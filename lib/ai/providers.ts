@@ -50,7 +50,7 @@ import type {
   ThinkingConfig,
 } from '@/lib/types/provider';
 import { applyModelMetadata, getCatalogThinkingCapability } from './model-metadata';
-import { findModelById } from './model-aliases';
+import { findModelById, getCatalogAliasModelId } from './model-aliases';
 import {
   getDefaultThinkingConfig,
   getThinkingMode,
@@ -1082,6 +1082,49 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         outputWindow: 8192,
         capabilities: { streaming: true, tools: true, vision: false },
       },
+      // Text-generation table: context 204,800. M3 is the multimodal model;
+      // these are language-only, with the same tool calling as M2.7.
+      // Highspeed "效果不变", so M2.7-highspeed keeps M2.7's 8192 output.
+      // M2's documented max output is 128k (including chain of thought).
+      // M2.5 and M2.1 do not publish a max output, so it is omitted.
+      {
+        id: 'MiniMax-M2.7-highspeed',
+        name: 'MiniMax M2.7 Highspeed',
+        contextWindow: 204800,
+        outputWindow: 8192,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'MiniMax-M2.5',
+        name: 'MiniMax M2.5',
+        contextWindow: 204800,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'MiniMax-M2.5-highspeed',
+        name: 'MiniMax M2.5 Highspeed',
+        contextWindow: 204800,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'MiniMax-M2.1',
+        name: 'MiniMax M2.1',
+        contextWindow: 204800,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'MiniMax-M2.1-highspeed',
+        name: 'MiniMax M2.1 Highspeed',
+        contextWindow: 204800,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'MiniMax-M2',
+        name: 'MiniMax M2',
+        contextWindow: 204800,
+        outputWindow: 131072,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
     ],
   },
 
@@ -1442,6 +1485,12 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     requiresApiKey: true,
     icon: '/logos/tokendance.svg',
     models: [
+      // The plan's own family. Context, output and vision are not published,
+      // so this row only gives the id a catalog entry. Thinking is attached
+      // from model-metadata.
+      { id: 'cogevol-base', name: 'Cogevol Base' },
+      { id: 'cogevol-slide-0828', name: 'Cogevol Slide' },
+      { id: 'cogevol-interactive-0828', name: 'Cogevol Interactive' },
       {
         id: 'deepseek-v4.1-flash',
         name: 'DeepSeek V4.1 Flash',
@@ -2544,8 +2593,8 @@ export function getModel(config: ModelConfig): ModelWithInfo {
       throw new Error(`Unsupported provider type: ${providerType}`);
   }
 
-  // Look up model info from the provider registry
-  const modelInfo = findModelById(config.providerId, provider?.models, config.modelId) ?? null;
+  // Catalog metadata only. config.modelId is still the id sent on the wire.
+  const modelInfo = getModelInfo(config.providerId, config.modelId) ?? null;
 
   return { model, modelInfo };
 }
@@ -2625,9 +2674,122 @@ export function getProvider(providerId: ProviderId): ProviderConfig | undefined 
 }
 
 /**
+ * Token-plan chat ids whose endpoints are not the open-platform catalogs.
+ * `getModelInfo` reads this after a miss on `PROVIDERS[provider].models`.
+ * Those arrays back the official presets, which list every registry row, and
+ * api.moonshot.cn / Ark `/api/v3` reject these ids.
+ *
+ * Kimi Code (kimi.com/code/docs, 2026-10-15): `k3` aliases to `kimi-k3`.
+ * Context is from that page; max output is not listed, so it is omitted.
+ * `k3-256k` accepts images (not video). `kimi-for-coding` is K2.8 Preview
+ * (images); the highspeed id is K2.7 Code HighSpeed at 262144 context, not
+ * the open-platform highspeed row's 256000. Tool calling is not stated for
+ * the two coding ids, so it stays unset.
+ *
+ * Ark Agent Plan (套餐概览, 2026-10-19). Not the dated direct-API snapshots:
+ * the plan table lists 1024k context and 256k max output, and the model list
+ * marks Seed 2.1 / Seed 2.0 Mini as 多模态理解. 1k = 1024. `kimi-k2.8-preview`
+ * documents 1024k / 1024k and image input, but callers send `outputWindow` as
+ * `max_tokens` without subtracting the prompt, which exceeds Ark's
+ * input+output limit, so that ceiling is omitted.
+ */
+const PLAN_ONLY_MODELS: Partial<Record<ProviderId, readonly ModelInfo[]>> = {
+  kimi: [
+    {
+      id: 'k3-256k',
+      name: 'Kimi K3 256K',
+      contextWindow: 262144,
+      capabilities: { streaming: true, tools: true, vision: true },
+    },
+    {
+      id: 'kimi-for-coding',
+      name: 'Kimi for Coding',
+      contextWindow: 1048576,
+      capabilities: { streaming: true, vision: true },
+    },
+    {
+      id: 'kimi-for-coding-highspeed',
+      name: 'Kimi for Coding HighSpeed',
+      contextWindow: 262144,
+      capabilities: { streaming: true, vision: true },
+    },
+  ],
+  doubao: [
+    {
+      id: 'doubao-seed-2.1-pro',
+      name: 'Doubao Seed 2.1 Pro',
+      contextWindow: 1048576,
+      outputWindow: 262144,
+      capabilities: { streaming: true, tools: true, vision: true },
+    },
+    {
+      id: 'doubao-seed-2.1-lite',
+      name: 'Doubao Seed 2.1 Lite',
+      contextWindow: 1048576,
+      outputWindow: 262144,
+      capabilities: { streaming: true, tools: true, vision: true },
+    },
+    {
+      id: 'doubao-seed-2.0-mini',
+      name: 'Doubao Seed 2.0 Mini',
+      contextWindow: 262144,
+      outputWindow: 131072,
+      capabilities: { streaming: true, tools: true, vision: true },
+    },
+    // Console auto-router, not one model, so it has no single window.
+    // The plan calls tools; image input is not a property of the router.
+    {
+      id: 'ark-code-latest',
+      name: 'Ark Code Latest',
+      capabilities: { streaming: true, tools: true, vision: false },
+    },
+    // Plan deepseek-v4-flash is its own 1024k/384k model. The plan page's
+    // vision sentence is for deepseek-v4.1-flash, not this id, and the
+    // direct deepseek-flash row has vision, so this is not an alias.
+    {
+      id: 'deepseek-v4-flash',
+      name: 'DeepSeek V4 Flash',
+      contextWindow: 1048576,
+      outputWindow: 393216,
+      capabilities: { streaming: true, tools: true, vision: false },
+    },
+    // Plan table 1024k/128k and 原生多模态. MiniMax-M3's own output is 32k.
+    {
+      id: 'minimax-m3',
+      name: 'MiniMax M3',
+      contextWindow: 1048576,
+      outputWindow: 131072,
+      capabilities: { streaming: true, tools: true, vision: true },
+    },
+    // 支持文本和图片输入. Output ceiling omitted; see the comment above.
+    {
+      id: 'kimi-k2.8-preview',
+      name: 'Kimi K2.8 Preview',
+      contextWindow: 1048576,
+      capabilities: { streaming: true, tools: true, vision: true },
+    },
+  ],
+};
+
+/**
  * Get model info
  */
 export function getModelInfo(providerId: ProviderId, modelId: string): ModelInfo | undefined {
   const provider = PROVIDERS[providerId];
-  return findModelById(providerId, provider?.models, modelId);
+  const local = findModelById(providerId, provider?.models, modelId);
+  if (local) return local;
+
+  const planOnly = findModelById(providerId, PLAN_ONLY_MODELS[providerId], modelId);
+  if (planOnly) return planOnly;
+
+  const borrowedId = getCatalogAliasModelId(providerId, modelId);
+  if (!borrowedId) return undefined;
+
+  // Native catalogs are declared before gateway copies (TokenDance), so the
+  // first exact id keeps the row that stores output windows.
+  for (const candidate of Object.values(PROVIDERS)) {
+    const match = candidate.models.find((model) => model.id === borrowedId);
+    if (match) return match;
+  }
+  return undefined;
 }

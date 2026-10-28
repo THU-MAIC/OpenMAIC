@@ -214,4 +214,52 @@ describe('MinerU parser', () => {
       expect.objectContaining({ id: 'img_1', path: 'abc.jpg', pageNumber: 2 }),
     ]);
   });
+
+  it('keeps page, size and caption for table and equation crops', () => {
+    const parsed = extractMinerUResult({
+      md_content: '',
+      images: { 'fig.jpg': 'AAAA', 'tab.jpg': 'BBBB', 'eq.jpg': 'CCCC' },
+      content_list: [
+        {
+          type: 'image',
+          img_path: 'images/fig.jpg',
+          page_idx: 0,
+          bbox: [10, 20, 110, 220],
+          image_caption: ['Figure 1: Overview'],
+        },
+        {
+          type: 'table',
+          img_path: 'images/tab.jpg',
+          page_idx: 3,
+          bbox: [50, 100, 450, 300],
+          table_caption: ['Table 2: Results'],
+          table_footnote: ['* p < 0.05'],
+        },
+        {
+          type: 'equation',
+          img_path: 'images/eq.jpg',
+          page_idx: 5,
+          bbox: [100, 400, 400, 460],
+          text: '$$E = mc^2$$',
+        },
+      ],
+    });
+    const byPath = Object.fromEntries(
+      (parsed.metadata?.pdfImages ?? []).map((img) => [img.path, img]),
+    );
+    expect(byPath['fig.jpg']).toMatchObject({
+      pageNumber: 1,
+      description: 'Figure 1: Overview',
+      width: 100,
+      height: 200,
+    });
+    expect(byPath['tab.jpg']).toMatchObject({
+      pageNumber: 4,
+      description: 'Table 2: Results',
+      width: 400,
+      height: 200,
+    });
+    expect(byPath['eq.jpg']).toMatchObject({ pageNumber: 6, width: 300, height: 60 });
+    expect(byPath['eq.jpg'].description).toBeUndefined();
+  });
 });

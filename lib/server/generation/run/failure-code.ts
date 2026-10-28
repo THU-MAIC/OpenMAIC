@@ -10,13 +10,37 @@ import { WebSearchConfigError } from '@/lib/server/web-search-config';
 
 import { StepRefusal } from '../steps/context';
 
+/**
+ * Codes `runFailureCode` itself returns. Host classifiers may report other
+ * codes through the same `errorCode` field; this union is only the built-in set.
+ */
+export type RunFailureErrorCode =
+  | 'PROVIDER_DISABLED'
+  | 'MISSING_API_KEY'
+  | 'INVALID_URL'
+  | 'MODEL_CONFIG_INVALID'
+  | 'MISSING_REQUIRED_FIELD'
+  | 'INVALID_REQUEST'
+  | 'GENERATION_FAILED'
+  | 'PROVIDER_QUOTA_EXHAUSTED'
+  | 'RATE_LIMITED'
+  | 'UPSTREAM_ERROR'
+  | 'INTERNAL_ERROR';
+
 export interface RunFailureCode {
   errorCode: string;
-  /** The provider's HTTP status, when the failure is a provider's answer. */
+  /**
+   * Status used to classify the failure. A provider HTTP status when the
+   * failure carries one. `TTSRateLimitError` contributes 429 as a classifier
+   * sentinel even when the provider answered HTTP 200 with a rate-limit
+   * business code; it is not that wire status.
+   */
   statusCode?: number;
 }
 
-export function runFailureCode(error: unknown): RunFailureCode {
+export function runFailureCode(
+  error: unknown,
+): RunFailureCode & { errorCode: RunFailureErrorCode } {
   if (error instanceof ModelAuthorizationError)
     return { errorCode: error.code, statusCode: error.httpStatus };
   if (error instanceof ModelConfigurationError || error instanceof WebSearchConfigError) {

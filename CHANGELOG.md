@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Features
+
+- `@openmaic/generation` exports `renderScenePrompt('slide-content', { imageElementEnabled, generatedImageEnabled, generatedVideoEnabled })`, which returns the slide content system prompt without running generation. Slide generation builds its system prompt through the same code, so the two cannot drift. `@openmaic/generation` 0.3.26.
+
+### Bug Fixes
+
+- A slide image whose box has a different shape from the image is now fitted inside the box the model laid out, centered, like `object-fit: contain`. Previously the box kept its width and changed its height, so a box flatter than its image grew downward and covered the text below it. Boxes within 10% of the image's ratio, and images with unknown dimensions, are unchanged. `@openmaic/generation` 0.3.25.
+- Narration: generated speech is prompted to keep Greek letters and named constants as symbols, because that text is also the caption (classroom, standalone HTML player, and narration export). Write π, not the homophone 派, and the same for θ, α, β, λ, ω, Σ, and the constant e. `@openmaic/generation` 0.3.28. [#1906](https://github.com/THU-MAIC/OpenMAIC/issues/1906)
+- Ark Agent Plan chat models resolve catalog metadata again, so reference images, context windows and max output are no longer dropped. The request still sends the plan's own model id. Ids that match an existing row reuse it (`deepseek-v4-pro`, `glm-5.3`, `kimi-k3`, `kimi-k2.7-code`, and Coding Plan `k3`). Seed 2.1 Pro, Seed 2.1 Lite, Seed 2.0 Mini, `deepseek-v4-flash`, `minimax-m3`, `kimi-k2.8-preview` and `ark-code-latest` resolve for the Agent Plan and stay off the dated Doubao preset; `ark-code-latest` is a router with tool calling, no image input and no single window. `kimi-k2.8-preview` omits max output because that documented ceiling equals the context window and callers send it as `max_tokens`. Kimi Coding Plan ids stay off the open-platform Kimi preset. The rest of MiniMax's M2 chat ids and TokenDance's Cogevol ids resolve model info as well. [#1947](https://github.com/THU-MAIC/OpenMAIC/issues/1947) [#1942](https://github.com/THU-MAIC/OpenMAIC/issues/1942)
+
 ## [1.3.0-rc.1] - 2026-10-22
 
 1.3.0-rc.1 is the first release candidate for 1.3.0. Its main theme is the **knowledge base**: every upload is kept in its owner's knowledge base until it is deleted, organized in folders and parsed once, with the result reused by every conversation. A new library page lists and organizes the materials, the composer offers them through `@` and a picker, and the agent gets tools to read, search and organize them. Interactive scenes also load their libraries from the deployment instead of a public CDN, the editor marks pages that have current problems, and malformed slide shapes no longer hang the renderer. This release contains breaking changes and upgrade conditions: the built-in Veo provider is removed, and the knowledge base adds schema changes that cannot run beside older instances or be rolled back. Read **Breaking Changes** before upgrading from 1.2.x.

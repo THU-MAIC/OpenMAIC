@@ -268,3 +268,108 @@ test('legacy narration does not flash a warning when the scene is renamed', asyn
     contentType: 'image/png',
   });
 });
+
+test('cached narration does not flash a marker on mount or when a page is inserted above it', async ({
+  page,
+  mockApi,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  await mockApi.mockModelSettings({ ...DEFAULT_MODEL_SETTINGS, media: { tts: 'openai-tts' } });
+  await page.addInitScript(() => {
+    localStorage.setItem('locale', 'en-US');
+    const observed = { markers: 0 };
+    Object.assign(window, { pendingNarrationMarkers: observed });
+    new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof Element)) continue;
+          const markers = node.matches('[data-testid="scene-issue-marker"]')
+            ? [node]
+            : node.querySelectorAll('[data-testid="scene-issue-marker"]');
+          for (const marker of markers) {
+            const title = marker
+              .closest('[data-testid="scene-item"]')
+              ?.querySelector('[data-testid="scene-title"]')?.textContent;
+            if (title === 'Cached narration') observed.markers++;
+          }
+        }
+      }
+    }).observe(document, { childList: true, subtree: true });
+  });
+  const stageId = uniqueStageId('pending-narration-marker');
+  const now = Date.now();
+  const scene = {
+    ...createMockScene(stageId),
+    title: 'Cached narration',
+    createdAt: now,
+    updatedAt: now,
+  };
+  await seedServerDocument(page, {
+    stage: { id: stageId, name: 'Pending narration marker', createdAt: now, updatedAt: now },
+    scenes: [scene],
+    outline: { outlines: [], generationComplete: true, createdAt: now, updatedAt: now },
+  });
+  await page.goto(`/classroom/${stageId}`);
+  const edit = page.getByRole('switch', { name: /edit course/i }).first();
+  await expect(edit).toBeVisible();
+  await page.evaluate(
+    async ({ stageId, text }) => {
+      const database = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open('maic-device-cache');
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      try {
+        const tx = database.transaction('audioFiles', 'readwrite');
+        const done = new Promise<void>((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+        });
+        for (const order of [0, 2])
+          tx.objectStore('audioFiles').put({
+            id: `tts_s${order}_action-0`,
+            stageId,
+            text,
+            blob: new Blob(['cached narration']),
+            format: 'mp3',
+            createdAt: Date.now(),
+          });
+        await done;
+      } finally {
+        database.close();
+      }
+    },
+    { stageId, text: scene.actions[0].text },
+  );
+  await page.reload();
+  await expect(edit).toBeVisible();
+  await page
+    .getByRole('button', { name: /got it/i })
+    .click({ timeout: 3000 })
+    .catch(() => {});
+  if ((await edit.getAttribute('aria-checked')) !== 'true') await edit.click();
+  const rail = page.getByTestId('slide-nav-rail');
+  const cachedScene = rail.getByTestId('scene-item').filter({ hasText: 'Cached narration' });
+  await expect(cachedScene).toBeVisible();
+  await expect(cachedScene.getByTestId('scene-issue-marker')).toHaveCount(0);
+  const observed = () =>
+    page.evaluate(
+      () =>
+        (window as unknown as { pendingNarrationMarkers: { markers: number } })
+          .pendingNarrationMarkers.markers,
+    );
+  expect(await observed()).toBe(0);
+  await rail.getByTestId('slide-nav-insert').first().click();
+  await page.getByTestId('scene-type-slide').click();
+  await expect(rail.getByTestId('scene-item')).toHaveCount(2);
+  await expect(cachedScene.getByTestId('scene-issue-marker')).toHaveCount(0);
+  await expect(
+    rail.getByTestId('scene-item').first().getByTestId('scene-issue-marker'),
+  ).toHaveCount(1);
+  expect(await observed()).toBe(0);
+  await testInfo.attach('inserted-above-cached-narration', {
+    body: await rail.screenshot(),
+    contentType: 'image/png',
+  });
+});

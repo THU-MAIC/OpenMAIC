@@ -21,9 +21,16 @@ export type {
   SceneContentFailureCode,
   SceneContentOptions,
 } from './scene-generator.js';
+export { renderScenePrompt } from './scene-prompts.js';
+export type {
+  RenderedScenePrompt,
+  ScenePromptId,
+  SlideContentPromptOptions,
+} from './scene-prompts.js';
 export { buildCompleteScene } from './scene-builder.js';
 export type { BuildCompleteSceneOptions } from './scene-builder.js';
 export {
+  DEFAULT_MAX_DELAY_MS,
   isAbortError,
   isRetryableGenerationError,
   withGenerationRetry,

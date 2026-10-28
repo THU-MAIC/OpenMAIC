@@ -41,12 +41,15 @@ export function extractMinerUResult(fileResult: Record<string, unknown>): Parsed
     );
     pageCount = pages.size;
 
+    // Tables and display equations are cropped into images too and referenced by img_path
+    const imageTypes = new Set(['image', 'table', 'equation']);
     for (const item of contentList) {
-      if (item.type === 'image' && item.img_path) {
+      if (imageTypes.has(item.type) && item.img_path) {
+        const captions = item.type === 'table' ? item.table_caption : item.image_caption;
         const metaEntry = {
           pageIdx: item.page_idx ?? 0,
           bbox: item.bbox || [0, 0, 1000, 1000],
-          caption: Array.isArray(item.image_caption) ? item.image_caption[0] : undefined,
+          caption: Array.isArray(captions) ? captions[0] : undefined,
         };
         // Store under both the full path and basename so lookup works
         // regardless of whether images dict uses "abc.jpg" or "images/abc.jpg"

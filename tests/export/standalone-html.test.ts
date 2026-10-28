@@ -399,6 +399,7 @@ describe('standalone HTML export', () => {
     expect(interactive.content.type).toBe('interactive');
     const content = interactive.content as { html?: string };
     expect(content.html).toContain('data-iframe-patch');
+    expect(content.html).toContain('data-maic-media-document="standalone-1"');
     expect(content.html).toContain('Light intensity lab');
   });
 

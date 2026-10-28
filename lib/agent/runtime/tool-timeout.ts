@@ -86,6 +86,22 @@ export class AgentToolAbortedError extends Error {
   }
 }
 
+const toolDeadlines = new WeakMap<AbortSignal, number>();
+
+/**
+ * Milliseconds left on the budget `withAgentToolTimeout` started for this
+ * signal. Undefined when `signal` is not that derived signal.
+ */
+export function agentToolBudgetRemainingMs(
+  signal: AbortSignal | undefined,
+  now = Date.now(),
+): number | undefined {
+  if (!signal) return undefined;
+  const deadlineAt = toolDeadlines.get(signal);
+  if (deadlineAt === undefined) return undefined;
+  return deadlineAt - now;
+}
+
 /**
  * Wrap a tool so every execution is bounded by the tool timeout and by the
  * caller's AbortSignal.
@@ -120,6 +136,7 @@ async function executeWithToolBound(
   // The derived signal is what the tool actually sees: the outer signal is
   // forwarded into it, and the timeout fires it as well.
   const controller = new AbortController();
+  if (timeoutMs > 0) toolDeadlines.set(controller.signal, Date.now() + timeoutMs);
   const forwardAbort = () => controller.abort(signal?.reason);
   if (signal?.aborted) controller.abort(signal.reason);
   else signal?.addEventListener('abort', forwardAbort, { once: true });

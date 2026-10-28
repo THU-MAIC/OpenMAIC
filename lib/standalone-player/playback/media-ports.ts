@@ -1,3 +1,4 @@
+import { createInteractiveMediaSession, mediaDocumentId } from '@/lib/interactive/media-bridge';
 /**
  * DOM side of the sequencer ports: the narration `<audio>` element, the slide
  * `<video>` elements, and the interactive scene's iframe channel.
@@ -306,11 +307,25 @@ export class VideoRegistry {
 export class WidgetChannel {
   private frame: HTMLIFrameElement | null = null;
   private loaded = false;
+  private mediaSession: ReturnType<typeof createInteractiveMediaSession> | null = null;
+  onMediaPlay: (() => void) | null = null;
+
+  pauseMedia(): void {
+    this.mediaSession?.pause();
+  }
   private queue: Array<Record<string, unknown>> = [];
 
   attach(frame: HTMLIFrameElement | null): void {
     if (frame === this.frame) return;
+    this.mediaSession?.dispose();
+    this.mediaSession = null;
     this.frame = frame;
+    const documentId = mediaDocumentId(frame?.srcdoc);
+    if (frame && documentId) {
+      this.mediaSession = createInteractiveMediaSession(frame, documentId, () =>
+        this.onMediaPlay?.(),
+      );
+    }
     this.loaded = false;
     this.queue = [];
   }

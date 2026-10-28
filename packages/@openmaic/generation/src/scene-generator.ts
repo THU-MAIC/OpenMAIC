@@ -43,6 +43,7 @@ import {
 } from './prompt-formatters.js';
 import type { PromptId } from './prompts/types.js';
 import { buildPrompt, PROMPT_IDS } from './prompts/index.js';
+import { buildSlideContentPrompt } from './scene-prompts.js';
 import type {
   GeneratedInteractiveContent,
   GeneratedPBLContent,
@@ -548,13 +549,19 @@ function fixElementDefaults(
           const curW = normalized.width || 400;
           const curH = normalized.height || 300;
           if (Math.abs(curW / curH - knownRatio) / knownRatio > 0.1) {
-            // Keep width, correct height
-            const newH = Math.round(curW / knownRatio);
-            if (newH > 462) {
-              // canvas 562.5 - margins 50×2
-              return { ...normalized, width: Math.round(462 * knownRatio), height: 462 };
-            }
-            return { ...normalized, height: newH };
+            // Contain-fit (like `object-fit: contain`): the largest box with the
+            // real ratio inside the model's box, centered in it. Never grows past
+            // the model's box, so it cannot cover the elements laid out around it.
+            const fitByWidth = curW / curH < knownRatio;
+            const newW = fitByWidth ? curW : Math.round(curH * knownRatio);
+            const newH = fitByWidth ? Math.round(curW / knownRatio) : curH;
+            return {
+              ...normalized,
+              left: Math.round((normalized.left ?? 0) + (curW - newW) / 2),
+              top: Math.round((normalized.top ?? 0) + (curH - newH) / 2),
+              width: newW,
+              height: newH,
+            };
           }
         }
       }
@@ -696,7 +703,6 @@ async function generateSlideContent(
   const generatedImageEnabled = generatedImageEntries.length > 0;
   const generatedVideoEnabled = generatedVideoEntries.length > 0;
   const imageElementEnabled = hasAssignedImages || generatedImageEnabled;
-  const mediaElementEnabled = imageElementEnabled || generatedVideoEnabled;
 
   // Add generated media placeholders info (images + videos)
   if (outline.mediaGenerations && outline.mediaGenerations.length > 0) {
@@ -727,27 +733,20 @@ async function generateSlideContent(
     }
   }
 
-  // Canvas dimensions (matching viewportSize and viewportRatio)
-  const canvasWidth = 1000;
-  const canvasHeight = 562.5;
-
   const teacherContext = formatTeacherPersonaForPrompt(agents);
 
-  const prompts = buildPrompt(PROMPT_IDS.SLIDE_CONTENT, {
-    title: outline.title,
-    description: outline.description,
-    keyPoints: (outline.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join('\n'),
-    elements: '（根据要点自动生成）',
-    assignedImages: assignedImagesText,
-    canvas_width: canvasWidth,
-    canvas_height: canvasHeight,
-    teacherContext,
-    languageDirective: languageDirective || '',
-    imageElementEnabled,
-    generatedImageEnabled,
-    generatedVideoEnabled,
-    mediaElementEnabled,
-  });
+  const prompts = buildSlideContentPrompt(
+    { imageElementEnabled, generatedImageEnabled, generatedVideoEnabled },
+    {
+      title: outline.title,
+      description: outline.description,
+      keyPoints: (outline.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join('\n'),
+      elements: '（根据要点自动生成）',
+      assignedImages: assignedImagesText,
+      teacherContext,
+      languageDirective: languageDirective || '',
+    },
+  );
 
   if (!prompts) {
     onFailure?.({ code: 'prompt-unavailable' });

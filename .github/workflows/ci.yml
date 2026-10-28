@@ -24,6 +24,11 @@ on:
         integration/material-library,
         integration/workbench-home,
       ]
+  # The merge queue builds each entry on top of main and the entries queued
+  # ahead of it, so a pull request no longer has to be brought up to date with
+  # main by hand before it merges. The required check must report here too, or
+  # a queued entry waits until it times out.
+  merge_group:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -46,12 +51,17 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-      - run: node --test .github/scripts/issue-triage.test.mjs
+      - run: node --test .github/scripts/*.test.mjs
 
-  check:
-    name: Lint, Typecheck & Unit Tests
+  # The required status check on main is the job *name* "Lint, Typecheck &
+  # Unit Tests". The work behind it runs as the parallel jobs below, and the
+  # `check` job at the end carries that name and passes only when every one of
+  # them passed. A job added here that must gate merges has to be added to its
+  # `needs` as well.
+  lint:
+    name: Lint & Typecheck
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
         with:
@@ -71,18 +81,11 @@ jobs:
             exit 1
           fi
 
-      - uses: pnpm/action-setup@v5
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: pnpm
-
       - name: Package version bumps
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         run: node scripts/check-package-version-bumps.mjs "$BASE_SHA"
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
 
       # A branch creation or a force push reports an unusable `before`. Fail
       # rather than substituting HEAD^: a force push can replace many commits at
@@ -110,11 +113,15 @@ jobs:
       - name: Internal dependency ranges
         run: node scripts/check-internal-dependency-ranges.mjs
 
-      - run: pnpm install --frozen-lockfile
+      # The real install, postinstall included: the verification below is
+      # about what installing does, so this job does not use the build cache.
+      - uses: ./.github/actions/setup-workspace
+        with:
+          build-cache: 'false'
 
-      # Root proxy integration tests load current and historical render-service
-      # sources. They need the standalone service's Node dependencies as well.
-      - name: Install render-service test dependencies
+      # The root tsc reaches tests that load render-service sources, which
+      # resolve the standalone service's own Node dependencies.
+      - name: Install render-service dependencies
         working-directory: render-service
         env:
           PUPPETEER_SKIP_DOWNLOAD: 'true'
@@ -160,11 +167,41 @@ jobs:
             'tsc' 'npx tsc --noEmit' \
             'i18n' 'pnpm check:i18n-keys'
 
-      # Keep these sequential. Running root vitest alongside the storage
-      # package on a 4-core runner made 5s-timeout tests flake (CPU
-      # contention, not a product regression).
+  # The root suite was ~10 minutes serial. Each shard is its own runner, so
+  # shards never compete for CPU (running root vitest alongside the storage
+  # package on one 4-core runner made 5s-timeout tests flake).
+  unit:
+    name: Unit Tests (${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-workspace
+
+      # Root proxy integration tests load current and historical render-service
+      # sources. They need the standalone service's Node dependencies as well.
+      - name: Install render-service test dependencies
+        working-directory: render-service
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+        run: npm ci
+
       - name: Unit Tests
-        run: pnpm test
+        run: pnpm exec vitest run --shard=${{ matrix.shard }}/4
+
+  package-tests:
+    name: Unit Tests (packages)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-workspace
 
       - name: Unit Tests (importer)
         run: pnpm --filter @openmaic/importer test
@@ -216,6 +253,15 @@ jobs:
           printf '%s\n' "$output"
           node -e 'const value = JSON.parse(process.argv[1]); if (!Array.isArray(value.outlines) || value.outlines.length === 0 || !value.scene || value.sceneValidation?.valid !== true) process.exit(1)' "$output"
 
+  storage-tests:
+    name: Unit Tests (storage)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-workspace
+
       # Covers the package's own test tree, which the root tsc reaches only by an
       # incidental glob. The device-scope guard is written as `@ts-expect-error`
       # probes in those tests, and a probe nothing type-checks proves nothing.
@@ -224,6 +270,28 @@ jobs:
 
       - name: Unit Tests (storage)
         run: pnpm --filter @openmaic/storage test
+
+  # The required check. A job skipped because something it needs failed
+  # counts as passing for a required check, so this must not be skipped:
+  # `always()` makes it run and fail whenever any job above failed or was
+  # cancelled.
+  check:
+    name: Lint, Typecheck & Unit Tests
+    needs: [lint, unit, package-tests, storage-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every job to have passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          if printf '%s' "$NEEDS" | jq -e 'to_entries | any(.value.result != "success")' >/dev/null; then
+            echo "::error::A job behind this check did not succeed."
+            exit 1
+          fi
 
   render-service:
     name: Render Service (typecheck + tests)
@@ -287,14 +355,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: pnpm/action-setup@v5
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-workspace
 
       # Browser tarballs live under ~/.cache/ms-playwright. A cold download of
       # Chromium from the Playwright CDN has sat for 20+ minutes on this runner
@@ -371,16 +432,12 @@ jobs:
             fi
           done
 
-      # Incremental compilation artifacts only. Keyed on the lockfile plus
-      # next.config.ts so a dependency or webpack-rule change misses; source
-      # edits still reuse the restore-key prefix.
-      - name: Cache Next.js build
-        uses: actions/cache@v6
-        with:
-          path: .next/cache
-          key: ${{ runner.os }}-nextjs-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('next.config.ts') }}
-          restore-keys: |
-            ${{ runner.os }}-nextjs-${{ hashFiles('pnpm-lock.yaml') }}-
+      # No `.next/cache` restore: the build starts cold. The cache was keyed on
+      # the lockfile and next.config.ts only, so every run restored the
+      # Turbopack cache of an older commit, and builds from it shipped a stale
+      # app/globals.css (without the `--safe-area-*` variables the phone
+      # layout reads) while the rest of the CSS was current. The phone e2e
+      # specs then failed on every attempt and ran the job out of time.
 
       # Dedicated so a cold `next build` is not charged against Playwright's
       # webServer readiness budget (120s). NEXT_PUBLIC_MAIC_EDITOR_ENABLED is a
@@ -415,24 +472,60 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Pushes build unless only documentation changed, so every commit that
+      # lands is still built. Pull requests and merge queue entries build only
+      # when a file the deps or builder stage handles differently from the
+      # rest of CI changed:
+      #   - Dockerfile, .dockerignore: the stages and their build context.
+      #   - package.json (any), pnpm-lock.yaml, pnpm-workspace.yaml, .npmrc,
+      #     .pnpmfile.cjs: the deps stage installs them on Alpine (musl) with
+      #     native toolchains, which no other job does.
+      #   - packages/, scripts/: copied into the deps stage; the builder runs
+      #     build:packages under a 1 GiB V8 heap cap (#1526) and the build
+      #     scripts from scripts/.
+      #   - next.config.*, tsconfig*.json: the standalone output and the
+      #     production tsconfig the builder's `next build` uses.
+      #   - .github/workflows/ci.yml: this job itself.
+      # Other app sources go through the same `pnpm build` in the e2e job on
+      # every pull request. What that does not catch is an app source that
+      # starts depending on a path .dockerignore excludes (assets, docs, *.md);
+      # the build on push to main does.
       - name: Detect main-image changes
         id: changes
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
           PUSH_BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" = "pull_request" ]; then base="$PR_BASE"; else base="$PUSH_BEFORE"; fi
+          case "$EVENT_NAME" in
+            pull_request | merge_group) base="$PR_BASE"; scope=inputs ;;
+            *) base="$PUSH_BEFORE"; scope=all ;;
+          esac
           if [ -z "$base" ] || ! git rev-parse --verify --quiet "$base^{commit}" >/dev/null; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          changed="$(git diff --name-only "$base" "$GITHUB_SHA")"
+          if [ "$scope" = inputs ]; then
+            inputs="$(printf '%s\n' "$changed" | grep -E \
+              -e '^(Dockerfile|\.dockerignore|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.npmrc|\.pnpmfile\.cjs)$' \
+              -e '^(next\.config\.[^/]+|tsconfig[^/]*\.json)$' \
+              -e '^(packages|scripts)/' \
+              -e '^\.github/workflows/ci\.yml$' \
+              -e '(^|/)package\.json$' || true)"
+            if [ -n "$inputs" ]; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "Main-image inputs changed:"
+              printf '%s\n' "$inputs"
+            else
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              echo "No main-image input changed; skipping the image build."
+            fi
           # The builder stage copies the whole context (`COPY . .`), so almost any
           # file is an image input. Skip only when every changed file is docs.
-          changed="$(git diff --name-only "$base" "$GITHUB_SHA")"
-          if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qvE '(^docs/|\.md$)'; then
+          elif [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qvE '(^docs/|\.md$)'; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "Only documentation changed; skipping the image build."
           else

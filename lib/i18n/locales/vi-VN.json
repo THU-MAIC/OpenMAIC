@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "Quay lại",
     "you": "Bạn",
     "confirm": "Xác nhận",
     "cancel": "Hủy",
@@ -10,6 +11,22 @@
     "close": "Đóng"
   },
   "home": {
+    "resumeGeneration": "Tiếp tục tạo",
+    "emptyLibraryTitle": "Lớp học của bạn bắt đầu ở đây",
+    "emptyLibraryBody": "Tạo khóa học ở trang chủ và quay lại đây để học tiếp.",
+    "mobileTitle": "Bạn muốn học gì?",
+    "mobileSubtitle": "Cho biết chủ đề, AI sẽ tạo một lớp học tương tác.",
+    "mobilePlaceholder": "Nhập chủ đề hoặc tải tài liệu lên",
+    "courseOptions": "Tùy chọn lớp học",
+    "courseMaterials": "Tài liệu khóa học",
+    "courseMaterialsCount": "Tài liệu khóa học · {{n}}",
+    "backToCourseOptions": "Quay lại tùy chọn lớp học",
+    "materialsDone": "Hoàn tất",
+    "allSettings": "Tất cả cài đặt",
+    "examplesLabel": "Thử một chủ đề",
+    "examplePython": "Học Python từ đầu",
+    "exampleFourier": "Hiểu biến đổi Fourier qua ví dụ trực quan",
+    "desktopOnly": "Hãy dùng máy tính cho trình biên tập và chế độ Pro.",
     "slogan": "Học tập sinh tạo trong lớp học tương tác đa tác nhân",
     "greetingWithName": "Chào {{name}}"
   },
@@ -2290,7 +2307,18 @@
         "notMovable": "Không thể chuyển tài liệu này",
         "gone": "Mục này không còn tồn tại",
         "save": "Không thực hiện được. Hãy thử lại",
-        "notEmpty": "Thư mục vẫn còn tài liệu. Hãy chuyển chúng đi trước"
+        "notEmpty": "Thư mục vẫn còn tài liệu. Hãy chuyển chúng đi trước",
+        "materialNotFound": "Không tìm thấy tài liệu hoặc không có quyền truy cập.",
+        "folderNotFound": "Không tìm thấy thư mục hoặc không có quyền truy cập.",
+        "textUnavailable": "Văn bản của tài liệu không khả dụng.",
+        "derivative": "Tài liệu phái sinh dùng tên của tài liệu gốc; hãy đổi tên tài liệu gốc.",
+        "moveTooMany": "Mỗi lần chỉ di chuyển tối đa {{limit}} tài liệu.",
+        "moveNotMovable": "Không có tài liệu nào được di chuyển. Một số tài liệu đã chọn không khả dụng hoặc không thể di chuyển.",
+        "toolFolderNameTooLong": "Tên thư mục quá dài (tối đa 40 ký tự nửa chiều rộng hoặc 20 ký tự toàn chiều rộng).",
+        "toolFolderLimit": "Cơ sở tri thức đã đạt giới hạn {{limit}} thư mục.",
+        "mediaUnsupported": "Chỉ có thể dùng hình ảnh, video hoặc âm thanh làm phương tiện của khóa học.",
+        "mediaStorageFull": "Không đủ dung lượng để lưu nội dung này. Hãy giải phóng dung lượng rồi thử lại.",
+        "mediaNotFound": "Không tìm thấy tài liệu đa phương tiện hoặc tài liệu không có tệp đa phương tiện khả dụng."
       },
       "actions": {
         "parse": "Phân tích",
@@ -2319,6 +2347,9 @@
         "cannotUndo": "Không thể hoàn tác thao tác này.",
         "folderTitle": "Xóa thư mục “{{name}}”?",
         "folderContents": "Số tệp sẽ chuyển lên cấp cao nhất: {{count}}. Không tệp nào bị xóa."
+      },
+      "conversationFailure": {
+        "serviceUnavailable": "Chưa cấu hình dịch vụ phân tích cho loại tệp này. Hãy nhờ quản trị viên cấu hình."
       }
     },
     "untitledCourse": "未命名课堂",
@@ -2350,7 +2381,8 @@
       "materialUnavailable": "Không thể đính kèm {{name}} ({{reason}}). Mở kho kiến thức để xem lý do và phân tích lại.",
       "materialAttached": "Đã có trong cuộc trò chuyện này",
       "materialStaged": "Đã có trong tin nhắn này",
-      "materialsCapped": "Đang hiện {{count}} tài liệu đầu tiên — gõ tiếp để thu hẹp"
+      "materialsCapped": "Đang hiện {{count}} tài liệu đầu tiên — gõ tiếp để thu hẹp",
+      "materialUnavailableGuidance": "Không thể đính kèm {{name}}. {{guidance}} Bạn có thể xử lý tài liệu trên trang cơ sở tri thức."
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",

@@ -450,6 +450,14 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
 
   [getModelMetadataKey('minimax', 'MiniMax-M3')]: minimaxM3Thinking,
   [getModelMetadataKey('minimax', 'MiniMax-M2.7')]: fixedThinkingCapability,
+  // Same always-on record as M2.7 (requestAdapter none): no extra thinking
+  // field is sent. Highspeed variants keep the base model's effect.
+  [getModelMetadataKey('minimax', 'MiniMax-M2.7-highspeed')]: fixedThinkingCapability,
+  [getModelMetadataKey('minimax', 'MiniMax-M2.5')]: fixedThinkingCapability,
+  [getModelMetadataKey('minimax', 'MiniMax-M2.5-highspeed')]: fixedThinkingCapability,
+  [getModelMetadataKey('minimax', 'MiniMax-M2.1')]: fixedThinkingCapability,
+  [getModelMetadataKey('minimax', 'MiniMax-M2.1-highspeed')]: fixedThinkingCapability,
+  [getModelMetadataKey('minimax', 'MiniMax-M2')]: fixedThinkingCapability,
 
   [getModelMetadataKey('tencent-hunyuan', 'hy3')]: hunyuanHy3Effort,
 

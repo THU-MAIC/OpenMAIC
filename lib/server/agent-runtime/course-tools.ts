@@ -37,7 +37,11 @@ import { buildDslCourseTools, DSL_COURSE_TOOL_NAMES } from './dsl-tools';
 import { CURRICULUM_ALLOWLIST } from './curriculum-tools';
 import { buildGenerationTools, GENERATION_TOOL_NAMES } from './generation-tools';
 import { buildCourseAudioAndDeckTools, COURSE_AUDIO_DECK_TOOL_NAMES } from './course-edit/tools';
-import { buildMaterialMediaTool, MATERIAL_MEDIA_TOOL_NAME } from './material-media';
+import {
+  buildMaterialMediaTool,
+  MATERIAL_MEDIA_TOOL_NAME,
+  type MaterialMediaDeps,
+} from './material-media';
 import { RENDER_SCENE_PREVIEW_TOOL_NAME } from './scene-preview';
 import { buildImportPptxTool, IMPORT_PPTX_TOOL_NAME, type ImportPptxToolDeps } from './import-pptx';
 import {
@@ -208,6 +212,7 @@ export function withOwnerStageAuthorization(
  */
 export function buildDslCourseToolset(
   deps: CourseToolDeps &
+    Pick<MaterialMediaDeps, 'locale'> &
     Partial<ImportPptxToolDeps> &
     Partial<GenerateImageToolDeps> &
     Partial<GenerateVideoToolDeps>,
@@ -219,7 +224,13 @@ export function buildDslCourseToolset(
     ...(hasConfiguredVideoGeneration(deps) ? [buildGenerateVideoTool(deps)] : []),
     ...buildCourseAudioAndDeckTools(deps),
     ...(deps.sessionId
-      ? [buildMaterialMediaTool({ sessionId: deps.sessionId, ownerId: deps.ownerId })]
+      ? [
+          buildMaterialMediaTool({
+            sessionId: deps.sessionId,
+            ownerId: deps.ownerId,
+            locale: deps.locale,
+          }),
+        ]
       : []),
     ...buildDslCourseTools(deps),
   ] as unknown as AgentTool<never, never>[];
@@ -275,10 +286,14 @@ export const COURSE_SYSTEM_PROMPT = [
   'Offer stable, unique option ids when choices are useful.',
   'After ask_user succeeds, stop and wait for the next user message.',
   'Do not answer your own question or invent the user decision.',
-  'If no clarification is needed, answer directly without calling a tool.',
+  'When the user only asks a question and no clarification is needed, answer it directly without calling a tool; a request for work is carried out with tools.',
   'Follow later user messages as updates to the same conversation.',
   'Be honest about uncertainty and unavailable capabilities.',
   "Reply in the user's language unless the user requests another language.",
+  'The user creates learning content for themselves or others and is not an engineer: describe results in terms of that content, never expose tool names, field names, ids, or file and JSON paths, and link a classroom as a markdown link.',
+  'Claim only what tool results show, and say plainly what you did not verify.',
+  'Carry a request through to the end; stop early only when a decision genuinely needs the user.',
+  "Keep the final report brief: what was done, what is left if anything, and what needs the user's decision.",
 ].join('\n');
 
 interface CoursePromptBlocks {
@@ -295,9 +310,9 @@ interface CoursePromptBlocks {
   /** Compatibility guidance for installed legacy skills and resumed transcripts. */
   dslTools?: string;
   /**
-   * Session-materials listing. Present only when the session actually has
-   * materials (reference semantics: the block must not appear for a session
-   * with nothing to read).
+   * Static materials and knowledge-base guidance. The runner always
+   * passes it, including when nothing is attached, so the model can
+   * still use the knowledge base. The text does not list the set.
    */
   materials?: string;
   /** Roster guidance (list_voices / set_roster; always registered). */

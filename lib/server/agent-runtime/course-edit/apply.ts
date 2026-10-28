@@ -6,7 +6,7 @@ import type { PBLProjectV2, PBLRole } from '@/lib/pbl/v2/types';
 import type { Action } from '@/lib/types/action';
 import type { QuizContent, Scene, SlideContent } from '@/lib/types/stage';
 import type { WidgetConfig } from '@/lib/types/widgets';
-import type { PPTElement } from '@openmaic/dsl';
+import { normalizeElement, type PPTElement } from '@openmaic/dsl';
 import {
   containsReadSceneMediaPlaceholder,
   containsReadScenePlaceholderFragment,
@@ -70,17 +70,59 @@ export function inventorySlide(content: SlideContent) {
   });
 }
 
-/** Whole-page visible-text view used to prove old copy has no residue. */
+interface SlideTextEntry {
+  /** Field-level pointer (relative to scene /content) of the stored string. */
+  path: string;
+  id: string;
+  type: string;
+  text: string;
+  /** The stored value is HTML; `text` shows it with tags stripped. */
+  html?: true;
+}
+
+function slideElementText(element: PPTElement, index: number): SlideTextEntry[] {
+  const base = `/canvas/elements/${index}`;
+  const rec = element as PPTElement & {
+    content?: unknown;
+    text?: { content?: unknown };
+    latex?: unknown;
+    lines?: { content?: unknown }[];
+    data?: { text?: unknown }[][];
+  };
+  const entry = (path: string, text: unknown, html = false): SlideTextEntry[] => {
+    if (typeof text !== 'string') return [];
+    const visible = html ? stripTags(text) : text;
+    if (!visible) return [];
+    return [
+      { path, id: rec.id, type: rec.type, text: visible, ...(html ? { html: true as const } : {}) },
+    ];
+  };
+  if (rec.type === 'text') return entry(`${base}/content`, rec.content, true);
+  if (rec.type === 'shape') return entry(`${base}/text/content`, rec.text?.content, true);
+  if (rec.type === 'latex') return entry(`${base}/latex`, rec.latex);
+  if (rec.type === 'code') {
+    return (Array.isArray(rec.lines) ? rec.lines : []).flatMap((line, lineIndex) =>
+      entry(`${base}/lines/${lineIndex}/content`, line?.content),
+    );
+  }
+  if (rec.type === 'table') {
+    return (Array.isArray(rec.data) ? rec.data : []).flatMap((row, rowIndex) =>
+      (Array.isArray(row) ? row : []).flatMap((cell, cellIndex) =>
+        entry(`${base}/data/${rowIndex}/${cellIndex}/text`, cell?.text),
+      ),
+    );
+  }
+  return [];
+}
+
+/**
+ * Whole-page visible-text view used to prove old copy has no residue. Every
+ * entry's `path` addresses the exact stored string field, so it can be passed
+ * straight to `set`/`str_replace` (after the scene `/content` prefix).
+ */
 export function textSlide(content: SlideContent) {
   const inventory = inventorySlide(content);
-  const elements = inventory
-    .map((element, index) => ({
-      path: `/canvas/elements/${index}`,
-      id: element.id,
-      type: element.type,
-      text: element.text,
-    }))
-    .filter((element) => element.text.length > 0);
+  const elements = content.canvas.elements.flatMap(slideElementText);
   const media: {
     path: string;
     id: string;
@@ -163,8 +205,15 @@ function arrayIndex(token: string, length: number): ApplyResult<number> {
     return fail(`array path segment ${JSON.stringify(token)} is not a canonical index`);
   }
   const index = Number(token);
-  if (index >= length) return fail(`array index ${index} is out of bounds (length ${length})`);
+  if (index >= length) {
+    return fail(`array index ${index} is out of bounds (current length ${length})`);
+  }
   return ok(index);
+}
+
+/** `set` at index == length (or the RFC 6901 `-` token) appends to the array. */
+function isAppendToken(token: string, length: number): boolean {
+  return token === '-' || token === String(length);
 }
 
 function applyPointer(
@@ -191,6 +240,10 @@ function applyPointer(
   const key = tokens.at(-1);
   if (key === undefined) return fail('patch path must address a field');
   if (Array.isArray(parent)) {
+    if (action === 'set' && isAppendToken(key, parent.length)) {
+      parent.push(structuredClone(value));
+      return ok(undefined);
+    }
     const parsed = arrayIndex(key, parent.length);
     if (!parsed.ok) return parsed;
     if (action === 'remove') parent.splice(parsed.value, 1);
@@ -268,6 +321,146 @@ function strReplaceMissing(path: string): StrReplaceResult<never> {
   return failStr(`str_replace requires a string field; ${path} is missing`);
 }
 
+function encodePointerToken(token: string): string {
+  return token.replace(/~/g, '~0').replace(/\//g, '~1');
+}
+
+export interface StringField {
+  path: string;
+  value: string;
+}
+
+/**
+ * Every string leaf under `value`, as scene-rooted JSON Pointers that can be
+ * passed straight back to `set`/`str_replace`.
+ */
+export function collectStringFields(value: unknown, base = ''): StringField[] {
+  const out: StringField[] = [];
+  const walk = (node: unknown, path: string) => {
+    if (typeof node === 'string') out.push({ path, value: node });
+    else if (Array.isArray(node)) node.forEach((item, index) => walk(item, `${path}/${index}`));
+    else if (isRecord(node)) {
+      for (const [key, item] of Object.entries(node)) {
+        walk(item, `${path}/${encodePointerToken(key)}`);
+      }
+    }
+  };
+  walk(value, base);
+  return out;
+}
+
+const MAX_LISTED_FIELDS = 12;
+const FIELD_PREVIEW_CHARS = 60;
+
+function previewText(text: string, max = FIELD_PREVIEW_CHARS): string {
+  const flat = text.replace(/\s+/g, ' ');
+  return flat.length > max ? `${flat.slice(0, max)}…` : flat;
+}
+
+/**
+ * A short listing of the string fields nearest to `path` (under the deepest
+ * container of `path` that exists), so a model that guessed the wrong field
+ * name sees the real writable pointers.
+ */
+export function describeStringFieldsNear(root: unknown, path: string): string {
+  const decoded = decodePointer(path);
+  if (!decoded.ok) return '';
+  let node: unknown = root;
+  let base = '';
+  for (const token of decoded.value) {
+    let child: unknown;
+    if (Array.isArray(node) && /^(0|[1-9]\d*)$/.test(token) && Number(token) < node.length) {
+      child = node[Number(token)];
+    } else if (isRecord(node) && Object.prototype.hasOwnProperty.call(node, token)) {
+      child = node[token];
+    } else break;
+    if (child === null || typeof child !== 'object') break;
+    node = child;
+    base += `/${encodePointerToken(token)}`;
+  }
+  if (base === '') return '';
+  const fields = collectStringFields(node, base).filter((field) => field.value.trim());
+  if (fields.length === 0) return '';
+  const listed = fields
+    .slice(0, MAX_LISTED_FIELDS)
+    .map((field) => `${field.path} = ${JSON.stringify(previewText(field.value))}`);
+  const more =
+    fields.length > MAX_LISTED_FIELDS ? ` (+${fields.length - MAX_LISTED_FIELDS} more)` : '';
+  return `String fields under ${base}: ${listed.join('; ')}${more}`;
+}
+
+const EXCERPT_CHARS = 200;
+const MAX_SIMILARITY_WORK = 2_000_000;
+
+function bigramCounts(text: string): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (let index = 0; index < text.length - 1; index += 1) {
+    const gram = text.slice(index, index + 2);
+    counts.set(gram, (counts.get(gram) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * Locate the window of `text` most similar to `anchor` (bigram Dice score)
+ * and return a ~200 character excerpt around it. Diagnostic only: the result
+ * is shown to the model and is never written back.
+ */
+export function closestExcerpt(
+  text: string,
+  anchor: string,
+): { excerpt: string; score: number } | null {
+  const needle = anchor.toLowerCase();
+  const haystack = text.toLowerCase();
+  if (needle.length < 2 || haystack.length < 2) return null;
+  const target = bigramCounts(needle);
+  const targetSize = needle.length - 1;
+  const width = Math.min(needle.length, haystack.length);
+  const windows = haystack.length - width + 1;
+  const step = Math.max(
+    1,
+    Math.floor(width / 4),
+    Math.ceil((windows * width) / MAX_SIMILARITY_WORK),
+  );
+  let best = { start: 0, score: -1 };
+  const consider = (start: number) => {
+    const window = bigramCounts(haystack.slice(start, start + width));
+    let shared = 0;
+    for (const [gram, count] of window) shared += Math.min(count, target.get(gram) ?? 0);
+    const score = (2 * shared) / (targetSize + width - 1);
+    if (score > best.score) best = { start, score };
+  };
+  for (let start = 0; start < windows; start += step) consider(start);
+  if (windows > 1) consider(windows - 1);
+  const span = Math.max(EXCERPT_CHARS, width);
+  const from = Math.max(0, Math.min(text.length - span, best.start - (span - width) / 2));
+  const start = Math.floor(from);
+  const excerpt = text.slice(start, start + span);
+  return {
+    excerpt: `${start > 0 ? '…' : ''}${excerpt}${start + span < text.length ? '…' : ''}`,
+    score: best.score,
+  };
+}
+
+/** Anchors scoring below this are not worth showing as "closest" text. */
+const MIN_EXCERPT_SCORE = 0.3;
+
+/** Diagnostic suffix for an anchor that does not occur in `text`. */
+export function anchorNotFoundHint(text: string, anchor: string): string {
+  const hints: string[] = [];
+  const visibleAnchor = anchor.replace(/\s+/g, ' ').trim();
+  if (visibleAnchor && /<[^>]+>/.test(text) && stripTags(text).includes(visibleAnchor)) {
+    hints.push(
+      'the anchor matches the visible text, but the stored value has HTML markup inside it; anchor on the exact stored text from read_stage detail:"source"',
+    );
+  }
+  const closest = closestExcerpt(text, anchor);
+  if (closest && closest.score >= MIN_EXCERPT_SCORE) {
+    hints.push(`closest stored text: ${JSON.stringify(closest.excerpt)}`);
+  }
+  return hints.length ? `; ${hints.join('; ')}` : '';
+}
+
 function strReplaceTypeName(value: unknown): string {
   if (value === null) return 'null';
   if (Array.isArray(value)) return 'array';
@@ -341,7 +534,9 @@ export function applyStrReplace<T>(root: T, input: StrReplaceInput): StrReplaceR
     fromIndex = found + input.oldText.length;
   }
   if (occurrences === 0) {
-    return failStr(`anchor text not found in ${input.path} (0 occurrences)`);
+    return failStr(
+      `anchor text not found in ${input.path} (0 occurrences)${anchorNotFoundHint(current, input.oldText)}`,
+    );
   }
   if (!input.replaceAll && occurrences > 1) {
     return failStr(`anchor text occurs ${occurrences} times; extend the anchor or set replaceAll`);
@@ -362,9 +557,21 @@ function elementIdentityIssue(before: SlideContent, after: SlideContent): string
   if (before.canvas.id !== after.canvas.id) return 'patch cannot change canvas id';
   const oldTypes = new Map(before.canvas.elements.map((element) => [element.id, element.type]));
   const nextIds = after.canvas.elements.map((element) => element.id);
-  if (new Set(nextIds).size !== nextIds.length) return 'patch produced duplicate element ids';
-  if (oldTypes.size !== nextIds.length || nextIds.some((id) => !oldTypes.has(id))) {
-    return 'patch cannot add, remove, or change element ids; use add_element/delete_element';
+  const duplicates = nextIds.filter((id, index) => nextIds.indexOf(id) !== index);
+  if (duplicates.length > 0) {
+    return `patch produced duplicate element ids: ${[...new Set(duplicates)].map((id) => JSON.stringify(id)).join(', ')}`;
+  }
+  const nextSet = new Set(nextIds);
+  const added = nextIds.filter((id) => !oldTypes.has(id));
+  const removed = [...oldTypes.keys()].filter((id) => !nextSet.has(id));
+  if (added.length > 0 || removed.length > 0) {
+    const names = (ids: unknown[]) =>
+      ids.map((id) => (typeof id === 'string' ? JSON.stringify(id) : '(no id)')).join(', ');
+    const changes = [
+      ...(added.length ? [`added ${names(added)}`] : []),
+      ...(removed.length ? [`removed ${names(removed)}`] : []),
+    ];
+    return `patch cannot add, remove, or change element ids (${changes.join('; ')}); use add_element/delete_element`;
   }
   for (const element of after.canvas.elements) {
     if (oldTypes.get(element.id) !== element.type) {
@@ -372,6 +579,67 @@ function elementIdentityIssue(before: SlideContent, after: SlideContent): string
     }
   }
   return null;
+}
+
+/**
+ * Element ids are server-owned. A whole-element `set` of the same type that
+ * omits the id still means "replace this element", so it keeps the original
+ * id. Carrying ANOTHER existing element's id is a reorder attempt, which
+ * `set` cannot express without retargeting animations and actions.
+ */
+function keepElementIdentity(
+  content: SlideContent,
+  tokens: string[],
+  action: 'set' | 'remove',
+  value: unknown,
+): ApplyResult<unknown> {
+  if (action !== 'set' || !isRecord(value) || tokens.length !== 3) return ok(value);
+  if (tokens[0] !== 'canvas' || tokens[1] !== 'elements' || !/^(0|[1-9]\d*)$/.test(tokens[2]!)) {
+    return ok(value);
+  }
+  const index = Number(tokens[2]);
+  const existing = content.canvas.elements[index];
+  if (!existing) return ok(value);
+  if (value.id === undefined) {
+    return ok(value.type === existing.type ? { ...value, id: existing.id } : value);
+  }
+  const other = content.canvas.elements.findIndex(
+    (element, at) => at !== index && element.id === value.id,
+  );
+  if (other >= 0) {
+    return fail(
+      `set /canvas/elements/${index} carries id ${JSON.stringify(value.id)} of the element at index ${other}; elements cannot be reordered or swapped with set. Edit each element's fields in place, or use delete_element + add_element (afterId/index) to move one`,
+    );
+  }
+  return ok(value);
+}
+
+/**
+ * Fill structural renderer defaults (`normalizeElement`'s required-field
+ * defaults and `rotate: 0`) on a new element before validation. Visible text
+ * bodies are never invented: a missing `content` is still reported.
+ */
+function withRendererDefaults(element: Record<string, unknown>): Record<string, unknown> {
+  let normalized: Record<string, unknown>;
+  try {
+    normalized = normalizeElement(element) as unknown as Record<string, unknown>;
+  } catch {
+    // Malformed input: let the schema validation report the precise issue.
+    return element;
+  }
+  if (element.type === 'text' && !('content' in element)) delete normalized.content;
+  if (isRecord(element.text) && !('content' in element.text) && isRecord(normalized.text)) {
+    delete normalized.text.content;
+  }
+  // Shape geometry is derived from the box only when BOTH halves are absent:
+  // a supplied path is in its own coordinate space, so a box-sized viewBox
+  // (or a box-sized path for a supplied viewBox) would mis-scale it.
+  if (element.type === 'shape' && 'path' in element !== 'viewBox' in element) {
+    if (!('path' in element)) delete normalized.path;
+    if (!('viewBox' in element)) delete normalized.viewBox;
+  }
+  if (element.type !== 'line' && !('rotate' in element)) normalized.rotate = 0;
+  return normalized;
 }
 
 function applyJsonPointerPatch(
@@ -394,30 +662,45 @@ function applyJsonPointerPatch(
   }
   const decoded = decodePointer(input.path);
   if (!decoded.ok) return decoded;
+  const value = keepElementIdentity(content, decoded.value, input.action, input.value);
+  if (!value.ok) return value;
   const next = structuredClone(content);
   const applied = applyPointer(
     next as unknown as Record<string, unknown>,
     decoded.value,
     input.action,
-    input.value,
+    value.value,
   );
   if (!applied.ok) return applied;
-  const identityIssue = elementIdentityIssue(content, next);
+  return finalizeSlideContent(content, next);
+}
+
+/**
+ * Shared post-condition for any edit of slide content that keeps element
+ * identity (JSON Pointer set/remove, str_replace): ids and types unchanged,
+ * no NEW schema violations relative to `before`, and changed LaTeX re-rendered.
+ * `after` is mutated (LaTeX html) and returned.
+ */
+export function finalizeSlideContent(
+  before: SlideContent,
+  after: SlideContent,
+): ApplyResult<SlideContent> {
+  const identityIssue = elementIdentityIssue(before, after);
   if (identityIssue) return fail(`patch rejected: ${identityIssue}`);
-  const schemaIssues = validateSlideCanvas(next.canvas, content.canvas);
+  const schemaIssues = validateSlideCanvas(after.canvas, before.canvas);
   if (schemaIssues.length > 0) return fail(`patch rejected: ${schemaIssues.join('; ')}`);
   const beforeLatex = new Map(
-    content.canvas.elements
+    before.canvas.elements
       .filter((element) => element.type === 'latex')
       .map((element) => [element.id, element.latex]),
   );
-  for (const element of next.canvas.elements) {
+  for (const element of after.canvas.elements) {
     if (element.type !== 'latex' || beforeLatex.get(element.id) === element.latex) continue;
     const html = renderLatexElementHtml(element.latex);
     if (html !== null) element.html = html;
     else delete element.html;
   }
-  return ok(next);
+  return ok(after);
 }
 
 export function applySlideEdit(
@@ -434,7 +717,8 @@ export function applySlideEdit(
           'add_element element must not include id (the server assigns element identity)',
         );
       }
-      const issues = validateElementInput(input.element);
+      const candidate = withRendererDefaults(input.element);
+      const issues = validateElementInput(candidate);
       if (issues.length > 0) return fail(`add_element rejected: ${issues.join('; ')}`);
       if (input.afterId !== undefined && input.index !== undefined) {
         return fail('add_element accepts either afterId or index, not both');
@@ -458,7 +742,7 @@ export function applySlideEdit(
       }
       let id = `el-${nanoid(8)}`;
       while (findElement(content, id)) id = `el-${nanoid(8)}`;
-      const element = { ...structuredClone(input.element), id } as unknown as PPTElement;
+      const element = { ...structuredClone(candidate), id } as unknown as PPTElement;
       const next = structuredClone(content);
       next.canvas.elements.splice(index ?? next.canvas.elements.length, 0, element);
       return ok(next);

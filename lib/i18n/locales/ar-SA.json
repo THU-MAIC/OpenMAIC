@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "رجوع",
     "you": "أنت",
     "confirm": "تأكيد",
     "cancel": "إلغاء",
@@ -10,6 +11,22 @@
     "close": "إغلاق"
   },
   "home": {
+    "resumeGeneration": "متابعة الإنشاء",
+    "emptyLibraryTitle": "تبدأ دروسك هنا",
+    "emptyLibraryBody": "أنشئ درسًا من الصفحة الرئيسية، ثم عُد إلى هنا لمتابعة التعلم.",
+    "mobileTitle": "ماذا تريد أن تتعلم؟",
+    "mobileSubtitle": "أخبرنا بموضوعك ليُنشئ الذكاء الاصطناعي درسًا تفاعليًا.",
+    "mobilePlaceholder": "أدخل موضوعًا أو ارفع مواد تعليمية",
+    "courseOptions": "خيارات الدرس",
+    "courseMaterials": "مواد الدورة",
+    "courseMaterialsCount": "مواد الدورة · {{n}}",
+    "backToCourseOptions": "العودة إلى خيارات الدرس",
+    "materialsDone": "تم",
+    "allSettings": "كل الإعدادات",
+    "examplesLabel": "جرّب موضوعًا",
+    "examplePython": "تعلم Python من الصفر",
+    "exampleFourier": "شرح تحويل فورييه بأمثلة مبسطة",
+    "desktopOnly": "استخدم الكمبيوتر للمحرر ووضع Pro.",
     "slogan": "التعلّم التوليدي في فصل تفاعلي متعدد الوكلاء",
     "greetingWithName": "مرحبًا، {{name}}"
   },
@@ -2290,7 +2307,18 @@
         "notMovable": "لا يمكن نقل هذه المادة",
         "gone": "لم يعد موجودًا",
         "save": "لم تنجح العملية. حاول مرة أخرى",
-        "notEmpty": "لا يزال المجلد يحتوي على مواد. انقلها أولًا"
+        "notEmpty": "لا يزال المجلد يحتوي على مواد. انقلها أولًا",
+        "materialNotFound": "المادة غير موجودة أو لا يمكن الوصول إليها.",
+        "folderNotFound": "المجلد غير موجود أو لا يمكن الوصول إليه.",
+        "textUnavailable": "نص المادة غير متاح.",
+        "derivative": "تستخدم المادة المشتقة اسم المصدر؛ أعد تسمية المصدر بدلاً منها.",
+        "moveTooMany": "انقل {{limit}} مادة كحد أقصى في المرة الواحدة.",
+        "moveNotMovable": "لم تُنقل أي مادة. بعض المواد المحددة غير متاحة أو لا يمكن نقلها.",
+        "toolFolderNameTooLong": "اسم المجلد طويل جدًا (40 حرفًا بنصف العرض أو 20 حرفًا بالعرض الكامل كحد أقصى).",
+        "toolFolderLimit": "بلغت قاعدة المعرفة الحد الأقصى وهو {{limit}} مجلدًا.",
+        "mediaUnsupported": "يمكن استخدام الصور أو الفيديو أو الصوت فقط كوسائط للدورة.",
+        "mediaStorageFull": "لا توجد مساحة كافية لحفظ هذه الوسائط. أفرغ مساحة ثم حاول مجددًا.",
+        "mediaNotFound": "لم يُعثر على مادة الوسائط أو لا تحتوي على ملف وسائط متاح."
       },
       "actions": {
         "parse": "تحليل",
@@ -2319,6 +2347,9 @@
         "cannotUndo": "لا يمكن التراجع عن هذا الإجراء.",
         "folderTitle": "حذف المجلد «{{name}}»؟",
         "folderContents": "سيتم نقل {{count}} من الملفات إلى المستوى الأعلى. لن يتم حذف أي ملف."
+      },
+      "conversationFailure": {
+        "serviceUnavailable": "لم تُهيأ خدمة تحليل لهذا النوع من الملفات. اطلب من المسؤول تهيئتها."
       }
     },
     "untitledCourse": "未命名课堂",
@@ -2350,7 +2381,8 @@
       "materialUnavailable": "تعذّر إرفاق {{name}} ({{reason}}). افتح قاعدة المعرفة لمعرفة السبب وإعادة التحليل.",
       "materialAttached": "موجودة بالفعل في هذه المحادثة",
       "materialStaged": "موجودة بالفعل في هذه الرسالة",
-      "materialsCapped": "تُعرض أول {{count}} مواد — تابع الكتابة لتضييق النتائج"
+      "materialsCapped": "تُعرض أول {{count}} مواد — تابع الكتابة لتضييق النتائج",
+      "materialUnavailableGuidance": "لا يمكن إرفاق {{name}}. {{guidance}} يمكنك إدارة المادة من صفحة قاعدة المعرفة."
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",

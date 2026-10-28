@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "返回",
     "you": "你",
     "confirm": "确定",
     "cancel": "取消",
@@ -10,6 +11,22 @@
     "close": "关闭"
   },
   "home": {
+    "resumeGeneration": "继续生成",
+    "emptyLibraryTitle": "你的课程，从这里开始",
+    "emptyLibraryBody": "在首页创建课程后，可以在这里继续学习。",
+    "mobileTitle": "今天想学什么？",
+    "mobileSubtitle": "说说你想学什么，AI 为你生成互动课堂",
+    "mobilePlaceholder": "输入学习主题，或上传资料",
+    "courseOptions": "课程选项",
+    "courseMaterials": "课程资料",
+    "courseMaterialsCount": "课程资料 · {{n}} 个文件",
+    "backToCourseOptions": "返回课程选项",
+    "materialsDone": "完成",
+    "allSettings": "全部设置",
+    "examplesLabel": "试试这些主题",
+    "examplePython": "零基础学习 Python",
+    "exampleFourier": "用直观的例子讲解傅里叶变换",
+    "desktopOnly": "编辑器和专业模式请在电脑上使用。",
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
     "greetingWithName": "嗨，{{name}}"
   },
@@ -2290,7 +2307,18 @@
         "notMovable": "这份资料不能移动",
         "gone": "它已经不存在了",
         "save": "操作没有成功，请重试",
-        "notEmpty": "文件夹里还有资料，请先移走"
+        "notEmpty": "文件夹里还有资料，请先移走",
+        "materialNotFound": "资料不存在或不可访问。",
+        "folderNotFound": "文件夹不存在或不可访问。",
+        "textUnavailable": "资料的文字内容不可用。",
+        "derivative": "衍生资料沿用原资料名称，请重命名原资料。",
+        "moveTooMany": "每次最多移动 {{limit}} 份资料。",
+        "moveNotMovable": "未移动任何资料。部分所选资料不可用或无法移动。",
+        "toolFolderNameTooLong": "文件夹名称过长，最多支持 40 个半角字符或 20 个全角字符。",
+        "toolFolderLimit": "知识库已达到 {{limit}} 个文件夹的上限。",
+        "mediaUnsupported": "只有图片、视频或音频资料可以用作课程媒体。",
+        "mediaStorageFull": "没有足够空间保存这份媒体，请释放空间后重试。",
+        "mediaNotFound": "找不到这份媒体资料，或它没有可用的媒体文件。"
       },
       "actions": {
         "parse": "解析",
@@ -2319,6 +2347,9 @@
         "cannotUndo": "此操作不能撤销。",
         "folderTitle": "删除文件夹“{{name}}”？",
         "folderContents": "{{count}} 个文件将移到顶层，不会删除任何文件。"
+      },
+      "conversationFailure": {
+        "serviceUnavailable": "尚未配置可处理此类文件的解析服务，请联系管理员完成配置。"
       }
     },
     "untitledCourse": "未命名课堂",
@@ -2350,7 +2381,8 @@
       "materialUnavailable": "{{name}} 无法附加（{{reason}}）。请在知识库中查看原因并重新解析。",
       "materialAttached": "本会话已有",
       "materialStaged": "已在这条消息里",
-      "materialsCapped": "只显示前 {{count}} 份材料，继续输入可缩小范围"
+      "materialsCapped": "只显示前 {{count}} 份材料，继续输入可缩小范围",
+      "materialUnavailableGuidance": "{{name}} 无法附加。{{guidance}}可在知识库页面处理。"
     },
     "heroTitle": "今天想创造点什么？",
     "heroSubtitle": "说出你的想法，把它变成一段可以亲历的学习旅程",

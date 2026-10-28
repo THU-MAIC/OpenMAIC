@@ -204,6 +204,7 @@ const InteractiveWhiteboardCanvas = forwardRef<
       }
 
       e.preventDefault();
+      window.getSelection()?.removeAllRanges();
       setIsPanning(true);
       panStartRef.current = { x: e.clientX, y: e.clientY, panX, panY };
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);

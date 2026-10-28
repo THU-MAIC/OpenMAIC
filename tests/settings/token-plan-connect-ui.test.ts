@@ -157,8 +157,8 @@ describe('Token Plan → connecting applies the plan’s recommended configurati
     expect(rows).toHaveLength(2);
     // Slot names as the course model map shows them (the id here: the test's
     // translations return keys), then current → recommended.
-    expect(rows[0]).toMatch(/^llmDeepSeek V4 Pro · ds → cogevol-base · TokenDance$/);
-    expect(rows[1]).toMatch(/^course\.content\.slide.* → cogevol-slide-0828 · TokenDance$/);
+    expect(rows[0]).toMatch(/^llmDeepSeek V4 Pro · ds → Cogevol Base · TokenDance$/);
+    expect(rows[1]).toMatch(/^course\.content\.slide.* → Cogevol Slide · TokenDance$/);
   });
 
   it("“Use plan's recommended setup” overwrites the workspace's picks in one change", async () => {

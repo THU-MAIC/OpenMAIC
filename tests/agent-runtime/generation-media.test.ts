@@ -140,6 +140,125 @@ describe('generation media tools', () => {
     expect(fetchPreview).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    [undefined, '找不到这份媒体资料，或它没有可用的媒体文件。'],
+    ['en-US', 'Media material not found or has no media bytes.'],
+  ] as const)(
+    'turns an ast_ asset id into a pointer without copying, and localizes missing materials (locale=%s)',
+    async (locale, missingText) => {
+      const storeAsset = vi.fn();
+      const resolveMaterial = vi.fn(async () => null);
+      const tool = buildMaterialMediaTool({
+        sessionId: 'session-a',
+        ownerId: 'owner-a',
+        storeAsset,
+        resolveMaterial,
+        ...(locale ? { locale: () => locale } : {}),
+      });
+      const response = await tool.execute('asset', {
+        materialId: 'ast_generated_image',
+        stageId: 'stage-a',
+      } as never);
+      expect(response).toMatchObject({
+        isError: true,
+        details: { materialId: 'ast_generated_image', error: 'asset-id-not-material' },
+      });
+      expect(textOf(response)).toContain('already a usable src');
+      expect(textOf(response)).toContain('patch_stage');
+      expect(storeAsset).not.toHaveBeenCalled();
+
+      // Asset-ID recovery stays in English; unknown materials use the current locale.
+      const missing = await tool.execute('missing', {
+        materialId: 'mat_gone',
+        stageId: 'stage-a',
+      } as never);
+      expect(textOf(missing)).toBe(missingText);
+    },
+  );
+
+  it('resolves a preview by page order or read_stage path and lists pages on a miss', async () => {
+    const bodies: Array<{ scene: { id: string }; viewport: Record<string, number> }> = [];
+    const fetchPreview = vi.fn(async (_url: string, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return new Response(new Uint8Array([137, 80, 78, 71]));
+    });
+    const page = (id: string, order: number) => ({
+      id,
+      stageId: 'stage-a',
+      order,
+      title: id,
+      type: 'slide',
+      content: { type: 'slide' },
+      actions: [],
+    });
+    const store = {
+      loadDocument: vi.fn(async () => ({
+        stage: { id: 'stage-a', name: 'Stage A' },
+        scenes: [page('scene-dup-1', 2), page('scene-a', 1)],
+      })),
+    } as unknown as CourseStore;
+    const [tool] = buildScenePreviewTools({
+      store,
+      stageAccess: async () => ({ kind: 'owned' as const }),
+      ownerId: 'user:u1',
+      renderService: { url: 'http://render.test' },
+      fetchPreview: fetchPreview as unknown as typeof fetch,
+    });
+
+    const byOrder = await tool!.execute('order', { stageId: 'stage-a', sceneId: '2' } as never);
+    expect(byOrder.details).toMatchObject({ sceneId: 'scene-dup-1', order: 2 });
+    const byPath = await tool!.execute('path', {
+      stageId: 'stage-a',
+      sceneId: '/scenes/scene-a',
+    } as never);
+    expect(byPath.details).toMatchObject({ sceneId: 'scene-a', order: 1 });
+    expect(bodies.map((body) => body.scene.id)).toEqual(['scene-dup-1', 'scene-a']);
+
+    const miss = await tool!.execute('miss', { stageId: 'stage-a', sceneId: 'stage-a' } as never);
+    expect(miss).toMatchObject({ isError: true });
+    expect(textOf(miss)).toContain('pages (order=id): 1=scene-a, 2=scene-dup-1');
+    expect(fetchPreview).toHaveBeenCalledTimes(2);
+  });
+
+  it('always renders previews at device scale 1, whatever the call passes', async () => {
+    const bodies: Array<{ viewport: Record<string, number> }> = [];
+    const fetchPreview = vi.fn(async (_url: string, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return new Response(new Uint8Array([137, 80, 78, 71]));
+    });
+    const store = {
+      loadDocument: vi.fn(async () => ({
+        stage: { id: 'stage-a', name: 'Stage A' },
+        scenes: [
+          {
+            id: 'scene-a',
+            stageId: 'stage-a',
+            order: 1,
+            title: 'A',
+            type: 'slide',
+            content: { type: 'slide' },
+            actions: [],
+          },
+        ],
+      })),
+    } as unknown as CourseStore;
+    const [tool] = buildScenePreviewTools({
+      store,
+      stageAccess: async () => ({ kind: 'owned' as const }),
+      ownerId: 'user:u1',
+      renderService: { url: 'http://render.test' },
+      fetchPreview: fetchPreview as unknown as typeof fetch,
+    });
+    // The agent-facing schema no longer offers a scale factor.
+    expect(JSON.stringify(tool!.parameters)).not.toContain('deviceScaleFactor');
+    await tool!.execute('scaled', {
+      stageId: 'stage-a',
+      sceneId: 'scene-a',
+      viewport: { width: 1280, height: 720, deviceScaleFactor: 2 },
+    } as never);
+    expect(bodies[0]!.viewport).toEqual({ width: 1280, height: 720, deviceScaleFactor: 1 });
+  });
+
   it('omits preview when the render service is not configured', () => {
     expect(
       buildScenePreviewTools({

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { getValidASRLanguage, useSettingsStore } from '@/lib/store/settings';
+import { resolveASRLanguage, useSettingsStore } from '@/lib/store/settings';
 import { ASR_PROVIDERS } from '@/lib/audio/constants';
 import { regionalEndpointTemplate } from '@/lib/config/official-endpoints';
 import type { ASRProviderId } from '@/lib/audio/types';
@@ -52,6 +52,10 @@ function languageName(code: string, locale: string): string {
  */
 export function ASRSettings({ view, apply, entry }: ServicePanelProps) {
   const { t, locale } = useI18n();
+  const localeRef = useRef(locale);
+  useEffect(() => {
+    localeRef.current = locale;
+  }, [locale]);
 
   const asrLanguage = useSettingsStore((state) => state.asrLanguage);
   const setASRLanguage = useSettingsStore((state) => state.setASRLanguage);
@@ -63,7 +67,7 @@ export function ASRSettings({ view, apply, entry }: ServicePanelProps) {
   const editable = (entry.state === 'workspace' || entry.state === 'available') && !isBrowser;
   const use = rootUse(view, 'asr', entry.id);
   const languages = asrProvider?.supportedLanguages ?? [];
-  const effectiveLanguage = getValidASRLanguage(providerId, asrLanguage);
+  const effectiveLanguage = resolveASRLanguage(providerId, asrLanguage, locale);
   const modelId = use.modelId || asrProvider?.defaultModelId;
 
   const [isRecording, setIsRecording] = useState(false);
@@ -98,7 +102,7 @@ export function ASRSettings({ view, apply, entry }: ServicePanelProps) {
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Vendor-prefixed API without standard typings
       const recognition = new (SpeechRecognitionCtor as new () => any)();
-      recognition.lang = effectiveLanguage || 'zh-CN';
+      recognition.lang = effectiveLanguage;
       recognition.onresult = (event: {
         results: { [index: number]: { [index: number]: { transcript: string } } };
       }) => {
@@ -137,7 +141,15 @@ export function ASRSettings({ view, apply, entry }: ServicePanelProps) {
           // The saved service is tested with the server's configuration of it.
           formData.append('previewProvider', entry.id);
           if (use.inUse && use.modelId) formData.append('previewModel', use.modelId);
-          formData.append('language', effectiveLanguage);
+          // 测试录音也在转录时解析，不能使用录音开始时闭包中的旧界面语言。
+          formData.append(
+            'language',
+            resolveASRLanguage(
+              providerId,
+              useSettingsStore.getState().asrLanguage,
+              localeRef.current,
+            ),
+          );
           const response = await fetch('/api/transcription', { method: 'POST', body: formData });
           if (response.ok) {
             const data = await response.json();

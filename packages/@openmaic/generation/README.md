@@ -22,6 +22,13 @@ may supply `onFailure`; it receives `{ code: 'prompt-unavailable' }` or
 `{ code: 'invalid-model-output' }` immediately before that `null` result.
 `generateWidgetContent` accepts the same callback in its options.
 
+`renderScenePrompt('slide-content', { imageElementEnabled, generatedImageEnabled,
+generatedVideoEnabled })` returns `{ system }`, the system prompt that slide
+content generation sends to the model for those media rules, without running
+generation. The slide generator builds its own system prompt through the same
+code, so a consumer that serves the slide contract with another model sends the
+same prompt. `imageElementEnabled` covers assigned and generated images.
+
 PBL scenes use the same `AICallFn` seam for single-call planning. Hosts that
 need an agentic fallback may inject `pblLoopFallback`; provider selection and
 fallback execution remain caller-owned. The two planner templates ship under

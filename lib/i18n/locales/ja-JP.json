@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "戻る",
     "you": "あなた",
     "confirm": "確認",
     "cancel": "キャンセル",
@@ -10,6 +11,22 @@
     "close": "閉じる"
   },
   "home": {
+    "resumeGeneration": "生成を続ける",
+    "emptyLibraryTitle": "ここから学びが始まります",
+    "emptyLibraryBody": "ホームで授業を作成すると、ここから学習を再開できます。",
+    "mobileTitle": "今日は何を学びますか？",
+    "mobileSubtitle": "学びたいことを伝えると、AI が対話型授業を作ります。",
+    "mobilePlaceholder": "学習テーマを入力、または資料をアップロード",
+    "courseOptions": "授業オプション",
+    "courseMaterials": "授業資料",
+    "courseMaterialsCount": "授業資料 · {{n}} 件",
+    "backToCourseOptions": "授業オプションに戻る",
+    "materialsDone": "完了",
+    "allSettings": "すべての設定",
+    "examplesLabel": "テーマの例",
+    "examplePython": "Python を基礎から学ぶ",
+    "exampleFourier": "フーリエ変換を直感的に学ぶ",
+    "desktopOnly": "エディターと Pro モードはパソコンをご利用ください。",
     "slogan": "マルチエージェント対話型教室で生成的に学ぶ",
     "greetingWithName": "こんにちは、{{name}}さん"
   },
@@ -2290,7 +2307,18 @@
         "notMovable": "この資料は移動できません",
         "gone": "すでに存在しません",
         "save": "うまくいきませんでした。もう一度お試しください",
-        "notEmpty": "このフォルダーにはまだ資料があります。先に移動してください"
+        "notEmpty": "このフォルダーにはまだ資料があります。先に移動してください",
+        "materialNotFound": "資料が見つからないか、アクセスできません。",
+        "folderNotFound": "フォルダーが見つからないか、アクセスできません。",
+        "textUnavailable": "資料のテキストを利用できません。",
+        "derivative": "派生資料には元の資料の名前が使われます。元の資料の名前を変更してください。",
+        "moveTooMany": "一度に移動できる資料は {{limit}} 件までです。",
+        "moveNotMovable": "資料は移動されませんでした。一部の資料を利用または移動できません。",
+        "toolFolderNameTooLong": "フォルダー名が長すぎます（半角40文字、全角20文字まで）。",
+        "toolFolderLimit": "ナレッジベースのフォルダー数が上限の {{limit}} 件に達しています。",
+        "mediaUnsupported": "授業のメディアには画像、動画、音声の資料のみ使用できます。",
+        "mediaStorageFull": "このメディアを保存する空き容量がありません。空き容量を確保して再試行してください。",
+        "mediaNotFound": "メディア資料が見つからないか、利用できるメディアファイルがありません。"
       },
       "actions": {
         "parse": "解析",
@@ -2319,6 +2347,9 @@
         "cannotUndo": "この操作は元に戻せません。",
         "folderTitle": "フォルダー「{{name}}」を削除しますか？",
         "folderContents": "{{count}} 件のファイルを最上位に移動します。ファイルは削除されません。"
+      },
+      "conversationFailure": {
+        "serviceUnavailable": "この種類のファイルに対応する解析サービスが設定されていません。管理者に設定を依頼してください。"
       }
     },
     "untitledCourse": "未命名课堂",
@@ -2350,7 +2381,8 @@
       "materialUnavailable": "{{name}} は添付できません（{{reason}}）。ナレッジベースで理由を確認し、もう一度解析してください。",
       "materialAttached": "この会話にすでにあります",
       "materialStaged": "このメッセージにすでにあります",
-      "materialsCapped": "最初の {{count}} 件の素材を表示中 — 入力を続けて絞り込めます"
+      "materialsCapped": "最初の {{count}} 件の素材を表示中 — 入力を続けて絞り込めます",
+      "materialUnavailableGuidance": "{{name}} を添付できません。{{guidance}} ナレッジベースのページで対応できます。"
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",

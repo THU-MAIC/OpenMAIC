@@ -258,6 +258,22 @@ export function buildNativeChildPrompt(
     '# Available Native tools',
     nativeToolInventory,
     ...nativeWhiteboardGuidance,
+    ...(availableTools.includes('wb_draw_shape')
+      ? [
+          '# Native whiteboard shapes',
+          '- Geometry: every shape requires SVG path d data and viewBox:[w,h] with positive dimensions, never complete SVG markup. Element width/height scale the viewBox independently per axis; keep the viewBox ratio equal to width:height when proportions matter.',
+          '- Path/viewBox coordinates are local: origin (0,0) is the unrotated element upper-left. Never put absolute whiteboard x/y into path data or center a path around zero without offsetting it into the viewBox.',
+          '- x/y is the upper-left BEFORE rotation; rotate is a finite angle in degrees around the box center, positive clockwise (default 0). Work out the intended center first, then x=centerX-width/2 and y=centerY-height/2. Keep the rotated shape inside the canvas too.',
+          '- Arc radii are in viewBox units and scale with element width/height; unequal axis scales turn circular arcs into elliptical arcs.',
+          '- Close filled shapes with Z. Open curves use fillColor:"transparent" and stroke:{color,width,style?}; style defaults to solid (also dashed/dotted).',
+          '- Examples below omit expectedLastSeq only for readability: in EVERY actual call copy it exactly from the latest wb_read; read again between successful mutations. Never copy a placeholder sequence.',
+          '- Right triangle: path:"M0 0 L4 0 L0 3 Z", viewBox:[4,3]; use width:height=4:3 to preserve its proportions.',
+          '- Open cubic curve: path:"M0 1 C1 0 2 0 3 1", viewBox:[3,1], fillColor:"transparent", stroke:{color:"#333333",width:2}.',
+          '- Complete circle/ellipse: path:"M1 0 A1 1 0 1 1 1 2 A1 1 0 1 1 1 0 Z", viewBox:[2,2]. Equal element width/height gives a circle; different dimensions give an ellipse.',
+          '- Clockwise upper-right quarter circle, top-left to bottom-right: path:"M0 0 A1 1 0 0 1 1 1", viewBox:[1,1]; for width=height its radius equals width.',
+          '- On an invalid shape error, correct the reported field/path position or reduce path complexity and retry. Do not claim success until the mutation succeeds. Native shapes persist as PPTShapeElement records, never Legacy JSON actions.',
+        ]
+      : []),
     '',
     '# Length & Style (CRITICAL)',
     buildLengthGuidelines(agent.role),

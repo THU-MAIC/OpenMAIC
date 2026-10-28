@@ -341,7 +341,7 @@ describe('uploaded material extraction lifecycle', () => {
     // language, with the configuration guidance, and none of the diagnostic.
     for (const [locale, guidance] of [
       ['zh-CN', '请联系管理员完成配置'],
-      ['en-US', 'Ask your administrator to configure one'],
+      ['en-US', 'Ask an administrator to configure one'],
     ] as const) {
       const listing = buildMaterialTools({
         sessionId: 'session-1',
@@ -351,6 +351,7 @@ describe('uploaded material extraction lifecycle', () => {
       const wire = JSON.stringify(await listing.execute('list', {} as never));
       expect(wire).toContain('"reasonCode":"service_unavailable"');
       expect(wire).toContain(guidance);
+      expect(wire).not.toContain('Parse again');
       expect(wire).not.toMatch(/AliDocMind|ffmpeg|server ASR/i);
     }
   });

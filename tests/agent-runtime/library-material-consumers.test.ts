@@ -323,3 +323,54 @@ describe('consumers of a linked library source (PGlite)', { timeout: 20_000 }, (
     expect(result.details).toEqual({ status: 'unavailable', materialId: 'src-deck' });
   });
 });
+
+describe('material media error wording', () => {
+  it.each([
+    [
+      'zh-CN',
+      '找不到这份媒体资料，或它没有可用的媒体文件。',
+      '只有图片、视频或音频资料可以用作课程媒体。',
+      '没有足够空间保存这份媒体，请释放空间后重试。',
+    ],
+    [
+      'en-US',
+      'Media material not found or has no media bytes.',
+      'Only image, video or audio materials can be used as course media.',
+      'There is not enough storage for this media. Free space, then try again.',
+    ],
+  ] as const)(
+    'localizes known failures in %s without changing their error markers',
+    async (locale, missing, unsupported, full) => {
+      const resolve = vi.fn();
+      const media = buildMaterialMediaTool({
+        sessionId: 'ses-1',
+        ownerId: ACCOUNT,
+        locale: () => locale,
+        resolveMaterial: resolve,
+        storeAsset: vi.fn().mockResolvedValue({ status: 'refused', reason: 'storage-full' }),
+      });
+      const run = () =>
+        media.execute('call', { materialId: 'private-id', stageId: 'stage-1' } as never);
+      resolve.mockResolvedValue(null);
+      expect(await run()).toMatchObject({ isError: true, content: [{ text: missing }] });
+      const handle = {
+        id: 'private-id',
+        kind: 'source',
+        title: 'File',
+        hasBytes: true,
+        read: vi.fn(),
+      };
+      resolve.mockResolvedValue({ ...handle, hasBytes: false });
+      expect(await run()).toMatchObject({ isError: true, content: [{ text: missing }] });
+      resolve.mockResolvedValue(handle);
+      handle.read.mockResolvedValue({ bytes: Buffer.from('text'), mime: 'text/plain' });
+      expect(await run()).toMatchObject({ isError: true, content: [{ text: unsupported }] });
+      handle.read.mockResolvedValue({ bytes: Buffer.from('image'), mime: 'image/png' });
+      expect(await run()).toMatchObject({
+        isError: true,
+        details: { status: 'storage-full' },
+        content: [{ text: full }],
+      });
+    },
+  );
+});
