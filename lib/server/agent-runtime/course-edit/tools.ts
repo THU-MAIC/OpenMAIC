@@ -4,6 +4,10 @@ import type { AgentTool } from '@earendil-works/pi-agent-core';
 
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
 import type { Scene } from '@/lib/types/stage';
+import { TTS_PROVIDERS, type TTSProviderId } from '@/lib/audio/constants';
+import { BROWSER_NATIVE_TTS_PROVIDER_ID } from '@/lib/audio/provider-enablement';
+import { isServerProviderDisabled } from '@/lib/server/provider-config';
+import type { MediaConnection } from '@/lib/server/model-config/media';
 import { matchOutlineEntries } from '../course-outline-union';
 import { putSceneBringingCurrent } from '../document-writes';
 import { createBlankScene } from './apply';
@@ -266,3 +270,20 @@ export function buildCourseAudioAndDeckTools(deps: CourseToolDeps): AgentTool<ne
 }
 
 export const COURSE_AUDIO_DECK_TOOL_NAMES = ['generate_tts', 'edit_deck'] as const;
+
+/**
+ * Capability gate for narration audio synthesis (generate_tts).
+ * Resolves true only when the run owner's TTS connection names an enabled,
+ * non-browser-native provider supported by the server and with an API key if required.
+ */
+export function hasConfiguredTtsCapability(connection?: MediaConnection | 'off' | null): boolean {
+  if (!connection || connection === 'off') return false;
+  if (connection.providerId === BROWSER_NATIVE_TTS_PROVIDER_ID) return false;
+  const providerId = connection.providerId as TTSProviderId;
+  if (isServerProviderDisabled('tts', providerId)) return false;
+  const provider = TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS];
+  if (provider?.requiresApiKey && !connection.apiKey) return false;
+  return true;
+}
+
+export const hasConfiguredTtsGeneration = hasConfiguredTtsCapability;

@@ -48,6 +48,8 @@ import {
   untrustedContentPolicyPromptBlock,
 } from './fetch-url';
 import { assembleRunnerTools, buildRunnerCoursePrompt } from './runner-contract';
+import { hasConfiguredTtsCapability } from './course-edit/tools';
+import { hasConfiguredImageCapability } from './generate-image';
 import { buildMaterialTools, MATERIAL_TOOL_NAMES } from './material-tools';
 import { defaultLocale, supportedLocaleOf, type Locale } from '@/lib/i18n/types';
 import { startExtractionWatcher, type ExtractionWatcher } from './extraction-watcher';
@@ -123,6 +125,10 @@ const MESSAGE_UPDATE_MIN_INTERVAL_MS = 150;
 
 /** The runner's always-registered tool; additional tools are capability-gated. */
 export const MINIMAL_AGENT_TOOL_NAMES = new Set(['ask_user']);
+
+/** Guidance telling the agent to respect the registered toolset. */
+export const RUNNER_TOOL_DISCIPLINE_PROMPT =
+  'Use only registered tools and skip unavailable steps such as narration or image generation.';
 
 /**
  * System prompt for a run with the given registered toolset, assembled by
@@ -1498,6 +1504,9 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     // The tts slot for this run's owner: narration, the voice catalog and
     // voice registration all use its provider.
     const ttsConnection = await serverMediaConnection('tts', meta.ownerId);
+    const imageConnection = await serverMediaConnection('image', meta.ownerId);
+    const ttsCapability = hasConfiguredTtsCapability(ttsConnection);
+    const imageCapability = hasConfiguredImageCapability(imageConnection);
     const dslTools = buildDslCourseToolset({
       locale: () => runLocale,
       store: ownerScopedStore,
@@ -1511,6 +1520,10 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       ownerId: meta.ownerId,
       abortSignal: abort.signal,
       getActiveSkill: () => activeSkill,
+    }).filter((tool) => {
+      if (tool.name === 'generate_tts') return ttsCapability;
+      if (tool.name === 'generate_image') return imageCapability;
+      return true;
     });
     const curriculumTools = buildCurriculumTools({
       store: ownerScopedStore,
@@ -1648,18 +1661,21 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     let toolCalls = 0;
     const agent = buildAgent({
       streamFn,
-      systemPrompt: buildRunnerCoursePrompt({
-        availableSkills: availableSkillsPromptBlock(installedSkills),
-        curriculum: CURRICULUM_TOOLS_PROMPT,
-        ...(search ? { search: searchPromptBlock() } : {}),
-        ...(fetchConnection ? { fetch: fetchPromptBlock() } : {}),
-        untrustedContent: untrustedContentPolicyPromptBlock(!!fetchConnection),
-        // Always: a conversation with nothing attached can still use the
-        // knowledge base.
-        materials: materialsPromptBlock(materials),
-        roster: ROSTER_TOOLS_PROMPT,
-        voice: voiceCloneToolsPrompt(voiceRegistrationEnabled),
-      }),
+      systemPrompt: [
+        buildRunnerCoursePrompt({
+          availableSkills: availableSkillsPromptBlock(installedSkills),
+          curriculum: CURRICULUM_TOOLS_PROMPT,
+          ...(search ? { search: searchPromptBlock() } : {}),
+          ...(fetchConnection ? { fetch: fetchPromptBlock() } : {}),
+          untrustedContent: untrustedContentPolicyPromptBlock(!!fetchConnection),
+          // Always: a conversation with nothing attached can still use the
+          // knowledge base.
+          materials: materialsPromptBlock(materials),
+          roster: ROSTER_TOOLS_PROMPT,
+          voice: voiceCloneToolsPrompt(voiceRegistrationEnabled),
+        }),
+        RUNNER_TOOL_DISCIPLINE_PROMPT,
+      ].join('\n\n'),
       model: driver.piModel,
       tools,
       allowedToolNames: new Set([

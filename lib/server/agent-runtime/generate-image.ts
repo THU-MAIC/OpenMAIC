@@ -4,7 +4,7 @@ import { Type, type Static } from 'typebox';
 
 import { generateImage, IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { managedMediaProviderFetch, mediaProviderFetch } from '@/lib/server/media-provider-fetch';
-import { serverMediaConnection } from '@/lib/server/model-config/media';
+import { serverMediaConnection, type MediaConnection } from '@/lib/server/model-config/media';
 import type {
   ImageGenerationConfig,
   ImageGenerationOptions,
@@ -388,3 +388,19 @@ export function buildGenerateImageTool(
     },
   };
 }
+
+/**
+ * Capability gate for image generation (generate_image).
+ * Resolves true only when the run owner's image connection names an enabled,
+ * supported server image provider with an API key if required.
+ */
+export function hasConfiguredImageCapability(connection?: MediaConnection | 'off' | null): boolean {
+  if (!connection || connection === 'off') return false;
+  const providerId = connection.providerId as ImageProviderId;
+  if (isServerProviderDisabled('image', providerId)) return false;
+  const provider = IMAGE_PROVIDERS[providerId];
+  if (provider?.requiresApiKey && !connection.apiKey) return false;
+  return true;
+}
+
+export const hasConfiguredImageGeneration = hasConfiguredImageCapability;
