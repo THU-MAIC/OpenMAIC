@@ -1606,6 +1606,35 @@ export function preservesReasoningForModel(model: LanguageModel | string): boole
   return providerId in PROVIDERS && preservesReasoning(providerId, modelId);
 }
 
+function isDeepSeekModel(providerId: string, modelId: string): boolean {
+  return /deepseek/i.test(modelId) || /deepseek/i.test(providerId);
+}
+
+function buildDeepSeekThinkingParams(
+  config: ThinkingConfig,
+  mode: 'enabled' | 'disabled' | 'auto' | undefined,
+  hasTools?: boolean,
+): { params: Record<string, unknown>; disablesThinking: boolean } {
+  if (mode === 'disabled' || config.effort === 'none') {
+    return { params: { thinking: { type: 'disabled' } }, disablesThinking: true };
+  }
+  // A tool-carrying request may never set reasoning_effort (the transport
+  // rejects function tools combined with it), so the toggle goes alone;
+  // every other request keeps the historical effort (explicit value, else
+  // the default).
+  if (hasTools) {
+    return { params: { thinking: { type: 'enabled' } }, disablesThinking: false };
+  }
+  const effort = config.effort === 'max' || config.effort === 'xhigh' ? 'max' : 'high';
+  return {
+    params: {
+      thinking: { type: 'enabled' },
+      reasoning_effort: effort,
+    },
+    disablesThinking: false,
+  };
+}
+
 function getCompatThinkingBodyParams(
   providerId: ProviderId,
   modelId: string,
@@ -1627,7 +1656,12 @@ function getCompatThinkingBodyParams(
   }
 
   const capability = getCatalogThinkingCapability(providerId, modelId);
-  if (!capability || capability.control === 'none') return undefined;
+  if (!capability) {
+    return isDeepSeekModel(providerId, modelId)
+      ? buildDeepSeekThinkingParams(config, mode, options.hasTools)
+      : undefined;
+  }
+  if (capability.control === 'none') return undefined;
 
   const budget = pickThinkingBudget(capability, config);
 
@@ -1682,26 +1716,8 @@ function getCompatThinkingBodyParams(
       return undefined;
     }
 
-    case 'deepseek': {
-      if (mode === 'disabled' || config.effort === 'none') {
-        return { params: { thinking: { type: 'disabled' } }, disablesThinking: true };
-      }
-      // A tool-carrying request may never set reasoning_effort (the transport
-      // rejects function tools combined with it), so the toggle goes alone;
-      // every other request keeps the historical effort (explicit value, else
-      // the default).
-      if (options.hasTools) {
-        return { params: { thinking: { type: 'enabled' } }, disablesThinking: false };
-      }
-      const effort = config.effort === 'max' || config.effort === 'xhigh' ? 'max' : 'high';
-      return {
-        params: {
-          thinking: { type: 'enabled' },
-          reasoning_effort: effort,
-        },
-        disablesThinking: false,
-      };
-    }
+    case 'deepseek':
+      return buildDeepSeekThinkingParams(config, mode, options.hasTools);
 
     case 'qwen': {
       if (mode === 'disabled')
@@ -2281,9 +2297,6 @@ export function getModel(config: ModelConfig): ModelWithInfo {
         config.providerId !== 'openai' ||
         (usesCustomOpenAIBaseUrl(config.baseUrl) && !usesOpenAIResponses);
       const roundTripProvider = preservesReasoning(config.providerId, config.modelId);
-      const deepseekAdapter =
-        getCatalogThinkingCapability(config.providerId, config.modelId)?.requestAdapter ===
-        'deepseek';
       if (usesCompatTransport) {
         const providerId = config.providerId;
         const compatFetch = async (url: RequestInfo | URL, init?: RequestInit) => {
@@ -2302,54 +2315,53 @@ export function getModel(config: ModelConfig): ModelWithInfo {
               ? getDefaultThinkingConfig(getCatalogThinkingCapability(providerId, config.modelId))
               : undefined);
 
-          const hasRequestTools =
-            !!init?.body &&
-            typeof init.body === 'string' &&
-            (() => {
-              try {
-                const tools = JSON.parse(init.body).tools;
-                return Array.isArray(tools) && tools.length > 0;
-              } catch {
-                return false;
-              }
-            })();
-
           let thinkingDisabledOnWire = false;
-          if (thinking && init?.body && typeof init.body === 'string') {
-            const built = getCompatThinkingBodyParams(providerId, config.modelId, thinking, {
-              hasTools: hasRequestTools,
-            });
-            if (built) {
-              thinkingDisabledOnWire = built.disablesThinking;
-              try {
-                const body = JSON.parse(init.body);
-                if (providerId === 'lemonade' && 'stream_options' in body) {
-                  delete body.stream_options;
-                }
-                Object.assign(body, built.params);
-                init = { ...init, body: JSON.stringify(body) };
-              } catch {
-                /* leave body as-is */
-              }
-            }
-          }
-
-          if (roundTripProvider && init?.body && typeof init.body === 'string') {
+          if (init?.body && typeof init.body === 'string') {
             try {
               const body = JSON.parse(init.body);
-              if (thinkingDisabledOnWire) {
-                stripReasoningContentInRequestBody(body);
-              } else {
-                restoreReasoningContentInRequestBody(body);
-                if (deepseekAdapter) {
-                  for (const message of body.messages ?? []) {
-                    if (message?.role === 'assistant' && message.reasoning_content === undefined) {
-                      message.reasoning_content = '';
-                    }
+              let modified = false;
+              const hasRequestTools = Array.isArray(body.tools) && body.tools.length > 0;
+
+              if (thinking) {
+                const built = getCompatThinkingBodyParams(providerId, config.modelId, thinking, {
+                  hasTools: hasRequestTools,
+                });
+                if (built) {
+                  thinkingDisabledOnWire = built.disablesThinking;
+                  if (providerId === 'lemonade' && 'stream_options' in body) {
+                    delete body.stream_options;
+                  }
+                  Object.assign(body, built.params);
+                  modified = true;
+                }
+              }
+
+              if (roundTripProvider) {
+                if (thinkingDisabledOnWire) {
+                  stripReasoningContentInRequestBody(body);
+                } else {
+                  restoreReasoningContentInRequestBody(body);
+                }
+                modified = true;
+              }
+
+              if (!thinkingDisabledOnWire) {
+                for (const message of body.messages ?? []) {
+                  if (
+                    message?.role === 'assistant' &&
+                    (Boolean(message.function_call) ||
+                      (Array.isArray(message.tool_calls) && message.tool_calls.length > 0)) &&
+                    message.reasoning_content === undefined
+                  ) {
+                    message.reasoning_content = '';
+                    modified = true;
                   }
                 }
               }
-              init = { ...init, body: JSON.stringify(body) };
+
+              if (modified) {
+                init = { ...init, body: JSON.stringify(body) };
+              }
             } catch {
               /* leave body as-is */
             }

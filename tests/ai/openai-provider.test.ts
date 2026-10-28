@@ -28,6 +28,7 @@ async function captureInjectedRequestBody(
   modelId: string,
   thinkingConfig?: Record<string, unknown>,
   baseUrl?: string,
+  requestMessages?: Array<Record<string, unknown>>,
 ) {
   const originalFetch = globalThis.fetch;
   const globalRecord = globalThis as Record<string, unknown>;
@@ -47,6 +48,7 @@ async function captureInjectedRequestBody(
 
     getModel({
       providerId,
+      providerType: 'openai',
       modelId,
       apiKey: 'sk-test',
       baseUrl,
@@ -59,7 +61,7 @@ async function captureInjectedRequestBody(
       method: 'POST',
       body: JSON.stringify({
         model: modelId,
-        messages: [{ role: 'user', content: 'hi' }],
+        messages: requestMessages ?? [{ role: 'user', content: 'hi' }],
       }),
     });
 
@@ -714,6 +716,70 @@ describe('OpenAI provider defaults', () => {
     });
     expect(body).not.toHaveProperty('reasoning_effort');
     expect(body).not.toHaveProperty('enable_thinking');
+  });
+
+  it('translates thinking for uncatalogued DeepSeek models and backfills missing reasoning_content on tool calls', async () => {
+    const body = await captureInjectedRequestBody(
+      'custom-gateway' as ProviderId,
+      'deepseek-reasoner',
+      { mode: 'enabled' },
+      'https://gateway.example/v1',
+      [
+        { role: 'user', content: '/deep-research run' },
+        {
+          role: 'assistant',
+          tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'read', arguments: '{}' } }],
+        },
+      ],
+    );
+
+    expect(body).toMatchObject({
+      thinking: { type: 'enabled' },
+    });
+    expect(body.messages[1].reasoning_content).toBe('');
+  });
+
+  it('preserves existing reasoning_content on assistant tool-call messages for uncatalogued DeepSeek models', async () => {
+    const body = await captureInjectedRequestBody(
+      'custom-gateway' as ProviderId,
+      'deepseek-reasoner',
+      { mode: 'enabled' },
+      'https://gateway.example/v1',
+      [
+        { role: 'user', content: '/deep-research run' },
+        {
+          role: 'assistant',
+          reasoning_content: 'pre-existing reasoning steps',
+          tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'read', arguments: '{}' } }],
+        },
+      ],
+    );
+
+    expect(body).toMatchObject({
+      thinking: { type: 'enabled' },
+    });
+    expect(body.messages[1].reasoning_content).toBe('pre-existing reasoning steps');
+  });
+
+  it('does not backfill reasoning_content when thinking is explicitly disabled on uncatalogued DeepSeek models', async () => {
+    const body = await captureInjectedRequestBody(
+      'custom-gateway' as ProviderId,
+      'deepseek-reasoner',
+      { mode: 'disabled' },
+      'https://gateway.example/v1',
+      [
+        { role: 'user', content: '/deep-research run' },
+        {
+          role: 'assistant',
+          tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'read', arguments: '{}' } }],
+        },
+      ],
+    );
+
+    expect(body).toMatchObject({
+      thinking: { type: 'disabled' },
+    });
+    expect(body.messages[1].reasoning_content).toBeUndefined();
   });
 
   it('recovers reasoning_content from a custom OpenAI gateway stream', async () => {

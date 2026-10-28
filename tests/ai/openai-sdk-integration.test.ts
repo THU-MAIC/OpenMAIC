@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import { resolveThinkingProviderOptions, streamLLM } from '@/lib/ai/llm';
 import { getModel, preservesReasoningForModel } from '@/lib/ai/providers';
+import type { ProviderId } from '@/lib/types/provider';
 
 describe('OpenAI SDK integration', () => {
   it('carries the custom gateway toggle in and reasoning_content back out', async () => {
@@ -442,7 +443,8 @@ describe('OpenAI SDK integration', () => {
 
       expect(requestBodies).toHaveLength(2);
       const assistant = (requestBodies[1]?.messages as Array<Record<string, unknown>>)[1];
-      expect(assistant?.reasoning_content).toBeUndefined();
+      expect(assistant?.reasoning_content).not.toBe('use the lookup tool');
+      expect(assistant?.reasoning_content).toBe('');
     });
 
     it('scopes reasoning_effort to DeepSeek calls without tools', async () => {
@@ -801,11 +803,200 @@ describe('OpenAI SDK integration', () => {
       expect(String(assistant?.content ?? '')).not.toContain('openmaic:kimi-reasoning');
     });
 
-    it('does not backfill reasoning_content outside the DeepSeek adapter', async () => {
+    it('backfills an empty reasoning_content for tool turns when wire thinking is enabled', async () => {
       const requestBodies = await runKimiTurn(false, { enabled: true });
 
       expect(requestBodies).toHaveLength(2);
       const assistant = findAssistant(requestBodies[1]);
+      expect(assistant?.reasoning_content).toBe('');
+    });
+  });
+
+  describe('uncatalogued OpenAI-compatible provider with synthesized skill tool calls', () => {
+    function sseResponse(chunks: unknown[]): Response {
+      const encoder = new TextEncoder();
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            for (const chunk of chunks) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            }
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+            controller.close();
+          },
+        }),
+        { headers: { 'content-type': 'text/event-stream' } },
+      );
+    }
+
+    function chunk(content = 'done') {
+      return {
+        id: 'chatcmpl-uncatalogued',
+        object: 'chat.completion.chunk',
+        created: 1,
+        model: 'deepseek-reasoner',
+        choices: [{ index: 0, delta: { content }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      };
+    }
+
+    async function runSynthesizedTurn(options: {
+      thinking?: { mode?: 'enabled' | 'disabled' | 'auto'; enabled?: boolean; effort?: string };
+      includeToolCall?: boolean;
+      existingReasoningContent?: string;
+    }) {
+      let capturedBody: Record<string, unknown> | undefined;
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        // If testing pre-existing reasoning on incoming wire body, inject before compatFetch processes it
+        if (options.existingReasoningContent && init?.body && typeof init.body === 'string') {
+          const parsed = JSON.parse(init.body);
+          for (const m of parsed.messages ?? []) {
+            if (m.role === 'assistant') {
+              m.reasoning_content = options.existingReasoningContent;
+            }
+          }
+          init = { ...init, body: JSON.stringify(parsed) };
+        }
+        capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return sseResponse([chunk('result')]);
+      }) as typeof globalThis.fetch;
+
+      try {
+        const { model } = getModel({
+          providerId: 'uncatalogued-gateway' as ProviderId,
+          providerType: 'openai',
+          modelId: 'deepseek-reasoner',
+          apiKey: 'sk-test',
+          baseUrl: 'https://gateway.example.com/v1',
+        });
+
+        const messages = (
+          options.includeToolCall === false
+            ? [
+                { role: 'user' as const, content: 'hello' },
+                { role: 'assistant' as const, content: 'prior reply' },
+                { role: 'user' as const, content: 'followup' },
+              ]
+            : [
+                { role: 'user' as const, content: '/deep-research explore recent findings' },
+                {
+                  role: 'assistant' as const,
+                  content: [
+                    {
+                      type: 'tool-call' as const,
+                      toolCallId: 'call_sklpre_999',
+                      toolName: 'read',
+                      input: { path: 'skills/deep-research/SKILL.md' },
+                    },
+                  ],
+                },
+                {
+                  role: 'tool' as const,
+                  content: [
+                    {
+                      type: 'tool-result' as const,
+                      toolCallId: 'call_sklpre_999',
+                      toolName: 'read',
+                      output: { type: 'text', value: '# Deep Research Instructions' },
+                    },
+                  ],
+                },
+              ]
+        ) as unknown as NonNullable<Parameters<typeof streamLLM>[0]['messages']>;
+
+        const result = streamLLM(
+          {
+            model,
+            messages,
+            tools: {
+              read: tool({
+                description: 'read a file',
+                inputSchema: z.object({ path: z.string() }),
+                execute: async () => ({ content: '# Deep Research Instructions' }),
+              }),
+            },
+          },
+          'test',
+          options.thinking as never,
+        );
+
+        await result.consumeStream();
+        return capturedBody;
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    }
+
+    it('injects thinking enabled on the wire and backfills empty reasoning_content for synthesized skill calls', async () => {
+      const body = await runSynthesizedTurn({ thinking: { mode: 'enabled' } });
+
+      expect(body).toMatchObject({ thinking: { type: 'enabled' } });
+      const assistant = (body?.messages as Array<Record<string, unknown>>)?.find(
+        (m) => m.role === 'assistant',
+      );
+      expect(assistant).toBeDefined();
+      expect(assistant?.reasoning_content).toBe('');
+      expect(assistant?.tool_calls).toEqual([
+        expect.objectContaining({
+          id: 'call_sklpre_999',
+          function: expect.objectContaining({ name: 'read' }),
+        }),
+      ]);
+    });
+
+    it('translates configured enabled boolean flag into supported wire request', async () => {
+      const body = await runSynthesizedTurn({ thinking: { enabled: true } });
+
+      expect(body).toMatchObject({ thinking: { type: 'enabled' } });
+      const assistant = (body?.messages as Array<Record<string, unknown>>)?.find(
+        (m) => m.role === 'assistant',
+      );
+      expect(assistant?.reasoning_content).toBe('');
+    });
+
+    it('translates explicit disable mode and respects wire disablement without backfilling', async () => {
+      const body = await runSynthesizedTurn({ thinking: { mode: 'disabled' } });
+
+      expect(body).toMatchObject({ thinking: { type: 'disabled' } });
+      const assistant = (body?.messages as Array<Record<string, unknown>>)?.find(
+        (m) => m.role === 'assistant',
+      );
+      expect(assistant?.reasoning_content).toBeUndefined();
+    });
+
+    it('translates explicit effort none into wire disablement and omits reasoning_content', async () => {
+      const body = await runSynthesizedTurn({ thinking: { effort: 'none' } });
+
+      expect(body).toMatchObject({ thinking: { type: 'disabled' } });
+      const assistant = (body?.messages as Array<Record<string, unknown>>)?.find(
+        (m) => m.role === 'assistant',
+      );
+      expect(assistant?.reasoning_content).toBeUndefined();
+    });
+
+    it('preserves existing reasoning_content when present on the assistant message', async () => {
+      const body = await runSynthesizedTurn({
+        thinking: { mode: 'enabled' },
+        existingReasoningContent: 'prior thinking step for skill preload',
+      });
+
+      expect(body).toMatchObject({ thinking: { type: 'enabled' } });
+      const assistant = (body?.messages as Array<Record<string, unknown>>)?.find(
+        (m) => m.role === 'assistant',
+      );
+      expect(assistant?.reasoning_content).toBe('prior thinking step for skill preload');
+    });
+
+    it('avoids unnecessary mutations on assistant messages that have no tool calls', async () => {
+      const body = await runSynthesizedTurn({
+        thinking: { mode: 'enabled' },
+        includeToolCall: false,
+      });
+
+      const assistant = (body?.messages as Array<Record<string, unknown>>)?.find(
+        (m) => m.role === 'assistant',
+      );
       expect(assistant?.reasoning_content).toBeUndefined();
     });
   });
