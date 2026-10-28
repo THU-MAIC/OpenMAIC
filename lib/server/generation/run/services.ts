@@ -427,20 +427,29 @@ export const defaultRunStepServices: RunStepServices = {
     return {
       ...(Object.keys(truncated).length > 0 ? { truncated } : {}),
       text: bundle.text,
-      images: bundle.images.map(({ src, ...image }) => {
-        // The browser stores every image's bytes or fails the analysis.
-        if (!src.startsWith('data:')) {
-          throw new Error(`Material image ${image.id} has no inline bytes`);
+      // An image whose bytes cannot be read is left out, never failing the step.
+      images: bundle.images.flatMap(({ src, ...image }) => {
+        let decoded;
+        try {
+          if (!src.startsWith('data:')) throw new Error('no inline bytes');
+          decoded = decodeDataUrl(src, MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES);
+        } catch (error) {
+          ctx.log.warn(
+            `Material image ${image.id} is not readable; left out`,
+            error instanceof Error ? error.message : error,
+          );
+          return [];
         }
-        const decoded = decodeDataUrl(src, MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES);
-        return {
-          ...image,
-          bytes: decoded.bytes,
-          mimeType:
-            decoded.mimeType && decoded.mimeType.startsWith('image/')
-              ? decoded.mimeType
-              : 'image/png',
-        };
+        return [
+          {
+            ...image,
+            bytes: decoded.bytes,
+            mimeType:
+              decoded.mimeType && decoded.mimeType.startsWith('image/')
+                ? decoded.mimeType
+                : 'image/png',
+          },
+        ];
       }),
     };
   },

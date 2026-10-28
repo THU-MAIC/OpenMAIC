@@ -392,7 +392,11 @@ export async function runClaimedOwnerExtraction(
       persistence.withTransaction,
       claim,
       {
-        cacheKey: ownerExtractionCacheKey(source, outcome.extractor, options),
+        // Images that failed to download may download next time: such a
+        // result is never reused, a new upload of these bytes extracts again.
+        cacheKey: outcome.imagesNotDownloaded
+          ? null
+          : ownerExtractionCacheKey(source, outcome.extractor, options),
         text: {
           assetId: textAssetId,
           chars: outcome.text.length,

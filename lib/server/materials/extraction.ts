@@ -381,7 +381,9 @@ export async function extractOwnerMaterial(
   if (reusable?.extraction?.resultKey) {
     try {
       const reused = await byteStore.get(reusable.extraction.resultKey);
-      if (isSelfContainedResult(reused)) {
+      // Images left out may download next time (a deadline, a host error):
+      // such a result is not reused, the new upload extracts again.
+      if (!reusable.extraction.imagesSkipped && isSelfContainedResult(reused)) {
         const resultBytes = await store(reused);
         const {
           updatedAt: _updatedAt,
@@ -393,7 +395,7 @@ export async function extractOwnerMaterial(
         return { ...extraction, resultKey, resultBytes };
       }
       log.info(
-        `material ${material.id}: the extraction of ${reusable.id} links its images; extracting`,
+        `material ${material.id}: the extraction of ${reusable.id} lacks images; extracting`,
       );
     } catch (error) {
       if (error instanceof ExtractionResultTooLargeError) throw error;

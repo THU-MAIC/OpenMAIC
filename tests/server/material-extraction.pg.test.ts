@@ -878,6 +878,52 @@ describe.skipIf(!contractUrl)('material extraction at upload on PostgreSQL', () 
       expect((await storedImages(material.id)).map((image) => image.id)).toEqual(['img_2']);
     });
 
+    it('leaves out an image that is neither base64 nor a URL, and the run completes', async () => {
+      const material = await upload('paths.pdf', { mime: 'application/pdf' });
+      await runNextOwnerMaterialExtraction(
+        'worker-a',
+        deps(async () =>
+          extractMinerUResult({
+            md_content: 'deck',
+            images: { 'p1.jpg': '/files/p1.jpg', 'p2.jpg': LINK('ok') },
+          }),
+        ),
+      );
+      expect((await read(material.id)).extraction).toMatchObject({
+        status: 'ready',
+        imageCount: 1,
+        imagesSkipped: 1,
+      });
+      const analyzedMaterials = await defaultRunStepServices.analyzeMaterials(
+        OWNER,
+        [material.id],
+        { log: console as never },
+      );
+      expect(analyzedMaterials.images).toHaveLength(1);
+      expect(Buffer.from(analyzedMaterials.images[0]!.bytes)).toEqual(PNG);
+    });
+
+    it('does not reuse an extraction that left images out: a new upload extracts again', async () => {
+      const links = [LINK('broken'), LINK('ok')];
+      const first = await upload('partial.pdf', { mime: 'application/pdf', sha: 'same-partial' });
+      await runNextOwnerMaterialExtraction(
+        'worker-a',
+        deps(async () => parsedWithLinks('deck', links)),
+      );
+      expect((await read(first.id)).extraction).toMatchObject({ imagesSkipped: 1 });
+      const again = await upload('partial-again.pdf', {
+        mime: 'application/pdf',
+        sha: 'same-partial',
+      });
+      await runNextOwnerMaterialExtraction(
+        'worker-a',
+        deps(async () => parsedWithLinks('deck', links)),
+      );
+      expect(analyzed).toEqual(['partial.pdf', 'partial-again.pdf']);
+      expect((await read(again.id)).extraction).toMatchObject({ status: 'ready', imageCount: 1 });
+      expect(downloads).toEqual([LINK('broken'), LINK('ok'), LINK('broken'), LINK('ok')]);
+    });
+
     it('downloads only what fits next to the text, and the extraction is still ready', async () => {
       process.env.OPENMAIC_MATERIAL_EXTRACTION_MAX_RESULT_MB = '1';
       const material = await upload('dense.pdf', { mime: 'application/pdf' });
@@ -964,6 +1010,26 @@ describe.skipIf(!contractUrl)('material extraction at upload on PostgreSQL', () 
           expect(Buffer.from(image.bytes)).toEqual(PNG);
         }
         expect(downloads).toEqual([LINK('a'), LINK('b'), LINK('broken')]);
+      });
+
+      it('a run leaves out an image whose bytes cannot be read, and completes', async () => {
+        const good = `data:image/png;base64,${PNG.toString('base64')}`;
+        const material = await linkedMaterial('unreadable.pdf', [
+          wrapped('/files/p1.jpg'),
+          good,
+          // Not base64, so taken as inline, but not decodable either.
+          'data:image/png,%E0%A4%A',
+        ]);
+
+        const analyzedMaterials = await defaultRunStepServices.analyzeMaterials(
+          OWNER,
+          [material.id],
+          { log: console as never },
+        );
+
+        expect(analyzedMaterials.images).toHaveLength(1);
+        expect(Buffer.from(analyzedMaterials.images[0]!.bytes)).toEqual(PNG);
+        expect(downloads).toEqual([]);
       });
 
       it('a run leaves out the images a stalled host does not answer in time', async () => {

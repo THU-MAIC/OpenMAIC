@@ -157,6 +157,8 @@ export interface SourceExtractionOutcome {
   /** Positions written by the document-image parser, before publication. */
   imageRefs?: Array<{ start: number; end: number; key: string }>;
   images: ExtractedSourceImage[];
+  /** Images left out because their download failed: they may be kept another time. */
+  imagesNotDownloaded?: number;
   /** The provider that actually produced the result (after any fallback). */
   extractor: { id: string; version: string };
   stats: MaterialExtractionStats;

@@ -13,8 +13,9 @@
  * Once the byte budget is spent (nothing left, or an image did not fit in what
  * was left) no download starts and the ones running are stopped: a budget of
  * nothing makes no request at all. An image that cannot be inlined (refused,
- * failed, too large, not an image, or a source that is neither a `data:` nor
- * an `http(s)` URL) is dropped and counted, never failing the extraction it
+ * failed, too large, not an image, a `data:` URL that is not base64 as it
+ * says, or a source that is neither a `data:` nor an `http(s)` URL) is
+ * dropped and counted, never failing the extraction it
  * belongs to; an abort of `signal` does fail it. A `deadline` bounds the
  * downloads without failing them: once it fires, the downloads still running
  * are stopped and every image not yet downloaded is dropped and counted.
@@ -31,6 +32,7 @@ import {
   readResponseBodyWithLimit,
 } from '@/lib/server/bounded-download';
 import { fetchProviderResultUrl } from '@/lib/server/provider-result-fetch';
+import { isBase64Payload } from '@/lib/utils/base64';
 
 const log = createLogger('InlineImages');
 
@@ -84,14 +86,20 @@ export function remoteImageUrl(src: string | undefined): string | undefined {
   return wrapped?.[1];
 }
 
+/**
+ * Whether an image source carries its bytes: a `data:` URL whose payload, if
+ * it says base64, is base64 (a wrapped URL or path is not).
+ */
+function isInlineImageSource(src: string | undefined): boolean {
+  if (typeof src !== 'string' || !src.startsWith('data:')) return false;
+  const comma = src.indexOf(',');
+  if (comma === -1) return false;
+  return !/;base64$/i.test(src.slice(5, comma)) || isBase64Payload(src.slice(comma + 1));
+}
+
 /** Whether every image already carries its bytes inline. */
 export function imagesAreInline(images: ReadonlyArray<{ src?: string }>): boolean {
-  return images.every(
-    (image) =>
-      typeof image.src === 'string' &&
-      image.src.startsWith('data:') &&
-      remoteImageUrl(image.src) === undefined,
-  );
+  return images.every((image) => isInlineImageSource(image.src));
 }
 
 /** The image type of downloaded bytes: what the response declares, else what the bytes are. */
@@ -187,7 +195,9 @@ export async function inlineRemoteImages<
     if (!spent.signal.aborted) spent.abort(new Error('image byte budget spent'));
   };
 
-  const results: Array<T | null> = images.map((image) => (imagesAreInline([image]) ? image : null));
+  const results: Array<T | null> = images.map((image) =>
+    isInlineImageSource(image.src) ? image : null,
+  );
   const remote: Array<{ index: number; url: string }> = [];
   images.forEach((image, index) => {
     if (results[index]) return;

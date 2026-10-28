@@ -236,7 +236,11 @@ describe('ownerDocumentOutcome', () => {
       expect(outcome.text).toBe(
         String.raw`![](openmaic-derivative:img-1)` + '\n\n' + String.raw`\[image\]`,
       );
-      expect(outcome.stats.diagnostics).toEqual([expect.stringContaining('1 document image(s)')]);
+      expect(outcome.stats.diagnostics).toEqual([
+        '1 document image(s) not kept (limit 100, or unreadable)',
+        '1 document image(s) could not be downloaded',
+      ]);
+      expect(outcome.imagesNotDownloaded).toBe(1);
     });
   });
 });
@@ -273,6 +277,14 @@ describe('MinerU parser', () => {
       'data:image/jpeg;base64,BBBB',
     ]);
     expect(parsed.metadata?.pdfImages?.[0]).toMatchObject({ src: url, path: 'abc.jpg' });
+  });
+
+  it('wraps no value that is not base64 (a path is kept as is, to be dropped)', () => {
+    const parsed = extractMinerUResult({
+      md_content: '',
+      images: { 'p1.jpg': '/files/p1.jpg', 'p2.jpg': '//cdn.example.com/p2.jpg' },
+    });
+    expect(parsed.images).toEqual(['/files/p1.jpg', '//cdn.example.com/p2.jpg']);
   });
 
   it('finds the metadata of an image content_list names by its URL', () => {

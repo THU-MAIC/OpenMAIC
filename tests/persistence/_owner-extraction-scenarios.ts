@@ -20,6 +20,8 @@ import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
 import { ensureUserSkillSchema } from '@openmaic/storage/skill/pg';
 import { expect, vi } from 'vitest';
 import * as imageParser from '@/lib/server/material-extraction/document-image-parser';
+import * as providerResultFetch from '@/lib/server/provider-result-fetch';
+import sharp from 'sharp';
 
 import type { DocumentExtractorProvider, MediaExtractorProvider } from '@/lib/document';
 import { getDocumentExtractorManifestEntry } from '@/lib/document/extractors/manifest';
@@ -1391,6 +1393,59 @@ export async function fallbackReuseScenario(h: ExtractionHarness): Promise<void>
   expect(first.extractor).toMatchObject({ id: 'test-doc' });
   expect(second).toMatchObject({ reusedFrom: 'doc-first', text: first.text });
   expect(await extractionRootsOf(h, 'doc-second')).toEqual([first.text.assetId]);
+}
+
+/**
+ * A result that left out images whose download failed is never a cache hit:
+ * the next upload of the same bytes extracts again (and may download them),
+ * and a result with every image kept is reused as before.
+ */
+export async function failedImageDownloadScenario(h: ExtractionHarness): Promise<void> {
+  const png = await sharp({
+    create: { width: 2, height: 2, channels: 3, background: { r: 255, g: 0, b: 0 } },
+  })
+    .png()
+    .toBuffer();
+  const extract = vi.fn(async () => ({
+    metadata: { pageCount: 1 },
+    blocks: [{ id: 'b1', type: 'markdown', text: '![](images/fig-1.jpg)' }],
+    assets: [
+      {
+        id: 'img_1',
+        type: 'image',
+        data: 'https://files.example.com/media/fig-1',
+        metadata: { path: 'fig-1.jpg' },
+      },
+    ],
+  }));
+  const download = vi
+    .spyOn(providerResultFetch, 'fetchProviderResultUrl')
+    .mockResolvedValueOnce(new Response('unavailable', { status: 503 }))
+    .mockImplementation(
+      async () => new Response(new Uint8Array(png), { headers: { 'content-type': 'image/png' } }),
+    );
+  try {
+    const deps = h.deps({ providers: () => [documentProvider(extract)] });
+    const bytes = Buffer.from('%PDF-linked-images');
+    for (const id of ['doc-failed', 'doc-retried', 'doc-reused']) {
+      await seedSource(h, id, { bytes });
+      await ensure(h, id);
+      await drain(h, deps);
+    }
+    const failed = await stateOf(h, 'doc-failed');
+    expect(failed.extraction_result!.derivatives).toEqual([]);
+    expect(failed.extraction_cache_key).toBeNull();
+    const retried = (await stateOf(h, 'doc-retried')).extraction_result!;
+    expect(retried.reusedFrom).toBeUndefined();
+    expect(retried.derivatives).toHaveLength(1);
+    expect((await stateOf(h, 'doc-reused')).extraction_result).toMatchObject({
+      reusedFrom: 'doc-retried',
+    });
+    expect(extract).toHaveBeenCalledTimes(2);
+    expect(download).toHaveBeenCalledTimes(2);
+  } finally {
+    download.mockRestore();
+  }
 }
 
 /**

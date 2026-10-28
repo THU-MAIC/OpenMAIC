@@ -15,6 +15,7 @@
  */
 import { providerFetch, type ProviderFetchPolicy } from '@/lib/server/provider-fetch';
 import { UnsafeNetworkTargetError, validateUrlForSSRFWithPolicy } from '@/lib/server/ssrf-guard';
+import { isBase64Payload } from '@/lib/utils/base64';
 
 export const PROVIDER_RESULT_URL_POLICY: ProviderFetchPolicy = {
   allowLocalNetworks: false,
@@ -25,16 +26,9 @@ function dataUrlTooLarge(maxBytes: number): Error {
   return new Error(`Download failed: data URL exceeds the ${maxBytes}-byte limit`);
 }
 
-/** Base64 characters (standard or URL-safe alphabet), padding and whitespace. */
-const BASE64_PAYLOAD = /^[A-Za-z0-9+/=_\-\s]*$/;
-
-/**
- * Decode a base64 payload, refusing one that is not base64. Node's decoder
- * skips characters outside the alphabet, so a value that is something else
- * (a URL, say) would decode to garbage bytes instead of failing.
- */
+/** Decode a base64 payload, refusing one that is not base64 (see {@link isBase64Payload}). */
 export function decodeBase64(payload: string): Buffer {
-  if (!BASE64_PAYLOAD.test(payload)) throw new Error('Invalid base64 payload');
+  if (!isBase64Payload(payload)) throw new Error('Invalid base64 payload');
   return Buffer.from(payload, 'base64');
 }
 

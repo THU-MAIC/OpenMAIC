@@ -10,6 +10,7 @@ import { afterEach, describe, it, vi } from 'vitest';
 import {
   bootExtractionHarness,
   failureReasonScenario,
+  failedImageDownloadScenario,
   documentFallbackScenario,
   documentServiceUnavailableScenario,
   cacheCollectorOrderScenario,
@@ -161,6 +162,10 @@ describe('owner-level material extraction (PGlite)', () => {
 
   it('reuses a document fallback s earlier result when the provider ahead of it fails', async () => {
     await fallbackReuseScenario(await boot());
+  });
+
+  it('never reuses a result whose image downloads failed', async () => {
+    await failedImageDownloadScenario(await boot());
   });
 
   it('does not reuse a done donor that no longer roots its result', async () => {

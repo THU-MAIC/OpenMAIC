@@ -170,6 +170,17 @@ describe('inlineRemoteImages', () => {
     expect(transport).not.toHaveBeenCalled();
   });
 
+  it('drops a base64 data URL whose payload is not base64, without a request', async () => {
+    const good = image('img_2', 'data:image/png;base64,AAAA');
+    const result = await inlineRemoteImages([
+      image('img_1', 'data:image/png;base64,/files/p1.jpg'),
+      good,
+    ]);
+
+    expect(result).toEqual({ images: [good], skipped: 1 });
+    expect(transport).not.toHaveBeenCalled();
+  });
+
   it('downloads at most maxImages remote images', async () => {
     transport.mockImplementation(
       async () => new Response(new Uint8Array(PNG), { headers: { 'content-type': 'image/png' } }),
@@ -369,6 +380,8 @@ describe('inlineRemoteImages', () => {
     expect(imagesAreInline([{ src: 'data:x' }, { src: '' }])).toBe(false);
     expect(imagesAreInline([{ src: 'data:image/png;base64,https://a/b' }])).toBe(false);
     expect(imagesAreInline([{ src: 'data:image/png;base64,AA' }])).toBe(true);
+    expect(imagesAreInline([{ src: 'data:image/png;base64,/files/p1.jpg' }])).toBe(false);
+    expect(imagesAreInline([{ src: 'data:image/svg+xml,%3Csvg%3E' }])).toBe(true);
     expect(imagesAreInline([])).toBe(true);
   });
 });

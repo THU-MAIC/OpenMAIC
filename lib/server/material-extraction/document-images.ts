@@ -87,15 +87,19 @@ async function downloadedImages(
 /**
  * The document's images to keep, in provider order and within the bounds,
  * each prepared as WebP, keyed `img-<n>`. An image that cannot be downloaded,
- * decoded or prepared is skipped.
+ * decoded or prepared is skipped; `notDownloaded` counts the downloads that
+ * failed, which may succeed another time.
  */
-async function keptImages(
-  artifact: DocumentArtifact,
-): Promise<{ kept: Array<KeptImage & { path?: string }>; skipped: number }> {
+async function keptImages(artifact: DocumentArtifact): Promise<{
+  kept: Array<KeptImage & { path?: string }>;
+  skipped: number;
+  notDownloaded: number;
+}> {
   const candidates = artifact.assets.filter((asset) => asset.type === 'image' && asset.data);
   const downloaded = await downloadedImages(candidates);
   const kept: Array<KeptImage & { path?: string }> = [];
   let skipped = 0;
+  let notDownloaded = 0;
   for (const [index, asset] of candidates.entries()) {
     if (kept.length >= MAX_DERIVED_IMAGES) {
       skipped += 1;
@@ -103,7 +107,9 @@ async function keptImages(
     }
     let prepared;
     try {
-      const data = remoteImageUrl(asset.data) ? downloaded.get(index) : asset.data;
+      const remote = remoteImageUrl(asset.data) !== undefined;
+      const data = remote ? downloaded.get(index) : asset.data;
+      if (remote && !data) notDownloaded += 1;
       prepared = data ? await prepareDerivedImage(decodeMediaAssetData(data)) : null;
     } catch {
       prepared = null;
@@ -126,7 +132,7 @@ async function keptImages(
       },
     });
   }
-  return { kept, skipped };
+  return { kept, skipped, notDownloaded };
 }
 
 /**
@@ -222,7 +228,7 @@ export async function ownerDocumentOutcome(
   artifact: DocumentArtifact,
   provider: DocumentExtractorProvider,
 ): Promise<SourceExtractionOutcome> {
-  const { kept, skipped } = await keptImages(artifact);
+  const { kept, skipped, notDownloaded } = await keptImages(artifact);
   const index = imagePathIndex(kept);
   // Uploads decoded by plain-text have no provider-owned image paths. MinerU
   // output still needs rewriting when all of its images are missing.
@@ -232,6 +238,7 @@ export async function ownerDocumentOutcome(
     ...(skipped > 0
       ? [`${skipped} document image(s) not kept (limit ${MAX_DERIVED_IMAGES}, or unreadable)`]
       : []),
+    ...(notDownloaded > 0 ? [`${notDownloaded} document image(s) could not be downloaded`] : []),
   ];
   let rewritten = { text: base.text, refs: [] as ImageReference[] };
   if (provider.id !== 'plain-text') {
@@ -253,6 +260,7 @@ export async function ownerDocumentOutcome(
     text: rewritten.text,
     imageRefs: rewritten.refs,
     images: kept.map(({ image }) => image),
+    ...(notDownloaded > 0 ? { imagesNotDownloaded: notDownloaded } : {}),
     stats: {
       ...base.stats,
       chars: rewritten.text.length,

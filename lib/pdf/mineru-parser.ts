@@ -6,6 +6,7 @@
 
 import type { ParsedPdfContent } from '@/lib/types/pdf';
 import { createLogger } from '@/lib/logger';
+import { isBase64Payload } from '@/lib/utils/base64';
 
 const log = createLogger('MinerUParser');
 
@@ -15,13 +16,15 @@ export function extractMinerUResult(fileResult: Record<string, unknown>): Parsed
   const imageData: Record<string, string> = {};
   let pageCount = 0;
 
-  // Extract images from the images object (key → base64 string). A MinerU
-  // gateway that hosts the images answers a URL instead: it is kept as is (the
-  // server downloads it when it stores the extraction), never wrapped as base64.
+  // Extract images from the images object (key → base64 string). Only bare
+  // base64 is wrapped as a data URL: a MinerU gateway that hosts the images
+  // answers a URL instead, kept as is (the server downloads it when it stores
+  // the extraction), and any other value is kept as is too, to be dropped,
+  // never decoded as base64 into garbage bytes.
   if (fileResult.images && typeof fileResult.images === 'object') {
     Object.entries(fileResult.images as Record<string, string>).forEach(([key, value]) => {
       imageData[key] =
-        value.startsWith('data:') || /^https?:\/\//i.test(value)
+        value.startsWith('data:') || !isBase64Payload(value)
           ? value
           : `data:image/png;base64,${value}`;
     });
