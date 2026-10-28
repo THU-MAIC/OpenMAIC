@@ -1082,7 +1082,7 @@ export function WorkbenchChat({
                   <SkillSlashMenu
                     key={slash}
                     filter={slash}
-                    title={t('proMode.skillMenuTitle')}
+                    title={t('workspace.composer.skillMenuTitle')}
                     // A completion, not a picker: the half-typed `/query` becomes
                     // the real handle and the caret lands after it.
                     onPick={loadSkill}
@@ -1152,7 +1152,7 @@ export function WorkbenchChat({
                   <AttachButton
                     testId="workbench-attach"
                     disabled={busy || !canSend}
-                    label={t('proMode.attach')}
+                    label={t('workspace.composer.attach')}
                     onFiles={materials.addFiles}
                   />
                   {/* Shown exactly when the menu can open: classrooms to name,
@@ -1163,8 +1163,8 @@ export function WorkbenchChat({
                       disabled={busy || !canSend}
                       label={t(
                         materials.enabled
-                          ? 'proMode.mentionCourseOrMaterial'
-                          : 'proMode.mentionCourse',
+                          ? 'workspace.composer.mentionCourseOrMaterial'
+                          : 'workspace.composer.mentionCourse',
                       )}
                       onClick={openMention}
                     />
@@ -1172,7 +1172,7 @@ export function WorkbenchChat({
                   <SkillButton
                     testId="workbench-skill-button"
                     disabled={busy || !canSend}
-                    label={t('proMode.loadSkill')}
+                    label={t('workspace.composer.loadSkill')}
                     onClick={openSkillMenu}
                   />
                 </div>

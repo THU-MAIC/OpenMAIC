@@ -83,9 +83,13 @@ function ExportMenuItem({
 
 interface HeaderControlsProps {
   readonly mode?: StageMode;
-  readonly proModeActive?: boolean;
   readonly canEdit?: boolean;
   readonly onToggleEditMode?: () => void;
+  /**
+   * `onToggleEditMode` opens the course in the workspace instead of flipping
+   * this page into edit mode, so it renders as a button rather than a switch.
+   */
+  readonly editOpensWorkspace?: boolean;
   readonly showGlobalControls?: boolean;
   readonly showCourseActions?: boolean;
   /**
@@ -112,9 +116,9 @@ interface HeaderControlsProps {
  */
 export function HeaderControls({
   mode,
-  proModeActive,
   canEdit,
   onToggleEditMode,
+  editOpensWorkspace = false,
   showGlobalControls = true,
   showCourseActions = true,
   variant = 'default',
@@ -156,19 +160,41 @@ export function HeaderControls({
   const htmlHasPlaybackMedia = exportMenuOpen && classroomHasPlaybackMedia(scenes);
 
   const compact = variant === 'compact';
-  const proChecked = proModeActive ?? mode === 'edit';
+  const editChecked = mode === 'edit';
+  const editDisabled = !canEdit && mode !== 'edit';
+  const workspaceEditButton =
+    onToggleEditMode && editOpensWorkspace ? (
+      <button
+        type="button"
+        onClick={onToggleEditMode}
+        disabled={editDisabled}
+        title={editDisabled ? t('stage.editDisabledHint') : undefined}
+        className={cn(
+          'shrink-0 inline-flex items-center rounded-full border shadow-sm transition-colors duration-200',
+          'bg-white/60 dark:bg-gray-800/60 backdrop-blur-md border-gray-100/50 dark:border-gray-700/50',
+          'text-xs font-semibold text-gray-600 dark:text-gray-300',
+          compact ? 'h-8 px-3' : 'h-9 px-3.5',
+          editDisabled
+            ? 'opacity-60 cursor-not-allowed'
+            : 'hover:border-violet-400/60 hover:text-violet-600 dark:hover:border-violet-500/50 dark:hover:text-violet-300',
+        )}
+      >
+        {t('stage.editInWorkspace')}
+      </button>
+    ) : null;
 
   if (!showGlobalControls && !showCourseActions) {
+    if (workspaceEditButton) return workspaceEditButton;
     return onToggleEditMode ? (
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
-          {t('stage.proMode')}
+          {t('stage.editToggle')}
         </span>
         <Switch
-          checked={proChecked}
+          checked={editChecked}
           onCheckedChange={onToggleEditMode}
           disabled={!canEdit}
-          aria-label={proChecked ? t('stage.doneEditing') : t('stage.editCourse')}
+          aria-label={editChecked ? t('stage.doneEditing') : t('stage.editCourse')}
         />
       </div>
     ) : null;
@@ -255,22 +281,25 @@ export function HeaderControls({
         </button>
       </div>
 
-      {/* Pro Switch — toggle property: on/off both clickable, not a
+      {/* Edit Switch — toggle property: on/off both clickable, not a
           one-way "Done" button. Disabled only when the current scene
           can't be entered (pending/generating/etc.). Fades in with its
           host bar on the mode swap (no cross-bar layoutId morph: the
           playback Header and edit CommandBar have different left-side
-          widths, so morphing made the pill visibly drift). */}
-      {onToggleEditMode && (
+          widths, so morphing made the pill visibly drift). Where the
+          workbench is available, editing happens there instead: the
+          control is a plain button that opens the course in it. */}
+      {workspaceEditButton}
+      {onToggleEditMode && !editOpensWorkspace && (
         <label
           className={cn(
             'shrink-0 inline-flex items-center gap-2.5 rounded-full border shadow-sm transition-colors duration-200',
             'bg-white/60 dark:bg-gray-800/60 backdrop-blur-md',
             compact ? 'h-8 px-2.5' : 'h-9 px-3',
-            proChecked
+            editChecked
               ? 'border-violet-500/60 dark:border-violet-400/60'
               : 'border-gray-100/50 dark:border-gray-700/50',
-            !canEdit && mode !== 'edit'
+            editDisabled
               ? 'opacity-60 cursor-not-allowed'
               : 'cursor-pointer hover:border-violet-400/60 dark:hover:border-violet-500/50',
           )}
@@ -278,9 +307,9 @@ export function HeaderControls({
           // on hover and point the user to a real scene instead of a bare
           // "Edit course" label they can't act on.
           title={
-            !canEdit && mode !== 'edit'
-              ? t('stage.proModeDisabledHint')
-              : proChecked
+            editDisabled
+              ? t('stage.editDisabledHint')
+              : editChecked
                 ? t('stage.doneEditing')
                 : t('stage.editCourse')
           }
@@ -288,18 +317,18 @@ export function HeaderControls({
           <span
             className={cn(
               'text-[11px] font-bold uppercase tracking-[0.14em] tabular-nums select-none transition-colors duration-200',
-              proChecked
+              editChecked
                 ? 'text-violet-600 dark:text-violet-300'
                 : 'text-gray-500 dark:text-gray-400',
             )}
           >
-            {t('edit.proMode')}
+            {t('stage.editToggle')}
           </span>
           <Switch
-            checked={proChecked}
+            checked={editChecked}
             onCheckedChange={onToggleEditMode}
-            disabled={!canEdit && mode !== 'edit'}
-            aria-label={proChecked ? t('stage.doneEditing') : t('stage.editCourse')}
+            disabled={editDisabled}
+            aria-label={editChecked ? t('stage.doneEditing') : t('stage.editCourse')}
             className="data-[state=checked]:bg-violet-600 dark:data-[state=checked]:bg-violet-500"
           />
         </label>

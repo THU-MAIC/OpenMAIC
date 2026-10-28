@@ -11,9 +11,10 @@ import { HeaderControls } from './stage/header-controls';
 interface HeaderProps {
   readonly currentSceneTitle: string;
   readonly mode?: StageMode;
-  readonly proModeActive?: boolean;
   readonly canEdit?: boolean;
   readonly onToggleEditMode?: () => void;
+  /** See `HeaderControls`: the edit control opens the workspace. */
+  readonly editOpensWorkspace?: boolean;
   /** Replaces the default back-to-home arrow as the header's leftmost
       control. `PlaybackChromeRoot` passes the workbench's return control
       here while a session is attached and full-screen playback is on, so the
@@ -34,9 +35,9 @@ interface HeaderProps {
 export function Header({
   currentSceneTitle,
   mode,
-  proModeActive,
   canEdit,
   onToggleEditMode,
+  editOpensWorkspace,
   backControl,
   hideBackControl,
   hideGlobalControls,
@@ -91,9 +92,9 @@ export function Header({
             classrooms omit both the global capsule and course share/export. */}
         <HeaderControls
           mode={mode}
-          proModeActive={proModeActive}
           canEdit={canEdit}
           onToggleEditMode={onToggleEditMode}
+          editOpensWorkspace={editOpensWorkspace}
           showGlobalControls={!hideGlobalControls}
           showCourseActions={!hideCourseActions}
         />

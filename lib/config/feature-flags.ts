@@ -48,24 +48,29 @@ export function isServerPersistenceConfigured(): boolean {
  * Build-time workbench affordance. This public flag is separate from the
  * server runtime gate because Next.js inlines NEXT_PUBLIC values into client
  * bundles; both gates must be on before a workbench page is reachable.
+ *
+ * `NEXT_PUBLIC_PRO_WORKBENCH_ENABLED` is the previous name, still read when the
+ * new one is unset. It is kept for one release so existing deployments keep
+ * their workbench across the rename.
  */
-export function isProWorkbenchEnabled(): boolean {
+export function isWorkbenchEnabled(): boolean {
+  const value = process.env.NEXT_PUBLIC_WORKBENCH_ENABLED;
+  if (value !== undefined && value !== '') return readBoolean(value);
   return readBoolean(process.env.NEXT_PUBLIC_PRO_WORKBENCH_ENABLED);
 }
 
 /**
- * MAIC Editor (Pro mode) gate. Default OFF — gates only the Pro toggle
- * affordance in `Header`. The `StageMode` type union is unaffected so
- * existing code paths typecheck identically with the flag in either
- * state.
+ * Classroom editor gate. Default OFF — gates only the edit toggle in `Header`.
+ * The `StageMode` type union is unaffected so existing code paths typecheck
+ * identically with the flag in either state.
  *
- * Implied by the Pro workbench flag: the workbench IS Pro mode, and a
- * workbench build without the editor toggle has no way to edit a course.
- * The standalone flag remains for deployments that want the classroom
- * editor without the workbench.
+ * Implied by the workbench flag: editing a course is part of the workbench,
+ * and a workbench build without the editor has no way to edit a course. The
+ * standalone flag remains for deployments that want the classroom editor
+ * without the workbench.
  */
 export function isMaicEditorEnabled(): boolean {
-  return isProWorkbenchEnabled() || readBoolean(process.env.NEXT_PUBLIC_MAIC_EDITOR_ENABLED);
+  return isWorkbenchEnabled() || readBoolean(process.env.NEXT_PUBLIC_MAIC_EDITOR_ENABLED);
 }
 
 /**

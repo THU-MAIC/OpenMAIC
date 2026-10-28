@@ -9,7 +9,7 @@ import {
   isHostedSceneEditable,
   resolveStageChromeMode,
 } from '@/lib/edit/stage-mode';
-import { isMaicEditorEnabled, isProWorkbenchEnabled } from '@/lib/config/feature-flags';
+import { isMaicEditorEnabled, isWorkbenchEnabled } from '@/lib/config/feature-flags';
 import { EditChromeRoot } from '@/components/edit/EditChromeRoot';
 import {
   PlaybackChromeRoot,
@@ -29,7 +29,6 @@ import { resolveClassroomHeaderControls } from '@/lib/workbench/classroom-header
 import { useWorkbenchStore } from '@/lib/workbench/session-store';
 import { useWorkbenchPanelState } from '@/lib/workbench/panel-context';
 import { workspaceHref } from '@/lib/workbench/workspace-panes';
-import { exitProPlaybackToStandalone } from '@/lib/workbench/pro-playback-exit';
 
 /**
  * Stage — top-level classroom container. Standalone classrooms dispatch
@@ -60,7 +59,7 @@ export function Stage({
   const { mode, setMode, scenes, currentSceneId, generatingOutlines, stage } = useStageStore();
   const router = useRouter();
   const enteringWorkbench = useRef(false);
-  const proWorkbenchFlag = isProWorkbenchEnabled();
+  const proWorkbenchFlag = isWorkbenchEnabled();
   const editorEnabled = isMaicEditorEnabled();
   const [proRuntime, setProRuntime] = useState<'pending' | 'on' | 'off'>(
     proWorkbenchFlag ? 'pending' : 'off',
@@ -337,27 +336,13 @@ export function Stage({
     }
   }, [router, setPanelOpen, stage?.id]);
 
-  const handleExitWorkbench = useCallback(async () => {
-    if (!stage?.id) return;
-    await exitProPlaybackToStandalone({
-      stageId: stage.id,
-      teardown: () => playbackRef.current?.teardown(),
-      // Hosted playback is view state and may be masking a stale standalone
-      // `edit` mode. Commit playback before leaving the workspace so the
-      // ordinary classroom stays on the exact learning surface the user saw.
-      setMode,
-      replace: (href) => router.replace(href),
-      onTeardownError: (error) => console.error('[Stage] workbench exit teardown failed', error),
-    });
-  }, [router, setMode, stage?.id]);
-
-  // The embedded pane owns its mode switch in the tab header. Full-screen
-  // learning exposes an active switch whose off transition exits the workspace
-  // and returns to the ordinary classroom route.
+  // A classroom hosted by the workspace has no edit control of its own: the
+  // pane's learning/editing switch lives in its tab header, and full-screen
+  // learning returns through `WorkbenchReturnControl`. On the classroom route
+  // the control opens the course in the workspace where one is available, and
+  // toggles this page's own editor otherwise.
   const chromeToggleHandler = hosted
-    ? workbenchPlayback
-      ? handleExitWorkbench
-      : undefined
+    ? undefined
     : !isOwner || proRuntime === 'pending'
       ? undefined
       : proWorkbenchEntry
@@ -418,9 +403,9 @@ export function Stage({
             onInteractivePickerChange={setPlaybackInteractivePicker}
             onRetryOutline={onRetryOutline}
             generationFailureMessage={generationFailureMessage}
-            canEnterProMode={workbenchPlayback || isEditable}
+            canEnterProMode={isEditable}
             onEnterProMode={chromeToggleHandler}
-            proModeActive={hosted && workbenchPlayback}
+            editOpensWorkspace={!hosted && proWorkbenchEntry}
             headerBackControl={
               classroomBackControl === 'workbench-return' ? <WorkbenchReturnControl /> : undefined
             }

@@ -333,14 +333,14 @@ never stop the server.
 
 ## Agent workbench and runtime
 
-The Pro workbench is a usable course-building surface entered from the home
+The workbench is a usable course-building surface entered from the home
 page. Its collapsible navigation rail, conversation pane, and tabbed classroom
 pane share `/api/agent/*` control-plane routes and an in-process session runner.
 It is off by default. Enable its build-time entry point and the server runtime;
 it uses the same PostgreSQL connection as the rest of the app:
 
 ```bash
-NEXT_PUBLIC_PRO_WORKBENCH_ENABLED=true
+NEXT_PUBLIC_WORKBENCH_ENABLED=true
 OPENMAIC_AGENT_RUNTIME_ENABLED=true
 DATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic
 ```

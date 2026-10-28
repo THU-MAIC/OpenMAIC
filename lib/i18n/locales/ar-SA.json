@@ -333,10 +333,11 @@
     "exitFullscreen": "الخروج من ملء الشاشة",
     "editCourse": "تحرير الدورة",
     "doneEditing": "إنهاء التحرير",
-    "proModeDisabledHint": "التحرير غير متاح في هذه الصفحة — افتح شريحة من الدورة للتحرير باستخدام وضع Pro."
+    "editDisabledHint": "التحرير غير متاح في هذه الصفحة — افتح شريحة من الدورة لتحريرها.",
+    "editToggle": "تحرير",
+    "editInWorkspace": "تحرير في مساحة العمل"
   },
   "edit": {
-    "proMode": "احترافي",
     "undo": "تراجع",
     "redo": "إعادة",
     "delete": "حذف",
@@ -2366,7 +2367,6 @@
     "retry": "Retry",
     "untitledSession": "Untitled chat",
     "pagePosition": "Page {{index}} of {{total}}",
-    "exitPro": "Exit Pro",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
@@ -2441,7 +2441,23 @@
     "courseTabsAria": "الدورات المفتوحة",
     "courseTabClose": "إغلاق التبويب: {{name}}",
     "courseTabRunning": "قيد التوليد",
-    "foldersUnavailable": "المجلدات غير متوفرة في هذا الإصدار"
+    "foldersUnavailable": "المجلدات غير متوفرة في هذا الإصدار",
+    "composer": {
+      "attach": "إرفاق مواد",
+      "mentionCourse": "引用课堂",
+      "mentionCourseOrMaterial": "الإشارة إلى فصل أو مادة من قاعدة المعرفة",
+      "loadSkill": "加载 skill",
+      "skillMenuTitle": "选择课程设计技能",
+      "skillsLoading": "正在加载 skill…",
+      "noSkillsAvailable": "暂无可用 skill",
+      "userSkillsGroup": "我的 Skill",
+      "builtinSkillsGroup": "内置 Skill",
+      "skillsLoadFailed": "Skill 加载失败，点击重试",
+      "retrySkills": "重试",
+      "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+      "launchPlaceholder": "صِف تجربة التعلم التي تريد إنشاءها",
+      "launchSend": "بدء الإنشاء"
+    }
   },
   "profile": {
     "title": "الملف الشخصي",
@@ -2472,25 +2488,6 @@
     "title": "أدخل رمز الوصول",
     "placeholder": "رمز الوصول",
     "error": "رمز الوصول غير صالح. يرجى المحاولة مرة أخرى."
-  },
-  "proMode": {
-    "attach": "إرفاق مواد",
-    "mentionCourse": "引用课堂",
-    "loadSkill": "加载 skill",
-    "skillMenuTitle": "选择课程设计技能",
-    "skillsLoading": "正在加载 skill…",
-    "noSkillsAvailable": "暂无可用 skill",
-    "userSkillsGroup": "我的 Skill",
-    "builtinSkillsGroup": "内置 Skill",
-    "skillsLoadFailed": "Skill 加载失败，点击重试",
-    "retrySkills": "重试",
-    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
-    "badgeAria": "وضع Pro",
-    "badgeEnter": "وضع Pro",
-    "badgeExit": "العودة إلى الوضع العادي",
-    "launchPlaceholder": "صِف تجربة التعلم التي تريد إنشاءها",
-    "launchSend": "بدء الإنشاء",
-    "mentionCourseOrMaterial": "الإشارة إلى فصل أو مادة من قاعدة المعرفة"
   },
   "workbench": {
     "tool": {

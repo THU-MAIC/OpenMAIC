@@ -48,7 +48,7 @@
  */
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 // The workspace's visual layer. Imported HERE rather than from `globals.css`
 // so it lands in this route's CSS chunk only — `/` must not receive it.
@@ -62,7 +62,6 @@ import {
 import { OwnerSessionClient } from '@/lib/workbench/owner-session-client';
 import { resolveCourseChatBootstrap } from '@/lib/workbench/course-chat-bootstrap';
 import { startConversationWithFirstMessage } from '@/lib/workbench/first-message-session';
-import { startProSwap } from '@/lib/workbench/pro-swap';
 import { createdCourseTabsToOpen } from '@/lib/workbench/created-course-tabs';
 import { isCourseReadOnly } from '@/lib/workbench/course-read-only';
 import {
@@ -189,7 +188,6 @@ export function WorkspaceShell() {
 
 function WorkspaceShellController({ initialPanes }: { readonly initialPanes: WorkspacePanes }) {
   const { t } = useI18n();
-  const router = useRouter();
   const navigation = useWorkspacePaneNavigation(initialPanes);
 
   // Discover-only: course management lives in the navigation tree.
@@ -845,11 +843,6 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     [closeCourse, courses],
   );
 
-  // Leaving Pro is a state change: the two surfaces crossfade while the
-  // lockup stays fixed. `startProSwap` falls back to a plain push where the
-  // browser has no View Transitions or the user asked for less motion, and
-  // swallows a second click while one swap is already running.
-  const exitPro = () => startProSwap('/', (href) => router.push(href));
   /**
    * Back to the bare workspace: both panes dropped, the composer refocused.
    *
@@ -1629,7 +1622,6 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           onOpenSession={openSession}
           onNewSession={startNewConversation}
           onGoHome={goHome}
-          onExitPro={exitPro}
           onSessionDeleted={handleSessionDeleted}
           onRenameSession={renameSession}
           onDeleteCourse={handleCourseDeleted}
@@ -1748,7 +1740,6 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           courseOptions={courseOptions}
           onOpenSession={openCreatedSession}
           onOpenSessionAfterLeaving={openCreatedSessionAfterLeaving}
-          onExitPro={exitPro}
           materialSeed={materialSeed}
           onMaterialSeedConsumed={consumeMaterialSeed}
         />

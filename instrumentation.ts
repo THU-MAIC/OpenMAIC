@@ -44,6 +44,12 @@ export async function register(): Promise<void> {
     warnIfAccessCodeIsUnset(process.env.ACCESS_CODE);
   }
 
+  // Warn-only: the workbench flag's previous name, still read until 1.4.0
+  // (lib/server/workbench-flag-deprecation.ts).
+  const { warnIfDeprecatedWorkbenchFlagIsUsed } =
+    await import('@/lib/server/workbench-flag-deprecation');
+  warnIfDeprecatedWorkbenchFlagIsUsed();
+
   // Every store's recorded schema versions, read in the background: a database
   // this release must not run against (upgraded by a newer release) stops the
   // process here rather than failing every request that touches the store

@@ -29,7 +29,6 @@ vi.mock('@/lib/hooks/use-i18n', () => ({
 vi.mock('@/lib/brand/brand-context', () => ({
   useBrand: () => ({ markSrc: '/mark.svg', logoSrc: '/logo.svg' }),
 }));
-vi.mock('@/components/workbench/ProBadge', () => ({ ProBadge: () => null }));
 vi.mock('@/components/language-switcher', () => ({ LanguageSwitcher: () => null }));
 vi.mock('@/components/site-header/theme-toggle', () => ({ ThemeToggle: () => null }));
 vi.mock('@/lib/workbench/workspace-actions', () => ({
@@ -144,7 +143,6 @@ async function renderRail(courseRuns: ReadonlyMap<string, RunSnapshot>, initial:
           onGoHome: vi.fn(),
           libraryOpen: false,
           onOpenLibrary: vi.fn(),
-          onExitPro: vi.fn(),
           onSessionDeleted: vi.fn(),
           onRenameSession: vi.fn(async () => null),
           onDeleteCourse: vi.fn(),
