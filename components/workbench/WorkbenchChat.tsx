@@ -81,6 +81,7 @@ import {
   useComposerMaterials,
   useMaterialMentions,
   useMaterialSeed,
+  useAgentSkills,
   type AgentSkillInfo,
   type MaterialSeed,
 } from './compose-extras';
@@ -658,10 +659,21 @@ export function WorkbenchChat({
    * reopens until the user types something new.
    */
   /** Backspace deletes a whole `/handle`; see the hook for the IME guard. */
-  const onSkillHandleBackspace = useSkillHandleBackspace(setDraft, (next) => {
-    pendingCaret.current = next;
-    setCaret(next);
-  });
+  // The same registry the composer's mirror layer reads, so Backspace takes a
+  // handle as one unit exactly when it is drawn as a skill pill.
+  const { skills: installedSkills } = useAgentSkills();
+  const installedSkillNames = useMemo(
+    () => installedSkills.map((skill) => skill.name),
+    [installedSkills],
+  );
+  const onSkillHandleBackspace = useSkillHandleBackspace(
+    setDraft,
+    (next) => {
+      pendingCaret.current = next;
+      setCaret(next);
+    },
+    installedSkillNames,
+  );
   const loadSkill = useCallback((skill: AgentSkillInfo) => {
     // The live selection, not the tracked state: the element is the freshest
     // answer either way.

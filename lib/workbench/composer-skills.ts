@@ -77,7 +77,8 @@ export interface SkillHandleInsertion {
  * A handle is one thing to the reader and one thing to the model, so deleting it
  * one character at a time — leaving `/k12-core-literacy-plannin`, which resolves
  * to nothing — is the wrong unit. With the caret immediately after a handle (or
- * after the space that follows it) one Backspace takes the whole run.
+ * after the space that follows it) one Backspace takes the whole run, provided the
+ * handle names an installed skill. A handle still being typed is ordinary text.
  *
  * Deliberately narrow. It fires ONLY on a collapsed caret sitting at the END of a
  * handle token; anywhere else — mid-handle, with a selection, in the middle of
@@ -86,7 +87,11 @@ export interface SkillHandleInsertion {
  * composition would break Chinese input, which is the one thing this composer may
  * never regress.
  */
-export function deleteSkillHandleBefore(draft: string, caret: number): SkillHandleInsertion | null {
+export function deleteSkillHandleBefore(
+  draft: string,
+  caret: number,
+  installedNames: readonly string[],
+): SkillHandleInsertion | null {
   if (caret <= 0 || caret > draft.length) return null;
   // The insertion leaves a single trailing space, so the caret usually sits after
   // it rather than against the handle. Step over exactly one.
@@ -99,8 +104,26 @@ export function deleteSkillHandleBefore(draft: string, caret: number): SkillHand
    * mangling this exists to prevent, in the other direction.
    */
   if (token.end !== probe) return null;
-  if (!skillHandleName(token.text)) return null;
+  /**
+   * Only a COMPLETED handle is one unit: the same test that draws it as a pill.
+   * `/deep-res` on its way to `/deep-research` resolves to nothing yet, so it is
+   * still being typed, and Backspace there must take one character, not the word.
+   */
+  if (!isInstalledSkillHandle(token.text, new Set(installedNames))) return null;
   return { draft: draft.slice(0, token.start) + draft.slice(caret), caret: token.start };
+}
+
+/**
+ * Whether a token is a handle that resolves to an installed skill.
+ *
+ * The single test for "this is a skill, not text": the mirror layer paints a pill
+ * exactly where this holds (`segmentSkillHandles`), and Backspace takes a token as
+ * one unit exactly where this holds (`deleteSkillHandleBefore`). The bare `/` spells
+ * the empty name, which no installed skill has.
+ */
+export function isInstalledSkillHandle(token: string, installed: ReadonlySet<string>): boolean {
+  const name = skillHandleName(token);
+  return !!name && installed.has(name);
 }
 
 /** One run of the draft, as the mirror layer draws it. */
@@ -139,8 +162,7 @@ export function segmentSkillHandles(
   const segments: ComposerTextSegment[] = [];
   let plainFrom = 0;
   for (const token of composerTokens(text)) {
-    const name = skillHandleName(token.text);
-    if (!name || !installed.has(name)) continue;
+    if (!isInstalledSkillHandle(token.text, installed)) continue;
     if (token.start > plainFrom)
       segments.push({ text: text.slice(plainFrom, token.start), skill: false });
     segments.push({ text: token.text, skill: true });

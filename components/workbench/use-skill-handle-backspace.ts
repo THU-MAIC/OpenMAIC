@@ -1,7 +1,8 @@
 'use client';
 
 /**
- * Backspace deletes a whole skill handle, in every composer.
+ * Backspace deletes a whole skill handle, in every composer — once the handle
+ * resolves to an installed skill. A partial handle still being typed is text.
  *
  * A handle is one object to the reader and one to the model, so character-by-
  * character deletion leaves `/k12-core-literacy-plannin` — a handle that resolves
@@ -26,6 +27,11 @@ export function useSkillHandleBackspace(
    * into a value handed to it is both a lint error here and the wrong shape.
    */
   onCaret: (caret: number) => void,
+  /**
+   * The installed skill names. Only a handle that resolves to one of them is
+   * deleted as a unit; a partial handle still being typed loses one character.
+   */
+  installedNames: readonly string[],
 ): (event: KeyboardEvent<HTMLTextAreaElement>) => boolean {
   return useCallback(
     (event) => {
@@ -34,13 +40,17 @@ export function useSkillHandleBackspace(
       const textarea = event.currentTarget;
       // A selection already has a unit of deletion: its own.
       if (textarea.selectionStart !== textarea.selectionEnd) return false;
-      const deletion = deleteSkillHandleBefore(textarea.value, textarea.selectionStart ?? 0);
+      const deletion = deleteSkillHandleBefore(
+        textarea.value,
+        textarea.selectionStart ?? 0,
+        installedNames,
+      );
       if (!deletion) return false;
       event.preventDefault();
       onCaret(deletion.caret);
       setDraft(deletion.draft);
       return true;
     },
-    [onCaret, setDraft],
+    [installedNames, onCaret, setDraft],
   );
 }
