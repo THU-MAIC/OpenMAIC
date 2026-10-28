@@ -123,7 +123,12 @@ Short containers scroll a minimum usable workbench; narrow containers stack IDE 
 assistant. Expanding and returning preserves the mounted editor and chat drafts.
 File switches preserve unsaved buffers. Unsaved files block execution and teaching
 handoffs until saved or explicitly discarded; changing environments preserves drafts
-but disables stale writes. Pending edits must finish saving before execution or an automatic recovery snapshot. Browser drafts
+and verifies each dirty tab against the recovered file before resuming saves. A
+matching base hash or an observed submitted value can reconnect the draft; a real
+file conflict keeps the draft and never silently rebases over recovered work.
+The editor names the recovered-base conflict and offers to copy the retained
+draft before the learner explicitly discards/reloads and reconciles the changes.
+Pending edits must finish saving before execution or an automatic recovery snapshot. Browser drafts
 survive scene return and same-tab refresh; closing the tab, clearing browser storage
 or using another browser is not a save. If storage is unavailable, a visible warning
 asks the learner to save or copy their work before refreshing or leaving.
@@ -131,7 +136,11 @@ All controls use the existing workspace routes, permissions and version checks.
 An explicit progress conflict refreshes the study and retains the draft for a new
 save request. Confirmed file conflicts also discard the rejected request identity,
 but never replace the draft's observed hash: concurrent file changes still require
-reconciliation. Unknown save outcomes retain the exact request for explicit retry.
+reconciliation. Environment-unavailable/changed rejections refresh environment state
+and release the rejected request identity. Recovery uses a fresh request after
+verifying the file; late outcomes from the old environment cannot freeze its
+replacement. Unknown save outcomes in the same environment retain the exact request
+for explicit retry.
 When teaching input is blocked, the composer explains the pending request, active
 reply, unavailable environment, unsaved files or unfinished opening. Environment
 restoration and failed-opening retries are available beside the draft. These

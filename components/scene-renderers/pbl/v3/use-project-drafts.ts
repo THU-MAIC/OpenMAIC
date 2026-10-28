@@ -32,6 +32,9 @@ const uiSchema = z
       key: z.string(),
       values: z.array(z.number().int().nonnegative().nullable()).max(256),
     }),
+    decisionDrafts: z
+      .record(z.string(), z.object({ chosen: z.string(), rationale: z.string() }))
+      .default({}),
     showWorkspace: z.boolean(),
     showAssistant: z.boolean(),
   })
@@ -44,6 +47,7 @@ const emptyUi = (): StudyDraft => ({
   text: '',
   textRevision: 0,
   quizAnswers: { key: '', values: [] },
+  decisionDrafts: {},
   showWorkspace: true,
   showAssistant: true,
 });
@@ -89,6 +93,25 @@ export function hasEditorDraft(id: string) {
   return Object.values(readEditorDraft(id).buffers).some((b) => b.text !== b.saved);
 }
 export const readPendingMessage = (id: string) => read(id, 'ui', uiSchema, emptyUi).pendingMessage;
+
+/** Acknowledge the submitted version only, including receipts received after scene navigation. */
+export function acknowledgeDecisionDraft(
+  studyId: string,
+  draftKey: string,
+  response: { chosen: unknown; rationale?: unknown },
+) {
+  const draft = read(studyId, 'ui', uiSchema, emptyUi);
+  const current = draft.decisionDrafts[draftKey];
+  if (
+    !current ||
+    current.chosen !== response.chosen ||
+    current.rationale !== (response.rationale ?? '')
+  )
+    return true;
+  const next = { ...draft.decisionDrafts };
+  delete next[draftKey];
+  return write(studyId, 'ui', { ...draft, decisionDrafts: next });
+}
 
 /** Keep unconfirmed text with the draft; never persist a request for automatic replay. */
 export function beginPendingMessage(studyId: string, id: string, text: string) {
@@ -183,6 +206,14 @@ export function useStudyDraft(id: string | undefined, onStorageError: () => void
     (value: boolean) => update((previous) => ({ ...previous, showWorkspace: value })),
     [update],
   );
+  const setDecisionDrafts = useCallback(
+    (next: SetStateAction<StudyDraft['decisionDrafts']>) =>
+      update((previous) => ({
+        ...previous,
+        decisionDrafts: typeof next === 'function' ? next(previous.decisionDrafts) : next,
+      })),
+    [update],
+  );
   const setShowAssistant = useCallback(
     (value: boolean) => update((previous) => ({ ...previous, showAssistant: value })),
     [update],
@@ -191,6 +222,7 @@ export function useStudyDraft(id: string | undefined, onStorageError: () => void
     ...(state.id === id ? state.value : emptyUi()),
     setText,
     setQuizAnswers,
+    setDecisionDrafts,
     setShowWorkspace,
     setShowAssistant,
   };

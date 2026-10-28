@@ -1,6 +1,7 @@
 /** Real PG + local Python execution. Model decisions are driven explicitly through the role tools. No cloud or live model calls. */
 import { beforeAll, afterAll, describe, expect, it, vi, onTestFinished } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import { DECISION_RESPONSE_MAX_LENGTH } from '@/lib/pbl/v3/domain/orchestration/decisions';
 import { mkdtemp, readFile, writeFile, mkdir, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -721,6 +722,276 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     }
     if (mocked.root) await rm(mocked.root, { recursive: true, force: true });
   });
+  it.each([false, true])(
+    'persists literal text decisions through summaries and reports (option collision: %s)',
+    async (collision) => {
+      const bundle = packageBuiltin(project);
+      const descriptor: ProjectDescriptor = JSON.parse(bundle.files['project.json']);
+      descriptor.id = descriptor.definition.id = `open-response-${randomUUID()}`;
+      const decision = descriptor.definition.decisions[0]!;
+      decision.responseType = 'text';
+      decision.requiresRationale = true;
+      if (!collision) decision.options = [];
+      bundle.files['project.json'] = JSON.stringify(descriptor);
+      const ref = await installProjectPackage(
+        principal.ownerId,
+        indexProjectFiles(descriptor.id, descriptor.version, bundle.files),
+      );
+      const stageId = randomUUID();
+      const documents = new PgDocumentStore<
+        import('@/lib/types/stage').Scene,
+        import('@/lib/types/stage').Stage
+      >(pool, { withTransaction: (fn) => store.transaction(fn), trackAssetReferences: true });
+      await documents.saveDocument({
+        stage: { id: stageId, name: 'Decision response fixture', createdAt: 1, updatedAt: 1 },
+        scenes: [
+          {
+            id: 'response',
+            stageId,
+            type: 'pbl',
+            title: 'Project',
+            order: 0,
+            content: { type: 'pbl', projectV3: ref },
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+      });
+      await claimStageMeta(pool, stageId, principal.ownerId);
+      // Seed the decision step; this is response persistence coverage, not a teaching journey.
+      const initial = startOrchestration(descriptor.definition);
+      initial.state.position.stageIndex = 1;
+      const row = await store.create(
+        {
+          ownerId: principal.ownerId,
+          stageId,
+          sceneId: 'response',
+          projectId: ref.id,
+          version: ref.version,
+          projectRef: ref,
+        },
+        initial,
+      );
+      const send = async (type: string, extra: Record<string, unknown> = {}) =>
+        commandStudy(principal, row.id, {
+          id: randomUUID(),
+          revision: (await store.get(row.id, principal.ownerId)).revision,
+          type,
+          ...extra,
+        });
+      await send('prepare');
+      const original = await store.get(row.id, principal.ownerId);
+      const counts = async () =>
+        (
+          await pool.query(
+            `SELECT
+          (SELECT count(*)::int FROM pbl_v3_commands WHERE study_id=$1) AS commands,
+          (SELECT count(*)::int FROM pbl_v3_events WHERE study_id=$1) AS events`,
+            [row.id],
+          )
+        ).rows[0];
+      const beforeCounts = await counts();
+      for (const response of [
+        { chosen: 'x'.repeat(DECISION_RESPONSE_MAX_LENGTH + 1), rationale: 'Reason' },
+        { chosen: 'Rule', rationale: 'x'.repeat(DECISION_RESPONSE_MAX_LENGTH + 1) },
+        { chosen: '学'.repeat(40_000), rationale: '学'.repeat(40_000) },
+        ...['bad\0text', '\uD800', '\uDC00'].flatMap((value) => [
+          { chosen: value, rationale: 'Reason' },
+          { chosen: 'Rule', rationale: value },
+        ]),
+      ]) {
+        // Each payload fits the route cap: enforce field and combined response limits independently.
+        expect(Buffer.byteLength(JSON.stringify(response))).toBeLessThan(256_000);
+        await expect(
+          send('decide', { decisionId: decision.id, ...response }),
+        ).rejects.toMatchObject({ status: 400 });
+        const unchanged = await store.get(row.id, principal.ownerId);
+        expect(unchanged.state).toEqual(original.state);
+        expect(unchanged.revision).toBe(original.revision);
+        expect(unchanged.last_used_at).toEqual(original.last_used_at);
+        expect(await counts()).toEqual(beforeCounts);
+      }
+      await expect(
+        send('decide', { decisionId: decision.id, chosen: 'My rule', rationale: '  ' }),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(
+        (await store.get(row.id, principal.ownerId)).state.collected.greeting!.decisions,
+      ).toEqual([]);
+      const chosen = collision
+        ? decision.options[0]!.id
+        : 'If the requested item exists, remove it.\nOtherwise keep the collection unchanged.';
+      const rationale = 'Avoid changing an unrelated item.';
+      const request = {
+        id: randomUUID(),
+        revision: original.revision,
+        type: 'decide',
+        decisionId: decision.id,
+        chosen,
+        rationale,
+      };
+      // A refused attempt may record activity but must not alter the progress revision.
+      request.revision = (await store.get(row.id, principal.ownerId)).revision;
+      await commandStudy(principal, row.id, request);
+      await commandStudy(principal, row.id, request);
+      let current = await store.get(row.id, principal.ownerId);
+      expect(current.state.collected.greeting!.decisions).toEqual([
+        { id: decision.id, chosen, rationale, revision: 0 },
+      ]);
+      expect(
+        (
+          await pool.query(
+            "SELECT count(*)::int AS n FROM pbl_v3_events WHERE study_id=$1 AND event->>'type'='decision.recorded'",
+            [row.id],
+          )
+        ).rows[0].n,
+      ).toBe(1);
+      const view = await learningView(principal, row.id);
+      expect(view.decisions[0]).toMatchObject({
+        responseType: 'text',
+        requiresRationale: true,
+        options: decision.options.map(({ id, label }) => ({ id, label })),
+      });
+      await send('decide', {
+        decisionId: decision.id,
+        chosen,
+        rationale: 'A revised explanation.',
+      });
+      const longAnswer = 'ANSWER ' + '学'.repeat(12_000);
+      const longReason = 'REASON ' + '理'.repeat(12_000);
+      expect(
+        Buffer.byteLength(JSON.stringify({ chosen: longAnswer, rationale: longReason })),
+      ).toBeGreaterThan(32_768);
+      if (!collision)
+        await send('decide', {
+          decisionId: decision.id,
+          chosen: longAnswer,
+          rationale: longReason,
+        });
+      current = await store.get(row.id, principal.ownerId);
+      current.state.position.stageIndex = 2;
+      await store.transaction((db) =>
+        store.commit(db, current, { state: current.state, events: [] }),
+      );
+      expect((await learningView(principal, row.id)).decisionSummary![0]).toMatchObject({
+        choice: collision ? chosen : longAnswer,
+        rationale: collision ? 'A revised explanation.' : longReason,
+      });
+      current = await store.get(row.id, principal.ownerId);
+      current.state.status = 'completed';
+      await store.transaction((db) =>
+        store.commit(db, current, { state: current.state, events: [] }),
+      );
+      const { learningReport } = await import('@/lib/server/pbl-v3/report');
+      const report = await learningReport(principal, row.id);
+      expect(
+        report.evidence.some((e) => e.detail.includes(chosen) && e.detail.includes(rationale)),
+      ).toBe(true);
+      if (collision)
+        expect(
+          report.evidence
+            .filter((e) => e.kind === 'decision.recorded')
+            .every((e) => !e.detail.includes(decision.options[0]!.label)),
+        ).toBe(true);
+      expect(report.facts!.decisionChanges).toBe(collision ? 1 : 2);
+      if (!collision) {
+        const retained = report.evidence.find((e) => e.learnerText?.answer.startsWith('ANSWER'))!;
+        expect(retained.learnerText?.rationale).toMatch(/^REASON/);
+        expect(retained.detail).toContain('REASON');
+        expect(retained.truncated).toBe(true);
+        expect(report.truncated).toBe(true);
+        expect(retained.learnerText!.answer.length).toBeLessThanOrEqual(4000);
+        expect(
+          (await store.get(row.id, principal.ownerId)).state.collected.greeting!.decisions[0],
+        ).toMatchObject({ chosen: longAnswer, rationale: longReason });
+      }
+      await releasePreparationFixtures([row.id]);
+    },
+  );
+
+  it('retains a bounded excerpt of a valid long learner message instead of dropping its record', async () => {
+    const study = await freshStudy();
+    onTestFinished(() => releasePreparationFixtures([study.id]));
+    const started = (await study.send('begin')) as { sessionId: string };
+    const text = 'LEARNER ' + '学'.repeat(20_000);
+    await agents.appendControlEvent(started.sessionId, {
+      ts: Date.now(),
+      type: 'user_message',
+      data: { text, pblOpening: false },
+    });
+    await pool.query("UPDATE agent_sessions SET status='succeeded' WHERE id=$1", [
+      started.sessionId,
+    ]);
+    const { learningEvidence } = await import('@/lib/server/pbl-v3/report');
+    const report = await learningEvidence(principal, study.id);
+    const message = report.conversations
+      .flatMap((c) => c.messages)
+      .find((m) => m.text.startsWith('LEARNER'))!;
+    expect(message.text.length).toBeLessThanOrEqual(12_000);
+    expect(message.role).toBe('user');
+    expect(report.truncated).toBe(true);
+    expect(
+      (await agents.readEventsAfter(started.sessionId, 0, 100)).some(
+        (e) => e.type === 'user_message' && (e.data as { text?: string }).text === text,
+      ),
+    ).toBe(true);
+    await agents.softDeleteSession(started.sessionId, principal.ownerId);
+  });
+
+  it('reserves answer and rationale excerpts for every retained decision revision within the evidence budget', async () => {
+    const study = await freshStudy();
+    onTestFinished(() => releasePreparationFixtures([study.id]));
+    const row = await store.get(study.id, principal.ownerId);
+    const revisions = 18;
+    for (let i = 1; i <= revisions; i++)
+      await pool.query('INSERT INTO pbl_v3_events(study_id,sequence,event) VALUES($1,$2,$3)', [
+        study.id,
+        row.state.lastSequence + i,
+        JSON.stringify({
+          type: 'decision.recorded',
+          milestoneId: 'greeting',
+          decisionId: 'format',
+          chosen: `ANSWER-${i} ` + '🧠'.repeat(8000),
+          rationale: `REASON-${i} ` + '🧠'.repeat(8000),
+          revision: i - 1,
+        }),
+      ]);
+    await pool.query(
+      "UPDATE pbl_v3_studies SET state=jsonb_set(state,'{lastSequence}',to_jsonb($2::int)) WHERE id=$1",
+      [study.id, row.state.lastSequence + revisions],
+    );
+    const { learningEvidence } = await import('@/lib/server/pbl-v3/report');
+    const evidence = (await learningEvidence(principal, study.id)).evidence;
+    const decisions = evidence.filter((e) => e.kind === 'decision.recorded');
+    expect(decisions).toHaveLength(revisions);
+    for (let i = 1; i <= revisions; i++) {
+      const retained = decisions.find((e) => e.sequence === row.state.lastSequence + i)!;
+      expect(retained.learnerText!.answer).toContain(`ANSWER-${i}`);
+      expect(retained.learnerText!.rationale).toContain(`REASON-${i}`);
+      expect(retained.detail).toContain(`REASON-${i}`);
+      expect(retained.decisionContext?.question).toBeTruthy();
+      expect(retained.decisionContext?.answerLabel).toContain(`ANSWER-${i}`);
+      expect(retained.truncated).toBe(true);
+      for (const text of [
+        retained.detail,
+        retained.learnerText!.answer,
+        retained.learnerText!.rationale!,
+      ])
+        expect(text.isWellFormed()).toBe(true);
+    }
+    expect(
+      evidence.reduce(
+        (n, e) =>
+          n +
+          e.detail.length +
+          (e.learnerText?.answer.length ?? 0) +
+          (e.learnerText?.rationale?.length ?? 0) +
+          (e.decisionContext?.question.length ?? 0) +
+          (e.decisionContext?.answerLabel.length ?? 0),
+        0,
+      ),
+    ).toBeLessThanOrEqual(80_000);
+  });
+
   it('leaves study admission available for unrelated interaction during slow maintenance archives', async () => {
     const previousMax = pool.options.max;
     pool.options.max = 10; // The production pool's default admits two study operations.
@@ -3784,8 +4055,16 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(report.evidence.length).toBeLessThanOrEqual(2000);
     expect(report.conversations.flatMap((c) => c.messages).length).toBeLessThanOrEqual(1000);
     const textSize =
-      report.evidence.reduce((n, e) => n + e.detail.length, 0) +
-      report.conversations.flatMap((c) => c.messages).reduce((n, m) => n + m.text.length, 0);
+      report.evidence.reduce(
+        (n, e) =>
+          n +
+          e.detail.length +
+          (e.learnerText?.answer.length ?? 0) +
+          (e.learnerText?.rationale?.length ?? 0) +
+          (e.decisionContext?.question.length ?? 0) +
+          (e.decisionContext?.answerLabel.length ?? 0),
+        0,
+      ) + report.conversations.flatMap((c) => c.messages).reduce((n, m) => n + m.text.length, 0);
     expect(textSize).toBeLessThanOrEqual(240000);
     expect(Buffer.byteLength(JSON.stringify(report))).toBeLessThan(1000000);
     expect(JSON.stringify(report)).not.toContain('OVERSIZED_');

@@ -2763,6 +2763,8 @@
       }
     },
     "ide": {
+      "recoveryConflict": "يختلف الملف المستعاد عن النسخة الأصلية لمسودتك. تم الاحتفاظ بالمسودة. انسخها قبل إعادة التحميل لمراجعة التغييرات.",
+      "copyDraft": "نسخ المسودة المحفوظة",
       "workspace": "Code workspace",
       "resize": "Resize workspace and assistant",
       "resizeFiles": "Resize file explorer",
@@ -2877,7 +2879,7 @@
       "display": "Display",
       "stopped": "Stopped"
     },
-    "environmentSleeping": "بيئة المشروع غير نشطة. تابع العمل أو استعد الملفات باستخدام الزر أدناه.",
+    "environmentSleeping": "بيئة المشروع غير نشطة. استعد ملفات المشروع باستخدام الزر أدناه للمتابعة. تبقى المسودات غير المحفوظة في هذا المتصفح.",
     "recoverWorkspace": "استعادة ملفات المشروع",
     "checkpointUnavailable": "تعذرت أرشفة أحدث التغييرات. أعد محاولة الحفظ. عند استمرار الخمول قد يتم تحرير البيئة وفقدان التغييرات غير المؤرشفة.",
     "checkpointSkipped": "فشلت الأرشفة بشكل متكرر. قد تؤدي الاستعادة إلى فقدان التغييرات الأحدث من النسخة المحفوظة.",
@@ -2903,6 +2905,13 @@
       "older": "Load earlier records",
       "failed": "Could not load history. Please retry.",
       "empty": "No saved messages in this page."
-    }
+    },
+    "decisionResponse": "Your decision",
+    "decisionRationale": "Why did you choose this?",
+    "submitDecision": "Submit decision",
+    "decisionSaved": "Response saved",
+    "decisionUnsaved": "Unsaved changes",
+    "decisionTooLong": "Responses and reasons can contain up to {max} characters each and must fit the combined encoded size limit. Shorten the text to submit.",
+    "decisionInvalidText": "The response or reason contains unsupported characters. Replace them before submitting."
   }
 }

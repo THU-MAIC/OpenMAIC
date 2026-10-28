@@ -18,6 +18,10 @@ export interface LearningReport {
     milestoneId?: string;
     kind: string;
     detail: string;
+    /** Retained literal learner input only; excludes course prompts and option labels. */
+    learnerText?: { answer: string; rationale?: string };
+    /** Separately bounded authored context; never learner quote evidence. */
+    decisionContext?: { question: string; answerLabel: string };
     version?: string;
     truncated?: boolean;
   }[];
@@ -45,6 +49,15 @@ export interface LearningReport {
     omitted: boolean;
     canRetry: boolean;
   };
+}
+
+/** Bound report text in UTF-16 units without cutting a valid surrogate pair. */
+export function reportTextExcerpt(text: string, limit: number): string {
+  let end = Math.min(text.length, Math.max(0, Math.floor(limit)));
+  const before = text.charCodeAt(end - 1),
+    after = text.charCodeAt(end);
+  if (before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff) end--;
+  return text.slice(0, end);
 }
 
 /** Keep citation IDs tied to their retained source while interleaving shared mentor and milestone roles. */

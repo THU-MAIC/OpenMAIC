@@ -48,8 +48,14 @@ export interface LearningView {
     failureCode?: import('@/lib/agent/runtime/request-failure').ExecutionFailureCode | null;
     canRetry: boolean;
   } | null;
-  decisions: { id: string; prompt: string; options: { id: string; label: string }[] }[];
-  decisionSummary?: { id: string; prompt: string; choice: string }[];
+  decisions: {
+    id: string;
+    prompt: string;
+    responseType?: 'choice' | 'text';
+    requiresRationale?: boolean;
+    options: { id: string; label: string }[];
+  }[];
+  decisionSummary?: { id: string; prompt: string; choice: string; rationale?: string }[];
   questions: { q: string; options: string[] }[];
   evaluation: {
     id: string;

@@ -8,6 +8,32 @@ import {
 } from '@openmaic/dsl';
 import type { ClassroomManifest } from '@/lib/export/classroom-zip-types';
 import { PROJECT_LIMITS, projectResourcesWithinLimits, safeProjectPath } from './package-policy';
+import { projectSchema } from './domain/project/project-schema';
+
+export const DECISION_RESPONSE_CAPABILITY = 'pbl-v3-decision-responses@1';
+function needsDecisionResponses(projects: readonly PBLProjectPackage[]) {
+  return projects
+    .map((project) => {
+      let descriptor: unknown;
+      try {
+        descriptor = JSON.parse(project.files['project.json']);
+      } catch {
+        throw new Error('Invalid JSON in project.json.');
+      }
+      const definition = projectSchema.safeParse(
+        descriptor && typeof descriptor === 'object' && 'definition' in descriptor
+          ? descriptor.definition
+          : undefined,
+      );
+      if (!definition.success) throw new Error('Invalid project definition in project.json.');
+      return definition.data;
+    })
+    .some((definition) =>
+      definition.decisions.some(
+        (decision) => decision.responseType === 'text' || decision.requiresRationale === true,
+      ),
+    );
+}
 
 async function call(body: unknown) {
   const response = await fetch('/api/pbl/v3/packages', {
@@ -34,7 +60,9 @@ export function validateClassroomPackageCompatibility(manifest: ClassroomManifes
   if (
     manifest.requiredCapabilities !== undefined &&
     (!Array.isArray(manifest.requiredCapabilities) ||
-      manifest.requiredCapabilities.some((c) => c !== PBL_PROJECT_PACKAGE_CAPABILITY))
+      manifest.requiredCapabilities.some(
+        (c) => ![PBL_PROJECT_PACKAGE_CAPABILITY, DECISION_RESPONSE_CAPABILITY].includes(c),
+      ))
   )
     throw new Error('This classroom requires unsupported import capabilities.');
   if (
@@ -96,6 +124,8 @@ export async function attachClassroomProjects(
   manifest.pblProjects = [...new Map(projects.map((p) => [p.entry.checksum, p.entry])).values()];
   manifest.formatVersion = 2;
   manifest.requiredCapabilities = [PBL_PROJECT_PACKAGE_CAPABILITY];
+  if (needsDecisionResponses(projects))
+    manifest.requiredCapabilities.push(DECISION_RESPONSE_CAPABILITY);
   for (const scene of scenes) {
     const content = scene.content as { type: 'pbl'; projectV3: PBLV3Reference };
     const { entry } = byRef.get(JSON.stringify(content.projectV3))!;
@@ -197,6 +227,11 @@ export async function installClassroomProjects(zip: JSZip, manifest: ClassroomMa
     return;
   }
   const projects = await readClassroomProjects(zip, manifest.pblProjects);
+  if (
+    needsDecisionResponses(projects) &&
+    !manifest.requiredCapabilities?.includes(DECISION_RESPONSE_CAPABILITY)
+  )
+    throw new Error('Decision response forms require pbl-v3-decision-responses@1.');
   const { references }: { references: PBLV3Reference[] } = await call({
     action: 'install',
     projects,

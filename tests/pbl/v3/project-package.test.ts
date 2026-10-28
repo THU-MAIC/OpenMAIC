@@ -20,6 +20,7 @@ import {
   validateClassroomPackageCompatibility,
   attachClassroomProjects,
   installClassroomProjects,
+  DECISION_RESPONSE_CAPABILITY,
 } from '@/lib/pbl/v3/package-client';
 import type { ClassroomManifest } from '@/lib/export/classroom-zip-types';
 import { bindPackageReferences } from '@/lib/server/pbl-v3/project-resolver';
@@ -412,6 +413,7 @@ describe('self-contained PBL project packages', () => {
     try {
       await attachClassroomProjects('original', m, files);
       expect(m.formatVersion).toBe(2);
+      expect(m.requiredCapabilities).toEqual(['pbl-v3-projects@1']);
       expect(m.pblProjects).toHaveLength(1);
       expect(files.size).toBe(Object.keys(bundle.files).length);
       const first = structuredClone(m);
@@ -425,6 +427,64 @@ describe('self-contained PBL project packages', () => {
       fetcher.mockRestore();
     }
   });
+  it('declares written decision capabilities and rejects an undeclared archive before uploading it', async () => {
+    const bundle = revised((files) => {
+      const spec = JSON.parse(files['project.json']);
+      spec.definition.decisions[0].requiresRationale = true;
+      spec.definition.decisions[0].responseType = 'text';
+      spec.definition.decisions[0].options = [];
+      files['project.json'] = JSON.stringify(spec);
+    });
+    const m = manifest();
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      const input = JSON.parse(init!.body as string);
+      if (input.action === 'install')
+        return Response.json({
+          references: [
+            { ...source().ref, assetId: 'installed-template', checksum: bundle.entry.checksum },
+          ],
+        });
+      return Response.json({ projects: input.refs.map(() => bundle) });
+    });
+    try {
+      await attachClassroomProjects('original', m, new Map());
+      expect(m.requiredCapabilities).toEqual(['pbl-v3-projects@1', DECISION_RESPONSE_CAPABILITY]);
+      const zip = await archive(bundle);
+      const undeclared = structuredClone(m);
+      undeclared.requiredCapabilities = ['pbl-v3-projects@1'];
+      fetcher.mockClear();
+      await expect(installClassroomProjects(zip, undeclared)).rejects.toThrow(
+        DECISION_RESPONSE_CAPABILITY,
+      );
+      expect(fetcher).not.toHaveBeenCalled();
+      await installClassroomProjects(zip, m);
+      expect(fetcher).toHaveBeenCalledOnce();
+      expect(m.scenes[0].content).toMatchObject({ projectV3: { checksum: bundle.entry.checksum } });
+    } finally {
+      fetcher.mockRestore();
+    }
+  });
+  it.each(['{', 'null', '{}', '{"definition":{"decisions":[]}}'])(
+    'rejects malformed descriptors through a validation error before installing: %s',
+    async (descriptor) => {
+      const bundle = revised((files) => {
+        files['project.json'] = descriptor;
+      });
+      const m = manifest();
+      m.formatVersion = 2;
+      m.requiredCapabilities = ['pbl-v3-projects@1'];
+      m.pblProjects = [bundle.entry];
+      const fetcher = vi.spyOn(globalThis, 'fetch');
+      try {
+        await expect(installClassroomProjects(await archive(bundle), m)).rejects.toThrow(
+          /Invalid (JSON|project definition)/,
+        );
+        expect(fetcher).not.toHaveBeenCalled();
+      } finally {
+        fetcher.mockRestore();
+      }
+    },
+  );
   it('rejects unsupported formats/capabilities and unbound references; preserves ordinary v1 archives', () => {
     expect(() => validateClassroomPackageCompatibility(manifest())).not.toThrow();
     expect(() =>

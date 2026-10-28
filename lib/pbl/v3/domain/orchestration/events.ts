@@ -22,6 +22,7 @@ export type OrchestrationEvent =
       decisionId: string;
       recordId: string;
       chosen?: string;
+      rationale?: string;
       revision: number;
     }
   /**

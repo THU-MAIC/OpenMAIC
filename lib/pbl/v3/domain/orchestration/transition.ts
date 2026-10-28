@@ -3,7 +3,7 @@ import type {
   ProjectDefinition,
   StudentAction,
 } from '../project/project-schema';
-import { recordDecision } from './decisions';
+import { recordDecision, isDecisionResponseValid } from './decisions';
 import type { EngineTransition, OrchestrationEvent } from './events';
 import { createRemediationHint } from './remediation';
 import { createPblSessionState, currentMilestone, currentStage } from './state';
@@ -344,7 +344,7 @@ export function completeArtifactReview(
 export function submitDecision(
   project: ProjectDefinition,
   state: PblSessionState,
-  input: { decisionId: string; chosen: string; recordId: string },
+  input: { decisionId: string; chosen: string; rationale?: string; recordId: string },
 ): EngineTransition {
   const milestone = currentMilestone(project, state);
   const stage = currentStage(project, state);
@@ -354,12 +354,18 @@ export function submitDecision(
     );
   }
   const collected = state.collected[milestone.id];
+  const definition = project.decisions.find((decision) => decision.id === input.decisionId);
+  if (!definition || !isDecisionResponseValid(definition, input))
+    throw new InvalidEngineTransitionError(
+      'A valid decision response and any required rationale are needed',
+    );
   if (!collected)
     throw new InvalidEngineTransitionError(`missing collected state for ${milestone.id}`);
   const nextProgress = recordDecision(
     { decisions: collected.decisions },
     input.decisionId,
     input.chosen,
+    input.rationale,
   );
   const decision = nextProgress.decisions.find((candidate) => candidate.id === input.decisionId)!;
   const event: OrchestrationEvent = {
@@ -368,6 +374,7 @@ export function submitDecision(
     decisionId: input.decisionId,
     recordId: input.recordId,
     chosen: decision.chosen,
+    ...(decision.rationale === undefined ? {} : { rationale: decision.rationale }),
     revision: decision.revision,
   };
   const nextState: PblSessionState = {

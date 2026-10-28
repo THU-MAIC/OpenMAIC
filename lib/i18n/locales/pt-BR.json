@@ -2763,6 +2763,8 @@
       }
     },
     "ide": {
+      "recoveryConflict": "O arquivo restaurado difere da versão base do seu rascunho. O rascunho foi mantido. Copie-o antes de recarregar para comparar as alterações.",
+      "copyDraft": "Copiar rascunho mantido",
       "workspace": "Code workspace",
       "resize": "Resize workspace and assistant",
       "resizeFiles": "Resize file explorer",
@@ -2877,7 +2879,7 @@
       "display": "Display",
       "stopped": "Stopped"
     },
-    "environmentSleeping": "O ambiente do projeto está inativo. Continue trabalhando ou restaure os arquivos abaixo.",
+    "environmentSleeping": "O ambiente do projeto está inativo. Restaure os arquivos do projeto pelo botão abaixo para continuar. Os rascunhos não salvos ficam neste navegador.",
     "recoverWorkspace": "Restaurar arquivos do projeto",
     "checkpointUnavailable": "Não foi possível arquivar as últimas alterações. Tente salvar novamente. Se ficar inativo, o ambiente poderá ser liberado e alterações não arquivadas poderão ser perdidas.",
     "checkpointSkipped": "O arquivamento falhou repetidamente. A recuperação pode perder alterações posteriores ao salvamento.",
@@ -2903,6 +2905,13 @@
       "older": "Load earlier records",
       "failed": "Could not load history. Please retry.",
       "empty": "No saved messages in this page."
-    }
+    },
+    "decisionResponse": "Your decision",
+    "decisionRationale": "Why did you choose this?",
+    "submitDecision": "Submit decision",
+    "decisionSaved": "Response saved",
+    "decisionUnsaved": "Unsaved changes",
+    "decisionTooLong": "Responses and reasons can contain up to {max} characters each and must fit the combined encoded size limit. Shorten the text to submit.",
+    "decisionInvalidText": "The response or reason contains unsupported characters. Replace them before submitting."
   }
 }

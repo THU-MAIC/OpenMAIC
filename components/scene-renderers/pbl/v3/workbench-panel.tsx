@@ -410,6 +410,24 @@ export function LearningWorkbenchPanel({
                 </button>
               )}
             </div>
+            {editor.recoveryConflict && (
+              <div
+                role="alert"
+                className="flex items-center gap-2 border-b bg-amber-500/10 px-3 py-2 text-xs"
+              >
+                <p className="flex-1">{t('pblV3.ide.recoveryConflict')}</p>
+                <button
+                  className={button}
+                  onClick={() =>
+                    void navigator.clipboard
+                      .writeText(buffer?.text ?? '')
+                      .catch((error) => setError((error as Error).message))
+                  }
+                >
+                  {t('pblV3.ide.copyDraft')}
+                </button>
+              </div>
+            )}
             <div className="relative min-h-0 flex-1">
               {buffer ? (
                 <CodeEditor

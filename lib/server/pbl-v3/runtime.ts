@@ -33,6 +33,13 @@ import type { AgentRole } from '@/lib/pbl/v3/domain/project/project-schema';
 import { currentStage, currentMilestone } from '@/lib/pbl/v3/domain/orchestration/state';
 import * as transitions from '@/lib/pbl/v3/domain/orchestration/transition';
 import { judgeQuiz } from '@/lib/pbl/v3/domain/orchestration/quiz';
+import {
+  DECISION_RESPONSE_MAX_LENGTH,
+  decisionResponseLabel,
+  isDecisionResponseValid,
+  isDecisionResponseWithinLimits,
+  isDecisionResponseStorable,
+} from '@/lib/pbl/v3/domain/orchestration/decisions';
 import type { EngineTransition } from '@/lib/pbl/v3/domain/orchestration/events';
 import { assertProjectSource, projectFiles } from './workspace-files';
 import { assertLearningPlan } from './plan';
@@ -345,6 +352,7 @@ export interface LearningCommand {
   expectedHash?: string;
   decisionId?: string;
   chosen?: string;
+  rationale?: string;
   answers?: number[];
   evaluationId?: string;
 }
@@ -363,6 +371,14 @@ function validateCommand(command: LearningCommand) {
     (typeof command.text !== 'string' || command.text.length > 64_000)
   )
     throw sandboxInvalid('Text is limited to 64000 characters.');
+  if (command.type === 'decide' && !isDecisionResponseStorable(command))
+    throw sandboxInvalid(
+      'Decision responses must contain valid Unicode text without null characters.',
+    );
+  if (command.type === 'decide' && !isDecisionResponseWithinLimits(command))
+    throw sandboxInvalid(
+      `Decision responses and rationales are limited to ${DECISION_RESPONSE_MAX_LENGTH} characters each and must fit the combined encoded response budget.`,
+    );
   if (
     command.evaluationId !== undefined &&
     (typeof command.evaluationId !== 'string' || !/^[a-f0-9-]{36}$/.test(command.evaluationId))
@@ -775,11 +791,12 @@ export async function commandStudy(
     } else if (command.type === 'decide') {
       check('decide');
       const decision = definition.decisions.find((d) => d.id === command.decisionId);
-      if (!decision?.options.some((o) => o.id === command.chosen))
-        throw sandboxInvalid('Choose one of the current decision options.');
+      if (!decision || !isDecisionResponseValid(decision, command))
+        throw sandboxInvalid('Provide a valid decision response and its required rationale.');
       transition = transitions.submitDecision(definition, row.state, {
         decisionId: decision.id,
         chosen: command.chosen!,
+        ...(command.rationale === undefined ? {} : { rationale: command.rationale }),
         recordId: command.id,
       });
     } else if (command.type === 'quiz') {
@@ -1198,9 +1215,8 @@ export async function learningView(
             return {
               id: selected.id,
               prompt: definition?.desc ?? selected.id,
-              choice:
-                definition?.options.find((option) => option.id === selected.chosen)?.label ??
-                selected.chosen,
+              choice: decisionResponseLabel(definition, selected.chosen),
+              ...(selected.rationale === undefined ? {} : { rationale: selected.rationale }),
             };
           })
         : [],
@@ -1211,6 +1227,10 @@ export async function learningView(
             .map((d) => ({
               id: d.id,
               prompt: d.decisionPrompt,
+              ...(d.responseType === undefined ? {} : { responseType: d.responseType }),
+              ...(d.requiresRationale === undefined
+                ? {}
+                : { requiresRationale: d.requiresRationale }),
               options: d.options.map((o) => ({ id: o.id, label: o.label })),
             }))
         : [],

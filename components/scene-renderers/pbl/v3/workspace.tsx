@@ -14,10 +14,11 @@ import {
   LoaderCircle,
 } from 'lucide-react';
 import { useLearningStream } from './use-learning-stream';
+import { DecisionResponseForm } from './decision-response';
 import { useLearningObservation } from './use-learning-observation';
 import { useLearnerMessage } from './use-learner-message';
 import { useTheme } from '@/lib/hooks/use-theme';
-import { hasEditorDraft, useStudyDraft } from './use-project-drafts';
+import { acknowledgeDecisionDraft, hasEditorDraft, useStudyDraft } from './use-project-drafts';
 import { WorkbenchSplit } from './workbench-split';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -73,6 +74,8 @@ function PBLV3WorkspaceContent({
     pendingMessage: savedMessage,
     quizAnswers,
     setQuizAnswers,
+    decisionDrafts,
+    setDecisionDrafts,
     showWorkspace,
     setShowWorkspace,
     showAssistant,
@@ -99,6 +102,7 @@ function PBLV3WorkspaceContent({
     payload: Record<string, unknown>;
     id: string;
     revision: number;
+    milestoneId: string | null;
   } | null>(null);
   const studyId = view?.id;
   const receiveSnapshot = useCallback(
@@ -158,7 +162,13 @@ function PBLV3WorkspaceContent({
       const request =
         repeat && retry.current
           ? retry.current
-          : { type, payload, id: crypto.randomUUID(), revision: view.revision };
+          : {
+              type,
+              payload,
+              id: crypto.randomUUID(),
+              revision: view.revision,
+              milestoneId: view.state.position.milestoneId,
+            };
       retry.current = request;
       setPendingAction(request.type);
       if (request.type === 'decide')
@@ -182,6 +192,15 @@ function PBLV3WorkspaceContent({
             },
           },
         );
+        if (
+          request.type === 'decide' &&
+          !acknowledgeDecisionDraft(
+            view.id,
+            `${request.milestoneId}:${request.payload.decisionId}`,
+            { chosen: request.payload.chosen, rationale: request.payload.rationale },
+          )
+        )
+          storageError();
         updateView(result.view, baseline);
         if (result.result?.stale) setError(t('pblV3.testResult.stale'));
         retry.current = null;
@@ -201,7 +220,7 @@ function PBLV3WorkspaceContent({
         setPending(false);
       }
     },
-    [view, updateView, refresh, t, beginMessage, finishMessage, latestView],
+    [view, updateView, refresh, t, beginMessage, finishMessage, latestView, storageError],
   );
   const [preparationFailed, setPreparationFailed] = useState(false);
   const preparationAttempt = useRef('');
@@ -539,7 +558,11 @@ function PBLV3WorkspaceContent({
                     if (
                       error instanceof SandboxRequestError &&
                       error.status === 409 &&
-                      error.reason === 'PROGRESS_CHANGED'
+                      [
+                        'PROGRESS_CHANGED',
+                        'ENVIRONMENT_UNAVAILABLE',
+                        'ENVIRONMENT_CHANGED',
+                      ].includes(error.reason ?? '')
                     )
                       await refresh().catch(() => {});
                     throw error;
@@ -753,41 +776,34 @@ function PBLV3WorkspaceContent({
                         pendingAction={pendingAction}
                       />
                     )}
-                    {view.decisions.map((decision) => (
-                      <fieldset key={decision.id}>
-                        <legend>{decision.prompt}</legend>
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {decision.options.map((option) => (
-                            <button
-                              key={option.id}
-                              className={button}
-                              aria-busy={
-                                pendingDecision?.id === decision.id &&
-                                pendingDecision.chosen === option.id
-                              }
-                              aria-pressed={
-                                pendingDecision?.id === decision.id
-                                  ? pendingDecision.chosen === option.id
-                                  : view.state.collected[
-                                      view.state.position.milestoneId ?? ''
-                                    ]?.decisions.some(
-                                      (d) => d.id === decision.id && d.chosen === option.id,
-                                    )
-                              }
-                              disabled={disabled}
-                              onClick={() =>
-                                void command('decide', {
-                                  decisionId: decision.id,
-                                  chosen: option.id,
-                                })
-                              }
-                            >
-                              {option.label}
-                            </button>
-                          ))}
-                        </div>
-                      </fieldset>
-                    ))}
+                    {view.decisions.map((decision) => {
+                      const draftKey = `${view.state.position.milestoneId}:${decision.id}`;
+                      const selected = view.state.collected[
+                        view.state.position.milestoneId ?? ''
+                      ]?.decisions.find((d) => d.id === decision.id);
+                      return (
+                        <DecisionResponseForm
+                          key={`${view.id}:${draftKey}`}
+                          decision={decision}
+                          selected={selected}
+                          draft={decisionDrafts[draftKey]}
+                          disabled={disabled}
+                          pendingChosen={
+                            pendingDecision?.id === decision.id ? pendingDecision.chosen : undefined
+                          }
+                          onDraftChange={(draft) =>
+                            setDecisionDrafts((previous) => ({ ...previous, [draftKey]: draft }))
+                          }
+                          onSubmit={(chosen, rationale) =>
+                            command('decide', {
+                              decisionId: decision.id,
+                              chosen,
+                              ...(rationale === undefined ? {} : { rationale }),
+                            })
+                          }
+                        />
+                      );
+                    })}
                     {view.questions.map((question, index) => (
                       <fieldset key={index}>
                         <legend>{question.q}</legend>

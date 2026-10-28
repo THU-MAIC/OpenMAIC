@@ -2763,6 +2763,8 @@
       }
     },
     "ide": {
+      "recoveryConflict": "恢復的檔案與草稿底稿不同。草稿仍保留；請先複製草稿，再重新載入並核對修改。",
+      "copyDraft": "複製保留的草稿",
       "workspace": "Code workspace",
       "resize": "Resize workspace and assistant",
       "resizeFiles": "Resize file explorer",
@@ -2877,7 +2879,7 @@
       "display": "展示",
       "stopped": "已停止"
     },
-    "environmentSleeping": "專案環境已休眠。繼續操作即可恢復，也可以按下方按鈕恢復專案檔案。",
+    "environmentSleeping": "專案環境已休眠。請按下方「恢復專案檔案」後繼續，未儲存的草稿會保留在目前瀏覽器中。",
     "recoverWorkspace": "恢復專案檔案",
     "checkpointUnavailable": "最新修改未能封存，請重試儲存。若持續閒置，環境可能被釋放，未封存的修改可能遺失。",
     "checkpointSkipped": "封存持續失敗，復原時可能遺失已封存版本之後的修改。",
@@ -2903,6 +2905,13 @@
       "older": "載入更早記錄",
       "failed": "歷史記錄載入失敗，請重試。",
       "empty": "本頁暫無對話內容。"
-    }
+    },
+    "decisionResponse": "你的決策",
+    "decisionRationale": "為什麼這樣決定？",
+    "submitDecision": "提交決策",
+    "decisionSaved": "回答已儲存",
+    "decisionUnsaved": "修改尚未提交",
+    "decisionTooLong": "回答和理由各最多 {max} 個字元，合計還需符合編碼後的大小限制。請縮短後再提交。",
+    "decisionInvalidText": "回答或理由中含有無法儲存的字元，請替換這些字元後再提交。"
   }
 }

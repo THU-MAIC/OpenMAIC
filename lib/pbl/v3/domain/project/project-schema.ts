@@ -119,6 +119,8 @@ const decisionDefinitionSchema = z.object({
   kind: decisionKindSchema.default('architecture'),
   desc: nonEmptyString,
   decisionPrompt: nonEmptyString,
+  responseType: z.enum(['choice', 'text']).optional(),
+  requiresRationale: z.boolean().optional(),
   options: z.array(
     z.object({ id: nonEmptyString, label: nonEmptyString, summary: nonEmptyString }),
   ),

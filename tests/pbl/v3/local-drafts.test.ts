@@ -6,6 +6,7 @@ vi.mock('@/lib/i18n', () => ({ getClientTranslation: (key: string) => key }));
 import { useProjectEditor } from '@/components/scene-renderers/pbl/v3/use-project-editor';
 import { SandboxRequestError } from '@/components/sandbox/client';
 import {
+  acknowledgeDecisionDraft,
   readEditorDraft,
   useStudyDraft,
 } from '@/components/scene-renderers/pbl/v3/use-project-drafts';
@@ -74,7 +75,62 @@ afterEach(async () => {
 });
 
 describe('study-scoped local drafts', () => {
-  it('retains dirty file tabs on scene return, isolates another study and refuses to save into a replaced environment', async () => {
+  it('acknowledges only the submitted decision version in its original study and milestone', async () => {
+    const id = `decision-receipt-${sequence++}`;
+    const response = { chosen: 'Submitted rule', rationale: 'Submitted reason' };
+    await mount(createElement(Ui, { id }));
+    await act(async () => {
+      ui.setDecisionDrafts({ 'first:rule': response, 'second:rule': response });
+      ui.setText('Independent chat draft');
+    });
+    await leave();
+    await mount(createElement(Ui, { id: `${id}-other` }));
+    await act(async () => ui.setDecisionDrafts({ 'first:rule': response }));
+    await act(async () => acknowledgeDecisionDraft(id, 'first:rule', response));
+    expect(ui.decisionDrafts).toEqual({ 'first:rule': response });
+    await leave();
+    await mount(createElement(Ui, { id }));
+    expect(ui.decisionDrafts).toEqual({ 'second:rule': response });
+    expect(ui.text).toBe('Independent chat draft');
+    await act(async () =>
+      ui.setDecisionDrafts({
+        'first:rule': { ...response, rationale: 'Newer reason' },
+      }),
+    );
+    await act(async () => acknowledgeDecisionDraft(id, 'first:rule', response));
+    expect(ui.decisionDrafts['first:rule']?.rationale).toBe('Newer reason');
+    await act(async () =>
+      ui.setDecisionDrafts({
+        'first:rule': { ...response, chosen: 'Newer rule' },
+      }),
+    );
+    await act(async () => acknowledgeDecisionDraft(id, 'first:rule', response));
+    expect(ui.decisionDrafts['first:rule']?.chosen).toBe('Newer rule');
+  });
+
+  it('restores unsent decision text and rationale only within the same study', async () => {
+    const id = `decision-${sequence++}`;
+    await mount(createElement(Ui, { id }));
+    await act(async () =>
+      ui.setDecisionDrafts({
+        'stage:rule': { chosen: 'My rule\nwith two branches', rationale: 'My reason' },
+      }),
+    );
+    await leave();
+    await mount(createElement(Ui, { id: `${id}-other` }));
+    expect(ui.decisionDrafts).toEqual({});
+    await leave();
+    await mount(createElement(Ui, { id }));
+    expect(ui.decisionDrafts['stage:rule']).toEqual({
+      chosen: 'My rule\nwith two branches',
+      rationale: 'My reason',
+    });
+    await act(async () => ui.setText('Keep this independent chat draft.'));
+    await act(async () => ui.setDecisionDrafts({}));
+    expect(ui.text).toBe('Keep this independent chat draft.');
+  });
+
+  it('retains dirty tabs, isolates another study and refuses to overwrite changed files after replacement', async () => {
     const id = `editor-${sequence++}`;
     await mount(createElement(Editor, { value: view(id) }));
     await act(async () => editor.edit('Unsent plan'));
@@ -90,6 +146,8 @@ describe('study-scoped local drafts', () => {
     expect(read).not.toHaveBeenCalled();
     expect(save).not.toHaveBeenCalled();
     await leave();
+    read.mockResolvedValueOnce({ text: 'Different recovered source', hash: 'c'.repeat(64) });
+    read.mockResolvedValueOnce({ text: 'Different recovered plan', hash: 'd'.repeat(64) });
     await mount(createElement(Editor, { value: view(id, 'environment-two') }));
     expect(editor.stale).toBe(true);
     expect(editor.buffer?.text).toBe('Unsent code');
@@ -99,6 +157,195 @@ describe('study-scoped local drafts', () => {
     await mount(createElement(Editor, { value: view(`another-${sequence++}`) }));
     expect(editor.buffer?.text).toBe('Saved source');
     expect(editor.anyDirty).toBe(false);
+  });
+  it.each([false, true])(
+    'recovers a rejected save after environment replacement (reload: %s) without discarding newer typing',
+    async (reload) => {
+      const id = `restored-save-${sequence++}`;
+      await mount(createElement(Editor, { value: view(id) }));
+      vi.useFakeTimers();
+      save.mockRejectedValueOnce(
+        new SandboxRequestError(
+          'Restore the environment',
+          409,
+          'SANDBOX_CONFLICT',
+          'ENVIRONMENT_UNAVAILABLE',
+        ),
+      );
+      await act(async () => editor.edit('Rejected draft'));
+      await act(async () => vi.advanceTimersByTimeAsync(750));
+      const rejected = save.mock.calls[0]![3];
+      await act(async () => editor.edit('Newer retained typing'));
+      await act(async () =>
+        root!.render(
+          createElement(Editor, {
+            value: { ...view(id), environment: { ready: false } } as LearningView,
+            enabled: false,
+          }),
+        ),
+      );
+      if (reload) {
+        await leave();
+        await mount(createElement(Editor, { value: view(id, 'environment-two') }));
+      } else
+        await act(async () =>
+          root!.render(
+            createElement(Editor, { value: { ...view(id, 'environment-two'), revision: 2 } }),
+          ),
+        );
+      expect(editor.stale).toBe(false);
+      expect(editor.buffer?.text).toBe('Newer retained typing');
+      expect(editor.buffer?.saved).toBe('Saved source');
+      expect(editor.saveError).toBe('');
+      await act(async () => vi.advanceTimersByTimeAsync(750));
+      expect(save).toHaveBeenCalledTimes(2);
+      expect(save.mock.calls[1]?.slice(0, 3)).toEqual([
+        'PLAN.md',
+        'Newer retained typing',
+        'a'.repeat(64),
+      ]);
+      expect(save.mock.calls[1]?.[3].id).not.toBe(rejected.id);
+      expect(editor.anyDirty).toBe(false);
+    },
+  );
+
+  it('recovers an unavailable save when the same environment becomes ready again', async () => {
+    const id = `same-environment-${sequence++}`;
+    await mount(createElement(Editor, { value: view(id) }));
+    vi.useFakeTimers();
+    save.mockRejectedValueOnce(
+      new SandboxRequestError('Restore first', 409, 'SANDBOX_CONFLICT', 'ENVIRONMENT_UNAVAILABLE'),
+    );
+    await act(async () => editor.edit('Retained source'));
+    await act(async () => vi.advanceTimersByTimeAsync(750));
+    await act(async () =>
+      root!.render(
+        createElement(Editor, {
+          value: { ...view(id), environment: { ready: false } } as LearningView,
+          enabled: false,
+        }),
+      ),
+    );
+    await act(async () =>
+      root!.render(createElement(Editor, { value: { ...view(id), revision: 2 } })),
+    );
+    expect(editor.saveError).toBe('');
+    await act(async () => vi.advanceTimersByTimeAsync(750));
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(editor.anyDirty).toBe(false);
+  });
+
+  it('never overwrites a conflicting restored file or loses the local draft', async () => {
+    const id = `restore-conflict-${sequence++}`;
+    await mount(createElement(Editor, { value: view(id) }));
+    vi.useFakeTimers();
+    await act(async () => editor.edit('My retained source'));
+    read.mockResolvedValueOnce({ text: 'Changed by another writer', hash: 'd'.repeat(64) });
+    await act(async () =>
+      root!.render(createElement(Editor, { value: view(id, 'environment-two') })),
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(2000));
+    expect(editor.stale).toBe(true);
+    expect(editor.buffer?.text).toBe('My retained source');
+    expect(editor.recoveryConflict).toBe(true);
+    expect(readEditorDraft(id).buffers['PLAN.md']?.text).toBe('My retained source');
+    expect(save).not.toHaveBeenCalled();
+    await act(async () => editor.reload());
+    expect(editor.recoveryConflict).toBe(false);
+    expect(editor.stale).toBe(false);
+  });
+
+  it('recovers all dirty tabs while respecting current editing permissions', async () => {
+    const id = `restore-tabs-${sequence++}`;
+    await mount(createElement(Editor, { value: view(id) }));
+    vi.useFakeTimers();
+    await act(async () => editor.edit('Retained plan'));
+    await act(async () => editor.select('main.py'));
+    await act(async () => editor.edit('Retained code'));
+    await act(async () =>
+      root!.render(createElement(Editor, { value: view(id, 'environment-two'), writable: false })),
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    expect(save).not.toHaveBeenCalled();
+    expect(editor.stale).toBe(false);
+    await act(async () =>
+      root!.render(
+        createElement(Editor, { value: { ...view(id, 'environment-two'), revision: 2 } }),
+      ),
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(750));
+    expect(save.mock.calls.map((call) => call.slice(0, 2))).toEqual([
+      ['main.py', 'Retained code'],
+      ['PLAN.md', 'Retained plan'],
+    ]);
+    expect(editor.anyDirty).toBe(false);
+  });
+
+  it('reconciles an uncertain old save observed in the restored file before saving newer typing', async () => {
+    const id = `restored-ack-${sequence++}`;
+    await mount(createElement(Editor, { value: view(id) }));
+    vi.useFakeTimers();
+    save.mockRejectedValueOnce(new Error('Acknowledgement lost'));
+    await act(async () => editor.edit('Submitted source'));
+    await act(async () => vi.advanceTimersByTimeAsync(750));
+    const request = save.mock.calls[0]![3];
+    await act(async () => editor.edit('Newer source'));
+    read.mockResolvedValueOnce({ text: 'Submitted source', hash: 'c'.repeat(64) });
+    await act(async () =>
+      root!.render(createElement(Editor, { value: view(id, 'environment-two') })),
+    );
+    expect(editor.buffer?.saved).toBe('Submitted source');
+    expect(editor.buffer?.text).toBe('Newer source');
+    await act(async () => vi.advanceTimersByTimeAsync(750));
+    expect(save.mock.calls[1]?.slice(0, 3)).toEqual(['PLAN.md', 'Newer source', 'c'.repeat(64)]);
+    expect(save.mock.calls[1]?.[3].id).not.toBe(request.id);
+    expect(editor.anyDirty).toBe(false);
+  });
+
+  it('does not let a late failure from the released environment freeze the recovered editor', async () => {
+    const id = `late-recovery-${sequence++}`;
+    let reject!: (error: Error) => void;
+    save.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, fail) => {
+          reject = fail;
+        }),
+    );
+    await mount(createElement(Editor, { value: view(id) }));
+    await act(async () => editor.edit('Submitted source'));
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = editor.save();
+    });
+    await act(async () => editor.edit('Newer retained source'));
+    await act(async () =>
+      root!.render(createElement(Editor, { value: view(id, 'environment-two') })),
+    );
+    expect(editor.stale).toBe(false);
+    await act(async () => {
+      reject(new Error('Old workspace disconnected'));
+      await pending;
+    });
+    expect(save.mock.calls[1]?.slice(0, 3)).toEqual([
+      'PLAN.md',
+      'Newer retained source',
+      'a'.repeat(64),
+    ]);
+    expect(editor.saveError).toBe('');
+    expect(editor.anyDirty).toBe(false);
+  });
+
+  it('recognizes a draft already present in the restored file after a page reload', async () => {
+    const id = `reload-ack-${sequence++}`;
+    await mount(createElement(Editor, { value: view(id) }));
+    await act(async () => editor.edit('Already saved source'));
+    await leave();
+    read.mockResolvedValueOnce({ text: 'Already saved source', hash: 'c'.repeat(64) });
+    await mount(createElement(Editor, { value: view(id, 'environment-two') }));
+    expect(editor.stale).toBe(false);
+    expect(editor.anyDirty).toBe(false);
+    expect(editor.buffer?.text).toBe('Already saved source');
+    expect(save).not.toHaveBeenCalled();
   });
   it('does not let a late save acknowledgement erase a newer draft after scene navigation', async () => {
     const id = `late-${sequence++}`;

@@ -93,6 +93,76 @@ export. Their virtual requirements/pedagogy paths become `docs`/`skills`. A
 receiving installation needs no static registration. Re-export preserves stored
 resource bytes instead of reconstructing them from a later built-in definition.
 
+## Decision response forms
+
+Decision definitions may set `responseType: "text"` and `options: []` for an
+open-ended response. Omitting `responseType` keeps existing option buttons.
+Text forms ignore any retained options and preserve the literal response; choice
+definitions should provide at least one option.
+`requiresRationale: true` adds a required explanation field to either format;
+choice forms then use an explicit Submit decision button. The server validates
+nonempty responses, required rationales and option membership. Saving a response
+records a learner proposal; it does not certify its engineering correctness.
+Teaching materials remain responsible for reviewing reasoning and explaining gaps.
+Each submitted response and rationale is limited to 64,000 UTF-16 code units,
+matching chat input. The command boundary rejects oversized fields before any
+study activity, command receipt or decision event is written; direct domain
+transitions enforce the same limit. Forms use the shared rule and HTML `maxlength`,
+and retain oversized restored drafts for editing instead of silently truncating
+them. Existing stored responses remain readable without rewriting history. The
+combined JSON-encoded strings must also fit 192,000 UTF-8 bytes, leaving room for
+command metadata beneath the HTTP route's separate 256,000-byte cap. This includes
+JSON escaping and Unicode encoding; the form displays an error and preserves the
+draft when either limit is exceeded.
+NUL and unpaired UTF-16 surrogates are rejected before writes because PostgreSQL
+JSONB cannot store them. The form preserves such drafts for correction; valid
+Unicode and literal escape sequences are accepted without rewriting learner text.
+
+Responses and rationales remain together in study state, versioned decision events,
+role artifact projections, production summaries and report evidence. Report
+decision-change totals count revisions to either the response or its rationale,
+including rationale-only edits. Unsubmitted form drafts use the existing
+study-scoped browser draft store and never replay a
+command automatically. A successful submission or explicit retry clears only its
+matching draft, preserving later edits. Dialogue Agents receive the current
+milestone's submitted responses and rationales in both their initial prompt and
+live context as quoted, untrusted learner data; other stages retain their declared
+artifact access. Text responses
+remain literal in summaries and reports even if an authored option has a matching
+ID. Existing course packages and saved decisions remain valid;
+no database migration or new model/provider is required. Archives using either
+new response format declare `pbl-v3-decision-responses@1` alongside
+`pbl-v3-projects@1`, so older readers reject them before importing an unusable
+form. Export adds this requirement automatically.
+
+Reports retain separate bounded excerpts of a decision's literal answer and
+rationale instead of dropping valid events above the generic 32 KiB JSON guard.
+Long learner chat receives bounded text excerpts as well. Clipping is explicit and
+does not rewrite durable records. Formal decisions receive presentation space
+before generated artifacts, and analysis sampling prioritizes learner input over
+generated records while keeping chronological citations and existing budgets.
+Only retained literal learner text can support a learner quote; authored prompts,
+option labels and Agent prose cannot masquerade as learner-authored evidence.
+Raw tool output remains excluded from report analysis.
+Each retained decision revision receives an equal excerpt allowance before any
+revision spends the evidence budget; that budget includes literal quote-provenance
+fields and separately retained authored context as well as display text. Question
+and selected-option excerpts have independent space in the model input, so a long
+question cannot consume the selected option's allowance. Older saved reports fall
+back to their existing combined context. All quote fields require learner-only
+text visible in the actual model input, including journey/next findings; unquoted
+journey/next facts may still cite Agent actions/results. Omitted source IDs and
+clipped-away quotes cannot substantiate findings. Validation uses only the bounded
+learner segments, even if a clipped-away phrase is also visible in course context.
+Quotes must match literally, including whitespace. Excerpts preserve surrogate pairs.
+
+The quoted learner-decision block is bounded to 64 KiB in both initial role prompts
+and live dialogue updates. Normal proposals remain verbatim. Oversized cumulative
+input becomes an explicitly incomplete, Unicode-safe excerpt; the Agent must ask
+for concise clarification before relying on missing behavior, rather than guess.
+Saved responses, revisions and approval/workflow gates are unchanged. This bounds
+one model-input component, not total teaching time, conversation or tool use.
+
 ## Runtime profiles and private resources
 
 Version 1 registers `python3` and `java`. The platform generates builds from
