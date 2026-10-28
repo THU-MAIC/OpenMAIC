@@ -4,7 +4,8 @@ import type { AgentTool } from '@earendil-works/pi-agent-core';
 
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
 import type { Scene } from '@/lib/types/stage';
-import { TTS_PROVIDERS, type TTSProviderId } from '@/lib/audio/constants';
+import { TTS_PROVIDERS } from '@/lib/audio/constants';
+import type { TTSProviderId } from '@/lib/audio/types';
 import { BROWSER_NATIVE_TTS_PROVIDER_ID } from '@/lib/audio/provider-enablement';
 import { isServerProviderDisabled } from '@/lib/server/provider-config';
 import type { MediaConnection } from '@/lib/server/model-config/media';
