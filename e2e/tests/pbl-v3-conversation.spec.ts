@@ -732,6 +732,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   const originalUrl = page.url();
   const fileLink = page.getByRole('link', { name: 'src/main.py:30–32', exact: true });
   await expect(fileLink).toBeVisible();
+  await page.getByRole('button', { name: 'Toggle code workspace', exact: true }).click();
   await fileLink.click();
   await expect(page.getByRole('tab', { name: 'main.py', exact: true })).toHaveAttribute(
     'aria-selected',
@@ -741,6 +742,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await expect(page.locator('.pbl-change-added').first()).toBeVisible();
   await expect(page.locator('.pbl-change-gutter-added').first()).toBeVisible();
   expect(await page.locator('.monaco-editor .selected-text').count()).toBeGreaterThan(0);
+  await page.getByTestId('pbl-ide').screenshot({ path: 'test-results/pbl-v3-file-reference.png' });
   await page.getByRole('link', { name: 'Unavailable', exact: true }).click();
   expect(page.url()).toBe(originalUrl);
   await expect(page.getByRole('tab', { name: 'main.py', exact: true })).toHaveAttribute(
