@@ -30,7 +30,7 @@ export const deepseek: Extract<WebFetchProvider, { hosted: true }> = {
   icon: PROVIDERS.deepseek.icon,
   hosted: true,
   requiresApiKey: true,
-  credentialPresets: ['deepseek'],
+  credentialPresets: ['deepseek', 'deepseek-token-plan'],
   // This only permits workspace overrides; deployment bases are always preserved.
   acceptsWorkspaceBaseUrl: (baseUrl) =>
     ['https://api.deepseek.com', 'https://api.deepseek.com/v1'].includes(
