@@ -9368,4 +9368,65 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       await releasePreparationFixtures(ids);
     }
   }, 15000);
+  it('keeps an active application out of the one-shot watchdog and quiesces it on idle', async () => {
+    const fresh = await freshStudy(),
+      row = await store.get(fresh.id, principal.ownerId);
+    const commandId = randomUUID(),
+      result = {
+        id: commandId,
+        state: 'running',
+        stdout: '',
+        stderr: '',
+        exitCode: null,
+        truncated: false,
+      };
+    const statusFile = join(mocked.root, row.environment_id!, `.command-${commandId}`);
+    await writeFile(statusFile, JSON.stringify(result));
+    await pool.query(
+      `INSERT INTO sandbox_commands(environment_id,id,request_fingerprint,purpose,result_json,created_at) VALUES($1,$2,'fixture','application',$3,now()-interval '20 minutes')`,
+      [row.environment_id, commandId, JSON.stringify(result)],
+    );
+    await pool.query('UPDATE pbl_v3_studies SET workspace_dirty_at=NULL WHERE id=$1', [row.id]);
+    const cancel = vi
+      .spyOn(E2BCompatibleSandboxProvider.prototype, 'cancelCommand')
+      .mockImplementation(async () => {
+        await writeFile(
+          statusFile,
+          JSON.stringify({ ...result, state: 'cancelled', exitCode: -15 }),
+        );
+      });
+    try {
+      await maintainStudy(store, row.id, principal.ownerId);
+      expect(cancel).not.toHaveBeenCalled();
+      expect((await store.get(row.id, principal.ownerId)).checkpoint_failure).toBeNull();
+      await ageStudy(row.id);
+      await maintainStudy(store, row.id, principal.ownerId);
+      expect(cancel).toHaveBeenCalled();
+      expect(
+        (await (await SandboxStore.open()).get(principal.ownerId, row.environment_id!)).state,
+      ).toBe('destroyed');
+    } finally {
+      cancel.mockRestore();
+      await releasePreparationFixtures([row.id]);
+    }
+  }, 15000);
+
+  it('records a finite recovery cycle when an idle application cannot confirm shutdown', async () => {
+    const fresh = await freshStudy(),
+      row = await store.get(fresh.id, principal.ownerId);
+    await ageStudy(row.id);
+    const stop = vi
+      .spyOn(SandboxService.prototype, 'stopApplications')
+      .mockRejectedValue(new Error('Unconfirmed application shutdown'));
+    try {
+      await maintainStudy(store, row.id, principal.ownerId);
+      expect((await store.get(row.id, principal.ownerId)).checkpoint_failure).toMatchObject({
+        stage: 'execution',
+        firstIdleFailureAt: expect.any(String),
+      });
+    } finally {
+      stop.mockRestore();
+      await releasePreparationFixtures([row.id]);
+    }
+  });
 });

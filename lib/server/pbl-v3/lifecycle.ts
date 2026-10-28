@@ -117,7 +117,7 @@ async function renewDeferredStudy(
     // checkpoint/release obtains admission, so unarchived turn output outlives congestion.
     // It never moves the inactivity clock.
     const work = await store.pool.query(
-      `SELECT 1 FROM sandbox_commands WHERE environment_id=$1 AND (
+      `SELECT 1 FROM sandbox_commands WHERE environment_id=$1 AND purpose IS DISTINCT FROM 'application' AND (
          ((result_json IS NULL OR result_json->>'state' IN ('starting','running','unknown'))
            AND created_at >= $2)
          OR (result_json->>'state' IN ('exited','failed','cancelled','timed_out') AND updated_at >= $3))
@@ -276,11 +276,21 @@ export async function maintainStudy(
               (row.workspace_dirty_at &&
                 (await store.now()).getTime() - row.workspace_dirty_at.getTime() >=
                   PBL_DIRTY_CHECKPOINT_MS))
-          )
-            await service.stopApplications(environmentId);
+          ) {
+            try {
+              await service.stopApplications(environmentId);
+            } catch {
+              await handleUnsettledWriter(store, row, service, 'execution');
+              return;
+            }
+          }
           // A terminal result is persisted once by SandboxService.command, including lost start acknowledgements.
-          const commands = await store.pool.query<{ id: string; created_at: Date }>(
-            `SELECT id,created_at FROM sandbox_commands WHERE environment_id=$1
+          const commands = await store.pool.query<{
+            id: string;
+            created_at: Date;
+            purpose: string | null;
+          }>(
+            `SELECT id,created_at,purpose FROM sandbox_commands WHERE environment_id=$1
            AND (result_json IS NULL OR result_json->>'state' IN ('starting','running','unknown'))`,
             [environmentId],
           );
@@ -288,6 +298,9 @@ export async function maintainStudy(
             overdueCommands = 0;
           const commandNow = await store.now();
           for (const command of commands.rows) {
+            // A supervised application is not an overdue one-shot build/test. It is
+            // quiesced above for dirty/idle work and by source/checkpoint admission.
+            if (command.purpose === 'application') continue;
             const observed = await service
               .command(environmentId, command.id)
               .catch(() => ({ state: 'unknown' }));

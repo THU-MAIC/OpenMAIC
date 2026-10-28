@@ -526,7 +526,8 @@ export class SandboxService {
         id,
         {
           ...body,
-          timeoutMs: Math.min(this.config.lifetimeMs, 3_600_000),
+          // Leave the provider envelope time to persist the supervisor's terminal receipt.
+          timeoutMs: Math.min(this.config.lifetimeMs, 3_585_000),
         },
         epoch,
         'application',
