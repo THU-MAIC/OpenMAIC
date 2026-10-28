@@ -103,9 +103,11 @@ import { chatColumn, composerLayout, wbStyles as styles } from './chat/chat-styl
 import { ChatTimeline } from './chat/chat-timeline';
 import { pendingQuestion } from './chat/question-card-state';
 import { QuestionForm } from './chat/question-form';
+import { useQuestionHost } from '@/lib/workbench/question-host';
+import { sessionScopedKey } from '@/lib/workbench/request-scope';
 import { composerTakeover } from './chat/question-form-state';
 import { shouldShowWorkbenchEmptyState, WorkbenchChatEmptyState } from './chat/empty-state';
-import { invalidateAgentSkills } from '@/lib/workbench/agent-skills';
+import { invalidateAgentSkills, useAgentSkills } from '@/lib/workbench/agent-skills';
 import { settleSentElementRefs } from '@/lib/workbench/element-ref-send-result';
 import { settleSentCourseRefs } from '@/lib/workbench/course-ref-send-result';
 
@@ -312,7 +314,19 @@ export function WorkbenchChat({
    * a NEW question takes the composer over again on its own — there is no flag to
    * remember to reset.
    */
-  const [dismissedQuestionKey, setDismissedQuestionKey] = useState<string | null>(null);
+  // Node keys repeat across conversations and this component outlives a
+  // switch, so both question markers are held with their conversation
+  // (`sessionScopedKey`) and read back only for the attached one.
+  const [dismissedQuestion, setDismissedQuestion] = useState<string | null>(null);
+  // The question whose form was brought back to write a free-text answer.
+  const [freeTextQuestion, setFreeTextQuestion] = useState<string | null>(null);
+  const questionMark = (key: string) => sessionScopedKey(sessionId, key);
+  const setDismissedQuestionKey = (key: string | null) =>
+    setDismissedQuestion(key === null ? null : questionMark(key));
+  // Only the waiting question can have been waved off.
+  const waiting = pendingQuestion(chat);
+  const dismissedQuestionKey =
+    waiting && dismissedQuestion === questionMark(waiting.key) ? waiting.key : null;
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   // The mirror flag for stop: `POST /cancel` answers 202 ("asked"), and the run
   // only actually ends when the loop notices between steps — after the tool in
@@ -431,17 +445,18 @@ export function WorkbenchChat({
         node.toolName !== 'create_skill' ||
         node.toolState !== 'done' ||
         !node.toolDetails ||
-        refreshedCreateCalls.current.has(node.key)
+        refreshedCreateCalls.current.has(sessionScopedKey(sessionId, node.key))
       ) {
         continue;
       }
-      refreshedCreateCalls.current.add(node.key);
+      // Keyed with the conversation: a tool call's key repeats in another one.
+      refreshedCreateCalls.current.add(sessionScopedKey(sessionId, node.key));
       void invalidateAgentSkills().catch(() => {
         // The durable success card remains the receipt. Menus expose their own
         // retry state if this refresh fails.
       });
     }
-  }, [chat]);
+  }, [chat, sessionId]);
 
   const { scrollRef, contentRef, isNearBottom, scrollToBottom } =
     useWorkbenchAutoscroll(displayedChat);
@@ -615,7 +630,14 @@ export function WorkbenchChat({
   // The composer IS the question while one waits, unless this exact question's
   // form was dismissed. One derived value, so the swap below and the card's way
   // back cannot describe different states.
-  const takeover = composerTakeover({ pending, dismissedKey: dismissedQuestionKey });
+  // While the request preview shows this question as its form, the composer
+  // stays a composer and the transcript row points across to it.
+  const previewQuestionKey = useQuestionHost((s) => s.previewKey);
+  const previewHostsQuestion =
+    pending !== null && sessionScopedKey(sessionId, pending.key) === previewQuestionKey;
+  const takeover = previewHostsQuestion
+    ? null
+    : composerTakeover({ pending, dismissedKey: dismissedQuestionKey });
   // Pure-derived: the idle placeholder owns the rail only while it is truly
   // empty — no messages, not catching up, no run live. It disappears the
   // instant a bubble lands or a send flips the composer to STOP.
@@ -657,11 +679,17 @@ export function WorkbenchChat({
    * it). Both dismissals are recorded against the resulting draft, so nothing
    * reopens until the user types something new.
    */
-  /** Backspace deletes a whole `/handle`; see the hook for the IME guard. */
-  const onSkillHandleBackspace = useSkillHandleBackspace(setDraft, (next) => {
-    pendingCaret.current = next;
-    setCaret(next);
-  });
+  const { skills } = useAgentSkills();
+  const installedSkillNames = useMemo(() => skills.map((skill) => skill.name), [skills]);
+  /** Backspace deletes a resolving `/handle`; see the hook for the IME guard. */
+  const onSkillHandleBackspace = useSkillHandleBackspace(
+    setDraft,
+    (next) => {
+      pendingCaret.current = next;
+      setCaret(next);
+    },
+    installedSkillNames,
+  );
   const loadSkill = useCallback((skill: AgentSkillInfo) => {
     // The live selection, not the tracked state: the element is the freshest
     // answer either way.
@@ -912,6 +940,16 @@ export function WorkbenchChat({
     [submit],
   );
 
+  // Publish the one answer path for the preview's question form.
+  useEffect(() => {
+    useQuestionHost.getState().setAnswer(answerQuestion);
+    return () => {
+      if (useQuestionHost.getState().answer === answerQuestion) {
+        useQuestionHost.getState().setAnswer(null);
+      }
+    };
+  }, [answerQuestion]);
+
   async function send() {
     // What is in the box IS the message — skill handles included. There is
     // nothing to assemble here.
@@ -1039,8 +1077,18 @@ export function WorkbenchChat({
                     plan={displayedPlan}
                     onAnswer={answerQuestion}
                     dismissedQuestionKey={dismissedQuestionKey}
-                    onReviveQuestion={() => setDismissedQuestionKey(null)}
-                    takenOverQuestionKey={takeoverKey}
+                    onReviveQuestion={(freeText) => {
+                      setFreeTextQuestion(
+                        freeText && dismissedQuestionKey
+                          ? questionMark(dismissedQuestionKey)
+                          : null,
+                      );
+                      setDismissedQuestionKey(null);
+                    }}
+                    takenOverQuestionKey={
+                      takeoverKey ?? (previewHostsQuestion ? (pending?.key ?? null) : null)
+                    }
+                    questionPointer={previewHostsQuestion ? 'preview' : 'below'}
                     t={t}
                   />
                 ) : showEmptyState ? (
@@ -1098,6 +1146,7 @@ export function WorkbenchChat({
               <QuestionForm
                 node={takeover}
                 onAnswer={answerQuestion}
+                startInFreeText={freeTextQuestion === questionMark(takeover.key)}
                 onDismiss={() => setDismissedQuestionKey(takeover.key)}
                 t={t}
               />

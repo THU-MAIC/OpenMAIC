@@ -2403,6 +2403,11 @@
     "homeAria": "Back to home",
     "currentSession": "Current chat",
     "startLearning": "学習を開始",
+    "classroomMode": "教室モード",
+    "learningMode": "学習",
+    "editingMode": "編集",
+    "editingUnavailableGenerating": "コース生成中は編集できません。",
+    "fullscreenLearning": "全画面で学習",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",

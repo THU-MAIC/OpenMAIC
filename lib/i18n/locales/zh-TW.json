@@ -2388,6 +2388,11 @@
     "homeAria": "返回首頁",
     "currentSession": "目前對話",
     "startLearning": "開始學習",
+    "classroomMode": "課堂模式",
+    "learningMode": "學習",
+    "editingMode": "編輯",
+    "editingUnavailableGenerating": "課程生成期間無法編輯。",
+    "fullscreenLearning": "全螢幕學習",
     "time": {
       "justNow": "剛剛",
       "minutesAgo": "{{count}} 分鐘前",

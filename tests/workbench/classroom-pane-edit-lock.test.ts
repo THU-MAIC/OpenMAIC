@@ -1,45 +1,29 @@
 // @vitest-environment jsdom
 
-/**
- * The right pane's classroom is edit-locked.
- *
- * The lock lives at the pane, not in the entry paths: `WorkspaceClassroomPane`
- * is the single element that mounts a classroom into the workspace, so this
- * exercises the real chain — pane → `WorkbenchPanelProvider` → the panel state
- * a hosted classroom reads → `resolveStageChromeMode` — instead of asserting
- * the resolver in isolation. What the classroom document or the stage store
- * says about play/edit is deliberately fed in as hostile input.
- */
-
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resolveStageChromeMode, type StageChromeModeContext } from '@/lib/edit/stage-mode';
+import { resolveStageChromeMode } from '@/lib/edit/stage-mode';
 import { useWorkbenchPanelState, type WorkbenchPanelState } from '@/lib/workbench/panel-context';
+import { useStageStore } from '@/lib/store/stage';
+import { readClassroomMode, writeClassroomMode } from '@/lib/workbench/classroom-mode';
 
-const probe = vi.hoisted(() => ({ states: [] as WorkbenchPanelState[] }));
+const probe = vi.hoisted(() => ({
+  states: [] as WorkbenchPanelState[],
+}));
 const setPlaybackOn = vi.fn();
 
-vi.mock('@/lib/hooks/use-i18n', () => ({
-  useI18n: () => ({ t: (key: string) => key }),
-}));
-// Stand in for the real classroom and report the panel state it would host
-// its chrome decision on.
+vi.mock('@/lib/hooks/use-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock('@/components/classroom/ClassroomSurface', () => ({
   ClassroomSurface: () => {
-    probe.states.push(useWorkbenchPanelState());
+    const panel = useWorkbenchPanelState();
+    probe.states.push(panel);
     return null;
   },
 }));
-vi.mock('@/lib/workbench/use-workbench-pro-edit', () => ({
-  useWorkbenchProEditing: () => undefined,
-}));
+vi.mock('@/lib/workbench/use-workbench-pro-edit', () => ({ useWorkbenchProEditing: () => {} }));
 vi.mock('@/components/workbench/workspace/WorkspaceCourseTabs', () => ({
   WorkspaceCourseTabs: () => null,
-}));
-vi.mock('@/lib/store/stage', () => ({
-  useStageStore: (selector: (state: { scenes: unknown[] }) => unknown) =>
-    selector({ scenes: [{ id: 'scene-1' }] }),
 }));
 vi.mock('@/lib/workbench/session-store', () => ({
   useWorkbenchStore: (selector: (state: { setPlaybackOn: () => void }) => unknown) =>
@@ -49,149 +33,168 @@ vi.mock('@/lib/workbench/session-store', () => ({
 import { WorkspaceClassroomPane } from '@/components/workbench/workspace/WorkspaceClassroomPane';
 
 let root: Root | null = null;
-
-async function mountPane(props: { hidden: boolean; playback: boolean }): Promise<void> {
-  const container = document.createElement('div');
-  document.body.appendChild(container);
-  root = createRoot(container);
-  await act(async () =>
-    root?.render(
-      createElement(WorkspaceClassroomPane, {
-        browser: {
-          tabs: [{ id: 'stage-1', name: 'Course' }],
-          activeCourseId: 'stage-1',
-          onActivateCourse: vi.fn(),
-          onCloseCourse: vi.fn(),
-        },
-        readOnly: false,
-        ...props,
-      }),
-    ),
-  );
-}
-
-/** The chrome a hosted classroom would resolve for the pane's first render. */
-function hostedChrome(panel: WorkbenchPanelState, overrides: Partial<StageChromeModeContext> = {}) {
-  return resolveStageChromeMode({
-    // Hostile input: the stage store's transient mode always says playback for
-    // a course that has just been loaded (`loadFromStorage` resets it), and a
-    // stage persisted mid-learning would say the same.
-    storedMode: 'playback',
-    hosted: panel.hosted,
-    workbenchShowingClassroom: panel.hosted && panel.editPinned,
-    workbenchLearning: panel.hosted && panel.playback,
+let props = { courseId: 'stage-1', hidden: false, playback: false, readOnly: false };
+const button = (mode: string) =>
+  document.querySelector<HTMLButtonElement>(`[data-testid="workbench-mode-${mode}"]`)!;
+const panel = () => probe.states.at(-1)!;
+const chrome = () =>
+  resolveStageChromeMode({
+    storedMode: 'edit',
+    hosted: panel().hosted,
+    workbenchShowingClassroom: panel().editPinned,
+    workbenchLearning: panel().learning && panel().visible,
     isEditable: true,
     hasCurrentScene: true,
     stageMatchesHost: true,
     editorReady: true,
     editorLoadFailed: false,
-    ...overrides,
   });
+
+async function render(next: Partial<typeof props> = {}) {
+  props = { ...props, ...next };
+  if (!root) {
+    const container = document.createElement('div');
+    document.body.append(container);
+    root = createRoot(container);
+  }
+  await act(async () =>
+    root!.render(
+      createElement(WorkspaceClassroomPane, {
+        browser: {
+          tabs: [{ id: props.courseId, name: 'Course' }],
+          activeCourseId: props.courseId,
+          onActivateCourse: vi.fn(),
+          onCloseCourse: vi.fn(),
+        },
+        hidden: props.hidden,
+        playback: props.playback,
+        readOnly: props.readOnly,
+      }),
+    ),
+  );
+}
+async function click(mode: string) {
+  await act(async () => button(mode).click());
 }
 
 beforeEach(() => {
+  props = { courseId: 'stage-1', hidden: false, playback: false, readOnly: false };
   probe.states.length = 0;
   setPlaybackOn.mockClear();
+  localStorage.clear();
+  useStageStore.setState({
+    stage: { id: 'stage-1', name: 'Course' } as never,
+    scenes: [{ id: 'scene-1' }] as never,
+    isOwner: true,
+    readOnly: false,
+    courseGenerating: false,
+  });
 });
-
 afterEach(async () => {
-  if (root) await act(async () => root?.unmount());
+  if (root) await act(async () => root!.unmount());
   root = null;
-  document.body.innerHTML = '';
+  document.body.replaceChildren();
 });
 
-describe('workspace classroom pane edit lock', () => {
-  it('locks the classroom it mounts to edit on the first render', async () => {
-    await mountPane({ hidden: false, playback: false });
-
-    expect(probe.states.length).toBeGreaterThan(0);
-    // Not "the first render happened to be edit": every render the pane
-    // produced declared the lock.
-    for (const panel of probe.states) {
-      expect(panel.hosted).toBe(true);
-      expect(panel.editPinned).toBe(true);
-      expect(hostedChrome(panel)).toBe('edit');
-    }
+describe('classroom tab modes', () => {
+  it('starts in learning and switches in the same pane', async () => {
+    await render();
+    expect(chrome()).toBe('playback');
+    await click('editing');
+    expect(chrome()).toBe('edit');
+    expect(setPlaybackOn).not.toHaveBeenCalled();
+    expect(readClassroomMode('stage-1')).toBe('editing');
+    await click('learning');
+    expect(chrome()).toBe('playback');
+    expect(readClassroomMode('stage-1')).toBe('learning');
   });
 
-  it('holds the lock for a freshly created classroom that has no scene yet', async () => {
-    await mountPane({ hidden: false, playback: false });
-    const panel = probe.states[0];
-
-    // The agent has just created the course: the document is in the store but
-    // generation has not produced a scene, so the edit chrome cannot mount
-    // yet. This used to resolve to the full playback chrome — speed control,
-    // play button, learner avatars, mic bar — and flip to edit once the first
-    // scene landed.
-    expect(hostedChrome(panel, { isEditable: false, hasCurrentScene: false })).toBe('loading');
-    // ...and the moment the first scene exists it is edit, with no playback
-    // frame in between.
-    expect(hostedChrome(panel)).toBe('edit');
-  });
-
-  it('cannot be flipped by classroom state that says playback', async () => {
-    await mountPane({ hidden: false, playback: false });
-    const panel = probe.states[0];
-
-    for (const storedMode of ['playback', 'autonomous', 'edit'] as const) {
-      expect(hostedChrome(panel, { storedMode })).toBe('edit');
-    }
-  });
-
-  it('never resolves playback while the pane holds the lock', async () => {
-    await mountPane({ hidden: false, playback: false });
-    const panel = probe.states[0];
-    const booleans = [false, true];
-
-    for (const isEditable of booleans) {
-      for (const hasCurrentScene of booleans) {
-        for (const stageMatchesHost of booleans) {
-          for (const editorReady of booleans) {
-            for (const editorLoadFailed of booleans) {
-              expect(
-                hostedChrome(panel, {
-                  isEditable,
-                  hasCurrentScene,
-                  stageMatchesHost,
-                  editorReady,
-                  editorLoadFailed,
-                }),
-              ).not.toBe('playback');
-            }
-          }
-        }
-      }
-    }
-  });
-
-  it('does not park the learning chrome behind a folded pane', async () => {
-    await mountPane({ hidden: true, playback: false });
-    const panel = probe.states[0];
-
-    expect(panel.editPinned).toBe(false);
-    // Folded is not learning: the editor drops, but unfolding must not
-    // cross-fade a classroom's playback chrome out over the reopened pane.
-    expect(hostedChrome(panel)).toBe('loading');
-  });
-
-  it('releases the lock only through Start Learning', async () => {
-    await mountPane({ hidden: false, playback: false });
-    const button = document.querySelector<HTMLButtonElement>(
-      '[data-testid="workbench-start-learning"]',
-    );
-    expect(button).not.toBeNull();
-    await act(async () => button?.click());
-    expect(setPlaybackOn).toHaveBeenCalledWith(true);
-
-    // The pane re-rendered with that intent is the one state that hands the
-    // classroom back to the learning chrome.
-    await act(async () => root?.unmount());
+  it('isolates course preferences and restores editing after a remount', async () => {
+    await render();
+    await click('editing');
+    await act(async () => useStageStore.setState({ stage: { id: 'stage-2' } as never }));
+    await render({ courseId: 'stage-2' });
+    expect(chrome()).toBe('playback');
+    await act(async () => useStageStore.setState({ stage: { id: 'stage-1' } as never }));
+    await render({ courseId: 'stage-1' });
+    expect(chrome()).toBe('edit');
+    await act(async () => root!.unmount());
     root = null;
-    probe.states.length = 0;
-    await mountPane({ hidden: false, playback: true });
-    const panel = probe.states[0];
+    await render();
+    expect(chrome()).toBe('edit');
+    expect(readClassroomMode('stage-2')).toBe('learning');
+  });
 
-    expect(panel.editPinned).toBe(false);
-    expect(hostedChrome(panel)).toBe('playback');
+  it('keeps in-memory course choices when browser storage is denied', async () => {
+    const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('denied');
+    });
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('denied');
+    });
+    try {
+      await render();
+      await click('editing');
+      await act(async () => useStageStore.setState({ stage: { id: 'stage-2' } as never }));
+      await render({ courseId: 'stage-2' });
+      expect(chrome()).toBe('playback');
+      await act(async () => useStageStore.setState({ stage: { id: 'stage-1' } as never }));
+      await render({ courseId: 'stage-1' });
+      expect(chrome()).toBe('edit');
+    } finally {
+      get.mockRestore();
+      set.mockRestore();
+    }
+  });
+
+  it('overrides saved editing during generation, then restores it without overwriting memory', async () => {
+    writeClassroomMode('stage-1', 'editing');
+    await act(async () => useStageStore.setState({ courseGenerating: true }));
+    await render();
+    expect(chrome()).toBe('playback');
+    expect(button('editing').disabled).toBe(true);
+    await click('editing');
+    expect(readClassroomMode('stage-1')).toBe('editing');
+    await act(async () => useStageStore.setState({ courseGenerating: false }));
+    expect(chrome()).toBe('edit');
+    await act(async () => useStageStore.setState({ courseGenerating: true }));
+    expect(chrome()).toBe('playback');
+    expect(panel().editPinned).toBe(false);
+  });
+
+  it('gates every edit request on ownership, access and the loaded course', async () => {
+    writeClassroomMode('stage-1', 'editing');
+    await render({ readOnly: true });
+    expect(chrome()).toBe('playback');
+    expect(button('editing').disabled).toBe(true);
+    await render({ readOnly: false });
+    for (const patch of [
+      { isOwner: false },
+      { isOwner: true, readOnly: true },
+      { readOnly: false, stage: { id: 'other' } as never },
+    ]) {
+      await act(async () => useStageStore.setState(patch));
+      expect(chrome()).toBe('playback');
+      expect(button('editing').disabled).toBe(true);
+    }
+  });
+
+  it('folding drops chrome, and full-screen playback preserves the per-course preference', async () => {
+    writeClassroomMode('stage-1', 'editing');
+    await render({ hidden: true });
+    expect(chrome()).toBe('loading');
+    await render({ hidden: false });
+    expect(chrome()).toBe('edit');
+    await act(async () =>
+      document
+        .querySelector<HTMLButtonElement>('[data-testid="workbench-start-learning"]')!
+        .click(),
+    );
+    expect(setPlaybackOn).toHaveBeenCalledWith(true);
+    await render({ playback: true });
+    expect(chrome()).toBe('playback');
+    await render({ playback: false });
+    expect(chrome()).toBe('edit');
+    expect(readClassroomMode('stage-1')).toBe('editing');
   });
 });

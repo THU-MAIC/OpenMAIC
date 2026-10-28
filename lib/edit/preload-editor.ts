@@ -20,7 +20,7 @@ let editorLoaded = false;
 /**
  * Whether the editor chunk is ALREADY registered, answered synchronously.
  *
- * The workspace pane is edit-locked, so a remount there (a course switch, a
+ * A hosted course can remember editing, so a remount there (a course switch, a
  * reopened tab) must be able to resolve straight to the edit chrome during
  * render. Waiting for `preloadEditor()` to resolve again would cost a paint of
  * the neutral loading shell for an import that finished long ago.

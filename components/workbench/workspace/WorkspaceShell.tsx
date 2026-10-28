@@ -123,6 +123,19 @@ import { WorkspaceRail } from './WorkspaceRail';
 import { WorkspaceHome } from './WorkspaceHome';
 import { WorkspaceChatPane } from './WorkspaceChatPane';
 import { WorkspaceClassroomPane } from './WorkspaceClassroomPane';
+import {
+  NO_PREVIEW_TAB,
+  PREVIEW_TAB_ID,
+  WorkspaceRequestActivity,
+  type PreviewTabState,
+} from './WorkspaceRequestActivity';
+import { rememberPreviewClosed } from '@/lib/workbench/preview-tab';
+import { requestEpisodeStart } from '@/lib/workbench/request-activity';
+import { anyCourseHasScene, watchFirstScene } from '@/lib/workbench/first-scene-ready';
+import {
+  conversationTargetStageIds,
+  worksOnExistingCourses,
+} from '@/lib/workbench/conversation-course';
 import { PaneTab } from './PaneTab';
 import { ResizeHandle } from './ResizeHandle';
 import { MaterialLibraryPage } from './MaterialLibraryPage';
@@ -927,7 +940,205 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const stageLinkStageIds = useWorkbenchStore((s) => s.stageLinkStageIds);
   const attachedSessionReplaying = useWorkbenchStore((s) => s.replaying);
   const replayedStageLinkCount = useWorkbenchStore((s) => s.replayedStageLinkCount);
+  // Serialize only provenance ids: streaming text changes must not restart the
+  // scene reads. This is a derived value, not another lifecycle/store.
+  const requestCreatedCourseIds = useWorkbenchStore((s) =>
+    JSON.stringify(
+      s.chat?.slice(requestEpisodeStart(s.chat) + 1).flatMap((node) => {
+        if (node.kind !== 'tool' || node.toolName !== 'create_stage' || node.toolState !== 'done')
+          return [];
+        // `reused` is a retry of this same call (the id derives from the call
+        // id), so it still proves this request created the course.
+        const details = node.toolDetails as { stageId?: unknown } | undefined;
+        return typeof details?.stageId === 'string' ? [details.stageId] : [];
+      }) ?? [],
+    ),
+  );
   const pageCount = useWorkbenchStore((s) => Object.keys(s.pages).length);
+  const touchedStageIds = useWorkbenchStore((s) => s.touchedStageIds);
+  // The request panel and the first-scene handoff cover only the time before
+  // this conversation's course has a scene; after that the workbench behaves
+  // as it did. An earlier request counts once one of its tool calls persisted
+  // a page (the fold stamps the card's sceneId at its checkpoint), or once a
+  // course it linked, wrote, or whose stage its calls name is listed with
+  // scenes (not a course it is merely bound to as context). This
+  // request's own course counts once it has been handed off: it is in the tab
+  // set, open or closed, or — after a session-only refresh, which restores no
+  // tabs — in the remembered tab set the handoff recovery already consults.
+  const earlierRequestMadeScene = useWorkbenchStore((s) =>
+    s.chat
+      .slice(0, requestEpisodeStart(s.chat) + 1)
+      .some((node) => node.kind === 'tool' && Boolean(node.sceneId)),
+  );
+  // The pages this request's own tool calls persisted (the fold stamps the
+  // card's sceneId at its checkpoint), as a string so the selector is stable.
+  // A new one is when a course still waiting may have its first scene.
+  const thisRequestScenes = useWorkbenchStore((s) =>
+    s.chat
+      .slice(requestEpisodeStart(s.chat) + 1)
+      .flatMap((node) => (node.kind === 'tool' && node.sceneId ? [node.sceneId] : []))
+      .join('|'),
+  );
+  const thisRequestMadeScene = thisRequestScenes !== '';
+  const createdThisRequest = useMemo(
+    () => JSON.parse(requestCreatedCourseIds) as string[],
+    [requestCreatedCourseIds],
+  );
+  // The courses this conversation's tool calls work on. A course is this
+  // conversation's own when it created it (its link) or its calls work on it;
+  // a course merely open in the pane, or bound as context because the
+  // conversation was started beside it, does not keep the placeholder away.
+  const targetedStageIds = useWorkbenchStore((s) =>
+    JSON.stringify(conversationTargetStageIds(s.chat)),
+  );
+  // This request is creating a course of its own (its create_stage has started).
+  const creatingInRequest = useWorkbenchStore((s) =>
+    s.chat
+      .slice(requestEpisodeStart(s.chat) + 1)
+      .some((node) => node.kind === 'tool' && node.toolName === 'create_stage'),
+  );
+  const earlierCourseHasScene =
+    earlierRequestMadeScene ||
+    anyCourseHasScene(
+      [
+        ...stageLinkStageIds,
+        ...touchedStageIds,
+        ...(JSON.parse(targetedStageIds) as string[]),
+      ].filter((id) => !createdThisRequest.includes(id)),
+      courses.state === 'ready' ? courses.classrooms : [],
+    );
+  // Only a course this request created can be in it; the reader is SSR-safe.
+  const rememberedTabs = createdThisRequest.length > 0 ? readCourseTabsMemory() : null;
+  const requestCourseHandedOff = createdThisRequest.some((id) =>
+    [courseTabs, rememberedTabs].some(
+      (tabs) => tabs?.courseIds.includes(id) || (tabs?.closedCourseIds ?? []).includes(id),
+    ),
+  );
+  // Bound beside a course and looking through existing courses (and creating
+  // none): the conversation is about existing courses; no placeholder.
+  const onExistingCourses = useWorkbenchStore((s) => worksOnExistingCourses(s.chat, s.stageId));
+  // The courses this request created that this visit saw it create while the
+  // run was live, and that are not reconciled as a tab yet (opened, closed, or
+  // remembered). They outlive the run: a run that ends before a course's first
+  // scene was read still hands it off. Per conversation.
+  const [pendingOwn, setPendingOwn] = useState<{
+    readonly sessionId: string | null;
+    readonly ids: readonly string[];
+  }>({ sessionId: null, ids: [] });
+  const isReconciled = (id: string) =>
+    [courseTabs, rememberedTabs].some(
+      (tabs) => tabs?.courseIds.includes(id) || (tabs?.closedCourseIds ?? []).includes(id),
+    );
+  const pendingHandoff =
+    pendingOwn.sessionId === attachedSessionId && pendingOwn.ids.some((id) => !isReconciled(id));
+  // A finished request whose own course has a scene is history: reopened
+  // without tab memory, its replayed link does not navigate, and there is no
+  // handoff left to wait for. Like any finished conversation, no placeholder —
+  // unless this visit is still handing one of its courses off: then the
+  // handoff retires the placeholder, not the end of the run.
+  const requestLive = ['running', 'queued', 'connecting'].includes(attachedSessionStatus);
+  const finishedRequestMadeScene =
+    !requestLive &&
+    !pendingHandoff &&
+    (thisRequestMadeScene ||
+      anyCourseHasScene(createdThisRequest, courses.state === 'ready' ? courses.classrooms : []));
+  const beforeFirstScene =
+    !earlierCourseHasScene &&
+    !requestCourseHandedOff &&
+    !onExistingCourses &&
+    !finishedRequestMadeScene;
+
+  /* ── The request preview tab ─────────────────────────────────────────────
+     The placeholder for the course this conversation may produce, as a
+     regular tab in the right pane's tab strip, beside any course tabs (see
+     `WorkspaceRequestActivity`). It is available while the attached
+     conversation has no course with scenes; the first readable scene opens the
+     course tab in its place. It takes focus when a request starts animating in
+     it, and not on later events, so a teacher who switched to another tab
+     stays there. Closing it is remembered for that request
+     (`lib/workbench/preview-tab.ts`); folding it is the pane's own fold. */
+  const previewEligible =
+    !render.library && !narrow && beforeFirstScene && panes.sessionId === attachedSessionId;
+  const [reportedPreviewTab, setPreviewTab] = useState<PreviewTabState>(NO_PREVIEW_TAB);
+  // The preview reports a render behind; a report from the previous
+  // conversation (whose request keys may repeat here) is no report.
+  const previewTab =
+    reportedPreviewTab.sessionId === attachedSessionId ? reportedPreviewTab : NO_PREVIEW_TAB;
+  const previewTabOpen = previewEligible && previewTab.shown;
+  // Which tab of the strip the preview is relative to, per conversation: the
+  // preview is the active tab, or a course tab is.
+  const [previewFocus, setPreviewFocus] = useState<{
+    sessionId: string | null;
+    active: boolean;
+    focusedKey: string | null;
+  }>({ sessionId: null, active: false, focusedKey: null });
+  if (previewFocus.sessionId !== attachedSessionId) {
+    setPreviewFocus({ sessionId: attachedSessionId, active: false, focusedKey: null });
+  }
+  if (
+    previewTabOpen &&
+    previewTab.live &&
+    previewTab.requestKey !== null &&
+    previewTab.requestKey !== previewFocus.focusedKey &&
+    previewFocus.sessionId === attachedSessionId
+  ) {
+    // A request started animating: the tab takes focus, once per request.
+    setPreviewFocus({ ...previewFocus, active: true, focusedKey: previewTab.requestKey });
+  }
+  /** The preview is the tab on screen: it is active, or there is no course tab to show. */
+  const previewShowing = previewTabOpen && (previewFocus.active || !panes.courseId);
+  /**
+   * The conversation's first course replaces its preview tab. The preview is
+   * always the strip's last tab and a new course tab joins at the end, so the
+   * course lands where the preview was. It takes focus if the preview had it
+   * (or nothing else is open); a teacher on another course tab stays there.
+   */
+  const handOffPreview = useCallback(
+    (courseId: string) => {
+      const opened = openCourseTabs(courseTabs, [courseId]);
+      const focus = previewShowing || !courseTabs.activeCourseId;
+      const next = focus
+        ? activateCourseTab(opened, courseId)
+        : activateCourseTab(opened, courseTabs.activeCourseId as string);
+      setCourseTabs(next);
+      persistCourseTabs(next);
+      if (focus) {
+        collapse.expandClassroom();
+        navigateInBackground((current) => withCourse(current, courseId), 'push');
+      }
+    },
+    [collapse, courseTabs, navigateInBackground, persistCourseTabs, previewShowing],
+  );
+  // The readiness reads outlive a render; they hand off through the latest
+  // handoff, and skip a course the user has reconciled meanwhile.
+  const handOffRef = useRef(handOffPreview);
+  useLayoutEffect(() => {
+    handOffRef.current = (courseId: string) => {
+      const tabs = courseTabsRef.current;
+      if (tabs.courseIds.includes(courseId) || (tabs.closedCourseIds ?? []).includes(courseId)) {
+        return;
+      }
+      handOffPreview(courseId);
+    };
+  });
+  const firstSceneWatchers = useRef(new Map<string, () => void>());
+
+  // Request keys come from per-session event sequences and collide across
+  // conversations, so the close is remembered with the conversation it was for.
+  const [closedPreview, setClosedPreview] = useState<{
+    readonly sessionId: string | null;
+    readonly key: string;
+  } | null>(null);
+  const closedPreviewKey =
+    closedPreview && closedPreview.sessionId === attachedSessionId ? closedPreview.key : null;
+  const closePreview = useCallback(
+    (requestKey: string) => {
+      rememberPreviewClosed(attachedSessionId, requestKey);
+      setClosedPreview({ sessionId: attachedSessionId, key: requestKey });
+      setPreviewFocus((current) => ({ ...current, active: false }));
+    },
+    [attachedSessionId],
+  );
   const paneSessionStageId = useMemo(
     () => sessions.find((session) => session.id === panes.sessionId)?.stageId ?? null,
     [panes.sessionId, sessions],
@@ -947,29 +1158,120 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    *
    */
   useEffect(() => {
+    // A delayed first scene may arrive after re-attachment replayed its link.
+    // Only a successful new create_stage in this request proves provenance;
+    // arbitrary historical links do not.
+    const rememberedTabs = readCourseTabsMemory();
+    const rememberedCourseIds = [
+      ...(rememberedTabs?.courseIds ?? []),
+      ...(rememberedTabs?.closedCourseIds ?? []),
+    ];
+    // The courses this live request created and that are not reconciled yet
+    // (opened or closed as a tab, now or in tab memory). They stay this
+    // request's own whatever the pane shows, replayed links included, so a
+    // series restored after a reload keeps every course, not just the first.
+    const live = ['running', 'queued', 'connecting'].includes(attachedSessionStatus);
+    const unreconciled = (id: string) =>
+      !rememberedCourseIds.includes(id) &&
+      !courseTabs.courseIds.includes(id) &&
+      !(courseTabs.closedCourseIds ?? []).includes(id);
+    const liveOwn =
+      live && !panes.library && !earlierCourseHasScene
+        ? createdThisRequest.filter(unreconciled)
+        : [];
+    // Admitted while live, kept until reconciled, through the end of the run.
+    const keptOwn =
+      pendingOwn.sessionId === attachedSessionId ? pendingOwn.ids.filter(unreconciled) : [];
+    const ownCourses = [...new Set([...keptOwn, ...liveOwn])];
+    const pendingChanged =
+      pendingOwn.sessionId !== attachedSessionId ||
+      ownCourses.length !== pendingOwn.ids.length ||
+      ownCourses.some((id) => !pendingOwn.ids.includes(id));
+    if (pendingChanged) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the kept set follows the durable facts above
+      setPendingOwn({ sessionId: attachedSessionId, ids: ownCourses });
+    }
+    // A reconciled course needs no more reading.
+    for (const [id, cancel] of firstSceneWatchers.current) {
+      if (!unreconciled(id)) {
+        cancel();
+        firstSceneWatchers.current.delete(id);
+      }
+    }
+    const eligibleLinks = stageLinkStageIds.filter(
+      (id, index) => index >= replayedStageLinkCount || ownCourses.includes(id),
+    );
     const open = createdCourseTabsToOpen({
       sessionId: attachedSessionId === panes.sessionId ? panes.sessionId : null,
-      createdCourseIds: stageLinkStageIds,
-      replayedCourseCount: replayedStageLinkCount,
+      createdCourseIds: eligibleLinks,
+      replayedCourseCount: 0,
       availableCourseIds:
         courses.state === 'ready' ? courses.classrooms.map((course) => course.id) : [],
       openCourseIds: courseTabs.courseIds,
       closedCourseIds: courseTabs.closedCourseIds ?? [],
       replaying: attachedSessionReplaying,
     });
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- a durable library write is the external event being synchronized into URL/tab state
-    if (open.length > 0) openCourses(open);
+    if (open.length === 0) return;
+    // This request's own courses open at their first readable scene (the
+    // first replaces the preview tab), and so does a link that lands while the
+    // preview is the placeholder for a create_stage still in flight (its tab
+    // state lags a render behind the stream). Any other live link keeps the
+    // existing classroom and library background navigation.
+    const previewHolds = previewTabOpen || (previewEligible && creatingInRequest);
+    const others = previewHolds ? [] : open.filter((id) => !ownCourses.includes(id));
+    if (others.length > 0) {
+      // Synchronize the existing live course-link behavior.
+      openCourses(others);
+      return;
+    }
+    // Each waiting course has one readiness read in flight at most. It is not
+    // cancelled when this effect re-runs (the run ending is one such change):
+    // only a conversation switch, unmount or the course being reconciled stops
+    // it. A read that settles without a scene frees the slot for the next
+    // trigger (a checkpoint, the course list).
+    for (const id of open) {
+      if (firstSceneWatchers.current.has(id)) continue;
+      const cancel = watchFirstScene(
+        [id],
+        (courseId) => handOffRef.current(courseId),
+        () => {
+          if (firstSceneWatchers.current.get(id) === cancel) firstSceneWatchers.current.delete(id);
+        },
+      );
+      firstSceneWatchers.current.set(id, cancel);
+    }
   }, [
     attachedSessionId,
     attachedSessionReplaying,
+    createdThisRequest,
+    earlierCourseHasScene,
     courseTabs,
     courses.classrooms,
     courses.state,
     stageLinkStageIds,
     openCourses,
+    handOffPreview,
+    previewTabOpen,
+    previewEligible,
+    creatingInRequest,
     panes.sessionId,
     replayedStageLinkCount,
+    libraryRevision,
+    pageCount,
+    attachedSessionStatus,
+    panes.library,
+    thisRequestScenes,
+    pendingOwn,
   ]);
+
+  // The readiness reads belong to the attached conversation.
+  useEffect(() => {
+    const watchers = firstSceneWatchers.current;
+    return () => {
+      for (const cancel of watchers.values()) cancel();
+      watchers.clear();
+    };
+  }, [attachedSessionId]);
 
   useGeneratedCourseDiscoverySync({
     sessionId: attachedSessionId,
@@ -1205,19 +1507,63 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     [courseTabs.courseIds, lookupCourse],
   );
 
-  const classroomBrowser = useMemo(
-    () => ({
-      tabs: courseTabItems,
-      activeCourseId: panes.courseId as string,
-      onActivateCourse: activateCourse,
+  /** A course tab chosen in the strip: the preview, if it was on screen, steps back. */
+  const activateCourseFromStrip = useCallback(
+    (courseId: string) => {
+      if (courseId === PREVIEW_TAB_ID) {
+        setPreviewFocus((current) => ({ ...current, active: true }));
+        return;
+      }
+      setPreviewFocus((current) => ({ ...current, active: false }));
+      activateCourse(courseId);
+    },
+    [activateCourse],
+  );
+  const closeCourseFromStrip = useCallback(
+    (courseId: string) => {
+      if (courseId === PREVIEW_TAB_ID) {
+        if (previewTab.requestKey) closePreview(previewTab.requestKey);
+        return;
+      }
       // The teacher closing a tab; `closeCourse` alone is also the end of a
       // course deletion, which is not a navigation of theirs.
-      onCloseCourse: (courseId: string) => {
-        setMaterialSeed(null);
-        closeCourse(courseId);
-      },
+      setMaterialSeed(null);
+      closeCourse(courseId);
+    },
+    [closeCourse, closePreview, previewTab.requestKey],
+  );
+
+  const classroomBrowser = useMemo(
+    () => ({
+      // One strip: the course tabs, then the preview tab while it is open.
+      tabs: previewTabOpen
+        ? [...courseTabItems, { id: PREVIEW_TAB_ID, name: previewTab.label }]
+        : courseTabItems,
+      // The mounted classroom always gets the real course: the preview tab
+      // only selects in the strip, so the keep-alive classroom behind it is
+      // never asked to load the sentinel.
+      activeCourseId: panes.courseId as string,
+      selectedTabId: previewShowing ? PREVIEW_TAB_ID : (panes.courseId as string),
+      onActivateCourse: activateCourseFromStrip,
+      onCloseCourse: closeCourseFromStrip,
     }),
-    [activateCourse, closeCourse, courseTabItems, panes.courseId],
+    [
+      activateCourseFromStrip,
+      closeCourseFromStrip,
+      courseTabItems,
+      panes.courseId,
+      previewShowing,
+      previewTab.label,
+      previewTabOpen,
+    ],
+  );
+  const previewStrip = useMemo(
+    () => ({
+      tabs: courseTabItems,
+      onActivate: activateCourseFromStrip,
+      onCloseCourse: closeCourseFromStrip,
+    }),
+    [activateCourseFromStrip, closeCourseFromStrip, courseTabItems],
   );
 
   const courseNavigation = useMemo(
@@ -1230,6 +1576,26 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     }),
     [courseOptions, generatingCourseIds, lookupCourse, openCourse, panes.courseId],
   );
+
+  // The preview on screen (not folded) folds the navigation, as a view state.
+  const previewPaneOpen = previewShowing && !collapse.value.classroom;
+  const [navReopenedForPreview, setNavReopenedForPreview] = useState(false);
+  if (!previewPaneOpen && navReopenedForPreview) setNavReopenedForPreview(false);
+  const navCollapsed = collapse.value.nav || (previewPaneOpen && !navReopenedForPreview);
+  const toggleRail = useCallback(() => {
+    if (!previewPaneOpen) {
+      collapse.toggleNav();
+      return;
+    }
+    if (navCollapsed) {
+      // Reopened by hand: it stays open for this preview, and an open
+      // preference is remembered as one.
+      if (collapse.value.nav) collapse.toggleNav();
+      setNavReopenedForPreview(true);
+    } else {
+      setNavReopenedForPreview(false);
+    }
+  }, [collapse, navCollapsed, previewPaneOpen]);
 
   return (
     <div
@@ -1262,8 +1628,8 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           }}
           activeCourseId={panes.courseId}
           activeSessionId={panes.sessionId}
-          collapsed={collapse.value.nav}
-          onToggleCollapsed={collapse.toggleNav}
+          collapsed={navCollapsed}
+          onToggleCollapsed={toggleRail}
           onOpenCourse={openCourse}
           onOpenSession={openSession}
           onNewSession={startNewConversation}
@@ -1301,7 +1667,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
         <WorkspaceChatPane
           hidden={!chatOpen}
           covered={render.library}
-          fill={chatFills}
+          fill={chatFills && !previewPaneOpen}
           width={chatWidth.value}
           navigation={courseNavigation}
           materialSeed={materialSeed}
@@ -1322,7 +1688,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           // visible pane anyway.
           onCollapse={bothPanesOnScreen ? collapse.collapseChat : undefined}
           resizeHandle={
-            bothPanesOnScreen ? (
+            bothPanesOnScreen || previewPaneOpen ? (
               <ResizeHandle
                 testId="workspace-chat-resize-handle"
                 label={t('workspace.resizeChatAria')}
@@ -1338,10 +1704,30 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
         />
       ) : null}
 
+      {previewEligible ? (
+        <WorkspaceRequestActivity
+          onStateChange={setPreviewTab}
+          hidden={!previewShowing || collapse.value.classroom}
+          onCollapse={collapse.collapseClassroom}
+          closedKey={closedPreviewKey}
+          onClose={closePreview}
+          strip={previewStrip}
+        />
+      ) : null}
+
+      {previewTabOpen && !panes.courseId && collapse.value.classroom ? (
+        <PaneTab
+          testId="workspace-preview-reopen"
+          label={t('workspace.expandClassroom')}
+          side="right"
+          onClick={collapse.expandClassroom}
+        />
+      ) : null}
+
       {panes.courseId ? (
         <WorkspaceClassroomPane
           browser={classroomBrowser}
-          hidden={!classroomOpen}
+          hidden={!classroomOpen || previewShowing}
           readOnly={readOnlyCourse}
           playback={playbackOn}
           // Symmetric with the conversation's fold: offered only while both

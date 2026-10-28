@@ -19,7 +19,7 @@ function readSampleRate(wav: Uint8Array): number {
 }
 
 /** Documented Interactions REST shape (not the SDK `output_audio` convenience field). */
-function restAudioResponse(pcm: Uint8Array, sampleRate = 24_000) {
+function restAudioResponse(audio: Uint8Array, mimeType = 'audio/l16;rate=24000') {
   return {
     status: 'completed',
     steps: [
@@ -28,8 +28,8 @@ function restAudioResponse(pcm: Uint8Array, sampleRate = 24_000) {
         content: [
           {
             type: 'audio',
-            mime_type: `audio/l16;rate=${sampleRate}`,
-            data: Buffer.from(pcm).toString('base64'),
+            mime_type: mimeType,
+            data: Buffer.from(audio).toString('base64'),
           },
         ],
       },
@@ -53,6 +53,35 @@ describe('Google Gemini TTS', () => {
   beforeEach(() => {
     mockFetch.mockReset();
   });
+
+  it.each(['audio/wav', 'audio/wav;rate=16000'])(
+    'preserves %s without adding a second header',
+    async (mimeType) => {
+      // A 16 kHz mono PCM WAV with four samples, independent of the production wrapper.
+      const wav = Buffer.from(
+        '524946462c00000057415645666d74201000000001000100803e0000007d000002001000646174610800000000000100ffff0000',
+        'hex',
+      );
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => restAudioResponse(wav, mimeType),
+      });
+
+      const result = await generateTTS(
+        {
+          providerId: 'google-tts',
+          apiKey: 'k',
+          voice: 'Kore',
+          modelId: 'gemini-3.8-flash-lite-tts',
+        },
+        'hello classroom',
+      );
+
+      expect(result.format).toBe('wav');
+      expect(result.audio.byteLength).toBe(wav.byteLength);
+      expect(Buffer.from(result.audio)).toEqual(wav);
+    },
+  );
 
   it('reads audio from steps[].content[] and wraps PCM as wav', async () => {
     const pcm = fakePcm(12);
@@ -110,7 +139,7 @@ describe('Google Gemini TTS', () => {
     const pcm = fakePcm(8);
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => restAudioResponse(pcm, 16_000),
+      json: async () => restAudioResponse(pcm, 'audio/l16;rate=16000'),
       headers: { get: () => null },
     });
 
@@ -123,7 +152,7 @@ describe('Google Gemini TTS', () => {
     expect(Array.from(result.audio.slice(44))).toEqual(Array.from(pcm));
   });
 
-  it('defaults voice to Kore and model to gemini-3.1-flash-tts-preview', async () => {
+  it('defaults voice to Kore and model to gemini-3.8-flash-lite-tts', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => restAudioResponse(fakePcm()),
@@ -133,8 +162,31 @@ describe('Google Gemini TTS', () => {
     await generateTTS({ providerId: 'google-tts', apiKey: 'k', voice: '' }, 'hi');
 
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.model).toBe('gemini-3.1-flash-tts-preview');
+    expect(body.model).toBe('gemini-3.8-flash-lite-tts');
     expect(body.generation_config.speech_config[0].voice).toBe('Kore');
+  });
+
+  it('rejects an unsupported encoding instead of treating it as PCM', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => restAudioResponse(fakePcm(), 'audio/mulaw'),
+    });
+    await expect(
+      generateTTS({ providerId: 'google-tts', apiKey: 'k', voice: 'Kore' }, 'hi'),
+    ).rejects.toThrow(/unsupported audio format/);
+  });
+
+  it('keeps the legacy PCM fallback when the response omits its MIME type', async () => {
+    const pcm = fakePcm();
+    const payload = restAudioResponse(pcm);
+    Reflect.deleteProperty(payload.steps[0].content[0], 'mime_type');
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => payload });
+    const result = await generateTTS(
+      { providerId: 'google-tts', apiKey: 'k', voice: 'Kore' },
+      'hi',
+    );
+    expect(readSampleRate(result.audio)).toBe(24_000);
+    expect(result.audio.slice(44)).toEqual(pcm);
   });
 
   it('respects a custom baseUrl without swallowing the path', async () => {

@@ -12,7 +12,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Bug Fixes
 
+- Google TTS: add Gemini 3.8 Flash-Lite (the new default) and Flash TTS ahead of the preview models' retirement. Preserve complete WAV responses instead of wrapping them in a second header; retain PCM conversion and explicit model selections. [#2033](https://github.com/THU-MAIC/OpenMAIC/issues/2033)
+- Speech recognition: OpenAI-compatible transcription models that reject `verbose_json` now receive plain JSON requests. Qwen3 ASR recordings are uploaded as WAV from both the composer and the settings preview, with a matching multipart filename. Known OpenAI transcription models retain their existing SDK path and provider requests retain the guarded transport.
+
 - A slide image whose box has a different shape from the image is now fitted inside the box the model laid out, centered, like `object-fit: contain`. Previously the box kept its width and changed its height, so a box flatter than its image grew downward and covered the text below it. Boxes within 10% of the image's ratio, and images with unknown dimensions, are unchanged. `@openmaic/generation` 0.3.25.
+- Narration: generated speech is prompted to keep Greek letters and named constants as symbols, because that text is also the caption (classroom, standalone HTML player, and narration export). Write π, not the homophone 派, and the same for θ, α, β, λ, ω, Σ, and the constant e. `@openmaic/generation` 0.3.28. [#1906](https://github.com/THU-MAIC/OpenMAIC/issues/1906)
+- Ark Agent Plan chat models resolve catalog metadata again, so reference images, context windows and max output are no longer dropped. The request still sends the plan's own model id. Ids that match an existing row reuse it (`deepseek-v4-pro`, `glm-5.3`, `kimi-k3`, `kimi-k2.7-code`, and Coding Plan `k3`). Seed 2.1 Pro, Seed 2.1 Lite, Seed 2.0 Mini, `deepseek-v4-flash`, `minimax-m3`, `kimi-k2.8-preview` and `ark-code-latest` resolve for the Agent Plan and stay off the dated Doubao preset; `ark-code-latest` is a router with tool calling, no image input and no single window. `kimi-k2.8-preview` omits max output because that documented ceiling equals the context window and callers send it as `max_tokens`. Kimi Coding Plan ids stay off the open-platform Kimi preset. The rest of MiniMax's M2 chat ids and TokenDance's Cogevol ids resolve model info as well. [#1947](https://github.com/THU-MAIC/OpenMAIC/issues/1947) [#1942](https://github.com/THU-MAIC/OpenMAIC/issues/1942)
 
 ## [1.3.0-rc.1] - 2026-10-22
 

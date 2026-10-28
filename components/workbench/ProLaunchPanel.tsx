@@ -48,6 +48,7 @@ import {
   type AgentSkillInfo,
   type MaterialSeed,
 } from '@/components/workbench/compose-extras';
+import { useAgentSkills } from '@/lib/workbench/agent-skills';
 import { insertSkillHandle, seedSlashQuery } from '@/lib/workbench/composer-skills';
 import { resolveComposerMenu } from '@/lib/workbench/composer-menus';
 import { useSkillHandleBackspace } from '@/components/workbench/use-skill-handle-backspace';
@@ -264,10 +265,16 @@ export function ProLaunchPanel({
    * function, same discipline as `WorkbenchChat.loadSkill` — an input box is an
    * input box.
    */
-  const onSkillHandleBackspace = useSkillHandleBackspace(setPrompt, (next) => {
-    pendingCaret.current = next;
-    setCaret(next);
-  });
+  const { skills } = useAgentSkills();
+  const installedSkillNames = useMemo(() => skills.map((skill) => skill.name), [skills]);
+  const onSkillHandleBackspace = useSkillHandleBackspace(
+    setPrompt,
+    (next) => {
+      pendingCaret.current = next;
+      setCaret(next);
+    },
+    installedSkillNames,
+  );
   const loadSkill = useCallback((picked: AgentSkillInfo) => {
     // The live selection: the element is the freshest answer either way.
     const at = textareaRef.current?.selectionStart ?? null;

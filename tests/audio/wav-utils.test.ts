@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isWavBlob, normalizeASRUploadAudio } from '@/lib/audio/wav-utils';
 
 describe('isWavBlob', () => {
@@ -26,6 +26,10 @@ describe('isWavBlob', () => {
 });
 
 describe('normalizeASRUploadAudio', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('passes through providers without WAV normalization unchanged', async () => {
     const input = new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' });
     const result = await normalizeASRUploadAudio('openai-whisper', input);
@@ -46,4 +50,61 @@ describe('normalizeASRUploadAudio', () => {
     expect(result.blob).toBe(input);
     expect(result.fileName).toBe('recording.wav');
   });
+
+  it.each(['qwen3-asr', 'Qwen3-ASR-1.7B', 'Qwen/Qwen3-ASR-1.7B', 'qwen/qwen3-asr-0.6b'])(
+    'keeps existing WAV audio for compatible model %s',
+    async (modelId) => {
+      const input = new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/wav' });
+      const result = await normalizeASRUploadAudio('openai-whisper', input, modelId);
+      expect(result.blob).toBe(input);
+      expect(result.fileName).toBe('recording.wav');
+    },
+  );
+
+  it.each([
+    'qwen3-asr',
+    'qwen3-asr-1.7b',
+    'Qwen3-ASR-1.7B',
+    'Qwen/Qwen3-ASR-1.7B',
+    'Qwen/Qwen3-ASR-0.6B',
+    'qwen/qwen3-asr-1.7b',
+  ])('converts browser WebM recordings to WAV for compatible model %s', async (modelId) => {
+    const input = new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' });
+    const decodeAudioData = vi.fn().mockResolvedValue({
+      sampleRate: 16000,
+      length: 3,
+      numberOfChannels: 1,
+      getChannelData: () => new Float32Array([0, 0.5, -0.5]),
+    });
+    const close = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('window', {
+      AudioContext: class {
+        decodeAudioData = decodeAudioData;
+        close = close;
+      },
+    });
+
+    const result = await normalizeASRUploadAudio('openai-whisper', input, modelId);
+
+    expect(result.fileName).toBe('recording.wav');
+    expect(result.blob.type).toBe('audio/wav');
+    const wav = new DataView(await result.blob.arrayBuffer());
+    expect(new TextDecoder().decode(wav.buffer.slice(0, 4))).toBe('RIFF');
+    expect(new TextDecoder().decode(wav.buffer.slice(8, 12))).toBe('WAVE');
+    expect(wav.getUint32(24, true)).toBe(16000);
+    expect(wav.getInt16(46, true)).toBe(16383);
+    expect(wav.getInt16(48, true)).toBe(-16384);
+    expect(decodeAudioData).toHaveBeenCalledWith(await input.arrayBuffer());
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it.each(['whisper-1', 'Qwen/Qwen3-ForcedAligner-0.6B', 'other-qwen3-asr', 'qwen3-asr2'])(
+    'passes through unrelated model %s without conversion',
+    async (modelId) => {
+      const input = new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' });
+      const result = await normalizeASRUploadAudio('openai-whisper', input, modelId);
+      expect(result.blob).toBe(input);
+      expect(result.fileName).toBe('recording.webm');
+    },
+  );
 });

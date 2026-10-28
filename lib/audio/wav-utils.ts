@@ -76,8 +76,14 @@ export async function audioBlobToWav(blob: Blob): Promise<Blob> {
 export async function normalizeASRUploadAudio(
   providerId: string,
   audioBlob: Blob,
+  modelId?: string,
 ): Promise<{ blob: Blob; fileName: string }> {
-  if (providerId !== 'lemonade-asr' && providerId !== 'funasr-asr') {
+  // Qwen3 behind a compatible transcription endpoint decodes PCM/WAV, but
+  // cannot decode the browser's WebM/Opus recording container. Model IDs may
+  // include a namespace and mixed case, e.g. Qwen/Qwen3-ASR-1.7B.
+  const qwenCompatible =
+    providerId === 'openai-whisper' && /^(?:[^/]+\/)?qwen3-asr(?:$|-)/i.test(modelId ?? '');
+  if (providerId !== 'lemonade-asr' && providerId !== 'funasr-asr' && !qwenCompatible) {
     return { blob: audioBlob, fileName: 'recording.webm' };
   }
   return { blob: await audioBlobToWav(audioBlob), fileName: 'recording.wav' };

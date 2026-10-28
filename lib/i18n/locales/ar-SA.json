@@ -2403,6 +2403,11 @@
     "homeAria": "Back to home",
     "currentSession": "Current chat",
     "startLearning": "ابدأ التعلم",
+    "classroomMode": "وضع الفصل",
+    "learningMode": "تعلّم",
+    "editingMode": "تحرير",
+    "editingUnavailableGenerating": "التحرير غير متاح أثناء إنشاء الدورة.",
+    "fullscreenLearning": "التعلّم بملء الشاشة",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",

@@ -2403,6 +2403,11 @@
     "homeAria": "Back to home",
     "currentSession": "Current chat",
     "startLearning": "Start learning",
+    "classroomMode": "Classroom mode",
+    "learningMode": "Learn",
+    "editingMode": "Edit",
+    "editingUnavailableGenerating": "Editing is unavailable while this course is generating.",
+    "fullscreenLearning": "Full-screen learning",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",

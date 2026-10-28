@@ -135,7 +135,7 @@ export function ASRSettings({ view, apply, entry }: ServicePanelProps) {
         setIsProcessing(true);
         try {
           const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-          const uploadAudio = await normalizeASRUploadAudio(providerId, audioBlob);
+          const uploadAudio = await normalizeASRUploadAudio(providerId, audioBlob, use.modelId);
           const formData = new FormData();
           formData.append('audio', uploadAudio.blob, uploadAudio.fileName);
           // The saved service is tested with the server's configuration of it.
