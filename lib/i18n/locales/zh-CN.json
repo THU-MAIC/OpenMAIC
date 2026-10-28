@@ -2633,7 +2633,7 @@
     "reportEvidence": "决策、作品和结果",
     "reportConversations": "学习对话",
     "conversationLimited": "为保持流畅，本次视图省略了部分活动内容；完整记录仍已保存。",
-    "truncatedEvidence": "这里仅显示最近的记录，较早记录仍已保存。",
+    "truncatedEvidence": "这里展示了部分学习记录；完整原始记录仍被保存。",
     "evidenceVersion": "记录版本",
     "learner": "学生",
     "build": "编译／检查语法",

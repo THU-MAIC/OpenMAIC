@@ -1,3 +1,4 @@
+import { completedProjectFiles } from '@/lib/server/pbl-v3/completed-files';
 import { canViewProjectReport } from '@/lib/server/pbl-v3/stage-progress';
 import { latestFileChanges } from '@/lib/server/pbl-v3/file-changes';
 import { isPBLV3Reference } from '@/lib/pbl/v3/types';
@@ -67,7 +68,24 @@ export async function GET(request: Request) {
     if (path !== null) {
       const store = await LearningStore.open();
       const row = await store.get(id, principal.ownerId);
-      assertProjectSource(projectFor(row), path);
+      const project = projectFor(row);
+      assertProjectSource(project, path);
+      const completed = await completedProjectFiles(store.pool, row, project);
+      if (completed) {
+        const text = completed[path];
+        if (typeof text !== 'string')
+          throw new SandboxError(
+            'SANDBOX_NOT_FOUND',
+            404,
+            'This file is not in the completed project.',
+          );
+        const hash = digest(text);
+        return Response.json({
+          text,
+          hash,
+          changes: await latestFileChanges(store.pool, row.id, path, hash),
+        });
+      }
       const service = await SandboxService.forOwner(principal);
       assertEnvironmentReady(await touchEnvironment(store, row, service, false));
       const text = await service.readText(requireEnvironment(row), path);

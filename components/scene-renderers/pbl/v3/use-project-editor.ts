@@ -10,6 +10,9 @@ export type FileSaveReceipt = { hash: string };
 export type FileSaveRequest = { id: string; revision?: number };
 const AUTOSAVE_DELAY_MS = 750;
 
+const editorSource = (view: LearningView) =>
+  view.completedFilesAvailable ? `completed:${view.id}:${view.revision}` : view.environmentId;
+
 /** Same debounce/serial receipt model as OpenPBL, with hosted file-hash fencing. */
 export function useProjectEditor(
   view: LearningView,
@@ -23,6 +26,7 @@ export function useProjectEditor(
   onError: (error: string) => void,
   options: { enabled: boolean; canEdit: (path: string) => boolean },
 ) {
+  const selectedSource = editorSource(view);
   const [initial] = useState(() => readEditorDraft(view.id));
   const [path, setPath] = useState(initial.path);
   const [tabs, setTabs] = useState(initial.tabs.length ? initial.tabs : ['PLAN.md']);
@@ -76,7 +80,8 @@ export function useProjectEditor(
     async (discard = false, name = current.current.path) => {
       const { view, read } = current.current;
       const path = name;
-      if (!view.environment?.ready || !view.files.includes(path)) return;
+      if ((!view.environment?.ready && !view.completedFilesAvailable) || !view.files.includes(path))
+        return;
       const active = path === current.current.path;
       const ticket = active ? ++sequence.current : sequence.current;
       if (active) setLoading(true);
@@ -85,7 +90,7 @@ export function useProjectEditor(
         if (
           !mounted.current ||
           (active && ticket !== sequence.current) ||
-          view.environmentId !== current.current.view.environmentId ||
+          editorSource(view) !== editorSource(current.current.view) ||
           !current.current.view.files.includes(path)
         )
           return;
@@ -114,7 +119,7 @@ export function useProjectEditor(
         if (!discard && existing && existing.text !== existing.saved) {
           const rejected = unavailableSave.current;
           const retry = retrySave.current;
-          if (existing.environment === view.environmentId && rejected?.name !== path) return;
+          if (existing.environment === editorSource(view) && rejected?.name !== path) return;
           const savedSubmission =
             result.text === existing.text ||
             (retry?.name === path &&
@@ -124,11 +129,11 @@ export function useProjectEditor(
           // Reattach only a verified base or a submission observed in the restored file.
           if (result.hash !== existing.hash && !savedSubmission) {
             setRecoveryConflicts((previous) =>
-              previous[path] === view.environmentId
+              previous[path] === editorSource(view)
                 ? previous
-                : { ...previous, [path]: view.environmentId! },
+                : { ...previous, [path]: editorSource(view)! },
             );
-            if (existing.environment !== view.environmentId) clearRecoveredFailure();
+            if (existing.environment !== editorSource(view)) clearRecoveredFailure();
             return;
           }
           clearConflict();
@@ -141,7 +146,7 @@ export function useProjectEditor(
                     ...latest,
                     saved: result.text,
                     hash: result.hash,
-                    environment: view.environmentId!,
+                    environment: editorSource(view)!,
                   },
                 }
               : previous;
@@ -152,7 +157,7 @@ export function useProjectEditor(
         clearConflict();
         updateBuffers((previous) => ({
           ...previous,
-          [path]: { ...result, saved: result.text, environment: view.environmentId! },
+          [path]: { ...result, saved: result.text, environment: editorSource(view)! },
         }));
         if (
           discard ||
@@ -178,7 +183,7 @@ export function useProjectEditor(
     if (
       !buffer ||
       buffer.text === buffer.saved ||
-      buffer.environment !== view.environmentId ||
+      buffer.environment !== selectedSource ||
       unavailableSave.current?.name === path
     )
       void load();
@@ -189,7 +194,7 @@ export function useProjectEditor(
       if (
         name !== path &&
         buffer.text !== buffer.saved &&
-        (buffer.environment !== view.environmentId || unavailableSave.current?.name === name)
+        (buffer.environment !== selectedSource || unavailableSave.current?.name === name)
       )
         void load(false, name);
     return () => {
@@ -197,7 +202,14 @@ export function useProjectEditor(
       // eslint-disable-next-line react-hooks/exhaustive-deps
       sequence.current++;
     };
-  }, [path, view.environmentId, view.environment?.ready, view.revision, load]);
+  }, [
+    path,
+    selectedSource,
+    view.completedFilesAvailable,
+    view.environment?.ready,
+    view.revision,
+    load,
+  ]);
 
   const pump = useCallback((): Promise<void> => {
     if (inFlight.current) return inFlight.current;
@@ -208,9 +220,9 @@ export function useProjectEditor(
         const retry = retrySave.current;
         if (
           retry &&
-          (retry.buffer.environment !== view.environmentId ||
+          (retry.buffer.environment !== editorSource(view) ||
             !view.files.includes(retry.name) ||
-            recoveryConflicts[retry.name] === view.environmentId ||
+            recoveryConflicts[retry.name] === editorSource(view) ||
             !options.canEdit(retry.name))
         )
           return;
@@ -221,8 +233,8 @@ export function useProjectEditor(
             return (
               b &&
               b.text !== b.saved &&
-              b.environment === view.environmentId &&
-              recoveryConflicts[p] !== view.environmentId &&
+              b.environment === editorSource(view) &&
+              recoveryConflicts[p] !== editorSource(view) &&
               view.files.includes(p) &&
               options.canEdit(p)
             );
@@ -268,7 +280,7 @@ export function useProjectEditor(
           });
         } catch (error) {
           // A late outcome from the released workspace cannot freeze its replacement.
-          if (buffer.environment !== current.current.view.environmentId) continue;
+          if (buffer.environment !== editorSource(current.current.view)) continue;
           // A confirmed precondition rejection did not write this draft. Unknown outcomes
           // still replay the exact request; fresh attempts retain the observed file hash.
           if (
@@ -303,7 +315,14 @@ export function useProjectEditor(
     if (!options.enabled || failed.current) return;
     const timer = setTimeout(() => void pump(), AUTOSAVE_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [buffers, options.enabled, view.environmentId, view.revision, pump]);
+  }, [
+    buffers,
+    options.enabled,
+    view.environmentId,
+    view.completedFilesAvailable,
+    view.revision,
+    pump,
+  ]);
   const select = (name: string) => {
     if (name === path) return;
     sequence.current++;
@@ -345,14 +364,14 @@ export function useProjectEditor(
     loading,
     saving,
     saveError,
-    recoveryConflict: recoveryConflicts[path] === view.environmentId,
+    recoveryConflict: recoveryConflicts[path] === editorSource(view),
     dirty,
     anyDirty: Object.values(buffers).some((b) => b.text !== b.saved),
     stale:
       !!buffers[path] &&
-      (buffers[path].environment !== view.environmentId ||
+      (buffers[path].environment !== editorSource(view) ||
         !view.files.includes(path) ||
-        recoveryConflicts[path] === view.environmentId),
+        recoveryConflicts[path] === editorSource(view)),
     select,
     close,
     reload: () => load(true),
@@ -368,8 +387,8 @@ export function useProjectEditor(
         !options.enabled ||
         !options.canEdit(path) ||
         !b ||
-        b.environment !== view.environmentId ||
-        recoveryConflicts[path] === view.environmentId ||
+        b.environment !== editorSource(view) ||
+        recoveryConflicts[path] === editorSource(view) ||
         b.text === text
       )
         return;

@@ -478,7 +478,7 @@ function PBLV3WorkspaceContent({
       {!view && <p className="p-4">{t('pblV3.loading')}</p>}
       {view && (
         <>
-          {!view.environment?.ready && (
+          {!view.environment?.ready && !view.completedFilesAvailable && (
             <div
               role="status"
               data-testid="pbl-environment-setup"

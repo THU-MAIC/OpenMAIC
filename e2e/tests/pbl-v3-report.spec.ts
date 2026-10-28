@@ -64,7 +64,8 @@ test('completed project reports stay discoverable, show facts before analysis, a
     title: 'Build a small todo application',
     reportAvailable: true,
     environmentId: 'report-environment',
-    environment: { state: 'running', ready: true },
+    environment: { state: 'destroyed', ready: false },
+    completedFilesAvailable: true,
     recovery: null,
     state: {
       status: 'completed',

@@ -133,19 +133,21 @@ export function LearningWorkbenchPanel({
         : ['chat', 'begin', 'retry'].includes(pendingAction ?? '')
           ? 'agent'
           : 'request';
-  const editReason = !view.environment?.ready
-    ? 'environment'
-    : stale
-      ? 'stale'
-      : operation
-        ? 'operation'
-        : pending
-          ? pendingReason
-          : editor.loading || !work
-            ? 'loading'
-            : (access(path).reason ??
-              work.editReason ??
-              (work.canEdit ? (work.planning ? 'planEditable' : 'codeEditable') : 'loading'));
+  const editReason = view.completedFilesAvailable
+    ? 'completed'
+    : !view.environment?.ready
+      ? 'environment'
+      : stale
+        ? 'stale'
+        : operation
+          ? 'operation'
+          : pending
+            ? pendingReason
+            : editor.loading || !work
+              ? 'loading'
+              : (access(path).reason ??
+                work.editReason ??
+                (work.canEdit ? (work.planning ? 'planEditable' : 'codeEditable') : 'loading'));
   const editMessage =
     editReason === 'environment'
       ? t(environmentNoticeKeys[environmentNotice(view.environment, pendingAction === 'prepare')])

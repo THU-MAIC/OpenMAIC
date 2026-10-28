@@ -1,3 +1,4 @@
+import { completedProjectFiles } from './completed-files';
 import { recordLearningEvidence } from './evidence';
 import {
   projectConversation,
@@ -216,10 +217,12 @@ export function invalidateWorkspace(row: Study, changedPath?: string): EngineTra
   return { state, events: [] };
 }
 export async function openStudy(principal: OwnerPrincipal, stageId: string, sceneId: string) {
-  // Identity must be eligible for execution before any learning instance is created.
-  await SandboxService.forOwner(principal);
   const studies = await LearningStore.open();
   const existing = await studies.findForScene(principal.ownerId, stageId, sceneId);
+  // Existing completed work is owner-scoped read-only data; execution eligibility
+  // is still required before creating/resuming any unfinished learning instance.
+  if (existing?.state.status === 'completed') return existing;
+  await SandboxService.forOwner(principal);
   if (existing) return existing;
   const documents = await getOwnerScopedDocumentStore(principal);
   const scene = await documents.getScene(stageId, sceneId);
@@ -1148,7 +1151,10 @@ export async function learningView(
       }
     : null;
   let environmentService: SandboxService | undefined;
-  let files = cached?.files ?? Object.keys(project.files);
+  const completedFiles = await completedProjectFiles(store.pool, row, project);
+  let files = completedFiles
+    ? Object.keys(completedFiles).sort()
+    : (cached?.files ?? Object.keys(project.files));
   if (row.environment_id && !cached) {
     try {
       environmentService = await SandboxService.forOwner(principal);
@@ -1168,7 +1174,7 @@ export async function learningView(
             ready: !released && observed.state === 'running' && observed.workspaceReady,
           }
         : null;
-      if (environment?.ready)
+      if (environment?.ready && !completedFiles)
         files = await projectFiles(environmentService, row.environment_id, project);
     } catch (error) {
       if (
@@ -1220,6 +1226,7 @@ export async function learningView(
     revision: row.revision,
     title: project.definition.title,
     reportAvailable: canViewProjectReport(row.state),
+    completedFilesAvailable: completedFiles !== null,
     lifecycleError: row.lifecycle_error ?? null,
     checkpointFailure: row.checkpoint_failure ?? null,
     archiveDiscard: row.archive_discard ?? null,

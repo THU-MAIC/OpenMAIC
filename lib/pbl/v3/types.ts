@@ -23,6 +23,7 @@ export interface LearningView {
   revision: number;
   title: string;
   reportAvailable: boolean;
+  completedFilesAvailable?: boolean;
   lifecycleError?: string | null;
   checkpointFailure?: ArchiveFailure | null;
   archiveDiscard?: ArchiveDiscard | null;
