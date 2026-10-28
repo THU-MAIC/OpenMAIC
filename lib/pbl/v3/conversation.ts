@@ -100,7 +100,7 @@ export function mergeConversationHistory(pages: readonly (readonly LearningConve
   );
 }
 
-/** Remove only synthesized handoff echoes, preserving the original model reply and its identity. */
+/** Resolve committed response delivery and legacy exact echoes without changing durable records. */
 export function handoffEchoes<
   T extends {
     scope: string;
@@ -135,7 +135,8 @@ export function handoffEchoes<
   return new Set(
     replies.filter((reply) => {
       const committed = reply.inputId === undefined ? undefined : canonical.get(key(reply));
-      if (committed) return reply !== committed && (reply.handoff || reply.messageId !== undefined);
+      if (committed && text.get(key(reply)) !== committed.text)
+        return reply !== committed && (reply.handoff || reply.messageId !== undefined);
       return (
         reply.handoff &&
         reply.inputId !== undefined &&

@@ -637,7 +637,7 @@ export async function teachingRunnerConfig(input: {
             stage.reviewRequired &&
             (p.approval === true || review.state.activeFile === protocol.final);
           const response =
-            typeof p.explanation === 'string'
+            typeof p.explanation === 'string' && p.explanation.trim()
               ? [p.explanation.trim(), p.question].filter(Boolean).join('\n\n')
               : undefined;
           review.checkpoint(p.question, hash, approval, response);

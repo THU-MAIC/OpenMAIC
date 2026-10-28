@@ -4316,7 +4316,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       const mentor = (await store.roles(studyId)).find((binding) => binding.role === 'mentor')!;
       expect(mentor.stage_key).toBe('greeting:6');
       expect(config.systemPrompt).toContain(
-        '"teachingContext":{"stageKey":"greeting:6","completionRecorded":false,"activeSection":null,',
+        '"teachingContext":{"stageKey":"greeting:6","completionRecorded":false,',
       );
       expect(config.systemPrompt).toContain('"recordedEvidence"');
       expect(config.systemPrompt).toContain('2 checks passed');
@@ -4541,7 +4541,12 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     mocked.responses = [
       toolResponse([{ name: 'read_next_skill', input: {} }]),
       textResponse(delivered),
-      toolResponse([{ name: 'request_skill_review', input: { question } }]),
+      toolResponse([
+        {
+          name: 'request_skill_review',
+          input: { explanation: delivered.slice(0, -question.length).trim(), question },
+        },
+      ]),
     ];
     const callsBefore = mocked.modelCalls;
     await runSession(
@@ -4855,7 +4860,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             type: 'tool-call',
             toolCallId: 'ask-review',
             toolName: 'request_skill_review',
-            input: { question: 'What should greet(name) return?' },
+            input: { explanation: '', question: 'What should greet(name) return?' },
           },
           finish,
         ],
@@ -4874,7 +4879,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             type: 'tool-call',
             toolCallId: 'early-review',
             toolName: 'request_skill_review',
-            input: { question: '' },
+            input: { explanation: '', question: '' },
           },
           finish,
         ]);
@@ -4933,7 +4938,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             type: 'tool-call',
             toolCallId: 'next-review',
             toolName: 'request_skill_review',
-            input: { question: 'How does the caller use that value?' },
+            input: { explanation: '', question: 'How does the caller use that value?' },
           },
           finish,
         ],

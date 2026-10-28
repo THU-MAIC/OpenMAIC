@@ -1068,3 +1068,29 @@ it('reconciles canonical delivery across pages without hiding another role sessi
       .map((part) => part.text),
   ).toEqual(['Still visible until a handoff commits.']);
 });
+
+it('retains the original message identity when a canonical recovery copies its exact text', () => {
+  const response = 'Open Project files to read PLAN.md.';
+  const before = [
+    event(1, 'user_message', { text: 'Where is the plan?' }),
+    event(2, 'message_end', message(response)),
+  ];
+  const original = projectConversation(before, 'planner', false)
+    .flatMap((entry) => entry.parts)
+    .find((part) => part.kind === 'text' && part.text === response)!;
+  const recovered = projectConversation(
+    [
+      ...before,
+      event(3, 'pbl_learner_handoff', {
+        question: response,
+        canonical: true,
+        toolCallId: 'recovery',
+      }),
+    ],
+    'planner',
+    false,
+  )
+    .flatMap((entry) => entry.parts)
+    .filter((part) => part.kind === 'text' && part.text === response);
+  expect(recovered).toEqual([original]);
+});
