@@ -144,6 +144,11 @@ export interface RosterAgent {
 
 const str = (value: unknown): string => (typeof value === 'string' ? value : '');
 
+/** When the newest cast by `now` was set, or null: a later set_roster is a new cast. */
+export function latestRosterAt(track: RequestTrack, now: number): number | null {
+  return rosterOf(track.steps, now)?.at ?? null;
+}
+
 /** The newest roster a finished `set_roster` returned by `now`, and when. */
 function rosterOf(
   steps: readonly RequestStep[],

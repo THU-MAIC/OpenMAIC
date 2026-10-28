@@ -178,4 +178,68 @@ describe('preview memory across conversations', () => {
     // The cast has never been on screen: it is revealed now.
     expect(scene()).toBe('assembling');
   });
+
+  it('reveals a replacement cast that arrived while the preview was hidden', async () => {
+    let state = foldUntil(firstPageAt);
+    let id = frames.length;
+    const add = (ts: number, type: string, data: unknown) => {
+      state = foldEvent(state, { id: ++id, ts, attempt: 1, type, data });
+    };
+    const attach = () =>
+      act(async () => {
+        useWorkbenchStore.setState({
+          ...state,
+          sessionId: 'session-recast',
+          status: 'running',
+          replaying: false,
+        } as never);
+      });
+    const preview = (hidden: boolean) =>
+      createElement(WorkspaceRequestActivity, { closedKey: null, onClose: () => {}, hidden });
+    // The first cast, watched: revealed, then generation.
+    vi.setSystemTime(firstPageAt + 1_000);
+    await attach();
+    await act(async () => root.render(preview(false)));
+    await act(async () => vi.advanceTimersByTime(rosterRevealMs(3) + 5_000));
+    expect(scene()).toBe('generating');
+
+    // Behind a course tab, the same request casts again.
+    await act(async () => root.render(preview(true)));
+    const recastAt = Date.now();
+    add(recastAt, 'tool_execution_start', {
+      toolCallId: 'recast',
+      toolName: 'set_roster',
+      args: {},
+    });
+    add(recastAt + 10, 'tool_execution_end', {
+      toolCallId: 'recast',
+      toolName: 'set_roster',
+      isError: false,
+      result: {
+        content: [],
+        details: {
+          roster: [
+            { id: 'new-t', name: 'Teacher Wu', role: 'teacher', avatar: '/avatars/teacher.png' },
+            { id: 'new-a', name: 'Student B', role: 'student', avatar: '/avatars/assist.png' },
+          ],
+        },
+      },
+    });
+    await attach();
+    await act(async () => vi.advanceTimersByTime(10_000));
+
+    // Shown again: the replacement cast is revealed, in full.
+    await act(async () => root.render(preview(false)));
+    const flipped = () =>
+      container.querySelectorAll(
+        '[data-testid="request-preview-roster-card"][data-revealed="true"]',
+      ).length;
+    expect(scene()).toBe('assembling');
+    expect(container.textContent).toContain('Teacher Wu');
+    // From face down, at the classic pace, through every card.
+    expect(flipped()).toBe(0);
+    await act(async () => vi.advanceTimersByTime(rosterRevealMs(2)));
+    expect(scene()).toBe('assembling');
+    expect(flipped()).toBe(2);
+  });
 });

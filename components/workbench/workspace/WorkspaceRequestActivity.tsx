@@ -27,6 +27,7 @@ type Translate = (key: string, options?: Record<string, unknown>) => string;
 import { requestTrack, type RequestTrack } from '@/lib/workbench/request-activity';
 import {
   DEFAULT_REQUEST_SCHEDULE,
+  latestRosterAt,
   scheduleRequestPreview,
   type RequestPreviewView,
 } from '@/lib/workbench/request-schedule';
@@ -137,7 +138,10 @@ export function WorkspaceRequestActivity({
   // When this viewer first had the cast in hand: a page opened or reloaded
   // after set_roster still gets the reveal (see `RequestViewerMemory`).
   // Keyed with the conversation: request keys repeat across conversations.
-  const rosterKey = track ? sessionScopedKey(sessionId, track.key) : null;
+  // And with the cast: a request that calls set_roster again has a new cast
+  // to reveal, seen or not.
+  const castAt = track ? latestRosterAt(track, now) : null;
+  const rosterKey = track ? sessionScopedKey(sessionId, `${track.key}@${castAt ?? ''}`) : null;
   const [rosterSeen, setRosterSeen] = useState<{ key: string; at: number } | null>(null);
   const rosterSeenAt = rosterKey !== null && rosterSeen?.key === rosterKey ? rosterSeen.at : null;
   const view = track
