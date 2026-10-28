@@ -38,7 +38,9 @@ export interface ArtifactProjection {
     responseType?: 'choice' | 'text';
     requiresRationale?: boolean;
   }[];
-  decisionsChosen?: readonly Pick<DecisionRecord, 'id' | 'chosen' | 'rationale'>[];
+  decisionsChosen?: readonly (Pick<DecisionRecord, 'id' | 'chosen' | 'rationale'> & {
+    selection?: { label: string; summary?: string };
+  })[];
   plan?: string;
   code?: string;
 }
@@ -76,6 +78,7 @@ export function projectArtifacts({
         id,
         chosen,
         ...(rationale === undefined ? {} : { rationale }),
+        ...selectedOption(decisionCatalog, id, chosen),
       }));
     }
     if (artifact === 'plan') projection.plan = state.plan ?? '';
@@ -83,4 +86,28 @@ export function projectArtifacts({
   }
 
   return projection;
+}
+
+/** Public option semantics travel with the saved ID; private rubric never does. */
+function selectedOption(catalog: readonly DecisionQuestion[], id: string, chosen: unknown) {
+  const question = catalog.find((item) => item.id === id);
+  if (question?.responseType === 'text') return {};
+  const option = question?.options?.find(
+    (value) => typeof value === 'object' && value !== null && 'id' in value && value.id === chosen,
+  );
+  if (
+    !option ||
+    typeof option !== 'object' ||
+    !('label' in option) ||
+    typeof option.label !== 'string'
+  )
+    return {};
+  return {
+    selection: {
+      label: option.label,
+      ...('summary' in option && typeof option.summary === 'string'
+        ? { summary: option.summary }
+        : {}),
+    },
+  };
 }

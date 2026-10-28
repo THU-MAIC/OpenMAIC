@@ -2551,7 +2551,7 @@
     "restoredCheckpoint": "Se restauró el último punto guardado, sin los cambios posteriores.",
     "restartedWorkspace": "No había un punto guardado. Se reinició el espacio de trabajo con los archivos iniciales.",
     "restoredProgress": "Se volvió al primer paso afectado. Revisa y prueba los archivos restaurados.",
-    "environmentNotice": "Preparing your project environment. Your teaching assistant will open the step when it is ready.",
+    "environmentNotice": "Preparing or restoring the environment. The editor is read-only; existing drafts are kept. Type after recovery.",
     "prepare": "Retry project setup",
     "completed": "Project completed. Your learning progress is saved.",
     "learning": "Learning conversation",
@@ -2787,6 +2787,7 @@
       "toggleAssistant": "Toggle learning assistant",
       "environmentDetails": "Environment details",
       "saving": "Guardando…",
+      "readOnly": "Read-only",
       "saved": "Guardado",
       "saveFailed": "Error al guardar · Reintentar",
       "draftRetained": "Cambios conservados en este navegador"
@@ -2879,7 +2880,8 @@
       "display": "Display",
       "stopped": "Stopped"
     },
-    "environmentSleeping": "El entorno del proyecto está inactivo. Restaura los archivos del proyecto con el botón de abajo para continuar. Los borradores sin guardar se conservan en este navegador.",
+    "environmentReleasing": "The environment is being released. The editor is read-only. Wait, then click the workbench or use the restore button. Existing browser drafts are kept.",
+    "environmentSleeping": "The environment is inactive and the editor is read-only. Click in the workbench to restore automatically, or use Restore project files. Existing browser drafts are kept; type after recovery.",
     "recoverWorkspace": "Restaurar archivos del proyecto",
     "checkpointUnavailable": "No se pudieron archivar los últimos cambios. Intenta guardar de nuevo. Si permanece inactivo, el entorno puede liberarse y los cambios sin archivar pueden perderse.",
     "checkpointSkipped": "El archivado ha fallado repetidamente. Al recuperar, pueden perderse los cambios posteriores al respaldo.",

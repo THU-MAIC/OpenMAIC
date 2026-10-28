@@ -1,4 +1,5 @@
 import 'server-only';
+import { visibleProductLabels } from './ui-labels';
 import en from '@/lib/i18n/locales/en-US.json';
 import zh from '@/lib/i18n/locales/zh-CN.json';
 import { hasTaskDrawer, learningWorkbenchFeatures, stageStep } from '@/lib/pbl/v3/presentation';
@@ -34,7 +35,7 @@ const responsibilities: Record<AgentRole, string> = {
 };
 const labels = {
   projectFiles: { en: en.pblV3.files, zh: zh.pblV3.files },
-  task: { en: en.pblV3.journey.taskTitle, zh: zh.pblV3.journey.taskTitle },
+  task: { en: en.pblV3.journey.taskDetails, zh: zh.pblV3.journey.taskDetails },
   runTests: { en: en.pblV3.runTests, zh: zh.pblV3.runTests },
   build: { en: en.pblV3.build, zh: zh.pblV3.build },
   continue: { en: en.pblV3.next, zh: zh.pblV3.next },
@@ -50,6 +51,7 @@ export function teachingProductContext(input: {
   stage: StageDefinition;
   role: AgentRole;
   completionRecorded?: boolean;
+  uiLocale?: string;
   workspace?: TeachingWorkspaceFacts;
 }) {
   const { definition, stage, role, workspace, completionRecorded = false } = input;
@@ -95,6 +97,8 @@ export function teachingProductContext(input: {
         'Pane visibility, selected tabs and viewport are not observed. Give conditional directions using named controls.',
     },
     labels,
+    uiLocale: input.uiLocale ?? 'en-US',
+    visibleLabels: visibleProductLabels(input.uiLocale),
     features: learningWorkbenchFeatures,
     current: {
       step,

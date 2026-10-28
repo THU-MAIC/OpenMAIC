@@ -79,7 +79,12 @@ const greeting: InstalledProject = {
         desc: 'Choose a string formatting method.',
         decisionPrompt: 'How will you insert the name into the greeting?',
         options: [
-          { id: 'format', label: 'Formatted string', summary: 'Use a formatted string.' },
+          {
+            id: 'format',
+            label: 'f-string (formatted string literal)',
+            summary:
+              'Use a Python f-string, for example f"Hello, {name}!"; do not substitute str.format().',
+          },
           { id: 'concat', label: 'Concatenation', summary: 'Join strings.' },
         ],
         rubricAnchor: 'readability',
@@ -99,6 +104,23 @@ const greeting: InstalledProject = {
             options: ['Sends a value to the caller', 'Prints a value automatically'],
             answer: 0,
             explain: 'return gives the value to the caller.',
+          },
+          {
+            q: 'When greet is called with Ada, what does the name parameter hold?',
+            options: ['The function name', 'The value Ada', 'The returned greeting'],
+            answer: 1,
+            explain: 'A parameter receives the argument supplied by the caller.',
+          },
+          {
+            q: 'The approved plan uses your chosen formatting method. What should implementation do?',
+            options: [
+              'Use any method with similar output without mentioning the change',
+              'Skip checking the saved decision',
+              'Follow that method, or discuss a necessary change before replacing it',
+            ],
+            answer: 2,
+            explain:
+              'A chosen implementation technique is part of the approved plan, even when another technique could produce the same output.',
           },
         ],
         stages: [
@@ -148,7 +170,7 @@ const greeting: InstalledProject = {
 };
 function extendedProject(language: 'Python' | 'Java'): InstalledProject {
   const java = language === 'Java';
-  const ref = { id: java ? 'greeting-java' : 'greeting-python-lab', version: '1.1.0' };
+  const ref = { id: java ? 'greeting-java' : 'greeting-python-lab', version: '1.2.0' };
   const file = java ? 'src/Greeting.java' : 'src/greeting.py';
   const definition = structuredClone(greeting.definition);
   definition.id = ref.id;
@@ -164,7 +186,11 @@ function extendedProject(language: 'Python' | 'Java'): InstalledProject {
   };
   if (java) {
     definition.decisions[0]!.options = [
-      { id: 'format', label: 'Formatted string', summary: 'Use String.format.' },
+      {
+        id: 'format',
+        label: 'String.format',
+        summary: 'Use Java String.format; Python f-strings are not Java syntax.',
+      },
       { id: 'concat', label: 'Concatenation', summary: 'Join strings with +.' },
     ];
     first.contract =
@@ -204,6 +230,23 @@ function extendedProject(language: 'Python' | 'Java'): InstalledProject {
         answer: 0,
         explain: 'New behavior must preserve earlier requirements.',
       },
+      {
+        q: 'Which input exercises the new surrounding-whitespace requirement?',
+        options: ['  Ada  ', 'Ada', 'Lin'],
+        answer: 0,
+        explain:
+          'Leading and trailing spaces exercise normalization; ordinary names remain useful regression cases.',
+      },
+      {
+        q: 'The syntax/build check succeeds. What does this prove?',
+        options: [
+          'All required behavior passed',
+          'The code passed that syntax/build check; formal behavior tests still matter',
+          'Every earlier requirement was tested',
+        ],
+        answer: 1,
+        explain: 'Building and checking observable behavior supply different evidence.',
+      },
     ],
   });
   const check = (id: string, name: string, expected: string) => ({
@@ -240,11 +283,33 @@ function extendedProject(language: 'Python' | 'Java'): InstalledProject {
 }
 const pythonLab = extendedProject('Python');
 const javaLab = extendedProject('Java');
+// Keep existing study references and quiz attempts pinned to their original content.
+function legacySample(project: InstalledProject, version: string): InstalledProject {
+  const legacy = structuredClone(project);
+  legacy.ref.version = version;
+  for (const milestone of legacy.definition.milestones)
+    milestone.quiz = milestone.quiz?.slice(0, 1);
+  legacy.definition.decisions[0]!.options[0] = {
+    id: 'format',
+    label: 'Formatted string',
+    summary:
+      legacy.definition.language === 'Java' ? 'Use String.format.' : 'Use a formatted string.',
+  };
+  return legacy;
+}
+const currentGreeting = { ...greeting, ref: { ...greeting.ref, version: '1.1.0' } };
 const projects = new Map(
-  [greeting, pythonLab, javaLab].map((p) => [`${p.ref.id}@${p.ref.version}`, p]),
+  [
+    legacySample(greeting, '1.0.0'),
+    legacySample(pythonLab, '1.1.0'),
+    legacySample(javaLab, '1.1.0'),
+    currentGreeting,
+    pythonLab,
+    javaLab,
+  ].map((p) => [`${p.ref.id}@${p.ref.version}`, p]),
 );
 export function publicProjects() {
-  return [pythonLab, javaLab, greeting].map(({ ref, definition }) => ({
+  return [pythonLab, javaLab, currentGreeting].map(({ ref, definition }) => ({
     ref,
     title: definition.title,
     language: definition.language,

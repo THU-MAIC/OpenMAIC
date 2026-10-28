@@ -343,3 +343,66 @@ describe('guided review boundaries', () => {
       expect(isPBLV3Reference(value)).toBe(false);
   });
 });
+
+describe('semantic artifact acceptance before the final section', () => {
+  it.each(['我认可当前版本', 'Looks good, no changes; continue', '可以进入测试'])(
+    'reuses genuine current-version acceptance: %s',
+    (reply) => {
+      const review = new GuidedSkillReview(protocol, undefined, false, true);
+      review.beginRun('plan:2', [{ seq: 1, text: 'Start' }], false);
+      review.advance('A-teach.md', undefined, artifact);
+      review.checkpoint('Any changes to this version?', artifact);
+      review.beginRun('plan:2', [{ seq: 2, text: reply }], true);
+      review.advance(
+        'B-review.md',
+        'The actual reply accepts this unchanged version.',
+        artifact,
+        false,
+        true,
+      );
+      expect(() =>
+        review.complete('Same accepted version, all goals covered.', artifact, true),
+      ).not.toThrow();
+      expect(
+        () => new GuidedSkillReview(protocol, review.state, false, true).state.approval,
+      ).not.toThrow();
+    },
+  );
+  it('does not create approval from an understanding-only or contradictory reply assessment', () => {
+    for (const reply of [
+      'I understand the plan',
+      'Looks good, but please change the return value',
+    ]) {
+      const review = new GuidedSkillReview(protocol, undefined, false, true);
+      review.beginRun('plan:2', [{ seq: 1, text: 'Start' }], false);
+      review.advance('A-teach.md', undefined, artifact);
+      review.checkpoint('Review and approve?', artifact, true);
+      review.beginRun('plan:2', [{ seq: 2, text: reply }], true);
+      review.advance(
+        'B-review.md',
+        'Understanding or clarification only, not acceptance.',
+        artifact,
+        false,
+        false,
+      );
+      expect(() => review.complete('Covered review, but no acceptance.', artifact, true)).toThrow(
+        'approval',
+      );
+    }
+  });
+  it('still rejects fabricated, changed-version, support-only and old-stage acceptance', () => {
+    const review = new GuidedSkillReview(protocol, undefined, false, true);
+    review.beginRun('plan:2', [{ seq: 1, text: 'Start' }], false);
+    review.advance('A-teach.md', undefined, artifact);
+    review.checkpoint('Review this version.', artifact);
+    review.beginRun('plan:2', [{ seq: 1, text: 'Start' }], true);
+    expect(() => review.advance('B-review.md', 'Accept', artifact, false, true)).toThrow();
+    review.beginRun('plan:2', [{ seq: 2, text: 'I accept' }], true);
+    expect(() => review.advance('B-review.md', 'Accept', 'b'.repeat(64), false, true)).toThrow();
+    review.advance('B-review.md', 'Accept', artifact, false, true);
+    expect(() => review.complete('Accept', 'b'.repeat(64), true)).toThrow();
+    const next = new GuidedSkillReview(protocol, review.state, false, true);
+    next.beginRun('code:3', [{ seq: 2, text: 'I accept' }], true);
+    expect(() => next.complete('Accept', artifact, true)).toThrow();
+  });
+});

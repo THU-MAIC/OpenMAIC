@@ -8,6 +8,7 @@ import {
 import { executionFailureCode } from '@/lib/agent/runtime/request-failure';
 import { readConversationHistory, CONVERSATION_BYTES } from './conversation-history';
 import 'server-only';
+import { isTeachingLocale } from './communication';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { projectEditAccess } from '@/lib/pbl/v3/edit-access';
 import { learnerActions } from '@/lib/pbl/v3/learner-actions';
@@ -255,6 +256,7 @@ export async function queueRole(
   text: string,
   opening = false,
   commandId?: string,
+  uiLocale?: string,
 ) {
   await fenceOwnerWrite(db, row.owner_id);
   const role = roleFor(row);
@@ -323,7 +325,12 @@ export async function queueRole(
     await agents.appendControlEvent(binding.session_id, {
       ts: Date.now(),
       type: 'user_message',
-      data: { text, delivery: 'queued', pblOpening: true },
+      data: {
+        text,
+        delivery: 'queued',
+        pblOpening: true,
+        ...(uiLocale ? { pblUiLocale: uiLocale } : {}),
+      },
     });
     await agents.requeueSession(binding.session_id);
   } else {
@@ -334,11 +341,18 @@ export async function queueRole(
     );
     // Annotate the staged input in this same transaction, before either the input
     // or its wakeup becomes visible. No historical events are rewritten.
-    if (commandId)
+    if (commandId || uiLocale)
       await db.query(
-        `UPDATE agent_session_events SET data=data || jsonb_build_object('pblCommandId',$3::text)
+        `UPDATE agent_session_events SET data=data || $3::jsonb
          WHERE session_id=$1 AND seq=$2`,
-        [binding.session_id, input.seq, commandId],
+        [
+          binding.session_id,
+          input.seq,
+          JSON.stringify({
+            ...(commandId ? { pblCommandId: commandId } : {}),
+            ...(uiLocale ? { pblUiLocale: uiLocale } : {}),
+          }),
+        ],
       );
   }
   return binding.session_id;
@@ -355,6 +369,7 @@ export interface LearningCommand {
   rationale?: string;
   answers?: number[];
   evaluationId?: string;
+  uiLocale?: string;
 }
 function validateCommand(command: LearningCommand) {
   if (
@@ -371,6 +386,8 @@ function validateCommand(command: LearningCommand) {
     (typeof command.text !== 'string' || command.text.length > 64_000)
   )
     throw sandboxInvalid('Text is limited to 64000 characters.');
+  if (command.uiLocale !== undefined && !isTeachingLocale(command.uiLocale))
+    throw sandboxInvalid('Select a supported interface language.');
   if (command.type === 'decide' && !isDecisionResponseStorable(command))
     throw sandboxInvalid(
       'Decision responses must contain valid Unicode text without null characters.',
@@ -631,6 +648,7 @@ export async function commandStudy(
                 : command.text!,
               command.type === 'begin',
               command.id,
+              command.uiLocale,
             ),
           };
         }
@@ -1103,7 +1121,13 @@ export async function learningView(
   // must not offer it as ready, or retry is enabled only to fail and the next input cannot restore.
   const released = !!row.environment_id && environmentReleaseCommitted(row, row.environment_id);
   let environment: LearningView['environment'] = cached?.environment
-    ? { ...cached.environment, ready: cached.environment.ready && !released }
+    ? {
+        ...cached.environment,
+        ready: cached.environment.ready && !released,
+        ...(row.idle_turn_cleanup?.releasing && cached.environment.state !== 'destroyed'
+          ? { releasing: true }
+          : { releasing: false }),
+      }
     : null;
   let environmentService: SandboxService | undefined;
   let files = cached?.files ?? Object.keys(project.files);
@@ -1118,6 +1142,9 @@ export async function learningView(
       environment = observed
         ? {
             state: observed.state,
+            ...(row.idle_turn_cleanup?.releasing && observed.state !== 'destroyed'
+              ? { releasing: true }
+              : {}),
             ready: !released && observed.state === 'running' && observed.workspaceReady,
           }
         : null;

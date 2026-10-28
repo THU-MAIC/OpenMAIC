@@ -2551,7 +2551,7 @@
     "restoredCheckpoint": "The workspace was restored from the latest checkpoint. Changes made after that checkpoint are not included.",
     "restartedWorkspace": "No checkpoint was available. The workspace was restarted with the project starter files.",
     "restoredProgress": "Progress was returned to the first affected step. Review and test the restored files again.",
-    "environmentNotice": "Preparing your project environment. Your teaching assistant will open the step when it is ready.",
+    "environmentNotice": "Preparing or restoring the environment. The editor is read-only; existing drafts are kept. Type after recovery.",
     "prepare": "Retry project setup",
     "completed": "Project completed. Your learning progress is saved.",
     "learning": "Learning conversation",
@@ -2787,6 +2787,7 @@
       "toggleAssistant": "Toggle learning assistant",
       "environmentDetails": "Environment details",
       "saving": "Saving…",
+      "readOnly": "Read-only",
       "saved": "Saved",
       "saveFailed": "Save failed · Retry",
       "draftRetained": "Changes kept in this browser"
@@ -2879,7 +2880,8 @@
       "display": "Display",
       "stopped": "Stopped"
     },
-    "environmentSleeping": "Your project environment is inactive. Click Restore project files below to continue. Unsaved drafts are kept in this browser.",
+    "environmentReleasing": "The environment is being released. The editor is read-only. Wait, then click the workbench or use the restore button. Existing browser drafts are kept.",
+    "environmentSleeping": "The environment is inactive and the editor is read-only. Click in the workbench to restore automatically, or use Restore project files. Existing browser drafts are kept; type after recovery.",
     "recoverWorkspace": "Restore project files",
     "checkpointUnavailable": "Your latest work could not be archived. Retry to save it. If left idle, this environment may be released and unarchived edits lost.",
     "checkpointSkipped": "Archiving failed persistently. Recovery may lose changes newer than the saved checkpoint.",

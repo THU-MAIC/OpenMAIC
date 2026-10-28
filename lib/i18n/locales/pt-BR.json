@@ -2551,7 +2551,7 @@
     "restoredCheckpoint": "O espaço foi restaurado a partir do último ponto salvo, sem alterações posteriores.",
     "restartedWorkspace": "Não havia ponto salvo. O espaço foi reiniciado com os arquivos iniciais do projeto.",
     "restoredProgress": "O progresso voltou à primeira etapa afetada. Revise e teste os arquivos restaurados.",
-    "environmentNotice": "Preparing your project environment. Your teaching assistant will open the step when it is ready.",
+    "environmentNotice": "Preparing or restoring the environment. The editor is read-only; existing drafts are kept. Type after recovery.",
     "prepare": "Retry project setup",
     "completed": "Project completed. Your learning progress is saved.",
     "learning": "Learning conversation",
@@ -2787,6 +2787,7 @@
       "toggleAssistant": "Toggle learning assistant",
       "environmentDetails": "Environment details",
       "saving": "Salvando…",
+      "readOnly": "Read-only",
       "saved": "Salvo",
       "saveFailed": "Falha ao salvar · Tentar novamente",
       "draftRetained": "Alterações mantidas neste navegador"
@@ -2879,7 +2880,8 @@
       "display": "Display",
       "stopped": "Stopped"
     },
-    "environmentSleeping": "O ambiente do projeto está inativo. Restaure os arquivos do projeto pelo botão abaixo para continuar. Os rascunhos não salvos ficam neste navegador.",
+    "environmentReleasing": "The environment is being released. The editor is read-only. Wait, then click the workbench or use the restore button. Existing browser drafts are kept.",
+    "environmentSleeping": "The environment is inactive and the editor is read-only. Click in the workbench to restore automatically, or use Restore project files. Existing browser drafts are kept; type after recovery.",
     "recoverWorkspace": "Restaurar arquivos do projeto",
     "checkpointUnavailable": "Não foi possível arquivar as últimas alterações. Tente salvar novamente. Se ficar inativo, o ambiente poderá ser liberado e alterações não arquivadas poderão ser perdidas.",
     "checkpointSkipped": "O arquivamento falhou repetidamente. A recuperação pode perder alterações posteriores ao salvamento.",

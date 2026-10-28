@@ -494,6 +494,10 @@ test('installed sample opens in the normal classroom and preserves progress afte
   // Observe expiry without trusted input: passive refreshes must not allocate compute.
   await page.getByRole('button', { name: 'Refresh progress' }).dispatchEvent('click');
   await expect(page.getByTestId('pbl-environment-setup')).toContainText('environment is inactive');
+  await expect(page.getByTestId('pbl-environment-setup')).toContainText(
+    'Click in the workbench to restore automatically',
+  );
+  await expect(page.getByTestId('pbl-editor-readonly')).toContainText('read-only');
   expect(calls.filter((c) => c.type === 'prepare')).toHaveLength(beforeRecovery);
   // Classroom navigation is only reachable outside the shared fullscreen overlay.
   if (
@@ -557,6 +561,10 @@ test('installed sample opens in the normal classroom and preserves progress afte
   view.environment = { state: 'destroyed', ready: false };
   await page.getByRole('button', { name: 'Refresh progress' }).dispatchEvent('click');
   await expect(page.getByTestId('pbl-environment-setup')).toContainText('environment is inactive');
+  await expect(page.getByTestId('pbl-environment-setup')).toContainText(
+    'Click in the workbench to restore automatically',
+  );
+  await expect(page.getByTestId('pbl-editor-readonly')).toContainText('read-only');
   await page.waitForTimeout(1100);
   // Trusted input in the PBL content still restores automatically, without changing the draft.
   await page.getByLabel('Your message').press('ArrowLeft');
@@ -663,6 +671,25 @@ test('installed sample opens in the normal classroom and preserves progress afte
   }
   await expect(page.getByRole('tab', { name: /●/ })).toHaveCount(0);
   expect(calls.filter((c) => c.type === 'save')).toHaveLength(savesBeforeSwitching);
+  // Testing locks remain visible even with a clean, saved editor buffer.
+  const codingStage = view.stage;
+  view.stage = { kind: 'check', checker: 'tests' } as LearningView['stage'];
+  view.state.position.stageIndex = 4;
+  view.evaluation = { id: 'running-test', state: 'running', stdout: '', stderr: '' };
+  view.actions = [];
+  view.revision++;
+  await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
+  await expect(page.getByTestId('pbl-editor-readonly')).toContainText('Tests are running');
+  await page.locator('.monaco-editor .view-lines .view-line').first().click();
+  await page.keyboard.type('blocked');
+  await expect(page.locator('.monaco-editor .view-lines')).toHaveText(
+    'print("Saved code after retry")',
+  );
+  expect(calls.filter((c) => c.type === 'save')).toHaveLength(savesBeforeSwitching);
+  view.stage = codingStage;
+  view.state.position.stageIndex = 3;
+  view.evaluation = null;
+  view.actions = ['chat', 'edit'];
   view.busy = true;
   view.revision++;
   await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
@@ -671,7 +698,7 @@ test('installed sample opens in the normal classroom and preserves progress afte
   await expect(page.locator('.monaco-editor-overlaymessage')).toContainText(
     'The assistant is working',
   );
-  await expect(page.getByTestId('pbl-edit-access')).toHaveCount(0);
+  await expect(page.getByTestId('pbl-editor-readonly')).toContainText('The assistant is working');
   await expect(page.locator('.monaco-editor .view-lines')).toHaveText(
     'print("Saved code after retry")',
   );
@@ -803,6 +830,10 @@ test('installed sample opens in the normal classroom and preserves progress afte
   await page.keyboard.insertText('print("Draft after idle")');
   await expect(retrySave).toBeVisible();
   await expect(page.getByTestId('pbl-environment-setup')).toContainText('environment is inactive');
+  await expect(page.getByTestId('pbl-environment-setup')).toContainText(
+    'Click in the workbench to restore automatically',
+  );
+  await expect(page.getByTestId('pbl-editor-readonly')).toContainText('read-only');
   const unavailableRequest = saveAttempts.at(-1)!;
   const beforeDraftRestore = calls.filter((c) => c.type === 'prepare').length;
   await page.getByRole('button', { name: 'Restore project files', exact: true }).click();

@@ -27,7 +27,11 @@ export interface LearningView {
   checkpointFailure?: ArchiveFailure | null;
   archiveDiscard?: ArchiveDiscard | null;
   environmentId: string | null;
-  environment: { state: import('@/lib/sandbox/types').SandboxState; ready: boolean } | null;
+  environment: {
+    state: import('@/lib/sandbox/types').SandboxState;
+    ready: boolean;
+    releasing?: boolean;
+  } | null;
   recovery: { checkpointRevision: number; progressReset: boolean } | null;
   state: PblSessionState;
   stage: StageDefinition;

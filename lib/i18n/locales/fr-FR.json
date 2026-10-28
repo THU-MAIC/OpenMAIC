@@ -2551,7 +2551,7 @@
     "restoredCheckpoint": "L’espace de travail a été restauré depuis le dernier point de sauvegarde, sans les modifications ultérieures.",
     "restartedWorkspace": "Aucun point de sauvegarde disponible : les fichiers initiaux du projet ont été rétablis.",
     "restoredProgress": "La progression est revenue à la première étape affectée. Vérifiez et testez à nouveau les fichiers restaurés.",
-    "environmentNotice": "Preparing your project environment. Your teaching assistant will open the step when it is ready.",
+    "environmentNotice": "Preparing or restoring the environment. The editor is read-only; existing drafts are kept. Type after recovery.",
     "prepare": "Retry project setup",
     "completed": "Project completed. Your learning progress is saved.",
     "learning": "Learning conversation",
@@ -2787,6 +2787,7 @@
       "toggleAssistant": "Toggle learning assistant",
       "environmentDetails": "Environment details",
       "saving": "Enregistrement…",
+      "readOnly": "Read-only",
       "saved": "Enregistré",
       "saveFailed": "Échec · Réessayer",
       "draftRetained": "Modifications conservées dans ce navigateur"
@@ -2879,7 +2880,8 @@
       "display": "Display",
       "stopped": "Stopped"
     },
-    "environmentSleeping": "L’environnement du projet est inactif. Restaurez les fichiers du projet avec le bouton ci-dessous pour continuer. Les brouillons non enregistrés sont conservés dans ce navigateur.",
+    "environmentReleasing": "The environment is being released. The editor is read-only. Wait, then click the workbench or use the restore button. Existing browser drafts are kept.",
+    "environmentSleeping": "The environment is inactive and the editor is read-only. Click in the workbench to restore automatically, or use Restore project files. Existing browser drafts are kept; type after recovery.",
     "recoverWorkspace": "Restaurer les fichiers du projet",
     "checkpointUnavailable": "Les dernières modifications ne sont pas archivées. Réessayez de les enregistrer. En cas d’inactivité, l’environnement peut être libéré et les modifications non archivées perdues.",
     "checkpointSkipped": "L’archivage échoue de façon persistante. La restauration peut perdre les modifications plus récentes que la sauvegarde.",

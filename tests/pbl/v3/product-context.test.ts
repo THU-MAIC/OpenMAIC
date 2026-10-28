@@ -303,3 +303,25 @@ describe('authoritative product guidance', () => {
     },
   );
 });
+
+it('keeps the same response policy across welcome, decisions, artifacts, assessments, repair and recap', () => {
+  for (const index of [0, 1, 2, 3, 4, 5, 6]) {
+    const input = {
+      ...fixture(index),
+      communication: {
+        uiLocale: 'en-US',
+        responseLanguage: { locale: 'zh-CN', source: 'explicit' as const },
+      },
+    };
+    const prompt = renderTeachingPrompt(input).systemPrompt;
+    expect(prompt).toContain('"responseLanguage":{"locale":"zh-CN","source":"explicit"}');
+    expect(prompt).toContain('"task":"Current task details"');
+    expect(prompt).toContain('before any real conversation, use communication.uiLocale');
+    expect(prompt).toContain('An explicit preference persists');
+    expect(prompt).toContain('file hashes or build revision numbers');
+    expect(prompt).toContain('Skill/tool/thinking cards remain expandable');
+    expect(JSON.parse(teachingLiveContext(input)).communication.responseLanguage.locale).toBe(
+      'zh-CN',
+    );
+  }
+});

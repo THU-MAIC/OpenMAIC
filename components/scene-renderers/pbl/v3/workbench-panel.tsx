@@ -15,8 +15,10 @@ import {
   AlertCircle,
   ChevronLeft,
   PanelLeftOpen,
+  LockKeyhole,
 } from 'lucide-react';
 import { PendingAction } from './pending-action';
+import { environmentNotice, environmentNoticeKeys } from '@/lib/pbl/v3/environment-status';
 import { projectEditAccess } from '@/lib/pbl/v3/edit-access';
 import { FileExplorer } from './file-explorer';
 import { useProjectEditor, type FileSaveReceipt, type FileSaveRequest } from './use-project-editor';
@@ -115,10 +117,10 @@ export function LearningWorkbenchPanel({
         : ['chat', 'begin', 'retry'].includes(pendingAction ?? '')
           ? 'agent'
           : 'request';
-  const editReason = stale
-    ? 'stale'
-    : !view.environment?.ready
-      ? 'environment'
+  const editReason = !view.environment?.ready
+    ? 'environment'
+    : stale
+      ? 'stale'
       : operation
         ? 'operation'
         : pending
@@ -128,6 +130,10 @@ export function LearningWorkbenchPanel({
             : (access(path).reason ??
               work.editReason ??
               (work.canEdit ? (work.planning ? 'planEditable' : 'codeEditable') : 'loading'));
+  const editMessage =
+    editReason === 'environment'
+      ? t(environmentNoticeKeys[environmentNotice(view.environment, pendingAction === 'prepare')])
+      : t(`pblV3.editAccess.${editReason}`);
   const save = () => {
     if (canSave) void editor.save();
   };
@@ -410,6 +416,20 @@ export function LearningWorkbenchPanel({
                 </button>
               )}
             </div>
+            {!canSave && (
+              <div
+                role="status"
+                aria-live="polite"
+                data-testid="pbl-editor-readonly"
+                className="flex shrink-0 items-start gap-2 border-b bg-amber-500/10 px-3 py-2 text-xs text-foreground"
+              >
+                <LockKeyhole size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
+                <p>
+                  <strong>{t('pblV3.ide.readOnly')}: </strong>
+                  {editMessage}
+                </p>
+              </div>
+            )}
             {editor.recoveryConflict && (
               <div
                 role="alert"
@@ -436,7 +456,7 @@ export function LearningWorkbenchPanel({
                   path={path}
                   value={buffer.text}
                   readOnly={!canSave}
-                  readOnlyReason={t(`pblV3.editAccess.${editReason}`)}
+                  readOnlyReason={editMessage}
                   onChange={editor.edit}
                   onSave={save}
                 />

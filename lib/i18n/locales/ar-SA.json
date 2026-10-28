@@ -2551,7 +2551,7 @@
     "restoredCheckpoint": "تمت استعادة مساحة العمل من آخر نقطة حفظ، دون التغييرات اللاحقة.",
     "restartedWorkspace": "لا توجد نقطة حفظ. أعيد تجهيز مساحة العمل بملفات المشروع الأولية.",
     "restoredProgress": "أعيد التقدم إلى أول خطوة متأثرة. راجع الملفات المستعادة واختبرها مجددًا.",
-    "environmentNotice": "Preparing your project environment. Your teaching assistant will open the step when it is ready.",
+    "environmentNotice": "Preparing or restoring the environment. The editor is read-only; existing drafts are kept. Type after recovery.",
     "prepare": "Retry project setup",
     "completed": "Project completed. Your learning progress is saved.",
     "learning": "Learning conversation",
@@ -2787,6 +2787,7 @@
       "toggleAssistant": "Toggle learning assistant",
       "environmentDetails": "Environment details",
       "saving": "جارٍ الحفظ…",
+      "readOnly": "Read-only",
       "saved": "تم الحفظ",
       "saveFailed": "فشل الحفظ · إعادة المحاولة",
       "draftRetained": "التغييرات محفوظة في هذا المتصفح"
@@ -2879,7 +2880,8 @@
       "display": "Display",
       "stopped": "Stopped"
     },
-    "environmentSleeping": "بيئة المشروع غير نشطة. استعد ملفات المشروع باستخدام الزر أدناه للمتابعة. تبقى المسودات غير المحفوظة في هذا المتصفح.",
+    "environmentReleasing": "The environment is being released. The editor is read-only. Wait, then click the workbench or use the restore button. Existing browser drafts are kept.",
+    "environmentSleeping": "The environment is inactive and the editor is read-only. Click in the workbench to restore automatically, or use Restore project files. Existing browser drafts are kept; type after recovery.",
     "recoverWorkspace": "استعادة ملفات المشروع",
     "checkpointUnavailable": "تعذرت أرشفة أحدث التغييرات. أعد محاولة الحفظ. عند استمرار الخمول قد يتم تحرير البيئة وفقدان التغييرات غير المؤرشفة.",
     "checkpointSkipped": "فشلت الأرشفة بشكل متكرر. قد تؤدي الاستعادة إلى فقدان التغييرات الأحدث من النسخة المحفوظة.",

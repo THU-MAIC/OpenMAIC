@@ -1,4 +1,5 @@
 'use client';
+import { environmentNotice, environmentNoticeKeys } from '@/lib/pbl/v3/environment-status';
 import { usePblActivityGeneration } from './activity-provider';
 import {
   ArrowUp,
@@ -62,7 +63,7 @@ function PBLV3WorkspaceContent({
 }) {
   const activityGeneration = usePblActivityGeneration(sceneId);
   const { resolvedTheme, setTheme } = useTheme();
-  const { t } = useI18n(),
+  const { t, locale } = useI18n(),
     stageId = useStageStore((state) => state.stage?.id);
   const { view, workbench, latestView, updateView, receive, openView } = useLearningObservation();
   const [error, setError] = useState(''),
@@ -102,6 +103,7 @@ function PBLV3WorkspaceContent({
     payload: Record<string, unknown>;
     id: string;
     revision: number;
+    uiLocale: string;
     milestoneId: string | null;
   } | null>(null);
   const studyId = view?.id;
@@ -167,6 +169,7 @@ function PBLV3WorkspaceContent({
               payload,
               id: crypto.randomUUID(),
               revision: view.revision,
+              uiLocale: locale,
               milestoneId: view.state.position.milestoneId,
             };
       retry.current = request;
@@ -188,6 +191,7 @@ function PBLV3WorkspaceContent({
               id: request.id,
               revision: request.revision,
               type: request.type,
+              uiLocale: request.uiLocale,
               ...request.payload,
             },
           },
@@ -220,7 +224,7 @@ function PBLV3WorkspaceContent({
         setPending(false);
       }
     },
-    [view, updateView, refresh, t, beginMessage, finishMessage, latestView, storageError],
+    [view, updateView, refresh, t, locale, beginMessage, finishMessage, latestView, storageError],
   );
   const [preparationFailed, setPreparationFailed] = useState(false);
   const preparationAttempt = useRef('');
@@ -457,11 +461,13 @@ function PBLV3WorkspaceContent({
               )}
               <p className="flex-1">
                 {t(
-                  preparationFailed
-                    ? 'pblV3.environmentUnavailable'
-                    : pending
-                      ? 'pblV3.environmentNotice'
-                      : 'pblV3.environmentSleeping',
+                  environmentNoticeKeys[
+                    environmentNotice(
+                      view.environment,
+                      pendingAction === 'prepare',
+                      preparationFailed,
+                    )
+                  ],
                 )}
               </p>
               {!pending && (

@@ -179,3 +179,36 @@ Static policy and deterministic tool tests cannot prove every natural-language
 reply or every future course. Keep representative real-model conversation checks
 alongside complete course acceptance and revise any contradictory course material
 at its source.
+
+### Beta feedback: language, acceptance and editor state
+
+All roles receive the interface locale on the queued input. A real learner turn can
+establish a conversational language or an explicit preference through
+`set_response_language`. Only that preference is shared across roles; their dialogue
+remains isolated. Explicit preferences survive short acknowledgements, automatic
+stage openings and later role changes. Interface controls use their actual localized
+labels even when the conversation uses another language. Authored questions remain
+course content; private answers are never exposed for translation.
+
+A learner can accept the unchanged plan/code during an earlier review without using
+a required approval keyword. `artifactApproved` carries the model's semantic assessment
+of that actual reply; the host still checks its sequence, pending task, stage and
+artifact fingerprint. Understanding alone, assistance, mixed acceptance/change
+requests and approvals of a different version are insufficient. Earlier acceptance
+is visible in the teaching context so the final section can reuse it.
+
+Learner prose explains choices and results rather than internal section labels,
+decision IDs, hashes or build revisions. Full Skill, tool and thinking cards remain
+expandable. Public option labels/summaries accompany chosen IDs in downstream role
+context, preserving the selected technique as well as its observable output.
+
+The editor displays a persistent read-only reason separately from save status.
+Testing, assistant work, release, recovery and inactive environments remain distinct.
+Real workbench input still triggers the existing automatic preparation; the banner
+also offers explicit restoration. Existing drafts are retained; new typing should
+wait until recovery completes. These notices do not buffer or replay keystrokes.
+
+Updated built-in samples have new versions and three quiz questions per milestone.
+Existing references retain their previous authored content and quiz attempts. Course
+package changes likewise require a new package version and a fresh learner copy
+when the author wants a clean acceptance run.

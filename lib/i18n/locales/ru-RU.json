@@ -2551,7 +2551,7 @@
     "restoredCheckpoint": "Рабочая область восстановлена из последней контрольной точки без последующих изменений.",
     "restartedWorkspace": "Контрольной точки нет. Рабочая область создана заново с начальными файлами проекта.",
     "restoredProgress": "Прогресс возвращён к первому затронутому этапу. Повторно проверьте и протестируйте восстановленные файлы.",
-    "environmentNotice": "Preparing your project environment. Your teaching assistant will open the step when it is ready.",
+    "environmentNotice": "Preparing or restoring the environment. The editor is read-only; existing drafts are kept. Type after recovery.",
     "prepare": "Retry project setup",
     "completed": "Project completed. Your learning progress is saved.",
     "learning": "Learning conversation",
@@ -2787,6 +2787,7 @@
       "toggleAssistant": "Toggle learning assistant",
       "environmentDetails": "Environment details",
       "saving": "Сохранение…",
+      "readOnly": "Read-only",
       "saved": "Сохранено",
       "saveFailed": "Ошибка · Повторить",
       "draftRetained": "Изменения сохранены в этом браузере"
@@ -2879,7 +2880,8 @@
       "display": "Display",
       "stopped": "Stopped"
     },
-    "environmentSleeping": "Среда проекта неактивна. Восстановите файлы проекта кнопкой ниже, чтобы продолжить. Несохранённые черновики остаются в этом браузере.",
+    "environmentReleasing": "The environment is being released. The editor is read-only. Wait, then click the workbench or use the restore button. Existing browser drafts are kept.",
+    "environmentSleeping": "The environment is inactive and the editor is read-only. Click in the workbench to restore automatically, or use Restore project files. Existing browser drafts are kept; type after recovery.",
     "recoverWorkspace": "Восстановить файлы проекта",
     "checkpointUnavailable": "Не удалось сохранить последние изменения в архив. Повторите сохранение. При бездействии среда может быть освобождена, а несохранённые изменения — потеряны.",
     "checkpointSkipped": "Архивация постоянно завершается ошибкой. При восстановлении изменения новее сохранённой версии могут быть потеряны.",

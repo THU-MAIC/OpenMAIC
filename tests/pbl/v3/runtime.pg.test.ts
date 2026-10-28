@@ -722,6 +722,111 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     }
     if (mocked.root) await rm(mocked.root, { recursive: true, force: true });
   });
+  it('completes plan review from spontaneous current-version acceptance without another approval question', async () => {
+    const original = studyId;
+    const study = await freshStudy();
+    studyId = study.id;
+    try {
+      await store.pool.query(
+        "UPDATE pbl_v3_studies SET state=jsonb_set(state,'{position,stageIndex}','2') WHERE id=$1",
+        [study.id],
+      );
+      await runTools('Please prepare my plan.', async (config) => {
+        await invoke(config, 'read_next_skill');
+        const row = await store.get(study.id, principal.ownerId);
+        const service = await SandboxService.forOwner(principal);
+        const text = await service.readText(row.environment_id!, 'PLAN.md');
+        await invoke(config, 'write_file', {
+          path: 'PLAN.md',
+          text: 'Use an f-string to return the required greeting, then check the returned value.',
+          expectedHash: digest(text),
+        });
+        await invoke(config, 'request_skill_review', {
+          question: 'Review the current plan and any necessary changes.',
+        });
+      });
+      await runTools('我认可当前版本，没有需要改的，可以继续。', async (config) => {
+        await invoke(config, 'read_next_skill', {
+          studentFeedback:
+            'The actual reply understands and accepts this current plan without changes.',
+          artifactApproved: true,
+        });
+        for (let n = 0; n < 2; n++)
+          await invoke(config, 'read_next_skill', {
+            studentFeedback: 'Same reply covers review and accepts this unchanged plan.',
+            reuseFeedback: true,
+          });
+        expect(await config.liveContext()).toContain('"priorArtifactApproval":{"studentSeq":');
+        await invoke(config, 'complete_stage', {
+          studentFeedback: 'The learner accepted the unchanged current plan.',
+          reuseFeedback: true,
+        });
+      });
+      const view = await learningView(principal, study.id);
+      expect(view.actions).toContain('next');
+      expect(view.state.position.stageIndex).toBe(2);
+      expect(view.state.collected.greeting!.planReviewCompleted).toBe(true);
+    } finally {
+      studyId = original;
+      await releasePreparationFixtures([study.id]);
+    }
+  });
+
+  it('retains response language across role boundaries without sharing dialogue or granting review evidence', async () => {
+    const original = studyId;
+    const study = await freshStudy();
+    studyId = study.id;
+    try {
+      await runTools('请用中文讲解这个项目。', async (config) => {
+        await invoke(config, 'set_response_language', { locale: 'zh-CN', source: 'explicit' });
+        expect(await config.liveContext()).toContain(
+          '"responseLanguage":{"locale":"zh-CN","source":"explicit"}',
+        );
+        await invoke(config, 'respond_to_learner', { response: '好的，后续使用中文。' });
+      });
+      const before = await store.get(study.id, principal.ownerId);
+      expect(before.state.position.stageIndex).toBe(0);
+      expect(before.state.collected.greeting!.teachingCompleted).not.toBe(true);
+      const binding = (await store.roles(study.id))[0]!;
+      expect(binding.guided?.welcome).toBe('pending');
+      await runTools('OK', async (config) => {
+        expect(config.systemPrompt).toContain(
+          '"responseLanguage":{"locale":"zh-CN","source":"explicit"}',
+        );
+        await expect(
+          invoke(config, 'set_response_language', { locale: 'en-US', source: 'conversation' }),
+        ).rejects.toThrow('explicit');
+        await invoke(config, 'respond_to_learner', { response: '继续保留中文。' });
+      });
+      await runTools('Switch to English please.', async (config) => {
+        await invoke(config, 'set_response_language', { locale: 'en-US', source: 'explicit' });
+        await invoke(config, 'respond_to_learner', { response: 'I will use English.' });
+      });
+      expect(
+        (
+          await store.pool.query(
+            "SELECT detail FROM pbl_v3_evidence WHERE study_id=$1 AND kind='response-language' ORDER BY id DESC LIMIT 1",
+            [study.id],
+          )
+        ).rows[0].detail,
+      ).toEqual({ locale: 'en-US', source: 'explicit' });
+      // A different role receives the preference through study metadata alone.
+      await store.pool.query(
+        "UPDATE pbl_v3_studies SET state=jsonb_set(state,'{position,stageIndex}','1') WHERE id=$1",
+        [study.id],
+      );
+      await runTools('Discuss the offered choice.', async (config) => {
+        expect(config.systemPrompt).toContain(
+          '"responseLanguage":{"locale":"en-US","source":"explicit"}',
+        );
+        expect(config.systemPrompt).not.toContain('请用中文讲解这个项目。');
+      });
+    } finally {
+      studyId = original;
+      await releasePreparationFixtures([study.id]);
+    }
+  });
+
   it.each([false, true])(
     'persists literal text decisions through summaries and reports (option collision: %s)',
     async (collision) => {

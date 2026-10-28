@@ -2551,7 +2551,7 @@
     "restoredCheckpoint": "已从最近的检查点恢复工作区，不包含该检查点之后的修改。",
     "restartedWorkspace": "没有可用的检查点，已用项目初始文件重新准备工作区。",
     "restoredProgress": "学习进度已退回首个受影响的步骤，请重新审阅和测试恢复后的文件。",
-    "environmentNotice": "正在为你准备项目环境，准备好后导师会主动开场。",
+    "environmentNotice": "正在准备或恢复环境，编辑器暂时只读。现有草稿会保留，请在恢复后输入。",
     "prepare": "重试准备",
     "completed": "项目已完成，学习进度已保存。",
     "learning": "学习助手",
@@ -2787,6 +2787,7 @@
       "toggleAssistant": "显示或隐藏学习助手",
       "environmentDetails": "学习环境详情",
       "saving": "保存中…",
+      "readOnly": "只读",
       "saved": "已保存",
       "saveFailed": "保存失败 · 重试",
       "draftRetained": "修改暂存于此浏览器"
@@ -2879,7 +2880,8 @@
       "display": "展示",
       "stopped": "已停止"
     },
-    "environmentSleeping": "项目环境已休眠。请点击下方“恢复项目文件”后继续，未保存的草稿会保留在当前浏览器中。",
+    "environmentReleasing": "环境正在释放，编辑器暂时只读。请稍候再点击工作区或使用恢复按钮；现有本机草稿会保留。",
+    "environmentSleeping": "环境目前未启用，编辑器暂时只读。点击工作区会自动恢复，也可以点“恢复项目文件”；本机草稿会保留，恢复后再输入。",
     "recoverWorkspace": "恢复项目文件",
     "checkpointUnavailable": "最新修改未能归档，请重试保存。若持续空闲，环境可能被释放，未归档的修改可能丢失。",
     "checkpointSkipped": "归档持续失败，恢复时可能丢失已归档版本之后的修改。",
