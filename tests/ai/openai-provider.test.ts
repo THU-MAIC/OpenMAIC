@@ -754,7 +754,7 @@ describe('OpenAI provider defaults', () => {
     }
   });
 
-  describe('reasoning_content on uncatalogued thinking models', () => {
+  describe('reasoning_content pass-back retry on uncatalogued thinking models', () => {
     // The shape a leading skill handle produces: a synthesized assistant
     // tool call (no reasoning) followed by its tool result.
     const skillPreloadMessages = () => [
@@ -775,77 +775,164 @@ describe('OpenAI provider defaults', () => {
       { role: 'user', content: 'go on' },
     ];
 
+    const passBackError = () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            message: 'The `reasoning_content` in the thinking mode must be passed back to the API.',
+            type: 'invalid_request_error',
+            code: 'invalid_request_error',
+          },
+        }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
+      );
+    const success = () =>
+      new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+
+    async function sendThroughCompat(
+      target: {
+        providerId: ProviderId;
+        modelId: string;
+        providerType?: 'openai';
+        baseUrl?: string;
+      },
+      responses: Array<() => Response>,
+      thinkingConfig?: Record<string, unknown>,
+    ) {
+      const originalFetch = globalThis.fetch;
+      const globalRecord = globalThis as Record<string, unknown>;
+      const originalThinkingContext = globalRecord.__thinkingContext;
+      const bodies: Array<Record<string, unknown>> = [];
+      const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+        bodies.push(JSON.parse(init?.body as string));
+        const next = responses[bodies.length - 1] ?? responses.at(-1)!;
+        return next();
+      });
+      try {
+        globalThis.fetch = fetchMock as typeof fetch;
+        globalRecord.__thinkingContext = { getStore: () => thinkingConfig };
+        getModel({ ...target, apiKey: 'sk-test' });
+        const options = openAiMock.createOpenAI.mock.calls.at(-1)?.[0] as
+          | { fetch?: typeof fetch }
+          | undefined;
+        const response = await options!.fetch!('https://example.test/v1/chat/completions', {
+          method: 'POST',
+          body: JSON.stringify({
+            model: target.modelId,
+            stream: true,
+            messages: skillPreloadMessages(),
+          }),
+        });
+        return { bodies, response };
+      } finally {
+        globalThis.fetch = originalFetch;
+        if (originalThinkingContext === undefined) {
+          delete globalRecord.__thinkingContext;
+        } else {
+          globalRecord.__thinkingContext = originalThinkingContext;
+        }
+      }
+    }
+
+    const customGateway = {
+      providerId: 'acme-gateway' as ProviderId,
+      providerType: 'openai' as const,
+      modelId: 'deepseek-v4-pro',
+      baseUrl: 'https://gateway.example/v1',
+    };
+
     function assistants(body: Record<string, unknown>) {
       return (body.messages as Array<Record<string, unknown>>).filter(
         (message) => message.role === 'assistant',
       );
     }
 
-    it('fills an empty reasoning_content on a custom provider tool-call turn', async () => {
-      const body = await captureInjectedRequestBody(
-        'acme-gateway' as ProviderId,
-        'deepseek-v4-pro',
-        undefined,
-        'https://gateway.example/v1',
-        { providerType: 'openai', messages: skillPreloadMessages() },
-      );
+    it('sends the request unchanged when the provider accepts it', async () => {
+      const { bodies, response } = await sendThroughCompat(customGateway, [success]);
 
-      const [toolCallTurn, plainTurn] = assistants(body);
+      expect(bodies).toHaveLength(1);
+      expect(response.status).toBe(200);
+      for (const message of assistants(bodies[0]!)) {
+        expect(message).not.toHaveProperty('reasoning_content');
+      }
+    });
+
+    it('retries once with an empty reasoning_content on tool-call turns', async () => {
+      const { bodies, response } = await sendThroughCompat(customGateway, [passBackError, success]);
+
+      expect(bodies).toHaveLength(2);
+      expect(response.status).toBe(200);
+      const [toolCallTurn, plainTurn] = assistants(bodies[1]!);
       expect(toolCallTurn).toMatchObject({
         reasoning_content: '',
         tool_calls: [{ id: 'call-skill' }],
       });
       expect(plainTurn).not.toHaveProperty('reasoning_content');
+      expect({ ...bodies[1], messages: undefined }).toEqual({ ...bodies[0], messages: undefined });
     });
 
-    it('keeps an existing reasoning_content on a custom provider', async () => {
-      const messages = skillPreloadMessages();
-      (messages[1] as Record<string, unknown>).reasoning_content = 'read the skill first';
-      const body = await captureInjectedRequestBody(
-        'acme-gateway' as ProviderId,
-        'deepseek-v4-pro',
-        { enabled: true },
-        'https://gateway.example/v1',
-        { providerType: 'openai', messages },
-      );
+    it('surfaces the retry error without retrying again', async () => {
+      const { bodies, response } = await sendThroughCompat(customGateway, [passBackError]);
 
-      expect(assistants(body)[0]).toMatchObject({ reasoning_content: 'read the skill first' });
+      expect(bodies).toHaveLength(2);
+      expect(response.status).toBe(400);
+      expect(await response.text()).toContain('passed back');
     });
 
-    it('fills it on an uncatalogued gateway model while the wire keeps thinking on', async () => {
-      const body = await captureInjectedRequestBody(
-        'openai',
-        'deepseek-v4-flash-vision-exp',
-        { enabled: true },
-        'https://gateway.example/v1',
-        { messages: skillPreloadMessages() },
-      );
+    it('does not retry an unrelated 400', async () => {
+      const unrelated = () =>
+        new Response(
+          JSON.stringify({
+            error: {
+              message: 'Invalid value for messages[1].content',
+              type: 'invalid_request_error',
+            },
+          }),
+          { status: 400, headers: { 'content-type': 'application/json' } },
+        );
+      const { bodies, response } = await sendThroughCompat(customGateway, [unrelated, success]);
 
-      expect(body).toMatchObject({ chat_template_kwargs: { thinking: true } });
-      expect(assistants(body)[0]).toMatchObject({ reasoning_content: '' });
+      expect(bodies).toHaveLength(1);
+      expect(response.status).toBe(400);
+      expect(await response.text()).toContain('Invalid value');
     });
 
-    it('does not fill it when the wire disables thinking', async () => {
-      const body = await captureInjectedRequestBody(
-        'openai',
-        'deepseek-v4-flash-vision-exp',
+    it('does not retry when the wire disables thinking', async () => {
+      const { bodies, response } = await sendThroughCompat(
+        {
+          providerId: 'openai',
+          modelId: 'deepseek-v4-flash-vision-exp',
+          baseUrl: 'https://gateway.example/v1',
+        },
+        [passBackError, success],
         { enabled: false },
-        'https://gateway.example/v1',
-        { messages: skillPreloadMessages() },
       );
 
-      expect(body).toMatchObject({ chat_template_kwargs: { thinking: false } });
-      for (const message of assistants(body)) {
-        expect(message).not.toHaveProperty('reasoning_content');
-      }
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0]).toMatchObject({ chat_template_kwargs: { thinking: false } });
+      expect(response.status).toBe(400);
     });
 
-    it('leaves catalogued non-DeepSeek models to their catalog behavior', async () => {
-      const body = await captureInjectedRequestBody('qwen', 'qwen3.7-max', undefined, undefined, {
-        messages: skillPreloadMessages(),
-      });
+    it('keeps the catalogued DeepSeek fill and never retries catalogued models', async () => {
+      const deepseek = await sendThroughCompat(
+        { providerId: 'deepseek', modelId: 'deepseek-v4-pro' },
+        [success],
+      );
+      expect(deepseek.bodies).toHaveLength(1);
+      for (const message of assistants(deepseek.bodies[0]!)) {
+        expect(message).toMatchObject({ reasoning_content: '' });
+      }
 
-      for (const message of assistants(body)) {
+      const qwen = await sendThroughCompat({ providerId: 'qwen', modelId: 'qwen3.7-max' }, [
+        passBackError,
+        success,
+      ]);
+      expect(qwen.bodies).toHaveLength(1);
+      expect(qwen.response.status).toBe(400);
+      for (const message of assistants(qwen.bodies[0]!)) {
         expect(message).not.toHaveProperty('reasoning_content');
       }
     });

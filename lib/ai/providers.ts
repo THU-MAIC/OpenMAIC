@@ -1655,6 +1655,49 @@ export function preservesReasoningForModel(model: LanguageModel | string): boole
   return providerId in PROVIDERS && preservesReasoning(providerId, modelId);
 }
 
+/**
+ * Whether an error body is DeepSeek's thinking-mode rejection of an assistant
+ * turn without reasoning_content ("The `reasoning_content` in the thinking
+ * mode must be passed back to the API."). Matches the error message, not the
+ * whole body, so an unrelated 400 that merely echoes the request cannot match.
+ */
+function isReasoningContentPassBackError(errorText: string): boolean {
+  let message = errorText;
+  try {
+    const parsed = JSON.parse(errorText) as { error?: { message?: unknown }; message?: unknown };
+    const candidate = parsed?.error?.message ?? parsed?.message;
+    if (typeof candidate === 'string') message = candidate;
+  } catch {
+    /* not JSON: match the raw text */
+  }
+  return /reasoning_content/i.test(message) && /passed\s+back/i.test(message);
+}
+
+/**
+ * Add an empty reasoning_content to every assistant tool-call message that
+ * lacks one. Returns undefined when nothing changed (a retry could not help).
+ */
+function withEmptyToolCallReasoning(requestBody: string): string | undefined {
+  try {
+    const body = JSON.parse(requestBody);
+    let changed = false;
+    for (const message of body?.messages ?? []) {
+      if (
+        message?.role === 'assistant' &&
+        message.reasoning_content === undefined &&
+        Array.isArray(message.tool_calls) &&
+        message.tool_calls.length > 0
+      ) {
+        message.reasoning_content = '';
+        changed = true;
+      }
+    }
+    return changed ? JSON.stringify(body) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function getCompatThinkingBodyParams(
   providerId: ProviderId,
   modelId: string,
@@ -2332,10 +2375,8 @@ export function getModel(config: ModelConfig): ModelWithInfo {
       const roundTripProvider = preservesReasoning(config.providerId, config.modelId);
       const catalogThinking = getCatalogThinkingCapability(config.providerId, config.modelId);
       const deepseekAdapter = catalogThinking?.requestAdapter === 'deepseek';
-      // A model the catalog has no thinking metadata for (a custom provider, or
-      // an unlisted model behind a gateway) may still be a DeepSeek-style
-      // thinking model that rejects a prior tool-call turn without
-      // reasoning_content, e.g. a synthesized skill preload turn.
+      // No catalog thinking metadata: a custom provider, or an unlisted model
+      // behind a gateway, which may still be a DeepSeek-style thinking model.
       const uncataloguedThinking = !catalogThinking;
       if (usesCompatTransport) {
         const providerId = config.providerId;
@@ -2387,30 +2428,18 @@ export function getModel(config: ModelConfig): ModelWithInfo {
             }
           }
 
-          // Uncatalogued models get an empty reasoning_content on assistant
-          // tool-call messages unless thinking is disabled on the wire. That is
-          // the turn shape DeepSeek-style thinking requires the field on, and
-          // OpenAI-compatible servers that do not know the field ignore it.
-          const fillsUncataloguedToolCalls = uncataloguedThinking && !thinkingDisabledOnWire;
-          if (
-            (roundTripProvider || fillsUncataloguedToolCalls) &&
-            init?.body &&
-            typeof init.body === 'string'
-          ) {
+          if (roundTripProvider && init?.body && typeof init.body === 'string') {
             try {
               const body = JSON.parse(init.body);
               if (thinkingDisabledOnWire) {
                 stripReasoningContentInRequestBody(body);
               } else {
-                if (roundTripProvider) restoreReasoningContentInRequestBody(body);
-                for (const message of body.messages ?? []) {
-                  if (message?.role !== 'assistant' || message.reasoning_content !== undefined) {
-                    continue;
-                  }
-                  const hasToolCalls =
-                    Array.isArray(message.tool_calls) && message.tool_calls.length > 0;
-                  if (deepseekAdapter || (fillsUncataloguedToolCalls && hasToolCalls)) {
-                    message.reasoning_content = '';
+                restoreReasoningContentInRequestBody(body);
+                if (deepseekAdapter) {
+                  for (const message of body.messages ?? []) {
+                    if (message?.role === 'assistant' && message.reasoning_content === undefined) {
+                      message.reasoning_content = '';
+                    }
                   }
                 }
               }
@@ -2419,9 +2448,36 @@ export function getModel(config: ModelConfig): ModelWithInfo {
               /* leave body as-is */
             }
           }
-          const response = useStreamingChatCompat
-            ? await fetchCustomOpenAIChat(url, init, transportFetch)
-            : await transportFetch(url, init);
+          const send = (requestInit: RequestInit | undefined) =>
+            useStreamingChatCompat
+              ? fetchCustomOpenAIChat(url, requestInit, transportFetch)
+              : transportFetch(url, requestInit);
+          let response = await send(init);
+
+          // A thinking model the catalog does not know may reject a prior
+          // tool-call turn that carries no reasoning_content (for example a
+          // synthesized skill preload turn). Requests go out unchanged; only
+          // on that specific rejection is the request re-sent once with an
+          // empty reasoning_content on those turns.
+          if (
+            uncataloguedThinking &&
+            !thinkingDisabledOnWire &&
+            response.status === 400 &&
+            typeof init?.body === 'string'
+          ) {
+            const errorText = await response
+              .clone()
+              .text()
+              .catch(() => '');
+            if (isReasoningContentPassBackError(errorText)) {
+              const retryBody = withEmptyToolCallReasoning(init.body);
+              if (retryBody !== undefined) {
+                await response.body?.cancel().catch(() => {});
+                init = { ...init, body: retryBody };
+                response = await send(init);
+              }
+            }
+          }
 
           // Recover reasoning that @ai-sdk/openai's chat schema drops: rewrite
           // streamed `reasoning_content` deltas into an inline <think> block
