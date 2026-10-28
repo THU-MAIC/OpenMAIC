@@ -795,6 +795,10 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         { chosen: 'x'.repeat(DECISION_RESPONSE_MAX_LENGTH + 1), rationale: 'Reason' },
         { chosen: 'Rule', rationale: 'x'.repeat(DECISION_RESPONSE_MAX_LENGTH + 1) },
         { chosen: '学'.repeat(40_000), rationale: '学'.repeat(40_000) },
+        ...['bad\0text', '\uD800', '\uDC00'].flatMap((value) => [
+          { chosen: value, rationale: 'Reason' },
+          { chosen: 'Rule', rationale: value },
+        ]),
       ]) {
         // Each payload fits the route cap: enforce field and combined response limits independently.
         expect(Buffer.byteLength(JSON.stringify(response))).toBeLessThan(256_000);
@@ -906,6 +910,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
 
   it('retains a bounded excerpt of a valid long learner message instead of dropping its record', async () => {
     const study = await freshStudy();
+    onTestFinished(() => releasePreparationFixtures([study.id]));
     const started = (await study.send('begin')) as { sessionId: string };
     const text = 'LEARNER ' + '学'.repeat(20_000);
     await agents.appendControlEvent(started.sessionId, {
@@ -930,6 +935,57 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       ),
     ).toBe(true);
     await agents.softDeleteSession(started.sessionId, principal.ownerId);
+  });
+
+  it('reserves answer and rationale excerpts for every retained decision revision within the evidence budget', async () => {
+    const study = await freshStudy();
+    onTestFinished(() => releasePreparationFixtures([study.id]));
+    const row = await store.get(study.id, principal.ownerId);
+    const revisions = 18;
+    for (let i = 1; i <= revisions; i++)
+      await pool.query('INSERT INTO pbl_v3_events(study_id,sequence,event) VALUES($1,$2,$3)', [
+        study.id,
+        row.state.lastSequence + i,
+        JSON.stringify({
+          type: 'decision.recorded',
+          milestoneId: 'greeting',
+          decisionId: 'format',
+          chosen: `ANSWER-${i} ` + '🧠'.repeat(8000),
+          rationale: `REASON-${i} ` + '🧠'.repeat(8000),
+          revision: i - 1,
+        }),
+      ]);
+    await pool.query(
+      "UPDATE pbl_v3_studies SET state=jsonb_set(state,'{lastSequence}',to_jsonb($2::int)) WHERE id=$1",
+      [study.id, row.state.lastSequence + revisions],
+    );
+    const { learningEvidence } = await import('@/lib/server/pbl-v3/report');
+    const evidence = (await learningEvidence(principal, study.id)).evidence;
+    const decisions = evidence.filter((e) => e.kind === 'decision.recorded');
+    expect(decisions).toHaveLength(revisions);
+    for (let i = 1; i <= revisions; i++) {
+      const retained = decisions.find((e) => e.sequence === row.state.lastSequence + i)!;
+      expect(retained.learnerText!.answer).toContain(`ANSWER-${i}`);
+      expect(retained.learnerText!.rationale).toContain(`REASON-${i}`);
+      expect(retained.detail).toContain(`REASON-${i}`);
+      expect(retained.truncated).toBe(true);
+      for (const text of [
+        retained.detail,
+        retained.learnerText!.answer,
+        retained.learnerText!.rationale!,
+      ])
+        expect(text.isWellFormed()).toBe(true);
+    }
+    expect(
+      evidence.reduce(
+        (n, e) =>
+          n +
+          e.detail.length +
+          (e.learnerText?.answer.length ?? 0) +
+          (e.learnerText?.rationale?.length ?? 0),
+        0,
+      ),
+    ).toBeLessThanOrEqual(80_000);
   });
 
   it('leaves study admission available for unrelated interaction during slow maintenance archives', async () => {
@@ -3995,8 +4051,14 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(report.evidence.length).toBeLessThanOrEqual(2000);
     expect(report.conversations.flatMap((c) => c.messages).length).toBeLessThanOrEqual(1000);
     const textSize =
-      report.evidence.reduce((n, e) => n + e.detail.length, 0) +
-      report.conversations.flatMap((c) => c.messages).reduce((n, m) => n + m.text.length, 0);
+      report.evidence.reduce(
+        (n, e) =>
+          n +
+          e.detail.length +
+          (e.learnerText?.answer.length ?? 0) +
+          (e.learnerText?.rationale?.length ?? 0),
+        0,
+      ) + report.conversations.flatMap((c) => c.messages).reduce((n, m) => n + m.text.length, 0);
     expect(textSize).toBeLessThanOrEqual(240000);
     expect(Buffer.byteLength(JSON.stringify(report))).toBeLessThan(1000000);
     expect(JSON.stringify(report)).not.toContain('OVERSIZED_');

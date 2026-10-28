@@ -5,6 +5,7 @@ import {
   DECISION_RESPONSE_MAX_LENGTH,
   isDecisionResponseValid,
   isDecisionResponseWithinLimits,
+  isDecisionResponseStorable,
   type DecisionRecord,
 } from '@/lib/pbl/v3/domain/orchestration/decisions';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -109,6 +110,11 @@ export function DecisionResponseForm({
       {!isDecisionResponseWithinLimits(value) && (
         <p role="alert" className="text-xs text-destructive">
           {t('pblV3.decisionTooLong', { max: DECISION_RESPONSE_MAX_LENGTH })}
+        </p>
+      )}
+      {!isDecisionResponseStorable(value) && (
+        <p role="alert" className="text-xs text-destructive">
+          {t('pblV3.decisionInvalidText')}
         </p>
       )}
     </fieldset>

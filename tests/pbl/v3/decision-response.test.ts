@@ -12,6 +12,7 @@ import {
   DECISION_RESPONSE_MAX_BYTES,
   decisionResponseLabel,
   isDecisionResponseWithinLimits,
+  isDecisionResponseStorable,
   isDecisionResponseValid,
 } from '@/lib/pbl/v3/domain/orchestration/decisions';
 import { projectArtifacts } from '@/lib/pbl/v3/domain/orchestration/artifacts';
@@ -40,6 +41,27 @@ function fixture() {
 }
 
 describe('authored decision responses', () => {
+  it('rejects PostgreSQL-incompatible decision text without altering learner input or state', () => {
+    const { definition, state, decision } = fixture();
+    const original = structuredClone(state);
+    for (const value of ['x\0y', '\uD800', '\uDC00', 'x\uD800y'])
+      for (const response of [
+        { chosen: value, rationale: 'Reason' },
+        { chosen: 'Rule', rationale: value },
+      ]) {
+        expect(isDecisionResponseStorable(response)).toBe(false);
+        expect(() =>
+          submitDecision(definition, state, {
+            decisionId: decision.id,
+            recordId: 'invalid-unicode',
+            ...response,
+          }),
+        ).toThrow();
+        expect(state).toEqual(original);
+      }
+    for (const value of ['普通文字', '🧠', '\\u0000', '\\uD800', '\tline\nnext'])
+      expect(isDecisionResponseStorable({ chosen: value, rationale: value })).toBe(true);
+  });
   it('accepts boundary-length text without changing it and rejects overflow before a transition', () => {
     const { definition, state, decision, milestone } = fixture();
     const original = structuredClone(state);

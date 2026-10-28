@@ -49,6 +49,15 @@ export interface LearningReport {
   };
 }
 
+/** Bound report text in UTF-16 units without cutting a valid surrogate pair. */
+export function reportTextExcerpt(text: string, limit: number): string {
+  let end = Math.min(text.length, Math.max(0, Math.floor(limit)));
+  const before = text.charCodeAt(end - 1),
+    after = text.charCodeAt(end);
+  if (before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff) end--;
+  return text.slice(0, end);
+}
+
 /** Keep citation IDs tied to their retained source while interleaving shared mentor and milestone roles. */
 export function reportConversationMessages(report: LearningReport) {
   return report.conversations

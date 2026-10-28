@@ -6,6 +6,7 @@ import { analyzeLearningReport } from './report-analysis';
 import type { OwnerPrincipal } from '@/lib/server/identity/types';
 import type { OrchestrationEvent } from '@/lib/pbl/v3/domain/orchestration/events';
 import type { LearningReport } from '@/lib/pbl/v3/report';
+import { reportTextExcerpt } from '@/lib/pbl/v3/report';
 import { handoffEchoes } from '@/lib/pbl/v3/conversation';
 import { LearningStore, type Study, type RoleBinding } from './store';
 import { projectFor } from './runtime';
@@ -26,7 +27,7 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
   let truncated = false;
   let remaining = TEXT_LIMIT / 3;
   const boundedText = (text: string) => {
-    const clipped = text.slice(0, Math.min(DETAIL_LIMIT, remaining));
+    const clipped = reportTextExcerpt(text, Math.min(DETAIL_LIMIT, remaining));
     remaining -= clipped.length;
     if (clipped.length < text.length) truncated = true;
     return clipped;
@@ -70,6 +71,13 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
         Number(b.event?.type === 'decision.recorded') -
         Number(a.event?.type === 'decision.recorded'),
     );
+  const decisionCount = prioritized.filter((row) => row.event?.type === 'decision.recorded').length;
+  // Reserve equal space across retained revisions. Five fields account for the
+  // displayed question/label/reason plus literal answer/reason quote provenance.
+  const decisionAllowance = Math.min(
+    DECISION_FIELD_LIMIT,
+    Math.max(0, Math.floor((TEXT_LIMIT / 3 / Math.max(1, decisionCount) - 40) / 5)),
+  );
   for (const { sequence, at, event, clipped } of prioritized) {
     if (!event) {
       truncated = true;
@@ -83,19 +91,21 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
       case 'decision.recorded': {
         const d = project.definition.decisions.find((d) => d.id === event.decisionId);
         // Reserve separate space for the answer and reason so neither hides the other.
-        const allowance = Math.min(
-          DECISION_FIELD_LIMIT,
-          Math.max(0, Math.floor((remaining - 40) / 3)),
-        );
-        const answer = (event.chosen ?? '').slice(0, allowance);
-        const rationale = event.rationale?.slice(0, allowance);
+        const allowance = decisionAllowance;
+        const answer = reportTextExcerpt(event.chosen ?? '', allowance);
+        const rationale =
+          event.rationale === undefined || event.rationale === null
+            ? undefined
+            : reportTextExcerpt(event.rationale, allowance);
         learnerText = { answer, ...(rationale ? { rationale } : {}) };
-        detail = `${(d?.decisionPrompt ?? event.decisionId).slice(0, allowance)}: ${decisionResponseLabel(d, answer).slice(0, allowance)}`;
+        const label = decisionResponseLabel(d, event.chosen ?? '');
+        detail = `${reportTextExcerpt(d?.decisionPrompt ?? event.decisionId, allowance)}: ${reportTextExcerpt(label, allowance)}`;
         if (rationale) detail += `\nRationale: ${rationale}`;
         recordClipped ||=
           answer.length < (event.chosen?.length ?? 0) ||
           (rationale?.length ?? 0) < (event.rationale?.length ?? 0) ||
-          (d?.decisionPrompt ?? event.decisionId).length > allowance;
+          (d?.decisionPrompt ?? event.decisionId).length > allowance ||
+          label.length > allowance;
         break;
       }
       case 'artifact.recorded':
@@ -128,6 +138,7 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
         break;
     }
     if (detail !== undefined) {
+      remaining -= (learnerText?.answer.length ?? 0) + (learnerText?.rationale?.length ?? 0);
       const text = boundedText(detail);
       if (!text && detail) continue;
       evidence.push({

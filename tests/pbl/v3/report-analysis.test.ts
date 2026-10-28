@@ -5,7 +5,11 @@ import {
   reportSources,
   validateReportFindings,
 } from '@/lib/server/pbl-v3/report-analysis';
-import { reportConversationMessages, type LearningReport } from '@/lib/pbl/v3/report';
+import {
+  reportConversationMessages,
+  reportTextExcerpt,
+  type LearningReport,
+} from '@/lib/pbl/v3/report';
 
 const report: LearningReport = {
   studyId: 'study',
@@ -48,6 +52,122 @@ const finding = {
 };
 
 describe('grounded report analysis', () => {
+  it('clips report and model excerpts without splitting emoji pairs', () => {
+    expect(reportTextExcerpt('a🧠z', 2)).toBe('a');
+    expect(reportTextExcerpt('a🧠z', 3)).toBe('a🧠');
+    expect(reportTextExcerpt('学🧠习', 0)).toBe('');
+    const emoji: LearningReport = {
+      ...report,
+      conversations: [],
+      evidence: [
+        {
+          sequence: 2,
+          at: 2,
+          kind: 'decision.recorded',
+          detail: 'a' + '🧠'.repeat(3000),
+          learnerText: { answer: 'a' + '🧠'.repeat(3000), rationale: 'b' + '🧠'.repeat(3000) },
+        },
+      ],
+    };
+    const input = reportAnalysisInput(emoji);
+    expect(input.records[0]!.text.isWellFormed()).toBe(true);
+    expect(input.records[0]!.text.length).toBeLessThanOrEqual(4000);
+    expect(input.omitted).toBe(true);
+  });
+  it('keeps the question and option meaning alongside literal learner evidence', () => {
+    const choices: LearningReport = {
+      ...report,
+      evidence: [
+        {
+          sequence: 9,
+          at: 9,
+          kind: 'decision.recorded',
+          detail:
+            'Where should the new item appear?: At the beginning\nRationale: Read new items first.',
+          learnerText: { answer: 'c1', rationale: 'Read new items first.' },
+        },
+      ],
+    };
+    expect(reportSources(choices).find((s) => s.id === 'event:9')!.text).toBe(
+      choices.evidence[0]!.detail,
+    );
+    const text = reportAnalysisInput(choices).records.find((s) => s.id === 'event:9')!.text;
+    expect(text).toContain('Where should the new item appear?');
+    expect(text).toContain('At the beginning');
+    expect(text).toContain('c1');
+    expect(text).toContain('Read new items first.');
+  });
+
+  it.each(['journey', 'next'] as const)(
+    'requires learner-only quotes in %s while allowing unquoted contextual facts',
+    (category) => {
+      expect(() =>
+        validateReportFindings(
+          JSON.stringify({
+            findings: [
+              { ...finding, category, evidence: ['turn:0:3'], quote: 'preserves the greeting' },
+            ],
+          }),
+          report,
+        ),
+      ).toThrow('No supported');
+      expect(
+        validateReportFindings(JSON.stringify({ findings: [{ ...finding, category }] }), report),
+      ).toHaveLength(1);
+      expect(
+        validateReportFindings(
+          JSON.stringify({
+            findings: [{ ...finding, category, evidence: ['event:1'], quote: undefined }],
+          }),
+          report,
+        ),
+      ).toHaveLength(1);
+    },
+  );
+
+  it('rejects citations and quotes omitted from the actual model input', () => {
+    const clipped: LearningReport = {
+      ...report,
+      conversations: [
+        {
+          ...report.conversations[0]!,
+          messages: [
+            {
+              sequence: 2,
+              at: 2,
+              role: 'user',
+              text: 'x'.repeat(5000) + 'hidden learner statement',
+            },
+          ],
+        },
+      ],
+    };
+    expect(() =>
+      validateReportFindings(
+        JSON.stringify({ findings: [{ ...finding, quote: 'hidden learner statement' }] }),
+        clipped,
+      ),
+    ).toThrow('No supported');
+    const omitted: LearningReport = {
+      ...report,
+      evidence: Array.from({ length: 1500 }, (_, i) => ({
+        sequence: i + 10,
+        at: i + 10,
+        kind: 'artifact',
+        detail: 'Agent action',
+      })),
+    };
+    const retained = new Set(reportAnalysisInput(omitted).records.map((s) => s.id));
+    const missing = reportSources(omitted).find((s) => !retained.has(s.id))!;
+    expect(() =>
+      validateReportFindings(
+        JSON.stringify({
+          findings: [{ ...finding, category: 'journey', evidence: [missing.id], quote: undefined }],
+        }),
+        omitted,
+      ),
+    ).toThrow('No supported');
+  });
   it('shares chronological conversation order with the UI and interleaves analysis sources without changing citations', () => {
     const mixed: LearningReport = {
       ...report,

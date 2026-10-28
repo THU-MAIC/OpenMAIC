@@ -14,6 +14,17 @@ export const DECISION_RESPONSE_MAX_LENGTH = 64_000;
 /** Reserve room for command metadata beneath the route's 256,000-byte body cap. */
 export const DECISION_RESPONSE_MAX_BYTES = 192_000;
 
+/** PostgreSQL JSONB cannot represent NUL or an unpaired UTF-16 surrogate. */
+export function isDecisionResponseStorable(response: {
+  chosen?: unknown;
+  rationale?: unknown;
+}): boolean {
+  return [response.chosen, response.rationale].every(
+    (value) =>
+      typeof value !== 'string' || (!value.includes('\0') && !/[\uD800-\uDFFF]/u.test(value)),
+  );
+}
+
 export function isDecisionResponseWithinLimits(response: {
   chosen?: unknown;
   rationale?: unknown;
@@ -83,7 +94,8 @@ export function isDecisionResponseValid(
   },
   response: { chosen?: unknown; rationale?: unknown },
 ): boolean {
-  if (!isDecisionResponseWithinLimits(response)) return false;
+  if (!isDecisionResponseWithinLimits(response) || !isDecisionResponseStorable(response))
+    return false;
   if (typeof response.chosen !== 'string') return false;
   if (response.rationale !== undefined && typeof response.rationale !== 'string') return false;
   if (

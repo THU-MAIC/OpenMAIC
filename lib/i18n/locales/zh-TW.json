@@ -2909,6 +2909,7 @@
     "submitDecision": "提交決策",
     "decisionSaved": "回答已儲存",
     "decisionUnsaved": "修改尚未提交",
-    "decisionTooLong": "回答和理由各最多 {max} 個字元，合計還需符合編碼後的大小限制。請縮短後再提交。"
+    "decisionTooLong": "回答和理由各最多 {max} 個字元，合計還需符合編碼後的大小限制。請縮短後再提交。",
+    "decisionInvalidText": "回答或理由中含有無法儲存的字元，請替換這些字元後再提交。"
   }
 }

@@ -114,6 +114,9 @@ combined JSON-encoded strings must also fit 192,000 UTF-8 bytes, leaving room fo
 command metadata beneath the HTTP route's separate 256,000-byte cap. This includes
 JSON escaping and Unicode encoding; the form displays an error and preserves the
 draft when either limit is exceeded.
+NUL and unpaired UTF-16 surrogates are rejected before writes because PostgreSQL
+JSONB cannot store them. The form preserves such drafts for correction; valid
+Unicode and literal escape sequences are accepted without rewriting learner text.
 
 Responses and rationales remain together in study state, versioned decision events,
 role artifact projections, production summaries and report evidence. Report
@@ -141,6 +144,13 @@ generated records while keeping chronological citations and existing budgets.
 Only retained literal learner text can support a learner quote; authored prompts,
 option labels and Agent prose cannot masquerade as learner-authored evidence.
 Raw tool output remains excluded from report analysis.
+Each retained decision revision receives an equal excerpt allowance before any
+revision spends the evidence budget; that budget includes literal quote-provenance
+fields as well as display text. The report model retains question/option context
+alongside literal answer/reason excerpts. All quote fields require learner-only
+text visible in the actual model input, including journey/next findings; unquoted
+journey/next facts may still cite Agent actions/results. Omitted source IDs and
+clipped-away quotes cannot substantiate findings. Excerpts preserve surrogate pairs.
 
 ## Runtime profiles and private resources
 

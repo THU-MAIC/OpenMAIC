@@ -38,6 +38,7 @@ import {
   decisionResponseLabel,
   isDecisionResponseValid,
   isDecisionResponseWithinLimits,
+  isDecisionResponseStorable,
 } from '@/lib/pbl/v3/domain/orchestration/decisions';
 import type { EngineTransition } from '@/lib/pbl/v3/domain/orchestration/events';
 import { assertProjectSource, projectFiles } from './workspace-files';
@@ -370,6 +371,10 @@ function validateCommand(command: LearningCommand) {
     (typeof command.text !== 'string' || command.text.length > 64_000)
   )
     throw sandboxInvalid('Text is limited to 64000 characters.');
+  if (command.type === 'decide' && !isDecisionResponseStorable(command))
+    throw sandboxInvalid(
+      'Decision responses must contain valid Unicode text without null characters.',
+    );
   if (command.type === 'decide' && !isDecisionResponseWithinLimits(command))
     throw sandboxInvalid(
       `Decision responses and rationales are limited to ${DECISION_RESPONSE_MAX_LENGTH} characters each and must fit the combined encoded response budget.`,

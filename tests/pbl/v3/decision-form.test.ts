@@ -155,3 +155,24 @@ it('keeps an over-budget Unicode draft editable and enables submission after cor
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(container.querySelector('button')!.disabled).toBe(false);
 });
+
+it.each(['chosen', 'rationale'] as const)(
+  'preserves an unstorable %s draft for correction before submitting',
+  async (field) => {
+    const draft = { chosen: 'Rule', rationale: 'Reason', [field]: 'bad\0text' };
+    await mount(
+      { id: 'rule', prompt: 'Explain', responseType: 'text', requiresRationale: true, options: [] },
+      draft,
+    );
+    expect(container.querySelector('[role="alert"]')!.textContent).toBe(
+      'pblV3.decisionInvalidText',
+    );
+    expect(container.querySelector('button')!.disabled).toBe(true);
+    expect(container.querySelectorAll('textarea')[field === 'chosen' ? 0 : 1]!.value).toBe(
+      draft[field],
+    );
+    await type(field === 'chosen' ? 0 : 1, 'Corrected text');
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.querySelector('button')!.disabled).toBe(false);
+  },
+);
