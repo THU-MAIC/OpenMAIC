@@ -165,6 +165,9 @@ export function recoveredProgress(
   checkpointRevision?: number,
 ) {
   const state = structuredClone(row.state);
+  // Completion is backed by immutable final evidence. Reopening its application
+  // restores a runtime workspace, not an opportunity to reassess that submission.
+  if (state.status === 'completed') return { state, reset: false };
   const saved = row.environment_recovery?.savedPosition;
   let crossedBoundary = false;
   let rewind = -1;

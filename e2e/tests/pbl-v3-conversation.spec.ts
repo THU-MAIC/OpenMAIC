@@ -769,6 +769,15 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await expect(page.locator('.pbl-change-gutter-added').first()).toBeVisible();
   expect(await page.locator('.monaco-editor .selected-text').count()).toBeGreaterThan(0);
   await page.getByTestId('pbl-ide').screenshot({ path: 'test-results/pbl-v3-file-reference.png' });
+  // A consumed file-link selection must not replay when Monaco mounts again.
+  await page.keyboard.press('ArrowRight');
+  await page.getByRole('tab', { name: 'PLAN.md', exact: true }).click();
+  await page.getByRole('tab', { name: 'main.py', exact: true }).click();
+  await expect(page.locator('.monaco-editor .view-lines')).toContainText('line_1');
+  await expect(page.locator('.monaco-editor .selected-text')).toHaveCount(0);
+  await fileLink.click();
+  await expect(page.locator('.monaco-editor .selected-text').first()).toBeVisible();
+
   await page.getByRole('link', { name: 'Unavailable', exact: true }).click();
   expect(page.url()).toBe(originalUrl);
   await expect(page.getByRole('tab', { name: 'main.py', exact: true })).toHaveAttribute(

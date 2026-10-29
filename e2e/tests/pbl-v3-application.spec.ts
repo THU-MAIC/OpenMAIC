@@ -188,6 +188,21 @@ for (const legacyMove of [false, true]) {
       'aria-expanded',
       'false',
     );
+    const workspacePanel = page.getByTestId('workspace');
+    const assistantPanel = page.getByTestId('assistant');
+    const beforeDrag = (await workspacePanel.boundingBox())!;
+    const assistantBefore = (await assistantPanel.boundingBox())!;
+    const dividerX = (beforeDrag.x + beforeDrag.width + assistantBefore.x) / 2;
+    await page.mouse.move(dividerX, beforeDrag.y + beforeDrag.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(dividerX + 70, beforeDrag.y + beforeDrag.height / 2, { steps: 10 });
+    await page.mouse.up();
+    await expect
+      .poll(async () => (await workspacePanel.boundingBox())!.width)
+      .toBeGreaterThan(beforeDrag.width + 30);
+    await expect
+      .poll(async () => (await page.getByTestId('application').boundingBox())?.width ?? 0)
+      .toBeLessThan(1);
     await page.getByTestId('pbl-application-open').click();
     await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toHaveValue(
       'Unsaved form input',

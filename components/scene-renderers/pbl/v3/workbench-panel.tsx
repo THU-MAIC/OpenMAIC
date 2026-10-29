@@ -51,6 +51,7 @@ export function LearningWorkbenchPanel({
   view,
   workbench,
   fileTarget,
+  onFileTargetConsumed,
   pending,
   pendingAction,
   onRefresh,
@@ -59,6 +60,7 @@ export function LearningWorkbenchPanel({
 }: {
   view: LearningView;
   fileTarget?: (FileReference & { requestId: number }) | null;
+  onFileTargetConsumed: (requestId: number) => void;
   workbench: LearningWorkbench | null;
   pending: boolean;
   pendingAction: string | null;
@@ -473,6 +475,7 @@ export function LearningWorkbenchPanel({
                   studyId={view.id}
                   path={path}
                   value={buffer.text}
+                  onTargetConsumed={onFileTargetConsumed}
                   target={
                     !editor.loading && !stale && fileTarget?.path === path ? fileTarget : null
                   }

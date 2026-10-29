@@ -429,7 +429,11 @@ export function ProjectReport({
               <section className="mt-7 space-y-2">
                 <h3 className="mb-3 text-lg font-semibold">{t('pblV3.reportConversations')}</h3>
                 {reportConversationMessages(report).map((m) => (
-                  <details id={sourceId(m.id)} key={m.id} className="rounded-xl border p-3">
+                  <details
+                    id={sourceId(m.id)}
+                    key={m.id}
+                    className="min-w-0 rounded-xl border p-3 [overflow-wrap:anywhere]"
+                  >
                     <summary className="cursor-pointer text-sm">
                       {m.role === 'learner' ? t('pblV3.learner') : t(`pblV3.roles.${m.role}`)} ·{' '}
                       {report.milestones.find((x) => x.id === m.milestone)?.title ??

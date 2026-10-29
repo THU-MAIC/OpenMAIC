@@ -59,6 +59,7 @@ function PBLV3WorkspaceContent({
   const [fileTarget, setFileTarget] = useState<
     (FileReference & { studyId: string; requestId: number }) | null
   >(null);
+  const fileTargetSequence = useRef(0);
   const taskDock = useRef<{ open: () => void }>(null);
   const [error, setError] = useState(''),
     [pending, setPending] = useState(false);
@@ -577,6 +578,13 @@ function PBLV3WorkspaceContent({
                 key={view.id}
                 view={view}
                 fileTarget={fileTarget?.studyId === view.id ? fileTarget : null}
+                onFileTargetConsumed={(requestId) =>
+                  setFileTarget((current) =>
+                    current?.studyId === view.id && current.requestId === requestId
+                      ? null
+                      : current,
+                  )
+                }
                 workbench={workbench}
                 pending={pending || stream.status !== 'connected'}
                 pendingAction={pendingAction}
@@ -668,7 +676,11 @@ function PBLV3WorkspaceContent({
                     view={view}
                     onOpenFile={(reference) => {
                       setShowWorkspace(true);
-                      setFileTarget({ ...reference, studyId: view.id, requestId: Date.now() });
+                      setFileTarget({
+                        ...reference,
+                        studyId: view.id,
+                        requestId: ++fileTargetSequence.current,
+                      });
                     }}
                     onOpenReport={
                       view.reportAvailable && !view.busy ? () => setReportOpen(true) : undefined

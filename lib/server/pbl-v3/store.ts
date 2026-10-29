@@ -574,15 +574,19 @@ export class LearningStore {
        AND environment_id=$4 AND checkpoint_failure->>'environmentId'=$4
        AND checkpoint_failure->>'stage'='collection' AND idle_turn_cleanup IS NULL
        AND archive_discard->>'environmentId' IS DISTINCT FROM environment_id`;
-    const result = await db.query<Study>(
-      `UPDATE pbl_v3_studies SET state=$3,revision=revision+1,environment_id=$4,evaluation=$5,environment_recovery=$6,
+    const result = await db.query<Study & { report_unchanged: boolean }>(
+      `WITH previous AS MATERIALIZED (
+         SELECT state AS old_state FROM pbl_v3_studies WHERE id=$1 AND revision=$2
+       )
+       UPDATE pbl_v3_studies SET state=$3,revision=revision+1,environment_id=$4,evaluation=$5,environment_recovery=$6,
        workspace_dirty_at=CASE WHEN $7::timestamptz IS NULL THEN NULL ELSE COALESCE(workspace_dirty_at,clock_timestamp()) END,
        lifecycle_error=CASE WHEN ${collectionSettled} THEN NULL ELSE $8 END,
        checkpoint_failure=CASE WHEN ${collectionSettled} THEN NULL ELSE checkpoint_failure END,
        idle_turn_cleanup=CASE WHEN environment_id IS DISTINCT FROM $4::text THEN NULL ELSE idle_turn_cleanup END
-      WHERE id=$1 AND revision=$2
+      FROM previous WHERE id=$1 AND revision=$2
         AND archive_discard IS NOT DISTINCT FROM $9::jsonb
-        AND (idle_turn_cleanup->>'releasing' IS DISTINCT FROM 'true' OR idle_turn_cleanup IS NOT DISTINCT FROM $10::jsonb) RETURNING *`,
+        AND (idle_turn_cleanup->>'releasing' IS DISTINCT FROM 'true' OR idle_turn_cleanup IS NOT DISTINCT FROM $10::jsonb)
+       RETURNING pbl_v3_studies.*,old_state=$3::jsonb AND old_state->>'status'='completed' AS report_unchanged`,
       [
         row.id,
         row.revision,
@@ -598,8 +602,19 @@ export class LearningStore {
     );
     if (!result.rows[0])
       throw sandboxConflict('Learning progress changed. Refresh before retrying.');
+    // Operational recovery advances the concurrency revision without changing
+    // completed learning evidence. Carry its report (and in-flight claim) along.
+    if (transition.events.length === 0 && result.rows[0].report_unchanged)
+      await db.query(
+        `UPDATE pbl_v3_reports SET completion_revision=$3,
+         document=CASE WHEN document IS NULL THEN NULL
+           ELSE jsonb_set(document,'{revision}',to_jsonb($3::int)) END
+         WHERE study_id=$1 AND completion_revision=$2`,
+        [row.id, row.revision, result.rows[0].revision],
+      );
     await this.events(db, row.id, transition);
-    return { ...result.rows[0], ...(row.project ? { project: row.project } : {}) };
+    const { report_unchanged: _reportUnchanged, ...saved } = result.rows[0];
+    return { ...saved, ...(row.project ? { project: row.project } : {}) };
   }
   private async events(db: PoolClient, id: string, transition: EngineTransition) {
     await notifyDurableAgentEvent(db, { kind: 'session', sessionId: id });

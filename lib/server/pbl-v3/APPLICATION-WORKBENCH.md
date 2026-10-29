@@ -19,3 +19,12 @@ Keep the application description short. Put ordinary actions in the application 
 Open in new tab is temporary preview access, not public publication. This change introduces no public sharing/revocation API and does not make preview grants into stable work links. Public sharing still needs an explicit audience/interface policy, revocation and coordination with environment inactivity and cost management. Standalone input remains unobserved by the workbench and cannot be promised to renew activity.
 
 The existing application package contract currently admits Python entrypoints. This layout does not add the Java artifact/startup/readiness adapter required by the future FS course, nor import OpenPBL RuntimeHost/SQLite/ECS orchestration.
+
+## Beta review follow-ups
+
+- File-link ranges are one-shot navigation requests, consumed in the workspace after Monaco applies them. Switching files cannot replay an old selection; clicking the link again creates a fresh request.
+- Collapsed application panels cannot participate in user resizing. The iframe remains mounted, while the visible workspace/assistant divider resizes only the visible panes.
+- Recovering an acknowledged learner save uses authoritative change ranges, including an empty list, without erasing later typing. Retrying a teaching turn uses the current UI locale as control metadata, never new learner feedback.
+- Reports resolve committed learner handoffs before sampling. Hidden SDK message frames do not consume visible-history quotas; oversized canonical handoff text is excerpted with omission markers rather than dropping its identity; ordinary SDK payloads retain their byte ceiling. Raw durable history and the existing projection budgets remain intact.
+- Completed learning evidence is immutable. Restoring its runtime application workspace cannot reopen teaching or revoke recorded completion. A state-preserving operational revision carries saved report analysis and any active report claim forward atomically; actual learning changes still invalidate analysis.
+- Report analysis retains its existing 90-second budget across model resolution, primary and fallback, below the two-minute claim expiry. This does not limit teaching Agent duration, tool calls, reasoning or output.

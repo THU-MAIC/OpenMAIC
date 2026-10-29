@@ -636,7 +636,7 @@ export async function commandStudy(
           await sessionStore.appendControlEvent(binding.session_id, {
             ts: Date.now(),
             type: 'pbl_turn_retried',
-            data: {},
+            data: { pblUiLocale: command.uiLocale },
           });
           // Reuse the actual student turn: retrying is not new feedback or approval.
           result = { sessionId: binding.session_id };

@@ -17,7 +17,10 @@ let root: Root | undefined,
   container: HTMLDivElement,
   sequence = 0;
 let editor: ReturnType<typeof useProjectEditor>, ui: ReturnType<typeof useStudyDraft>;
-const read = vi.fn(async () => ({ text: 'Saved source', hash: 'a'.repeat(64) }));
+const read = vi.fn<Parameters<typeof useProjectEditor>[1]>(async () => ({
+  text: 'Saved source',
+  hash: 'a'.repeat(64),
+}));
 const save = vi.fn<Parameters<typeof useProjectEditor>[2]>(async () => ({ hash: 'b'.repeat(64) })),
   error = vi.fn();
 const view = (id: string, environmentId = 'environment-one') =>
@@ -554,3 +557,35 @@ describe('study-scoped local drafts', () => {
     expect(editor.buffer?.text).toBe('Copy this before leaving the page');
   });
 });
+
+it.each([false, true])(
+  'clears obsolete AI ranges after a confirmed lost-ack save (newer typing: %s)',
+  async (newer) => {
+    const id = `lost-ack-ranges-${sequence++}`;
+    read.mockResolvedValueOnce({
+      text: 'Saved source',
+      hash: 'a'.repeat(64),
+      changes: [{ start: 1, end: 1, kind: 'added' }],
+    });
+    await mount(createElement(Editor, { value: view(id) }));
+    expect(editor.buffer?.changes).toHaveLength(1);
+    vi.useFakeTimers();
+    save.mockRejectedValueOnce(
+      new SandboxRequestError('Response lost', 503, 'SANDBOX_UNAVAILABLE'),
+    );
+    await act(async () => editor.edit('Committed learner edit'));
+    await act(async () => vi.advanceTimersByTimeAsync(750));
+    if (newer) await act(async () => editor.edit('Newer learner typing'));
+    read.mockResolvedValueOnce({
+      text: 'Committed learner edit',
+      hash: 'b'.repeat(64),
+      changes: [],
+    });
+    await act(async () =>
+      root!.render(createElement(Editor, { value: view(id, 'replacement'), enabled: false })),
+    );
+    expect(editor.buffer?.saved).toBe('Committed learner edit');
+    expect(editor.buffer?.text).toBe(newer ? 'Newer learner typing' : 'Committed learner edit');
+    expect(editor.buffer?.changes).toEqual([]);
+  },
+);

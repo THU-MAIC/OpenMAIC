@@ -17,9 +17,10 @@ import { projectFor } from './runtime';
 import { canonicalReview, reviewQuestions } from './review-question';
 import { canViewProjectReport } from './stage-progress';
 import { decisionResponseLabel } from '@/lib/pbl/v3/domain/orchestration/decisions';
+import { abortable } from '@/lib/server/agent-runtime/abortable';
 
 // Evidence sampling is part of the cached report projection.
-const REPORT_FORMAT_VERSION = 3;
+const REPORT_FORMAT_VERSION = 4;
 const HISTORY_LIMIT = 1000;
 const RECORD_BYTES = 32768;
 const TEXT_LIMIT = 240000;
@@ -217,28 +218,49 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
       Math.floor(eventsRemaining / (visibleBindings.length - bindingIndex)),
     );
     const entries = await db.query<{ id: number; at: number; type: string; data: unknown }>(
-      `SELECT e.seq AS id,e.ts::float8 AS at,e.type,
-         (CASE WHEN e.type='user_message' THEN jsonb_build_object(
-           'text',CASE WHEN jsonb_typeof(e.data->'text')='string' THEN left(e.data->>'text',$5) END,
-           'pblOpening',e.data->'pblOpening',
-           'pblTextClipped',length(e.data->>'text')>$5)
-         WHEN octet_length(e.data::text)<=$4 THEN e.data END) || jsonb_build_object(
-           'pblInputId',(SELECT input.seq FROM agent_session_events input
-             WHERE input.session_id=e.session_id AND input.seq<=e.seq AND input.type='user_message'
-             ORDER BY input.seq DESC LIMIT 1)) AS data
-       FROM agent_session_events e WHERE e.session_id=$1 AND e.seq IN (
-         (SELECT seq FROM agent_session_events WHERE session_id=$1 AND seq<=$2
-           AND (type<>'user_message' OR COALESCE(data->>'pblOpening','false')<>'true')
-           AND (type IN ('user_message','message_end','pbl_learner_handoff') OR
-             (type='tool_execution_end' AND data->>'toolName' IN ('request_skill_review','request_learner_help','respond_to_learner')))
-           ORDER BY seq ASC LIMIT (($3::int+1)/2))
+      `WITH candidates AS NOT MATERIALIZED (
+         SELECT e.*,COALESCE(i.seq,CASE WHEN e.type='user_message' THEN e.seq END) AS input_id
+         FROM agent_session_events e LEFT JOIN LATERAL (
+           SELECT u.seq,COALESCE((SELECT min(n.seq) FROM agent_session_events n
+             WHERE n.session_id=$1 AND n.type='user_message' AND n.seq>u.seq AND n.seq<=$2),$2::bigint+1) AS until
+           FROM agent_session_events u WHERE e.type<>'user_message'
+             AND u.session_id=$1 AND u.type='user_message' AND u.seq<=e.seq
+           ORDER BY u.seq DESC LIMIT 1
+         ) i ON true
+         WHERE e.session_id=$1 AND e.seq<=$2 AND (
+           (e.type='user_message' AND COALESCE(e.data->>'pblOpening','false')<>'true') OR
+           (e.type='message_end' AND e.data->'message'->>'role'='assistant'
+             AND jsonb_path_exists(e.data,'$.message.content[*] ? (@.type == "text" && @.text != "")')) OR
+           (e.type='pbl_learner_handoff' AND jsonb_typeof(e.data->'question')='string'
+             AND length(e.data->>'question')>0) OR
+           (e.type='tool_execution_end' AND e.data->>'toolName' IN
+             ('request_skill_review','request_learner_help','respond_to_learner')
+             AND COALESCE(e.data->>'isError','false')<>'true'
+             AND NOT EXISTS (SELECT 1 FROM agent_session_events h
+               WHERE h.session_id=e.session_id AND h.type='pbl_learner_handoff'
+                 AND h.seq<=$2 AND h.data->>'toolCallId'=e.data->>'toolCallId'))
+         ) AND (e.type='user_message' OR NOT EXISTS (
+           SELECT 1 FROM agent_session_events h WHERE h.session_id=e.session_id
+             AND h.type='pbl_learner_handoff' AND h.seq>=i.seq AND h.seq<i.until
+             AND h.data->>'canonical'='true' AND jsonb_typeof(h.data->'question')='string'
+             AND length(btrim(h.data->>'question'))>0
+             AND (e.type<>'pbl_learner_handoff' OR e.seq<h.seq)
+         ))
+       ), sampled AS (
+         (SELECT * FROM candidates ORDER BY seq ASC LIMIT (($3::int+1)/2))
          UNION
-         (SELECT seq FROM agent_session_events WHERE session_id=$1 AND seq<=$2
-           AND (type<>'user_message' OR COALESCE(data->>'pblOpening','false')<>'true')
-           AND (type IN ('user_message','message_end','pbl_learner_handoff') OR
-             (type='tool_execution_end' AND data->>'toolName' IN ('request_skill_review','request_learner_help','respond_to_learner')))
-           ORDER BY seq DESC LIMIT ($3::int/2))
-       ) ORDER BY e.seq DESC`,
+         (SELECT * FROM candidates ORDER BY seq DESC LIMIT ($3::int/2))
+       )
+       SELECT e.seq AS id,e.ts::float8 AS at,e.type,
+         (CASE WHEN e.type='user_message' THEN jsonb_build_object(
+           'text',left(e.data->>'text',$5),'pblOpening',e.data->'pblOpening',
+           'pblTextClipped',length(e.data->>'text')>$5)
+         WHEN e.type='pbl_learner_handoff' THEN jsonb_build_object(
+           'question',left(e.data->>'question',$5),'canonical',e.data->'canonical',
+           'toolCallId',e.data->'toolCallId','pblTextClipped',length(e.data->>'question')>$5)
+         WHEN octet_length(e.data::text)<=$4 THEN e.data END) ||
+         jsonb_build_object('pblInputId',e.input_id) AS data
+       FROM sampled e ORDER BY e.seq DESC`,
       [binding.session_id, binding.last, allowance + 1, RECORD_BYTES, DETAIL_LIMIT],
     );
     let conversationTruncated = entries.rows.length > allowance;
@@ -640,7 +662,13 @@ export async function generateLearningReport(
   });
   if (!claimed) return learningReport(principal, id);
   try {
-    const analysis = await analyzeLearningReport(principal.ownerId, report, signal);
+    // One report budget spans resolution, primary and fallback, below the claim's
+    // two-minute expiry. Teaching Agent turns do not use this report-only limit.
+    const budget = AbortSignal.any([signal, AbortSignal.timeout(90_000)]);
+    const analysis = await abortable(
+      analyzeLearningReport(principal.ownerId, report, budget),
+      budget,
+    );
     const document: LearningReport = {
       ...report,
       analysis: {
@@ -652,7 +680,9 @@ export async function generateLearningReport(
       },
     };
     await store.pool.query(
-      `UPDATE pbl_v3_reports SET status='ready',document=$3,updated_at=now() WHERE study_id=$1 AND attempt=$2`,
+      `UPDATE pbl_v3_reports SET status='ready',
+       document=jsonb_set($3::jsonb,'{revision}',to_jsonb(completion_revision)),updated_at=now()
+       WHERE study_id=$1 AND attempt=$2`,
       [id, attempt, JSON.stringify(document)],
     );
     return learningReport(principal, id);

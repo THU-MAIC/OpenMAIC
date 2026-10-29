@@ -165,7 +165,7 @@ export async function analyzeLearningReport(
     'pbl-learning-report',
     undefined,
     { mode: 'disabled' },
-    { serverManaged: connection.serverManaged },
+    { serverManaged: connection.serverManaged, preserveAbortSignal: true },
   );
   return {
     findings: validateReportFindings(result.text, report),

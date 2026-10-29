@@ -21,7 +21,10 @@ export function WorkbenchSplit({
   showAssistant?: boolean;
 }) {
   const hasApplication = !!application;
-  const workspacePanel = usePanelRef(),
+  const appVisible = hasApplication && showApplication;
+  const workAreaVisible = showWorkspace || appVisible;
+  const workAreaPanel = usePanelRef(),
+    workspacePanel = usePanelRef(),
     assistantPanel = usePanelRef(),
     applicationPanel = usePanelRef();
   useEffect(() => {
@@ -33,82 +36,93 @@ export function WorkbenchSplit({
     else assistantPanel.current?.collapse();
   }, [showAssistant, assistantPanel]);
   useEffect(() => {
-    if (showApplication) applicationPanel.current?.expand();
+    if (appVisible) applicationPanel.current?.expand();
     else applicationPanel.current?.collapse();
-  }, [showApplication, applicationPanel, hasApplication]);
+  }, [appVisible, applicationPanel]);
+  useEffect(() => {
+    if (workAreaVisible) workAreaPanel.current?.expand();
+    else workAreaPanel.current?.collapse();
+  }, [workAreaVisible, workAreaPanel]);
   const ref = useRef<HTMLDivElement>(null);
   const [compact, setCompact] = useState(false);
   const { t } = useI18n();
-  const visiblePanels =
-    Number(showWorkspace) + Number(showAssistant) + Number(!!application && showApplication);
+  const visiblePanels = Number(showWorkspace) + Number(showAssistant) + Number(appVisible);
   const stacked = compact && visiblePanels > 1;
-  const stackHeight =
-    (!hasApplication && showWorkspace && showAssistant ? 10 : 0) +
-    (showWorkspace ? 350 : 0) +
-    (showAssistant ? 400 : 0) +
-    (application && showApplication ? 380 : 0);
+  const workAreaHeight = (showWorkspace ? 350 : 0) + (appVisible ? 380 : 0);
+  const stackHeight = workAreaHeight + (showAssistant ? 400 : 0) + (visiblePanels - 1) * 4;
   useEffect(() => {
     const observer = new ResizeObserver(([entry]) =>
-      setCompact(entry!.contentRect.width < (hasApplication && showApplication ? 1040 : 560)),
+      setCompact(entry!.contentRect.width < (appVisible ? 1040 : 560)),
     );
     if (ref.current) observer.observe(ref.current);
     return () => observer.disconnect();
-  }, [hasApplication, showApplication]);
+  }, [appVisible]);
+  const separator = compact ? 'h-1 bg-border hover:bg-primary' : 'w-1 bg-border hover:bg-primary';
   return (
     <div ref={ref} className="min-h-0 flex-1 overflow-auto" data-testid="pbl-workbench-split">
       <Group
         orientation={compact ? 'vertical' : 'horizontal'}
-        onLayoutChanged={(layout, meta) => {
-          if (meta.isUserInteraction && showApplication && layout.application === 0)
-            onCollapseApplication?.();
-        }}
         style={{ height: stacked ? stackHeight : '100%', minHeight: stacked ? stackHeight : 0 }}
       >
+        {/* The outer divider always borders the visible work area and assistant.
+            Keeping the application in its own inner group preserves its iframe. */}
         <Panel
-          id="workspace"
-          panelRef={workspacePanel}
+          id="work-area"
+          panelRef={workAreaPanel}
           collapsible
-          defaultSize={application ? '39.6%' : '55%'}
-          minSize={stacked ? '350px' : compact ? 0 : hasApplication ? '25%' : '30%'}
+          defaultSize="55%"
+          minSize={stacked ? `${workAreaHeight}px` : compact ? 0 : appVisible ? '60%' : '30%'}
           className="h-full min-w-0"
         >
-          {workspace}
-        </Panel>
-        {application && (
-          <>
-            <Separator
-              aria-label={t('pblV3.ide.resize')}
-              disabled={!showApplication}
-              className={
-                !showApplication
-                  ? 'hidden'
-                  : compact
-                    ? 'h-1 bg-border hover:bg-primary'
-                    : 'w-1 bg-border hover:bg-primary'
-              }
-            />
+          <Group
+            orientation={compact ? 'vertical' : 'horizontal'}
+            onLayoutChanged={(layout, meta) => {
+              if (meta.isUserInteraction && appVisible && layout.application === 0)
+                onCollapseApplication?.();
+            }}
+          >
             <Panel
-              id="application"
-              panelRef={applicationPanel}
+              id="workspace"
+              panelRef={workspacePanel}
               collapsible
-              defaultSize="28%"
-              minSize={stacked ? '380px' : compact ? 0 : '24%'}
+              defaultSize={hasApplication ? '58.6%' : '100%'}
+              minSize={stacked ? '350px' : compact ? 0 : '40%'}
               className="h-full min-w-0"
             >
-              {application}
+              {workspace}
             </Panel>
-          </>
-        )}
+            {application && (
+              <>
+                <Separator
+                  aria-label={t('pblV3.ide.resize')}
+                  disabled={!appVisible || !showWorkspace}
+                  className={!appVisible || !showWorkspace ? 'hidden' : separator}
+                />
+                <Panel
+                  id="application"
+                  panelRef={applicationPanel}
+                  collapsible
+                  defaultSize="41.4%"
+                  minSize={stacked ? '380px' : compact ? 0 : '35%'}
+                  className="h-full min-w-0"
+                >
+                  {application}
+                </Panel>
+              </>
+            )}
+          </Group>
+        </Panel>
         <Separator
           aria-label={t('pblV3.ide.resize')}
-          className={compact ? 'h-1 bg-border hover:bg-primary' : 'w-1 bg-border hover:bg-primary'}
+          disabled={!workAreaVisible || !showAssistant}
+          className={!workAreaVisible || !showAssistant ? 'hidden' : separator}
         />
         <Panel
           id="assistant"
           panelRef={assistantPanel}
           collapsible
-          defaultSize={application ? '32.4%' : '45%'}
-          minSize={stacked ? '400px' : compact ? 0 : hasApplication ? '25%' : '28%'}
+          defaultSize="45%"
+          minSize={stacked ? '400px' : compact ? 0 : '28%'}
           className="h-full min-w-0"
         >
           {assistant}
