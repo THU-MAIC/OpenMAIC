@@ -1,6 +1,7 @@
 'use client';
 import type { FileReference } from '@/lib/pbl/v3/file-reference';
 import { environmentNotice, environmentNoticeKeys } from '@/lib/pbl/v3/environment-status';
+import { ApplicationPreview } from './application-preview';
 import { usePblActivityGeneration } from './activity-provider';
 import {
   ArrowUp,
@@ -37,26 +38,10 @@ import { TestEvaluation } from './test-evaluation';
 import { PendingAction } from './pending-action';
 import { TaskDock } from './task-dock';
 import { ProductionContext } from './production-context';
-import { sandboxErrorMessage } from '@/lib/sandbox/error-message';
+import { pblRequest } from './request';
+export { pblRequest } from './request';
 import { SandboxRequestError } from '@/components/sandbox/client';
 
-const headers = { 'content-type': 'application/json', 'x-openmaic-sandbox': '1' };
-export async function pblRequest<T>(url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(url, {
-    headers,
-    ...(signal ? { signal } : {}),
-    ...(body === undefined ? {} : { method: 'POST', body: JSON.stringify(body) }),
-  });
-  const data = await response.json();
-  if (!response.ok)
-    throw new SandboxRequestError(
-      sandboxErrorMessage(data.error),
-      response.status,
-      data.error?.code,
-      data.error?.reason,
-    );
-  return data as T;
-}
 function PBLV3WorkspaceContent({
   sceneId,
   onReturnToHero,
@@ -358,6 +343,12 @@ function PBLV3WorkspaceContent({
         )}
         {view && (
           <>
+            <ApplicationPreview
+              key={`${view.id}:${view.environmentId}`}
+              view={view}
+              workbench={workbench}
+              dirty={dirtyFiles}
+            />
             <LearningPanels key={view.id} view={view} />
             {view.reportAvailable && (
               <button

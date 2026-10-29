@@ -2567,13 +2567,20 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       // The process dies while the provider works on the video.
       abortA.abort();
       expect(await executionA).toBe('interrupted');
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      const takeover = (await claim(run.id, 'worker-b', 1))!;
-      expect(takeover).toMatchObject({ takeover: true });
+      // A final media commit can still hold the row lock: SKIP LOCKED returns
+      // null temporarily. Keep the first actual claim so a wrong claim cannot
+      // be masked by repeatedly taking over worker B's own lease.
+      let takeover: ClaimedRun | null = null;
+      await expect
+        .poll(async () => {
+          takeover ??= await claim(run.id, 'worker-b', 1);
+          return takeover;
+        })
+        .toMatchObject({ takeover: true });
 
       const resumed = mediaServices();
       expect(
-        await executeGenerationRun(takeover, {
+        await executeGenerationRun(takeover!, {
           services: resumed.services,
           signal: new AbortController().signal,
         }),

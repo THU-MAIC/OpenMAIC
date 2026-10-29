@@ -15,6 +15,7 @@ import {
 
 import {
   assertWorkspaceMutation,
+  isLearningWorkspace,
   dispatchWorkspaceMutation,
   type WorkspaceMutation,
 } from './managed-workspace';
@@ -416,6 +417,8 @@ export class SandboxService {
   ) {
     await this.mutation(id, 'write');
     return this.store.exclusive(id, async () => {
+      const row = await this.running(id);
+      if (isLearningWorkspace(row.workspace_id)) await this.stopApplicationsUnlocked(row);
       const current = await this.readText(id, path);
       if (createHash('sha256').update(current).digest('hex') !== expectedHash)
         throw sandboxConflict(
@@ -438,6 +441,7 @@ export class SandboxService {
       throw new SandboxError('SANDBOX_FILE_TOO_LARGE', 413, 'Text files are limited to 1 MiB.');
     }
     const row = await this.running(id);
+    if (isLearningWorkspace(row.workspace_id)) await this.stopApplicationsUnlocked(row);
     await dispatchWorkspaceMutation(this.ownerId, row.workspace_id, row.id, 'write', () =>
       this.provider.writeText(row.resource_id, row.id, path, text),
     );
@@ -515,7 +519,30 @@ export class SandboxService {
     return this.store.exclusive(id, () => this.startCommandUnlocked(id, body, epoch));
   }
 
-  private async startCommandUnlocked(id: string, body: Record<string, unknown>, epoch?: number) {
+  /** Host-only declaration, not accepted from the generic command route. */
+  async startApplicationCommand(id: string, body: Record<string, unknown>, epoch: number) {
+    await this.mutation(id, 'preview');
+    await this.mutation(id, 'command');
+    return this.store.exclusive(id, () =>
+      this.startCommandUnlocked(
+        id,
+        {
+          ...body,
+          // Leave the provider envelope time to persist the supervisor's terminal receipt.
+          timeoutMs: Math.min(this.config.lifetimeMs, 3_585_000),
+        },
+        epoch,
+        'application',
+      ),
+    );
+  }
+
+  private async startCommandUnlocked(
+    id: string,
+    body: Record<string, unknown>,
+    epoch?: number,
+    purpose?: 'application',
+  ) {
     assertSandboxId(body.requestId);
     if (
       typeof body.command !== 'string' ||
@@ -542,8 +569,10 @@ export class SandboxService {
       cwd: (body.cwd as string | undefined) ?? WORKSPACE_ROOT,
       timeoutMs,
     };
-    const hash = createHash('sha256').update(JSON.stringify(input)).digest('hex');
-    const created = await this.store.reserveCommand(row, input.id, hash, epoch);
+    const hash = createHash('sha256')
+      .update(JSON.stringify(purpose ? { ...input, purpose } : input))
+      .digest('hex');
+    const created = await this.store.reserveCommand(row, input.id, hash, epoch, purpose);
     if (created) {
       let dispatched = false;
       try {
@@ -847,9 +876,36 @@ export class SandboxService {
     );
   }
 
+  /** Application commands remain managed writers. Cancellation must settle before evidence. */
+  async stopApplications(id: string, signal?: AbortSignal) {
+    const row = await this.binding(id);
+    return this.stopApplicationsUnlocked(row, signal);
+  }
+
+  private async stopApplicationsUnlocked(row: SandboxRow, signal?: AbortSignal) {
+    for (const cmd of await this.store.listCommands(row)) {
+      if (cmd.purpose !== 'application') continue;
+      let result = await this.command(row.id, cmd.id, signal);
+      if (!['starting', 'running', 'unknown'].includes(result.state)) continue;
+      await this.cancelCommand(row.id, cmd.id);
+      const deadline = Date.now() + 5_000;
+      while (['starting', 'running', 'unknown'].includes(result.state) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        signal?.throwIfAborted();
+        result = await this.command(row.id, cmd.id, signal);
+      }
+      if (['starting', 'running', 'unknown'].includes(result.state))
+        throw sandboxConflict(
+          'The application has not stopped yet. Retry shortly.',
+          'WORKSPACE_COMMAND_ACTIVE',
+        );
+    }
+  }
+
   private async assertWorkspaceIdleUnlocked(row: SandboxRow, signal?: AbortSignal) {
     signal?.throwIfAborted();
     // A file checkpoint is not a process or database snapshot. Quiesce managed writers first.
+    await this.stopApplicationsUnlocked(row, signal);
     for (const cmd of await this.store.listCommands(row)) {
       const result = await this.command(row.id, cmd.id, signal);
       if (['starting', 'running', 'unknown'].includes(result.state))
@@ -1015,7 +1071,10 @@ export class SandboxService {
     const config = await resolvedSandboxConfig();
     const store = await SandboxStore.open();
     const row = await store.get(grant.ownerId, grant.environmentId);
-    assertWorkspaceMutation(grant.ownerId, row.workspace_id, row.id, 'preview');
+    if (isLearningWorkspace(row.workspace_id)) {
+      const { assertLearningPreview } = await import('@/lib/server/pbl-v3/application');
+      await assertLearningPreview(grant.ownerId, row.workspace_id, row.id, grant.port);
+    } else assertWorkspaceMutation(grant.ownerId, row.workspace_id, row.id, 'preview');
     if (
       row.state !== 'running' ||
       !row.workspace_ready ||
@@ -1033,8 +1092,12 @@ export class SandboxService {
     return { row, grant, provider, expiresAt };
   }
 
-  static async previewTarget(ticket: string, host: string) {
+  static async previewTarget(ticket: string, host: string, activity = false) {
     const { row, grant, provider, expiresAt } = await this.resolvePreview(ticket, host);
+    if (activity && isLearningWorkspace(row.workspace_id)) {
+      const { recordLearningPreviewActivity } = await import('@/lib/server/pbl-v3/application');
+      await recordLearningPreviewActivity(grant.ownerId, row.workspace_id, row.id, grant.port);
+    }
     if (previewConfig().transport === 'sdk')
       return { transport: 'sdk', url: `http://127.0.0.1:${grant.port}`, expiresAt };
     return {

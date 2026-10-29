@@ -63,11 +63,19 @@ export function PBLV3Container({ sceneId }: { sceneId: string }) {
   }, []);
   useLayoutEffect(() => {
     if (!portalHost) return;
-    // React keeps the workspace instance when its portal target stays identical.
-    // Move that same host inside native fullscreen so it remains visible there.
-    (fullscreenRoot ?? document.body).appendChild(portalHost);
-    return () => portalHost.remove();
+    // Keep the host in the playback stage even when it is not fullscreen.
+    // Reparenting a connected iframe with appendChild reloads its document,
+    // even though React preserves the workspace instance and portal target.
+    const target =
+      fullscreenRoot ?? hostRef.current?.closest('[data-playback-stage]') ?? document.body;
+    if (portalHost.parentElement === target) return;
+    const move = (target as Element & { moveBefore?: (node: Node, before: Node | null) => void })
+      .moveBefore;
+    if (portalHost.isConnected && move) move.call(target, portalHost, null);
+    else target.appendChild(portalHost);
   }, [fullscreenRoot, portalHost]);
+  // Only unmount detaches the host; fullscreen changes must never run this cleanup.
+  useLayoutEffect(() => () => portalHost?.remove(), [portalHost]);
   const launch = () => {
     setAutoExpand(true);
     setReportOpen(false);

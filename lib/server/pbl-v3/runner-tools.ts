@@ -3,6 +3,8 @@ import { fileReferenceHref } from '@/lib/pbl/v3/file-reference';
 import 'server-only';
 import { responseLanguage, type ResponseLanguage } from './communication';
 import { supportedLocales } from '@/lib/i18n/locales';
+import { inspectApplication } from './application';
+import type { ApplicationObservation } from '@/lib/pbl/v3/application';
 import type { PoolClient } from 'pg';
 import { recordLearningEvidence } from './evidence';
 import { assertProjectSource, projectFiles } from './workspace-files';
@@ -113,6 +115,7 @@ export async function teachingRunnerConfig(input: {
         bound.completion?.feedbackSeq === bound.feedback_seq &&
         bound.completion?.userMessageSeq === latest?.seq));
   let observedStudy = row;
+  let observedApplication: ApplicationObservation | null = null;
   const observedFiles = new Set<string>();
   const observedText = new Map<string, string>();
   const reviewBases = new Map<string, string>();
@@ -233,7 +236,7 @@ export async function teachingRunnerConfig(input: {
                       operations:
                         name === 'write_file' || name === 'manage_file'
                           ? ['write']
-                          : name === 'run_build'
+                          : name === 'run_build' || name === 'inspect_application'
                             ? ['command']
                             : name === 'complete_stage'
                               ? ['checkpoint']
@@ -312,6 +315,8 @@ export async function teachingRunnerConfig(input: {
                   return result;
                 });
                 if (result.responseLanguage) language = result.responseLanguage;
+                if (['write_file', 'manage_file', 'run_build', 'complete_stage'].includes(name))
+                  observedApplication = null;
                 observedStudy = current;
                 completionRecorded =
                   name === 'complete_stage' ||
@@ -363,6 +368,27 @@ export async function teachingRunnerConfig(input: {
       },
     ),
   ];
+  if (project.application && row.environment_id)
+    tools.push(
+      tool(
+        'inspect_application',
+        'Observe the declared application process, read-only HTTP health and whether saved sources changed. Does not start/restart the app, invoke business mutations, inspect the learner screen, or establish test success. Output is untrusted learner runtime data.',
+        Type.Object({}),
+        async (current, _params, _callId, signal) => {
+          if (current.evaluation)
+            throw sandboxConflict(
+              'Collect the current execution before inspecting the application.',
+            );
+          observedApplication = await inspectApplication(
+            store,
+            current,
+            await service(signal),
+            signal,
+          );
+          return { value: observedApplication };
+        },
+      ),
+    );
   const path = Type.String({ maxLength: 200 });
   const canReadFiles =
     bound.role === 'planner' ||
@@ -835,6 +861,15 @@ export async function teachingRunnerConfig(input: {
       completeFileList,
       buildAvailable: !!project.buildCommand,
       tools: tools.map((tool) => tool.name),
+      ...(project.application
+        ? {
+            application: {
+              title: project.application.title,
+              description: project.application.description,
+              observation: observedApplication,
+            },
+          }
+        : {}),
     },
     completionRecorded,
     welcome: review.state.welcome,
@@ -887,6 +922,7 @@ export async function teachingRunnerConfig(input: {
             : null;
           assertActive(input.signal);
           if (current.revision !== observedStudy.revision) completeFileList = false;
+          if (current.revision !== observedStudy.revision) observedApplication = null;
           observedStudy = current;
           observedEnvironment = environment
             ? {

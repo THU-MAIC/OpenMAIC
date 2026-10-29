@@ -264,6 +264,13 @@ const SHIPPED: readonly (readonly [
     'f74aae6d1de902a2e054a88b01669806dcebe08675044e1b31c3405084419521',
   ],
   [
+    'sandbox-environments',
+    11,
+    'managed-application-commands',
+    true,
+    'b39beab8334efd2d64de3a0f1e882ebaf2e18d01a786d66192e60449ce7f4c51',
+  ],
+  [
     'pbl-projects',
     1,
     'validated-project-assets',

@@ -13,6 +13,7 @@ import { MAX_COMMAND_BYTES } from '@/lib/sandbox/types';
 import type { InstalledProject } from './catalog';
 import { evaluationCommand } from './evaluation';
 import { stageSkill } from './skills';
+import { applicationLaunchCommand, applicationProbeCommand } from './application-command';
 import { validSourcePath } from './workspace-files';
 
 export { PROJECT_LIMITS, safeProjectPath } from '@/lib/pbl/v3/package-policy';
@@ -52,6 +53,33 @@ const descriptorSchema = z
         sourceRoots: z.array(path).max(16),
         buildSources: z.array(path).min(1).max(128).optional(),
         evaluations: z.record(z.string(), path),
+        application: z
+          .object({
+            title: z.string().trim().min(1).max(100),
+            description: z.string().trim().min(1).max(2000),
+            argv: z
+              .array(
+                z
+                  .string()
+                  .min(1)
+                  .max(512)
+                  .refine((v) => !v.includes('\0')),
+              )
+              .min(2)
+              .max(32),
+            port: z
+              .number()
+              .int()
+              .min(1024)
+              .max(65535)
+              .refine((v) => v !== 49983),
+            healthPath: z
+              .string()
+              .regex(/^\/[a-zA-Z0-9_/-]*$/)
+              .max(200),
+          })
+          .strict()
+          .optional(),
       })
       .strict(),
     teaching: z.array(binding).min(1).max(256),
@@ -327,6 +355,20 @@ export function validateProjectPackage(input: unknown): {
     return invalid('Starter files overlap private course resources.');
   if (config.runtime.sourceRoots.some((root) => /^(skills|docs|tests|rubric)(\/|$)/.test(root)))
     return invalid('Source roots overlap private course resources.');
+  const application = config.runtime.application;
+  if (
+    application &&
+    (config.runtime.profile !== 'python3' ||
+      application.argv[0] !== 'python3' ||
+      !safeProjectPath(application.argv[1]) ||
+      !application.argv[1].endsWith('.py') ||
+      !Object.hasOwn(files, application.argv[1]))
+  )
+    return invalid('Applications require a Python starter entrypoint and the python3 profile.');
+  if (application) {
+    applicationLaunchCommand(application.argv);
+    applicationProbeCommand(Object.keys(files).sort(), application.port, application.healthPath);
+  }
   const buildSources = config.runtime.buildSources;
   if (
     buildSources?.some(
@@ -394,6 +436,7 @@ export function validateProjectPackage(input: unknown): {
     files,
     sourceRoots: config.runtime.sourceRoots,
     evaluations,
+    application,
     buildCommand,
     coursePackage: { bundle, descriptor: config },
   };

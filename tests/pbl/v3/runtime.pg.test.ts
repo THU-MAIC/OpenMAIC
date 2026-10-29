@@ -6,6 +6,7 @@ import { mkdtemp, readFile, writeFile, mkdir, readdir, rm } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { execFile } from 'node:child_process';
+import { createServer } from 'node:http';
 import { promisify } from 'node:util';
 import { Pool } from 'pg';
 import { PgAssetStore, ensureAssetSchema } from '@openmaic/storage/asset/pg';
@@ -22,6 +23,7 @@ import {
 import { WORKSPACE_FILE_RUNNER } from '@/lib/server/sandbox/workspace-archive';
 import { workbenchCommand, workbenchView } from '@/lib/server/pbl-v3/workbench';
 import { issuePreviewGrant } from '@/lib/server/sandbox/preview';
+import { applicationRequest } from '@/lib/server/pbl-v3/application';
 import type { ModelMessage } from 'ai';
 import { PgAgentSessionStore, ensureAgentSessionSchema } from '@openmaic/storage/agent-session/pg';
 import { listAgentUserMessages } from '@/lib/server/agent-runtime/user-messages';
@@ -1157,8 +1159,10 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           store.recordActivity(interactive.id, principal.ownerId),
         ),
       ).resolves.toMatchObject({ id: interactive.id });
-      await expect(interactive.send('checkpoint')).resolves.toBeDefined();
+      // Finish this environment's lightweight renewal before competing for its mutation lock.
+      // The unrelated archive remains blocked below, so admission isolation is still exercised.
       await scanning;
+      await expect(interactive.send('checkpoint')).resolves.toBeDefined();
       expect(mocked.renewals.slice(renewals)).toContain(interactiveEnvironment);
       expect(started.size).toBe(1);
       release();
@@ -7215,7 +7219,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     }
   });
 
-  it.each(['activity', 'edit', 'command'] as const)(
+  it.each(['activity', 'edit', 'command', 'application'] as const)(
     'keeps %s available during periodic upload and fences changed generations',
     async (action) => {
       const fresh = await freshStudy();
@@ -7238,9 +7242,11 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       const archive = vi
         .spyOn(E2BCompatibleSandboxProvider.prototype, 'exportWorkspace')
         .mockImplementation(async function* (this: E2BCompatibleSandboxProvider, ...args) {
+          const chunks = [];
+          for await (const chunk of original.apply(this, args)) chunks.push(chunk);
           entered();
           await gate;
-          yield* original.apply(this, args);
+          yield* chunks;
         });
       const maintaining = maintainStudy(store, fresh.id, principal.ownerId);
       try {
@@ -7262,6 +7268,29 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             expectedHash: digest(text),
             text: text + '\n# concurrent editor save\n',
           });
+        } else if (action === 'application') {
+          // This writer finishes before archive publication, so the live-command guard alone cannot catch it.
+          await store.waitForExclusive(fresh.id, async () => {
+            const current = await store.get(fresh.id, principal.ownerId);
+            const revision = current.revision;
+            const evidence = structuredClone(current.state);
+            const dirty = current.workspace_dirty_at!.getTime();
+            await store.markWorkspaceWriter(current);
+            await store.markWorkspaceWriter(current);
+            const updated = await store.get(fresh.id, principal.ownerId);
+            expect(updated.workspace_dirty_at!.getTime()).toBeGreaterThan(dirty);
+            expect(updated.revision).toBe(revision);
+            expect(updated.state).toEqual(evidence);
+            const path = join(mocked.root, row.environment_id!, 'greeting.py');
+            await writeFile(
+              path,
+              (await readFile(path, 'utf8')) + '\n# saved by a short-lived application\n',
+            );
+            await pool.query(
+              "INSERT INTO sandbox_commands(environment_id,id,request_fingerprint,purpose,result_json) VALUES($1,$2,'fixture','application',$3)",
+              [row.environment_id, randomUUID(), JSON.stringify({ state: 'exited', exitCode: 0 })],
+            );
+          });
         } else if (action === 'command')
           await pool.query(
             "INSERT INTO sandbox_commands(environment_id,id,request_fingerprint) VALUES($1,$2,'fixture')",
@@ -7280,6 +7309,20 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         expect((await store.get(fresh.id, principal.ownerId)).workspace_dirty_at === null).toBe(
           action === 'activity',
         );
+        if (action === 'application') {
+          archive.mockRestore();
+          await fresh.send('checkpoint');
+          mocked.missing.add(row.environment_id!);
+          await learningView(principal, fresh.id);
+          await fresh.send('prepare');
+          const recovered = await store.get(fresh.id, principal.ownerId);
+          expect(recovered.environment_id).not.toBe(row.environment_id);
+          expect(
+            await (
+              await SandboxService.forOwner(principal)
+            ).readText(recovered.environment_id!, 'greeting.py'),
+          ).toContain('saved by a short-lived application');
+        }
       } finally {
         release();
         await maintaining;
@@ -9476,5 +9519,242 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(after!.feedback_seq).toBe(before!.feedback_seq);
     expect(after!.turn_started_at.getTime()).toBeGreaterThan(Date.now() - 10000);
     expect((await agents.getSession(queued.sessionId))?.status).toBe('queued');
+  });
+  it.each([false, true])(
+    'orders application launches independently of timestamps, including legacy receipts: %s',
+    async (legacy) => {
+      const originalApplication = project.application;
+      const health = createServer((_req, res) => res.end('ready'));
+      await new Promise<void>((resolve) => health.listen(0, '127.0.0.1', resolve));
+      project.application = {
+        title: 'Learner application',
+        description: 'An optional interactive artifact.',
+        argv: ['python3', 'greeting.py'],
+        port: (health.address() as { port: number }).port,
+        healthPath: '/',
+      };
+      const ids: string[] = [],
+        launches: string[] = [];
+      const originalStart = E2BCompatibleSandboxProvider.prototype.startCommand;
+      const start = vi
+        .spyOn(E2BCompatibleSandboxProvider.prototype, 'startCommand')
+        .mockImplementation(async function (
+          this: E2BCompatibleSandboxProvider,
+          id,
+          operation,
+          input,
+        ) {
+          if (!input.command.startsWith('exec '))
+            return originalStart.call(this, id, operation, input);
+          launches.push(input.id);
+          await writeFile(
+            join(mocked.root, id, `.command-${input.id}`),
+            JSON.stringify({
+              id: input.id,
+              state: 'running',
+              stdout: '',
+              stderr: '',
+              exitCode: null,
+              truncated: false,
+            }),
+          );
+        });
+      const cancel = vi
+        .spyOn(E2BCompatibleSandboxProvider.prototype, 'cancelCommand')
+        .mockImplementation(async (id, _operation, commandId) => {
+          const path = join(mocked.root, id, `.command-${commandId}`);
+          const result = JSON.parse(await readFile(path, 'utf8'));
+          await writeFile(path, JSON.stringify({ ...result, state: 'cancelled', exitCode: -15 }));
+        });
+      vi.stubEnv('OPENMAIC_SECRET_KEY', 'local-secret-'.repeat(4));
+      vi.stubEnv('OPENMAIC_PREVIEW_GATEWAY_KEY', 'local-gateway-'.repeat(4));
+      vi.stubEnv('OPENMAIC_APP_ORIGIN', 'https://app.example.com');
+      vi.stubEnv('OPENMAIC_SANDBOX_PREVIEW_ORIGIN', 'https://{id}.preview-example.net');
+      try {
+        const fresh = await freshStudy();
+        ids.push(fresh.id);
+        const row = await store.get(fresh.id, principal.ownerId);
+        const initial = {
+          studyId: row.id,
+          id: randomUUID(),
+          environmentId: row.environment_id!,
+          revision: row.revision,
+          epoch: await (
+            await SandboxService.forOwner(principal)
+          ).workspaceEpoch(row.environment_id!),
+          action: 'open',
+        };
+        expect(await applicationRequest(principal, initial)).toMatchObject({
+          state: 'running',
+          preview: expect.any(Object),
+        });
+        // Reproduce a previous host being ahead of the next host by 60 seconds.
+        // Legacy imports/upgrades have no sequence and must not outrank a new launch.
+        await pool.query(
+          `UPDATE pbl_v3_commands SET result=jsonb_set(
+             CASE WHEN $3 THEN result-'launchSequence' ELSE result END,
+             '{startedAt}',to_jsonb((clock_timestamp()+interval '60 seconds')::text))
+           WHERE study_id=$1 AND id=$2`,
+          [row.id, `application:${initial.id}`, legacy],
+        );
+        const restart = { ...initial, id: randomUUID(), action: 'restart' };
+        expect(await applicationRequest(principal, restart)).toMatchObject({
+          state: 'running',
+          preview: expect.any(Object),
+        });
+        expect(await applicationRequest(principal, initial)).toMatchObject({ state: 'running' });
+        expect(await applicationRequest(principal, { ...initial, id: randomUUID() })).toMatchObject(
+          { state: 'running', preview: expect.any(Object) },
+        );
+        expect(await applicationRequest(principal, { ...initial, action: 'status' })).toMatchObject(
+          { state: 'running' },
+        );
+        expect(launches).toEqual([initial.id, restart.id]);
+        const receipt = (
+          await pool.query('SELECT result FROM pbl_v3_commands WHERE study_id=$1 AND id=$2', [
+            row.id,
+            `application:${restart.id}`,
+          ])
+        ).rows[0].result;
+        expect(receipt.launchSequence).toBe(legacy ? 1 : 2);
+        expect((await store.get(row.id, principal.ownerId)).revision).toBe(row.revision);
+      } finally {
+        start.mockRestore();
+        // Keep cancellation available until the active application is collected.
+        try {
+          await releasePreparationFixtures(ids);
+        } finally {
+          cancel.mockRestore();
+          project.application = originalApplication;
+          health.closeAllConnections();
+          await new Promise<void>((resolve) => health.close(() => resolve()));
+        }
+      }
+    },
+    15000,
+  );
+  it('gives each role read-only application diagnostics without shared chat or execution privileges', async () => {
+    const originalStudy = studyId,
+      originalApplication = project.application;
+    const ids: string[] = [];
+    project.application = {
+      title: 'Learner application',
+      description: 'An optional interactive artifact.',
+      argv: ['python3', 'greeting.py'],
+      port: 8000,
+      healthPath: '/',
+    };
+    try {
+      for (const index of [0, 2, 3, 6]) {
+        const fresh = await freshStudy();
+        ids.push(fresh.id);
+        studyId = fresh.id;
+        const row = await store.get(studyId, principal.ownerId);
+        row.state.position.stageIndex = index;
+        await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+        await runTools(
+          'What is Open application? Please inspect its state; this is only a help request.',
+          async (config) => {
+            expect(config.systemPrompt).toContain('Learner application');
+            expect(config.allowedToolNames.has('inspect_application')).toBe(true);
+            expect(config.allowedToolNames.has('run_command')).toBe(false);
+            const result = await invoke(config, 'inspect_application');
+            expect(JSON.parse((result.content[0] as { text: string }).text)).toMatchObject({
+              state: 'stopped',
+            });
+            expect(config.isTurnComplete()).toBe(false);
+            expect(config.allowedToolNames.has('read_file')).toBe(index !== 0);
+          },
+        );
+        const after = await store.get(studyId, principal.ownerId);
+        expect(after.state.position.stageIndex).toBe(index);
+        expect(after.state.status).not.toBe('completed');
+        expect(
+          (
+            await pool.query('SELECT id FROM sandbox_commands WHERE environment_id=$1', [
+              after.environment_id,
+            ])
+          ).rows,
+        ).toHaveLength(0);
+      }
+    } finally {
+      studyId = originalStudy;
+      project.application = originalApplication;
+      await releasePreparationFixtures(ids);
+    }
+  }, 15000);
+  it('keeps an active application out of the one-shot watchdog and quiesces it on idle', async () => {
+    const fresh = await freshStudy(),
+      row = await store.get(fresh.id, principal.ownerId);
+    const commandId = randomUUID(),
+      result = {
+        id: commandId,
+        state: 'running',
+        stdout: '',
+        stderr: '',
+        exitCode: null,
+        truncated: false,
+      };
+    const statusFile = join(mocked.root, row.environment_id!, `.command-${commandId}`);
+    await writeFile(statusFile, JSON.stringify(result));
+    await pool.query(
+      `INSERT INTO sandbox_commands(environment_id,id,request_fingerprint,purpose,result_json,created_at) VALUES($1,$2,'fixture','application',$3,now()-interval '20 minutes')`,
+      [row.environment_id, commandId, JSON.stringify(result)],
+    );
+    await pool.query('UPDATE pbl_v3_studies SET workspace_dirty_at=NULL WHERE id=$1', [row.id]);
+    const cancel = vi
+      .spyOn(E2BCompatibleSandboxProvider.prototype, 'cancelCommand')
+      .mockImplementation(async () => {
+        await writeFile(
+          statusFile,
+          JSON.stringify({ ...result, state: 'cancelled', exitCode: -15 }),
+        );
+      });
+    try {
+      const read = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'readCommand');
+      try {
+        const workbench = await workbenchView(principal, row.id, { passive: true });
+        expect(workbench.commands.some((entry) => entry.id === commandId)).toBe(false);
+        expect(read.mock.calls.some((args) => args.includes(commandId))).toBe(false);
+        expect(
+          (await (await SandboxService.forOwner(principal)).listCommands(row.environment_id!)).some(
+            (entry) => entry.id === commandId && entry.purpose === 'application',
+          ),
+        ).toBe(true);
+      } finally {
+        read.mockRestore();
+      }
+      await maintainStudy(store, row.id, principal.ownerId);
+      expect(cancel).not.toHaveBeenCalled();
+      expect((await store.get(row.id, principal.ownerId)).checkpoint_failure).toBeNull();
+      await ageStudy(row.id);
+      await maintainStudy(store, row.id, principal.ownerId);
+      expect(cancel).toHaveBeenCalled();
+      expect(
+        (await (await SandboxStore.open()).get(principal.ownerId, row.environment_id!)).state,
+      ).toBe('destroyed');
+    } finally {
+      cancel.mockRestore();
+      await releasePreparationFixtures([row.id]);
+    }
+  }, 15000);
+
+  it('records a finite recovery cycle when an idle application cannot confirm shutdown', async () => {
+    const fresh = await freshStudy(),
+      row = await store.get(fresh.id, principal.ownerId);
+    await ageStudy(row.id);
+    const stop = vi
+      .spyOn(SandboxService.prototype, 'stopApplications')
+      .mockRejectedValue(new Error('Unconfirmed application shutdown'));
+    try {
+      await maintainStudy(store, row.id, principal.ownerId);
+      expect((await store.get(row.id, principal.ownerId)).checkpoint_failure).toMatchObject({
+        stage: 'execution',
+        firstIdleFailureAt: expect.any(String),
+      });
+    } finally {
+      stop.mockRestore();
+      await releasePreparationFixtures([row.id]);
+    }
   });
 });

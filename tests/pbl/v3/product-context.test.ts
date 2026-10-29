@@ -47,6 +47,26 @@ function fixture(index: number) {
 }
 
 describe('authoritative product guidance', () => {
+  it('keeps declared UI instructions separate from observed runtime and formal assessment evidence', () => {
+    const input = fixture(6);
+    input.workspace.application = {
+      title: 'My list',
+      description: 'Add, remove and inspect current numbers.',
+      observation: {
+        state: 'running',
+        observedAt: '2026-10-28T00:00:00Z',
+        httpStatus: 200,
+        sourceChanged: true,
+      },
+    };
+    const product = teachingProductContext(input);
+    expect(product.features.applicationPreview).toBe(true);
+    expect(product.application?.entry).toContain('Open application');
+    expect(product.current.application).toMatchObject({ sourceChanged: true, httpStatus: 200 });
+    expect(product.application?.meaning).toContain('does not prove');
+    expect(productHelpRules).toContain('keep this optional');
+    expect(teachingProductContext(fixture(0)).features.applicationPreview).toBe(false);
+  });
   it('bounds large decision context in both initial role prompts and live dialogue refreshes', () => {
     for (const index of [1, 2, 3]) {
       const input = fixture(index);

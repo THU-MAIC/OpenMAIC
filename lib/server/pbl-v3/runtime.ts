@@ -1223,6 +1223,14 @@ export async function learningView(
     id,
     revision: row.revision,
     title: project.definition.title,
+    ...(project.application
+      ? {
+          application: {
+            title: project.application.title,
+            description: project.application.description,
+          },
+        }
+      : {}),
     reportAvailable: canViewProjectReport(row.state),
     completedFilesAvailable: completedFiles !== null,
     lifecycleError: row.lifecycle_error ?? null,
