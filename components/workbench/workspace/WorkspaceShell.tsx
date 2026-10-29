@@ -1122,6 +1122,9 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     };
   });
   const firstSceneWatchers = useRef(new Map<string, () => void>());
+  // Courses a trigger reached while their read was in flight: that read may
+  // predate the trigger, so one more follows when it settles without a scene.
+  const firstSceneRereads = useRef(new Set<string>());
 
   // Request keys come from per-session event sequences and collide across
   // conversations, so the close is remembered with the conversation it was for.
@@ -1196,6 +1199,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       if (!unreconciled(id)) {
         cancel();
         firstSceneWatchers.current.delete(id);
+        firstSceneRereads.current.delete(id);
       }
     }
     const eligibleLinks = stageLinkStageIds.filter(
@@ -1227,18 +1231,27 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     // Each waiting course has one readiness read in flight at most. It is not
     // cancelled when this effect re-runs (the run ending is one such change):
     // only a conversation switch, unmount or the course being reconciled stops
-    // it. A read that settles without a scene frees the slot for the next
-    // trigger (a checkpoint, the course list).
-    for (const id of open) {
-      if (firstSceneWatchers.current.has(id)) continue;
+    // it. A trigger (a checkpoint, the run ending, the course list) that
+    // arrives meanwhile is kept, not dropped: the in-flight read may predate
+    // it, so a read that settles without a scene starts one more.
+    const watch = (id: string) => {
       const cancel = watchFirstScene(
         [id],
-        (courseId) => handOffRef.current(courseId),
+        (courseId) => {
+          firstSceneRereads.current.delete(id);
+          handOffRef.current(courseId);
+        },
         () => {
-          if (firstSceneWatchers.current.get(id) === cancel) firstSceneWatchers.current.delete(id);
+          if (firstSceneWatchers.current.get(id) !== cancel) return;
+          firstSceneWatchers.current.delete(id);
+          if (firstSceneRereads.current.delete(id)) watch(id);
         },
       );
       firstSceneWatchers.current.set(id, cancel);
+    };
+    for (const id of open) {
+      if (firstSceneWatchers.current.has(id)) firstSceneRereads.current.add(id);
+      else watch(id);
     }
   }, [
     attachedSessionId,
@@ -1267,9 +1280,11 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   // The readiness reads belong to the attached conversation.
   useEffect(() => {
     const watchers = firstSceneWatchers.current;
+    const rereads = firstSceneRereads.current;
     return () => {
       for (const cancel of watchers.values()) cancel();
       watchers.clear();
+      rereads.clear();
     };
   }, [attachedSessionId]);
 

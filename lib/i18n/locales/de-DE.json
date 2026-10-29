@@ -2260,6 +2260,12 @@
         "processing_interrupted": {
           "label": "Analyse nicht abgeschlossen",
           "description": "Die Analyse konnte nicht abgeschlossen werden. Sie können es später erneut versuchen."
+        },
+        "too_many_pages": {
+          "label": "Zu viele Seiten",
+          "description": "Dieses PDF hat {{pages}} Seiten und überschreitet das Analyselimit von {{maxPages}} Seiten. Teilen Sie es auf und laden Sie die Teile hoch, oder laden Sie nur die benötigten Kapitel hoch.",
+          "descriptionWithoutCount": "Dieses PDF überschreitet das Analyselimit von {{maxPages}} Seiten. Teilen Sie es auf und laden Sie die Teile hoch, oder laden Sie nur die benötigten Kapitel hoch.",
+          "descriptionWithoutLimit": "Dieses PDF hat mehr Seiten, als der Analysedienst verarbeitet. Teilen Sie es auf und laden Sie die Teile hoch, oder laden Sie nur die benötigten Kapitel hoch."
         }
       },
       "status": {

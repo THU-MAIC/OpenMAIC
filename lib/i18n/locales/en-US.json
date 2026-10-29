@@ -2260,6 +2260,12 @@
         "processing_interrupted": {
           "label": "Parsing did not finish",
           "description": "Parsing could not be completed. You can try again later."
+        },
+        "too_many_pages": {
+          "label": "Too many pages",
+          "description": "This PDF has {{pages}} pages, more than the {{maxPages}}-page parsing limit. Split it and upload the parts, or upload only the chapters you need.",
+          "descriptionWithoutCount": "This PDF is over the {{maxPages}}-page parsing limit. Split it and upload the parts, or upload only the chapters you need.",
+          "descriptionWithoutLimit": "This PDF has more pages than the parsing service accepts. Split it and upload the parts, or upload only the chapters you need."
         }
       },
       "status": {

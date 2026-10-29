@@ -5,9 +5,10 @@ interface EnterEditModeOptions {
    */
   teardown: () => Promise<void> | undefined;
   /**
-   * Load the editor chunk (fonts + slide surface) before the mode flip so
+   * Load the editor chunk (slide + quiz surfaces) before the mode flip so
    * the edit chrome animates in with its content already present. The import
-   * is promise-cached, so this is a no-op on subsequent toggles.
+   * is promise-cached, so this is a no-op on subsequent toggles. The picker
+   * fonts load alongside but are not part of this wait.
    */
   preload: () => Promise<unknown>;
   /** Make edit mode visible once teardown and preload have both succeeded. */

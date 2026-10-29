@@ -19,7 +19,9 @@
  */
 import {
   extractionReasonCodeOf,
+  extractionReasonValuesOf,
   type MaterialExtractionReasonCode,
+  type MaterialExtractionReasonValues,
 } from '@/lib/types/material-extraction-failure';
 import type { WorkbenchMaterial } from './session-store';
 
@@ -45,6 +47,7 @@ export interface MaterialMentionCandidate {
   readonly bytes: number;
   readonly extractionStatus: ExtractionStatus;
   readonly reasonCode?: MaterialExtractionReasonCode;
+  readonly reasonValues?: MaterialExtractionReasonValues;
   /** This conversation already has it (attached by an earlier message). */
   readonly attached: boolean;
   /** Already a pill on this message: picking it again changes nothing. */
@@ -58,7 +61,7 @@ interface LibraryListing {
   folderName?: string;
   mime?: string;
   bytes: number;
-  extraction?: { status?: string; reasonCode?: unknown };
+  extraction?: { status?: string; reasonCode?: unknown; reasonValues?: unknown };
   attached?: boolean;
 }
 
@@ -77,17 +80,22 @@ export function materialMentionCandidates(
   listed: readonly LibraryListing[],
   stagedIds: ReadonlySet<string>,
 ): MaterialMentionCandidate[] {
-  return listed.slice(0, MATERIAL_MENTION_LIMIT).map((material) => ({
-    materialId: material.materialId,
-    name: material.name,
-    ...(material.folderName ? { folderName: material.folderName } : {}),
-    ...(material.mime ? { mimeType: material.mime } : {}),
-    bytes: material.bytes,
-    extractionStatus: extractionStatusOf(material.extraction?.status),
-    reasonCode: extractionReasonCodeOf(material.extraction?.reasonCode),
-    attached: material.attached === true,
-    staged: stagedIds.has(material.materialId),
-  }));
+  return listed.slice(0, MATERIAL_MENTION_LIMIT).map((material) => {
+    const reasonCode = extractionReasonCodeOf(material.extraction?.reasonCode);
+    const reasonValues = extractionReasonValuesOf(reasonCode, material.extraction?.reasonValues);
+    return {
+      materialId: material.materialId,
+      name: material.name,
+      ...(material.folderName ? { folderName: material.folderName } : {}),
+      ...(material.mime ? { mimeType: material.mime } : {}),
+      bytes: material.bytes,
+      extractionStatus: extractionStatusOf(material.extraction?.status),
+      reasonCode,
+      ...(reasonValues ? { reasonValues } : {}),
+      attached: material.attached === true,
+      staged: stagedIds.has(material.materialId),
+    };
+  });
 }
 
 /** The pill a pick stages: the same shape a finished upload stages. */

@@ -74,7 +74,11 @@ import {
 import { resolveExtractionServices, type ExtractionServices } from './services';
 
 import { ownerDocumentOutcome } from './document-images';
-import { isTransientExtractionError, MaterialExtractionError } from './errors';
+import {
+  isTransientExtractionError,
+  MaterialExtractionError,
+  MaterialSourceRefusedError,
+} from './errors';
 import {
   decodeMediaAssetData,
   documentExtractionFailure,
@@ -113,6 +117,12 @@ export interface OwnerExtractionDependencies extends ExtractorRegistryDependenci
 /** Shared between a run and its heartbeat: set once the claim is known to be lost. */
 export interface OwnerExtractionRunState {
   lost: boolean;
+  /**
+   * Aborted once the run is cancelled (its claim found lost, which a deleted
+   * source also makes it, or the runner stopping): what the run waits on that
+   * can be stopped (image downloads) stops.
+   */
+  signal?: AbortSignal;
 }
 
 export type OwnerExtractionRunOutcome = PublishOutcome | 'reused';
@@ -337,7 +347,7 @@ export async function runClaimedOwnerExtraction(
     return state.lost ? 'not-authorized' : undefined;
   };
 
-  const extracted = await extractOrReuse(plan, claim.originalName, reuse);
+  const extracted = await extractOrReuse(plan, claim.originalName, reuse, state.signal);
   if (extracted.kind === 'reused') return extracted.outcome;
   const outcome = extracted.outcome;
 
@@ -392,7 +402,11 @@ export async function runClaimedOwnerExtraction(
       persistence.withTransaction,
       claim,
       {
-        cacheKey: ownerExtractionCacheKey(source, outcome.extractor, options),
+        // Images that failed to download may download next time: such a
+        // result is never reused, a new upload of these bytes extracts again.
+        cacheKey: outcome.imagesNotDownloaded
+          ? null
+          : ownerExtractionCacheKey(source, outcome.extractor, options),
         text: {
           assetId: textAssetId,
           chars: outcome.text.length,
@@ -468,6 +482,7 @@ async function extractOrReuse(
     id: string;
     version: string;
   }) => Promise<OwnerExtractionRunOutcome | undefined>,
+  signal?: AbortSignal,
 ): Promise<
   | { kind: 'reused'; outcome: OwnerExtractionRunOutcome }
   | { kind: 'extracted'; outcome: SourceExtractionOutcome }
@@ -484,11 +499,17 @@ async function extractOrReuse(
     if (reused) return { kind: 'reused', outcome: reused };
     try {
       const artifact = await extractWithDocumentProvider(provider, plan);
-      return { kind: 'extracted', outcome: await ownerDocumentOutcome(artifact, provider) };
+      return {
+        kind: 'extracted',
+        outcome: await ownerDocumentOutcome(artifact, provider, { signal }),
+      };
     } catch (error) {
-      if (error instanceof DocumentImageParseError) throw error;
+      // A cancelled run stops here; it is no provider's failure to fall back from.
+      if (error instanceof DocumentImageParseError || signal?.aborted) throw error;
       errors.push(documentFailureLine(provider, error));
       failures.push(error);
+      // The source itself was refused: no other provider is tried for it.
+      if (error instanceof MaterialSourceRefusedError) break;
     }
   }
   throw documentExtractionFailure(errors, failures, plan.noServiceConfigured);
@@ -550,6 +571,8 @@ async function publishReused(
 export interface OwnerExtractionWorkerOptions {
   leaseTtlMs?: number;
   heartbeatIntervalMs?: number;
+  /** Aborted when the runner stops: the run is cancelled, not settled (its lease expires). */
+  signal?: AbortSignal;
 }
 
 /**
@@ -569,11 +592,17 @@ export async function runNextOwnerExtraction(
     createToken: randomUUID,
   });
   if (!claim) return false;
-  const state: OwnerExtractionRunState = { lost: false };
+  const lost = new AbortController();
+  const state: OwnerExtractionRunState = {
+    lost: false,
+    signal: options.signal ? AbortSignal.any([options.signal, lost.signal]) : lost.signal,
+  };
   const heartbeat = setInterval(() => {
     heartbeatOwnerMaterialExtraction(pool, claim, now()).then(
       (current) => {
-        if (!current) state.lost = true;
+        if (current) return;
+        state.lost = true;
+        lost.abort(new OwnerExtractionClaimLostError(claim.materialId));
       },
       (error) => {
         // A heartbeat that did not land renews nothing; the lease decides.
@@ -584,7 +613,13 @@ export async function runNextOwnerExtraction(
   try {
     await runClaimedOwnerExtraction(claim, dependencies, state);
   } catch (error) {
-    if (!(error instanceof OwnerExtractionClaimLostError) && !state.lost) {
+    // A cancelled run settles nothing: the claim is someone else's, or the
+    // runner stopped and the lease expires for another instance to take.
+    if (
+      !(error instanceof OwnerExtractionClaimLostError) &&
+      !state.lost &&
+      !state.signal?.aborted
+    ) {
       const reason = error instanceof Error ? error.message : String(error);
       // The diagnostic is for operators: tools give the model only a stable reason.
       console.warn(`[owner-extraction] ${claim.materialId} failed: ${reason}`);
@@ -597,6 +632,9 @@ export async function runNextOwnerExtraction(
             : error instanceof MaterialExtractionError
               ? error.reasonCode
               : undefined,
+        ...(error instanceof MaterialExtractionError && error.reasonValues
+          ? { reasonValues: error.reasonValues }
+          : {}),
       });
     }
   } finally {
@@ -627,8 +665,10 @@ export interface OwnerExtractionRunnerOptions extends OwnerExtractionWorkerOptio
  * session chain's (`./runner.ts`): every interval it fills its free slots
  * with {@link runNextOwnerExtraction}. Claims, leases and the claim budget
  * keep several instances from running one source twice; a run whose claim
- * is lost publishes nothing. `stop` stops claiming and waits for the runs
- * under way, so shutdown closes the pool only after them.
+ * is lost publishes nothing. `stop` stops claiming, cancels the image
+ * downloads of the runs under way (such a run settles nothing; its lease
+ * expires) and waits for those runs, so shutdown closes the pool only after
+ * them.
  *
  * The wait is bounded, because a provider call cannot be cancelled and may
  * never return, and a shutdown must end. When it runs out, `stop` says so
@@ -651,13 +691,18 @@ export function startOwnerExtractionRunner(
   const maxConcurrent = options.maxConcurrent ?? agentRuntimeConfig.maxConcurrent;
   const running = new Set<Promise<void>>();
   let stopping = false;
+  // Cancels what the runs under way can stop (image downloads) once stopping.
+  const stopped = new AbortController();
 
   const scan = async () => {
     if (stopping) return;
     try {
       const resolved = await dependencies();
       for (let slot = running.size; !stopping && slot < maxConcurrent; slot += 1) {
-        const run: Promise<void> = runNextOwnerExtraction(resolved, options)
+        const run: Promise<void> = runNextOwnerExtraction(resolved, {
+          ...options,
+          signal: stopped.signal,
+        })
           .then(() => undefined)
           .catch((error) => {
             console.error('[owner-extraction] run failed before settlement', error);
@@ -676,6 +721,7 @@ export function startOwnerExtractionRunner(
     async stop(stopOptions) {
       stopping = true;
       clearInterval(timer);
+      stopped.abort(new Error('owner extraction runner stopped'));
       const deadline = Date.now() + (stopOptions?.timeoutMs ?? 15_000);
       while (running.size > 0 && Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, 50));

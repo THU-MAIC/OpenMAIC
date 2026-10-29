@@ -202,6 +202,8 @@ export interface MaterialExtractionView {
   textChars?: number;
   pageCount?: number;
   imageCount?: number;
+  /** Images found that could not be stored, left out of `imageCount`. */
+  imagesSkipped?: number;
   /** What a course leaves out of this material on its own. */
   truncated?: { textChars?: number; images?: { total: number; max: number } };
 }

@@ -966,15 +966,37 @@ describe('material library routes and tools (PGlite)', () => {
   it('returns only whitelisted extraction codes on all owner HTTP projections', async () => {
     const h = await boot();
     await seedLinkedConversation(h);
-    for (const [status, code, expected] of [
+    const counts = { pages: 461, maxPages: 200 };
+    for (const [status, code, expected, reasonValues] of [
       ['failed', 'storage_full', { status: 'failed', reasonCode: 'storage_full' }],
       ['failed', 'future_code', { status: 'failed' }],
       ['failed', undefined, { status: 'failed' }],
       ['pending', 'storage_full', { status: 'pending' }],
+      [
+        'failed',
+        'too_many_pages',
+        { status: 'failed', reasonCode: 'too_many_pages', reasonValues: counts },
+        { ...counts, note: 'PRIVATE_UPSTREAM_BODY' },
+      ],
+      [
+        'failed',
+        'too_many_pages',
+        { status: 'failed', reasonCode: 'too_many_pages' },
+        { pages: '461', maxPages: -1 },
+      ],
+      ['failed', 'storage_full', { status: 'failed', reasonCode: 'storage_full' }, counts],
+      ['pending', 'too_many_pages', { status: 'pending' }, counts],
     ] as const) {
       await h.pool.query(
         `UPDATE owner_material SET extraction = $1::jsonb, extraction_error = 'PRIVATE_UPSTREAM_BODY' WHERE id = 'src-a'`,
-        [JSON.stringify({ status, reasonCode: code, reason: 'PRIVATE_UPSTREAM_BODY' })],
+        [
+          JSON.stringify({
+            status,
+            reasonCode: code,
+            reason: 'PRIVATE_UPSTREAM_BODY',
+            ...(reasonValues ? { reasonValues } : {}),
+          }),
+        ],
       );
       const library = await libraryRoute(request('GET', '/api/materials/library'));
       const session = await sessionMaterialsRoute(request('GET', '/api/materials?sessionId=ses-1'));

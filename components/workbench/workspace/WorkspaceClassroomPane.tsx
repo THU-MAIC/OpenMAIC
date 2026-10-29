@@ -31,6 +31,7 @@ import { useStageStore } from '@/lib/store/stage';
 import { useWorkbenchStore } from '@/lib/workbench/session-store';
 import { WorkbenchPanelProvider } from '@/lib/workbench/panel-context';
 import { useWorkbenchProEditing } from '@/lib/workbench/use-workbench-pro-edit';
+import { useEditorWarmup } from '@/lib/edit/use-editor-warmup';
 import { WorkspaceCourseTabs, type WorkspaceCourseTabItem } from './WorkspaceCourseTabs';
 import { PaneFoldButton } from './PaneFoldButton';
 
@@ -107,6 +108,9 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
     !courseGenerating &&
     scenes.length > 0;
   const learning = playback || !editingAllowed || preferences[courseId] !== 'editing';
+  // Load the editor while the course is shown in Learn mode, so the first switch
+  // to Edit does not wait on its download. Only where the switch is offered.
+  const warmEditorNow = useEditorWarmup(editingAllowed && learning && !hidden && !playback);
 
   const rememberMode = (mode: ClassroomMode) => {
     setPreferences((previous) => ({ ...previous, [courseId]: mode }));
@@ -198,6 +202,8 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
               data-testid="workbench-mode-editing"
               aria-pressed={!learning}
               disabled={!editingAllowed}
+              onPointerEnter={warmEditorNow}
+              onFocus={warmEditorNow}
               onClick={() => {
                 if (editingAllowed) rememberMode('editing');
               }}

@@ -10,7 +10,9 @@
 
 import {
   extractionReasonCodeOf,
+  extractionReasonValuesOf,
   type MaterialExtractionReasonCode,
+  type MaterialExtractionReasonValues,
 } from '@/lib/types/material-extraction-failure';
 import type { WorkbenchMaterial } from '@/lib/workbench/session-store';
 
@@ -56,6 +58,7 @@ export interface LibraryMaterial {
   readonly extraction: {
     readonly status: MaterialExtractionStatus;
     readonly reasonCode?: MaterialExtractionReasonCode;
+    readonly reasonValues?: MaterialExtractionReasonValues;
   };
   readonly createdAt: string;
 }
@@ -198,6 +201,7 @@ function materialOf(raw: unknown): LibraryMaterial | null {
   const status = extractionStatusOf(extraction.status);
   const reasonCode =
     status === 'failed' ? extractionReasonCodeOf(extraction.reasonCode) : undefined;
+  const reasonValues = extractionReasonValuesOf(reasonCode, extraction.reasonValues);
   return {
     materialId: item.materialId,
     name: item.name,
@@ -210,6 +214,7 @@ function materialOf(raw: unknown): LibraryMaterial | null {
     extraction: {
       status,
       ...(reasonCode ? { reasonCode } : {}),
+      ...(reasonValues ? { reasonValues } : {}),
     },
     createdAt: typeof item.createdAt === 'string' ? item.createdAt : '',
   };

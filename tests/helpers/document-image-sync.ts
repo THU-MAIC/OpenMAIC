@@ -6,8 +6,7 @@ import {
   type RewriteImageTarget,
 } from '@/lib/server/material-extraction/document-image-apply.mjs';
 import {
-  isProviderPath,
-  keyOf,
+  derivativeTarget,
   type ImagePathIndex,
 } from '@/lib/server/material-extraction/document-image-paths.mjs';
 const DERIVATIVE_REF_PREFIX = 'openmaic-derivative:';
@@ -23,15 +22,11 @@ const MATERIAL_REF_PREFIX = 'material:';
  * A reference to a kept image names its key; one to any other file of the
  * provider becomes its alt text. A reference image is written inline, and a
  * definition of a provider file that only images use is removed, so no
- * provider path is left behind. Remote, inline (`data:`) and absolute
- * references are kept.
+ * provider path is left behind. A URL a kept image was downloaded from names
+ * its key too; other remote, inline (`data:`) and absolute references are kept.
  */
 export function rewriteImageReferences(markdown: string, index: ImagePathIndex): string {
-  return rewriteImageDestinations(markdown, (target) => {
-    if (!isProviderPath(target)) return undefined;
-    const key = keyOf(index, target);
-    return key ? `${DERIVATIVE_REF_PREFIX}${key}` : null;
-  });
+  return rewriteImageDestinations(markdown, (target) => derivativeTarget(index, target));
 }
 
 function rewriteImageDestinations(markdown: string, rewriteTarget: RewriteImageTarget): string {

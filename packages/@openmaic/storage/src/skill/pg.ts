@@ -278,6 +278,19 @@ export class PgUserSkillStore implements UserSkillStore {
     return result.rows[0] ? mapRow(result.rows[0]) : null;
   }
 
+  /** Distinguish an owned deletion from missing/foreign IDs without exposing its body. */
+  async findDeleted(
+    id: string,
+    ownerId: string,
+  ): Promise<Pick<UserSkillRecord, 'id' | 'name'> | null> {
+    const result = await this.queryable.query<{ id: string; name: string }>(
+      `SELECT id, name FROM ${this.table}
+       WHERE id = $1 AND owner_id = $2 AND deleted_at IS NOT NULL LIMIT 1`,
+      [id, ownerId],
+    );
+    return result.rows[0] ?? null;
+  }
+
   async findByRef(ownerId: string, ref: string): Promise<UserSkillRecord | null> {
     const condition = refCondition(ref);
     const result = await this.queryable.query<UserSkillRow>(

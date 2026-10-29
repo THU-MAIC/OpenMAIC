@@ -650,11 +650,11 @@ export async function readSkillFileText(skill: LoadedSkill): Promise<string> {
  * invocation shape and transcript semantics remain pi-native.
  */
 export function createNativeSkillReadTool(
-  skills: readonly LoadedSkill[],
+  installedSkills: readonly LoadedSkill[] | (() => readonly LoadedSkill[]),
   onActivate: (skill: LoadedSkill) => void,
 ): AgentTool<typeof NativeReadParams, unknown> {
-  const roots = skills.map((skill) => dirname(skill.filePath));
-  const assertAllowed = async (path: string): Promise<string> => {
+  const assertAllowed = async (path: string, skills: readonly LoadedSkill[]): Promise<string> => {
+    const roots = skills.map((skill) => dirname(skill.filePath));
     const canonical = await realpath(path);
     for (const root of roots) {
       const canonicalRoot = await realpath(root);
@@ -669,6 +669,7 @@ export function createNativeSkillReadTool(
     description: 'Read a text file. Paths are limited to installed skill directories.',
     parameters: NativeReadParams,
     async execute(_id, params: Static<typeof NativeReadParams>) {
+      const skills = typeof installedSkills === 'function' ? installedSkills() : installedSkills;
       // Database skills have deliberately virtual paths. Match the path
       // exactly against this run's already-loaded owner-scoped registry and
       // return memory; never pass it to realpath or widen filesystem access.
@@ -697,7 +698,7 @@ export function createNativeSkillReadTool(
       if (params.path.startsWith(USER_SKILL_VIRTUAL_ROOT)) {
         throw new Error('read is limited to the loaded user skill');
       }
-      const canonical = await assertAllowed(resolve(skillsDir, params.path));
+      const canonical = await assertAllowed(resolve(skillsDir, params.path), skills);
       await access(canonical, constants.R_OK);
       const text = await readFile(canonical, 'utf8');
       const lines = text.split(/\r?\n/);

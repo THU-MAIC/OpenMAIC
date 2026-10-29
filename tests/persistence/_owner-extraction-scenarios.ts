@@ -11,6 +11,7 @@
  */
 import { OwnerMaterialBytesUnavailableError } from '@/lib/server/materials/owner-material-bytes';
 import { MaterialExtractionError } from '@/lib/server/material-extraction/errors';
+import { selfHostedMinerUFailure } from '@/lib/pdf/pdf-providers';
 import { createHash, randomUUID } from 'node:crypto';
 
 import { ensureAgentSessionSchema } from '@openmaic/storage/agent-session/pg';
@@ -20,6 +21,8 @@ import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
 import { ensureUserSkillSchema } from '@openmaic/storage/skill/pg';
 import { expect, vi } from 'vitest';
 import * as imageParser from '@/lib/server/material-extraction/document-image-parser';
+import * as providerResultFetch from '@/lib/server/provider-result-fetch';
+import sharp from 'sharp';
 
 import type { DocumentExtractorProvider, MediaExtractorProvider } from '@/lib/document';
 import { getDocumentExtractorManifestEntry } from '@/lib/document/extractors/manifest';
@@ -54,6 +57,7 @@ import {
   OWNER_EXTRACTION_LEASE_TTL_MS,
   runClaimedOwnerExtraction,
   runNextOwnerExtraction,
+  startOwnerExtractionRunner,
   type OwnerExtractionDependencies,
 } from '@/lib/server/material-extraction/owner-extraction';
 
@@ -1394,6 +1398,145 @@ export async function fallbackReuseScenario(h: ExtractionHarness): Promise<void>
 }
 
 /**
+ * A result that left out images whose download failed is never a cache hit:
+ * the next upload of the same bytes extracts again (and may download them),
+ * and a result with every image kept is reused as before.
+ */
+export async function failedImageDownloadScenario(h: ExtractionHarness): Promise<void> {
+  const png = await sharp({
+    create: { width: 2, height: 2, channels: 3, background: { r: 255, g: 0, b: 0 } },
+  })
+    .png()
+    .toBuffer();
+  const extract = vi.fn(async () => ({
+    metadata: { pageCount: 1 },
+    blocks: [{ id: 'b1', type: 'markdown', text: '![](images/fig-1.jpg)' }],
+    assets: [
+      {
+        id: 'img_1',
+        type: 'image',
+        data: 'https://files.example.com/media/fig-1',
+        metadata: { path: 'fig-1.jpg' },
+      },
+    ],
+  }));
+  const download = vi
+    .spyOn(providerResultFetch, 'fetchProviderResultUrl')
+    .mockResolvedValueOnce(new Response('unavailable', { status: 503 }))
+    .mockImplementation(
+      async () => new Response(new Uint8Array(png), { headers: { 'content-type': 'image/png' } }),
+    );
+  try {
+    const deps = h.deps({ providers: () => [documentProvider(extract)] });
+    const bytes = Buffer.from('%PDF-linked-images');
+    for (const id of ['doc-failed', 'doc-retried', 'doc-reused']) {
+      await seedSource(h, id, { bytes });
+      await ensure(h, id);
+      await drain(h, deps);
+    }
+    const failed = await stateOf(h, 'doc-failed');
+    expect(failed.extraction_result!.derivatives).toEqual([]);
+    expect(failed.extraction_cache_key).toBeNull();
+    const retried = (await stateOf(h, 'doc-retried')).extraction_result!;
+    expect(retried.reusedFrom).toBeUndefined();
+    expect(retried.derivatives).toHaveLength(1);
+    expect((await stateOf(h, 'doc-reused')).extraction_result).toMatchObject({
+      reusedFrom: 'doc-retried',
+    });
+    expect(extract).toHaveBeenCalledTimes(2);
+    expect(download).toHaveBeenCalledTimes(2);
+  } finally {
+    download.mockRestore();
+  }
+}
+
+/**
+ * A run cancelled while an image download stalls -- its source deleted (the
+ * heartbeat finds the claim lost), or the runner stopping -- stops at once
+ * instead of waiting out the download's timeout or deadline. The
+ * cancellation is no provider failure: no fallback runs and nothing is
+ * settled or published.
+ */
+export async function cancelledImageDownloadScenario(h: ExtractionHarness): Promise<void> {
+  const extract = vi.fn(async () => ({
+    metadata: { pageCount: 1 },
+    blocks: [{ id: 'b1', type: 'markdown', text: '![](images/fig-1.jpg)' }],
+    assets: [
+      {
+        id: 'img_1',
+        type: 'image',
+        data: 'https://files.example.com/media/stalls',
+        metadata: { path: 'fig-1.jpg' },
+      },
+    ],
+  }));
+  const fallback = vi.fn(async () => ({
+    metadata: {},
+    blocks: [{ id: 'b1', type: 'text', text: 'fallback' }],
+    assets: [],
+  }));
+  let requested!: () => void;
+  let downloadStarted = new Promise<void>((resolve) => (requested = resolve));
+  // A host that never answers and ignores the abort.
+  const download = vi
+    .spyOn(providerResultFetch, 'fetchProviderResultUrl')
+    .mockImplementation(() => {
+      requested();
+      return new Promise<Response>(() => {});
+    });
+  const within = <T>(work: Promise<T>, what: string) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    return Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${what} did not stop within 3 s`)), 3_000);
+      }),
+    ]).finally(() => clearTimeout(timer));
+  };
+  const expectUnsettled = async (id: string) => {
+    const state = await stateOf(h, id);
+    expect(state.status).toBe('running');
+    expect(state.extraction_error).toBeNull();
+    expect(state.extraction_result).toBeNull();
+  };
+  try {
+    const deps = h.deps({
+      providers: () => [
+        documentProvider(extract),
+        { ...documentProvider(fallback), id: 'test-fallback' as never },
+      ],
+    });
+
+    await seedSource(h, 'doc-deleted', { bytes: Buffer.from('%PDF-deleted') });
+    await ensure(h, 'doc-deleted');
+    const run = runNextOwnerExtraction(deps, { heartbeatIntervalMs: 10 });
+    await downloadStarted;
+    await h.pool.query('UPDATE owner_material SET deleted_at = 1 WHERE id = $1', ['doc-deleted']);
+    expect(await within(run, 'the run of a deleted source')).toBe(true);
+    await expectUnsettled('doc-deleted');
+
+    downloadStarted = new Promise<void>((resolve) => (requested = resolve));
+    await seedSource(h, 'doc-stopped', { bytes: Buffer.from('%PDF-stopped') });
+    await ensure(h, 'doc-stopped');
+    const runner = startOwnerExtractionRunner({
+      dependencies: async () => deps,
+      scanIntervalMs: 60_000,
+      heartbeatIntervalMs: 60_000,
+    });
+    await downloadStarted;
+    expect(await within(runner.stop({ timeoutMs: 10_000 }), 'the stopped runner')).toEqual({
+      drained: true,
+      running: 0,
+    });
+    await expectUnsettled('doc-stopped');
+
+    expect(fallback).not.toHaveBeenCalled();
+  } finally {
+    download.mockRestore();
+  }
+}
+
+/**
  * A donor that is still `done` but no longer roots its result -- its entries
  * still exist, unreferenced -- is not reused: a hit needs a result something
  * still keeps alive, and reusing it would revive entries on their way out.
@@ -1674,6 +1817,53 @@ export async function documentFallbackScenario(h: ExtractionHarness): Promise<vo
       provider('alidocmind', ['image/png'], h.documentExtract),
     ]),
   ).toMatchObject({ status: 'done', reason_code: null });
+}
+
+/**
+ * A configured MinerU (gateway) that refuses a PDF for its page count ends
+ * the attempt: the local unpdf behind it is not tried, the first claim is
+ * the last (no retry), and the counts are kept with the public reason for
+ * the page to state. Parsing again queues it afresh, without the old counts.
+ */
+export async function tooManyPagesScenario(h: ExtractionHarness): Promise<void> {
+  const { provider, run } = documentCandidates(h);
+  const pdf = ['application/pdf'];
+  const refusal = vi.fn(async () => {
+    throw selfHostedMinerUFailure(
+      422,
+      JSON.stringify({
+        error: {
+          code: 'pdf_too_many_pages',
+          message: 'PDF has 461 pages, which exceeds the 200-page limit',
+        },
+      }),
+    );
+  });
+  const providers = [provider('mineru', pdf, refusal), provider('unpdf', pdf, h.documentExtract)];
+  expect(await run('pdf-long', 'application/pdf', providers, ['mineru'])).toMatchObject({
+    status: 'failed',
+    reason_code: 'too_many_pages',
+    extraction_claims: 1,
+    extraction_result: null,
+  });
+  expect(refusal).toHaveBeenCalledTimes(1);
+  expect(h.documentExtract).not.toHaveBeenCalled();
+  const stored = async () =>
+    (
+      await h.pool.query<{ extraction: Record<string, unknown>; extraction_error: string }>(
+        'SELECT extraction, extraction_error FROM owner_material WHERE id = $1',
+        ['pdf-long'],
+      )
+    ).rows[0]!;
+  const failed = await stored();
+  expect(failed.extraction).toEqual({
+    status: 'failed',
+    reasonCode: 'too_many_pages',
+    reasonValues: { pages: 461, maxPages: 200 },
+  });
+  expect(failed.extraction_error).toContain('MinerU refused the document: too many pages');
+  await ensure(h, 'pdf-long');
+  expect((await stored()).extraction).toEqual({ status: 'pending' });
 }
 
 /** Public failure reasons survive only a terminal, current claim. */

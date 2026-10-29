@@ -15,6 +15,7 @@
  */
 import { providerFetch, type ProviderFetchPolicy } from '@/lib/server/provider-fetch';
 import { UnsafeNetworkTargetError, validateUrlForSSRFWithPolicy } from '@/lib/server/ssrf-guard';
+import { isBase64Payload } from '@/lib/utils/base64';
 
 export const PROVIDER_RESULT_URL_POLICY: ProviderFetchPolicy = {
   allowLocalNetworks: false,
@@ -23,6 +24,12 @@ export const PROVIDER_RESULT_URL_POLICY: ProviderFetchPolicy = {
 
 function dataUrlTooLarge(maxBytes: number): Error {
   return new Error(`Download failed: data URL exceeds the ${maxBytes}-byte limit`);
+}
+
+/** Decode a base64 payload, refusing one that is not base64 (see {@link isBase64Payload}). */
+export function decodeBase64(payload: string): Buffer {
+  if (!isBase64Payload(payload)) throw new Error('Invalid base64 payload');
+  return Buffer.from(payload, 'base64');
 }
 
 /**
@@ -45,9 +52,7 @@ export function decodeDataUrl(url: string, maxBytes: number): { bytes: Buffer; m
     ? Math.floor((rawData.length * 3) / 4) - (rawData.match(/=*$/)?.[0].length ?? 0)
     : Math.ceil(rawData.length / 3);
   if (estimated > maxBytes) throw dataUrlTooLarge(maxBytes);
-  const bytes = base64
-    ? Buffer.from(rawData, 'base64')
-    : Buffer.from(decodeURIComponent(rawData), 'utf8');
+  const bytes = base64 ? decodeBase64(rawData) : Buffer.from(decodeURIComponent(rawData), 'utf8');
   if (bytes.byteLength > maxBytes) throw dataUrlTooLarge(maxBytes);
   return { bytes, mimeType: params[0]?.trim().toLowerCase() || 'application/octet-stream' };
 }

@@ -3,12 +3,16 @@
  * rewritten to keys, how keys resolve to a source's own derivatives, and that
  * MinerU's parser keeps the file each image is named by.
  */
-import { describe, expect, it } from 'vitest';
+import sharp from 'sharp';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fromMarkdown } from 'mdast-util-from-markdown';
 
 import type { DocumentArtifact, DocumentExtractorProvider } from '@/lib/document/types';
 import { textDocumentExtractorProvider } from '@/lib/document/extractors/text';
+import { parsedPdfToDocumentArtifact } from '@/lib/document/pdf-compat';
+import { MINERU_IMAGE_MIMES } from '@/lib/document/mime';
 import { extractMinerUResult } from '@/lib/pdf/mineru-parser';
+import * as providerResultFetch from '@/lib/server/provider-result-fetch';
 import {
   imagePathIndex,
   ownerDocumentOutcome,
@@ -148,6 +152,23 @@ describe('imagePathIndex', () => {
     // An ambiguous file name alone matches neither.
     expect(rewriteImageReferences('![](elsewhere/fig.png)', two)).toBe(String.raw`\[image\]`);
   });
+
+  it('matches a kept image by the URL it was downloaded from, and no other URL', () => {
+    const linked = imagePathIndex([
+      { key: 'img-1', path: 'a.jpg', url: 'https://files.example.com/media/a' },
+      { key: 'img-2', path: 'https://files.example.com/media/b' },
+    ]);
+    expect(
+      rewriteImageReferences(
+        '![](https://files.example.com/media/a) <img src="https://files.example.com/media/b"> ' +
+          '![](images/a.jpg) ![](https://example.com/a.jpg)',
+        linked,
+      ),
+    ).toBe(
+      '![](openmaic-derivative:img-1) <img src="openmaic-derivative:img-2"> ' +
+        '![](openmaic-derivative:img-1) ![](https://example.com/a.jpg)',
+    );
+  });
 });
 
 describe('ownerDocumentOutcome', () => {
@@ -182,6 +203,149 @@ describe('ownerDocumentOutcome', () => {
       String.raw`Literal: \[image: x\]`,
     );
   });
+
+  describe('images a MinerU gateway answers as URLs', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    const linked = (images: Record<string, string>) =>
+      parsedPdfToDocumentArtifact(
+        extractMinerUResult({
+          md_content: Object.keys(images)
+            .map((file) => `![](images/${file})`)
+            .join('\n\n'),
+          images,
+        }),
+        { buffer: Buffer.alloc(0), mimeType: 'application/pdf', config: { providerId: 'mineru' } },
+      );
+
+    it('keeps the downloaded images as derivatives, and drops one it cannot download', async () => {
+      const png = await sharp({
+        create: { width: 4, height: 2, channels: 3, background: { r: 0, g: 128, b: 255 } },
+      })
+        .png()
+        .toBuffer();
+      const fetchResult = vi
+        .spyOn(providerResultFetch, 'fetchProviderResultUrl')
+        .mockImplementation(async (url) =>
+          url.endsWith('/gone')
+            ? new Response('gone', { status: 404 })
+            : new Response(new Uint8Array(png), { headers: { 'content-type': 'image/png' } }),
+        );
+
+      const outcome = await ownerDocumentOutcome(
+        linked({
+          'a.jpg': 'https://files.example.com/media/a',
+          'b.jpg': 'https://files.example.com/media/gone',
+        }),
+        provider,
+      );
+
+      expect(fetchResult.mock.calls.map(([url]) => url)).toEqual([
+        'https://files.example.com/media/a',
+        'https://files.example.com/media/gone',
+      ]);
+      expect(outcome.images).toEqual([
+        expect.objectContaining({ key: 'img-1', mimeType: 'image/webp' }),
+      ]);
+      const kept = await sharp(Buffer.from(outcome.images[0]!.data, 'base64')).metadata();
+      expect(kept).toMatchObject({ format: 'webp', width: 4, height: 2 });
+      expect(outcome.text).toBe(
+        String.raw`![](openmaic-derivative:img-1)` + '\n\n' + String.raw`\[image\]`,
+      );
+      expect(outcome.stats.diagnostics).toEqual([
+        '1 document image(s) not kept (limit 100, or unreadable)',
+        '1 document image(s) could not be downloaded',
+      ]);
+      expect(outcome.imagesNotDownloaded).toBe(1);
+    });
+
+    it('does not count as not downloaded what would be left out again', async () => {
+      const png = await sharp({
+        create: { width: 4, height: 2, channels: 3, background: { r: 0, g: 128, b: 255 } },
+      })
+        .png()
+        .toBuffer();
+      vi.spyOn(providerResultFetch, 'fetchProviderResultUrl').mockImplementation(async (url) => {
+        if (url.endsWith('/huge')) {
+          return new Response(new Uint8Array(8), {
+            headers: { 'content-type': 'image/png', 'content-length': String(1024 ** 3) },
+          });
+        }
+        return new Response(new Uint8Array(png), { headers: { 'content-type': 'image/png' } });
+      });
+
+      const outcome = await ownerDocumentOutcome(
+        linked({
+          'a.jpg': 'https://files.example.com/media/a',
+          'c.jpg': 'https://files.example.com/media/huge',
+        }),
+        provider,
+      );
+
+      expect(outcome.images).toHaveLength(1);
+      // Too large: the same answer drops it again, so the result stays cacheable.
+      expect(outcome.imagesNotDownloaded).toBeUndefined();
+      expect(outcome.stats.diagnostics).toEqual([
+        '1 document image(s) not kept (limit 100, or unreadable)',
+      ]);
+    });
+
+    it('counts a response that is not an image as not downloaded', async () => {
+      const png = await sharp({
+        create: { width: 4, height: 2, channels: 3, background: { r: 0, g: 128, b: 255 } },
+      })
+        .png()
+        .toBuffer();
+      vi.spyOn(providerResultFetch, 'fetchProviderResultUrl').mockImplementation(async (url) =>
+        url.endsWith('/login')
+          ? new Response('<html>sign in</html>', { headers: { 'content-type': 'text/html' } })
+          : new Response(new Uint8Array(png), { headers: { 'content-type': 'image/png' } }),
+      );
+
+      const outcome = await ownerDocumentOutcome(
+        linked({
+          'a.jpg': 'https://files.example.com/media/a',
+          'b.jpg': 'https://files.example.com/media/login',
+        }),
+        provider,
+      );
+
+      expect(outcome.images).toHaveLength(1);
+      // A sign-in, firewall or rate-limit page may pass: the result is not cached.
+      expect(outcome.imagesNotDownloaded).toBe(1);
+    });
+
+    it('rewrites the references that name an image by its URL', async () => {
+      const png = await sharp({
+        create: { width: 4, height: 2, channels: 3, background: { r: 0, g: 128, b: 255 } },
+      })
+        .png()
+        .toBuffer();
+      vi.spyOn(providerResultFetch, 'fetchProviderResultUrl').mockImplementation(
+        async () => new Response(new Uint8Array(png), { headers: { 'content-type': 'image/png' } }),
+      );
+      const a = 'https://files.example.com/shares/media/a';
+      const b = 'https://files.example.com/shares/media/b';
+      const artifact = parsedPdfToDocumentArtifact(
+        extractMinerUResult({
+          md_content: `![](${a})\n\n<img src="${b}">\n\n![](https://example.com/logo.png)`,
+          images: { 'a.jpg': a, [b]: b },
+        }),
+        { buffer: Buffer.alloc(0), mimeType: 'application/pdf', config: { providerId: 'mineru' } },
+      );
+
+      const outcome = await ownerDocumentOutcome(artifact, provider);
+
+      expect(outcome.images.map((image) => image.key)).toEqual(['img-1', 'img-2']);
+      expect(outcome.text).toBe(
+        '![](openmaic-derivative:img-1)\n\n<img src="openmaic-derivative:img-2">\n\n' +
+          '![](https://example.com/logo.png)',
+      );
+      expect(outcome.imageRefs?.map((ref) => ref.key)).toEqual(['img-1', 'img-2']);
+    });
+  });
 });
 
 describe('resolveDerivativeRefs', () => {
@@ -204,6 +368,100 @@ describe('resolveDerivativeRefs', () => {
 });
 
 describe('MinerU parser', () => {
+  const PNG_BASE64 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0]).toString(
+    'base64',
+  );
+  const JPEG_BASE64 = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10]).toString('base64');
+
+  it('keeps an image a gateway answers as a URL, and wraps only bare base64', () => {
+    const url = 'https://files.example.com/media/abc';
+    const parsed = extractMinerUResult({
+      md_content: '',
+      images: { 'abc.jpg': url, 'def.jpg': JPEG_BASE64, 'ghi.jpg': 'data:image/jpeg;base64,BBBB' },
+    });
+    expect(parsed.images).toEqual([
+      url,
+      `data:image/jpeg;base64,${JPEG_BASE64}`,
+      'data:image/jpeg;base64,BBBB',
+    ]);
+    expect(parsed.metadata?.pdfImages?.[0]).toMatchObject({ src: url, path: 'abc.jpg' });
+  });
+
+  it('wraps base64 of an image only (a path is kept as is, to be dropped)', () => {
+    // Paths made only of base64 characters, a dot-free name among them.
+    const paths = ['/files/p1.jpg', '//cdn.example.com/p2.jpg', '/file_parse/abc', 'images/foo'];
+    const parsed = extractMinerUResult({
+      md_content: '',
+      images: Object.fromEntries(paths.map((path, index) => [`p${index}.jpg`, path])),
+    });
+    expect(parsed.images).toEqual(paths);
+  });
+
+  const bytes = (...values: number[]) => Buffer.from([...values, 0, 0, 0, 0]).toString('base64');
+
+  // Every type MinerU accepts as an input image may come back as an extracted one.
+  const SIGNED: Array<[string, string, string]> = [
+    ['PNG', 'image/png', PNG_BASE64],
+    ['JPEG', 'image/jpeg', JPEG_BASE64],
+    ['GIF', 'image/gif', Buffer.from('GIF89a\x01\x00\x01\x00', 'latin1').toString('base64')],
+    [
+      'WebP',
+      'image/webp',
+      Buffer.from('RIFF\x24\x00\x00\x00WEBPVP8 ', 'latin1').toString('base64'),
+    ],
+    ['BMP', 'image/bmp', Buffer.from('BM\x46\x00\x00\x00', 'latin1').toString('base64')],
+    ['little-endian TIFF', 'image/tiff', bytes(0x49, 0x49, 0x2a, 0x00)],
+    ['big-endian TIFF', 'image/tiff', bytes(0x4d, 0x4d, 0x00, 0x2a)],
+    [
+      'boxed JPEG 2000',
+      'image/jp2',
+      bytes(0x00, 0x00, 0x00, 0x0c, 0x6a, 0x50, 0x20, 0x20, 0x0d, 0x0a, 0x87, 0x0a),
+    ],
+    ['JPEG 2000 codestream', 'image/jp2', bytes(0xff, 0x4f, 0xff, 0x51)],
+  ];
+
+  it.each(SIGNED)('wraps bare base64 of a %s image as %s', (_, mimeType, base64) => {
+    expect(extractMinerUResult({ md_content: '', images: { 'a.jpg': base64 } }).images).toEqual([
+      `data:${mimeType};base64,${base64}`,
+    ]);
+  });
+
+  it('covers every image type MinerU accepts', () => {
+    const covered = new Set(SIGNED.map(([, mimeType]) => mimeType));
+    expect(MINERU_IMAGE_MIMES.filter((mime) => !covered.has(mime))).toEqual([]);
+  });
+
+  it('does not take a JPEG 2000 box of another kind for an image', () => {
+    // A box of the same length that is not the JPEG 2000 signature.
+    const other = bytes(0x00, 0x00, 0x00, 0x0c, 0x66, 0x74, 0x79, 0x70, 0x0d, 0x0a, 0x87, 0x0a);
+    expect(extractMinerUResult({ md_content: '', images: { 'a.jpg': other } }).images).toEqual([
+      other,
+    ]);
+  });
+
+  it('finds the metadata of an image content_list names by its URL', () => {
+    const url = 'https://files.example.com/media/abc';
+    const parsed = extractMinerUResult({
+      md_content: '',
+      images: { 'abc.jpg': url },
+      content_list: [
+        {
+          type: 'image',
+          img_path: url,
+          page_idx: 2,
+          bbox: [100, 200, 400, 500],
+          image_caption: ['Figure 1'],
+        },
+      ],
+    });
+    expect(parsed.metadata?.pdfImages?.[0]).toMatchObject({
+      pageNumber: 3,
+      description: 'Figure 1',
+      width: 300,
+      height: 300,
+    });
+  });
+
   it('records the file the markdown names each image by', () => {
     const parsed = extractMinerUResult({
       md_content: '![](images/abc.jpg)',

@@ -78,7 +78,7 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChro
     };
   }, []);
 
-  // Safety net: the editor chunk (fonts + slide surface registration) is
+  // Safety net: the editor chunk (slide + quiz surface registration) is
   // normally preloaded by the Pro Switch handler in stage.tsx BEFORE mode
   // flips, so by the time we mount the surface is already registered and
   // EditShell resolves it immediately (no NOOP flash). This call is a
