@@ -27,6 +27,7 @@ import { applicationRequest } from '@/lib/server/pbl-v3/application';
 import type { ModelMessage } from 'ai';
 import { PgAgentSessionStore, ensureAgentSessionSchema } from '@openmaic/storage/agent-session/pg';
 import { listAgentUserMessages } from '@/lib/server/agent-runtime/user-messages';
+import { visibleProductLabels } from '@/lib/server/pbl-v3/ui-labels';
 vi.mock('server-only', () => ({}));
 const mocked = vi.hoisted(() => ({
   pool: undefined as unknown,
@@ -2034,6 +2035,203 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     20000,
   );
 
+  it.each([0, 40000])(
+    'resolves canonical dialogue before bounded report sampling (padding: %s)',
+    async (padding) => {
+      const study = await unpreparedStudy();
+      const prefix = `canonical-sample-${randomUUID()}-`;
+      await pool.query(
+        `INSERT INTO agent_sessions(id,owner_id,prompt,stage_id,status,updated_at)
+      SELECT $1||g,$2,'Report','report','succeeded',now()+CASE WHEN g=1 THEN interval '1 hour' ELSE interval '0' END
+      FROM generate_series(1,100) g`,
+        [prefix, principal.ownerId],
+      );
+      await pool.query(
+        `INSERT INTO pbl_v3_roles(session_id,study_id,role,context_key,stage_key)
+      SELECT $1||g,$2,'discussion','canonical-'||g,'canonical:0' FROM generate_series(1,100) g`,
+        [prefix, study.id],
+      );
+      await pool.query(
+        `INSERT INTO agent_session_events(session_id,seq,ts,attempt,type,data)
+      SELECT $1,g,g,0,CASE WHEN g=1 OR g>502 THEN 'user_message' WHEN g=502 THEN 'pbl_learner_handoff' ELSE 'message_end' END,
+      CASE WHEN g=1 THEN jsonb_build_object('text','automatic opening','pblOpening',true)
+        WHEN g=502 THEN jsonb_build_object('question','CANONICAL response '||repeat('x',$2::int),'canonical',true,'toolCallId','committed')
+        WHEN g>502 THEN jsonb_build_object('text','Learner '||g)
+        ELSE jsonb_build_object('message',jsonb_build_object('role','assistant','content',jsonb_build_array(jsonb_build_object('type','text','text','SUPERSEDED draft '||g)))) END
+      FROM generate_series(1,1102) g`,
+        [prefix + '1', padding],
+      );
+      const report = await learningEvidence(principal, study.id);
+      const conversation = report.conversations.find((c) => c.milestone === 'canonical-1')!;
+      expect(conversation.messages.some((m) => m.text.startsWith('CANONICAL response'))).toBe(true);
+      expect(JSON.stringify(report.conversations)).not.toContain('SUPERSEDED');
+      expect(conversation.truncated).toBe(true);
+      expect(conversation.messages.length).toBeLessThanOrEqual(10);
+    },
+  );
+  it('does not let invisible SDK message_end frames displace the visible opening', async () => {
+    const study = await unpreparedStudy();
+    const prefix = `hidden-sample-${randomUUID()}-`;
+    await pool.query(
+      `INSERT INTO agent_sessions(id,owner_id,prompt,stage_id,status,updated_at)
+      SELECT $1||g,$2,'Report','report','succeeded',now()+CASE WHEN g=1 THEN interval '1 hour' ELSE interval '0' END
+      FROM generate_series(1,100) g`,
+      [prefix, principal.ownerId],
+    );
+    await pool.query(
+      `INSERT INTO pbl_v3_roles(session_id,study_id,role,context_key,stage_key)
+      SELECT $1||g,$2,'discussion','hidden-'||g,'hidden:0' FROM generate_series(1,100) g`,
+      [prefix, study.id],
+    );
+    await pool.query(
+      `INSERT INTO agent_session_events(session_id,seq,ts,attempt,type,data)
+      SELECT $1,g,g,0,CASE WHEN g=1 OR g>101 THEN 'user_message' ELSE 'message_end' END,
+      CASE WHEN g=1 THEN jsonb_build_object('text','system opening','pblOpening',true)
+        WHEN g>101 THEN jsonb_build_object('text','VISIBLE learner '||g)
+        ELSE jsonb_build_object('message',jsonb_build_object('role',CASE WHEN g%3=0 THEN 'user' WHEN g%3=1 THEN 'toolResult' ELSE 'assistant' END,
+          'content',jsonb_build_array(jsonb_build_object('type','toolCall','name','read_file')))) END
+      FROM generate_series(1,120) g`,
+      [prefix + '1'],
+    );
+    const report = await learningEvidence(principal, study.id);
+    expect(report.conversations.find((c) => c.milestone === 'hidden-1')?.messages[0]?.text).toBe(
+      'VISIBLE learner 102',
+    );
+  });
+  it.each(
+    [
+      { from: 'zh-CN', to: 'en-US' },
+      { from: 'en-US', to: 'zh-CN' },
+      { from: 'ja-JP', to: 'fr-FR' },
+    ].flatMap((locales) =>
+      (['failed', 'cancelled'] as const).map((status) => ({ ...locales, status })),
+    ),
+  )(
+    'uses the explicit retry UI locale after $status from $from to $to without adding learner evidence',
+    async ({ status, from, to }) => {
+      const study = await freshStudy();
+      onTestFinished(() => releasePreparationFixtures([study.id]));
+      const send = async (type: string, uiLocale: string) =>
+        commandStudy(principal, study.id, {
+          id: randomUUID(),
+          revision: (await store.get(study.id, principal.ownerId)).revision,
+          type,
+          uiLocale,
+        });
+      const queued = (await send('begin', from)) as { sessionId: string };
+      const first = await agents.claimNextSession('locale-worker', process.pid, {
+        sessionId: queued.sessionId,
+        leaseTtlMs: 10000,
+        maxAttempts: 5,
+      });
+      const assertLocale = async (attempt: number, locale: string) => {
+        const config = await teachingRunnerConfig({
+          sessionId: queued.sessionId,
+          ownerId: principal.ownerId,
+          workerId: 'locale-worker',
+          attempt,
+          signal: new AbortController().signal,
+        });
+        expect(config.systemPrompt.match(/"uiLocale":"([^"]+)"/)?.[1]).toBe(locale);
+        expect(
+          config.systemPrompt.includes(
+            `"visibleLabels":${JSON.stringify(visibleProductLabels(locale))}`,
+          ),
+        ).toBe(true);
+      };
+      await assertLocale(first!.attempt, from);
+      await agents.finishSession(queued.sessionId, 'locale-worker', {
+        status,
+        expectedAttempt: first!.attempt,
+      });
+      const inputs = await listAgentUserMessages(agents, queued.sessionId);
+      await send('retry', to);
+      const retry = await agents.claimNextSession('locale-worker', process.pid, {
+        sessionId: queued.sessionId,
+        leaseTtlMs: 10000,
+        maxAttempts: 5,
+      });
+      try {
+        await assertLocale(retry!.attempt, to);
+        expect(await listAgentUserMessages(agents, queued.sessionId)).toEqual(inputs);
+      } finally {
+        await agents.finishSession(queued.sessionId, 'locale-worker', {
+          status: 'cancelled',
+          expectedAttempt: retry!.attempt,
+        });
+      }
+    },
+  );
+  it.each([false, true])(
+    'preserves completed analysis across application restoration (in-flight: %s)',
+    async (inFlight) => {
+      const study = await freshStudy();
+      onTestFinished(() => releasePreparationFixtures([study.id]));
+      const row = await store.get(study.id, principal.ownerId);
+      row.state.status = 'completed';
+      await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+      mocked.reportAnalysis.mockReset();
+      let finish!: (value: { findings: never[]; omitted: boolean }) => void;
+      mocked.reportAnalysis.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+      const generating = generateLearningReport(principal, study.id, new AbortController().signal);
+      await vi.waitFor(() => expect(mocked.reportAnalysis).toHaveBeenCalledTimes(1));
+      if (!inFlight) {
+        finish({ findings: [], omitted: false });
+        await generating;
+      }
+      await ageStudy(study.id);
+      await maintainStudy(store, study.id, principal.ownerId);
+      await study.send('prepare');
+      if (inFlight) {
+        finish({ findings: [], omitted: false });
+        await generating;
+      }
+      const restored = await store.get(study.id, principal.ownerId);
+      const report = await learningReport(principal, study.id);
+      expect(restored.state.status).toBe('completed');
+      expect(report.analysis?.status).toBe('ready');
+      expect(report.revision).toBe(restored.revision);
+      expect(
+        (await generateLearningReport(principal, study.id, new AbortController().signal)).analysis
+          ?.status,
+      ).toBe('ready');
+      expect(mocked.reportAnalysis).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('ends a cancelled report claim without allowing late analysis to overwrite its retry', async () => {
+    const study = await unpreparedStudy();
+    await pool.query(
+      "UPDATE pbl_v3_studies SET state=jsonb_set(state,'{status}','\"completed\"') WHERE id=$1",
+      [study.id],
+    );
+    mocked.reportAnalysis.mockReset();
+    let finish!: (value: { findings: never[]; omitted: boolean }) => void;
+    mocked.reportAnalysis.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const controller = new AbortController();
+    const generation = generateLearningReport(principal, study.id, controller.signal);
+    await vi.waitFor(() => expect(mocked.reportAnalysis).toHaveBeenCalledTimes(1));
+    const budget = mocked.reportAnalysis.mock.calls[0]![2] as AbortSignal;
+    controller.abort();
+    expect((await generation).analysis?.status).toBe('failed');
+    expect(budget.aborted).toBe(true);
+    mocked.reportAnalysis.mockResolvedValueOnce({ findings: [], omitted: false });
+    const retry = await generateLearningReport(principal, study.id, new AbortController().signal);
+    finish({ findings: [], omitted: false });
+    await Promise.resolve();
+    expect(await learningReport(principal, study.id)).toEqual(retry);
+  });
+
   it('generates only after completion, saves one report and safely retries a failed analysis', async () => {
     const { id } = await freshStudy();
     await expect(learningReport(principal, id)).rejects.toMatchObject({ status: 409 });
@@ -3491,10 +3689,12 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         );
       } else if (phase !== 'start') await invoke(config, 'run_build');
       const before = (await store.get(study.id, principal.ownerId)).evaluation;
-      let release!: () => void,
-        entered = false;
+      let release!: () => void, reachPause!: () => void;
+      const entered = new Promise<void>((resolve) => {
+        reachPause = resolve;
+      });
       const pause = async () => {
-        entered = true;
+        reachPause();
         await new Promise<void>((resolve) => {
           release = resolve;
         });
@@ -3542,7 +3742,15 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         (error) => error,
       );
       try {
-        await vi.waitFor(() => expect(entered).toBe(true));
+        // Synchronize with the actual I/O boundary, not waitFor's one-second
+        // default. An operation that ends before the boundary is still a failure.
+        await Promise.race([
+          entered,
+          pending.then((result) => {
+            if (result instanceof Error) throw result;
+            throw new Error('Build operation ended before reaching the paused I/O.');
+          }),
+        ]);
         await expireExecution(sessionId);
         await (await import('@/lib/server/pbl-v3/execution-watchdog')).expireStalledTeachingTurns();
         expect((await agents.getSession(sessionId))!.status).toBe('failed');

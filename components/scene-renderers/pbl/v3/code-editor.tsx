@@ -18,6 +18,7 @@ export function CodeEditor({
   readOnlyReason,
   onChange,
   onSave,
+  onTargetConsumed,
 }: {
   studyId: string;
   path: string;
@@ -28,14 +29,15 @@ export function CodeEditor({
   readOnlyReason: string;
   onChange: (text: string) => void;
   onSave: () => void;
+  onTargetConsumed: (requestId: number) => void;
 }) {
   const instance = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const decorations = useRef<MonacoEditor.IEditorDecorationsCollection | null>(null);
   const lastTarget = useRef<number | null>(null);
-  const latest = useRef({ target, changes });
+  const latest = useRef({ target, changes, onTargetConsumed });
   useLayoutEffect(() => {
-    latest.current = { target, changes };
-  }, [target, changes]);
+    latest.current = { target, changes, onTargetConsumed };
+  }, [target, changes, onTargetConsumed]);
   const present = useCallback(() => {
     const editor = instance.current,
       model = editor?.getModel();
@@ -76,6 +78,7 @@ export function CodeEditor({
       editor.setSelection(range);
       editor.revealRangeInCenter(range);
       editor.focus();
+      latest.current.onTargetConsumed(target.requestId);
     }
   }, []);
   useEffect(() => {

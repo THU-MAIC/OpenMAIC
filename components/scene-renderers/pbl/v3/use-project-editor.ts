@@ -146,6 +146,7 @@ export function useProjectEditor(
                     ...latest,
                     saved: result.text,
                     hash: result.hash,
+                    changes: result.changes,
                     environment: editorSource(view)!,
                   },
                 }

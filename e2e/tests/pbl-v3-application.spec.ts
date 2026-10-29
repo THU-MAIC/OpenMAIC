@@ -7,8 +7,8 @@ for (const legacyMove of [false, true]) {
   test(`application input and client state survive native fullscreen (legacy DOM: ${legacyMove})`, async ({
     page,
     learningEvents,
-  }) => {
-    test.setTimeout(90000);
+  }, testInfo) => {
+    test.setTimeout(180000);
     await page.addInitScript((legacy) => {
       localStorage.setItem('locale', 'en-US');
       if (legacy) Reflect.deleteProperty(Element.prototype, 'moveBefore');
@@ -149,7 +149,9 @@ for (const legacyMove of [false, true]) {
     await page.goto(`/classroom/${stageId}`);
     await page.getByRole('button', { name: 'Continue Project', exact: true }).click();
     await page.getByTestId('pbl-application-open').click();
-    const dialog = page.getByRole('dialog');
+    const panel = page.getByTestId('pbl-application-panel');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByText('Try this interface.', { exact: true })).toBeHidden();
     const app = page.frameLocator('iframe[title="Preview form"]');
     await app.getByRole('textbox', { name: 'Draft', exact: true }).fill('Unsaved form input');
     await app.getByRole('button', { name: 'Increment', exact: true }).click();
@@ -162,8 +164,8 @@ for (const legacyMove of [false, true]) {
         document.querySelector<HTMLElement>('[data-playback-stage]')!.requestFullscreen(),
       );
       await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(true);
-      await expect(dialog).toBeVisible();
-      expect(await dialog.evaluate((el) => document.fullscreenElement!.contains(el))).toBe(true);
+      await expect(panel).toBeVisible();
+      expect(await panel.evaluate((el) => document.fullscreenElement!.contains(el))).toBe(true);
       await page.evaluate(() => document.exitFullscreen());
       await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(false);
       await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toHaveValue(
@@ -174,17 +176,88 @@ for (const legacyMove of [false, true]) {
         await app.locator('body').evaluate(() => (window as unknown as { boot: string }).boot),
       ).toBe(boot);
       expect(
-        await dialog.evaluate((el) => {
+        await panel.evaluate((el) => {
           const rect = el.getBoundingClientRect();
           return el.contains(document.elementFromPoint(rect.right - 20, rect.top + 20));
         }),
       ).toBe(true);
     }
+    // Folding is layout-only: preserve the document and never start another app.
+    await panel.getByRole('button', { name: 'Collapse application', exact: true }).click();
+    await expect(page.getByTestId('pbl-application-open')).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    const workspacePanel = page.getByTestId('workspace');
+    const assistantPanel = page.getByTestId('assistant');
+    const beforeDrag = (await workspacePanel.boundingBox())!;
+    const assistantBefore = (await assistantPanel.boundingBox())!;
+    const dividerX = (beforeDrag.x + beforeDrag.width + assistantBefore.x) / 2;
+    await page.mouse.move(dividerX, beforeDrag.y + beforeDrag.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(dividerX + 70, beforeDrag.y + beforeDrag.height / 2, { steps: 10 });
+    await page.mouse.up();
+    await expect
+      .poll(async () => (await workspacePanel.boundingBox())!.width)
+      .toBeGreaterThan(beforeDrag.width + 30);
+    await expect
+      .poll(async () => (await page.getByTestId('application').boundingBox())?.width ?? 0)
+      .toBeLessThan(1);
+    await page.getByTestId('pbl-application-open').click();
+    await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toHaveValue(
+      'Unsaved form input',
+    );
+    expect(
+      await app.locator('body').evaluate(() => (window as unknown as { boot: string }).boot),
+    ).toBe(boot);
+    // On a phone each panel remains reachable without covering the conversation.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect.poll(() => panel.evaluate((el) => el.clientHeight)).toBeGreaterThan(300);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await expect
+      .poll(async () => {
+        const editorBox = await page.getByTestId('workspace').boundingBox();
+        const applicationBox = await panel.boundingBox();
+        const assistantBox = await page.getByTestId('assistant').boundingBox();
+        return (
+          !!editorBox &&
+          !!applicationBox &&
+          !!assistantBox &&
+          editorBox.width > 0 &&
+          applicationBox.width > 0 &&
+          assistantBox.width > 0 &&
+          editorBox.x + editorBox.width <= applicationBox.x + 1 &&
+          applicationBox.x + applicationBox.width <= assistantBox.x + 1
+        );
+      })
+      .toBe(true);
+    if (!legacyMove) await page.screenshot({ path: testInfo.outputPath('application-dock.png') });
     expect(launches).toBe(1);
     expect(documents).toBe(1);
     expect(commands).toEqual([]);
-    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-    await expect(dialog).not.toBeVisible();
+    // The dock does not trap focus or block learner input. A busy server state does
+    // suspend application interaction, then requires a deliberate reopen.
+    const composer = page.locator('textarea[placeholder]').last();
+    await composer.fill('Keep this draft while looking at the application');
+    await expect(composer).toHaveValue('Keep this draft while looking at the application');
+    view.busy = true;
+    view.activitySequence!++;
+    await publishLearning();
+    await expect(panel.locator('iframe')).toHaveCount(0);
+    view.busy = false;
+    view.activitySequence!++;
+    await publishLearning();
+    await expect(
+      panel.getByRole('button', { name: 'Reopen application', exact: true }),
+    ).toBeEnabled();
+    expect(launches).toBe(1);
+    await panel.getByRole('button', { name: 'Reopen application', exact: true }).click();
+    await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toBeVisible();
+    await expect(composer).toHaveValue('Keep this draft while looking at the application');
+    expect(launches).toBe(2);
+    await panel.getByRole('button', { name: 'Collapse application', exact: true }).click();
+    await expect(panel).not.toBeVisible();
     // A final source snapshot needs no compute to read, but the application does.
     view.state.status = 'completed';
     view.completedFilesAvailable = true;
@@ -213,10 +286,10 @@ for (const legacyMove of [false, true]) {
     await expect(page.locator('.monaco-editor textarea').first()).not.toBeEditable();
     await page.getByTestId('pbl-application-open').click();
     await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toBeVisible();
-    expect(launches).toBe(2);
+    expect(launches).toBe(3);
     expect(commands).toEqual(['prepare']);
-    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-    await expect(dialog).not.toBeVisible();
+    await panel.getByRole('button', { name: 'Collapse application', exact: true }).click();
+    await expect(panel).not.toBeVisible();
     // Completed projects without execution features still need no restore control.
     view.application = undefined;
     view.environment = { state: 'destroyed', ready: false };

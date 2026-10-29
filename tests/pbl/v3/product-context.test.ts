@@ -75,6 +75,9 @@ describe('authoritative product guidance', () => {
     const product = teachingProductContext(input);
     expect(product.features.applicationPreview).toBe(true);
     expect(product.application?.entry).toContain('Open application');
+    expect(product.application?.entry).toContain('between the IDE and learning assistant');
+    expect(product.application?.entry).not.toContain('dialog');
+    expect(product.application?.lifetime).toContain('not a published work-sharing link');
     expect(product.current.application).toMatchObject({ sourceChanged: true, httpStatus: 200 });
     expect(product.application?.meaning).toContain('does not prove');
     expect(product.visibleLabels.applicationRestore).toBe('Restore application environment');

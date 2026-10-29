@@ -110,3 +110,18 @@ it('rewinds later milestones to the saved position and drops only their current 
   expect(result.state.milestones[1]!.status).toBe('pending');
   expect(study.state.position.milestoneIndex).toBe(1);
 });
+
+it('keeps completed submission evidence when a restored application workspace has changed', () => {
+  const original = row();
+  original.state.status = 'completed';
+  original.state.milestones[0]!.status = 'completed';
+  const result = recoveredProgress(
+    original,
+    project,
+    { ...files, 'greeting.py': 'runtime application changed a file' },
+    0,
+  );
+  expect(result.reset).toBe(false);
+  expect(result.state).toEqual(original.state);
+  expect(result.state.collected.greeting?.tests?.status).toBe('passed');
+});

@@ -79,8 +79,13 @@ export async function teachingRunnerConfig(input: {
   const userMessages = await listAgentUserMessages(agents, input.sessionId);
   const latest = userMessages.at(-1);
   let language = await responseLanguage(store.pool, row.id);
-  const uiLocale =
-    [...userMessages].reverse().find((message) => message.pblUiLocale)?.pblUiLocale ?? 'en-US';
+  const localeEvent = await store.pool.query<{ locale: string }>(
+    `SELECT data->>'pblUiLocale' AS locale FROM agent_session_events
+     WHERE session_id=$1 AND type IN ('user_message','pbl_turn_retried')
+       AND data->>'pblUiLocale'=ANY($2::text[]) ORDER BY seq DESC LIMIT 1`,
+    [input.sessionId, supportedLocales.map(({ code }) => code)],
+  );
+  const uiLocale = localeEvent.rows[0]?.locale ?? 'en-US';
   const skill = packagedStageSkill(project, stage, bound.stage_key, bound.role);
   const progression = skill.progression;
   const protocol = {

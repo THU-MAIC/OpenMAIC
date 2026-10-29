@@ -173,7 +173,12 @@ test('completed project reports stay discoverable, show facts before analysis, a
         role: 'mentor',
         milestone: 'todo',
         messages: [
-          { sequence: 2, at: 1, role: 'user', text: 'I checked the number before deleting.' },
+          {
+            sequence: 2,
+            at: 1,
+            role: 'user',
+            text: 'I checked the number before deleting. ' + 'X'.repeat(2000),
+          },
         ],
         truncated: false,
       },
@@ -331,6 +336,11 @@ test('completed project reports stay discoverable, show facts before analysis, a
   await expect(report.locator('details[open]')).toContainText(
     'I checked the number before deleting.',
   );
+  // An expanded citation must stay inside the report, even with an unbroken token.
+  const priorViewport = page.viewportSize()!;
+  await page.setViewportSize({ width: 520, height: 900 });
+  await expect.poll(() => report.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThan(3);
+  await page.setViewportSize(priorViewport);
   await report.getByRole('button', { name: 'View read-only workbench', exact: true }).click();
   const workspace = page.getByTestId('pbl-v3-workspace');
   await expect(workspace.getByTestId('pbl-project-completed')).toBeVisible();

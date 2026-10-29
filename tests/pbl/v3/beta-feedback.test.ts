@@ -42,7 +42,9 @@ describe('beta feedback boundaries', () => {
     expect(visibleProductLabels('zh-CN')).toMatchObject({
       application: '打开应用',
       applicationRestart: '重启应用',
-      applicationNewTab: '在新标签页打开',
+      applicationCollapse: '收起应用',
+      applicationHelp: '应用说明',
+      applicationNewTab: '在新标签页打开临时预览',
       applicationReopen: '重新打开应用',
     });
     expect(visibleProductLabels('unknown')).toEqual(visibleProductLabels('en-US'));
