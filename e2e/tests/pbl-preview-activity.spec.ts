@@ -16,9 +16,18 @@ test('keeps embedded activity private and new-tab applications genuinely top-lev
   test.setTimeout(60000);
   let signals = 0;
   let standalone = false;
+  let proxiedWorkers = 0;
   const sockets = new Set<Socket>();
   const pending = new Set<ServerResponse>();
   const app = createServer((req, res) => {
+    if (req.url === '/worker.js') {
+      proxiedWorkers++;
+      res.setHeader('content-type', 'application/javascript');
+      res.end(
+        "self.addEventListener('install',()=>self.skipWaiting());self.addEventListener('activate',event=>event.waitUntil(clients.claim()));",
+      );
+      return;
+    }
     if (req.url === '/pending-image') {
       pending.add(res);
       res.on('close', () => pending.delete(res));
@@ -27,8 +36,11 @@ test('keeps embedded activity private and new-tab applications genuinely top-lev
     res.setHeader('content-type', 'text/html');
     if (standalone) {
       res.setHeader('content-security-policy', "frame-ancestors 'none'");
-      res.end(`<!doctype html><h1>Standalone application</h1><output></output>
-<script>document.querySelector('output').textContent=window.top===window?'top-level':'framed'</script>`);
+      res.end(`<!doctype html><h1>Standalone application</h1><output id="mode"></output><output id="worker"></output>
+<script>
+document.querySelector('#mode').textContent=window.top===window?'top-level':'framed';
+navigator.serviceWorker.register('/worker.js',{scope:'/'}).then(()=>document.querySelector('#worker').textContent='registered',()=>document.querySelector('#worker').textContent='blocked');
+</script>`);
       return;
     }
     res.end(`<!doctype html><input aria-label="Task"><output>Starting</output><img src="/pending-image">
@@ -150,17 +162,35 @@ Promise.all([
     });
     await page.clock.runFor(31000);
     expect(signals).toBe(2);
+    // A second authorized shell shares the cookie, but must not invalidate the first.
+    await page.evaluate((src) => {
+      const renewed = document.createElement('iframe');
+      renewed.title = 'Renewed preview';
+      renewed.src = src;
+      document.body.append(renewed);
+    }, origin + '/__openmaic_preview#renewed-test-only-grant');
+    await expect(
+      page
+        .frameLocator('iframe[title="Renewed preview"]')
+        .frameLocator('iframe[title="Application"]')
+        .locator('output'),
+    ).toHaveText('403,403');
+    await frame.getByRole('textbox', { name: 'Task' }).click();
+    await expect.poll(() => signals).toBe(3);
     // The new-tab fallback must also work for apps that explicitly refuse framing.
     standalone = true;
     await page.goto(origin + '/__openmaic_preview#test-only-grant', {
       waitUntil: 'domcontentloaded',
     });
     await expect(page.getByRole('heading', { name: 'Standalone application' })).toBeVisible();
-    await expect(page.locator('output')).toHaveText('top-level');
+    await expect(page.locator('#mode')).toHaveText('top-level');
+    await expect(page.locator('#worker')).toHaveText('blocked');
+    expect(proxiedWorkers).toBe(0);
+    expect(await page.evaluate(() => navigator.serviceWorker.controller)).toBeNull();
     expect(page.url()).toBe(origin + '/');
     expect(page.frames()).toHaveLength(1);
     await page.clock.runFor(31000);
-    expect(signals).toBe(2); // Standalone navigation is not a learner activity signal.
+    expect(signals).toBe(3); // Standalone navigation is not a learner activity signal.
   } finally {
     await page.goto('about:blank').catch(() => {});
     if (child && child.exitCode === null) {

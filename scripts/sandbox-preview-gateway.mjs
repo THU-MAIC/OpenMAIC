@@ -66,9 +66,11 @@ function token(req) {
   if (matches.length !== 1) throw new Error('Preview authorization required');
   return matches[0].slice(cookieName.length + 1);
 }
-function activityKey(ticket, host) {
+function activityKey(host) {
+  // The origin already binds owner/environment/port/epoch. Tabs share its cookie,
+  // so a legitimate renewal must not invalidate another shell's private capability.
   return createHmac('sha256', gatewayKey)
-    .update('preview-activity-v1:' + host + ':' + ticket)
+    .update('preview-activity-v1:' + host)
     .digest('base64url');
 }
 // Each request and WebSocket upgrade rechecks the current grant epoch.
@@ -273,7 +275,7 @@ const server = http.createServer(async (req, res) => {
         'set-cookie': previewAuthorizationCookies(cookieName, ticket, target.expiresAt),
       });
       // Bootstrap requires the raw signed ticket, never just the app's cookie.
-      res.end(JSON.stringify({ activityKey: activityKey(ticket, host) }));
+      res.end(JSON.stringify({ activityKey: activityKey(host) }));
       return;
     }
     if (path.pathname === '/__openmaic_activity') {
@@ -281,7 +283,7 @@ const server = http.createServer(async (req, res) => {
       if (req.method !== 'POST') throw new Error('Invalid activity signal');
       const ticket = token(req);
       const proof = req.headers['x-openmaic-preview-activity'];
-      const expected = activityKey(ticket, host);
+      const expected = activityKey(host);
       if (
         typeof proof !== 'string' ||
         !/^[A-Za-z0-9_-]{43}$/.test(proof) ||

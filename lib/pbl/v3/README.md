@@ -536,7 +536,11 @@ In the workbench, the gateway's isolated shell observes trusted pointer/keyboard
 input inside the app, coalescing it through the signed gateway to the existing study
 activity clock. Activity requires a private shell capability in addition to the preview
 cookie; application scripts cannot mint it using their cookie alone. Loading, observing,
-authorization checks and silent viewing do not renew activity. The new-tab fallback
+authorization checks and silent viewing do not renew activity. The private capability is
+scoped to the epoch-bound preview origin, so renewing a shared cookie in another tab
+does not invalidate an active shell. Service-worker script requests remain blocked by
+the gateway before proxying; apps cannot register a worker to intercept shell requests.
+The new-tab fallback
 authorizes and navigates directly to the application, preserving top-level behavior and
 supporting applications that refuse framing. Standalone input cannot be observed by the
 workbench without instrumenting the app; it does not renew study activity, and the normal

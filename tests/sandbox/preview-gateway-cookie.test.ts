@@ -213,6 +213,45 @@ describe.each(['http:', 'https:'])('preview cookie exchange (%s)', (protocol) =>
     expect(r.status).toBe(403);
     expect(r.headers.get('set-cookie')).toBeNull();
   });
+  it('blocks service-worker script loads before application proxying', async () => {
+    for (const headers of [
+      { 'service-worker': 'script' },
+      { 'sec-fetch-dest': 'serviceworker' },
+    ] as Record<string, string>[])
+      expect((await request('/worker.js', { headers })).status).toBe(403);
+    expect(activitySignals).toBe(0);
+  });
+  it('preserves an existing shell capability when another tab renews the same preview cookie', async () => {
+    const authorize = (ticket: string) =>
+      request('/__openmaic_authorize', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ticket }),
+      });
+    const first = await authorize('first-tab-grant');
+    const renewed = await authorize('second-tab-grant');
+    const headers = {
+      cookie: renewed.headers.getSetCookie().at(-1)!.split(';')[0],
+      'x-openmaic-preview-activity': JSON.parse(first.body).activityKey,
+    };
+    expect((await request('/__openmaic_activity', { method: 'POST', headers })).status).toBe(204);
+    expect(activitySignals).toBe(1);
+    const other = host.replace(
+      '00000000-0000-4000-8000-000000000000',
+      '11111111-1111-4111-8111-111111111111',
+    );
+    expect(
+      (
+        await request('/__openmaic_activity', {
+          method: 'POST',
+          headers: { ...headers, host: other, origin: `${protocol}//${other}` },
+        })
+      ).status,
+    ).toBe(403);
+    revoked = true;
+    expect((await request('/__openmaic_activity', { method: 'POST', headers })).status).toBe(403);
+    expect(activitySignals).toBe(1);
+  });
   it.each([429, 500, 502, 503, 504])(
     'preserves HTTP %s so failed input can retry',
     async (status) => {
