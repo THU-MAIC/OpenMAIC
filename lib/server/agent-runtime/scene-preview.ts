@@ -52,16 +52,24 @@ export interface ScenePreviewDeps {
     ownerId: string,
     assetId: string,
     maxByteLength: number,
+    signal?: AbortSignal,
   ) => Promise<PreviewAssetResolution>;
   /** Read a deployment-hosted interactive library file; defaults to `public/`. */
   readLibraryFile?: InteractiveLibraryFileReader;
+  /** One deadline for preparing and rendering the page; tests shorten it. */
+  timeoutMs?: number;
 }
+
+/** Wall-clock budget for one preview: preparing the page and rendering it. */
+const PREVIEW_TIMEOUT_MS = 25_000;
 
 const readOwnedPreviewAsset: NonNullable<ScenePreviewDeps['readAsset']> = (
   ownerId,
   assetId,
   maxByteLength,
-) => resolveOwnedAsset(assetId, ownerId, process.env.DATABASE_URL ?? '', maxByteLength);
+) =>
+  // The asset store takes no signal; the caller races this read against its own.
+  resolveOwnedAsset(assetId, ownerId, process.env.DATABASE_URL ?? '', maxByteLength);
 
 /** Longest render-service refusal reason relayed to the agent. */
 const MAX_REFUSAL_CHARS = 500;
@@ -156,23 +164,42 @@ export function buildScenePreviewTools(deps: ScenePreviewDeps): AgentTool<never,
               : 'the course has no pages yet',
           );
         }
+        // One deadline covers preparing the page and rendering it, so a slow
+        // asset read leaves less time for the render rather than more.
+        const timeoutMs = deps.timeoutMs ?? PREVIEW_TIMEOUT_MS;
+        const deadline = AbortSignal.timeout(timeoutMs);
+        const previewSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
+        const interrupted = () =>
+          signal?.aborted
+            ? failure(scene.id, 'operation aborted')
+            : deadline.aborted
+              ? failure(scene.id, `preview timed out after ${timeoutMs / 1000} s`)
+              : undefined;
         // The service draws only self-contained scenes: inline the page's media
         // and hosted libraries into a copy, never into the stored document.
         let prepared: Awaited<ReturnType<typeof prepareScenePreview>>;
         try {
           prepared = await prepareScenePreview(scene, {
-            readAsset: (assetId, maxByteLength) =>
-              (deps.readAsset ?? readOwnedPreviewAsset)(deps.ownerId, assetId, maxByteLength),
+            readAsset: (assetId, maxByteLength, readSignal) =>
+              (deps.readAsset ?? readOwnedPreviewAsset)(
+                deps.ownerId,
+                assetId,
+                maxByteLength,
+                readSignal,
+              ),
             readLibraryFile: deps.readLibraryFile,
+            signal: previewSignal,
           });
         } catch (error) {
-          if (signal?.aborted) return failure(scene.id, 'operation aborted');
+          const stopped = interrupted();
+          if (stopped) return stopped;
           return failure(
             scene.id,
             `could not prepare the page for preview: ${error instanceof Error ? error.message : 'unknown error'}`,
           );
         }
-        if (signal?.aborted) return failure(scene.id, 'operation aborted');
+        const stopped = interrupted();
+        if (stopped) return stopped;
         if (!prepared.ok) return failure(scene.id, prepared.reason);
         const viewport = {
           width: params.viewport?.width ?? 1280,
@@ -192,9 +219,7 @@ export function buildScenePreviewTools(deps: ScenePreviewDeps): AgentTool<never,
               stage: { id: doc.stage.id, name: doc.stage.name },
               viewport,
             }),
-            signal: signal
-              ? AbortSignal.any([signal, AbortSignal.timeout(25_000)])
-              : AbortSignal.timeout(25_000),
+            signal: previewSignal,
           });
           if (!response.ok) {
             const reason = await refusalReason(response);
@@ -216,7 +241,8 @@ export function buildScenePreviewTools(deps: ScenePreviewDeps): AgentTool<never,
             details: { sceneId: scene.id, order: scene.order, viewport, bytes: bytes.length },
           };
         } catch (error) {
-          if (signal?.aborted) return failure(scene.id, 'operation aborted');
+          const stopped = interrupted();
+          if (stopped) return stopped;
           return failure(scene.id, error instanceof Error ? error.message : 'unknown render error');
         }
       },

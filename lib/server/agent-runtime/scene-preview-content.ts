@@ -49,12 +49,14 @@ export type PreviewAssetResolution =
 export type PreviewAssetReader = (
   assetId: string,
   maxByteLength: number,
+  signal?: AbortSignal,
 ) => Promise<PreviewAssetResolution>;
 
 /** Read one file of a deployment-hosted interactive library (`<package>@<version>`, file). */
 export type InteractiveLibraryFileReader = (
   libraryDirectory: string,
   file: string,
+  signal?: AbortSignal,
 ) => Promise<Uint8Array | null>;
 
 export interface PreparePreviewOptions {
@@ -62,6 +64,31 @@ export interface PreparePreviewOptions {
   readLibraryFile?: InteractiveLibraryFileReader;
   /** Bytes the scene may occupy once serialized; defaults to {@link PREVIEW_REQUEST_BUDGET_BYTES}. */
   budgetBytes?: number;
+  /**
+   * Stops preparation: checked between reads, and every read is raced against
+   * it, so a stuck or slow read cannot outlive a cancel or the deadline.
+   */
+  signal?: AbortSignal;
+}
+
+/** Settle with `work`, or reject with the signal's reason as soon as it aborts. */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (!signal) return work;
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+    work.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(error);
+      },
+    );
+  });
 }
 
 export type PreparedPreviewScene =
@@ -121,12 +148,13 @@ function shortRef(ref: string): string {
 export const readHostedInteractiveLibraryFile: InteractiveLibraryFileReader = async (
   libraryDirectory,
   file,
+  signal,
 ) => {
   const root = path.join(process.cwd(), 'public', 'vendor', 'interactive', libraryDirectory);
   const target = path.resolve(root, file);
   if (!target.startsWith(`${root}${path.sep}`)) return null;
   try {
-    return new Uint8Array(await readFile(target));
+    return new Uint8Array(await readFile(target, { signal }));
   } catch {
     return null;
   }
@@ -145,7 +173,7 @@ const LIBRARY_CONTENT_TYPES: Record<string, string> = {
  * Serve the hosted interactive libraries from disk and nothing else: every
  * other URL is a miss, so the preview never fetches over the network.
  */
-function libraryFetcher(read: InteractiveLibraryFileReader): FetchAsset {
+function libraryFetcher(read: InteractiveLibraryFileReader, signal?: AbortSignal): FetchAsset {
   const libraryDirectories = new Set<string>(
     INTERACTIVE_LIBRARIES.map((library) => `${library.package}@${library.version}`),
   );
@@ -159,6 +187,8 @@ function libraryFetcher(read: InteractiveLibraryFileReader): FetchAsset {
     ),
   ];
   return async (url) => {
+    // Once aborted, every remaining fetch the inliner makes ends at once.
+    if (signal?.aborted) return null;
     let parsed: URL;
     try {
       parsed = new URL(url);
@@ -173,7 +203,7 @@ function libraryFetcher(read: InteractiveLibraryFileReader): FetchAsset {
       decodeURIComponent(href.slice(base.length)),
     );
     if (!match || !libraryDirectories.has(match[1]!)) return null;
-    const bytes = await read(match[1]!, match[2]!);
+    const bytes = await untilAborted(read(match[1]!, match[2]!, signal), signal).catch(() => null);
     if (!bytes) return null;
     const contentType =
       LIBRARY_CONTENT_TYPES[path.extname(match[2]!).toLowerCase()] ?? 'application/octet-stream';
@@ -264,6 +294,8 @@ async function prepareSlide(
     }
   };
 
+  // Every await in this loop is an asset read raced against the signal, so a
+  // cancel or the deadline ends the loop at the read it interrupts.
   for (const slot of slots) {
     const ref = slot.ref!.trim();
     if (slot.kind === 'video-poster') {
@@ -281,7 +313,10 @@ async function prepareSlide(
     // A data URL costs about 4/3 of the bytes plus its short header.
     const headroom = budget - used + ref.length - 128;
     const maxByteLength = Math.max(0, Math.floor((headroom * 3) / 4));
-    const resolution = await options.readAsset(ref, maxByteLength);
+    const resolution = await untilAborted(
+      options.readAsset(ref, maxByteLength, options.signal),
+      options.signal,
+    );
     if (resolution.status === 'missing') {
       placehold(slot, 'the asset does not exist or is not readable by this user');
       continue;
@@ -323,9 +358,15 @@ async function prepareInteractive(
     unresolved,
   } = await inlineHtmlAssets(html, {
     baseUrl: PREVIEW_ASSET_ORIGIN,
-    fetcher: libraryFetcher(options.readLibraryFile ?? readHostedInteractiveLibraryFile),
+    fetcher: libraryFetcher(
+      options.readLibraryFile ?? readHostedInteractiveLibraryFile,
+      options.signal,
+    ),
     keepImportmapFallbacks: false,
   });
+  // The inliner treats a refused fetch as a missing asset; an abort must not
+  // leave a half-inlined page to send.
+  options.signal?.throwIfAborted();
   const copy = structuredClone(scene);
   (copy.content as unknown as Record<string, unknown>).html = inlined;
   if (jsonBytes(copy) > budget) {
@@ -357,6 +398,7 @@ export async function prepareScenePreview(
   options: PreparePreviewOptions,
 ): Promise<PreparedPreviewScene> {
   const budget = options.budgetBytes ?? PREVIEW_REQUEST_BUDGET_BYTES;
+  options.signal?.throwIfAborted();
   if (scene.type === 'slide') return prepareSlide(scene, options, budget);
   if (scene.type === 'interactive') return prepareInteractive(scene, options, budget);
   return { ok: true, scene, notes: [] };

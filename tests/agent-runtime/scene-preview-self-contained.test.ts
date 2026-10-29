@@ -6,6 +6,7 @@ import type { CourseStore } from '@/lib/server/agent-runtime/course-tools';
 import { buildScenePreviewTools } from '@/lib/server/agent-runtime/scene-preview';
 import {
   PREVIEW_REQUEST_BUDGET_BYTES,
+  prepareScenePreview,
   readHostedInteractiveLibraryFile,
   type PreviewAssetResolution,
 } from '@/lib/server/agent-runtime/scene-preview-content';
@@ -302,7 +303,12 @@ describe('render_scene_preview self-contained scenes', () => {
       sceneId: 'scene-a',
     } as never);
 
-    expect(readAsset).toHaveBeenCalledWith(OWNER, IMAGE_ID, expect.any(Number));
+    expect(readAsset).toHaveBeenCalledWith(
+      OWNER,
+      IMAGE_ID,
+      expect.any(Number),
+      expect.any(AbortSignal),
+    );
     const sent = bodies[0]!.scene;
     expect(previewabilityError(sent)).toBeUndefined();
     expect(JSON.stringify(sent)).not.toContain(IMAGE_BYTES.toString('base64'));
@@ -520,5 +526,180 @@ describe('render_scene_preview self-contained scenes', () => {
     expect(readLibraryFile).not.toHaveBeenCalled();
     expect(textOf(result)).toContain('HTTP 422: Interactive HTML is not self-contained');
     expect(textOf(result)).toContain('https://cdn.example.com/widget.js');
+  });
+
+  describe('cancellation and the deadline', () => {
+    const manyImages = () =>
+      slideScene(Array.from({ length: 5 }, (_, index) => image(`img-${index}`, `ast_${index}`)));
+
+    it('stops reading assets once the call is aborted and sends nothing', async () => {
+      const controller = new AbortController();
+      const reads: string[] = [];
+      const readAsset = vi.fn(
+        async (_owner: string, assetId: string): Promise<PreviewAssetResolution> => {
+          reads.push(assetId);
+          if (reads.length === 2) controller.abort();
+          return { status: 'resolved', buffer: IMAGE_BYTES, mimeType: 'image/png' };
+        },
+      );
+      const { fetchPreview } = recordingRenderService();
+      const result = await buildScenePreviewTools({
+        store: storeOf(manyImages()),
+        stageAccess: async () => ({ kind: 'owned' as const }),
+        ownerId: OWNER,
+        renderService: { url: 'http://render.test' },
+        fetchPreview,
+        readAsset,
+      })[0]!.execute(
+        'preview',
+        { stageId: 'stage-a', sceneId: 'scene-a' } as never,
+        controller.signal,
+      );
+
+      expect(reads).toEqual(['ast_0', 'ast_1']);
+      expect(fetchPreview).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ isError: true });
+      expect(textOf(result)).toBe('Preview failed: operation aborted');
+    });
+
+    it('passes the abort signal to the asset read', async () => {
+      const controller = new AbortController();
+      const seen: Array<boolean | undefined> = [];
+      const readAsset = vi.fn(
+        async (
+          _owner: string,
+          _assetId: string,
+          _max: number,
+          signal?: AbortSignal,
+        ): Promise<PreviewAssetResolution> => {
+          seen.push(signal?.aborted);
+          controller.abort();
+          seen.push(signal?.aborted);
+          return { status: 'missing' };
+        },
+      );
+      const { fetchPreview } = recordingRenderService();
+      const result = await buildScenePreviewTools({
+        store: storeOf(manyImages()),
+        stageAccess: async () => ({ kind: 'owned' as const }),
+        ownerId: OWNER,
+        renderService: { url: 'http://render.test' },
+        fetchPreview,
+        readAsset,
+      })[0]!.execute(
+        'preview',
+        { stageId: 'stage-a', sceneId: 'scene-a' } as never,
+        controller.signal,
+      );
+      // The read sees the call's cancellation through the signal it was given.
+      expect(seen).toEqual([false, true]);
+      expect(readAsset).toHaveBeenCalledTimes(1);
+      expect(textOf(result)).toBe('Preview failed: operation aborted');
+      expect(fetchPreview).not.toHaveBeenCalled();
+    });
+
+    it('cuts a read that never settles at the deadline, without a render request', async () => {
+      const readAsset = vi.fn(() => new Promise<PreviewAssetResolution>(() => {}));
+      const { fetchPreview } = recordingRenderService();
+      const started = Date.now();
+      const result = await buildScenePreviewTools({
+        store: storeOf(manyImages()),
+        stageAccess: async () => ({ kind: 'owned' as const }),
+        ownerId: OWNER,
+        renderService: { url: 'http://render.test' },
+        fetchPreview,
+        readAsset,
+        timeoutMs: 50,
+      })[0]!.execute('preview', { stageId: 'stage-a', sceneId: 'scene-a' } as never);
+
+      expect(Date.now() - started).toBeLessThan(2_000);
+      expect(readAsset).toHaveBeenCalledTimes(1);
+      expect(fetchPreview).not.toHaveBeenCalled();
+      expect(textOf(result)).toBe('Preview failed: preview timed out after 0.05 s');
+    });
+
+    it('stops inlining interactive libraries once aborted and sends nothing', async () => {
+      const controller = new AbortController();
+      const html = `<!doctype html><html><head><script src="${interactiveLibraryUrl('@tailwindcss/browser')}"></script><script src="${interactiveLibraryUrl('chart.js')}"></script></head><body>x</body></html>`;
+      const scene = {
+        id: 'scene-a',
+        stageId: 'stage-a',
+        order: 1,
+        title: 'Interactive',
+        type: 'interactive',
+        content: { type: 'interactive', url: '', html },
+        actions: [],
+      };
+      // The first library read never settles until the call is cancelled.
+      const readLibraryFile = vi.fn(() => {
+        controller.abort();
+        return new Promise<Uint8Array | null>(() => {});
+      });
+      const { fetchPreview } = recordingRenderService();
+      const result = await buildScenePreviewTools({
+        store: storeOf(scene),
+        stageAccess: async () => ({ kind: 'owned' as const }),
+        ownerId: OWNER,
+        renderService: { url: 'http://render.test' },
+        fetchPreview,
+        readLibraryFile,
+      })[0]!.execute(
+        'preview',
+        { stageId: 'stage-a', sceneId: 'scene-a' } as never,
+        controller.signal,
+      );
+
+      expect(readLibraryFile).toHaveBeenCalledTimes(1);
+      expect(fetchPreview).not.toHaveBeenCalled();
+      expect(textOf(result)).toBe('Preview failed: operation aborted');
+    });
+
+    it('never returns a half-inlined interactive page to a direct caller', async () => {
+      const controller = new AbortController();
+      const html = `<!doctype html><html><head><script src="${interactiveLibraryUrl('chart.js')}"></script></head><body>x</body></html>`;
+      const scene = {
+        id: 'scene-a',
+        stageId: 'stage-a',
+        order: 1,
+        title: 'Interactive',
+        type: 'interactive',
+        content: { type: 'interactive', url: '', html },
+        actions: [],
+      };
+      const readLibraryFile = vi.fn(() => {
+        controller.abort();
+        return new Promise<Uint8Array | null>(() => {});
+      });
+      await expect(
+        prepareScenePreview(scene as never, {
+          readAsset: async () => ({ status: 'missing' }),
+          readLibraryFile,
+          signal: controller.signal,
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('gives the render request the same signal, so a cancel aborts it', async () => {
+      const controller = new AbortController();
+      let seen: AbortSignal | undefined;
+      const fetchPreview = vi.fn(async (_url: string, init?: RequestInit) => {
+        seen = init?.signal ?? undefined;
+        controller.abort();
+        throw new DOMException('aborted', 'AbortError');
+      });
+      const result = await buildScenePreviewTools({
+        store: storeOf(slideScene([image('img-1', 'data:image/png;base64,AAAA')])),
+        stageAccess: async () => ({ kind: 'owned' as const }),
+        ownerId: OWNER,
+        renderService: { url: 'http://render.test' },
+        fetchPreview: fetchPreview as unknown as typeof fetch,
+      })[0]!.execute(
+        'preview',
+        { stageId: 'stage-a', sceneId: 'scene-a' } as never,
+        controller.signal,
+      );
+      expect(seen?.aborted).toBe(true);
+      expect(textOf(result)).toBe('Preview failed: operation aborted');
+    });
   });
 });
