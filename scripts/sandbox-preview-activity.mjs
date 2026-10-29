@@ -5,7 +5,8 @@ export function installPreviewActivity(frame, activityKey) {
   // fetch/listener methods. Keep the capability in a private Request, not DOM,
   // storage, globals, or a callback registered through an app-owned method.
   const send = fetch.bind(globalThis),
-    NativeRequest = Request;
+    NativeRequest = Request,
+    NativePromise = Promise;
   const listen = Function.prototype.call.bind(EventTarget.prototype.addEventListener);
   const status = Function.prototype.call.bind(
     Object.getOwnPropertyDescriptor(Response.prototype, 'status').get,
@@ -14,6 +15,7 @@ export function installPreviewActivity(frame, activityKey) {
     Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState').get,
   );
   const create = Object.create,
+    define = Object.defineProperty,
     timeout = AbortSignal.timeout.bind(AbortSignal);
   const now = Date.now,
     wait = setTimeout,
@@ -41,7 +43,13 @@ export function installPreviewActivity(frame, activityKey) {
       // No iterable headers or inherited RequestInit properties are exposed to app hooks.
       const init = create(null);
       init.signal = timeout(10_000);
-      const response = await send(new NativeRequest(request, init));
+      const result = send(new NativeRequest(request, init));
+      // Keep await on the native Promise path, bypassing app-controlled
+      // prototype constructor/then hooks that could substitute a response.
+      const descriptor = create(null);
+      descriptor.value = NativePromise;
+      define(result, 'constructor', descriptor);
+      const response = await result;
       const code = status(response);
       if ((code < 200 || code >= 300) && code !== 403) changed = true;
     } catch {

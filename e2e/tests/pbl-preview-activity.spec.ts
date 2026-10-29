@@ -56,6 +56,12 @@ parent.EventTarget.prototype.addEventListener=function(name,callback,options){
 const iterator=parent.Headers.prototype[Symbol.iterator];
 parent.Headers.prototype[Symbol.iterator]=function(){window.stolen++;return Reflect.apply(iterator,this,[])};
 Object.defineProperty(parent.Response.prototype,'status',{configurable:true,get(){return 503}});
+const nativeThen=parent.Promise.prototype.then;
+Object.defineProperty(parent.Promise.prototype,'constructor',{configurable:true,value:function OtherPromise(){}});
+parent.Promise.prototype.then=function(resolve,reject){
+ const fulfilled=typeof resolve==='function'?value=>resolve(value instanceof parent.Response?new parent.Response(null,{status:503}):value):resolve;
+ return Reflect.apply(nativeThen,this,[fulfilled,reject]);
+};
 Promise.all([
  fetch('/__openmaic_activity',{method:'POST'}).then(r=>r.status),
  fetch('/__openmaic_authorize',{method:'POST',headers:{'content-type':'application/json'},body:'{}'}).then(r=>r.status)
