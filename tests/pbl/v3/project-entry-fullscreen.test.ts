@@ -54,12 +54,21 @@ afterEach(() => {
   mocks.submissions = 0;
 });
 
-it.each([false, true])(
-  'preserves the workspace, stream and pending submission through native fullscreen (initial: %s)',
-  async (initialFullscreen) => {
+it.each([
+  { initialFullscreen: false, playbackStage: true },
+  { initialFullscreen: true, playbackStage: true },
+  { initialFullscreen: false, playbackStage: false },
+  { initialFullscreen: true, playbackStage: false },
+])(
+  'preserves the workspace, stream and pending submission through native fullscreen ($initialFullscreen, stage host: $playbackStage)',
+  async ({ initialFullscreen, playbackStage }) => {
     const page = document.createElement('div');
     const stage = document.createElement('div');
-    document.body.append(page, stage);
+    if (playbackStage) {
+      stage.dataset.playbackStage = '';
+      stage.append(page);
+      document.body.append(stage);
+    } else document.body.append(page, stage);
     let fullscreen: Element | null = initialFullscreen ? stage : null;
     const originalFullscreen = Object.getOwnPropertyDescriptor(document, 'fullscreenElement');
     Object.defineProperty(document, 'fullscreenElement', {
@@ -73,7 +82,11 @@ it.each([false, true])(
       await act(async () => page.querySelector('button')!.click());
       const submit = document.querySelector<HTMLButtonElement>('[data-testid="workspace-submit"]')!;
       const portalHost = submit.parentElement!;
-      expect(portalHost.parentElement).toBe(initialFullscreen ? stage : document.body);
+      expect(portalHost.parentElement).toBe(
+        initialFullscreen || playbackStage ? stage : document.body,
+      );
+      const detached = vi.spyOn(portalHost, 'remove');
+      const reparented = vi.spyOn(stage, 'appendChild');
       await act(async () => submit.click());
       expect(submit.disabled).toBe(true);
       expect(mocks.read).toHaveBeenCalledTimes(1);
@@ -84,7 +97,9 @@ it.each([false, true])(
           document.dispatchEvent(new Event('fullscreenchange'));
         });
         expect(document.querySelector('[data-testid="workspace-submit"]')).toBe(submit);
-        expect(portalHost.parentElement).toBe(target ?? document.body);
+        expect(portalHost.parentElement).toBe(target ?? (playbackStage ? stage : document.body));
+        expect(detached).not.toHaveBeenCalled();
+        if (playbackStage) expect(reparented).not.toHaveBeenCalled();
         expect(submit.disabled).toBe(true);
         expect(mocks.read).toHaveBeenCalledTimes(1);
         expect(signal.aborted).toBe(false);
@@ -96,6 +111,7 @@ it.each([false, true])(
       await act(async () => root.unmount());
       expect(signal.aborted).toBe(true);
       expect(portalHost.isConnected).toBe(false);
+      expect(detached).toHaveBeenCalledTimes(1);
     } finally {
       await act(async () => root.unmount());
       page.remove();

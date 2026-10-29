@@ -6,8 +6,9 @@ import {
   previewContentDisposition,
   validatePreviewTarget,
 } from './sandbox-preview-policy.mjs';
+import { previewShell } from './sandbox-preview-activity.mjs';
 import { previewAgent } from './sandbox-preview-transport.mjs';
-import { createHmac, randomBytes } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
 const originPattern = process.env.OPENMAIC_SANDBOX_PREVIEW_ORIGIN;
 const backend = process.env.OPENMAIC_PREVIEW_BACKEND_ORIGIN;
@@ -65,10 +66,23 @@ function token(req) {
   if (matches.length !== 1) throw new Error('Preview authorization required');
   return matches[0].slice(cookieName.length + 1);
 }
+function activityKey(host) {
+  // The origin already binds owner/environment/port/epoch. Tabs share its cookie,
+  // so a legitimate renewal must not invalidate another shell's private capability.
+  return createHmac('sha256', gatewayKey)
+    .update('preview-activity-v1:' + host)
+    .digest('base64url');
+}
 // Each request and WebSocket upgrade rechecks the current grant epoch.
 // Reusing a recently resolved target would allow writes after revocation.
-async function resolve(ticket, host) {
-  const body = JSON.stringify({ ticket, host });
+class PreviewResolveError extends Error {
+  constructor(statusCode) {
+    super('Preview resolution failed.');
+    this.statusCode = statusCode;
+  }
+}
+async function resolve(ticket, host, activity = false) {
+  const body = JSON.stringify({ ticket, host, ...(activity ? { activity: true } : {}) });
   const at = String(Date.now());
   const auth =
     at +
@@ -76,17 +90,26 @@ async function resolve(ticket, host) {
     createHmac('sha256', gatewayKey)
       .update(at + '.' + body)
       .digest('hex');
-  const r = await fetch(backendUrl, {
-    method: 'POST',
-    redirect: 'error',
-    signal: AbortSignal.timeout(30_000),
-    headers: { 'content-type': 'application/json', 'x-openmaic-preview-gateway': auth },
-    body,
-  });
-  if (!r.ok) throw new Error('Preview authorization refused');
-  const target = await r.json();
-  validatePreviewTarget(target);
-  return target;
+  let r;
+  try {
+    r = await fetch(backendUrl, {
+      method: 'POST',
+      redirect: 'error',
+      signal: AbortSignal.timeout(30_000),
+      headers: { 'content-type': 'application/json', 'x-openmaic-preview-gateway': auth },
+      body,
+    });
+  } catch {
+    throw new PreviewResolveError(503);
+  }
+  if (!r.ok) throw new PreviewResolveError(r.status >= 500 || r.status === 429 ? r.status : 403);
+  try {
+    const target = await r.json();
+    validatePreviewTarget(target);
+    return target;
+  } catch {
+    throw new PreviewResolveError(502);
+  }
 }
 function watchAuthorization(ticket, host, close) {
   let stopped = false,
@@ -206,7 +229,9 @@ function fail(res, status = 403) {
   res.end(
     status === 429
       ? 'Preview connection limit reached. Close unused previews and retry.'
-      : 'Preview unavailable or access expired. Reopen it from OpenMAIC.',
+      : status >= 500
+        ? 'Preview temporarily unavailable. Please retry.'
+        : 'Preview unavailable or access expired. Reopen it from OpenMAIC.',
   );
 }
 const server = http.createServer(async (req, res) => {
@@ -224,12 +249,9 @@ const server = http.createServer(async (req, res) => {
         'content-type': 'text/html; charset=utf-8',
         'cache-control': 'no-store',
         'referrer-policy': 'no-referrer',
-        'content-security-policy': `default-src 'none'; script-src 'nonce-${nonce}'; connect-src 'self'; base-uri 'none'; frame-ancestors *`,
+        'content-security-policy': `default-src 'none'; script-src 'nonce-${nonce}'; connect-src 'self'; frame-src 'self'; style-src 'nonce-${nonce}'; base-uri 'none'; frame-ancestors *`,
       });
-      res.end(`<!doctype html><title>Opening preview</title><p id="status">Opening preview…</p><script nonce="${nonce}">
-const ticket=location.hash.slice(1);history.replaceState(null,'','/__openmaic_preview');
-fetch('/__openmaic_authorize',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({ticket})})
-.then(r=>{if(!r.ok)throw Error();location.replace('/')}).catch(()=>{document.getElementById('status').textContent='Access expired. Reopen from OpenMAIC.'});</script>`);
+      res.end(previewShell(nonce));
       return;
     }
     if (path.pathname === '/__openmaic_authorize') {
@@ -247,10 +269,29 @@ fetch('/__openmaic_authorize',{method:'POST',headers:{'content-type':'applicatio
       if (typeof ticket !== 'string' || ticket.length > 4096 || !/^[-_a-zA-Z0-9.]+$/.test(ticket))
         throw new Error('Invalid ticket');
       const target = await resolve(ticket, host);
-      res.writeHead(204, {
+      res.writeHead(200, {
         'cache-control': 'no-store',
+        'content-type': 'application/json',
         'set-cookie': previewAuthorizationCookies(cookieName, ticket, target.expiresAt),
       });
+      // Bootstrap requires the raw signed ticket, never just the app's cookie.
+      res.end(JSON.stringify({ activityKey: activityKey(host) }));
+      return;
+    }
+    if (path.pathname === '/__openmaic_activity') {
+      checkOrigin(req, host);
+      if (req.method !== 'POST') throw new Error('Invalid activity signal');
+      const ticket = token(req);
+      const proof = req.headers['x-openmaic-preview-activity'];
+      const expected = activityKey(host);
+      if (
+        typeof proof !== 'string' ||
+        !/^[A-Za-z0-9_-]{43}$/.test(proof) ||
+        !timingSafeEqual(Buffer.from(proof), Buffer.from(expected))
+      )
+        throw new Error('Invalid activity capability');
+      await resolve(ticket, host, true);
+      res.writeHead(204, { 'cache-control': 'no-store' });
       res.end();
       return;
     }
@@ -307,8 +348,8 @@ fetch('/__openmaic_authorize',{method:'POST',headers:{'content-type':'applicatio
     });
     req.on('aborted', () => upstream.destroy());
     req.pipe(upstream);
-  } catch {
-    fail(res);
+  } catch (error) {
+    fail(res, error instanceof PreviewResolveError ? error.statusCode : 403);
   }
 });
 server.on('upgrade', async (req, socket, head) => {
@@ -384,8 +425,9 @@ server.on('upgrade', async (req, socket, head) => {
     socket.on('error', () => upstream.destroy());
     socket.on('close', () => upstream.destroy());
     upstream.end();
-  } catch {
-    socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+  } catch (error) {
+    const status = error instanceof PreviewResolveError ? error.statusCode : 403;
+    socket.end(`HTTP/1.1 ${status} ${http.STATUS_CODES[status]}\r\nConnection: close\r\n\r\n`);
   }
 });
 server.headersTimeout = 15_000;

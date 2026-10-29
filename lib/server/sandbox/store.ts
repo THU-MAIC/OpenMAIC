@@ -120,6 +120,7 @@ export class SandboxStore {
     id: string,
     fingerprint: string,
     epoch?: number,
+    purpose?: 'application',
   ): Promise<boolean> {
     return this.persistence.withTransaction(async (tx) => {
       await fenceOwnerWrite(tx, row.owner_id);
@@ -148,8 +149,8 @@ export class SandboxStore {
           'Reconcile or cancel active commands before starting more.',
         );
       await tx.query(
-        'INSERT INTO sandbox_commands(environment_id,id,request_fingerprint) VALUES ($1,$2,$3)',
-        [row.id, id, fingerprint],
+        'INSERT INTO sandbox_commands(environment_id,id,request_fingerprint,purpose) VALUES ($1,$2,$3,$4)',
+        [row.id, id, fingerprint, purpose ?? null],
       );
       return true;
     });
@@ -169,8 +170,9 @@ export class SandboxStore {
       id: string;
       state: string;
       exitCode: number | null;
+      purpose: 'application' | null;
     }>(
-      `SELECT id,COALESCE(result_json->>'state','unknown') AS state,
+      `SELECT id,purpose,COALESCE(result_json->>'state','unknown') AS state,
          (result_json->>'exitCode')::integer AS "exitCode"
        FROM sandbox_commands WHERE environment_id=$1
        ORDER BY (result_json IS NULL OR result_json->>'state' IN ('starting','running','unknown')) DESC,

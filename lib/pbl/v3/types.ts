@@ -22,6 +22,7 @@ export interface LearningView {
   id: string;
   revision: number;
   title: string;
+  application?: { title: string; description: string };
   reportAvailable: boolean;
   lifecycleError?: string | null;
   checkpointFailure?: ArchiveFailure | null;

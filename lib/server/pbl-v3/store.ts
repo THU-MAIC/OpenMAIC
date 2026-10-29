@@ -288,6 +288,26 @@ export class LearningStore {
     });
   }
 
+  /** Called under the study lock before dispatching an application writer.
+   * Advance the archive fence on every start, without changing teaching evidence or editor revisions.
+   */
+  async markWorkspaceWriter(row: Study) {
+    const updated = await this.transaction(async (db) => {
+      await fenceOwnerWrite(db, row.owner_id);
+      return db.query<Pick<Study, 'workspace_dirty_at'>>(
+        `UPDATE pbl_v3_studies SET workspace_dirty_at=GREATEST(
+           date_trunc('milliseconds',clock_timestamp()), workspace_dirty_at+interval '1 millisecond')
+         WHERE id=$1 AND owner_id=$2 AND environment_id=$3 AND revision=$4
+           AND idle_turn_cleanup->>'releasing' IS DISTINCT FROM 'true'
+           AND (archive_discard IS NULL OR archive_discard->>'environmentId'<>$3)
+         RETURNING workspace_dirty_at`,
+        [row.id, row.owner_id, row.environment_id, row.revision],
+      );
+    });
+    if (!updated.rows[0]) throw sandboxConflict('Workspace changed before application startup.');
+    row.workspace_dirty_at = updated.rows[0].workspace_dirty_at;
+  }
+
   /** Checkpoint metadata does not change teaching progress or invalidate an editor revision. */
   async saveEnvironmentRecovery(row: Study, db?: Queryable) {
     const save = async (db: Queryable) => {
