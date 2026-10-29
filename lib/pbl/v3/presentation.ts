@@ -3,6 +3,9 @@ import type { LearningView } from './types';
 /** Hosted activity UI capabilities, shared with teaching guidance. */
 export const learningWorkbenchFeatures = { executionConsole: false, applicationPreview: false };
 
+/** Presentation-only navigation to the current task; never a decision submission. */
+export const TASK_DRAWER_LINK = '#pbl-task';
+
 export function hasTaskDrawer(view: Pick<LearningView, 'state' | 'stage'>): boolean {
   return (
     view.state.status !== 'completed' && ['dialogue', 'produce', 'check'].includes(view.stage.kind)

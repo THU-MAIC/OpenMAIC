@@ -864,7 +864,7 @@ test('installed sample opens in the normal classroom and preserves progress afte
   ).toHaveCount(0);
   const taskDetails = page.getByRole('region', { name: 'Current task details', exact: true });
   if (!(await taskDetails.isVisible()))
-    await page.getByRole('button', { name: /Current task details/ }).click();
+    await page.getByRole('button', { name: /^Current task$/ }).click();
   await expect(
     taskDetails.getByRole('button', { name: 'Build / check syntax', exact: true }),
   ).toBeVisible();
@@ -888,7 +888,7 @@ test('installed sample opens in the normal classroom and preserves progress afte
   view.evaluation.stderr = 'greeting.py:1: SyntaxError: expected a colon';
   view.revision++;
   await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
-  await page.getByRole('button', { name: /Current task details/ }).click();
+  await page.getByRole('button', { name: /^Current task$/ }).click();
   await expect(taskDetails.getByText('greeting.py:1: SyntaxError: expected a colon')).toBeVisible();
   await expect(page.getByTestId('pbl-build-status')).toHaveCount(0);
   await expect(page.locator('.pbl-task-dock [data-action="compile"]')).toHaveCount(0);
@@ -928,13 +928,13 @@ test('installed sample opens in the normal classroom and preserves progress afte
   } as LearningView['stage'];
   view.state.position.stageIndex = 5;
   await page.getByRole('button', { name: 'Refresh progress' }).click();
-  await page.getByRole('button', { name: /Current task details/ }).click();
+  await page.getByRole('button', { name: /^Current task$/ }).click();
   // Selecting the last question first must not count sparse array slots as answers.
   await page.getByRole('radio', { name: 'After saving' }).check();
   await expect(page.getByRole('button', { name: 'Submit answers' })).toBeDisabled();
   await page.reload();
   await page.getByRole('button', { name: /^(?:Start Project|Continue Project)$/ }).click();
-  await page.getByRole('button', { name: /Current task details/ }).click();
+  await page.getByRole('button', { name: /^Current task$/ }).click();
   await expect(page.getByRole('radio', { name: 'After saving' })).toBeChecked();
   await expect(page.getByRole('button', { name: 'Submit answers' })).toBeDisabled();
   await page.getByRole('radio', { name: 'Prints a value' }).check();
@@ -945,7 +945,7 @@ test('installed sample opens in the normal classroom and preserves progress afte
   await page.reload();
   await page.getByRole('button', { name: /^(?:Start Project|Continue Project)$/ }).click();
   // The drawer closes on reload; its recorded quiz result remains available on reopening.
-  await page.getByRole('button', { name: /Current task details/ }).click();
+  await page.getByRole('button', { name: /^Current task$/ }).click();
   await expect(page.getByRole('region', { name: 'Current task details', exact: true })).toBeVisible(
     { timeout: 15000 },
   );

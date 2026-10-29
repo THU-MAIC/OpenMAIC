@@ -31,7 +31,7 @@ export function visibleProductLabels(locale = 'en-US') {
   const p = (locales[locale] ?? locales['en-US']!).pblV3;
   return {
     projectFiles: p.files,
-    task: p.journey.taskDetails,
+    task: p.journey.taskTitle,
     runTests: p.runTests,
     submitQuiz: p.submitQuiz,
     build: p.build,

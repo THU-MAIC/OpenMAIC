@@ -35,9 +35,9 @@ describe('beta feedback boundaries', () => {
     expect(environmentNotice({ state: 'destroyed', ready: false }, false)).toBe('inactive');
   });
   it('uses real UI labels independently of conversational language', () => {
-    expect(visibleProductLabels('en-US').task).toBe('Current task details');
+    expect(visibleProductLabels('en-US').task).toBe('Current task');
     expect(visibleProductLabels('en-US').submitQuiz).toBe('Submit answers');
-    expect(visibleProductLabels('zh-CN').task).toBe('当前任务详情');
+    expect(visibleProductLabels('zh-CN').task).toBe('当前任务');
     expect(visibleProductLabels('en-US').application).toBe('Open application');
     expect(visibleProductLabels('zh-CN')).toMatchObject({
       application: '打开应用',

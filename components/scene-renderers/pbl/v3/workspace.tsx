@@ -58,6 +58,7 @@ function PBLV3WorkspaceContent({
   const [fileTarget, setFileTarget] = useState<
     (FileReference & { studyId: string; requestId: number }) | null
   >(null);
+  const taskDock = useRef<{ open: () => void }>(null);
   const [error, setError] = useState(''),
     [pending, setPending] = useState(false);
   const storageError = useCallback(() => setError(t('pblV3.draftStorageUnavailable')), [t]);
@@ -552,13 +553,6 @@ function PBLV3WorkspaceContent({
                   {t(view.busy ? 'pblV3.reportCopy.finalizing' : 'pblV3.reportCopy.completionHint')}
                 </p>
               </div>
-              <button
-                className="shrink-0 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
-                onClick={() => setReportOpen(true)}
-                disabled={view.busy}
-              >
-                {t('pblV3.report')}
-              </button>
             </div>
           )}
           <WorkbenchSplit
@@ -665,6 +659,7 @@ function PBLV3WorkspaceContent({
                     onOpenReport={
                       view.reportAvailable && !view.busy ? () => setReportOpen(true) : undefined
                     }
+                    onOpenTask={() => taskDock.current?.open()}
                     sent={sent}
                     pendingMessage={pendingMessage}
                     requesting={['chat', 'begin', 'retry'].includes(pendingAction ?? '')}
@@ -672,6 +667,7 @@ function PBLV3WorkspaceContent({
                   <TaskDock
                     key={`${view.id}:${view.state.position.milestoneIndex}:${view.state.position.stageIndex}`}
                     view={view}
+                    ref={taskDock}
                     working={
                       buildWorking ||
                       (testStage &&

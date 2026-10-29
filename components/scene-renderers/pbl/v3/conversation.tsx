@@ -1,5 +1,6 @@
 'use client';
 import { parseFileReference, type FileReference } from '@/lib/pbl/v3/file-reference';
+import { hasTaskDrawer, TASK_DRAWER_LINK } from '@/lib/pbl/v3/presentation';
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import {
   Check,
@@ -207,10 +208,12 @@ export function LearningConversation({
   pendingMessage = null,
   onOpenFile,
   onOpenReport,
+  onOpenTask,
 }: {
   view: LearningView;
   onOpenReport?: () => void;
   onOpenFile?: (reference: FileReference) => void;
+  onOpenTask?: () => void;
   sent: number;
   requesting?: boolean;
   pendingMessage?: LearningConversationEntry | null;
@@ -223,9 +226,18 @@ export function LearningConversation({
       speaker: m.role === 'user' ? 'user' : (view.role ?? 'mentor'),
       parts: [{ kind: 'text', id: `${i}`, text: m.text }],
     }));
-  const openFileReference = (event: MouseEvent<HTMLElement>, dismiss?: () => void) => {
+  const openReference = (event: MouseEvent<HTMLElement>, dismiss?: () => void) => {
     const anchor = (event.target as Element).closest('a');
     const href = anchor?.getAttribute('href') ?? '';
+    if (href === TASK_DRAWER_LINK) {
+      event.preventDefault();
+      if (hasTaskDrawer(view) && onOpenTask) {
+        if (dismiss) event.stopPropagation();
+        dismiss?.();
+        onOpenTask();
+      }
+      return;
+    }
     if (!href.startsWith('#pbl-file=')) return;
     event.preventDefault();
     const reference = parseFileReference(href);
@@ -240,12 +252,12 @@ export function LearningConversation({
   return (
     <Conversation className="min-h-0 flex-1 bg-background" aria-label={t('pblV3.learning')}>
       <FollowSend count={sent} />
-      <ConversationContent className="gap-5 p-4" onClick={(event) => openFileReference(event)}>
+      <ConversationContent className="gap-5 p-4" onClick={(event) => openReference(event)}>
         <ConversationHistory
           id={view.id}
           sources={view.conversationHistory ?? []}
           renderEntry={(entry, dismiss) => (
-            <div onClick={(event) => openFileReference(event, dismiss)}>
+            <div onClick={(event) => openReference(event, dismiss)}>
               <ConversationEntry
                 entry={entry}
                 onOpenReport={

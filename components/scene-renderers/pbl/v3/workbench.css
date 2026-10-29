@@ -52,6 +52,29 @@
 .pbl-workbench .pbl-task-drawer {
   /* Keep its close control inside the chat area, even in a short scene. */
   max-height: min(560px, max(0px, calc(100cqh - 64px)));
+  transform-origin: bottom center;
+  animation: pbl-task-open 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes pbl-task-open {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pbl-workbench .pbl-task-drawer {
+    animation: none;
+  }
+}
+@container (max-width: 500px) {
+  .pbl-workbench .pbl-task-trigger .pbl-task-step,
+  .pbl-workbench .pbl-task-trigger .pbl-task-hint {
+    display: none;
+  }
 }
 /* OpenPBL's filled ready action, with a neutral unavailable state. */
 .pbl-workbench .pbl-stage-action {

@@ -47,6 +47,19 @@ function fixture(index: number) {
 }
 
 describe('authoritative product guidance', () => {
+  it('names the visible task trigger and directs decisions to a presentation-only drawer link', () => {
+    const input = fixture(1);
+    const context = teachingProductContext({ ...input, uiLocale: 'zh-CN' });
+    expect(context.visibleLabels.task).toBe('当前任务');
+    expect(context.taskLink).toBe('#pbl-task');
+    expect(context.current.taskDrawer).toBe(true);
+    const prompt = renderTeachingPrompt(input).systemPrompt;
+    expect(prompt).toContain('drawer above the message input');
+    expect(prompt).toContain('text is exactly productContext.visibleLabels.task');
+    expect(prompt).toContain('not by sending a chat message');
+    expect(prompt).toContain('does not submit, save, approve, restore an environment or advance');
+    expect(teachingProductContext(fixture(0)).current.taskDrawer).toBe(false);
+  });
   it('keeps declared UI instructions separate from observed runtime and formal assessment evidence', () => {
     const input = fixture(6);
     input.workspace.application = {
@@ -335,7 +348,7 @@ it('keeps the same response policy across welcome, decisions, artifacts, assessm
     };
     const prompt = renderTeachingPrompt(input).systemPrompt;
     expect(prompt).toContain('"responseLanguage":{"locale":"zh-CN","source":"explicit"}');
-    expect(prompt).toContain('"task":"Current task details"');
+    expect(prompt).toContain('"task":"Current task"');
     expect(prompt).toContain('before any real conversation, use communication.uiLocale');
     expect(prompt).toContain('An explicit preference persists');
     expect(prompt).toContain('file hashes or build revision numbers');

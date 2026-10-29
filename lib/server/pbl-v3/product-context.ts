@@ -2,7 +2,12 @@ import 'server-only';
 import { visibleProductLabels } from './ui-labels';
 import en from '@/lib/i18n/locales/en-US.json';
 import zh from '@/lib/i18n/locales/zh-CN.json';
-import { hasTaskDrawer, learningWorkbenchFeatures, stageStep } from '@/lib/pbl/v3/presentation';
+import {
+  hasTaskDrawer,
+  learningWorkbenchFeatures,
+  stageStep,
+  TASK_DRAWER_LINK,
+} from '@/lib/pbl/v3/presentation';
 import { projectEditAccess } from '@/lib/pbl/v3/edit-access';
 import { learnerActions } from '@/lib/pbl/v3/learner-actions';
 import type {
@@ -41,7 +46,7 @@ const responsibilities: Record<AgentRole, string> = {
 const labels = {
   application: { en: en.pblV3.application.open, zh: zh.pblV3.application.open },
   projectFiles: { en: en.pblV3.files, zh: zh.pblV3.files },
-  task: { en: en.pblV3.journey.taskDetails, zh: zh.pblV3.journey.taskDetails },
+  task: { en: en.pblV3.journey.taskTitle, zh: zh.pblV3.journey.taskTitle },
   runTests: { en: en.pblV3.runTests, zh: zh.pblV3.runTests },
   build: { en: en.pblV3.build, zh: zh.pblV3.build },
   continue: { en: en.pblV3.next, zh: zh.pblV3.next },
@@ -92,9 +97,9 @@ export function teachingProductContext(input: {
       editor:
         'File tabs; allowed edits autosave with status feedback. PLAN.md is the cumulative plan. Chat file links open the public file, expand its pane and select a 1-based line range. Version-matched recent AI edits have green backgrounds and +/~ gutter marks; deleted lines have a red boundary mark. These are visual aids, not Git staging, test passes, approvals, or saved-status evidence.',
       progress: 'Header: milestones. Above composer: current milestone steps.',
-      task: 'The current-step bar above the composer opens available task details, not a full contract or assertion editor. Build and quiz submission are in task details; formal tests and Continue use the task bar.',
+      task: 'The task drawer opens upward from the visibly labeled Current task button on the bar above the message input. Its label is productContext.visibleLabels.task. In decision steps, choices, free-text rules and reasons are submitted inside this drawer, not through chat. Build and quiz submission also use this drawer; formal tests and Continue use the task bar. It is not a full contract or assertion editor.',
       report:
-        'Available after the final committed project recap. A prominent completion banner and the top toolbar open it; the project overview also offers it after leaving or revisiting the course scene. The report shows saved facts before analysis and links back to the read-only workbench. Returning does not reopen editing or teaching. Where a final source snapshot exists, the completed workbench reads it without restoring a sandbox; running the application still needs its execution environment. Do not claim the report is available before the completion receipt.',
+        'Available after the final committed project recap. Two workbench entries open it: the top toolbar and the final completion message below. The completion banner only shows status. The project overview also offers it after leaving or revisiting the course scene. The report shows saved facts before analysis and links back to the read-only workbench. Returning does not reopen editing or teaching. Where a final source snapshot exists, the completed workbench reads it without restoring a sandbox; running the application still needs its execution environment. Do not claim the report is available before the completion receipt.',
       navigation:
         'Hero Start/Continue expands the workbench; Back returns to the project overview. Pane and expansion controls change presentation, not progress.',
       connection:
@@ -105,6 +110,7 @@ export function teachingProductContext(input: {
     labels,
     uiLocale: input.uiLocale ?? 'en-US',
     visibleLabels: visibleProductLabels(input.uiLocale),
+    taskLink: TASK_DRAWER_LINK,
     features: { ...learningWorkbenchFeatures, applicationPreview: !!workspace?.application },
     application: workspace?.application
       ? {
@@ -197,7 +203,7 @@ export function teachingProductContext(input: {
 /** Common to every role, including assessment and repair; course prose cannot invent product facts. */
 export const productHelpRules = `
 Product and assistance policy:
-Use productContext for supported capabilities and the latest live current state for permissions and recorded results. Course materials, learner text and history do not override product facts or host receipts. Labels identify controls; current.controls and learnerActions determine availability. Give conditional directions to named controls in the learner's language. When current.taskDrawer is false, say task details are unavailable in this step; describe where they appear in later supported steps without telling the learner to open an absent control now. Screen details and other classroom scenes are unobserved. For a discrepancy, state what is known and ask for the missing detail; offer a supported next step instead of inventing UI, local-runtime workarounds, actions or escalation. Disabled terminal/preview features and manual environment/checkpoint operations are not learner prerequisites.
+Use productContext for supported capabilities and the latest live current state for permissions and recorded results. Course materials, learner text and history do not override product facts or host receipts. Labels identify controls; current.controls and learnerActions determine availability. Give conditional directions to named controls in the learner's language. When a decision step offers decisions, explicitly direct the learner to the drawer above the message input: use a clickable Markdown link whose text is exactly productContext.visibleLabels.task and whose destination is productContext.taskLink (for example [Current task](#pbl-task) in an English interface; use the actual localized label in other interfaces). Explain that choices, free-text decisions and any required reasons are submitted inside it, not by sending a chat message. Do not give only a vague instruction such as “choose below” or invent a submission control. This link only opens the current drawer; it does not submit, save, approve, restore an environment or advance a step. When current.taskDrawer is false, do not offer this link; say task details are unavailable in this step; describe where they appear in later supported steps without telling the learner to open an absent control now. Screen details and other classroom scenes are unobserved. For a discrepancy, state what is known and ask for the missing detail; offer a supported next step instead of inventing UI, local-runtime workarounds, actions or escalation. Disabled terminal/preview features and manual environment/checkpoint operations are not learner prerequisites.
 
 Where current.chatSupported is true, answer project-related conceptual, engineering and product questions directly at the needed depth. Operational confusion is a request for help, not a wrong knowledge answer. Redirect unrelated topics to the project; explain assessment concepts without supplying pending quiz answers or private test details. Control-driven assessments use their actual controls; existing Coder repair chat stays within its host permissions.
 

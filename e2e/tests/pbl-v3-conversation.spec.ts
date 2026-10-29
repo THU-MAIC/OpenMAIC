@@ -317,6 +317,17 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
         },
       ];
       view.needsOpening = true;
+      view.conversation!.push({
+        id: 'decision-directions',
+        speaker: 'discussion',
+        parts: [
+          {
+            kind: 'text',
+            id: 'decision-directions-text',
+            text: 'Open [Current task](#pbl-task) in the drawer above the message input to submit your decisions and reasons.',
+          },
+        ],
+      });
       view.revision++;
       return route.fulfill({ json: { view } });
     }
@@ -608,7 +619,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
     0,
   );
   // Teaching has no drawer; decisions expose only the actual current task.
-  await expect(task.getByRole('button', { name: /Current task details/ })).toHaveCount(0);
+  await expect(task.getByRole('button', { name: /^Current task$/ })).toHaveCount(0);
   await expect(details).toHaveCount(0);
   const originalStage = view.stage;
   const enterDecisions = task.getByRole('button', {
@@ -650,7 +661,26 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await expect(task.getByText('2/7', { exact: true })).toBeVisible();
   await expect(enterDecisions).toHaveCount(0);
   const composerBefore = await page.getByLabel('Your message', { exact: true }).boundingBox();
-  await task.getByRole('button', { name: /Current task details/ }).click();
+  const taskTrigger = task.getByRole('button', { name: 'Current task', exact: true });
+  await expect(taskTrigger.getByText('Current task', { exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Current task', exact: true }).click();
+  await expect(details.getByText('Where will tasks live?')).toBeVisible();
+  await expect(taskTrigger).toHaveAttribute('aria-expanded', 'true');
+  expect(await details.evaluate((el) => getComputedStyle(el).animationName)).toBe('pbl-task-open');
+  await expect
+    .poll(() =>
+      details.evaluate((el) =>
+        el.getAnimations().some((animation) => animation.playState === 'running'),
+      ),
+    )
+    .toBe(false);
+  const drawerBox = await details.boundingBox();
+  const triggerBox = await taskTrigger.boundingBox();
+  expect(drawerBox!.y + drawerBox!.height).toBeLessThanOrEqual(triggerBox!.y);
+  expect(advances).toBe(1);
+  await details.getByRole('button', { name: 'Close task details' }).click();
+  await expect(taskTrigger).toBeFocused();
+  await task.getByRole('button', { name: /^Current task$/ }).click();
   await expect(details.getByText('Where will tasks live?')).toBeVisible();
   let releaseDecision!: () => void;
   decisionGate = new Promise<void>((resolve) => {
@@ -681,7 +711,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   );
   await details.getByRole('button', { name: 'Close task details' }).press('Escape');
   await expect(details).toHaveCount(0);
-  await expect(task.getByRole('button', { name: /Current task details/ })).toBeFocused();
+  await expect(task.getByRole('button', { name: /^Current task$/ })).toBeFocused();
   // Production uses OpenPBL's current-task header and contextual sections, not repeated goals.
   const originalTask = view.task;
   view.stage = {
@@ -698,7 +728,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   view.decisionSummary = [{ id: 'storage', prompt: 'Task storage', choice: 'A Python list' }];
   view.revision++;
   await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
-  await task.getByRole('button', { name: /Current task details/ }).click();
+  await task.getByRole('button', { name: /^Current task$/ }).click();
   await expect(details.getByRole('heading', { name: 'Current task', exact: true })).toBeVisible();
   await expect(details.getByText('Add the first task', { exact: true })).toHaveCount(0);
   await expect(
@@ -1084,7 +1114,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await expect(
     task.getByRole('button', { name: 'Continue to Check your understanding', exact: true }),
   ).toHaveCount(0);
-  await task.getByRole('button', { name: /Current task details/ }).click();
+  await task.getByRole('button', { name: /^Current task$/ }).click();
   await expect(page.getByTestId('pbl-test-details')).toHaveAttribute('data-state', 'failed');
   await expect(
     details.getByText('Add one task: Output did not satisfy the contract', { exact: true }),
@@ -1141,7 +1171,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
       greens.includes(await enterQuiz.evaluate((el) => getComputedStyle(el).backgroundColor)),
     )
     .toBe(true);
-  await task.getByRole('button', { name: /Current task details/ }).click();
+  await task.getByRole('button', { name: /^Current task$/ }).click();
   await expect(page.getByTestId('pbl-test-details')).toHaveAttribute('data-state', 'passed');
   await expect(details.getByRole('listitem')).toHaveCount(2);
   await details.getByRole('button', { name: 'Close task details' }).click({ timeout: 7000 });
@@ -1156,11 +1186,11 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
     await page.getByRole('button', { name: 'Exit fullscreen workspace', exact: true }).click();
   await page.getByRole('button', { name: 'Expand to fullscreen workspace', exact: true }).click();
   await expect(page.getByLabel('Your message', { exact: true })).toBeInViewport();
-  await task.getByRole('button', { name: /Current task details/ }).click();
+  await task.getByRole('button', { name: /^Current task$/ }).click();
   await expect(details.getByRole('button', { name: 'Close task details' })).toBeInViewport();
   await page.keyboard.press('Escape');
   await expect(details).toHaveCount(0);
-  await expect(task.getByRole('button', { name: /Current task details/ })).toBeFocused();
+  await expect(task.getByRole('button', { name: /^Current task$/ })).toBeFocused();
   await page.getByRole('button', { name: 'Exit fullscreen workspace' }).click();
   await page.setViewportSize({ width: 390, height: 844 });
   if (
