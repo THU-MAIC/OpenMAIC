@@ -51,6 +51,14 @@ describe('preview grants', () => {
     vi.stubEnv('OPENMAIC_SANDBOX_PREVIEW_ORIGIN', pattern);
     expect(() => previewConfig()).toThrow();
   });
+  it('allows a same-site preview domain only with the explicit opt-in', () => {
+    vi.stubEnv('OPENMAIC_SANDBOX_PREVIEW_ORIGIN', 'https://{id}.preview.example.com');
+    expect(() => previewConfig()).toThrow();
+    vi.stubEnv('OPENMAIC_SANDBOX_PREVIEW_ALLOW_SAME_SITE', 'true');
+    expect(previewConfig().pattern).toBe('https://{id}.preview.example.com');
+    vi.stubEnv('OPENMAIC_SANDBOX_PREVIEW_ORIGIN', 'http://{id}.preview.example.com');
+    expect(() => previewConfig()).toThrow();
+  });
   it('requires signed machine requests with a bounded timestamp', () => {
     vi.useFakeTimers();
     const body = '{}';
