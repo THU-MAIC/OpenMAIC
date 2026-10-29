@@ -1,6 +1,9 @@
 'use client';
 
-import { MEDIA_MAX_DURATION_SEC } from '@/lib/types/media-limits';
+import {
+  extractionFailureDescription,
+  type MaterialExtractionReasonCode,
+} from '@/lib/types/material-extraction-failure';
 import { extractionLabelKey } from '@/lib/workbench/material-library-client';
 
 /**
@@ -108,6 +111,14 @@ export function CourseMentionMenu({
   readonly onPickMaterial?: (candidate: MaterialMentionCandidate) => void;
 }) {
   const { t } = useI18n();
+  // The page's explanation of a failure, with the numbers it states.
+  const failureGuidance = (
+    reasonCode: MaterialExtractionReasonCode,
+    candidate: MaterialMentionCandidate,
+  ) => {
+    const { key, values } = extractionFailureDescription(reasonCode, candidate.reasonValues);
+    return t(`workspace.knowledgeBase.failure.${reasonCode}.${key}`, values);
+  };
   const titleId = useId();
   const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -394,12 +405,7 @@ export function CourseMentionMenu({
                   ? candidate.reasonCode
                     ? t('workspace.courseMention.materialUnavailableGuidance', {
                         name: candidate.name,
-                        guidance: t(
-                          `workspace.knowledgeBase.failure.${candidate.reasonCode}.description`,
-                          {
-                            minutes: MEDIA_MAX_DURATION_SEC / 60,
-                          },
-                        ),
+                        guidance: failureGuidance(candidate.reasonCode, candidate),
                       })
                     : t('workspace.courseMention.materialUnavailable', {
                         name: candidate.name,

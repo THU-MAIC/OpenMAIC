@@ -137,6 +137,40 @@ describe('POST /api/parse-pdf with self-hosted MinerU', () => {
       });
     });
 
+    it('names a page-limit refusal with its counts only', async () => {
+      const mineru = await startLoopback((_req, res) => {
+        res.writeHead(422, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            error: {
+              code: 'pdf_too_many_pages',
+              message: 'PDF has 461 pages, which exceeds the 200-page limit internal-secret',
+            },
+          }),
+        );
+      });
+
+      const res = await postParsePdf({ providerId: 'mineru', baseUrl: mineru.origin });
+
+      expect(res.json).toMatchObject({
+        success: false,
+        error:
+          'MinerU refused the document: too many pages (status 422; 461 pages, limit 200 pages)',
+      });
+      expect(res.json.error).not.toContain('internal-secret');
+    });
+
+    it('reads only a bounded prefix of a large error body', async () => {
+      const mineru = await startLoopback((_req, res) => {
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('x'.repeat(4 * 1024 * 1024));
+      });
+
+      const res = await postParsePdf({ providerId: 'mineru', baseUrl: mineru.origin });
+
+      expect(res.json.error).toBe('MinerU API error (500)');
+    });
+
     it('keeps the missing-dependency classification without quoting the body', async () => {
       const mineru = await startLoopback((_req, res) => {
         res.writeHead(500, { 'Content-Type': 'text/plain' });

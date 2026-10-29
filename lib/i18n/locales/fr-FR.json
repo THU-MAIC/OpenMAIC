@@ -2260,6 +2260,12 @@
         "processing_interrupted": {
           "label": "Analyse non terminée",
           "description": "L’analyse n’a pas pu être terminée. Vous pouvez réessayer plus tard."
+        },
+        "too_many_pages": {
+          "label": "Trop de pages",
+          "description": "Ce PDF compte {{pages}} pages, au-delà de la limite d’analyse de {{maxPages}} pages. Divisez-le avant de l’importer, ou importez uniquement les chapitres nécessaires.",
+          "descriptionWithoutCount": "Ce PDF dépasse la limite d’analyse de {{maxPages}} pages. Divisez-le avant de l’importer, ou importez uniquement les chapitres nécessaires.",
+          "descriptionWithoutLimit": "Ce PDF compte plus de pages que le service d’analyse n’en accepte. Divisez-le avant de l’importer, ou importez uniquement les chapitres nécessaires."
         }
       },
       "status": {

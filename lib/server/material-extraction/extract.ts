@@ -30,7 +30,11 @@ import {
 } from '@/lib/server/agent-runtime/session-materials';
 import { decodeBase64 } from '@/lib/server/provider-result-fetch';
 
-import { isTransientExtractionError, MaterialExtractionError } from './errors';
+import {
+  isTransientExtractionError,
+  MaterialExtractionError,
+  MaterialSourceRefusedError,
+} from './errors';
 
 /** Which extractors a source's bytes go to: the registry seams both extraction paths share. */
 export interface ExtractorRegistryDependencies {
@@ -172,6 +176,7 @@ function wrapProviderError(error: unknown): MaterialExtractionError {
     {
       cause: error,
       reasonCode: error instanceof MaterialExtractionError ? error.reasonCode : undefined,
+      reasonValues: error instanceof MaterialExtractionError ? error.reasonValues : undefined,
     },
   );
 }
@@ -303,6 +308,8 @@ export async function runSourceExtraction(
     } catch (error) {
       errors.push(documentFailureLine(provider, error));
       failures.push(error);
+      // The source itself was refused: no other provider is tried for it.
+      if (error instanceof MaterialSourceRefusedError) break;
       continue;
     }
     return documentOutcome(artifact, provider);
@@ -329,13 +336,23 @@ export function documentFailureLine(provider: DocumentExtractorProvider, error: 
 /**
  * The failure once every document provider failed: retryable if any failure
  * was transient, and `service_unavailable` when no candidate was a service
- * the deployment configured (any other failure keeps no reason code).
+ * the deployment configured (any other failure keeps no reason code). A
+ * service that refused the source itself ends the walk: that refusal, never
+ * retried, with its reason.
  */
 export function documentExtractionFailure(
   errors: string[],
   failures: unknown[],
   noServiceConfigured = false,
 ): MaterialExtractionError {
+  const refusal = failures.find((failure) => failure instanceof MaterialSourceRefusedError);
+  if (refusal) {
+    return new MaterialExtractionError(`document extraction failed (${errors.join('; ')})`, false, {
+      cause: refusal,
+      reasonCode: refusal.reasonCode,
+      reasonValues: refusal.reasonValues,
+    });
+  }
   return new MaterialExtractionError(
     `document extraction failed (${errors.join('; ')})`,
     failures.some(isTransientExtractionError),

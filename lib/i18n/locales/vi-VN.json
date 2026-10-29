@@ -2260,6 +2260,12 @@
         "processing_interrupted": {
           "label": "Phân tích chưa hoàn tất",
           "description": "Không thể hoàn tất phân tích. Bạn có thể thử lại sau."
+        },
+        "too_many_pages": {
+          "label": "Quá nhiều trang",
+          "description": "Tệp PDF này có {{pages}} trang, vượt quá giới hạn phân tích {{maxPages}} trang. Hãy chia nhỏ tệp rồi tải lên, hoặc chỉ tải lên các chương cần thiết.",
+          "descriptionWithoutCount": "Tệp PDF này vượt quá giới hạn phân tích {{maxPages}} trang. Hãy chia nhỏ tệp rồi tải lên, hoặc chỉ tải lên các chương cần thiết.",
+          "descriptionWithoutLimit": "Tệp PDF này có nhiều trang hơn mức dịch vụ phân tích chấp nhận. Hãy chia nhỏ tệp rồi tải lên, hoặc chỉ tải lên các chương cần thiết."
         }
       },
       "status": {

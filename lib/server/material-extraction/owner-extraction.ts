@@ -74,7 +74,11 @@ import {
 import { resolveExtractionServices, type ExtractionServices } from './services';
 
 import { ownerDocumentOutcome } from './document-images';
-import { isTransientExtractionError, MaterialExtractionError } from './errors';
+import {
+  isTransientExtractionError,
+  MaterialExtractionError,
+  MaterialSourceRefusedError,
+} from './errors';
 import {
   decodeMediaAssetData,
   documentExtractionFailure,
@@ -504,6 +508,8 @@ async function extractOrReuse(
       if (error instanceof DocumentImageParseError || signal?.aborted) throw error;
       errors.push(documentFailureLine(provider, error));
       failures.push(error);
+      // The source itself was refused: no other provider is tried for it.
+      if (error instanceof MaterialSourceRefusedError) break;
     }
   }
   throw documentExtractionFailure(errors, failures, plan.noServiceConfigured);
@@ -626,6 +632,9 @@ export async function runNextOwnerExtraction(
             : error instanceof MaterialExtractionError
               ? error.reasonCode
               : undefined,
+        ...(error instanceof MaterialExtractionError && error.reasonValues
+          ? { reasonValues: error.reasonValues }
+          : {}),
       });
     }
   } finally {

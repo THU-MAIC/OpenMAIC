@@ -86,6 +86,8 @@ export interface OwnerMaterialTruncation {
  */
 export interface OwnerMaterialExtraction {
   reasonCode?: import('@/lib/types/material-extraction-failure').MaterialExtractionReasonCode;
+  /** The numbers a failure's explanation states (`too_many_pages`: pages, the service's limit). */
+  reasonValues?: import('@/lib/types/material-extraction-failure').MaterialExtractionReasonValues;
   status: OwnerMaterialExtractionStatus;
   /** Why it failed, as the extractor said it. */
   error?: string;

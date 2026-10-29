@@ -14,6 +14,7 @@ import {
   cancelledImageDownloadScenario,
   documentFallbackScenario,
   documentServiceUnavailableScenario,
+  tooManyPagesScenario,
   cacheCollectorOrderScenario,
   claimIntoSameContentScenario,
   sameKeyConcurrentSourcesScenario,
@@ -95,6 +96,10 @@ describe('owner-level material extraction (PGlite)', () => {
 
   it('keeps document fallback, and a PDF’s own failure, free of that reason', async () => {
     await documentFallbackScenario(await boot());
+  });
+
+  it('ends a PDF refused for too many pages at the refusal, with its counts', async () => {
+    await tooManyPagesScenario(await boot());
   });
 
   it('keeps public failure reasons on current terminal claims only', async () => {

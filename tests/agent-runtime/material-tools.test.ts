@@ -40,6 +40,7 @@ function ownerSource(
     revision?: string;
     error?: string | null;
     reasonCode?: string;
+    reasonValues?: Record<string, unknown>;
   } = {},
 ): OwnerMaterialEntry {
   const status = options.status ?? (options.revision ? 'done' : 'idle');
@@ -59,6 +60,7 @@ function ownerSource(
     extraction: {
       status,
       ...(options.reasonCode ? { reasonCode: options.reasonCode } : {}),
+      ...(options.reasonValues ? { reasonValues: options.reasonValues } : {}),
     } as OwnerMaterialEntry['extraction'],
     createdAt: 0,
     deletedAt: null,
@@ -674,6 +676,38 @@ describe('material agent tools', () => {
       expect(text).not.toContain('PARSER_API_KEY');
     },
   );
+
+  it('tells the model the stored page counts of a library PDF refused for too many pages', async () => {
+    const tools = buildMaterialTools({
+      sessionId: 'ses_1',
+      listLibrary: async () => [
+        {
+          ...ownerSource({
+            status: 'failed',
+            reasonCode: 'too_many_pages',
+            reasonValues: { pages: 461, maxPages: 200 },
+          }),
+          id: 'src_long',
+        },
+      ],
+      attachedIds: async () => new Set<string>(),
+      locale: () => 'en-US',
+    });
+    const { details } = await tool(tools, 'list_materials').execute('c1', {
+      scope: 'library',
+    } as never);
+    expect(
+      (details as { materials: { extraction: Record<string, unknown> }[] }).materials[0]!
+        .extraction,
+    ).toEqual({
+      status: 'failed',
+      statusLabel: 'Parse failed',
+      reasonCode: 'too_many_pages',
+      reason: 'Too many pages',
+      guidance:
+        'This PDF has 461 pages, more than the 200-page parsing limit. Split it and upload the parts, or upload only the chapters you need.',
+    });
+  });
 
   it('reads an unknown or missing stored code as the generic failure', async () => {
     const tools = buildMaterialTools({
