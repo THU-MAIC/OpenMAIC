@@ -1,11 +1,17 @@
 import { Type } from 'typebox';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 
+import { resolveOwnedAsset } from '@/lib/persistence/resolve-server-asset';
 import { proxyFetch } from '@/lib/server/proxy-fetch';
 import { resolveRenderServiceUrl } from '@/lib/server/render-service';
 import type { Scene } from '@/lib/types/stage';
 import type { CourseStore } from './course-tools';
 import { COURSE_STAGE_ID_DESCRIPTION } from './course-stage';
+import {
+  prepareScenePreview,
+  type InteractiveLibraryFileReader,
+  type PreviewAssetResolution,
+} from './scene-preview-content';
 
 const Params = Type.Object({
   stageId: Type.String({ description: COURSE_STAGE_ID_DESCRIPTION }),
@@ -38,6 +44,62 @@ export interface ScenePreviewDeps {
   ownerId: string;
   renderService?: ReturnType<typeof resolveRenderServiceUrl>;
   fetchPreview?: typeof proxyFetch;
+  /**
+   * Read an asset's bytes as `ownerId` may read them (the persistence route's
+   * rule), refusing more than `maxByteLength`. Defaults to the server asset pool.
+   */
+  readAsset?: (
+    ownerId: string,
+    assetId: string,
+    maxByteLength: number,
+  ) => Promise<PreviewAssetResolution>;
+  /** Read a deployment-hosted interactive library file; defaults to `public/`. */
+  readLibraryFile?: InteractiveLibraryFileReader;
+}
+
+const readOwnedPreviewAsset: NonNullable<ScenePreviewDeps['readAsset']> = (
+  ownerId,
+  assetId,
+  maxByteLength,
+) => resolveOwnedAsset(assetId, ownerId, process.env.DATABASE_URL ?? '', maxByteLength);
+
+/** Longest render-service refusal reason relayed to the agent. */
+const MAX_REFUSAL_CHARS = 500;
+
+/**
+ * The reason a refusing render service gives: its JSON `error` (with `reason`,
+ * the machine code admission refusals carry), else the body text.
+ */
+async function refusalReason(response: Response): Promise<string | undefined> {
+  let text: string;
+  try {
+    text = (await response.text()).trim();
+  } catch {
+    return undefined;
+  }
+  if (!text) return undefined;
+  let message = text;
+  try {
+    const body = JSON.parse(text) as unknown;
+    if (body && typeof body === 'object' && !Array.isArray(body)) {
+      const { error, reason } = body as { error?: unknown; reason?: unknown };
+      const prose =
+        typeof error === 'string'
+          ? error
+          : error &&
+              typeof error === 'object' &&
+              typeof (error as { message?: unknown }).message === 'string'
+            ? (error as { message: string }).message
+            : undefined;
+      if (prose) message = typeof reason === 'string' && reason ? `${prose} (${reason})` : prose;
+    }
+  } catch {
+    // Not JSON: relay the text as is.
+  }
+  message = message.replace(/\s+/g, ' ');
+  return message.length > MAX_REFUSAL_CHARS
+    ? `${message.slice(0, MAX_REFUSAL_CHARS - 3)}...`
+    : message;
 }
 
 function failure(sceneId: string, message: string) {
@@ -94,6 +156,24 @@ export function buildScenePreviewTools(deps: ScenePreviewDeps): AgentTool<never,
               : 'the course has no pages yet',
           );
         }
+        // The service draws only self-contained scenes: inline the page's media
+        // and hosted libraries into a copy, never into the stored document.
+        let prepared: Awaited<ReturnType<typeof prepareScenePreview>>;
+        try {
+          prepared = await prepareScenePreview(scene, {
+            readAsset: (assetId, maxByteLength) =>
+              (deps.readAsset ?? readOwnedPreviewAsset)(deps.ownerId, assetId, maxByteLength),
+            readLibraryFile: deps.readLibraryFile,
+          });
+        } catch (error) {
+          if (signal?.aborted) return failure(scene.id, 'operation aborted');
+          return failure(
+            scene.id,
+            `could not prepare the page for preview: ${error instanceof Error ? error.message : 'unknown error'}`,
+          );
+        }
+        if (signal?.aborted) return failure(scene.id, 'operation aborted');
+        if (!prepared.ok) return failure(scene.id, prepared.reason);
         const viewport = {
           width: params.viewport?.width ?? 1280,
           height: params.viewport?.height ?? 720,
@@ -108,7 +188,7 @@ export function buildScenePreviewTools(deps: ScenePreviewDeps): AgentTool<never,
             },
             body: JSON.stringify({
               version: 1,
-              scene,
+              scene: prepared.scene,
               stage: { id: doc.stage.id, name: doc.stage.name },
               viewport,
             }),
@@ -116,13 +196,22 @@ export function buildScenePreviewTools(deps: ScenePreviewDeps): AgentTool<never,
               ? AbortSignal.any([signal, AbortSignal.timeout(25_000)])
               : AbortSignal.timeout(25_000),
           });
-          if (!response.ok)
-            return failure(scene.id, `render service returned HTTP ${response.status}`);
+          if (!response.ok) {
+            const reason = await refusalReason(response);
+            const notes = prepared.notes.length ? ` ${prepared.notes.join(' ')}` : '';
+            return failure(
+              scene.id,
+              `render service returned HTTP ${response.status}${reason ? `: ${reason}` : ''}.${notes}`,
+            );
+          }
           const bytes = Buffer.from(await response.arrayBuffer());
           if (!bytes.length) return failure(scene.id, 'render service returned an empty image');
           return {
             content: [
               { type: 'image' as const, data: bytes.toString('base64'), mimeType: 'image/png' },
+              ...(prepared.notes.length
+                ? [{ type: 'text' as const, text: `Preview notes: ${prepared.notes.join(' ')}` }]
+                : []),
             ],
             details: { sceneId: scene.id, order: scene.order, viewport, bytes: bytes.length },
           };
