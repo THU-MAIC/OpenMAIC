@@ -15,12 +15,17 @@ import { UPGRADE_SCENARIOS } from './_owner-material-upgrade-scenarios';
 
 const contractUrl = process.env.PG_CONTRACT_URL;
 
-/** Wait until some backend in this database is blocked on a lock. */
-async function waitForLockWaiter(pool: Pool): Promise<void> {
+/** Wait until this test's waiter backend is blocked by its holder's locks. */
+async function waitForLockWaiter(
+  pool: Pool,
+  waiterPid: number,
+  holderPid: number,
+): Promise<void> {
   for (let attempt = 0; attempt < 400; attempt += 1) {
     const waiting = await pool.query(
       `SELECT 1 FROM pg_stat_activity
-        WHERE wait_event_type = 'Lock' AND datname = current_database()`,
+        WHERE pid = $1::int AND $2::int = ANY(pg_blocking_pids(pid))`,
+      [waiterPid, holderPid],
     );
     if (waiting.rows.length > 0) return;
     await new Promise((resolve) => setTimeout(resolve, 25));
@@ -96,6 +101,13 @@ describe.skipIf(!contractUrl)('owner material quota reservations on PostgreSQL',
     const first = await pool.connect();
     const second = await pool.connect();
     try {
+      const holderPid = Number(
+        (await first.query<{ pid: number | string }>('SELECT pg_backend_pid() AS pid')).rows[0]!.pid,
+      );
+      const waiterPid = Number(
+        (await second.query<{ pid: number | string }>('SELECT pg_backend_pid() AS pid')).rows[0]!.pid,
+      );
+
       await first.query('BEGIN');
       await first.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [lockKey]);
       const before = await first.query<{ count: string }>(usageSql, ['owner-1']);
@@ -113,15 +125,16 @@ describe.skipIf(!contractUrl)('owner material quota reservations on PostgreSQL',
         await second.query(insertSql, ['mat-b', 'b.pdf', Date.now()]);
         await second.query('COMMIT');
       })();
+      const outcome = expect(secondReservation).rejects.toBeInstanceOf(MaterialQuotaExceededError);
 
       // Barrier after the first usage read: the second connection is genuinely
       // blocked on the advisory lock, before it has read any usage.
-      await waitForLockWaiter(pool);
+      await waitForLockWaiter(pool, waiterPid, holderPid);
 
       await first.query(insertSql, ['mat-a', 'a.pdf', Date.now()]);
       await first.query('COMMIT');
 
-      await expect(secondReservation).rejects.toBeInstanceOf(MaterialQuotaExceededError);
+      await outcome;
       const rows = await pool.query<{ id: string }>('SELECT id FROM owner_material');
       expect(rows.rows.map((row) => row.id)).toEqual(['mat-a']);
     } finally {
