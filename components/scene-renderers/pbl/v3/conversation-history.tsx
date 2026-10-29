@@ -109,8 +109,10 @@ export function ConversationHistory({
           overlayClassName="z-[140]"
           className="z-[150] flex max-h-[85dvh] w-[min(56rem,90vw)] flex-col gap-3"
           onCloseAutoFocus={(event) => {
+            // The opener is outside DialogTrigger; restore it only for ordinary closes.
             // Accepted navigation supplies its own focus target (IDE/report).
-            if (navigating.current) event.preventDefault();
+            event.preventDefault();
+            if (!navigating.current) trigger.current?.focus();
             navigating.current = false;
           }}
         >

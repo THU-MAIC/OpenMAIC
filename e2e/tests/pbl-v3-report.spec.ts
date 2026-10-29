@@ -323,7 +323,7 @@ test('completed project reports stay discoverable, show facts before analysis, a
     'aria-selected',
     'true',
   );
-  expect(await page.locator('.monaco-editor .selected-text').count()).toBeGreaterThan(0);
+  await expect.poll(() => page.locator('.monaco-editor .selected-text').count()).toBeGreaterThan(0);
   await expect(page.locator('.monaco-editor textarea').first()).not.toBeEditable();
   await historyTrigger.click();
   await page.keyboard.press('Escape');

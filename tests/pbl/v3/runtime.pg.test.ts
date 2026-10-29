@@ -4599,7 +4599,8 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     );
     expect(mocked.modelCalls - callsBefore).toBe(3);
     expect(mocked.modelSystems.at(-1)).toContain(delivered);
-    expect(mocked.modelSystems.at(-1)).toContain('record that SAME question');
+    expect(mocked.modelSystems.at(-1)).toContain('record that SAME reply');
+    expect(mocked.modelSystems.at(-1)).toContain('verbatim into explanation');
     expect((await agents.getSession(queued.sessionId))?.status).toBe('succeeded');
     expect(await agents.listUserMessages(queued.sessionId)).toEqual(inputs);
     expect((await store.binding(queued.sessionId))?.guided?.pending?.question).toBe(question);
