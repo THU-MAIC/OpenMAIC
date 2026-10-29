@@ -795,6 +795,54 @@ describe.skipIf(!contractUrl)('PgAssetStore with PostgreSQL 16', () => {
       );
     }, 20_000);
 
+    test('live pins on the oldest blobs do not stall the page or keep it capped', async () => {
+      const layer = new GatedByteStore();
+      const registry = stagedStore(layer);
+      const batchSize = 2;
+      // The `batchSize` oldest unreferenced blobs are being staged again.
+      const pinned = ['pinned one', 'pinned two'];
+      for (const [index, value] of pinned.entries()) {
+        const id = await registry.put(principal, new Blob([value]));
+        await registry.remove(principal, id);
+        const { contentHash } = await contentHashOf(new Blob([value]));
+        await pool.query('UPDATE asset_blobs SET unreferenced_at = $2 WHERE content_hash = $1', [
+          contentHash,
+          `2000-01-0${index + 1}T00:00:00.000Z`,
+        ]);
+        await registry.stageBytes(new Blob([value]));
+      }
+      // A younger blob, still well past the grace period, that nothing pins.
+      const free = new Blob(['free to reclaim']);
+      const { contentHash: freeHash } = await contentHashOf(free);
+      await registry.remove(principal, await registry.put(principal, free));
+      await pool.query(
+        `UPDATE asset_blobs SET unreferenced_at = '2001-01-01T00:00:00.000Z'
+                         WHERE content_hash = $1`,
+        [freeHash],
+      );
+      const collector = new AssetCollector(pool as Queryable, layer, {
+        graceMs: 0,
+        batchSize,
+        now: () => new Date('2026-01-01T00:00:00.000Z'),
+        withTransaction: transactionFor(pool),
+      });
+
+      const first = await collector.collectPass();
+      expect(first).toMatchObject({ collected: 1, capped: false });
+      expect(await layer.read(freeHash)).toBeNull();
+
+      // A caller draining while `capped` stops.
+      let passes = 1;
+      let pass = first;
+      while (pass.capped && passes < 10) {
+        pass = await collector.collectPass();
+        passes += 1;
+      }
+      expect(pass.capped).toBe(false);
+      expect(passes).toBe(1);
+      expect((await pool.query('SELECT 1 FROM asset_blob_stages')).rows).toHaveLength(2);
+    });
+
     test('releasing a stage lets its bytes drain, and releasing again is a no-op', async () => {
       const layer = new GatedByteStore();
       const registry = stagedStore(layer);

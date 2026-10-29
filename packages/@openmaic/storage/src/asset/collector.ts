@@ -588,9 +588,29 @@ export class AssetCollector {
         // The hash is the tiebreaker within one timestamp only, where the tied
         // set is bounded and every member of it is taken by the same pass or
         // the next one.
+        //
+        // The page holds only blobs the locked recheck below would take: no
+        // entry names them and no live stage pin holds them. A row that fails
+        // either test is skipped by that recheck without being deleted, so a
+        // page that kept such rows would select them again on the next pass;
+        // a backlog of at least `batchSize` of them -- stages over old
+        // unreferenced blobs, say -- would then stall every later blob and
+        // report `capped` forever. Filtering them here keeps the page moving
+        // past them, and the locked recheck still decides races. Both
+        // subqueries are index lookups (`asset_entries_content_hash_idx`,
+        // `asset_blob_stages_content_hash_idx`).
         `SELECT content_hash
            FROM asset_blobs
           WHERE unreferenced_at < $1::timestamptz
+            AND NOT EXISTS (
+              SELECT 1 FROM asset_entries AS entries
+               WHERE entries.content_hash = asset_blobs.content_hash
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM asset_blob_stages AS stages
+               WHERE stages.content_hash = asset_blobs.content_hash
+                 AND stages.expires_at > now()
+            )
           ORDER BY unreferenced_at ASC, content_hash ASC
           LIMIT $2`,
         [cutoff, this.batchSize],
