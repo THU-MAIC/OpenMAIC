@@ -18,6 +18,9 @@ interface EditChromeRootProps {
   readonly scene: Scene;
   readonly isEditable: boolean;
   readonly onToggleEditMode?: () => void;
+  /** See `HeaderControls`: Learn | Edit and the way into the workspace. */
+  readonly workbenchControls?: boolean;
+  readonly onOpenInWorkspace?: () => void;
 }
 
 /**
@@ -35,7 +38,13 @@ interface EditChromeRootProps {
  * `scene` is required (non-null). The parent gates mounting on
  * `mode === 'edit' && currentScene` to satisfy this contract.
  */
-export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChromeRootProps) {
+export function EditChromeRoot({
+  scene,
+  isEditable,
+  onToggleEditMode,
+  workbenchControls,
+  onOpenInWorkspace,
+}: EditChromeRootProps) {
   // Hosted inside the workbench panel? Then two pieces of chrome are
   // meaningless here: the Pro Switch (the panel is Pro-locked; there is
   // nowhere to toggle to) and the Edit-with-AI right rail (the workbench
@@ -104,6 +113,8 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChro
       mode="edit"
       canEdit={isEditable}
       onToggleEditMode={isMaicEditorEnabled() && !inWorkbenchPanel ? onToggleEditMode : undefined}
+      workbenchControls={workbenchControls}
+      onOpenInWorkspace={onOpenInWorkspace}
     />
   );
 

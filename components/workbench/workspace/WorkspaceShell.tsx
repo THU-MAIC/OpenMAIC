@@ -1738,7 +1738,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           browser={classroomBrowser}
           hidden={!classroomOpen || previewShowing}
           readOnly={readOnlyCourse}
-          playback={playbackOn}
+          fullscreen={playbackOn}
           // Symmetric with the conversation's fold: offered only while both
           // panes are on screen (the last visible pane cannot fold — see
           // `resolveWorkspaceRender`). Its button lives in the pane's own header.

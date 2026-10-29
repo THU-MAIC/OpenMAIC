@@ -12,7 +12,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from 'react';
 import { useStageStore } from '@/lib/store';
 import { PENDING_SCENE_ID } from '@/lib/store/stage';
@@ -111,13 +110,14 @@ interface PlaybackChromeRootProps {
   readonly canEnterProMode?: boolean;
   /** Edit control click handler — parent coordinates teardown + mode flip. */
   readonly onEnterProMode?: () => void;
-  /** The edit control opens the course in the workspace. */
-  readonly editOpensWorkspace?: boolean;
-  readonly headerBackControl?: ReactNode;
-  readonly hideHeaderBackControl?: boolean;
+  /**
+   * The workbench is part of this build: the header offers Learn | Edit and,
+   * with `onOpenInWorkspace`, the way into the workspace (see `HeaderControls`).
+   */
+  readonly workbenchControls?: boolean;
+  readonly onOpenInWorkspace?: () => void;
+  /** The workspace pane draws its own header around a hosted classroom. */
   readonly hideHeader?: boolean;
-  readonly hideHeaderGlobalControls?: boolean;
-  readonly hideHeaderCourseActions?: boolean;
   readonly onInteractivePickerChange?: (state: PlaybackInteractivePickerState | null) => void;
 }
 
@@ -135,12 +135,9 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       generationFailureMessage,
       canEnterProMode,
       onEnterProMode,
-      editOpensWorkspace,
-      headerBackControl,
-      hideHeaderBackControl,
+      workbenchControls,
+      onOpenInWorkspace,
       hideHeader,
-      hideHeaderGlobalControls,
-      hideHeaderCourseActions,
       onInteractivePickerChange,
     },
     ref,
@@ -1730,11 +1727,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               mode={mode}
               canEdit={!!canEnterProMode}
               onToggleEditMode={onEnterProMode}
-              editOpensWorkspace={editOpensWorkspace}
-              backControl={headerBackControl}
-              hideBackControl={hideHeaderBackControl}
-              hideGlobalControls={hideHeaderGlobalControls}
-              hideCourseActions={hideHeaderCourseActions}
+              workbenchControls={workbenchControls}
+              onOpenInWorkspace={onOpenInWorkspace}
             />
           )}
 

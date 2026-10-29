@@ -1,6 +1,5 @@
 'use client';
 
-import type { ReactNode } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -13,35 +12,22 @@ interface HeaderProps {
   readonly mode?: StageMode;
   readonly canEdit?: boolean;
   readonly onToggleEditMode?: () => void;
-  /** See `HeaderControls`: the edit control opens the workspace. */
-  readonly editOpensWorkspace?: boolean;
-  /** Replaces the default back-to-home arrow as the header's leftmost
-      control. `PlaybackChromeRoot` passes the workbench's return control
-      here while a session is attached and full-screen playback is on, so the
-      top-left back affordance becomes the back-to-workspace control instead of a home arrow
-      (which would navigate away from the hosted classroom entirely). */
-  readonly backControl?: ReactNode;
-  /** Drops the back slot entirely (no `backControl`, no home arrow). The
-      embedded workbench form uses this: the conversation sits beside/above
-      the classroom, so any back affordance here would duplicate the chat's
-      own back and could exit the workbench. */
-  readonly hideBackControl?: boolean;
-  /** Hide application-global controls in a workbench-attached classroom. */
-  readonly hideGlobalControls?: boolean;
-  /** Hide course-level share/export in a workbench-attached classroom. */
-  readonly hideCourseActions?: boolean;
+  /** See `HeaderControls`: Learn | Edit and the way into the workspace. */
+  readonly workbenchControls?: boolean;
+  readonly onOpenInWorkspace?: () => void;
 }
 
+/**
+ * The standalone classroom's header (`/classroom/[id]`). A classroom hosted
+ * in the workspace has no header of its own: the pane draws one around it.
+ */
 export function Header({
   currentSceneTitle,
   mode,
   canEdit,
   onToggleEditMode,
-  editOpensWorkspace,
-  backControl,
-  hideBackControl,
-  hideGlobalControls,
-  hideCourseActions,
+  workbenchControls,
+  onOpenInWorkspace,
 }: HeaderProps) {
   const { t } = useI18n();
   const router = useRouter();
@@ -52,18 +38,15 @@ export function Header({
     <>
       <header className="h-20 px-8 flex items-center justify-between z-10 bg-transparent gap-4">
         <div className="flex items-center gap-3 min-w-0 flex-1">
-          {hideBackControl
-            ? null
-            : (backControl ?? (
-                <button
-                  onClick={() => exitClassroom(router, searchParams)}
-                  className="shrink-0 p-2 rounded-lg text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
-                  title={exitLabel}
-                  aria-label={exitLabel}
-                >
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
-              ))}
+          <button
+            data-testid="classroom-exit"
+            onClick={() => exitClassroom(router, searchParams)}
+            className="shrink-0 p-2 rounded-lg text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+            title={exitLabel}
+            aria-label={exitLabel}
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
           {/* Title block — hidden when `mode === 'edit'`. Header lives
               inside `PlaybackChromeRoot`, which is unmounted by `Stage`
               once mode flips to 'edit', so in steady state this branch
@@ -88,15 +71,12 @@ export function Header({
           )}
         </div>
 
-        {/* Standalone classroom keeps the full cluster. Workbench-attached
-            classrooms omit both the global capsule and course share/export. */}
         <HeaderControls
           mode={mode}
           canEdit={canEdit}
           onToggleEditMode={onToggleEditMode}
-          editOpensWorkspace={editOpensWorkspace}
-          showGlobalControls={!hideGlobalControls}
-          showCourseActions={!hideCourseActions}
+          workbenchControls={workbenchControls}
+          onOpenInWorkspace={onOpenInWorkspace}
         />
       </header>
     </>
