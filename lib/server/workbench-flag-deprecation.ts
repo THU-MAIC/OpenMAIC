@@ -3,7 +3,7 @@
  *
  * `NEXT_PUBLIC_PRO_WORKBENCH_ENABLED` was renamed to
  * `NEXT_PUBLIC_WORKBENCH_ENABLED`. The old name is still read, when the new
- * one is unset or empty, until 1.4.0 (see `isWorkbenchEnabled` in
+ * one is unset or empty, until 1.6.0 (see `isWorkbenchEnabled` in
  * `lib/config/feature-flags.ts`). This warns exactly when that fallback is
  * taken, so a deployment learns of the rename before the old name stops
  * working. A warning, never a boot failure.
@@ -28,7 +28,7 @@ export function warnIfDeprecatedWorkbenchFlagIsUsed(): void {
   if (previous === undefined || previous === '') return;
   warned = true;
   log.warn(
-    'NEXT_PUBLIC_PRO_WORKBENCH_ENABLED is deprecated and will be removed in 1.4.0. ' +
+    'NEXT_PUBLIC_PRO_WORKBENCH_ENABLED is deprecated and will be removed in 1.6.0. ' +
       'Rename it to NEXT_PUBLIC_WORKBENCH_ENABLED and rebuild.',
   );
 }

@@ -44,7 +44,7 @@ export async function register(): Promise<void> {
     warnIfAccessCodeIsUnset(process.env.ACCESS_CODE);
   }
 
-  // Warn-only: the workbench flag's previous name, still read until 1.4.0
+  // Warn-only: the workbench flag's previous name, still read until 1.6.0
   // (lib/server/workbench-flag-deprecation.ts).
   const { warnIfDeprecatedWorkbenchFlagIsUsed } =
     await import('@/lib/server/workbench-flag-deprecation');

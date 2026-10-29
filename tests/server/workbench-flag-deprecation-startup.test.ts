@@ -66,7 +66,7 @@ describe('deprecated workbench flag startup warning', () => {
     expect(console.warn).toHaveBeenCalledOnce();
     expect(console.warn).toHaveBeenCalledWith(
       expect.stringContaining(
-        'NEXT_PUBLIC_PRO_WORKBENCH_ENABLED is deprecated and will be removed in 1.4.0',
+        'NEXT_PUBLIC_PRO_WORKBENCH_ENABLED is deprecated and will be removed in 1.6.0',
       ),
     );
     expect(console.warn).toHaveBeenCalledWith(

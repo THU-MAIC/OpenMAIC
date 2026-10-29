@@ -50,7 +50,7 @@ export function isServerPersistenceConfigured(): boolean {
  * bundles; both gates must be on before a workbench page is reachable.
  *
  * `NEXT_PUBLIC_PRO_WORKBENCH_ENABLED` is the previous name, still read when the
- * new one is unset. It is kept for one release so existing deployments keep
+ * new one is unset, until its removal in 1.6.0, so existing deployments keep
  * their workbench across the rename.
  */
 export function isWorkbenchEnabled(): boolean {
