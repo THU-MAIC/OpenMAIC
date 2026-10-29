@@ -1007,7 +1007,7 @@ export function WorkspaceRail({
             src={brand.logoSrc}
             alt=""
             aria-hidden="true"
-            className="h-[22px] w-auto max-w-[128px] shrink-0"
+            className="ws-wordmark h-[22px] w-auto max-w-[128px] shrink-0"
           />
         </HomeLink>
         {/* THE rail's header, and therefore where the rail folds — the same

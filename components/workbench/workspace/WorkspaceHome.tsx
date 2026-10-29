@@ -112,7 +112,7 @@ export function WorkspaceHome({
                   src={brand.logoSrc}
                   alt={brand.productName}
                   data-testid="pro-workspace-hero-logo"
-                  className="ws-hero-logo"
+                  className="ws-hero-logo ws-wordmark"
                 />
               )}
             </div>

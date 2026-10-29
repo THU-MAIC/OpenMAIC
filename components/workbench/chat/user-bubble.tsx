@@ -1,9 +1,9 @@
 'use client';
 
 /**
- * User bubble — solid fill (the OpenPBL shape: `bg-primary` on
- * `primary-foreground`, tightened trailing corner). Right alignment is the
- * whole authorship signal; there is no avatar and no name.
+ * User bubble — a soft violet fill with ink text and a tightened trailing
+ * corner. Right alignment is the whole authorship signal; there is no avatar
+ * and no name.
  */
 import { BookOpen, Paperclip } from 'lucide-react';
 import type { ElementRef } from '@/lib/workbench/element-refs';

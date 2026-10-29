@@ -1138,21 +1138,6 @@
   box-shadow: 0 0 0 1px var(--ws-accent-thread);
 }
 
-/* ── Rail foot ───────────────────────────────────────────────────────────
-   SiteHeader's own widgets, dropped into the rail. They bring their own
-   (grey-ramp) styling; this only quiets them to the rail's contrast and gives
-   the cluster a divider of the rail's own kind. */
-.ws-utils {
-  color: var(--ws-ink-mute);
-}
-
-.ws-utils-sep {
-  width: 1px;
-  height: 16px;
-  margin: 0 4px;
-  background: var(--ws-line);
-}
-
 /* ── Resize handle ───────────────────────────────────────────────────────
    A 6px hit strip straddles each pane edge, but the only visible affordance is
    the seam itself: a fine resting thread that strengthens on hover. On a seam
@@ -1720,43 +1705,6 @@
   clip-path: inset(50%);
 }
 
-/* Full-screen classroom playback hosts this existing control inside the
-   classroom chrome. It inherits the rail row's quiet ghost language: compact
-   by default, a soft tint only on hover. The ArrowLeft's shaft is hidden so
-   the visible mark is the requested chevron-left from the same Lucide path. */
-.ws-root [data-testid='workbench-return'] {
-  height: 28px;
-  gap: 4px;
-  padding: 0 7px;
-  border-radius: 7px;
-  color: var(--ws-ink-mute);
-  background: transparent;
-  transition:
-    background-color 160ms var(--ws-ease),
-    color 160ms var(--ws-ease);
-}
-
-.ws-root [data-testid='workbench-return']:hover {
-  color: var(--ws-ink);
-  background: var(--ws-tint);
-}
-
-.ws-root [data-testid='workbench-return']:focus-visible {
-  outline: none;
-  color: var(--ws-ink);
-  background: var(--ws-tint);
-  box-shadow: 0 0 0 1px var(--ws-accent-thread);
-}
-
-.ws-root [data-testid='workbench-return'] svg {
-  width: 14px;
-  height: 14px;
-}
-
-.ws-root [data-testid='workbench-return'] svg path:last-child {
-  display: none;
-}
-
 /* ── Slim navigation rail ────────────────────────────────────────────────
    The collapsed navigation: icons only, same glass, same hover pill. */
 .ws-mini {
@@ -1808,10 +1756,8 @@
   box-shadow: 0 0 0 2px var(--ws-accent-thread);
 }
 
-/* ── Utility overflow ────────────────────────────────────────────────────
-   The ⋯ matches its neighbours in the foot, which are SiteHeader's 32px
-   round ghost buttons — a differently-shaped sibling would read as a
-   different kind of thing. */
+/* ── Small round ghost buttons ───────────────────────────────────────────
+   The knowledge base dialogs' close and spacer controls. */
 .ws-util-btn {
   display: inline-flex;
   align-items: center;
@@ -1833,63 +1779,6 @@
 .ws-util-btn:focus-visible {
   outline: none;
   box-shadow: 0 0 0 1px var(--ws-accent-thread);
-}
-
-/* The panel is portalled to `.ws-root` and positioned against the viewport,
-   so it is never clipped by the rail's scrolling body nor re-based by the
-   rail's backdrop-filter. `z-index` clears the rail (10) and the panes. */
-.ws-pop {
-  position: fixed;
-  z-index: 60;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  width: max-content;
-  padding: 4px 6px;
-  border-radius: 12px;
-  border: 1px solid var(--ws-line);
-  background-color: var(--ws-raised);
-  background-image: var(--ws-grain);
-  box-shadow: var(--ws-lift);
-  animation: ws-pop-in 140ms var(--ws-ease) both;
-}
-
-.ws-pop:focus {
-  outline: none;
-}
-
-/* One row, in the same order and at the same size as the foot cluster it
-   continues — the overflow is the rest of that cluster, not a second kind of
-   menu. */
-.ws-pop-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-}
-
-@keyframes ws-pop-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-/* SiteHeader's own dropdowns open downward and are right-aligned, which at the
-   foot of a full-height rail is off the bottom of the window and — for a
-   control sitting 100px from the left edge — off the left of it too. Inside
-   the rail's utility clusters they open upward and hang to the right instead.
-   Radix-based menus position themselves and are unaffected. */
-.ws-utils [class~='top-full'] {
-  top: auto;
-  bottom: 100%;
-  left: 0;
-  right: auto;
-  margin-top: 0;
-  margin-bottom: 8px;
 }
 
 /* ── Drag to reorder ─────────────────────────────────────────────────────
@@ -2040,10 +1929,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ws-pop {
-    animation: none;
-  }
-
   .ws-home,
   .ws-util-btn,
   .ws-kb-row-menu {
@@ -2054,4 +1939,725 @@
   .ws-resize-thread::after {
     transition: none;
   }
+}
+
+/* ══ Shell refresh ═══════════════════════════════════════════════════════
+   The workspace without a top bar: the rail carries the destinations and the
+   account block, the home and the pages sit on one lit canvas, and the
+   classroom pane keeps a header at both sizes. Same tokens as above; these
+   rules only add the pieces the bar-less shell needs. */
+
+/* The canvas: three soft pools of the brand's light (violet behind the hero,
+   lavender low right, a cool blue low left) over the slate base. */
+.ws-root .ws-canvas {
+  background-color: #f7f7fb;
+  background-image:
+    radial-gradient(900px 420px at 50% 18%, rgba(176, 160, 255, 0.16), transparent 70%),
+    radial-gradient(700px 500px at 92% 85%, rgba(214, 196, 255, 0.2), transparent 70%),
+    radial-gradient(600px 400px at 6% 70%, rgba(190, 215, 255, 0.16), transparent 70%);
+  background-repeat: no-repeat;
+  background-size: auto;
+  background-attachment: local;
+}
+
+.dark .ws-root .ws-canvas {
+  background-color: #0b1020;
+  background-image:
+    radial-gradient(900px 420px at 50% 18%, rgba(139, 92, 246, 0.14), transparent 70%),
+    radial-gradient(700px 500px at 92% 85%, rgba(124, 58, 237, 0.1), transparent 70%),
+    radial-gradient(600px 400px at 6% 70%, rgba(59, 130, 246, 0.08), transparent 70%);
+}
+
+/* ── Rail ── */
+.ws-root .ws-rail {
+  background-color: rgba(250, 250, 253, 0.94);
+  background-image: none;
+  box-shadow: inset -1px 0 0 0 rgba(15, 23, 42, 0.07);
+}
+
+.dark .ws-root .ws-rail {
+  background-color: rgba(15, 23, 42, 0.86);
+  box-shadow: inset -1px 0 0 0 rgba(255, 255, 255, 0.07);
+}
+
+.ws-root .ws-new {
+  background-color: #fff;
+  border-color: rgba(15, 23, 42, 0.09);
+  color: var(--ws-ink);
+}
+
+.ws-root .ws-new:hover {
+  border-color: rgba(124, 58, 237, 0.3);
+  transform: none;
+}
+
+.dark .ws-root .ws-new {
+  background-color: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.ws-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 9px;
+  font-size: 13.5px;
+  color: var(--ws-ink-soft);
+  text-align: left;
+  transition:
+    background-color 160ms var(--ws-ease),
+    color 160ms var(--ws-ease);
+}
+
+.ws-nav-item svg {
+  color: var(--ws-ink-mute);
+}
+
+.ws-nav-item:hover {
+  background: rgba(124, 58, 237, 0.06);
+  color: var(--ws-ink);
+}
+
+.ws-nav-item[aria-current='page'] {
+  background: #fff;
+  color: var(--ws-ink);
+  font-weight: 600;
+  box-shadow:
+    0 1px 2px rgba(25, 25, 60, 0.05),
+    0 1px 1px rgba(25, 25, 60, 0.03);
+}
+
+.ws-nav-item[aria-current='page'] svg {
+  color: var(--ws-accent);
+}
+
+.dark .ws-nav-item:hover {
+  background: rgba(167, 139, 250, 0.08);
+}
+
+.dark .ws-nav-item[aria-current='page'] {
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+}
+
+.ws-nav-item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--ws-accent-thread);
+}
+
+.ws-nav-tag {
+  margin-left: auto;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ws-accent);
+}
+
+.ws-mini-rule {
+  width: 28px;
+  height: 1px;
+  flex-shrink: 0;
+  background: var(--ws-line);
+}
+
+.ws-root .ws-mini-btn.ws-mini-on {
+  background: #fff;
+  color: var(--ws-accent);
+  box-shadow: 0 1px 2px rgba(25, 25, 60, 0.06);
+}
+
+.dark .ws-root .ws-mini-btn.ws-mini-on {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ws-mini-accent {
+  color: var(--ws-accent);
+}
+
+/* The chats | courses switch, as the demo's segmented track. */
+.ws-root .ws-navtabs {
+  padding: 3px;
+  border-radius: 10px;
+  background: #efeff4;
+  border: 0;
+  box-shadow: none;
+}
+
+.dark .ws-root .ws-navtabs {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ws-root .ws-navtab {
+  height: 26px;
+  border-radius: 8px;
+}
+
+.ws-root .ws-navtab .ws-navtab-label {
+  font-size: 12.5px;
+}
+
+/* ── Account block ── */
+.ws-rail-foot {
+  box-shadow: inset 0 1px 0 0 var(--ws-line-soft);
+}
+
+.ws-avatar {
+  overflow: visible;
+  color: #fff;
+  background: linear-gradient(135deg, #c4b5fd, #8b5cf6);
+}
+
+.ws-avatar img {
+  background: #f1f0f7;
+}
+
+.ws-avatar-badge {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: #f04438;
+  box-shadow: 0 0 0 2px #fff;
+}
+
+.dark .ws-avatar-badge {
+  box-shadow: 0 0 0 2px #0f172a;
+}
+
+.ws-account {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 11px;
+  color: var(--ws-ink);
+  transition: background-color 160ms var(--ws-ease);
+}
+
+.ws-account:hover,
+.ws-account[data-state='open'] {
+  background: rgba(124, 58, 237, 0.07);
+}
+
+.dark .ws-account:hover,
+.dark .ws-account[data-state='open'] {
+  background: rgba(167, 139, 250, 0.1);
+}
+
+.ws-account:focus-visible,
+.ws-account-mini:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--ws-accent-thread);
+}
+
+.ws-account-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.ws-account-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--ws-ink-mute);
+}
+
+.ws-account-mini {
+  border-radius: 9999px;
+}
+
+.ws-account-mini[data-state='open'] {
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.18);
+}
+
+.ws-account-signin {
+  display: inline-flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 10px;
+  background: #7c3aed;
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px -4px rgba(124, 58, 237, 0.6);
+}
+
+.ws-account-signin:hover {
+  background: #6d28d9;
+}
+
+.ws-account-more {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 1px solid var(--ws-line);
+  background: #fff;
+  color: var(--ws-ink-mute);
+}
+
+.dark .ws-account-more {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ws-account-hint {
+  text-align: center;
+  font-size: 12px;
+  color: var(--ws-ink-mute);
+}
+
+/* The account menu is portalled to the body, outside `.ws-root`, so it is
+   styled with the product's own palette rather than the shell's tokens. */
+.ws-account-menu {
+  border-color: rgba(15, 23, 42, 0.08);
+  box-shadow:
+    0 18px 50px -12px rgba(50, 40, 120, 0.22),
+    0 4px 12px rgba(25, 25, 60, 0.06);
+}
+
+.ws-menu-item {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border-radius: 9px;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.ws-menu-item svg {
+  color: rgb(100 116 139);
+}
+
+.ws-menu-static {
+  cursor: default;
+}
+
+.ws-account-summary {
+  background: linear-gradient(135deg, #f6f3ff, #eef4ff);
+  color: rgb(15 23 42);
+}
+
+.dark .ws-account-summary {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.16), rgba(59, 130, 246, 0.1));
+  color: rgb(241 245 249);
+}
+
+.ws-mini-seg {
+  display: flex;
+  padding: 2px;
+  border-radius: 8px;
+  background: #f0eff5;
+}
+
+.dark .ws-mini-seg {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.ws-mini-seg-btn {
+  display: inline-flex;
+  width: 30px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: rgb(100 116 139);
+}
+
+.ws-mini-seg-btn:hover {
+  color: rgb(15 23 42);
+}
+
+.ws-mini-seg-on {
+  background: #fff;
+  color: #7c3aed;
+  box-shadow: 0 1px 2px rgba(25, 25, 60, 0.08);
+}
+
+.dark .ws-mini-seg-btn:hover {
+  color: #fff;
+}
+
+.dark .ws-mini-seg-on {
+  background: rgba(255, 255, 255, 0.12);
+  color: #c4b5fd;
+}
+
+.ws-mini-seg-on svg,
+.ws-menu-item .ws-mini-seg-on svg {
+  color: inherit;
+}
+
+/* ── Pages in the main area (my courses, host pages) ── */
+.ws-page-title {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ws-ink);
+}
+
+.ws-page-sub {
+  margin-top: 4px;
+  font-size: 14px;
+  color: var(--ws-ink-mute);
+}
+
+.ws-page-search {
+  display: flex;
+  width: 240px;
+  height: 38px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-radius: 11px;
+  border: 1px solid var(--ws-line);
+  background: #fff;
+  font-size: 13.5px;
+  color: var(--ws-ink-mute);
+  box-shadow: 0 1px 2px rgba(25, 25, 60, 0.04);
+}
+
+.ws-page-search input {
+  color: var(--ws-ink);
+}
+
+.ws-page-search:focus-within {
+  border-color: var(--ws-accent-thread);
+  box-shadow: 0 0 0 3px var(--ws-accent-wash);
+}
+
+.ws-page-btn {
+  display: inline-flex;
+  height: 38px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px;
+  border-radius: 11px;
+  border: 1px solid var(--ws-line);
+  background: #fff;
+  font-size: 13.5px;
+  color: var(--ws-ink-soft);
+  white-space: nowrap;
+}
+
+.ws-page-btn:hover:not(:disabled) {
+  border-color: rgba(124, 58, 237, 0.3);
+  color: var(--ws-ink);
+}
+
+.ws-page-btn:disabled {
+  opacity: 0.5;
+}
+
+.dark .ws-page-search,
+.dark .ws-page-btn {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.ws-section-title {
+  font-size: 16px;
+  font-weight: 650;
+  color: var(--ws-ink);
+}
+
+.ws-page-empty {
+  padding: 48px 0;
+  text-align: center;
+  font-size: 13.5px;
+  color: var(--ws-ink-mute);
+}
+
+.ws-folder-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 13px;
+  border: 1px solid var(--ws-line);
+  background: #fff;
+  color: var(--ws-ink);
+  box-shadow: 0 1px 2px rgba(25, 25, 60, 0.04);
+  transition:
+    border-color 160ms var(--ws-ease),
+    box-shadow 160ms var(--ws-ease);
+}
+
+.ws-folder-card:hover {
+  border-color: rgba(124, 58, 237, 0.25);
+}
+
+.ws-folder-card-on {
+  border-color: rgba(124, 58, 237, 0.45);
+  box-shadow: 0 0 0 3px var(--ws-accent-wash);
+}
+
+.dark .ws-folder-card {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ws-folder-card-icon {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: #ede9fe;
+  color: #7c3aed;
+}
+
+.dark .ws-folder-card-icon {
+  background: rgba(139, 92, 246, 0.18);
+  color: #c4b5fd;
+}
+
+.ws-course-card {
+  display: block;
+  min-width: 0;
+}
+
+.ws-course-card[aria-disabled='true'] {
+  cursor: default;
+}
+
+.ws-course-card-thumb {
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid var(--ws-line-soft);
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(25, 25, 60, 0.05);
+  transition:
+    transform 160ms var(--ws-ease),
+    box-shadow 160ms var(--ws-ease);
+}
+
+.dark .ws-course-card-thumb {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ws-course-card:hover:not([aria-disabled='true']) .ws-course-card-thumb {
+  transform: translateY(-2px);
+  box-shadow:
+    0 6px 24px -8px rgba(60, 50, 140, 0.14),
+    0 2px 6px rgba(25, 25, 60, 0.05);
+}
+
+.ws-course-card-blank {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, #f3f0ff, #eef4ff);
+}
+
+.dark .ws-course-card-blank {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.12), rgba(59, 130, 246, 0.08));
+}
+
+.ws-course-card-status {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 9999px;
+  background: rgba(40, 40, 55, 0.62);
+  color: #fff;
+  font-size: 11px;
+  backdrop-filter: blur(4px);
+}
+
+.ws-course-card-name {
+  margin-top: 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--ws-ink);
+}
+
+.ws-course-card-meta {
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  color: var(--ws-ink-mute);
+}
+
+/* ── Classroom pane header ── */
+.ws-root .ws-classroom-head {
+  background: rgba(255, 255, 255, 0.92);
+  gap: 6px;
+}
+
+.dark .ws-root .ws-classroom-head {
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.ws-vsep {
+  width: 1px;
+  height: 20px;
+  flex-shrink: 0;
+  margin: 0 2px;
+  background: var(--ws-line);
+}
+
+.ws-head-icon {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  color: var(--ws-ink-mute);
+  transition:
+    background-color 160ms var(--ws-ease),
+    color 160ms var(--ws-ease);
+}
+
+.ws-head-icon:hover:not(:disabled) {
+  background: rgba(124, 58, 237, 0.08);
+  color: var(--ws-ink);
+}
+
+.ws-head-icon:disabled {
+  opacity: 0.4;
+}
+
+.ws-head-icon:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--ws-accent-thread);
+}
+
+.ws-head-icon-on {
+  background: #fff;
+  color: var(--ws-accent);
+  box-shadow: 0 1px 2px rgba(25, 25, 60, 0.08);
+}
+
+.dark .ws-head-icon-on {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ── Full-screen classroom ── */
+.ws-root .ws-classroom-fullscreen {
+  background: linear-gradient(180deg, #f7f7fb, #f3f2f9);
+}
+
+.dark .ws-root .ws-classroom-fullscreen {
+  background: linear-gradient(180deg, #0b1020, #0f172a);
+}
+
+.ws-full-head {
+  height: 56px;
+  position: relative;
+  z-index: 5;
+}
+
+.ws-full-leave {
+  display: inline-flex;
+  height: 34px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px 0 9px;
+  border-radius: 10px;
+  border: 1px solid var(--ws-line);
+  background: #fff;
+  font-size: 13.5px;
+  color: var(--ws-ink-soft);
+  transition: border-color 160ms var(--ws-ease);
+}
+
+.ws-full-leave:hover {
+  border-color: rgba(124, 58, 237, 0.3);
+  color: var(--ws-ink);
+}
+
+.dark .ws-full-leave {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ws-full-crumb {
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  color: var(--ws-ink-mute);
+}
+
+.ws-full-title {
+  margin-top: 1px;
+  font-size: 15.5px;
+  font-weight: 650;
+  color: var(--ws-ink);
+}
+
+/* ── Home ── */
+.ws-gh-pill {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 11px;
+  border-radius: 9999px;
+  border: 1px solid var(--ws-line);
+  background: #fff;
+  font-size: 12.5px;
+  color: var(--ws-ink-soft);
+  transition: border-color 160ms var(--ws-ease);
+}
+
+.ws-gh-pill:hover {
+  border-color: rgba(124, 58, 237, 0.3);
+  color: var(--ws-ink);
+}
+
+.dark .ws-gh-pill {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ws-root .ws-composer {
+  border-color: #ddd6ff;
+  border-radius: 18px;
+  background-color: rgba(255, 255, 255, 0.92);
+  box-shadow:
+    0 10px 40px -14px rgba(108, 92, 231, 0.3),
+    0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.ws-root .ws-composer:hover {
+  border-color: #cfc5ff;
+}
+
+.dark .ws-root .ws-composer {
+  border-color: rgba(167, 139, 250, 0.28);
+  background-color: rgba(15, 23, 42, 0.82);
+  box-shadow:
+    0 10px 40px -14px rgba(139, 92, 246, 0.35),
+    0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* The horizontal logo is drawn for light grounds: its "Open" is a dark ink
+   that disappears on the dark canvas. Inverting and turning the hue half way
+   round keeps the violet violet and lifts the ink to a light lavender. */
+.dark .ws-root .ws-wordmark {
+  filter: invert(1) hue-rotate(180deg) brightness(1.08);
 }
