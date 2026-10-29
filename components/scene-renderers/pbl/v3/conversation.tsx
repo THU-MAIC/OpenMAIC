@@ -247,6 +247,8 @@ export function LearningConversation({
       className="min-h-0 flex-1 bg-background"
       aria-label={t('pblV3.learning')}
       targetScrollTop={targetScrollTop}
+      initial="instant"
+      resize="instant"
     >
       <ConversationContent className="gap-5 p-4" onClick={(event) => openReference(event)}>
         <ConversationHistory

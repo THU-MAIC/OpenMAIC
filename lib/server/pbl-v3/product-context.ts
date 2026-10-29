@@ -119,7 +119,7 @@ export function teachingProductContext(input: {
           entry:
             'Workbench header: Open application. Opens an isolated application dialog; Restart application starts the saved code again. Available independently of the seven learning steps, including after completion.',
           lifetime:
-            'Runs saved code, not unsaved editor drafts. A build, file write, formal assessment or checkpoint may stop it; reopen afterwards. Restart/recovery can clear in-memory application data. A preview access grant expires after five minutes; reopen to renew it.',
+            'Runs saved code, not unsaved editor drafts. A build, file write, formal assessment or checkpoint may stop it; reopen afterwards. Restart/recovery can clear in-memory application data. A preview access grant expires after five minutes; reopen to renew it. After completion, if the environment is inactive, use the visible applicationRestore control before opening the application. This restores execution only; completed source remains read-only and reading the report does not restore the environment.',
           meaning:
             'An HTTP response only proves the observed route responded. It does not prove add/delete functions, current source correctness, a formal test pass or completion. Read the project application guide for actual buttons and expected unfinished behavior.',
         }

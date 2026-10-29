@@ -2945,7 +2945,9 @@
       "reopen": "Reopen application",
       "starting": "Starting your application…",
       "failed": "The application exited. Read the output or ask your current assistant for help.",
-      "unavailable": "The application is not responding yet. Reopen, or share the error with your assistant."
+      "unavailable": "The application is not responding yet. Reopen, or share the error with your assistant.",
+      "restore": "恢復應用環境",
+      "restoreNotice": "作品與報告仍可查看。如要再次執行應用，請恢復應用環境；完成後的原始碼仍為唯讀。"
     }
   }
 }

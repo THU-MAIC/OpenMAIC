@@ -45,5 +45,6 @@ export function visibleProductLabels(locale = 'en-US') {
     applicationRestart: p.application.restart,
     applicationNewTab: p.application.newTab,
     applicationReopen: p.application.reopen,
+    applicationRestore: p.application.restore,
   };
 }

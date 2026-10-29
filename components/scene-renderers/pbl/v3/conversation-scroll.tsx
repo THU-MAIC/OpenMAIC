@@ -57,7 +57,9 @@ export function ConversationScroll({
   useLayoutEffect(() => {
     if (previous.current !== sent) {
       previous.current = sent;
-      void scrollToBottom();
+      // A spring can overshoot the reply heading and hide its opening text.
+      // Re-anchor precisely; manual scrolling and the explicit tail button stay independent.
+      void scrollToBottom({ animation: 'instant' });
     }
   }, [sent, scrollToBottom]);
 

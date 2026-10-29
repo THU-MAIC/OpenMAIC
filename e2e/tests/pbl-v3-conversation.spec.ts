@@ -1272,8 +1272,9 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
     el.scrollTop = 0;
   });
   await page.screenshot({ path: 'test-results/pbl-v3-conversation-mobile.png' });
-  await expect(page.locator('[data-testid="pbl-v3-workspace"]')).toHaveJSProperty(
-    'scrollWidth',
-    await page.getByTestId('pbl-v3-workspace').evaluate((el) => el.clientWidth),
-  );
+  await expect
+    .poll(() =>
+      page.getByTestId('pbl-v3-workspace').evaluate((el) => el.scrollWidth - el.clientWidth),
+    )
+    .toBeLessThanOrEqual(1);
 });

@@ -77,6 +77,9 @@ describe('authoritative product guidance', () => {
     expect(product.application?.entry).toContain('Open application');
     expect(product.current.application).toMatchObject({ sourceChanged: true, httpStatus: 200 });
     expect(product.application?.meaning).toContain('does not prove');
+    expect(product.visibleLabels.applicationRestore).toBe('Restore application environment');
+    expect(product.application?.lifetime).toContain('completed source remains read-only');
+    expect(product.application?.lifetime).toContain('reading the report does not restore');
     expect(productHelpRules).toContain('keep this optional');
     expect(teachingProductContext(fixture(0)).features.applicationPreview).toBe(false);
   });

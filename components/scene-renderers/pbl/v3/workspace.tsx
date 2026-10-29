@@ -100,6 +100,7 @@ function PBLV3WorkspaceContent({
     milestoneId: string | null;
   } | null>(null);
   const studyId = view?.id;
+  const completedApplication = view?.state.status === 'completed' && !!view.application;
   const receiveSnapshot = useCallback(
     (snapshot: Parameters<typeof receive>[0]) => {
       observeMessage(snapshot.view);
@@ -470,9 +471,10 @@ function PBLV3WorkspaceContent({
       {!view && <p className="p-4">{t('pblV3.loading')}</p>}
       {view && (
         <>
-          {!view.environment?.ready && !view.completedFilesAvailable && (
+          {!view.environment?.ready && (!view.completedFilesAvailable || view.application) && (
             <div
               role="status"
+              aria-busy={pendingAction === 'prepare'}
               data-testid="pbl-environment-setup"
               className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/30 px-3 py-2 text-xs"
             >
@@ -481,13 +483,15 @@ function PBLV3WorkspaceContent({
               )}
               <p className="flex-1">
                 {t(
-                  environmentNoticeKeys[
-                    environmentNotice(
-                      view.environment,
-                      pendingAction === 'prepare',
-                      preparationFailed,
-                    )
-                  ],
+                  completedApplication && !preparationFailed
+                    ? 'pblV3.application.restoreNotice'
+                    : environmentNoticeKeys[
+                        environmentNotice(
+                          view.environment,
+                          pendingAction === 'prepare',
+                          preparationFailed,
+                        )
+                      ],
                 )}
               </p>
               {!pending && (
@@ -496,7 +500,13 @@ function PBLV3WorkspaceContent({
                   disabled={pending || view.busy}
                   onClick={() => void prepare(retry.current?.type === 'prepare')}
                 >
-                  {t(preparationFailed ? 'pblV3.prepare' : 'pblV3.recoverWorkspace')}
+                  {t(
+                    preparationFailed
+                      ? 'pblV3.prepare'
+                      : completedApplication
+                        ? 'pblV3.application.restore'
+                        : 'pblV3.recoverWorkspace',
+                  )}
                 </button>
               )}
             </div>
