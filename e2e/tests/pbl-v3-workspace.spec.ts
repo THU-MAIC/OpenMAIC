@@ -973,16 +973,35 @@ test('installed sample opens in the normal classroom and preserves progress afte
   view.role = 'mentor';
   view.actions = [];
   view.state.position.stageIndex = 6;
+  view.conversation = [
+    {
+      id: 'completed-recap',
+      speaker: 'mentor',
+      parts: [
+        {
+          kind: 'tool',
+          id: 'completed-recap-tool',
+          action: 'complete',
+          status: 'succeeded',
+          projectCompleted: true,
+        },
+      ],
+    },
+  ];
   await page.getByRole('button', { name: 'Refresh progress' }).click();
   const workspace = page.getByTestId('pbl-v3-workspace');
   const toolbarReport = workspace
     .locator(':scope > header')
     .getByRole('button', { name: 'Learning report', exact: true });
   const completionReport = workspace
-    .getByTestId('pbl-project-completed')
+    .getByTestId('pbl-agent-turn')
     .getByRole('button', { name: 'Learning report', exact: true });
   await expect(toolbarReport).toBeVisible();
   await expect(completionReport).toBeVisible();
+  await expect(workspace.getByRole('button', { name: 'Learning report', exact: true })).toHaveCount(
+    2,
+  );
+  await expect(workspace.getByTestId('pbl-project-completed').getByRole('button')).toHaveCount(0);
   // Completed projects can restore source files explicitly; opening the report needs no compute.
   await expect(
     page.getByRole('button', { name: 'Restore project files', exact: true }),
