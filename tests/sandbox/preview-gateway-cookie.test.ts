@@ -98,7 +98,7 @@ describe.each(['http:', 'https:'])('preview cookie exchange (%s)', (protocol) =>
     path: string,
     init: { method?: string; headers?: Record<string, string>; body?: string } = {},
   ) =>
-    new Promise<{ status: number; headers: Headers }>((resolve, reject) => {
+    new Promise<{ status: number; headers: Headers; body: string }>((resolve, reject) => {
       // Preserve the configured virtual Host while connecting to the loopback listener.
       const req = http.request(
         {
@@ -114,8 +114,11 @@ describe.each(['http:', 'https:'])('preview cookie exchange (%s)', (protocol) =>
             if (value !== undefined)
               for (const item of Array.isArray(value) ? value : [value]) headers.append(key, item);
           }
-          res.resume();
-          res.once('end', () => resolve({ status: res.statusCode!, headers }));
+          let body = '';
+          res.on('data', (chunk) => {
+            body += chunk;
+          });
+          res.once('end', () => resolve({ status: res.statusCode!, headers, body }));
         },
       );
       req.once('error', reject);
@@ -127,7 +130,7 @@ describe.each(['http:', 'https:'])('preview cookie exchange (%s)', (protocol) =>
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ ticket: 'test-only-signed-ticket' }),
     });
-    expect(r.status).toBe(204);
+    expect(r.status).toBe(200);
     const c = r.headers.get('set-cookie')!;
     expect(c).toContain('Path=/; HttpOnly; SameSite=None; Secure; Partitioned; Max-Age=');
     expect(c).not.toContain('Domain=');
@@ -143,8 +146,8 @@ describe.each(['http:', 'https:'])('preview cookie exchange (%s)', (protocol) =>
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ ticket: 'warm-grant' }),
     });
-    expect(r.status).toBe(204);
-    const cookie = r.headers.get('set-cookie')!.split(';')[0];
+    expect(r.status).toBe(200);
+    const cookie = r.headers.getSetCookie().at(-1)!.split(';')[0];
     revoked = true; // No 3-second delay: the next request must consult the backend.
     expect((await request('/write', { method: 'POST', headers: { cookie } })).status).toBe(403);
     expect(
@@ -159,25 +162,45 @@ describe.each(['http:', 'https:'])('preview cookie exchange (%s)', (protocol) =>
       body: JSON.stringify({ ticket: 'input-grant' }),
     });
     expect(activitySignals).toBe(0);
-    const cookie = authorized.headers.get('set-cookie')!.split(';')[0];
+    const cookie = authorized.headers.getSetCookie().at(-1)!.split(';')[0];
+    const proof = JSON.parse(authorized.body).activityKey;
+    const headers = { cookie, 'x-openmaic-preview-activity': proof };
+    // A framed app has the cookie but neither the raw bootstrap ticket nor its capability.
     expect(
       (await request('/__openmaic_activity', { method: 'POST', headers: { cookie } })).status,
-    ).toBe(204);
+    ).toBe(403);
+    expect(
+      (
+        await request('/__openmaic_activity', {
+          method: 'POST',
+          headers: { ...headers, 'x-openmaic-preview-activity': 'x'.repeat(43) },
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await request('/__openmaic_authorize', {
+          method: 'POST',
+          headers: { cookie, 'content-type': 'application/json' },
+          body: '{}',
+        })
+      ).status,
+    ).toBe(403);
+    expect(activitySignals).toBe(0);
+    expect((await request('/__openmaic_activity', { method: 'POST', headers })).status).toBe(204);
     expect(activitySignals).toBe(1);
     expect(
       (
         await request('/__openmaic_activity', {
           method: 'POST',
-          headers: { cookie, origin: 'https://foreign.example' },
+          headers: { ...headers, origin: 'https://foreign.example' },
         })
       ).status,
     ).toBe(403);
     expect((await request('/__openmaic_activity', { headers: { cookie } })).status).toBe(403);
     expect((await request('/__openmaic_activity', { method: 'POST' })).status).toBe(403);
     revoked = true;
-    expect(
-      (await request('/__openmaic_activity', { method: 'POST', headers: { cookie } })).status,
-    ).toBe(403);
+    expect((await request('/__openmaic_activity', { method: 'POST', headers })).status).toBe(403);
     expect(activitySignals).toBe(1);
   });
   it('still refuses unauthenticated document requests and foreign-origin exchange', async () => {
@@ -198,25 +221,35 @@ describe.each(['http:', 'https:'])('preview cookie exchange (%s)', (protocol) =>
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ ticket: 'retry-grant' }),
       });
-      const cookie = authorized.headers.get('set-cookie')!.split(';')[0];
+      const cookie = authorized.headers.getSetCookie().at(-1)!.split(';')[0];
+      const headers = {
+        cookie,
+        'x-openmaic-preview-activity': JSON.parse(authorized.body).activityKey,
+      };
       backendStatus = status;
-      expect(
-        (await request('/__openmaic_activity', { method: 'POST', headers: { cookie } })).status,
-      ).toBe(status);
+      expect((await request('/__openmaic_activity', { method: 'POST', headers })).status).toBe(
+        status,
+      );
       expect(activitySignals).toBe(0);
       expect(
         (await request('/ws', { headers: { cookie, connection: 'Upgrade', upgrade: 'websocket' } }))
           .status,
       ).toBe(status);
       backendStatus = 200;
-      expect(
-        (await request('/__openmaic_activity', { method: 'POST', headers: { cookie } })).status,
-      ).toBe(204);
+      expect((await request('/__openmaic_activity', { method: 'POST', headers })).status).toBe(204);
       expect(activitySignals).toBe(1);
     },
   );
   it('fails closed with retryable status for network or invalid backend responses', async () => {
-    const headers = { cookie: `${protocol === 'https:' ? '__Host-' : ''}openmaic_preview=grant` };
+    const authorized = await request('/__openmaic_authorize', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ticket: 'network-grant' }),
+    });
+    const headers = {
+      cookie: authorized.headers.getSetCookie().at(-1)!.split(';')[0],
+      'x-openmaic-preview-activity': JSON.parse(authorized.body).activityKey,
+    };
     disconnect = true;
     expect((await request('/__openmaic_activity', { method: 'POST', headers })).status).toBe(503);
     disconnect = false;

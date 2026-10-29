@@ -11,7 +11,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-10-28T00:00:00Z'));
   listeners.clear();
-  fetchMock.mockReset().mockResolvedValue({ ok: true, status: 204 });
+  fetchMock.mockReset().mockResolvedValue(new Response(null, { status: 204 }));
   documentState = {
     visibilityState: 'visible',
     addEventListener: vi.fn((_name, fn) => {
@@ -20,24 +20,48 @@ beforeEach(() => {
   };
   vi.stubGlobal('document', documentState);
   vi.stubGlobal('fetch', fetchMock);
+  vi.stubGlobal('location', { href: 'http://preview.localhost/__openmaic_preview' });
+  vi.stubGlobal('Document', {
+    prototype: Object.create(null, {
+      visibilityState: {
+        get() {
+          return documentState.visibilityState;
+        },
+      },
+    }),
+  });
+  const nativeListen = EventTarget.prototype.addEventListener;
+  vi.spyOn(EventTarget.prototype, 'addEventListener').mockImplementation(function (
+    this: EventTarget,
+    name,
+    listener,
+    options,
+  ) {
+    if (Object.hasOwn(this, 'addEventListener')) this.addEventListener(name, listener, options);
+    else nativeListen.call(this, name, listener, options);
+  });
   appDocument = {
     addEventListener: vi.fn((name: string, fn: (event: { isTrusted: boolean }) => void) =>
       listeners.set(name, fn),
     ),
   };
-  installPreviewActivity({
-    addEventListener: (_name: string, fn: () => void) => {
-      loaded = fn;
+  installPreviewActivity(
+    {
+      addEventListener: (_name: string, fn: () => void) => {
+        loaded = fn;
+      },
+      get contentDocument() {
+        return appDocument;
+      },
     },
-    get contentDocument() {
-      return appDocument;
-    },
-  });
+    'test-only-activity-capability',
+  );
 });
 afterEach(() => {
   vi.clearAllTimers();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 it('tracks input before iframe load, follows document replacement and does not duplicate listeners', async () => {
@@ -45,6 +69,9 @@ it('tracks input before iframe load, follows document replacement and does not d
   listeners.get('keydown')!({ isTrusted: true });
   await vi.advanceTimersByTimeAsync(0);
   expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(fetchMock.mock.calls[0][0].headers.get('x-openmaic-preview-activity')).toBe(
+    'test-only-activity-capability',
+  );
   loaded();
   await vi.advanceTimersByTimeAsync(1000);
   expect(appDocument!.addEventListener).toHaveBeenCalledTimes(3);
@@ -89,11 +116,11 @@ it('coalesces real iframe input and never reports load, synthetic events, quiet 
 it.each([429, 500, 502, 503, 504])(
   'retries input after HTTP %s but drops a revoked batch',
   async (status) => {
-    fetchMock.mockResolvedValueOnce({ ok: false, status });
+    fetchMock.mockResolvedValueOnce(new Response(null, { status }));
     listeners.get('keydown')!({ isTrusted: true });
     await vi.advanceTimersByTimeAsync(30_000);
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    fetchMock.mockResolvedValue({ ok: false, status: 403 });
+    fetchMock.mockResolvedValue(new Response(null, { status: 403 }));
     listeners.get('keydown')!({ isTrusted: true });
     await vi.advanceTimersByTimeAsync(120_000);
     expect(fetchMock).toHaveBeenCalledTimes(3);

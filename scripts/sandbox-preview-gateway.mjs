@@ -8,7 +8,7 @@ import {
 } from './sandbox-preview-policy.mjs';
 import { previewShell } from './sandbox-preview-activity.mjs';
 import { previewAgent } from './sandbox-preview-transport.mjs';
-import { createHmac, randomBytes } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
 const originPattern = process.env.OPENMAIC_SANDBOX_PREVIEW_ORIGIN;
 const backend = process.env.OPENMAIC_PREVIEW_BACKEND_ORIGIN;
@@ -65,6 +65,11 @@ function token(req) {
     .filter((x) => x.startsWith(cookieName + '='));
   if (matches.length !== 1) throw new Error('Preview authorization required');
   return matches[0].slice(cookieName.length + 1);
+}
+function activityKey(ticket, host) {
+  return createHmac('sha256', gatewayKey)
+    .update('preview-activity-v1:' + host + ':' + ticket)
+    .digest('base64url');
 }
 // Each request and WebSocket upgrade rechecks the current grant epoch.
 // Reusing a recently resolved target would allow writes after revocation.
@@ -262,17 +267,28 @@ const server = http.createServer(async (req, res) => {
       if (typeof ticket !== 'string' || ticket.length > 4096 || !/^[-_a-zA-Z0-9.]+$/.test(ticket))
         throw new Error('Invalid ticket');
       const target = await resolve(ticket, host);
-      res.writeHead(204, {
+      res.writeHead(200, {
         'cache-control': 'no-store',
+        'content-type': 'application/json',
         'set-cookie': previewAuthorizationCookies(cookieName, ticket, target.expiresAt),
       });
-      res.end();
+      // Bootstrap requires the raw signed ticket, never just the app's cookie.
+      res.end(JSON.stringify({ activityKey: activityKey(ticket, host) }));
       return;
     }
     if (path.pathname === '/__openmaic_activity') {
       checkOrigin(req, host);
       if (req.method !== 'POST') throw new Error('Invalid activity signal');
-      await resolve(token(req), host, true);
+      const ticket = token(req);
+      const proof = req.headers['x-openmaic-preview-activity'];
+      const expected = activityKey(ticket, host);
+      if (
+        typeof proof !== 'string' ||
+        !/^[A-Za-z0-9_-]{43}$/.test(proof) ||
+        !timingSafeEqual(Buffer.from(proof), Buffer.from(expected))
+      )
+        throw new Error('Invalid activity capability');
+      await resolve(ticket, host, true);
       res.writeHead(204, { 'cache-control': 'no-store' });
       res.end();
       return;
