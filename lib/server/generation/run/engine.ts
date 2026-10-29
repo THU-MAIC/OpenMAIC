@@ -508,7 +508,13 @@ async function executeClaimedRun(
     const research = output<ResearchOutput>('research');
     return withRouteRetry(
       () =>
-        withDeadline(stepId, STEP_DEADLINES_MS.sceneContent, contentSignal, (callSignal) =>
+        withDeadline(
+          stepId,
+          outlines[sceneIndex]!.type === 'interactive'
+            ? STEP_DEADLINES_MS.sceneContentInteractive
+            : STEP_DEADLINES_MS.sceneContent,
+          contentSignal,
+          (callSignal) =>
           services.sceneContent(
             owner,
             {
