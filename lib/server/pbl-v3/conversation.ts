@@ -321,7 +321,9 @@ export function projectConversation(
     const last = events.at(-1);
     getAssistant({ id: (last?.id ?? 0) + 1, ts: (last?.ts ?? 0) + 1 });
   }
-  const visible = deduplicateHandoffs(entries).filter(
+  // History pages are cached independently. Keep canonical receipts until the
+  // client merges pages, or an exact echo on this page can resurrect older drafts.
+  const visible = (history ? entries : deduplicateHandoffs(entries)).filter(
     (e) =>
       e.boundary ||
       e.omitted ||

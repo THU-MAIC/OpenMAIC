@@ -1094,3 +1094,42 @@ it('retains the original message identity when a canonical recovery copies its e
     .filter((part) => part.kind === 'text' && part.text === response);
   expect(recovered).toEqual([original]);
 });
+
+it.each([
+  { blocks: ['The final explanation and question.'] },
+  { blocks: ['The final explanation.', 'One closing question?'] },
+])(
+  'retains canonical receipts until separately projected history pages merge ($blocks.length blocks)',
+  ({ blocks }) => {
+    const draft = event(2, 'message_end', {
+      ...message('An earlier draft which the committed reply replaces.'),
+      pblInputId: 1,
+      pblMessageId: 2,
+    });
+    const final = event(4, 'message_end', {
+      message: { role: 'assistant', content: blocks.map((text) => ({ type: 'text', text })) },
+      pblInputId: 1,
+      pblMessageId: 4,
+    });
+    const receipt = event(5, 'pbl_learner_handoff', {
+      question: blocks.join('\n'),
+      canonical: true,
+      toolCallId: 'page-receipt',
+      pblInputId: 1,
+    });
+    const project = (events: PersistedAgentSessionEvent[], history: boolean) =>
+      projectConversation(events, 'planner', false, undefined, history);
+    const pages = [project([draft], true), project([final, receipt], true)];
+    const saved = structuredClone(pages);
+    const texts = (entries: ReturnType<typeof projectConversation>) =>
+      entries
+        .flatMap((e) => e.parts)
+        .filter((p) => p.kind === 'text')
+        .map((p) => p.text);
+    expect(texts(mergeConversationHistory(pages))).toEqual(
+      texts(project([draft, final, receipt], false)),
+    );
+    expect(texts(mergeConversationHistory(pages))).toEqual([blocks.join('\n')]);
+    expect(pages).toEqual(saved);
+  },
+);

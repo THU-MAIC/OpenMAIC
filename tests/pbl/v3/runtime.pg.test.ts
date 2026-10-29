@@ -1985,6 +1985,55 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     ).toEqual([question]);
     expect(report.facts).toMatchObject({ learnerTurns: 0, assistantTurns: 1 });
   });
+  it.each([
+    { bindings: 1, automaticOpening: false },
+    { bindings: 3, automaticOpening: false },
+    { bindings: 1000, automaticOpening: false },
+    { bindings: 1000, automaticOpening: true },
+  ])(
+    'preserves the oldest learner message in bounded two-ended report samples ($bindings bindings, opening: $automaticOpening)',
+    async ({ bindings, automaticOpening }) => {
+      const study = await unpreparedStudy();
+      const prefix = `sample-${randomUUID()}-`;
+      await pool.query(
+        `INSERT INTO agent_sessions(id,owner_id,prompt,stage_id,status,updated_at)
+       SELECT $1 || g,$2,'Report sample','report-course','succeeded',
+         now() + CASE WHEN g=1 THEN interval '1 hour' ELSE interval '0' END
+       FROM generate_series(1,$3::int) g`,
+        [prefix, principal.ownerId, bindings],
+      );
+      await pool.query(
+        `INSERT INTO pbl_v3_roles(session_id,study_id,role,context_key,stage_key)
+       SELECT $1 || g,$2,'discussion','sample-' || g,'sample:0' FROM generate_series(1,$3::int) g`,
+        [prefix, study.id, bindings],
+      );
+      await pool.query(
+        `INSERT INTO agent_session_events(session_id,seq,ts,attempt,type,data)
+       SELECT $1,g,g,0,'user_message',jsonb_build_object('text','learner-' || g,
+         'pblOpening',g=1 AND $2::boolean)
+       FROM generate_series(1,1002) g`,
+        [prefix + '1', automaticOpening],
+      );
+      const report = await learningEvidence(principal, study.id);
+      const retained = report.conversations.find((c) => c.milestone === 'sample-1')!;
+      const allowance = Math.floor(1000 / bindings);
+      expect(retained.truncated).toBe(true);
+      expect(retained.messages).toHaveLength(allowance);
+      expect(retained.messages[0]?.text).toBe(automaticOpening ? 'learner-2' : 'learner-1');
+      if (allowance > 1) expect(retained.messages.at(-1)?.text).toBe('learner-1002');
+      expect(report.facts?.learnerTurns).toBe(automaticOpening ? 1001 : 1002);
+      expect(
+        (
+          await pool.query(
+            'SELECT count(*)::int AS n FROM agent_session_events WHERE session_id=$1',
+            [prefix + '1'],
+          )
+        ).rows[0].n,
+      ).toBe(1002);
+    },
+    20000,
+  );
+
   it('generates only after completion, saves one report and safely retries a failed analysis', async () => {
     const { id } = await freshStudy();
     await expect(learningReport(principal, id)).rejects.toMatchObject({ status: 409 });
@@ -2019,7 +2068,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(mocked.reportAnalysis).toHaveBeenCalledTimes(2);
     // An old-format cached report is rebuilt token-free; one explicit retry upgrades it.
     await pool.query(
-      "UPDATE pbl_v3_reports SET document=document-'formatVersion' WHERE study_id=$1",
+      "UPDATE pbl_v3_reports SET document=jsonb_set(document,'{formatVersion}','2') WHERE study_id=$1",
       [id],
     );
     const upgradedFacts = await learningReport(principal, id);
@@ -9200,6 +9249,60 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       state: 'destroyed',
     });
   });
+  it('opens owned completed read-only studies with sandboxes disabled while keeping execution gated', async () => {
+    const completed = await freshStudy();
+    const row = await store.get(completed.id, principal.ownerId);
+    await recordLearningEvidence(pool, row, 'coder', 'artifact', {
+      artifactKind: 'final',
+      files: { 'PLAN.md': 'Final plan.' },
+    });
+    const documents = new PgDocumentStore<
+      import('@/lib/types/stage').Scene,
+      import('@/lib/types/stage').Stage
+    >(pool, { withTransaction: (fn) => store.transaction(fn) });
+    await documents.saveDocument({
+      stage: { id: row.stage_id, name: 'Completed review', createdAt: 1, updatedAt: 1 },
+      scenes: [],
+    });
+    await claimStageMeta(pool, row.stage_id, principal.ownerId);
+    await pool.query(
+      "UPDATE pbl_v3_studies SET state=jsonb_set(state,'{status}','\"completed\"') WHERE id=$1",
+      [completed.id],
+    );
+    const running = await unpreparedStudy();
+    const active = await store.get(running.id, principal.ownerId);
+    await documents.saveDocument({
+      stage: { id: active.stage_id, name: 'Active execution', createdAt: 1, updatedAt: 1 },
+      scenes: [],
+    });
+    await claimStageMeta(pool, active.stage_id, principal.ownerId);
+    const service = vi
+      .spyOn(SandboxService, 'forOwner')
+      .mockRejectedValue(new SandboxError('SANDBOX_DISABLED', 503, 'Sandboxes disabled.'));
+    onTestFinished(() => service.mockRestore());
+    expect((await openStudy(principal, row.stage_id, row.scene_id)).id).toBe(completed.id);
+    expect(service).not.toHaveBeenCalled();
+    expect(await learningView(principal, completed.id)).toMatchObject({
+      reportAvailable: true,
+      completedFilesAvailable: true,
+      files: ['PLAN.md'],
+    });
+    await expect(completed.send('prepare')).rejects.toMatchObject({ code: 'SANDBOX_DISABLED' });
+    await expect(openStudy(principal, active.stage_id, active.scene_id)).rejects.toMatchObject({
+      code: 'SANDBOX_DISABLED',
+    });
+    await expect(openStudy(principal, randomUUID(), 'scene')).rejects.toMatchObject({
+      code: 'SANDBOX_DISABLED',
+    });
+    await expect(
+      openStudy({ ...principal, ownerId: 'foreign-owner' }, row.stage_id, row.scene_id),
+    ).rejects.toMatchObject({ code: 'SANDBOX_DISABLED' });
+    service.mockRestore();
+    await expect(
+      openStudy({ ...principal, ownerId: 'foreign-owner' }, row.stage_id, row.scene_id),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
   it('restores completed project files without reopening teaching or allocating for a report read', async () => {
     const fresh = await freshStudy();
     const row = await store.get(fresh.id, principal.ownerId);

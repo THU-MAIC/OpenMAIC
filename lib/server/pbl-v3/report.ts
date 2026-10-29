@@ -18,7 +18,8 @@ import { canonicalReview, reviewQuestions } from './review-question';
 import { canViewProjectReport } from './stage-progress';
 import { decisionResponseLabel } from '@/lib/pbl/v3/domain/orchestration/decisions';
 
-const REPORT_FORMAT_VERSION = 2;
+// Evidence sampling is part of the cached report projection.
+const REPORT_FORMAT_VERSION = 3;
 const HISTORY_LIMIT = 1000;
 const RECORD_BYTES = 32768;
 const TEXT_LIMIT = 240000;
@@ -184,12 +185,19 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
   const conversations: LearningReport['conversations'] = [];
   remaining = TEXT_LIMIT / 3;
   const bindings = await db.query<
-    RoleBinding & { available: boolean; last: number; omitted: boolean }
+    RoleBinding & {
+      available: boolean;
+      last: number;
+      omitted: boolean;
+      last_input: { id: number; at: number } | null;
+    }
   >(
     `SELECT r.session_id,r.role,r.context_key,r.stage_key,
        CASE WHEN octet_length(r.guided::text)<=$3 THEN r.guided END AS guided,
        COALESCE(octet_length(r.guided::text)>$3,false) AS omitted,
        a.id IS NOT NULL AND a.deleted_at IS NULL AS available,
+       (SELECT jsonb_build_object('id',seq,'at',ts) FROM agent_session_events
+         WHERE session_id=r.session_id AND type='user_message' ORDER BY seq DESC LIMIT 1) AS last_input,
        COALESCE((SELECT max(seq) FROM agent_session_events WHERE session_id=r.session_id),0) AS last
      FROM pbl_v3_roles r LEFT JOIN agent_sessions a ON a.id=r.session_id
      WHERE r.study_id=$1 ORDER BY a.updated_at DESC NULLS LAST,r.session_id LIMIT $2`,
@@ -220,11 +228,13 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
              ORDER BY input.seq DESC LIMIT 1)) AS data
        FROM agent_session_events e WHERE e.session_id=$1 AND e.seq IN (
          (SELECT seq FROM agent_session_events WHERE session_id=$1 AND seq<=$2
+           AND (type<>'user_message' OR COALESCE(data->>'pblOpening','false')<>'true')
            AND (type IN ('user_message','message_end','pbl_learner_handoff') OR
              (type='tool_execution_end' AND data->>'toolName' IN ('request_skill_review','request_learner_help','respond_to_learner')))
            ORDER BY seq ASC LIMIT (($3::int+1)/2))
          UNION
          (SELECT seq FROM agent_session_events WHERE session_id=$1 AND seq<=$2
+           AND (type<>'user_message' OR COALESCE(data->>'pblOpening','false')<>'true')
            AND (type IN ('user_message','message_end','pbl_learner_handoff') OR
              (type='tool_execution_end' AND data->>'toolName' IN ('request_skill_review','request_learner_help','respond_to_learner')))
            ORDER BY seq DESC LIMIT ($3::int/2))
@@ -232,7 +242,14 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
       [binding.session_id, binding.last, allowance + 1, RECORD_BYTES, DETAIL_LIMIT],
     );
     let conversationTruncated = entries.rows.length > allowance;
-    const selected = entries.rows.slice(0, allowance);
+    // The extra row detects truncation; discard the middle sentinel, not the
+    // oldest learner turn. With one slot, retain the opening rather than the tail.
+    const selected = conversationTruncated
+      ? [
+          ...entries.rows.slice(0, Math.floor(allowance / 2)),
+          ...entries.rows.slice(-Math.ceil(allowance / 2)),
+        ]
+      : entries.rows;
     eventsRemaining -= selected.length;
     const messages: Array<
       LearningReport['conversations'][number]['messages'][number] & {
@@ -263,8 +280,10 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
           messageId: source.messageId,
         });
     };
-    let latestInputSequence: number | undefined;
-    let latestInputAt = 0;
+    // Pending delivery follows the actual input, even when that input is an
+    // automatic opening or absent from the bounded visible sample.
+    const latestInputSequence = binding.last_input?.id;
+    const latestInputAt = binding.last_input?.at ?? 0;
     const questions = reviewQuestions(selected);
     for (const entry of selected) {
       if (!entry.data) {
@@ -291,12 +310,7 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
           canonical: canonicalReview(entry),
         });
       if (entry.type === 'user_message') {
-        // Review recovery follows the actual queued input, including automatic
-        // openings. Only real learner messages belong in the visible transcript.
-        if (latestInputSequence === undefined || entry.id > latestInputSequence) {
-          latestInputSequence = entry.id;
-          latestInputAt = entry.at;
-        }
+        // Only real learner messages belong in the visible transcript.
         if (!data.pblOpening && typeof data.text === 'string')
           pushMessage(entry.id, entry.at, 'user', data.text);
       }
