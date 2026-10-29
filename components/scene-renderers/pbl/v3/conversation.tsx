@@ -1,7 +1,7 @@
 'use client';
 import { parseFileReference, type FileReference } from '@/lib/pbl/v3/file-reference';
 import { hasTaskDrawer, TASK_DRAWER_LINK } from '@/lib/pbl/v3/presentation';
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useState, type MouseEvent } from 'react';
 import {
   Check,
   Copy,
@@ -11,34 +11,18 @@ import {
   ListChecks,
   MessageSquareText,
 } from 'lucide-react';
-import { useStickToBottomContext } from 'use-stick-to-bottom';
-import {
-  Conversation,
-  ConversationContent,
-  ConversationScrollButton,
-} from '@/components/ai-elements/conversation';
+import { Conversation, ConversationContent } from '@/components/ai-elements/conversation';
 import { TextBlock } from '@/components/workbench/chat/text-block';
 import { ThinkingBlock } from '@/components/workbench/chat/thinking-block';
 import { WaitingBar } from '@/components/workbench/chat/waiting-bar';
 import { ToolActivity } from './tool-activity';
 import { ConversationHistory } from './conversation-history';
+import { ConversationScroll, useConversationScrollTarget } from './conversation-scroll';
 import { UserBubble } from '@/components/workbench/chat/user-bubble';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { LearningView } from '@/lib/pbl/v3/types';
 import type { LearningConversationEntry } from '@/lib/pbl/v3/conversation';
 
-// OpenPBL's explicit-send reanchor rule, using the host's existing sticky-scroll implementation.
-function FollowSend({ count }: { count: number }) {
-  const { scrollToBottom } = useStickToBottomContext();
-  const previous = useRef(count);
-  useEffect(() => {
-    if (previous.current !== count) {
-      previous.current = count;
-      void scrollToBottom();
-    }
-  }, [count, scrollToBottom]);
-  return null;
-}
 const accents = {
   mentor: 'border-violet-400/40 text-violet-700 dark:text-violet-300',
   discussion: 'border-sky-400/40 text-sky-700 dark:text-sky-300',
@@ -87,6 +71,7 @@ function AgentTurn({
       className="group/turn min-w-0 space-y-1.5"
       data-testid="pbl-agent-turn"
       data-status={entry.status}
+      data-turn-id={entry.id}
     >
       <div className={`flex items-center gap-2 text-[13px] font-medium ${accents[role]}`}>
         <span className="inline-flex size-[22px] items-center justify-center rounded-full bg-current/10">
@@ -249,9 +234,20 @@ export function LearningConversation({
       onOpenFile(reference);
     }
   };
+  const placeholder = (requesting || view.busy) && !entries.some((e) => e.status === 'running');
+  const last = entries.at(-1);
+  const turnId = placeholder
+    ? 'queued'
+    : !pendingMessage && last && last.speaker !== 'user' && !last.boundary
+      ? last.id
+      : null;
+  const { targetScrollTop, follow } = useConversationScrollTarget(turnId, sent);
   return (
-    <Conversation className="min-h-0 flex-1 bg-background" aria-label={t('pblV3.learning')}>
-      <FollowSend count={sent} />
+    <Conversation
+      className="min-h-0 flex-1 bg-background"
+      aria-label={t('pblV3.learning')}
+      targetScrollTop={targetScrollTop}
+    >
       <ConversationContent className="gap-5 p-4" onClick={(event) => openReference(event)}>
         <ConversationHistory
           id={view.id}
@@ -284,13 +280,17 @@ export function LearningConversation({
           <ConversationEntry key={entry.id} entry={entry} onOpenReport={onOpenReport} />
         ))}
         {pendingMessage && <ConversationEntry entry={pendingMessage} />}
-        {(requesting || view.busy) && !entries.some((e) => e.status === 'running') && (
+        {placeholder && (
           <AgentTurn
             entry={{ id: 'queued', speaker: view.role ?? 'mentor', status: 'running', parts: [] }}
           />
         )}
       </ConversationContent>
-      <ConversationScrollButton aria-label={t('pblV3.journey.latest')} />
+      <ConversationScroll
+        sent={sent}
+        onFollow={follow}
+        generating={requesting || view.busy || entries.some((entry) => entry.status === 'running')}
+      />
     </Conversation>
   );
 }

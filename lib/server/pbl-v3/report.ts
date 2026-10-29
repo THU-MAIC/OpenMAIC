@@ -1,4 +1,5 @@
 import 'server-only';
+import { createLogger } from '@/lib/logger';
 import { projectReportSummary } from '@/lib/pbl/v3/report-summary';
 import { stageStep } from '@/lib/pbl/v3/presentation';
 import { responseLanguage } from './communication';
@@ -641,7 +642,14 @@ export async function generateLearningReport(
       [id, attempt, JSON.stringify(document)],
     );
     return learningReport(principal, id);
-  } catch {
+  } catch (error) {
+    // Keep operational diagnostics without retaining provider bodies or learner material.
+    createLogger('PBLReport').warn('Analysis failed', {
+      studyId: id,
+      attempt,
+      errorType: error instanceof Error ? error.name : 'UnknownError',
+      aborted: signal.aborted,
+    });
     await store.pool.query(
       `UPDATE pbl_v3_reports SET status='failed',updated_at=now() WHERE study_id=$1 AND attempt=$2`,
       [id, attempt],

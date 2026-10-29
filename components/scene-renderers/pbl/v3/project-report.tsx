@@ -282,7 +282,7 @@ export function ProjectReport({
                   {t('pblV3.reportCopy.generating')}
                 </p>
               )}
-              {report.analysis?.status === 'failed' && (
+              {!pending && report.analysis?.status === 'failed' && (
                 <p role="status" className="text-sm text-muted-foreground">
                   {t('pblV3.reportCopy.failed')}
                 </p>
