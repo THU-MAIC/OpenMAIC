@@ -1003,11 +1003,15 @@ test('installed sample opens in the normal classroom and preserves progress afte
     ),
   ).toBeVisible();
   await expect(
-    report.getByText('Only the most recent records are shown here. Earlier records remain saved.', {
-      exact: true,
-    }),
+    report.getByText(
+      'Selected learning records are shown here. Complete original records remain saved.',
+      {
+        exact: true,
+      },
+    ),
   ).toBeVisible();
-  await report.getByRole('button', { name: 'Evidence 7', exact: true }).click();
+  await report.getByRole('button', { name: 'Evidence 1', exact: true }).click();
+  await expect(report.locator(`#report-source-${view.id}-event-7`)).toHaveAttribute('open', '');
   await expect(report.getByText('Saved plan evidence')).toBeVisible();
   expect(
     await report
