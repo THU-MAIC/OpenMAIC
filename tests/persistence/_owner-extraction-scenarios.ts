@@ -1837,7 +1837,6 @@ export async function tooManyPagesScenario(h: ExtractionHarness): Promise<void> 
           message: 'PDF has 461 pages, which exceeds the 200-page limit',
         },
       }),
-      { managed: true },
     );
   });
   const providers = [provider('mineru', pdf, refusal), provider('unpdf', pdf, h.documentExtract)];

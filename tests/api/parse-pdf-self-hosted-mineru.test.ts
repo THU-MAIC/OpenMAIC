@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   resolvePDFBaseUrl: vi.fn(),
   promisesLookup: vi.fn(),
   callbackLookup: vi.fn(),
+  logError: vi.fn(),
 }));
 
 vi.mock('@/lib/server/provider-config', async (importOriginal) => ({
@@ -49,7 +50,7 @@ vi.mock('node:dns', async (importOriginal) => {
 });
 
 vi.mock('@/lib/logger', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: mocks.logError, debug: vi.fn() }),
 }));
 
 const CONNECTION_FAILED = {
@@ -254,6 +255,28 @@ describe('POST /api/parse-pdf with self-hosted MinerU', () => {
     expect(res.status).toBe(200);
     expect(managed.requests()).toBe(1);
     expect(clientTarget.requests()).toBe(0);
+  });
+
+  it('keeps a server-managed MinerU error body in the server log only', async () => {
+    const managed = await startLoopback((_req, res) => {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ detail: 'config not found at /srv/internal/mineru.yaml' }));
+    });
+    mocks.isServerConfiguredProvider.mockReturnValue(true);
+    mocks.resolvePDFBaseUrl.mockImplementation((_id: string, baseUrl?: string) =>
+      baseUrl === undefined ? managed.origin : baseUrl,
+    );
+
+    const res = await postParsePdf({ providerId: 'mineru' });
+
+    expect(res).toEqual({
+      status: 500,
+      json: { success: false, errorCode: 'PARSE_FAILED', error: 'MinerU API error (500)' },
+    });
+    expect(JSON.stringify(res.json)).not.toContain('/srv/internal');
+    expect(mocks.logError).toHaveBeenCalledWith(
+      expect.stringContaining('config not found at /srv/internal/mineru.yaml'),
+    );
   });
 
   it('still refuses cloud metadata as a server-managed base URL', async () => {

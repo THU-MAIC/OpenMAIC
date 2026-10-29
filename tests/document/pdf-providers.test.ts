@@ -65,21 +65,19 @@ describe('a MinerU gateway refusal', () => {
   });
 
   it('turns pdf_too_many_pages into a too_many_pages refusal with its counts', () => {
-    for (const managed of [true, false]) {
-      const error = selfHostedMinerUFailure(422, GATEWAY_BODY, { managed });
-      expect(error).toBeInstanceOf(MaterialSourceRefusedError);
-      expect(error).toMatchObject({
-        reasonCode: 'too_many_pages',
-        reasonValues: { pages: 461, maxPages: 200 },
-        retryable: false,
-      });
-      expect(isTransientExtractionError(error)).toBe(false);
-      expect(error.message).toBe(
-        'MinerU refused the document: too many pages (status 422; 461 pages, limit 200 pages)',
-      );
-      // Only the counts, never the provider's words.
-      expect(error.message).not.toContain('Split the file');
-    }
+    const error = selfHostedMinerUFailure(422, GATEWAY_BODY);
+    expect(error).toBeInstanceOf(MaterialSourceRefusedError);
+    expect(error).toMatchObject({
+      reasonCode: 'too_many_pages',
+      reasonValues: { pages: 461, maxPages: 200 },
+      retryable: false,
+    });
+    expect(isTransientExtractionError(error)).toBe(false);
+    expect(error.message).toBe(
+      'MinerU refused the document: too many pages (status 422; 461 pages, limit 200 pages)',
+    );
+    // Only the counts, never the provider's words.
+    expect(error.message).not.toContain('Split the file');
   });
 
   it('keeps the refusal when the message states no counts', () => {
@@ -91,25 +89,17 @@ describe('a MinerU gateway refusal', () => {
     expect(error.message).toBe('MinerU refused the document: too many pages (status 422)');
   });
 
-  it('keeps a managed service message, truncated, for any other 4xx', () => {
+  it('never quotes the body of any other failure', () => {
     const body = JSON.stringify({
-      error: { code: 'unsupported_file', message: `Encrypted PDF ${'x'.repeat(1000)}` },
+      error: { code: 'unsupported_file', message: 'Encrypted PDF at /srv/internal/mineru.yaml' },
     });
-    const error = selfHostedMinerUFailure(415, body, { managed: true });
+    const error = selfHostedMinerUFailure(415, body);
     expect(error).not.toBeInstanceOf(MaterialSourceRefusedError);
-    expect(
-      error.message.startsWith('MinerU API error (415): unsupported_file: Encrypted PDF'),
-    ).toBe(true);
-    expect(error.message.length).toBeLessThan(350);
+    expect(error.message).toBe('MinerU API error (415)');
     expect(isTransientExtractionError(error)).toBe(false);
-    expect(selfHostedMinerUFailure(400, 'plain refusal text', { managed: true }).message).toBe(
-      'MinerU API error (400): plain refusal text',
+    expect(selfHostedMinerUFailure(400, 'plain refusal text').message).toBe(
+      'MinerU API error (400)',
     );
-  });
-
-  it('never quotes the body of a caller-supplied service', () => {
-    const body = JSON.stringify({ error: { code: 'x', message: 'internal-secret-body' } });
-    expect(selfHostedMinerUFailure(400, body).message).toBe('MinerU API error (400)');
   });
 
   it('parses OpenAI-style, FastAPI and plain-text bodies', () => {

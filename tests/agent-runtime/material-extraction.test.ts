@@ -471,7 +471,6 @@ describe('document parsing service unavailable (session chain)', () => {
               message: 'PDF has 461 pages, which exceeds the 200-page limit',
             },
           }),
-          { managed: true },
         );
       }) as never,
     };
@@ -494,6 +493,26 @@ describe('document parsing service unavailable (session chain)', () => {
     });
     expect(failure.message).toContain('mineru: MinerU refused the document: too many pages');
     expect(unpdf).not.toHaveBeenCalled();
+  });
+
+  it('keeps a MinerU error body out of the failure it stores and reports', async () => {
+    const failing = {
+      ...documentService('mineru', ['application/pdf']),
+      extract: vi.fn(async () => {
+        throw selfHostedMinerUFailure(
+          500,
+          JSON.stringify({ detail: 'config not found at /srv/internal/mineru.yaml' }),
+        );
+      }) as never,
+    };
+    const plan = await planSourceExtraction(
+      { bytes: Buffer.from('%PDF'), mime: 'application/pdf' },
+      'doc.pdf',
+      { providers: () => [failing], configuredProviderIds: () => ['mineru'] },
+    );
+    const failure = await runSourceExtraction(plan, 'doc.pdf').catch((error) => error);
+    expect(failure.message).toContain('mineru: MinerU API error (500)');
+    expect(failure.message).not.toContain('/srv/internal');
   });
 
   it('reads whether a candidate is a service from its metadata, not its id', async () => {

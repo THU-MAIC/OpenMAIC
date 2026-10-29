@@ -167,11 +167,7 @@ export function getMinerUBackend(): string {
  *
  * Exported for unit testing.
  */
-export function describeSelfHostedMinerUError(
-  status: number,
-  rawBody: string,
-  options: { quoteMessage?: boolean } = {},
-): string {
+export function describeSelfHostedMinerUError(status: number, rawBody: string): string {
   const body = rawBody.toLowerCase();
   const missingDependency =
     body.includes('modulenotfounderror') ||
@@ -189,20 +185,15 @@ export function describeSelfHostedMinerUError(
     );
   }
 
-  // Unknown failure: report the status only. The body is logged by the caller
-  // and never echoed, so the parse route cannot relay a target's content.
-  // Only a server-managed service -- the operator's own -- has its message
-  // (truncated) kept, for the stored diagnostic of a failed extraction.
-  const base = `MinerU API error (${status})`;
-  if (!options.quoteMessage) return base;
-  const { code, message } = parseMinerUErrorBody(rawBody);
-  const detail = [code, message].filter(Boolean).join(': ');
-  return detail ? `${base}: ${detail.slice(0, MINERU_ERROR_MESSAGE_MAX_CHARS)}` : base;
+  // Unknown failure: report the status only, whoever configured the service.
+  // The thrown message reaches clients (the parse route's response, stored
+  // extraction errors), so the body -- which can name a server's paths or
+  // configuration -- is only written to the server log by the caller.
+  return `MinerU API error (${status})`;
 }
 
-/** How much of a failed response's body is read, and how much of its message is kept. */
+/** How much of a failed response's body is read. */
 const MINERU_ERROR_BODY_MAX_BYTES = 64 * 1024;
-const MINERU_ERROR_MESSAGE_MAX_CHARS = 300;
 
 /**
  * A MinerU (or MinerU gateway) error body: an OpenAI-style
@@ -272,11 +263,7 @@ async function readBoundedErrorBody(response: Response): Promise<string> {
  * with the counts it states: not retried, and no other provider is tried for
  * the same file. Its message carries only those counts, never the body.
  */
-export function selfHostedMinerUFailure(
-  status: number,
-  rawBody: string,
-  options: { managed?: boolean } = {},
-): Error {
+export function selfHostedMinerUFailure(status: number, rawBody: string): Error {
   const { code, message } = parseMinerUErrorBody(rawBody);
   if (code === 'pdf_too_many_pages') {
     const { pages, maxPages } = pageLimitOf(message);
@@ -292,9 +279,7 @@ export function selfHostedMinerUFailure(
       },
     );
   }
-  return new Error(
-    describeSelfHostedMinerUError(status, rawBody, { quoteMessage: options.managed }),
-  );
+  return new Error(describeSelfHostedMinerUError(status, rawBody));
 }
 
 // A caller-supplied self-hosted MinerU URL runs under the operator address
@@ -803,7 +788,7 @@ export async function parseWithMinerUDocument(
   if (!response.ok) {
     const errorText = await readBoundedErrorBody(response);
     log.error(`[MinerU] file_parse failed [status=${response.status}]: ${errorText.slice(0, 500)}`);
-    throw selfHostedMinerUFailure(response.status, errorText, { managed: config.managed });
+    throw selfHostedMinerUFailure(response.status, errorText);
   }
 
   // A body that is not JSON must not surface the parser's message: Node's
