@@ -671,6 +671,130 @@ describe.skipIf(!contractUrl)('PgAssetStore with PostgreSQL 16', () => {
       expect((await pool.query('SELECT * FROM asset_blob_stages')).rows).toEqual([]);
     });
 
+    test('a caller transaction holding a spent pin open past its deadline does not park the collector', async () => {
+      const layer = new GatedByteStore();
+      const registry = stagedStore(layer);
+      const staged = await registry.stageBytes(new Blob(['spent in a long transaction']));
+      // A deadline the open transaction below will outlive.
+      await pool.query(
+        `UPDATE asset_blob_stages SET expires_at = clock_timestamp() + interval '300 milliseconds'`,
+      );
+      let finish!: () => void;
+      const mayCommit = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      let spent!: () => void;
+      const pinSpent = new Promise<void>((resolve) => {
+        spent = resolve;
+      });
+      const host = transactionFor(probePool)(async (tx) => {
+        const id = await new PgAssetStore(tx, {
+          byteStore: layer,
+          withTransaction: (body) => body(tx),
+        }).putStaged(principal, staged);
+        spent();
+        await mayCommit;
+        return id;
+      });
+      await pinSpent;
+      await new Promise((resolve) => setTimeout(resolve, 400));
+
+      const collector = new AssetCollector(pool as Queryable, layer, {
+        withTransaction: transactionFor(pool),
+      });
+      const started = Date.now();
+      await expect(collector.collectPass()).resolves.toMatchObject({ collected: 0 });
+      expect(Date.now() - started).toBeLessThan(5_000);
+
+      finish();
+      const id = await host;
+      expect((await registry.resolve(principal, id))?.bytes).toEqual(
+        new TextEncoder().encode('spent in a long transaction'),
+      );
+    });
+
+    test('a renewal in flight is waited for, so the collector never judges the deadline it replaces', async () => {
+      // The renewal decides the pin is live and then has not committed when
+      // the old deadline passes. A collector that read the pin without waiting
+      // for it would see the old, expired deadline, delete the bytes, and --
+      // if it then failed before deleting the row -- leave a renewed pin over
+      // bytes that are gone. The renewal holds the blob row, so the collector
+      // waits for it and then sees the new deadline.
+      const layer = new GatedByteStore();
+      let renewing!: () => void;
+      const renewalPending = new Promise<void>((resolve) => {
+        renewing = resolve;
+      });
+      let commitRenewal!: () => void;
+      const mayCommitRenewal = new Promise<void>((resolve) => {
+        commitRenewal = resolve;
+      });
+      const registry = new PgAssetStore(probePool as Queryable, {
+        byteStore: layer,
+        stageTtlMs: 1_000,
+        withTransaction: (body) =>
+          transactionFor(probePool)((queryable) =>
+            body({
+              async query<TRow extends Record<string, unknown> = Record<string, unknown>>(
+                text: string,
+                params?: unknown[],
+              ): Promise<QueryResult<TRow>> {
+                const result = await queryable.query<TRow>(text, params);
+                if (text.startsWith('UPDATE asset_blob_stages')) {
+                  renewing();
+                  await mayCommitRenewal;
+                }
+                return result;
+              },
+            }),
+          ),
+      });
+      const data = new Blob(['renewed under the collector']);
+      const { contentHash } = await contentHashOf(data);
+
+      // The upload ends late in the pin's life, so the renewal decides the
+      // pin is live shortly before its first deadline.
+      const writeGate = layer.gate('write');
+      const putting = registry.put(principal, data);
+      await writeGate.reached;
+      // Otherwise collectable. Stamped now, since the renewal will hold the
+      // row until it commits.
+      await pool.query(`UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'`);
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      writeGate.open();
+      await renewalPending;
+      // The deadline the renewal replaces has now passed; the new one has not.
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      const failingCollector = new AssetCollector(pool as Queryable, layer, {
+        graceMs: 0,
+        now: () => new Date('2026-01-01T00:00:00.000Z'),
+        withTransaction: (body) =>
+          transactionFor(pool)((queryable) =>
+            body({
+              async query<TRow extends Record<string, unknown> = Record<string, unknown>>(
+                text: string,
+                params?: unknown[],
+              ): Promise<QueryResult<TRow>> {
+                if (text.startsWith('DELETE FROM asset_blobs')) {
+                  throw new Error('injected failure after the byte delete');
+                }
+                return queryable.query<TRow>(text, params);
+              },
+            }),
+          ),
+      });
+      const collection = failingCollector.collect();
+      await waitForLockWaiter(pool);
+      commitRenewal();
+
+      expect(await collection).toBe(0);
+      const id = await putting;
+      expect(await layer.read(contentHash)).not.toBeNull();
+      expect((await registry.resolve(principal, id))?.bytes).toEqual(
+        new TextEncoder().encode('renewed under the collector'),
+      );
+    }, 20_000);
+
     test('releasing a stage lets its bytes drain, and releasing again is a no-op', async () => {
       const layer = new GatedByteStore();
       const registry = stagedStore(layer);

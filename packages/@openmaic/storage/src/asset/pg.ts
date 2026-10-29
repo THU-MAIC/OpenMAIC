@@ -382,11 +382,25 @@ const stagedRecords = new WeakMap<StagedAssetBytes, StagedRecord>();
  */
 const STAGE_PIN_LIVE_SQL = 'expires_at > clock_timestamp()';
 
-/** Renew a live stage pin's deadline, or find it dead or gone. */
+/**
+ * Renew a live stage pin's deadline, or find it dead or gone.
+ *
+ * Preceded, in the same transaction, by a shared lock on the pin's blob row
+ * ({@link LOCK_STAGED_BLOB_SQL}), so every pin write is ordered against the
+ * collector by that row, as the stage's insert and the allocation's claim
+ * are. Without it a renewal could decide the pin is live, and the collector
+ * -- holding the row but reading the pin before the renewal commits -- could
+ * judge the old, now-expired deadline and delete the bytes, leaving a renewed
+ * pin over bytes that are gone if its transaction then failed before deleting
+ * the row.
+ */
 const RENEW_STAGE_SQL = `UPDATE asset_blob_stages
     SET expires_at = clock_timestamp() + ($2::double precision * interval '1 millisecond')
   WHERE id = $1 AND ${STAGE_PIN_LIVE_SQL}
   RETURNING id`;
+
+/** The blob-row lock a renewal takes before its pin: row before pin, always. */
+const LOCK_STAGED_BLOB_SQL = `SELECT 1 FROM asset_blobs WHERE content_hash = $1 FOR SHARE`;
 
 /**
  * Bound on how long one registry write transaction may wait on a lock.
@@ -635,8 +649,9 @@ export class PgAssetStore implements AssetStore {
    * 2. The bytes are written with no transaction or connection held.
    *    Content-addressed and idempotent, so concurrent stages of the same
    *    content may both write.
-   * 3. A short statement renews the pin, which both restarts its deadline from
-   *    the end of the upload and proves it was not reclaimed during it.
+   * 3. A short transaction takes a shared lock on the blob row and renews the
+   *    pin, which both restarts its deadline from the end of the upload and
+   *    proves it was not reclaimed during it (see {@link RENEW_STAGE_SQL}).
    *
    * An in-database layer writes its bytes inside step 1 instead, through the
    * transaction it is coordinated with. Every path runs the same statements
@@ -681,9 +696,10 @@ export class PgAssetStore implements AssetStore {
     if (!hasTransactionalWriter(store)) {
       try {
         await store.write(contentHash, bytes);
-        const renewed = await this.transaction((queryable) =>
-          queryable.query(RENEW_STAGE_SQL, [stageId, ttl]),
-        );
+        const renewed = await this.writeTransaction(async (queryable) => {
+          await queryable.query(LOCK_STAGED_BLOB_SQL, [contentHash]);
+          return queryable.query(RENEW_STAGE_SQL, [stageId, ttl]);
+        });
         if (!renewed.rows[0]) throw new RegistryStageLost();
       } catch (error) {
         await this.releaseStage(stageId);
