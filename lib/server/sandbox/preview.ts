@@ -40,6 +40,9 @@ export function previewConfig() {
   const app = new URL(appOrigin);
   const local = (host: string) =>
     host === 'localhost' || host.endsWith('.localhost') || host === '127.0.0.1';
+  // Explicit operator opt-in for deployments that can only serve previews under the
+  // application's registrable domain. Same-origin previews remain refused.
+  const allowSameSite = process.env.OPENMAIC_SANDBOX_PREVIEW_ALLOW_SAME_SITE?.trim() === 'true';
   if (
     base.username ||
     base.password ||
@@ -49,7 +52,9 @@ export function previewConfig() {
     !base.hostname.startsWith('00000000-0000-4000-8000-000000000000.') ||
     (!['https:'].includes(base.protocol) && !(base.protocol === 'http:' && local(base.hostname))) ||
     base.origin === app.origin ||
-    (!local(base.hostname) && getDomain(base.hostname) === getDomain(app.hostname))
+    (!allowSameSite &&
+      !local(base.hostname) &&
+      getDomain(base.hostname) === getDomain(app.hostname))
   )
     return unavailable();
   secret();
