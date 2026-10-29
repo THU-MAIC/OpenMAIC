@@ -1248,6 +1248,11 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     const historyMessages = recovery.messages;
     const plan = planResume(historyMessages);
     const plannedMessages = plan.kind === 'start' ? [] : plan.messages;
+    // The transcript append can survive a crash before the delivery cursor does.
+    const consumedInTranscript = plannedMessages.reduce(
+      (latest, message) => Math.max(latest, durableUserMessageSeq(message) ?? 0),
+      0,
+    );
     // planResume now contains durable messages only; synthetic receipts are a
     // read-time provider view owned by repairOrphanedToolCalls.
     const retainedCount = plannedMessages.length;
@@ -1282,7 +1287,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     // Automatic activation lives in the transcript: a successful pi
     // `read` of SKILL.md. An explicit selection stays authoritative for this
     // session rather than being silently replaced by a later model read.
-    const installedSkills = await listSkills(meta.ownerId);
+    let installedSkills = await listSkills(meta.ownerId);
     const requestedSkill = await findSkill(meta.skillId, meta.ownerId);
     const deletedSkill =
       meta.skillId?.startsWith('usk_') && !requestedSkill
@@ -1293,25 +1298,10 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         throw new Error(`session skill "${meta.skillId}" is unavailable for its owner`);
       }
     }
-    let activeSkill = requestedSkill ?? skillReadFromTranscript(historyMessages, installedSkills);
-    let userFramesSeen = 0;
-    let turnPinnedSkill: LoadedSkill | null = null;
-    let pinValidThrough = -1;
-    const pinnedForCurrentTurn = (): LoadedSkill | null =>
-      turnPinnedSkill && userFramesSeen <= pinValidThrough ? turnPinnedSkill : null;
-    const skillReadTool = installedSkills.length
-      ? createNativeSkillReadTool(installedSkills, (selected) => {
-          if (!requestedSkill && !pinnedForCurrentTurn()) activeSkill = selected;
-        })
-      : null;
-
-    const adoptPreload = (preload: SkillPreload, deliversUserFrame: boolean): void => {
-      if (requestedSkill) return;
-      const target = preloadConstraintTarget(preload.requested);
-      turnPinnedSkill = target && target.constraints !== null ? target : null;
-      pinValidThrough = userFramesSeen + (deliversUserFrame ? 1 : 0);
-      if (target) activeSkill = target;
-    };
+    // Deletion may land between listSkills and findSkill's fresh lookup. Never
+    // keep the confirmed tombstone's body in this run's earlier snapshot.
+    if (deletedSkill)
+      installedSkills = installedSkills.filter((skill) => skill.id !== deletedSkill.id);
 
     const {
       messages: loggedMessages,
@@ -1391,7 +1381,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       // Fresh follow-ups after this boundary retain normal explicit selection.
       const receipt = {
         skillName: deletedSkill.name,
-        throughMessageSeq: Math.max(deliveredThrough, openingMessageSeq ?? 0),
+        throughMessageSeq: Math.max(deliveredThrough, consumedInTranscript, openingMessageSeq ?? 0),
       };
       const detached = await store.detachSessionSkill(id, {
         ownerId: meta.ownerId,
@@ -1405,13 +1395,13 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       detachedSkills.push(receipt);
     }
 
-    const skillsForMessage = (seq = 0) =>
-      installedSkills.filter(
-        (skill) =>
-          !detachedSkills.some(
-            (receipt) => receipt.skillName === skill.name && seq <= receipt.throughMessageSeq,
-          ),
+    const skillAvailableForMessage = (skill: { id: string; name: string }, seq = 0) =>
+      skill.id !== deletedSkill?.id &&
+      !detachedSkills.some(
+        (receipt) => receipt.skillName === skill.name && seq <= receipt.throughMessageSeq,
       );
+    const skillsForMessage = (seq = 0) =>
+      installedSkills.filter((skill) => skillAvailableForMessage(skill, seq));
 
     const driver = await resolveAgentDriverModel(await backgroundWorkspaceId(meta.ownerId));
     const streamFn = createCallLlmStreamFn({
@@ -1506,16 +1496,32 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       idleAttach,
       firstRunSeq: recovery.firstRunSeq,
     });
-    // The language of the message this run answers first: the one it starts
-    // from (not the newest queued), or -- a first prompt, or a resume -- what
-    // was in effect at the last consumed message. A user frame in the retained
-    // transcript was consumed even when the delivered cursor, a separate
-    // write, did not land before the worker stopped. It moves only when a
-    // steered message is actually consumed (below).
-    const consumedInTranscript = plannedMessages.reduce(
-      (latest, message) => Math.max(latest, durableUserMessageSeq(message) ?? 0),
-      0,
-    );
+    // Discovery, preload and both readers share the consumed turn's boundary.
+    // Queuing a steer must not change what the preceding turn may read.
+    let skillMessageSeq =
+      plannedStart.kind === 'prompt'
+        ? (plannedStart.durableMessageSeq ?? 0)
+        : Math.max(deliveredThrough, consumedInTranscript);
+    const currentSkills = () => skillsForMessage(skillMessageSeq);
+    let activeSkill = requestedSkill ?? skillReadFromTranscript(historyMessages, currentSkills());
+    let userFramesSeen = 0;
+    let turnPinnedSkill: LoadedSkill | null = null;
+    let pinValidThrough = -1;
+    const pinnedForCurrentTurn = (): LoadedSkill | null =>
+      turnPinnedSkill && userFramesSeen <= pinValidThrough ? turnPinnedSkill : null;
+    const skillReadTool = installedSkills.length
+      ? createNativeSkillReadTool(currentSkills, (selected) => {
+          if (!requestedSkill && !pinnedForCurrentTurn()) activeSkill = selected;
+        })
+      : null;
+    const adoptPreload = (preload: SkillPreload, deliversUserFrame: boolean): void => {
+      if (requestedSkill) return;
+      const target = preloadConstraintTarget(preload.requested);
+      turnPinnedSkill = target && target.constraints !== null ? target : null;
+      pinValidThrough = userFramesSeen + (deliversUserFrame ? 1 : 0);
+      if (target) activeSkill = target;
+    };
+    // Use the language of the message being answered, not the newest queued.
     let runLocale = localeThrough(
       messageLocales,
       plannedStart.kind === 'prompt' && plannedStart.durableMessageSeq !== undefined
@@ -1661,7 +1667,9 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         // Skill created earlier IN THIS RUN is not in `installedSkills` (loaded
         // once at start), and a tool that appears only on the next run would be a
         // capability the model cannot discover when it needs it.
-        buildSkillEditTools(meta.ownerId, currentOwner),
+        buildSkillEditTools(meta.ownerId, currentOwner, (skill) =>
+          skillAvailableForMessage(skill, skillMessageSeq),
+        ),
         // The native `read` tool is restricted to installed skill resources; it is
         // present exactly when skills exist. Discovery and invocation stay pi-native.
         skillReadTool ? [skillReadTool] : [],
@@ -1689,10 +1697,9 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     );
     const askUserLatch = createAskUserTerminateLatch();
     let toolCalls = 0;
-    const agent = buildAgent({
-      streamFn,
-      systemPrompt: buildRunnerCoursePrompt({
-        availableSkills: availableSkillsPromptBlock(installedSkills),
+    const systemPromptForTurn = () =>
+      buildRunnerCoursePrompt({
+        availableSkills: availableSkillsPromptBlock(currentSkills()),
         curriculum: CURRICULUM_TOOLS_PROMPT,
         ...(search ? { search: searchPromptBlock() } : {}),
         ...(fetchConnection ? { fetch: fetchPromptBlock() } : {}),
@@ -1702,7 +1709,13 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         materials: materialsPromptBlock(materials),
         roster: ROSTER_TOOLS_PROMPT,
         voice: voiceCloneToolsPrompt(voiceRegistrationEnabled),
-      }),
+      });
+    const agent = buildAgent({
+      // Pi snapshots the system prompt at run start. Rebuild discovery at the
+      // provider boundary too, after a fresh steered user frame is consumed.
+      streamFn: (model, context, options) =>
+        streamFn(model, { ...context, systemPrompt: systemPromptForTurn() }, options),
+      systemPrompt: systemPromptForTurn(),
       model: driver.piModel,
       tools,
       allowedToolNames: new Set([
@@ -1755,7 +1768,10 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
           // or a steered follow-up -- and from now on the run answers it, in
           // its language.
           const consumed = durableUserMessageSeq(event.message);
-          if (consumed !== null) runLocale = localeThrough(messageLocales, consumed, meta.locale);
+          if (consumed !== null) {
+            runLocale = localeThrough(messageLocales, consumed, meta.locale);
+            skillMessageSeq = consumed;
+          }
         }
         enqueue(async () => {
           await entrySession!.appendMessage(event.message);
@@ -1941,7 +1957,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         // of `user` messages in the transcript, and moving it would mark a
         // real user message delivered and drop it.
         const resumedMessage = loggedMessages.findLast(
-          (message) => message.seq <= deliveredThrough,
+          (message) => message.seq <= Math.max(deliveredThrough, consumedInTranscript),
         );
         const resumedTurnText = resumedMessage?.text ?? meta.prompt;
         const repair = await buildSkillPreload({
