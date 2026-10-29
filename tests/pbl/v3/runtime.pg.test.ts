@@ -6,6 +6,7 @@ import { mkdtemp, readFile, writeFile, mkdir, readdir, rm } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { execFile } from 'node:child_process';
+import { createServer } from 'node:http';
 import { promisify } from 'node:util';
 import { Pool } from 'pg';
 import { PgAssetStore, ensureAssetSchema } from '@openmaic/storage/asset/pg';
@@ -22,6 +23,7 @@ import {
 import { WORKSPACE_FILE_RUNNER } from '@/lib/server/sandbox/workspace-archive';
 import { workbenchCommand, workbenchView } from '@/lib/server/pbl-v3/workbench';
 import { issuePreviewGrant } from '@/lib/server/sandbox/preview';
+import { applicationRequest } from '@/lib/server/pbl-v3/application';
 import type { ModelMessage } from 'ai';
 import { PgAgentSessionStore, ensureAgentSessionSchema } from '@openmaic/storage/agent-session/pg';
 import { listAgentUserMessages } from '@/lib/server/agent-runtime/user-messages';
@@ -9359,6 +9361,119 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(after!.turn_started_at.getTime()).toBeGreaterThan(Date.now() - 10000);
     expect((await agents.getSession(queued.sessionId))?.status).toBe('queued');
   });
+  it.each([false, true])(
+    'orders application launches independently of timestamps, including legacy receipts: %s',
+    async (legacy) => {
+      const originalApplication = project.application;
+      const health = createServer((_req, res) => res.end('ready'));
+      await new Promise<void>((resolve) => health.listen(0, '127.0.0.1', resolve));
+      project.application = {
+        title: 'Learner application',
+        description: 'An optional interactive artifact.',
+        argv: ['python3', 'greeting.py'],
+        port: (health.address() as { port: number }).port,
+        healthPath: '/',
+      };
+      const ids: string[] = [],
+        launches: string[] = [];
+      const originalStart = E2BCompatibleSandboxProvider.prototype.startCommand;
+      const start = vi
+        .spyOn(E2BCompatibleSandboxProvider.prototype, 'startCommand')
+        .mockImplementation(async function (
+          this: E2BCompatibleSandboxProvider,
+          id,
+          operation,
+          input,
+        ) {
+          if (!input.command.startsWith('exec '))
+            return originalStart.call(this, id, operation, input);
+          launches.push(input.id);
+          await writeFile(
+            join(mocked.root, id, `.command-${input.id}`),
+            JSON.stringify({
+              id: input.id,
+              state: 'running',
+              stdout: '',
+              stderr: '',
+              exitCode: null,
+              truncated: false,
+            }),
+          );
+        });
+      const cancel = vi
+        .spyOn(E2BCompatibleSandboxProvider.prototype, 'cancelCommand')
+        .mockImplementation(async (id, _operation, commandId) => {
+          const path = join(mocked.root, id, `.command-${commandId}`);
+          const result = JSON.parse(await readFile(path, 'utf8'));
+          await writeFile(path, JSON.stringify({ ...result, state: 'cancelled', exitCode: -15 }));
+        });
+      vi.stubEnv('OPENMAIC_SECRET_KEY', 'local-secret-'.repeat(4));
+      vi.stubEnv('OPENMAIC_PREVIEW_GATEWAY_KEY', 'local-gateway-'.repeat(4));
+      vi.stubEnv('OPENMAIC_APP_ORIGIN', 'https://app.example.com');
+      vi.stubEnv('OPENMAIC_SANDBOX_PREVIEW_ORIGIN', 'https://{id}.preview-example.net');
+      try {
+        const fresh = await freshStudy();
+        ids.push(fresh.id);
+        const row = await store.get(fresh.id, principal.ownerId);
+        const initial = {
+          studyId: row.id,
+          id: randomUUID(),
+          environmentId: row.environment_id!,
+          revision: row.revision,
+          epoch: await (
+            await SandboxService.forOwner(principal)
+          ).workspaceEpoch(row.environment_id!),
+          action: 'open',
+        };
+        expect(await applicationRequest(principal, initial)).toMatchObject({
+          state: 'running',
+          preview: expect.any(Object),
+        });
+        // Reproduce a previous host being ahead of the next host by 60 seconds.
+        // Legacy imports/upgrades have no sequence and must not outrank a new launch.
+        await pool.query(
+          `UPDATE pbl_v3_commands SET result=jsonb_set(
+             CASE WHEN $3 THEN result-'launchSequence' ELSE result END,
+             '{startedAt}',to_jsonb((clock_timestamp()+interval '60 seconds')::text))
+           WHERE study_id=$1 AND id=$2`,
+          [row.id, `application:${initial.id}`, legacy],
+        );
+        const restart = { ...initial, id: randomUUID(), action: 'restart' };
+        expect(await applicationRequest(principal, restart)).toMatchObject({
+          state: 'running',
+          preview: expect.any(Object),
+        });
+        expect(await applicationRequest(principal, initial)).toMatchObject({ state: 'running' });
+        expect(await applicationRequest(principal, { ...initial, id: randomUUID() })).toMatchObject(
+          { state: 'running', preview: expect.any(Object) },
+        );
+        expect(await applicationRequest(principal, { ...initial, action: 'status' })).toMatchObject(
+          { state: 'running' },
+        );
+        expect(launches).toEqual([initial.id, restart.id]);
+        const receipt = (
+          await pool.query('SELECT result FROM pbl_v3_commands WHERE study_id=$1 AND id=$2', [
+            row.id,
+            `application:${restart.id}`,
+          ])
+        ).rows[0].result;
+        expect(receipt.launchSequence).toBe(legacy ? 1 : 2);
+        expect((await store.get(row.id, principal.ownerId)).revision).toBe(row.revision);
+      } finally {
+        start.mockRestore();
+        // Keep cancellation available until the active application is collected.
+        try {
+          await releasePreparationFixtures(ids);
+        } finally {
+          cancel.mockRestore();
+          project.application = originalApplication;
+          health.closeAllConnections();
+          await new Promise<void>((resolve) => health.close(() => resolve()));
+        }
+      }
+    },
+    15000,
+  );
   it('gives each role read-only application diagnostics without shared chat or execution privileges', async () => {
     const originalStudy = studyId,
       originalApplication = project.application;

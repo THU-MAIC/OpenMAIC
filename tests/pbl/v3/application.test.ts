@@ -20,6 +20,7 @@ interface RunFixture {
   commandId: string;
   sourceHash: string;
   startedAt: string;
+  launchSequence?: number;
 }
 interface ReceiptFixture {
   hash: string;
@@ -59,14 +60,26 @@ vi.mock('@/lib/server/pbl-v3/store', () => ({
           if (sql.startsWith('SELECT id FROM sandbox_commands'))
             return { rows: mock.starts.includes(args[1]) ? [{ id: args[1] }] : [] };
           if (sql.startsWith('INSERT')) {
-            mock.receipts.set(args[1], { hash: args[2], result: JSON.parse(args[3]) });
+            const result = JSON.parse(args[3]);
+            if (sql.includes('launchSequence'))
+              result.launchSequence =
+                Math.max(
+                  0,
+                  ...[...mock.receipts.values()].map((r) => r.result.launchSequence ?? 0),
+                ) + 1;
+            mock.receipts.set(args[1], { hash: args[2], result });
             return { rows: [] };
           }
           if (sql.includes('id LIKE'))
             return {
               rows: [...mock.receipts.values()]
                 .filter((r) => r.result.environmentId === args[1])
-                .reverse()
+                .sort(
+                  (a, b) =>
+                    (sql.includes('launchSequence')
+                      ? (b.result.launchSequence ?? 0) - (a.result.launchSequence ?? 0)
+                      : 0) || b.result.startedAt.localeCompare(a.result.startedAt),
+                )
                 .slice(0, 1),
             };
           return { rows: [mock.receipts.get(args[1])].filter(Boolean) };
@@ -302,6 +315,37 @@ describe('declared project applications', () => {
     await applicationRequest(owner, request());
     expect(mock.starts).toEqual([request().id, study]);
   });
+  it.each([0, -60_000])(
+    'keeps the newest launch when the application clock changes by %s ms',
+    async (clockChange) => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        const time = Date.parse('2026-10-29T00:00:00Z');
+        vi.setSystemTime(time);
+        await applicationRequest(owner, request());
+        mock.command.mockImplementation(async (_env, id) => ({
+          state: id === request().id ? 'cancelled' : 'running',
+          stdout: '',
+          stderr: '',
+          exitCode: id === request().id ? -15 : null,
+        }));
+        vi.setSystemTime(time + clockChange);
+        await expect(applicationRequest(owner, request('restart', study))).resolves.toMatchObject({
+          state: 'running',
+          preview: expect.any(Object),
+        });
+        await applicationRequest(owner, request('status'));
+        // An old retry must observe the new run without dispatching the old one.
+        await applicationRequest(owner, request());
+        await applicationRequest(owner, request('open', env));
+        expect(mock.command).toHaveBeenLastCalledWith(env, study, undefined);
+        expect(mock.starts).toEqual([request().id, study]);
+        expect([...mock.receipts.values()].map((r) => r.result.launchSequence)).toEqual([1, 2]);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
   it('authorizes gateway access only for the current owner, binding and declared port', async () => {
     await expect(
       assertLearningPreview('owner', 'pbl-' + study, env, 8000),

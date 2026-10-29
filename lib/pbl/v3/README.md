@@ -532,16 +532,24 @@ routes still cannot launch a managed project or mint its preview grants. Gateway
 resolution rechecks the owned study, current environment and declared port, including
 release/recovery; normal grant expiration and epoch revocation still apply. The dialog uses
 the existing workbench portal so it stays above expanded and native-fullscreen workbenches.
-The gateway's isolated shell observes trusted pointer/keyboard/wheel input inside the app,
-coalescing it through the signed gateway to the existing study activity clock (also in a
-separate tab). Loading, observing, authorization checks and silent viewing do not renew
-activity. Course HTML and response bodies are not rewritten.
+In the workbench, the gateway's isolated shell observes trusted pointer/keyboard/wheel
+input inside the app, coalescing it through the signed gateway to the existing study
+activity clock. Activity requires a private shell capability in addition to the preview
+cookie; application scripts cannot mint it using their cookie alone. Loading, observing,
+authorization checks and silent viewing do not renew activity. The new-tab fallback
+authorizes and navigates directly to the application, preserving top-level behavior and
+supporting applications that refuse framing. Standalone input cannot be observed by the
+workbench without instrumenting the app; it does not renew study activity, and the normal
+idle/expiration policy still applies. Reopen from the workbench after expiry. Course HTML
+and response bodies are not rewritten.
 
 Application processes are recorded sandbox commands, not detached daemons. They remain
 writers until the supervisor confirms exit. Every launch advances the existing dirty/archive
 fence, including retries of an unacknowledged launch, so a completed short-lived writer
 cannot be hidden by an older upload. This does not invalidate teaching evidence or editor
-revisions just because the learner opened their app. Application processes remain in the
+revisions just because the learner opened their app. A study-locked sequence in the existing
+launch receipt orders new runs independently of application-machine timestamps, including
+after an upgrade from receipts without a sequence. Application processes remain in the
 writer/lifecycle registry but are excluded from one-shot workbench execution polling. Source evidence/checkpoints automatically
 cancel and collect them; file/assessment operations cannot mistake a cancellation request
 for a stopped writer. Idle maintenance stops them rather than granting another retention

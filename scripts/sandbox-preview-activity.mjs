@@ -86,7 +86,7 @@ export function previewShell(nonce) {
 (()=>{'use strict';
 let ticket=location.hash.slice(1);history.replaceState(null,'','/__openmaic_preview');
 fetch('/__openmaic_authorize',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({ticket})})
-.then(async r=>{ticket='';if(!r.ok)throw Error();const {activityKey}=await r.json();if(typeof activityKey!=='string')throw Error();const frame=document.createElement('iframe');frame.title='Application';
+.then(async r=>{ticket='';if(!r.ok)throw Error();if(window.top===window){location.replace('/');return;}const {activityKey}=await r.json();if(typeof activityKey!=='string')throw Error();const frame=document.createElement('iframe');frame.title='Application';
 (${installPreviewActivity.toString()})(frame,activityKey);frame.src='/';document.getElementById('status').remove();document.body.append(frame);})
 .catch(()=>{document.getElementById('status').textContent='Access expired. Reopen from OpenMAIC.'});})();</script>`;
 }

@@ -65,12 +65,16 @@ interface ApplicationRun {
   epoch: number;
   commandId: string;
   sourceHash: string;
+  /** Absent on legacy receipts; new launches are ordered under the existing study lock. */
+  launchSequence?: number;
   startedAt: string;
 }
 async function lastRun(store: LearningStore, row: Study): Promise<ApplicationRun | null> {
   const result = await store.pool.query<{ result: ApplicationRun }>(
     `SELECT result FROM pbl_v3_commands WHERE study_id=$1 AND id LIKE 'application:%'
-       AND result->>'environmentId'=$2 ORDER BY result->>'startedAt' DESC,id DESC LIMIT 1`,
+       AND result->>'environmentId'=$2
+       ORDER BY COALESCE((result->>'launchSequence')::bigint,0) DESC,
+         result->>'startedAt' DESC,id DESC LIMIT 1`,
     [row.id, requireEnvironment(row)],
   );
   return result.rows[0]?.result ?? null;
@@ -253,8 +257,13 @@ export async function applicationRequest(principal: OwnerPrincipal, input: unkno
             };
             // Invalidate an in-flight archive even if this writer exits before publication.
             await store.markWorkspaceWriter(row);
+            // Allocate in the existing receipt under the cross-process study lock.
+            // Wall-clock timestamps (even identical ones) never order new launches.
             await store.pool.query(
-              'INSERT INTO pbl_v3_commands(study_id,id,hash,result,stage_key) VALUES($1,$2,$3,$4,$5)',
+              `INSERT INTO pbl_v3_commands(study_id,id,hash,result,stage_key)
+               SELECT $1,$2,$3,$4::jsonb || jsonb_build_object(
+                 'launchSequence',COALESCE(MAX((result->>'launchSequence')::bigint),0)+1),$5
+               FROM pbl_v3_commands WHERE study_id=$1 AND id LIKE 'application:%'`,
               [row.id, receiptId, hash, JSON.stringify(run), stageKey(row)],
             );
             await service.startApplicationCommand(

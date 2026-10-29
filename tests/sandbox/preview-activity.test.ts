@@ -127,10 +127,11 @@ it.each([429, 500, 502, 503, 504])(
   },
 );
 
-it('uses an isolated shell in both iframe and new-tab modes, and drops the bootstrap ticket before mounting app HTML', () => {
+it('keeps new tabs top-level and clears the ticket before redirecting or mounting framed app HTML', () => {
   const html = previewShell('test-nonce');
   expect(html).toContain("frame.src='/'");
   expect(html).toContain('nonce="test-nonce"');
   expect(html.indexOf("ticket=''")).toBeLessThan(html.indexOf("document.createElement('iframe')"));
+  expect(html).toContain("if(window.top===window){location.replace('/');return;}");
   expect(html).not.toContain('postMessage');
 });

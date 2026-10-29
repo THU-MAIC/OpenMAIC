@@ -10,9 +10,12 @@ async function listen(server: Server) {
   return (server.address() as { port: number }).port;
 }
 
-test('only trusted preview input can use the private activity capability', async ({ page }) => {
+test('keeps embedded activity private and new-tab applications genuinely top-level', async ({
+  page,
+}) => {
   test.setTimeout(60000);
   let signals = 0;
+  let standalone = false;
   const sockets = new Set<Socket>();
   const pending = new Set<ServerResponse>();
   const app = createServer((req, res) => {
@@ -22,6 +25,12 @@ test('only trusted preview input can use the private activity capability', async
       return;
     }
     res.setHeader('content-type', 'text/html');
+    if (standalone) {
+      res.setHeader('content-security-policy', "frame-ancestors 'none'");
+      res.end(`<!doctype html><h1>Standalone application</h1><output></output>
+<script>document.querySelector('output').textContent=window.top===window?'top-level':'framed'</script>`);
+      return;
+    }
     res.end(`<!doctype html><input aria-label="Task"><output>Starting</output><img src="/pending-image">
 <script>
 window.stolen=0;window.callbacks=[];
@@ -43,6 +52,13 @@ Promise.all([
   });
   const appPort = await listen(app);
   const backend = createServer(async (req, res) => {
+    if (req.url === '/host') {
+      res.setHeader('content-type', 'text/html');
+      res.end(
+        `<iframe title="Preview" src="${origin}/__openmaic_preview#test-only-grant"></iframe>`,
+      );
+      return;
+    }
     if (req.url?.endsWith('/tunnel')) {
       const socket = connect(appPort, '127.0.0.1');
       sockets.add(socket);
@@ -93,10 +109,12 @@ Promise.all([
       child!.once('exit', (code) => reject(new Error(`Gateway exited: ${code}`)));
     });
     await page.clock.install({ time: Date.now() });
-    await page.goto(origin + '/__openmaic_preview#test-only-grant', {
+    await page.goto(`http://127.0.0.1:${backendPort}/host`, {
       waitUntil: 'domcontentloaded',
     });
-    const frame = page.frameLocator('iframe[title="Application"]');
+    const frame = page
+      .frameLocator('iframe[title="Preview"]')
+      .frameLocator('iframe[title="Application"]');
     await expect(frame.locator('output')).toHaveText('403,403');
     await page.clock.runFor(200);
     expect(signals).toBe(0);
@@ -132,6 +150,17 @@ Promise.all([
     });
     await page.clock.runFor(31000);
     expect(signals).toBe(2);
+    // The new-tab fallback must also work for apps that explicitly refuse framing.
+    standalone = true;
+    await page.goto(origin + '/__openmaic_preview#test-only-grant', {
+      waitUntil: 'domcontentloaded',
+    });
+    await expect(page.getByRole('heading', { name: 'Standalone application' })).toBeVisible();
+    await expect(page.locator('output')).toHaveText('top-level');
+    expect(page.url()).toBe(origin + '/');
+    expect(page.frames()).toHaveLength(1);
+    await page.clock.runFor(31000);
+    expect(signals).toBe(2); // Standalone navigation is not a learner activity signal.
   } finally {
     await page.goto('about:blank').catch(() => {});
     if (child && child.exitCode === null) {
