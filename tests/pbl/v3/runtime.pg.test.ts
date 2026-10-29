@@ -3689,10 +3689,12 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         );
       } else if (phase !== 'start') await invoke(config, 'run_build');
       const before = (await store.get(study.id, principal.ownerId)).evaluation;
-      let release!: () => void,
-        entered = false;
+      let release!: () => void, reachPause!: () => void;
+      const entered = new Promise<void>((resolve) => {
+        reachPause = resolve;
+      });
       const pause = async () => {
-        entered = true;
+        reachPause();
         await new Promise<void>((resolve) => {
           release = resolve;
         });
@@ -3740,7 +3742,15 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         (error) => error,
       );
       try {
-        await vi.waitFor(() => expect(entered).toBe(true));
+        // Synchronize with the actual I/O boundary, not waitFor's one-second
+        // default. An operation that ends before the boundary is still a failure.
+        await Promise.race([
+          entered,
+          pending.then((result) => {
+            if (result instanceof Error) throw result;
+            throw new Error('Build operation ended before reaching the paused I/O.');
+          }),
+        ]);
         await expireExecution(sessionId);
         await (await import('@/lib/server/pbl-v3/execution-watchdog')).expireStalledTeachingTurns();
         expect((await agents.getSession(sessionId))!.status).toBe('failed');
