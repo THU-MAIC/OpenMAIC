@@ -1,4 +1,5 @@
 'use client';
+import type { FileReference, FileChangeRange } from '@/lib/pbl/v3/file-reference';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { Group, Panel, Separator, usePanelRef } from 'react-resizable-panels';
@@ -15,8 +16,10 @@ import {
   AlertCircle,
   ChevronLeft,
   PanelLeftOpen,
+  LockKeyhole,
 } from 'lucide-react';
 import { PendingAction } from './pending-action';
+import { environmentNotice, environmentNoticeKeys } from '@/lib/pbl/v3/environment-status';
 import { projectEditAccess } from '@/lib/pbl/v3/edit-access';
 import { FileExplorer } from './file-explorer';
 import { useProjectEditor, type FileSaveReceipt, type FileSaveRequest } from './use-project-editor';
@@ -47,6 +50,7 @@ export async function workbenchRequest<T>(url: string, body?: unknown): Promise<
 export function LearningWorkbenchPanel({
   view,
   workbench,
+  fileTarget,
   pending,
   pendingAction,
   onRefresh,
@@ -54,6 +58,7 @@ export function LearningWorkbenchPanel({
   onDirtyChange,
 }: {
   view: LearningView;
+  fileTarget?: (FileReference & { requestId: number }) | null;
   workbench: LearningWorkbench | null;
   pending: boolean;
   pendingAction: string | null;
@@ -92,7 +97,7 @@ export function LearningWorkbenchPanel({
   const editor = useProjectEditor(
     view,
     (path) =>
-      workbenchRequest<{ text: string; hash: string }>(
+      workbenchRequest<{ text: string; hash: string; changes?: FileChangeRange[] }>(
         `/api/pbl/v3?id=${encodeURIComponent(view.id)}&file=${encodeURIComponent(path)}`,
       ),
     onSave,
@@ -100,6 +105,19 @@ export function LearningWorkbenchPanel({
     { enabled: !disabled && !!work?.canEdit, canEdit },
   );
   const { path, buffer, stale } = editor;
+  const selectedTarget = useRef<number | null>(null);
+  const selectFile = useRef(editor.select);
+  selectFile.current = editor.select;
+  useEffect(() => {
+    if (
+      fileTarget &&
+      selectedTarget.current !== fileTarget.requestId &&
+      view.files.includes(fileTarget.path)
+    ) {
+      selectedTarget.current = fileTarget.requestId;
+      selectFile.current(fileTarget.path);
+    }
+  }, [fileTarget, view.files]);
   const dirty = editor.anyDirty;
   useEffect(() => {
     onDirtyChange(dirty);
@@ -115,19 +133,25 @@ export function LearningWorkbenchPanel({
         : ['chat', 'begin', 'retry'].includes(pendingAction ?? '')
           ? 'agent'
           : 'request';
-  const editReason = stale
-    ? 'stale'
+  const editReason = view.completedFilesAvailable
+    ? 'completed'
     : !view.environment?.ready
       ? 'environment'
-      : operation
-        ? 'operation'
-        : pending
-          ? pendingReason
-          : editor.loading || !work
-            ? 'loading'
-            : (access(path).reason ??
-              work.editReason ??
-              (work.canEdit ? (work.planning ? 'planEditable' : 'codeEditable') : 'loading'));
+      : stale
+        ? 'stale'
+        : operation
+          ? 'operation'
+          : pending
+            ? pendingReason
+            : editor.loading || !work
+              ? 'loading'
+              : (access(path).reason ??
+                work.editReason ??
+                (work.canEdit ? (work.planning ? 'planEditable' : 'codeEditable') : 'loading'));
+  const editMessage =
+    editReason === 'environment'
+      ? t(environmentNoticeKeys[environmentNotice(view.environment, pendingAction === 'prepare')])
+      : t(`pblV3.editAccess.${editReason}`);
   const save = () => {
     if (canSave) void editor.save();
   };
@@ -410,6 +434,20 @@ export function LearningWorkbenchPanel({
                 </button>
               )}
             </div>
+            {!canSave && (
+              <div
+                role="status"
+                aria-live="polite"
+                data-testid="pbl-editor-readonly"
+                className="flex shrink-0 items-start gap-2 border-b bg-amber-500/10 px-3 py-2 text-xs text-foreground"
+              >
+                <LockKeyhole size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
+                <p>
+                  <strong>{t('pblV3.ide.readOnly')}: </strong>
+                  {editMessage}
+                </p>
+              </div>
+            )}
             {editor.recoveryConflict && (
               <div
                 role="alert"
@@ -435,8 +473,12 @@ export function LearningWorkbenchPanel({
                   studyId={view.id}
                   path={path}
                   value={buffer.text}
+                  target={
+                    !editor.loading && !stale && fileTarget?.path === path ? fileTarget : null
+                  }
+                  changes={!stale && buffer.text === buffer.saved ? buffer.changes : undefined}
                   readOnly={!canSave}
-                  readOnlyReason={t(`pblV3.editAccess.${editReason}`)}
+                  readOnlyReason={editMessage}
                   onChange={editor.edit}
                   onSave={save}
                 />

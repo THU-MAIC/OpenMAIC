@@ -317,6 +317,13 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
         },
       ];
       view.needsOpening = true;
+      view
+        .conversation!.findLast((entry) => entry.speaker !== 'user')!
+        .parts.push({
+          kind: 'text',
+          id: 'decision-directions-text',
+          text: 'Open [Current task](#pbl-task) in the drawer above the message input to submit your decisions and reasons.',
+        });
       view.revision++;
       return route.fulfill({ json: { view } });
     }
@@ -338,7 +345,11 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
     if (new URL(route.request().url()).searchParams.has('file'))
       return route.fulfill({
         json: {
-          text: '## Greeting plan\nConnect input to a returned greeting.',
+          text:
+            new URL(route.request().url()).searchParams.get('file') === 'src/main.py'
+              ? Array.from({ length: 80 }, (_, i) => `line_${i + 1} = ${i + 1}`).join('\n')
+              : '## Greeting plan\nConnect input to a returned greeting.',
+          changes: [{ start: 30, end: 32, kind: 'added' }],
           hash: 'a'.repeat(64),
         },
       });
@@ -604,7 +615,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
     0,
   );
   // Teaching has no drawer; decisions expose only the actual current task.
-  await expect(task.getByRole('button', { name: /Current task details/ })).toHaveCount(0);
+  await expect(task.getByRole('button', { name: /^Current task$/ })).toHaveCount(0);
   await expect(details).toHaveCount(0);
   const originalStage = view.stage;
   const enterDecisions = task.getByRole('button', {
@@ -646,7 +657,26 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await expect(task.getByText('2/7', { exact: true })).toBeVisible();
   await expect(enterDecisions).toHaveCount(0);
   const composerBefore = await page.getByLabel('Your message', { exact: true }).boundingBox();
-  await task.getByRole('button', { name: /Current task details/ }).click();
+  const taskTrigger = task.getByRole('button', { name: 'Current task', exact: true });
+  await expect(taskTrigger.getByText('Current task', { exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Current task', exact: true }).click();
+  await expect(details.getByText('Where will tasks live?')).toBeVisible();
+  await expect(taskTrigger).toHaveAttribute('aria-expanded', 'true');
+  expect(await details.evaluate((el) => getComputedStyle(el).animationName)).toBe('pbl-task-open');
+  await expect
+    .poll(() =>
+      details.evaluate((el) =>
+        el.getAnimations().some((animation) => animation.playState === 'running'),
+      ),
+    )
+    .toBe(false);
+  const drawerBox = await details.boundingBox();
+  const triggerBox = await taskTrigger.boundingBox();
+  expect(drawerBox!.y + drawerBox!.height).toBeLessThanOrEqual(triggerBox!.y);
+  expect(advances).toBe(1);
+  await details.getByRole('button', { name: 'Close task details' }).click();
+  await expect(taskTrigger).toBeFocused();
+  await task.getByRole('button', { name: /^Current task$/ }).click();
   await expect(details.getByText('Where will tasks live?')).toBeVisible();
   let releaseDecision!: () => void;
   decisionGate = new Promise<void>((resolve) => {
@@ -677,7 +707,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   );
   await details.getByRole('button', { name: 'Close task details' }).press('Escape');
   await expect(details).toHaveCount(0);
-  await expect(task.getByRole('button', { name: /Current task details/ })).toBeFocused();
+  await expect(task.getByRole('button', { name: /^Current task$/ })).toBeFocused();
   // Production uses OpenPBL's current-task header and contextual sections, not repeated goals.
   const originalTask = view.task;
   view.stage = {
@@ -694,7 +724,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   view.decisionSummary = [{ id: 'storage', prompt: 'Task storage', choice: 'A Python list' }];
   view.revision++;
   await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
-  await task.getByRole('button', { name: /Current task details/ }).click();
+  await task.getByRole('button', { name: /^Current task$/ }).click();
   await expect(details.getByRole('heading', { name: 'Current task', exact: true })).toBeVisible();
   await expect(details.getByText('Add the first task', { exact: true })).toHaveCount(0);
   await expect(
@@ -710,6 +740,42 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   view.actions = ['chat', 'edit'];
   view.revision++;
   await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
+  // Real Markdown links open the IDE file and range, including from a hidden pane.
+  view.files = ['PLAN.md', 'src/main.py'];
+  view.conversation!.push({
+    id: 'file-review',
+    speaker: 'coder',
+    parts: [
+      {
+        kind: 'text',
+        id: 'file-review-text',
+        text: 'Review [src/main.py:30–32](#pbl-file=src%2Fmain.py&line=30&end=32), then [PLAN.md:1–2](#pbl-file=PLAN.md&line=1&end=2). [Unavailable](#pbl-file=private%2Frubric.md).',
+      },
+    ],
+  });
+  view.revision++;
+  publishLearning();
+  const originalUrl = page.url();
+  const fileLink = page.getByRole('link', { name: 'src/main.py:30–32', exact: true });
+  await expect(fileLink).toBeVisible();
+  await page.getByRole('button', { name: 'Toggle code workspace', exact: true }).click();
+  await fileLink.click();
+  await expect(page.getByRole('tab', { name: 'main.py', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(page.locator('.monaco-editor .view-lines')).toContainText('line_30');
+  await expect(page.locator('.pbl-change-added').first()).toBeVisible();
+  await expect(page.locator('.pbl-change-gutter-added').first()).toBeVisible();
+  expect(await page.locator('.monaco-editor .selected-text').count()).toBeGreaterThan(0);
+  await page.getByTestId('pbl-ide').screenshot({ path: 'test-results/pbl-v3-file-reference.png' });
+  await page.getByRole('link', { name: 'Unavailable', exact: true }).click();
+  expect(page.url()).toBe(originalUrl);
+  await expect(page.getByRole('tab', { name: 'main.py', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await page.getByRole('link', { name: 'PLAN.md:1–2', exact: true }).click();
   const planEditor = page.locator('.monaco-editor textarea').first();
   await expect(page.locator('.monaco-editor .view-lines')).toContainText('Greeting plan');
   await expect(planEditor).toBeEditable();
@@ -931,6 +997,74 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await expect(thinking.getByRole('button')).toBeEnabled();
   await expect(thinking.getByRole('button')).toHaveAttribute('aria-expanded', 'false');
 
+  // A long streaming reply keeps its heading readable instead of chasing its tail.
+  const requestsBeforeLongReply = chatRequests;
+  await page.getByLabel('Your message', { exact: true }).fill('Please explain this in detail.');
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await expect.poll(() => chatRequests).toBe(requestsBeforeLongReply + 1);
+  await expect(
+    conversation.getByText('Please explain this in detail.', { exact: true }),
+  ).toBeVisible();
+  const scrollArea = conversation.locator(':scope > div').first();
+  const belowButton = conversation.getByTestId('pbl-conversation-scroll-button');
+  const previousEntries = [...view.conversation!];
+  const longReply = {
+    id: 'long-streaming-reply',
+    speaker: 'discussion' as const,
+    status: 'running' as 'running' | 'succeeded',
+    parts: [{ kind: 'text' as const, id: 'long-text', text: 'A new explanation', streaming: true }],
+  };
+  view.conversation!.push(longReply);
+  view.busy = true;
+  view.activitySequence++;
+  await publishLearning();
+  const longTurn = conversation.locator('[data-turn-id="long-streaming-reply"]');
+  await expect(longTurn).toBeVisible();
+  longReply.parts[0]!.text = Array.from(
+    { length: 35 },
+    (_, i) => `Paragraph ${i}: an explanation that grows while you read.\n\n`,
+  ).join('');
+  view.activitySequence++;
+  await publishLearning();
+  await expect(belowButton).toHaveAttribute('data-generating', 'true');
+  await expect
+    .poll(async () => {
+      const heading = await longTurn.boundingBox(),
+        viewport = await scrollArea.boundingBox();
+      return !!heading && !!viewport && heading.y >= viewport.y - 2 && heading.y <= viewport.y + 24;
+    })
+    .toBe(true);
+  const pinned = await scrollArea.evaluate((el) => el.scrollTop);
+  longReply.parts[0]!.text += '\n\n' + 'More content below the viewport.\n\n'.repeat(25);
+  view.activitySequence++;
+  await publishLearning();
+  await expect(longTurn).toContainText('More content below the viewport.');
+  await expect.poll(() => scrollArea.evaluate((el) => el.scrollTop)).toBeCloseTo(pinned, 0);
+  // Manual upward reading remains in place while output continues.
+  await scrollArea.hover();
+  await page.mouse.wheel(0, -180);
+  await expect.poll(() => scrollArea.evaluate((el) => el.scrollTop)).toBeLessThan(pinned - 30);
+  const reading = await scrollArea.evaluate((el) => el.scrollTop);
+  longReply.parts[0]!.text += '\n\nStill generating.\n\n'.repeat(10);
+  view.activitySequence++;
+  await publishLearning();
+  await expect(longTurn).toContainText('Still generating.');
+  await expect.poll(() => scrollArea.evaluate((el) => el.scrollTop)).toBeCloseTo(reading, 0);
+  longReply.status = 'succeeded';
+  longReply.parts[0]!.streaming = false;
+  view.busy = false;
+  view.activitySequence++;
+  await publishLearning();
+  await expect(belowButton).toHaveAttribute('data-generating', 'false');
+  await belowButton.click();
+  await expect
+    .poll(() => scrollArea.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
+    .toBeLessThanOrEqual(8);
+  await expect(belowButton).toHaveCount(0);
+  view.conversation = previousEntries;
+  view.activitySequence++;
+  await publishLearning();
+
   await expect(page.locator('.monaco-editor .view-lines')).toContainText('Greeting plan');
   await page.getByLabel('Your message', { exact: true }).fill('My draft answer');
   if (
@@ -1044,7 +1178,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await expect(
     task.getByRole('button', { name: 'Continue to Check your understanding', exact: true }),
   ).toHaveCount(0);
-  await task.getByRole('button', { name: /Current task details/ }).click();
+  await task.getByRole('button', { name: /^Current task$/ }).click();
   await expect(page.getByTestId('pbl-test-details')).toHaveAttribute('data-state', 'failed');
   await expect(
     details.getByText('Add one task: Output did not satisfy the contract', { exact: true }),
@@ -1101,7 +1235,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
       greens.includes(await enterQuiz.evaluate((el) => getComputedStyle(el).backgroundColor)),
     )
     .toBe(true);
-  await task.getByRole('button', { name: /Current task details/ }).click();
+  await task.getByRole('button', { name: /^Current task$/ }).click();
   await expect(page.getByTestId('pbl-test-details')).toHaveAttribute('data-state', 'passed');
   await expect(details.getByRole('listitem')).toHaveCount(2);
   await details.getByRole('button', { name: 'Close task details' }).click({ timeout: 7000 });
@@ -1116,11 +1250,11 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
     await page.getByRole('button', { name: 'Exit fullscreen workspace', exact: true }).click();
   await page.getByRole('button', { name: 'Expand to fullscreen workspace', exact: true }).click();
   await expect(page.getByLabel('Your message', { exact: true })).toBeInViewport();
-  await task.getByRole('button', { name: /Current task details/ }).click();
+  await task.getByRole('button', { name: /^Current task$/ }).click();
   await expect(details.getByRole('button', { name: 'Close task details' })).toBeInViewport();
   await page.keyboard.press('Escape');
   await expect(details).toHaveCount(0);
-  await expect(task.getByRole('button', { name: /Current task details/ })).toBeFocused();
+  await expect(task.getByRole('button', { name: /^Current task$/ })).toBeFocused();
   await page.getByRole('button', { name: 'Exit fullscreen workspace' }).click();
   await page.setViewportSize({ width: 390, height: 844 });
   if (
@@ -1138,8 +1272,9 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
     el.scrollTop = 0;
   });
   await page.screenshot({ path: 'test-results/pbl-v3-conversation-mobile.png' });
-  await expect(page.locator('[data-testid="pbl-v3-workspace"]')).toHaveJSProperty(
-    'scrollWidth',
-    await page.getByTestId('pbl-v3-workspace').evaluate((el) => el.clientWidth),
-  );
+  await expect
+    .poll(() =>
+      page.getByTestId('pbl-v3-workspace').evaluate((el) => el.scrollWidth - el.clientWidth),
+    )
+    .toBeLessThanOrEqual(1);
 });

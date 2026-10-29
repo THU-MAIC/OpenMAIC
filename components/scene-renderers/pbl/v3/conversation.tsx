@@ -1,5 +1,7 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { parseFileReference, type FileReference } from '@/lib/pbl/v3/file-reference';
+import { hasTaskDrawer, TASK_DRAWER_LINK } from '@/lib/pbl/v3/presentation';
+import { useState, type MouseEvent } from 'react';
 import {
   Check,
   Copy,
@@ -9,34 +11,18 @@ import {
   ListChecks,
   MessageSquareText,
 } from 'lucide-react';
-import { useStickToBottomContext } from 'use-stick-to-bottom';
-import {
-  Conversation,
-  ConversationContent,
-  ConversationScrollButton,
-} from '@/components/ai-elements/conversation';
+import { Conversation, ConversationContent } from '@/components/ai-elements/conversation';
 import { TextBlock } from '@/components/workbench/chat/text-block';
 import { ThinkingBlock } from '@/components/workbench/chat/thinking-block';
 import { WaitingBar } from '@/components/workbench/chat/waiting-bar';
 import { ToolActivity } from './tool-activity';
 import { ConversationHistory } from './conversation-history';
+import { ConversationScroll, useConversationScrollTarget } from './conversation-scroll';
 import { UserBubble } from '@/components/workbench/chat/user-bubble';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { LearningView } from '@/lib/pbl/v3/types';
 import type { LearningConversationEntry } from '@/lib/pbl/v3/conversation';
 
-// OpenPBL's explicit-send reanchor rule, using the host's existing sticky-scroll implementation.
-function FollowSend({ count }: { count: number }) {
-  const { scrollToBottom } = useStickToBottomContext();
-  const previous = useRef(count);
-  useEffect(() => {
-    if (previous.current !== count) {
-      previous.current = count;
-      void scrollToBottom();
-    }
-  }, [count, scrollToBottom]);
-  return null;
-}
 const accents = {
   mentor: 'border-violet-400/40 text-violet-700 dark:text-violet-300',
   discussion: 'border-sky-400/40 text-sky-700 dark:text-sky-300',
@@ -63,7 +49,13 @@ function groupParts(parts: Part[]) {
   }
   return groups;
 }
-function AgentTurn({ entry }: { entry: LearningConversationEntry }) {
+function AgentTurn({
+  entry,
+  onOpenReport,
+}: {
+  entry: LearningConversationEntry;
+  onOpenReport?: () => void;
+}) {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   const role = entry.speaker === 'user' ? 'mentor' : entry.speaker;
@@ -79,6 +71,7 @@ function AgentTurn({ entry }: { entry: LearningConversationEntry }) {
       className="group/turn min-w-0 space-y-1.5"
       data-testid="pbl-agent-turn"
       data-status={entry.status}
+      data-turn-id={entry.id}
     >
       <div className={`flex items-center gap-2 text-[13px] font-medium ${accents[role]}`}>
         <span className="inline-flex size-[22px] items-center justify-center rounded-full bg-current/10">
@@ -102,6 +95,20 @@ function AgentTurn({ entry }: { entry: LearningConversationEntry }) {
                   )}
                 </p>
               )}
+              {onOpenReport &&
+                part.some(
+                  (tool) =>
+                    tool.action === 'complete' &&
+                    tool.status === 'succeeded' &&
+                    tool.projectCompleted,
+                ) && (
+                  <button
+                    className="rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-500"
+                    onClick={onOpenReport}
+                  >
+                    {t('pblV3.report')}
+                  </button>
+                )}
             </div>
           ) : part.kind === 'thinking' ? (
             <ThinkingBlock
@@ -147,7 +154,13 @@ function AgentTurn({ entry }: { entry: LearningConversationEntry }) {
     </article>
   );
 }
-function ConversationEntry({ entry }: { entry: LearningConversationEntry }) {
+function ConversationEntry({
+  entry,
+  onOpenReport,
+}: {
+  entry: LearningConversationEntry;
+  onOpenReport?: () => void;
+}) {
   const { t } = useI18n();
   return entry.boundary ? (
     <div
@@ -170,7 +183,7 @@ function ConversationEntry({ entry }: { entry: LearningConversationEntry }) {
       text={entry.parts.flatMap((p) => (p.kind === 'text' ? [p.text] : [])).join('\n')}
     />
   ) : (
-    <AgentTurn key={entry.id} entry={entry} />
+    <AgentTurn key={entry.id} entry={entry} onOpenReport={onOpenReport} />
   );
 }
 export function LearningConversation({
@@ -178,8 +191,14 @@ export function LearningConversation({
   sent,
   requesting = false,
   pendingMessage = null,
+  onOpenFile,
+  onOpenReport,
+  onOpenTask,
 }: {
   view: LearningView;
+  onOpenReport?: () => void;
+  onOpenFile?: (reference: FileReference) => void;
+  onOpenTask?: () => void;
   sent: number;
   requesting?: boolean;
   pendingMessage?: LearningConversationEntry | null;
@@ -192,14 +211,64 @@ export function LearningConversation({
       speaker: m.role === 'user' ? 'user' : (view.role ?? 'mentor'),
       parts: [{ kind: 'text', id: `${i}`, text: m.text }],
     }));
+  const openReference = (event: MouseEvent<HTMLElement>, dismiss?: () => void) => {
+    const anchor = (event.target as Element).closest('a');
+    const href = anchor?.getAttribute('href') ?? '';
+    if (href === TASK_DRAWER_LINK) {
+      event.preventDefault();
+      if (hasTaskDrawer(view) && onOpenTask) {
+        if (dismiss) event.stopPropagation();
+        dismiss?.();
+        onOpenTask();
+      }
+      return;
+    }
+    if (!href.startsWith('#pbl-file=')) return;
+    event.preventDefault();
+    const reference = parseFileReference(href);
+    // The current public file list remains authoritative, including old history links.
+    if (reference && view.files.includes(reference.path) && onOpenFile) {
+      // A portal also bubbles through the live conversation; navigate only once.
+      if (dismiss) event.stopPropagation();
+      dismiss?.();
+      onOpenFile(reference);
+    }
+  };
+  const placeholder = (requesting || view.busy) && !entries.some((e) => e.status === 'running');
+  const last = entries.at(-1);
+  const turnId = placeholder
+    ? 'queued'
+    : !pendingMessage && last && last.speaker !== 'user' && !last.boundary
+      ? last.id
+      : null;
+  const { targetScrollTop, follow } = useConversationScrollTarget(turnId, sent);
   return (
-    <Conversation className="min-h-0 flex-1 bg-background" aria-label={t('pblV3.learning')}>
-      <FollowSend count={sent} />
-      <ConversationContent className="gap-5 p-4">
+    <Conversation
+      className="min-h-0 flex-1 bg-background"
+      aria-label={t('pblV3.learning')}
+      targetScrollTop={targetScrollTop}
+      initial="instant"
+      resize="instant"
+    >
+      <ConversationContent className="gap-5 p-4" onClick={(event) => openReference(event)}>
         <ConversationHistory
           id={view.id}
           sources={view.conversationHistory ?? []}
-          renderEntry={(entry) => <ConversationEntry entry={entry} />}
+          renderEntry={(entry, dismiss) => (
+            <div onClick={(event) => openReference(event, dismiss)}>
+              <ConversationEntry
+                entry={entry}
+                onOpenReport={
+                  onOpenReport
+                    ? () => {
+                        dismiss();
+                        onOpenReport();
+                      }
+                    : undefined
+                }
+              />
+            </div>
+          )}
         />
         {entries.some((entry) => entry.omitted) && (
           <p role="status" className="text-xs text-muted-foreground">
@@ -210,16 +279,20 @@ export function LearningConversation({
           <p className="text-sm text-muted-foreground">{t('pblV3.journey.startConversation')}</p>
         )}
         {entries.map((entry) => (
-          <ConversationEntry key={entry.id} entry={entry} />
+          <ConversationEntry key={entry.id} entry={entry} onOpenReport={onOpenReport} />
         ))}
         {pendingMessage && <ConversationEntry entry={pendingMessage} />}
-        {(requesting || view.busy) && !entries.some((e) => e.status === 'running') && (
+        {placeholder && (
           <AgentTurn
             entry={{ id: 'queued', speaker: view.role ?? 'mentor', status: 'running', parts: [] }}
           />
         )}
       </ConversationContent>
-      <ConversationScrollButton aria-label={t('pblV3.journey.latest')} />
+      <ConversationScroll
+        sent={sent}
+        onFollow={follow}
+        generating={requesting || view.busy || entries.some((entry) => entry.status === 'running')}
+      />
     </Conversation>
   );
 }

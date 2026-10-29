@@ -8,16 +8,21 @@ import { useStageStore } from '@/lib/store/stage';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { ProjectHero } from '../project-hero';
 import { PBLWorkspaceLayer } from '../workspace-layer';
+import { ProjectReport } from './project-report';
 import { PBLV3Workspace, pblRequest } from './workspace';
 
 export function PBLV3Container({ sceneId }: { sceneId: string }) {
   const stageId = useStageStore((state) => state.stage?.id);
   const { t } = useI18n();
   const hostRef = useRef<HTMLDivElement>(null);
-  const [entrance, setEntrance] = useState<{ hero: ProjectHeroDetails; started: boolean } | null>(
-    null,
-  );
+  const [entrance, setEntrance] = useState<{
+    hero: ProjectHeroDetails;
+    started: boolean;
+    studyId?: string | null;
+    reportAvailable?: boolean;
+  } | null>(null);
   const [error, setError] = useState('');
+  const [reportOpen, setReportOpen] = useState(false);
   const [entered, setEntered] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [autoExpand, setAutoExpand] = useState(false);
@@ -32,7 +37,12 @@ export function PBLV3Container({ sceneId }: { sceneId: string }) {
   useEffect(() => {
     if (!stageId) return;
     const controller = new AbortController();
-    void pblRequest<{ hero: ProjectHeroDetails; started: boolean }>(
+    void pblRequest<{
+      hero: ProjectHeroDetails;
+      started: boolean;
+      studyId?: string | null;
+      reportAvailable?: boolean;
+    }>(
       `/api/pbl/v3?${new URLSearchParams({ project: '1', stageId, sceneId })}`,
       undefined,
       controller.signal,
@@ -68,9 +78,11 @@ export function PBLV3Container({ sceneId }: { sceneId: string }) {
   useLayoutEffect(() => () => portalHost?.remove(), [portalHost]);
   const launch = () => {
     setAutoExpand(true);
+    setReportOpen(false);
     setEntered(true);
   };
   const returnToHero = useCallback(() => {
+    setReportOpen(false);
     setEntered(false);
     setExpanded(false);
     setAutoExpand(false);
@@ -83,6 +95,15 @@ export function PBLV3Container({ sceneId }: { sceneId: string }) {
           <ProjectHero
             details={entrance.hero}
             started={entrance.started}
+            completed={!!entrance.reportAvailable}
+            onReport={
+              entrance.reportAvailable && entrance.studyId
+                ? () => {
+                    setAutoExpand(true);
+                    setReportOpen(true);
+                  }
+                : undefined
+            }
             onStart={launch}
             onContinue={launch}
           />
@@ -107,7 +128,7 @@ export function PBLV3Container({ sceneId }: { sceneId: string }) {
             {t('pblV3.loading')}
           </div>
         ))}
-      {entered &&
+      {(entered || reportOpen) &&
         portalHost &&
         createPortal(
           <PBLWorkspaceLayer
@@ -119,7 +140,19 @@ export function PBLV3Container({ sceneId }: { sceneId: string }) {
             onAutoExpandConsumed={() => setAutoExpand(false)}
             showExpandControl
           >
-            <PBLV3Workspace sceneId={sceneId} onReturnToHero={returnToHero} />
+            {reportOpen && entrance?.studyId ? (
+              <div className="pbl-workbench relative h-full">
+                <ProjectReport
+                  studyId={entrance.studyId}
+                  title={entrance.hero.title}
+                  open
+                  onClose={returnToHero}
+                  onWorkbench={launch}
+                />
+              </div>
+            ) : (
+              <PBLV3Workspace sceneId={sceneId} onReturnToHero={returnToHero} />
+            )}
           </PBLWorkspaceLayer>,
           portalHost,
         )}

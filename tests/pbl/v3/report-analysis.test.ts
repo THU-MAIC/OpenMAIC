@@ -438,3 +438,32 @@ describe('grounded report analysis', () => {
     expect(large.evidence[0]!.learnerText!.answer.length).toBeGreaterThan(4000);
   });
 });
+
+it('retains a supported quote citation when bounding excessive citations and skips malformed sibling findings', () => {
+  const candidate = structuredClone(report);
+  candidate.evidence = Array.from({ length: 7 }, (_, i) => ({
+    sequence: i + 1,
+    at: i,
+    kind: 'decision.recorded',
+    detail: 'Decision context',
+    learnerText: { answer: i === 6 ? 'I checked the number before deleting.' : 'Another choice' },
+  }));
+  const findings = validateReportFindings(
+    JSON.stringify({
+      findings: [
+        {
+          category: 'strength',
+          title: 'Checks before changing',
+          detail: 'The learner connected validation to deletion.',
+          evidence: candidate.evidence.map((e) => `event:${e.sequence}`),
+          quote: 'I checked the number before deleting.',
+        },
+        { category: 'strength', title: 'Invalid sibling' },
+      ],
+    }),
+    candidate,
+  );
+  expect(findings).toHaveLength(1);
+  expect(findings[0]!.evidence).toHaveLength(6);
+  expect(findings[0]!.evidence).toContain('event:7');
+});

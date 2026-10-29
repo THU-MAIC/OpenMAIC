@@ -238,3 +238,45 @@ describe('authored decision responses', () => {
     ).toThrow('not allowed');
   });
 });
+
+it('carries the exact selected public technique to Planner and Coder without private grading data', () => {
+  for (const [id, version, label, summary] of [
+    ['greeting-python-lab', '1.2.0', 'f-string (formatted string literal)', 'f"Hello, {name}!"'],
+    ['greeting-java', '1.2.0', 'String.format', 'Use Java String.format'],
+  ]) {
+    const definition = installedProject({ id: id!, version: version! }).definition;
+    const projection = projectArtifacts({
+      reads: ['decisions.chosen'],
+      milestone: definition.milestones[0]!,
+      state: {
+        decisions: [{ id: 'format', chosen: 'format', revision: 0, rationale: 'Readability' }],
+      },
+      decisionCatalog: definition.decisions,
+    });
+    expect(projection.decisionsChosen![0]).toMatchObject({
+      chosen: 'format',
+      rationale: 'Readability',
+      selection: { label },
+    });
+    expect(projection.decisionsChosen![0]!.selection!.summary).toContain(summary);
+    expect(JSON.stringify(projection)).not.toContain('rubricAnchor');
+    for (const role of ['planner', 'coder'] as const) {
+      const stage = definition.milestones[0]!.stages[role === 'planner' ? 2 : 3]!;
+      const collected =
+        startOrchestration(definition).state.collected[definition.milestones[0]!.id]!;
+      collected.decisions = [{ id: 'format', chosen: 'format', revision: 0 }];
+      const prompt = renderTeachingPrompt({
+        definition,
+        milestone: definition.milestones[0]!,
+        stage,
+        stageKey: 'greeting:2',
+        role,
+        packaged: false,
+        skill: { content: {}, progression: [], documents: [] },
+        collected,
+      }).systemPrompt;
+      expect(prompt).toContain(label);
+      expect(prompt).toContain('do not substitute an equivalent-output technique');
+    }
+  }
+});

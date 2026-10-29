@@ -1,4 +1,8 @@
 import 'server-only';
+import { createLogger } from '@/lib/logger';
+import { projectReportSummary } from '@/lib/pbl/v3/report-summary';
+import { stageStep } from '@/lib/pbl/v3/presentation';
+import { responseLanguage } from './communication';
 import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { sandboxConflict } from '@/lib/sandbox/errors';
@@ -10,10 +14,12 @@ import { reportTextExcerpt } from '@/lib/pbl/v3/report';
 import { handoffEchoes } from '@/lib/pbl/v3/conversation';
 import { LearningStore, type Study, type RoleBinding } from './store';
 import { projectFor } from './runtime';
-import { reviewQuestions } from './review-question';
+import { canonicalReview, reviewQuestions } from './review-question';
 import { canViewProjectReport } from './stage-progress';
 import { decisionResponseLabel } from '@/lib/pbl/v3/domain/orchestration/decisions';
 
+// Evidence sampling is part of the cached report projection.
+const REPORT_FORMAT_VERSION = 3;
 const HISTORY_LIMIT = 1000;
 const RECORD_BYTES = 32768;
 const TEXT_LIMIT = 240000;
@@ -179,12 +185,19 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
   const conversations: LearningReport['conversations'] = [];
   remaining = TEXT_LIMIT / 3;
   const bindings = await db.query<
-    RoleBinding & { available: boolean; last: number; omitted: boolean }
+    RoleBinding & {
+      available: boolean;
+      last: number;
+      omitted: boolean;
+      last_input: { id: number; at: number } | null;
+    }
   >(
     `SELECT r.session_id,r.role,r.context_key,r.stage_key,
        CASE WHEN octet_length(r.guided::text)<=$3 THEN r.guided END AS guided,
        COALESCE(octet_length(r.guided::text)>$3,false) AS omitted,
        a.id IS NOT NULL AND a.deleted_at IS NULL AS available,
+       (SELECT jsonb_build_object('id',seq,'at',ts) FROM agent_session_events
+         WHERE session_id=r.session_id AND type='user_message' ORDER BY seq DESC LIMIT 1) AS last_input,
        COALESCE((SELECT max(seq) FROM agent_session_events WHERE session_id=r.session_id),0) AS last
      FROM pbl_v3_roles r LEFT JOIN agent_sessions a ON a.id=r.session_id
      WHERE r.study_id=$1 ORDER BY a.updated_at DESC NULLS LAST,r.session_id LIMIT $2`,
@@ -192,12 +205,17 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
   );
   if (bindings.rows.length > HISTORY_LIMIT) truncated = true;
   let eventsRemaining = HISTORY_LIMIT;
-  for (const binding of bindings.rows.slice(0, HISTORY_LIMIT)) {
+  const visibleBindings = bindings.rows.slice(0, HISTORY_LIMIT);
+  for (const [bindingIndex, binding] of visibleBindings.entries()) {
     if (binding.omitted) truncated = true;
     if (!binding.available) {
       truncated = true;
       continue;
     }
+    const allowance = Math.max(
+      1,
+      Math.floor(eventsRemaining / (visibleBindings.length - bindingIndex)),
+    );
     const entries = await db.query<{ id: number; at: number; type: string; data: unknown }>(
       `SELECT e.seq AS id,e.ts::float8 AS at,e.type,
          (CASE WHEN e.type='user_message' THEN jsonb_build_object(
@@ -208,15 +226,30 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
            'pblInputId',(SELECT input.seq FROM agent_session_events input
              WHERE input.session_id=e.session_id AND input.seq<=e.seq AND input.type='user_message'
              ORDER BY input.seq DESC LIMIT 1)) AS data
-       FROM agent_session_events e WHERE e.session_id=$1 AND e.seq<=$2
-         AND (type IN ('user_message','message_end','pbl_learner_handoff')
-           OR (type='tool_execution_end' AND data->>'toolName' IN
-             ('request_skill_review','request_learner_help','respond_to_learner')))
-       ORDER BY e.seq DESC LIMIT $3`,
-      [binding.session_id, binding.last, eventsRemaining + 1, RECORD_BYTES, DETAIL_LIMIT],
+       FROM agent_session_events e WHERE e.session_id=$1 AND e.seq IN (
+         (SELECT seq FROM agent_session_events WHERE session_id=$1 AND seq<=$2
+           AND (type<>'user_message' OR COALESCE(data->>'pblOpening','false')<>'true')
+           AND (type IN ('user_message','message_end','pbl_learner_handoff') OR
+             (type='tool_execution_end' AND data->>'toolName' IN ('request_skill_review','request_learner_help','respond_to_learner')))
+           ORDER BY seq ASC LIMIT (($3::int+1)/2))
+         UNION
+         (SELECT seq FROM agent_session_events WHERE session_id=$1 AND seq<=$2
+           AND (type<>'user_message' OR COALESCE(data->>'pblOpening','false')<>'true')
+           AND (type IN ('user_message','message_end','pbl_learner_handoff') OR
+             (type='tool_execution_end' AND data->>'toolName' IN ('request_skill_review','request_learner_help','respond_to_learner')))
+           ORDER BY seq DESC LIMIT ($3::int/2))
+       ) ORDER BY e.seq DESC`,
+      [binding.session_id, binding.last, allowance + 1, RECORD_BYTES, DETAIL_LIMIT],
     );
-    let conversationTruncated = entries.rows.length > eventsRemaining;
-    const selected = entries.rows.slice(0, eventsRemaining);
+    let conversationTruncated = entries.rows.length > allowance;
+    // The extra row detects truncation; discard the middle sentinel, not the
+    // oldest learner turn. With one slot, retain the opening rather than the tail.
+    const selected = conversationTruncated
+      ? [
+          ...entries.rows.slice(0, Math.floor(allowance / 2)),
+          ...entries.rows.slice(-Math.ceil(allowance / 2)),
+        ]
+      : entries.rows;
     eventsRemaining -= selected.length;
     const messages: Array<
       LearningReport['conversations'][number]['messages'][number] & {
@@ -224,6 +257,7 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
         inputId?: number;
         messageId?: number;
         handoff: boolean;
+        canonical?: boolean;
       }
     > = [];
     const pushMessage = (
@@ -231,7 +265,7 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
       at: number,
       role: 'user' | 'assistant',
       text: string,
-      source: { inputId?: number; messageId?: number; handoff?: boolean } = {},
+      source: { inputId?: number; messageId?: number; handoff?: boolean; canonical?: boolean } = {},
     ) => {
       if (text)
         messages.push({
@@ -241,12 +275,15 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
           text,
           scope: binding.session_id,
           handoff: source.handoff === true,
+          canonical: source.canonical,
           inputId: source.inputId,
           messageId: source.messageId,
         });
     };
-    let latestInputSequence: number | undefined;
-    let latestInputAt = 0;
+    // Pending delivery follows the actual input, even when that input is an
+    // automatic opening or absent from the bounded visible sample.
+    const latestInputSequence = binding.last_input?.id;
+    const latestInputAt = binding.last_input?.at ?? 0;
     const questions = reviewQuestions(selected);
     for (const entry of selected) {
       if (!entry.data) {
@@ -267,14 +304,13 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
           : undefined;
       const question = questions.get(entry.id);
       if (question !== undefined)
-        pushMessage(entry.id, entry.at, 'assistant', question, { inputId, handoff: true });
+        pushMessage(entry.id, entry.at, 'assistant', question, {
+          inputId,
+          handoff: true,
+          canonical: canonicalReview(entry),
+        });
       if (entry.type === 'user_message') {
-        // Review recovery follows the actual queued input, including automatic
-        // openings. Only real learner messages belong in the visible transcript.
-        if (latestInputSequence === undefined || entry.id > latestInputSequence) {
-          latestInputSequence = entry.id;
-          latestInputAt = entry.at;
-        }
+        // Only real learner messages belong in the visible transcript.
         if (!data.pblOpening && typeof data.text === 'string')
           pushMessage(entry.id, entry.at, 'user', data.text);
       }
@@ -299,25 +335,36 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
           (m) =>
             m.sequence > latestInputSequence &&
             m.role === 'assistant' &&
-            m.text === pending.question,
+            m.text ===
+              (('displayText' in pending ? pending.displayText : undefined) ?? pending.question),
         )
       )
         pushMessage(
           binding.last + 1,
           selected[0]?.at ?? latestInputAt,
           'assistant',
-          pending.question,
-          { inputId: latestInputSequence, handoff: true },
+          ('displayText' in pending ? pending.displayText : undefined) || pending.question,
+          {
+            inputId: latestInputSequence,
+            handoff: true,
+            canonical: 'displayText' in pending && !!pending.displayText,
+          },
         );
     }
     const duplicates = handoffEchoes(messages);
+    const retained = messages.filter((message) => !duplicates.has(message));
+    const perMessage = Math.min(
+      DETAIL_LIMIT,
+      Math.floor(
+        remaining / (visibleBindings.length - bindingIndex) / Math.max(1, retained.length),
+      ),
+    );
     conversations.push({
       role: binding.role,
       milestone: binding.context_key,
-      messages: messages
-        .filter((message) => !duplicates.has(message))
+      messages: retained
         .flatMap((message) => {
-          const text = boundedText(message.text);
+          const text = boundedText(reportTextExcerpt(message.text, perMessage));
           if (text.length < message.text.length) conversationTruncated = true;
           return text
             ? [{ sequence: message.sequence, at: message.at, role: message.role, text }]
@@ -338,7 +385,7 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
   }>(
     `SELECT id,(extract(epoch FROM created_at)*1000)::float8 AS at,milestone_id,kind,actor,
        CASE WHEN octet_length(detail::text)<=$3 THEN detail END AS detail
-     FROM pbl_v3_evidence WHERE study_id=$1 ORDER BY id DESC LIMIT $2`,
+     FROM pbl_v3_evidence WHERE study_id=$1 AND kind<>'response-language' ORDER BY id DESC LIMIT $2`,
     [id, HISTORY_LIMIT + 1, RECORD_BYTES],
   );
   if (saved.rows.length > HISTORY_LIMIT) truncated = true;
@@ -353,7 +400,10 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
         actor: item.actor,
         ...Object.fromEntries(
           Object.entries(item.detail).filter(
-            ([key]) => !['fingerprint', 'previousHash', 'expectedHash', 'requestId'].includes(key),
+            ([key]) =>
+              !['fingerprint', 'previousHash', 'expectedHash', 'requestId', 'changes'].includes(
+                key,
+              ),
           ),
         ),
       },
@@ -397,22 +447,35 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
       interrupted: number;
       edits: number;
     }>(
-      `SELECT
+      `WITH events AS (
+       SELECT e.*, max(e.seq) FILTER (WHERE e.type='user_message') OVER
+         (PARTITION BY e.session_id ORDER BY e.seq ROWS UNBOUNDED PRECEDING) AS input_id
+       FROM pbl_v3_roles r JOIN agent_sessions a ON a.id=r.session_id AND a.deleted_at IS NULL
+       JOIN agent_session_events e ON e.session_id=r.session_id WHERE r.study_id=$1
+      ) SELECT
        count(*) FILTER (WHERE e.type='user_message' AND jsonb_typeof(e.data->'text')='string'
          AND COALESCE(e.data->>'pblOpening','false')<>'true')::int AS learner,
-       count(*) FILTER (WHERE e.type='message_end' AND e.data#>>'{message,role}'='assistant'
-         AND EXISTS (SELECT 1 FROM jsonb_array_elements(CASE
+       count(DISTINCT (e.session_id,COALESCE(e.input_id,e.seq))) FILTER (WHERE
+         (e.type='message_end' AND e.data#>>'{message,role}'='assistant'
+          AND EXISTS (SELECT 1 FROM jsonb_array_elements(CASE
            WHEN jsonb_typeof(e.data#>'{message,content}')='array' THEN e.data#>'{message,content}' ELSE '[]'::jsonb END) p
-           WHERE p->>'type'='text' AND COALESCE(p->>'text','')<>''))::int AS assistant,
-       count(*) FILTER (WHERE e.type='session_interrupted' OR
+           WHERE p->>'type'='text' AND COALESCE(p->>'text','')<>''))
+         OR (e.type='pbl_learner_handoff' AND COALESCE(e.data->>'question','')<>'')
+         OR (e.type='tool_execution_end' AND COALESCE(e.data->>'isError','false')<>'true'
+           AND e.data->>'toolName' IN ('request_skill_review','request_learner_help','respond_to_learner')
+           AND jsonb_array_length(CASE WHEN jsonb_typeof(e.data#>'{result,content}')='array' THEN e.data#>'{result,content}' ELSE '[]'::jsonb END)>0)
+       )::int AS assistant,
+       count(DISTINCT (e.session_id,e.attempt)) FILTER (WHERE e.type='session_interrupted' OR
          (e.type='session_end' AND e.data->>'status'='failed'))::int AS interrupted,
        (SELECT count(*)::int FROM pbl_v3_evidence WHERE study_id=$1 AND kind='file-edit') AS edits
-     FROM pbl_v3_roles r JOIN agent_sessions a ON a.id=r.session_id AND a.deleted_at IS NULL
-       JOIN agent_session_events e ON e.session_id=r.session_id WHERE r.study_id=$1`,
+     FROM events e`,
       [id],
     )
   ).rows[0]!;
   return {
+    formatVersion: REPORT_FORMAT_VERSION,
+    responseLocale: (await responseLanguage(db, id))?.locale,
+    summary: projectReportSummary(project.definition, row.state),
     facts: {
       learnerTurns: totals.learner,
       assistantTurns: totals.assistant,
@@ -432,9 +495,7 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
       title: m.title,
       optional: !!m.optional,
       status: row.state.milestones[i]?.status ?? 'pending',
-      stages: m.stages.map((s) =>
-        s.kind === 'check' ? s.checker : s.kind === 'produce' ? s.writes : s.kind,
-      ),
+      stages: m.stages.map(stageStep),
     })),
     outcomes: project.definition.milestones.map((m) => {
       const collected = row.state.collected[m.id];
@@ -509,7 +570,7 @@ async function readReportSnapshot(
       [id, completionRevision],
     )
   ).rows[0];
-  if (saved?.status === 'ready' && saved.document)
+  if (saved?.status === 'ready' && saved.document?.formatVersion === REPORT_FORMAT_VERSION)
     return { report: saved.document, completionRevision };
   const evidence = await buildLearningEvidence(db, row);
   const stale = !!saved && Date.now() - saved.updated_at.getTime() > 120000;
@@ -571,8 +632,9 @@ export async function generateLearningReport(
       `INSERT INTO pbl_v3_reports(study_id,completion_revision,attempt,status) VALUES($1,$2,$3,'generating')
      ON CONFLICT(study_id) DO UPDATE SET completion_revision=$2,attempt=$3,status='generating',document=NULL,updated_at=now()
      WHERE pbl_v3_reports.status='failed' OR pbl_v3_reports.updated_at<now()-interval '2 minutes'
-       OR pbl_v3_reports.completion_revision<>$2 RETURNING study_id`,
-      [id, completionRevision, attempt],
+       OR pbl_v3_reports.completion_revision<>$2
+       OR (pbl_v3_reports.status='ready' AND COALESCE(pbl_v3_reports.document->>'formatVersion','')<>$4) RETURNING study_id`,
+      [id, completionRevision, attempt, String(REPORT_FORMAT_VERSION)],
     );
     return claim.rows.length > 0;
   });
@@ -594,7 +656,14 @@ export async function generateLearningReport(
       [id, attempt, JSON.stringify(document)],
     );
     return learningReport(principal, id);
-  } catch {
+  } catch (error) {
+    // Keep operational diagnostics without retaining provider bodies or learner material.
+    createLogger('PBLReport').warn('Analysis failed', {
+      studyId: id,
+      attempt,
+      errorType: error instanceof Error ? error.name : 'UnknownError',
+      aborted: signal.aborted,
+    });
     await store.pool.query(
       `UPDATE pbl_v3_reports SET status='failed',updated_at=now() WHERE study_id=$1 AND attempt=$2`,
       [id, attempt],

@@ -21,12 +21,17 @@ export async function supportTurnSequences(
   );
 }
 
-/** Extract committed handoffs and successful, structured teaching-tool questions. */
-export function reviewQuestion(event: { type: string; data: unknown }): string | null {
+/** A committed full response is the sole prose delivery for its input; tool cards stay visible. */
+function reviewReceipt(event: {
+  type: string;
+  data: unknown;
+}): { text: string; canonical: boolean } | null {
   if (!event.data || typeof event.data !== 'object') return null;
   if (event.type === LEARNER_HANDOFF_EVENT) {
-    const question = (event.data as { question?: unknown }).question;
-    return typeof question === 'string' && question.trim() ? question : null;
+    const data = event.data as { question?: unknown; canonical?: unknown };
+    return typeof data.question === 'string' && data.question.trim()
+      ? { text: data.question, canonical: data.canonical === true }
+      : null;
   }
   if (event.type !== 'tool_execution_end') return null;
   const data = event.data as {
@@ -45,14 +50,26 @@ export function reviewQuestion(event: { type: string; data: unknown }): string |
     if (block.type !== 'text' || !block.text) continue;
     try {
       const receipt = JSON.parse(block.text);
+      if (
+        receipt.canonical === true &&
+        typeof receipt.response === 'string' &&
+        receipt.response.trim()
+      )
+        return { text: receipt.response, canonical: true };
       if (data.toolName === 'respond_to_learner' && typeof receipt.response === 'string')
-        return receipt.response;
-      if (typeof receipt.question === 'string') return receipt.question;
+        return { text: receipt.response, canonical: false };
+      if (typeof receipt.question === 'string') return { text: receipt.question, canonical: false };
     } catch {
-      // Other tool output and malformed receipts are not teaching conversation.
+      /* Malformed or unrelated output is not a teaching response. */
     }
   }
   return null;
+}
+export function reviewQuestion(event: { type: string; data: unknown }): string | null {
+  return reviewReceipt(event)?.text ?? null;
+}
+export function canonicalReview(event: { type: string; data: unknown }): boolean {
+  return reviewReceipt(event)?.canonical === true;
 }
 
 /** Prefer the ordered SDK display event; the atomic handoff survives a crash before it arrives. */

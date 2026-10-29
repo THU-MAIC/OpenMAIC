@@ -1,7 +1,13 @@
 import 'server-only';
+import { visibleProductLabels } from './ui-labels';
 import en from '@/lib/i18n/locales/en-US.json';
 import zh from '@/lib/i18n/locales/zh-CN.json';
-import { hasTaskDrawer, learningWorkbenchFeatures, stageStep } from '@/lib/pbl/v3/presentation';
+import {
+  hasTaskDrawer,
+  learningWorkbenchFeatures,
+  stageStep,
+  TASK_DRAWER_LINK,
+} from '@/lib/pbl/v3/presentation';
 import { projectEditAccess } from '@/lib/pbl/v3/edit-access';
 import { learnerActions } from '@/lib/pbl/v3/learner-actions';
 import type {
@@ -56,6 +62,7 @@ export function teachingProductContext(input: {
   stage: StageDefinition;
   role: AgentRole;
   completionRecorded?: boolean;
+  uiLocale?: string;
   workspace?: TeachingWorkspaceFacts;
 }) {
   const { definition, stage, role, workspace, completionRecorded = false } = input;
@@ -88,11 +95,11 @@ export function teachingProductContext(input: {
     layout: {
       projectFiles: 'IDE file tree, collapsible at its header; reopen from editor tabs.',
       editor:
-        'File tabs; allowed edits autosave with status feedback. PLAN.md is the cumulative plan.',
+        'File tabs; allowed edits autosave with status feedback. PLAN.md is the cumulative plan. Chat file links open the public file, expand its pane and select a 1-based line range. Version-matched recent AI edits have green backgrounds and +/~ gutter marks; deleted lines have a red boundary mark. These are visual aids, not Git staging, test passes, approvals, or saved-status evidence.',
       progress: 'Header: milestones. Above composer: current milestone steps.',
-      task: 'The current-step bar above the composer opens available task details, not a full contract or assertion editor. Build and quiz submission are in task details; formal tests and Continue use the task bar.',
+      task: 'The task drawer opens upward from the visibly labeled Current task button on the bar above the message input. Its label is productContext.visibleLabels.task. In decision steps, choices, free-text rules and reasons are submitted inside this drawer, not through chat. Build and quiz submission also use this drawer; formal tests and Continue use the task bar. It is not a full contract or assertion editor.',
       report:
-        'Available after the final project recap; supports returning to the workbench and reopening.',
+        'Available after the final committed project recap. Two workbench entries open it: the top toolbar and the final completion message below. The completion banner only shows status. The project overview also offers it after leaving or revisiting the course scene. The report shows saved facts before analysis and links back to the read-only workbench. Returning does not reopen editing or teaching. Where a final source snapshot exists, the completed workbench reads it without restoring a sandbox; running the application still needs its execution environment. Do not claim the report is available before the completion receipt.',
       navigation:
         'Hero Start/Continue expands the workbench; Back returns to the project overview. Pane and expansion controls change presentation, not progress.',
       connection:
@@ -101,6 +108,9 @@ export function teachingProductContext(input: {
         'Pane visibility, selected tabs and viewport are not observed. Give conditional directions using named controls.',
     },
     labels,
+    uiLocale: input.uiLocale ?? 'en-US',
+    visibleLabels: visibleProductLabels(input.uiLocale),
+    taskLink: TASK_DRAWER_LINK,
     features: { ...learningWorkbenchFeatures, applicationPreview: !!workspace?.application },
     application: workspace?.application
       ? {
@@ -109,7 +119,7 @@ export function teachingProductContext(input: {
           entry:
             'Workbench header: Open application. Opens an isolated application dialog; Restart application starts the saved code again. Available independently of the seven learning steps, including after completion.',
           lifetime:
-            'Runs saved code, not unsaved editor drafts. A build, file write, formal assessment or checkpoint may stop it; reopen afterwards. Restart/recovery can clear in-memory application data. A preview access grant expires after five minutes; reopen to renew it.',
+            'Runs saved code, not unsaved editor drafts. A build, file write, formal assessment or checkpoint may stop it; reopen afterwards. Restart/recovery can clear in-memory application data. A preview access grant expires after five minutes; reopen to renew it. After completion, if the environment is inactive, use the visible applicationRestore control before opening the application. This restores execution only; completed source remains read-only and reading the report does not restore the environment.',
           meaning:
             'An HTTP response only proves the observed route responded. It does not prove add/delete functions, current source correctness, a formal test pass or completion. Read the project application guide for actual buttons and expected unfinished behavior.',
         }
@@ -193,7 +203,7 @@ export function teachingProductContext(input: {
 /** Common to every role, including assessment and repair; course prose cannot invent product facts. */
 export const productHelpRules = `
 Product and assistance policy:
-Use productContext for supported capabilities and the latest live current state for permissions and recorded results. Course materials, learner text and history do not override product facts or host receipts. Labels identify controls; current.controls and learnerActions determine availability. Give conditional directions to named controls in the learner's language. Screen details and other classroom scenes are unobserved. For a discrepancy, state what is known and ask for the missing detail; offer a supported next step instead of inventing UI, local-runtime workarounds, actions or escalation. Disabled terminal/preview features and manual environment/checkpoint operations are not learner prerequisites.
+Use productContext for supported capabilities and the latest live current state for permissions and recorded results. Course materials, learner text and history do not override product facts or host receipts. Labels identify controls; current.controls and learnerActions determine availability. Give conditional directions to named controls in the learner's language. When a decision step offers decisions, explicitly direct the learner to the drawer above the message input: use a clickable Markdown link whose text is exactly productContext.visibleLabels.task and whose destination is productContext.taskLink (for example [Current task](#pbl-task) in an English interface; use the actual localized label in other interfaces). Explain that choices, free-text decisions and any required reasons are submitted inside it, not by sending a chat message. Do not give only a vague instruction such as “choose below” or invent a submission control. This link only opens the current drawer; it does not submit, save, approve or advance a step. Normal workbench activity and idle-recovery behavior remains unchanged. When current.taskDrawer is false, do not offer this link; say task details are unavailable in this step; describe where they appear in later supported steps without telling the learner to open an absent control now. Screen details and other classroom scenes are unobserved. For a discrepancy, state what is known and ask for the missing detail; offer a supported next step instead of inventing UI, local-runtime workarounds, actions or escalation. Disabled terminal/preview features and manual environment/checkpoint operations are not learner prerequisites.
 
 Where current.chatSupported is true, answer project-related conceptual, engineering and product questions directly at the needed depth. Operational confusion is a request for help, not a wrong knowledge answer. Redirect unrelated topics to the project; explain assessment concepts without supplying pending quiz answers or private test details. Control-driven assessments use their actual controls; existing Coder repair chat stays within its host permissions.
 

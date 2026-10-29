@@ -10,6 +10,7 @@ const receiptSchema = z.object({
   artifactDigest: z.string().regex(/^[a-f0-9]{64}$/),
   runId: z.string(),
   question: z.string().min(1),
+  displayText: z.string().min(1).optional(),
   approval: z.boolean().optional(),
 });
 export const guidedSkillStateSchema = z
@@ -197,7 +198,13 @@ export class GuidedSkillReview {
     this.advanced = true;
   }
 
-  advance(file: string, feedback: string | undefined, digest: string, reuseFeedback = false): void {
+  advance(
+    file: string,
+    feedback: string | undefined,
+    digest: string,
+    reuseFeedback = false,
+    artifactApproved?: boolean,
+  ): void {
     if ((this.advanced && !reuseFeedback) || this.ended)
       throw new Error('本轮只能展开一个内容部分；交付并等待学生反馈后再继续');
     const expected =
@@ -214,7 +221,11 @@ export class GuidedSkillReview {
           artifactDigest: digest,
           studentSeq: this.studentResponses().at(-1)!.seq,
         };
-        if (this.state.pending?.approval) this.state.approval = { ...this.state.coverage };
+        if (
+          this.requiresApproval &&
+          ((this.state.pending?.approval && artifactApproved !== false) || artifactApproved)
+        )
+          this.state.approval = { ...this.state.coverage };
       }
       this.state.reviewedFiles.push(this.state.activeFile);
     }
@@ -223,7 +234,12 @@ export class GuidedSkillReview {
     this.advanced = true;
   }
 
-  checkpoint(question: string, digest: string, approval = false): GuidedSkillState {
+  checkpoint(
+    question: string,
+    digest: string,
+    approval = false,
+    displayText?: string,
+  ): GuidedSkillState {
     if (!question.trim()) throw new Error('请给出当前段的具体检查任务');
     // The welcome is already supplied by the host prompt. Recording readiness
     // may be the model's first tool call; it must not depend on a redundant read.
@@ -236,6 +252,7 @@ export class GuidedSkillReview {
       artifactDigest: digest,
       runId: this.runId,
       question,
+      ...(displayText ? { displayText } : {}),
       ...(approval ? { approval: true } : {}),
     };
     this.ended = true;
@@ -257,13 +274,19 @@ export class GuidedSkillReview {
       );
   }
 
-  assertComplete(feedback: string | undefined, digest: string, reuseFeedback = false): void {
+  assertComplete(
+    feedback: string | undefined,
+    digest: string,
+    reuseFeedback = false,
+    artifactApproved?: boolean,
+  ): void {
     this.assertCompletable();
     if (reuseFeedback) this.assertCovered(feedback, digest);
     else this.assertFeedback(feedback, digest);
     const prior = this.state.approval;
     const approved =
-      (!reuseFeedback && this.state.pending?.approval) ||
+      (!reuseFeedback &&
+        ((this.state.pending?.approval && artifactApproved !== false) || artifactApproved)) ||
       (prior?.stageKey === this.stageKey &&
         prior.artifactDigest === digest &&
         this.messages.some((message) => message.seq === prior.studentSeq && message.text.trim()));
@@ -273,8 +296,13 @@ export class GuidedSkillReview {
       );
   }
 
-  complete(feedback: string | undefined, digest: string, reuseFeedback = false): void {
-    this.assertComplete(feedback, digest, reuseFeedback);
+  complete(
+    feedback: string | undefined,
+    digest: string,
+    reuseFeedback = false,
+    artifactApproved?: boolean,
+  ): void {
+    this.assertComplete(feedback, digest, reuseFeedback, artifactApproved);
     this.ended = true;
   }
 }

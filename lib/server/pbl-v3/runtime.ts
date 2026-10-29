@@ -1,3 +1,4 @@
+import { completedProjectFiles } from './completed-files';
 import { recordLearningEvidence } from './evidence';
 import {
   projectConversation,
@@ -8,11 +9,12 @@ import {
 import { executionFailureCode } from '@/lib/agent/runtime/request-failure';
 import { readConversationHistory, CONVERSATION_BYTES } from './conversation-history';
 import 'server-only';
+import { isTeachingLocale } from './communication';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { projectEditAccess } from '@/lib/pbl/v3/edit-access';
 import { learnerActions } from '@/lib/pbl/v3/learner-actions';
 import { handoffEchoes, deduplicateHandoffs } from '@/lib/pbl/v3/conversation';
-import { reviewQuestions } from './review-question';
+import { canonicalReview, reviewQuestions } from './review-question';
 import { createHash, randomUUID } from 'node:crypto';
 import { checkpointIO, checkpointStep } from '@/lib/server/sandbox/checkpoint-errors';
 import { CHECKPOINT_TIMEOUT_MS } from '@/lib/server/sandbox/checkpoint-policy';
@@ -215,10 +217,12 @@ export function invalidateWorkspace(row: Study, changedPath?: string): EngineTra
   return { state, events: [] };
 }
 export async function openStudy(principal: OwnerPrincipal, stageId: string, sceneId: string) {
-  // Identity must be eligible for execution before any learning instance is created.
-  await SandboxService.forOwner(principal);
   const studies = await LearningStore.open();
   const existing = await studies.findForScene(principal.ownerId, stageId, sceneId);
+  // Owned final snapshots need no execution provider. Active/new studies still
+  // require an eligible identity and configuration before learning can proceed.
+  if (existing?.state.status === 'completed') return existing;
+  await SandboxService.forOwner(principal);
   if (existing) return existing;
   const documents = await getOwnerScopedDocumentStore(principal);
   const scene = await documents.getScene(stageId, sceneId);
@@ -255,6 +259,7 @@ export async function queueRole(
   text: string,
   opening = false,
   commandId?: string,
+  uiLocale?: string,
 ) {
   await fenceOwnerWrite(db, row.owner_id);
   const role = roleFor(row);
@@ -323,7 +328,12 @@ export async function queueRole(
     await agents.appendControlEvent(binding.session_id, {
       ts: Date.now(),
       type: 'user_message',
-      data: { text, delivery: 'queued', pblOpening: true },
+      data: {
+        text,
+        delivery: 'queued',
+        pblOpening: true,
+        ...(uiLocale ? { pblUiLocale: uiLocale } : {}),
+      },
     });
     await agents.requeueSession(binding.session_id);
   } else {
@@ -334,11 +344,18 @@ export async function queueRole(
     );
     // Annotate the staged input in this same transaction, before either the input
     // or its wakeup becomes visible. No historical events are rewritten.
-    if (commandId)
+    if (commandId || uiLocale)
       await db.query(
-        `UPDATE agent_session_events SET data=data || jsonb_build_object('pblCommandId',$3::text)
+        `UPDATE agent_session_events SET data=data || $3::jsonb
          WHERE session_id=$1 AND seq=$2`,
-        [binding.session_id, input.seq, commandId],
+        [
+          binding.session_id,
+          input.seq,
+          JSON.stringify({
+            ...(commandId ? { pblCommandId: commandId } : {}),
+            ...(uiLocale ? { pblUiLocale: uiLocale } : {}),
+          }),
+        ],
       );
   }
   return binding.session_id;
@@ -355,6 +372,7 @@ export interface LearningCommand {
   rationale?: string;
   answers?: number[];
   evaluationId?: string;
+  uiLocale?: string;
 }
 function validateCommand(command: LearningCommand) {
   if (
@@ -371,6 +389,8 @@ function validateCommand(command: LearningCommand) {
     (typeof command.text !== 'string' || command.text.length > 64_000)
   )
     throw sandboxInvalid('Text is limited to 64000 characters.');
+  if (command.uiLocale !== undefined && !isTeachingLocale(command.uiLocale))
+    throw sandboxInvalid('Select a supported interface language.');
   if (command.type === 'decide' && !isDecisionResponseStorable(command))
     throw sandboxInvalid(
       'Decision responses must contain valid Unicode text without null characters.',
@@ -631,6 +651,7 @@ export async function commandStudy(
                 : command.text!,
               command.type === 'begin',
               command.id,
+              command.uiLocale,
             ),
           };
         }
@@ -924,6 +945,7 @@ export async function learningView(
       inputId?: number;
       messageId?: number;
       handoff: boolean;
+      canonical?: boolean;
     }
   > = [];
   let conversation: LearningView['conversation'] = [];
@@ -995,10 +1017,14 @@ export async function learningView(
           scope: binding.session_id,
           inputId: data.pblInputId,
           handoff: true,
+          canonical: canonicalReview(event),
         });
         if (
           event.id > (latestUserSeq ?? 0) &&
-          question === (binding.guided?.handoff?.question ?? binding.guided?.pending?.question)
+          question ===
+            (binding.guided?.handoff?.question ??
+              binding.guided?.pending?.displayText ??
+              binding.guided?.pending?.question)
         )
           currentQuestionShown = true;
       }
@@ -1068,23 +1094,34 @@ export async function learningView(
   conversation = conversation.slice(-60);
   // The review transaction can commit before the runner persists its display event.
   const pendingReview = binding?.guided?.handoff ?? binding?.guided?.pending;
+  const pendingDisplay =
+    pendingReview &&
+    ('displayText' in pendingReview
+      ? (pendingReview.displayText ?? pendingReview.question)
+      : pendingReview.question);
+  const canonicalPending =
+    !!pendingReview &&
+    (('displayText' in pendingReview && !!pendingReview.displayText) ||
+      ('kind' in pendingReview && pendingReview.kind === 'support'));
   if (pendingReview?.runId === `${stageKey(row)}:${latestUserSeq ?? 0}` && !currentQuestionShown) {
     messages.push({
       role: 'assistant',
-      text: pendingReview.question,
+      text: pendingDisplay!,
       scope: binding!.session_id,
       inputId: latestUserSeq,
+      canonical: canonicalPending,
       handoff: true,
     });
     conversation.push({
-      id: `pending-${pendingReview.runId}`,
+      id: `${binding!.session_id}:pending-${pendingReview.runId}`,
       speaker: binding!.role,
       inputId: latestUserSeq,
       parts: [
         {
           kind: 'text',
           id: `question-pending-${pendingReview.runId}`,
-          text: pendingReview.question,
+          text: pendingDisplay!,
+          ...(canonicalPending ? { canonical: true as const } : {}),
         },
       ],
     });
@@ -1103,10 +1140,21 @@ export async function learningView(
   // must not offer it as ready, or retry is enabled only to fail and the next input cannot restore.
   const released = !!row.environment_id && environmentReleaseCommitted(row, row.environment_id);
   let environment: LearningView['environment'] = cached?.environment
-    ? { ...cached.environment, ready: cached.environment.ready && !released }
+    ? {
+        ...cached.environment,
+        ready: cached.environment.ready && !released,
+        ...(row.idle_turn_cleanup?.environmentId === row.environment_id &&
+        row.idle_turn_cleanup.releasing &&
+        cached.environment.state !== 'destroyed'
+          ? { releasing: true }
+          : { releasing: false }),
+      }
     : null;
   let environmentService: SandboxService | undefined;
-  let files = cached?.files ?? Object.keys(project.files);
+  const completedFiles = await completedProjectFiles(store.pool, row, project);
+  let files = completedFiles
+    ? Object.keys(completedFiles).sort()
+    : (cached?.files ?? Object.keys(project.files));
   if (row.environment_id && !cached) {
     try {
       environmentService = await SandboxService.forOwner(principal);
@@ -1118,10 +1166,15 @@ export async function learningView(
       environment = observed
         ? {
             state: observed.state,
+            ...(row.idle_turn_cleanup?.environmentId === row.environment_id &&
+            row.idle_turn_cleanup.releasing &&
+            observed.state !== 'destroyed'
+              ? { releasing: true }
+              : {}),
             ready: !released && observed.state === 'running' && observed.workspaceReady,
           }
         : null;
-      if (environment?.ready)
+      if (environment?.ready && !completedFiles)
         files = await projectFiles(environmentService, row.environment_id, project);
     } catch (error) {
       if (
@@ -1181,6 +1234,7 @@ export async function learningView(
         }
       : {}),
     reportAvailable: canViewProjectReport(row.state),
+    completedFilesAvailable: completedFiles !== null,
     lifecycleError: row.lifecycle_error ?? null,
     checkpointFailure: row.checkpoint_failure ?? null,
     archiveDiscard: row.archive_discard ?? null,

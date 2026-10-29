@@ -2551,7 +2551,7 @@
     "restoredCheckpoint": "تمت استعادة مساحة العمل من آخر نقطة حفظ، دون التغييرات اللاحقة.",
     "restartedWorkspace": "لا توجد نقطة حفظ. أعيد تجهيز مساحة العمل بملفات المشروع الأولية.",
     "restoredProgress": "أعيد التقدم إلى أول خطوة متأثرة. راجع الملفات المستعادة واختبرها مجددًا.",
-    "environmentNotice": "Preparing your project environment. Your teaching assistant will open the step when it is ready.",
+    "environmentNotice": "Preparing or restoring the environment. The editor is read-only; existing drafts are kept. Type after recovery.",
     "prepare": "Retry project setup",
     "completed": "Project completed. Your learning progress is saved.",
     "learning": "Learning conversation",
@@ -2633,7 +2633,7 @@
     "reportEvidence": "Decisions, artifacts and results",
     "reportConversations": "Learning conversations",
     "conversationLimited": "Some activity is omitted from this view to keep it responsive. The complete records remain saved.",
-    "truncatedEvidence": "Only the most recent records are shown here. Earlier records remain saved.",
+    "truncatedEvidence": "تُعرض هنا سجلات تعلم مختارة. تبقى السجلات الأصلية الكاملة محفوظة.",
     "evidenceVersion": "Recorded version",
     "learner": "Learner",
     "build": "Build / check syntax",
@@ -2787,6 +2787,7 @@
       "toggleAssistant": "Toggle learning assistant",
       "environmentDetails": "Environment details",
       "saving": "جارٍ الحفظ…",
+      "readOnly": "Read-only",
       "saved": "تم الحفظ",
       "saveFailed": "فشل الحفظ · إعادة المحاولة",
       "draftRetained": "التغييرات محفوظة في هذا المتصفح"
@@ -2823,7 +2824,25 @@
       "quizAttempts": "Quiz attempts",
       "fileEdits": "Recorded file edits",
       "interruptedRuns": "Interrupted or failed assistant runs",
-      "completed": "Project completed. You can open your learning report."
+      "completed": "Project completed. You can open your learning report.",
+      "subtitle": "ما أنجزته والقرارات التي اتخذتها والأدلة على تقدمك.",
+      "completedMilestones": "المراحل المكتملة",
+      "completedSteps": "الخطوات المكتملة",
+      "concepts": "المفاهيم التي مارستها",
+      "skills": "المهارات التي مارستها",
+      "practiceNotice": "توضح هذه السجلات ما مارسته ولا تُعد شهادة إتقان.",
+      "viewWorkbench": "عرض مساحة العمل للقراءة فقط",
+      "completedTitle": "اكتمل المشروع",
+      "completionHint": "تم حفظ عملك. يمكنك عرض التقرير أو العودة إلى مساحة العمل.",
+      "close": "إغلاق التقرير",
+      "finalizing": "جارٍ حفظ الرد الأخير. سيتاح التقرير قريبًا.",
+      "skillLabels": {
+        "decisions": "اتخاذ قرارات هندسية",
+        "planReview": "مراجعة خطة",
+        "codeReview": "مراجعة التنفيذ",
+        "verification": "التحقق بالاختبارات",
+        "reflection": "التأمل بناءً على الأدلة"
+      }
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {
@@ -2879,7 +2898,8 @@
       "display": "Display",
       "stopped": "Stopped"
     },
-    "environmentSleeping": "بيئة المشروع غير نشطة. استعد ملفات المشروع باستخدام الزر أدناه للمتابعة. تبقى المسودات غير المحفوظة في هذا المتصفح.",
+    "environmentReleasing": "The environment is being released. The editor is read-only. Wait, then click the workbench or use the restore button. Existing browser drafts are kept.",
+    "environmentSleeping": "The environment is inactive and the editor is read-only. Click in the workbench to restore automatically, or use Restore project files. Existing browser drafts are kept; type after recovery.",
     "recoverWorkspace": "استعادة ملفات المشروع",
     "checkpointUnavailable": "تعذرت أرشفة أحدث التغييرات. أعد محاولة الحفظ. عند استمرار الخمول قد يتم تحرير البيئة وفقدان التغييرات غير المؤرشفة.",
     "checkpointSkipped": "فشلت الأرشفة بشكل متكرر. قد تؤدي الاستعادة إلى فقدان التغييرات الأحدث من النسخة المحفوظة.",
@@ -2925,7 +2945,9 @@
       "reopen": "Reopen application",
       "starting": "Starting your application…",
       "failed": "The application exited. Read the output or ask your current assistant for help.",
-      "unavailable": "The application is not responding yet. Reopen, or share the error with your assistant."
+      "unavailable": "The application is not responding yet. Reopen, or share the error with your assistant.",
+      "restore": "Restore application environment",
+      "restoreNotice": "Your saved source and report remain available. Restore the environment to run your application again; completed source stays read-only."
     }
   }
 }

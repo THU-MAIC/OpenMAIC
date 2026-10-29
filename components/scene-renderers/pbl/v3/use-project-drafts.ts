@@ -3,6 +3,15 @@ import { useCallback, useEffect, useState, type SetStateAction } from 'react';
 import { z } from 'zod';
 
 const bufferSchema = z.object({
+  changes: z
+    .array(
+      z.object({
+        start: z.number().int().positive(),
+        end: z.number().int().positive(),
+        kind: z.enum(['added', 'modified', 'deleted']),
+      }),
+    )
+    .optional(),
   text: z.string(),
   saved: z.string(),
   hash: z.string(),

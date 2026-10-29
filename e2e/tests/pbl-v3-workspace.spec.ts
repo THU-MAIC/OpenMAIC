@@ -494,6 +494,10 @@ test('installed sample opens in the normal classroom and preserves progress afte
   // Observe expiry without trusted input: passive refreshes must not allocate compute.
   await page.getByRole('button', { name: 'Refresh progress' }).dispatchEvent('click');
   await expect(page.getByTestId('pbl-environment-setup')).toContainText('environment is inactive');
+  await expect(page.getByTestId('pbl-environment-setup')).toContainText(
+    'Click in the workbench to restore automatically',
+  );
+  await expect(page.getByTestId('pbl-editor-readonly')).toContainText('read-only');
   expect(calls.filter((c) => c.type === 'prepare')).toHaveLength(beforeRecovery);
   // Classroom navigation is only reachable outside the shared fullscreen overlay.
   if (
@@ -557,6 +561,10 @@ test('installed sample opens in the normal classroom and preserves progress afte
   view.environment = { state: 'destroyed', ready: false };
   await page.getByRole('button', { name: 'Refresh progress' }).dispatchEvent('click');
   await expect(page.getByTestId('pbl-environment-setup')).toContainText('environment is inactive');
+  await expect(page.getByTestId('pbl-environment-setup')).toContainText(
+    'Click in the workbench to restore automatically',
+  );
+  await expect(page.getByTestId('pbl-editor-readonly')).toContainText('read-only');
   await page.waitForTimeout(1100);
   // Trusted input in the PBL content still restores automatically, without changing the draft.
   await page.getByLabel('Your message').press('ArrowLeft');
@@ -663,6 +671,25 @@ test('installed sample opens in the normal classroom and preserves progress afte
   }
   await expect(page.getByRole('tab', { name: /●/ })).toHaveCount(0);
   expect(calls.filter((c) => c.type === 'save')).toHaveLength(savesBeforeSwitching);
+  // Testing locks remain visible even with a clean, saved editor buffer.
+  const codingStage = view.stage;
+  view.stage = { kind: 'check', checker: 'tests' } as LearningView['stage'];
+  view.state.position.stageIndex = 4;
+  view.evaluation = { id: 'running-test', state: 'running', stdout: '', stderr: '' };
+  view.actions = [];
+  view.revision++;
+  await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
+  await expect(page.getByTestId('pbl-editor-readonly')).toContainText('Tests are running');
+  await page.locator('.monaco-editor .view-lines .view-line').first().click();
+  await page.keyboard.type('blocked');
+  await expect(page.locator('.monaco-editor .view-lines')).toHaveText(
+    'print("Saved code after retry")',
+  );
+  expect(calls.filter((c) => c.type === 'save')).toHaveLength(savesBeforeSwitching);
+  view.stage = codingStage;
+  view.state.position.stageIndex = 3;
+  view.evaluation = null;
+  view.actions = ['chat', 'edit'];
   view.busy = true;
   view.revision++;
   await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
@@ -671,7 +698,7 @@ test('installed sample opens in the normal classroom and preserves progress afte
   await expect(page.locator('.monaco-editor-overlaymessage')).toContainText(
     'The assistant is working',
   );
-  await expect(page.getByTestId('pbl-edit-access')).toHaveCount(0);
+  await expect(page.getByTestId('pbl-editor-readonly')).toContainText('The assistant is working');
   await expect(page.locator('.monaco-editor .view-lines')).toHaveText(
     'print("Saved code after retry")',
   );
@@ -798,11 +825,17 @@ test('installed sample opens in the normal classroom and preserves progress afte
   // Real workbench/Monaco recovery: the rejected draft survives restore and
   // saves against its verified base with a new request, without discarding it.
   unavailableAutosave = true;
-  await page.locator('.monaco-editor .view-lines .view-line').first().click();
-  await page.keyboard.press('ControlOrMeta+A');
+  const restoredEditor = page.locator('.monaco-editor textarea').first();
+  await expect(restoredEditor).toBeEditable();
+  await restoredEditor.focus();
+  await restoredEditor.press('ControlOrMeta+A');
   await page.keyboard.insertText('print("Draft after idle")');
   await expect(retrySave).toBeVisible();
   await expect(page.getByTestId('pbl-environment-setup')).toContainText('environment is inactive');
+  await expect(page.getByTestId('pbl-environment-setup')).toContainText(
+    'Click in the workbench to restore automatically',
+  );
+  await expect(page.getByTestId('pbl-editor-readonly')).toContainText('read-only');
   const unavailableRequest = saveAttempts.at(-1)!;
   const beforeDraftRestore = calls.filter((c) => c.type === 'prepare').length;
   await page.getByRole('button', { name: 'Restore project files', exact: true }).click();
@@ -821,7 +854,7 @@ test('installed sample opens in the normal classroom and preserves progress afte
     'aria-selected',
     'true',
   );
-  // Build feedback uses the existing task drawer without shrinking the editor.
+  // Build output uses the task drawer; only the explicit read-only notice takes editor space.
   const editorHeight = (await page.locator('.monaco-editor').first().boundingBox())!.height;
   view.actions.push('compile');
   await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
@@ -831,7 +864,7 @@ test('installed sample opens in the normal classroom and preserves progress afte
   ).toHaveCount(0);
   const taskDetails = page.getByRole('region', { name: 'Current task details', exact: true });
   if (!(await taskDetails.isVisible()))
-    await page.getByRole('button', { name: /Current task details/ }).click();
+    await page.getByRole('button', { name: /^Current task$/ }).click();
   await expect(
     taskDetails.getByRole('button', { name: 'Build / check syntax', exact: true }),
   ).toBeVisible();
@@ -848,13 +881,14 @@ test('installed sample opens in the normal classroom and preserves progress afte
   await page.getByRole('button', { name: 'Close task details', exact: true }).click();
   await expect(page.locator('.pbl-task-dock [data-action="compile"] .animate-spin')).toHaveCount(1);
   expect(
-    (await page.locator('.monaco-editor').first().boundingBox())!.height,
+    (await page.locator('.monaco-editor').first().boundingBox())!.height +
+      ((await page.getByTestId('pbl-editor-readonly').boundingBox())?.height ?? 0),
   ).toBeGreaterThanOrEqual(editorHeight - 1);
   view.evaluation.state = 'exited';
   view.evaluation.stderr = 'greeting.py:1: SyntaxError: expected a colon';
   view.revision++;
   await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
-  await page.getByRole('button', { name: /Current task details/ }).click();
+  await page.getByRole('button', { name: /^Current task$/ }).click();
   await expect(taskDetails.getByText('greeting.py:1: SyntaxError: expected a colon')).toBeVisible();
   await expect(page.getByTestId('pbl-build-status')).toHaveCount(0);
   await expect(page.locator('.pbl-task-dock [data-action="compile"]')).toHaveCount(0);
@@ -894,13 +928,13 @@ test('installed sample opens in the normal classroom and preserves progress afte
   } as LearningView['stage'];
   view.state.position.stageIndex = 5;
   await page.getByRole('button', { name: 'Refresh progress' }).click();
-  await page.getByRole('button', { name: /Current task details/ }).click();
+  await page.getByRole('button', { name: /^Current task$/ }).click();
   // Selecting the last question first must not count sparse array slots as answers.
   await page.getByRole('radio', { name: 'After saving' }).check();
   await expect(page.getByRole('button', { name: 'Submit answers' })).toBeDisabled();
   await page.reload();
   await page.getByRole('button', { name: /^(?:Start Project|Continue Project)$/ }).click();
-  await page.getByRole('button', { name: /Current task details/ }).click();
+  await page.getByRole('button', { name: /^Current task$/ }).click();
   await expect(page.getByRole('radio', { name: 'After saving' })).toBeChecked();
   await expect(page.getByRole('button', { name: 'Submit answers' })).toBeDisabled();
   await page.getByRole('radio', { name: 'Prints a value' }).check();
@@ -911,7 +945,7 @@ test('installed sample opens in the normal classroom and preserves progress afte
   await page.reload();
   await page.getByRole('button', { name: /^(?:Start Project|Continue Project)$/ }).click();
   // The drawer closes on reload; its recorded quiz result remains available on reopening.
-  await page.getByRole('button', { name: /Current task details/ }).click();
+  await page.getByRole('button', { name: /^Current task$/ }).click();
   await expect(page.getByRole('region', { name: 'Current task details', exact: true })).toBeVisible(
     { timeout: 15000 },
   );
@@ -939,8 +973,35 @@ test('installed sample opens in the normal classroom and preserves progress afte
   view.role = 'mentor';
   view.actions = [];
   view.state.position.stageIndex = 6;
+  view.conversation = [
+    {
+      id: 'completed-recap',
+      speaker: 'mentor',
+      parts: [
+        {
+          kind: 'tool',
+          id: 'completed-recap-tool',
+          action: 'complete',
+          status: 'succeeded',
+          projectCompleted: true,
+        },
+      ],
+    },
+  ];
   await page.getByRole('button', { name: 'Refresh progress' }).click();
-  await expect(page.getByRole('button', { name: 'Learning report', exact: true })).toBeVisible();
+  const workspace = page.getByTestId('pbl-v3-workspace');
+  const toolbarReport = workspace
+    .locator(':scope > header')
+    .getByRole('button', { name: 'Learning report', exact: true });
+  const completionReport = workspace
+    .getByTestId('pbl-agent-turn')
+    .getByRole('button', { name: 'Learning report', exact: true });
+  await expect(toolbarReport).toBeVisible();
+  await expect(completionReport).toBeVisible();
+  await expect(workspace.getByRole('button', { name: 'Learning report', exact: true })).toHaveCount(
+    2,
+  );
+  await expect(workspace.getByTestId('pbl-project-completed').getByRole('button')).toHaveCount(0);
   // Completed projects can restore source files explicitly; opening the report needs no compute.
   await expect(
     page.getByRole('button', { name: 'Restore project files', exact: true }),
@@ -951,8 +1012,8 @@ test('installed sample opens in the normal classroom and preserves progress afte
   )
     await page.getByRole('button', { name: 'Exit fullscreen workspace', exact: true }).click();
   await page.getByRole('button', { name: 'Expand to fullscreen workspace', exact: true }).click();
-  await page.getByRole('button', { name: 'Learning report', exact: true }).click();
-  const report = page.getByRole('region', { name: 'Learning report' });
+  await toolbarReport.click();
+  const report = page.getByRole('dialog', { name: 'Learning report', exact: true });
   await expect(report.getByText('A saved learning journey', { exact: true })).toBeVisible();
   await expect(
     report.getByText(
@@ -961,30 +1022,35 @@ test('installed sample opens in the normal classroom and preserves progress afte
     ),
   ).toBeVisible();
   await expect(
-    report.getByText('Only the most recent records are shown here. Earlier records remain saved.', {
-      exact: true,
-    }),
+    report.getByText(
+      'Selected learning records are shown here. Complete original records remain saved.',
+      {
+        exact: true,
+      },
+    ),
   ).toBeVisible();
-  await report.getByRole('button', { name: 'Evidence 7', exact: true }).click();
+  await report.getByRole('button', { name: 'Evidence 1', exact: true }).click();
+  await expect(report.locator(`#report-source-${view.id}-event-7`)).toHaveAttribute('open', '');
   await expect(report.getByText('Saved plan evidence')).toBeVisible();
   expect(
     await report
-      .locator('details[id^="report-source-turn-"]')
+      .locator(`details[id^="report-source-${view.id}-turn-"]`)
       .evaluateAll((items) => items.map((item) => item.id)),
   ).toEqual([
-    'report-source-turn-0-1',
-    'report-source-turn-2-1',
-    'report-source-turn-1-1',
-    'report-source-turn-0-2',
+    `report-source-${view.id}-turn-0-1`,
+    `report-source-${view.id}-turn-2-1`,
+    `report-source-${view.id}-turn-1-1`,
+    `report-source-${view.id}-turn-0-2`,
   ]);
   await report.evaluate((el) => {
     el.scrollTop = 0;
   });
   await report.screenshot({ path: 'test-results/pbl-v3-report.png' });
-  await page.getByRole('button', { name: 'Return to learning' }).click();
+  await report.getByRole('button', { name: 'View read-only workbench', exact: true }).click();
   await expect(report).toHaveCount(0);
-  await page.getByRole('button', { name: 'Learning report', exact: true }).click();
+  await completionReport.click();
   await expect(report.getByText('A saved learning journey', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Return to learning' }).click();
+  await report.getByRole('button', { name: 'Close report', exact: true }).click();
+  await expect(report).toHaveCount(0);
   expect(calls.filter((c) => c.type === 'prepare')).toHaveLength(beforeCompletedProject);
 });

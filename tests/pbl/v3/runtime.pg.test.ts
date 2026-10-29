@@ -472,7 +472,7 @@ function toolResponse(calls: { name: string; input: Record<string, unknown> }[])
       type: 'tool-call',
       toolCallId: randomUUID(),
       toolName: call.name,
-      input: call.input,
+      input: call.name === 'request_skill_review' ? { explanation: '', ...call.input } : call.input,
     })),
     modelFinish('tool-calls'),
   ];
@@ -724,6 +724,120 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     }
     if (mocked.root) await rm(mocked.root, { recursive: true, force: true });
   });
+  it('completes plan review from spontaneous current-version acceptance without another approval question', async () => {
+    const original = studyId;
+    const study = await freshStudy();
+    studyId = study.id;
+    try {
+      await store.pool.query(
+        "UPDATE pbl_v3_studies SET state=jsonb_set(state,'{position,stageIndex}','2') WHERE id=$1",
+        [study.id],
+      );
+      await runTools('Please prepare my plan.', async (config) => {
+        await invoke(config, 'read_next_skill');
+        const row = await store.get(study.id, principal.ownerId);
+        const service = await SandboxService.forOwner(principal);
+        const text = await service.readText(row.environment_id!, 'PLAN.md');
+        await invoke(config, 'write_file', {
+          path: 'PLAN.md',
+          text: 'Use an f-string to return the required greeting, then check the returned value.',
+          expectedHash: digest(text),
+        });
+        await invoke(config, 'request_skill_review', {
+          explanation: 'The plan follows the saved choice and describes how to check its result.',
+          question: 'Review the current plan and any necessary changes.',
+        });
+      });
+      const delivered = await learningView(principal, study.id);
+      expect(
+        delivered.messages
+          .filter((message) => message.role === 'assistant')
+          .map((message) => message.text),
+      ).toContain(
+        'The plan follows the saved choice and describes how to check its result.\n\nReview the current plan and any necessary changes.',
+      );
+      await runTools('我认可当前版本，没有需要改的，可以继续。', async (config) => {
+        await invoke(config, 'read_next_skill', {
+          studentFeedback:
+            'The actual reply understands and accepts this current plan without changes.',
+          artifactApproved: true,
+        });
+        for (let n = 0; n < 2; n++)
+          await invoke(config, 'read_next_skill', {
+            studentFeedback: 'Same reply covers review and accepts this unchanged plan.',
+            reuseFeedback: true,
+          });
+        expect(await config.liveContext()).toContain('"priorArtifactApproval":{"studentSeq":');
+        await invoke(config, 'complete_stage', {
+          studentFeedback: 'The learner accepted the unchanged current plan.',
+          reuseFeedback: true,
+        });
+      });
+      const view = await learningView(principal, study.id);
+      expect(view.actions).toContain('next');
+      expect(view.state.position.stageIndex).toBe(2);
+      expect(view.state.collected.greeting!.planReviewCompleted).toBe(true);
+    } finally {
+      studyId = original;
+      await releasePreparationFixtures([study.id]);
+    }
+  });
+
+  it('retains response language across role boundaries without sharing dialogue or granting review evidence', async () => {
+    const original = studyId;
+    const study = await freshStudy();
+    studyId = study.id;
+    try {
+      await runTools('请用中文讲解这个项目。', async (config) => {
+        await invoke(config, 'set_response_language', { locale: 'zh-CN', source: 'explicit' });
+        expect(await config.liveContext()).toContain(
+          '"responseLanguage":{"locale":"zh-CN","source":"explicit"}',
+        );
+        await invoke(config, 'respond_to_learner', { response: '好的，后续使用中文。' });
+      });
+      const before = await store.get(study.id, principal.ownerId);
+      expect(before.state.position.stageIndex).toBe(0);
+      expect(before.state.collected.greeting!.teachingCompleted).not.toBe(true);
+      const binding = (await store.roles(study.id))[0]!;
+      expect(binding.guided?.welcome).toBe('pending');
+      await runTools('OK', async (config) => {
+        expect(config.systemPrompt).toContain(
+          '"responseLanguage":{"locale":"zh-CN","source":"explicit"}',
+        );
+        await expect(
+          invoke(config, 'set_response_language', { locale: 'en-US', source: 'conversation' }),
+        ).rejects.toThrow('explicit');
+        await invoke(config, 'respond_to_learner', { response: '继续保留中文。' });
+      });
+      await runTools('Switch to English please.', async (config) => {
+        await invoke(config, 'set_response_language', { locale: 'en-US', source: 'explicit' });
+        await invoke(config, 'respond_to_learner', { response: 'I will use English.' });
+      });
+      expect(
+        (
+          await store.pool.query(
+            "SELECT detail FROM pbl_v3_evidence WHERE study_id=$1 AND kind='response-language' ORDER BY id DESC LIMIT 1",
+            [study.id],
+          )
+        ).rows[0].detail,
+      ).toEqual({ locale: 'en-US', source: 'explicit' });
+      // A different role receives the preference through study metadata alone.
+      await store.pool.query(
+        "UPDATE pbl_v3_studies SET state=jsonb_set(state,'{position,stageIndex}','1') WHERE id=$1",
+        [study.id],
+      );
+      await runTools('Discuss the offered choice.', async (config) => {
+        expect(config.systemPrompt).toContain(
+          '"responseLanguage":{"locale":"en-US","source":"explicit"}',
+        );
+        expect(config.systemPrompt).not.toContain('请用中文讲解这个项目。');
+      });
+    } finally {
+      studyId = original;
+      await releasePreparationFixtures([study.id]);
+    }
+  });
+
   it.each([false, true])(
     'persists literal text decisions through summaries and reports (option collision: %s)',
     async (collision) => {
@@ -1843,6 +1957,83 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     ).rejects.toMatchObject({ status: 404 });
     await agents.softDeleteSession(started.sessionId, principal.ownerId);
   });
+  it('counts tool-delivered reply turns once and keeps canonical report dialogue consistent with the workbench', async () => {
+    const study = await freshStudy();
+    const started = (await study.send('begin')) as { sessionId: string };
+    const question = 'Read the current plan, then tell me whether it matches your choice.';
+    await agents.appendControlEvent(started.sessionId, {
+      ts: Date.now(),
+      type: 'message_end',
+      data: {
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'A draft prelude which was superseded.' }],
+        },
+      },
+    });
+    await agents.appendControlEvent(started.sessionId, {
+      ts: Date.now(),
+      type: 'pbl_learner_handoff',
+      data: { question, canonical: true, toolCallId: 'canonical-report-review' },
+    });
+    const report = await learningEvidence(principal, study.id);
+    expect(
+      report.conversations
+        .flatMap((c) => c.messages)
+        .filter((m) => m.role === 'assistant')
+        .map((m) => m.text),
+    ).toEqual([question]);
+    expect(report.facts).toMatchObject({ learnerTurns: 0, assistantTurns: 1 });
+  });
+  it.each([
+    { bindings: 1, automaticOpening: false },
+    { bindings: 3, automaticOpening: false },
+    { bindings: 1000, automaticOpening: false },
+    { bindings: 1000, automaticOpening: true },
+  ])(
+    'preserves the oldest learner message in bounded two-ended report samples ($bindings bindings, opening: $automaticOpening)',
+    async ({ bindings, automaticOpening }) => {
+      const study = await unpreparedStudy();
+      const prefix = `sample-${randomUUID()}-`;
+      await pool.query(
+        `INSERT INTO agent_sessions(id,owner_id,prompt,stage_id,status,updated_at)
+       SELECT $1 || g,$2,'Report sample','report-course','succeeded',
+         now() + CASE WHEN g=1 THEN interval '1 hour' ELSE interval '0' END
+       FROM generate_series(1,$3::int) g`,
+        [prefix, principal.ownerId, bindings],
+      );
+      await pool.query(
+        `INSERT INTO pbl_v3_roles(session_id,study_id,role,context_key,stage_key)
+       SELECT $1 || g,$2,'discussion','sample-' || g,'sample:0' FROM generate_series(1,$3::int) g`,
+        [prefix, study.id, bindings],
+      );
+      await pool.query(
+        `INSERT INTO agent_session_events(session_id,seq,ts,attempt,type,data)
+       SELECT $1,g,g,0,'user_message',jsonb_build_object('text','learner-' || g,
+         'pblOpening',g=1 AND $2::boolean)
+       FROM generate_series(1,1002) g`,
+        [prefix + '1', automaticOpening],
+      );
+      const report = await learningEvidence(principal, study.id);
+      const retained = report.conversations.find((c) => c.milestone === 'sample-1')!;
+      const allowance = Math.floor(1000 / bindings);
+      expect(retained.truncated).toBe(true);
+      expect(retained.messages).toHaveLength(allowance);
+      expect(retained.messages[0]?.text).toBe(automaticOpening ? 'learner-2' : 'learner-1');
+      if (allowance > 1) expect(retained.messages.at(-1)?.text).toBe('learner-1002');
+      expect(report.facts?.learnerTurns).toBe(automaticOpening ? 1001 : 1002);
+      expect(
+        (
+          await pool.query(
+            'SELECT count(*)::int AS n FROM agent_session_events WHERE session_id=$1',
+            [prefix + '1'],
+          )
+        ).rows[0].n,
+      ).toBe(1002);
+    },
+    20000,
+  );
+
   it('generates only after completion, saves one report and safely retries a failed analysis', async () => {
     const { id } = await freshStudy();
     await expect(learningReport(principal, id)).rejects.toMatchObject({ status: 409 });
@@ -1875,6 +2066,18 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(await learningReport(principal, id)).toEqual(ready);
     expect(await generateLearningReport(principal, id, signal)).toEqual(ready);
     expect(mocked.reportAnalysis).toHaveBeenCalledTimes(2);
+    // An old-format cached report is rebuilt token-free; one explicit retry upgrades it.
+    await pool.query(
+      "UPDATE pbl_v3_reports SET document=jsonb_set(document,'{formatVersion}','2') WHERE study_id=$1",
+      [id],
+    );
+    const upgradedFacts = await learningReport(principal, id);
+    expect(upgradedFacts.summary).toBeDefined();
+    expect(upgradedFacts.analysis?.status).toBe('not_generated');
+    expect(mocked.reportAnalysis).toHaveBeenCalledTimes(2);
+    mocked.reportAnalysis.mockResolvedValueOnce({ findings: [], omitted: false });
+    expect((await generateLearningReport(principal, id, signal)).analysis?.status).toBe('ready');
+    expect(mocked.reportAnalysis).toHaveBeenCalledTimes(3);
     await expect(
       learningReport({ ...principal, ownerId: 'another-owner' }, id),
     ).rejects.toMatchObject({ status: 404 });
@@ -4081,7 +4284,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(report.counts['decision.recorded']).toBe(size);
     expect(report.facts).toMatchObject({
       learnerTurns: size,
-      assistantTurns: 2,
+      assistantTurns: 1,
       decisions: 1,
       decisionChanges: size - 1,
       fileEdits: size + 1,
@@ -4206,7 +4409,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       const mentor = (await store.roles(studyId)).find((binding) => binding.role === 'mentor')!;
       expect(mentor.stage_key).toBe('greeting:6');
       expect(config.systemPrompt).toContain(
-        '"teachingContext":{"stageKey":"greeting:6","completionRecorded":false,"activeSection":null,',
+        '"teachingContext":{"stageKey":"greeting:6","completionRecorded":false,',
       );
       expect(config.systemPrompt).toContain('"recordedEvidence"');
       expect(config.systemPrompt).toContain('2 checks passed');
@@ -4431,7 +4634,12 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     mocked.responses = [
       toolResponse([{ name: 'read_next_skill', input: {} }]),
       textResponse(delivered),
-      toolResponse([{ name: 'request_skill_review', input: { question } }]),
+      toolResponse([
+        {
+          name: 'request_skill_review',
+          input: { explanation: delivered.slice(0, -question.length).trim(), question },
+        },
+      ]),
     ];
     const callsBefore = mocked.modelCalls;
     await runSession(
@@ -4440,7 +4648,8 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     );
     expect(mocked.modelCalls - callsBefore).toBe(3);
     expect(mocked.modelSystems.at(-1)).toContain(delivered);
-    expect(mocked.modelSystems.at(-1)).toContain('record that SAME question');
+    expect(mocked.modelSystems.at(-1)).toContain('record that SAME reply');
+    expect(mocked.modelSystems.at(-1)).toContain('verbatim into explanation');
     expect((await agents.getSession(queued.sessionId))?.status).toBe('succeeded');
     expect(await agents.listUserMessages(queued.sessionId)).toEqual(inputs);
     expect((await store.binding(queued.sessionId))?.guided?.pending?.question).toBe(question);
@@ -4745,7 +4954,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             type: 'tool-call',
             toolCallId: 'ask-review',
             toolName: 'request_skill_review',
-            input: { question: 'What should greet(name) return?' },
+            input: { explanation: '', question: 'What should greet(name) return?' },
           },
           finish,
         ],
@@ -4764,7 +4973,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             type: 'tool-call',
             toolCallId: 'early-review',
             toolName: 'request_skill_review',
-            input: { question: '' },
+            input: { explanation: '', question: '' },
           },
           finish,
         ]);
@@ -4823,7 +5032,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             type: 'tool-call',
             toolCallId: 'next-review',
             toolName: 'request_skill_review',
-            input: { question: 'How does the caller use that value?' },
+            input: { explanation: '', question: 'How does the caller use that value?' },
           },
           finish,
         ],
@@ -9040,6 +9249,60 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       state: 'destroyed',
     });
   });
+  it('opens owned completed read-only studies with sandboxes disabled while keeping execution gated', async () => {
+    const completed = await freshStudy();
+    const row = await store.get(completed.id, principal.ownerId);
+    await recordLearningEvidence(pool, row, 'coder', 'artifact', {
+      artifactKind: 'final',
+      files: { 'PLAN.md': 'Final plan.' },
+    });
+    const documents = new PgDocumentStore<
+      import('@/lib/types/stage').Scene,
+      import('@/lib/types/stage').Stage
+    >(pool, { withTransaction: (fn) => store.transaction(fn) });
+    await documents.saveDocument({
+      stage: { id: row.stage_id, name: 'Completed review', createdAt: 1, updatedAt: 1 },
+      scenes: [],
+    });
+    await claimStageMeta(pool, row.stage_id, principal.ownerId);
+    await pool.query(
+      "UPDATE pbl_v3_studies SET state=jsonb_set(state,'{status}','\"completed\"') WHERE id=$1",
+      [completed.id],
+    );
+    const running = await unpreparedStudy();
+    const active = await store.get(running.id, principal.ownerId);
+    await documents.saveDocument({
+      stage: { id: active.stage_id, name: 'Active execution', createdAt: 1, updatedAt: 1 },
+      scenes: [],
+    });
+    await claimStageMeta(pool, active.stage_id, principal.ownerId);
+    const service = vi
+      .spyOn(SandboxService, 'forOwner')
+      .mockRejectedValue(new SandboxError('SANDBOX_DISABLED', 503, 'Sandboxes disabled.'));
+    onTestFinished(() => service.mockRestore());
+    expect((await openStudy(principal, row.stage_id, row.scene_id)).id).toBe(completed.id);
+    expect(service).not.toHaveBeenCalled();
+    expect(await learningView(principal, completed.id)).toMatchObject({
+      reportAvailable: true,
+      completedFilesAvailable: true,
+      files: ['PLAN.md'],
+    });
+    await expect(completed.send('prepare')).rejects.toMatchObject({ code: 'SANDBOX_DISABLED' });
+    await expect(openStudy(principal, active.stage_id, active.scene_id)).rejects.toMatchObject({
+      code: 'SANDBOX_DISABLED',
+    });
+    await expect(openStudy(principal, randomUUID(), 'scene')).rejects.toMatchObject({
+      code: 'SANDBOX_DISABLED',
+    });
+    await expect(
+      openStudy({ ...principal, ownerId: 'foreign-owner' }, row.stage_id, row.scene_id),
+    ).rejects.toMatchObject({ code: 'SANDBOX_DISABLED' });
+    service.mockRestore();
+    await expect(
+      openStudy({ ...principal, ownerId: 'foreign-owner' }, row.stage_id, row.scene_id),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
   it('restores completed project files without reopening teaching or allocating for a report read', async () => {
     const fresh = await freshStudy();
     const row = await store.get(fresh.id, principal.ownerId);

@@ -132,10 +132,20 @@ for (const legacyMove of [false, true]) {
       if (url.pathname.endsWith('/workspace')) return route.fulfill({ json: workbench });
       if (url.searchParams.has('file'))
         return route.fulfill({ json: { text: 'Saved plan', hash: 'a'.repeat(64) } });
-      if (body?.command) commands.push(body.command.type);
+      if (body?.command) {
+        commands.push(body.command.type);
+        if (body.command.type === 'prepare') {
+          view.environmentId = 'restored-preview-environment';
+          view.environment = { state: 'running', ready: true };
+          view.revision++;
+          workbench.environmentId = view.environmentId;
+          workbench.revision = view.revision;
+          workbench.epoch++;
+        }
+      }
       return route.fulfill({ json: body?.command ? { view } : view });
     });
-    await learningEvents(() => ({ view, workbench }));
+    const publishLearning = await learningEvents(() => ({ view, workbench }));
     await page.goto(`/classroom/${stageId}`);
     await page.getByRole('button', { name: 'Continue Project', exact: true }).click();
     await page.getByTestId('pbl-application-open').click();
@@ -173,5 +183,46 @@ for (const legacyMove of [false, true]) {
     expect(launches).toBe(1);
     expect(documents).toBe(1);
     expect(commands).toEqual([]);
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    // A final source snapshot needs no compute to read, but the application does.
+    view.state.status = 'completed';
+    view.completedFilesAvailable = true;
+    view.environment = { state: 'destroyed', ready: false };
+    view.stage = {
+      kind: 'mentor_say',
+      agent: 'mentor',
+      skill: 'recap',
+      say: 'Done',
+      studentActions: [],
+    };
+    view.actions = [];
+    view.state.position.stageIndex = 6;
+    view.revision++;
+    view.activitySequence!++;
+    await publishLearning();
+    const restore = page.getByRole('button', {
+      name: 'Restore application environment',
+      exact: true,
+    });
+    await expect(restore).toBeVisible();
+    await expect(page.getByTestId('pbl-application-open')).toBeDisabled();
+    expect(commands).toEqual([]);
+    await restore.click();
+    await expect(page.getByTestId('pbl-application-open')).toBeEnabled();
+    await expect(page.locator('.monaco-editor textarea').first()).not.toBeEditable();
+    await page.getByTestId('pbl-application-open').click();
+    await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toBeVisible();
+    expect(launches).toBe(2);
+    expect(commands).toEqual(['prepare']);
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    // Completed projects without execution features still need no restore control.
+    view.application = undefined;
+    view.environment = { state: 'destroyed', ready: false };
+    view.activitySequence!++;
+    await publishLearning();
+    await expect(page.getByTestId('pbl-environment-setup')).toHaveCount(0);
+    expect(commands).toEqual(['prepare']);
   });
 }

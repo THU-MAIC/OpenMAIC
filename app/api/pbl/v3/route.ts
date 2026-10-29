@@ -1,3 +1,6 @@
+import { completedProjectFiles } from '@/lib/server/pbl-v3/completed-files';
+import { canViewProjectReport } from '@/lib/server/pbl-v3/stage-progress';
+import { latestFileChanges } from '@/lib/server/pbl-v3/file-changes';
 import { isPBLV3Reference } from '@/lib/pbl/v3/types';
 import { sandboxBody, sandboxPrincipalResponse } from '@/lib/server/sandbox/http';
 import { SandboxService } from '@/lib/server/sandbox/service';
@@ -53,18 +56,42 @@ export async function GET(request: Request) {
           sceneId,
         );
       }
-      return Response.json({ hero: projectHeroDetails(project.definition), started: !!existing });
+      return Response.json({
+        hero: projectHeroDetails(project.definition),
+        started: !!existing,
+        studyId: existing?.id ?? null,
+        reportAvailable: existing ? canViewProjectReport(existing.state) : false,
+      });
     }
     if (!id) throw sandboxInvalid('A learning session is required.');
     const path = params.get('file');
     if (path !== null) {
       const store = await LearningStore.open();
       const row = await store.get(id, principal.ownerId);
-      assertProjectSource(projectFor(row), path);
+      const project = projectFor(row);
+      assertProjectSource(project, path);
+      const completed = await completedProjectFiles(store.pool, row, project);
+      if (completed) {
+        const text = completed[path];
+        if (typeof text !== 'string')
+          throw new SandboxError(
+            'SANDBOX_NOT_FOUND',
+            404,
+            'This file is not in the completed project.',
+          );
+        const hash = digest(text);
+        return Response.json({
+          text,
+          hash,
+          changes: await latestFileChanges(store.pool, row.id, path, hash),
+        });
+      }
       const service = await SandboxService.forOwner(principal);
       assertEnvironmentReady(await touchEnvironment(store, row, service, false));
       const text = await service.readText(requireEnvironment(row), path);
-      return Response.json({ text, hash: digest(text) });
+      const hash = digest(text);
+      const changes = await latestFileChanges(store.pool, row.id, path, hash);
+      return Response.json({ text, hash, changes });
     }
     return Response.json(await learningView(principal, id));
   });

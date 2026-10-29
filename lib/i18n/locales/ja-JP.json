@@ -2551,7 +2551,7 @@
     "restoredCheckpoint": "最新のチェックポイントから復元しました。それ以降の変更は含まれません。",
     "restartedWorkspace": "チェックポイントがないため、初期ファイルで再開しました。",
     "restoredProgress": "影響を受けた最初のステップに戻りました。復元されたファイルを再確認し、テストしてください。",
-    "environmentNotice": "Preparing your project environment. Your teaching assistant will open the step when it is ready.",
+    "environmentNotice": "Preparing or restoring the environment. The editor is read-only; existing drafts are kept. Type after recovery.",
     "prepare": "Retry project setup",
     "completed": "Project completed. Your learning progress is saved.",
     "learning": "Learning conversation",
@@ -2633,7 +2633,7 @@
     "reportEvidence": "Decisions, artifacts and results",
     "reportConversations": "Learning conversations",
     "conversationLimited": "Some activity is omitted from this view to keep it responsive. The complete records remain saved.",
-    "truncatedEvidence": "Only the most recent records are shown here. Earlier records remain saved.",
+    "truncatedEvidence": "ここでは一部の学習記録を表示しています。元の完全な記録は保存されています。",
     "evidenceVersion": "Recorded version",
     "learner": "Learner",
     "build": "Build / check syntax",
@@ -2787,6 +2787,7 @@
       "toggleAssistant": "Toggle learning assistant",
       "environmentDetails": "Environment details",
       "saving": "保存中…",
+      "readOnly": "Read-only",
       "saved": "保存済み",
       "saveFailed": "保存失敗 · 再試行",
       "draftRetained": "変更をこのブラウザに保持"
@@ -2823,7 +2824,25 @@
       "quizAttempts": "Quiz attempts",
       "fileEdits": "Recorded file edits",
       "interruptedRuns": "Interrupted or failed assistant runs",
-      "completed": "Project completed. You can open your learning report."
+      "completed": "Project completed. You can open your learning report.",
+      "subtitle": "作ったもの、選んだこと、そして進歩を支える記録。",
+      "completedMilestones": "完了した段階",
+      "completedSteps": "完了したステップ",
+      "concepts": "実践した概念",
+      "skills": "実践したスキル",
+      "practiceNotice": "記録は実践の内容を示すもので、習熟を認定するものではありません。",
+      "viewWorkbench": "読み取り専用の作業画面",
+      "completedTitle": "プロジェクト完了",
+      "completionHint": "作品と学習記録を保存しました。レポートや作業画面で振り返れます。",
+      "close": "レポートを閉じる",
+      "finalizing": "最後の返信を保存中です。まもなくレポートを開けます。",
+      "skillLabels": {
+        "decisions": "設計の判断",
+        "planReview": "計画のレビュー",
+        "codeReview": "実装のレビュー",
+        "verification": "テストによる検証",
+        "reflection": "記録に基づく振り返り"
+      }
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {
@@ -2879,7 +2898,8 @@
       "display": "Display",
       "stopped": "Stopped"
     },
-    "environmentSleeping": "プロジェクト環境は休止中です。下のボタンでプロジェクトファイルを復元してから続けてください。未保存の下書きはこのブラウザーに保持されます。",
+    "environmentReleasing": "The environment is being released. The editor is read-only. Wait, then click the workbench or use the restore button. Existing browser drafts are kept.",
+    "environmentSleeping": "The environment is inactive and the editor is read-only. Click in the workbench to restore automatically, or use Restore project files. Existing browser drafts are kept; type after recovery.",
     "recoverWorkspace": "プロジェクトファイルを復元",
     "checkpointUnavailable": "最新の変更を保存できませんでした。再試行してください。操作がない状態が続くと環境が解放され、未保存の変更が失われる場合があります。",
     "checkpointSkipped": "アーカイブに繰り返し失敗しました。復元時に保存済みの版より新しい変更が失われる場合があります。",
@@ -2925,7 +2945,9 @@
       "reopen": "Reopen application",
       "starting": "Starting your application…",
       "failed": "The application exited. Read the output or ask your current assistant for help.",
-      "unavailable": "The application is not responding yet. Reopen, or share the error with your assistant."
+      "unavailable": "The application is not responding yet. Reopen, or share the error with your assistant.",
+      "restore": "Restore application environment",
+      "restoreNotice": "Your saved source and report remain available. Restore the environment to run your application again; completed source stays read-only."
     }
   }
 }

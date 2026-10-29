@@ -107,7 +107,10 @@ describe('teaching stage handoff', () => {
       const result = currentTeachingContext(context, { ...window, deliveredReply: reply });
       expect(result.messages).toEqual([reflection]);
       expect(result.systemPrompt).toContain(JSON.stringify(reply));
-      expect(result.systemPrompt).toContain('record that SAME question');
+      expect(result.systemPrompt).toContain('record that SAME reply');
+      expect(result.systemPrompt).toContain('verbatim into explanation');
+      expect(result.systemPrompt).toContain('closing question verbatim into question');
+      expect(result.systemPrompt).toContain('Do not omit an already delivered explanation');
       expect(result.systemPrompt).toContain('never student feedback');
       expect(result.messages.filter((message) => message.role === 'user')).toHaveLength(1);
       expect(context.systemPrompt).toBe('Current teaching policy');

@@ -2551,7 +2551,7 @@
     "restoredCheckpoint": "최신 체크포인트에서 복원했습니다. 이후의 변경은 포함되지 않습니다.",
     "restartedWorkspace": "체크포인트가 없어 프로젝트 초기 파일로 다시 시작했습니다.",
     "restoredProgress": "영향받은 첫 단계로 돌아갔습니다. 복원된 파일을 다시 검토하고 테스트하세요.",
-    "environmentNotice": "Preparing your project environment. Your teaching assistant will open the step when it is ready.",
+    "environmentNotice": "Preparing or restoring the environment. The editor is read-only; existing drafts are kept. Type after recovery.",
     "prepare": "Retry project setup",
     "completed": "Project completed. Your learning progress is saved.",
     "learning": "Learning conversation",
@@ -2633,7 +2633,7 @@
     "reportEvidence": "Decisions, artifacts and results",
     "reportConversations": "Learning conversations",
     "conversationLimited": "Some activity is omitted from this view to keep it responsive. The complete records remain saved.",
-    "truncatedEvidence": "Only the most recent records are shown here. Earlier records remain saved.",
+    "truncatedEvidence": "여기에는 일부 학습 기록이 표시됩니다. 전체 원본 기록은 보관되어 있습니다.",
     "evidenceVersion": "Recorded version",
     "learner": "Learner",
     "build": "Build / check syntax",
@@ -2787,6 +2787,7 @@
       "toggleAssistant": "Toggle learning assistant",
       "environmentDetails": "Environment details",
       "saving": "저장 중…",
+      "readOnly": "Read-only",
       "saved": "저장됨",
       "saveFailed": "저장 실패 · 재시도",
       "draftRetained": "변경 사항이 브라우저에 보관됨"
@@ -2823,7 +2824,25 @@
       "quizAttempts": "Quiz attempts",
       "fileEdits": "Recorded file edits",
       "interruptedRuns": "Interrupted or failed assistant runs",
-      "completed": "Project completed. You can open your learning report."
+      "completed": "Project completed. You can open your learning report.",
+      "subtitle": "만든 결과물, 선택한 결정, 그리고 발전을 보여 주는 기록입니다.",
+      "completedMilestones": "완료한 단계",
+      "completedSteps": "완료한 절차",
+      "concepts": "실습한 개념",
+      "skills": "실습한 역량",
+      "practiceNotice": "이 기록은 실습 내용을 보여 주며 숙련도를 인증하지 않습니다.",
+      "viewWorkbench": "읽기 전용 작업 공간 보기",
+      "completedTitle": "프로젝트 완료",
+      "completionHint": "결과물과 학습 기록이 저장되었습니다. 보고서와 작업 공간에서 돌아볼 수 있습니다.",
+      "close": "보고서 닫기",
+      "finalizing": "마지막 응답을 저장 중입니다. 곧 보고서를 열 수 있습니다.",
+      "skillLabels": {
+        "decisions": "엔지니어링 의사 결정",
+        "planReview": "계획 검토",
+        "codeReview": "구현 검토",
+        "verification": "테스트로 동작 검증",
+        "reflection": "근거를 통한 회고"
+      }
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {
@@ -2879,7 +2898,8 @@
       "display": "Display",
       "stopped": "Stopped"
     },
-    "environmentSleeping": "프로젝트 환경이 비활성 상태입니다. 아래 버튼으로 프로젝트 파일을 복원한 후 계속하세요. 저장하지 않은 초안은 이 브라우저에 유지됩니다.",
+    "environmentReleasing": "The environment is being released. The editor is read-only. Wait, then click the workbench or use the restore button. Existing browser drafts are kept.",
+    "environmentSleeping": "The environment is inactive and the editor is read-only. Click in the workbench to restore automatically, or use Restore project files. Existing browser drafts are kept; type after recovery.",
     "recoverWorkspace": "프로젝트 파일 복원",
     "checkpointUnavailable": "최신 변경 사항을 보관하지 못했습니다. 저장을 다시 시도하세요. 유휴 상태가 지속되면 환경이 해제되고 보관되지 않은 변경 사항이 손실될 수 있습니다.",
     "checkpointSkipped": "보관이 계속 실패했습니다. 복원 시 저장된 버전 이후의 변경 사항이 손실될 수 있습니다.",
@@ -2925,7 +2945,9 @@
       "reopen": "Reopen application",
       "starting": "Starting your application…",
       "failed": "The application exited. Read the output or ask your current assistant for help.",
-      "unavailable": "The application is not responding yet. Reopen, or share the error with your assistant."
+      "unavailable": "The application is not responding yet. Reopen, or share the error with your assistant.",
+      "restore": "Restore application environment",
+      "restoreNotice": "Your saved source and report remain available. Restore the environment to run your application again; completed source stays read-only."
     }
   }
 }

@@ -2551,7 +2551,7 @@
     "restoredCheckpoint": "已從最近的檢查點恢復工作區，不包含該檢查點之後的修改。",
     "restartedWorkspace": "沒有可用的檢查點，已用專案初始檔案重新準備工作區。",
     "restoredProgress": "學習進度已退回首個受影響的步驟，請重新審閱和測試恢復後的檔案。",
-    "environmentNotice": "Preparing your project environment. Your teaching assistant will open the step when it is ready.",
+    "environmentNotice": "正在準備或恢復環境，編輯器暫時唯讀。現有草稿會保留，請在恢復後輸入。",
     "prepare": "Retry project setup",
     "completed": "Project completed. Your learning progress is saved.",
     "learning": "Learning conversation",
@@ -2633,7 +2633,7 @@
     "reportEvidence": "Decisions, artifacts and results",
     "reportConversations": "Learning conversations",
     "conversationLimited": "為保持流暢，本次檢視省略了部分活動內容；完整記錄仍已儲存。",
-    "truncatedEvidence": "Only the most recent records are shown here. Earlier records remain saved.",
+    "truncatedEvidence": "這裡顯示部分學習紀錄；完整原始紀錄仍被儲存。",
     "evidenceVersion": "Recorded version",
     "learner": "Learner",
     "build": "Build / check syntax",
@@ -2787,6 +2787,7 @@
       "toggleAssistant": "Toggle learning assistant",
       "environmentDetails": "Environment details",
       "saving": "儲存中…",
+      "readOnly": "唯讀",
       "saved": "已儲存",
       "saveFailed": "儲存失敗 · 重試",
       "draftRetained": "修改暫存於此瀏覽器"
@@ -2816,14 +2817,32 @@
       "facts": "Your project in numbers",
       "countNotice": "These describe the recorded process; more is not a better score.",
       "learnerTurns": "Your messages",
-      "assistantTurns": "Assistant replies",
+      "assistantTurns": "AI 回覆輪次",
       "decisions": "Decisions made",
       "decisionChanges": "Decisions reconsidered",
       "testRuns": "Test runs",
       "quizAttempts": "Quiz attempts",
       "fileEdits": "Recorded file edits",
       "interruptedRuns": "Interrupted or failed assistant runs",
-      "completed": "Project completed. You can open your learning report."
+      "completed": "Project completed. You can open your learning report.",
+      "subtitle": "你完成了什麼、作過哪些選擇，以及哪些紀錄見證了這次進步。",
+      "completedMilestones": "完成階段",
+      "completedSteps": "完成環節",
+      "concepts": "實踐概念",
+      "skills": "這次實踐的能力",
+      "practiceNotice": "這些紀錄說明你參與了哪些實踐，不代表已經完全掌握。",
+      "viewWorkbench": "查看唯讀工作台",
+      "completedTitle": "專案已完成",
+      "completionHint": "作品與學習紀錄已儲存。查看學習報告，也可以隨時回到工作台回顧。",
+      "close": "關閉報告",
+      "finalizing": "正在儲存最後的回覆，報告入口即將可用。",
+      "skillLabels": {
+        "decisions": "作出工程決策",
+        "planReview": "審閱實施計畫",
+        "codeReview": "核對程式實作",
+        "verification": "用測試驗證行為",
+        "reflection": "根據證據回顧"
+      }
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {
@@ -2879,7 +2898,8 @@
       "display": "展示",
       "stopped": "已停止"
     },
-    "environmentSleeping": "專案環境已休眠。請按下方「恢復專案檔案」後繼續，未儲存的草稿會保留在目前瀏覽器中。",
+    "environmentReleasing": "環境正在釋放，編輯器暫時唯讀。請稍候再點擊工作區或使用恢復按鈕；現有本機草稿會保留。",
+    "environmentSleeping": "環境目前未啟用，編輯器暫時唯讀。點擊工作區會自動恢復，也可以點「恢復專案檔案」；本機草稿會保留，恢復後再輸入。",
     "recoverWorkspace": "恢復專案檔案",
     "checkpointUnavailable": "最新修改未能封存，請重試儲存。若持續閒置，環境可能被釋放，未封存的修改可能遺失。",
     "checkpointSkipped": "封存持續失敗，復原時可能遺失已封存版本之後的修改。",
@@ -2925,7 +2945,9 @@
       "reopen": "Reopen application",
       "starting": "Starting your application…",
       "failed": "The application exited. Read the output or ask your current assistant for help.",
-      "unavailable": "The application is not responding yet. Reopen, or share the error with your assistant."
+      "unavailable": "The application is not responding yet. Reopen, or share the error with your assistant.",
+      "restore": "恢復應用環境",
+      "restoreNotice": "作品與報告仍可查看。如要再次執行應用，請恢復應用環境；完成後的原始碼仍為唯讀。"
     }
   }
 }

@@ -2551,7 +2551,7 @@
     "restoredCheckpoint": "L’espace de travail a été restauré depuis le dernier point de sauvegarde, sans les modifications ultérieures.",
     "restartedWorkspace": "Aucun point de sauvegarde disponible : les fichiers initiaux du projet ont été rétablis.",
     "restoredProgress": "La progression est revenue à la première étape affectée. Vérifiez et testez à nouveau les fichiers restaurés.",
-    "environmentNotice": "Preparing your project environment. Your teaching assistant will open the step when it is ready.",
+    "environmentNotice": "Preparing or restoring the environment. The editor is read-only; existing drafts are kept. Type after recovery.",
     "prepare": "Retry project setup",
     "completed": "Project completed. Your learning progress is saved.",
     "learning": "Learning conversation",
@@ -2633,7 +2633,7 @@
     "reportEvidence": "Decisions, artifacts and results",
     "reportConversations": "Learning conversations",
     "conversationLimited": "Some activity is omitted from this view to keep it responsive. The complete records remain saved.",
-    "truncatedEvidence": "Only the most recent records are shown here. Earlier records remain saved.",
+    "truncatedEvidence": "Une sélection des traces est affichée ici. Les enregistrements originaux complets sont conservés.",
     "evidenceVersion": "Recorded version",
     "learner": "Learner",
     "build": "Build / check syntax",
@@ -2787,6 +2787,7 @@
       "toggleAssistant": "Toggle learning assistant",
       "environmentDetails": "Environment details",
       "saving": "Enregistrement…",
+      "readOnly": "Read-only",
       "saved": "Enregistré",
       "saveFailed": "Échec · Réessayer",
       "draftRetained": "Modifications conservées dans ce navigateur"
@@ -2823,7 +2824,25 @@
       "quizAttempts": "Quiz attempts",
       "fileEdits": "Recorded file edits",
       "interruptedRuns": "Interrupted or failed assistant runs",
-      "completed": "Project completed. You can open your learning report."
+      "completed": "Project completed. You can open your learning report.",
+      "subtitle": "Votre réalisation, vos décisions et les traces de vos progrès.",
+      "completedMilestones": "Étapes terminées",
+      "completedSteps": "Actions terminées",
+      "concepts": "Concepts pratiqués",
+      "skills": "Compétences pratiquées",
+      "practiceNotice": "Ces traces décrivent votre pratique et ne certifient pas la maîtrise.",
+      "viewWorkbench": "Voir l’atelier en lecture seule",
+      "completedTitle": "Projet terminé",
+      "completionHint": "Votre travail est enregistré. Consultez le rapport ou retrouvez votre atelier.",
+      "close": "Fermer le rapport",
+      "finalizing": "Enregistrement de la dernière réponse. Le rapport sera bientôt disponible.",
+      "skillLabels": {
+        "decisions": "Prendre des décisions techniques",
+        "planReview": "Relire un plan",
+        "codeReview": "Vérifier une implémentation",
+        "verification": "Vérifier par les tests",
+        "reflection": "Réfléchir à partir des traces"
+      }
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {
@@ -2879,7 +2898,8 @@
       "display": "Display",
       "stopped": "Stopped"
     },
-    "environmentSleeping": "L’environnement du projet est inactif. Restaurez les fichiers du projet avec le bouton ci-dessous pour continuer. Les brouillons non enregistrés sont conservés dans ce navigateur.",
+    "environmentReleasing": "The environment is being released. The editor is read-only. Wait, then click the workbench or use the restore button. Existing browser drafts are kept.",
+    "environmentSleeping": "The environment is inactive and the editor is read-only. Click in the workbench to restore automatically, or use Restore project files. Existing browser drafts are kept; type after recovery.",
     "recoverWorkspace": "Restaurer les fichiers du projet",
     "checkpointUnavailable": "Les dernières modifications ne sont pas archivées. Réessayez de les enregistrer. En cas d’inactivité, l’environnement peut être libéré et les modifications non archivées perdues.",
     "checkpointSkipped": "L’archivage échoue de façon persistante. La restauration peut perdre les modifications plus récentes que la sauvegarde.",
@@ -2925,7 +2945,9 @@
       "reopen": "Reopen application",
       "starting": "Starting your application…",
       "failed": "The application exited. Read the output or ask your current assistant for help.",
-      "unavailable": "The application is not responding yet. Reopen, or share the error with your assistant."
+      "unavailable": "The application is not responding yet. Reopen, or share the error with your assistant.",
+      "restore": "Restore application environment",
+      "restoreNotice": "Your saved source and report remain available. Restore the environment to run your application again; completed source stays read-only."
     }
   }
 }

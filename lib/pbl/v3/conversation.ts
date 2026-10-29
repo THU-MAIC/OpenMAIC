@@ -23,7 +23,14 @@ export interface LearningConversationEntry {
     total: number;
   };
   parts: (
-    | { kind: 'text'; id: string; messageId?: number; text: string; streaming?: boolean }
+    | {
+        kind: 'text';
+        id: string;
+        messageId?: number;
+        text: string;
+        streaming?: boolean;
+        canonical?: true;
+      }
     | {
         kind: 'thinking';
         id: string;
@@ -61,6 +68,12 @@ export interface LearningConversationEntry {
   )[];
 }
 
+function conversationScope(entry: LearningConversationEntry): string {
+  return entry.id.startsWith('pbl-role-') && entry.id.includes(':')
+    ? entry.id.slice(0, entry.id.indexOf(':'))
+    : entry.speaker;
+}
+
 /** Fold loaded history fragments by durable identity, without altering cached pages. */
 export function mergeConversationHistory(pages: readonly (readonly LearningConversationEntry[])[]) {
   const parts = new Map<string, LearningConversationEntry['parts'][number]>();
@@ -69,7 +82,7 @@ export function mergeConversationHistory(pages: readonly (readonly LearningConve
       page.flatMap((entry) => {
         const merged: LearningConversationEntry = { ...entry, parts: [] };
         for (const part of entry.parts) {
-          const key = `${part.kind}:${part.id}`;
+          const key = `${conversationScope(entry)}:${part.kind}:${part.id}`;
           const earlier = parts.get(key);
           if (earlier) {
             // Pages arrive newest first but are folded chronologically. A later
@@ -87,7 +100,7 @@ export function mergeConversationHistory(pages: readonly (readonly LearningConve
   );
 }
 
-/** Remove only synthesized handoff echoes, preserving the original model reply and its identity. */
+/** Resolve committed response delivery and legacy exact echoes without changing durable records. */
 export function handoffEchoes<
   T extends {
     scope: string;
@@ -95,11 +108,14 @@ export function handoffEchoes<
     messageId?: number;
     text: string;
     handoff: boolean;
+    canonical?: boolean;
   },
 >(replies: readonly T[]): Set<T> {
   const originals = new Map<string, Map<number, string[]>>();
+  const canonical = new Map<string, T>();
   const key = (reply: T) => `${reply.scope}:${reply.inputId}`;
   for (const reply of replies) {
+    if (reply.canonical && reply.inputId !== undefined) canonical.set(key(reply), reply);
     if (reply.handoff || reply.inputId === undefined || reply.messageId === undefined) continue;
     const messages = originals.get(key(reply)) ?? new Map<number, string[]>();
     const blocks = messages.get(reply.messageId) ?? [];
@@ -117,13 +133,17 @@ export function handoffEchoes<
     ]),
   );
   return new Set(
-    replies.filter(
-      (reply) =>
+    replies.filter((reply) => {
+      const committed = reply.inputId === undefined ? undefined : canonical.get(key(reply));
+      if (committed && text.get(key(reply)) !== committed.text)
+        return reply !== committed && (reply.handoff || reply.messageId !== undefined);
+      return (
         reply.handoff &&
         reply.inputId !== undefined &&
         !!reply.text &&
-        text.get(key(reply))?.includes(reply.text),
-    ),
+        text.get(key(reply))?.includes(reply.text)
+      );
+    }),
   );
 }
 
@@ -134,11 +154,12 @@ export function deduplicateHandoffs(entries: readonly LearningConversationEntry[
       part.kind === 'text'
         ? [
             {
-              scope: entry.speaker,
+              scope: conversationScope(entry),
               inputId: entry.inputId,
               messageId: part.messageId,
               text: part.text,
               handoff: part.id.startsWith('question-'),
+              canonical: part.canonical,
               part,
             },
           ]

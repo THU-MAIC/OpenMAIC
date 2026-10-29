@@ -39,10 +39,14 @@ export function ProjectHero({
   instructorStreaming = false,
   onStart,
   onContinue,
+  onReport,
+  completed = false,
   onReset,
 }: {
   details: ProjectHeroDetails;
   started: boolean;
+  completed?: boolean;
+  onReport?: () => void;
   launching?: boolean;
   instructorStreaming?: boolean;
   onStart: () => void;
@@ -207,11 +211,17 @@ export function ProjectHero({
           </div>
 
           <div className="mt-7">
+            {completed && onReport && (
+              <button onClick={onReport} className={`${LAUNCH_BUTTON_CLASS} mb-3`}>
+                <CheckCircle2 size={19} /> {t('pblV3.reportCopy.completedTitle')} ·{' '}
+                {t('pblV3.report')}
+              </button>
+            )}
             {started ? (
               <div className="flex items-stretch gap-2">
                 <button onClick={onContinue} className={LAUNCH_BUTTON_CLASS}>
                   <span className="absolute inset-y-0 -left-1/3 w-1/3 bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-[420%]" />
-                  {t('pbl.v2.hero.continueProject')}
+                  {t(completed ? 'pblV3.reportCopy.viewWorkbench' : 'pbl.v2.hero.continueProject')}
                   <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                 </button>
                 {onReset && (

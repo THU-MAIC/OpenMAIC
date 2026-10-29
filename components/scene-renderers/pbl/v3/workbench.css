@@ -52,6 +52,29 @@
 .pbl-workbench .pbl-task-drawer {
   /* Keep its close control inside the chat area, even in a short scene. */
   max-height: min(560px, max(0px, calc(100cqh - 64px)));
+  transform-origin: bottom center;
+  animation: pbl-task-open 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes pbl-task-open {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pbl-workbench .pbl-task-drawer {
+    animation: none;
+  }
+}
+@container (max-width: 500px) {
+  .pbl-workbench .pbl-task-trigger .pbl-task-step,
+  .pbl-workbench .pbl-task-trigger .pbl-task-hint {
+    display: none;
+  }
 }
 /* OpenPBL's filled ready action, with a neutral unavailable state. */
 .pbl-workbench .pbl-stage-action {
@@ -103,4 +126,31 @@
   font-size: 12px;
   line-height: 1.5;
   box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
+}
+
+/* Version-matched AI edits; selection itself remains Monaco's native selection. */
+.pbl-change-added {
+  background-color: rgb(34 197 94 / 15%);
+}
+.pbl-change-modified {
+  background-color: rgb(34 197 94 / 10%);
+}
+.pbl-change-gutter-added,
+.pbl-change-gutter-modified {
+  border-left: 3px solid #22c55e;
+}
+.pbl-change-gutter-added::after {
+  content: '+';
+  color: #16a34a;
+  font-weight: 700;
+  padding-left: 2px;
+}
+.pbl-change-gutter-modified::after {
+  content: '~';
+  color: #16a34a;
+  font-weight: 700;
+  padding-left: 2px;
+}
+.pbl-change-gutter-deleted {
+  border-top: 3px solid #ef4444;
 }

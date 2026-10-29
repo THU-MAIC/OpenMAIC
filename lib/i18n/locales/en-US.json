@@ -2551,7 +2551,7 @@
     "restoredCheckpoint": "The workspace was restored from the latest checkpoint. Changes made after that checkpoint are not included.",
     "restartedWorkspace": "No checkpoint was available. The workspace was restarted with the project starter files.",
     "restoredProgress": "Progress was returned to the first affected step. Review and test the restored files again.",
-    "environmentNotice": "Preparing your project environment. Your teaching assistant will open the step when it is ready.",
+    "environmentNotice": "Preparing or restoring the environment. The editor is read-only; existing drafts are kept. Type after recovery.",
     "prepare": "Retry project setup",
     "completed": "Project completed. Your learning progress is saved.",
     "learning": "Learning conversation",
@@ -2633,7 +2633,7 @@
     "reportEvidence": "Decisions, artifacts and results",
     "reportConversations": "Learning conversations",
     "conversationLimited": "Some activity is omitted from this view to keep it responsive. The complete records remain saved.",
-    "truncatedEvidence": "Only the most recent records are shown here. Earlier records remain saved.",
+    "truncatedEvidence": "Selected learning records are shown here. Complete original records remain saved.",
     "evidenceVersion": "Recorded version",
     "learner": "Learner",
     "build": "Build / check syntax",
@@ -2787,6 +2787,7 @@
       "toggleAssistant": "Toggle learning assistant",
       "environmentDetails": "Environment details",
       "saving": "Saving…",
+      "readOnly": "Read-only",
       "saved": "Saved",
       "saveFailed": "Save failed · Retry",
       "draftRetained": "Changes kept in this browser"
@@ -2816,14 +2817,32 @@
       "facts": "Your project in numbers",
       "countNotice": "These describe the recorded process; more is not a better score.",
       "learnerTurns": "Your messages",
-      "assistantTurns": "Assistant replies",
+      "assistantTurns": "AI reply turns",
       "decisions": "Decisions made",
       "decisionChanges": "Decisions reconsidered",
       "testRuns": "Test runs",
       "quizAttempts": "Quiz attempts",
       "fileEdits": "Recorded file edits",
       "interruptedRuns": "Interrupted or failed assistant runs",
-      "completed": "Project completed. You can open your learning report."
+      "completed": "Project completed. You can open your learning report.",
+      "subtitle": "A record of what you built, the choices you made, and the evidence behind your progress.",
+      "completedMilestones": "Milestones completed",
+      "completedSteps": "Steps completed",
+      "concepts": "Concepts practiced",
+      "skills": "Skills put into practice",
+      "practiceNotice": "These records show what you practiced, not a certification of mastery.",
+      "viewWorkbench": "View read-only workbench",
+      "completedTitle": "Project completed",
+      "completionHint": "Your work is saved. Explore your learning report or revisit the workbench.",
+      "close": "Close report",
+      "finalizing": "Saving the final response. Your report will be available shortly.",
+      "skillLabels": {
+        "decisions": "Making engineering decisions",
+        "planReview": "Reviewing a plan",
+        "codeReview": "Reviewing implementation",
+        "verification": "Verifying behavior with tests",
+        "reflection": "Reflecting from evidence"
+      }
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {
@@ -2879,7 +2898,8 @@
       "display": "Display",
       "stopped": "Stopped"
     },
-    "environmentSleeping": "Your project environment is inactive. Click Restore project files below to continue. Unsaved drafts are kept in this browser.",
+    "environmentReleasing": "The environment is being released. The editor is read-only. Wait, then click the workbench or use the restore button. Existing browser drafts are kept.",
+    "environmentSleeping": "The environment is inactive and the editor is read-only. Click in the workbench to restore automatically, or use Restore project files. Existing browser drafts are kept; type after recovery.",
     "recoverWorkspace": "Restore project files",
     "checkpointUnavailable": "Your latest work could not be archived. Retry to save it. If left idle, this environment may be released and unarchived edits lost.",
     "checkpointSkipped": "Archiving failed persistently. Recovery may lose changes newer than the saved checkpoint.",
@@ -2925,7 +2945,9 @@
       "reopen": "Reopen application",
       "starting": "Starting your application…",
       "failed": "The application exited. Read the output or ask your current assistant for help.",
-      "unavailable": "The application is not responding yet. Reopen, or share the error with your assistant."
+      "unavailable": "The application is not responding yet. Reopen, or share the error with your assistant.",
+      "restore": "Restore application environment",
+      "restoreNotice": "Your saved source and report remain available. Restore the environment to run your application again; completed source stays read-only."
     }
   }
 }

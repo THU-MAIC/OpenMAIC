@@ -1,4 +1,8 @@
+import { changedLineRanges } from './file-changes';
+import { fileReferenceHref } from '@/lib/pbl/v3/file-reference';
 import 'server-only';
+import { responseLanguage, type ResponseLanguage } from './communication';
+import { supportedLocales } from '@/lib/i18n/locales';
 import { inspectApplication } from './application';
 import type { ApplicationObservation } from '@/lib/pbl/v3/application';
 import type { PoolClient } from 'pg';
@@ -31,7 +35,11 @@ import {
   saveStudyCheckpoint,
   invalidateWorkspace,
 } from './runtime';
-import { touchEnvironment, assertEnvironmentReady } from './environment';
+import {
+  touchEnvironment,
+  assertEnvironmentReady,
+  environmentReleaseCommitted,
+} from './environment';
 import { assertLearningPlan } from './plan';
 import { startBuild, collectBuild, assertBuilt, isBuilt } from './compilation';
 import { packagedStageSkill } from './project-package';
@@ -70,6 +78,9 @@ export async function teachingRunnerConfig(input: {
   const agents = await getAgentSessionStore();
   const userMessages = await listAgentUserMessages(agents, input.sessionId);
   const latest = userMessages.at(-1);
+  let language = await responseLanguage(store.pool, row.id);
+  const uiLocale =
+    [...userMessages].reverse().find((message) => message.pblUiLocale)?.pblUiLocale ?? 'en-US';
   const skill = packagedStageSkill(project, stage, bound.stage_key, bound.role);
   const progression = skill.progression;
   const protocol = {
@@ -106,6 +117,8 @@ export async function teachingRunnerConfig(input: {
   let observedStudy = row;
   let observedApplication: ApplicationObservation | null = null;
   const observedFiles = new Set<string>();
+  const observedText = new Map<string, string>();
+  const reviewBases = new Map<string, string>();
   let completeFileList = false;
   const environment = row.environment_id
     ? await (await SandboxStore.open()).get(row.owner_id, row.environment_id).catch(() => null)
@@ -113,7 +126,10 @@ export async function teachingRunnerConfig(input: {
   let observedEnvironment = environment
     ? {
         state: environment.state,
-        ready: environment.state === 'running' && environment.workspace_ready,
+        ready:
+          environment.state === 'running' &&
+          environment.workspace_ready &&
+          !environmentReleaseCommitted(row, environment.id),
       }
     : null;
   const assertActive = (signal: AbortSignal) => {
@@ -183,6 +199,7 @@ export async function teachingRunnerConfig(input: {
       value: unknown;
       transition?: EngineTransition;
       evidence?: Record<string, unknown>;
+      responseLanguage?: ResponseLanguage;
     }>,
   ) {
     return {
@@ -236,6 +253,10 @@ export async function teachingRunnerConfig(input: {
                       db,
                     );
                     assertActive(signal);
+                    if (result.responseLanguage)
+                      await recordLearningEvidence(db, current, bound.role, 'response-language', {
+                        ...result.responseLanguage,
+                      });
                     if (result.evidence)
                       await recordLearningEvidence(
                         db,
@@ -250,7 +271,11 @@ export async function teachingRunnerConfig(input: {
                       input.sessionId,
                       JSON.stringify(review.state),
                     ]);
-                    if (name === 'request_learner_help' || name === 'respond_to_learner') {
+                    if (
+                      name === 'request_learner_help' ||
+                      name === 'respond_to_learner' ||
+                      (name === 'request_skill_review' && review.state.pending?.displayText)
+                    ) {
                       // Publish the learner-facing handoff atomically with its turn receipt.
                       const sequence = await store
                         .agentStore(db)
@@ -259,7 +284,16 @@ export async function teachingRunnerConfig(input: {
                           attempt: input.attempt,
                           type: LEARNER_HANDOFF_EVENT,
                           data: {
-                            ...review.state.handoff!,
+                            ...(name === 'request_skill_review'
+                              ? {
+                                  runId: review.state.pending!.runId,
+                                  question: review.state.pending!.displayText,
+                                  canonical: true,
+                                }
+                              : {
+                                  ...review.state.handoff!,
+                                  ...(name === 'respond_to_learner' ? { canonical: true } : {}),
+                                }),
                             toolCallId: _id,
                             ...(name === 'respond_to_learner'
                               ? { stageKey: bound.stage_key, sourceUserSeq: latest!.seq }
@@ -280,6 +314,7 @@ export async function teachingRunnerConfig(input: {
                   });
                   return result;
                 });
+                if (result.responseLanguage) language = result.responseLanguage;
                 if (['write_file', 'manage_file', 'run_build', 'complete_stage'].includes(name))
                   observedApplication = null;
                 observedStudy = current;
@@ -312,7 +347,27 @@ export async function teachingRunnerConfig(input: {
       },
     } as unknown as AgentTool;
   }
-  const tools: AgentTool[] = [];
+  const tools: AgentTool[] = [
+    tool(
+      'set_response_language',
+      'Remember the language established by actual learner conversation, or an explicit learner language request, for all roles in this project. This changes no learning evidence, readiness or approval. Do not infer a change from code, option labels, system entry or a short acknowledgement. An existing explicit preference requires another explicit request to change.',
+      Type.Object({
+        locale: Type.Union(supportedLocales.map((item) => Type.Literal(item.code))),
+        source: Type.Union([Type.Literal('explicit'), Type.Literal('conversation')]),
+      }),
+      async (_current, p) => {
+        if (!latest || latest.pblOpening)
+          throw sandboxConflict(
+            'A real learner message is required to select a response language.',
+          );
+        if (language?.source === 'explicit' && p.source !== 'explicit')
+          throw sandboxConflict(
+            'Keep the learner explicit language preference until they explicitly change it.',
+          );
+        return { value: { responseLanguage: p.locale }, responseLanguage: p };
+      },
+    ),
+  ];
   if (project.application && row.environment_id)
     tools.push(
       tool(
@@ -351,7 +406,16 @@ export async function teachingRunnerConfig(input: {
           assertProjectSource(project, p.path);
           const text = await (await service(signal)).readText(current.environment_id!, p.path);
           observedFiles.add(p.path);
-          return { value: { path: p.path, text, hash: digest(text) } };
+          observedText.set(p.path, text);
+          return {
+            value: {
+              path: p.path,
+              text,
+              hash: digest(text),
+              reviewLink: fileReferenceHref(p.path),
+              lineCount: text.split('\n').length,
+            },
+          };
         },
       ),
     );
@@ -373,6 +437,9 @@ export async function teachingRunnerConfig(input: {
             throw sandboxConflict('Collect the running build or test before editing files.');
           if (guided) review.assertWritable();
           if (p.path === 'PLAN.md') await assertLearningPlan(store, current, p.text);
+          const previousText = observedText.get(p.path);
+          const validBase = previousText !== undefined && digest(previousText) === p.expectedHash;
+          const before = validBase ? (reviewBases.get(p.path) ?? previousText) : undefined;
           const changed = await (
             await service(signal)
           ).compareAndWriteText(
@@ -390,10 +457,19 @@ export async function teachingRunnerConfig(input: {
             },
           );
           observedFiles.add(p.path);
+          observedText.set(p.path, p.text);
+          if (before !== undefined) reviewBases.set(p.path, before);
+          const changes = before === undefined ? [] : changedLineRanges(before, p.text);
           return {
-            value: { written: true, changed, hash: digest(p.text) },
+            value: {
+              written: true,
+              changed,
+              hash: digest(p.text),
+              reviewLink: fileReferenceHref(p.path),
+              changes,
+            },
             ...(changed
-              ? { evidence: { path: p.path, text: p.text, previousHash: p.expectedHash } }
+              ? { evidence: { path: p.path, text: p.text, previousHash: p.expectedHash, changes } }
               : {}),
           };
         },
@@ -481,7 +557,13 @@ export async function teachingRunnerConfig(input: {
           if (p.action !== 'create') observedFiles.delete(p.path);
           if (p.action === 'create') observedFiles.add(p.path);
           if (p.destination) observedFiles.add(p.destination);
-          return { value, evidence: { ...p } };
+          return {
+            value,
+            evidence: {
+              ...p,
+              ...(p.action === 'create' ? { changes: changedLineRanges('', p.text ?? '') } : {}),
+            },
+          };
         },
       ),
     );
@@ -495,7 +577,14 @@ export async function teachingRunnerConfig(input: {
           if (!latest || latest.pblOpening)
             throw sandboxConflict('Automatic entry must deliver the project/stage opening.');
           review.support(p.response);
-          return { value: { response: p.response, waitForStudent: true, advancesProgress: false } };
+          return {
+            value: {
+              response: p.response,
+              canonical: true,
+              waitForStudent: true,
+              advancesProgress: false,
+            },
+          };
         },
       ),
     );
@@ -506,6 +595,12 @@ export async function teachingRunnerConfig(input: {
         Type.Object({
           studentFeedback: Type.Optional(Type.String()),
           reuseFeedback: Type.Optional(Type.Boolean()),
+          artifactApproved: Type.Optional(
+            Type.Boolean({
+              description:
+                'Semantic assessment of an actual reply to the pending current-version review: the learner accepts this version, requests no further changes, or agrees to proceed. No magic approval word is required. False for mere understanding, a help request, or mixed acceptance plus requested changes; clarify conflicts first.',
+            }),
+          ),
         }),
         async (current, p, _callId, signal) => {
           const reread = !!review.state.activeFile && !p.studentFeedback;
@@ -531,20 +626,27 @@ export async function teachingRunnerConfig(input: {
               p.studentFeedback,
               review.state.activeFile ? await fingerprint(current, signal) : digest('no-workspace'),
               p.reuseFeedback,
+              p.artifactApproved,
             );
           return {
-            value: teachingSection(
-              {
-                skill,
-                stage,
-                milestone,
-                definition: project.definition,
-                welcome: review.state.welcome,
-                welcomePresented:
-                  review.state.welcome === 'pending' ? !!review.state.pending : undefined,
-              },
-              next,
-            ),
+            value: {
+              priorArtifactApproval:
+                review.state.approval?.stageKey === bound.stage_key
+                  ? { studentSeq: review.state.approval.studentSeq, revalidateCurrentVersion: true }
+                  : null,
+              ...teachingSection(
+                {
+                  skill,
+                  stage,
+                  milestone,
+                  definition: project.definition,
+                  welcome: review.state.welcome,
+                  welcomePresented:
+                    review.state.welcome === 'pending' ? !!review.state.pending : undefined,
+                },
+                next,
+              ),
+            },
           };
         },
       ),
@@ -572,10 +674,15 @@ export async function teachingRunnerConfig(input: {
         'request_skill_review',
         'Record a concrete student review question for this section. End your turn and wait for a new student reply. Set approval only when explicitly asking the learner to approve the current plan/code version. Understanding alone is not approval. The final artifact section always records an approval request.',
         Type.Object({
+          explanation: Type.String({
+            maxLength: 32000,
+            description:
+              'The complete learner-facing explanation for this turn, excluding the closing question. Put the welcome/lesson/file guidance here, not also in ordinary prose. Empty only when no explanation is needed. If prose was already delivered before recovery, copy its explanation here verbatim. This committed message replaces earlier ordinary prose for this same learner input; preserve all relevant explanation.',
+          }),
           question: Type.String({
             minLength: 1,
             description:
-              'Only the learner-facing question or invitation. Exclude the lesson explanation, introduction and examples. If already asked in prose, copy that question verbatim.',
+              'Exactly one closing question or invitation, without the explanation. It is joined to explanation for a single learner-visible message.',
           }),
           approval: Type.Optional(Type.Boolean()),
         }),
@@ -586,8 +693,18 @@ export async function teachingRunnerConfig(input: {
             stage.kind === 'produce' &&
             stage.reviewRequired &&
             (p.approval === true || review.state.activeFile === protocol.final);
-          review.checkpoint(p.question, hash, approval);
-          return { value: { question: p.question, waitForStudent: true } };
+          const response =
+            typeof p.explanation === 'string' && p.explanation.trim()
+              ? [p.explanation.trim(), p.question].filter(Boolean).join('\n\n')
+              : undefined;
+          review.checkpoint(p.question, hash, approval, response);
+          return {
+            value: {
+              question: p.question,
+              ...(response ? { response, canonical: true } : {}),
+              waitForStudent: true,
+            },
+          };
         },
       ),
     );
@@ -598,12 +715,18 @@ export async function teachingRunnerConfig(input: {
         Type.Object({
           studentFeedback: Type.String({ minLength: 1 }),
           reuseFeedback: Type.Optional(Type.Boolean()),
+          artifactApproved: Type.Optional(
+            Type.Boolean({
+              description:
+                'Semantic assessment of an actual reply to the pending current-version review: the learner accepts this version, requests no further changes, or agrees to proceed. No magic approval word is required. False for mere understanding, a help request, or mixed acceptance plus requested changes; clarify conflicts first.',
+            }),
+          ),
         }),
         async (current, p, _callId, signal) => {
           // Reject an out-of-order model action before any remote file access.
           review.assertCompletable();
           const hash = await fingerprint(current, signal);
-          review.assertComplete(p.studentFeedback, hash, p.reuseFeedback);
+          review.assertComplete(p.studentFeedback, hash, p.reuseFeedback, p.artifactApproved);
           await assertBuilt(store, current, hash);
           let transition: EngineTransition = { state: current.state, events: [] };
           let evidence: Record<string, unknown> | undefined;
@@ -726,6 +849,7 @@ export async function teachingRunnerConfig(input: {
   };
   const currentPromptInput = (): TeachingPromptInput => ({
     ...promptInput,
+    communication: { uiLocale, responseLanguage: language },
     collected: observedStudy.state.collected[milestone.id]!,
     pendingRun: observedStudy.evaluation?.id ?? null,
     workspace: {
@@ -752,6 +876,10 @@ export async function teachingRunnerConfig(input: {
     welcomePresented: review.state.welcome === 'pending' ? !!review.state.pending : undefined,
     activeSection: review.state.activeFile,
     reviewedSectionCount: review.state.reviewedFiles.length,
+    priorArtifactApproval:
+      review.state.approval?.stageKey === bound.stage_key
+        ? { studentSeq: review.state.approval.studentSeq, revalidateCurrentVersion: true }
+        : null,
     pendingReview: review.state.pending
       ? {
           question: review.state.pending.question,
@@ -799,7 +927,10 @@ export async function teachingRunnerConfig(input: {
           observedEnvironment = environment
             ? {
                 state: environment.state,
-                ready: environment.state === 'running' && environment.workspace_ready,
+                ready:
+                  environment.state === 'running' &&
+                  environment.workspace_ready &&
+                  !environmentReleaseCommitted(current, environment.id),
               }
             : null;
           completionRecorded = hasStageCompletion(
@@ -914,7 +1045,7 @@ export function prepareTeachingContinuation(agent: Agent, window: TeachingHistor
   window.deliveredReply = [window.deliveredReply, reply].filter(Boolean).join('\n\n');
   agent.state.messages = messages;
   const instruction =
-    '\nRuntime continuation: your preceding reply is already learner-visible but ended without a committed teaching receipt. Its prose remains available as quoted recovery context. Do not restart the opening, repeat the explanation, or replace a question already asked. For an assistance-only answer or product clarification, copy that response verbatim into respond_to_learner and preserve the pending review; do not turn it into a knowledge question or approval. For a delivered teaching question, copy it verbatim into request_skill_review (or request_learner_help for a blocked required build). Output only the appropriate tool call, with no additional assistant prose, then wait. Otherwise finish only the missing work for the SAME real learner input using the authoritative live state. Read any unopened section before delivering new material. Reuse verified same-version learner feedback for covered goals rather than repeating questions. While welcome is pending, only real later readiness starts the lesson. After the final goal and any required current-version approval are satisfied by actual learner feedback, complete_stage may commit completion. Never treat the quoted assistant reply as learner evidence or approval, invent a student response, or claim a Continue button exists before completion succeeds.';
+    '\nRuntime continuation: your preceding reply is already learner-visible but ended without a committed teaching receipt. Its prose remains available as quoted recovery context. Do not restart the opening, repeat the explanation, or replace a question already asked. For an assistance-only answer or product clarification, copy that response verbatim into respond_to_learner and preserve the pending review; do not turn it into a knowledge question or approval. For a delivered teaching question, copy the explanation verbatim into request_skill_review.explanation and its single closing question into question. Use request_learner_help for a blocked required build. Output only the appropriate tool call, with no additional assistant prose, then wait. Otherwise finish only the missing work for the SAME real learner input using the authoritative live state. Read any unopened section before delivering new material. Reuse verified same-version learner feedback for covered goals rather than repeating questions. While welcome is pending, only real later readiness starts the lesson. After the final goal and any required current-version approval are satisfied by actual learner feedback, complete_stage may commit completion. Never treat the quoted assistant reply as learner evidence or approval, invent a student response, or claim a Continue button exists before completion succeeds.';
   if (!agent.state.systemPrompt.endsWith(instruction)) agent.state.systemPrompt += instruction;
   return true;
 }

@@ -1,4 +1,6 @@
 'use client';
+import type { FileReference } from '@/lib/pbl/v3/file-reference';
+import { environmentNotice, environmentNoticeKeys } from '@/lib/pbl/v3/environment-status';
 import { ApplicationPreview } from './application-preview';
 import { usePblActivityGeneration } from './activity-provider';
 import {
@@ -27,6 +29,8 @@ import { useStageStore } from '@/lib/store/stage';
 import type { LearningView } from '@/lib/pbl/v3/types';
 import { LearningWorkbenchPanel } from './workbench-panel';
 import type { FileSaveReceipt } from './use-project-editor';
+import { ProjectReport } from './project-report';
+import { FileText, CheckCircle2 } from 'lucide-react';
 import { LearningPanels } from './learning-panels';
 import { LearningConversation } from './conversation';
 import { WorkspaceFrame } from './workspace-frame';
@@ -47,9 +51,14 @@ function PBLV3WorkspaceContent({
 }) {
   const activityGeneration = usePblActivityGeneration(sceneId);
   const { resolvedTheme, setTheme } = useTheme();
-  const { t } = useI18n(),
+  const { t, locale } = useI18n(),
     stageId = useStageStore((state) => state.stage?.id);
   const { view, workbench, latestView, updateView, receive, openView } = useLearningObservation();
+  const [reportOpen, setReportOpen] = useState(false);
+  const [fileTarget, setFileTarget] = useState<
+    (FileReference & { studyId: string; requestId: number }) | null
+  >(null);
+  const taskDock = useRef<{ open: () => void }>(null);
   const [error, setError] = useState(''),
     [pending, setPending] = useState(false);
   const storageError = useCallback(() => setError(t('pblV3.draftStorageUnavailable')), [t]);
@@ -87,9 +96,11 @@ function PBLV3WorkspaceContent({
     payload: Record<string, unknown>;
     id: string;
     revision: number;
+    uiLocale: string;
     milestoneId: string | null;
   } | null>(null);
   const studyId = view?.id;
+  const completedApplication = view?.state.status === 'completed' && !!view.application;
   const receiveSnapshot = useCallback(
     (snapshot: Parameters<typeof receive>[0]) => {
       observeMessage(snapshot.view);
@@ -152,6 +163,7 @@ function PBLV3WorkspaceContent({
               payload,
               id: crypto.randomUUID(),
               revision: view.revision,
+              uiLocale: locale,
               milestoneId: view.state.position.milestoneId,
             };
       retry.current = request;
@@ -173,6 +185,7 @@ function PBLV3WorkspaceContent({
               id: request.id,
               revision: request.revision,
               type: request.type,
+              uiLocale: request.uiLocale,
               ...request.payload,
             },
           },
@@ -205,7 +218,7 @@ function PBLV3WorkspaceContent({
         setPending(false);
       }
     },
-    [view, updateView, refresh, t, beginMessage, finishMessage, latestView, storageError],
+    [view, updateView, refresh, t, locale, beginMessage, finishMessage, latestView, storageError],
   );
   const [preparationFailed, setPreparationFailed] = useState(false);
   const preparationAttempt = useRef('');
@@ -339,6 +352,17 @@ function PBLV3WorkspaceContent({
               dirty={dirtyFiles}
             />
             <LearningPanels key={view.id} view={view} />
+            {view.reportAvailable && (
+              <button
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-500"
+                onClick={() => setReportOpen(true)}
+                disabled={view.busy}
+                aria-label={t('pblV3.report')}
+              >
+                <FileText size={14} />
+                {t('pblV3.report')}
+              </button>
+            )}
             <details className="relative text-xs">
               <summary
                 aria-label={t('pblV3.ide.environmentDetails')}
@@ -417,6 +441,16 @@ function PBLV3WorkspaceContent({
           {resolvedTheme === 'dark' ? <Moon size={14} /> : <Sun size={14} />}
         </button>
       </header>
+      {view?.reportAvailable && (
+        <ProjectReport
+          key={view.id}
+          studyId={view.id}
+          title={view.title}
+          open={reportOpen}
+          onClose={() => setReportOpen(false)}
+          onWorkbench={() => setReportOpen(false)}
+        />
+      )}
       {error && (
         <div
           role="alert"
@@ -437,9 +471,10 @@ function PBLV3WorkspaceContent({
       {!view && <p className="p-4">{t('pblV3.loading')}</p>}
       {view && (
         <>
-          {!view.environment?.ready && (
+          {!view.environment?.ready && (!view.completedFilesAvailable || view.application) && (
             <div
               role="status"
+              aria-busy={pendingAction === 'prepare'}
               data-testid="pbl-environment-setup"
               className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/30 px-3 py-2 text-xs"
             >
@@ -448,11 +483,15 @@ function PBLV3WorkspaceContent({
               )}
               <p className="flex-1">
                 {t(
-                  preparationFailed
-                    ? 'pblV3.environmentUnavailable'
-                    : pending
-                      ? 'pblV3.environmentNotice'
-                      : 'pblV3.environmentSleeping',
+                  completedApplication && !preparationFailed
+                    ? 'pblV3.application.restoreNotice'
+                    : environmentNoticeKeys[
+                        environmentNotice(
+                          view.environment,
+                          pendingAction === 'prepare',
+                          preparationFailed,
+                        )
+                      ],
                 )}
               </p>
               {!pending && (
@@ -461,7 +500,13 @@ function PBLV3WorkspaceContent({
                   disabled={pending || view.busy}
                   onClick={() => void prepare(retry.current?.type === 'prepare')}
                 >
-                  {t(preparationFailed ? 'pblV3.prepare' : 'pblV3.recoverWorkspace')}
+                  {t(
+                    preparationFailed
+                      ? 'pblV3.prepare'
+                      : completedApplication
+                        ? 'pblV3.application.restore'
+                        : 'pblV3.recoverWorkspace',
+                  )}
                 </button>
               )}
             </div>
@@ -506,6 +551,20 @@ function PBLV3WorkspaceContent({
               {t('pblV3.restoredProgress')}
             </p>
           )}
+          {view.reportAvailable && (
+            <div
+              data-testid="pbl-project-completed"
+              className="flex shrink-0 flex-wrap items-center gap-3 border-b border-violet-500/20 bg-violet-500/10 px-4 py-3"
+            >
+              <CheckCircle2 size={22} className="shrink-0 text-violet-500" />
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold">{t('pblV3.reportCopy.completedTitle')}</p>
+                <p className="text-xs text-muted-foreground">
+                  {t(view.busy ? 'pblV3.reportCopy.finalizing' : 'pblV3.reportCopy.completionHint')}
+                </p>
+              </div>
+            </div>
+          )}
           <WorkbenchSplit
             showWorkspace={showWorkspace}
             showAssistant={showAssistant}
@@ -513,6 +572,7 @@ function PBLV3WorkspaceContent({
               <LearningWorkbenchPanel
                 key={view.id}
                 view={view}
+                fileTarget={fileTarget?.studyId === view.id ? fileTarget : null}
                 workbench={workbench}
                 pending={pending || stream.status !== 'connected'}
                 pendingAction={pendingAction}
@@ -602,6 +662,14 @@ function PBLV3WorkspaceContent({
                 <div className="pbl-task-area flex min-h-0 flex-1 flex-col">
                   <LearningConversation
                     view={view}
+                    onOpenFile={(reference) => {
+                      setShowWorkspace(true);
+                      setFileTarget({ ...reference, studyId: view.id, requestId: Date.now() });
+                    }}
+                    onOpenReport={
+                      view.reportAvailable && !view.busy ? () => setReportOpen(true) : undefined
+                    }
+                    onOpenTask={() => taskDock.current?.open()}
                     sent={sent}
                     pendingMessage={pendingMessage}
                     requesting={['chat', 'begin', 'retry'].includes(pendingAction ?? '')}
@@ -609,6 +677,7 @@ function PBLV3WorkspaceContent({
                   <TaskDock
                     key={`${view.id}:${view.state.position.milestoneIndex}:${view.state.position.stageIndex}`}
                     view={view}
+                    ref={taskDock}
                     working={
                       buildWorking ||
                       (testStage &&

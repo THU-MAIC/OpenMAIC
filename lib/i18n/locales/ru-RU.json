@@ -2551,7 +2551,7 @@
     "restoredCheckpoint": "Рабочая область восстановлена из последней контрольной точки без последующих изменений.",
     "restartedWorkspace": "Контрольной точки нет. Рабочая область создана заново с начальными файлами проекта.",
     "restoredProgress": "Прогресс возвращён к первому затронутому этапу. Повторно проверьте и протестируйте восстановленные файлы.",
-    "environmentNotice": "Preparing your project environment. Your teaching assistant will open the step when it is ready.",
+    "environmentNotice": "Preparing or restoring the environment. The editor is read-only; existing drafts are kept. Type after recovery.",
     "prepare": "Retry project setup",
     "completed": "Project completed. Your learning progress is saved.",
     "learning": "Learning conversation",
@@ -2633,7 +2633,7 @@
     "reportEvidence": "Decisions, artifacts and results",
     "reportConversations": "Learning conversations",
     "conversationLimited": "Some activity is omitted from this view to keep it responsive. The complete records remain saved.",
-    "truncatedEvidence": "Only the most recent records are shown here. Earlier records remain saved.",
+    "truncatedEvidence": "Здесь показана часть учебных записей. Полные оригиналы сохранены.",
     "evidenceVersion": "Recorded version",
     "learner": "Learner",
     "build": "Build / check syntax",
@@ -2787,6 +2787,7 @@
       "toggleAssistant": "Toggle learning assistant",
       "environmentDetails": "Environment details",
       "saving": "Сохранение…",
+      "readOnly": "Read-only",
       "saved": "Сохранено",
       "saveFailed": "Ошибка · Повторить",
       "draftRetained": "Изменения сохранены в этом браузере"
@@ -2823,7 +2824,25 @@
       "quizAttempts": "Quiz attempts",
       "fileEdits": "Recorded file edits",
       "interruptedRuns": "Interrupted or failed assistant runs",
-      "completed": "Project completed. You can open your learning report."
+      "completed": "Project completed. You can open your learning report.",
+      "subtitle": "Ваш результат, принятые решения и записи о вашем прогрессе.",
+      "completedMilestones": "Этапов завершено",
+      "completedSteps": "Шагов завершено",
+      "concepts": "Отработанные понятия",
+      "skills": "Навыки на практике",
+      "practiceNotice": "Записи отражают практику, но не подтверждают полное владение навыками.",
+      "viewWorkbench": "Открыть рабочую область для чтения",
+      "completedTitle": "Проект завершён",
+      "completionHint": "Работа сохранена. Откройте отчёт или вернитесь к рабочей области.",
+      "close": "Закрыть отчёт",
+      "finalizing": "Сохраняется последний ответ. Отчёт скоро будет доступен.",
+      "skillLabels": {
+        "decisions": "Инженерные решения",
+        "planReview": "Проверка плана",
+        "codeReview": "Проверка реализации",
+        "verification": "Проверка тестами",
+        "reflection": "Рефлексия по записям"
+      }
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {
@@ -2879,7 +2898,8 @@
       "display": "Display",
       "stopped": "Stopped"
     },
-    "environmentSleeping": "Среда проекта неактивна. Восстановите файлы проекта кнопкой ниже, чтобы продолжить. Несохранённые черновики остаются в этом браузере.",
+    "environmentReleasing": "The environment is being released. The editor is read-only. Wait, then click the workbench or use the restore button. Existing browser drafts are kept.",
+    "environmentSleeping": "The environment is inactive and the editor is read-only. Click in the workbench to restore automatically, or use Restore project files. Existing browser drafts are kept; type after recovery.",
     "recoverWorkspace": "Восстановить файлы проекта",
     "checkpointUnavailable": "Не удалось сохранить последние изменения в архив. Повторите сохранение. При бездействии среда может быть освобождена, а несохранённые изменения — потеряны.",
     "checkpointSkipped": "Архивация постоянно завершается ошибкой. При восстановлении изменения новее сохранённой версии могут быть потеряны.",
@@ -2925,7 +2945,9 @@
       "reopen": "Reopen application",
       "starting": "Starting your application…",
       "failed": "The application exited. Read the output or ask your current assistant for help.",
-      "unavailable": "The application is not responding yet. Reopen, or share the error with your assistant."
+      "unavailable": "The application is not responding yet. Reopen, or share the error with your assistant.",
+      "restore": "Restore application environment",
+      "restoreNotice": "Your saved source and report remain available. Restore the environment to run your application again; completed source stays read-only."
     }
   }
 }
