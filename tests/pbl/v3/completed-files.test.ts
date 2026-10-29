@@ -8,20 +8,18 @@ import type { Queryable } from '@openmaic/storage/document/pg';
 it('only exposes public source from a committed final snapshot and leaves unfinished work live', async () => {
   const project = installedProject({ id: 'greeting-python', version: '1.0.0' });
   const row = { id: 'owner-scoped-study', state: startOrchestration(project.definition).state };
-  const query = vi
-    .fn()
-    .mockResolvedValue({
-      rows: [
-        {
-          files: {
-            'PLAN.md': 'Reviewed plan',
-            'src/greeting.py': 'Reviewed code',
-            'rubric/answers.md': 'PRIVATE',
-            '../secrets': 'PRIVATE',
-          },
+  const query = vi.fn().mockResolvedValue({
+    rows: [
+      {
+        files: {
+          'PLAN.md': 'Reviewed plan',
+          'src/greeting.py': 'Reviewed code',
+          'rubric/answers.md': 'PRIVATE',
+          '../secrets': 'PRIVATE',
         },
-      ],
-    });
+      },
+    ],
+  });
   const db = { query } as unknown as Queryable;
   expect(await completedProjectFiles(db, row, project)).toBeNull();
   expect(query).not.toHaveBeenCalled();

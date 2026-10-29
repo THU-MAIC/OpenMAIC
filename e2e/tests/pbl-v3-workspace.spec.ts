@@ -825,8 +825,10 @@ test('installed sample opens in the normal classroom and preserves progress afte
   // Real workbench/Monaco recovery: the rejected draft survives restore and
   // saves against its verified base with a new request, without discarding it.
   unavailableAutosave = true;
-  await page.locator('.monaco-editor .view-lines .view-line').first().click();
-  await page.keyboard.press('ControlOrMeta+A');
+  const restoredEditor = page.locator('.monaco-editor textarea').first();
+  await expect(restoredEditor).toBeEditable();
+  await restoredEditor.focus();
+  await restoredEditor.press('ControlOrMeta+A');
   await page.keyboard.insertText('print("Draft after idle")');
   await expect(retrySave).toBeVisible();
   await expect(page.getByTestId('pbl-environment-setup')).toContainText('environment is inactive');
@@ -972,7 +974,15 @@ test('installed sample opens in the normal classroom and preserves progress afte
   view.actions = [];
   view.state.position.stageIndex = 6;
   await page.getByRole('button', { name: 'Refresh progress' }).click();
-  await expect(page.getByRole('button', { name: 'Learning report', exact: true })).toBeVisible();
+  const workspace = page.getByTestId('pbl-v3-workspace');
+  const toolbarReport = workspace
+    .locator(':scope > header')
+    .getByRole('button', { name: 'Learning report', exact: true });
+  const completionReport = workspace
+    .getByTestId('pbl-project-completed')
+    .getByRole('button', { name: 'Learning report', exact: true });
+  await expect(toolbarReport).toBeVisible();
+  await expect(completionReport).toBeVisible();
   // Completed projects can restore source files explicitly; opening the report needs no compute.
   await expect(
     page.getByRole('button', { name: 'Restore project files', exact: true }),
@@ -983,8 +993,8 @@ test('installed sample opens in the normal classroom and preserves progress afte
   )
     await page.getByRole('button', { name: 'Exit fullscreen workspace', exact: true }).click();
   await page.getByRole('button', { name: 'Expand to fullscreen workspace', exact: true }).click();
-  await page.getByRole('button', { name: 'Learning report', exact: true }).click();
-  const report = page.getByRole('region', { name: 'Learning report' });
+  await toolbarReport.click();
+  const report = page.getByRole('dialog', { name: 'Learning report', exact: true });
   await expect(report.getByText('A saved learning journey', { exact: true })).toBeVisible();
   await expect(
     report.getByText(
@@ -1001,22 +1011,23 @@ test('installed sample opens in the normal classroom and preserves progress afte
   await expect(report.getByText('Saved plan evidence')).toBeVisible();
   expect(
     await report
-      .locator('details[id^="report-source-turn-"]')
+      .locator(`details[id^="report-source-${view.id}-turn-"]`)
       .evaluateAll((items) => items.map((item) => item.id)),
   ).toEqual([
-    'report-source-turn-0-1',
-    'report-source-turn-2-1',
-    'report-source-turn-1-1',
-    'report-source-turn-0-2',
+    `report-source-${view.id}-turn-0-1`,
+    `report-source-${view.id}-turn-2-1`,
+    `report-source-${view.id}-turn-1-1`,
+    `report-source-${view.id}-turn-0-2`,
   ]);
   await report.evaluate((el) => {
     el.scrollTop = 0;
   });
   await report.screenshot({ path: 'test-results/pbl-v3-report.png' });
-  await page.getByRole('button', { name: 'Return to learning' }).click();
+  await report.getByRole('button', { name: 'View read-only workbench', exact: true }).click();
   await expect(report).toHaveCount(0);
-  await page.getByRole('button', { name: 'Learning report', exact: true }).click();
+  await completionReport.click();
   await expect(report.getByText('A saved learning journey', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Return to learning' }).click();
+  await report.getByRole('button', { name: 'Close report', exact: true }).click();
+  await expect(report).toHaveCount(0);
   expect(calls.filter((c) => c.type === 'prepare')).toHaveLength(beforeCompletedProject);
 });
