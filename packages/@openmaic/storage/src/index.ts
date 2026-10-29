@@ -62,6 +62,7 @@ export {
   ASSET_PG_MIGRATIONS,
   ASSET_PG_SCHEMA,
   DEFAULT_ASSET_PENDING_TTL_MS,
+  DEFAULT_ASSET_STAGE_TTL_MS,
   PgAssetStore,
   ensureAssetSchema,
   type PgAssetStoreOptions,

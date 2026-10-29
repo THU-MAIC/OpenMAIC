@@ -154,7 +154,7 @@ class GatedByteStore implements AssetByteStore {
   private readonly values = new Map<ContentHash, Uint8Array>();
   private readonly gates = new Map<
     'read' | 'write',
-    { arrive: () => void; opened: Promise<void> }
+    Array<{ arrive: () => void; opened: Promise<void> }>
   >();
   // Bytes live in a process-local map, never in the registry's PostgreSQL, so
   // the plain methods cannot contend for its row locks (see
@@ -164,7 +164,7 @@ class GatedByteStore implements AssetByteStore {
   onWrite?: () => Promise<void>;
   onRead?: () => Promise<void>;
 
-  /** Park the next operation of `kind` until `open()`. */
+  /** Park the next not-yet-gated operation of `kind` until `open()`. */
   gate(kind: 'read' | 'write'): { reached: Promise<void>; open: () => void } {
     let arrive!: () => void;
     const reached = new Promise<void>((resolve) => {
@@ -174,14 +174,15 @@ class GatedByteStore implements AssetByteStore {
     const opened = new Promise<void>((resolve) => {
       open = resolve;
     });
-    this.gates.set(kind, { arrive, opened });
+    const queue = this.gates.get(kind) ?? [];
+    queue.push({ arrive, opened });
+    this.gates.set(kind, queue);
     return { reached, open };
   }
 
   private async pass(kind: 'read' | 'write'): Promise<void> {
-    const gate = this.gates.get(kind);
+    const gate = this.gates.get(kind)?.shift();
     if (!gate) return;
-    this.gates.delete(kind);
     gate.arrive();
     await gate.opened;
   }
@@ -363,7 +364,10 @@ describe.skipIf(!contractUrl)('PgAssetStore with PostgreSQL 16', () => {
       await probePool.end();
     });
 
-    function stagedStore(layer: AssetByteStore, extra: { quotaBytes?: number } = {}): PgAssetStore {
+    function stagedStore(
+      layer: AssetByteStore,
+      extra: { quotaBytes?: number; stageTtlMs?: number } = {},
+    ): PgAssetStore {
       return new PgAssetStore(probePool as Queryable, {
         byteStore: layer,
         withTransaction: transactionFor(probePool),
@@ -604,19 +608,134 @@ describe.skipIf(!contractUrl)('PgAssetStore with PostgreSQL 16', () => {
       expect((await pool.query('SELECT * FROM asset_blobs')).rows).toEqual([]);
     });
 
-    test('an expired pin nothing reclaimed still vouches for its bytes', async () => {
+    test('an expired pin is dead even while its row survives', async () => {
       const layer = new GatedByteStore();
       const registry = stagedStore(layer);
-      const staged = await registry.stageBytes(new Blob(['late but intact']));
+      const staged = await registry.stageBytes(new Blob(['expired, not reclaimed']));
       await pool.query(`UPDATE asset_blob_stages SET expires_at = '2000-01-01T00:00:00.000Z'`);
 
-      const id = await registry.putStaged(principal, staged, { contentType: 'text/plain' });
-
-      expect(await registry.resolve(principal, id)).toMatchObject({
-        bytes: new TextEncoder().encode('late but intact'),
-        mime: 'text/plain',
-      });
+      await expect(registry.putStaged(principal, staged)).rejects.toThrow(/registry put failed/);
+      expect((await pool.query('SELECT * FROM asset_entries')).rows).toEqual([]);
     });
+
+    test('a collector that fails after deleting the bytes cannot leave a pin an allocation trusts', async () => {
+      // The byte delete is outside the database and survives the collector's
+      // rollback, so the blob row and its expired pin outlive the bytes. The
+      // pin must stay dead: allocating on it would name bytes that are gone.
+      const layer = new GatedByteStore();
+      const registry = stagedStore(layer);
+      const data = new Blob(['deleted, then rolled back']);
+      const { contentHash } = await contentHashOf(data);
+      const staged = await registry.stageBytes(data);
+      await pool.query(`UPDATE asset_blob_stages SET expires_at = '2000-01-01T00:00:00.000Z'`);
+      await pool.query(`UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'`);
+      const failingCollector = new AssetCollector(pool as Queryable, layer, {
+        graceMs: 0,
+        now: () => new Date('2026-01-01T00:00:00.000Z'),
+        withTransaction: (body) =>
+          transactionFor(pool)((queryable) =>
+            body({
+              async query<TRow extends Record<string, unknown> = Record<string, unknown>>(
+                text: string,
+                params?: unknown[],
+              ): Promise<QueryResult<TRow>> {
+                if (text.startsWith('DELETE FROM asset_blobs')) {
+                  throw new Error('injected failure after the byte delete');
+                }
+                return queryable.query<TRow>(text, params);
+              },
+            }),
+          ),
+      });
+
+      await expect(failingCollector.collect()).rejects.toThrow();
+      expect(await layer.read(contentHash)).toBeNull();
+      expect((await pool.query('SELECT id FROM asset_blob_stages')).rows).toHaveLength(1);
+
+      await expect(registry.putStaged(principal, staged)).rejects.toThrow(/registry put failed/);
+      expect((await pool.query('SELECT * FROM asset_entries')).rows).toEqual([]);
+    });
+
+    test('an upload that outlives its pin fails instead of allocating', async () => {
+      const layer = new GatedByteStore();
+      const registry = stagedStore(layer, { stageTtlMs: 1 });
+      const writeGate = layer.gate('write');
+
+      const putting = registry.put(principal, new Blob(['too slow']));
+      await writeGate.reached;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      writeGate.open();
+
+      await expect(putting).rejects.toThrow(/registry put failed/);
+      expect((await pool.query('SELECT * FROM asset_entries')).rows).toEqual([]);
+      expect((await pool.query('SELECT * FROM asset_blob_stages')).rows).toEqual([]);
+    });
+
+    test('releasing a stage lets its bytes drain, and releasing again is a no-op', async () => {
+      const layer = new GatedByteStore();
+      const registry = stagedStore(layer);
+      const data = new Blob(['given back']);
+      const { contentHash } = await contentHashOf(data);
+      const staged = await registry.stageBytes(data);
+
+      await registry.releaseStaged(staged);
+      await registry.releaseStaged(staged);
+
+      expect((await pool.query('SELECT * FROM asset_blob_stages')).rows).toEqual([]);
+      await expect(registry.putStaged(principal, staged)).rejects.toThrow(/registry put failed/);
+      await pool.query(`UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'`);
+      const collector = new AssetCollector(pool as Queryable, layer, {
+        graceMs: 0,
+        now: () => new Date('2026-01-01T00:00:00.000Z'),
+        withTransaction: transactionFor(pool),
+      });
+      expect(await collector.collect()).toBe(1);
+      expect(await layer.read(contentHash)).toBeNull();
+    });
+
+    test.each(['put', 'replace'] as const)(
+      'a transaction-bound %s and a pool-bound write of the same content and principal do not deadlock',
+      async (operation) => {
+        // The pool-bound writer stages and uploads; the host transaction then
+        // stages the same content and holds what its stage locked until it
+        // commits; the pool-bound writer then allocates (principal's lock,
+        // then the blob row) while the host is still uploading. The host's
+        // allocation must not then wait for the principal's lock while holding
+        // the blob row the pool-bound writer is waiting for.
+        const layer = new GatedByteStore();
+        const quotaBytes = 1_000;
+        const pooled = stagedStore(layer, { quotaBytes });
+        const data = new Blob([`contended ${operation}`]);
+        const existing =
+          operation === 'replace' ? await pooled.put(principal, new Blob(['original'])) : undefined;
+        const pooledGate = layer.gate('write');
+        const hostGate = layer.gate('write');
+
+        const pooledWrite = pooled.put(principal, data);
+        await pooledGate.reached;
+        const hostWrite = transactionFor(probePool)(async (tx): Promise<unknown> => {
+          const bound = new PgAssetStore(tx, {
+            byteStore: layer,
+            withTransaction: (body) => body(tx),
+            quotaBytes,
+          });
+          return operation === 'put'
+            ? bound.put(principal, data)
+            : bound.replace(principal, existing!, data);
+        });
+        await hostGate.reached;
+        pooledGate.open();
+        await waitForLockWaiter(pool);
+        hostGate.open();
+
+        const results = await Promise.allSettled([pooledWrite, hostWrite]);
+        expect(results.map((result) => result.status)).toEqual(['fulfilled', 'fulfilled']);
+        const pooledId = (results[0] as PromiseFulfilledResult<string>).value;
+        expect((await pooled.resolve(principal, pooledId))?.bytes).toEqual(
+          new TextEncoder().encode(`contended ${operation}`),
+        );
+      },
+    );
 
     test('a store bound to a caller transaction allocates staged bytes with no byte I/O in it', async () => {
       const layer = new GatedByteStore();

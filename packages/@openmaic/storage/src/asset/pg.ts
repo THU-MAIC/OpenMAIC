@@ -96,10 +96,23 @@ export interface PgAssetStoreOptions {
    * written and never read.
    */
   pendingTtlMs?: number;
+  /**
+   * How long a stage pin (see {@link PgAssetStore.stageBytes}) protects its
+   * bytes: the bound on an object-store upload plus, for `putStaged`, the gap
+   * before the allocating transaction. The collector does not reclaim a blob
+   * while a live pin names it; a pin past this deadline is dead, so an upload
+   * or allocation that outlives it fails rather than trusting bytes the
+   * collector may already have removed. It also bounds how long an abandoned
+   * stage holds its bytes back from reclamation.
+   */
+  stageTtlMs?: number;
 }
 
 /** One day. A deployment may choose a longer window. */
 export const DEFAULT_ASSET_PENDING_TTL_MS = 24 * 60 * 60 * 1000;
+
+/** One day: far beyond any upload, short enough to drain abandoned stages. */
+export const DEFAULT_ASSET_STAGE_TTL_MS = 24 * 60 * 60 * 1000;
 
 /**
  * One PGlite-compatible statement per entry, in dependency order.
@@ -352,10 +365,27 @@ interface StagedRecord {
 
 const stagedRecords = new WeakMap<StagedAssetBytes, StagedRecord>();
 
-/** One live statement that renews a stage pin's deadline, or finds it gone. */
+/**
+ * When a stage pin is alive: strictly before its deadline, read on the wall
+ * clock at the moment of the check.
+ *
+ * An expired pin is dead even while its row still exists, and must never be
+ * revived. The collector treats it as dead -- it deletes the bytes, which no
+ * rollback restores, before deleting the blob row the pin cascades with -- so
+ * a collector transaction that fails between those two steps leaves the row
+ * and the expired pin behind with the bytes gone. `clock_timestamp()` rather
+ * than `now()`: `now()` is the transaction's start, and an allocating
+ * transaction that waited on a lock would otherwise judge the pin by a time
+ * before a collector that ran meanwhile. The collector judges by its own
+ * `now()`, which is never later than when it acts, so any check made after a
+ * collector deleted bytes sees the pin as dead too.
+ */
+const STAGE_PIN_LIVE_SQL = 'expires_at > clock_timestamp()';
+
+/** Renew a live stage pin's deadline, or find it dead or gone. */
 const RENEW_STAGE_SQL = `UPDATE asset_blob_stages
-    SET expires_at = now() + ($2::double precision * interval '1 millisecond')
-  WHERE id = $1
+    SET expires_at = clock_timestamp() + ($2::double precision * interval '1 millisecond')
+  WHERE id = $1 AND ${STAGE_PIN_LIVE_SQL}
   RETURNING id`;
 
 /**
@@ -427,6 +457,7 @@ export class PgAssetStore implements AssetStore {
   private readonly byteStore: AssetByteStore;
   private readonly quotaBytes?: number;
   private readonly pendingTtlMs: number;
+  private readonly stageTtlMs: number;
 
   constructor(
     private readonly queryable: Queryable,
@@ -452,10 +483,17 @@ export class PgAssetStore implements AssetStore {
     ) {
       throw new Error('@openmaic/storage: pendingTtlMs must be a positive safe integer');
     }
+    if (
+      options.stageTtlMs !== undefined &&
+      (!Number.isSafeInteger(options.stageTtlMs) || options.stageTtlMs < 1)
+    ) {
+      throw new Error('@openmaic/storage: stageTtlMs must be a positive safe integer');
+    }
     this.transactionHook = options.withTransaction;
     this.byteStore = options.byteStore;
     this.quotaBytes = options.quotaBytes;
     this.pendingTtlMs = options.pendingTtlMs ?? DEFAULT_ASSET_PENDING_TTL_MS;
+    this.stageTtlMs = options.stageTtlMs ?? DEFAULT_ASSET_STAGE_TTL_MS;
   }
 
   private transaction<T>(body: (queryable: Queryable) => Promise<T>): Promise<T> {
@@ -524,8 +562,12 @@ export class PgAssetStore implements AssetStore {
    * transaction and have declared their bytes live elsewhere: an in-database
    * layer writes through the transaction it is coordinated with, which is
    * correct and cheap, so it keeps the single-transaction path.
+   *
+   * A host that allocates inside its own transaction uses this to decide
+   * whether {@link stageBytes} buys anything: with an in-database layer it
+   * would only add a transaction, so such a host keeps calling `put`.
    */
-  private stagesByteWrites(): boolean {
+  stagesByteWrites(): boolean {
     return (
       !hasTransactionalWriter(this.byteStore) &&
       this.byteStore.writesOutsideRegistryDatabase === true
@@ -557,17 +599,21 @@ export class PgAssetStore implements AssetStore {
    *
    * The row lock comes first, so a collector already holding it finishes
    * before the pin is looked at: if it reclaimed the blob, the pin cascaded
-   * away with the row and is not found here. A pin that IS found was never
-   * reclaimed with its blob, and the blob row cannot have been deleted and
-   * re-created underneath it either (deleting the row deletes the pin), so the
-   * bytes the stage uploaded after writing the pin are still stored. With the
-   * row lock held from here to commit, the collector cannot start on it.
+   * away with the row and is not found here. A pin that is found AND still
+   * live was never reclaimed with its blob -- the collector skips a blob any
+   * live pin names -- and the blob row cannot have been deleted and re-created
+   * underneath it either (deleting the row deletes the pin), so the bytes the
+   * stage uploaded after writing the pin are still stored. An expired pin is
+   * refused even when its row survives: a collector may have deleted its bytes
+   * and then failed before deleting the row (see {@link STAGE_PIN_LIVE_SQL}).
+   * With the row lock held from here to commit, the collector cannot start on
+   * it.
    */
   private async claimStagedBlob(queryable: Queryable, staged: StagedRecord): Promise<void> {
     await this.claimBlobRow(queryable, staged.contentHash, staged.byteLength);
     const consumed = await queryable.query(
       `DELETE FROM asset_blob_stages
-        WHERE id = $1 AND content_hash = $2
+        WHERE id = $1 AND content_hash = $2 AND ${STAGE_PIN_LIVE_SQL}
         RETURNING id`,
       [staged.stageId, staged.contentHash],
     );
@@ -581,7 +627,7 @@ export class PgAssetStore implements AssetStore {
    * 1. A short transaction claims the blob row -- a new row is stamped
    *    unreferenced now, so an abandoned stage leaves bytes the collector
    *    reclaims rather than a row nothing will ever stamp -- and records a pin
-   *    that expires after `pendingTtlMs`. Claiming the row first makes this
+   *    that expires after `stageTtlMs`. Claiming the row first makes this
    *    wait out a collector that already holds it, so the pin is written
    *    either before the collector can lock the row (and the collector, which
    *    re-reads pins under that lock, skips the blob) or after it has deleted
@@ -595,16 +641,29 @@ export class PgAssetStore implements AssetStore {
    * An in-database layer writes its bytes inside step 1 instead, through the
    * transaction it is coordinated with. Every path runs the same statements
    * whether or not the content was already stored.
+   *
+   * `lockAhead` runs first in step 1 and takes, in their usual order, the
+   * locks the allocating transaction will take before it reaches the blob
+   * row: the principal's quota lock, and for `replace` the entry's row lock.
+   * On a store bound to fresh transactions they are released at once and cost
+   * a few statements. On a store bound to a caller's open transaction, step 1
+   * and the allocation share that transaction, so the blob-row lock taken
+   * here is held until the caller commits; without the locks ahead of it that
+   * transaction would hold the blob row and then wait for the principal's
+   * lock -- the reverse of every other writer, which takes the principal's
+   * lock and then waits for the blob row, and a deadlock between the two.
    */
   private async stage(
     contentHash: ContentHash,
     bytes: Uint8Array,
     type: string,
+    lockAhead?: (queryable: Queryable) => Promise<void>,
   ): Promise<StagedRecord> {
     const stageId = crypto.randomUUID();
     const store = this.byteStore;
-    const ttl = this.pendingTtlMs;
+    const ttl = this.stageTtlMs;
     await this.writeTransaction(async (queryable) => {
+      await lockAhead?.(queryable);
       await queryable.query(
         `INSERT INTO asset_blobs (content_hash, byte_size, unreferenced_at)
          VALUES ($1, $2, now())
@@ -614,7 +673,7 @@ export class PgAssetStore implements AssetStore {
       );
       await queryable.query(
         `INSERT INTO asset_blob_stages (id, content_hash, expires_at)
-         VALUES ($1, $2, now() + ($3::double precision * interval '1 millisecond'))`,
+         VALUES ($1, $2, clock_timestamp() + ($3::double precision * interval '1 millisecond'))`,
         [stageId, contentHash, ttl],
       );
       if (hasTransactionalWriter(store)) await store.writeWith(queryable, contentHash, bytes);
@@ -650,6 +709,21 @@ export class PgAssetStore implements AssetStore {
   }
 
   /**
+   * Give up a stage {@link stageBytes} answered and nothing will spend, so its
+   * bytes drain on the collector's ordinary grace period instead of waiting
+   * out `stageTtlMs`. Idempotent: releasing a spent, released, expired or
+   * foreign handle does nothing. Best effort -- a failure leaves the pin to
+   * expire on its own -- and never throws. Call it on a store bound to fresh
+   * transactions, after the transaction that would have spent the handle has
+   * ended: inside that transaction it would be rolled back with it.
+   */
+  async releaseStaged(staged: StagedAssetBytes): Promise<void> {
+    const record = stagedRecords.get(staged);
+    if (!record) return;
+    await this.releaseStage(record.stageId);
+  }
+
+  /**
    * Upload bytes ahead of the transaction that will allocate an entry for
    * them, and answer a handle {@link putStaged} spends.
    *
@@ -664,11 +738,18 @@ export class PgAssetStore implements AssetStore {
    * transaction).
    *
    * Nothing names the staged bytes until `putStaged` commits. A stage that is
-   * never spent expires after `pendingTtlMs`, and the collector then reclaims
-   * its bytes on the ordinary grace period; `putStaged` on an expired stage
-   * fails like any other registry failure, and the caller stages again.
+   * never spent should be given back with {@link releaseStaged}; otherwise it
+   * expires after `stageTtlMs`, and the collector then reclaims its bytes on
+   * the ordinary grace period. `putStaged` on an expired stage fails like any
+   * other registry failure, and the caller stages again.
    * Called on a store bound to an open transaction, the stage runs inside it
    * and is no better than `put`.
+   *
+   * The handle is a process-local capability: it is valid only in the process
+   * and the copy of this package that answered it (it is not serializable,
+   * and a second copy of the package does not recognize it), and it is not
+   * bound to a principal -- whoever holds it decides which principal
+   * `putStaged` allocates for, with that principal's quota.
    */
   async stageBytes(data: BinaryBlob): Promise<StagedAssetBytes> {
     this.assertByteWriteIsCoordinatable();
@@ -898,7 +979,13 @@ export class PgAssetStore implements AssetStore {
       }
       let record: StagedRecord;
       try {
-        record = await this.stage(contentHash, bytes, data.type);
+        // The principal's lock ahead of the blob row, in the order the
+        // allocation takes them (see `stage`).
+        record = await this.stage(contentHash, bytes, data.type, (queryable) =>
+          this.quotaBytes === undefined
+            ? Promise.resolve()
+            : this.lockPrincipal(queryable, principal),
+        );
       } catch {
         throw registryFailure('put');
       }
@@ -1215,7 +1302,15 @@ export class PgAssetStore implements AssetStore {
         );
         if (!exists.rows[0]) throw new RegistryAssetNotFound();
         if (await entryIsRooted(this.queryable, ref)) throw new AssetRootedError();
-        staged = await this.stage(contentHash, bytes, data.type);
+        // The principal's lock, then the entry's, ahead of the blob row: the
+        // order the replacing transaction below takes them (see `stage`).
+        staged = await this.stage(contentHash, bytes, data.type, async (queryable) => {
+          if (this.quotaBytes !== undefined) await this.lockPrincipal(queryable, principal);
+          await queryable.query(
+            'SELECT id FROM asset_entries WHERE id = $1 AND principal = $2 FOR UPDATE',
+            [ref, principal.key],
+          );
+        });
       } catch (error) {
         throw replaceFailure(error);
       }
