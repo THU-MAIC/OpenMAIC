@@ -1000,7 +1000,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   // A long streaming reply keeps its heading readable instead of chasing its tail.
   const requestsBeforeLongReply = chatRequests;
   await page.getByLabel('Your message', { exact: true }).fill('Please explain this in detail.');
-  await page.getByRole('button', { name: 'Send message', exact: true }).click();
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
   await expect.poll(() => chatRequests).toBe(requestsBeforeLongReply + 1);
   await expect(
     conversation.getByText('Please explain this in detail.', { exact: true }),

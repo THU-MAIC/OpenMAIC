@@ -10,14 +10,19 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 /** Follow a growing reply only until its heading reaches the reading area's top. */
 export function useConversationScrollTarget(turnId: string | null, sent: number) {
   const followTail = useRef(false);
+  const currentTurn = useRef(turnId);
   useLayoutEffect(() => {
+    currentTurn.current = turnId;
     followTail.current = false;
   }, [turnId, sent]);
+  // The scroll library retains its initial target callback. Keep that callback
+  // stable and read the current reply through a ref instead of a stale closure.
   const targetScrollTop = useCallback<GetTargetScrollTop>(
     (target, { scrollElement, contentElement }) => {
-      if (followTail.current || !turnId) return target;
+      const id = currentTurn.current;
+      if (followTail.current || !id) return target;
       const turn = [...contentElement.querySelectorAll<HTMLElement>('[data-turn-id]')].find(
-        (element) => element.dataset.turnId === turnId,
+        (element) => element.dataset.turnId === id,
       );
       if (!turn) return target;
       const heading =
@@ -28,7 +33,7 @@ export function useConversationScrollTarget(turnId: string | null, sent: number)
       // Manual reading below the heading must never be pulled back upward.
       return Math.min(target, Math.max(scrollElement.scrollTop, heading));
     },
-    [turnId],
+    [],
   );
   const follow = useCallback(() => {
     followTail.current = true;
