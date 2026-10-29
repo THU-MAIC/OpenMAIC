@@ -133,7 +133,7 @@ for (const legacyMove of [false, true]) {
       if (url.searchParams.has('file'))
         return route.fulfill({ json: { text: 'Saved plan', hash: 'a'.repeat(64) } });
       if (body?.command) commands.push(body.command.type);
-      return route.fulfill({ json: body ? { view } : view });
+      return route.fulfill({ json: body?.command ? { view } : view });
     });
     await learningEvents(() => ({ view, workbench }));
     await page.goto(`/classroom/${stageId}`);

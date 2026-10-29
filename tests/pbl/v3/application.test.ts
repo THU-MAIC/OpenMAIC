@@ -42,6 +42,7 @@ const mock = vi.hoisted(() => ({
   scope: vi.fn(),
   command: vi.fn(),
   paths: ['app.py'],
+  files: { 'app.py': 'pass\n' } as Record<string, string>,
 }));
 vi.mock('@/lib/server/pbl-v3/store', () => ({
   LearningStore: {
@@ -104,7 +105,7 @@ vi.mock('@/lib/server/sandbox/managed-workspace', () => ({
 vi.mock('@/lib/server/pbl-v3/runtime', () => ({
   busy: async () => mock.busy,
   projectFor: () => mock.project,
-  readFiles: async () => ({ 'app.py': 'pass\n' }),
+  readFiles: async () => mock.files,
   requireEnvironment: (row: StudyFixture) => row.environment_id,
   stageKey: () => 'sample:0',
 }));
@@ -147,6 +148,7 @@ beforeEach(() => {
   mock.busy = false;
   mock.state = 'running';
   mock.paths = ['app.py'];
+  mock.files = { 'app.py': 'pass\n' };
   mock.row = {
     id: study,
     owner_id: 'owner',
@@ -174,6 +176,17 @@ beforeEach(() => {
 });
 
 describe('declared project applications', () => {
+  it('checks shutdown-created source paths before recording or dispatching a new writer', async () => {
+    mock.stop.mockImplementationOnce(async () => {
+      mock.files = Object.fromEntries(
+        Array.from({ length: 256 }, (_, i) => [`src/${'x'.repeat(230)}${i}.py`, 'pass\n']),
+      );
+    });
+    await expect(applicationRequest(owner, request('restart'))).rejects.toThrow('32 KiB');
+    expect(mock.starts).toEqual([]);
+    expect(mock.receipts.size).toBe(0);
+    expect(mock.writer).not.toHaveBeenCalled();
+  });
   it.each(['open', 'restart'])(
     'checks the current source-path budget before %s dispatch',
     async (action) => {

@@ -237,14 +237,20 @@ export async function applicationRequest(principal: OwnerPrincipal, input: unkno
           const running = previousCommand && active(previousCommand.state);
           if (!receipt && (request.action === 'restart' || !running)) {
             await service.stopApplications(environmentId);
-            const files = await readFiles(service, row),
-              run: ApplicationRun = {
-                environmentId,
-                epoch: request.epoch,
-                commandId: request.id,
-                sourceHash: applicationFingerprint(files),
-                startedAt: new Date().toISOString(),
-              };
+            const files = await readFiles(service, row);
+            // Shutdown hooks can create sources too; check the quiesced snapshot.
+            applicationProbeCommand(
+              Object.keys(files).sort(),
+              application.port,
+              application.healthPath,
+            );
+            const run: ApplicationRun = {
+              environmentId,
+              epoch: request.epoch,
+              commandId: request.id,
+              sourceHash: applicationFingerprint(files),
+              startedAt: new Date().toISOString(),
+            };
             // Invalidate an in-flight archive even if this writer exits before publication.
             await store.markWorkspaceWriter(row);
             await store.pool.query(
