@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Persistence: a request now fails after 10 s when every persistence connection is busy, instead of waiting forever with no error or log. Deployments that pass their own pool factory should set `connectionTimeoutMillis` on it too. [#2093](https://github.com/THU-MAIC/OpenMAIC/pull/2093)
+
 ## [1.3.0] - 2026-10-29
 
 1.3.0 has two themes. The **knowledge base** shipped in the release candidate (see [1.3.0-rc.1](#130-rc1---2026-10-22)): every upload stays in its owner's knowledge base until it is deleted, is organized in folders and parsed once, and the composer and the agent can use it. The **Pro workbench upgrade** is new in this release: a request shows a preview of the agent's work before the first page exists, and classroom tabs switch between Learn and Edit. This section collects what is new in 1.3.0 beyond the rc.1 section below. Coming from 1.2.x:
