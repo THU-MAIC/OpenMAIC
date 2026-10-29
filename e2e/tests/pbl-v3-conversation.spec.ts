@@ -317,17 +317,13 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
         },
       ];
       view.needsOpening = true;
-      view.conversation!.push({
-        id: 'decision-directions',
-        speaker: 'discussion',
-        parts: [
-          {
-            kind: 'text',
-            id: 'decision-directions-text',
-            text: 'Open [Current task](#pbl-task) in the drawer above the message input to submit your decisions and reasons.',
-          },
-        ],
-      });
+      view
+        .conversation!.findLast((entry) => entry.speaker !== 'user')!
+        .parts.push({
+          kind: 'text',
+          id: 'decision-directions-text',
+          text: 'Open [Current task](#pbl-task) in the drawer above the message input to submit your decisions and reasons.',
+        });
       view.revision++;
       return route.fulfill({ json: { view } });
     }

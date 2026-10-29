@@ -57,7 +57,7 @@ describe('authoritative product guidance', () => {
     expect(prompt).toContain('drawer above the message input');
     expect(prompt).toContain('text is exactly productContext.visibleLabels.task');
     expect(prompt).toContain('not by sending a chat message');
-    expect(prompt).toContain('does not submit, save, approve, restore an environment or advance');
+    expect(prompt).toContain('does not submit, save, approve or advance');
     expect(teachingProductContext(fixture(0)).current.taskDrawer).toBe(false);
   });
   it('keeps declared UI instructions separate from observed runtime and formal assessment evidence', () => {
