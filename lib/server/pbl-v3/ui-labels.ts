@@ -41,5 +41,9 @@ export function visibleProductLabels(locale = 'en-US') {
     restore: p.recoverWorkspace,
     toggleWorkspace: p.ide.toggleWorkspace,
     toggleAssistant: p.ide.toggleAssistant,
+    application: p.application.open,
+    applicationRestart: p.application.restart,
+    applicationNewTab: p.application.newTab,
+    applicationReopen: p.application.reopen,
   };
 }

@@ -24,7 +24,7 @@ export function ConversationHistory({
 }: {
   id: string;
   sources: Source[];
-  renderEntry: (entry: LearningConversationEntry) => ReactNode;
+  renderEntry: (entry: LearningConversationEntry, dismissForNavigation: () => void) => ReactNode;
 }) {
   const { t } = useI18n();
   const [source, setSource] = useState<Source | null>(null);
@@ -34,6 +34,7 @@ export function ConversationHistory({
   const [failed, setFailed] = useState(false);
   const request = useRef<AbortController | null>(null);
   const trigger = useRef<HTMLButtonElement | null>(null);
+  const navigating = useRef(false);
   const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
   const next = pages[0]?.nextBefore;
   const load = async (selected: Source, before?: number) => {
@@ -107,6 +108,11 @@ export function ConversationHistory({
           container={portalContainer}
           overlayClassName="z-[140]"
           className="z-[150] flex max-h-[85dvh] w-[min(56rem,90vw)] flex-col gap-3"
+          onCloseAutoFocus={(event) => {
+            // Accepted navigation supplies its own focus target (IDE/report).
+            if (navigating.current) event.preventDefault();
+            navigating.current = false;
+          }}
         >
           <DialogTitle className="pr-10">{t('pblV3.history.title')}</DialogTitle>
           <DialogDescription>{t('pblV3.history.description')}</DialogDescription>
@@ -141,7 +147,12 @@ export function ConversationHistory({
               </p>
             )}
             {mergeConversationHistory(pages.map((page) => page.conversation)).map((entry) => (
-              <div key={entry.id}>{renderEntry(entry)}</div>
+              <div key={entry.id}>
+                {renderEntry(entry, () => {
+                  navigating.current = true;
+                  select(null);
+                })}
+              </div>
             ))}
             {!pending &&
               !failed &&

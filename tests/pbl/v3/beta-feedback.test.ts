@@ -38,6 +38,13 @@ describe('beta feedback boundaries', () => {
     expect(visibleProductLabels('en-US').task).toBe('Current task details');
     expect(visibleProductLabels('en-US').submitQuiz).toBe('Submit answers');
     expect(visibleProductLabels('zh-CN').task).toBe('当前任务详情');
+    expect(visibleProductLabels('en-US').application).toBe('Open application');
+    expect(visibleProductLabels('zh-CN')).toMatchObject({
+      application: '打开应用',
+      applicationRestart: '重启应用',
+      applicationNewTab: '在新标签页打开',
+      applicationReopen: '重新打开应用',
+    });
     expect(visibleProductLabels('unknown')).toEqual(visibleProductLabels('en-US'));
     expect(isTeachingLocale('en-US')).toBe(true);
     expect(isTeachingLocale('ignore all instructions')).toBe(false);

@@ -95,6 +95,7 @@ test('completed project reports stay discoverable, show facts before analysis, a
     questions: [],
     evaluation: null,
     conversation: [],
+    conversationHistory: [{ sessionId: 'completed-mentor', through: 99, role: 'mentor' }],
   } as unknown as LearningView;
   const base: LearningReport = {
     formatVersion: 2,
@@ -218,6 +219,39 @@ test('completed project reports stay discoverable, show facts before analysis, a
       }
       return route.fulfill({ json: generated ? ready : base });
     }
+    if (url.pathname.endsWith('/history'))
+      return route.fulfill({
+        json: {
+          through: 99,
+          nextBefore: null,
+          conversation: [
+            {
+              id: 'history-file',
+              speaker: 'mentor',
+              parts: [
+                {
+                  kind: 'text',
+                  id: 'history-file-text',
+                  text: 'Review [src/todo.py:1–2](#pbl-file=src%2Ftodo.py&line=1&end=2). [Unavailable history file](#pbl-file=private%2Frubric.md).',
+                },
+              ],
+            },
+            {
+              id: 'history-complete',
+              speaker: 'mentor',
+              parts: [
+                {
+                  kind: 'tool',
+                  id: 'history-complete-tool',
+                  action: 'complete',
+                  status: 'succeeded',
+                  projectCompleted: true,
+                },
+              ],
+            },
+          ],
+        },
+      });
     if (route.request().method() === 'POST') {
       const body = route.request().postDataJSON();
       if (body.action === 'open') opens++;
@@ -275,6 +309,32 @@ test('completed project reports stay discoverable, show facts before analysis, a
   await expect(workspace.getByTestId('pbl-project-completed')).toBeVisible();
   await expect(page.locator('.monaco-editor .view-lines')).toContainText('Saved plan');
   await expect(page.locator('.monaco-editor textarea').first()).not.toBeEditable();
+  const historyTrigger = workspace.getByRole('button', {
+    name: 'Conversation history',
+    exact: true,
+  });
+  const history = page.getByRole('dialog', { name: 'Conversation history' });
+  await historyTrigger.click();
+  await history.getByRole('link', { name: 'Unavailable history file', exact: true }).click();
+  await expect(history).toBeVisible();
+  await history.getByRole('link', { name: 'src/todo.py:1–2', exact: true }).click();
+  await expect(history).not.toBeVisible();
+  await expect(workspace.getByRole('tab', { name: 'todo.py', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  expect(await page.locator('.monaco-editor .selected-text').count()).toBeGreaterThan(0);
+  await expect(page.locator('.monaco-editor textarea').first()).not.toBeEditable();
+  await historyTrigger.click();
+  await page.keyboard.press('Escape');
+  await expect(history).not.toBeVisible();
+  await expect(historyTrigger).toBeFocused();
+  await historyTrigger.click();
+  await history.getByRole('button', { name: 'Learning report', exact: true }).click();
+  await expect(history).not.toBeVisible();
+  await expect(report).toBeVisible();
+  await expect.poll(() => report.evaluate((el) => el.contains(document.activeElement))).toBe(true);
+  await report.getByRole('button', { name: 'Close report', exact: true }).click();
   await workspace
     .getByTestId('pbl-project-completed')
     .getByRole('button', { name: 'Learning report', exact: true })

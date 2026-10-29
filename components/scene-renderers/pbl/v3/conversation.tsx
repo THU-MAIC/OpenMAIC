@@ -1,6 +1,6 @@
 'use client';
 import { parseFileReference, type FileReference } from '@/lib/pbl/v3/file-reference';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import {
   Check,
   Copy,
@@ -223,25 +223,42 @@ export function LearningConversation({
       speaker: m.role === 'user' ? 'user' : (view.role ?? 'mentor'),
       parts: [{ kind: 'text', id: `${i}`, text: m.text }],
     }));
+  const openFileReference = (event: MouseEvent<HTMLElement>, dismiss?: () => void) => {
+    const anchor = (event.target as Element).closest('a');
+    const href = anchor?.getAttribute('href') ?? '';
+    if (!href.startsWith('#pbl-file=')) return;
+    event.preventDefault();
+    const reference = parseFileReference(href);
+    // The current public file list remains authoritative, including old history links.
+    if (reference && view.files.includes(reference.path) && onOpenFile) {
+      // A portal also bubbles through the live conversation; navigate only once.
+      if (dismiss) event.stopPropagation();
+      dismiss?.();
+      onOpenFile(reference);
+    }
+  };
   return (
     <Conversation className="min-h-0 flex-1 bg-background" aria-label={t('pblV3.learning')}>
       <FollowSend count={sent} />
-      <ConversationContent
-        className="gap-5 p-4"
-        onClick={(event) => {
-          const anchor = (event.target as Element).closest('a');
-          const href = anchor?.getAttribute('href') ?? '';
-          if (!href.startsWith('#pbl-file=')) return;
-          event.preventDefault();
-          const reference = parseFileReference(href);
-          // The current public file list remains authoritative, including old history links.
-          if (reference && view.files.includes(reference.path)) onOpenFile?.(reference);
-        }}
-      >
+      <ConversationContent className="gap-5 p-4" onClick={(event) => openFileReference(event)}>
         <ConversationHistory
           id={view.id}
           sources={view.conversationHistory ?? []}
-          renderEntry={(entry) => <ConversationEntry entry={entry} onOpenReport={onOpenReport} />}
+          renderEntry={(entry, dismiss) => (
+            <div onClick={(event) => openFileReference(event, dismiss)}>
+              <ConversationEntry
+                entry={entry}
+                onOpenReport={
+                  onOpenReport
+                    ? () => {
+                        dismiss();
+                        onOpenReport();
+                      }
+                    : undefined
+                }
+              />
+            </div>
+          )}
         />
         {entries.some((entry) => entry.omitted) && (
           <p role="status" className="text-xs text-muted-foreground">
