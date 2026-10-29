@@ -9,6 +9,7 @@ import {
   clampChatWidth,
   closeAllCourseTabs,
   closeCourseTab,
+  defaultNavCollapsed,
   legacyWorkspaceHref,
   NO_PANES,
   parseChatWidth,
@@ -463,6 +464,22 @@ describe('persisted pane preferences', () => {
     expect(parseCollapsed('0')).toBe(false);
     expect(parseCollapsed(null)).toBe(false);
     expect(parseCollapsed('true')).toBe(false);
+  });
+
+  it('applies the caller default only when nothing is stored', () => {
+    expect(parseCollapsed(null, true)).toBe(true);
+    expect(parseCollapsed('0', true)).toBe(false);
+    expect(parseCollapsed('1', false)).toBe(true);
+    expect(parseCollapsed('true', true)).toBe(false);
+  });
+
+  it('folds the rail by default on the home surface only', () => {
+    expect(defaultNavCollapsed(readWorkspacePanes(search('')))).toBe(true);
+    expect(defaultNavCollapsed(readWorkspacePanes(search('session=')))).toBe(true);
+    expect(defaultNavCollapsed(readWorkspacePanes(search('session=s1')))).toBe(false);
+    expect(defaultNavCollapsed(readWorkspacePanes(search('course=c1')))).toBe(false);
+    expect(defaultNavCollapsed(readWorkspacePanes(search('session=s1&course=c1')))).toBe(false);
+    expect(defaultNavCollapsed(readWorkspacePanes(search('view=library')))).toBe(false);
   });
 });
 
