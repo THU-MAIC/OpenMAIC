@@ -18,24 +18,20 @@
  * page nobody reads. Discovery runs in `discover-only` mode: folders, courses
  * and sessions are managed in the navigation tree, never twice on one screen.
  *
- * The hero is the CLASSIC home's hero, not a composed one. An earlier cut put
- * an invented headline here ("What will you create today?") over a lone mark;
- * it was a second voice for a product that already has one. What the homepage
- * puts above its composer is the horizontal logo with the Pro badge at the
- * wordmark's shoulder, the tagline, and the GitHub pill — the same three
- * things, the same components, sized for a column that is narrower than a full
- * page but not shrunk out of the page's weight class: the round that pinned
- * the mark at 40px left the surface top-light, and no amount of trimming below
- * fixes a masthead nobody sees.
+ * The hero is the CLASSIC home's hero, not a composed one: the horizontal
+ * logo, the tagline and the GitHub link, sized for a column that is narrower
+ * than a full page but not shrunk out of the page's weight class.
  *
- * The badge here is also the mode switch. It sits beside the product identity,
- * so making that visible Pro state actionable keeps both home surfaces
- * symmetrical: off enters Pro on `/`, on returns to classic here. The rail
- * keeps its copy because the hero only exists on this resting surface.
+ * Under the composer, a host may add a section of its own (a featured-course
+ * strip, say) through `WorkbenchShellExtensions.homeSection`. Upstream has no
+ * feed of other people's courses, so by default nothing follows the composer.
  */
 
 import type { ReactNode } from 'react';
+import { Github } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { useWorkbenchShellExtensions } from '@/lib/workbench/shell-extensions';
+import { OPENMAIC_GITHUB_URL } from '@/lib/workbench/shell-links';
 import { useBrand, useIsDesktop } from '@/lib/brand/brand-context';
 import { ProLaunchPanel } from '@/components/workbench/ProLaunchPanel';
 import type { CourseMentionSource } from '@/lib/workbench/course-mention';
@@ -67,6 +63,7 @@ export function WorkspaceHome({
   const { t } = useI18n();
   const brand = useBrand();
   const isDesktop = useIsDesktop();
+  const { homeSection } = useWorkbenchShellExtensions();
 
   return (
     <main
@@ -120,10 +117,20 @@ export function WorkspaceHome({
               )}
             </div>
 
-            <div className="mt-3.5 flex items-center gap-3">
+            <div className="mt-3.5 flex flex-wrap items-center justify-center gap-3">
               <p className="ws-tagline" data-testid="pro-workspace-hero-tagline">
                 {t('home.slogan')}
               </p>
+              <a
+                href={OPENMAIC_GITHUB_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                data-testid="pro-workspace-hero-github"
+                className="ws-gh-pill"
+              >
+                <Github className="size-3.5" aria-hidden="true" />
+                GitHub
+              </a>
             </div>
           </div>
 
@@ -160,6 +167,11 @@ export function WorkspaceHome({
           className="ws-featured flex w-full flex-col items-center [&>div]:mt-0"
         >
           {discoveryContent}
+          {homeSection ? (
+            <div className="w-full" data-testid="pro-workspace-host-section">
+              {homeSection}
+            </div>
+          ) : null}
         </section>
       </div>
     </main>

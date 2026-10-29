@@ -26,7 +26,6 @@
     "examplesLabel": "Try an example",
     "examplePython": "Learn Python from scratch",
     "exampleFourier": "Explain the Fourier transform with intuitive examples",
-    "desktopOnly": "Please use a computer for the editor and Pro mode.",
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
     "greetingWithName": "Hi, {{name}}"
   },
@@ -352,7 +351,8 @@
     "doneEditing": "Done editing",
     "editDisabledHint": "Editing isn't available on this page — open a course slide to edit it.",
     "editToggle": "Edit",
-    "editInWorkspace": "Edit in workspace"
+    "openInWorkspace": "Open in workspace",
+    "openInWorkspaceHint": "Open in the workspace, to keep working on this course in a conversation"
   },
   "edit": {
     "undo": "Undo",
@@ -2413,7 +2413,6 @@
     "learningMode": "Learn",
     "editingMode": "Edit",
     "editingUnavailableGenerating": "Editing is unavailable while this course is generating.",
-    "fullscreenLearning": "Full-screen learning",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2461,7 +2460,6 @@
     "autoSaved": "Saved",
     "collapsedTitle": "Both panes are collapsed",
     "collapsedHint": "Use the tabs on the left to bring the conversation or the classroom back",
-    "moreUtilities": "More",
     "rowMore": "More actions for {{name}}",
     "folderDeleteHint": "The courses inside move back to the top level. Nothing is deleted.",
     "dropToUnfile": "Drop here to move out of the folder",
@@ -2495,6 +2493,38 @@
       "noSkillMatch": "No Skills match “{{query}}”",
       "launchPlaceholder": "Describe the learning experience you want to create",
       "launchSend": "Start build"
+    },
+    "nav": {
+      "search": "Search",
+      "myCourses": "My courses"
+    },
+    "account": {
+      "signIn": "Sign in",
+      "menu": "Account and settings",
+      "models": "Models",
+      "language": "Language",
+      "about": "About OpenMAIC",
+      "aboutBody": "An open-source platform that turns any topic into an interactive classroom with AI teachers and classmates. Released under the MIT license.",
+      "viewOnGithub": "View on GitHub",
+      "docs": "Docs",
+      "signOut": "Sign out"
+    },
+    "coursesPage": {
+      "subtitle": "Courses you made or imported, and the folders you keep them in",
+      "searchPlaceholder": "Search my courses",
+      "folders": "Folders",
+      "courseCount": "{{count}} courses",
+      "courseCount_one": "{{count}} course",
+      "courseCount_other": "{{count}} courses",
+      "results": "Search results",
+      "recent": "Recently edited",
+      "allCourses": "All courses"
+    },
+    "fullscreen": {
+      "expand": "Full screen",
+      "leave": "Leave course",
+      "leaveHint": "Close this course and return to the workspace",
+      "collapse": "Exit full screen (Esc)"
     }
   },
   "profile": {

@@ -94,7 +94,9 @@ import {
   restoreCourseTabs,
   samePanes,
   withCourse,
-  withLibrary,
+  withView,
+  WORKSPACE_COURSES_VIEW,
+  WORKSPACE_LIBRARY_VIEW,
   withSession,
   type WorkspacePanes,
 } from '@/lib/workbench/workspace-panes';
@@ -139,6 +141,8 @@ import {
 import { PaneTab } from './PaneTab';
 import { ResizeHandle } from './ResizeHandle';
 import { MaterialLibraryPage } from './MaterialLibraryPage';
+import { WorkspaceCoursesPage } from './WorkspaceCoursesPage';
+import { hostPageItems, useWorkbenchShellExtensions } from '@/lib/workbench/shell-extensions';
 import type { MaterialSeed, MaterialSeedTarget } from '@/components/workbench/compose-extras';
 
 const EMPTY_SESSIONS: ProHomeSessionItem[] = [];
@@ -278,17 +282,15 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const surface =
     panes.sessionId !== null || panes.courseId !== null
       ? 'elsewhere'
-      : panes.library
-        ? 'library'
+      : panes.view
+        ? 'page'
         : 'home';
   const [homeVisit, setHomeVisit] = useState({ surface, visit: 0 });
   if (homeVisit.surface !== surface) {
     setHomeVisit({
       surface,
       visit:
-        homeVisit.surface === 'home' && surface === 'library'
-          ? homeVisit.visit
-          : homeVisit.visit + 1,
+        homeVisit.surface === 'home' && surface === 'page' ? homeVisit.visit : homeVisit.visit + 1,
     });
   }
   // What a late answer is checked against. -1 once the shell is gone: an
@@ -318,7 +320,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       navigation.update((current) => {
         const next = change(current);
         if (!next) return null;
-        return { next, mode: current.library ? 'replace' : mode };
+        return { next, mode: current.view ? 'replace' : mode };
       });
     },
     [navigation],
@@ -609,7 +611,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       persistCourseTabs(next);
       collapse.expandClassroom();
       setMaterialSeed(null);
-      goTo(withLibrary(withCourse(panes, next.activeCourseId), false));
+      goTo(withView(withCourse(panes, next.activeCourseId), null));
     },
     [collapse, courseTabs, goTo, panes, persistCourseTabs],
   );
@@ -644,7 +646,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       setNewConversationRequested(false);
       collapse.expandChat();
       setMaterialSeed(null);
-      goTo(withLibrary(withSession(panes, sessionId), false));
+      goTo(withView(withSession(panes, sessionId), null));
     },
     [collapse, goTo, panes],
   );
@@ -679,7 +681,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       if (currentHomeVisit.current !== sentInHomeVisit) return;
       let attached = false;
       navigateInBackground((current) => {
-        if (!current.library || current.sessionId !== null || current.courseId !== null) {
+        if (!current.view || current.sessionId !== null || current.courseId !== null) {
           return null;
         }
         attached = true;
@@ -741,21 +743,41 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     [navigateInBackground],
   );
 
-  /** The rail's knowledge base row: the page takes the main area. */
-  const openLibrary = useCallback(() => {
-    setMaterialSeed(null);
-    goTo(withLibrary(panes, true));
-  }, [goTo, panes]);
+  /** A rail destination (the knowledge base, my courses, a host page) takes the main area. */
+  const openView = useCallback(
+    (view: string) => {
+      setMaterialSeed(null);
+      goTo(withView(panes, view));
+    },
+    [goTo, panes],
+  );
 
   /**
    * The page's own way back (its compact header, where the rail is hidden):
    * the panes it covers come back as they were. A navigation that drops the
    * view, not a history step, so a page opened from a pasted link leaves too.
    */
-  const leaveLibrary = useCallback(() => {
+  const leaveView = useCallback(() => {
     setMaterialSeed(null);
-    goTo(withLibrary(panes, false));
+    goTo(withView(panes, null));
   }, [goTo, panes]);
+
+  /*
+   * The pages a host registered (`WorkbenchShellExtensions.navItems` with a
+   * `render`). A `?view=` naming no page this deployment has -- a stale link,
+   * a host page since removed -- is dropped rather than leaving an empty main
+   * area.
+   */
+  const shellExtensions = useWorkbenchShellExtensions();
+  const hostPages = useMemo(() => hostPageItems(shellExtensions), [shellExtensions]);
+  const unknownView =
+    !!panes.view &&
+    panes.view !== WORKSPACE_LIBRARY_VIEW &&
+    panes.view !== WORKSPACE_COURSES_VIEW &&
+    !hostPages.has(panes.view);
+  useEffect(() => {
+    if (unknownView) navigation.replace(withView(panes, null));
+  }, [navigation, panes, unknownView]);
 
   /**
    * The title a chat is displaying right now, wherever it is displayed: the
@@ -858,7 +880,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    * course away. That is `startNewConversation` below.
    */
   const goHome = () => {
-    if (panes.sessionId || panes.courseId || panes.library) {
+    if (panes.sessionId || panes.courseId || panes.view) {
       navigation.push({ sessionId: null, courseId: null });
     }
     setCourseTabs(NO_COURSE_TABS);
@@ -888,11 +910,11 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     setMaterialSeed(null);
     // The teacher's own choice, so it also leaves the knowledge base page.
     if (panes.courseId) {
-      if (panes.sessionId || panes.library) {
+      if (panes.sessionId || panes.view) {
         navigation.push({ sessionId: null, courseId: panes.courseId });
       }
     } else {
-      if (panes.sessionId || panes.library) navigation.push({ sessionId: null, courseId: null });
+      if (panes.sessionId || panes.view) navigation.push({ sessionId: null, courseId: null });
       setCourseTabs(NO_COURSE_TABS);
       persistCourseTabs(NO_COURSE_TABS);
     }
@@ -1053,7 +1075,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
      stays there. Closing it is remembered for that request
      (`lib/workbench/preview-tab.ts`); folding it is the pane's own fold. */
   const previewEligible =
-    !render.library && !narrow && beforeFirstScene && panes.sessionId === attachedSessionId;
+    !render.view && !narrow && beforeFirstScene && panes.sessionId === attachedSessionId;
   const [reportedPreviewTab, setPreviewTab] = useState<PreviewTabState>(NO_PREVIEW_TAB);
   // The preview reports a render behind; a report from the previous
   // conversation (whose request keys may repeat here) is no report.
@@ -1174,9 +1196,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       !courseTabs.courseIds.includes(id) &&
       !(courseTabs.closedCourseIds ?? []).includes(id);
     const liveOwn =
-      live && !panes.library && !earlierCourseHasScene
-        ? createdThisRequest.filter(unreconciled)
-        : [];
+      live && !panes.view && !earlierCourseHasScene ? createdThisRequest.filter(unreconciled) : [];
     // Admitted while live, kept until reconciled, through the end of the run.
     const keptOwn =
       pendingOwn.sessionId === attachedSessionId ? pendingOwn.ids.filter(unreconciled) : [];
@@ -1267,7 +1287,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     libraryRevision,
     pageCount,
     attachedSessionStatus,
-    panes.library,
+    panes.view,
     thisRequestScenes,
     pendingOwn,
   ]);
@@ -1612,8 +1632,8 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       ref={rootRef}
       data-testid="pro-workspace"
       data-ws-layout={
-        render.library
-          ? 'library'
+        render.view
+          ? `view:${render.view}`
           : render.home
             ? 'home'
             : `${chatOpen ? 'chat' : ''}${classroomOpen ? 'classroom' : ''}`
@@ -1647,8 +1667,8 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           onSessionDeleted={handleSessionDeleted}
           onRenameSession={renameSession}
           onDeleteCourse={handleCourseDeleted}
-          libraryOpen={render.library}
-          onOpenLibrary={openLibrary}
+          activeView={render.view}
+          onOpenView={openView}
           resizeHandle={
             <ResizeHandle
               testId="pro-rail-resize-handle"
@@ -1675,7 +1695,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       {chatOpen || chatMounted ? (
         <WorkspaceChatPane
           hidden={!chatOpen}
-          covered={render.library}
+          covered={render.view !== null}
           fill={chatFills && !previewPaneOpen}
           width={chatWidth.value}
           navigation={courseNavigation}
@@ -1769,12 +1789,26 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
         />
       ) : null}
 
-      {/* The knowledge base page covers the main area. The conversation and
-          classroom panes above stay mounted, hidden (`render` turns both off),
-          so leaving the page finds them as they were and the run's stream is
-          never detached. */}
-      {render.library ? (
-        <MaterialLibraryPage onChatWithMaterial={chatWithMaterial} onLeave={leaveLibrary} />
+      {/* A page covers the main area: the knowledge base, my courses, or a
+          host page. The conversation and classroom panes above stay mounted,
+          hidden (`render` turns both off), so leaving the page finds them as
+          they were and the run's stream is never detached. */}
+      {render.view === WORKSPACE_LIBRARY_VIEW ? (
+        <MaterialLibraryPage onChatWithMaterial={chatWithMaterial} onLeave={leaveView} />
+      ) : render.view === WORKSPACE_COURSES_VIEW ? (
+        <WorkspaceCoursesPage
+          courses={courses}
+          courseRuns={courseRuns}
+          pendingRuns={pendingRuns}
+          onOpenCourse={openCourse}
+        />
+      ) : render.view ? (
+        <main
+          data-testid={`workspace-host-view-${render.view}`}
+          className="ws-canvas relative flex min-w-0 flex-1 flex-col overflow-y-auto"
+        >
+          {hostPages.get(render.view)?.render?.()}
+        </main>
       ) : null}
     </div>
   );

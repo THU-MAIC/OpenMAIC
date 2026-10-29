@@ -26,7 +26,6 @@
     "examplesLabel": "Thử một chủ đề",
     "examplePython": "Học Python từ đầu",
     "exampleFourier": "Hiểu biến đổi Fourier qua ví dụ trực quan",
-    "desktopOnly": "Hãy dùng máy tính cho trình biên tập và chế độ Pro.",
     "slogan": "Học tập sinh tạo trong lớp học tương tác đa tác nhân",
     "greetingWithName": "Chào {{name}}"
   },
@@ -352,7 +351,8 @@
     "doneEditing": "Sửa xong",
     "editDisabledHint": "Trang này không sửa được — hãy mở một slide bài học để sửa.",
     "editToggle": "Sửa",
-    "editInWorkspace": "Sửa trong khu làm việc"
+    "openInWorkspace": "Mở trong không gian làm việc",
+    "openInWorkspaceHint": "Mở trong không gian làm việc để tiếp tục khóa học này qua trò chuyện"
   },
   "edit": {
     "undo": "Hoàn tác",
@@ -2413,7 +2413,6 @@
     "learningMode": "Học",
     "editingMode": "Chỉnh sửa",
     "editingUnavailableGenerating": "Không thể chỉnh sửa khi khóa học đang được tạo.",
-    "fullscreenLearning": "Học toàn màn hình",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2461,7 +2460,6 @@
     "autoSaved": "Đã lưu",
     "collapsedTitle": "Both panes are collapsed",
     "collapsedHint": "Use the tabs on the left to bring the conversation or the classroom back",
-    "moreUtilities": "More",
     "rowMore": "Thao tác khác cho {{name}}",
     "folderDeleteHint": "Các khoá học bên trong sẽ trở về cấp trên cùng, không bị xoá.",
     "dropToUnfile": "Thả vào đây để đưa ra khỏi thư mục",
@@ -2495,6 +2493,38 @@
       "noSkillMatch": "没有匹配“{{query}}”的 Skill",
       "launchPlaceholder": "Mô tả trải nghiệm học tập bạn muốn tạo",
       "launchSend": "Bắt đầu tạo"
+    },
+    "nav": {
+      "search": "Tìm kiếm",
+      "myCourses": "Khóa học của tôi"
+    },
+    "account": {
+      "signIn": "Đăng nhập",
+      "menu": "Tài khoản và cài đặt",
+      "models": "Mô hình",
+      "language": "Ngôn ngữ",
+      "about": "Giới thiệu OpenMAIC",
+      "aboutBody": "Nền tảng mã nguồn mở biến mọi chủ đề thành một lớp học tương tác với giáo viên và bạn học AI. Phát hành theo giấy phép MIT.",
+      "viewOnGithub": "Xem trên GitHub",
+      "docs": "Tài liệu",
+      "signOut": "Đăng xuất"
+    },
+    "coursesPage": {
+      "subtitle": "Các khóa học bạn đã tạo hoặc nhập, và các thư mục để sắp xếp chúng",
+      "searchPlaceholder": "Tìm trong khóa học của tôi",
+      "folders": "Thư mục",
+      "courseCount": "{{count}} khóa học",
+      "courseCount_one": "{{count}} khóa học",
+      "courseCount_other": "{{count}} khóa học",
+      "results": "Kết quả tìm kiếm",
+      "recent": "Chỉnh sửa gần đây",
+      "allCourses": "Tất cả khóa học"
+    },
+    "fullscreen": {
+      "expand": "Toàn màn hình",
+      "leave": "Rời khóa học",
+      "leaveHint": "Đóng khóa học này và quay lại không gian làm việc",
+      "collapse": "Thoát toàn màn hình (Esc)"
     }
   },
   "profile": {

@@ -26,7 +26,6 @@
     "examplesLabel": "예시 주제",
     "examplePython": "Python 기초부터 배우기",
     "exampleFourier": "직관적인 예제로 푸리에 변환 배우기",
-    "desktopOnly": "편집기와 Pro 모드는 컴퓨터에서 이용하세요.",
     "slogan": "멀티 에이전트 인터랙티브 교실에서 펼치는 생성형 학습",
     "greetingWithName": "안녕하세요, {{name}}!"
   },
@@ -352,7 +351,8 @@
     "doneEditing": "편집 완료",
     "editDisabledHint": "이 페이지에서는 편집할 수 없습니다 — 코스 슬라이드를 열면 편집할 수 있습니다.",
     "editToggle": "편집",
-    "editInWorkspace": "워크스페이스에서 편집"
+    "openInWorkspace": "작업 공간에서 열기",
+    "openInWorkspaceHint": "작업 공간에서 열어 대화로 이 코스 작업을 이어가기"
   },
   "edit": {
     "undo": "실행 취소",
@@ -2413,7 +2413,6 @@
     "learningMode": "학습",
     "editingMode": "편집",
     "editingUnavailableGenerating": "강좌 생성 중에는 편집할 수 없습니다.",
-    "fullscreenLearning": "전체 화면 학습",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2461,7 +2460,6 @@
     "autoSaved": "저장됨",
     "collapsedTitle": "Both panes are collapsed",
     "collapsedHint": "Use the tabs on the left to bring the conversation or the classroom back",
-    "moreUtilities": "More",
     "rowMore": "{{name}} 추가 작업",
     "folderDeleteHint": "폴더 안의 강의는 최상위 목록으로 돌아갑니다. 삭제되지 않습니다.",
     "dropToUnfile": "여기에 놓으면 폴더에서 빼냅니다",
@@ -2495,6 +2493,38 @@
       "noSkillMatch": "没有匹配“{{query}}”的 Skill",
       "launchPlaceholder": "만들고 싶은 학습 경험을 설명해 보세요",
       "launchSend": "구축 시작"
+    },
+    "nav": {
+      "search": "검색",
+      "myCourses": "내 코스"
+    },
+    "account": {
+      "signIn": "로그인",
+      "menu": "계정 및 설정",
+      "models": "모델",
+      "language": "언어",
+      "about": "OpenMAIC 소개",
+      "aboutBody": "어떤 주제든 AI 선생님과 친구들이 함께하는 인터랙티브 교실로 바꿔 주는 오픈소스 플랫폼입니다. MIT 라이선스로 배포됩니다.",
+      "viewOnGithub": "GitHub에서 보기",
+      "docs": "문서",
+      "signOut": "로그아웃"
+    },
+    "coursesPage": {
+      "subtitle": "직접 만들거나 가져온 코스와 이를 정리하는 폴더",
+      "searchPlaceholder": "내 코스 검색",
+      "folders": "폴더",
+      "courseCount": "코스 {{count}}개",
+      "courseCount_one": "코스 {{count}}개",
+      "courseCount_other": "코스 {{count}}개",
+      "results": "검색 결과",
+      "recent": "최근 편집",
+      "allCourses": "전체 코스"
+    },
+    "fullscreen": {
+      "expand": "전체 화면",
+      "leave": "코스 닫기",
+      "leaveHint": "이 코스를 닫고 작업 공간으로 돌아가기",
+      "collapse": "전체 화면 종료 (Esc)"
     }
   },
   "profile": {

@@ -26,7 +26,6 @@
     "examplesLabel": "试试这些主题",
     "examplePython": "零基础学习 Python",
     "exampleFourier": "用直观的例子讲解傅里叶变换",
-    "desktopOnly": "编辑器和专业模式请在电脑上使用。",
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
     "greetingWithName": "嗨，{{name}}"
   },
@@ -352,7 +351,8 @@
     "doneEditing": "完成编辑",
     "editDisabledHint": "本页不支持编辑——打开任意课程页即可编辑。",
     "editToggle": "编辑",
-    "editInWorkspace": "在工作台中编辑"
+    "openInWorkspace": "在工作台中打开",
+    "openInWorkspaceHint": "在工作台中打开，可以继续对话修改这门课"
   },
   "edit": {
     "undo": "撤销",
@@ -2413,7 +2413,6 @@
     "learningMode": "学习",
     "editingMode": "编辑",
     "editingUnavailableGenerating": "课程生成期间无法编辑。",
-    "fullscreenLearning": "全屏学习",
     "time": {
       "justNow": "刚刚",
       "minutesAgo": "{{count}} 分钟前",
@@ -2461,7 +2460,6 @@
     "autoSaved": "已保存",
     "collapsedTitle": "两侧面板都收起了",
     "collapsedHint": "点左边的标签，把对话或课堂展开",
-    "moreUtilities": "更多",
     "rowMore": "{{name}}的更多操作",
     "folderDeleteHint": "文件夹里的课堂会回到列表顶层，不会被删除。",
     "dropToUnfile": "放到这里移出文件夹",
@@ -2495,6 +2493,38 @@
       "noSkillMatch": "没有匹配“{{query}}”的 Skill",
       "launchPlaceholder": "描述你想创造的学习体验",
       "launchSend": "开始构建"
+    },
+    "nav": {
+      "search": "搜索",
+      "myCourses": "我的课程"
+    },
+    "account": {
+      "signIn": "登录",
+      "menu": "账号与设置",
+      "models": "模型服务",
+      "language": "语言",
+      "about": "关于 OpenMAIC",
+      "aboutBody": "开源的多智能体互动课堂平台：输入任何主题，AI 老师和同学陪你一起学。基于 MIT 许可证发布。",
+      "viewOnGithub": "在 GitHub 上查看",
+      "docs": "文档",
+      "signOut": "退出登录"
+    },
+    "coursesPage": {
+      "subtitle": "你生成或导入的课程，以及整理它们的文件夹",
+      "searchPlaceholder": "搜索我的课程",
+      "folders": "文件夹",
+      "courseCount": "{{count}} 门课",
+      "courseCount_one": "{{count}} 门课",
+      "courseCount_other": "{{count}} 门课",
+      "results": "搜索结果",
+      "recent": "最近编辑",
+      "allCourses": "全部课程"
+    },
+    "fullscreen": {
+      "expand": "全屏",
+      "leave": "离开课程",
+      "leaveHint": "关闭这门课，回到工作台",
+      "collapse": "退出全屏（Esc）"
     }
   },
   "profile": {

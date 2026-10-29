@@ -26,7 +26,6 @@
     "examplesLabel": "Prueba un tema",
     "examplePython": "Aprender Python desde cero",
     "exampleFourier": "Transformada de Fourier con ejemplos intuitivos",
-    "desktopOnly": "Usa una computadora para el editor y el modo Pro.",
     "slogan": "Aprendizaje generativo en un aula interactiva multiagente",
     "greetingWithName": "Hola, {{name}}"
   },
@@ -352,7 +351,8 @@
     "doneEditing": "Terminar edición",
     "editDisabledHint": "La edición no está disponible en esta página — abre una diapositiva del curso para editarla.",
     "editToggle": "Editar",
-    "editInWorkspace": "Editar en el espacio de trabajo"
+    "openInWorkspace": "Abrir en el espacio de trabajo",
+    "openInWorkspaceHint": "Abrir en el espacio de trabajo para seguir con este curso en una conversación"
   },
   "edit": {
     "undo": "Deshacer",
@@ -2413,7 +2413,6 @@
     "learningMode": "Aprender",
     "editingMode": "Editar",
     "editingUnavailableGenerating": "No se puede editar mientras se genera el curso.",
-    "fullscreenLearning": "Aprender en pantalla completa",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2461,7 +2460,6 @@
     "autoSaved": "Guardado",
     "collapsedTitle": "Both panes are collapsed",
     "collapsedHint": "Use the tabs on the left to bring the conversation or the classroom back",
-    "moreUtilities": "More",
     "rowMore": "Más acciones para {{name}}",
     "folderDeleteHint": "Los cursos que contiene vuelven al nivel principal. No se elimina nada.",
     "dropToUnfile": "Suelta aquí para sacarlo de la carpeta",
@@ -2495,6 +2493,38 @@
       "noSkillMatch": "没有匹配“{{query}}”的 Skill",
       "launchPlaceholder": "Describe la experiencia de aprendizaje que quieres crear",
       "launchSend": "Iniciar construcción"
+    },
+    "nav": {
+      "search": "Buscar",
+      "myCourses": "Mis cursos"
+    },
+    "account": {
+      "signIn": "Iniciar sesión",
+      "menu": "Cuenta y configuración",
+      "models": "Modelos",
+      "language": "Idioma",
+      "about": "Acerca de OpenMAIC",
+      "aboutBody": "Una plataforma de código abierto que convierte cualquier tema en un aula interactiva con docentes y compañeros de IA. Publicada con la licencia MIT.",
+      "viewOnGithub": "Ver en GitHub",
+      "docs": "Documentación",
+      "signOut": "Cerrar sesión"
+    },
+    "coursesPage": {
+      "subtitle": "Los cursos que creaste o importaste, y las carpetas donde los organizas",
+      "searchPlaceholder": "Buscar en mis cursos",
+      "folders": "Carpetas",
+      "courseCount": "{{count}} cursos",
+      "courseCount_one": "{{count}} curso",
+      "courseCount_other": "{{count}} cursos",
+      "results": "Resultados",
+      "recent": "Editados recientemente",
+      "allCourses": "Todos los cursos"
+    },
+    "fullscreen": {
+      "expand": "Pantalla completa",
+      "leave": "Salir del curso",
+      "leaveHint": "Cerrar este curso y volver al espacio de trabajo",
+      "collapse": "Salir de pantalla completa (Esc)"
     }
   },
   "profile": {

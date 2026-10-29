@@ -26,7 +26,6 @@
     "examplesLabel": "Примеры тем",
     "examplePython": "Python с нуля",
     "exampleFourier": "Преобразование Фурье на простых примерах",
-    "desktopOnly": "Для редактора и режима Pro используйте компьютер.",
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
     "greetingWithName": "Привет, {{name}}"
   },
@@ -352,7 +351,8 @@
     "doneEditing": "Завершить редактирование",
     "editDisabledHint": "Редактирование недоступно на этой странице — откройте слайд курса, чтобы его отредактировать.",
     "editToggle": "Правка",
-    "editInWorkspace": "Редактировать в рабочей области"
+    "openInWorkspace": "Открыть в рабочем пространстве",
+    "openInWorkspaceHint": "Открыть в рабочем пространстве, чтобы продолжить работу над курсом в диалоге"
   },
   "edit": {
     "undo": "Отменить",
@@ -2413,7 +2413,6 @@
     "learningMode": "Учиться",
     "editingMode": "Править",
     "editingUnavailableGenerating": "Редактирование недоступно во время создания курса.",
-    "fullscreenLearning": "Учиться на весь экран",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2461,7 +2460,6 @@
     "autoSaved": "Сохранено",
     "collapsedTitle": "Both panes are collapsed",
     "collapsedHint": "Use the tabs on the left to bring the conversation or the classroom back",
-    "moreUtilities": "More",
     "rowMore": "Другие действия для {{name}}",
     "folderDeleteHint": "Курсы из папки вернутся на верхний уровень. Ничего не удаляется.",
     "dropToUnfile": "Перетащите сюда, чтобы убрать из папки",
@@ -2495,6 +2493,38 @@
       "noSkillMatch": "没有匹配“{{query}}”的 Skill",
       "launchPlaceholder": "Опишите учебный опыт, который хотите создать",
       "launchSend": "Начать сборку"
+    },
+    "nav": {
+      "search": "Поиск",
+      "myCourses": "Мои курсы"
+    },
+    "account": {
+      "signIn": "Войти",
+      "menu": "Аккаунт и настройки",
+      "models": "Модели",
+      "language": "Язык",
+      "about": "Об OpenMAIC",
+      "aboutBody": "Платформа с открытым исходным кодом, которая превращает любую тему в интерактивный класс с ИИ-преподавателями и одноклассниками. Распространяется по лицензии MIT.",
+      "viewOnGithub": "Открыть на GitHub",
+      "docs": "Документация",
+      "signOut": "Выйти"
+    },
+    "coursesPage": {
+      "subtitle": "Курсы, которые вы создали или импортировали, и папки, в которых они лежат",
+      "searchPlaceholder": "Поиск по моим курсам",
+      "folders": "Папки",
+      "courseCount": "Курсов: {{count}}",
+      "courseCount_one": "Курсов: {{count}}",
+      "courseCount_other": "Курсов: {{count}}",
+      "results": "Результаты поиска",
+      "recent": "Недавно изменённые",
+      "allCourses": "Все курсы"
+    },
+    "fullscreen": {
+      "expand": "Во весь экран",
+      "leave": "Закрыть курс",
+      "leaveHint": "Закрыть этот курс и вернуться в рабочее пространство",
+      "collapse": "Выйти из полноэкранного режима (Esc)"
     }
   },
   "profile": {

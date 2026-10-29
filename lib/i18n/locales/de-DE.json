@@ -26,7 +26,6 @@
     "examplesLabel": "Beispielthemen",
     "examplePython": "Python von Grund auf lernen",
     "exampleFourier": "Fourier-Transformation mit anschaulichen Beispielen",
-    "desktopOnly": "Verwende für den Editor und Pro-Modus einen Computer.",
     "slogan": "Generatives Lernen im interaktiven Lernraum mit mehreren KI-Agenten",
     "greetingWithName": "Hallo, {{name}}"
   },
@@ -352,7 +351,8 @@
     "doneEditing": "Bearbeitung abschließen",
     "editDisabledHint": "Diese Seite kann nicht bearbeitet werden — öffne eine Kursfolie, um sie zu bearbeiten.",
     "editToggle": "Bearbeiten",
-    "editInWorkspace": "Im Arbeitsbereich bearbeiten"
+    "openInWorkspace": "Im Arbeitsbereich öffnen",
+    "openInWorkspaceHint": "Im Arbeitsbereich öffnen, um im Gespräch an diesem Kurs weiterzuarbeiten"
   },
   "edit": {
     "undo": "Rückgängig",
@@ -2413,7 +2413,6 @@
     "learningMode": "Lernen",
     "editingMode": "Bearbeiten",
     "editingUnavailableGenerating": "Während der Kurserstellung ist die Bearbeitung nicht verfügbar.",
-    "fullscreenLearning": "Im Vollbild lernen",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2461,7 +2460,6 @@
     "autoSaved": "Gespeichert",
     "collapsedTitle": "Both panes are collapsed",
     "collapsedHint": "Use the tabs on the left to bring the conversation or the classroom back",
-    "moreUtilities": "More",
     "rowMore": "More actions for {{name}}",
     "folderDeleteHint": "Die Kurse darin wandern zurück auf die oberste Ebene. Nichts wird gelöscht.",
     "dropToUnfile": "Hier ablegen, um aus dem Ordner zu nehmen",
@@ -2495,6 +2493,38 @@
       "noSkillMatch": "没有匹配“{{query}}”的 Skill",
       "launchPlaceholder": "Describe the learning experience you want to create",
       "launchSend": "Start build"
+    },
+    "nav": {
+      "search": "Suchen",
+      "myCourses": "Meine Kurse"
+    },
+    "account": {
+      "signIn": "Anmelden",
+      "menu": "Konto und Einstellungen",
+      "models": "Modelle",
+      "language": "Sprache",
+      "about": "Über OpenMAIC",
+      "aboutBody": "Eine Open-Source-Plattform, die jedes Thema in ein interaktives Klassenzimmer mit KI-Lehrkräften und -Mitschülern verwandelt. Veröffentlicht unter der MIT-Lizenz.",
+      "viewOnGithub": "Auf GitHub ansehen",
+      "docs": "Dokumentation",
+      "signOut": "Abmelden"
+    },
+    "coursesPage": {
+      "subtitle": "Kurse, die du erstellt oder importiert hast, und die Ordner, in denen du sie ablegst",
+      "searchPlaceholder": "Meine Kurse durchsuchen",
+      "folders": "Ordner",
+      "courseCount": "{{count}} Kurse",
+      "courseCount_one": "{{count}} Kurs",
+      "courseCount_other": "{{count}} Kurse",
+      "results": "Suchergebnisse",
+      "recent": "Zuletzt bearbeitet",
+      "allCourses": "Alle Kurse"
+    },
+    "fullscreen": {
+      "expand": "Vollbild",
+      "leave": "Kurs verlassen",
+      "leaveHint": "Diesen Kurs schließen und zum Arbeitsbereich zurückkehren",
+      "collapse": "Vollbild beenden (Esc)"
     }
   },
   "profile": {

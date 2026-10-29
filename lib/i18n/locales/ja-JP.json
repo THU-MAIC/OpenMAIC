@@ -26,7 +26,6 @@
     "examplesLabel": "テーマの例",
     "examplePython": "Python を基礎から学ぶ",
     "exampleFourier": "フーリエ変換を直感的に学ぶ",
-    "desktopOnly": "エディターと Pro モードはパソコンをご利用ください。",
     "slogan": "マルチエージェント対話型教室で生成的に学ぶ",
     "greetingWithName": "こんにちは、{{name}}さん"
   },
@@ -352,7 +351,8 @@
     "doneEditing": "編集を完了",
     "editDisabledHint": "このページでは編集できません。コースのスライドを開くと編集できます。",
     "editToggle": "編集",
-    "editInWorkspace": "ワークスペースで編集"
+    "openInWorkspace": "ワークスペースで開く",
+    "openInWorkspaceHint": "ワークスペースで開き、会話しながらこのコースの作業を続ける"
   },
   "edit": {
     "undo": "元に戻す",
@@ -2413,7 +2413,6 @@
     "learningMode": "学習",
     "editingMode": "編集",
     "editingUnavailableGenerating": "コース生成中は編集できません。",
-    "fullscreenLearning": "全画面で学習",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2461,7 +2460,6 @@
     "autoSaved": "保存済み",
     "collapsedTitle": "Both panes are collapsed",
     "collapsedHint": "Use the tabs on the left to bring the conversation or the classroom back",
-    "moreUtilities": "More",
     "rowMore": "{{name}}のその他の操作",
     "folderDeleteHint": "フォルダー内のコースはトップレベルに戻ります。削除はされません。",
     "dropToUnfile": "ここにドロップするとフォルダーから外れます",
@@ -2495,6 +2493,38 @@
       "noSkillMatch": "没有匹配“{{query}}”的 Skill",
       "launchPlaceholder": "作りたい学習体験を描いてください",
       "launchSend": "構築を開始"
+    },
+    "nav": {
+      "search": "検索",
+      "myCourses": "マイコース"
+    },
+    "account": {
+      "signIn": "ログイン",
+      "menu": "アカウントと設定",
+      "models": "モデル",
+      "language": "言語",
+      "about": "OpenMAIC について",
+      "aboutBody": "どんなテーマでも、AI の先生とクラスメートがいるインタラクティブな教室に変えるオープンソースのプラットフォームです。MIT ライセンスで公開しています。",
+      "viewOnGithub": "GitHub で見る",
+      "docs": "ドキュメント",
+      "signOut": "ログアウト"
+    },
+    "coursesPage": {
+      "subtitle": "作成またはインポートしたコースと、それを整理するフォルダー",
+      "searchPlaceholder": "マイコースを検索",
+      "folders": "フォルダー",
+      "courseCount": "{{count}} コース",
+      "courseCount_one": "{{count}} コース",
+      "courseCount_other": "{{count}} コース",
+      "results": "検索結果",
+      "recent": "最近の編集",
+      "allCourses": "すべてのコース"
+    },
+    "fullscreen": {
+      "expand": "全画面",
+      "leave": "コースを閉じる",
+      "leaveHint": "このコースを閉じてワークスペースに戻る",
+      "collapse": "全画面を終了（Esc）"
     }
   },
   "profile": {

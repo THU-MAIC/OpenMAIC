@@ -26,7 +26,6 @@
     "examplesLabel": "試試這些主題",
     "examplePython": "從零學習 Python",
     "exampleFourier": "用直觀的例子講解傅立葉轉換",
-    "desktopOnly": "編輯器和專業模式請在電腦上使用。",
     "slogan": "多智能體互動課室中的生成式學習",
     "greetingWithName": "嗨，{{name}}"
   },
@@ -352,7 +351,8 @@
     "doneEditing": "完成編輯",
     "editDisabledHint": "此頁面無法編輯——開啟課程投影片即可編輯。",
     "editToggle": "編輯",
-    "editInWorkspace": "在工作台中編輯"
+    "openInWorkspace": "在工作台中開啟",
+    "openInWorkspaceHint": "在工作台中開啟，可以繼續對話修改這門課"
   },
   "edit": {
     "undo": "復原",
@@ -2398,7 +2398,6 @@
     "learningMode": "學習",
     "editingMode": "編輯",
     "editingUnavailableGenerating": "課程生成期間無法編輯。",
-    "fullscreenLearning": "全螢幕學習",
     "time": {
       "justNow": "剛剛",
       "minutesAgo": "{{count}} 分鐘前",
@@ -2446,7 +2445,6 @@
     "autoSaved": "已儲存",
     "collapsedTitle": "兩側面板都收合了",
     "collapsedHint": "點左邊的標籤，把對話或課堂展開",
-    "moreUtilities": "更多",
     "rowMore": "{{name}}的更多操作",
     "folderDeleteHint": "資料夾裡的課堂會回到列表最上層，不會被刪除。",
     "dropToUnfile": "放到這裡移出資料夾",
@@ -2480,6 +2478,38 @@
       "noSkillMatch": "没有匹配“{{query}}”的 Skill",
       "launchPlaceholder": "描述你想創造的學習體驗",
       "launchSend": "開始構建"
+    },
+    "nav": {
+      "search": "搜尋",
+      "myCourses": "我的課程"
+    },
+    "account": {
+      "signIn": "登入",
+      "menu": "帳號與設定",
+      "models": "模型服務",
+      "language": "語言",
+      "about": "關於 OpenMAIC",
+      "aboutBody": "開源的多智慧體互動課堂平台：輸入任何主題，AI 老師和同學陪你一起學。以 MIT 授權條款發布。",
+      "viewOnGithub": "在 GitHub 上查看",
+      "docs": "文件",
+      "signOut": "登出"
+    },
+    "coursesPage": {
+      "subtitle": "你產生或匯入的課程，以及整理它們的資料夾",
+      "searchPlaceholder": "搜尋我的課程",
+      "folders": "資料夾",
+      "courseCount": "{{count}} 門課",
+      "courseCount_one": "{{count}} 門課",
+      "courseCount_other": "{{count}} 門課",
+      "results": "搜尋結果",
+      "recent": "最近編輯",
+      "allCourses": "全部課程"
+    },
+    "fullscreen": {
+      "expand": "全螢幕",
+      "leave": "離開課程",
+      "leaveHint": "關閉這門課，回到工作台",
+      "collapse": "結束全螢幕（Esc）"
     }
   },
   "profile": {

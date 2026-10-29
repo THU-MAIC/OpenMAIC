@@ -26,7 +26,6 @@
     "examplesLabel": "جرّب موضوعًا",
     "examplePython": "تعلم Python من الصفر",
     "exampleFourier": "شرح تحويل فورييه بأمثلة مبسطة",
-    "desktopOnly": "استخدم الكمبيوتر للمحرر ووضع Pro.",
     "slogan": "التعلّم التوليدي في فصل تفاعلي متعدد الوكلاء",
     "greetingWithName": "مرحبًا، {{name}}"
   },
@@ -352,7 +351,8 @@
     "doneEditing": "إنهاء التحرير",
     "editDisabledHint": "التحرير غير متاح في هذه الصفحة — افتح شريحة من الدورة لتحريرها.",
     "editToggle": "تحرير",
-    "editInWorkspace": "تحرير في مساحة العمل"
+    "openInWorkspace": "فتح في مساحة العمل",
+    "openInWorkspaceHint": "افتح في مساحة العمل لمتابعة العمل على هذه الدورة في محادثة"
   },
   "edit": {
     "undo": "تراجع",
@@ -2413,7 +2413,6 @@
     "learningMode": "تعلّم",
     "editingMode": "تحرير",
     "editingUnavailableGenerating": "التحرير غير متاح أثناء إنشاء الدورة.",
-    "fullscreenLearning": "التعلّم بملء الشاشة",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2461,7 +2460,6 @@
     "autoSaved": "تم الحفظ",
     "collapsedTitle": "Both panes are collapsed",
     "collapsedHint": "Use the tabs on the left to bring the conversation or the classroom back",
-    "moreUtilities": "More",
     "rowMore": "إجراءات أخرى لـ {{name}}",
     "folderDeleteHint": "ستعود الدورات داخله إلى المستوى الأعلى، ولن يُحذف شيء.",
     "dropToUnfile": "أفلِت هنا لإخراجه من المجلد",
@@ -2495,6 +2493,38 @@
       "noSkillMatch": "没有匹配“{{query}}”的 Skill",
       "launchPlaceholder": "صِف تجربة التعلم التي تريد إنشاءها",
       "launchSend": "بدء الإنشاء"
+    },
+    "nav": {
+      "search": "بحث",
+      "myCourses": "دوراتي"
+    },
+    "account": {
+      "signIn": "تسجيل الدخول",
+      "menu": "الحساب والإعدادات",
+      "models": "النماذج",
+      "language": "اللغة",
+      "about": "حول OpenMAIC",
+      "aboutBody": "منصة مفتوحة المصدر تحوّل أي موضوع إلى فصل دراسي تفاعلي مع معلمين وزملاء بالذكاء الاصطناعي. صادرة بموجب ترخيص MIT.",
+      "viewOnGithub": "عرض على GitHub",
+      "docs": "الوثائق",
+      "signOut": "تسجيل الخروج"
+    },
+    "coursesPage": {
+      "subtitle": "الدورات التي أنشأتها أو استوردتها، والمجلدات التي تنظمها فيها",
+      "searchPlaceholder": "البحث في دوراتي",
+      "folders": "المجلدات",
+      "courseCount": "{{count}} دورات",
+      "courseCount_one": "دورة واحدة",
+      "courseCount_other": "{{count}} دورة",
+      "results": "نتائج البحث",
+      "recent": "عُدّلت مؤخرًا",
+      "allCourses": "كل الدورات"
+    },
+    "fullscreen": {
+      "expand": "ملء الشاشة",
+      "leave": "مغادرة الدورة",
+      "leaveHint": "إغلاق هذه الدورة والعودة إلى مساحة العمل",
+      "collapse": "الخروج من ملء الشاشة (Esc)"
     }
   },
   "profile": {

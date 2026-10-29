@@ -31,9 +31,12 @@
  *    than a rail that is one render late;
  *  - long lists reveal one page at a time (`workspace-paging`), because this
  *    account has 139 courses and "reveal everything" is not a navigation;
- *  - the header utilities the classic chrome carries — language, theme,
- *    feedback, community, account — survive at the foot, as the SAME
- *    components SiteHeader mounts, with the two least-pressed behind one ⋯;
+ *  - above the lists, the destinations: search (the list's name filter), my
+ *    courses and the knowledge base (pages in the main area), then whatever
+ *    the host registered (`lib/workbench/shell-extensions.tsx`);
+ *  - at the foot, the account block. The workspace has no top bar, so its
+ *    menu carries everything one would: language, theme, settings, the
+ *    project's links, and the host's own entries (`WorkspaceAccount`);
  *  - rows are draggable: courses and sessions reorder against a hairline
  *    insertion line, a course dropped on a folder row is filed into it, a
  *    course dropped on the BLANK GROUND at the tree's foot is moved back out to
@@ -47,13 +50,11 @@
  *    endpoints — `PATCH /api/folders/:id` and `PATCH /api/stages/:id` — but not
  *    to different interactions.
  *
- * Collapsed, it becomes a 60px icon strip: an explicit expand button in the
- * header slot, a new-session button, one glyph per destination (which expands
- * the rail INTO that destination — the chat tab, the course tab), and the
- * utilities. The compact header is an action rather than a second brand/home
- * affordance, so the way back out is visible immediately.
+ * Collapsed, it becomes a 60px icon strip with the same items: the mark, the
+ * expand button, new chat and search, one glyph per destination, the chat
+ * list's glyph (which expands the rail into it), and the account avatar.
  *
- * It folds from its own header — the row with the wordmark and the PRO pill —
+ * It folds from its own header — the row with the wordmark —
  * with the same `PaneFoldButton` the conversation and the classroom use. It used
  * to fold from a pill floating in the middle of its seam, on the argument that
  * the rail had no header; that left one line carrying two meanings, because the
@@ -64,7 +65,6 @@
 import {
   useCallback,
   useEffect,
-  useId,
   useMemo,
   useRef,
   useState,
@@ -72,7 +72,6 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from 'react';
-import { createPortal } from 'react-dom';
 import {
   Check,
   Folder,
@@ -84,10 +83,9 @@ import {
   MessagesSquare,
   MoreHorizontal,
   Pencil,
-  Plus,
   RefreshCw,
   Search,
-  Settings,
+  SquarePen,
   Trash2,
   Upload,
   X,
@@ -96,8 +94,6 @@ import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useBrand } from '@/lib/brand/brand-context';
 import type { HomeDiscoveryState, useHomeDiscovery } from '@/lib/hooks/use-home-discovery';
-import { LanguageSwitcher } from '@/components/language-switcher';
-import { ThemeToggle } from '@/components/site-header/theme-toggle';
 import { SettingsDialog } from '@/components/settings';
 import {
   DropdownMenu,
@@ -117,10 +113,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils/cn';
-import {
-  FloatingLayerOwner,
-  installFloatingLayerDismissListeners,
-} from '@/components/ui/floating-layer-owner';
 import {
   newestFirst,
   relativeBucket,
@@ -162,6 +154,12 @@ import {
 } from '@/lib/generation-run-client/course-card';
 import type { RunSnapshot } from '@/lib/generation-run-client/types';
 import { PaneFoldButton } from './PaneFoldButton';
+import { WorkspaceAccountBlock } from './WorkspaceAccount';
+import {
+  useWorkbenchShellExtensions,
+  type WorkbenchShellIcon,
+} from '@/lib/workbench/shell-extensions';
+import { WORKSPACE_COURSES_VIEW, WORKSPACE_LIBRARY_VIEW } from '@/lib/workbench/workspace-panes';
 import { deleteWorkspaceSession } from '@/lib/workbench/workspace-actions';
 import { apiRenameStage, StageRenameError, STAGE_NAME_MAX_LENGTH } from '@/lib/live/server-api';
 import { SESSION_TITLE_MAX_LENGTH, workbenchSessionTitle } from '@/lib/workbench/session-title';
@@ -210,8 +208,8 @@ export function WorkspaceRail({
   onSessionDeleted,
   onRenameSession,
   onDeleteCourse,
-  libraryOpen,
-  onOpenLibrary,
+  activeView,
+  onOpenView,
   resizeHandle,
 }: {
   readonly courses: Discovery;
@@ -259,10 +257,13 @@ export function WorkspaceRail({
   readonly onRenameSession: (sessionId: string, title: string) => Promise<string | null>;
   /** The shell deletes the course AND closes its classroom tab on success. */
   readonly onDeleteCourse: (courseId: string) => Promise<void> | void;
-  /** The knowledge base page fills the main area right now. */
-  readonly libraryOpen: boolean;
-  /** Open the knowledge base page (RFC #1716 §7: from the foot of the rail). */
-  readonly onOpenLibrary: () => void;
+  /**
+   * The main-area page on screen (`library`, `courses` or a host page id), or
+   * null. Its destination row is marked current.
+   */
+  readonly activeView: string | null;
+  /** Open a main-area page: my courses, the knowledge base, a host page. */
+  readonly onOpenView: (view: string) => void;
   /** The width drag, owned by the shell (it writes the CSS variable on the root). */
   readonly resizeHandle: ReactNode;
 }) {
@@ -295,8 +296,68 @@ export function WorkspaceRail({
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
   /** The folder whose delete has been asked for, and not yet answered. */
   const [folderToDelete, setFolderToDelete] = useState<{ id: string; name: string } | null>(null);
-  /** The model/provider settings dialog, opened from the rail's foot cluster. */
+  /** The model/provider settings dialog, opened from the account menu. */
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  /*
+   * "Search" in the destinations focuses the list's name filter. From the
+   * folded strip it first unfolds the rail; the input only exists once the
+   * expanded rail has rendered, so the focus is owed until then.
+   */
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchFocusOwed = useRef(false);
+  useEffect(() => {
+    if (collapsed || !searchFocusOwed.current) return;
+    searchFocusOwed.current = false;
+    searchInputRef.current?.focus();
+  }, [collapsed]);
+  const openSearch = () => {
+    if (collapsed) {
+      searchFocusOwed.current = true;
+      onToggleCollapsed();
+      return;
+    }
+    searchInputRef.current?.focus();
+  };
+
+  /*
+   * The rail's destinations: the built-in pages, then whatever the host
+   * registered (`WorkbenchShellExtensions.navItems`). A host item that renders
+   * a page opens it in the main area like the built-ins do; one with a link
+   * navigates.
+   */
+  const extensions = useWorkbenchShellExtensions();
+  const destinations: readonly RailDestination[] = [
+    {
+      id: WORKSPACE_COURSES_VIEW,
+      testId: 'pro-nav-my-courses',
+      label: t('workspace.nav.myCourses'),
+      icon: BookOpen,
+      active: activeView === WORKSPACE_COURSES_VIEW,
+      onSelect: () => onOpenView(WORKSPACE_COURSES_VIEW),
+    },
+    {
+      id: WORKSPACE_LIBRARY_VIEW,
+      testId: 'pro-nav-library',
+      label: t('workspace.knowledgeBase.title'),
+      icon: Library,
+      active: activeView === WORKSPACE_LIBRARY_VIEW,
+      onSelect: () => onOpenView(WORKSPACE_LIBRARY_VIEW),
+    },
+    ...(extensions.navItems ?? []).map(
+      (item): RailDestination => ({
+        id: item.id,
+        testId: `pro-nav-host-${item.id}`,
+        label: item.label,
+        icon: item.icon,
+        tag: item.tag,
+        active: activeView === item.id,
+        href: item.render ? undefined : item.href,
+        external: item.external,
+        onSelect: item.render ? () => onOpenView(item.id) : item.onSelect,
+      }),
+    ),
+  ];
 
   /**
    * Commit a folder rename. Returns null when it landed and a readable message
@@ -660,10 +721,17 @@ export function WorkspaceRail({
         aria-label={t('workspace.navAria')}
         className="ws-rail ws-mini relative z-10 hidden h-full shrink-0 flex-col items-center md:flex"
       >
-        <div className="flex h-16 shrink-0 items-center">
-          {/* The expanded header's fold stays in the same spatial slot when the
-              rail closes. The mark disappears so this compact state exposes
-              its primary recovery action without changing the logo's meaning. */}
+        <div className="flex shrink-0 flex-col items-center gap-1 pb-2 pt-3">
+          <HomeLink testId="pro-nav-home-mini" onGoHome={onGoHome} className="mb-1 p-1">
+            <img
+              src={brand.markSrc}
+              alt=""
+              aria-hidden="true"
+              className="size-7 shrink-0 object-contain"
+            />
+          </HomeLink>
+          {/* The expanded header's fold keeps its slot's meaning here: the one
+              control that brings the rail back as it was. */}
           <PaneFoldButton
             testId="pro-nav-expand"
             label={t('workspace.expandNav')}
@@ -672,9 +740,6 @@ export function WorkspaceRail({
             className="ws-mini-btn"
             onClick={onToggleCollapsed}
           />
-        </div>
-        <div className="ws-seam-rail w-8 shrink-0" aria-hidden="true" />
-        <div className="flex flex-1 flex-col items-center gap-1 pt-3">
           <button
             type="button"
             data-testid="pro-workspace-new-session-mini"
@@ -683,9 +748,29 @@ export function WorkspaceRail({
             title={t('workspace.newSession')}
             className="ws-mini-btn"
           >
-            <Plus className="size-4" aria-hidden="true" />
+            <SquarePen className="size-[18px]" aria-hidden="true" />
           </button>
-          <div className="my-1 h-px w-6 bg-[color:var(--ws-line-soft)]" aria-hidden="true" />
+          <button
+            type="button"
+            data-testid="pro-nav-search-mini"
+            onClick={openSearch}
+            aria-label={t('workspace.nav.search')}
+            title={t('workspace.nav.search')}
+            className="ws-mini-btn"
+          >
+            <Search className="size-[18px]" aria-hidden="true" />
+          </button>
+        </div>
+        <div className="ws-mini-rule" aria-hidden="true" />
+        <div className="flex flex-col items-center gap-1 py-2">
+          {destinations.map((item) => (
+            <RailDestinationButton key={item.id} item={item} mini />
+          ))}
+        </div>
+        <div className="ws-mini-rule" aria-hidden="true" />
+        <div className="flex flex-1 flex-col items-center gap-1 py-2">
+          {/* The lists are destinations too: each glyph reopens the rail onto
+              the list it depicts. */}
           <button
             type="button"
             data-testid="pro-nav-mini-sessions"
@@ -696,56 +781,17 @@ export function WorkspaceRail({
             aria-expanded={false}
             className="ws-mini-btn"
           >
-            <MessagesSquare className="size-4" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            data-testid="pro-nav-mini-courses"
-            onClick={() => expandInto('courses')}
-            aria-label={expandLabel(t('workspace.sections.courses'))}
-            title={expandLabel(t('workspace.sections.courses'))}
-            aria-current={activeCourseId ? 'true' : undefined}
-            aria-expanded={false}
-            className="ws-mini-btn"
-          >
-            <BookOpen className="size-4" aria-hidden="true" />
+            <MessagesSquare className="size-[18px]" aria-hidden="true" />
           </button>
         </div>
-        <div className="ws-seam-rail w-8 shrink-0" aria-hidden="true" />
         <div
           aria-label={t('workspace.utilitiesAria')}
           data-testid="pro-rail-utilities-mini"
-          className="ws-utils flex shrink-0 flex-col items-center gap-0.5 py-2.5"
+          className="flex shrink-0 flex-col items-center pb-3.5 pt-2"
         >
-          {/* 60px of width does not hold five controls, so at this size the
-              overflow is where everything but the most-used entries lives —
-              including the locale switcher. Settings stays on the surface: the
-              collapsed rail must not lose the one entry that configures the
-              providers the surface depends on. */}
-          <button
-            type="button"
-            data-testid="pro-nav-library-mini"
-            onClick={onOpenLibrary}
-            aria-label={t('workspace.knowledgeBase.title')}
-            title={t('workspace.knowledgeBase.title')}
-            aria-current={libraryOpen ? 'page' : undefined}
-            className="ws-mini-btn"
-          >
-            <Library className="size-4" aria-hidden="true" />
-          </button>
-          <RailOverflow testId="pro-rail-more-mini" mini withLanguage />
-          <ThemeToggle />
-          <button
-            type="button"
-            data-testid="pro-nav-settings-mini"
-            onClick={() => setSettingsOpen(true)}
-            aria-label={t('settings.title')}
-            title={t('settings.title')}
-            className="ws-mini-btn"
-          >
-            <Settings className="size-4" aria-hidden="true" />
-          </button>
+          <WorkspaceAccountBlock mini onOpenSettings={() => setSettingsOpen(true)} />
         </div>
+        <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       </nav>
     );
   }
@@ -954,21 +1000,19 @@ export function WorkspaceRail({
       className="ws-rail ws-enter-rail relative z-10 hidden h-full shrink-0 flex-col md:flex"
       style={{ width: 'var(--ws-rail-w)' }}
     >
-      <div className="flex h-16 shrink-0 items-center gap-2 px-4">
-        {/* The wordmark is the way home: back to the bare `/workspace`. */}
+      <div className="flex h-14 shrink-0 items-center gap-2 pl-4 pr-3">
+        {/* The wordmark is the way home: back to the bare workspace. */}
         <HomeLink testId="pro-nav-home" onGoHome={onGoHome} className="-ml-1.5 px-1.5 py-1">
           <img
             src={brand.logoSrc}
             alt=""
             aria-hidden="true"
-            className="h-[21px] w-auto max-w-[110px] shrink-0"
+            className="h-[22px] w-auto max-w-[128px] shrink-0"
           />
         </HomeLink>
         {/* THE rail's header, and therefore where the rail folds — the same
             button, in the same place, that the conversation and the classroom
-            fold from. It used to be a pill floating in the middle of the rail's
-            own seam, which made one line mean two things: that seam also drags
-            the rail's width. The seam now only resizes. */}
+            fold from. The seam only resizes. */}
         <PaneFoldButton
           testId="pro-nav-collapse"
           label={t('workspace.collapseNav')}
@@ -979,26 +1023,40 @@ export function WorkspaceRail({
         />
       </div>
 
-      {/* A hairline that fades before the rail's right edge, rather than a
-          full-width border: the rail already has one edge, and two hard
-          rules meeting in a corner is the boxy look this pass removes. */}
-      <div className="ws-seam-rail mx-4 shrink-0" aria-hidden="true" />
-
-      {/* Compose, one row to itself — the prototype's newrow shape. Find is no
-          longer its square sibling: a search box is an action on the LIST, not
-          on the act of starting one, so it moved under the tab strip, where it
-          filters whichever list the active tab shows (see the findrow below). */}
-      <div className="flex shrink-0 items-center gap-2 px-3 pb-3 pt-3">
+      {/* New chat: the one raised object in the rail. It starts a conversation
+          and leaves an open classroom where it is (`startNewConversation`). */}
+      <div className="shrink-0 px-3 pb-1.5 pt-1">
         <button
           type="button"
           data-testid="pro-workspace-new-session"
           onClick={onNewSession}
-          className="ws-new flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg px-3 text-[13px] font-medium focus-visible:outline-none"
+          className="ws-new flex h-[38px] w-full min-w-0 items-center gap-2.5 rounded-[11px] px-3 text-[13.5px] font-medium focus-visible:outline-none"
         >
-          <Plus className="size-4 shrink-0 opacity-50" aria-hidden="true" />
+          <SquarePen className="size-4 shrink-0" aria-hidden="true" />
           <span className="min-w-0 truncate">{t('workspace.newSession')}</span>
         </button>
       </div>
+
+      {/* Destinations: search, the built-in pages, then the host's. */}
+      <div
+        className="flex shrink-0 flex-col gap-px px-2 pb-1 pt-1"
+        data-testid="pro-nav-destinations"
+      >
+        <button
+          type="button"
+          data-testid="pro-nav-search"
+          onClick={openSearch}
+          className="ws-nav-item"
+        >
+          <Search className="size-[18px] shrink-0" aria-hidden="true" />
+          <span className="min-w-0 truncate">{t('workspace.nav.search')}</span>
+        </button>
+        {destinations.map((item) => (
+          <RailDestinationButton key={item.id} item={item} />
+        ))}
+      </div>
+
+      <div className="ws-seam-rail mx-4 my-2 shrink-0" aria-hidden="true" />
 
       {/* ── Two tabs, one body ───────────────────────────────────────────
           Chat and courses are both yours and both maintained, so they are two
@@ -1034,6 +1092,7 @@ export function WorkspaceRail({
         <div className="ws-find min-w-0 flex-1">
           <Search className="size-3.5 shrink-0" aria-hidden="true" />
           <input
+            ref={searchInputRef}
             data-testid={`pro-nav-search-input-${tab}`}
             value={tab === 'sessions' ? sessionsSection.query : coursesSection.query}
             onChange={(event) => {
@@ -1305,11 +1364,16 @@ export function WorkspaceRail({
         ) : null}
       </div>
 
-      <RailUtilities
-        libraryOpen={libraryOpen}
-        onOpenLibrary={onOpenLibrary}
-        onOpenSettings={() => setSettingsOpen(true)}
-      />
+      {/* The account block: who is here, and the menu with everything a top
+          bar would otherwise carry (language, theme, settings, the project's
+          links, and the host's own entries). */}
+      <div
+        className="ws-rail-foot shrink-0 px-2.5 pb-2.5 pt-2"
+        aria-label={t('workspace.utilitiesAria')}
+        data-testid="pro-rail-utilities"
+      >
+        <WorkspaceAccountBlock onOpenSettings={() => setSettingsOpen(true)} />
+      </div>
 
       {resizeHandle}
 
@@ -2173,199 +2237,68 @@ function SessionDot({ status }: { readonly status: ProHomeSessionItem['status'] 
   );
 }
 
-/* ── Rail foot ────────────────────────────────────────────────────────── */
+/* ── Destinations ─────────────────────────────────────────────────────── */
 
-/**
- * The classic header's utilities, at the rail's foot.
- *
- * These are SiteHeader's own components — locale, theme, feedback, community
- * and the account entry each keep exactly one implementation. Nothing the
- * classic chrome offers is dropped; what changes is only which of them are on
- * the surface. Theme and account are one press away because they are pressed
- * daily; feedback and the community links are a press further, behind one
- * quiet ⋯, because a rail is navigation first and a settings bar second.
- *
- * The settings entry lives here too, in the slot the removed saved-courses
- * drawer left in this cluster (a product decision on this branch: the drawer
- * could only ever render empty, and the model/provider dialog is the one
- * surface-wide setting the workspace still needs). It is the same dialog the
- * classic home opens from its header pill; the rail trigger owns its own
- * mount.
- *
- * The product ships no reusable notification bell (the only Bell in the tree
- * belongs to the community dialog), so there is nothing to cluster here for
- * notifications.
- */
-function RailUtilities({
-  libraryOpen,
-  onOpenLibrary,
-  onOpenSettings,
-}: {
-  readonly libraryOpen: boolean;
-  readonly onOpenLibrary: () => void;
-  readonly onOpenSettings: () => void;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="shrink-0" data-testid="pro-rail-utilities">
-      {/* The knowledge base is a page, not a third tab beside Chats and
-          Courses (RFC #1716): one row at the foot, selected while it fills
-          the main area. */}
-      <div className="px-3 pb-2">
-        <button
-          type="button"
-          data-testid="pro-nav-library"
-          onClick={onOpenLibrary}
-          aria-current={libraryOpen ? 'page' : undefined}
-          className={cn(
-            'ws-row flex h-9 w-full min-w-0 items-center gap-2 px-2 text-left text-[13px]',
-            libraryOpen && 'ws-row-active',
-          )}
-        >
-          <Library className="size-4 shrink-0 opacity-60" aria-hidden="true" />
-          <span className="min-w-0 truncate">{t('workspace.knowledgeBase.title')}</span>
-        </button>
-      </div>
-      <div className="ws-seam-rail mx-4" aria-hidden="true" />
-      <div
-        aria-label={t('workspace.utilitiesAria')}
-        className="ws-utils flex items-center gap-0.5 px-3 py-2.5"
-      >
-        <LanguageSwitcher />
-        <ThemeToggle />
-        <button
-          type="button"
-          data-testid="pro-nav-settings"
-          onClick={onOpenSettings}
-          aria-label={t('settings.title')}
-          title={t('settings.title')}
-          className="ws-util-btn"
-        >
-          <Settings className="size-4" aria-hidden="true" />
-        </button>
-      </div>
-    </div>
-  );
+interface RailDestination {
+  readonly id: string;
+  readonly testId: string;
+  readonly label: string;
+  readonly icon: WorkbenchShellIcon;
+  readonly active: boolean;
+  readonly tag?: string;
+  readonly href?: string;
+  readonly external?: boolean;
+  readonly onSelect?: () => void;
 }
 
 /**
- * Widest the one-row panel can get (locale + feedback + separator + three
- * community icons). Only the viewport clamp uses it, so an estimate on the
- * generous side is exactly right — the panel itself is `max-content`.
+ * One destination row (or, folded, one glyph): a page in the main area, or a
+ * link out. The current page is marked `aria-current` and raised.
  */
-const OVERFLOW_WIDTH_PX = 240;
-
-/**
- * The ⋯ at the foot, and the small panel it opens.
- *
- * Portalled to `.ws-root` rather than rendered in place, for two reasons that
- * are both about the rail: the rail carries `backdrop-filter`, which makes it
- * the containing block for any `position: fixed` descendant, and the rail is a
- * narrow column whose scrolling body clips. Escaping to the shell root fixes
- * both while keeping the `--ws-*` tokens (they are declared on `.ws-root`) and
- * the dark-mode variants in scope.
- */
-export function RailOverflow({
-  testId,
+function RailDestinationButton({
+  item,
   mini = false,
-  withLanguage = false,
 }: {
-  readonly testId: string;
+  readonly item: RailDestination;
   readonly mini?: boolean;
-  /** Collapsed rails have no room for the locale switcher on the surface. */
-  readonly withLanguage?: boolean;
 }) {
-  const { t } = useI18n();
-  const [open, setOpen] = useState(false);
-  const [anchor, setAnchor] = useState<{ left: number; bottom: number } | null>(null);
-  const [host, setHost] = useState<HTMLElement | null>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const ownerId = useId();
-
-  const close = useCallback((refocus: boolean) => {
-    setOpen(false);
-    if (refocus) triggerRef.current?.focus();
-  }, []);
-
-  const toggle = () => {
-    if (open) {
-      close(false);
-      return;
-    }
-    const trigger = triggerRef.current;
-    const rect = trigger?.getBoundingClientRect();
-    if (!trigger || !rect) return;
-    // Opens upward: this sits at the bottom of a full-height rail.
-    setAnchor({
-      left: Math.max(8, Math.min(rect.left, window.innerWidth - OVERFLOW_WIDTH_PX - 8)),
-      bottom: Math.max(8, window.innerHeight - rect.top + 8),
-    });
-    setHost(trigger.closest<HTMLElement>('.ws-root') ?? document.body);
-    setOpen(true);
-  };
-
-  // Focus moves into the panel on open: it is portalled to the end of the
-  // tree, so Tab from the trigger would otherwise walk past it entirely.
-  useEffect(() => {
-    if (!open) return;
-    const panel = panelRef.current;
-    const first = panel?.querySelector<HTMLElement>(
-      'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    );
-    (first ?? panel)?.focus();
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    // The anchor is a snapshot of the trigger's box; anything that moves the
-    // trigger (a resize, a pane scrolling) invalidates it, and a stale panel
-    // is worse than no panel.
-    return installFloatingLayerDismissListeners({
-      ownerId,
-      roots: () => [panelRef.current, triggerRef.current],
-      onDismiss: close,
-    });
-  }, [open, close, ownerId]);
-
-  return (
+  const Icon = item.icon;
+  const className = mini ? cn('ws-mini-btn', item.active && 'ws-mini-on') : 'ws-nav-item';
+  const content = mini ? (
+    <Icon className="size-[18px]" aria-hidden />
+  ) : (
     <>
-      <button
-        ref={triggerRef}
-        type="button"
-        data-testid={testId}
-        onClick={toggle}
-        aria-haspopup="true"
-        aria-expanded={open}
-        aria-label={t('workspace.moreUtilities')}
-        title={t('workspace.moreUtilities')}
-        className={mini ? 'ws-mini-btn' : 'ws-util-btn'}
-      >
-        <MoreHorizontal className="size-4" aria-hidden="true" />
-      </button>
-      {open && host && anchor
-        ? createPortal(
-            <FloatingLayerOwner ownerId={ownerId}>
-              <div
-                ref={panelRef}
-                role="group"
-                tabIndex={-1}
-                data-testid={`${testId}-panel`}
-                aria-label={t('workspace.moreUtilities')}
-                className="ws-pop ws-utils"
-                style={{ left: anchor.left, bottom: anchor.bottom }}
-              >
-                {withLanguage ? (
-                  <span className="ws-pop-item" data-testid={`${testId}-language`}>
-                    <LanguageSwitcher />
-                  </span>
-                ) : null}
-              </div>
-            </FloatingLayerOwner>,
-            host,
-          )
-        : null}
+      <Icon className="size-[18px] shrink-0" aria-hidden />
+      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+      {item.tag ? <span className="ws-nav-tag">{item.tag}</span> : null}
     </>
+  );
+  if (item.href && !item.onSelect) {
+    return (
+      <a
+        href={item.href}
+        data-testid={item.testId}
+        aria-label={mini ? item.label : undefined}
+        title={mini ? item.label : undefined}
+        className={className}
+        {...(item.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+      >
+        {content}
+      </a>
+    );
+  }
+  return (
+    <button
+      type="button"
+      data-testid={item.testId}
+      onClick={item.onSelect}
+      aria-current={item.active ? 'page' : undefined}
+      aria-label={mini ? item.label : undefined}
+      title={mini ? item.label : undefined}
+      className={className}
+    >
+      {content}
+    </button>
   );
 }
 

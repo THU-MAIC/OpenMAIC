@@ -26,7 +26,6 @@
     "examplesLabel": "Exemples de sujets",
     "examplePython": "Apprendre Python de zéro",
     "exampleFourier": "Comprendre la transformée de Fourier par des exemples",
-    "desktopOnly": "Utilisez un ordinateur pour l’éditeur et le mode Pro.",
     "slogan": "L’apprentissage génératif en classe interactive multi-agents",
     "greetingWithName": "Bonjour, {{name}}"
   },
@@ -352,7 +351,8 @@
     "doneEditing": "Terminer les modifications",
     "editDisabledHint": "L’édition n’est pas disponible sur cette page. Ouvrez une diapositive de cours pour la modifier.",
     "editToggle": "Modifier",
-    "editInWorkspace": "Modifier dans l’espace de travail"
+    "openInWorkspace": "Ouvrir dans l’espace de travail",
+    "openInWorkspaceHint": "Ouvrir dans l’espace de travail pour continuer ce cours en conversation"
   },
   "edit": {
     "undo": "Annuler",
@@ -2413,7 +2413,6 @@
     "learningMode": "Apprendre",
     "editingMode": "Modifier",
     "editingUnavailableGenerating": "La modification est indisponible pendant la génération du cours.",
-    "fullscreenLearning": "Apprendre en plein écran",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2461,7 +2460,6 @@
     "autoSaved": "Enregistré",
     "collapsedTitle": "Both panes are collapsed",
     "collapsedHint": "Use the tabs on the left to bring the conversation or the classroom back",
-    "moreUtilities": "More",
     "rowMore": "Plus d’actions pour {{name}}",
     "folderDeleteHint": "Les cours qu’il contient retournent au niveau supérieur. Rien n’est supprimé.",
     "dropToUnfile": "Déposez ici pour sortir du dossier",
@@ -2495,6 +2493,38 @@
       "noSkillMatch": "没有匹配“{{query}}”的 Skill",
       "launchPlaceholder": "Décrivez l'expérience d'apprentissage que vous souhaitez créer",
       "launchSend": "Lancer la création"
+    },
+    "nav": {
+      "search": "Rechercher",
+      "myCourses": "Mes cours"
+    },
+    "account": {
+      "signIn": "Se connecter",
+      "menu": "Compte et paramètres",
+      "models": "Modèles",
+      "language": "Langue",
+      "about": "À propos d’OpenMAIC",
+      "aboutBody": "Une plateforme open source qui transforme n’importe quel sujet en classe interactive, avec des enseignants et des camarades IA. Publiée sous licence MIT.",
+      "viewOnGithub": "Voir sur GitHub",
+      "docs": "Documentation",
+      "signOut": "Se déconnecter"
+    },
+    "coursesPage": {
+      "subtitle": "Les cours que vous avez créés ou importés, et les dossiers où vous les rangez",
+      "searchPlaceholder": "Rechercher dans mes cours",
+      "folders": "Dossiers",
+      "courseCount": "{{count}} cours",
+      "courseCount_one": "{{count}} cours",
+      "courseCount_other": "{{count}} cours",
+      "results": "Résultats",
+      "recent": "Modifiés récemment",
+      "allCourses": "Tous les cours"
+    },
+    "fullscreen": {
+      "expand": "Plein écran",
+      "leave": "Quitter le cours",
+      "leaveHint": "Fermer ce cours et revenir à l’espace de travail",
+      "collapse": "Quitter le plein écran (Échap)"
     }
   },
   "profile": {
