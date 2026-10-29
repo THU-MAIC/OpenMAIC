@@ -56,7 +56,7 @@ describe('workspace classroom header', () => {
             onCloseCourse: vi.fn(),
           },
           readOnly: false,
-          playback: false,
+          fullscreen: false,
           hidden: false,
         }),
       ),

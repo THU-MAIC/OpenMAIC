@@ -1299,9 +1299,9 @@ describe('the knowledge base page', () => {
   const layout = () =>
     container?.querySelector('[data-testid="pro-workspace"]')?.getAttribute('data-ws-layout');
   const openLibrary = async () => {
-    const onOpenLibrary = mocks.railProps?.onOpenLibrary as () => void;
-    expect(onOpenLibrary).toBeTypeOf('function');
-    await act(async () => onOpenLibrary());
+    const onOpenView = mocks.railProps?.onOpenView as (view: string) => void;
+    expect(onOpenView).toBeTypeOf('function');
+    await act(async () => onOpenView('library'));
   };
 
   it('opens from the rail into the main area, leaving the conversation mounted', async () => {
@@ -1309,15 +1309,15 @@ describe('the knowledge base page', () => {
     mocks.store.sessionId = 'session-1';
     mocks.sessionRows = [{ id: 'session-1', stageId: 'stage-1', updatedAt: 9 }];
     await render();
-    expect(mocks.railProps?.libraryOpen).toBe(false);
+    expect(mocks.railProps?.activeView).toBe(null);
     mocks.detach.mockClear();
 
     await openLibrary();
 
     expect(mocks.routerPush).toHaveBeenCalledWith('/workspace?session=session-1&view=library');
     expect(libraryShown()).toBe(true);
-    expect(layout()).toBe('library');
-    expect(mocks.railProps?.libraryOpen).toBe(true);
+    expect(layout()).toBe('view:library');
+    expect(mocks.railProps?.activeView).toBe('library');
     // Hidden, not unmounted: the run's stream and the draft survive the page.
     expect(container?.querySelector('[data-testid="chat-pane"]')).not.toBeNull();
     expect(mocks.chatPaneProps?.hidden).toBe(true);

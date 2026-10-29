@@ -333,9 +333,9 @@ never stop the server.
 
 ## Agent workbench and runtime
 
-The workbench is a usable course-building surface entered from the home
-page. Its collapsible navigation rail, conversation pane, and tabbed classroom
-pane share `/api/agent/*` control-plane routes and an in-process session runner.
+The workbench is a course-building surface that, once enabled, is the home
+page itself (the classic home is used while it is off). Its collapsible
+navigation rail, conversation pane, and tabbed classroom pane share `/api/agent/*` control-plane routes and an in-process session runner.
 It is off by default. Enable its build-time entry point and the server runtime;
 it uses the same PostgreSQL connection as the rest of the app:
 

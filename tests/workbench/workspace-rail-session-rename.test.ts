@@ -22,8 +22,9 @@ vi.mock('@/lib/hooks/use-i18n', () => ({
 vi.mock('@/lib/brand/brand-context', () => ({
   useBrand: () => ({ markSrc: '/mark.svg', logoSrc: '/logo.svg' }),
 }));
-vi.mock('@/components/language-switcher', () => ({ LanguageSwitcher: () => null }));
-vi.mock('@/components/site-header/theme-toggle', () => ({ ThemeToggle: () => null }));
+vi.mock('@/components/workbench/workspace/WorkspaceAccount', () => ({
+  WorkspaceAccountBlock: () => null,
+}));
 vi.mock('@/lib/workbench/workspace-actions', () => ({
   deleteWorkspaceSession: vi.fn(async () => ({ deleted: true })),
 }));
@@ -140,8 +141,8 @@ async function renderRail(
         onSessionDeleted: vi.fn(),
         onRenameSession,
         onDeleteCourse: vi.fn(),
-        libraryOpen: false,
-        onOpenLibrary: vi.fn(),
+        activeView: null,
+        onOpenView: vi.fn(),
         resizeHandle: null as ReactNode,
       }),
     );

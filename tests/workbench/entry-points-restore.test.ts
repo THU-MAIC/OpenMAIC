@@ -8,9 +8,8 @@
  *  2. the Pro launch composer (and the chat composer) carries an attach
  *     control in the glyph row, rendered exactly when the material upload
  *     path can serve a request;
- *  3. the rail's foot cluster — the bottom-left utilities — mounts the
- *     settings trigger for the model/provider dialog, in the slot the removed
- *     saved-courses drawer left.
+ *  3. the rail's account menu, at its foot, carries the settings entry for the
+ *     model/provider dialog beside the language and theme controls.
  *
  * Items 1 and 3 are pinned from source (the rail and the shell are heavy
  * client surfaces the suite renders nowhere else); item 2 is pinned by an
@@ -199,39 +198,41 @@ describe('entry point 2 — the composer attach control', () => {
   });
 });
 
-describe('entry point 3 — the settings entry in the rail’s foot cluster', () => {
+describe('entry point 3 — the settings entry in the rail’s account menu', () => {
   const rail = read('components/workbench/workspace/WorkspaceRail.tsx');
+  const account = read('components/workbench/workspace/WorkspaceAccount.tsx');
 
-  it('mounts the settings trigger in the expanded foot cluster', () => {
-    const utilities = rail.slice(rail.indexOf('function RailUtilities'));
-    expect(utilities).toContain('data-testid="pro-nav-settings"');
-    expect(utilities).toContain('<Settings className="size-4"');
-    expect(utilities).toContain("aria-label={t('settings.title')}");
-    expect(utilities).toContain("title={t('settings.title')}");
+  it('mounts the account block, whose menu carries settings, in the expanded foot', () => {
+    const foot = rail.slice(rail.indexOf('data-testid="pro-rail-utilities"'));
+    expect(foot).toContain(
+      '<WorkspaceAccountBlock onOpenSettings={() => setSettingsOpen(true)} />',
+    );
+    expect(account).toContain('data-testid="workspace-account-settings"');
+    expect(account).toContain('onSelect={onOpenSettings}');
   });
 
-  it('keeps the trigger on the collapsed strip too', () => {
+  it('keeps it on the collapsed strip too', () => {
     const mini = rail.slice(
       rail.indexOf('pro-rail-utilities-mini'),
       rail.indexOf('renderCourseRow'),
     );
-    expect(mini).toContain('data-testid="pro-nav-settings-mini"');
-    expect(mini).toContain('onClick={() => setSettingsOpen(true)}');
+    expect(mini).toContain(
+      '<WorkspaceAccountBlock mini onOpenSettings={() => setSettingsOpen(true)} />',
+    );
   });
 
   it('opens the model/provider dialog, mounted by the rail itself', () => {
     expect(rail).toContain("import { SettingsDialog } from '@/components/settings'");
     expect(rail).toContain('<SettingsDialog');
     expect(rail).toContain('open={settingsOpen}');
-    const trigger = rail.slice(rail.indexOf('data-testid="pro-nav-settings"'));
-    expect(trigger.slice(0, trigger.indexOf('</button>'))).toContain('onClick={onOpenSettings}');
   });
 
-  it('sits beside the language and display toggles in the cluster order', () => {
-    const utilities = rail.slice(rail.indexOf('function RailUtilities'));
-    const order = ['<LanguageSwitcher', '<ThemeToggle', 'pro-nav-settings'].map((token) =>
-      utilities.indexOf(token),
-    );
+  it('sits with the language and theme controls in the menu', () => {
+    const order = [
+      'workspace-account-settings',
+      'workspace-account-language',
+      'workspace-account-theme',
+    ].map((token) => account.indexOf(token));
     for (const index of order) expect(index).toBeGreaterThan(-1);
     expect(order[0]).toBeLessThan(order[1]);
     expect(order[1]).toBeLessThan(order[2]);

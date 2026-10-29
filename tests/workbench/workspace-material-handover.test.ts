@@ -404,7 +404,8 @@ const type = async (textarea: HTMLTextAreaElement, text: string) => {
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
   });
 };
-const openLibrary = () => act(async () => (mocks.railProps!.onOpenLibrary as () => void)());
+const openLibrary = () =>
+  act(async () => (mocks.railProps!.onOpenView as (view: string) => void)('library'));
 const chatWith = async (id: string) => {
   await openLibrary();
   await act(async () =>

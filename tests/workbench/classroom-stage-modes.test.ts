@@ -46,9 +46,6 @@ vi.mock('@/components/edit/PlaybackChromeRoot', () => ({
 vi.mock('@/components/scene-renderers/InteractiveIframeHost', () => ({
   InteractiveIframeHost: () => null,
 }));
-vi.mock('@/components/workbench/WorkbenchReturnControl', () => ({
-  WorkbenchReturnControl: () => null,
-}));
 vi.mock('motion/react', () => ({
   AnimatePresence: ({ children }: { children: ReactNode }) => children,
   motion: { div: ({ children }: { children: ReactNode }) => createElement('div', null, children) },

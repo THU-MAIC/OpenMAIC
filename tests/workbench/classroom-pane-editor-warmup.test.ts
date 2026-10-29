@@ -26,6 +26,7 @@ vi.mock('@/lib/edit/preload-editor', () => ({
 }));
 vi.mock('@/lib/hooks/use-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock('@/components/classroom/ClassroomSurface', () => ({ ClassroomSurface: () => null }));
+vi.mock('@/components/stage/header-controls', () => ({ HeaderControls: () => null }));
 vi.mock('@/lib/workbench/use-workbench-pro-edit', () => ({ useWorkbenchProEditing: () => {} }));
 vi.mock('@/components/workbench/workspace/WorkspaceCourseTabs', () => ({
   WorkspaceCourseTabs: () => null,
@@ -53,9 +54,9 @@ const cancelIdle = vi.fn((handle: number) => {
   idle = idle.filter((pending) => pending !== callback);
 });
 
-type Props = { hidden: boolean; playback: boolean; readOnly: boolean };
+type Props = { hidden: boolean; fullscreen: boolean; readOnly: boolean };
 async function render(next: Partial<Props> = {}) {
-  const props: Props = { hidden: false, playback: false, readOnly: false, ...next };
+  const props: Props = { hidden: false, fullscreen: false, readOnly: false, ...next };
   if (!root) {
     const container = document.createElement('div');
     document.body.append(container);
@@ -162,11 +163,16 @@ describe('warming the editor from the classroom pane', () => {
     expect(probe.calls).toBe(0);
   });
 
-  it('does not schedule a warm-up for a hidden pane or full-screen playback', async () => {
+  it('does not schedule a warm-up for a hidden pane', async () => {
     await render({ hidden: true });
-    await render({ playback: true });
     await runIdle();
     expect(probe.calls).toBe(0);
+  });
+
+  it('still warms the editor in full screen, where Edit is offered too', async () => {
+    await render({ fullscreen: true });
+    await runIdle();
+    expect(probe.calls).toBe(1);
   });
 
   it('does not schedule a warm-up once the editor is already loaded', async () => {

@@ -539,10 +539,14 @@ Its durable sessions can be resumed after a worker restart, accept follow-up
 instructions while running, and stream a replayable event history to the chat
 surface.
 
-Open it at `/workspace`, or with Edit in workspace from a classroom. The
-workspace combines a transient, collapsible folders/conversations rail with a
-chat pane and a classroom pane whose open courses stay in tabs. Every entry
-remains gated by the public workbench flag plus the configured server runtime.
+Where it is enabled, the workbench is the home page (`/`, also at
+`/workspace`). Its rail carries search, My courses, the knowledge base, the
+conversation and course lists, and an account menu with the language, theme,
+model settings and project links; beside it sit a chat pane and a classroom
+pane whose open courses stay in tabs. A classroom opens full screen with
+Learn | Edit, and a standalone classroom page opens in the workspace from its
+collapse button. Every entry remains gated by the public workbench flag plus
+the configured server runtime; with it off, the classic home page is unchanged.
 
 The agent works through explicit, validated tools rather than editing opaque
 blobs:

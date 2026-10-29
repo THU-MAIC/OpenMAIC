@@ -234,9 +234,7 @@ describe('fold placement', () => {
     expect(shell).toContain('setClassroom(false)');
     expect(shell).toContain('collapse.collapseChat');
     expect(shell).toContain('collapse.collapseClassroom');
-    expect(pane).toContain(
-      '<WorkbenchPanelProvider visible={!hidden} playback={playback} learning={learning}>',
-    );
+    expect(pane).toContain('<WorkbenchPanelProvider visible={!hidden} learning={learning}>');
     // The chat learns only whether a pane sits beside it, never the
     // classroom's own visibility (it also carries the knowledge base hand-over).
     const chatElement = chatPane.slice(
@@ -262,7 +260,9 @@ describe('fold placement', () => {
     // The header row owns the wordmark and the fold, and auto margin pushes
     // the fold to the rail boundary instead of pinning it beside the logo.
     const row =
-      /<div className="flex h-16 shrink-0 items-center gap-2 px-4">([\s\S]*?)<\/div>/.exec(rail);
+      /<div className="flex h-14 shrink-0 items-center gap-2 pl-4 pr-3">([\s\S]*?)<\/div>/.exec(
+        rail,
+      );
     expect(row, 'the rail’s header row').not.toBeNull();
     expect(row![1]).toContain('testId="pro-nav-home"');
     expect(row![1]).toContain('testId="pro-nav-collapse"');
@@ -303,7 +303,7 @@ describe('fold placement', () => {
    * COLLAPSED, the top brand is replaced by an explicit expand action in the
    * same header slot. Destination glyphs still expand into their own sections.
    */
-  it('replaces the collapsed wordmark with an explicit expand button', () => {
+  it('keeps an explicit expand button and the same items as the expanded rail', () => {
     const rail = read('components/workbench/workspace/WorkspaceRail.tsx');
     const mini = rail.slice(rail.indexOf('pro-nav-rail-mini'), rail.indexOf('renderCourseRow'));
 
@@ -311,18 +311,23 @@ describe('fold placement', () => {
     expect(mini).toContain("label={t('workspace.expandNav')}");
     expect(mini).toContain('direction="right"');
     expect(mini).toContain('onClick={onToggleCollapsed}');
-    expect(mini).not.toContain('pro-nav-home-mini');
+    // The mark, not the wordmark: 60px holds the square logo only.
+    expect(mini).toContain('testId="pro-nav-home-mini"');
+    expect(mini).toContain('brand.markSrc');
     // The strip is the list of destinations, and saved courses are not one any
     // more: the drawer is gone, so there is no glyph that opens it.
     expect(mini).not.toContain('pro-nav-mini-saved');
+    // New chat, search, the destinations and the account, as in the expanded rail.
+    expect(mini).toContain('pro-workspace-new-session-mini');
+    expect(mini).toContain('pro-nav-search-mini');
+    expect(mini).toContain('<RailDestinationButton key={item.id} item={item} mini />');
+    expect(mini).toContain('<WorkspaceAccountBlock mini');
 
-    // Each destination glyph expands, and says so on top of naming its tab.
-    for (const glyph of ['pro-nav-mini-sessions', 'pro-nav-mini-courses']) {
-      const button = new RegExp(`data-testid="${glyph}"[\\s\\S]*?/>\\s*</button>`).exec(mini);
-      expect(button, glyph).not.toBeNull();
-      expect(button![0], glyph).toContain('expandLabel(');
-      expect(button![0], glyph).toContain('aria-expanded={false}');
-      expect(button![0], glyph).toContain('expandInto(');
-    }
+    // The chat list's glyph expands, and says so on top of naming its tab.
+    const button = /data-testid="pro-nav-mini-sessions"[\s\S]*?\/>\s*<\/button>/.exec(mini);
+    expect(button).not.toBeNull();
+    expect(button![0]).toContain('expandLabel(');
+    expect(button![0]).toContain('aria-expanded={false}');
+    expect(button![0]).toContain('expandInto(');
   });
 });

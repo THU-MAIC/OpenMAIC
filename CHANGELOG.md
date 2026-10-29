@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+Targeted for 1.5.0. The workbench stays off by default in this change; where it is enabled it becomes the home page.
+
+### Breaking Changes
+
+- **`NEXT_PUBLIC_PRO_WORKBENCH_ENABLED` is renamed to `NEXT_PUBLIC_WORKBENCH_ENABLED`.** The previous name is still read when the new one is unset or empty, until its removal in 1.6.0, and the server logs a deprecation warning at startup when it is used. Like every `NEXT_PUBLIC_*` flag it is compiled into the build, so switching to the new name requires a rebuild; the Docker build and `docker-compose.yml` pass both names.
+
+### Changed
+
+- **The home page is the workbench.** With the workbench enabled, `/` renders the workspace (also at `/workspace`), with its rail folded for anyone who has not chosen otherwise. With it disabled, the classic home page renders unchanged, now from `app/classic-home.tsx`.
+- **The workbench is no longer a separate "Pro mode".** The PRO badge, the home ↔ workspace transition and the Exit Pro control are removed. Where only the classroom editor is enabled, the classroom's edit switch is labelled **Edit** instead of **Pro**.
+- **A shell without a top bar.** The workspace rail now holds the logo and fold, New chat, Search (the list's name filter), the destinations **My courses** (a new page with folders and course thumbnails) and **Knowledge base**, then the chat and course lists. At its foot, an account block opens a menu with the settings, language, theme (light, dark, system), About, Docs and GitHub. The folded rail shows the same items as icons. Pages in the main area share one `?view=` parameter (`library`, `courses`).
+- **One full-screen classroom, editing included.** The classroom pane's ⛶ fills the window and keeps a header: **Leave course** on the left closes the course's tab, and in the same corner as ⛶ the Learn | Edit switch and a collapse button return to the split view with the course still open; Esc does the same. Editing works in full screen. The separate back-to-workspace control in the classroom header is removed.
+- **The standalone classroom page** (`/classroom/[id]`), where the workbench is part of the build, uses the same chrome: Learn | Edit switches the page's own editor, and the collapse button opens the course in the workspace's classroom pane. It replaces **Edit in workspace**. Without the workbench the page is unchanged.
+- The rail, account menu, home, classroom pane header and chat column are restyled on the existing design tokens, in light and dark.
+
+### Features
+
+- **Shell extension slots** (`lib/workbench/shell-extensions.tsx`). A deployment adds its own rail destinations (pages in the main area or links), account menu entries, an account summary line, an unread badge, its own sign-in identity and a section under the home composer by providing `WorkbenchShellExtensionsProvider` (mounted empty in the root layout), without changing the shell. Nested providers merge.
+
 ## [1.3.0] - 2026-10-29
 
 1.3.0 has two themes. The **knowledge base** shipped in the release candidate (see [1.3.0-rc.1](#130-rc1---2026-10-22)): every upload stays in its owner's knowledge base until it is deleted, is organized in folders and parsed once, and the composer and the agent can use it. The **Pro workbench upgrade** is new in this release: a request shows a preview of the agent's work before the first page exists, and classroom tabs switch between Learn and Edit. This section collects what is new in 1.3.0 beyond the rc.1 section below. Coming from 1.2.x:

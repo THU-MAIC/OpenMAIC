@@ -28,29 +28,58 @@ vi.mock('@/components/stage/video-export-dialog', () => ({ VideoExportDialog: ()
 
 import { HeaderControls } from '@/components/stage/header-controls';
 
-function render(editOpensWorkspace: boolean) {
+function render(
+  props: {
+    readonly workbenchControls?: boolean;
+    readonly onOpenInWorkspace?: () => void;
+    readonly mode?: 'playback' | 'edit';
+    readonly canEdit?: boolean;
+  } = {},
+) {
   return renderToStaticMarkup(
     createElement(HeaderControls, {
-      mode: 'playback',
-      canEdit: true,
+      mode: props.mode ?? 'playback',
+      canEdit: props.canEdit ?? true,
       onToggleEditMode: vi.fn(),
-      editOpensWorkspace,
+      workbenchControls: props.workbenchControls,
+      onOpenInWorkspace: props.onOpenInWorkspace,
     }),
   );
 }
 
 describe('classroom header edit entry', () => {
-  it('is a plain button that opens the workspace where the workbench is available', () => {
-    const html = render(true);
-    expect(html).toContain('stage.editInWorkspace');
+  it('is the workspace Learn | Edit switch plus the way into the workspace with the workbench', () => {
+    const html = render({ workbenchControls: true, onOpenInWorkspace: vi.fn() });
+    expect(html).toContain('data-testid="workbench-mode-learning"');
+    expect(html).toContain('data-testid="workbench-mode-editing"');
+    expect(html).toContain('data-testid="classroom-open-in-workspace"');
+    expect(html).toContain('stage.openInWorkspace');
     expect(html).not.toContain('role="switch"');
-    expect(html).not.toContain('stage.editToggle');
+    // The way into the workspace is the last control, where the workspace's
+    // full-screen header keeps its collapse glyph.
+    expect(html.lastIndexOf('classroom-open-in-workspace')).toBeGreaterThan(
+      html.lastIndexOf('workbench-mode-editing'),
+    );
   });
 
-  it('stays the standalone edit switch otherwise', () => {
-    const html = render(false);
+  it('reflects this page’s own editor in the switch', () => {
+    const learning = render({ workbenchControls: true });
+    expect(learning).toMatch(/data-testid="workbench-mode-learning" aria-pressed="true"/);
+    const editing = render({ workbenchControls: true, mode: 'edit' });
+    expect(editing).toMatch(/data-testid="workbench-mode-editing" aria-pressed="true"/);
+  });
+
+  it('offers no way into the workspace until it is known to be reachable', () => {
+    const html = render({ workbenchControls: true });
+    expect(html).toContain('data-testid="workbench-mode-learning"');
+    expect(html).not.toContain('classroom-open-in-workspace');
+  });
+
+  it('stays the standalone edit switch without the workbench', () => {
+    const html = render();
     expect(html).toContain('role="switch"');
     expect(html).toContain('stage.editToggle');
-    expect(html).not.toContain('stage.editInWorkspace');
+    expect(html).not.toContain('workbench-mode-learning');
+    expect(html).not.toContain('classroom-open-in-workspace');
   });
 });
