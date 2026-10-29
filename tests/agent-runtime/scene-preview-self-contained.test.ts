@@ -189,6 +189,107 @@ describe('render_scene_preview self-contained scenes', () => {
     expect(textOf(result)).toBe('');
   });
 
+  it.each([
+    ['absent', undefined],
+    ['empty', ''],
+    ['an opaque ref that mediaRef overrides', 'ast_stale_src'],
+  ])('plays a video whose source is its mediaRef (src %s) from src', async (_label, src) => {
+    const video = {
+      type: 'video',
+      id: 'video-1',
+      ...(src === undefined ? {} : { src }),
+      mediaRef: 'ast_video',
+      autoplay: false,
+      left: 0,
+      top: 0,
+      width: 320,
+      height: 180,
+      rotate: 0,
+    };
+    const scene = slideScene([video]);
+    const stored = structuredClone(scene);
+    const readAsset = assetPool({
+      ast_video: { owner: OWNER, bytes: Buffer.from('video'), mime: 'video/mp4' },
+      ast_stale_src: { owner: OWNER, bytes: Buffer.from('stale'), mime: 'video/mp4' },
+    });
+    const { bodies, fetchPreview } = recordingRenderService();
+
+    const result = await tool({ scene, readAsset, fetchPreview }).execute('preview', {
+      stageId: 'stage-a',
+      sceneId: 'scene-a',
+    } as never);
+
+    expect(previewabilityError(bodies[0]!.scene)).toBeUndefined();
+    const sent = (
+      bodies[0]!.scene as { content: { canvas: { elements: Array<Record<string, unknown>> } } }
+    ).content.canvas.elements[0]!;
+    expect(sent.src).toBe(`data:video/mp4;base64,${Buffer.from('video').toString('base64')}`);
+    expect(sent).not.toHaveProperty('mediaRef');
+    expect(sent).not.toHaveProperty('poster');
+    expect(readAsset.mock.calls.map(([, assetId]) => assetId)).toEqual(['ast_video']);
+    expect(textOf(result)).toBe('');
+    expect(scene).toEqual(stored);
+  });
+
+  it('ignores an empty mediaRef and plays the asset in src', async () => {
+    const scene = slideScene([
+      {
+        type: 'video',
+        id: 'video-1',
+        src: 'ast_video',
+        mediaRef: '',
+        autoplay: false,
+        left: 0,
+        top: 0,
+        width: 320,
+        height: 180,
+        rotate: 0,
+      },
+    ]);
+    const readAsset = assetPool({
+      ast_video: { owner: OWNER, bytes: Buffer.from('video'), mime: 'video/mp4' },
+    });
+    const { bodies, fetchPreview } = recordingRenderService();
+    await tool({ scene, readAsset, fetchPreview }).execute('preview', {
+      stageId: 'stage-a',
+      sceneId: 'scene-a',
+    } as never);
+    expect(previewabilityError(bodies[0]!.scene)).toBeUndefined();
+    expect(
+      (bodies[0]!.scene as { content: { canvas: { elements: Array<{ src: string }> } } }).content
+        .canvas.elements[0]!.src,
+    ).toBe(`data:video/mp4;base64,${Buffer.from('video').toString('base64')}`);
+  });
+
+  it('keeps a concrete video src over its mediaRef, as the player does', async () => {
+    const scene = slideScene([
+      {
+        type: 'video',
+        id: 'video-1',
+        src: 'data:video/mp4;base64,AAAA',
+        mediaRef: 'ast_video',
+        autoplay: false,
+        left: 0,
+        top: 0,
+        width: 320,
+        height: 180,
+        rotate: 0,
+      },
+    ]);
+    const readAsset = assetPool({});
+    const { bodies, fetchPreview } = recordingRenderService();
+    await tool({ scene, readAsset, fetchPreview }).execute('preview', {
+      stageId: 'stage-a',
+      sceneId: 'scene-a',
+    } as never);
+    expect(readAsset).not.toHaveBeenCalled();
+    expect(previewabilityError(bodies[0]!.scene)).toBeUndefined();
+    expect(
+      (bodies[0]!.scene as { content: { canvas: { elements: Array<{ src: string }> } } }).content
+        .canvas.elements[0]!.src,
+    ).toBe('data:video/mp4;base64,AAAA');
+  });
+
   it("never inlines another owner's asset: the slot is a placeholder and the agent is told", async () => {
     const scene = slideScene([image('img-1', IMAGE_ID)]);
     const readAsset = assetPool({

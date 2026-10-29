@@ -18,7 +18,11 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { slideMediaSlotDescriptors, type SlideMediaSlotKind } from '@openmaic/dsl';
+import {
+  isConcreteMediaAddress,
+  slideMediaSlotDescriptors,
+  type SlideMediaSlotKind,
+} from '@openmaic/dsl';
 import {
   INTERACTIVE_ASSET_PATH,
   INTERACTIVE_LIBRARIES,
@@ -177,6 +181,33 @@ function libraryFetcher(read: InteractiveLibraryFileReader): FetchAsset {
   };
 }
 
+/**
+ * The ref a video actually plays, with the app's precedence
+ * (`resolveVideoMediaForElement` in `lib/media/media-task-resolution.ts`): a
+ * concrete `src` wins, then a non-empty `mediaRef`, then `src` as stored. That
+ * module is browser-side, so its precedence is restated here.
+ */
+function effectiveVideoSource(video: Record<string, unknown>): string | undefined {
+  const src = typeof video.src === 'string' ? video.src : undefined;
+  const mediaRef = typeof video.mediaRef === 'string' ? video.mediaRef : undefined;
+  if (src && isConcreteMediaAddress(src)) return src;
+  return mediaRef || src;
+}
+
+/**
+ * The renderer draws a video from `src` and `poster` only, so the effective
+ * source moves into `src` and `mediaRef` is dropped from the preview copy.
+ */
+function normalizeVideoSources(elements: readonly unknown[]): void {
+  for (const element of elements) {
+    if (!isRecord(element) || element.type !== 'video') continue;
+    const source = effectiveVideoSource(element);
+    delete element.mediaRef;
+    if (source === undefined) delete element.src;
+    else element.src = source;
+  }
+}
+
 async function prepareSlide(
   scene: Scene,
   options: PreparePreviewOptions,
@@ -193,6 +224,7 @@ async function prepareSlide(
   if (!canvas.elements.every((element) => isRecord(element) && typeof element.type === 'string')) {
     return { ok: true, scene: copy, notes: [] };
   }
+  normalizeVideoSources(canvas.elements);
   const slide = canvas as unknown as Parameters<typeof slideMediaSlotDescriptors>[0];
   const slots = [...slideMediaSlotDescriptors(slide)]
     .filter((slot) => slot.ref !== undefined && !isDataUrl(slot.ref))
@@ -222,7 +254,7 @@ async function prepareSlide(
     // A video that will not play still needs a frame to show.
     const element = elementOf(slot);
     if (
-      (slot.kind === 'video-src' || slot.kind === 'video-media-ref') &&
+      slot.kind === 'video-src' &&
       element &&
       !(typeof element.poster === 'string' && isDataUrl(element.poster))
     ) {
@@ -234,11 +266,6 @@ async function prepareSlide(
 
   for (const slot of slots) {
     const ref = slot.ref!.trim();
-    if (slot.kind === 'video-media-ref') {
-      const element = elementOf(slot);
-      // The service ignores mediaRef once src is a data URL.
-      if (typeof element?.src === 'string' && isDataUrl(element.src)) continue;
-    }
     if (slot.kind === 'video-poster') {
       const element = elementOf(slot);
       if (typeof element?.poster === 'string' && isDataUrl(element.poster)) continue;
