@@ -41,6 +41,7 @@ const mock = vi.hoisted(() => ({
   stop: vi.fn(),
   scope: vi.fn(),
   command: vi.fn(),
+  paths: ['app.py'],
 }));
 vi.mock('@/lib/server/pbl-v3/store', () => ({
   LearningStore: {
@@ -113,7 +114,7 @@ vi.mock('@/lib/server/pbl-v3/environment', () => ({
   touchEnvironment: async () => ({ state: 'running', workspaceReady: true }),
   environmentReleaseCommitted: (row: StudyFixture) => !!row.released,
 }));
-vi.mock('@/lib/server/pbl-v3/workspace-files', () => ({ projectFiles: async () => ['app.py'] }));
+vi.mock('@/lib/server/pbl-v3/workspace-files', () => ({ projectFiles: async () => mock.paths }));
 import {
   applicationRequest,
   applicationFingerprint,
@@ -145,6 +146,7 @@ beforeEach(() => {
   mock.epoch = 0;
   mock.busy = false;
   mock.state = 'running';
+  mock.paths = ['app.py'];
   mock.row = {
     id: study,
     owner_id: 'owner',
@@ -172,6 +174,37 @@ beforeEach(() => {
 });
 
 describe('declared project applications', () => {
+  it.each(['open', 'restart'])(
+    'checks the current source-path budget before %s dispatch',
+    async (action) => {
+      mock.paths = Array.from({ length: 256 }, (_, i) => `src/${'x'.repeat(230)}${i}.py`);
+      await expect(applicationRequest(owner, request(action))).rejects.toThrow('32 KiB');
+      expect(mock.starts).toEqual([]);
+      expect(mock.receipts.size).toBe(0);
+      expect(mock.writer).not.toHaveBeenCalled();
+      expect(mock.stop).not.toHaveBeenCalled();
+      expect(mock.activity).not.toHaveBeenCalled();
+      mock.paths = ['app.py'];
+      await expect(applicationRequest(owner, request(action))).resolves.toMatchObject({
+        state: 'running',
+        preview: expect.any(Object),
+      });
+    },
+  );
+  it('leaves an existing application intact on an oversized restart and still permits stopping it', async () => {
+    await applicationRequest(owner, request());
+    vi.clearAllMocks();
+    mock.paths = Array.from({ length: 256 }, (_, i) => `src/${'x'.repeat(230)}${i}.py`);
+    await expect(applicationRequest(owner, request('restart', study))).rejects.toThrow('32 KiB');
+    expect(mock.starts).toEqual([request().id]);
+    expect(mock.receipts.size).toBe(1);
+    expect(mock.writer).not.toHaveBeenCalled();
+    expect(mock.stop).not.toHaveBeenCalled();
+    await expect(applicationRequest(owner, request('stop', study))).resolves.toMatchObject({
+      state: 'stopped',
+    });
+    expect(mock.stop).toHaveBeenCalledTimes(1);
+  });
   it('refuses wrong owners, stale bindings, stopped epochs, undeclared apps and busy assessments before dispatch', async () => {
     await expect(applicationRequest({ ...owner, ownerId: 'other' }, request())).rejects.toThrow(
       'not found',

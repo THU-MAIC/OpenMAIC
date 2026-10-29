@@ -211,6 +211,13 @@ export async function applicationRequest(principal: OwnerPrincipal, input: unkno
           } satisfies ApplicationObservation;
         }
         if (request.action !== 'status') {
+          // Learner-created/renamed source paths can outgrow the starter budget.
+          // Reject before stopping an existing app, reserving a writer or dispatching.
+          applicationProbeCommand(
+            await projectFiles(service, environmentId, projectFor(row)),
+            application.port,
+            application.healthPath,
+          );
           // A durable reservation precedes provider dispatch. A retry cannot restart a lost-ack command.
           const receiptId = `application:${request.id}`,
             hash = createHash('sha256').update(JSON.stringify(request)).digest('hex');
