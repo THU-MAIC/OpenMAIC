@@ -27,6 +27,7 @@ import { applicationRequest } from '@/lib/server/pbl-v3/application';
 import type { ModelMessage } from 'ai';
 import { PgAgentSessionStore, ensureAgentSessionSchema } from '@openmaic/storage/agent-session/pg';
 import { listAgentUserMessages } from '@/lib/server/agent-runtime/user-messages';
+import { visibleProductLabels } from '@/lib/server/pbl-v3/ui-labels';
 vi.mock('server-only', () => ({}));
 const mocked = vi.hoisted(() => ({
   pool: undefined as unknown,
@@ -2097,9 +2098,17 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       'VISIBLE learner 102',
     );
   });
-  it.each(['failed', 'cancelled'] as const)(
-    'uses the explicit retry UI locale after %s without adding learner evidence',
-    async (status) => {
+  it.each(
+    [
+      { from: 'zh-CN', to: 'en-US' },
+      { from: 'en-US', to: 'zh-CN' },
+      { from: 'ja-JP', to: 'fr-FR' },
+    ].flatMap((locales) =>
+      (['failed', 'cancelled'] as const).map((status) => ({ ...locales, status })),
+    ),
+  )(
+    'uses the explicit retry UI locale after $status from $from to $to without adding learner evidence',
+    async ({ status, from, to }) => {
       const study = await freshStudy();
       onTestFinished(() => releasePreparationFixtures([study.id]));
       const send = async (type: string, uiLocale: string) =>
@@ -2109,32 +2118,41 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           type,
           uiLocale,
         });
-      const queued = (await send('begin', 'zh-CN')) as { sessionId: string };
+      const queued = (await send('begin', from)) as { sessionId: string };
       const first = await agents.claimNextSession('locale-worker', process.pid, {
         sessionId: queued.sessionId,
         leaseTtlMs: 10000,
         maxAttempts: 5,
       });
+      const assertLocale = async (attempt: number, locale: string) => {
+        const config = await teachingRunnerConfig({
+          sessionId: queued.sessionId,
+          ownerId: principal.ownerId,
+          workerId: 'locale-worker',
+          attempt,
+          signal: new AbortController().signal,
+        });
+        expect(config.systemPrompt.match(/"uiLocale":"([^"]+)"/)?.[1]).toBe(locale);
+        expect(
+          config.systemPrompt.includes(
+            `"visibleLabels":${JSON.stringify(visibleProductLabels(locale))}`,
+          ),
+        ).toBe(true);
+      };
+      await assertLocale(first!.attempt, from);
       await agents.finishSession(queued.sessionId, 'locale-worker', {
         status,
         expectedAttempt: first!.attempt,
       });
       const inputs = await listAgentUserMessages(agents, queued.sessionId);
-      await send('retry', 'en-US');
+      await send('retry', to);
       const retry = await agents.claimNextSession('locale-worker', process.pid, {
         sessionId: queued.sessionId,
         leaseTtlMs: 10000,
         maxAttempts: 5,
       });
       try {
-        const config = await teachingRunnerConfig({
-          sessionId: queued.sessionId,
-          ownerId: principal.ownerId,
-          workerId: 'locale-worker',
-          attempt: retry!.attempt,
-          signal: new AbortController().signal,
-        });
-        expect(config.systemPrompt).toContain('Current task');
+        await assertLocale(retry!.attempt, to);
         expect(await listAgentUserMessages(agents, queued.sessionId)).toEqual(inputs);
       } finally {
         await agents.finishSession(queued.sessionId, 'locale-worker', {

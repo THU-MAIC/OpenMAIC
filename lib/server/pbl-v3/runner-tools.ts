@@ -83,7 +83,7 @@ export async function teachingRunnerConfig(input: {
     `SELECT data->>'pblUiLocale' AS locale FROM agent_session_events
      WHERE session_id=$1 AND type IN ('user_message','pbl_turn_retried')
        AND data->>'pblUiLocale'=ANY($2::text[]) ORDER BY seq DESC LIMIT 1`,
-    [input.sessionId, [...supportedLocales]],
+    [input.sessionId, supportedLocales.map(({ code }) => code)],
   );
   const uiLocale = localeEvent.rows[0]?.locale ?? 'en-US';
   const skill = packagedStageSkill(project, stage, bound.stage_key, bound.role);
