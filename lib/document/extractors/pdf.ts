@@ -1,3 +1,5 @@
+import { parseWithPaddleCloud } from '@/lib/pdf/paddleocr-cloud';
+import { parseWithPaddleOCR } from '@/lib/pdf/paddleocr';
 import { parseWithMinerUCloud } from '@/lib/pdf/mineru-cloud';
 import { parsePDF, parseWithMinerUDocument } from '@/lib/pdf/pdf-providers';
 import { PDF_PROVIDERS } from '@/lib/pdf/constants';
@@ -45,6 +47,10 @@ function createPdfBackedDocumentExtractor(id: PDFProviderId): DocumentExtractorP
         });
       } else if (id === 'mineru-cloud') {
         parsed = await parseWithMinerUCloud(config, input.buffer, input.fileName);
+      } else if (id === 'paddleocr') {
+        parsed = await parseWithPaddleOCR(config, input.buffer, { mimeType: input.mimeType });
+      } else if (id === 'paddleocr-cloud') {
+        parsed = await parseWithPaddleCloud(config, input.buffer, input.fileName);
       } else if (id === 'mineru') {
         // Self-host MinerU routes every type (incl. pdf) through /file_parse.
         parsed = await parseWithMinerUDocument(config, input.buffer, {

@@ -27,6 +27,8 @@ import {
   ALIDOCMIND_MIMES,
   DOCUMENT_MIME_TYPES,
   MINERU_CLOUD_MIMES,
+  PADDLE_CLOUD_MIMES,
+  PADDLEOCR_MIMES,
   MINERU_SELFHOST_MIMES,
   PLAIN_TEXT_MIMES,
   LOCAL_FFMPEG_MEDIA_MIMES,
@@ -40,6 +42,11 @@ export interface DocumentExtractorManifestEntry {
   version: string;
   supportedMimeTypes: readonly string[];
   capabilities: DocumentExtractorCapabilities;
+  /**
+   * The parser's text output is Markdown (rendered as a markdown block and
+   * protected from whitespace normalization), not plain text.
+   */
+  markdownOutput?: boolean;
   /**
    * Whether extraction calls a service the operator must configure (a
    * server-providers.yml `pdf` entry or `PDF_*` env). Self-contained
@@ -105,6 +112,7 @@ const DOCUMENT_EXTRACTOR_MANIFEST: Record<string, DocumentExtractorManifestEntry
     id: 'mineru',
     displayName: 'MinerU',
     version: '1',
+    markdownOutput: true,
     supportedMimeTypes: MINERU_SELFHOST_MIMES,
     requiresServiceConfig: true,
     capabilities: {
@@ -121,6 +129,7 @@ const DOCUMENT_EXTRACTOR_MANIFEST: Record<string, DocumentExtractorManifestEntry
     id: 'mineru-cloud',
     displayName: 'MinerU (Cloud)',
     version: '1',
+    markdownOutput: true,
     supportedMimeTypes: MINERU_CLOUD_MIMES,
     requiresServiceConfig: true,
     capabilities: {
@@ -128,6 +137,40 @@ const DOCUMENT_EXTRACTOR_MANIFEST: Record<string, DocumentExtractorManifestEntry
       images: true,
       tables: true,
       formulas: true,
+      layout: true,
+      ocr: true,
+      async: true,
+    },
+  },
+  paddleocr: {
+    id: 'paddleocr',
+    displayName: 'PaddleOCR',
+    version: '1',
+    markdownOutput: true,
+    supportedMimeTypes: PADDLEOCR_MIMES,
+    requiresServiceConfig: true,
+    capabilities: {
+      text: true,
+      images: true,
+      tables: true,
+      formulas: false,
+      layout: true,
+      ocr: true,
+      async: false,
+    },
+  },
+  'paddleocr-cloud': {
+    id: 'paddleocr-cloud',
+    displayName: 'PaddleOCR (Cloud)',
+    version: '1',
+    markdownOutput: true,
+    supportedMimeTypes: PADDLE_CLOUD_MIMES,
+    requiresServiceConfig: true,
+    capabilities: {
+      text: true,
+      images: true,
+      tables: true,
+      formulas: false,
       layout: true,
       ocr: true,
       async: true,

@@ -37,7 +37,7 @@ description: オープンソース版 OpenMAIC の組み込みモデルと provi
 | 動画 | `seedance`、`kling`、`minimax-video`、`grok-video`、`happyhorse`、`openrouter-video` |
 | Web 検索 | `tavily`、`exa`、`firecrawl`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`deepseek`、`kimi`、`kimi-coding-plan`、`searxng` |
 | Webページ取得 | `builtin`、`deepseek`、`firecrawl`、`kimi`、`kimi-coding-plan` |
-| ドキュメント解析 | `unpdf`、`mineru`、`mineru-cloud`、`alidocmind` |
+| ドキュメント解析 | `unpdf`、`mineru`、`mineru-cloud`、`alidocmind`、`paddleocr`、`paddleocr-cloud` |
 
 `azure`、`openai-compatible`、`searxng`、`mineru` には `baseUrl` が必要で、`alidocmind` は `credentials`（キーペア）で認証します。セルフホストの TTS・ASR・画像・検索・ドキュメントのプリセット、キーペアのプリセット、Bedrock は `openmaic.yml` でのみ設定できます。[設定説明](./configuration.mdx)を参照してください。
 
@@ -133,6 +133,8 @@ Google TTS の既定モデルは `gemini-3.8-flash-lite-tts` です。明示的�
 | MinerU       | `mineru`       | テキスト、画像、表、数式、レイアウト解析 |
 | MinerU Cloud | `mineru-cloud` | テキスト、画像、表、数式、レイアウト解析 |
 | AliDocMind   | `alidocmind`   | テキスト、画像、表、数式、レイアウト解析、OCR |
+| PaddleOCR (self-hosted) | `paddleocr` | Text, images, tables, layout analysis, OCR — self-hosted PaddleX serving, no API key |
+| PaddleOCR (Cloud) | `paddleocr-cloud` | Text, images, tables, layout analysis, OCR — Baidu API Key + Secret Key pair |
 
 ## Web Search プロバイダー
 

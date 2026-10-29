@@ -37,7 +37,7 @@ description: Встроенные модели и список провайде�
 | Видео | `seedance`, `kling`, `minimax-video`, `grok-video`, `happyhorse`, `openrouter-video` |
 | Веб-поиск | `tavily`, `exa`, `firecrawl`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `deepseek`, `kimi`, `kimi-coding-plan`, `searxng` |
 | Загрузка веб-страниц | `builtin`, `deepseek`, `firecrawl`, `kimi`, `kimi-coding-plan` |
-| Разбор документов | `unpdf`, `mineru`, `mineru-cloud`, `alidocmind` |
+| Разбор документов | `unpdf`, `mineru`, `mineru-cloud`, `alidocmind`, `paddleocr`, `paddleocr-cloud` |
 
 `azure`, `openai-compatible`, `searxng` и `mineru` требуют `baseUrl`; `alidocmind` аутентифицируется через `credentials` (пару ключей). Собственные (self-hosted) пресеты TTS, ASR, изображений, поиска и документов, пресеты с парой ключей и Bedrock настраиваются только в `openmaic.yml`; см. [Конфигурацию](./configuration.mdx).
 
@@ -133,6 +133,8 @@ description: Встроенные модели и список провайде�
 | MinerU          | `mineru`       | Текст, изображения, таблицы, формулы, анализ макета |
 | MinerU Cloud    | `mineru-cloud` | Текст, изображения, таблицы, формулы, анализ макета |
 | AliDocMind      | `alidocmind`   | Текст, изображения, таблицы, формулы, анализ макета, OCR |
+| PaddleOCR (self-hosted) | `paddleocr` | Text, images, tables, layout analysis, OCR — self-hosted PaddleX serving, no API key |
+| PaddleOCR (Cloud) | `paddleocr-cloud` | Text, images, tables, layout analysis, OCR — Baidu API Key + Secret Key pair |
 
 ## Провайдеры веб-поиска
 

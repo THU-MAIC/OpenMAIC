@@ -143,6 +143,9 @@ import type { PDFParserConfig } from './types';
 import type { ParsedPdfContent } from '@/lib/types/pdf';
 import { PDF_PROVIDERS } from './constants';
 import { createLogger } from '@/lib/logger';
+import { parseWithPaddleOCR } from './paddleocr';
+import { parseWithPaddleCloud } from './paddleocr-cloud';
+import { getExtensionsForMimes } from '@/lib/document/mime';
 import { extractMinerUResult } from './mineru-parser';
 import { parseWithMinerUCloud } from './mineru-cloud';
 import { parseWithAliDocMindClient } from './alidocmind-client';
@@ -310,11 +313,20 @@ export async function parsePDF(
     throw new Error(`Unknown PDF provider: ${config.providerId}`);
   }
 
-  // Validate API key if required
-  if (provider.requiresApiKey && !config.apiKey) {
-    // AliDocMind uses AK/SK instead of a single apiKey; check separately.
-    const envAvailable = config.allowEnvFallback && !!process.env.ALIDOCMIND_ACCESS_KEY_ID;
-    if (config.providerId !== 'alidocmind' || (!config.accessKeyId && !envAvailable)) {
+  // Validate credentials if required. AliDocMind and PaddleOCR Cloud use
+  // AK/SK pairs configured through openmaic.yml `credentials` (or client
+  // BYOK) rather than a single apiKey. AliDocMind additionally honors its
+  // legacy env fallback; PaddleOCR Cloud has none — pair it in YAML.
+  const usesKeyPair = config.providerId === 'alidocmind' || config.providerId === 'paddleocr-cloud';
+  if (provider.requiresApiKey && !usesKeyPair && !config.apiKey) {
+    throw new Error(`API key required for PDF provider: ${config.providerId}`);
+  }
+  if (usesKeyPair && !config.accessKeyId) {
+    const envAvailable =
+      config.providerId === 'alidocmind' &&
+      config.allowEnvFallback &&
+      !!process.env.ALIDOCMIND_ACCESS_KEY_ID;
+    if (!config.accessKeyId && !envAvailable) {
       throw new Error(`API key required for PDF provider: ${config.providerId}`);
     }
   }
@@ -339,6 +351,21 @@ export async function parsePDF(
     case 'alidocmind':
       result = await parseWithAliDocMind(config, pdfBuffer, options);
       break;
+
+    case 'paddleocr':
+      result = await parseWithPaddleOCR(config, pdfBuffer, { mimeType: options?.mimeType });
+      break;
+
+    case 'paddleocr-cloud': {
+      // Baidu identifies the upload by the file_name extension.
+      let cloudName = options?.fileName;
+      if (cloudName && !cloudName.includes('.') && options?.mimeType) {
+        const ext = getExtensionsForMimes([options.mimeType])[0];
+        if (ext) cloudName = `${cloudName}.${ext}`;
+      }
+      result = await parseWithPaddleCloud(config, pdfBuffer, cloudName);
+      break;
+    }
 
     default:
       throw new Error(`Unsupported PDF provider: ${config.providerId}`);

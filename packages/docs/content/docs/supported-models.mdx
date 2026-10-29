@@ -37,9 +37,9 @@ All preset IDs:
 | Video | `seedance`, `kling`, `minimax-video`, `grok-video`, `happyhorse`, `openrouter-video` |
 | Web search | `tavily`, `exa`, `firecrawl`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `deepseek`, `kimi`, `kimi-coding-plan`, `searxng` |
 | Web fetch | `builtin`, `deepseek`, `firecrawl`, `kimi`, `kimi-coding-plan` |
-| Document parsing | `unpdf`, `mineru`, `mineru-cloud`, `alidocmind` |
+| Document parsing | `unpdf`, `mineru`, `mineru-cloud`, `alidocmind`, `paddleocr`, `paddleocr-cloud` |
 
-`azure`, `openai-compatible`, `searxng` and `mineru` need a `baseUrl`; `alidocmind` authenticates with `credentials` (a key pair). Self-hosted TTS, ASR, image, search and document presets, key-pair presets and Bedrock can only be configured in `openmaic.yml`; see [Configuration](./configuration.mdx).
+`azure`, `openai-compatible`, `searxng` and `mineru` and `paddleocr` need a `baseUrl`; `alidocmind` and `paddleocr-cloud` authenticate with `credentials` (a key pair). Self-hosted TTS, ASR, image, search and document presets, key-pair presets and Bedrock can only be configured in `openmaic.yml`; see [Configuration](./configuration.mdx).
 
 ## LLM models
 
@@ -133,6 +133,8 @@ Google TTS defaults to `gemini-3.8-flash-lite-tts`. Existing explicit model sele
 | MinerU       | `mineru`       | Text, images, tables, formulas, layout analysis |
 | MinerU Cloud | `mineru-cloud` | Text, images, tables, formulas, layout analysis |
 | AliDocMind   | `alidocmind`   | Text, images, tables, formulas, layout analysis, OCR |
+| PaddleOCR (self-hosted) | `paddleocr` | Text, images, tables, layout analysis, OCR — self-hosted PaddleX serving, no API key |
+| PaddleOCR (Cloud) | `paddleocr-cloud` | Text, images, tables, layout analysis, OCR — Baidu API Key + Secret Key pair |
 
 ## Web Search providers
 

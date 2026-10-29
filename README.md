@@ -486,6 +486,25 @@ slots:
   document: mineru
 ```
 
+### Optional: PaddleOCR (Document Parsing)
+
+[PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) supports the same document slot in two forms: **self-hosted** via [PaddleX serving](https://paddlepaddle.github.io/PaddleX/latest/pipeline_usage/tutorials/ocr_pipelines/layout_parsing.html) (no API key; note the default 10-page-per-PDF serving cap), or **Baidu Cloud** (PaddleOCR-VL) with an API Key + Secret Key pair. Declare it in `openmaic.yml` and assign the `document` slot:
+
+```yaml
+providers:
+  paddleocr:
+    preset: paddleocr
+    baseUrl: http://localhost:8080
+  paddleocr-cloud:
+    preset: paddleocr-cloud
+    credentials:
+      accessKeyId: ${PADDLEOCR_CLOUD_ACCESS_KEY_ID}
+      accessKeySecret: ${PADDLEOCR_CLOUD_ACCESS_KEY_SECRET}
+
+slots:
+  document: paddleocr
+```
+
 Without `openmaic.yml`, the legacy variables `PDF_MINERU_CLOUD_API_KEY` or `PDF_MINERU_BASE_URL` in `.env.local` still work.
 
 ### Optional: VoxCPM2 (Self-Hosted TTS with Voice Cloning)

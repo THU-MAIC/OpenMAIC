@@ -37,7 +37,7 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 | الفيديو | `seedance` و`kling` و`minimax-video` و`grok-video` و`happyhorse` و`openrouter-video` |
 | البحث على الويب | `tavily` و`exa` و`firecrawl` و`bocha` و`brave` و`baidu` و`claude` و`minimax-search` و`doubao-search` و`deepseek` و`kimi` و`kimi-coding-plan` و`searxng` |
 | جلب صفحات الويب | `builtin` و`deepseek` و`firecrawl` و`kimi` و`kimi-coding-plan` |
-| تحليل المستندات | `unpdf` و`mineru` و`mineru-cloud` و`alidocmind` |
+| تحليل المستندات | `unpdf` و`mineru` و`mineru-cloud` و`alidocmind` و`paddleocr` و`paddleocr-cloud` |
 
 تحتاج `azure` و`openai-compatible` و`searxng` و`mineru` إلى `baseUrl`، ويصادق `alidocmind` عبر `credentials` (زوج مفاتيح). إعدادات TTS وASR والصور والبحث والمستندات المستضافة ذاتيًا، وإعدادات أزواج المفاتيح، وBedrock لا تُضبط إلا في `openmaic.yml`؛ راجع [الإعدادات](./configuration.mdx).
 
@@ -133,6 +133,8 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 | MinerU       | `mineru`       | نصوص، صور، جداول، صيغ، تحليل تخطيط |
 | MinerU Cloud | `mineru-cloud` | نصوص، صور، جداول، صيغ، تحليل تخطيط |
 | AliDocMind   | `alidocmind`   | نصوص، صور، جداول، صيغ، تحليل تخطيط، OCR |
+| PaddleOCR (self-hosted) | `paddleocr` | Text, images, tables, layout analysis, OCR — self-hosted PaddleX serving, no API key |
+| PaddleOCR (Cloud) | `paddleocr-cloud` | Text, images, tables, layout analysis, OCR — Baidu API Key + Secret Key pair |
 
 ## مزودو البحث على الويب
 

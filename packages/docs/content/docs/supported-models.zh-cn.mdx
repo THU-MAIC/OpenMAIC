@@ -37,7 +37,7 @@ description: 开源版 OpenMAIC 的内置模型与 provider 列表。
 | 视频 | `seedance`、`kling`、`minimax-video`、`grok-video`、`happyhorse`、`openrouter-video` |
 | 联网搜索 | `tavily`、`exa`、`firecrawl`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`deepseek`、`kimi`、`kimi-coding-plan`、`searxng` |
 | 网页抓取 | `builtin`、`deepseek`、`firecrawl`、`kimi`、`kimi-coding-plan` |
-| 文档解析 | `unpdf`、`mineru`、`mineru-cloud`、`alidocmind` |
+| 文档解析 | `unpdf`、`mineru`、`mineru-cloud`、`alidocmind`、`paddleocr`、`paddleocr-cloud` |
 
 `azure`、`openai-compatible`、`searxng` 和 `mineru` 需要 `baseUrl`；`alidocmind` 使用 `credentials`（密钥对）认证。自托管的 TTS、ASR、图像、搜索和文档预设、密钥对预设以及 Bedrock 只能在 `openmaic.yml` 中配置，见[配置说明](./configuration.mdx)。
 
@@ -133,6 +133,8 @@ Google TTS 默认使用 `gemini-3.8-flash-lite-tts`，已显式选择的模型�
 | MinerU       | `mineru`       | 文本、图片、表格、公式、版面分析      |
 | MinerU Cloud | `mineru-cloud` | 文本、图片、表格、公式、版面分析      |
 | AliDocMind   | `alidocmind`   | 文本、图片、表格、公式、版面分析、OCR |
+| PaddleOCR (self-hosted) | `paddleocr` | Text, images, tables, layout analysis, OCR — self-hosted PaddleX serving, no API key |
+| PaddleOCR (Cloud) | `paddleocr-cloud` | Text, images, tables, layout analysis, OCR — Baidu API Key + Secret Key pair |
 
 ## Web Search 提供方
 
