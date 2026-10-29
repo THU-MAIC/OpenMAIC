@@ -1,13 +1,19 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
+import { useState, useEffect, useMemo, useRef, useDeferredValue, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ArrowUp,
+  Menu,
+  Plus,
+  MoreHorizontal,
+  Paperclip,
+  AlertCircle,
   Check,
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   Clock,
   Copy,
   Folder,
@@ -28,6 +34,17 @@ import {
   Presentation,
   Loader2,
 } from 'lucide-react';
+import './home-mobile.css';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { HomeLibrary } from '@/components/home/home-library';
+import { useMobileLayout } from '@/lib/adaptive/adaptive-provider';
+import { installPageScrollBoundary } from '@/lib/adaptive/page-scroll-boundary';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { createLogger } from '@/lib/logger';
@@ -57,6 +74,7 @@ import {
   useCourseMaterials,
   type CourseMaterialMessage,
 } from '@/lib/generation-run-client/use-course-materials';
+import { useCourseMaterialCapabilities } from '@/lib/generation-run-client/use-course-material-capabilities';
 import { useOwnerRuns } from '@/lib/generation-run-client/use-owner-runs';
 import {
   courseRunHref,
@@ -143,6 +161,46 @@ function HomePage() {
   const { t } = useI18n();
   const { theme, setTheme } = useTheme();
   const router = useRouter();
+  const mobile = useMobileLayout();
+  useEffect(() => {
+    if (!mobile) return;
+    return installPageScrollBoundary(document);
+  }, [mobile]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [mobileOptionsOpen, setMobileOptionsOpen] = useState(false);
+  const [mobileMaterialsOpen, setMobileMaterialsOpen] = useState(false);
+  const [materialNotice, setMaterialNotice] = useState<string | null>(null);
+  const materialNoticeVersion = useRef(0);
+  const clearMaterialNotice = useCallback(() => {
+    materialNoticeVersion.current += 1;
+    setMaterialNotice(null);
+  }, []);
+  const [mobileViewMotion, setMobileViewMotion] = useState<'forward' | 'back' | null>(null);
+  const mobileOptionsContentRef = useRef<HTMLDivElement>(null);
+  const mobileOptionsTitleRef = useRef<HTMLHeadingElement>(null);
+  const openMobileOptions = () => {
+    setMobileViewMotion(null);
+    setMobileMaterialsOpen(false);
+    setMobileOptionsOpen(true);
+  };
+  const openMobileMaterials = () => {
+    setMobileViewMotion(mobileOptionsOpen ? 'forward' : null);
+    setMobileMaterialsOpen(true);
+    setMobileOptionsOpen(true);
+    requestAnimationFrame(() => mobileOptionsTitleRef.current?.focus());
+  };
+  const returnToMobileOptions = () => {
+    clearMaterialNotice();
+    setMobileViewMotion('back');
+    setMobileMaterialsOpen(false);
+    requestAnimationFrame(() => {
+      mobileOptionsContentRef.current
+        ?.querySelector<HTMLButtonElement>(
+          '[data-testid="course-material-pill"], [data-testid="course-material-button"]',
+        )
+        ?.focus();
+    });
+  };
   // Do not replay the classic hero's entrance after the route handoff already
   // carried the lockup and composer into place. The entrance is CSS, not a
   // JS-driven animation, so the server-rendered hero is painted (and fades in)
@@ -250,6 +308,7 @@ function HomePage() {
   const [hydrated, setHydrated] = useState(false);
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
+  const newFolderButtonRef = useRef<HTMLButtonElement>(null);
   // When set, the new-folder dialog is creating a folder AND moving this course
   // into it (entered via the move-menu's "new folder" entry).
   const [createAndMoveTarget, setCreateAndMoveTarget] = useState<string | null>(null);
@@ -541,14 +600,31 @@ function HomePage() {
 
   // Attached materials upload and extract at once; Generate waits for them.
   const courseMaterials = useCourseMaterials();
+  const reportRemovedMaterials = useCallback(
+    (message: string) => {
+      setMaterialNotice(message);
+      // Settings can change the parser while the material panel is unmounted.
+      if (!(mobile && mobileOptionsOpen && mobileMaterialsOpen)) toast.error(message);
+    },
+    [mobile, mobileOptionsOpen, mobileMaterialsOpen],
+  );
+  useCourseMaterialCapabilities(
+    courseMaterials.materials,
+    courseMaterials.remove,
+    reportRemovedMaterials,
+    preparingGenerate,
+  );
   const materialMessage = (message: CourseMaterialMessage) =>
     message.text ?? (message.key ? t(message.key, message.values) : '');
 
   const addCourseMaterials = async (files: File[]) => {
     // The set is frozen while a run is being started.
     if (preparingGenerate) return;
+    const version = materialNoticeVersion.current;
     const refusal = await courseMaterials.add(files);
-    setError(refusal ? materialMessage(refusal) : null);
+    if (version === materialNoticeVersion.current) {
+      setMaterialNotice(refusal ? materialMessage(refusal) : null);
+    }
   };
 
   const removeCourseMaterial = (id: string) => {
@@ -635,8 +711,54 @@ function HomePage() {
     }
   };
 
+  useEffect(() => {
+    if (!mobile) {
+      setHistoryOpen(false);
+      setMobileOptionsOpen(false);
+      setMobileMaterialsOpen(false);
+    }
+  }, [mobile]);
+  useEffect(() => {
+    if (!mobileOptionsOpen) clearMaterialNotice();
+  }, [mobileOptionsOpen, clearMaterialNotice]);
+  useEffect(() => {
+    const input = textareaRef.current;
+    if (!input) return;
+    if (!mobile) {
+      input.style.height = '';
+      return;
+    }
+    input.style.height = '48px';
+    input.style.height = `${Math.min(144, Math.max(48, input.scrollHeight))}px`;
+  }, [mobile, form.requirement]);
+
+  const generationToolbar = (
+    <GenerationToolbar
+      materialView={mobile ? (mobileMaterialsOpen ? 'panel' : 'entry') : 'popover'}
+      onMaterialOpen={mobile ? openMobileMaterials : undefined}
+      courseMaterials={courseMaterials.materials}
+      onCourseMaterialsAdd={(files) => void addCourseMaterials(files)}
+      onCourseMaterialRemove={removeCourseMaterial}
+      onCourseMaterialRetry={(id) => {
+        if (!preparingGenerate) courseMaterials.retry(id);
+      }}
+      onPdfError={setMaterialNotice}
+      materialNotice={materialNotice}
+      onMaterialClose={clearMaterialNotice}
+      materialsLocked={preparingGenerate}
+      onSettingsOpen={(section) => {
+        setSettingsSection(section);
+        setSettingsOpen(true);
+      }}
+    />
+  );
+
   return (
-    <div className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex flex-col items-center p-4 pt-16 md:p-8 md:pt-16 overflow-x-hidden">
+    <div
+      data-testid="home-page"
+      data-mobile={mobile}
+      className="home-page min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex flex-col items-center p-4 pt-16 md:p-8 md:pt-16 overflow-x-hidden"
+    >
       <input
         ref={fileInputRef}
         type="file"
@@ -653,10 +775,22 @@ function HomePage() {
           className="hidden"
         />
       )}
-      {/* ═══ Top-right pill (unchanged) ═══ */}
+      {mobile && (
+        <button
+          type="button"
+          data-testid="home-history-open"
+          className="home-history-open"
+          aria-label={t('classroom.recentClassrooms')}
+          aria-expanded={historyOpen}
+          onClick={() => setHistoryOpen(true)}
+        >
+          <Menu size={22} />
+        </button>
+      )}
+      {/* Shared language, theme and desktop settings controls. */}
       <div
         ref={toolbarRef}
-        className="fixed top-4 right-4 z-50 flex items-center gap-1 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md px-2 py-1.5 rounded-full border border-gray-100/50 dark:border-gray-700/50 shadow-sm"
+        className="home-top-tools fixed top-4 right-4 z-50 flex items-center gap-1 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md px-2 py-1.5 rounded-full border border-gray-100/50 dark:border-gray-700/50 shadow-sm"
       >
         {/* Language Selector */}
         <LanguageSwitcher onOpen={() => setThemeOpen(false)} />
@@ -666,6 +800,7 @@ function HomePage() {
         {/* Theme Selector */}
         <div className="relative">
           <button
+            aria-label={t('settings.theme')}
             onClick={() => {
               setThemeOpen(!themeOpen);
             }}
@@ -726,8 +861,9 @@ function HomePage() {
         <div className="w-[1px] h-4 bg-gray-200 dark:bg-gray-700" />
 
         {/* Settings Button */}
-        <div className="relative">
+        <div className="home-desktop-settings relative">
           <button
+            aria-label={t('settings.title')}
             onClick={() => setSettingsOpen(true)}
             className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all group"
           >
@@ -759,12 +895,12 @@ function HomePage() {
       {/* ═══ Hero section: title + input (centered, wider) ═══ */}
       <div
         className={cn(
-          'relative z-20 w-full max-w-[800px] flex flex-col items-center mt-[10vh]',
+          'home-hero relative z-20 w-full max-w-[800px] flex flex-col items-center mt-[10vh]',
           heroEnter('fade-in slide-in-from-bottom-5 duration-600'),
         )}
       >
         {/* ── Logo ── */}
-        <div className="relative" data-pro-morph="lockup">
+        <div className="home-brand relative" data-pro-morph="lockup">
           <img
             src="/logo-horizontal.png"
             alt="OpenMAIC"
@@ -778,82 +914,118 @@ function HomePage() {
               className="absolute left-full top-0 ml-1.5 mt-[10px] md:ml-2 md:mt-[14px]"
               data-pro-morph="badge"
             >
-              <ProBadge active={false} onToggle={enterWorkbench} />
+              <ProBadge
+                active={false}
+                onToggle={() => (mobile ? toast.info(t('home.desktopOnly')) : enterWorkbench())}
+              />
             </div>
           ) : null}
         </div>
 
+        {mobile && <h1 className="home-mobile-heading">{t('home.mobileTitle')}</h1>}
         {/* ── Slogan ── */}
         <p
           className={cn(
-            'text-sm text-muted-foreground/60 mb-8',
+            'home-slogan text-sm text-muted-foreground/60 mb-8',
             heroEnter('fade-in duration-300 delay-250'),
           )}
         >
-          {t('home.slogan')}
+          {t(mobile ? 'home.mobileSubtitle' : 'home.slogan')}
         </p>
 
         {/* ── Unified input area ── */}
-        <div className={cn('w-full', heroEnter('fade-in zoom-in-97 duration-300 delay-350'))}>
+        <div
+          className={cn(
+            'home-input-wrap w-full',
+            heroEnter('fade-in zoom-in-97 duration-300 delay-350'),
+          )}
+        >
           <div
             data-pro-morph="composer"
-            className="w-full rounded-2xl border border-border/60 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl shadow-xl shadow-black/[0.03] dark:shadow-black/20 transition-shadow focus-within:shadow-2xl focus-within:shadow-violet-500/[0.06]"
+            className="home-composer w-full rounded-2xl border border-border/60 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl shadow-xl shadow-black/[0.03] dark:shadow-black/20 transition-shadow focus-within:shadow-2xl focus-within:shadow-violet-500/[0.06]"
           >
             {/* ── Greeting + Profile + Agents ── */}
-            <div className="relative z-20 flex items-start justify-between">
-              <GreetingBar />
-              <div className="pr-3 pt-3.5 shrink-0">
-                <AgentBar />
+            {!mobile && (
+              <div className="home-profile relative z-20 flex items-start justify-between">
+                <GreetingBar />
+                <div className="pr-3 pt-3.5 shrink-0">
+                  <AgentBar />
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Textarea */}
             <textarea
               ref={textareaRef}
-              placeholder={t('upload.requirementPlaceholder')}
+              data-testid="home-requirement"
+              aria-label={t('home.mobilePlaceholder')}
+              placeholder={t(mobile ? 'home.mobilePlaceholder' : 'upload.requirementPlaceholder')}
               className="w-full resize-none border-0 bg-transparent px-4 pt-1 pb-2 text-[13px] leading-relaxed placeholder:text-muted-foreground/40 focus:outline-none min-h-[140px] max-h-[300px]"
               value={form.requirement}
               onChange={(e) => updateForm('requirement', e.target.value)}
               onKeyDown={handleKeyDown}
-              rows={4}
+              rows={mobile ? 2 : 4}
             />
 
             {/* Toolbar row */}
-            <div className="px-3 pb-3 flex items-end gap-2">
-              <div className="flex-1 min-w-0">
-                <GenerationToolbar
-                  courseMaterials={courseMaterials.materials}
-                  onCourseMaterialsAdd={(files) => void addCourseMaterials(files)}
-                  onCourseMaterialRemove={removeCourseMaterial}
-                  onCourseMaterialRetry={(id) => {
-                    if (!preparingGenerate) courseMaterials.retry(id);
-                  }}
-                  onPdfError={setError}
-                  materialsLocked={preparingGenerate}
-                  onSettingsOpen={(section) => {
-                    setSettingsSection(section);
-                    setSettingsOpen(true);
-                  }}
-                />
+            <div className="home-composer-controls px-3 pb-3 flex items-end gap-2">
+              <div className="home-desktop-generation flex-1 min-w-0">
+                {!mobile && generationToolbar}
               </div>
 
+              {mobile && courseMaterials.materials.length > 0 && (
+                <button
+                  type="button"
+                  className="home-material-status"
+                  onClick={openMobileMaterials}
+                  aria-label={t('toolbar.courseMaterialsSelected', {
+                    n: courseMaterials.materials.length,
+                  })}
+                >
+                  {courseMaterials.materials.some((item) => item.status === 'failed') ? (
+                    <AlertCircle size={14} className="text-destructive" />
+                  ) : courseMaterials.allReady ? (
+                    <Paperclip size={14} />
+                  ) : (
+                    <Loader2 size={14} className="animate-spin" />
+                  )}
+                  <span>
+                    {t('toolbar.courseMaterialsSelected', { n: courseMaterials.materials.length })}
+                  </span>
+                </button>
+              )}
+              {mobile && (
+                <button
+                  type="button"
+                  className="home-options-open"
+                  data-testid="home-options-open"
+                  aria-label={t('home.courseOptions')}
+                  onClick={openMobileOptions}
+                >
+                  <Plus size={22} />
+                </button>
+              )}
               {/* Interactive mode toggle */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <InteractiveModeButton
-                    pressed={form.interactiveMode}
-                    label={t('toolbar.interactiveModeLabel')}
-                    onPressedChange={(pressed) => updateForm('interactiveMode', pressed)}
-                  />
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  {t('toolbar.interactiveModeHint')}
-                </TooltipContent>
-              </Tooltip>
+              {!mobile && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <InteractiveModeButton
+                      pressed={form.interactiveMode}
+                      label={t('toolbar.interactiveModeLabel')}
+                      onPressedChange={(pressed) => updateForm('interactiveMode', pressed)}
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    {t('toolbar.interactiveModeHint')}
+                  </TooltipContent>
+                </Tooltip>
+              )}
 
-              {/* Voice input */}
+              {/* Keep the recorder mounted when text replaces its idle control. */}
               <SpeechButton
+                className="home-speech"
                 size="md"
+                hiddenWhenIdle={mobile && (!!form.requirement.trim() || preparingGenerate)}
                 onTranscription={(text) => {
                   setForm((prev) => {
                     const next = prev.requirement + (prev.requirement ? ' ' : '') + text;
@@ -864,10 +1036,13 @@ function HomePage() {
 
               {/* Send button */}
               <button
+                data-testid="home-generate"
+                aria-label={t('toolbar.enterClassroom')}
+                hidden={mobile && !form.requirement.trim() && !preparingGenerate}
                 onClick={handleGenerate}
                 disabled={!canGenerate || preparingGenerate}
                 className={cn(
-                  'shrink-0 h-8 rounded-lg flex items-center justify-center gap-1.5 transition-all px-3',
+                  'home-send shrink-0 h-8 rounded-lg flex items-center justify-center gap-1.5 transition-all px-3',
                   canGenerate && !preparingGenerate
                     ? 'bg-primary text-primary-foreground hover:opacity-90 shadow-sm cursor-pointer'
                     : 'bg-muted text-muted-foreground/40 cursor-not-allowed',
@@ -941,7 +1116,7 @@ function HomePage() {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="mt-3 w-full p-3 bg-destructive/10 border border-destructive/20 rounded-lg"
+              className="home-error mt-3 w-full p-3 bg-destructive/10 border border-destructive/20 rounded-lg"
             >
               <p className="text-sm text-destructive">{error}</p>
             </motion.div>
@@ -956,11 +1131,57 @@ function HomePage() {
           action surface across root, folder, and empty. Until the library and
           folder reads resolve, the section shows a skeleton of its own layout
           (server-rendered, so it is on screen before the page's scripts run). */}
-      <div className="relative z-10 mt-10 w-full max-w-6xl flex flex-col items-center">
+      <HomeLibrary
+        mobile={mobile}
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        title={t('classroom.recentClassrooms')}
+        headerAction={
+          !currentFolderId && !isSearching ? (
+            <button
+              type="button"
+              ref={newFolderButtonRef}
+              data-testid="home-new-folder"
+              aria-label={t('classroom.newFolderTitle')}
+              title={t('classroom.newFolderTitle')}
+              onClick={() => setNewFolderOpen(true)}
+            >
+              <FolderPlus size={20} />
+            </button>
+          ) : undefined
+        }
+      >
+        {mobile && (
+          <div className="home-mobile-library-search">
+            {currentFolderId && (
+              <button
+                type="button"
+                className="home-folder-back"
+                onClick={() => setCurrentFolderId(undefined)}
+              >
+                <ChevronRight className="rotate-180 size-4" />
+                {t('classroom.recentClassrooms')}
+              </button>
+            )}
+            {currentFolder && <p className="mb-3 text-sm font-medium">{currentFolder.name}</p>}
+            <div className="relative">
+              <Search className="absolute left-3 top-3 size-4 text-muted-foreground" />
+              <input
+                data-testid="home-mobile-search"
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder={t('classroom.searchPlaceholder')}
+                aria-label={t('classroom.searchAriaLabel')}
+                className="w-full h-10 rounded-xl border border-border bg-background pl-9 pr-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+              />
+            </div>
+          </div>
+        )}
         {/* Trigger — divider-line with centered text. Fixed height keeps the
               bar geometrically stable when the New-folder action or the folder
               path appears/disappears (entering vs leaving a folder). */}
-        <div className="group w-full flex items-center gap-4 h-9">
+        <div className="home-library-actions group w-full flex items-center gap-4 h-9">
           <div className="flex-1 h-px bg-border/40 group-hover:bg-border/70 transition-colors" />
           <div className="shrink-0 flex items-center gap-3 text-[13px] text-muted-foreground/60 select-none">
             <button
@@ -1081,6 +1302,7 @@ function HomePage() {
             </AnimatePresence>
 
             <button
+              data-testid="home-course-import"
               onClick={triggerImport}
               disabled={importing}
               className="group/import grid grid-cols-[auto_0fr] hover:grid-cols-[auto_1fr] items-center gap-1 rounded-full px-1.5 py-0.5 text-[12px] text-muted-foreground/35 hover:text-muted-foreground/70 hover:bg-muted/50 transition-all duration-200 cursor-pointer"
@@ -1125,7 +1347,7 @@ function HomePage() {
               play its expand animation then: the server-rendered skeleton must
               be visible without the page's scripts. */}
         <AnimatePresence initial={false}>
-          {recentOpen && (
+          {(mobile || recentOpen) && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
@@ -1137,7 +1359,15 @@ function HomePage() {
                 <LibrarySkeleton />
               ) : folders.length === 0 && classrooms.length === 0 && pendingRuns.length === 0 ? (
                 <div className="pt-8 pb-2 text-center text-[13px] text-muted-foreground/60">
-                  {t('classroom.emptyLibraryHint')}
+                  {mobile ? (
+                    <div className="home-empty-library">
+                      <Presentation size={36} strokeWidth={1.4} />
+                      <p>{t('home.emptyLibraryTitle')}</p>
+                      <span>{t('home.emptyLibraryBody')}</span>
+                    </div>
+                  ) : (
+                    t('classroom.emptyLibraryHint')
+                  )}
                 </div>
               ) : !isSearching && currentFolderId && currentFolderClassrooms.length === 0 ? (
                 // Empty folder: hint directly below the centered path bar.
@@ -1151,7 +1381,7 @@ function HomePage() {
                   {t('classroom.searchEmpty')}
                 </div>
               ) : (
-                <div className="pt-8">
+                <div className={mobile ? '' : 'pt-8'}>
                   {/* Breadcrumb — shown only while searching (the folder path
                         already lives in the centered header above). */}
                   {isSearching && (
@@ -1194,7 +1424,7 @@ function HomePage() {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -8 }}
                       transition={{ duration: 0.2 }}
-                      className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-5 gap-y-8"
+                      className="home-library-grid grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-5 gap-y-8"
                     >
                       {/* Root + non-search: render folder tiles first. */}
                       {!isSearching &&
@@ -1207,6 +1437,7 @@ function HomePage() {
                             transition={{ delay: i * 0.04, duration: 0.35, ease: 'easeOut' }}
                           >
                             <FolderCard
+                              mobile={mobile}
                               folder={folder}
                               courseCount={courseCountByFolder.get(folder.id) ?? 0}
                               coverSlides={folderCovers.get(folder.id)?.slides ?? []}
@@ -1230,6 +1461,7 @@ function HomePage() {
                             transition={{ duration: 0.35, ease: 'easeOut' }}
                           >
                             <ClassroomCard
+                              mobile={mobile}
                               classroom={pendingRunListItem(run)}
                               formatDate={formatDate}
                               runStatus={courseRunStatus(run)}
@@ -1239,7 +1471,10 @@ function HomePage() {
                               confirmingDelete={pendingDeleteId === run.id}
                               onConfirmDelete={() => confirmDelete(run.id)}
                               onCancelDelete={() => setPendingDeleteId(null)}
-                              onClick={() => router.push(courseRunHref(run))}
+                              onClick={() => {
+                                setHistoryOpen(false);
+                                router.push(courseRunHref(run));
+                              }}
                             />
                           </motion.div>
                         ))}
@@ -1253,6 +1488,7 @@ function HomePage() {
                           transition={{ delay: i * 0.04, duration: 0.35, ease: 'easeOut' }}
                         >
                           <ClassroomCard
+                            mobile={mobile}
                             classroom={classroom}
                             slide={thumbnails[classroom.id]}
                             requestThumbnail={requestThumbnail}
@@ -1267,19 +1503,21 @@ function HomePage() {
                             onConfirmDelete={() => confirmDelete(classroom.id)}
                             onCancelDelete={() => setPendingDeleteId(null)}
                             onClick={() => {
+                              setHistoryOpen(false);
                               const run = runByStageId.get(classroom.id);
                               router.push(run ? courseRunHref(run) : `/classroom/${classroom.id}`);
                             }}
                             overlay={
                               <>
                                 <MoveToFolderMenu
+                                  variant={mobile ? 'items' : 'icon'}
                                   folders={folders}
                                   currentFolderId={classroom.folderId}
                                   onMove={(folderId) => handleMoveCourse(classroom.id, folderId)}
                                   onCreateAndMove={handleCreateAndMove(classroom.id)}
                                 />
                                 {/* Search view: show the owning folder as a badge. */}
-                                {isSearching && classroom.folderId && (
+                                {!mobile && isSearching && classroom.folderId && (
                                   <span className="absolute bottom-2 left-2 z-10 inline-flex items-center gap-1 rounded-md bg-violet-500/80 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm pointer-events-none">
                                     <Folder className="size-2.5" />
                                     {folderNameById.get(classroom.folderId) ?? ''}
@@ -1297,22 +1535,140 @@ function HomePage() {
             </motion.div>
           )}
         </AnimatePresence>
-      </div>
+        {/* Keep the portalled folder dialog inside the library's React tree.
+            Touch dismissal must not also reach the drawer underneath it. */}
+        <NewFolderDialog
+          open={newFolderOpen}
+          onOpenChange={(open) => {
+            setNewFolderOpen(open);
+            if (!open) setCreateAndMoveTarget(null);
+          }}
+          folders={folders}
+          onCreate={handleCreateFolder}
+          onCloseAutoFocus={(event) => {
+            if (!mobile || !historyOpen) return;
+            event.preventDefault();
+            requestAnimationFrame(() => {
+              const target =
+                newFolderButtonRef.current ??
+                document.querySelector<HTMLInputElement>('[data-testid="home-mobile-search"]');
+              target?.focus();
+            });
+          }}
+        />
+      </HomeLibrary>
 
-      {/* Folder dialogs — mounted at the top level so they are reachable even
-          while the Recent section is collapsed or the course list is empty. */}
-      <NewFolderDialog
-        open={newFolderOpen}
-        onOpenChange={(open) => {
-          setNewFolderOpen(open);
-          if (!open) setCreateAndMoveTarget(null);
-        }}
-        folders={folders}
-        onCreate={handleCreateFolder}
-      />
+      {mobile && (
+        <Dialog
+          open={mobileOptionsOpen}
+          onOpenChange={(open) => {
+            setMobileOptionsOpen(open);
+            if (open) {
+              setMobileViewMotion(null);
+              setMobileMaterialsOpen(false);
+            }
+          }}
+        >
+          <DialogContent
+            ref={mobileOptionsContentRef}
+            data-testid="home-mobile-options"
+            onOpenAutoFocus={(event) => {
+              event.preventDefault();
+              requestAnimationFrame(() => mobileOptionsTitleRef.current?.focus());
+            }}
+            className={cn('home-mobile-options', mobileMaterialsOpen && 'home-materials-view')}
+            aria-describedby={undefined}
+          >
+            <div
+              key={mobileMaterialsOpen ? 'materials' : 'options'}
+              className="home-options-page"
+              data-view={mobileMaterialsOpen ? 'materials' : 'options'}
+              data-motion={mobileViewMotion ?? undefined}
+            >
+              <div
+                className={mobileMaterialsOpen ? 'home-materials-header' : 'home-options-header'}
+              >
+                {mobileMaterialsOpen && (
+                  <button
+                    type="button"
+                    className="flex h-11 min-w-0 items-center gap-1 text-xs"
+                    aria-label={t('home.backToCourseOptions')}
+                    onClick={returnToMobileOptions}
+                  >
+                    <ChevronLeft size={18} className="shrink-0 rtl:rotate-180" />
+                    <span className="truncate">{t('home.courseOptions')}</span>
+                  </button>
+                )}
+                <DialogTitle ref={mobileOptionsTitleRef} tabIndex={-1}>
+                  {t(mobileMaterialsOpen ? 'home.courseMaterials' : 'home.courseOptions')}
+                </DialogTitle>
+                {mobileMaterialsOpen && <span aria-hidden="true" />}
+              </div>
+              <div
+                className={
+                  mobileMaterialsOpen ? 'home-materials-body' : 'home-options-body space-y-4'
+                }
+                data-testid={mobileMaterialsOpen ? 'home-materials-body' : 'home-options-body'}
+              >
+                {!mobileMaterialsOpen && (
+                  <div className="home-mobile-teaching-options flex flex-wrap items-start gap-3">
+                    <GreetingBar reserveSpace />
+                    <AgentBar />
+                  </div>
+                )}
+                <div>{generationToolbar}</div>
+                {!mobileMaterialsOpen && (
+                  <>
+                    <InteractiveModeButton
+                      pressed={form.interactiveMode}
+                      label={t('toolbar.interactiveModeLabel')}
+                      onPressedChange={(pressed) => updateForm('interactiveMode', pressed)}
+                    />
+                    <button
+                      type="button"
+                      className="flex h-11 items-center gap-2 text-sm"
+                      onClick={() => {
+                        setMobileOptionsOpen(false);
+                        setSettingsOpen(true);
+                      }}
+                    >
+                      <Settings size={18} />
+                      {t('home.allSettings')}
+                    </button>
+                    <p className="text-xs text-muted-foreground">{t('home.examplesLabel')}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {['home.examplePython', 'home.exampleFourier'].map((key) => (
+                        <button
+                          key={key}
+                          type="button"
+                          className="rounded-full border border-border px-3 py-2 text-sm"
+                          onClick={() => {
+                            updateForm('requirement', t(key));
+                            setMobileOptionsOpen(false);
+                            requestAnimationFrame(() => textareaRef.current?.focus());
+                          }}
+                        >
+                          {t(key)}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+              {mobileMaterialsOpen && (
+                <div className="home-materials-footer">
+                  <Button type="button" className="h-11 w-full" onClick={returnToMobileOptions}>
+                    {t('home.materialsDone')}
+                  </Button>
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Footer — flows with content, at the very end */}
-      <div className="mt-auto pt-12 pb-4 text-center text-xs text-muted-foreground/40">
+      <div className="home-footer mt-auto pt-12 pb-4 text-center text-xs text-muted-foreground/40">
         OpenMAIC Open Source Project
       </div>
     </div>
@@ -1326,7 +1682,7 @@ function isCustomAvatar(src: string) {
   return src.startsWith('data:');
 }
 
-function GreetingBar() {
+function GreetingBar({ reserveSpace = false }: { reserveSpace?: boolean }) {
   const { t } = useI18n();
   const avatar = useUserProfileStore((s) => s.avatar);
   const nickname = useUserProfileStore((s) => s.nickname);
@@ -1412,8 +1768,10 @@ function GreetingBar() {
       />
 
       {/* ── Collapsed pill (always in flow) ── */}
-      {!open && (
+      {(!open || reserveSpace) && (
         <div
+          aria-hidden={open || undefined}
+          style={open ? { visibility: 'hidden', pointerEvents: 'none' } : undefined}
           className="flex items-center gap-2.5 cursor-pointer transition-all duration-200 group rounded-full px-2.5 py-1.5 border border-border/50 text-muted-foreground/70 hover:text-foreground hover:bg-muted/60 active:scale-[0.97]"
           onClick={() => setOpen(true)}
         >
@@ -1593,7 +1951,12 @@ function GreetingBar() {
                   placeholder={t('profile.bioPlaceholder')}
                   maxLength={200}
                   rows={2}
-                  className="resize-none border-border/40 bg-transparent min-h-[72px] !text-[13px] !leading-relaxed placeholder:!text-[11px] placeholder:!leading-relaxed focus-visible:ring-1 focus-visible:ring-border/60"
+                  className={cn(
+                    'resize-none border-border/40 bg-transparent min-h-[72px] !leading-relaxed placeholder:!leading-relaxed focus-visible:ring-1 focus-visible:ring-border/60',
+                    reserveSpace
+                      ? '!text-base placeholder:!text-sm'
+                      : '!text-[13px] placeholder:!text-[11px]',
+                  )}
                 />
               </div>
             </div>
@@ -1619,6 +1982,7 @@ function pendingRunListItem(run: RunSnapshot): StageListItem {
 }
 
 function ClassroomCard({
+  mobile = false,
   classroom,
   slide,
   requestThumbnail,
@@ -1633,6 +1997,7 @@ function ClassroomCard({
   onCancelDelete,
   onClick,
 }: {
+  mobile?: boolean;
   classroom: StageListItem;
   /** The first slide; null when the course has none, undefined until loaded. */
   slide?: Slide | null;
@@ -1658,6 +2023,8 @@ function ClassroomCard({
   const [editing, setEditing] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const nameInputRef = useRef<HTMLInputElement>(null);
+  const renameAfterMenuRef = useRef(false);
+  const [moving, setMoving] = useState(false);
   const nearViewport = useNearViewport(thumbRef);
 
   useEffect(() => {
@@ -1676,8 +2043,9 @@ function ClassroomCard({
   }, []);
 
   useEffect(() => {
-    if (editing) nameInputRef.current?.focus();
-  }, [editing]);
+    // On phones, wait until the menu releases its focus trap before editing.
+    if (editing && !mobile) nameInputRef.current?.focus();
+  }, [editing, mobile]);
 
   const isTaskEngineMode = classroom.taskEngineMode === true;
   const showModeBadge = classroom.interactiveMode || isTaskEngineMode;
@@ -1701,9 +2069,21 @@ function ClassroomCard({
 
   return (
     <div
-      className="group cursor-pointer"
+      className={cn('home-course-card group cursor-pointer', mobile && 'home-course-card-mobile')}
+      role={mobile ? 'link' : undefined}
+      tabIndex={mobile ? 0 : undefined}
+      aria-label={mobile ? classroom.name : undefined}
+      onKeyDown={(event) => {
+        if (
+          mobile &&
+          event.target === event.currentTarget &&
+          event.key === 'Enter' &&
+          !confirmingDelete
+        )
+          onClick();
+      }}
       onClick={confirmingDelete ? undefined : onClick}
-      draggable={!confirmingDelete && !editing && !pendingCourse}
+      draggable={!mobile && !confirmingDelete && !editing && !pendingCourse}
       onDragStart={(e) => {
         e.dataTransfer.setData('text/stage-id', classroom.id);
         e.dataTransfer.effectAllowed = 'move';
@@ -1717,7 +2097,7 @@ function ClassroomCard({
       {/* Thumbnail — large radius, no border, subtle bg */}
       <div
         ref={thumbRef}
-        className="relative w-full aspect-[16/9] rounded-2xl bg-slate-100 dark:bg-slate-800/80 overflow-hidden transition-transform duration-200 group-hover:scale-[1.02]"
+        className="home-course-thumbnail relative w-full aspect-[16/9] rounded-2xl bg-slate-100 dark:bg-slate-800/80 overflow-hidden transition-transform duration-200 group-hover:scale-[1.02]"
       >
         {slide && thumbWidth > 0 ? (
           <SlideThumbnail
@@ -1769,7 +2149,7 @@ function ClassroomCard({
 
         {/* Delete — top-right, only on hover */}
         <AnimatePresence>
-          {!confirmingDelete && (
+          {!mobile && !confirmingDelete && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -1804,7 +2184,7 @@ function ClassroomCard({
 
         {/* Inline delete confirmation overlay */}
         <AnimatePresence>
-          {confirmingDelete && (
+          {confirmingDelete && !mobile && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -1836,7 +2216,13 @@ function ClassroomCard({
       </div>
 
       {/* Info — outside the thumbnail */}
-      <div className="mt-2.5 px-1 flex items-center gap-2">
+      <div className="home-course-meta mt-2.5 px-1 flex items-center gap-2">
+        {mobile && runStatus?.kind === 'paused' && (
+          <span className="home-course-resume">
+            <span>{t('home.resumeGeneration')}</span>
+            <ChevronRight size={12} className="shrink-0" />
+          </span>
+        )}
         {runStatus ? (
           <CourseRunStatusLabel status={runStatus} />
         ) : (
@@ -1848,9 +2234,14 @@ function ClassroomCard({
           <div className="flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
             <input
               ref={nameInputRef}
+              data-home-course-rename
               value={nameDraft}
               onChange={(e) => setNameDraft(e.target.value)}
               onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === 'Escape') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }
                 if (e.key === 'Enter') commitRename();
                 if (e.key === 'Escape') setEditing(false);
               }}
@@ -1892,6 +2283,105 @@ function ClassroomCard({
           </Tooltip>
         )}
       </div>
+      {mobile && confirmingDelete && (
+        <div
+          className="home-mobile-delete-confirm"
+          role="alert"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="home-delete-copy">
+            <p className="home-delete-title">{classroom.name}</p>
+            <p>{t('classroom.deleteConfirmTitle')}?</p>
+          </div>
+          <div className="flex gap-3">
+            <button type="button" onClick={onCancelDelete}>
+              {t('common.cancel')}
+            </button>
+            <button type="button" className="text-destructive" onClick={onConfirmDelete}>
+              {t('classroom.delete')}
+            </button>
+          </div>
+        </div>
+      )}
+      {mobile && !confirmingDelete && (
+        <div className="home-mobile-card-actions" onClick={(event) => event.stopPropagation()}>
+          <DropdownMenu
+            onOpenChange={(open) => {
+              if (!open) setMoving(false);
+            }}
+          >
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="home-course-more"
+                aria-label={`${t('home.courseOptions')}: ${classroom.name}`}
+              >
+                <MoreHorizontal size={20} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              className="home-course-menu min-w-44 [&_[data-slot=dropdown-menu-item]]:min-h-11"
+              align="end"
+              onClick={(event) => event.stopPropagation()}
+              onCloseAutoFocus={(event) => {
+                if (renameAfterMenuRef.current) {
+                  event.preventDefault();
+                  renameAfterMenuRef.current = false;
+                  requestAnimationFrame(() => nameInputRef.current?.focus());
+                }
+              }}
+            >
+              {moving ? (
+                <>
+                  <DropdownMenuItem
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      setMoving(false);
+                    }}
+                  >
+                    <ChevronRight size={16} className="rotate-180" />
+                    {t('common.back')}
+                  </DropdownMenuItem>
+                  {overlay}
+                </>
+              ) : (
+                <>
+                  {!pendingCourse && (
+                    <>
+                      <DropdownMenuItem
+                        onClick={(event) => {
+                          renameAfterMenuRef.current = true;
+                          startRename(event);
+                        }}
+                      >
+                        <Pencil size={16} />
+                        {t('classroom.rename')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onSelect={(event) => {
+                          event.preventDefault();
+                          setMoving(true);
+                        }}
+                      >
+                        <Folder size={16} />
+                        {t('classroom.moveToFolder')}
+                        <ChevronRight size={16} className="ml-auto" />
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onClick={(event) => onDelete(classroom.id, event)}
+                  >
+                    <Trash2 size={16} />
+                    {t('classroom.delete')}
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      )}
     </div>
   );
 }

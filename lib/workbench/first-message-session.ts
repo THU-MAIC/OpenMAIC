@@ -47,6 +47,11 @@ export async function startConversationWithFirstMessage(
     readonly materials?: readonly WorkbenchMaterial[];
     readonly elementRefs?: readonly ElementRef[];
     readonly courseRefs?: readonly CourseRef[];
+    /**
+     * The session exists, its first message not yet delivered: lets the
+     * caller tell this conversation from any other it may be shown meanwhile.
+     */
+    readonly onCreated?: (sessionId: string) => void;
   },
   deps: {
     readonly create?: typeof openWorkbenchForExistingCourse;
@@ -56,6 +61,7 @@ export async function startConversationWithFirstMessage(
   const create = deps.create ?? openWorkbenchForExistingCourse;
   const post = deps.post ?? postWorkbenchMessage;
   const meta = await create({ stageId: input.stageId, prompt: input.text });
+  input.onCreated?.(meta.id);
   const receipt = await post(
     meta.id,
     input.text,

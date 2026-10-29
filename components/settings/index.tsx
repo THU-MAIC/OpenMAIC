@@ -172,7 +172,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="h-[85vh] p-0 gap-0 block max-sm:h-[100dvh] max-sm:max-w-none max-sm:rounded-none"
+        className="home-settings-dialog h-[85vh] p-0 gap-0 block max-sm:h-[100dvh] max-sm:max-w-none max-sm:rounded-none"
         showCloseButton={false}
       >
         <DialogTitle className="sr-only">{t('settings.title')}</DialogTitle>
@@ -216,7 +216,12 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             <div className="flex items-center justify-between gap-3 border-b p-4 sm:p-5">
               <div className="flex items-center gap-3">{getHeaderContent()}</div>
               <div className="flex items-center gap-2">
-                <Button variant="ghost" size="icon" onClick={() => onOpenChange(false)}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={t('common.close')}
+                  onClick={() => onOpenChange(false)}
+                >
                   <X className="h-4 w-4" />
                 </Button>
               </div>

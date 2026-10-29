@@ -15,20 +15,9 @@ export interface WorkbenchPanelState {
   readonly visible: boolean;
   /** Whether the hosted classroom is in full-screen learning playback. */
   readonly playback: boolean;
-  /**
-   * The pane's chrome lock: the hosted classroom is EDIT, full stop.
-   *
-   * Computed here, at the one place the workspace mounts a classroom, rather
-   * than re-derived by whatever renders inside it. That is the difference
-   * between "every entry path remembers to ask for edit mode" and "the pane
-   * decides and no entry path is consulted": a freshly created course, a
-   * restored tab, a tab switch and a reload all arrive through this single
-   * provider, so they all get the same answer.
-   *
-   * False in exactly two cases, both of them the user's own doing: the pane is
-   * folded away (nothing is on screen to lock), or the user pressed Start
-   * Learning and stepped into full-screen playback.
-   */
+  /** Whether this pane currently requests the learning chrome. */
+  readonly learning: boolean;
+  /** Editing intent after applying visibility, playback and course access gates. */
   readonly editPinned: boolean;
 }
 
@@ -37,6 +26,7 @@ const OUTSIDE_WORKBENCH: WorkbenchPanelState = {
   visible: true,
   playback: false,
   editPinned: false,
+  learning: false,
 };
 
 const WorkbenchPanelContext = createContext<WorkbenchPanelState>(OUTSIDE_WORKBENCH);
@@ -45,14 +35,22 @@ export function WorkbenchPanelProvider({
   children,
   visible = true,
   playback = false,
+  learning = playback,
 }: {
   readonly children: ReactNode;
   readonly visible?: boolean;
   readonly playback?: boolean;
+  readonly learning?: boolean;
 }) {
   const value = useMemo<WorkbenchPanelState>(
-    () => ({ hosted: true, visible, playback, editPinned: visible && !playback }),
-    [playback, visible],
+    () => ({
+      hosted: true,
+      visible,
+      playback,
+      learning,
+      editPinned: visible && !playback && !learning,
+    }),
+    [playback, visible, learning],
   );
   return <WorkbenchPanelContext.Provider value={value}>{children}</WorkbenchPanelContext.Provider>;
 }
@@ -139,6 +137,8 @@ export interface WorkbenchDraftConversation {
     readonly materials: readonly WorkbenchMaterial[];
     readonly elementRefs: readonly ElementRef[];
     readonly courseRefs: readonly CourseRef[];
+    /** Called once the session exists, before its first message is delivered. */
+    readonly onCreated?: (sessionId: string) => void;
   }) => Promise<{
     readonly accepted: boolean;
     readonly elementRefsAccepted: boolean;

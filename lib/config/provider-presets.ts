@@ -17,7 +17,7 @@
  * spelled out in {@link PRESET_ID_OVERRIDES}.
  */
 import { WEB_FETCH_PROVIDERS } from '@/lib/web-fetch/registry';
-import { PROVIDERS } from '@/lib/ai/providers';
+import { getModelInfo, PROVIDERS } from '@/lib/ai/providers';
 import { ASR_PROVIDERS, TTS_PROVIDERS } from '@/lib/audio/constants';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
@@ -32,7 +32,7 @@ import { presetIdFor, tokenPlanPresetId } from '@/lib/config/preset-ids';
 import { STAGE_SLOTS, type SlotCapability, type SlotId } from '@/lib/config/model-slots';
 import type { LlmStage } from '@/lib/server/model-routes';
 import { getCatalogThinkingCapability } from '@/lib/ai/model-metadata';
-import type { ThinkingCapability } from '@/lib/types/provider';
+import type { ProviderId, ThinkingCapability } from '@/lib/types/provider';
 
 export interface PresetCapabilityTarget {
   /** Entry of that capability's built-in registry that serves the calls. */
@@ -282,9 +282,11 @@ export function catalogueModel(
   id: string,
   known?: RegistryModel,
 ): CatalogueModel {
+  // This provider's thinking map wins over a borrowed catalog row, so an
+  // Ark plan id keeps the doubao request adapter.
   const thinking =
-    known?.capabilities?.thinking ??
-    (capability === 'chat' ? getCatalogThinkingCapability(registryId, id) : undefined);
+    (capability === 'chat' ? getCatalogThinkingCapability(registryId, id) : undefined) ??
+    known?.capabilities?.thinking;
   const capabilities = { ...known?.capabilities, ...(thinking ? { thinking } : {}) };
   return {
     id,
@@ -310,7 +312,8 @@ export function presetModels(preset: ProviderPreset, capability: SlotCapability)
       capability,
       target.registryId,
       id,
-      known.find((model) => model.id === id),
+      known.find((model) => model.id === id) ??
+        (capability === 'chat' ? getModelInfo(target.registryId as ProviderId, id) : undefined),
     ),
   );
 }

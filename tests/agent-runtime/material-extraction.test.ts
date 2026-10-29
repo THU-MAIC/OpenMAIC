@@ -77,6 +77,17 @@ describe('uploaded material extraction lifecycle', () => {
     );
   });
 
+  it('refuses a payload that is not base64, such as an image URL', () => {
+    const url = 'https://files.example.com/media/abc';
+    expect(() => decodeMediaAssetData(url)).toThrow('Invalid base64 payload');
+    expect(() => decodeMediaAssetData(`data:image/png;base64,${url}`)).toThrow(
+      'Invalid base64 payload',
+    );
+    // Wrapped base64 and the URL-safe alphabet still decode.
+    expect(decodeMediaAssetData('AQID\nBA==')).toEqual(Buffer.from([1, 2, 3, 4]));
+    expect(decodeMediaAssetData('-_8=')).toEqual(Buffer.from([0xfb, 0xff]));
+  });
+
   it('uploads a source, extracts it through the registry, and reads the extracted text', async () => {
     db = new PGlite();
     await db.waitReady;

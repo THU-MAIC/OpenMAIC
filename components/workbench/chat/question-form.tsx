@@ -29,7 +29,12 @@
  * (see `WorkbenchChat`). Nothing about the question changes — it just stops
  * holding the composer hostage.
  */
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+const ROWS_FADE = {
+  maskImage: 'linear-gradient(to bottom, #000 calc(100% - 40px), transparent)',
+  WebkitMaskImage: 'linear-gradient(to bottom, #000 calc(100% - 40px), transparent)',
+};
 import { Check } from 'lucide-react';
 import type { ChatNode } from '@/lib/workbench/session-store';
 import { defaultWorkbenchTranslator, type WorkbenchTranslator } from '@/lib/i18n/workbench';
@@ -43,6 +48,8 @@ export function QuestionForm({
   node,
   onAnswer,
   onDismiss,
+  embedded = false,
+  startInFreeText = false,
   t = defaultWorkbenchTranslator,
 }: {
   readonly node: ChatNode;
@@ -50,15 +57,31 @@ export function QuestionForm({
   readonly onAnswer?: (text: string) => Promise<boolean>;
   /** Give the composer back. The question stays open; only the form steps aside. */
   readonly onDismiss: () => void;
+  /**
+   * Hosted inside another surface (the request preview's question card) that
+   * already draws the frame: no box of its own.
+   */
+  readonly embedded?: boolean;
+  /** Open with the free-text row picked and focused (the user chose to write). */
+  readonly startInFreeText?: boolean;
   readonly t?: WorkbenchTranslator;
 }) {
-  const form = useQuestionForm(node, onAnswer, t);
+  const form = useQuestionForm(node, onAnswer, t, startInFreeText);
   const { mode, rows, locked } = form;
   const rowRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const otherRef = useRef<HTMLInputElement | null>(null);
   const openRef = useRef<HTMLTextAreaElement | null>(null);
   const submitRef = useRef<HTMLButtonElement | null>(null);
   const otherIndex = rows.length - 1;
+  const rowsRef = useRef<HTMLDivElement | null>(null);
+  const [rowsAtEnd, setRowsAtEnd] = useState(true);
+  const measureRows = useCallback(() => {
+    const el = rowsRef.current;
+    if (el) setRowsAtEnd(el.scrollTop + el.clientHeight >= el.scrollHeight - 4);
+  }, []);
+  useEffect(() => {
+    measureRows();
+  }, [measureRows, rows.length]);
   const otherPicked = form.picks.otherPicked;
 
   // An open question has one place a keystroke can go, so focus starts there.
@@ -87,7 +110,7 @@ export function QuestionForm({
 
   return (
     <section
-      className={styles.questionForm.box}
+      className={embedded ? styles.questionForm.embeddedBox : styles.questionForm.box}
       data-testid="workbench-question-form"
       data-mode={mode}
       // The workbench's convention for "Escape is mine": keeps the double-Escape
@@ -128,7 +151,11 @@ export function QuestionForm({
         />
       ) : (
         <div
+          ref={rowsRef}
+          onScroll={measureRows}
           className={styles.questionForm.rows}
+          // A soft fade says more options sit below, instead of a row cut in half.
+          style={rowsAtEnd ? undefined : ROWS_FADE}
           role={mode === 'multi' ? 'group' : 'radiogroup'}
           aria-label={node.text}
         >
@@ -174,7 +201,7 @@ export function QuestionForm({
                     {picked && mode === 'multi' ? <Check size={11} strokeWidth={3} /> : null}
                   </span>
                   <span className={styles.questionForm.label}>
-                    {isOther ? t('workbench.question.other') : row.label}
+                    {isOther ? (row.label ?? t('workbench.question.other')) : row.label}
                   </span>
                 </button>
                 {isOther && picked ? (

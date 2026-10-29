@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "رجوع",
     "you": "أنت",
     "confirm": "تأكيد",
     "cancel": "إلغاء",
@@ -10,6 +11,22 @@
     "close": "إغلاق"
   },
   "home": {
+    "resumeGeneration": "متابعة الإنشاء",
+    "emptyLibraryTitle": "تبدأ دروسك هنا",
+    "emptyLibraryBody": "أنشئ درسًا من الصفحة الرئيسية، ثم عُد إلى هنا لمتابعة التعلم.",
+    "mobileTitle": "ماذا تريد أن تتعلم؟",
+    "mobileSubtitle": "أخبرنا بموضوعك ليُنشئ الذكاء الاصطناعي درسًا تفاعليًا.",
+    "mobilePlaceholder": "أدخل موضوعًا أو ارفع مواد تعليمية",
+    "courseOptions": "خيارات الدرس",
+    "courseMaterials": "مواد الدورة",
+    "courseMaterialsCount": "مواد الدورة · {{n}}",
+    "backToCourseOptions": "العودة إلى خيارات الدرس",
+    "materialsDone": "تم",
+    "allSettings": "كل الإعدادات",
+    "examplesLabel": "جرّب موضوعًا",
+    "examplePython": "تعلم Python من الصفر",
+    "exampleFourier": "شرح تحويل فورييه بأمثلة مبسطة",
+    "desktopOnly": "استخدم الكمبيوتر للمحرر ووضع Pro.",
     "slogan": "التعلّم التوليدي في فصل تفاعلي متعدد الوكلاء",
     "greetingWithName": "مرحبًا، {{name}}"
   },
@@ -2386,6 +2403,11 @@
     "homeAria": "Back to home",
     "currentSession": "Current chat",
     "startLearning": "ابدأ التعلم",
+    "classroomMode": "وضع الفصل",
+    "learningMode": "تعلّم",
+    "editingMode": "تحرير",
+    "editingUnavailableGenerating": "التحرير غير متاح أثناء إنشاء الدورة.",
+    "fullscreenLearning": "التعلّم بملء الشاشة",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'motion/react';
-import { useStageStore } from '@/lib/store';
+import { useStageStore, useCanvasStore } from '@/lib/store';
 import {
   isCurrentSceneEditable,
   isHostedSceneEditable,
@@ -38,21 +38,10 @@ import { exitProPlaybackToStandalone } from '@/lib/workbench/pro-playback-exit';
  *   mode === 'edit'                → EditChromeRoot
  *   mode === 'playback' / 'autonomous' → PlaybackChromeRoot
  *
- * When this classroom is HOSTED — mounted inside the Pro workspace's classroom
- * pane rather than filling a route — the dispatch below is not replaced, it is
- * merely stripped of the chrome that the host already provides: no header, no
- * global controls or Pro switch (the pane IS Pro-locked). Hosted chrome is
- * EDIT-LOCKED: the pane declares the lock once (`WorkbenchPanelState.editPinned`)
- * and this component reads it back, so no entry path — a course the agent just
- * created, a restored tab, a tab switch, a reload — gets to decide otherwise.
- * The learning chrome is reachable only through Start Learning, which clears
- * the lock at the pane. Everything else resolves synchronously between the
- * neutral loading shell and edit, so a hosted first paint can never be
- * playback. Deliberately not a third
- * `StageMode` — `StageMode` lives in the
- * published `@openmaic/dsl` and is persisted with the stage, whereas "this is
- * rendered inside the workspace right now" is view state that must not outlive
- * the tab.
+ * A hosted classroom takes its learning/editing intent from the pane. The
+ * pane applies the course preference and access gates, and this component
+ * additionally enforces the live generation fence. This remains view state;
+ * the published/persisted StageMode contract does not change.
  *
  * The host itself owns the three-pane layout, the conversation, the session
  * stream and the course sync. Stage's only responsibilities are: mode
@@ -119,11 +108,7 @@ export function Stage({
   // its panelOpen bit here made the keyed edit/playback roots swap for one
   // frame and produced a full classroom flash.
   const workbenchPlayback = workbenchPanel.playback;
-  // The classroom is showing exactly when it is hosted and the pane says it is
-  // edit-locked. The lock is computed once, at the provider the workspace
-  // mounts the classroom through (`WorkbenchPanelProvider`), so this is the
-  // pane's answer being read back rather than a second derivation that could
-  // disagree with it.
+  // The host's edit intent is independent of full-screen playback and chat.
   const workbenchShowingClassroom = hosted && workbenchPanel.editPinned;
 
   // Single decision for the classroom chrome's top-left back affordance:
@@ -148,9 +133,8 @@ export function Stage({
       hasCurrentScene: !!currentScene,
     });
 
-  // Hosted generation is page-granular: once the current page materialises,
-  // the human may edit it while the agent writes later scene IDs. Keep the
-  // stricter whole-deck generation gate above for standalone Pro mode.
+  // Hosted agent edits are page-scoped; a server generation run still locks
+  // the whole course through courseGenerating below.
   const currentStageMatchesHost = !classroomId || stage?.id === classroomId;
   const hostedSceneEditable = isHostedSceneEditable({
     editorEnabled,
@@ -162,49 +146,112 @@ export function Stage({
     hasCurrentScene: !!currentScene,
   });
   const chromeEditable = hosted ? hostedSceneEditable : isEditable;
-  // Seeded from the module-level registry rather than always starting at
-  // `idle`: once the editor chunk has been imported in this tab, a remount
-  // (course switch, reopened tab) must resolve to the edit chrome during the
-  // FIRST render. Starting at `idle` would spend a paint on the neutral
-  // loading shell waiting for an import that already finished.
+  // Only an already mounted learning surface stays up during edit entry.
+  // Cold editing mounts and reopened editors wait in the neutral loading shell.
   const [editorPreloadState, setEditorPreloadState] = useState<
-    'idle' | 'loading' | 'ready' | 'failed'
+    'idle' | 'loading' | 'playback' | 'ready' | 'failed'
   >(() => (isEditorPreloaded() ? 'ready' : 'idle'));
+  const playbackRef = useRef<PlaybackChromeRootHandle>(null);
+  // Teardown quiesces the learning surface (engine, SSE, audio) for good. When
+  // an edit entry that already tore it down is abandoned — the user picks
+  // Learn again first, or the editor fails to load — the same root would stay
+  // on screen, stopped. Bumping this key mounts a fresh one instead, so the
+  // learning surface always matches the selected mode.
+  const [playbackEpoch, setPlaybackEpoch] = useState(0);
+  const remountPlayback = useCallback(() => setPlaybackEpoch((epoch) => epoch + 1), []);
+  // What the latest run of the entry effect is for: a deferred remount only
+  // applies if the same course is still on learning by the time it lands.
+  const entryRef = useRef<{ classroomId: string | undefined; editing: boolean }>({
+    classroomId: undefined,
+    editing: false,
+  });
 
   useEffect(() => {
-    if (!hosted || !workbenchShowingClassroom || !hostedSceneEditable) return;
-    // Already registered — do not knock the state back to `loading`, which
-    // would blank an edit chrome that is on screen and correct.
-    if (isEditorPreloaded()) {
+    const mountedPlayback = playbackRef.current;
+    const editing = Boolean(hosted && workbenchShowingClassroom && hostedSceneEditable);
+    entryRef.current = { classroomId, editing };
+    if (!editing) {
+      setEditorPreloadState(
+        hosted && workbenchPanel.visible && currentStageMatchesHost && mountedPlayback
+          ? 'playback'
+          : 'idle',
+      );
+      return;
+    }
+    if (!mountedPlayback && isEditorPreloaded()) {
       setEditorPreloadState('ready');
       return;
     }
     let cancelled = false;
-    setEditorPreloadState('loading');
-    preloadEditor()
-      .then(() => {
-        if (!cancelled) setEditorPreloadState('ready');
-      })
-      .catch((error) => {
-        console.error('[Stage] hosted editor preload failed', error);
-        if (!cancelled) setEditorPreloadState('failed');
+    let tornDown = false;
+    let activated = false;
+    // The old root's teardown (engine, SSE, audio — including the global speech
+    // cancel) must finish before a fresh root mounts, or its cleanup would run
+    // against the new playback.
+    let teardownSettled: Promise<unknown> = Promise.resolve();
+    // Then only for this course, and only while learning is what it shows: this
+    // entry failed and is still current, or the latest run is on learning.
+    const remountAfterTeardown = () => {
+      tornDown = false;
+      void teardownSettled.then(() => {
+        const latest = entryRef.current;
+        if (latest.classroomId !== classroomId) return;
+        if (!cancelled || !latest.editing) remountPlayback();
       });
+    };
+    setEditorPreloadState((previous) =>
+      mountedPlayback && previous === 'playback' ? 'playback' : 'loading',
+    );
+    void enterEditMode({
+      teardown: () => {
+        if (!mountedPlayback) return undefined;
+        tornDown = true;
+        const done = mountedPlayback.teardown();
+        teardownSettled = Promise.resolve(done).catch(() => undefined);
+        return done;
+      },
+      preload: preloadEditor,
+      activate: () => {
+        if (cancelled) return;
+        activated = true;
+        setEditorPreloadState('ready');
+      },
+      onError: (error) => {
+        console.error('[Stage] hosted editor entry failed', error);
+        if (cancelled) return;
+        // Still on learning, but its root was already torn down: one fresh
+        // root, and the cleanup below must not mount another.
+        if (tornDown) remountAfterTeardown();
+        setEditorPreloadState((previous) => (previous === 'playback' ? 'playback' : 'failed'));
+      },
+    });
     return () => {
       cancelled = true;
+      // Abandoned before the editor took over: the learning root stays.
+      if (tornDown && !activated) remountAfterTeardown();
     };
-  }, [hosted, workbenchShowingClassroom, hostedSceneEditable]);
+  }, [
+    remountPlayback,
+    hosted,
+    workbenchShowingClassroom,
+    hostedSceneEditable,
+    classroomId,
+    workbenchPanel.visible,
+    currentStageMatchesHost,
+  ]);
 
-  // The workspace owns the edit/playback intent: the pane's edit lock is the
-  // edit intent, while Start Learning (`workbenchPlayback`) is the one signal
-  // that releases it. Resolve that intent in render rather than mutating the
-  // transient stage-store mode in an effect — otherwise every hosted course
-  // paints PlaybackChromeRoot once before the effect can run, and a course
-  // switch can inherit stale mode.
+  // Resolve before paint so a restored edit preference cannot override a
+  // generating course's fence or leak into a different course's chrome.
   const chromeMode = resolveStageChromeMode({
     storedMode: mode,
     hosted,
     workbenchShowingClassroom,
-    workbenchLearning: hosted && workbenchPlayback,
+    workbenchLearning:
+      hosted &&
+      workbenchPanel.visible &&
+      (workbenchPanel.learning ||
+        courseGenerating ||
+        (workbenchShowingClassroom && editorPreloadState === 'playback')),
     isEditable: chromeEditable,
     hasCurrentScene: !!currentScene,
     stageMatchesHost: currentStageMatchesHost,
@@ -212,7 +259,11 @@ export function Stage({
     editorLoadFailed: editorPreloadState === 'failed',
   });
 
-  const playbackRef = useRef<PlaybackChromeRootHandle>(null);
+  useEffect(() => {
+    if (!hosted || chromeMode !== 'edit') return;
+    return () => useCanvasStore.getState().resetCanvasState();
+  }, [hosted, chromeMode]);
+
   const [playbackInteractivePicker, setPlaybackInteractivePicker] =
     useState<PlaybackInteractivePickerState | null>(null);
   const handlePlaybackInteractivePick = useCallback((pick: PlaybackInteractiveComponentPick) => {
@@ -234,7 +285,7 @@ export function Stage({
       setMode('playback');
       return;
     }
-    // Load the editor chunk (fonts + slide surface) BEFORE flipping mode,
+    // Load the editor chunk (slide + quiz surfaces) BEFORE flipping mode,
     // so the edit chrome animates in with its content already present and
     // the slide surface registered — no mid-animation pop-in / NOOP flash.
     // Runs concurrently with teardown; the import is promise-cached so it's
@@ -244,10 +295,13 @@ export function Stage({
       preload: preloadEditor,
       activate: () => setMode('edit'),
       // Stay in playback so the failure surfaces rather than half-entering
-      // edit mode.
-      onError: (error) => console.error('[Stage] Pro mode entry failed during teardown', error),
+      // edit mode — on a fresh root, since the old one was torn down.
+      onError: (error) => {
+        console.error('[Stage] Pro mode entry failed during teardown', error);
+        remountPlayback();
+      },
     });
-  }, [mode, setMode]);
+  }, [mode, setMode, remountPlayback]);
 
   // Auto-exit edit mode when the current scene becomes uneditable
   // (pending generation, no scenes, currently generating).
@@ -300,7 +354,7 @@ export function Stage({
     });
   }, [router, setMode, stage?.id]);
 
-  // The embedded pane is already Pro-locked, so it has no switch. Full-screen
+  // The embedded pane owns its mode switch in the tab header. Full-screen
   // learning exposes an active switch whose off transition exits the workspace
   // and returns to the ordinary classroom route.
   const chromeToggleHandler = hosted
@@ -362,6 +416,7 @@ export function Stage({
           className="absolute inset-0 flex"
         >
           <PlaybackChromeRoot
+            key={playbackEpoch}
             ref={playbackRef}
             onInteractivePickerChange={setPlaybackInteractivePicker}
             onRetryOutline={onRetryOutline}

@@ -3,11 +3,13 @@
 /**
  * Backspace deletes a whole skill handle, in every composer.
  *
- * A handle is one object to the reader and one to the model, so character-by-
- * character deletion leaves `/k12-core-literacy-plannin` — a handle that resolves
- * to nothing. This makes the token the unit of deletion without giving up the
- * native `<textarea>`: the value stays plain text, so IME composition, the undo
- * stack, paste and autosize are all still the browser's.
+ * A handle that names an installed skill is one object to the reader and one
+ * to the model, so character-by-character deletion leaves
+ * `/k12-core-literacy-plannin` — a handle that resolves to nothing. This makes
+ * that token the unit of deletion without giving up the native `<textarea>`:
+ * the value stays plain text, so IME composition, the undo stack, paste and
+ * autosize are all still the browser's. A handle that does not resolve is
+ * still being typed, and Backspace removes one character.
  *
  * IME FIRST. `isComposing` (and the legacy 229 keycode) short-circuit everything:
  * rewriting the value under a live composition is exactly how Chinese input breaks,
@@ -26,6 +28,8 @@ export function useSkillHandleBackspace(
    * into a value handed to it is both a lint error here and the wrong shape.
    */
   onCaret: (caret: number) => void,
+  /** Installed skill names. Only a handle that resolves to one is deleted whole. */
+  installedNames: readonly string[],
 ): (event: KeyboardEvent<HTMLTextAreaElement>) => boolean {
   return useCallback(
     (event) => {
@@ -34,13 +38,17 @@ export function useSkillHandleBackspace(
       const textarea = event.currentTarget;
       // A selection already has a unit of deletion: its own.
       if (textarea.selectionStart !== textarea.selectionEnd) return false;
-      const deletion = deleteSkillHandleBefore(textarea.value, textarea.selectionStart ?? 0);
+      const deletion = deleteSkillHandleBefore(
+        textarea.value,
+        textarea.selectionStart ?? 0,
+        installedNames,
+      );
       if (!deletion) return false;
       event.preventDefault();
       onCaret(deletion.caret);
       setDraft(deletion.draft);
       return true;
     },
-    [onCaret, setDraft],
+    [installedNames, onCaret, setDraft],
   );
 }

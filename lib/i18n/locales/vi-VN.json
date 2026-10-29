@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "Quay lại",
     "you": "Bạn",
     "confirm": "Xác nhận",
     "cancel": "Hủy",
@@ -10,6 +11,22 @@
     "close": "Đóng"
   },
   "home": {
+    "resumeGeneration": "Tiếp tục tạo",
+    "emptyLibraryTitle": "Lớp học của bạn bắt đầu ở đây",
+    "emptyLibraryBody": "Tạo khóa học ở trang chủ và quay lại đây để học tiếp.",
+    "mobileTitle": "Bạn muốn học gì?",
+    "mobileSubtitle": "Cho biết chủ đề, AI sẽ tạo một lớp học tương tác.",
+    "mobilePlaceholder": "Nhập chủ đề hoặc tải tài liệu lên",
+    "courseOptions": "Tùy chọn lớp học",
+    "courseMaterials": "Tài liệu khóa học",
+    "courseMaterialsCount": "Tài liệu khóa học · {{n}}",
+    "backToCourseOptions": "Quay lại tùy chọn lớp học",
+    "materialsDone": "Hoàn tất",
+    "allSettings": "Tất cả cài đặt",
+    "examplesLabel": "Thử một chủ đề",
+    "examplePython": "Học Python từ đầu",
+    "exampleFourier": "Hiểu biến đổi Fourier qua ví dụ trực quan",
+    "desktopOnly": "Hãy dùng máy tính cho trình biên tập và chế độ Pro.",
     "slogan": "Học tập sinh tạo trong lớp học tương tác đa tác nhân",
     "greetingWithName": "Chào {{name}}"
   },
@@ -2386,6 +2403,11 @@
     "homeAria": "Back to home",
     "currentSession": "Current chat",
     "startLearning": "Bắt đầu học",
+    "classroomMode": "Chế độ lớp học",
+    "learningMode": "Học",
+    "editingMode": "Chỉnh sửa",
+    "editingUnavailableGenerating": "Không thể chỉnh sửa khi khóa học đang được tạo.",
+    "fullscreenLearning": "Học toàn màn hình",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",

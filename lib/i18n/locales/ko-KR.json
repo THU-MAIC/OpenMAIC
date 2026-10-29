@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "뒤로",
     "you": "나",
     "confirm": "확인",
     "cancel": "취소",
@@ -10,6 +11,22 @@
     "close": "닫기"
   },
   "home": {
+    "resumeGeneration": "생성 계속",
+    "emptyLibraryTitle": "여기서 수업을 시작하세요",
+    "emptyLibraryBody": "홈에서 수업을 만들면 여기서 학습을 이어갈 수 있습니다.",
+    "mobileTitle": "무엇을 배우고 싶으세요?",
+    "mobileSubtitle": "주제를 알려주시면 AI가 대화형 수업을 만듭니다.",
+    "mobilePlaceholder": "학습 주제를 입력하거나 자료를 업로드하세요",
+    "courseOptions": "수업 옵션",
+    "courseMaterials": "수업 자료",
+    "courseMaterialsCount": "수업 자료 · {{n}}개",
+    "backToCourseOptions": "수업 옵션으로 돌아가기",
+    "materialsDone": "완료",
+    "allSettings": "모든 설정",
+    "examplesLabel": "예시 주제",
+    "examplePython": "Python 기초부터 배우기",
+    "exampleFourier": "직관적인 예제로 푸리에 변환 배우기",
+    "desktopOnly": "편집기와 Pro 모드는 컴퓨터에서 이용하세요.",
     "slogan": "멀티 에이전트 인터랙티브 교실에서 펼치는 생성형 학습",
     "greetingWithName": "안녕하세요, {{name}}!"
   },
@@ -2386,6 +2403,11 @@
     "homeAria": "Back to home",
     "currentSession": "Current chat",
     "startLearning": "학습 시작",
+    "classroomMode": "교실 모드",
+    "learningMode": "학습",
+    "editingMode": "편집",
+    "editingUnavailableGenerating": "강좌 생성 중에는 편집할 수 없습니다.",
+    "fullscreenLearning": "전체 화면 학습",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",

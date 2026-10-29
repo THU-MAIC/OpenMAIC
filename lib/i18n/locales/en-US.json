@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "Back",
     "you": "You",
     "confirm": "Confirm",
     "cancel": "Cancel",
@@ -10,6 +11,22 @@
     "close": "Close"
   },
   "home": {
+    "resumeGeneration": "Continue generation",
+    "emptyLibraryTitle": "Your classes start here",
+    "emptyLibraryBody": "Create a course on the homepage. You can return here to continue learning.",
+    "mobileTitle": "What would you like to learn?",
+    "mobileSubtitle": "Tell us your topic. AI will build an interactive classroom.",
+    "mobilePlaceholder": "Enter a learning topic, or upload materials",
+    "courseOptions": "Course options",
+    "courseMaterials": "Course materials",
+    "courseMaterialsCount": "Course materials · {{n}} attached",
+    "backToCourseOptions": "Back to course options",
+    "materialsDone": "Done",
+    "allSettings": "All settings",
+    "examplesLabel": "Try an example",
+    "examplePython": "Learn Python from scratch",
+    "exampleFourier": "Explain the Fourier transform with intuitive examples",
+    "desktopOnly": "Please use a computer for the editor and Pro mode.",
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
     "greetingWithName": "Hi, {{name}}"
   },
@@ -2386,6 +2403,11 @@
     "homeAria": "Back to home",
     "currentSession": "Current chat",
     "startLearning": "Start learning",
+    "classroomMode": "Classroom mode",
+    "learningMode": "Learn",
+    "editingMode": "Edit",
+    "editingUnavailableGenerating": "Editing is unavailable while this course is generating.",
+    "fullscreenLearning": "Full-screen learning",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",

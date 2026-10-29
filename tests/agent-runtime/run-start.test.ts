@@ -141,6 +141,77 @@ describe('planRunStart', () => {
       }),
     ).toEqual({ kind: 'prompt', text: 'Continue' });
   });
+
+  it('includes the opening attachment note on the first user message', () => {
+    const materials = [
+      {
+        materialId: 'material-1',
+        originalName: 'lecture.mp4',
+        mime: 'video/mp4',
+        bytes: 10,
+      },
+    ];
+    const prompt = 'Build a lesson from the recording';
+    const opening = {
+      text: 'durable opening text',
+      durableMessageSeq: 1,
+      materials,
+    };
+    const courseRefs = [{ kind: 'course' as const, stageId: 'stage-1', title: '光的折射' }];
+    const elementRefs: ElementRef[] = [
+      {
+        kind: 'slide-element',
+        stageId: 'stage-1',
+        sceneId: 'scene-2',
+        elementId: 'title-1',
+        elementType: 'text',
+        label: 'Text · Old title',
+        snapshotText: 'Old title',
+      },
+    ];
+    const start = {
+      plan: planResume(null),
+      claimReason: 'queued' as const,
+      prompt,
+    };
+    const followUpNote = composeFollowUpText({ text: 'later', materials }).slice('later'.length);
+
+    for (const extra of [{}, { courseRefs }, { elementRefs }, { courseRefs, elementRefs }]) {
+      const pending = { ...opening, ...extra };
+      const text = composeFollowUpText({ ...pending, text: prompt });
+      expect(text.startsWith(prompt)).toBe(true);
+      expect(text).toContain(followUpNote);
+      expect(
+        planRunStart({
+          ...start,
+          pending: [pending],
+        }),
+      ).toEqual({ kind: 'prompt', text, durableMessageSeq: 1 });
+    }
+  });
+
+  it('keeps an idle attachment on the opening message, including its files', () => {
+    const opening = {
+      text: 'Shorten the second section',
+      materials: [
+        {
+          materialId: 'material-1',
+          originalName: 'lecture.mp4',
+          mime: 'video/mp4',
+          bytes: 10,
+        },
+      ],
+    };
+    expect(
+      planRunStart({
+        plan: planResume(null),
+        claimReason: 'queued',
+        pending: [opening],
+        prompt: 'Existing lesson',
+        idleAttach: true,
+      }),
+    ).toEqual({ kind: 'prompt', text: composeFollowUpText(opening) });
+  });
 });
 
 describe('durable user-message delivery tags', () => {

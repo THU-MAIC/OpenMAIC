@@ -35,6 +35,7 @@
     "submit": "Enviar",
     "dismiss": "Descartar",
     "inFormBelow": "Responda no formulário abaixo",
+    "inPreview": "Responda na pré-visualização",
     "multiAnswerSeparator": ", "
   },
   "material": {
@@ -98,6 +99,21 @@
       "vocational": "Formação profissional",
       "workshop-style": "Oficina interativa"
     }
+  },
+  "preview": {
+    "eyebrow": "Em andamento",
+    "understanding": "Entendendo seu pedido",
+    "understandingDesc": "Lendo o que você pediu e o que é preciso…",
+    "asking": "Uma pergunta rápida",
+    "askingDesc": "O agente continua quando você responder.",
+    "assembling": "Montando a sala de aula",
+    "assemblingDesc": "Criando o curso e escolhendo o professor e os colegas…",
+    "opening": "Abrindo a sala de aula",
+    "page": "Página {{order}}",
+    "pageCaption": "Página {{order}} · {{title}}",
+    "skills": "Habilidades equipadas",
+    "resting": "Seu curso aparecerá aqui",
+    "restingDesc": "Continue na conversa; quando um curso for criado, ele abre nesta aba."
   },
   "thinking": {
     "active": "Pensando…",

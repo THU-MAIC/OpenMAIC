@@ -54,13 +54,61 @@ export interface RenderEvent {
    * "admitted to run", not "currently rendering".
    */
   running?: number;
-  /** Fixed vocabulary — never a raw error message. */
+  /**
+   * Fixed vocabulary — never a raw error message. A finished job's failure
+   * reason, or a 5xx preview's {@link PreviewErrorCode}.
+   */
   errorCode?: string;
   /** Which admission cap rejected the caller, or which route served it. */
   reason?: string;
   route?: string;
   /** HTTP status the caller received, for the synchronous preview route. */
   status?: number;
+}
+
+/**
+ * Why a preview request failed with a 5xx, as a fixed code on its
+ * `preview_request` line. The route returns the error message to its caller
+ * but never logs it, because a message can quote the scene (a scene id, page
+ * markup). Without a code, a deployment that sees previews failing can count
+ * the failures but cannot tell a missing Chromium from a crashing one.
+ */
+export type PreviewErrorCode =
+  | 'deadline_exceeded'
+  | 'resource_mode_unsupported'
+  | 'chromium_unconfigured'
+  | 'browser_launch_failed'
+  | 'browser_crashed'
+  | 'browser_timeout'
+  | 'scene_not_found'
+  | 'empty_image'
+  | 'internal';
+
+/** Thrown by the preview route when the renderer returns zero bytes. */
+export const EMPTY_PREVIEW_IMAGE_MESSAGE = 'Preview renderer returned an empty image';
+
+/**
+ * Maps an unexpected preview failure to a {@link PreviewErrorCode}. Reads only
+ * the error's name and the fixed prefixes the renderer and Puppeteer use; the
+ * message never leaves this function.
+ */
+export function classifyPreviewFailure(error: unknown): PreviewErrorCode {
+  if (!(error instanceof Error)) return 'internal';
+  const message = error.message;
+  if (message === EMPTY_PREVIEW_IMAGE_MESSAGE) return 'empty_image';
+  if (message.startsWith('Chromium executable is not configured')) return 'chromium_unconfigured';
+  if (message.startsWith('Requested scene was not found')) return 'scene_not_found';
+  if (message.startsWith('Failed to launch the browser process')) return 'browser_launch_failed';
+  if (error.name === 'TimeoutError') return 'browser_timeout';
+  if (
+    error.name === 'TargetCloseError' ||
+    /^(Protocol error|Target closed|Session closed|Navigating frame was detached|Connection closed)/.test(
+      message,
+    )
+  ) {
+    return 'browser_crashed';
+  }
+  return 'internal';
 }
 
 /** Receives an event. Injectable so tests can assert without touching stdout. */
@@ -120,18 +168,20 @@ function summarize(event: RenderEvent): string {
 /**
  * Default sink: one JSON line per event on stdout.
  *
- * `console.error` for a failed render so a pipeline that only forwards stderr
- * still sees failures; everything else goes to stdout.
+ * `console.error` for a failed render or a 5xx preview so a pipeline that only
+ * forwards stderr still sees failures; everything else goes to stdout.
  */
 export const emitRenderEvent: RenderEventSink = (event) => {
+  const failed =
+    event.outcome === 'failed' || (event.event === 'preview_request' && (event.status ?? 0) >= 500);
   const line = JSON.stringify({
     timestamp: new Date().toISOString(),
-    level: event.outcome === 'failed' ? 'ERROR' : 'INFO',
+    level: failed ? 'ERROR' : 'INFO',
     service: 'render-service',
     component: event.event === 'preview_request' ? 'preview' : 'render',
     message: summarize(event),
     ...nonEmpty(event),
   });
-  if (event.outcome === 'failed') console.error(line);
+  if (failed) console.error(line);
   else console.log(line);
 };

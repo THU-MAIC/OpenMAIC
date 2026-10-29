@@ -17,15 +17,21 @@
  * course is a perfectly legitimate thing to do with one.
  */
 
-import { Eye, Play } from 'lucide-react';
-import { memo } from 'react';
+import { Eye, Maximize, BookOpen, Pencil } from 'lucide-react';
+import { memo, useLayoutEffect, useState } from 'react';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import {
+  readClassroomMode,
+  writeClassroomMode,
+  type ClassroomMode,
+} from '@/lib/workbench/classroom-mode';
 import { cn } from '@/lib/utils/cn';
 import { ClassroomSurface } from '@/components/classroom/ClassroomSurface';
 import { useStageStore } from '@/lib/store/stage';
 import { useWorkbenchStore } from '@/lib/workbench/session-store';
 import { WorkbenchPanelProvider } from '@/lib/workbench/panel-context';
 import { useWorkbenchProEditing } from '@/lib/workbench/use-workbench-pro-edit';
+import { useEditorWarmup } from '@/lib/edit/use-editor-warmup';
 import { WorkspaceCourseTabs, type WorkspaceCourseTabItem } from './WorkspaceCourseTabs';
 import { PaneFoldButton } from './PaneFoldButton';
 
@@ -42,9 +48,15 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
    * the seam they arrive through.
    */
   readonly browser: {
-    /** The open courses, in tab order — id, display name, and whether one is being written. */
+    /** The open courses, in tab order. */
     readonly tabs: readonly WorkspaceCourseTabItem[];
+    /** The course this pane shows: always a real course id. */
     readonly activeCourseId: string;
+    /**
+     * The tab the strip marks selected, when it is not the course (the request
+     * preview's tab). Selection only: nothing loads, stores or navigates by it.
+     */
+    readonly selectedTabId?: string;
     readonly onActivateCourse: (courseId: string) => void;
     /**
      * The real close: closing the last tab drops `?course=`, shuts the pane and
@@ -73,11 +85,37 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
   const courseId = browser.activeCourseId;
   const { t } = useI18n();
   const scenes = useStageStore((s) => s.scenes);
-  // A course its generation run is still producing shows the generating
-  // placeholder, not a classroom to learn from.
   const courseGenerating = useStageStore((s) => s.courseGenerating);
   const setPlaybackOn = useWorkbenchStore((s) => s.setPlaybackOn);
+  const loadedCourseId = useStageStore((s) => s.stage?.id);
+  const isOwner = useStageStore((s) => s.isOwner);
+  const stageReadOnly = useStageStore((s) => s.readOnly);
+  const [preferences, setPreferences] = useState<Record<string, ClassroomMode>>({});
 
+  useLayoutEffect(() => {
+    // Apply browser memory before paint. A different course never inherits an
+    // edit preference during its first render or while its document is loading.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- restore the browser preference before painting this course
+    setPreferences((previous) =>
+      previous[courseId] ? previous : { ...previous, [courseId]: readClassroomMode(courseId) },
+    );
+  }, [courseId]);
+  const editingAllowed =
+    loadedCourseId === courseId &&
+    isOwner &&
+    !stageReadOnly &&
+    !readOnly &&
+    !courseGenerating &&
+    scenes.length > 0;
+  const learning = playback || !editingAllowed || preferences[courseId] !== 'editing';
+  // Load the editor while the course is shown in Learn mode, so the first switch
+  // to Edit does not wait on its download. Only where the switch is offered.
+  const warmEditorNow = useEditorWarmup(editingAllowed && learning && !hidden && !playback);
+
+  const rememberMode = (mode: ClassroomMode) => {
+    setPreferences((previous) => ({ ...previous, [courseId]: mode }));
+    writeClassroomMode(courseId, mode);
+  };
   // Pro-mode sizing for a hosted classroom: fill the 16:9 card instead of
   // keeping the full-page editor's studio margin, which reads as a second
   // letterbox inside a pane.
@@ -90,6 +128,9 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
       aria-hidden={hidden || undefined}
       className={cn(
         'ws-pane ws-pane-last h-full min-w-0 flex-1 flex-col',
+        // Opening the pane (a course handed over from the request preview, or
+        // opened from the library) fades in rather than snapping.
+        'motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-500',
         hidden ? 'hidden' : 'flex',
       )}
     >
@@ -123,7 +164,7 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
               and folding covers "not now". */}
           <WorkspaceCourseTabs
             tabs={browser.tabs}
-            activeCourseId={browser.activeCourseId}
+            activeCourseId={browser.selectedTabId ?? browser.activeCourseId}
             onActivate={browser.onActivateCourse}
             onClose={browser.onCloseCourse}
           />
@@ -134,40 +175,68 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
               {t('workspace.readOnlyBadge')}
             </span>
           ) : null}
-          {/* The workspace frames playback as LEARNING, not presenting: a soft
-              accent-wash chip (the product violet at tint strength) instead of
-              a solid dark block — an invitation, not an office command. The
-              1px hover lift is the shell's standard hover vocabulary. */}
+          <div
+            role="group"
+            aria-label={t('workspace.classroomMode')}
+            className="flex shrink-0 items-center gap-0.5 rounded-lg bg-muted/60 p-0.5"
+          >
+            <button
+              type="button"
+              data-testid="workbench-mode-learning"
+              aria-pressed={learning}
+              onClick={() => {
+                rememberMode('learning');
+              }}
+              className={cn(
+                'inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60',
+                learning
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <BookOpen className="size-3.5" aria-hidden="true" />
+              {t('workspace.learningMode')}
+            </button>
+            <button
+              type="button"
+              data-testid="workbench-mode-editing"
+              aria-pressed={!learning}
+              disabled={!editingAllowed}
+              onPointerEnter={warmEditorNow}
+              onFocus={warmEditorNow}
+              onClick={() => {
+                if (editingAllowed) rememberMode('editing');
+              }}
+              title={courseGenerating ? t('workspace.editingUnavailableGenerating') : undefined}
+              className={cn(
+                'inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] font-medium disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60',
+                !learning
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <Pencil className="size-3.5" aria-hidden="true" />
+              {t('workspace.editingMode')}
+            </button>
+          </div>
           <button
             type="button"
             data-testid="workbench-start-learning"
-            disabled={scenes.length === 0 || courseGenerating}
+            disabled={scenes.length === 0 || loadedCourseId !== courseId}
             onClick={() => setPlaybackOn(true)}
-            className={cn(
-              'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-violet-600/10 px-3 text-[11px] font-medium text-violet-700 transition-[background-color,color,transform,box-shadow] duration-150',
-              'hover:bg-violet-600/15 hover:shadow-sm motion-safe:hover:-translate-y-px disabled:pointer-events-none disabled:opacity-40',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60',
-              'dark:bg-violet-400/10 dark:text-violet-300 dark:hover:bg-violet-400/15 dark:hover:shadow-none',
-            )}
+            aria-label={t('workspace.fullscreenLearning')}
+            title={t('workspace.fullscreenLearning')}
+            className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
           >
-            <Play className="size-3.5" aria-hidden="true" />
-            {t('workspace.startLearning')}
+            <Maximize className="size-3.5" aria-hidden="true" />
           </button>
         </header>
       )}
 
-      {/* The real classroom chrome. Course identity alone owns its lifecycle;
-          chat/session activity is deliberately absent from this boundary.
-
-          This provider is also the EDIT LOCK. Every way a classroom reaches
-          the right pane — the agent creating one mid-conversation, a restored
-          tab, a tab switch, a reload — comes through this one element, so the
-          lock is a property of the pane rather than a default each entry path
-          has to remember. `visible && !playback` is the whole rule: what the
-          classroom document or the stage store says about play/edit does not
-          participate. */}
+      {/* One course surface for both modes. Generation and access gates override
+          remembered editing without overwriting the course's preference. */}
       <div className="ws-classroom-body relative flex min-h-0 flex-1">
-        <WorkbenchPanelProvider visible={!hidden} playback={playback}>
+        <WorkbenchPanelProvider visible={!hidden} playback={playback} learning={learning}>
           <ClassroomSurface classroomId={courseId} variant="pane" />
         </WorkbenchPanelProvider>
       </div>

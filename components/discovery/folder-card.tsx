@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { AlertTriangle, Folder, Pencil, Trash2 } from 'lucide-react';
+import { AlertTriangle, Folder, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useNearViewport } from '@/lib/hooks/use-near-viewport';
 import { cn } from '@/lib/utils';
@@ -13,6 +13,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from '@/components/ui/alert-dialog';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
 import type { Slide } from '@openmaic/dsl';
 import type { FolderRecord } from '@/lib/types/folder';
@@ -22,8 +31,8 @@ import type { DeleteFolderMode, StageListItem } from '@/lib/utils/stage-storage'
 const MAX_COVERS = 3;
 
 /**
- * Folder card. Same visual footprint as a ClassroomCard (16:9 tile + title
- * row). The tile shows up to {@link MAX_COVERS} member course covers stacked
+ * Folder navigation: compact rows on phones, course-sized tiles on desktop.
+ * The desktop tile shows up to {@link MAX_COVERS} member course covers stacked
  * with a slight offset; an empty folder falls back to a centered folder icon.
  *
  * Hover shows rename / delete buttons matching the course-card ✏️/🗑️. The tile
@@ -31,6 +40,7 @@ const MAX_COVERS = 3;
  * this folder (the hover 📂 menu remains as the accessible fallback).
  */
 export function FolderCard({
+  mobile = false,
   folder,
   courseCount,
   coverSlides,
@@ -41,6 +51,7 @@ export function FolderCard({
   onDelete,
   onDropCourse,
 }: {
+  mobile?: boolean;
   folder: FolderRecord;
   courseCount: number;
   /** Up to {@link MAX_COVERS} first-slide thumbnails of the member courses. */
@@ -63,6 +74,8 @@ export function FolderCard({
   const [submitting, setSubmitting] = useState(false);
   const [dropActive, setDropActive] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const renameAfterMenuRef = useRef(false);
   const dragDepth = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const thumbRef = useRef<HTMLDivElement>(null);
@@ -72,13 +85,13 @@ export function FolderCard({
   const candidateKey = coverCandidates.map((c) => `${c.id}@${c.updatedAt}`).join('|');
 
   useEffect(() => {
-    if (!nearViewport || !requestThumbnail || !candidateKey) return;
+    if (mobile || !nearViewport || !requestThumbnail || !candidateKey) return;
     const withdraws = candidateKey.split('|').map((key) => {
       const at = key.lastIndexOf('@');
       return requestThumbnail(key.slice(0, at), Number(key.slice(at + 1)));
     });
     return () => withdraws.forEach((withdraw) => withdraw());
-  }, [nearViewport, requestThumbnail, candidateKey]);
+  }, [mobile, nearViewport, requestThumbnail, candidateKey]);
 
   // Clear lingering drop highlight when a course drag ends (covers Escape-
   // cancelled drags that may not fire dragleave on every target).
@@ -133,6 +146,154 @@ export function FolderCard({
     }
     setEditing(false);
   };
+
+  if (mobile) {
+    return (
+      <div className="home-folder-row" data-testid="home-folder-row">
+        {editing && (
+          <div className="home-folder-icon">
+            <Folder size={22} />
+          </div>
+        )}
+        {editing ? (
+          <div className="home-folder-name">
+            <input
+              ref={inputRef}
+              data-home-folder-rename
+              aria-label={t('classroom.rename')}
+              value={draft}
+              onChange={(event) => {
+                setDraft(event.target.value);
+                setError(null);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  void commit();
+                }
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setEditing(false);
+                }
+              }}
+              onBlur={() => void commit()}
+              disabled={submitting}
+              maxLength={80}
+            />
+            {error && (
+              <p className="whitespace-normal text-destructive" role="alert">
+                {error}
+              </p>
+            )}
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="home-folder-open"
+            onClick={onOpen}
+            aria-label={folder.name}
+          >
+            <span className="home-folder-icon">
+              <Folder size={22} />
+            </span>
+            <span className="home-folder-info">
+              <span className="home-folder-name">{folder.name}</span>
+              <span className="home-folder-count">
+                {courseCount} {t('classroom.folderCourseCountUnit')}
+              </span>
+            </span>
+          </button>
+        )}
+        {!editing && !confirmingDelete && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                ref={moreButtonRef}
+                type="button"
+                className="home-folder-more"
+                aria-label={`${t('settings.more')}: ${folder.name}`}
+              >
+                <MoreHorizontal size={20} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              collisionPadding={12}
+              className="min-w-44 max-w-[calc(100vw-24px)] [&_[data-slot=dropdown-menu-item]]:min-h-11"
+              onCloseAutoFocus={(event) => {
+                if (renameAfterMenuRef.current) {
+                  event.preventDefault();
+                  renameAfterMenuRef.current = false;
+                  requestAnimationFrame(() => inputRef.current?.focus());
+                }
+              }}
+            >
+              <DropdownMenuItem
+                onSelect={() => {
+                  renameAfterMenuRef.current = true;
+                  startEditing();
+                }}
+              >
+                <Pencil size={16} />
+                {t('classroom.rename')}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {courseCount > 0 && (
+                <DropdownMenuItem onSelect={() => onDelete('ungroup')}>
+                  <Folder size={16} />
+                  <span className="flex flex-col">
+                    <span>{t('classroom.deleteFolderOnly')}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {t('classroom.deleteFolderUngroupDesc')}
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onSelect={() => setConfirmingDelete(true)}
+              >
+                <Trash2 size={16} />
+                {courseCount > 0
+                  ? t('classroom.deleteFolderAndCourses', { count: courseCount })
+                  : t('classroom.delete')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+        <AlertDialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+          <AlertDialogContent
+            className="home-folder-confirm"
+            size="sm"
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              requestAnimationFrame(() => moreButtonRef.current?.focus());
+            }}
+          >
+            <AlertDialogTitle className="break-words">
+              {t('classroom.deleteFolderTitle', { name: folder.name })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {courseCount > 0
+                ? t('classroom.deleteFolderConfirmRemove')
+                : t('classroom.deleteFolderEmptyDesc')}
+            </AlertDialogDescription>
+            <AlertDialogFooter>
+              <AlertDialogCancel className="min-h-11">{t('common.cancel')}</AlertDialogCancel>
+              <AlertDialogAction
+                className="min-h-11"
+                variant="destructive"
+                onClick={() => onDelete(courseCount === 0 ? 'ungroup' : 'remove')}
+              >
+                {t('classroom.delete')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    );
+  }
 
   const covers = coverSlides.slice(0, MAX_COVERS);
   // Emptiness is derived from courseCount (the authoritative source), not from

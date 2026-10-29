@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "返回",
     "you": "你",
     "confirm": "確定",
     "cancel": "取消",
@@ -10,6 +11,22 @@
     "close": "關閉"
   },
   "home": {
+    "resumeGeneration": "繼續生成",
+    "emptyLibraryTitle": "你的課程，從這裡開始",
+    "emptyLibraryBody": "在首頁建立課程後，可以在這裡繼續學習。",
+    "mobileTitle": "今天想學什麼？",
+    "mobileSubtitle": "說說你想學什麼，AI 為你生成互動課堂",
+    "mobilePlaceholder": "輸入學習主題，或上傳資料",
+    "courseOptions": "課程選項",
+    "courseMaterials": "課程資料",
+    "courseMaterialsCount": "課程資料 · {{n}} 個檔案",
+    "backToCourseOptions": "返回課程選項",
+    "materialsDone": "完成",
+    "allSettings": "所有設定",
+    "examplesLabel": "試試這些主題",
+    "examplePython": "從零學習 Python",
+    "exampleFourier": "用直觀的例子講解傅立葉轉換",
+    "desktopOnly": "編輯器和專業模式請在電腦上使用。",
     "slogan": "多智能體互動課室中的生成式學習",
     "greetingWithName": "嗨，{{name}}"
   },
@@ -2371,6 +2388,11 @@
     "homeAria": "返回首頁",
     "currentSession": "目前對話",
     "startLearning": "開始學習",
+    "classroomMode": "課堂模式",
+    "learningMode": "學習",
+    "editingMode": "編輯",
+    "editingUnavailableGenerating": "課程生成期間無法編輯。",
+    "fullscreenLearning": "全螢幕學習",
     "time": {
       "justNow": "剛剛",
       "minutesAgo": "{{count}} 分鐘前",

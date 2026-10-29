@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "Назад",
     "you": "Вы",
     "confirm": "Подтвердить",
     "cancel": "Отмена",
@@ -10,6 +11,22 @@
     "close": "Закрыть"
   },
   "home": {
+    "resumeGeneration": "Продолжить генерацию",
+    "emptyLibraryTitle": "Ваши уроки появятся здесь",
+    "emptyLibraryBody": "Создайте курс на главной странице и возвращайтесь сюда, чтобы продолжить.",
+    "mobileTitle": "Что хотите изучить?",
+    "mobileSubtitle": "Расскажите о теме, и ИИ создаст интерактивный урок.",
+    "mobilePlaceholder": "Введите тему или загрузите материалы",
+    "courseOptions": "Параметры урока",
+    "courseMaterials": "Материалы курса",
+    "courseMaterialsCount": "Материалы курса · {{n}}",
+    "backToCourseOptions": "Назад к параметрам урока",
+    "materialsDone": "Готово",
+    "allSettings": "Все настройки",
+    "examplesLabel": "Примеры тем",
+    "examplePython": "Python с нуля",
+    "exampleFourier": "Преобразование Фурье на простых примерах",
+    "desktopOnly": "Для редактора и режима Pro используйте компьютер.",
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
     "greetingWithName": "Привет, {{name}}"
   },
@@ -2386,6 +2403,11 @@
     "homeAria": "Back to home",
     "currentSession": "Current chat",
     "startLearning": "Начать обучение",
+    "classroomMode": "Режим класса",
+    "learningMode": "Учиться",
+    "editingMode": "Править",
+    "editingUnavailableGenerating": "Редактирование недоступно во время создания курса.",
+    "fullscreenLearning": "Учиться на весь экран",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",

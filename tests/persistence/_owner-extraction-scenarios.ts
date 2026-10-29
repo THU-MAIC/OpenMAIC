@@ -20,6 +20,8 @@ import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
 import { ensureUserSkillSchema } from '@openmaic/storage/skill/pg';
 import { expect, vi } from 'vitest';
 import * as imageParser from '@/lib/server/material-extraction/document-image-parser';
+import * as providerResultFetch from '@/lib/server/provider-result-fetch';
+import sharp from 'sharp';
 
 import type { DocumentExtractorProvider, MediaExtractorProvider } from '@/lib/document';
 import { getDocumentExtractorManifestEntry } from '@/lib/document/extractors/manifest';
@@ -54,6 +56,7 @@ import {
   OWNER_EXTRACTION_LEASE_TTL_MS,
   runClaimedOwnerExtraction,
   runNextOwnerExtraction,
+  startOwnerExtractionRunner,
   type OwnerExtractionDependencies,
 } from '@/lib/server/material-extraction/owner-extraction';
 
@@ -1391,6 +1394,145 @@ export async function fallbackReuseScenario(h: ExtractionHarness): Promise<void>
   expect(first.extractor).toMatchObject({ id: 'test-doc' });
   expect(second).toMatchObject({ reusedFrom: 'doc-first', text: first.text });
   expect(await extractionRootsOf(h, 'doc-second')).toEqual([first.text.assetId]);
+}
+
+/**
+ * A result that left out images whose download failed is never a cache hit:
+ * the next upload of the same bytes extracts again (and may download them),
+ * and a result with every image kept is reused as before.
+ */
+export async function failedImageDownloadScenario(h: ExtractionHarness): Promise<void> {
+  const png = await sharp({
+    create: { width: 2, height: 2, channels: 3, background: { r: 255, g: 0, b: 0 } },
+  })
+    .png()
+    .toBuffer();
+  const extract = vi.fn(async () => ({
+    metadata: { pageCount: 1 },
+    blocks: [{ id: 'b1', type: 'markdown', text: '![](images/fig-1.jpg)' }],
+    assets: [
+      {
+        id: 'img_1',
+        type: 'image',
+        data: 'https://files.example.com/media/fig-1',
+        metadata: { path: 'fig-1.jpg' },
+      },
+    ],
+  }));
+  const download = vi
+    .spyOn(providerResultFetch, 'fetchProviderResultUrl')
+    .mockResolvedValueOnce(new Response('unavailable', { status: 503 }))
+    .mockImplementation(
+      async () => new Response(new Uint8Array(png), { headers: { 'content-type': 'image/png' } }),
+    );
+  try {
+    const deps = h.deps({ providers: () => [documentProvider(extract)] });
+    const bytes = Buffer.from('%PDF-linked-images');
+    for (const id of ['doc-failed', 'doc-retried', 'doc-reused']) {
+      await seedSource(h, id, { bytes });
+      await ensure(h, id);
+      await drain(h, deps);
+    }
+    const failed = await stateOf(h, 'doc-failed');
+    expect(failed.extraction_result!.derivatives).toEqual([]);
+    expect(failed.extraction_cache_key).toBeNull();
+    const retried = (await stateOf(h, 'doc-retried')).extraction_result!;
+    expect(retried.reusedFrom).toBeUndefined();
+    expect(retried.derivatives).toHaveLength(1);
+    expect((await stateOf(h, 'doc-reused')).extraction_result).toMatchObject({
+      reusedFrom: 'doc-retried',
+    });
+    expect(extract).toHaveBeenCalledTimes(2);
+    expect(download).toHaveBeenCalledTimes(2);
+  } finally {
+    download.mockRestore();
+  }
+}
+
+/**
+ * A run cancelled while an image download stalls -- its source deleted (the
+ * heartbeat finds the claim lost), or the runner stopping -- stops at once
+ * instead of waiting out the download's timeout or deadline. The
+ * cancellation is no provider failure: no fallback runs and nothing is
+ * settled or published.
+ */
+export async function cancelledImageDownloadScenario(h: ExtractionHarness): Promise<void> {
+  const extract = vi.fn(async () => ({
+    metadata: { pageCount: 1 },
+    blocks: [{ id: 'b1', type: 'markdown', text: '![](images/fig-1.jpg)' }],
+    assets: [
+      {
+        id: 'img_1',
+        type: 'image',
+        data: 'https://files.example.com/media/stalls',
+        metadata: { path: 'fig-1.jpg' },
+      },
+    ],
+  }));
+  const fallback = vi.fn(async () => ({
+    metadata: {},
+    blocks: [{ id: 'b1', type: 'text', text: 'fallback' }],
+    assets: [],
+  }));
+  let requested!: () => void;
+  let downloadStarted = new Promise<void>((resolve) => (requested = resolve));
+  // A host that never answers and ignores the abort.
+  const download = vi
+    .spyOn(providerResultFetch, 'fetchProviderResultUrl')
+    .mockImplementation(() => {
+      requested();
+      return new Promise<Response>(() => {});
+    });
+  const within = <T>(work: Promise<T>, what: string) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    return Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${what} did not stop within 3 s`)), 3_000);
+      }),
+    ]).finally(() => clearTimeout(timer));
+  };
+  const expectUnsettled = async (id: string) => {
+    const state = await stateOf(h, id);
+    expect(state.status).toBe('running');
+    expect(state.extraction_error).toBeNull();
+    expect(state.extraction_result).toBeNull();
+  };
+  try {
+    const deps = h.deps({
+      providers: () => [
+        documentProvider(extract),
+        { ...documentProvider(fallback), id: 'test-fallback' as never },
+      ],
+    });
+
+    await seedSource(h, 'doc-deleted', { bytes: Buffer.from('%PDF-deleted') });
+    await ensure(h, 'doc-deleted');
+    const run = runNextOwnerExtraction(deps, { heartbeatIntervalMs: 10 });
+    await downloadStarted;
+    await h.pool.query('UPDATE owner_material SET deleted_at = 1 WHERE id = $1', ['doc-deleted']);
+    expect(await within(run, 'the run of a deleted source')).toBe(true);
+    await expectUnsettled('doc-deleted');
+
+    downloadStarted = new Promise<void>((resolve) => (requested = resolve));
+    await seedSource(h, 'doc-stopped', { bytes: Buffer.from('%PDF-stopped') });
+    await ensure(h, 'doc-stopped');
+    const runner = startOwnerExtractionRunner({
+      dependencies: async () => deps,
+      scanIntervalMs: 60_000,
+      heartbeatIntervalMs: 60_000,
+    });
+    await downloadStarted;
+    expect(await within(runner.stop({ timeoutMs: 10_000 }), 'the stopped runner')).toEqual({
+      drained: true,
+      running: 0,
+    });
+    await expectUnsettled('doc-stopped');
+
+    expect(fallback).not.toHaveBeenCalled();
+  } finally {
+    download.mockRestore();
+  }
 }
 
 /**

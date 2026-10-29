@@ -102,7 +102,16 @@ describe('thinking config metadata', () => {
       vision: true,
     });
     expect(hunyuanModels).toEqual(['hy3']);
-    expect(minimaxModels).toEqual(['MiniMax-M3', 'MiniMax-M2.7']);
+    expect(minimaxModels).toEqual([
+      'MiniMax-M3',
+      'MiniMax-M2.7',
+      'MiniMax-M2.7-highspeed',
+      'MiniMax-M2.5',
+      'MiniMax-M2.5-highspeed',
+      'MiniMax-M2.1',
+      'MiniMax-M2.1-highspeed',
+      'MiniMax-M2',
+    ]);
     expect(siliconflowModels).not.toContain('MiniMaxAI/MiniMax-M2');
   });
 });

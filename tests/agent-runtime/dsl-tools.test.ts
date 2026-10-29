@@ -1942,6 +1942,13 @@ describe('DSL course-tool wiring', () => {
     expect(DSL_TOOLS_PROMPT).toContain('Start with detail:"tree" to see structure');
     expect(DSL_TOOLS_PROMPT).toContain('prefer grep_stage over paging with offset');
   });
+
+  it('points a new course without a chosen skill at stage-design before planning', () => {
+    const prompt = buildRunnerCoursePrompt({});
+    expect(prompt).toContain(
+      'When the user asks for a new course and has not chosen a skill, read the `stage-design` skill before planning; topic skills build on it.',
+    );
+  });
 });
 
 describe('grep_stage source scope searches the bounded projection (R6-P2-6)', () => {
