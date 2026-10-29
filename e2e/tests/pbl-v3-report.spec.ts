@@ -227,6 +227,10 @@ test('completed project reports stay discoverable, show facts before analysis, a
     if (url.pathname.endsWith('/report')) {
       if (route.request().method() === 'POST') {
         generations++;
+        if (generations === 1)
+          return route.fulfill({
+            json: { ...base, analysis: { ...base.analysis!, status: 'failed' } },
+          });
         await gate;
         generated = true;
         return route.fulfill({ json: ready });
@@ -307,6 +311,15 @@ test('completed project reports stay discoverable, show facts before analysis, a
   await expect(report.getByText('Concepts practiced', { exact: true }).first()).toBeVisible();
   await expect(report.getByText('Reviewing a plan', { exact: true })).toBeVisible();
   await expect.poll(() => generations).toBe(1);
+  const failure = report.getByText(
+    'The analysis could not be generated. Your learning records are saved; you can retry.',
+    { exact: true },
+  );
+  await expect(failure).toBeVisible();
+  await report.getByRole('button', { name: 'Generate report / retry', exact: true }).click();
+  await expect.poll(() => generations).toBe(2);
+  await expect(report.getByText('Preparing your project report…', { exact: true })).toBeVisible();
+  await expect(failure).toHaveCount(0);
   expect(opens).toBe(0);
   expect(commands).toEqual([]);
   finish();
@@ -369,7 +382,7 @@ test('completed project reports stay discoverable, show facts before analysis, a
   await expect(
     report.getByText('You connected a boundary to behavior', { exact: true }),
   ).toBeVisible();
-  expect(generations).toBe(1);
+  expect(generations).toBe(2);
   await report.getByRole('button', { name: 'Close report', exact: true }).click();
   await workspace.getByRole('button', { name: 'Back to project overview', exact: true }).click();
   await page.getByTestId('scene-title').filter({ hasText: 'Course overview' }).click();
@@ -381,6 +394,6 @@ test('completed project reports stay discoverable, show facts before analysis, a
   await expect(report).toBeVisible();
   expect(await report.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
   await report.screenshot({ path: 'test-results/pbl-v3-report-mobile.png' });
-  expect(generations).toBe(1);
+  expect(generations).toBe(2);
   expect(commands).toEqual([]);
 });

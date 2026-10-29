@@ -777,70 +777,6 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   );
   await page.getByRole('link', { name: 'PLAN.md:1–2', exact: true }).click();
   const planEditor = page.locator('.monaco-editor textarea').first();
-  // A long streaming reply keeps its heading readable instead of chasing its tail.
-  const previousEntries = [...view.conversation!];
-  const longReply = {
-    id: 'long-streaming-reply',
-    speaker: 'discussion' as const,
-    status: 'running' as 'running' | 'succeeded',
-    parts: [{ kind: 'text' as const, id: 'long-text', text: 'A new explanation', streaming: true }],
-  };
-  view.conversation!.push(longReply);
-  view.busy = true;
-  view.activitySequence++;
-  await publishLearning();
-  const longTurn = conversation.locator('[data-turn-id="long-streaming-reply"]');
-  await expect(longTurn).toBeVisible();
-  const scrollArea = conversation.locator(':scope > div').first();
-  await scrollArea.evaluate((el) => {
-    el.scrollTop = el.scrollHeight;
-  });
-  const belowButton = conversation.getByTestId('pbl-conversation-scroll-button');
-  longReply.parts[0]!.text = Array.from(
-    { length: 35 },
-    (_, i) => `Paragraph ${i}: an explanation that grows while you read.\n\n`,
-  ).join('');
-  view.activitySequence++;
-  await publishLearning();
-  await expect(belowButton).toHaveAttribute('data-generating', 'true');
-  await expect
-    .poll(async () => {
-      const heading = await longTurn.boundingBox(),
-        viewport = await scrollArea.boundingBox();
-      return !!heading && !!viewport && heading.y >= viewport.y - 2 && heading.y <= viewport.y + 24;
-    })
-    .toBe(true);
-  const pinned = await scrollArea.evaluate((el) => el.scrollTop);
-  longReply.parts[0]!.text += '\n\n' + 'More content below the viewport.\n\n'.repeat(25);
-  view.activitySequence++;
-  await publishLearning();
-  await expect(longTurn).toContainText('More content below the viewport.');
-  await expect.poll(() => scrollArea.evaluate((el) => el.scrollTop)).toBeCloseTo(pinned, 0);
-  // Manual upward reading remains in place while output continues.
-  await scrollArea.hover();
-  await page.mouse.wheel(0, -180);
-  await expect.poll(() => scrollArea.evaluate((el) => el.scrollTop)).toBeLessThan(pinned - 30);
-  const reading = await scrollArea.evaluate((el) => el.scrollTop);
-  longReply.parts[0]!.text += '\n\nStill generating.\n\n'.repeat(10);
-  view.activitySequence++;
-  await publishLearning();
-  await expect(longTurn).toContainText('Still generating.');
-  await expect.poll(() => scrollArea.evaluate((el) => el.scrollTop)).toBeCloseTo(reading, 0);
-  longReply.status = 'succeeded';
-  longReply.parts[0]!.streaming = false;
-  view.busy = false;
-  view.activitySequence++;
-  await publishLearning();
-  await expect(belowButton).toHaveAttribute('data-generating', 'false');
-  await belowButton.click();
-  await expect
-    .poll(() => scrollArea.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
-    .toBeLessThanOrEqual(8);
-  await expect(belowButton).toHaveCount(0);
-  view.conversation = previousEntries;
-  view.activitySequence++;
-  await publishLearning();
-
   await expect(page.locator('.monaco-editor .view-lines')).toContainText('Greeting plan');
   await expect(planEditor).toBeEditable();
   await page.locator('.monaco-editor .view-lines .view-line').first().click();
@@ -1060,6 +996,74 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
   await expect(thinking.getByRole('button')).toBeEnabled();
   await expect(thinking.getByRole('button')).toHaveAttribute('aria-expanded', 'false');
+
+  // A long streaming reply keeps its heading readable instead of chasing its tail.
+  const requestsBeforeLongReply = chatRequests;
+  await page.getByLabel('Your message', { exact: true }).fill('Please explain this in detail.');
+  await page.getByRole('button', { name: 'Send message', exact: true }).click();
+  await expect.poll(() => chatRequests).toBe(requestsBeforeLongReply + 1);
+  await expect(
+    conversation.getByText('Please explain this in detail.', { exact: true }),
+  ).toBeVisible();
+  const scrollArea = conversation.locator(':scope > div').first();
+  const belowButton = conversation.getByTestId('pbl-conversation-scroll-button');
+  const previousEntries = [...view.conversation!];
+  const longReply = {
+    id: 'long-streaming-reply',
+    speaker: 'discussion' as const,
+    status: 'running' as 'running' | 'succeeded',
+    parts: [{ kind: 'text' as const, id: 'long-text', text: 'A new explanation', streaming: true }],
+  };
+  view.conversation!.push(longReply);
+  view.busy = true;
+  view.activitySequence++;
+  await publishLearning();
+  const longTurn = conversation.locator('[data-turn-id="long-streaming-reply"]');
+  await expect(longTurn).toBeVisible();
+  longReply.parts[0]!.text = Array.from(
+    { length: 35 },
+    (_, i) => `Paragraph ${i}: an explanation that grows while you read.\n\n`,
+  ).join('');
+  view.activitySequence++;
+  await publishLearning();
+  await expect(belowButton).toHaveAttribute('data-generating', 'true');
+  await expect
+    .poll(async () => {
+      const heading = await longTurn.boundingBox(),
+        viewport = await scrollArea.boundingBox();
+      return !!heading && !!viewport && heading.y >= viewport.y - 2 && heading.y <= viewport.y + 24;
+    })
+    .toBe(true);
+  const pinned = await scrollArea.evaluate((el) => el.scrollTop);
+  longReply.parts[0]!.text += '\n\n' + 'More content below the viewport.\n\n'.repeat(25);
+  view.activitySequence++;
+  await publishLearning();
+  await expect(longTurn).toContainText('More content below the viewport.');
+  await expect.poll(() => scrollArea.evaluate((el) => el.scrollTop)).toBeCloseTo(pinned, 0);
+  // Manual upward reading remains in place while output continues.
+  await scrollArea.hover();
+  await page.mouse.wheel(0, -180);
+  await expect.poll(() => scrollArea.evaluate((el) => el.scrollTop)).toBeLessThan(pinned - 30);
+  const reading = await scrollArea.evaluate((el) => el.scrollTop);
+  longReply.parts[0]!.text += '\n\nStill generating.\n\n'.repeat(10);
+  view.activitySequence++;
+  await publishLearning();
+  await expect(longTurn).toContainText('Still generating.');
+  await expect.poll(() => scrollArea.evaluate((el) => el.scrollTop)).toBeCloseTo(reading, 0);
+  longReply.status = 'succeeded';
+  longReply.parts[0]!.streaming = false;
+  view.busy = false;
+  view.activitySequence++;
+  await publishLearning();
+  await expect(belowButton).toHaveAttribute('data-generating', 'false');
+  await belowButton.click();
+  await expect
+    .poll(() => scrollArea.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
+    .toBeLessThanOrEqual(8);
+  await expect(belowButton).toHaveCount(0);
+  view.conversation = previousEntries;
+  view.activitySequence++;
+  await publishLearning();
 
   await expect(page.locator('.monaco-editor .view-lines')).toContainText('Greeting plan');
   await page.getByLabel('Your message', { exact: true }).fill('My draft answer');
