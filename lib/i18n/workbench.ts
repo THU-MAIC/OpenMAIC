@@ -187,8 +187,6 @@ export const workbenchEn = {
     technicalDetails: 'Technical details',
     repeated: 'Same notice appeared {{count}} times in a row',
     resumed: 'Continued from the interruption',
-    skillDetached:
-      'The Skill used by this conversation was deleted. It has been unlinked; you can continue chatting or choose another Skill.',
     recovering: 'Generation was interrupted and is recovering automatically',
     steerQueued: 'The agent will respond after finishing the current step',
     runFailed: 'This build failed',
@@ -533,7 +531,6 @@ export const workbenchZh = {
     technicalDetails: '技术详情',
     repeated: '相同提示连续出现 {{count}} 次',
     resumed: '已从中断处继续生成',
-    skillDetached: '此会话原先使用的技能已被删除，已解除绑定。你可以继续对话或选择其他技能。',
     recovering: '生成暂时中断，正在自动恢复',
     steerQueued: 'agent 会在当前这一步做完后回应你',
     runFailed: '本轮生成失败',

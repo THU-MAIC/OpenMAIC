@@ -121,7 +121,6 @@
     "doneWithDuration": "Pensó durante {{duration}}"
   },
   "system": {
-    "skillDetached": "Se eliminó y desvinculó la Skill que usaba esta conversación. Puedes seguir conversando o elegir otra Skill.",
     "technicalDetails": "Detalles técnicos",
     "repeated": "El mismo aviso apareció {{count}} veces seguidas",
     "resumed": "Continuó desde la interrupción",

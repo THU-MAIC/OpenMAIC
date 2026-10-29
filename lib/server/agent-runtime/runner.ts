@@ -1384,7 +1384,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
 
     if (deletedSkill) {
       // Preserve the first-lifecycle-frame contract. Then commit the recovery
-      // and its notice atomically, before this message can reach the model.
+      // and its recovery receipt atomically, before this message reaches the model.
       await flushAll();
       // Already consumed turns and the original opening message must not be
       // reinterpreted as selecting a newly created Skill with the same handle.

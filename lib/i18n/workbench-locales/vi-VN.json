@@ -121,7 +121,6 @@
     "doneWithDuration": "Đã suy nghĩ {{duration}}"
   },
   "system": {
-    "skillDetached": "Skill dùng trong cuộc trò chuyện này đã bị xóa và hủy liên kết. Bạn có thể tiếp tục trò chuyện hoặc chọn Skill khác.",
     "technicalDetails": "Chi tiết kỹ thuật",
     "repeated": "Cùng một thông báo xuất hiện {{count}} lần liên tiếp",
     "resumed": "Đã tiếp tục từ chỗ bị ngắt",

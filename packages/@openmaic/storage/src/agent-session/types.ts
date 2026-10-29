@@ -361,7 +361,7 @@ export interface AgentSessionTitleStore {
   ): Promise<AgentSessionMeta | null>;
 }
 
-/** Optional recovery capability; detachment and its user notice commit together. */
+/** Optional recovery capability; detachment and its recovery event commit together. */
 export interface AgentSessionSkillStore {
   detachSessionSkill(
     sessionId: string,

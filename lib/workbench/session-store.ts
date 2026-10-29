@@ -1082,17 +1082,9 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
       break;
     }
     case 'skill_detached': {
+      // Recovery is an internal state repair, not a new chat message. Keep the
+      // historical Skill loads intact without exposing the frozen binding.
       next.skillId = null;
-      next.chat = [
-        ...state.chat,
-        {
-          key,
-          kind: 'system',
-          tone: 'info',
-          text: defaultWorkbenchTranslator('workbench.system.skillDetached'),
-          copyKey: 'workbench.system.skillDetached',
-        },
-      ];
       break;
     }
     case 'session_interrupted': {

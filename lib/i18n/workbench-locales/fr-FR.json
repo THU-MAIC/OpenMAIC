@@ -121,7 +121,6 @@
     "doneWithDuration": "Réflexion pendant {{duration}}"
   },
   "system": {
-    "skillDetached": "La Skill utilisée dans cette conversation a été supprimée et dissociée. Vous pouvez continuer à discuter ou choisir une autre Skill.",
     "technicalDetails": "Détails techniques",
     "repeated": "Même message {{count}} fois de suite",
     "resumed": "Reprise là où ça s'était interrompu",
