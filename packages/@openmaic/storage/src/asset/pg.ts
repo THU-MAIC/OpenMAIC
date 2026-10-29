@@ -700,13 +700,49 @@ export class PgAssetStore implements AssetStore {
           await queryable.query(LOCK_STAGED_BLOB_SQL, [contentHash]);
           return queryable.query(RENEW_STAGE_SQL, [stageId, ttl]);
         });
-        if (!renewed.rows[0]) throw new RegistryStageLost();
+        if (!renewed.rows[0]) {
+          await this.reregisterOutlivedUpload(contentHash, bytes.byteLength);
+          throw new RegistryStageLost();
+        }
       } catch (error) {
         await this.releaseStage(stageId);
         throw error;
       }
     }
     return { stageId, contentHash, byteLength: bytes.byteLength, type };
+  }
+
+  /**
+   * Make the bytes of an upload that outlived its pin reclaimable again.
+   *
+   * Once the pin is dead the collector may have deleted the blob row (and the
+   * object) while the upload was still in flight, and an upload that finishes
+   * after that delete leaves an object no row names -- invisible to the
+   * collector, which only reclaims bytes it has a row for. Inserting a row
+   * stamped unreferenced now puts such an object back under collection after
+   * the ordinary grace period. `DO NOTHING` on a row that exists: then the
+   * blob is still tracked (the collector has not taken it, or a concurrent
+   * writer has re-created it), and its state is that writer's to keep. The
+   * insert takes only the blob row, so it fits every lock order. Best effort:
+   * a failure here leaves an orphan object, which costs storage and names
+   * nothing.
+   */
+  private async reregisterOutlivedUpload(
+    contentHash: ContentHash,
+    byteLength: number,
+  ): Promise<void> {
+    try {
+      await this.writeTransaction((queryable) =>
+        queryable.query(
+          `INSERT INTO asset_blobs (content_hash, byte_size, unreferenced_at)
+           VALUES ($1, $2, now())
+           ON CONFLICT (content_hash) DO NOTHING`,
+          [contentHash, byteLength],
+        ),
+      );
+    } catch {
+      // An untracked object is a storage leak, never a dangling entry.
+    }
   }
 
   /**

@@ -843,6 +843,46 @@ describe.skipIf(!contractUrl)('PgAssetStore with PostgreSQL 16', () => {
       expect((await pool.query('SELECT 1 FROM asset_blob_stages')).rows).toHaveLength(2);
     });
 
+    test('an upload that finishes after the collector reclaimed its expired pin stays collectable', async () => {
+      const layer = new GatedByteStore();
+      const registry = stagedStore(layer, { stageTtlMs: 1 });
+      const data = new Blob(['outlived its pin']);
+      const { contentHash } = await contentHashOf(data);
+      const writeGate = layer.gate('write');
+
+      const putting = registry.put(principal, data);
+      await writeGate.reached;
+      // The pin is dead: the collector takes the row while the upload is
+      // still in flight, and the object lands only afterwards.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await pool.query(`UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'`);
+      const collector = new AssetCollector(pool as Queryable, layer, {
+        graceMs: 0,
+        now: () => new Date('2026-01-01T00:00:00.000Z'),
+        withTransaction: transactionFor(pool),
+      });
+      expect(await collector.collect()).toBe(1);
+      expect((await pool.query('SELECT 1 FROM asset_blobs')).rows).toEqual([]);
+      writeGate.open();
+
+      await expect(putting).rejects.toThrow(/registry put failed/);
+      expect(await layer.read(contentHash)).not.toBeNull();
+      const tracked = await pool.query<{ stamped: boolean }>(
+        'SELECT unreferenced_at IS NOT NULL AS stamped FROM asset_blobs WHERE content_hash = $1',
+        [contentHash],
+      );
+      expect(tracked.rows).toEqual([{ stamped: true }]);
+      expect((await pool.query('SELECT * FROM asset_entries')).rows).toEqual([]);
+
+      const later = new AssetCollector(pool as Queryable, layer, {
+        graceMs: 0,
+        now: () => new Date(Date.now() + 60_000),
+        withTransaction: transactionFor(pool),
+      });
+      expect(await later.collect()).toBe(1);
+      expect(await layer.read(contentHash)).toBeNull();
+    });
+
     test('releasing a stage lets its bytes drain, and releasing again is a no-op', async () => {
       const layer = new GatedByteStore();
       const registry = stagedStore(layer);
