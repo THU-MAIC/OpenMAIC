@@ -125,12 +125,18 @@ export async function storeGeneratedAsset(
     ? (meta, blob) => input.assetStore!.put(assetPrincipalForOwner(input.ownerId), blob, meta)
     : async (meta, blob) => {
         const provider = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
+        // The bytes go up first, on the pool-bound store, so the transaction
+        // below -- and the owner lock it takes -- is never held open across an
+        // upload that may be hundreds of MiB to an object store. Nothing names
+        // the staged bytes until `putStaged` commits; a stage this function
+        // never spends expires on its own.
+        const staged = await provider.assetStore.stageBytes(blob);
         return provider.withTransaction(async (tx) => {
           const ownerId = await forwardOwnerWrite(tx, input.ownerId);
           await input.fence?.(tx);
           const assetId = await provider
             .assetStoreIn(tx)
-            .put(assetPrincipalForOwner(ownerId), blob, meta);
+            .putStaged(assetPrincipalForOwner(ownerId), staged, meta);
           await input.afterPut?.(tx, assetId);
           return assetId;
         });

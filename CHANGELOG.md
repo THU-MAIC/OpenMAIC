@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Server asset storage: `@openmaic/storage` 0.39.0 no longer holds a database transaction open across object-store byte I/O. With a byte store outside the registry's database (S3 and compatible stores), `PgAssetStore.put` and `replace` stage the bytes: a short transaction records a stage pin, the upload runs with no connection or lock held, and a second short transaction checks the principal's quota under its lock, spends the pin and writes the entry. `resolve` reads the bytes after its registry transaction commits. Previously every upload and download held a pooled connection, the blob-row lock and (with a quota) the principal's quota lock for its whole duration, so a slow object store could exhaust the pool and stall every other write. The collector skips a blob any live pin names, so a blob being uploaded is never reclaimed underneath its write. For a host that allocates inside a transaction of its own, the new `PgAssetStore.stageBytes(blob)` uploads before that transaction and `putStaged(principal, staged, meta)` allocates inside it; generated media in the app now does this. The in-database byte store keeps its single-transaction path. Schema: asset migration v3 adds `asset_blob_stages (id, content_hash, expires_at)` with two indexes; a host that provisions `ASSET_PG_SCHEMA` through its own migrations must add them before upgrading, since the collector reads that table.
+
 ## [1.3.0] - 2026-10-29
 
 1.3.0 has two themes. The **knowledge base** shipped in the release candidate (see [1.3.0-rc.1](#130-rc1---2026-10-22)): every upload stays in its owner's knowledge base until it is deleted, is organized in folders and parsed once, and the composer and the agent can use it. The **Pro workbench upgrade** is new in this release: a request shows a preview of the agent's work before the first page exists, and classroom tabs switch between Learn and Edit. This section collects what is new in 1.3.0 beyond the rc.1 section below. Coming from 1.2.x:

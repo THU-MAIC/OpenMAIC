@@ -82,6 +82,8 @@ const REQUIRED_SUITES = [
  * document store never wrote would satisfy nothing here. `asset_root_refs` is
  * the second reference table the entry lifecycle consults, so its rows must
  * have been written against a real server too, not only against PGlite.
+ * `asset_blob_stages` holds the pins of staged object-store writes, whose
+ * races with the collector only a real server can exercise.
  */
 const REQUIRED_TABLES = [
   'document_stages',
@@ -97,6 +99,7 @@ const REQUIRED_TABLES = [
   'asset_reference_tracking',
   'document_asset_withdrawals',
   'asset_root_refs',
+  'asset_blob_stages',
 ];
 
 const usage = [

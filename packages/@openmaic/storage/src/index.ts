@@ -65,6 +65,7 @@ export {
   PgAssetStore,
   ensureAssetSchema,
   type PgAssetStoreOptions,
+  type StagedAssetBytes,
 } from './asset/pg.js';
 // `./asset/references.js` is deliberately NOT re-exported. Its functions are
 // transaction-scoped maintenance primitives that replace and delete reference

@@ -615,6 +615,21 @@ export class AssetCollector {
             [candidate.content_hash, cutoff],
           );
           if (!locked.rows[0]) return false;
+          // A live stage pin means a write is uploading these bytes, or has
+          // uploaded them and not yet allocated its entry, with no lock held
+          // (see `PgAssetStore.stageBytes`). Read in a statement of its own,
+          // after the row lock: a stage claims the row before writing its pin,
+          // so a pin either committed before that lock was granted -- and this
+          // fresh READ COMMITTED snapshot sees it -- or its stage is waiting
+          // behind this transaction and will find the row gone. An expired pin
+          // protects nothing; it cascades away with the row below.
+          const staged = await queryable.query(
+            `SELECT 1 FROM asset_blob_stages
+              WHERE content_hash = $1 AND expires_at > now()
+              LIMIT 1`,
+            [candidate.content_hash],
+          );
+          if (staged.rows[0]) return false;
           if (hasTransactionalDeleter(this.byteStore)) {
             await this.byteStore.deleteWith(queryable, candidate.content_hash);
           } else {
@@ -633,6 +648,26 @@ export class AssetCollector {
       } catch (error) {
         throw carryingEntryFailure(collectorFailure(undefined, error), pendingEntryLevelFailure);
       }
+    }
+    try {
+      // Expired stage pins whose blob is still referenced -- an abandoned
+      // stage of content some entry already names -- would otherwise stay
+      // forever, since only reclaiming the blob cascades them away. Bounded
+      // like the rest of the pass, and harmless to a stage racing it: a stage
+      // that finds its pin gone fails rather than trusting bytes it can no
+      // longer vouch for.
+      await this.queryable.query(
+        `DELETE FROM asset_blob_stages
+          WHERE id IN (
+            SELECT id FROM asset_blob_stages
+             WHERE expires_at < now()
+             ORDER BY expires_at ASC
+             LIMIT $1
+          )`,
+        [this.batchSize],
+      );
+    } catch (error) {
+      throw carryingEntryFailure(collectorFailure(undefined, error), pendingEntryLevelFailure);
     }
     if (trackingFailure) throw trackingFailure;
     if (entryFailure) throw entryFailure.error;
