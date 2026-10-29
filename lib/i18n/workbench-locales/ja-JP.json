@@ -121,6 +121,7 @@
     "doneWithDuration": "{{duration}} 思考しました"
   },
   "system": {
+    "skillDetached": "この会話で使用していたスキルが削除されたため、関連付けを解除しました。会話を続けるか、別のスキルを選択できます。",
     "technicalDetails": "技術詳細",
     "repeated": "同じ通知が連続して {{count}} 回",
     "resumed": "中断したところから再開しました",

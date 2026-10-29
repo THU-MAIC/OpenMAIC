@@ -121,6 +121,7 @@
     "doneWithDuration": "{{duration}} nachgedacht"
   },
   "system": {
+    "skillDetached": "Der in diesem Gespräch verwendete Skill wurde gelöscht und die Verknüpfung aufgehoben. Du kannst weiter chatten oder einen anderen Skill wählen.",
     "technicalDetails": "Technische Details",
     "repeated": "Gleiche Meldung {{count}}× hintereinander",
     "resumed": "An der Unterbrechung fortgesetzt",

@@ -69,6 +69,23 @@ const assistantMessage = (parts: { type: string; text?: string; thinking?: strin
 const contentOf = (state: WorkbenchFold) => state.chat.filter((n) => n.kind !== 'waiting');
 
 describe('lifecycle events', () => {
+  it('shows one replay-safe deletion notice without resetting the conversation or course', () => {
+    const initial = foldAll([ev('session_start', { prompt: 'Keep this conversation' })]);
+    initial.skillId = 'usk_deleted';
+    initial.stageId = 'saved-course';
+    const notice = ev('skill_detached', {});
+    const next = foldEvent(initial, notice);
+    expect(next.skillId).toBeNull();
+    expect(next.stageId).toBe('saved-course');
+    expect(next.status).toBe('running');
+    expect(next.chat).toContainEqual(
+      expect.objectContaining({ kind: 'user', text: 'Keep this conversation' }),
+    );
+    expect(
+      next.chat.filter((node) => node.copyKey === 'workbench.system.skillDetached'),
+    ).toHaveLength(1);
+    expect(foldEvent(next, notice)).toEqual(next);
+  });
   it('session_start opens the run with the user prompt and nothing else', () => {
     const state = foldAll([ev('session_start', { prompt: '给我讲讲光的折射', workerId: 'w1' })]);
     expect(state.status).toBe('running');

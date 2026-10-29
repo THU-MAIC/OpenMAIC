@@ -191,6 +191,7 @@ export {
   type AgentSessionMessageEntry,
   type AgentSessionMeta,
   type AgentSessionStatus,
+  type AgentSessionSkillStore,
   type AgentSessionStore,
   type AgentSessionTitleStore,
   type AgentSessionTransaction,

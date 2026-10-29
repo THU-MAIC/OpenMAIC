@@ -121,6 +121,7 @@
     "doneWithDuration": "已思考 {{duration}}"
   },
   "system": {
+    "skillDetached": "此對話原先使用的技能已被刪除，已解除綁定。你可以繼續對話或選擇其他技能。",
     "technicalDetails": "技術詳情",
     "repeated": "相同提示連續出現 {{count}} 次",
     "resumed": "已從中斷處繼續生成",

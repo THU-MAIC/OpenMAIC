@@ -98,7 +98,8 @@ import {
   type PendingToolCall,
 } from './tool-call-integrity';
 import { getAgentSessionStore } from './store';
-import { listAgentUserMessages } from './user-messages';
+import { findDeletedUserSkill } from './user-skills';
+import { listAgentUserMessages, readAgentMessageLog } from './user-messages';
 import { subscribeAgentEventWakeup } from './event-notify-bus';
 import { getBackgroundDocumentStore } from './owner-scoped-documents';
 import { canonicalizeStoredOwner } from '@/lib/persistence/owner-merges';
@@ -1276,14 +1277,21 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     // ── Skills ─────────────────────────────────────────────────────────────────
     // The installed set (builtins + this owner's user-authored skills) is loaded
     // once per run. An explicit API selection (the session's frozen `skillId`)
-    // is validated here rather than at claim time; an unavailable skill is a
-    // hard error. Automatic activation lives in the transcript: a successful pi
+    // is validated here rather than at claim time. Only a confirmed deleted
+    // personal Skill may be detached; missing/foreign skills remain errors.
+    // Automatic activation lives in the transcript: a successful pi
     // `read` of SKILL.md. An explicit selection stays authoritative for this
     // session rather than being silently replaced by a later model read.
     const installedSkills = await listSkills(meta.ownerId);
     const requestedSkill = await findSkill(meta.skillId, meta.ownerId);
+    const deletedSkill =
+      meta.skillId?.startsWith('usk_') && !requestedSkill
+        ? await findDeletedUserSkill(meta.skillId, meta.ownerId)
+        : null;
     if (meta.skillId && !requestedSkill) {
-      throw new Error(`session skill "${meta.skillId}" is unavailable for its owner`);
+      if (!deletedSkill) {
+        throw new Error(`session skill "${meta.skillId}" is unavailable for its owner`);
+      }
     }
     let activeSkill = requestedSkill ?? skillReadFromTranscript(historyMessages, installedSkills);
     let userFramesSeen = 0;
@@ -1305,7 +1313,11 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       if (target) activeSkill = target;
     };
 
-    const loggedMessages = await listAgentUserMessages(store, id);
+    const {
+      messages: loggedMessages,
+      detachedSkills,
+      openingMessageSeq,
+    } = await readAgentMessageLog(store, id);
     let deliveredThrough = meta.deliveredUserMessageSeq ?? 0;
     // Each durable message's interface language (#1880), filled as the run
     // reads messages; `localeThrough` decides which one is in effect.
@@ -1369,6 +1381,37 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         repairedToolCalls: repairedToolCallIds,
       });
     }
+
+    if (deletedSkill) {
+      // Preserve the first-lifecycle-frame contract. Then commit the recovery
+      // and its notice atomically, before this message can reach the model.
+      await flushAll();
+      // Already consumed turns and the original opening message must not be
+      // reinterpreted as selecting a newly created Skill with the same handle.
+      // Fresh follow-ups after this boundary retain normal explicit selection.
+      const receipt = {
+        skillName: deletedSkill.name,
+        throughMessageSeq: Math.max(deliveredThrough, openingMessageSeq ?? 0),
+      };
+      const detached = await store.detachSessionSkill(id, {
+        ownerId: meta.ownerId,
+        workerId: WORKER_ID,
+        attempt,
+        skillId: deletedSkill.id,
+        notice: { ts: Date.now(), type: LIFECYCLE.skillDetached, data: receipt },
+      });
+      if (!detached) throw new AgentSessionLeaseLostError(id, WORKER_ID, attempt);
+      delete meta.skillId;
+      detachedSkills.push(receipt);
+    }
+
+    const skillsForMessage = (seq = 0) =>
+      installedSkills.filter(
+        (skill) =>
+          !detachedSkills.some(
+            (receipt) => receipt.skillName === skill.name && seq <= receipt.throughMessageSeq,
+          ),
+      );
 
     const driver = await resolveAgentDriverModel(await backgroundWorkspaceId(meta.ownerId));
     const streamFn = createCallLlmStreamFn({
@@ -1846,7 +1889,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         // transcript dedupe (not a special case) keeps it to one load.
         const preload = await buildSkillPreload({
           text: plannedStart.text,
-          skills: installedSkills,
+          skills: skillsForMessage(plannedStart.durableMessageSeq),
           transcript: modelMessages,
           ...(plan.kind === 'start' && requestedSkill ? { forced: [requestedSkill] } : {}),
           model: {
@@ -1897,12 +1940,13 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         // Delivery carries NO user message — the follow-up cursor is the count
         // of `user` messages in the transcript, and moving it would mark a
         // real user message delivered and drop it.
-        const resumedTurnText =
-          loggedMessages.findLast((message) => message.seq <= deliveredThrough)?.text ??
-          meta.prompt;
+        const resumedMessage = loggedMessages.findLast(
+          (message) => message.seq <= deliveredThrough,
+        );
+        const resumedTurnText = resumedMessage?.text ?? meta.prompt;
         const repair = await buildSkillPreload({
           text: resumedTurnText,
-          skills: installedSkills,
+          skills: skillsForMessage(resumedMessage?.seq),
           transcript: modelMessages,
           model: {
             api: driver.piModel.api,

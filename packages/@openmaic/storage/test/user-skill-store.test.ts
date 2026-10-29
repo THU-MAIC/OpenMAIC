@@ -93,6 +93,22 @@ describe('PgUserSkillStore with PGlite', () => {
     expect(await store.findByRef('owner-2', 'my-shared')).toMatchObject({ ownerId: 'owner-2' });
   });
 
+  test('recognizes only a deleted Skill owned by the caller, not a missing or replacement Skill', async () => {
+    const original = await store.create(OWNER, input('my-deleted'));
+    expect(await store.findDeleted(original.id, OWNER)).toBeNull();
+    await store.delete(OWNER, original.id);
+    expect(await store.findDeleted(original.id, OWNER)).toEqual({
+      id: original.id,
+      name: 'my-deleted',
+    });
+    expect(await store.findDeleted(original.id, 'owner-2')).toBeNull();
+    expect(await store.findDeleted('usk_missing', OWNER)).toBeNull();
+    const replacement = await store.create(OWNER, input('my-deleted'));
+    expect(replacement.id).not.toBe(original.id);
+    expect(await store.findDeleted(replacement.id, OWNER)).toBeNull();
+    expect(await store.find(original.id, OWNER)).toBeNull();
+  });
+
   test('deduplicates an identical at-least-once retry and refuses a conflicting duplicate', async () => {
     const first = await store.create(OWNER, input('my-method'));
     // Identical content: the same create request redelivered — same receipt.

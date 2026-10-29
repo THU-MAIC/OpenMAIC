@@ -121,6 +121,7 @@
     "doneWithDuration": "{{duration}} 동안 생각했습니다"
   },
   "system": {
+    "skillDetached": "이 대화에서 사용하던 스킬이 삭제되어 연결을 해제했습니다. 대화를 계속하거나 다른 스킬을 선택할 수 있습니다.",
     "technicalDetails": "기술 세부 정보",
     "repeated": "같은 알림이 연속 {{count}}회 발생",
     "resumed": "중단된 지점부터 계속했습니다",

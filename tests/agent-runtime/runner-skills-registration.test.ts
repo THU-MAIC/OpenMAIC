@@ -16,7 +16,7 @@
  */
 import type { AgentEvent, AgentMessage } from '@earendil-works/pi-agent-core';
 import { InMemorySessionRepo, Session } from '@earendil-works/pi-agent-core';
-import type { ClaimedAgentSession } from '@openmaic/storage';
+import type { ClaimedAgentSession, PersistedAgentSessionEvent } from '@openmaic/storage';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /** Point the real skill loader at a temp directory BEFORE config.ts loads. */
@@ -51,6 +51,8 @@ const mocks = vi.hoisted(() => ({
   resolveAgentDriverModel: vi.fn(),
   createCallLlmStreamFn: vi.fn(),
   buildAgent: vi.fn(),
+  findDeletedUserSkill: vi.fn(),
+  listUserSkills: vi.fn(),
 }));
 
 vi.mock('node:crypto', async (importActual) => {
@@ -112,7 +114,11 @@ vi.mock('@/lib/agent/runtime/build-agent', () => ({
 // owner-scoped user-skill store is neutralized (no database in this test).
 vi.mock('@/lib/server/agent-runtime/user-skills', async (importActual) => {
   const actual = await importActual<typeof import('@/lib/server/agent-runtime/user-skills')>();
-  return { ...actual, listUserSkills: vi.fn(async () => []) };
+  return {
+    ...actual,
+    listUserSkills: mocks.listUserSkills,
+    findDeletedUserSkill: mocks.findDeletedUserSkill,
+  };
 });
 
 import { runSession } from '@/lib/server/agent-runtime/runner';
@@ -139,7 +145,7 @@ function makeMeta(overrides: Partial<ClaimedAgentSession> = {}): ClaimedAgentSes
   };
 }
 
-function makeStore(meta: ClaimedAgentSession) {
+function makeStore(meta: ClaimedAgentSession, events: PersistedAgentSessionEvent[] = []) {
   let seq = 0;
   return {
     appendRunEvent: vi.fn(
@@ -155,7 +161,9 @@ function makeStore(meta: ClaimedAgentSession) {
     clearCancel: vi.fn(async () => undefined),
     finishSession: vi.fn(async () => true),
     getSession: vi.fn(async () => ({ ...meta, lease: { workerId: WORKER_ID } })),
-    readEventsAfter: vi.fn(async () => []),
+    readEventsAfter: vi.fn(async (_id: string, after: number) =>
+      events.filter((event) => event.id > after),
+    ),
     heartbeat: vi.fn(async () => true),
     getCancelRequestedAt: vi.fn(async () => null),
     isCancelRequested: vi.fn(async () => false),
@@ -164,6 +172,10 @@ function makeStore(meta: ClaimedAgentSession) {
     releaseLease: vi.fn(async () => undefined),
     requeueForRetry: vi.fn(async () => false),
     requeueSession: vi.fn(async () => false),
+    detachSessionSkill: vi.fn(async () => {
+      delete meta.skillId;
+      return true;
+    }),
   };
 }
 
@@ -212,6 +224,8 @@ interface BuildAgentOptions {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.findDeletedUserSkill.mockResolvedValue(null);
+  mocks.listUserSkills.mockResolvedValue([]);
   mocks.resolveAgentDriverModel.mockResolvedValue({
     connection: { model: undefined, thinkingConfig: undefined },
     piModel: { api: 'openai-completions', provider: 'openai', id: 'driver-model' },
@@ -229,14 +243,19 @@ beforeEach(() => {
 interface RunOutcome {
   options: BuildAgentOptions;
   promptedWith: unknown;
+  meta: ClaimedAgentSession;
+  store: ReturnType<typeof makeStore>;
 }
 
 async function runToBuildAgent(
   metaOverrides: Partial<ClaimedAgentSession> = {},
+  events: PersistedAgentSessionEvent[] = [],
+  history: AgentMessage[] = [],
 ): Promise<RunOutcome> {
   const meta = makeMeta(metaOverrides);
   const session = await makeEntryTree();
-  const store = makeStore(meta);
+  for (const message of history) await session.appendMessage(message);
+  const store = makeStore(meta, events);
   mocks.openEntryStorage.mockResolvedValue(session.getStorage());
   mocks.getAgentSessionStore.mockResolvedValue(store);
 
@@ -255,7 +274,7 @@ async function runToBuildAgent(
     WORKER_ID,
     expect.objectContaining({ status: 'succeeded' }),
   );
-  return { options: options!, promptedWith: promptedWith[0] };
+  return { options: options!, promptedWith: promptedWith[0], meta, store };
 }
 
 describe('skills runner registration', () => {
@@ -409,6 +428,130 @@ describe('skills runner registration', () => {
 
     expect(promptedWith).toBe('Just help me out');
   });
+
+  it('persists deletion recovery, continues the same request, and does not detach again next run', async () => {
+    mocks.findDeletedUserSkill.mockResolvedValue({ id: 'usk_deleted', name: 'my-method' });
+    const first = await runToBuildAgent({ skillId: 'usk_deleted', prompt: 'Just help me out' });
+    expect(first.promptedWith).toBe('Just help me out');
+    expect(mocks.findDeletedUserSkill).toHaveBeenCalledWith('usk_deleted', 'owner-1');
+    expect(first.store.detachSessionSkill).toHaveBeenCalledWith(
+      SESSION_ID,
+      expect.objectContaining({
+        ownerId: 'owner-1',
+        workerId: WORKER_ID,
+        attempt: 1,
+        skillId: 'usk_deleted',
+        notice: expect.objectContaining({
+          type: 'skill_detached',
+          data: { skillName: 'my-method', throughMessageSeq: 0 },
+        }),
+      }),
+    );
+    expect(first.store.appendRunEvent.mock.calls[0]![2].type).toBe('session_start');
+    expect(first.meta).not.toHaveProperty('skillId');
+    const second = await runToBuildAgent(first.meta);
+    expect(second.store.detachSessionSkill).not.toHaveBeenCalled();
+    expect(second.promptedWith).toBe('Just help me out');
+  });
+
+  it('still preloads an explicitly requested available Skill after deletion recovery', async () => {
+    mocks.findDeletedUserSkill.mockResolvedValue({ id: 'usk_deleted', name: 'my-method' });
+    const result = await runToBuildAgent({
+      skillId: 'usk_deleted',
+      prompt: '/pro-editing adjust the title',
+    });
+    const group = result.promptedWith as Array<{ role: string; details?: { skill?: string } }>;
+    expect(group.map((message) => message.role)).toEqual(['user', 'assistant', 'toolResult']);
+    expect(group[2]!.details?.skill).toBe('pro-editing');
+  });
+
+  it.each(['recover', 'restart', 'explicit follow-up', 'first follow-up'])(
+    'handles a same-name replacement without replaying old intent (%s)',
+    async (mode) => {
+      mocks.findDeletedUserSkill.mockResolvedValue({ id: 'usk_deleted', name: 'my-method' });
+      mocks.listUserSkills.mockResolvedValue([
+        {
+          id: 'usk_replacement',
+          ownerId: 'owner-1',
+          name: 'my-method',
+          title: 'Replacement',
+          description: 'New instructions',
+          content: 'Only these new instructions.',
+          version: 1,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ]);
+      const prompt = '/my-method Just help me out';
+      const events: PersistedAgentSessionEvent[] = [
+        { id: 1, ts: 1, attempt: 0, type: 'user_message', data: { text: prompt } },
+      ];
+      if (mode !== 'recover' && mode !== 'first follow-up') {
+        events.push({
+          id: 2,
+          ts: 2,
+          attempt: 1,
+          type: 'skill_detached',
+          data: { skillName: 'my-method', throughMessageSeq: 1 },
+        });
+      }
+      if (mode === 'explicit follow-up') {
+        events.push({ id: 3, ts: 3, attempt: 0, type: 'user_message', data: { text: prompt } });
+      }
+      const history: AgentMessage[] = [];
+      if (mode === 'first follow-up') {
+        events.splice(
+          0,
+          events.length,
+          { id: 1, ts: 1, attempt: 1, type: 'session_start', data: { prompt } },
+          { id: 2, ts: 2, attempt: 1, type: 'session_end', data: { status: 'succeeded' } },
+          { id: 3, ts: 3, attempt: 0, type: 'user_message', data: { text: prompt } },
+        );
+        history.push({ role: 'user', content: prompt, timestamp: 1 }, {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'done' }],
+          stopReason: 'stop',
+          timestamp: 2,
+        } as unknown as AgentMessage);
+      }
+      const explicit = mode === 'explicit follow-up' || mode === 'first follow-up';
+      const result = await runToBuildAgent(
+        {
+          skillId: mode === 'recover' || mode === 'first follow-up' ? 'usk_deleted' : undefined,
+          prompt,
+          deliveredUserMessageSeq: mode === 'explicit follow-up' ? 1 : 0,
+        },
+        events,
+        history,
+      );
+      const group = result.promptedWith as Array<{ role: string; details?: { skill?: string } }>;
+      expect(group.map((message) => message.role)).toEqual(
+        explicit ? ['user', 'assistant', 'toolResult'] : ['user'],
+      );
+      if (explicit) expect(group[2]!.details?.skill).toBe('usk_replacement');
+      expect(result.meta.skillId).toBeUndefined();
+    },
+  );
+
+  it.each(['missing', 'database', 'lease'])(
+    'does not silently recover from %s errors',
+    async (failure) => {
+      const meta = makeMeta({ skillId: 'usk_deleted' });
+      const session = await makeEntryTree();
+      const store = makeStore(meta);
+      mocks.openEntryStorage.mockResolvedValue(session.getStorage());
+      mocks.getAgentSessionStore.mockResolvedValue(store);
+      if (failure === 'database')
+        mocks.findDeletedUserSkill.mockRejectedValue(new Error('database unavailable'));
+      if (failure === 'lease') {
+        mocks.findDeletedUserSkill.mockResolvedValue({ id: 'usk_deleted', name: 'my-method' });
+        store.detachSessionSkill.mockResolvedValue(false);
+      }
+      await runSession({ running: new Map(), shuttingDown: false }, meta);
+      expect(mocks.buildAgent).not.toHaveBeenCalled();
+      if (failure !== 'lease') expect(store.detachSessionSkill).not.toHaveBeenCalled();
+    },
+  );
 
   it('reuses the fixture temp dir so the loader reads real files', () => {
     expect(fixture.root).toBe(process.env.OPENMAIC_AGENT_SKILLS_DIR);

@@ -1081,6 +1081,20 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
       openWaiting(next, `${key}-w`, event.ts);
       break;
     }
+    case 'skill_detached': {
+      next.skillId = null;
+      next.chat = [
+        ...state.chat,
+        {
+          key,
+          kind: 'system',
+          tone: 'info',
+          text: defaultWorkbenchTranslator('workbench.system.skillDetached'),
+          copyKey: 'workbench.system.skillDetached',
+        },
+      ];
+      break;
+    }
     case 'session_interrupted': {
       // PR1: the runner parked the job WITHOUT a terminal status (deploy
       // handoff / lease lost). The row stays `running`; another instance will

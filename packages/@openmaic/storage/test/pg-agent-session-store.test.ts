@@ -53,6 +53,71 @@ describe('PgAgentSessionStore with PGlite', () => {
   });
   runAgentSessionUrlContract('Postgres (PGlite)', () => store);
 
+  test('detaches a Skill under the active lease and commits its notice exactly once', async () => {
+    await store.createSession(makeAgentSessionInput({ skillId: 'usk_deleted' }));
+    const claim = await store.claimNextSession('worker-a', 101, {
+      leaseTtlMs: 10_000,
+      maxAttempts: 5,
+    });
+    const before = await store.getSession('session-1');
+    const input = {
+      ownerId: 'owner-a',
+      workerId: 'worker-a',
+      attempt: claim!.attempt,
+      skillId: 'usk_deleted',
+      notice: { ts: 123, type: 'skill_detached', data: {} },
+    };
+    for (const wrong of [
+      { ownerId: 'owner-b' },
+      { workerId: 'worker-b' },
+      { attempt: 99 },
+      { skillId: 'usk_other' },
+    ]) {
+      expect(await store.detachSessionSkill('session-1', { ...input, ...wrong })).toBe(false);
+    }
+    expect(await store.detachSessionSkill('session-1', input)).toBe(true);
+    const after = await store.getSession('session-1');
+    expect(after).not.toHaveProperty('skillId');
+    expect(after).toMatchObject({
+      stageId: before!.stageId,
+      prompt: before!.prompt,
+      ownerId: before!.ownerId,
+      status: 'running',
+      attempt: claim!.attempt,
+    });
+    expect(await store.detachSessionSkill('session-1', input)).toBe(false);
+    expect(
+      (await store.readEventsAfter('session-1', 0, 100)).filter((e) => e.type === 'skill_detached'),
+    ).toHaveLength(1);
+  });
+
+  test('rolls back Skill detachment if the durable notice cannot commit', async () => {
+    await store.createSession(makeAgentSessionInput({ skillId: 'usk_deleted' }));
+    const claim = await store.claimNextSession('worker-a', 101, {
+      leaseTtlMs: 10_000,
+      maxAttempts: 5,
+    });
+    const failing = new PgAgentSessionStore(db, {
+      ...optionsFor(db),
+      onSessionEventAppended: async () => {
+        throw new Error('notice write failed');
+      },
+    });
+    await expect(
+      failing.detachSessionSkill('session-1', {
+        ownerId: 'owner-a',
+        workerId: 'worker-a',
+        attempt: claim!.attempt,
+        skillId: 'usk_deleted',
+        notice: { ts: 123, type: 'skill_detached', data: {} },
+      }),
+    ).rejects.toThrow('notice write failed');
+    expect((await store.getSession('session-1'))?.skillId).toBe('usk_deleted');
+    expect(
+      (await store.readEventsAfter('session-1', 0, 100)).filter((e) => e.type === 'skill_detached'),
+    ).toHaveLength(0);
+  });
+
   const textCases = [
     ['before\u0000after', 'beforeafter'],
     ['\uD800left\uDC00', '\uFFFDleft\uFFFD'],
