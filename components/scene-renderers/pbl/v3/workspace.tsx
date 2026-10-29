@@ -1,7 +1,8 @@
 'use client';
 import type { FileReference } from '@/lib/pbl/v3/file-reference';
 import { environmentNotice, environmentNoticeKeys } from '@/lib/pbl/v3/environment-status';
-import { ApplicationPreview } from './application-preview';
+import { ApplicationPreview, ApplicationPreviewToggle } from './application-preview';
+import { useApplicationPreview } from './use-application-preview';
 import { usePblActivityGeneration } from './activity-provider';
 import {
   ArrowUp,
@@ -89,6 +90,7 @@ function PBLV3WorkspaceContent({
   const commandInFlight = useRef(false);
   const [sent, setSent] = useState(0);
   const [dirtyFiles, setDirtyFiles] = useState(false);
+  const applicationPreview = useApplicationPreview(view, workbench, dirtyFiles);
   const answerKey = `${view?.id}:${view?.state.position.milestoneId}:${view?.state.position.stageIndex}`;
   const answers = quizAnswers.key === answerKey ? quizAnswers.values : [];
   const retry = useRef<{
@@ -345,12 +347,7 @@ function PBLV3WorkspaceContent({
         )}
         {view && (
           <>
-            <ApplicationPreview
-              key={`${view.id}:${view.environmentId}`}
-              view={view}
-              workbench={workbench}
-              dirty={dirtyFiles}
-            />
+            {view.application && <ApplicationPreviewToggle preview={applicationPreview} />}
             <LearningPanels key={view.id} view={view} />
             {view.reportAvailable && (
               <button
@@ -566,6 +563,13 @@ function PBLV3WorkspaceContent({
             </div>
           )}
           <WorkbenchSplit
+            application={
+              view.application ? (
+                <ApplicationPreview application={view.application} preview={applicationPreview} />
+              ) : undefined
+            }
+            showApplication={applicationPreview.open}
+            onCollapseApplication={applicationPreview.close}
             showWorkspace={showWorkspace}
             showAssistant={showAssistant}
             workspace={

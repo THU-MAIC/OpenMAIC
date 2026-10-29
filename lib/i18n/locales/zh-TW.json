@@ -2936,10 +2936,10 @@
     "application": {
       "open": "Open application",
       "restart": "Restart application",
-      "newTab": "Open in a new tab",
+      "newTab": "在新分頁開啟暫時預覽",
       "saveFirst": "Wait for your edits to save before opening the application.",
       "wait": "Wait for the environment, Agent or assessment to finish.",
-      "notice": "Runs your saved code. Edits, builds, tests and checkpoints may stop it; reopen afterwards. Restarting can clear temporary data.",
+      "notice": "執行已儲存的程式碼。編輯或測試後，可重新開啟應用。",
       "changed": "Saved sources changed after this application started. Restart to try the current version.",
       "expired": "Application access expired. Reopen to renew it.",
       "reopen": "Reopen application",
@@ -2947,7 +2947,10 @@
       "failed": "The application exited. Read the output or ask your current assistant for help.",
       "unavailable": "The application is not responding yet. Reopen, or share the error with your assistant.",
       "restore": "恢復應用環境",
-      "restoreNotice": "作品與報告仍可查看。如要再次執行應用，請恢復應用環境；完成後的原始碼仍為唯讀。"
+      "restoreNotice": "作品與報告仍可查看。如要再次執行應用，請恢復應用環境；完成後的原始碼仍為唯讀。",
+      "collapse": "收起應用",
+      "help": "應用說明",
+      "ready": "點擊重新執行，試試已儲存的程式碼。"
     }
   }
 }

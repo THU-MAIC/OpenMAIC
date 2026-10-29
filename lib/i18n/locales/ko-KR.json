@@ -2936,10 +2936,10 @@
     "application": {
       "open": "Open application",
       "restart": "Restart application",
-      "newTab": "Open in a new tab",
+      "newTab": "새 탭에서 임시 미리보기 열기",
       "saveFirst": "Wait for your edits to save before opening the application.",
       "wait": "Wait for the environment, Agent or assessment to finish.",
-      "notice": "Runs your saved code. Edits, builds, tests and checkpoints may stop it; reopen afterwards. Restarting can clear temporary data.",
+      "notice": "저장된 코드를 실행합니다. 편집이나 테스트 후 앱을 다시 열 수 있습니다.",
       "changed": "Saved sources changed after this application started. Restart to try the current version.",
       "expired": "Application access expired. Reopen to renew it.",
       "reopen": "Reopen application",
@@ -2947,7 +2947,10 @@
       "failed": "The application exited. Read the output or ask your current assistant for help.",
       "unavailable": "The application is not responding yet. Reopen, or share the error with your assistant.",
       "restore": "Restore application environment",
-      "restoreNotice": "Your saved source and report remain available. Restore the environment to run your application again; completed source stays read-only."
+      "restoreNotice": "Your saved source and report remain available. Restore the environment to run your application again; completed source stays read-only.",
+      "collapse": "앱 접기",
+      "help": "앱 도움말",
+      "ready": "앱을 실행하여 저장된 코드를 확인하세요."
     }
   }
 }

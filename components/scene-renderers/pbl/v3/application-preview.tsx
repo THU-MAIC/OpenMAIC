@@ -1,239 +1,163 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
-import { AppWindow, ExternalLink, LoaderCircle, RefreshCw } from 'lucide-react';
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { AppWindow, ChevronRight, ExternalLink, Info, LoaderCircle, RefreshCw } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { LearningView } from '@/lib/pbl/v3/types';
-import type { LearningWorkbench } from '@/lib/pbl/v3/workbench';
-import type { ApplicationObservation } from '@/lib/pbl/v3/application';
-import { pblRequest } from './request';
+import type { ApplicationPreviewController } from './use-application-preview';
 
-export function ApplicationPreview({
-  view,
-  workbench,
-  dirty,
-}: {
-  view: LearningView;
-  workbench: LearningWorkbench | null;
-  dirty: boolean;
-}) {
+export function ApplicationPreviewToggle({ preview }: { preview: ApplicationPreviewController }) {
   const { t } = useI18n();
-  const [open, setOpen] = useState(false),
-    [pending, setPending] = useState(false);
-  const [observation, setObservation] = useState<ApplicationObservation | null>(null);
-  const [error, setError] = useState(''),
-    [expired, setExpired] = useState(false);
-  const trigger = useRef<HTMLButtonElement | null>(null);
-  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
-  const attempt = useRef(0),
-    controller = useRef<AbortController | null>(null);
-  const disabled =
-    dirty || view.busy || !!view.evaluation || !view.environment?.ready || !workbench;
-  useEffect(
-    () => () => {
-      ++attempt.current;
-      controller.current?.abort();
-    },
-    [],
-  );
-  useEffect(() => {
-    ++attempt.current;
-    controller.current?.abort();
-    setOpen(false);
-    setPending(false);
-    setObservation(null);
-    setError('');
-  }, [view.id, workbench?.environmentId, workbench?.epoch]);
-  useEffect(() => {
-    if (!observation?.preview) return;
-    const timer = setTimeout(
-      () => setExpired(true),
-      Math.max(0, observation.preview.expiresAt - Date.now()),
-    );
-    return () => clearTimeout(timer);
-  }, [observation]);
-  async function load(action: 'open' | 'restart') {
-    if (disabled || !workbench) return;
-    const serial = ++attempt.current;
-    controller.current?.abort();
-    const abort = new AbortController();
-    controller.current = abort;
-    setPortalContainer(
-      trigger.current?.closest<HTMLElement>('[data-pbl-v3-portal]') ??
-        (document.fullscreenElement as HTMLElement | null),
-    );
-    setOpen(true);
-    setPending(true);
-    setError('');
-    setObservation(null);
-    setExpired(false);
-    const request = {
-      studyId: view.id,
-      environmentId: workbench.environmentId,
-      revision: view.revision,
-      epoch: workbench.epoch,
-      id: crypto.randomUUID(),
-      action,
-    };
-    try {
-      let result = await pblRequest<ApplicationObservation>(
-        '/api/pbl/v3/application',
-        request,
-        abort.signal,
-      );
-      // Reuse the exact request receipt; slow startup cannot execute a second server.
-      for (let retry = 0; result.state === 'starting' && retry < 3; retry++) {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        abort.signal.throwIfAborted();
-        result = await pblRequest<ApplicationObservation>(
-          '/api/pbl/v3/application',
-          request,
-          abort.signal,
-        );
-      }
-      if (serial === attempt.current) setObservation(result);
-    } catch (e) {
-      if (serial === attempt.current && !abort.signal.aborted) setError((e as Error).message);
-    } finally {
-      if (serial === attempt.current) setPending(false);
-    }
-  }
-  if (!view.application) return null;
+  const { setTrigger, disabled, open, dirty, toggle, panelId } = preview;
   return (
-    <>
-      <button
-        ref={trigger}
-        type="button"
-        data-testid="pbl-application-open"
-        disabled={disabled}
-        onClick={() => void load('open')}
-        title={t(
-          dirty
+    <button
+      ref={setTrigger}
+      type="button"
+      data-testid="pbl-application-open"
+      disabled={disabled && !open}
+      onClick={toggle}
+      aria-expanded={open}
+      aria-controls={panelId}
+      title={t(
+        open
+          ? 'pblV3.application.collapse'
+          : dirty
             ? 'pblV3.application.saveFirst'
             : disabled
               ? 'pblV3.application.wait'
               : 'pblV3.application.open',
-        )}
-        className="inline-flex items-center gap-1.5 rounded border px-2 py-1.5 text-xs disabled:opacity-40"
-      >
-        <AppWindow size={15} />
-        <span>{t('pblV3.application.open')}</span>
-      </button>
-      <Dialog
-        open={open}
-        onOpenChange={(value) => {
-          setOpen(value);
-          if (!value) {
-            ++attempt.current;
-            controller.current?.abort();
-            setPending(false);
-          }
-        }}
-      >
-        <DialogContent
-          container={portalContainer}
-          overlayClassName="z-[140]"
-          className="z-[150] flex h-[88vh] max-w-[94vw] flex-col gap-3 p-4"
-          onKeyDown={(event) => event.stopPropagation()}
-        >
-          <div className="flex shrink-0 items-start gap-3 pr-8">
-            <div className="min-w-0 flex-1">
-              <DialogTitle>{view.application.title}</DialogTitle>
-              <DialogDescription className="mt-1">
-                {t('pblV3.application.notice')}
-              </DialogDescription>
-            </div>
-            <button
-              type="button"
-              disabled={pending || disabled}
-              className="inline-flex items-center gap-1.5 rounded border px-3 py-1.5 text-xs disabled:opacity-40"
-              onClick={() => void load('restart')}
-            >
-              {pending ? (
-                <LoaderCircle size={14} className="animate-spin" />
-              ) : (
-                <RefreshCw size={14} />
-              )}
-              {t('pblV3.application.restart')}
-            </button>
-            {observation?.preview && !expired && (
-              <a
-                href={observation.preview.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded border p-1.5"
-                aria-label={t('pblV3.application.newTab')}
-              >
-                <ExternalLink size={15} />
-              </a>
-            )}
+      )}
+      className="inline-flex shrink-0 items-center gap-1.5 rounded border px-2 py-1.5 text-xs aria-expanded:bg-primary aria-expanded:text-primary-foreground disabled:opacity-40"
+    >
+      <AppWindow size={15} />
+      <span>{t('pblV3.application.open')}</span>
+    </button>
+  );
+}
+
+export function ApplicationPreview({
+  application,
+  preview,
+}: {
+  application: NonNullable<LearningView['application']>;
+  preview: ApplicationPreviewController;
+}) {
+  const { t } = useI18n();
+  const { pending, observation, error, expired, disabled } = preview;
+  const available = !disabled && observation?.preview && !expired;
+  return (
+    <section
+      id={preview.panelId}
+      aria-label={application.title}
+      aria-hidden={!preview.open}
+      inert={!preview.open}
+      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background"
+      data-testid="pbl-application-panel"
+    >
+      <header className="relative flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs">
+        <AppWindow size={15} className="shrink-0" />
+        <h3 className="min-w-0 flex-1 truncate font-semibold">{application.title}</h3>
+        <details>
+          <summary
+            aria-label={t('pblV3.application.help')}
+            title={t('pblV3.application.help')}
+            className="cursor-pointer list-none rounded p-1 hover:bg-muted"
+          >
+            <Info size={15} />
+          </summary>
+          <div className="absolute left-3 right-3 top-full z-30 space-y-2 rounded border bg-popover p-3 text-popover-foreground shadow-lg">
+            <p className="whitespace-pre-line">{application.description}</p>
+            <p className="text-muted-foreground">{t('pblV3.application.notice')}</p>
           </div>
-          <p className="shrink-0 whitespace-pre-line text-xs text-muted-foreground">
-            {view.application.description}
-          </p>
-          {observation?.sourceChanged && (
-            <p role="status" className="text-sm text-amber-600">
-              {t('pblV3.application.changed')}
-            </p>
-          )}
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
-          {expired ? (
-            <div className="flex flex-1 items-center justify-center gap-3">
-              <p>{t('pblV3.application.expired')}</p>
-              <button
-                className="rounded border px-3 py-2"
-                disabled={pending || disabled}
-                onClick={() => void load('open')}
-              >
-                {t('pblV3.application.reopen')}
-              </button>
-            </div>
-          ) : observation?.preview ? (
-            <iframe
-              key={observation.preview.url}
-              title={view.application.title}
-              src={observation.preview.url}
-              sandbox="allow-scripts allow-forms allow-same-origin"
-              referrerPolicy="no-referrer"
-              className="min-h-0 w-full flex-1 rounded-lg border bg-white"
-            />
-          ) : (
-            <div
-              role="status"
-              className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 overflow-auto rounded-lg border bg-muted/30 p-6"
-            >
-              {pending && <LoaderCircle className="animate-spin" />}
-              <p>
-                {t(
-                  pending
-                    ? 'pblV3.application.starting'
+        </details>
+        <button
+          type="button"
+          disabled={pending || disabled}
+          className="rounded p-1 hover:bg-muted disabled:opacity-40"
+          title={t('pblV3.application.restart')}
+          aria-label={t('pblV3.application.restart')}
+          onClick={() => void preview.load('restart')}
+        >
+          {pending ? <LoaderCircle size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+        </button>
+        {available && (
+          <a
+            href={observation.preview!.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={t('pblV3.application.newTab')}
+            aria-label={t('pblV3.application.newTab')}
+            className="rounded p-1 hover:bg-muted"
+          >
+            <ExternalLink size={15} />
+          </a>
+        )}
+        <button
+          type="button"
+          className="rounded p-1 hover:bg-muted"
+          title={t('pblV3.application.collapse')}
+          aria-label={t('pblV3.application.collapse')}
+          onClick={preview.close}
+        >
+          <ChevronRight size={15} />
+        </button>
+      </header>
+      {observation?.sourceChanged && (
+        <p role="status" className="px-3 py-2 text-xs text-amber-600">
+          {t('pblV3.application.changed')}
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="px-3 py-2 text-xs text-destructive">
+          {error}
+        </p>
+      )}
+      {available ? (
+        <iframe
+          key={observation.preview!.url}
+          title={application.title}
+          src={observation.preview!.url}
+          sandbox="allow-scripts allow-forms allow-same-origin"
+          referrerPolicy="no-referrer"
+          className="min-h-0 w-full flex-1 border-0 bg-white"
+        />
+      ) : (
+        <div
+          role="status"
+          className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 overflow-auto p-4 text-center text-sm text-muted-foreground"
+        >
+          {pending && <LoaderCircle className="animate-spin" />}
+          <p>
+            {t(
+              disabled
+                ? preview.dirty
+                  ? 'pblV3.application.saveFirst'
+                  : 'pblV3.application.wait'
+                : pending
+                  ? 'pblV3.application.starting'
+                  : expired
+                    ? 'pblV3.application.expired'
                     : observation?.state === 'failed'
                       ? 'pblV3.application.failed'
-                      : 'pblV3.application.unavailable',
-                )}
-              </p>
-              {observation?.output && (
-                <pre className="max-h-40 max-w-full overflow-auto whitespace-pre-wrap text-xs">
-                  {observation.output}
-                </pre>
-              )}
-              {!pending && (
-                <button
-                  disabled={disabled}
-                  className="rounded border px-3 py-2"
-                  onClick={() => void load('open')}
-                >
-                  {t('pblV3.application.reopen')}
-                </button>
-              )}
-            </div>
+                      : observation
+                        ? 'pblV3.application.unavailable'
+                        : 'pblV3.application.ready',
+            )}
+          </p>
+          {observation?.output && (
+            <pre className="max-h-40 max-w-full overflow-auto whitespace-pre-wrap text-left text-xs">
+              {observation.output}
+            </pre>
           )}
-        </DialogContent>
-      </Dialog>
-    </>
+          {!pending && !disabled && (
+            <button
+              type="button"
+              className="rounded border px-3 py-2 text-foreground"
+              onClick={() => void preview.load('open')}
+            >
+              {t('pblV3.application.reopen')}
+            </button>
+          )}
+        </div>
+      )}
+    </section>
   );
 }

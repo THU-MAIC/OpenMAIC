@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, createElement } from 'react';
+import { act, createElement, Fragment } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { LearningView } from '@/lib/pbl/v3/types';
@@ -8,69 +8,170 @@ import type { ApplicationObservation } from '@/lib/pbl/v3/application';
 vi.mock('@/lib/hooks/use-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 const mocks = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock('@/components/scene-renderers/pbl/v3/request', () => ({ pblRequest: mocks.request }));
-import { ApplicationPreview } from '@/components/scene-renderers/pbl/v3/application-preview';
+import {
+  ApplicationPreview,
+  ApplicationPreviewToggle,
+} from '@/components/scene-renderers/pbl/v3/application-preview';
+import { useApplicationPreview } from '@/components/scene-renderers/pbl/v3/use-application-preview';
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   mocks.request.mockReset();
 });
-
-it('opens immediately inside the moving fullscreen host, and drops late results on binding changes', async () => {
-  let resolve!: (value: ApplicationObservation) => void;
-  let signal!: AbortSignal;
+const view = {
+  id: 'study',
+  environmentId: 'environment',
+  busy: false,
+  revision: 0,
+  environment: { ready: true },
+  application: { title: 'Preview', description: 'Course-specific help.' },
+} as LearningView;
+const workbench = { environmentId: 'environment', epoch: 0 } as LearningWorkbench;
+const running = {
+  observedAt: '',
+  state: 'running',
+  preview: { url: 'https://isolated.example/preview', expiresAt: Date.now() + 60_000 },
+} satisfies ApplicationObservation;
+function Harness({
+  current = view,
+  epoch = 0,
+  dirty = false,
+}: {
+  current?: LearningView;
+  epoch?: number;
+  dirty?: boolean;
+}) {
+  const preview = useApplicationPreview(current, { ...workbench, epoch }, dirty);
+  return createElement(
+    Fragment,
+    null,
+    createElement(ApplicationPreviewToggle, { preview }),
+    createElement(ApplicationPreview, { application: current.application!, preview }),
+  );
+}
+async function fixture() {
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host);
+  await act(async () => root.render(createElement(Harness)));
+  return {
+    host,
+    root,
+    click: async () =>
+      act(async () =>
+        (host.querySelector('[data-testid="pbl-application-open"]') as HTMLButtonElement).click(),
+      ),
+    cleanup: async () => {
+      await act(async () => root.unmount());
+      host.remove();
+    },
+  };
+}
+it('opens a dock immediately and rejects stale results after environment rotation', async () => {
+  let resolve!: (value: ApplicationObservation) => void, signal!: AbortSignal;
   mocks.request.mockImplementation((_url, _body, abort: AbortSignal) => {
     signal = abort;
     return new Promise((done) => {
       resolve = done;
     });
   });
-  const host = document.createElement('div');
-  host.dataset.pblV3Portal = '';
-  const content = document.createElement('div');
-  host.append(content);
-  document.body.append(host);
-  const root = createRoot(content);
-  const view = {
-    id: 'study',
-    busy: false,
-    revision: 0,
-    environment: { ready: true },
-    application: { title: 'Preview', description: 'Try this project.' },
-  } as LearningView;
-  const workbench = { environmentId: 'environment', epoch: 0 } as LearningWorkbench;
-  const render = (epoch: number) =>
-    root.render(
-      createElement(ApplicationPreview, { view, workbench: { ...workbench, epoch }, dirty: false }),
-    );
+  const f = await fixture();
   try {
-    await act(async () => render(0));
-    await act(async () => {
-      (content.querySelector('[data-testid="pbl-application-open"]') as HTMLButtonElement).click();
-    });
-    const dialog = host.querySelector('[role="dialog"]')!;
-    expect(dialog).not.toBeNull();
-    expect(dialog.className).toContain('z-[150]');
-    expect(host.querySelector('[data-slot="dialog-overlay"]')?.className).toContain('z-[140]');
-    expect(dialog.textContent).toContain('pblV3.application.starting');
-    // Native fullscreen moves the same portal host, rather than recreating its children.
-    const fullscreen = document.createElement('section');
-    document.body.append(fullscreen);
-    fullscreen.append(host);
-    expect(fullscreen.querySelector('[role="dialog"]')).toBe(dialog);
-    await act(async () => render(1));
+    await f.click();
+    expect(
+      f.host.querySelector('[data-testid="pbl-application-panel"]')?.getAttribute('aria-hidden'),
+    ).toBe('false');
+    expect(f.host.textContent).toContain('pblV3.application.starting');
+    expect(f.host.querySelector('[role="dialog"]')).toBeNull();
+    await act(async () => f.root.render(createElement(Harness, { epoch: 1 })));
     expect(signal.aborted).toBe(true);
-    expect(host.querySelector('[role="dialog"]')).toBeNull();
-    await act(async () =>
-      resolve({
-        observedAt: '',
-        state: 'running',
-        preview: { url: 'https://isolated.example/preview', expiresAt: Date.now() + 60_000 },
-      }),
-    );
-    expect(host.querySelector('iframe')).toBeNull();
-    fullscreen.remove();
+    await act(async () => resolve(running));
+    expect(f.host.querySelector('iframe')).toBeNull();
+    expect(f.host.querySelector('[aria-controls]')?.getAttribute('aria-expanded')).toBe('false');
   } finally {
-    await act(async () => root.unmount());
-    host.remove();
+    await f.cleanup();
+  }
+});
+it('collapse preserves the iframe without stopping, relaunching or exposing it to keyboard navigation', async () => {
+  mocks.request.mockResolvedValue(running);
+  const f = await fixture();
+  try {
+    await f.click();
+    const frame = f.host.querySelector('iframe');
+    expect(frame).not.toBeNull();
+    await f.click();
+    const panel = f.host.querySelector('[data-testid="pbl-application-panel"]')!;
+    expect(panel.hasAttribute('inert')).toBe(true);
+    expect(panel.getAttribute('aria-hidden')).toBe('true');
+    await f.click();
+    expect(f.host.querySelector('iframe')).toBe(frame);
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+    expect(f.host.querySelector('details')?.open).toBe(false);
+  } finally {
+    await f.cleanup();
+  }
+});
+it('invalidates interactive preview during writes or agent work and requires an explicit reopen', async () => {
+  mocks.request.mockResolvedValue(running);
+  const f = await fixture();
+  try {
+    await f.click();
+    await act(async () =>
+      f.root.render(createElement(Harness, { current: { ...view, busy: true } })),
+    );
+    expect(f.host.querySelector('iframe')).toBeNull();
+    await act(async () => f.root.render(createElement(Harness)));
+    expect(f.host.querySelector('iframe')).toBeNull();
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      Array.from(f.host.querySelectorAll('button'))
+        .find((b) => b.textContent === 'pblV3.application.reopen')!
+        .click(),
+    );
+    expect(f.host.querySelector('iframe')).not.toBeNull();
+    await act(async () => f.root.render(createElement(Harness, { dirty: true })));
+    expect(f.host.querySelector('iframe')).toBeNull();
+  } finally {
+    await f.cleanup();
+  }
+});
+it('expires access even while collapsed and renews only through an explicit open', async () => {
+  vi.useFakeTimers();
+  mocks.request.mockResolvedValue({
+    ...running,
+    preview: { ...running.preview, expiresAt: Date.now() + 1000 },
+  });
+  const f = await fixture();
+  try {
+    await f.click();
+    await f.click();
+    await act(async () => vi.advanceTimersByTimeAsync(1001));
+    expect(f.host.querySelector('iframe')).toBeNull();
+    mocks.request.mockResolvedValue(running);
+    await f.click();
+    expect(mocks.request).toHaveBeenCalledTimes(2);
+    expect(f.host.querySelector('iframe')).not.toBeNull();
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it('hides the old application as soon as the study changes environment, before workbench refresh arrives', async () => {
+  mocks.request.mockResolvedValue(running);
+  const f = await fixture();
+  try {
+    await f.click();
+    expect(f.host.querySelector('iframe')).not.toBeNull();
+    await act(async () =>
+      f.root.render(createElement(Harness, { current: { ...view, environmentId: 'replacement' } })),
+    );
+    expect(f.host.querySelector('iframe')).toBeNull();
+    expect(
+      (f.host.querySelector('[data-testid="pbl-application-open"]') as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+  } finally {
+    await f.cleanup();
   }
 });
