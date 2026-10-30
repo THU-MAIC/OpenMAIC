@@ -89,7 +89,7 @@ import { WORKSPACE_COURSES_VIEW, WORKSPACE_LIBRARY_VIEW } from '@/lib/workbench/
 import { deleteWorkspaceSession } from '@/lib/workbench/workspace-actions';
 import { SESSION_TITLE_MAX_LENGTH, workbenchSessionTitle } from '@/lib/workbench/session-title';
 import { InlineNameRow, WorkspaceRowMenu } from './workspace-row-controls';
-import { isMacPlatform } from './WorkspaceSearchPalette';
+import { shortcutLabel, useIsMac } from '@/lib/workbench/shortcuts';
 
 /**
  * Rows the chat list shows before it pages: the list owns the rail's body,
@@ -160,7 +160,9 @@ export function WorkspaceRail({
 
   // "Search" opens the shell's global search palette (⌘K / Ctrl K), from the
   // expanded rail and the folded strip alike.
-  const searchShortcut = useSearchShortcutLabel();
+  const mac = useIsMac();
+  const searchShortcut = shortcutLabel('search', mac);
+  const newChatShortcut = shortcutLabel('newChat', mac);
 
   /*
    * The rail's destinations: the built-in pages, then whatever the host
@@ -335,6 +337,7 @@ export function WorkspaceRail({
             type="button"
             data-testid="pro-workspace-new-session-mini"
             onClick={onNewSession}
+            aria-keyshortcuts={newChatShortcut.aria}
             aria-label={t('workspace.newSession')}
             title={t('workspace.newSession')}
             className="ws-mini-btn"
@@ -486,10 +489,18 @@ export function WorkspaceRail({
           type="button"
           data-testid="pro-workspace-new-session"
           onClick={onNewSession}
+          aria-keyshortcuts={newChatShortcut.aria}
           className="ws-new flex h-[38px] w-full min-w-0 items-center gap-2.5 rounded-[11px] px-3 text-[13.5px] font-medium focus-visible:outline-none"
         >
           <SquarePen className="size-4 shrink-0" aria-hidden="true" />
-          <span className="min-w-0 truncate">{t('workspace.newSession')}</span>
+          <span className="min-w-0 flex-1 truncate text-left">{t('workspace.newSession')}</span>
+          <kbd
+            data-testid="pro-workspace-new-session-shortcut"
+            className="ws-kbd"
+            aria-hidden="true"
+          >
+            {newChatShortcut.label}
+          </kbd>
         </button>
       </div>
 
@@ -569,18 +580,6 @@ export function WorkspaceRail({
 }
 
 /* ── Rail lists ───────────────────────────────────────────────────────── */
-
-/** The palette's shortcut as the platform writes it: ⌘K on the Mac, Ctrl K elsewhere. */
-function useSearchShortcutLabel(): { readonly label: string; readonly aria: string } {
-  // Read after mount: the server cannot know the platform, and the first
-  // client paint must match what it sent.
-  const [mac, setMac] = useState<boolean | null>(null);
-  useEffect(() => {
-    setMac(isMacPlatform()); // eslint-disable-line react-hooks/set-state-in-effect -- platform is known only on the client
-  }, []);
-  if (mac === null) return { label: '', aria: 'Control+K' };
-  return mac ? { label: '⌘K', aria: 'Meta+K' } : { label: 'Ctrl K', aria: 'Control+K' };
-}
 
 /**
  * The chat list, without a head of its own: the three states a list can be

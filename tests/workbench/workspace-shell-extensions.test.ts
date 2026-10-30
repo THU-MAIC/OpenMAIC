@@ -140,6 +140,14 @@ describe('the rail’s destinations', () => {
     expect(onOpenSearch).toHaveBeenCalledTimes(1);
   });
 
+  it('states the new-chat shortcut on its button', async () => {
+    await renderRail();
+    expect(byTestId('pro-workspace-new-session')?.getAttribute('aria-keyshortcuts')).toMatch(
+      /Shift\+O$/,
+    );
+    expect(byTestId('pro-workspace-new-session-shortcut')?.textContent).toMatch(/O$/);
+  });
+
   it('opens the same search from the folded strip, without unfolding it', async () => {
     const { onToggleCollapsed, onOpenSearch } = await renderRail({ collapsed: true });
     await act(async () => byTestId('pro-nav-search-mini')!.click());

@@ -142,7 +142,8 @@ import { PaneTab } from './PaneTab';
 import { ResizeHandle } from './ResizeHandle';
 import { MaterialLibraryPage } from './MaterialLibraryPage';
 import { WorkspaceCoursesPage } from './WorkspaceCoursesPage';
-import { isMacPlatform, isSearchShortcut, WorkspaceSearchPalette } from './WorkspaceSearchPalette';
+import { WorkspaceSearchPalette } from './WorkspaceSearchPalette';
+import { isMacPlatform, isNewChatShortcut, isSearchShortcut } from '@/lib/workbench/shortcuts';
 import type { LibraryMaterial } from '@/lib/workbench/material-library-client';
 import { hostPageItems, useWorkbenchShellExtensions } from '@/lib/workbench/shell-extensions';
 import type { MaterialSeed, MaterialSeedTarget } from '@/components/workbench/compose-extras';
@@ -956,6 +957,24 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     }
     setComposerReset((value) => value + 1);
   };
+
+  // ⌘⇧O / Ctrl+Shift+O: a new chat from anywhere, exactly as the rail's button.
+  const startNewConversationRef = useRef(startNewConversation);
+  useEffect(() => {
+    startNewConversationRef.current = startNewConversation;
+  });
+  useEffect(() => {
+    const mac = isMacPlatform();
+    const onKeyDown = (event: KeyboardEvent) => {
+      // An editor inside the page that binds the chord itself keeps it.
+      if (event.defaultPrevented || !isNewChatShortcut(event, mac)) return;
+      event.preventDefault();
+      setSearchOpen(false);
+      startNewConversationRef.current();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   /**
    * The knowledge base page's "chat with this material": a new conversation

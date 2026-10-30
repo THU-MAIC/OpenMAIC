@@ -1342,6 +1342,20 @@ describe('the global search', () => {
     expect(searchShown()).toBe(false);
   });
 
+  it('starts a new chat with the platform chord, as the rail’s button does', async () => {
+    mocks.searchParams = new URLSearchParams('session=session-1');
+    mocks.store.sessionId = 'session-1';
+    mocks.sessionRows = [{ id: 'session-1', stageId: 'stage-1', updatedAt: 9 }];
+    await render();
+    mocks.routerPush.mockClear();
+    await act(async () => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'O', code: 'KeyO', ctrlKey: true, shiftKey: true }),
+      );
+    });
+    expect(mocks.routerPush).toHaveBeenLastCalledWith('/workspace');
+  });
+
   it('leaves the chord to an editor that already handled it', async () => {
     await render();
     const event = new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, cancelable: true });

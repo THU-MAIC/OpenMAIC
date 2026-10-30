@@ -30,7 +30,9 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
+  CommandShortcut,
 } from '@/components/ui/command';
+import { shortcutLabel, useIsMac } from '@/lib/workbench/shortcuts';
 import { matchesQuery } from '@/lib/workbench/workspace-tree';
 import { workbenchSessionTitle } from '@/lib/workbench/session-title';
 import type { ProHomeSessionItem } from '@/lib/workbench/pro-home-data';
@@ -56,21 +58,6 @@ export interface SearchCourse {
 export interface SearchFolder {
   readonly id: string;
   readonly name: string;
-}
-
-/** ⌘K on the Mac, Ctrl+K elsewhere: the palette's own shortcut. */
-export function isSearchShortcut(event: KeyboardEvent, mac: boolean): boolean {
-  if (event.key.toLowerCase() !== 'k' || event.altKey || event.shiftKey) return false;
-  return mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
-}
-
-export function isMacPlatform(): boolean {
-  if (typeof navigator === 'undefined') return false;
-  const platform =
-    (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform ??
-    navigator.platform ??
-    '';
-  return /mac|iphone|ipad/i.test(platform);
 }
 
 /** The knowledge base's answer for one query. */
@@ -106,6 +93,7 @@ export function WorkspaceSearchPalette({
   readonly libraryView: string;
 }) {
   const { t } = useI18n();
+  const newChatHint = shortcutLabel('newChat', useIsMac()).label;
   const [query, setQuery] = useState('');
   const trimmed = query.trim();
 
@@ -307,6 +295,9 @@ export function WorkspaceSearchPalette({
               >
                 <SquarePen aria-hidden="true" />
                 <span className="flex-1">{t('workspace.newSession')}</span>
+                <CommandShortcut data-testid="workspace-search-new-chat-shortcut">
+                  {newChatHint}
+                </CommandShortcut>
               </CommandItem>
               <CommandItem
                 value="action:my-courses"
