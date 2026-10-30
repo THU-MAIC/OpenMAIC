@@ -2507,7 +2507,8 @@
     "account": {
       "signIn": "Anmelden",
       "menu": "Konto und Einstellungen",
-      "profileDone": "Fertig",
+      "aboutMe": "Über mich",
+      "profileSaved": "Gespeichert",
       "language": "Sprache",
       "about": "Über OpenMAIC",
       "aboutBody": "Eine Open-Source-Plattform, die jedes Thema in ein interaktives Klassenzimmer mit KI-Lehrkräften und -Mitschülern verwandelt. Veröffentlicht unter der MIT-Lizenz.",

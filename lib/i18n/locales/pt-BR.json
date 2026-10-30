@@ -2507,7 +2507,8 @@
     "account": {
       "signIn": "Entrar",
       "menu": "Conta e configurações",
-      "profileDone": "Concluído",
+      "aboutMe": "Sobre mim",
+      "profileSaved": "Salvo",
       "language": "Idioma",
       "about": "Sobre o OpenMAIC",
       "aboutBody": "Uma plataforma de código aberto que transforma qualquer tema em uma sala de aula interativa com professores e colegas de IA. Publicada sob a licença MIT.",

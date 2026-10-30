@@ -2080,23 +2080,44 @@
   box-shadow: 0 0 0 2px #a78bfa;
 }
 
+.ws-profile-avatar-btn {
+  transition: box-shadow 160ms ease;
+}
+
+.ws-profile-avatar-btn:hover,
+.ws-profile-avatar-btn[aria-expanded='true'] {
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.35);
+}
+
+.ws-profile-name {
+  min-height: 32px;
+  border-radius: 8px;
+  cursor: text;
+}
+
+.ws-profile-saved {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 3px;
+  font-size: 11.5px;
+  color: rgb(22 163 74);
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+.ws-profile-saved-on {
+  opacity: 1;
+}
+
+.ws-profile-about {
+  color: rgb(100 116 139);
+  font-size: 13px;
+}
+
 .ws-profile-upload {
   border: 1px dashed rgba(100, 116, 139, 0.45);
   background: transparent;
-}
-
-.ws-profile-done {
-  height: 28px;
-  padding: 0 12px;
-  border-radius: 8px;
-  background: #7c3aed;
-  color: #fff;
-  font-size: 12.5px;
-  font-weight: 500;
-}
-
-.ws-profile-done:hover {
-  background: #6d28d9;
 }
 
 .ws-account-summary {

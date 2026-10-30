@@ -2507,7 +2507,8 @@
     "account": {
       "signIn": "Đăng nhập",
       "menu": "Tài khoản và cài đặt",
-      "profileDone": "Xong",
+      "aboutMe": "Giới thiệu bản thân",
+      "profileSaved": "Đã lưu",
       "language": "Ngôn ngữ",
       "about": "Giới thiệu OpenMAIC",
       "aboutBody": "Nền tảng mã nguồn mở biến mọi chủ đề thành một lớp học tương tác với giáo viên và bạn học AI. Phát hành theo giấy phép MIT.",

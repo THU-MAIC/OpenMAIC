@@ -10,14 +10,17 @@
  * its own menu entries and a summary line through the shell extensions
  * (`lib/workbench/shell-extensions.tsx`); without them the block shows the
  * local learner profile, which is the identity a single-owner deployment has.
- * That profile is edited in place: the menu's identity row opens into the
- * same fields the classic home's greeting bar edits (avatar, name, bio).
+ * That profile is edited in place, inside the menu, and saves itself: the name
+ * becomes a field where it is, the avatar opens a strip of choices under the
+ * row, and "About me" opens the bio — the fields the classic home's greeting
+ * bar edits, in the same store.
  */
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   BookText,
   Check,
+  ChevronDown,
   ChevronsUpDown,
   Github,
   ImagePlus,
@@ -32,6 +35,7 @@ import {
   Settings,
   SunMedium,
   SquareArrowOutUpRight,
+  UserRound,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useTheme } from '@/lib/hooks/use-theme';
@@ -260,16 +264,16 @@ function AccountMenu({
     { value: 'system', icon: Monitor, label: t('settings.themeOptions.system') },
   ] as const;
 
-  // The identity row opens into the profile editor in place. While it is open
-  // the rest of the menu steps aside, so hovering an item cannot pull focus
-  // out of a field; closing the menu (a click outside) leaves the editor too.
-  const [editing, setEditing] = useState(false);
+  // Which parts of the profile are open for editing. Escape folds them before
+  // it closes the menu; closing the menu folds them too.
+  const [open, setOpen] = useState<ProfileOpen>(PROFILE_CLOSED);
+  const anyOpen = open.name || open.avatar || open.bio;
 
   return (
     <DropdownMenu
       modal={false}
-      onOpenChange={(open) => {
-        if (!open) setEditing(false);
+      onOpenChange={(menuOpen) => {
+        if (!menuOpen) setOpen(PROFILE_CLOSED);
       }}
     >
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
@@ -280,193 +284,203 @@ function AccountMenu({
         sideOffset={8}
         className="ws-account-menu w-[272px] rounded-2xl p-1.5"
         onEscapeKeyDown={(event) => {
-          // Escape first leaves the editor, keeping what was already saved.
-          if (!editing) return;
+          // Escape first folds what is open of the profile (already saved).
+          if (!anyOpen) return;
           event.preventDefault();
-          setEditing(false);
+          setOpen(PROFILE_CLOSED);
         }}
       >
-        {editing ? (
-          <ProfileInlineEditor onDone={() => setEditing(false)} />
-        ) : (
+        {account.signedIn && profileEditable ? (
+          <ProfileRows open={open} onOpenChange={setOpen} />
+        ) : account.signedIn ? (
+          <div className="flex items-center gap-2.5 px-2.5 pb-2.5 pt-2">
+            <AccountAvatar src={account.avatar} name={account.name} size={36} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[13.5px] font-semibold text-foreground">
+                {account.name}
+              </div>
+              {account.detail ? (
+                <div className="truncate text-xs text-muted-foreground">{account.detail}</div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+        {extensions.accountSummary ? (
+          <div
+            data-testid="workspace-account-menu-summary"
+            className="ws-account-summary mx-1 mb-1.5 rounded-xl px-3 py-2.5 text-[13px]"
+          >
+            {extensions.accountSummary}
+          </div>
+        ) : null}
+
+        {hostItems.length > 0 ? (
           <>
-            {account.signedIn && profileEditable ? (
-              <DropdownMenuItem
-                data-testid="workspace-account-profile"
-                onSelect={(event) => {
-                  event.preventDefault();
-                  setEditing(true);
-                }}
-                title={t('profile.editTooltip')}
-                className="ws-menu-item ws-menu-profile group/profile mb-1"
-              >
-                <AccountAvatar src={account.avatar} name={account.name} size={36} />
-                <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-foreground">
-                  {account.name}
-                </span>
-                <Pencil
-                  className="size-3.5 shrink-0 text-muted-foreground opacity-50 transition-opacity group-hover/profile:opacity-100"
-                  aria-hidden="true"
-                />
-              </DropdownMenuItem>
-            ) : account.signedIn ? (
-              <div className="flex items-center gap-2.5 px-2.5 pb-2.5 pt-2">
-                <AccountAvatar src={account.avatar} name={account.name} size={36} />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13.5px] font-semibold text-foreground">
-                    {account.name}
-                  </div>
-                  {account.detail ? (
-                    <div className="truncate text-xs text-muted-foreground">{account.detail}</div>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-            {extensions.accountSummary ? (
-              <div
-                data-testid="workspace-account-menu-summary"
-                className="ws-account-summary mx-1 mb-1.5 rounded-xl px-3 py-2.5 text-[13px]"
-              >
-                {extensions.accountSummary}
-              </div>
-            ) : null}
+            <div data-testid="workspace-account-host-items">
+              {hostItems.map((item) => (
+                <HostMenuItem key={item.id} item={item} />
+              ))}
+            </div>
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
 
-            {hostItems.length > 0 ? (
-              <>
-                <div data-testid="workspace-account-host-items">
-                  {hostItems.map((item) => (
-                    <HostMenuItem key={item.id} item={item} />
-                  ))}
-                </div>
-                <DropdownMenuSeparator />
-              </>
-            ) : null}
+        <DropdownMenuItem
+          {...HOLD_FOCUS}
+          data-testid="workspace-account-settings"
+          onSelect={onOpenSettings}
+          className="ws-menu-item"
+        >
+          <Settings className="size-4" aria-hidden="true" />
+          <span className="flex-1">{t('settings.title')}</span>
+        </DropdownMenuItem>
 
-            <DropdownMenuItem
-              data-testid="workspace-account-settings"
-              onSelect={onOpenSettings}
-              className="ws-menu-item"
-            >
-              <Settings className="size-4" aria-hidden="true" />
-              <span className="flex-1">{t('settings.title')}</span>
-            </DropdownMenuItem>
-
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger
-                data-testid="workspace-account-language"
-                className="ws-menu-item"
-              >
-                <Languages className="size-4" aria-hidden="true" />
-                <span className="flex-1">{t('workspace.account.language')}</span>
-                <span className="text-xs text-muted-foreground">
-                  {currentLocale?.label ?? locale}
-                </span>
-              </DropdownMenuSubTrigger>
-              {/* Sized to its content: the whole list fits any ordinary viewport, and
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger
+            {...HOLD_FOCUS}
+            data-testid="workspace-account-language"
+            className="ws-menu-item"
+          >
+            <Languages className="size-4" aria-hidden="true" />
+            <span className="flex-1">{t('workspace.account.language')}</span>
+            <span className="text-xs text-muted-foreground">{currentLocale?.label ?? locale}</span>
+          </DropdownMenuSubTrigger>
+          {/* Sized to its content: the whole list fits any ordinary viewport, and
               collision handling slides it up from the trigger to make room. It
               scrolls only when the viewport is genuinely shorter than the list. */}
-              <DropdownMenuSubContent
-                collisionPadding={8}
-                className="ws-scroll max-h-(--radix-dropdown-menu-content-available-height) min-w-[160px] overflow-y-auto"
+          <DropdownMenuSubContent
+            collisionPadding={8}
+            className="ws-scroll max-h-(--radix-dropdown-menu-content-available-height) min-w-[160px] overflow-y-auto"
+          >
+            {supportedLocales.map((l) => (
+              <DropdownMenuItem
+                {...HOLD_FOCUS}
+                key={l.code}
+                onSelect={() => setLocale(l.code)}
+                className="ws-menu-item"
               >
-                {supportedLocales.map((l) => (
-                  <DropdownMenuItem
-                    key={l.code}
-                    onSelect={() => setLocale(l.code)}
-                    className="ws-menu-item"
-                  >
-                    <span className="flex-1">{l.label}</span>
-                    {locale === l.code ? <Check className="size-3.5" aria-hidden="true" /> : null}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
+                <span className="flex-1">{l.label}</span>
+                {locale === l.code ? <Check className="size-3.5" aria-hidden="true" /> : null}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
 
-            <div className="ws-menu-item ws-menu-static" data-testid="workspace-account-theme">
-              <SunMedium className="size-4" aria-hidden="true" />
-              <span className="flex-1">{t('settings.theme')}</span>
-              <div role="radiogroup" aria-label={t('settings.theme')} className="ws-mini-seg">
-                {themes.map(({ value, icon: Icon, label }) => (
-                  <button
-                    key={value}
-                    type="button"
-                    role="radio"
-                    aria-checked={theme === value}
-                    aria-label={label}
-                    title={label}
-                    data-testid={`workspace-account-theme-${value}`}
-                    onClick={() => setTheme(value)}
-                    className={cn('ws-mini-seg-btn', theme === value && 'ws-mini-seg-on')}
-                  >
-                    <Icon className="size-3.5" aria-hidden="true" />
-                  </button>
-                ))}
-              </div>
-            </div>
+        <div className="ws-menu-item ws-menu-static" data-testid="workspace-account-theme">
+          <SunMedium className="size-4" aria-hidden="true" />
+          <span className="flex-1">{t('settings.theme')}</span>
+          <div role="radiogroup" aria-label={t('settings.theme')} className="ws-mini-seg">
+            {themes.map(({ value, icon: Icon, label }) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={theme === value}
+                aria-label={label}
+                title={label}
+                data-testid={`workspace-account-theme-${value}`}
+                onClick={() => setTheme(value)}
+                className={cn('ws-mini-seg-btn', theme === value && 'ws-mini-seg-on')}
+              >
+                <Icon className="size-3.5" aria-hidden="true" />
+              </button>
+            ))}
+          </div>
+        </div>
 
+        <DropdownMenuSeparator />
+
+        <DropdownMenuItem
+          {...HOLD_FOCUS}
+          data-testid="workspace-account-about"
+          onSelect={onOpenAbout}
+          className="ws-menu-item"
+        >
+          <Info className="size-4" aria-hidden="true" />
+          <span className="flex-1">{t('workspace.account.about')}</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem {...HOLD_FOCUS} asChild className="ws-menu-item">
+          <a
+            href={docsHref(locale)}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="workspace-account-docs"
+          >
+            <BookText className="size-4" aria-hidden="true" />
+            <span className="flex-1">{t('workspace.account.docs')}</span>
+            <SquareArrowOutUpRight className="size-3 opacity-50" aria-hidden="true" />
+          </a>
+        </DropdownMenuItem>
+        <DropdownMenuItem {...HOLD_FOCUS} asChild className="ws-menu-item">
+          <a
+            href={OPENMAIC_GITHUB_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="workspace-account-github"
+          >
+            <Github className="size-4" aria-hidden="true" />
+            <span className="flex-1">GitHub</span>
+            <SquareArrowOutUpRight className="size-3 opacity-50" aria-hidden="true" />
+          </a>
+        </DropdownMenuItem>
+
+        {onSignOut ? (
+          <>
             <DropdownMenuSeparator />
-
             <DropdownMenuItem
-              data-testid="workspace-account-about"
-              onSelect={onOpenAbout}
+              {...HOLD_FOCUS}
+              data-testid="workspace-account-sign-out"
+              onSelect={onSignOut}
               className="ws-menu-item"
             >
-              <Info className="size-4" aria-hidden="true" />
-              <span className="flex-1">{t('workspace.account.about')}</span>
+              <LogOut className="size-4" aria-hidden="true" />
+              <span className="flex-1">{t('workspace.account.signOut')}</span>
             </DropdownMenuItem>
-            <DropdownMenuItem asChild className="ws-menu-item">
-              <a
-                href={docsHref(locale)}
-                target="_blank"
-                rel="noopener noreferrer"
-                data-testid="workspace-account-docs"
-              >
-                <BookText className="size-4" aria-hidden="true" />
-                <span className="flex-1">{t('workspace.account.docs')}</span>
-                <SquareArrowOutUpRight className="size-3 opacity-50" aria-hidden="true" />
-              </a>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild className="ws-menu-item">
-              <a
-                href={OPENMAIC_GITHUB_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                data-testid="workspace-account-github"
-              >
-                <Github className="size-4" aria-hidden="true" />
-                <span className="flex-1">GitHub</span>
-                <SquareArrowOutUpRight className="size-3 opacity-50" aria-hidden="true" />
-              </a>
-            </DropdownMenuItem>
-
-            {onSignOut ? (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  data-testid="workspace-account-sign-out"
-                  onSelect={onSignOut}
-                  className="ws-menu-item"
-                >
-                  <LogOut className="size-4" aria-hidden="true" />
-                  <span className="flex-1">{t('workspace.account.signOut')}</span>
-                </DropdownMenuItem>
-              </>
-            ) : null}
           </>
-        )}
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
 
+interface ProfileOpen {
+  readonly name: boolean;
+  readonly avatar: boolean;
+  readonly bio: boolean;
+}
+
+const PROFILE_CLOSED: ProfileOpen = { name: false, avatar: false, bio: false };
+
+/** How long typing in a profile field settles before it is saved. */
+export const PROFILE_SAVE_DELAY_MS = 500;
+
 /**
- * The local profile, edited in place at the top of the account menu: the
- * classic greeting bar's fields — an avatar from the preset choices or an
- * upload, the name, and the bio the AI teacher reads — written to the same
- * store. An avatar applies as soon as it is picked; the name and bio are saved
- * by Enter in the name field or Done, and Escape leaves them as they were.
+ * Keep the focus in a profile field while the pointer crosses the menu: a
+ * menu item takes the focus on hover unless its pointer event was handled.
  */
-function ProfileInlineEditor({ onDone }: { readonly onDone: () => void }) {
+function holdProfileFocus(event: { preventDefault: () => void }) {
+  const active = typeof document === 'undefined' ? null : document.activeElement;
+  if (active instanceof HTMLElement && active.dataset.profileField !== undefined) {
+    event.preventDefault();
+  }
+}
+const HOLD_FOCUS = { onPointerMove: holdProfileFocus, onPointerLeave: holdProfileFocus };
+
+/**
+ * The local profile at the top of the account menu, edited where it is shown
+ * and saved as it changes — no editor block, no button. The identity row stays
+ * a row: its name turns into a field when pressed, its avatar opens a strip of
+ * the preset choices and an upload under it, and a quiet "About me" row opens
+ * the bio. A picked avatar is saved at once; the name and the bio once typing
+ * settles and when the field is left. A small tick says it was saved.
+ */
+function ProfileRows({
+  open,
+  onOpenChange,
+}: {
+  readonly open: ProfileOpen;
+  readonly onOpenChange: (open: ProfileOpen) => void;
+}) {
   const { t } = useI18n();
   const avatar = useUserProfileStore((s) => s.avatar);
   const nickname = useUserProfileStore((s) => s.nickname);
@@ -476,115 +490,224 @@ function ProfileInlineEditor({ onDone }: { readonly onDone: () => void }) {
   const setBio = useUserProfileStore((s) => s.setBio);
   const [nameDraft, setNameDraft] = useState(nickname);
   const [bioDraft, setBioDraft] = useState(bio);
-  const nameRef = useRef<HTMLInputElement>(null);
+  const [saved, setSaved] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  const displayName = nameDraft.trim() || t('profile.defaultNickname');
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pending = useRef<{ name?: string; bio?: string }>({});
+  const displayName = (open.name ? nameDraft : nickname).trim() || t('profile.defaultNickname');
 
-  useEffect(() => {
-    nameRef.current?.focus();
-    nameRef.current?.select();
+  const markSaved = useCallback(() => {
+    setSaved(true);
+    if (savedTimer.current) clearTimeout(savedTimer.current);
+    savedTimer.current = setTimeout(() => setSaved(false), 1600);
   }, []);
+  /** Write what is pending now. */
+  const flush = useCallback(() => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = null;
+    const { name, bio: nextBio } = pending.current;
+    pending.current = {};
+    if (name !== undefined) setNickname(name.trim());
+    if (nextBio !== undefined) setBio(nextBio);
+    if (name !== undefined || nextBio !== undefined) markSaved();
+  }, [markSaved, setBio, setNickname]);
+  const schedule = (patch: { name?: string; bio?: string }) => {
+    pending.current = { ...pending.current, ...patch };
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(flush, PROFILE_SAVE_DELAY_MS);
+  };
+  // The menu closing must not lose typing: what is pending is written then.
+  useEffect(
+    () => () => {
+      flush();
+      if (savedTimer.current) clearTimeout(savedTimer.current);
+    },
+    [flush],
+  );
 
-  const save = () => {
-    setNickname(nameDraft.trim());
-    setBio(bioDraft);
-    onDone();
+  const fieldKeys = (event: React.KeyboardEvent) => {
+    // Escape folds the field (the menu does that): write what it held first.
+    if (event.key === 'Escape') {
+      flush();
+      return;
+    }
+    // The menu's typeahead and arrow keys would otherwise take these keys.
+    event.stopPropagation();
   };
 
   return (
-    <div
-      data-testid="workspace-profile-editor"
-      className="ws-profile-editor px-2 pb-2 pt-1.5"
-      // The menu's typeahead would otherwise take the letters typed here.
-      onKeyDown={(event) => {
-        if (event.key !== 'Escape') event.stopPropagation();
-      }}
-    >
-      <div className="flex items-center gap-2.5">
-        <AccountAvatar src={avatar || null} name={displayName} size={36} />
-        <input
-          ref={nameRef}
-          data-testid="workspace-profile-name"
-          value={nameDraft}
-          onChange={(event) => setNameDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault();
-              save();
-            }
-          }}
-          maxLength={20}
-          placeholder={t('profile.defaultNickname')}
-          aria-label={t('profile.title')}
-          className="ws-profile-input min-w-0 flex-1"
-        />
-      </div>
-      <div
-        role="radiogroup"
-        aria-label={t('profile.chooseAvatar')}
-        className="mt-2.5 flex flex-wrap items-center gap-1"
-      >
-        {AVATAR_OPTIONS.map((url) => (
+    <div data-testid="workspace-account-profile" className="ws-profile mb-1">
+      <div className="ws-menu-item ws-menu-static ws-menu-profile">
+        <button
+          type="button"
+          data-testid="workspace-profile-avatar-toggle"
+          aria-expanded={open.avatar}
+          aria-label={t('profile.chooseAvatar')}
+          title={t('profile.chooseAvatar')}
+          onClick={() => onOpenChange({ ...open, avatar: !open.avatar })}
+          className="ws-profile-avatar-btn shrink-0 rounded-full"
+        >
+          <AccountAvatar src={avatar || null} name={displayName} size={36} />
+        </button>
+        {open.name ? (
+          <input
+            autoFocus
+            data-profile-field=""
+            data-testid="workspace-profile-name"
+            value={nameDraft}
+            onChange={(event) => {
+              setNameDraft(event.target.value);
+              schedule({ name: event.target.value });
+            }}
+            onKeyDown={(event) => {
+              fieldKeys(event);
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                onOpenChange({ ...open, name: false });
+              }
+            }}
+            onFocus={(event) => event.currentTarget.select()}
+            onBlur={() => {
+              flush();
+              onOpenChange({ ...open, name: false });
+            }}
+            maxLength={20}
+            placeholder={t('profile.defaultNickname')}
+            aria-label={t('profile.title')}
+            className="ws-profile-input min-w-0 flex-1"
+          />
+        ) : (
           <button
-            key={url}
+            type="button"
+            data-testid="workspace-profile-name-button"
+            title={t('profile.editTooltip')}
+            onClick={() => {
+              setNameDraft(nickname);
+              onOpenChange({ ...open, name: true });
+            }}
+            className="ws-profile-name group/name inline-flex min-w-0 flex-1 items-center gap-1.5 text-left"
+          >
+            <span className="truncate text-[13.5px] font-semibold text-foreground">
+              {displayName}
+            </span>
+            <Pencil
+              className="size-3 shrink-0 opacity-0 transition-opacity group-hover/name:opacity-60"
+              aria-hidden="true"
+            />
+          </button>
+        )}
+        <span
+          data-testid="workspace-profile-saved"
+          aria-live="polite"
+          className={cn('ws-profile-saved', saved && 'ws-profile-saved-on')}
+        >
+          {saved ? (
+            <>
+              <Check className="size-3" aria-hidden="true" />
+              {t('workspace.account.profileSaved')}
+            </>
+          ) : null}
+        </span>
+      </div>
+
+      {open.avatar ? (
+        <div
+          role="radiogroup"
+          aria-label={t('profile.chooseAvatar')}
+          data-testid="workspace-profile-avatars"
+          className="flex flex-wrap items-center gap-1 px-2.5 pb-2 pt-0.5"
+        >
+          {AVATAR_OPTIONS.map((url) => (
+            <button
+              key={url}
+              type="button"
+              role="radio"
+              aria-checked={avatar === url}
+              data-testid="workspace-profile-avatar"
+              onClick={() => {
+                setAvatar(url);
+                markSaved();
+              }}
+              className={cn('ws-profile-avatar', avatar === url && 'ws-profile-avatar-on')}
+            >
+              <img src={url} alt="" className="size-full rounded-full" />
+            </button>
+          ))}
+          <button
             type="button"
             role="radio"
-            aria-checked={avatar === url}
-            data-testid="workspace-profile-avatar"
-            onClick={() => setAvatar(url)}
-            className={cn('ws-profile-avatar', avatar === url && 'ws-profile-avatar-on')}
+            aria-checked={avatar.startsWith('data:')}
+            onClick={() => fileRef.current?.click()}
+            title={t('profile.uploadAvatar')}
+            aria-label={t('profile.uploadAvatar')}
+            className={cn(
+              'ws-profile-avatar ws-profile-upload',
+              avatar.startsWith('data:') && 'ws-profile-avatar-on',
+            )}
           >
-            <img src={url} alt="" className="size-full rounded-full" />
+            <ImagePlus className="size-3.5" aria-hidden="true" />
           </button>
-        ))}
-        <button
-          type="button"
-          role="radio"
-          aria-checked={avatar.startsWith('data:')}
-          onClick={() => fileRef.current?.click()}
-          title={t('profile.uploadAvatar')}
-          aria-label={t('profile.uploadAvatar')}
-          className={cn(
-            'ws-profile-avatar ws-profile-upload',
-            avatar.startsWith('data:') && 'ws-profile-avatar-on',
-          )}
-        >
-          <ImagePlus className="size-3.5" aria-hidden="true" />
-        </button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.target.value = '';
-            if (!file) return;
-            void readAvatarUpload(file, t).then((next) => {
-              if (next) setAvatar(next);
-            });
-          }}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = '';
+              if (!file) return;
+              void readAvatarUpload(file, t).then((next) => {
+                if (!next) return;
+                setAvatar(next);
+                markSaved();
+              });
+            }}
+          />
+        </div>
+      ) : null}
+
+      <button
+        type="button"
+        data-testid="workspace-profile-bio-toggle"
+        aria-expanded={open.bio}
+        onClick={() => {
+          if (!open.bio) setBioDraft(bio);
+          onOpenChange({ ...open, bio: !open.bio });
+        }}
+        {...HOLD_FOCUS}
+        className="ws-menu-item ws-profile-about w-full"
+      >
+        <UserRound className="size-4" aria-hidden="true" />
+        <span className="flex-1 truncate text-left">
+          {open.bio || !bio.trim() ? t('workspace.account.aboutMe') : bio}
+        </span>
+        <ChevronDown
+          className={cn('size-3.5 opacity-50 transition-transform', open.bio && 'rotate-180')}
+          aria-hidden="true"
         />
-      </div>
-      <Textarea
-        data-testid="workspace-profile-bio"
-        value={bioDraft}
-        onChange={(event) => setBioDraft(event.target.value)}
-        placeholder={t('profile.bioPlaceholder')}
-        maxLength={200}
-        rows={3}
-        className="mt-2.5 min-h-[68px] resize-none bg-transparent !text-[13px] leading-relaxed"
-      />
-      <div className="mt-2 flex justify-end">
-        <button
-          type="button"
-          data-testid="workspace-profile-done"
-          onClick={save}
-          className="ws-profile-done"
-        >
-          {t('workspace.account.profileDone')}
-        </button>
-      </div>
+      </button>
+      {open.bio ? (
+        <div className="px-2 pb-1.5">
+          <Textarea
+            autoFocus
+            data-profile-field=""
+            data-testid="workspace-profile-bio"
+            value={bioDraft}
+            onChange={(event) => {
+              setBioDraft(event.target.value);
+              schedule({ bio: event.target.value });
+            }}
+            onKeyDown={fieldKeys}
+            onBlur={flush}
+            placeholder={t('profile.bioPlaceholder')}
+            aria-label={t('workspace.account.aboutMe')}
+            maxLength={200}
+            rows={3}
+            className="min-h-[68px] resize-none bg-transparent !text-[13px] leading-relaxed"
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -604,7 +727,7 @@ function HostMenuItem({ item }: { readonly item: WorkbenchShellMenuItem }) {
   );
   if (item.href) {
     return (
-      <DropdownMenuItem asChild className="ws-menu-item">
+      <DropdownMenuItem {...HOLD_FOCUS} asChild className="ws-menu-item">
         <a
           href={item.href}
           data-testid={`workspace-account-item-${item.id}`}
@@ -617,6 +740,7 @@ function HostMenuItem({ item }: { readonly item: WorkbenchShellMenuItem }) {
   }
   return (
     <DropdownMenuItem
+      {...HOLD_FOCUS}
       data-testid={`workspace-account-item-${item.id}`}
       onSelect={() => item.onSelect?.()}
       className="ws-menu-item"
