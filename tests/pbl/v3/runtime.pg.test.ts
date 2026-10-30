@@ -5194,7 +5194,10 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           totalTokens: 2,
         },
       };
-      const largeReply = 'Let us inspect the greeting. '.repeat(30000);
+      // This case exercises stop-frame replay with all messages retained. The
+      // explanation also appears in tool receipts; keep their combined request
+      // within the fixture model window. Overflow has dedicated projection tests.
+      const largeReply = 'Let us inspect the greeting. '.repeat(3000);
       mocked.responses = [
         [
           { type: 'text-delta', text: largeReply },
@@ -5289,7 +5292,8 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       const nextCalls = mocked.modelCalls;
       await runSession({ running: new Map(), shuttingDown: false }, next!);
       expect(mocked.modelCalls - nextCalls).toBe(1);
-      expect((await agents.getSession(queued.sessionId))?.status).toBe('succeeded');
+      const nextSession = await agents.getSession(queued.sessionId);
+      expect(nextSession?.status, nextSession?.error).toBe('succeeded');
       expect((await store.binding(queued.sessionId))?.guided?.activeFile).toBe('A-teach.md');
       const replayed = await learningView(principal, studyId);
       expect(
