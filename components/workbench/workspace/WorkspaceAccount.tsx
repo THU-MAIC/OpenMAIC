@@ -10,17 +10,15 @@
  * its own menu entries and a summary line through the shell extensions
  * (`lib/workbench/shell-extensions.tsx`); without them the block shows the
  * local learner profile, which is the identity a single-owner deployment has.
- * That profile is edited in place, inside the menu, and saves itself: the name
- * becomes a field where it is, the avatar opens a strip of choices under the
- * row, and "About me" opens the bio — the fields the classic home's greeting
- * bar edits, in the same store.
+ * That profile is edited from the menu's identity row: it floats out one
+ * small editor beside the account block — avatar, name and bio, the fields the
+ * classic home's greeting bar edits, in the same store — that saves itself.
  */
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   BookText,
   Check,
-  ChevronDown,
   ChevronsUpDown,
   Github,
   ImagePlus,
@@ -35,7 +33,6 @@ import {
   Settings,
   SunMedium,
   SquareArrowOutUpRight,
-  UserRound,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useTheme } from '@/lib/hooks/use-theme';
@@ -62,6 +59,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 
 /** Who the block shows: the host's identity, or the local learner profile. */
 function useAccountIdentity() {
@@ -132,6 +130,7 @@ export function WorkspaceAccountBlock({
   const extensions = useWorkbenchShellExtensions();
   const account = useAccountIdentity();
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const signIn = extensions.identity?.signIn;
   const badge = !!extensions.accountBadge;
 
@@ -141,7 +140,7 @@ export function WorkspaceAccountBlock({
       mini={mini}
       onOpenSettings={onOpenSettings}
       onOpenAbout={() => setAboutOpen(true)}
-      profileEditable={account.editable}
+      onEditProfile={account.editable ? () => setProfileOpen(true) : undefined}
     />
   );
 
@@ -231,7 +230,25 @@ export function WorkspaceAccountBlock({
 
   return (
     <>
-      {block}
+      {account.editable ? (
+        // The editor floats from the account block, where the menu was.
+        <Popover open={profileOpen} onOpenChange={setProfileOpen}>
+          <PopoverAnchor asChild>
+            <div className={mini ? 'flex flex-col items-center' : undefined}>{block}</div>
+          </PopoverAnchor>
+          <PopoverContent
+            data-testid="workspace-profile-editor"
+            side={mini ? 'right' : 'top'}
+            align="start"
+            sideOffset={8}
+            className="ws-account-menu ws-profile-editor w-[288px] rounded-2xl p-3.5"
+          >
+            <ProfileEditor />
+          </PopoverContent>
+        </Popover>
+      ) : (
+        block
+      )}
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
     </>
   );
@@ -242,14 +259,14 @@ function AccountMenu({
   mini,
   onOpenSettings,
   onOpenAbout,
-  profileEditable,
+  onEditProfile,
 }: {
   readonly trigger: ReactNode;
   readonly mini: boolean;
   readonly onOpenSettings: () => void;
   readonly onOpenAbout: () => void;
-  /** The identity is the local profile, which the learner can edit here. */
-  readonly profileEditable: boolean;
+  /** Present when the identity is the local profile, which the learner can edit. */
+  readonly onEditProfile?: () => void;
 }) {
   const { t, locale, setLocale } = useI18n();
   const { theme, setTheme } = useTheme();
@@ -264,18 +281,12 @@ function AccountMenu({
     { value: 'system', icon: Monitor, label: t('settings.themeOptions.system') },
   ] as const;
 
-  // Which parts of the profile are open for editing. Escape folds them before
-  // it closes the menu; closing the menu folds them too.
-  const [open, setOpen] = useState<ProfileOpen>(PROFILE_CLOSED);
-  const anyOpen = open.name || open.avatar || open.bio;
+  // The identity row hands over to the profile editor: the menu closes
+  // without taking the focus back to its trigger, which the editor needs.
+  const editingNext = useRef(false);
 
   return (
-    <DropdownMenu
-      modal={false}
-      onOpenChange={(menuOpen) => {
-        if (!menuOpen) setOpen(PROFILE_CLOSED);
-      }}
-    >
+    <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
       <DropdownMenuContent
         data-testid="workspace-account-menu"
@@ -283,15 +294,31 @@ function AccountMenu({
         align={mini ? 'end' : 'start'}
         sideOffset={8}
         className="ws-account-menu w-[272px] rounded-2xl p-1.5"
-        onEscapeKeyDown={(event) => {
-          // Escape first folds what is open of the profile (already saved).
-          if (!anyOpen) return;
+        onCloseAutoFocus={(event) => {
+          if (!editingNext.current) return;
+          editingNext.current = false;
           event.preventDefault();
-          setOpen(PROFILE_CLOSED);
         }}
       >
-        {account.signedIn && profileEditable ? (
-          <ProfileRows open={open} onOpenChange={setOpen} />
+        {account.signedIn && onEditProfile ? (
+          <DropdownMenuItem
+            data-testid="workspace-account-profile"
+            onSelect={() => {
+              editingNext.current = true;
+              onEditProfile();
+            }}
+            title={t('profile.editTooltip')}
+            className="ws-menu-item ws-menu-profile group/profile mb-1"
+          >
+            <AccountAvatar src={account.avatar} name={account.name} size={36} />
+            <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-foreground">
+              {account.name}
+            </span>
+            <Pencil
+              className="size-3.5 shrink-0 text-muted-foreground opacity-50 transition-opacity group-hover/profile:opacity-100"
+              aria-hidden="true"
+            />
+          </DropdownMenuItem>
         ) : account.signedIn ? (
           <div className="flex items-center gap-2.5 px-2.5 pb-2.5 pt-2">
             <AccountAvatar src={account.avatar} name={account.name} size={36} />
@@ -326,7 +353,6 @@ function AccountMenu({
         ) : null}
 
         <DropdownMenuItem
-          {...HOLD_FOCUS}
           data-testid="workspace-account-settings"
           onSelect={onOpenSettings}
           className="ws-menu-item"
@@ -336,11 +362,7 @@ function AccountMenu({
         </DropdownMenuItem>
 
         <DropdownMenuSub>
-          <DropdownMenuSubTrigger
-            {...HOLD_FOCUS}
-            data-testid="workspace-account-language"
-            className="ws-menu-item"
-          >
+          <DropdownMenuSubTrigger data-testid="workspace-account-language" className="ws-menu-item">
             <Languages className="size-4" aria-hidden="true" />
             <span className="flex-1">{t('workspace.account.language')}</span>
             <span className="text-xs text-muted-foreground">{currentLocale?.label ?? locale}</span>
@@ -354,7 +376,6 @@ function AccountMenu({
           >
             {supportedLocales.map((l) => (
               <DropdownMenuItem
-                {...HOLD_FOCUS}
                 key={l.code}
                 onSelect={() => setLocale(l.code)}
                 className="ws-menu-item"
@@ -391,7 +412,6 @@ function AccountMenu({
         <DropdownMenuSeparator />
 
         <DropdownMenuItem
-          {...HOLD_FOCUS}
           data-testid="workspace-account-about"
           onSelect={onOpenAbout}
           className="ws-menu-item"
@@ -399,7 +419,7 @@ function AccountMenu({
           <Info className="size-4" aria-hidden="true" />
           <span className="flex-1">{t('workspace.account.about')}</span>
         </DropdownMenuItem>
-        <DropdownMenuItem {...HOLD_FOCUS} asChild className="ws-menu-item">
+        <DropdownMenuItem asChild className="ws-menu-item">
           <a
             href={docsHref(locale)}
             target="_blank"
@@ -411,7 +431,7 @@ function AccountMenu({
             <SquareArrowOutUpRight className="size-3 opacity-50" aria-hidden="true" />
           </a>
         </DropdownMenuItem>
-        <DropdownMenuItem {...HOLD_FOCUS} asChild className="ws-menu-item">
+        <DropdownMenuItem asChild className="ws-menu-item">
           <a
             href={OPENMAIC_GITHUB_URL}
             target="_blank"
@@ -428,7 +448,6 @@ function AccountMenu({
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              {...HOLD_FOCUS}
               data-testid="workspace-account-sign-out"
               onSelect={onSignOut}
               className="ws-menu-item"
@@ -443,44 +462,16 @@ function AccountMenu({
   );
 }
 
-interface ProfileOpen {
-  readonly name: boolean;
-  readonly avatar: boolean;
-  readonly bio: boolean;
-}
-
-const PROFILE_CLOSED: ProfileOpen = { name: false, avatar: false, bio: false };
-
 /** How long typing in a profile field settles before it is saved. */
 export const PROFILE_SAVE_DELAY_MS = 500;
 
 /**
- * Keep the focus in a profile field while the pointer crosses the menu: a
- * menu item takes the focus on hover unless its pointer event was handled.
+ * The local profile in one small card: the avatar (current, the preset
+ * choices, an upload), the name and the bio. Nothing to confirm — a picked
+ * avatar is saved at once, the name and bio once typing settles, when a field
+ * is left and when the card closes, and a small tick says so.
  */
-function holdProfileFocus(event: { preventDefault: () => void }) {
-  const active = typeof document === 'undefined' ? null : document.activeElement;
-  if (active instanceof HTMLElement && active.dataset.profileField !== undefined) {
-    event.preventDefault();
-  }
-}
-const HOLD_FOCUS = { onPointerMove: holdProfileFocus, onPointerLeave: holdProfileFocus };
-
-/**
- * The local profile at the top of the account menu, edited where it is shown
- * and saved as it changes — no editor block, no button. The identity row stays
- * a row: its name turns into a field when pressed, its avatar opens a strip of
- * the preset choices and an upload under it, and a quiet "About me" row opens
- * the bio. A picked avatar is saved at once; the name and the bio once typing
- * settles and when the field is left. A small tick says it was saved.
- */
-function ProfileRows({
-  open,
-  onOpenChange,
-}: {
-  readonly open: ProfileOpen;
-  readonly onOpenChange: (open: ProfileOpen) => void;
-}) {
+function ProfileEditor() {
   const { t } = useI18n();
   const avatar = useUserProfileStore((s) => s.avatar);
   const nickname = useUserProfileStore((s) => s.nickname);
@@ -495,7 +486,7 @@ function ProfileRows({
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pending = useRef<{ name?: string; bio?: string }>({});
-  const displayName = (open.name ? nameDraft : nickname).trim() || t('profile.defaultNickname');
+  const displayName = nameDraft.trim() || t('profile.defaultNickname');
 
   const markSaved = useCallback(() => {
     setSaved(true);
@@ -517,7 +508,7 @@ function ProfileRows({
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(flush, PROFILE_SAVE_DELAY_MS);
   };
-  // The menu closing must not lose typing: what is pending is written then.
+  // Closing the card (Escape, a click outside) must not lose typing.
   useEffect(
     () => () => {
       flush();
@@ -526,77 +517,16 @@ function ProfileRows({
     [flush],
   );
 
-  const fieldKeys = (event: React.KeyboardEvent) => {
-    // Escape folds the field (the menu does that): write what it held first.
-    if (event.key === 'Escape') {
-      flush();
-      return;
-    }
-    // The menu's typeahead and arrow keys would otherwise take these keys.
-    event.stopPropagation();
-  };
-
   return (
-    <div data-testid="workspace-account-profile" className="ws-profile mb-1">
-      <div className="ws-menu-item ws-menu-static ws-menu-profile">
-        <button
-          type="button"
-          data-testid="workspace-profile-avatar-toggle"
-          aria-expanded={open.avatar}
-          aria-label={t('profile.chooseAvatar')}
-          title={t('profile.chooseAvatar')}
-          onClick={() => onOpenChange({ ...open, avatar: !open.avatar })}
-          className="ws-profile-avatar-btn shrink-0 rounded-full"
-        >
-          <AccountAvatar src={avatar || null} name={displayName} size={36} />
-        </button>
-        {open.name ? (
-          <input
-            autoFocus
-            data-profile-field=""
-            data-testid="workspace-profile-name"
-            value={nameDraft}
-            onChange={(event) => {
-              setNameDraft(event.target.value);
-              schedule({ name: event.target.value });
-            }}
-            onKeyDown={(event) => {
-              fieldKeys(event);
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                onOpenChange({ ...open, name: false });
-              }
-            }}
-            onFocus={(event) => event.currentTarget.select()}
-            onBlur={() => {
-              flush();
-              onOpenChange({ ...open, name: false });
-            }}
-            maxLength={20}
-            placeholder={t('profile.defaultNickname')}
-            aria-label={t('profile.title')}
-            className="ws-profile-input min-w-0 flex-1"
-          />
-        ) : (
-          <button
-            type="button"
-            data-testid="workspace-profile-name-button"
-            title={t('profile.editTooltip')}
-            onClick={() => {
-              setNameDraft(nickname);
-              onOpenChange({ ...open, name: true });
-            }}
-            className="ws-profile-name group/name inline-flex min-w-0 flex-1 items-center gap-1.5 text-left"
-          >
-            <span className="truncate text-[13.5px] font-semibold text-foreground">
-              {displayName}
-            </span>
-            <Pencil
-              className="size-3 shrink-0 opacity-0 transition-opacity group-hover/name:opacity-60"
-              aria-hidden="true"
-            />
-          </button>
-        )}
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-3">
+        <AccountAvatar src={avatar || null} name={displayName} size={44} />
+        <div className="min-w-0 flex-1">
+          <div className="text-[13px] font-semibold text-foreground">{t('profile.title')}</div>
+          <div className="truncate text-[11.5px] text-muted-foreground">
+            {t('profile.avatarHint')}
+          </div>
+        </div>
         <span
           data-testid="workspace-profile-saved"
           aria-live="polite"
@@ -611,103 +541,93 @@ function ProfileRows({
         </span>
       </div>
 
-      {open.avatar ? (
-        <div
-          role="radiogroup"
-          aria-label={t('profile.chooseAvatar')}
-          data-testid="workspace-profile-avatars"
-          className="flex flex-wrap items-center gap-1 px-2.5 pb-2 pt-0.5"
-        >
-          {AVATAR_OPTIONS.map((url) => (
-            <button
-              key={url}
-              type="button"
-              role="radio"
-              aria-checked={avatar === url}
-              data-testid="workspace-profile-avatar"
-              onClick={() => {
-                setAvatar(url);
-                markSaved();
-              }}
-              className={cn('ws-profile-avatar', avatar === url && 'ws-profile-avatar-on')}
-            >
-              <img src={url} alt="" className="size-full rounded-full" />
-            </button>
-          ))}
+      <div
+        role="radiogroup"
+        aria-label={t('profile.chooseAvatar')}
+        className="flex flex-wrap items-center gap-1"
+      >
+        {AVATAR_OPTIONS.map((url) => (
           <button
+            key={url}
             type="button"
             role="radio"
-            aria-checked={avatar.startsWith('data:')}
-            onClick={() => fileRef.current?.click()}
-            title={t('profile.uploadAvatar')}
-            aria-label={t('profile.uploadAvatar')}
-            className={cn(
-              'ws-profile-avatar ws-profile-upload',
-              avatar.startsWith('data:') && 'ws-profile-avatar-on',
-            )}
+            aria-checked={avatar === url}
+            data-testid="workspace-profile-avatar"
+            onClick={() => {
+              setAvatar(url);
+              markSaved();
+            }}
+            className={cn('ws-profile-avatar', avatar === url && 'ws-profile-avatar-on')}
           >
-            <ImagePlus className="size-3.5" aria-hidden="true" />
+            <img src={url} alt="" className="size-full rounded-full" />
           </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              event.target.value = '';
-              if (!file) return;
-              void readAvatarUpload(file, t).then((next) => {
-                if (!next) return;
-                setAvatar(next);
-                markSaved();
-              });
-            }}
-          />
-        </div>
-      ) : null}
-
-      <button
-        type="button"
-        data-testid="workspace-profile-bio-toggle"
-        aria-expanded={open.bio}
-        onClick={() => {
-          if (!open.bio) setBioDraft(bio);
-          onOpenChange({ ...open, bio: !open.bio });
-        }}
-        {...HOLD_FOCUS}
-        className="ws-menu-item ws-profile-about w-full"
-      >
-        <UserRound className="size-4" aria-hidden="true" />
-        <span className="flex-1 truncate text-left">
-          {open.bio || !bio.trim() ? t('workspace.account.aboutMe') : bio}
-        </span>
-        <ChevronDown
-          className={cn('size-3.5 opacity-50 transition-transform', open.bio && 'rotate-180')}
-          aria-hidden="true"
+        ))}
+        <button
+          type="button"
+          role="radio"
+          aria-checked={avatar.startsWith('data:')}
+          onClick={() => fileRef.current?.click()}
+          title={t('profile.uploadAvatar')}
+          aria-label={t('profile.uploadAvatar')}
+          className={cn(
+            'ws-profile-avatar ws-profile-upload',
+            avatar.startsWith('data:') && 'ws-profile-avatar-on',
+          )}
+        >
+          <ImagePlus className="size-3.5" aria-hidden="true" />
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = '';
+            if (!file) return;
+            void readAvatarUpload(file, t).then((next) => {
+              if (!next) return;
+              setAvatar(next);
+              markSaved();
+            });
+          }}
         />
-      </button>
-      {open.bio ? (
-        <div className="px-2 pb-1.5">
-          <Textarea
-            autoFocus
-            data-profile-field=""
-            data-testid="workspace-profile-bio"
-            value={bioDraft}
-            onChange={(event) => {
-              setBioDraft(event.target.value);
-              schedule({ bio: event.target.value });
-            }}
-            onKeyDown={fieldKeys}
-            onBlur={flush}
-            placeholder={t('profile.bioPlaceholder')}
-            aria-label={t('workspace.account.aboutMe')}
-            maxLength={200}
-            rows={3}
-            className="min-h-[68px] resize-none bg-transparent !text-[13px] leading-relaxed"
-          />
-        </div>
-      ) : null}
+      </div>
+
+      <input
+        autoFocus
+        data-testid="workspace-profile-name"
+        value={nameDraft}
+        onChange={(event) => {
+          setNameDraft(event.target.value);
+          schedule({ name: event.target.value });
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            flush();
+          }
+        }}
+        onBlur={flush}
+        maxLength={20}
+        placeholder={t('profile.defaultNickname')}
+        aria-label={t('profile.title')}
+        className="ws-profile-input w-full"
+      />
+      <Textarea
+        data-testid="workspace-profile-bio"
+        value={bioDraft}
+        onChange={(event) => {
+          setBioDraft(event.target.value);
+          schedule({ bio: event.target.value });
+        }}
+        onBlur={flush}
+        placeholder={t('profile.bioPlaceholder')}
+        aria-label={t('profile.bioPlaceholder')}
+        maxLength={200}
+        rows={3}
+        className="min-h-[72px] resize-none bg-transparent !text-[13px] leading-relaxed"
+      />
     </div>
   );
 }
@@ -727,7 +647,7 @@ function HostMenuItem({ item }: { readonly item: WorkbenchShellMenuItem }) {
   );
   if (item.href) {
     return (
-      <DropdownMenuItem {...HOLD_FOCUS} asChild className="ws-menu-item">
+      <DropdownMenuItem asChild className="ws-menu-item">
         <a
           href={item.href}
           data-testid={`workspace-account-item-${item.id}`}
@@ -740,7 +660,6 @@ function HostMenuItem({ item }: { readonly item: WorkbenchShellMenuItem }) {
   }
   return (
     <DropdownMenuItem
-      {...HOLD_FOCUS}
       data-testid={`workspace-account-item-${item.id}`}
       onSelect={() => item.onSelect?.()}
       className="ws-menu-item"

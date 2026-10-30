@@ -2509,7 +2509,6 @@
     "account": {
       "signIn": "ログイン",
       "menu": "アカウントと設定",
-      "aboutMe": "自己紹介",
       "profileSaved": "保存しました",
       "language": "言語",
       "about": "OpenMAIC について",

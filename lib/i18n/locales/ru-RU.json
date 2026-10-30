@@ -2509,7 +2509,6 @@
     "account": {
       "signIn": "Войти",
       "menu": "Аккаунт и настройки",
-      "aboutMe": "Обо мне",
       "profileSaved": "Сохранено",
       "language": "Язык",
       "about": "Об OpenMAIC",

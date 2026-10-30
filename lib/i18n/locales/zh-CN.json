@@ -2509,7 +2509,6 @@
     "account": {
       "signIn": "登录",
       "menu": "账号与设置",
-      "aboutMe": "自我介绍",
       "profileSaved": "已保存",
       "language": "语言",
       "about": "关于 OpenMAIC",

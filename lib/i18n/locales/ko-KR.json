@@ -2509,7 +2509,6 @@
     "account": {
       "signIn": "로그인",
       "menu": "계정 및 설정",
-      "aboutMe": "자기소개",
       "profileSaved": "저장됨",
       "language": "언어",
       "about": "OpenMAIC 소개",
