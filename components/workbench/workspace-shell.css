@@ -443,6 +443,16 @@
   animation: ws-spin 0.9s linear infinite;
 }
 
+.ws-row-status {
+  display: inline-flex;
+  align-items: center;
+}
+
+.ws-row-fail {
+  display: inline-flex;
+  color: var(--ws-fail);
+}
+
 .ws-dot-fail {
   background: var(--ws-fail);
 }

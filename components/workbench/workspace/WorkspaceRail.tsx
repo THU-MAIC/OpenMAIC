@@ -15,8 +15,9 @@
  *    now live on the My courses page in the main area, which carries the
  *    whole library (folders, import, filing, rename, delete, generating
  *    courses), so the rail is navigation and nothing else;
- *  - a chat row is its title and its relative time — no status mark. Whether
- *    a conversation is running is said where it is open (the pane header);
+ *  - a chat row is its title and its relative time; only a state worth a mark
+ *    replaces the time — a quiet spinner while it runs, a small alert when it
+ *    failed. A finished run goes back to rest, with no "unread" dot;
  *  - long lists reveal one page at a time (`workspace-paging`), because this
  *    account can hold hundreds of chats and "reveal everything" is not a
  *    navigation;
@@ -54,7 +55,16 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from 'react';
-import { BookOpen, Library, MessagesSquare, RefreshCw, Search, SquarePen } from 'lucide-react';
+import {
+  AlertCircle,
+  BookOpen,
+  Library,
+  LoaderCircle,
+  MessagesSquare,
+  RefreshCw,
+  Search,
+  SquarePen,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useBrand } from '@/lib/brand/brand-context';
@@ -434,7 +444,34 @@ export function WorkspaceRail({
             delta,
           )
         }
-        meta={relativeLabel(session.updatedAt || session.createdAt, t)}
+        // A chat at rest shows when it last moved. A running one shows a quiet
+        // spinner there instead, and a failed one a small alert; a run that
+        // finished while the teacher was elsewhere simply returns to rest.
+        meta={
+          sessionRunning(session.status) || session.status === 'failed'
+            ? null
+            : relativeLabel(session.updatedAt || session.createdAt, t)
+        }
+        statusMark={
+          sessionRunning(session.status) ? (
+            <LoaderCircle
+              role="img"
+              aria-label={t(`workspace.sessionStatus.${session.status}`)}
+              data-testid={`pro-nav-session-running-${session.id}`}
+              className="ws-spin-live"
+            />
+          ) : session.status === 'failed' ? (
+            <span
+              role="img"
+              aria-label={t('workspace.sessionStatus.failed')}
+              title={t('workspace.sessionStatus.failed')}
+              data-testid={`pro-nav-session-failed-${session.id}`}
+              className="ws-row-fail"
+            >
+              <AlertCircle className="size-3.5" aria-hidden="true" />
+            </span>
+          ) : null
+        }
         onClick={() => onOpenSession(session.id)}
         trailing={
           <WorkspaceRowMenu
@@ -698,6 +735,7 @@ function RailRow({
   label,
   meta,
   metaTestId,
+  statusMark,
   trailing,
   rowClassName,
   labelClassName,
@@ -712,6 +750,8 @@ function RailRow({
   readonly label: string;
   readonly meta?: string | null;
   readonly metaTestId?: string;
+  /** A state worth a mark (running, failed), in the metadata's place. */
+  readonly statusMark?: ReactNode;
   readonly trailing?: ReactNode;
   readonly rowClassName?: string;
   readonly labelClassName?: string;
@@ -769,6 +809,9 @@ function RailRow({
           <span data-testid={metaTestId} className="ws-row-meta shrink-0">
             {meta}
           </span>
+        ) : null}
+        {statusMark ? (
+          <span className="ws-row-meta ws-row-status shrink-0">{statusMark}</span>
         ) : null}
       </button>
       {trailing ? (
@@ -907,6 +950,11 @@ function writeStored(key: string, value: string): void {
 
 function writeStoredOrder(key: string, order: readonly string[]): void {
   writeStored(key, serializeOrder(order));
+}
+
+/** A chat whose run is under way (the owner list's live statuses). */
+function sessionRunning(status: ProHomeSessionItem['status']): boolean {
+  return status === 'running' || status === 'queued';
 }
 
 /** Bucket → locale copy. The bucketing itself lives in `pro-home-data`, tested. */

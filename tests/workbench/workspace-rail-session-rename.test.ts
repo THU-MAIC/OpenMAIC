@@ -66,7 +66,9 @@ afterEach(() => {
 const NAMED = 'session-named';
 const UNNAMED = 'session-unnamed';
 
-async function renderRail(): Promise<{ onRenameSession: ReturnType<typeof vi.fn> }> {
+async function renderRail(
+  statuses: Partial<Record<string, string>> = {},
+): Promise<{ onRenameSession: ReturnType<typeof vi.fn> }> {
   const onRenameSession = vi.fn(async () => null);
 
   const container = document.createElement('div');
@@ -83,7 +85,7 @@ async function renderRail(): Promise<{ onRenameSession: ReturnType<typeof vi.fn>
             stageId: 'stage-1',
             prompt: '帮我做一节课',
             title: '期末复习课',
-            status: 'succeeded' as const,
+            status: (statuses[NAMED] ?? 'succeeded') as 'succeeded',
             createdAt: 1,
             updatedAt: 2,
           },
@@ -91,7 +93,7 @@ async function renderRail(): Promise<{ onRenameSession: ReturnType<typeof vi.fn>
             id: UNNAMED,
             stageId: 'stage-2',
             prompt: '再来一节',
-            status: 'succeeded' as const,
+            status: (statuses[UNNAMED] ?? 'succeeded') as 'succeeded',
             createdAt: 1,
             updatedAt: 1,
           },
@@ -222,6 +224,18 @@ describe('the rail is a chat list', () => {
     expect(document.querySelector('[data-testid^="pro-nav-course-"]')).toBeNull();
     expect(document.querySelector('[data-testid^="pro-nav-folder-"]')).toBeNull();
     expect(byTestId('pro-nav-import-course')).toBeNull();
+  });
+
+  it('marks a running chat with a spinner and a failed one with an alert, in the time’s place', async () => {
+    await renderRail({ [NAMED]: 'running', [UNNAMED]: 'failed' });
+    await vi.waitFor(() => expect(byTestId(`pro-nav-session-${NAMED}`)).not.toBeNull());
+    expect(byTestId(`pro-nav-session-running-${NAMED}`)).not.toBeNull();
+    expect(byTestId(`pro-nav-session-${NAMED}`)!.querySelector('.ws-row-meta')?.textContent).toBe(
+      '',
+    );
+    const failed = byTestId(`pro-nav-session-failed-${UNNAMED}`)!;
+    expect(failed.getAttribute('title')).toBe('workspace.sessionStatus.failed');
+    expect(byTestId(`pro-nav-session-running-${UNNAMED}`)).toBeNull();
   });
 
   it('shows a chat row as its title and relative time, with no status mark', async () => {
