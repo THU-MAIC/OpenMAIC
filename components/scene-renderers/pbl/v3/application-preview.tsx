@@ -44,6 +44,7 @@ export function ApplicationPreview({
   const { t } = useI18n();
   const { pending, observation, error, expired, disabled } = preview;
   const available = !disabled && observation?.preview && !expired;
+  const mounted = !disabled && observation?.preview;
   const frame = useRef<HTMLIFrameElement | null>(null);
   const url = observation?.preview?.url;
   const renew = preview.renew;
@@ -128,17 +129,21 @@ export function ApplicationPreview({
           {error}
         </p>
       )}
-      {available ? (
+      {mounted && (
         <iframe
           ref={frame}
           key={observation.preview!.url}
           title={application.title}
           src={observation.preview!.url}
           sandbox="allow-scripts allow-forms allow-same-origin"
+          hidden={expired}
+          inert={expired}
+          aria-hidden={expired}
           referrerPolicy="no-referrer"
           className="min-h-0 w-full flex-1 border-0 bg-white"
         />
-      ) : (
+      )}
+      {!available && (
         <div
           role="status"
           className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 overflow-auto p-4 text-center text-sm text-muted-foreground"

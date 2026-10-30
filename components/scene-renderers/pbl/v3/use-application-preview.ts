@@ -4,18 +4,33 @@ import type { LearningView } from '@/lib/pbl/v3/types';
 import type { LearningWorkbench } from '@/lib/pbl/v3/workbench';
 import type { ApplicationObservation } from '@/lib/pbl/v3/application';
 import { pblRequest } from './request';
+import { useI18n } from '@/lib/hooks/use-i18n';
+
+/** Readiness retries retain one launch receipt in both embedded and new-tab opens. */
+async function waitForApplication(request: Record<string, unknown>, signal: AbortSignal) {
+  let result = await pblRequest<ApplicationObservation>('/api/pbl/v3/application', request, signal);
+  for (let retry = 0; result.state === 'starting' && retry < 3; retry++) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    signal.throwIfAborted();
+    result = await pblRequest<ApplicationObservation>('/api/pbl/v3/application', request, signal);
+  }
+  return result;
+}
 
 export function useApplicationPreview(
   view: LearningView | null,
   workbench: LearningWorkbench | null,
   dirty: boolean,
 ) {
+  const { t } = useI18n();
   const panelId = useId();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [observation, setObservation] = useState<ApplicationObservation | null>(null);
   const [error, setError] = useState('');
-  const [expired, setExpired] = useState(false);
+  const [expiredAt, setExpiredAt] = useState<number | null>(null);
+  // A timeout from an older grant cannot expire a later accepted renewal.
+  const expired = !!observation?.preview && expiredAt === observation.preview.expiresAt;
   const trigger = useRef<HTMLButtonElement | null>(null);
   const setTrigger = useCallback((element: HTMLButtonElement | null) => {
     trigger.current = element;
@@ -42,7 +57,7 @@ export function useApplicationPreview(
     setPending(false);
     setObservation(null);
     setError('');
-    setExpired(false);
+    setExpiredAt(null);
   }, [binding]);
   useEffect(
     () => () => {
@@ -63,10 +78,8 @@ export function useApplicationPreview(
   }, [disabled]);
   useEffect(() => {
     if (!observation?.preview) return;
-    const timer = setTimeout(
-      () => setExpired(true),
-      Math.max(0, observation.preview.expiresAt - Date.now()),
-    );
+    const deadline = observation.preview.expiresAt;
+    const timer = setTimeout(() => setExpiredAt(deadline), Math.max(0, deadline - Date.now()));
     return () => clearTimeout(timer);
   }, [observation]);
 
@@ -80,7 +93,7 @@ export function useApplicationPreview(
     setPending(true);
     setError('');
     setObservation(null);
-    setExpired(false);
+    setExpiredAt(null);
     const request = {
       studyId: view.id,
       environmentId: workbench.environmentId,
@@ -90,21 +103,7 @@ export function useApplicationPreview(
       action,
     };
     try {
-      let result = await pblRequest<ApplicationObservation>(
-        '/api/pbl/v3/application',
-        request,
-        abort.signal,
-      );
-      // Reuse the existing receipt; slow startup must not dispatch a second server.
-      for (let retry = 0; result.state === 'starting' && retry < 3; retry++) {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        abort.signal.throwIfAborted();
-        result = await pblRequest<ApplicationObservation>(
-          '/api/pbl/v3/application',
-          request,
-          abort.signal,
-        );
-      }
+      const result = await waitForApplication(request, abort.signal);
       if (serial === attempt.current) setObservation(result);
     } catch (e) {
       if (serial === attempt.current && !abort.signal.aborted) setError((e as Error).message);
@@ -139,8 +138,7 @@ export function useApplicationPreview(
     setPending(true);
     setError('');
     try {
-      const result = await pblRequest<ApplicationObservation>(
-        '/api/pbl/v3/application',
+      const result = await waitForApplication(
         {
           studyId: view.id,
           environmentId: workbench.environmentId,
@@ -151,8 +149,11 @@ export function useApplicationPreview(
         },
         abort.signal,
       );
-      if (serial !== attempt.current || !result.preview) tab.close();
-      else tab.location.replace(result.preview.url);
+      if (serial !== attempt.current) tab.close();
+      else if (!result.preview) {
+        tab.close();
+        setError(t('pblV3.application.unavailable'));
+      } else tab.location.replace(result.preview.url);
     } catch (e) {
       tab.close();
       if (serial === attempt.current && !abort.signal.aborted) setError((e as Error).message);
