@@ -108,3 +108,28 @@ describe('normalizeASRUploadAudio', () => {
     },
   );
 });
+
+describe('normalizeASRUploadAudio (registry-driven)', () => {
+  it('passes through providers whose documented formats include webm', async () => {
+    const input = new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' });
+    for (const providerId of ['openai-whisper', 'qwen-asr', 'azure-asr']) {
+      const result = await normalizeASRUploadAudio(providerId, input);
+      expect(result.blob).toBe(input);
+      expect(result.fileName).toBe('recording.webm');
+    }
+  });
+
+  it('keeps WAV blobs unchanged for xiaomi-asr, whose formats lack webm', async () => {
+    const input = new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/wav' });
+    const result = await normalizeASRUploadAudio('xiaomi-asr', input);
+    expect(result.blob).toBe(input);
+    expect(result.fileName).toBe('recording.wav');
+  });
+
+  it('passes unknown custom providers through without transcoding', async () => {
+    const input = new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' });
+    const result = await normalizeASRUploadAudio('custom-asr-mine', input);
+    expect(result.blob).toBe(input);
+    expect(result.fileName).toBe('recording.webm');
+  });
+});

@@ -89,6 +89,7 @@ export type BuiltInTTSProviderId =
   | 'doubao-tts'
   | 'elevenlabs-tts'
   | 'minimax-tts'
+  | 'xiaomi-tts'
   | 'google-tts'
   | 'lemonade-tts'
   | 'browser-native-tts';
@@ -140,6 +141,12 @@ export interface TTSProviderConfig {
   defaultModelId: string;
   voices: TTSVoiceInfo[];
   supportedFormats: string[]; // ['mp3', 'wav', 'opus', etc.]
+  /**
+   * The request path under `defaultBaseUrl` the provider posts to, shown in
+   * the settings request-URL hint. Omitted when there is no single fixed
+   * path.
+   */
+  endpointPath?: string;
   speedRange?: {
     min: number;
     max: number;
@@ -208,7 +215,8 @@ export type BuiltInASRProviderId =
   | 'qwen-asr'
   | 'funasr-asr'
   | 'lemonade-asr'
-  | 'azure-asr';
+  | 'azure-asr'
+  | 'xiaomi-asr';
 
 export type ASRProviderId = BuiltInASRProviderId | `custom-asr-${string}`;
 
@@ -225,6 +233,19 @@ export interface ASRProviderConfig {
   defaultModelId: string;
   supportedLanguages: string[];
   supportedFormats: string[];
+  /**
+   * The request path under `defaultBaseUrl` the provider posts to, shown in
+   * the settings request-URL hint. Omitted when there is no single fixed
+   * path.
+   */
+  endpointPath?: string;
+  /**
+   * The maximum ASR chunk duration (seconds) for server-side material
+   * extraction. Providers without a limit omit this and use the generic
+   * default. A provider whose input cap is a base64-encoded payload (e.g.
+   * Xiaomi MiMo's 10 MB input_audio limit) declares a lower bound here.
+   */
+  maxChunkSeconds?: number;
 }
 
 /**

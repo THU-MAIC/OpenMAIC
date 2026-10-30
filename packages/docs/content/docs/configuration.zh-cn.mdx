@@ -556,6 +556,10 @@ TTS_DOUBAO_BASE_URL=       # 可选覆盖
 TTS_QWEN_API_KEY=
 TTS_QWEN_BASE_URL=         # 可选覆盖
 
+# 小米 MiMo TTS
+TTS_XIAOMI_API_KEY=
+TTS_XIAOMI_BASE_URL=https://api.xiaomimimo.com/v1
+
 # 任何 OpenAI 兼容的 TTS 端点
 TTS_OPENAI_API_KEY=
 TTS_OPENAI_BASE_URL=
@@ -564,7 +568,7 @@ TTS_OPENAI_BASE_URL=
 TTS_VOXCPM_BASE_URL=http://localhost:8000
 ```
 
-支持的 TTS 前缀包括 `TTS_OPENAI_`、`TTS_AZURE_`、`TTS_GLM_`、`TTS_QWEN_`、`TTS_MINIMAX_`、`TTS_DOUBAO_`、`TTS_ELEVENLABS_`、`TTS_GOOGLE_`、`TTS_VOXCPM_` 和 `TTS_LEMONADE_`。本地 Lemonade TTS 和 VoxCPM2 不需要 API key。浏览器原生 TTS 不需要服务端配置。
+支持的 TTS 前缀包括 `TTS_OPENAI_`、`TTS_AZURE_`、`TTS_GLM_`、`TTS_QWEN_`、`TTS_MINIMAX_`、`TTS_DOUBAO_`、`TTS_ELEVENLABS_`、`TTS_GOOGLE_`、`TTS_VOXCPM_`、`TTS_XIAOMI_` 和 `TTS_LEMONADE_`。本地 Lemonade TTS 和 VoxCPM2 不需要 API key。浏览器原生 TTS 不需要服务端配置。
 
 管理员可以使用 `TTS_<PROVIDER>_ENABLED=false` 在服务端强制关闭某个 TTS 提供方。VoxCPM2（自托管 TTS + 声音克隆）请见单独的 [VoxCPM2](./voxcpm.mdx) 章节。
 
@@ -580,6 +584,10 @@ ASR_OPENAI_BASE_URL=       # 可选覆盖
 # Qwen ASR
 ASR_QWEN_API_KEY=
 ASR_QWEN_BASE_URL=         # 可选覆盖
+
+# 小米 MiMo ASR
+ASR_XIAOMI_API_KEY=
+ASR_XIAOMI_BASE_URL=https://api.xiaomimimo.com/v1
 
 # Azure ASR
 ASR_AZURE_API_KEY=

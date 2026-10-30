@@ -1433,6 +1433,8 @@
     "providerDoubaoTTS": "Doubao TTS 2.0 (Volcengine)",
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
+    "providerXiaomiTTS": "Xiaomi MiMo TTS",
+    "providerXiaomiASR": "Xiaomi MiMo ASR",
     "providerGoogleTTS": "Google Gemini TTS",
     "providerLemonadeTTS": "Lemonade TTS (Local)",
     "providerBrowserNativeTTS": "TTS Nativo do Navegador",

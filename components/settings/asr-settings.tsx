@@ -220,6 +220,7 @@ export function ASRSettings({ view, apply, entry }: ServicePanelProps) {
                 {asrProvider?.defaultBaseUrl && (
                   <p className="text-xs text-muted-foreground break-all">
                     {t('settings.requestUrl')}: {asrProvider.defaultBaseUrl}
+                    {asrProvider.endpointPath ?? ''}
                   </p>
                 )}
                 <EndpointServerOnlyHint />

@@ -329,6 +329,8 @@ export async function generateTTS(
 
       case 'minimax-tts':
         return await generateMiniMaxTTS(config, text, signal);
+      case 'xiaomi-tts':
+        return await generateXiaomiTTS(config, text, signal);
       case 'doubao-tts':
         return await generateDoubaoTTS(config, text, signal);
       case 'elevenlabs-tts':
@@ -1487,4 +1489,103 @@ function escapeXml(text: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
+}
+
+/**
+ * Map a numeric speed to a graded natural-language pacing instruction.
+ * MiMo TTS takes speed only as a style instruction, not a request parameter,
+ * so the slider range maps to graded wording: 1.05 and 2.0 must not produce
+ * the same request.
+ */
+function xiaomiPacingInstruction(speed: number): string | null {
+  if (speed > 1.0) {
+    const pct = Math.round((speed - 1) * 100);
+    if (pct >= 60) return '说得非常快，语速很快。';
+    if (pct >= 25) return '说得快一些，语速偏快。';
+    return '语速稍微快一点。';
+  }
+  if (speed < 1.0) {
+    const pct = Math.round((1 - speed) * 100);
+    if (pct >= 40) return '说得非常慢，语速很慢。';
+    if (pct >= 15) return '说得慢一些，语速偏慢。';
+    return '语速稍微慢一点。';
+  }
+  return null;
+}
+
+/**
+ * Xiaomi MiMo TTS implementation.
+ *
+ * MiMo TTS does NOT expose an OpenAI-style /audio/speech endpoint. It reuses
+ * the chat/completions protocol: the text to synthesize goes in an `assistant`
+ * message (a hard provider rule), optional style instructions go in a `user`
+ * message, and the audio payload comes back base64-encoded at
+ * `choices[0].message.audio.data`. Numeric speed is not a request parameter,
+ * so a non-default speed is translated into a graded pacing instruction
+ * (`xiaomiPacingInstruction`).
+ */
+async function generateXiaomiTTS(
+  config: TTSModelConfig,
+  text: string,
+  signal: AbortSignal,
+): Promise<TTSGenerationResult> {
+  const baseUrl = (config.baseUrl || TTS_PROVIDERS['xiaomi-tts'].defaultBaseUrl || '').replace(
+    /\/+$/,
+    '',
+  );
+
+  const messages: Array<{ role: string; content: string }> = [];
+  const pacing = xiaomiPacingInstruction(config.speed ?? 1.0);
+  if (pacing) {
+    messages.push({ role: 'user', content: pacing });
+  }
+  messages.push({ role: 'assistant', content: text });
+
+  const response = await ttsFetch(config, `${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      'Content-Type': 'application/json; charset=utf-8',
+      ...appAttributionHeaders(baseUrl),
+    },
+    body: JSON.stringify({
+      model: config.modelId || TTS_PROVIDERS['xiaomi-tts'].defaultModelId,
+      messages,
+      audio: {
+        format: 'wav',
+        voice: config.voice || 'mimo_default',
+      },
+    }),
+    signal,
+  });
+
+  if (!response.ok) {
+    throwIfTtsRateLimited('Xiaomi MiMo', response.status, response.headers.get('retry-after'));
+    const error = await response.json().catch(() => ({ error: { message: response.statusText } }));
+    throw new Error(`Xiaomi MiMo TTS API error: ${error.error?.message || response.statusText}`);
+  }
+
+  const data = await response.json();
+  const audioData = data?.choices?.[0]?.message?.audio?.data;
+  if (typeof audioData !== 'string' || !audioData) {
+    throw new TTSInvalidResponseError('Xiaomi MiMo', 'Xiaomi MiMo TTS API returned no audio data');
+  }
+  // Node's base64 decoder is lenient: whitespace or malformed input silently
+  // decodes to zero or arbitrary bytes. A "success" carrying those would be
+  // billed and persisted as an unplayable asset, so validate the payload.
+  const audio = Buffer.from(audioData, 'base64');
+  if (
+    audio.byteLength < 44 ||
+    !audio.subarray(0, 4).equals(Buffer.from('RIFF')) ||
+    !audio.subarray(8, 12).equals(Buffer.from('WAVE'))
+  ) {
+    throw new TTSInvalidResponseError(
+      'Xiaomi MiMo',
+      `Xiaomi MiMo TTS returned a ${audio.byteLength}-byte payload that is not a valid WAV file`,
+    );
+  }
+  return {
+    audio: new Uint8Array(audio),
+    format: 'wav',
+  };
 }

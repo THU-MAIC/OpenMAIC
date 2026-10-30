@@ -105,6 +105,7 @@ const TTS_ENV_MAP: Record<string, string> = {
   TTS_DOUBAO: 'doubao-tts',
   TTS_ELEVENLABS: 'elevenlabs-tts',
   TTS_MINIMAX: 'minimax-tts',
+  TTS_XIAOMI: 'xiaomi-tts',
   TTS_GOOGLE: 'google-tts',
   TTS_LEMONADE: 'lemonade-tts',
 };
@@ -115,6 +116,7 @@ const ASR_ENV_MAP: Record<string, string> = {
   ASR_AZURE: 'azure-asr',
   ASR_FUNASR: 'funasr-asr',
   ASR_LEMONADE: 'lemonade-asr',
+  ASR_XIAOMI: 'xiaomi-asr',
 };
 
 const PDF_ENV_MAP: Record<string, string> = {
