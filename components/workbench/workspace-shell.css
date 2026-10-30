@@ -2025,57 +2025,49 @@
   padding: 6px 10px;
 }
 
-/* The profile, edited in place at the top of the account menu. The menu is
-   portalled out of the shell, so like the rest of it these use the product's
-   palette directly rather than the shell's tokens. */
-.ws-profile-input {
-  height: 32px;
-  padding: 0 10px;
-  border-radius: 9px;
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  background: #fff;
-  font-size: 13.5px;
-  font-weight: 600;
+/* The profile editor opens at the top of the account menu: the panel grows
+   upward from its anchor as the editor's row track goes from 0 to its height,
+   and folds back the same way. */
+.ws-profile-expand {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 200ms ease;
+}
+
+.ws-profile-expand[data-open] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.ws-profile-collapse {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  color: rgb(100 116 139);
+}
+
+.ws-profile-collapse:hover {
+  background: rgba(15, 23, 42, 0.06);
   color: rgb(15 23 42);
-  outline: none;
 }
 
-.ws-profile-input:focus {
-  border-color: rgba(124, 58, 237, 0.45);
-  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
-}
-
-.dark .ws-profile-input {
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
+.dark .ws-profile-collapse:hover {
+  background: rgba(255, 255, 255, 0.08);
   color: rgb(241 245 249);
 }
 
-.ws-profile-avatar {
-  display: inline-flex;
-  width: 26px;
-  height: 26px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9999px;
-  background: rgba(15, 23, 42, 0.05);
-  color: rgb(100 116 139);
-  transition:
-    transform 160ms ease,
-    box-shadow 160ms ease;
+@media (prefers-reduced-motion: reduce) {
+  .ws-profile-expand {
+    transition: none;
+  }
 }
 
-.ws-profile-avatar:hover {
-  transform: scale(1.08);
-}
-
-.ws-profile-avatar-on {
-  box-shadow: 0 0 0 2px #7c3aed;
-}
-
-.dark .ws-profile-avatar-on {
-  box-shadow: 0 0 0 2px #a78bfa;
-}
+/* The "Saved" tick beside the profile editor. */
 
 .ws-profile-saved {
   display: inline-flex;
@@ -2090,11 +2082,6 @@
 
 .ws-profile-saved-on {
   opacity: 1;
-}
-
-.ws-profile-upload {
-  border: 1px dashed rgba(100, 116, 139, 0.45);
-  background: transparent;
 }
 
 .ws-account-summary {

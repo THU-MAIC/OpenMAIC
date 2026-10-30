@@ -19,7 +19,7 @@ import {
   type WorkbenchShellExtensions,
 } from '@/lib/workbench/shell-extensions';
 import { AVATAR_OPTIONS, useUserProfileStore } from '@/lib/store/user-profile';
-import { PROFILE_SAVE_DELAY_MS } from '@/components/workbench/workspace/WorkspaceAccount';
+import { PROFILE_BIO_SAVE_DELAY_MS } from '@/components/user-profile';
 
 vi.mock('@/lib/hooks/use-i18n', () => ({
   useI18n: () => ({ t: (key: string) => key, locale: 'en-US', setLocale: vi.fn() }),
@@ -265,38 +265,38 @@ describe('the host extension slots', () => {
     });
   };
 
-  it('floats one profile editor from the identity row, saving as it changes', async () => {
+  it('opens the profile editor at the top of the menu itself, saving as it changes', async () => {
     vi.useFakeTimers();
     try {
       await act(async () => useUserProfileStore.getState().setNickname('Ada'));
       await renderRail();
       const menu = await openAccountMenu();
-      const row = menu.querySelector<HTMLElement>('[data-testid="workspace-account-profile"]')!;
-      expect(row.textContent).toContain('Ada');
-      // The menu holds no fields of its own.
-      expect(menu.querySelector('input, textarea')).toBeNull();
-      await act(async () => row.click());
-
-      const editor = byTestId('workspace-profile-editor')!;
-      expect(editor, 'the floating editor').not.toBeNull();
-      // A popover, not a modal: no dialog, no button to confirm.
-      expect(
-        document.querySelector('[role="dialog"]:not([data-testid="workspace-profile-editor"])'),
-      ).toBeNull();
-      expect(editor.querySelector('button[type="submit"]')).toBeNull();
-      expect(editor.querySelectorAll('[data-testid="workspace-profile-avatar"]').length).toBe(
-        AVATAR_OPTIONS.length,
+      expect(byTestId('workspace-profile-expand')?.hasAttribute('data-open')).toBe(false);
+      await act(async () =>
+        menu.querySelector<HTMLElement>('[data-testid="workspace-account-profile"]')!.click(),
       );
 
-      // The name, saved once typing settles.
-      const name = editor.querySelector<HTMLInputElement>(
-        '[data-testid="workspace-profile-name"]',
-      )!;
-      expect(name.value).toBe('Ada');
+      // In the same panel, above the rest of the menu; no dialog, no button to confirm.
+      const editor = menu.querySelector<HTMLElement>('[data-testid="workspace-profile-editor"]')!;
+      expect(editor, 'the editor, inside the menu').not.toBeNull();
+      expect(byTestId('workspace-profile-expand')?.hasAttribute('data-open')).toBe(true);
+      expect(menu.querySelector('[data-testid="workspace-account-settings"]')).not.toBeNull();
+      expect(
+        editor.compareDocumentPosition(
+          menu.querySelector('[data-testid="workspace-account-settings"]')!,
+        ) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+      expect(editor.textContent).toContain('profile.avatarHint');
+
+      // The name is text until pressed, then a field saved on Enter.
+      await act(async () =>
+        editor.querySelector<HTMLButtonElement>('button.group\\/name')!.click(),
+      );
+      const name = editor.querySelector<HTMLInputElement>('input[maxlength="20"]')!;
       await setInput(name, 'Grace');
-      expect(useUserProfileStore.getState().nickname).toBe('Ada');
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(PROFILE_SAVE_DELAY_MS);
+        name.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
       });
       expect(useUserProfileStore.getState().nickname).toBe('Grace');
       expect(byTestId('workspace-profile-saved')?.textContent).toContain(
@@ -304,41 +304,51 @@ describe('the host extension slots', () => {
       );
       expect(byTestId('workspace-account')?.textContent).toContain('Grace');
 
-      // An avatar, at once.
+      // The avatar, from the chevron on it, at once.
       await act(async () =>
-        editor
-          .querySelectorAll<HTMLElement>('[data-testid="workspace-profile-avatar"]')[2]!
-          .click(),
+        editor.querySelector<HTMLButtonElement>('button.group\\/avatar')!.click(),
       );
-      expect(useUserProfileStore.getState().avatar).toBe(AVATAR_OPTIONS[2]);
+      const presets = editor.querySelectorAll<HTMLButtonElement>('img[src*="/avatars/"]');
+      await act(async () => (presets[presets.length - 1]!.parentElement as HTMLElement).click());
+      expect(useUserProfileStore.getState().avatar).toBe(AVATAR_OPTIONS[AVATAR_OPTIONS.length - 1]);
 
-      // The bio, when the field is left.
-      const bio = editor.querySelector<HTMLTextAreaElement>(
-        '[data-testid="workspace-profile-bio"]',
-      )!;
+      // The bio, once typing settles.
+      const bio = editor.querySelector<HTMLTextAreaElement>('textarea')!;
       await setInput(bio, 'Likes worked examples');
       await act(async () => {
-        bio.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+        await vi.advanceTimersByTimeAsync(PROFILE_BIO_SAVE_DELAY_MS);
       });
       expect(useUserProfileStore.getState().bio).toBe('Likes worked examples');
+
+      // Folding it puts the menu back as it was.
+      await act(async () => byTestId('workspace-profile-collapse')!.click());
+      expect(byTestId('workspace-profile-expand')?.hasAttribute('data-open')).toBe(false);
+      expect(menu.querySelector('[data-testid="workspace-account-profile"]')).not.toBeNull();
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('saves what was typed when the editor closes before the pause', async () => {
-    await act(async () => useUserProfileStore.getState().setNickname('Ada'));
+  // That Escape folds the editor and keeps the menu open is checked in a real
+  // browser: jsdom's layer stack lets the same Escape close the menu as well.
+  it('leaves the editor on Escape without losing what was typed', async () => {
+    await act(async () => useUserProfileStore.getState().setBio(''));
     await renderRail();
     const menu = await openAccountMenu();
     await act(async () =>
       menu.querySelector<HTMLElement>('[data-testid="workspace-account-profile"]')!.click(),
     );
-    await setInput(byTestId('workspace-profile-name') as HTMLInputElement, 'Lin');
+    const bio = menu.querySelector<HTMLTextAreaElement>(
+      '[data-testid="workspace-profile-editor"] textarea',
+    )!;
+    await setInput(bio, 'Draft');
     await act(async () => {
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      bio.focus();
+      bio.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
-    expect(byTestId('workspace-profile-editor')).toBeNull();
-    expect(useUserProfileStore.getState().nickname).toBe('Lin');
+    expect(byTestId('workspace-profile-expand')?.hasAttribute('data-open') ?? false).toBe(false);
+    for (const root of roots.splice(0)) act(() => root.unmount());
+    expect(useUserProfileStore.getState().bio).toBe('Draft');
   });
 
   it('offers no local profile editor for a host identity', async () => {

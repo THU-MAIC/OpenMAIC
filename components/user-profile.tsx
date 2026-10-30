@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import { Pencil, Check, ImagePlus, ChevronDown } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Card } from '@/components/ui/card';
@@ -57,7 +57,23 @@ export function readAvatarUpload(file: File, t: (key: string) => string): Promis
   });
 }
 
-export function UserProfileCard() {
+/** How long typing in the bio settles before it is saved. */
+export const PROFILE_BIO_SAVE_DELAY_MS = 500;
+
+/**
+ * The learner profile editor: avatar (presets or an upload, from the chevron
+ * on the avatar), the name (text until pressed, then a field; saved on Enter
+ * or leaving it) with its hint, and the bio (saved once typing settles, on
+ * leaving it, and when the editor goes away). It saves itself — there is no
+ * button — and reports each save through `onSaved`.
+ *
+ * `className` adjusts the card's surface for the host it sits in (the account
+ * menu supplies its own).
+ */
+export function UserProfileCard({
+  className,
+  onSaved,
+}: { readonly className?: string; readonly onSaved?: () => void } = {}) {
   const { t } = useI18n();
   const avatar = useUserProfileStore((s) => s.avatar);
   const nickname = useUserProfileStore((s) => s.nickname);
@@ -66,6 +82,24 @@ export function UserProfileCard() {
   const setNickname = useUserProfileStore((s) => s.setNickname);
   const setBio = useUserProfileStore((s) => s.setBio);
 
+  const [bioDraft, setBioDraft] = useState(bio);
+  const bioPending = useRef<string | null>(null);
+  const bioTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedRef = useRef(onSaved);
+  useEffect(() => {
+    savedRef.current = onSaved;
+  });
+  const flushBio = useCallback(() => {
+    if (bioTimer.current) clearTimeout(bioTimer.current);
+    bioTimer.current = null;
+    const next = bioPending.current;
+    bioPending.current = null;
+    if (next === null) return;
+    setBio(next);
+    savedRef.current?.();
+  }, [setBio]);
+  // Leaving (the menu closing, a page change) must not lose typing.
+  useEffect(() => flushBio, [flushBio]);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
@@ -88,8 +122,15 @@ export function UserProfileCard() {
   };
 
   const commitName = () => {
-    setNickname(nameDraft.trim());
+    if (nameDraft.trim() !== nickname) {
+      setNickname(nameDraft.trim());
+      onSaved?.();
+    }
     setEditingName(false);
+  };
+  const pickAvatar = (next: string) => {
+    setAvatar(next);
+    onSaved?.();
   };
 
   const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -97,13 +138,18 @@ export function UserProfileCard() {
     e.target.value = '';
     if (!file) return;
     void readAvatarUpload(file, t).then((avatar) => {
-      if (avatar) setAvatar(avatar);
+      if (avatar) pickAvatar(avatar);
     });
   };
 
   if (!hydrated) {
     return (
-      <Card className="p-5 !gap-0 shadow-xl border-muted/40 backdrop-blur-xl bg-white/80 dark:bg-slate-900/80">
+      <Card
+        className={cn(
+          'p-5 !gap-0 shadow-xl border-muted/40 backdrop-blur-xl bg-white/80 dark:bg-slate-900/80',
+          className,
+        )}
+      >
         <div className="flex items-center gap-3">
           <div className="size-11 rounded-full bg-muted animate-pulse" />
           <div className="flex-1 space-y-2">
@@ -116,7 +162,12 @@ export function UserProfileCard() {
   }
 
   return (
-    <Card className="p-5 !gap-0 shadow-xl border-muted/40 backdrop-blur-xl bg-white/80 dark:bg-slate-900/80">
+    <Card
+      className={cn(
+        'p-5 !gap-0 shadow-xl border-muted/40 backdrop-blur-xl bg-white/80 dark:bg-slate-900/80',
+        className,
+      )}
+    >
       {/* File input — sr-only keeps it in the flow but invisible; label triggers it */}
       <input
         id={FILE_INPUT_ID}
@@ -198,7 +249,7 @@ export function UserProfileCard() {
               {AVATAR_OPTIONS.map((url) => (
                 <button
                   key={url}
-                  onClick={() => setAvatar(url)}
+                  onClick={() => pickAvatar(url)}
                   className={cn(
                     'size-8 rounded-full overflow-hidden bg-gray-50 dark:bg-gray-800 cursor-pointer transition-all duration-150',
                     'hover:scale-110 active:scale-95',
@@ -232,8 +283,14 @@ export function UserProfileCard() {
 
       {/* Bio input */}
       <Textarea
-        value={bio}
-        onChange={(e) => setBio(e.target.value)}
+        value={bioDraft}
+        onChange={(e) => {
+          setBioDraft(e.target.value);
+          bioPending.current = e.target.value;
+          if (bioTimer.current) clearTimeout(bioTimer.current);
+          bioTimer.current = setTimeout(flushBio, PROFILE_BIO_SAVE_DELAY_MS);
+        }}
+        onBlur={flushBio}
         placeholder={t('profile.bioPlaceholder')}
         maxLength={200}
         rows={3}
