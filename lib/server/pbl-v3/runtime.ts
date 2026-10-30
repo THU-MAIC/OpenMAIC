@@ -24,6 +24,7 @@ import { writeSessionGrant } from '@/lib/server/sandbox/store';
 import { fenceOwnerWrite } from '@/lib/persistence/owner-merges';
 import { SandboxService } from '@/lib/server/sandbox/service';
 import { SandboxError, sandboxConflict, sandboxInvalid } from '@/lib/sandbox/errors';
+import { MAX_COMMAND_BYTES } from '@/lib/sandbox/types';
 import { getAgentSessionStore } from '@/lib/server/agent-runtime/store';
 import { listAgentUserMessages } from '@/lib/server/agent-runtime/user-messages';
 import { getOwnerScopedDocumentStore } from '@/lib/server/agent-runtime/owner-scoped-documents';
@@ -847,21 +848,34 @@ export async function commandStudy(
       if (row.evaluation && row.evaluation.id !== command.id)
         throw sandboxConflict('Collect the existing test result before starting another run.');
       const snapshot = await fileSnapshot(service, row);
+      const testCommand =
+        row.evaluation?.evaluationCommand ??
+        evaluationCommand(
+          evaluationFor(
+            project,
+            row.state.position.milestoneId!,
+            row.evaluation ? [] : Object.keys(snapshot.files),
+          ),
+          command.id,
+        );
+      if (Buffer.byteLength(testCommand) > MAX_COMMAND_BYTES)
+        throw sandboxInvalid(
+          'Current evaluation sources exceed the sandbox 32 KiB command limit.',
+          'PBL_SOURCE_SIZE',
+        );
       row.evaluation ??= {
         id: command.id,
         fingerprint: snapshot.fingerprint,
         stageKey: stageKey(row),
         startedAt: new Date().toISOString(),
+        evaluationCommand: testCommand,
       };
       row = await store.transaction((db) =>
         store.commit(db, row, { state: row.state, events: [] }),
       );
       result = await service.startCommand(requireEnvironment(row), {
         requestId: command.id,
-        command: evaluationCommand(
-          evaluationFor(project, row.state.position.milestoneId!),
-          command.id,
-        ),
+        command: testCommand,
         timeoutMs: 60_000,
       });
       transition = { state: row.state, events: [] };

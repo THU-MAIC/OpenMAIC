@@ -19,6 +19,12 @@ function needsApplication(projects: readonly PBLProjectPackage[]) {
 }
 
 export const DECISION_RESPONSE_CAPABILITY = 'pbl-v3-decision-responses@1';
+export const PRESENTATION_CAPABILITY = 'pbl-v3-presentation@1';
+function needsPresentation(projects: readonly PBLProjectPackage[]) {
+  return projects.some(
+    (project) => JSON.parse(project.files['project.json'])?.definition?.presentation !== undefined,
+  );
+}
 function needsDecisionResponses(projects: readonly PBLProjectPackage[]) {
   return projects
     .map((project) => {
@@ -74,6 +80,7 @@ export function validateClassroomPackageCompatibility(manifest: ClassroomManifes
             PBL_PROJECT_PACKAGE_CAPABILITY,
             DECISION_RESPONSE_CAPABILITY,
             APPLICATION_CAPABILITY,
+            PRESENTATION_CAPABILITY,
           ].includes(c),
       ))
   )
@@ -140,6 +147,7 @@ export async function attachClassroomProjects(
   if (needsDecisionResponses(projects))
     manifest.requiredCapabilities.push(DECISION_RESPONSE_CAPABILITY);
   if (needsApplication(projects)) manifest.requiredCapabilities.push(APPLICATION_CAPABILITY);
+  if (needsPresentation(projects)) manifest.requiredCapabilities.push(PRESENTATION_CAPABILITY);
   for (const scene of scenes) {
     const content = scene.content as { type: 'pbl'; projectV3: PBLV3Reference };
     const { entry } = byRef.get(JSON.stringify(content.projectV3))!;
@@ -246,6 +254,11 @@ export async function installClassroomProjects(zip: JSZip, manifest: ClassroomMa
     !manifest.requiredCapabilities?.includes(DECISION_RESPONSE_CAPABILITY)
   )
     throw new Error('Decision response forms require pbl-v3-decision-responses@1.');
+  if (
+    needsPresentation(projects) &&
+    !manifest.requiredCapabilities?.includes(PRESENTATION_CAPABILITY)
+  )
+    throw new Error('Project presentation requires pbl-v3-presentation@1.');
   if (
     needsApplication(projects) &&
     !manifest.requiredCapabilities?.includes(APPLICATION_CAPABILITY)

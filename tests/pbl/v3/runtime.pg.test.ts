@@ -1986,6 +1986,42 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     ).toEqual([question]);
     expect(report.facts).toMatchObject({ learnerTurns: 0, assistantTurns: 1 });
   });
+  it('counts distinct failed runs even when attended retries reuse the same attempt', async () => {
+    const study = await unpreparedStudy();
+    const sessionId = `report-runs-${randomUUID()}`;
+    await agents.createSession({
+      id: sessionId,
+      ownerId: principal.ownerId,
+      stageId: 'report-course',
+      prompt: 'Report fixture',
+      status: 'succeeded',
+    });
+    await pool.query(
+      "INSERT INTO pbl_v3_roles(session_id,study_id,role,context_key,stage_key) VALUES($1,$2,'discussion','greeting','greeting:0')",
+      [sessionId, study.id],
+    );
+    const events = [
+      ['user_message', { text: 'First turn' }],
+      ['session_start', {}],
+      ['session_interrupted', {}],
+      ['session_end', { status: 'failed' }],
+      ['pbl_turn_retried', {}],
+      ['session_resumed', {}],
+      ['session_end', { status: 'failed' }],
+      ['user_message', { text: 'Another turn' }],
+      ['session_resumed', {}],
+      ['session_end', { status: 'failed' }],
+    ] as const;
+    for (const [index, [type, data]] of events.entries())
+      await pool.query(
+        'INSERT INTO agent_session_events(session_id,seq,ts,attempt,type,data) VALUES($1,$2::integer,$2::integer,1,$3,$4)',
+        [sessionId, index + 1, type, JSON.stringify(data)],
+      );
+    expect((await learningEvidence(principal, study.id)).facts).toMatchObject({
+      interruptedRuns: 3,
+      learnerTurns: 2,
+    });
+  });
   it.each([
     { bindings: 1, automaticOpening: false },
     { bindings: 3, automaticOpening: false },

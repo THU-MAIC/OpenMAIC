@@ -93,12 +93,40 @@ export. Their virtual requirements/pedagogy paths become `docs`/`skills`. A
 receiving installation needs no static registration. Re-export preserves stored
 resource bytes instead of reconstructing them from a later built-in definition.
 
+## Optional Hero presentation
+
+A v3 definition can include optional public display copy:
+
+```json
+"presentation": {
+  "hero": {
+    "description": "Build and verify a small application with teaching assistants.",
+    "gains": ["Explain a behavior rule", "Check an implementation against tests"],
+    "instructorName": "Project mentor"
+  }
+}
+```
+
+`description` is required only when `hero` is present. `gains` and
+`instructorName` may be omitted to retain their existing fallback values. The
+actual project title, milestone count and decision count always come from the
+project definition. Copy is plain public text, never trusted HTML, teaching
+instructions, hidden answers or grading criteria.
+
+Export adds `pbl-v3-presentation@1` only for packages using this metadata; import
+requires the capability before any upload. New readers accept old v3 packages
+without this field and preserve their existing Hero fallback. PBL v1/v2 archives
+and Hero behavior do not change. Future generation can populate this same
+optional data; there is no activity ID, deployment override or generation switch
+in this contract. Metadata participates in the normal immutable project checksum;
+changing it does not silently rewrite an existing study's pinned package.
+
 ## Decision response forms
 
 Decision definitions may set `responseType: "text"` and `options: []` for an
 open-ended response. Omitting `responseType` keeps existing option buttons.
 Text forms ignore any retained options and preserve the literal response; choice
-definitions should provide at least one option.
+definitions must provide at least one option; empty choice definitions are rejected before publication.
 `requiresRationale: true` adds a required explanation field to either format;
 choice forms then use an explicit Submit decision button. The server validates
 nonempty responses, required rationales and option membership. Saving a response
@@ -166,11 +194,16 @@ one model-input component, not total teaching time, conversation or tool use.
 ## Runtime profiles and private resources
 
 Version 1 registers `python3` and `java`. The platform generates builds from
-`buildSources` (Python AST checks or `javac`); packages cannot supply arbitrary
+`buildSources` (Python AST checks or `javac`). A build also includes newly created,
+authorized same-language source files under the declared source roots, while
+preserving the authored entrypoints. It never scans private test resources or
+automatically adds unrelated original files. Evaluation retries reuse the exact
+command frozen with their source snapshot. Packages cannot supply arbitrary
 build shell commands. Evaluation JSON uses the existing adapter:
 `{prepare?, cases: [{id, argv, stdout, stdin?}]}`. Python permits `python3`; Java
 permits `java`, `javac` and `python3`. Case IDs must be unique. The parent checks
-exit status and exact stdout and records the existing evaluation receipts.
+exit status and stdout, normalizing CRLF and CR to LF on both expected and actual
+output while preserving all other whitespace, and records the existing evaluation receipts.
 
 Tests, answer keys and rubric files stay outside the learner workspace. The
 evaluation runner stages `tests/` and `rubric/` in its temporary directory; argv

@@ -66,6 +66,10 @@ export interface Study extends Record<string, unknown> {
     stageKey: string;
     startedAt: string;
     purpose?: 'compile';
+    /** Exact host-generated build command retained across lost dispatch acknowledgements. */
+    buildCommand?: string;
+    /** Host-generated test command frozen with the admitted source snapshot. */
+    evaluationCommand?: string;
   } | null;
 }
 export interface RoleBinding extends Record<string, unknown> {

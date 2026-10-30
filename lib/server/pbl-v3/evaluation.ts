@@ -7,6 +7,7 @@ import type {
 } from '@/lib/pbl/v3/domain/orchestration/types';
 import type { SandboxCommandResult } from '@/lib/sandbox/types';
 import type { InstalledProject } from './catalog';
+import { additionalBuildSources } from './build-command';
 
 export interface ProjectEvaluation {
   /** Private course resources, staged only in the evaluation's temporary directory. */
@@ -17,9 +18,33 @@ export interface ProjectEvaluation {
   cases: { id: string; label?: string; argv: string[]; stdout: string; stdin?: string }[];
 }
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
-export function evaluationFor(project: InstalledProject, milestone: string) {
-  const spec = project.evaluations[milestone];
-  if (!spec?.cases.length) throw sandboxConflict('No evaluation is installed for this milestone.');
+export function evaluationFor(
+  project: InstalledProject,
+  milestone: string,
+  paths: readonly string[] = [],
+) {
+  const installed = project.evaluations[milestone];
+  if (!installed?.cases.length)
+    throw sandboxConflict('No evaluation is installed for this milestone.');
+  const added = additionalBuildSources(project, paths, '.java');
+  const compile = (argv: string[]) =>
+    argv[0] === 'javac' &&
+    added.length &&
+    argv.some(
+      (arg) => Object.hasOwn(project.files, arg.replace(/^\.\//, '')) && arg.endsWith('.java'),
+    )
+      ? [
+          ...argv,
+          ...added
+            .filter((path) => !argv.includes(path) && !argv.includes(`./${path}`))
+            .map((path) => `./${path}`),
+        ]
+      : argv;
+  const spec = {
+    ...installed,
+    ...(installed.prepare ? { prepare: compile(installed.prepare) } : {}),
+    cases: installed.cases.map((test) => ({ ...test, argv: compile(test.argv) })),
+  };
   if (!project.coursePackage) return spec;
   const privateFiles = new Set([
     ...Object.values(project.coursePackage.descriptor.runtime.evaluations),
@@ -168,7 +193,8 @@ function evaluationReceipt(
         value.build &&
         result.reason == null &&
         result.exitCode === 0 &&
-        result.stdoutDigest === createHash('sha256').update(c.stdout, 'utf8').digest('hex');
+        result.stdoutDigest ===
+          createHash('sha256').update(c.stdout.replace(/\r\n?/g, '\n'), 'utf8').digest('hex');
       return {
         id: c.id,
         label: (c.label ?? c.id).slice(0, 160),

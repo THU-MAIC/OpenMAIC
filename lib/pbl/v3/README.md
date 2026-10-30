@@ -114,7 +114,8 @@ evidence without claiming that old test results certify subsequently edited file
 The workbench places the IDE on the left and teaching assistant on the right,
 with adjustable panel widths. The IDE includes an authorized file tree, Monaco
 editor, per-file tabs and drafts, and build output. Shell controls are disabled for
-the current activity. Projects declaring `runtime.application` expose an isolated application dialog from the header. The assistant keeps its conversation scroll separate from stage controls and
+the current activity. Projects declaring `runtime.application` expose an isolated, collapsible application
+panel between the IDE and assistant, with a header control to reopen it. The assistant keeps its conversation scroll separate from stage controls and
 the message composer. Enter sends; Shift+Enter inserts a line. Workspace keystrokes
 do not trigger classroom shortcuts.
 
@@ -158,8 +159,8 @@ they are not shown as learner messages and cannot count as review feedback. Relo
 reuse the current role and its saved history and position; a failed opening uses
 the normal retry path.
 The scene uses OpenPBL's blue-gray/green palette in dark mode and its light counterpart,
-scoped to the workbench and following the host theme. Project web applications and
-their API contracts remain later content-specific integration work.
+scoped to the workbench and following the host theme. Project web applications and their API contracts are supplied by the course package;
+the registered application profile and deployment gateway must support them.
 
 Monaco is loaded only in the browser. Install/dev/build copy its bundled assets to
 `public/code-editor/vs`; Docker copies these with the application's public directory.
@@ -225,7 +226,9 @@ bundles currently retain the English fallback for these additions.
   progress and files remain, while that role's review receipts restart.
 - The runner owns leases, attempt fences, background execution, cancellation,
   durable messages and reconnection. There is no additional process or worker pool.
-  Its existing concurrency limit applies; teaching runs are bounded to two minutes.
+  Its existing concurrency limit applies. Teaching has no application-defined total
+  duration or tool-call limit; cancellation, lease ownership and response-idle
+  detection remain in force.
 - Cancellation uses an owner-checked control path outside the learning lock and
   accepts stale progress revisions. Failed/cancelled turns have a visible status
   and an explicit retry through the existing runner. Retry reuses the original
@@ -530,8 +533,8 @@ existing provider requirements. App launch/inspection use study ownership, revis
 environment generation, release admission and managed workspace scopes. Generic sandbox
 routes still cannot launch a managed project or mint its preview grants. Gateway grant
 resolution rechecks the owned study, current environment and declared port, including
-release/recovery; normal grant expiration and epoch revocation still apply. The dialog uses
-the existing workbench portal so it stays above expanded and native-fullscreen workbenches.
+release/recovery; normal grant expiration and epoch revocation still apply. The
+embedded application panel stays inside expanded and native-fullscreen workbenches.
 In the workbench, the gateway's isolated shell observes trusted pointer/keyboard/wheel
 input inside the app, coalescing it through the signed gateway to the existing study
 activity clock. Activity requires a private shell capability in addition to the preview

@@ -43,9 +43,10 @@ decision selection is temporary; failures restore the confirmed selection. Only
 server receipts install learning progress, outcomes and file-operation results.
 
 Reports already open their page and generation status before awaiting a response.
-The current v3 workbench has no project-application preview UI, port declaration,
-preview command or study-specific preview grant. Application-shell integration is
-outside this change; the generic shared sandbox facilities remain separate.
+Projects with a declared `runtime.application` expose a collapsible application
+panel between the IDE and assistant. Launch commands and ports come from the
+validated course package, and the isolated gateway uses study-specific grants;
+generic sandbox preview access remains separate.
 
 ## Editing boundaries
 
@@ -114,7 +115,8 @@ An open shell can modify files, including PLAN.md; this is a cooperative learnin
 facility, not an adversarial-code boundary. Completion refuses a changed approved
 plan and stale source evidence. Generic sandbox mutation routes cannot operate on a
 learning workspace; the owner-checked v3 workbench and terminal routes own its scope.
-Old generic or study-scoped preview tickets cannot open learning workspaces.
+Generic preview tickets cannot open managed learning workspaces. Declared project
+applications use the dedicated, owner-checked study preview route and gateway.
 
 ## Verification and deployment
 

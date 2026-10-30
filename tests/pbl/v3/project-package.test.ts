@@ -21,6 +21,7 @@ import {
   attachClassroomProjects,
   installClassroomProjects,
   DECISION_RESPONSE_CAPABILITY,
+  PRESENTATION_CAPABILITY,
 } from '@/lib/pbl/v3/package-client';
 import type { ClassroomManifest } from '@/lib/export/classroom-zip-types';
 import { bindPackageReferences } from '@/lib/server/pbl-v3/project-resolver';
@@ -58,6 +59,62 @@ async function archive(bundle: ReturnType<typeof packageBuiltin>) {
   return JSZip.loadAsync(await zip.generateAsync({ type: 'uint8array' }));
 }
 describe('self-contained PBL project packages', () => {
+  it.each([undefined, 'choice'])(
+    'rejects an empty choice decision (%s) while retaining open text decisions',
+    (responseType) => {
+      const change = (type: string | undefined) =>
+        revised((files) => {
+          const descriptor = JSON.parse(files['project.json']);
+          Object.assign(descriptor.definition.decisions[0], { responseType: type, options: [] });
+          files['project.json'] = JSON.stringify(descriptor);
+        });
+      expect(() => validateProjectPackage(change(responseType))).toThrow('choice decision');
+      expect(() => validateProjectPackage(change('text'))).not.toThrow();
+    },
+  );
+  it('round-trips public Hero metadata with its own capability and rejects missing declarations before upload', async () => {
+    const hero = {
+      description: 'Public entrance copy',
+      gains: ['Choose and verify'],
+      instructorName: 'Guide',
+    };
+    const bundle = revised((files) => {
+      const descriptor = JSON.parse(files['project.json']);
+      descriptor.definition.presentation = { hero };
+      files['project.json'] = JSON.stringify(descriptor);
+    });
+    expect(validateProjectPackage(bundle).project.definition.presentation).toEqual({ hero });
+    const m = manifest();
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      const input = JSON.parse(init!.body as string);
+      return Response.json(
+        input.action === 'install'
+          ? {
+              references: [
+                { ...source().ref, assetId: 'installed', checksum: bundle.entry.checksum },
+              ],
+            }
+          : { projects: input.refs.map(() => bundle) },
+      );
+    });
+    try {
+      await attachClassroomProjects('course', m, new Map());
+      expect(m.requiredCapabilities).toContain(PRESENTATION_CAPABILITY);
+      const zip = await archive(bundle);
+      expect((await readClassroomProjects(zip, [bundle.entry]))[0].files).toEqual(bundle.files);
+      const undeclared = structuredClone(m);
+      undeclared.requiredCapabilities = ['pbl-v3-projects@1'];
+      fetcher.mockClear();
+      await expect(installClassroomProjects(zip, undeclared)).rejects.toThrow(
+        PRESENTATION_CAPABILITY,
+      );
+      expect(fetcher).not.toHaveBeenCalled();
+      await installClassroomProjects(zip, m);
+      expect(fetcher).toHaveBeenCalledOnce();
+    } finally {
+      fetcher.mockRestore();
+    }
+  });
   it('opts into applications only through a profile-bound starter entrypoint', () => {
     const app = {
       title: 'My application',

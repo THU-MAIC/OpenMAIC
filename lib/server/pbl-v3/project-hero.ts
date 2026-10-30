@@ -4,10 +4,11 @@ import type { ProjectDefinition } from '@/lib/pbl/v3/domain/project/project-sche
 
 /** Authored entrance copy only; no generated curriculum or private Skill payload. */
 export function projectHeroDetails(project: ProjectDefinition): ProjectHeroDetails {
+  const authored = project.presentation?.hero;
   const todo = project.id === 'python-todo-two-milestones';
   const futureSelf = /^future-self(?:-|$)/.test(project.id);
   const greeting = /^greeting-(?:python|java)/.test(project.id);
-  return {
+  const fallback: ProjectHeroDetails = {
     title: project.title,
     description: todo
       ? '用 Python 制作待办清单，先添加任务，再安全删除任务，在两个阶段中逐步完善同一份作品。'
@@ -42,4 +43,5 @@ export function projectHeroDetails(project: ProjectDefinition): ProjectHeroDetai
     milestoneCount: project.milestones.length,
     taskCount: project.milestones.reduce((count, milestone) => count + milestone.stages.length, 0),
   };
+  return authored ? { ...fallback, ...authored } : fallback;
 }

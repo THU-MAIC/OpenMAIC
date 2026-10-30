@@ -20,7 +20,7 @@ import { decisionResponseLabel } from '@/lib/pbl/v3/domain/orchestration/decisio
 import { abortable } from '@/lib/server/agent-runtime/abortable';
 
 // Evidence sampling is part of the cached report projection.
-const REPORT_FORMAT_VERSION = 4;
+const REPORT_FORMAT_VERSION = 5;
 const HISTORY_LIMIT = 1000;
 const RECORD_BYTES = 32768;
 const TEXT_LIMIT = 240000;
@@ -471,7 +471,9 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
     }>(
       `WITH events AS (
        SELECT e.*, max(e.seq) FILTER (WHERE e.type='user_message') OVER
-         (PARTITION BY e.session_id ORDER BY e.seq ROWS UNBOUNDED PRECEDING) AS input_id
+         (PARTITION BY e.session_id ORDER BY e.seq ROWS UNBOUNDED PRECEDING) AS input_id,
+         max(e.seq) FILTER (WHERE e.type IN ('user_message','pbl_turn_retried','session_start','session_resumed')) OVER
+         (PARTITION BY e.session_id ORDER BY e.seq ROWS UNBOUNDED PRECEDING) AS run_id
        FROM pbl_v3_roles r JOIN agent_sessions a ON a.id=r.session_id AND a.deleted_at IS NULL
        JOIN agent_session_events e ON e.session_id=r.session_id WHERE r.study_id=$1
       ) SELECT
@@ -487,7 +489,7 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
            AND e.data->>'toolName' IN ('request_skill_review','request_learner_help','respond_to_learner')
            AND jsonb_array_length(CASE WHEN jsonb_typeof(e.data#>'{result,content}')='array' THEN e.data#>'{result,content}' ELSE '[]'::jsonb END)>0)
        )::int AS assistant,
-       count(DISTINCT (e.session_id,e.attempt)) FILTER (WHERE e.type='session_interrupted' OR
+       count(DISTINCT (e.session_id,COALESCE(e.run_id,0),e.attempt)) FILTER (WHERE e.type='session_interrupted' OR
          (e.type='session_end' AND e.data->>'status'='failed'))::int AS interrupted,
        (SELECT count(*)::int FROM pbl_v3_evidence WHERE study_id=$1 AND kind='file-edit') AS edits
      FROM events e`,

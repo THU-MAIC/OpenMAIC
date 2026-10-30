@@ -114,20 +114,29 @@ const evaluationMetadataSchema = z.object({
   rubricRefs: z.array(nonEmptyString).default([]),
 });
 
-const decisionDefinitionSchema = z.object({
-  id: nonEmptyString,
-  kind: decisionKindSchema.default('architecture'),
-  desc: nonEmptyString,
-  decisionPrompt: nonEmptyString,
-  responseType: z.enum(['choice', 'text']).optional(),
-  requiresRationale: z.boolean().optional(),
-  options: z.array(
-    z.object({ id: nonEmptyString, label: nonEmptyString, summary: nonEmptyString }),
-  ),
-  rubricAnchor: nonEmptyString,
-  gatesGlobs: z.array(nonEmptyString),
-  evaluation: evaluationMetadataSchema.optional(),
-});
+const decisionDefinitionSchema = z
+  .object({
+    id: nonEmptyString,
+    kind: decisionKindSchema.default('architecture'),
+    desc: nonEmptyString,
+    decisionPrompt: nonEmptyString,
+    responseType: z.enum(['choice', 'text']).optional(),
+    requiresRationale: z.boolean().optional(),
+    options: z.array(
+      z.object({ id: nonEmptyString, label: nonEmptyString, summary: nonEmptyString }),
+    ),
+    rubricAnchor: nonEmptyString,
+    gatesGlobs: z.array(nonEmptyString),
+    evaluation: evaluationMetadataSchema.optional(),
+  })
+  .superRefine((decision, context) => {
+    if (decision.responseType !== 'text' && decision.options.length === 0)
+      context.addIssue({
+        code: 'custom',
+        message: 'A choice decision requires at least one option.',
+        path: ['options'],
+      });
+  });
 
 const quizQuestionSchema = z.object({
   q: nonEmptyString,
@@ -258,6 +267,18 @@ export const projectSchema = z
     id: nonEmptyString,
     title: nonEmptyString,
     language: nonEmptyString,
+    presentation: z
+      .object({
+        hero: z
+          .object({
+            description: z.string().trim().min(1).max(2000),
+            gains: z.array(z.string().trim().min(1).max(240)).min(1).max(8).optional(),
+            instructorName: z.string().trim().min(1).max(100).optional(),
+          })
+          .strict(),
+      })
+      .strict()
+      .optional(),
     providerRef: nonEmptyString,
     entry: z
       .object({ mode: z.enum(['intro', 'course-first']) })
