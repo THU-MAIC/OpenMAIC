@@ -144,9 +144,9 @@ describe('the rail’s destinations', () => {
   it('states the new-chat shortcut on its button', async () => {
     await renderRail();
     expect(byTestId('pro-workspace-new-session')?.getAttribute('aria-keyshortcuts')).toMatch(
-      /Shift\+O$/,
+      /\+J$/,
     );
-    expect(byTestId('pro-workspace-new-session-shortcut')?.textContent).toMatch(/O$/);
+    expect(byTestId('pro-workspace-new-session-shortcut')?.textContent).toMatch(/J$/);
   });
 
   it('opens the same search from the folded strip, without unfolding it', async () => {

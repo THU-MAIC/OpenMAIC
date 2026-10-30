@@ -1351,9 +1351,7 @@ describe('the global search', () => {
     await render();
     mocks.routerPush.mockClear();
     await act(async () => {
-      window.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'O', code: 'KeyO', ctrlKey: true, shiftKey: true }),
-      );
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', code: 'KeyJ', ctrlKey: true }));
     });
     expect(mocks.routerPush).toHaveBeenLastCalledWith('/workspace');
   });

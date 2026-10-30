@@ -2,7 +2,10 @@
 
 /**
  * The workbench's own keyboard shortcuts: ⌘K (Ctrl+K off the Mac) opens the
- * search, ⌘⇧O (Ctrl+Shift+O) starts a new chat. The shell listens for them;
+ * search, ⌘J (Ctrl+J) starts a new chat. Both are single-modifier chords a page
+ * may take (unlike ⌘N/⌘T and Ctrl+N/Ctrl+T, which browsers keep for
+ * themselves); Ctrl+J is Chrome's Downloads on Windows and Linux, and the
+ * shell's `preventDefault` keeps it for the workbench. The shell listens for them;
  * the rail and the search palette print them, in the platform's own notation.
  */
 
@@ -37,9 +40,9 @@ export function isSearchShortcut(event: KeyboardEvent, mac: boolean): boolean {
   return commandOnly(event, mac);
 }
 
-/** ⌘⇧O on the Mac, Ctrl+Shift+O elsewhere: a new chat. */
+/** ⌘J on the Mac, Ctrl+J elsewhere: a new chat. */
 export function isNewChatShortcut(event: KeyboardEvent, mac: boolean): boolean {
-  if (letterOf(event) !== 'o' || event.altKey || !event.shiftKey) return false;
+  if (letterOf(event) !== 'j' || event.altKey || event.shiftKey) return false;
   return commandOnly(event, mac);
 }
 
@@ -55,10 +58,8 @@ export function shortcutLabel(shortcut: WorkbenchShortcut, mac: boolean | null):
     if (mac === null) return { label: '', aria: 'Control+K' };
     return mac ? { label: '⌘K', aria: 'Meta+K' } : { label: 'Ctrl K', aria: 'Control+K' };
   }
-  if (mac === null) return { label: '', aria: 'Control+Shift+O' };
-  return mac
-    ? { label: '⌘⇧O', aria: 'Meta+Shift+O' }
-    : { label: 'Ctrl Shift O', aria: 'Control+Shift+O' };
+  if (mac === null) return { label: '', aria: 'Control+J' };
+  return mac ? { label: '⌘J', aria: 'Meta+J' } : { label: 'Ctrl J', aria: 'Control+J' };
 }
 
 /**

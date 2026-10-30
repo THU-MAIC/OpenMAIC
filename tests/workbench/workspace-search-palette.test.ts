@@ -143,15 +143,16 @@ describe('the shortcuts', () => {
     expect(isSearchShortcut(key({ key: 'j', metaKey: true }), true)).toBe(false);
   });
 
-  it('starts a new chat with ⌘⇧O on the Mac and Ctrl+Shift+O elsewhere', () => {
-    const o = (init: KeyboardEventInit) => key({ key: 'O', code: 'KeyO', shiftKey: true, ...init });
-    expect(isNewChatShortcut(o({ metaKey: true }), true)).toBe(true);
-    expect(isNewChatShortcut(o({ ctrlKey: true }), false)).toBe(true);
-    expect(isNewChatShortcut(o({ ctrlKey: true }), true)).toBe(false);
-    expect(isNewChatShortcut(o({ metaKey: true, shiftKey: false }), true)).toBe(false);
-    expect(isNewChatShortcut(o({ metaKey: true, altKey: true }), true)).toBe(false);
-    expect(shortcutLabel('newChat', true).label).toBe('⌘⇧O');
-    expect(shortcutLabel('newChat', false).label).toBe('Ctrl Shift O');
+  it('starts a new chat with ⌘J on the Mac and Ctrl+J elsewhere, and nothing else', () => {
+    const j = (init: KeyboardEventInit) => key({ key: 'j', code: 'KeyJ', ...init });
+    expect(isNewChatShortcut(j({ metaKey: true }), true)).toBe(true);
+    expect(isNewChatShortcut(j({ ctrlKey: true }), false)).toBe(true);
+    expect(isNewChatShortcut(j({ ctrlKey: true }), true)).toBe(false);
+    expect(isNewChatShortcut(j({ metaKey: true, shiftKey: true }), true)).toBe(false);
+    expect(isNewChatShortcut(j({ metaKey: true, altKey: true }), true)).toBe(false);
+    expect(isNewChatShortcut(key({ key: 'o', code: 'KeyO', metaKey: true }), true)).toBe(false);
+    expect(shortcutLabel('newChat', true).label).toBe('⌘J');
+    expect(shortcutLabel('newChat', false).label).toBe('Ctrl J');
   });
 });
 

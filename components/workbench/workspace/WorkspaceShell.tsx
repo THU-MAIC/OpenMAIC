@@ -965,7 +965,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     setComposerReset((value) => value + 1);
   };
 
-  // ⌘⇧O / Ctrl+Shift+O: a new chat from anywhere, exactly as the rail's button.
+  // ⌘J / Ctrl+J: a new chat from anywhere, exactly as the rail's button.
   const startNewConversationRef = useRef(startNewConversation);
   useEffect(() => {
     startNewConversationRef.current = startNewConversation;
