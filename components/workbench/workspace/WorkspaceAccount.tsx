@@ -318,7 +318,7 @@ function AccountMenu({
             style={{ height: editing ? 0 : Math.max(0, editorHeight - rowHeight) }}
           />
         ) : null}
-        <div className="ws-account-menu rounded-2xl p-1.5">
+        <div className="ws-account-menu w-full min-w-0 overflow-hidden rounded-2xl bg-popover p-1.5 text-popover-foreground shadow-md ring-1 ring-foreground/10">
           {account.signedIn && profileEditable ? (
             <div
               data-testid="workspace-profile-expand"
