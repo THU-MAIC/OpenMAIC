@@ -12,6 +12,7 @@ import { COURSE_STAGE_ID_DESCRIPTION } from '../course-stage';
 import {
   describeNarrationVoice,
   formatTtsFailureTally,
+  hasConfiguredTtsCapability,
   synthesizeSceneNarration,
 } from '../scene-tts';
 import { runStageMutation } from '../mutation-fence';
@@ -99,7 +100,7 @@ export function renumberCourseOrders(
   return { scenes: numbered, outline: { ...outline, outlines } };
 }
 
-export function buildCourseAudioAndDeckTools(deps: CourseToolDeps): AgentTool<never, never>[] {
+export function buildGenerateTtsTool(deps: CourseToolDeps): AgentTool<never, never> {
   const generateTts: AgentTool<typeof GenerateTtsParams> = {
     name: 'generate_tts',
     label: 'Generate narration audio',
@@ -161,6 +162,10 @@ export function buildCourseAudioAndDeckTools(deps: CourseToolDeps): AgentTool<ne
     },
   };
 
+  return generateTts as unknown as AgentTool<never, never>;
+}
+
+export function buildEditDeckTool(deps: CourseToolDeps): AgentTool<never, never> {
   const editDeck: AgentTool<typeof DeckParams> = {
     name: 'edit_deck',
     label: 'Edit course pages',
@@ -262,7 +267,15 @@ export function buildCourseAudioAndDeckTools(deps: CourseToolDeps): AgentTool<ne
     },
   };
 
-  return [generateTts, editDeck] as unknown as AgentTool<never, never>[];
+  return editDeck as unknown as AgentTool<never, never>;
 }
 
-export const COURSE_AUDIO_DECK_TOOL_NAMES = ['generate_tts', 'edit_deck'] as const;
+export function buildCourseAudioAndDeckTools(deps: CourseToolDeps): AgentTool<never, never>[] {
+  return [buildGenerateTtsTool(deps), buildEditDeckTool(deps)];
+}
+
+export const GENERATE_TTS_TOOL_NAME = 'generate_tts';
+export const EDIT_DECK_TOOL_NAME = 'edit_deck';
+export const COURSE_AUDIO_DECK_TOOL_NAMES = [GENERATE_TTS_TOOL_NAME, EDIT_DECK_TOOL_NAME] as const;
+
+export { hasConfiguredTtsCapability };

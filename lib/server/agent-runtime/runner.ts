@@ -1547,10 +1547,13 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     // The tts slot for this run's owner: narration, the voice catalog and
     // voice registration all use its provider.
     const ttsConnection = await serverMediaConnection('tts', meta.ownerId);
+    const imageConnection = await serverMediaConnection('image', meta.ownerId);
     const dslTools = buildDslCourseToolset({
       locale: () => runLocale,
       store: ownerScopedStore,
       backgroundStore: mediaJobStore,
+      ttsConnection,
+      imageConnection,
       // The video slot for this run's owner; generate_video exists only when
       // it resolves to a usable provider.
       videoConnection: await serverMediaConnection('video', meta.ownerId),
@@ -1697,10 +1700,14 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     );
     const askUserLatch = createAskUserTerminateLatch();
     let toolCalls = 0;
+    const hasTtsTool = dslTools.some((tool) => tool.name === 'generate_tts');
+    const hasImageTool = dslTools.some((tool) => tool.name === 'generate_image');
     const systemPromptForTurn = () =>
       buildRunnerCoursePrompt({
         availableSkills: availableSkillsPromptBlock(currentSkills()),
         curriculum: CURRICULUM_TOOLS_PROMPT,
+        tts: hasTtsTool,
+        image: hasImageTool,
         ...(search ? { search: searchPromptBlock() } : {}),
         ...(fetchConnection ? { fetch: fetchPromptBlock() } : {}),
         untrustedContent: untrustedContentPolicyPromptBlock(!!fetchConnection),

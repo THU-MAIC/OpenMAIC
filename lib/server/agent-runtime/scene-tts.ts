@@ -18,7 +18,7 @@ import { BROWSER_NATIVE_TTS_PROVIDER_ID } from '@/lib/audio/provider-enablement'
 import type { LegacySpeechAction, SpeechAction } from '@/lib/types/action';
 import type { GeneratedAgentConfig, Scene } from '@/lib/types/stage';
 import { adapterOptions } from '@/lib/server/model-config/adapter-options';
-import { serverMediaConnection } from '@/lib/server/model-config/media';
+import { serverMediaConnection, type MediaConnection } from '@/lib/server/model-config/media';
 import { resolveTTSModel, slotTTSModel } from '@/lib/server/provider-config';
 import { persistClassroomMediaBytes } from '@/lib/server/classroom-media-bytes';
 
@@ -281,26 +281,51 @@ function audioMime(format: string) {
   return format === 'wav' ? 'audio/wav' : format === 'ogg' ? 'audio/ogg' : 'audio/mpeg';
 }
 
+/**
+ * Capability gate for narration audio synthesis (generate_tts).
+ * Resolves true only when the run owner's TTS connection names an enabled,
+ * non-browser-native provider supported by the server and with an API key if required.
+ */
+export function hasConfiguredTtsCapability(
+  depsOrConnection?:
+    | { ttsConnection?: MediaConnection | 'off' | null; synthesizeTts?: unknown }
+    | MediaConnection
+    | 'off'
+    | null,
+): boolean {
+  if (!depsOrConnection || depsOrConnection === 'off') return false;
+  if ('synthesizeTts' in depsOrConnection && typeof depsOrConnection.synthesizeTts === 'function') {
+    return true;
+  }
+  const connection =
+    'providerId' in depsOrConnection
+      ? (depsOrConnection as MediaConnection)
+      : depsOrConnection.ttsConnection;
+  if (
+    !connection ||
+    connection === 'off' ||
+    connection.providerId === BROWSER_NATIVE_TTS_PROVIDER_ID
+  ) {
+    return false;
+  }
+  const providerId = connection.providerId as TTSProviderId;
+  const provider = TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS];
+  if (provider?.requiresApiKey && !connection.apiKey) return false;
+  return true;
+}
+
 /** Server-configured narration synthesis into the stage's classroom-media path. */
 export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<SceneTtsSummary> {
   const startedAt = Date.now();
   // The tts slot decides the provider; the narrator's bound voice applies
   // only when it belongs to that provider.
   const connection = await serverMediaConnection('tts', input.ownerId);
-  if (
-    !connection ||
-    connection === 'off' ||
-    connection.providerId === BROWSER_NATIVE_TTS_PROVIDER_ID
-  ) {
+  if (!hasConfiguredTtsCapability(connection) || !connection || connection === 'off') {
     return { available: false, changed: false, generated: 0, skipped: 0, failed: [] };
   }
   const providerId = connection.providerId as TTSProviderId;
   const bound = narratorVoice(input.roster);
-  const provider = TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS];
   const apiKey = connection.apiKey ?? '';
-  if (provider?.requiresApiKey && !apiKey) {
-    return { available: false, changed: false, generated: 0, skipped: 0, failed: [] };
-  }
   const voice =
     bound?.providerId === providerId && bound.voiceId
       ? bound.voiceId

@@ -4,7 +4,7 @@ import { Type, type Static } from 'typebox';
 
 import { generateImage, IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { managedMediaProviderFetch, mediaProviderFetch } from '@/lib/server/media-provider-fetch';
-import { serverMediaConnection } from '@/lib/server/model-config/media';
+import { serverMediaConnection, type MediaConnection } from '@/lib/server/model-config/media';
 import type {
   ImageGenerationConfig,
   ImageGenerationOptions,
@@ -74,6 +74,7 @@ export interface GenerateImageToolDeps extends Pick<
   CourseToolDeps,
   'sessionId' | 'abortSignal' | 'ownerId'
 > {
+  imageConnection?: MediaConnection | 'off' | null;
   /** The providers to pick from; by default, the one the image slot resolves to. */
   getConfiguredProviders?: () => ImageProviderListing | Promise<ImageProviderListing>;
   resolveProviderConfig?: (
@@ -177,31 +178,59 @@ function selectProvider(configured: ImageProviderListing): ImageProviderId | nul
   return (enabledProviderIds(configured)[0] as ImageProviderId | undefined) ?? null;
 }
 
+/** Enabled image provider ids from the listing: configured and not force-disabled. */
+function configuredImageProviderIds(configured: ImageProviderListing): ImageProviderId[] {
+  return enabledProviderIds(configured).filter(
+    (id): id is ImageProviderId => id in IMAGE_PROVIDERS,
+  );
+}
+
+/** The one-provider listing of a resolved image slot. */
+function slotImageListing(
+  connection: MediaConnection | 'off' | null | undefined,
+): ImageProviderListing {
+  return connection && connection !== 'off' ? { [connection.providerId]: {} } : {};
+}
+
+/** The generation config of a resolved image slot. */
+function slotImageConfig(
+  connection: MediaConnection | 'off' | null | undefined,
+  providerId: ImageProviderId,
+): ImageGenerationConfig {
+  if (!connection || connection === 'off' || connection.providerId !== providerId) {
+    throw new Error('the image slot no longer resolves to this provider');
+  }
+  return {
+    providerId,
+    apiKey: connection.apiKey ?? '',
+    ...(connection.baseUrl ? { baseUrl: connection.baseUrl } : {}),
+    // A slot without a model uses the provider's first catalogue model.
+    model: connection.modelId ?? IMAGE_PROVIDERS[providerId]?.models?.[0]?.id,
+    fetchImpl: connection.managed ? managedMediaProviderFetch : mediaProviderFetch,
+  };
+}
+
 /**
  * The image slot for the run's owner as a one-provider listing and its
  * connection. Resolved once per call.
  */
-function slotImageProvider(ownerId: string | undefined) {
+function slotImageProvider(
+  ownerId: string | undefined,
+  connectionOverride?: MediaConnection | 'off' | null,
+) {
   let pending: ReturnType<typeof serverMediaConnection> | undefined;
-  const connection = () => (pending ??= serverMediaConnection('image', ownerId));
+  const connection = () => {
+    if (connectionOverride !== undefined) return connectionOverride;
+    return (pending ??= serverMediaConnection('image', ownerId));
+  };
   return {
     listing: async (): Promise<ImageProviderListing> => {
       const resolved = await connection();
-      return resolved && resolved !== 'off' ? { [resolved.providerId]: {} } : {};
+      return slotImageListing(resolved);
     },
     config: async (providerId: ImageProviderId): Promise<ImageGenerationConfig> => {
       const resolved = await connection();
-      if (!resolved || resolved === 'off' || resolved.providerId !== providerId) {
-        throw new Error('the image slot no longer resolves to this provider');
-      }
-      return {
-        providerId,
-        apiKey: resolved.apiKey ?? '',
-        ...(resolved.baseUrl ? { baseUrl: resolved.baseUrl } : {}),
-        // A slot without a model uses the provider's first catalogue model.
-        model: resolved.modelId ?? IMAGE_PROVIDERS[providerId]?.models?.[0]?.id,
-        fetchImpl: resolved.managed ? managedMediaProviderFetch : mediaProviderFetch,
-      };
+      return slotImageConfig(resolved, providerId);
     },
   };
 }
@@ -210,7 +239,7 @@ export function buildGenerateImageTool(
   deps: GenerateImageToolDeps,
 ): AgentTool<typeof GenerateImageParams, unknown> {
   const providerSource = () => {
-    const slot = slotImageProvider(deps.ownerId);
+    const slot = slotImageProvider(deps.ownerId, deps.imageConnection);
     return {
       configuredProviders: deps.getConfiguredProviders ?? slot.listing,
       resolveProviderConfig: deps.resolveProviderConfig ?? slot.config,
@@ -387,4 +416,40 @@ export function buildGenerateImageTool(
       }
     },
   };
+}
+
+/**
+ * Capability gate for image generation (generate_image).
+ * Resolves true only when the run owner's image connection names an enabled,
+ * supported server image provider with an API key if required.
+ */
+export function hasConfiguredImageCapability(
+  depsOrConnection: Partial<GenerateImageToolDeps> | MediaConnection | 'off' | null = {},
+): boolean {
+  if (!depsOrConnection || depsOrConnection === 'off') return false;
+  const deps: Partial<GenerateImageToolDeps> =
+    'providerId' in depsOrConnection ? { imageConnection: depsOrConnection } : depsOrConnection;
+  if (deps.imageConnection !== undefined) {
+    const conn = deps.imageConnection;
+    if (!conn || conn === 'off') return false;
+    const providerId = conn.providerId as ImageProviderId;
+    if (isServerProviderDisabled('image', providerId)) return false;
+    const provider = IMAGE_PROVIDERS[providerId];
+    if (!provider) return false;
+    if (provider.requiresApiKey && !conn.apiKey) return false;
+    return true;
+  }
+  if (deps.getConfiguredProviders && deps.resolveProviderConfig) {
+    const listing = deps.getConfiguredProviders();
+    if (listing && typeof (listing as Promise<unknown>).then !== 'function') {
+      return configuredImageProviderIds(listing as ImageProviderListing).some((providerId) => {
+        const provider = IMAGE_PROVIDERS[providerId];
+        const config = (
+          deps.resolveProviderConfig as (id: ImageProviderId) => ImageGenerationConfig
+        )(providerId);
+        return !provider.requiresApiKey || !!config.apiKey;
+      });
+    }
+  }
+  return false;
 }
