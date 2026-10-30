@@ -175,3 +175,107 @@ it('hides the old application as soon as the study changes environment, before w
     await f.cleanup();
   }
 });
+
+it('keeps the same iframe through a verified activity renewal and expires after subsequent idle', async () => {
+  vi.useFakeTimers();
+  const expiresAt = Date.now() + 60_000;
+  mocks.request.mockResolvedValue({ ...running, preview: { ...running.preview, expiresAt } });
+  const f = await fixture();
+  try {
+    await f.click();
+    const frame = f.host.querySelector('iframe')!;
+    await act(async () => vi.advanceTimersByTimeAsync(30_000));
+    const message = { type: 'openmaic-preview-activity', expiresAt: Date.now() + 300_000 };
+    // Neither another window nor an unrelated origin may alter the local timer.
+    await act(async () =>
+      window.dispatchEvent(
+        new MessageEvent('message', { origin: 'https://isolated.example', data: message }),
+      ),
+    );
+    await act(async () =>
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          source: frame.contentWindow,
+          origin: 'https://foreign.example',
+          data: message,
+        }),
+      ),
+    );
+    await act(async () =>
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          source: frame.contentWindow,
+          origin: 'https://isolated.example',
+          data: message,
+        }),
+      ),
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(60_001));
+    expect(f.host.querySelector('iframe')).toBe(frame);
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+    await act(async () => vi.advanceTimersByTimeAsync(240_000));
+    expect(f.host.querySelector('iframe')).toBeNull();
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it('obtains a fresh new-tab ticket without replacing the live iframe or its input', async () => {
+  const replace = vi.fn(),
+    close = vi.fn();
+  const open = vi
+    .spyOn(window, 'open')
+    .mockReturnValue({ location: { replace }, close, opener: window } as unknown as Window);
+  mocks.request.mockResolvedValueOnce(running).mockResolvedValueOnce({
+    ...running,
+    preview: { ...running.preview, url: 'https://isolated.example/preview#fresh-ticket' },
+  });
+  const f = await fixture();
+  try {
+    await f.click();
+    const frame = f.host.querySelector('iframe');
+    await act(async () =>
+      (
+        f.host.querySelector('[aria-label="pblV3.application.newTab"]') as HTMLButtonElement
+      ).click(),
+    );
+    expect(replace).toHaveBeenCalledWith('https://isolated.example/preview#fresh-ticket');
+    expect(f.host.querySelector('iframe')).toBe(frame);
+    expect(close).not.toHaveBeenCalled();
+    expect(mocks.request.mock.calls[1][1].action).toBe('open');
+  } finally {
+    await f.cleanup();
+    open.mockRestore();
+  }
+});
+
+it.each(['foreign-origin', 'other-window'])(
+  'does not renew the display deadline from %s',
+  async (kind) => {
+    vi.useFakeTimers();
+    mocks.request.mockResolvedValue({
+      ...running,
+      preview: { ...running.preview, expiresAt: Date.now() + 60_000 },
+    });
+    const f = await fixture();
+    try {
+      await f.click();
+      const frame = f.host.querySelector('iframe')!;
+      await act(async () => vi.advanceTimersByTimeAsync(30_000));
+      await act(async () =>
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            source: kind === 'other-window' ? null : frame.contentWindow,
+            origin:
+              kind === 'foreign-origin' ? 'https://foreign.example' : 'https://isolated.example',
+            data: { type: 'openmaic-preview-activity', expiresAt: Date.now() + 300_000 },
+          }),
+        ),
+      );
+      await act(async () => vi.advanceTimersByTimeAsync(30_001));
+      expect(f.host.querySelector('iframe')).toBeNull();
+    } finally {
+      await f.cleanup();
+    }
+  },
+);

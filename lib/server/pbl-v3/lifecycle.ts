@@ -269,13 +269,11 @@ export async function maintainStudy(
           if (!archiveGraceExpired(row, await store.now()))
             await renewForMaintenance(store, service, id, environmentId);
           const agents = await activeStudyTurns(store, id, ownerId);
-          // A preview must not extend idle retention or block the next dirty-file checkpoint.
+          // Idle release quiesces applications. A periodic backup must instead
+          // wait for an active application: stopping it discards in-memory work.
           if (
             !agents.rows.length &&
-            ((await store.now()).getTime() - row.last_used_at.getTime() >= pblIdleTimeoutMs() ||
-              (row.workspace_dirty_at &&
-                (await store.now()).getTime() - row.workspace_dirty_at.getTime() >=
-                  PBL_DIRTY_CHECKPOINT_MS))
+            (await store.now()).getTime() - row.last_used_at.getTime() >= pblIdleTimeoutMs()
           ) {
             try {
               await service.stopApplications(environmentId);
@@ -294,13 +292,19 @@ export async function maintainStudy(
            AND (result_json IS NULL OR result_json->>'state' IN ('starting','running','unknown'))`,
             [environmentId],
           );
+          let applicationsBusy = false;
           let commandsBusy = 0,
             overdueCommands = 0;
           const commandNow = await store.now();
           for (const command of commands.rows) {
             // A supervised application is not an overdue one-shot build/test. It is
-            // quiesced above for dirty/idle work and by source/checkpoint admission.
-            if (command.purpose === 'application') continue;
+            // quiesced above for idle release and by explicit source/checkpoint admission.
+            if (command.purpose === 'application') {
+              const result = await service.command(environmentId, command.id).catch(() => null);
+              if (!result || ['starting', 'running', 'unknown'].includes(result.state))
+                applicationsBusy = true;
+              continue;
+            }
             const observed = await service
               .command(environmentId, command.id)
               .catch(() => ({ state: 'unknown' }));
@@ -366,7 +370,8 @@ export async function maintainStudy(
           const idle = now.getTime() - row.last_used_at.getTime() >= pblIdleTimeoutMs();
           if (
             idle ||
-            (row.workspace_dirty_at &&
+            (!applicationsBusy &&
+              row.workspace_dirty_at &&
               now.getTime() - row.workspace_dirty_at.getTime() >= PBL_DIRTY_CHECKPOINT_MS)
           ) {
             if (idle) {

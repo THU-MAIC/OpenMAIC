@@ -275,7 +275,7 @@ const server = http.createServer(async (req, res) => {
         'set-cookie': previewAuthorizationCookies(cookieName, ticket, target.expiresAt),
       });
       // Bootstrap requires the raw signed ticket, never just the app's cookie.
-      res.end(JSON.stringify({ activityKey: activityKey(host) }));
+      res.end(JSON.stringify({ activityKey: activityKey(host), appOrigin: target.appOrigin }));
       return;
     }
     if (path.pathname === '/__openmaic_activity') {
@@ -290,8 +290,29 @@ const server = http.createServer(async (req, res) => {
         !timingSafeEqual(Buffer.from(proof), Buffer.from(expected))
       )
         throw new Error('Invalid activity capability');
-      await resolve(ticket, host, true);
-      res.writeHead(204, { 'cache-control': 'no-store' });
+      const target = await resolve(ticket, host, true);
+      const renewed = target.authorization;
+      if (
+        renewed &&
+        (typeof renewed.ticket !== 'string' ||
+          renewed.ticket.length > 4096 ||
+          !/^[-_a-zA-Z0-9.]+$/.test(renewed.ticket) ||
+          renewed.expiresAt !== target.expiresAt)
+      )
+        throw new PreviewResolveError(502);
+      res.writeHead(204, {
+        'cache-control': 'no-store',
+        ...(renewed
+          ? {
+              'set-cookie': previewAuthorizationCookies(
+                cookieName,
+                renewed.ticket,
+                renewed.expiresAt,
+              ),
+              'x-openmaic-preview-expires-at': String(renewed.expiresAt),
+            }
+          : {}),
+      });
       res.end();
       return;
     }

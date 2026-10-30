@@ -7,10 +7,13 @@ let visible: () => void;
 let appDocument: { addEventListener: ReturnType<typeof vi.fn> } | null;
 let documentState: { visibilityState: string; addEventListener: ReturnType<typeof vi.fn> };
 const fetchMock = vi.fn();
+const notify = vi.fn();
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-10-28T00:00:00Z'));
   listeners.clear();
+  notify.mockReset();
+  vi.stubGlobal('parent', { postMessage: notify });
   fetchMock.mockReset().mockResolvedValue(new Response(null, { status: 204 }));
   documentState = {
     visibilityState: 'visible',
@@ -55,6 +58,7 @@ beforeEach(() => {
       },
     },
     'test-only-activity-capability',
+    'https://app.example.com',
   );
 });
 afterEach(() => {
@@ -133,5 +137,27 @@ it('keeps new tabs top-level and clears the ticket before redirecting or mountin
   expect(html).toContain('nonce="test-nonce"');
   expect(html.indexOf("ticket=''")).toBeLessThan(html.indexOf("document.createElement('iframe')"));
   expect(html).toContain("if(window.top===window){location.replace('/');return;}");
-  expect(html).not.toContain('postMessage');
+  expect(html).toContain('openmaic-preview-activity');
+});
+
+it('notifies only the app origin of a confirmed renewal, without forwarding credentials', async () => {
+  const expiresAt = Date.now() + 300_000;
+  fetchMock.mockResolvedValue(
+    new Response(null, {
+      status: 204,
+      headers: { 'x-openmaic-preview-expires-at': String(expiresAt) },
+    }),
+  );
+  listeners.get('keydown')!({ isTrusted: true });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(notify).toHaveBeenCalledWith(
+    { type: 'openmaic-preview-activity', expiresAt },
+    'https://app.example.com',
+  );
+  expect(JSON.stringify(notify.mock.calls)).not.toContain('capability');
+  notify.mockClear();
+  fetchMock.mockResolvedValue(new Response(null, { status: 403 }));
+  listeners.get('keydown')!({ isTrusted: true });
+  await vi.advanceTimersByTimeAsync(30_000);
+  expect(notify).not.toHaveBeenCalled();
 });

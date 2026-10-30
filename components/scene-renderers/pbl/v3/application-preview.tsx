@@ -1,4 +1,5 @@
 'use client';
+import { useEffect, useRef } from 'react';
 import { AppWindow, ChevronRight, ExternalLink, Info, LoaderCircle, RefreshCw } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { LearningView } from '@/lib/pbl/v3/types';
@@ -43,6 +44,23 @@ export function ApplicationPreview({
   const { t } = useI18n();
   const { pending, observation, error, expired, disabled } = preview;
   const available = !disabled && observation?.preview && !expired;
+  const frame = useRef<HTMLIFrameElement | null>(null);
+  const url = observation?.preview?.url;
+  const renew = preview.renew;
+  useEffect(() => {
+    if (!url || disabled) return;
+    const origin = new URL(url).origin;
+    const receive = (event: MessageEvent) => {
+      if (
+        event.source === frame.current?.contentWindow &&
+        event.origin === origin &&
+        event.data?.type === 'openmaic-preview-activity'
+      )
+        renew(event.data.expiresAt);
+    };
+    window.addEventListener('message', receive);
+    return () => window.removeEventListener('message', receive);
+  }, [url, disabled, renew]);
   return (
     <section
       id={preview.panelId}
@@ -79,16 +97,16 @@ export function ApplicationPreview({
           {pending ? <LoaderCircle size={15} className="animate-spin" /> : <RefreshCw size={15} />}
         </button>
         {available && (
-          <a
-            href={observation.preview!.url}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            type="button"
+            disabled={pending}
             title={t('pblV3.application.newTab')}
             aria-label={t('pblV3.application.newTab')}
-            className="rounded p-1 hover:bg-muted"
+            className="rounded p-1 hover:bg-muted disabled:opacity-40"
+            onClick={() => void preview.openNewTab()}
           >
             <ExternalLink size={15} />
-          </a>
+          </button>
         )}
         <button
           type="button"
@@ -112,6 +130,7 @@ export function ApplicationPreview({
       )}
       {available ? (
         <iframe
+          ref={frame}
           key={observation.preview!.url}
           title={application.title}
           src={observation.preview!.url}

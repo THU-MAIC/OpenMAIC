@@ -1,5 +1,5 @@
 /** Keep the gateway shell separate from course HTML: no response rewriting or app instrumentation. */
-export function installPreviewActivity(frame, activityKey) {
+export function installPreviewActivity(frame, activityKey, appOrigin) {
   'use strict';
   // Capture these before untrusted same-origin app code can replace its parent's
   // fetch/listener methods. Keep the capability in a private Request, not DOM,
@@ -11,6 +11,11 @@ export function installPreviewActivity(frame, activityKey) {
   const status = Function.prototype.call.bind(
     Object.getOwnPropertyDescriptor(Response.prototype, 'status').get,
   );
+  const responseHeaders = Function.prototype.call.bind(
+    Object.getOwnPropertyDescriptor(Response.prototype, 'headers').get,
+  );
+  const header = Function.prototype.call.bind(Headers.prototype.get);
+  const notify = typeof appOrigin === 'string' ? parent.postMessage.bind(parent) : null;
   const visibility = Function.prototype.call.bind(
     Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState').get,
   );
@@ -51,6 +56,13 @@ export function installPreviewActivity(frame, activityKey) {
       define(result, 'constructor', descriptor);
       const response = await result;
       const code = status(response);
+      if (code === 204 && notify) {
+        const expiresAt = Number(
+          header(responseHeaders(response), 'x-openmaic-preview-expires-at'),
+        );
+        if (Number.isFinite(expiresAt) && expiresAt > now() && expiresAt <= now() + 300_000)
+          notify({ type: 'openmaic-preview-activity', expiresAt }, appOrigin);
+      }
       if ((code < 200 || code >= 300) && code !== 403) changed = true;
     } catch {
       changed = true;
@@ -94,7 +106,7 @@ export function previewShell(nonce) {
 (()=>{'use strict';
 let ticket=location.hash.slice(1);history.replaceState(null,'','/__openmaic_preview');
 fetch('/__openmaic_authorize',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({ticket})})
-.then(async r=>{ticket='';if(!r.ok)throw Error();if(window.top===window){location.replace('/');return;}const {activityKey}=await r.json();if(typeof activityKey!=='string')throw Error();const frame=document.createElement('iframe');frame.title='Application';
-(${installPreviewActivity.toString()})(frame,activityKey);frame.src='/';document.getElementById('status').remove();document.body.append(frame);})
+.then(async r=>{ticket='';if(!r.ok)throw Error();if(window.top===window){location.replace('/');return;}const {activityKey,appOrigin}=await r.json();if(typeof activityKey!=='string')throw Error();const frame=document.createElement('iframe');frame.title='Application';
+(${installPreviewActivity.toString()})(frame,activityKey,appOrigin);frame.src='/';document.getElementById('status').remove();document.body.append(frame);})
 .catch(()=>{document.getElementById('status').textContent='Access expired. Reopen from OpenMAIC.'});})();</script>`;
 }

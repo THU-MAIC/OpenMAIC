@@ -7,7 +7,8 @@ The optional application panel sits between the IDE and learning assistant. Narr
 - Agent execution stays on the server. Learner applications run in the provider sandbox through the existing command registry and isolated preview gateway.
 - Explicit open/restart keeps current ownership, study revision, environment epoch, saved-file and busy checks, and idempotent startup receipts. The panel never bypasses these checks or starts applications through Agent diagnostics.
 - Editing, Agent work, assessment or loss of environment readiness removes the interactive preview. Once ready, the learner explicitly reopens it; mutations are never replayed. Existing shutdown-before-write/evidence/archive protections remain intact.
-- Environment changes discard stale responses and previews. Existing five-minute preview grants remain unchanged. After expiry, deliberate reopening obtains access again.
+- Environment changes discard stale responses and previews. Signed preview grants still last five minutes. Authenticated real input in the embedded preview renews its HttpOnly cookie and updates only the workbench's display deadline; passive requests never renew it. Idle/expired or revoked access cannot renew itself. New-tab access obtains a fresh owner-authorized ticket without reloading the embedded document; standalone tabs retain fixed expiry.
+- Periodic dirty-file backup waits for running applications without clearing the dirty marker. Explicit evidence, file writes, checkpoints and idle release still quiesce applications. The application process uses the existing one-hour supervisor envelope independently of the renewable environment lease; ordinary command timeout limits are unchanged.
 - Completed applications retain explicit environment restoration and read-only source. Reading source/reports or folding the panel does not allocate an environment or advance teaching.
 
 ## Course guidance

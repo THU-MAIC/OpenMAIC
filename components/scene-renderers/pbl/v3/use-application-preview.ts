@@ -112,6 +112,50 @@ export function useApplicationPreview(
       if (serial === attempt.current) setPending(false);
     }
   }
+  const renew = useCallback((expiresAt: number) => {
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now() || expiresAt > Date.now() + 300_000)
+      return;
+    setObservation((current) =>
+      current?.preview && expiresAt > current.preview.expiresAt
+        ? { ...current, preview: { ...current.preview, expiresAt } }
+        : current,
+    );
+  }, []);
+  async function openNewTab() {
+    if (disabled || pending || !view || !workbench) return;
+    // A renewed iframe cookie belongs to its embedding partition. Obtain a fresh
+    // owner-authorized ticket for the separate tab without reloading this iframe.
+    const tab = window.open('about:blank', '_blank');
+    if (!tab) return;
+    tab.opener = null;
+    const serial = ++attempt.current;
+    controller.current?.abort();
+    const abort = new AbortController();
+    controller.current = abort;
+    setPending(true);
+    setError('');
+    try {
+      const result = await pblRequest<ApplicationObservation>(
+        '/api/pbl/v3/application',
+        {
+          studyId: view.id,
+          environmentId: workbench.environmentId,
+          revision: view.revision,
+          epoch: workbench.epoch,
+          id: crypto.randomUUID(),
+          action: 'open',
+        },
+        abort.signal,
+      );
+      if (serial !== attempt.current || !result.preview) tab.close();
+      else tab.location.replace(result.preview.url);
+    } catch (e) {
+      tab.close();
+      if (serial === attempt.current && !abort.signal.aborted) setError((e as Error).message);
+    } finally {
+      if (serial === attempt.current) setPending(false);
+    }
+  }
   function close() {
     setOpen(false);
     trigger.current?.focus();
@@ -137,6 +181,8 @@ export function useApplicationPreview(
     close,
     toggle,
     load,
+    renew,
+    openNewTab,
   };
 }
 
