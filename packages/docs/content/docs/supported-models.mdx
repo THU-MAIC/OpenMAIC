@@ -19,8 +19,11 @@ A preset is a built-in provider template: which vendor, which endpoint, and whic
 | `tokendance` | TokenDance | Chat, image, video, TTS, web search |
 | `volcengine-ark` | Volcengine Ark Agent Plan | Chat, image, video, TTS, web search |
 | `kimi-coding-plan` | Kimi Coding Plan | Chat, web search, web fetch |
+| `deepseek-token-plan` | DeepSeek | Chat, web search, web fetch |
 
 Connecting Kimi Coding Plan in **Settings → Token Plan** recommends chat, web search and web fetch together, using the Coding Plan key and `https://api.kimi.com/coding/v1`. If web fetch only uses the implicit builtin default, connecting assigns Kimi directly without a conflict, even when keeping the current setup. Explicit workspace choices (including `null`) and deployment-configured non-builtin readers or `null` use the existing conflict choices. Disconnecting removes the plan's assignments and restores the server default (the builtin reader when no reader is configured); it does not restore a prior explicit workspace choice. Locked slots stay unchanged. Plans that do not declare web fetch leave it untouched.
+
+Connecting DeepSeek in **Settings → Token Plan** recommends chat (`deepseek-flash` by default), web search and web fetch together, using one DeepSeek API key and `https://api.deepseek.com/v1`. This is the same pay-as-you-go account and endpoint as the `deepseek` preset; the plan uses its own `deepseek-token-plan` preset so that disconnecting it removes only the plan's provider and assignments and leaves a separate `deepseek` provider unchanged.
 
 The first-run wizard leaves web fetch on the builtin reader; only connecting the plan through the Token Plan settings page applies its fetch recommendation.
 
@@ -35,8 +38,8 @@ All preset IDs:
 | ASR | `openai-whisper`, `qwen-asr`, `azure-asr`, `browser-native`, `funasr-asr`, `lemonade-asr` |
 | Image | `seedream`, `openai-image`, `qwen-image`, `nano-banana`, `minimax-image`, `grok-image`, `comfyui-image`, `lemonade-image`, `openrouter-image` |
 | Video | `seedance`, `kling`, `minimax-video`, `grok-video`, `happyhorse`, `openrouter-video` |
-| Web search | `tavily`, `exa`, `firecrawl`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `deepseek`, `kimi`, `kimi-coding-plan`, `searxng` |
-| Web fetch | `builtin`, `deepseek`, `firecrawl`, `kimi`, `kimi-coding-plan` |
+| Web search | `tavily`, `exa`, `firecrawl`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `deepseek`, `deepseek-token-plan`, `kimi`, `kimi-coding-plan`, `searxng` |
+| Web fetch | `builtin`, `deepseek`, `deepseek-token-plan`, `firecrawl`, `kimi`, `kimi-coding-plan` |
 | Document parsing | `unpdf`, `mineru`, `mineru-cloud`, `alidocmind` |
 
 `azure`, `openai-compatible`, `searxng` and `mineru` need a `baseUrl`; `alidocmind` authenticates with `credentials` (a key pair). Self-hosted TTS, ASR, image, search and document presets, key-pair presets and Bedrock can only be configured in `openmaic.yml`; see [Configuration](./configuration.mdx).
@@ -209,5 +212,6 @@ These IDs belong to the plan endpoint, independently of the direct provider cata
 | `volcengine-ark` | video | `doubao-seedance-2.0-mini`, `doubao-seedance-2.0` |
 | `volcengine-ark` | tts | `seed-tts-2.0` |
 | `kimi-coding-plan` | llm | `k3`, `k3-256k`, `kimi-for-coding`, `kimi-for-coding-highspeed` |
+| `deepseek-token-plan` | llm | `deepseek-flash`, `deepseek-v4-pro` |
 
 Ark migration targets follow the [supported model list](https://docs.volcengine.com/docs/ark/agent-plan-personal-plan-overview?lang=zh) and [retirement notice](https://docs.volcengine.com/docs/ark/agent-plan-personal-model-deprecation-announcement?lang=zh). Kimi K3 requires Medium or higher; Kimi K2.8 Preview is the Small-tier replacement for Kimi K2.7 Code.

@@ -708,6 +708,15 @@ const EXPECTED_ASSET_PG_SCHEMA: readonly string[] = [
      ON asset_root_refs (asset_id)`,
   `ALTER TABLE asset_reference_tracking
      ADD COLUMN IF NOT EXISTS rule_version INTEGER NOT NULL DEFAULT 1`,
+  `CREATE TABLE IF NOT EXISTS asset_blob_stages (
+     id TEXT PRIMARY KEY,
+     content_hash TEXT NOT NULL REFERENCES asset_blobs(content_hash) ON DELETE CASCADE,
+     expires_at TIMESTAMPTZ NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS asset_blob_stages_content_hash_idx
+     ON asset_blob_stages (content_hash)`,
+  `CREATE INDEX IF NOT EXISTS asset_blob_stages_expires_idx
+     ON asset_blob_stages (expires_at)`,
 ];
 
 describe('ASSET_PG_SCHEMA is a pinned contract', () => {

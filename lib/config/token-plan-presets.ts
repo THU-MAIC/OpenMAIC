@@ -89,14 +89,15 @@ export const MODALITY_ORDER: TokenPlanModality[] = [
  *
  * Scoped to TRUE token plans — a single key that spans multiple modalities.
  * Single-modality LLM providers (aggregators like OpenRouter, vendor-direct like
- * DeepSeek/GLM/Qwen) are deliberately NOT here: they're ordinary API providers
- * already covered by the add-provider flow, and listing them under "Token Plan"
+ * GLM/Qwen) are deliberately NOT here: they're ordinary API providers already
+ * covered by the add-provider flow, and listing them under "Token Plan"
  * muddied the "one key, every modality" promise.
  *
  * - TokenDance: LLM/image/video/TTS/web-search through one gateway key.
  * - MiniMax: LLM/image/video/TTS/web-search adapters.
  * - Volcengine Ark Agent Plan: LLM/image/video/TTS/web-search via the plan key.
  * - Kimi Coding Plan: LLM/web-search/web-fetch via the plan key.
+ * - DeepSeek: LLM/web-search/web-fetch via one platform API key.
  */
 export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
   // ── Gateway token plan (one key, vendor wire formats) ─────────────────────
@@ -288,7 +289,7 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
       },
     },
   },
-  // ── Kimi Coding Plan (last = lowest priority) ───────────────────────────
+  // ── Kimi Coding Plan ────────────────────────────────────────────────────
   // The Coding Plan key authenticates against the plan's DEDICATED
   // endpoint (https://www.kimi.com/code/docs/) — api.kimi.com/coding/v1,
   // international api.kimi.ai/coding/v1 — NOT Moonshot's Open Platform
@@ -303,7 +304,7 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
   // (the implicit builtin reader for fetch when no reader was configured).
   // The mainline defaults to `kimi-for-coding`; every follow-mainline LLM
   // station inherits it. Image/video/TTS are not declared and stay untouched.
-  // Priority note: placed LAST in TOKEN_PLAN_PRESETS, so Kimi yields only
+  // Priority note: ranked below the multi-modal plans, so Kimi yields only
   // slots that a higher-priority connected plan also recommends.
   {
     id: 'kimi',
@@ -326,6 +327,37 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
       },
       webSearch: { providerId: 'kimi', baseUrl: 'https://api.kimi.com/coding/v1' },
       webFetch: { providerId: 'kimi', baseUrl: 'https://api.kimi.com/coding/v1' },
+    },
+  },
+  // ── DeepSeek (last = lowest priority) ───────────────────────────────────
+  // Pay-as-you-go rather than a subscription, but one DeepSeek platform key
+  // covers chat, web search (/v1/tools/search) and web fetch (/v1/tools/fetch)
+  // on the same official endpoint, through the existing `deepseek` registry
+  // adapters. The endpoint is the one a personal `deepseek` provider uses; the
+  // plan still gets its own `deepseek-token-plan` preset so connecting and
+  // disconnecting it never touches a personal DeepSeek provider (and so a
+  // personal key does not count as a connected plan). The mainline defaults
+  // to `deepseek-flash` (vision, tool calling); every follow-mainline LLM
+  // station inherits it. Image/video/TTS are not declared and stay untouched.
+  // Priority note: placed LAST in TOKEN_PLAN_PRESETS, so DeepSeek yields the
+  // slots any other connected plan also recommends.
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    websiteUrl: 'https://platform.deepseek.com',
+    apiKeyPlaceholder: 'sk-...',
+    icon: '/logos/deepseek.svg',
+    category: 'token_plan',
+    modalities: {
+      llm: {
+        providerId: 'deepseek',
+        baseUrl: 'https://api.deepseek.com/v1',
+        apiFormat: 'openai',
+        defaultModels: ['deepseek-flash', 'deepseek-v4-pro'],
+        defaultModelId: 'deepseek-flash',
+      },
+      webSearch: { providerId: 'deepseek', baseUrl: 'https://api.deepseek.com/v1' },
+      webFetch: { providerId: 'deepseek', baseUrl: 'https://api.deepseek.com/v1' },
     },
   },
 ];

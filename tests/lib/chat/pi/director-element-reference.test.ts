@@ -151,8 +151,7 @@ describe('Pi Director request-scoped selected-element evidence', () => {
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: controller.signal,
       signal: controller.signal,
-      maxAgentTurns: 2,
-      maxActionsPerAgent: 1,
+
       enableWhiteboardTools: false,
     });
 

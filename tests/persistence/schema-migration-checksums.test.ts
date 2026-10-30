@@ -117,6 +117,13 @@ const SHIPPED: readonly (readonly [
     'd107028738479bdded529fca86c1475fb9f0576dc8fc1f641ece92749f64c37e',
   ],
   [
+    'asset',
+    3,
+    'blob_stages',
+    true,
+    '4e4b5ffc76eda63297abfefb075449173f150ff298e25f0ea28d1c5038b9912f',
+  ],
+  [
     'legacy-classroom-imports',
     1,
     'baseline',

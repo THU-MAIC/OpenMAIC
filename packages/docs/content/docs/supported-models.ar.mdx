@@ -19,8 +19,11 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 | `tokendance` | TokenDance | المحادثة والصور والفيديو وTTS والبحث على الويب |
 | `volcengine-ark` | Volcengine Ark Agent Plan | المحادثة والصور والفيديو وTTS والبحث على الويب |
 | `kimi-coding-plan` | Kimi coding plan | المحادثة والبحث على الويب وجلب صفحات الويب |
+| `deepseek-token-plan` | DeepSeek | المحادثة والبحث على الويب وجلب صفحات الويب |
 
 يوصي ربط Kimi Coding Plan في **الإعدادات ← Token Plan** بالمحادثة والبحث على الويب وجلب الصفحات معًا، باستخدام مفتاح الخطة والعنوان `https://api.kimi.com/coding/v1`. إذا كان الجلب يستخدم القارئ المدمج الافتراضي الضمني فقط، فإن الربط يعيّن Kimi مباشرةً دون تأكيد تعارض، حتى عند الاحتفاظ بالإعدادات الحالية. تخضع اختيارات مساحة العمل الصريحة (بما فيها `null`) والقارئ غير المدمج أو `null` المحددان في إعداد النشر لخيارات التعارض الحالية. يزيل قطع الاتصال تعيينات الخطة ويعيد القيمة الافتراضية للخادم (القارئ المدمج عند عدم إعداد قارئ آخر)، ولا يعيد اختيارًا صريحًا سابقًا لمساحة العمل. تبقى الخانات المقفلة دون تغيير، ولا تغيّر الخطط التي لا تعلن جلب الصفحات هذه الخانة.
+
+يوصي ربط DeepSeek في **الإعدادات ← Token Plan** بالمحادثة (افتراضيًا `deepseek-flash`) والبحث على الويب وجلب الصفحات معًا، باستخدام مفتاح DeepSeek API واحد والعنوان `https://api.deepseek.com/v1`. هذا هو حساب الدفع حسب الاستخدام والعنوان نفسهما في الإعداد المسبق `deepseek`؛ وتستخدم الخطة إعدادها المسبق الخاص `deepseek-token-plan`، لذا فإن فصلها يزيل مزوّد الخطة وتعييناتها فقط ويترك مزوّد `deepseek` المنفصل دون تغيير.
 
 يُبقي معالج الإعداد الأولي جلب الصفحات على القارئ المدمج؛ ولا تُطبّق توصية الخطة للجلب إلا عند ربطها عبر صفحة إعدادات Token Plan.
 
@@ -35,8 +38,8 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 | ASR | `openai-whisper` و`qwen-asr` و`azure-asr` و`browser-native` و`funasr-asr` و`lemonade-asr` |
 | الصور | `seedream` و`openai-image` و`qwen-image` و`nano-banana` و`minimax-image` و`grok-image` و`comfyui-image` و`lemonade-image` و`openrouter-image` |
 | الفيديو | `seedance` و`kling` و`minimax-video` و`grok-video` و`happyhorse` و`openrouter-video` |
-| البحث على الويب | `tavily` و`exa` و`firecrawl` و`bocha` و`brave` و`baidu` و`claude` و`minimax-search` و`doubao-search` و`deepseek` و`kimi` و`kimi-coding-plan` و`searxng` |
-| جلب صفحات الويب | `builtin` و`deepseek` و`firecrawl` و`kimi` و`kimi-coding-plan` |
+| البحث على الويب | `tavily` و`exa` و`firecrawl` و`bocha` و`brave` و`baidu` و`claude` و`minimax-search` و`doubao-search` و`deepseek` و`deepseek-token-plan` و`kimi` و`kimi-coding-plan` و`searxng` |
+| جلب صفحات الويب | `builtin` و`deepseek` و`deepseek-token-plan` و`firecrawl` و`kimi` و`kimi-coding-plan` |
 | تحليل المستندات | `unpdf` و`mineru` و`mineru-cloud` و`alidocmind` |
 
 تحتاج `azure` و`openai-compatible` و`searxng` و`mineru` إلى `baseUrl`، ويصادق `alidocmind` عبر `credentials` (زوج مفاتيح). إعدادات TTS وASR والصور والبحث والمستندات المستضافة ذاتيًا، وإعدادات أزواج المفاتيح، وBedrock لا تُضبط إلا في `openmaic.yml`؛ راجع [الإعدادات](./configuration.mdx).
@@ -209,5 +212,6 @@ These IDs belong to the plan endpoint, independently of the direct provider cata
 | `volcengine-ark` | video | `doubao-seedance-2.0-mini`, `doubao-seedance-2.0` |
 | `volcengine-ark` | tts | `seed-tts-2.0` |
 | `kimi-coding-plan` | llm | `k3`, `k3-256k`, `kimi-for-coding`, `kimi-for-coding-highspeed` |
+| `deepseek-token-plan` | llm | `deepseek-flash`, `deepseek-v4-pro` |
 
 Ark migration targets follow the [supported model list](https://docs.volcengine.com/docs/ark/agent-plan-personal-plan-overview?lang=zh) and [retirement notice](https://docs.volcengine.com/docs/ark/agent-plan-personal-model-deprecation-announcement?lang=zh). Kimi K3 requires Medium or higher; Kimi K2.8 Preview is the Small-tier replacement for Kimi K2.7 Code.

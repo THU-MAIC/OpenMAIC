@@ -19,8 +19,11 @@ description: 开源版 OpenMAIC 的内置模型与 provider 列表。
 | `tokendance` | TokenDance | 对话、图像、视频、TTS、联网搜索 |
 | `volcengine-ark` | 火山方舟 Agent Plan | 对话、图像、视频、TTS、联网搜索 |
 | `kimi-coding-plan` | Kimi 编程套餐 | 对话、联网搜索、网页抓取 |
+| `deepseek-token-plan` | DeepSeek | 对话、联网搜索、网页抓取 |
 
 在**设置 → Token Plan** 中连接 Kimi Coding Plan，会同时推荐对话、联网搜索和网页抓取，共用套餐密钥和 `https://api.kimi.com/coding/v1`。如果网页抓取仅使用隐式内置默认值，连接会直接分配 Kimi，不弹出冲突确认，即使选择保留当前配置也是如此。工作区的显式选择（包括 `null`）以及部署配置的非内置读取器或 `null` 仍按现有冲突选项处理。断开连接会移除套餐的分配，恢复服务端默认值（未配置读取器时为内置读取器），不会恢复此前工作区的显式选择。锁定的槽位保持不变，未声明网页抓取的套餐不会修改该槽位。
+
+在**设置 → Token Plan** 中连接 DeepSeek，会同时推荐对话（默认 `deepseek-flash`）、联网搜索和网页抓取，共用一个 DeepSeek API 密钥和 `https://api.deepseek.com/v1`。它与 `deepseek` 预设是同一个按量计费账号和地址；套餐使用独立的 `deepseek-token-plan` 预设，断开连接只会移除套餐自己的服务商和分配，不影响单独配置的 `deepseek` 服务商。
 
 首次设置向导会将网页抓取保留为内置读取器；只有通过 Token Plan 设置页面连接套餐，才会应用套餐的抓取推荐配置。
 
@@ -35,8 +38,8 @@ description: 开源版 OpenMAIC 的内置模型与 provider 列表。
 | ASR | `openai-whisper`、`qwen-asr`、`azure-asr`、`browser-native`、`funasr-asr`、`lemonade-asr` |
 | 图像 | `seedream`、`openai-image`、`qwen-image`、`nano-banana`、`minimax-image`、`grok-image`、`comfyui-image`、`lemonade-image`、`openrouter-image` |
 | 视频 | `seedance`、`kling`、`minimax-video`、`grok-video`、`happyhorse`、`openrouter-video` |
-| 联网搜索 | `tavily`、`exa`、`firecrawl`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`deepseek`、`kimi`、`kimi-coding-plan`、`searxng` |
-| 网页抓取 | `builtin`、`deepseek`、`firecrawl`、`kimi`、`kimi-coding-plan` |
+| 联网搜索 | `tavily`、`exa`、`firecrawl`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`deepseek`、`deepseek-token-plan`、`kimi`、`kimi-coding-plan`、`searxng` |
+| 网页抓取 | `builtin`、`deepseek`、`deepseek-token-plan`、`firecrawl`、`kimi`、`kimi-coding-plan` |
 | 文档解析 | `unpdf`、`mineru`、`mineru-cloud`、`alidocmind` |
 
 `azure`、`openai-compatible`、`searxng` 和 `mineru` 需要 `baseUrl`；`alidocmind` 使用 `credentials`（密钥对）认证。自托管的 TTS、ASR、图像、搜索和文档预设、密钥对预设以及 Bedrock 只能在 `openmaic.yml` 中配置，见[配置说明](./configuration.mdx)。
@@ -209,5 +212,6 @@ These IDs belong to the plan endpoint, independently of the direct provider cata
 | `volcengine-ark` | video | `doubao-seedance-2.0-mini`, `doubao-seedance-2.0` |
 | `volcengine-ark` | tts | `seed-tts-2.0` |
 | `kimi-coding-plan` | llm | `k3`, `k3-256k`, `kimi-for-coding`, `kimi-for-coding-highspeed` |
+| `deepseek-token-plan` | llm | `deepseek-flash`, `deepseek-v4-pro` |
 
 Ark migration targets follow the [supported model list](https://docs.volcengine.com/docs/ark/agent-plan-personal-plan-overview?lang=zh) and [retirement notice](https://docs.volcengine.com/docs/ark/agent-plan-personal-model-deprecation-announcement?lang=zh). Kimi K3 requires Medium or higher; Kimi K2.8 Preview is the Small-tier replacement for Kimi K2.7 Code.
