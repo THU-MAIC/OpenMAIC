@@ -2564,3 +2564,43 @@
 .dark .ws-root .ws-wordmark {
   filter: invert(1) hue-rotate(180deg) brightness(1.08);
 }
+
+/* ── Global search ────────────────────────────────────────────────────────
+   The rail's Search row states its shortcut; the palette itself is portalled
+   out of the shell, so it uses the product's palette directly. */
+.ws-kbd {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border-radius: 5px;
+  border: 1px solid var(--ws-line);
+  font-family: inherit;
+  font-size: 10.5px;
+  line-height: 15px;
+  color: var(--ws-ink-mute);
+}
+
+.ws-kbd:empty {
+  display: none;
+}
+
+.ws-search-context {
+  display: inline-flex;
+  max-width: 40%;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: rgb(100 116 139);
+}
+
+.ws-search-note {
+  padding: 6px 8px;
+  font-size: 12.5px;
+  color: rgb(100 116 139);
+}
+
+/* A source the search located, in the knowledge base list. */
+.ws-root [data-kb-row][data-located='true'] {
+  background-color: var(--ws-accent-wash);
+  box-shadow: inset 2px 0 0 var(--ws-accent);
+}

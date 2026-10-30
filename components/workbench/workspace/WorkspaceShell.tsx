@@ -142,6 +142,8 @@ import { PaneTab } from './PaneTab';
 import { ResizeHandle } from './ResizeHandle';
 import { MaterialLibraryPage } from './MaterialLibraryPage';
 import { WorkspaceCoursesPage } from './WorkspaceCoursesPage';
+import { isMacPlatform, isSearchShortcut, WorkspaceSearchPalette } from './WorkspaceSearchPalette';
+import type { LibraryMaterial } from '@/lib/workbench/material-library-client';
 import { hostPageItems, useWorkbenchShellExtensions } from '@/lib/workbench/shell-extensions';
 import type { MaterialSeed, MaterialSeedTarget } from '@/components/workbench/compose-extras';
 
@@ -750,6 +752,40 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       goTo(withView(panes, view));
     },
     [goTo, panes],
+  );
+
+  // ── Global search (⌘K / Ctrl K, or the rail's Search) ───────────────
+  const [searchOpen, setSearchOpen] = useState(false);
+  useEffect(() => {
+    const mac = isMacPlatform();
+    const onKeyDown = (event: KeyboardEvent) => {
+      // An editor inside the page that binds the chord itself keeps it.
+      if (event.defaultPrevented || !isSearchShortcut(event, mac)) return;
+      event.preventDefault();
+      setSearchOpen((open) => !open);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+  /**
+   * A material picked in the search: the knowledge base opens on it. The key
+   * makes picking the same file twice locate it twice.
+   */
+  const [locatedMaterial, setLocatedMaterial] = useState<{
+    readonly key: number;
+    readonly materialId: string;
+    readonly name: string;
+  } | null>(null);
+  const openMaterial = useCallback(
+    (material: LibraryMaterial) => {
+      setLocatedMaterial((current) => ({
+        key: (current?.key ?? 0) + 1,
+        materialId: material.materialId,
+        name: material.name,
+      }));
+      openView(WORKSPACE_LIBRARY_VIEW);
+    },
+    [openView],
   );
 
   /**
@@ -1645,6 +1681,24 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     >
       {courses.importInput}
 
+      {/* Mounted only while open, so every opening starts from an empty query. */}
+      {searchOpen ? (
+        <WorkspaceSearchPalette
+          open
+          onOpenChange={setSearchOpen}
+          sessions={visibleSessions}
+          courses={courses.classrooms}
+          folders={courses.folders}
+          onOpenSession={openSession}
+          onOpenCourse={openCourse}
+          onOpenMaterial={openMaterial}
+          onNewSession={startNewConversation}
+          onOpenView={openView}
+          coursesView={WORKSPACE_COURSES_VIEW}
+          libraryView={WORKSPACE_LIBRARY_VIEW}
+        />
+      ) : null}
+
       {classroomOpen && playbackOn ? null : (
         <WorkspaceRail
           sessions={visibleSessions}
@@ -1660,6 +1714,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           onGoHome={goHome}
           onSessionDeleted={handleSessionDeleted}
           onRenameSession={renameSession}
+          onOpenSearch={() => setSearchOpen(true)}
           activeView={render.view}
           onOpenView={openView}
           resizeHandle={
@@ -1786,7 +1841,11 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           hidden (`render` turns both off), so leaving the page finds them as
           they were and the run's stream is never detached. */}
       {render.view === WORKSPACE_LIBRARY_VIEW ? (
-        <MaterialLibraryPage onChatWithMaterial={chatWithMaterial} onLeave={leaveView} />
+        <MaterialLibraryPage
+          onChatWithMaterial={chatWithMaterial}
+          onLeave={leaveView}
+          locate={locatedMaterial}
+        />
       ) : render.view === WORKSPACE_COURSES_VIEW ? (
         <WorkspaceCoursesPage
           courses={courses}

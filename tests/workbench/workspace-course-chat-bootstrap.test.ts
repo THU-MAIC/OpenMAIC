@@ -61,6 +61,7 @@ const mocks = vi.hoisted(() => ({
   courses: null as Record<string, unknown> | null,
   railProps: null as Record<string, unknown> | null,
   coursesPageProps: null as Record<string, unknown> | null,
+  searchProps: null as Record<string, unknown> | null,
   railCollapsedSeen: [] as unknown[],
   homeProps: null as Record<string, unknown> | null,
   libraryProps: null as Record<string, unknown> | null,
@@ -244,6 +245,18 @@ vi.mock('@/components/workbench/workspace/PaneTab', () => ({ PaneTab: () => null
 // The preview tab renders the real course tab strip, which keeps its active
 // tab in view; jsdom has no layout to scroll.
 Element.prototype.scrollIntoView ??= function scrollIntoView() {};
+// The palette itself is tested on its own; the shell owns its shortcut and wiring.
+vi.mock('@/components/workbench/workspace/WorkspaceSearchPalette', async (importActual) => {
+  const actual =
+    await importActual<typeof import('@/components/workbench/workspace/WorkspaceSearchPalette')>();
+  return {
+    ...actual,
+    WorkspaceSearchPalette: (props: Record<string, unknown>) => {
+      mocks.searchProps = props;
+      return createElement('div', { 'data-testid': 'workspace-search' });
+    },
+  };
+});
 // My courses carries the library's course actions (open, delete, the
 // generating cards); the page itself is tested on its own.
 vi.mock('@/components/workbench/workspace/WorkspaceCoursesPage', () => ({
@@ -335,6 +348,7 @@ beforeEach(() => {
   mocks.chatPaneProps = null;
   mocks.railProps = null;
   mocks.coursesPageProps = null;
+  mocks.searchProps = null;
   mocks.railCollapsedSeen = [];
   mocks.homeProps = null;
   mocks.libraryProps = null;
@@ -1301,6 +1315,61 @@ describe('owner title projection in the workspace shell', () => {
 
     expect(mocks.setSessionTitle).not.toHaveBeenCalled();
     expect(mocks.store.sessionTitle).toBe('Detail title');
+  });
+});
+
+describe('the global search', () => {
+  const searchShown = () => container?.querySelector('[data-testid="workspace-search"]') !== null;
+  const chord = (init: KeyboardEventInit) =>
+    act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', bubbles: true, ...init }));
+    });
+
+  it('opens and closes with the platform chord, and from the rail', async () => {
+    await render();
+    expect(searchShown()).toBe(false);
+    // jsdom is not a Mac: Ctrl+K.
+    await chord({ metaKey: true });
+    expect(searchShown()).toBe(false);
+    await chord({ ctrlKey: true });
+    expect(searchShown()).toBe(true);
+    await chord({ ctrlKey: true });
+    expect(searchShown()).toBe(false);
+
+    await act(async () => (mocks.railProps?.onOpenSearch as () => void)());
+    expect(searchShown()).toBe(true);
+    await act(async () => (mocks.searchProps?.onOpenChange as (open: boolean) => void)(false));
+    expect(searchShown()).toBe(false);
+  });
+
+  it('leaves the chord to an editor that already handled it', async () => {
+    await render();
+    const event = new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, cancelable: true });
+    event.preventDefault();
+    await act(async () => {
+      window.dispatchEvent(event);
+    });
+    expect(searchShown()).toBe(false);
+  });
+
+  it('opens a material on the knowledge base, located', async () => {
+    await render();
+    await chord({ ctrlKey: true });
+    await act(async () =>
+      (mocks.searchProps?.onOpenMaterial as (material: unknown) => void)({
+        materialId: 'm1',
+        name: 'worksheet.pdf',
+      }),
+    );
+    expect(String(mocks.routerPush.mock.calls.at(-1)?.[0])).toContain('view=library');
+    expect(mocks.libraryProps?.locate).toMatchObject({ materialId: 'm1', name: 'worksheet.pdf' });
+  });
+
+  it('opens chats and courses through the shell’s own handlers', async () => {
+    await render();
+    await chord({ ctrlKey: true });
+    expect(mocks.searchProps?.onOpenSession).toBe(mocks.railProps?.onOpenSession);
+    expect(mocks.searchProps?.onOpenView).toBe(mocks.railProps?.onOpenView);
   });
 });
 

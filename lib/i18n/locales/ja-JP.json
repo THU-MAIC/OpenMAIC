@@ -2427,8 +2427,6 @@
       "cancelled": "Stopped"
     },
     "backToWorkspace": "Back to workspace",
-    "searchPlaceholder": "Filter by name",
-    "searchAria": "Search {{section}}",
     "searchEmpty": "No matches",
     "showMore": "Show {{count}} more",
     "showLess": "Show less",
@@ -2494,6 +2492,17 @@
     "nav": {
       "search": "検索",
       "myCourses": "マイコース"
+    },
+    "search": {
+      "placeholder": "チャット、コース、資料を検索",
+      "recentChats": "最近のチャット",
+      "recentCourses": "最近のコース",
+      "courses": "コース",
+      "materials": "資料",
+      "actions": "クイック操作",
+      "searching": "検索中…",
+      "empty": "「{{query}}」に一致する結果はありません",
+      "materialsFailed": "ナレッジベースを検索できませんでした"
     },
     "account": {
       "signIn": "ログイン",

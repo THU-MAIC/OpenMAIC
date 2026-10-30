@@ -2412,8 +2412,6 @@
       "cancelled": "已停止"
     },
     "backToWorkspace": "返回工作區",
-    "searchPlaceholder": "依名稱篩選",
-    "searchAria": "在{{section}}中搜尋",
     "searchEmpty": "沒有符合的內容",
     "showMore": "顯示更多 {{count}}",
     "showLess": "收合",
@@ -2479,6 +2477,17 @@
     "nav": {
       "search": "搜尋",
       "myCourses": "我的課程"
+    },
+    "search": {
+      "placeholder": "搜尋對話、課程和資料",
+      "recentChats": "最近對話",
+      "recentCourses": "最近課程",
+      "courses": "課程",
+      "materials": "資料",
+      "actions": "快捷操作",
+      "searching": "正在搜尋…",
+      "empty": "沒有與「{{query}}」相符的結果",
+      "materialsFailed": "知識庫搜尋失敗"
     },
     "account": {
       "signIn": "登入",

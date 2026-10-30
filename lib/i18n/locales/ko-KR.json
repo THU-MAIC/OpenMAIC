@@ -2427,8 +2427,6 @@
       "cancelled": "Stopped"
     },
     "backToWorkspace": "Back to workspace",
-    "searchPlaceholder": "Filter by name",
-    "searchAria": "Search {{section}}",
     "searchEmpty": "No matches",
     "showMore": "Show {{count}} more",
     "showLess": "Show less",
@@ -2494,6 +2492,17 @@
     "nav": {
       "search": "검색",
       "myCourses": "내 코스"
+    },
+    "search": {
+      "placeholder": "대화, 코스, 자료 검색",
+      "recentChats": "최근 대화",
+      "recentCourses": "최근 코스",
+      "courses": "코스",
+      "materials": "자료",
+      "actions": "빠른 작업",
+      "searching": "검색 중…",
+      "empty": "“{{query}}”와(과) 일치하는 결과가 없습니다",
+      "materialsFailed": "지식 베이스를 검색하지 못했습니다"
     },
     "account": {
       "signIn": "로그인",

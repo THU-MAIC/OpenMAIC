@@ -2427,8 +2427,6 @@
       "cancelled": "已停止"
     },
     "backToWorkspace": "返回工作区",
-    "searchPlaceholder": "按名称筛选",
-    "searchAria": "在{{section}}中搜索",
     "searchEmpty": "没有匹配的内容",
     "showMore": "展示更多 {{count}}",
     "showLess": "收起",
@@ -2494,6 +2492,17 @@
     "nav": {
       "search": "搜索",
       "myCourses": "我的课程"
+    },
+    "search": {
+      "placeholder": "搜索对话、课程和资料",
+      "recentChats": "最近对话",
+      "recentCourses": "最近课程",
+      "courses": "课程",
+      "materials": "资料",
+      "actions": "快捷操作",
+      "searching": "正在搜索…",
+      "empty": "没有与“{{query}}”匹配的结果",
+      "materialsFailed": "知识库搜索失败"
     },
     "account": {
       "signIn": "登录",

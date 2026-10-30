@@ -2427,8 +2427,6 @@
       "cancelled": "Stopped"
     },
     "backToWorkspace": "Back to workspace",
-    "searchPlaceholder": "Filter by name",
-    "searchAria": "Search {{section}}",
     "searchEmpty": "No matches",
     "showMore": "Show {{count}} more",
     "showLess": "Show less",
@@ -2494,6 +2492,17 @@
     "nav": {
       "search": "بحث",
       "myCourses": "دوراتي"
+    },
+    "search": {
+      "placeholder": "ابحث في المحادثات والدورات والمواد",
+      "recentChats": "المحادثات الأخيرة",
+      "recentCourses": "الدورات الأخيرة",
+      "courses": "الدورات",
+      "materials": "المواد",
+      "actions": "إجراءات سريعة",
+      "searching": "جارٍ البحث…",
+      "empty": "لا توجد نتائج تطابق “{{query}}”",
+      "materialsFailed": "تعذّر البحث في قاعدة المعرفة"
     },
     "account": {
       "signIn": "تسجيل الدخول",

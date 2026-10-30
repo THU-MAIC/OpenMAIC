@@ -20,7 +20,7 @@
  *  - long lists reveal one page at a time (`workspace-paging`), because this
  *    account can hold hundreds of chats and "reveal everything" is not a
  *    navigation;
- *  - above the lists, the destinations: search (the list's name filter), my
+ *  - above the list, the destinations: search (the global palette, ⌘K), my
  *    courses and the knowledge base (pages in the main area), then whatever
  *    the host registered (`lib/workbench/shell-extensions.tsx`);
  *  - at the foot, the account block. The workspace has no top bar, so its
@@ -49,7 +49,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ComponentProps,
   type MouseEvent as ReactMouseEvent,
@@ -63,7 +62,6 @@ import type { HomeDiscoveryState } from '@/lib/hooks/use-home-discovery';
 import { SettingsDialog } from '@/components/settings';
 import { cn } from '@/lib/utils/cn';
 import { relativeBucket, type ProHomeSessionItem } from '@/lib/workbench/pro-home-data';
-import { filterByName } from '@/lib/workbench/workspace-tree';
 import {
   EMPTY_PAGES,
   nextPage,
@@ -91,6 +89,7 @@ import { WORKSPACE_COURSES_VIEW, WORKSPACE_LIBRARY_VIEW } from '@/lib/workbench/
 import { deleteWorkspaceSession } from '@/lib/workbench/workspace-actions';
 import { SESSION_TITLE_MAX_LENGTH, workbenchSessionTitle } from '@/lib/workbench/session-title';
 import { InlineNameRow, WorkspaceRowMenu } from './workspace-row-controls';
+import { isMacPlatform } from './WorkspaceSearchPalette';
 
 /**
  * Rows the chat list shows before it pages: the list owns the rail's body,
@@ -110,6 +109,7 @@ export function WorkspaceRail({
   onGoHome,
   onSessionDeleted,
   onRenameSession,
+  onOpenSearch,
   activeView,
   onOpenView,
   resizeHandle,
@@ -137,6 +137,8 @@ export function WorkspaceRail({
    * pane header both) and answers with a readable message when it is refused.
    */
   readonly onRenameSession: (sessionId: string, title: string) => Promise<string | null>;
+  /** Open the global search palette (the shell owns it and its ⌘K). */
+  readonly onOpenSearch: () => void;
   /**
    * The main-area page on screen (`library`, `courses` or a host page id), or
    * null. Its destination row is marked current.
@@ -149,7 +151,6 @@ export function WorkspaceRail({
 }) {
   const { t } = useI18n();
   const brand = useBrand();
-  const sessionsSection = useListSearch();
 
   // ── Row maintenance: rename in place, delete after a question ────────
   // Which row is currently an input: two rows cannot be renamed at once.
@@ -157,26 +158,9 @@ export function WorkspaceRail({
   /** The model/provider settings dialog, opened from the account menu. */
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  /*
-   * "Search" in the destinations focuses the list's name filter. From the
-   * folded strip it first unfolds the rail; the input only exists once the
-   * expanded rail has rendered, so the focus is owed until then.
-   */
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const searchFocusOwed = useRef(false);
-  useEffect(() => {
-    if (collapsed || !searchFocusOwed.current) return;
-    searchFocusOwed.current = false;
-    searchInputRef.current?.focus();
-  }, [collapsed]);
-  const openSearch = () => {
-    if (collapsed) {
-      searchFocusOwed.current = true;
-      onToggleCollapsed();
-      return;
-    }
-    searchInputRef.current?.focus();
-  };
+  // "Search" opens the shell's global search palette (⌘K / Ctrl K), from the
+  // expanded rail and the folded strip alike.
+  const searchShortcut = useSearchShortcutLabel();
 
   /*
    * The rail's destinations: the built-in pages, then whatever the host
@@ -261,33 +245,6 @@ export function WorkspaceRail({
     },
     [onReloadSessions, onSessionDeleted, t],
   );
-
-  const matchedSessions = useMemo(
-    () =>
-      filterByName(
-        // Search what the row SHOWS: a renamed chat has to be findable by the
-        // name the user gave it, not only by its first message.
-        orderedSessions.map((session) => ({
-          ...session,
-          name: workbenchSessionTitle(session) ?? '',
-        })),
-        sessionsSection.query,
-      ),
-    [orderedSessions, sessionsSection.query],
-  );
-
-  // ── Paging × search ──────────────────────────────────────────────────
-  // Typing a query builds a different list under the same list id, so the
-  // pages a user opened on the unfiltered list must not carry over: five open
-  // pages would otherwise cash themselves in the moment the query was cleared. Adjusting state during render (React's own recipe for
-  // "derived from a prop that changed") rather than in an effect, so the tree
-  // never paints one frame with the stale window.
-  const querySignature = sessionsSection.query.trim();
-  const [pagedFor, setPagedFor] = useState(querySignature);
-  if (pagedFor !== querySignature) {
-    setPagedFor(querySignature);
-    setPages(EMPTY_PAGES);
-  }
 
   const openPage = useCallback((id: string, items: readonly unknown[], initial: number) => {
     setPages((current) =>
@@ -387,7 +344,7 @@ export function WorkspaceRail({
           <button
             type="button"
             data-testid="pro-nav-search-mini"
-            onClick={openSearch}
+            onClick={onOpenSearch}
             aria-label={t('workspace.nav.search')}
             title={t('workspace.nav.search')}
             className="ws-mini-btn"
@@ -429,7 +386,7 @@ export function WorkspaceRail({
     );
   }
 
-  const renderSessionRow = (session: (typeof matchedSessions)[number]) => {
+  const renderSessionRow = (session: (typeof orderedSessions)[number]) => {
     const label = workbenchSessionTitle(session) ?? t('workspace.untitledSession');
     // Being renamed: the row IS the input, in place.
     if (session.id === renamingSessionId) {
@@ -471,7 +428,7 @@ export function WorkspaceRail({
           moveWithKeyboard(
             'session',
             session.id,
-            matchedSessions.map((item) => item.id),
+            orderedSessions.map((item) => item.id),
             delta,
           )
         }
@@ -544,11 +501,15 @@ export function WorkspaceRail({
         <button
           type="button"
           data-testid="pro-nav-search"
-          onClick={openSearch}
+          onClick={onOpenSearch}
+          aria-keyshortcuts={searchShortcut.aria}
           className="ws-nav-item"
         >
           <Search className="size-[18px] shrink-0" aria-hidden="true" />
-          <span className="min-w-0 truncate">{t('workspace.nav.search')}</span>
+          <span className="min-w-0 flex-1 truncate text-left">{t('workspace.nav.search')}</span>
+          <kbd data-testid="pro-nav-search-shortcut" className="ws-kbd" aria-hidden="true">
+            {searchShortcut.label}
+          </kbd>
         </button>
         {destinations.map((item) => (
           <RailDestinationButton key={item.id} item={item} />
@@ -556,28 +517,6 @@ export function WorkspaceRail({
       </div>
 
       <div className="ws-seam-rail mx-4 my-2 shrink-0" aria-hidden="true" />
-
-      {/* Find, over the chat list: one always-visible icon+input row that
-          filters the conversations by the name each row shows. */}
-      <div className="flex shrink-0 items-center gap-1.5 px-3 pb-2 pt-2.5">
-        <div className="ws-find min-w-0 flex-1">
-          <Search className="size-3.5 shrink-0" aria-hidden="true" />
-          <input
-            ref={searchInputRef}
-            data-testid="pro-nav-search-input"
-            value={sessionsSection.query}
-            onChange={(event) => sessionsSection.setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key !== 'Escape') return;
-              event.preventDefault();
-              sessionsSection.setQuery('');
-            }}
-            placeholder={t('workspace.searchPlaceholder')}
-            aria-label={t('workspace.searchAria', { section: t('workspace.sections.sessions') })}
-            className="ws-find-input min-w-0 flex-1"
-          />
-        </div>
-      </div>
 
       <div
         data-testid="pro-nav-list"
@@ -591,19 +530,15 @@ export function WorkspaceRail({
           emptyLabel={t('workspace.sessionsEmpty')}
           onRetry={onReloadSessions}
         >
-          {sessionsSection.query.trim() && matchedSessions.length === 0 ? (
-            <RailEmpty label={t('workspace.searchEmpty')} />
-          ) : (
-            <PagedRows
-              id="sessions"
-              items={matchedSessions}
-              initial={SESSION_ROW_LIMIT}
-              pages={pagesFor(pages, 'sessions')}
-              onMore={() => openPage('sessions', matchedSessions, SESSION_ROW_LIMIT)}
-              onCollapse={() => collapsePage('sessions')}
-              render={(session) => renderSessionRow(session)}
-            />
-          )}
+          <PagedRows
+            id="sessions"
+            items={orderedSessions}
+            initial={SESSION_ROW_LIMIT}
+            pages={pagesFor(pages, 'sessions')}
+            onMore={() => openPage('sessions', orderedSessions, SESSION_ROW_LIMIT)}
+            onCollapse={() => collapsePage('sessions')}
+            render={(session) => renderSessionRow(session)}
+          />
         </RailList>
       </div>
 
@@ -635,37 +570,21 @@ export function WorkspaceRail({
 
 /* ── Rail lists ───────────────────────────────────────────────────────── */
 
-interface ListSearch {
-  readonly query: string;
-  readonly setQuery: (value: string) => void;
-  readonly searchOpen: boolean;
-  readonly openSearch: () => void;
-  readonly closeSearch: () => void;
-}
-
-/** The chat list's filter state. */
-function useListSearch(): ListSearch {
-  const [query, setQuery] = useState('');
-  const [searchOpen, setSearchOpen] = useState(false);
-
-  return {
-    query,
-    setQuery,
-    searchOpen,
-    openSearch: () => setSearchOpen(true),
-    closeSearch: () => {
-      setSearchOpen(false);
-      setQuery('');
-    },
-  };
+/** The palette's shortcut as the platform writes it: ⌘K on the Mac, Ctrl K elsewhere. */
+function useSearchShortcutLabel(): { readonly label: string; readonly aria: string } {
+  // Read after mount: the server cannot know the platform, and the first
+  // client paint must match what it sent.
+  const [mac, setMac] = useState<boolean | null>(null);
+  useEffect(() => {
+    setMac(isMacPlatform()); // eslint-disable-line react-hooks/set-state-in-effect -- platform is known only on the client
+  }, []);
+  if (mac === null) return { label: '', aria: 'Control+K' };
+  return mac ? { label: '⌘K', aria: 'Meta+K' } : { label: 'Ctrl K', aria: 'Control+K' };
 }
 
 /**
- * The chat list, without a head of its own.
- *
- * The filter lives in the findrow above it (see the rail's render); what is
- * left here is the three states a list can be in before it has any rows to
- * show. `count` is read, not
+ * The chat list, without a head of its own: the three states a list can be
+ * in before it has any rows to show. `count` is read, not
  * rendered — it is how this component knows the list is empty.
  */
 function RailList({

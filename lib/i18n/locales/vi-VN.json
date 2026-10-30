@@ -2427,8 +2427,6 @@
       "cancelled": "Stopped"
     },
     "backToWorkspace": "Back to workspace",
-    "searchPlaceholder": "Filter by name",
-    "searchAria": "Search {{section}}",
     "searchEmpty": "No matches",
     "showMore": "Show {{count}} more",
     "showLess": "Show less",
@@ -2494,6 +2492,17 @@
     "nav": {
       "search": "Tìm kiếm",
       "myCourses": "Khóa học của tôi"
+    },
+    "search": {
+      "placeholder": "Tìm cuộc trò chuyện, khóa học và tài liệu",
+      "recentChats": "Cuộc trò chuyện gần đây",
+      "recentCourses": "Khóa học gần đây",
+      "courses": "Khóa học",
+      "materials": "Tài liệu",
+      "actions": "Thao tác nhanh",
+      "searching": "Đang tìm…",
+      "empty": "Không có kết quả khớp với “{{query}}”",
+      "materialsFailed": "Không thể tìm trong kho kiến thức"
     },
     "account": {
       "signIn": "Đăng nhập",

@@ -2427,8 +2427,6 @@
       "cancelled": "Stopped"
     },
     "backToWorkspace": "Back to workspace",
-    "searchPlaceholder": "Filter by name",
-    "searchAria": "Search {{section}}",
     "searchEmpty": "No matches",
     "showMore": "Show {{count}} more",
     "showLess": "Show less",
@@ -2494,6 +2492,17 @@
     "nav": {
       "search": "Поиск",
       "myCourses": "Мои курсы"
+    },
+    "search": {
+      "placeholder": "Поиск по чатам, курсам и материалам",
+      "recentChats": "Недавние чаты",
+      "recentCourses": "Недавние курсы",
+      "courses": "Курсы",
+      "materials": "Материалы",
+      "actions": "Быстрые действия",
+      "searching": "Поиск…",
+      "empty": "Ничего не найдено по запросу «{{query}}»",
+      "materialsFailed": "Не удалось выполнить поиск в базе знаний"
     },
     "account": {
       "signIn": "Войти",

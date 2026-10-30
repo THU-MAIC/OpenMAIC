@@ -72,6 +72,7 @@ async function renderRail({
 } = {}) {
   const onOpenView = vi.fn();
   const onToggleCollapsed = vi.fn();
+  const onOpenSearch = vi.fn();
   const container = document.createElement('div');
   container.className = 'ws-root';
   document.body.append(container);
@@ -89,6 +90,7 @@ async function renderRail({
     onGoHome: vi.fn(),
     onSessionDeleted: vi.fn(),
     onRenameSession: vi.fn(async () => null),
+    onOpenSearch,
     activeView,
     onOpenView,
     resizeHandle: null as ReactNode,
@@ -100,7 +102,7 @@ async function renderRail({
         : rail,
     );
   });
-  return { onOpenView, onToggleCollapsed };
+  return { onOpenView, onToggleCollapsed, onOpenSearch };
 }
 
 async function openAccountMenu(): Promise<HTMLElement> {
@@ -128,16 +130,20 @@ describe('the rail’s destinations', () => {
     expect(onOpenView).toHaveBeenCalledWith('courses');
   });
 
-  it('focuses the list filter from Search', async () => {
-    await renderRail();
+  it('opens the global search from Search, which states its shortcut', async () => {
+    const { onOpenSearch } = await renderRail();
+    expect(byTestId('pro-nav-search-input')).toBeNull();
+    expect(byTestId('pro-nav-search')?.getAttribute('aria-keyshortcuts')).toMatch(/\+K$/);
+    expect(byTestId('pro-nav-search-shortcut')?.textContent).toMatch(/K$/);
     await act(async () => byTestId('pro-nav-search')!.click());
-    expect(document.activeElement?.getAttribute('data-testid')).toBe('pro-nav-search-input');
+    expect(onOpenSearch).toHaveBeenCalledTimes(1);
   });
 
-  it('unfolds the folded strip before focusing the filter', async () => {
-    const { onToggleCollapsed } = await renderRail({ collapsed: true });
+  it('opens the same search from the folded strip, without unfolding it', async () => {
+    const { onToggleCollapsed, onOpenSearch } = await renderRail({ collapsed: true });
     await act(async () => byTestId('pro-nav-search-mini')!.click());
-    expect(onToggleCollapsed).toHaveBeenCalledTimes(1);
+    expect(onOpenSearch).toHaveBeenCalledTimes(1);
+    expect(onToggleCollapsed).not.toHaveBeenCalled();
   });
 
   it('keeps the same destinations as icons when folded', async () => {
@@ -177,7 +183,7 @@ describe('the host extension slots', () => {
   it('adds the host’s rail entries after the built-ins, as pages or links', async () => {
     const { onOpenView } = await renderRail({ extensions: host });
     const items = [
-      ...document.querySelectorAll('[data-testid="pro-nav-destinations"] [data-testid]'),
+      ...document.querySelectorAll('[data-testid="pro-nav-destinations"] > [data-testid]'),
     ].map((el) => el.getAttribute('data-testid'));
     expect(items).toEqual([
       'pro-nav-search',

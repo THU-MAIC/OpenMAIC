@@ -106,6 +106,7 @@ async function renderRail(): Promise<{ onRenameSession: ReturnType<typeof vi.fn>
         onGoHome: vi.fn(),
         onSessionDeleted: vi.fn(),
         onRenameSession,
+        onOpenSearch: vi.fn(),
         activeView: null,
         onOpenView: vi.fn(),
         resizeHandle: null as ReactNode,

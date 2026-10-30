@@ -567,11 +567,22 @@ const LAYOUT = {
 export function MaterialLibraryPage({
   onChatWithMaterial,
   onLeave,
+  locate = null,
 }: {
   /** Start a conversation with this source staged (the shell decides where). */
   readonly onChatWithMaterial: (material: WorkbenchMaterial) => void;
   /** Leave the page for what it covers (the compact header's way back). */
   readonly onLeave: () => void;
+  /**
+   * A source to open the page on (the workspace search picked it): the page
+   * searches for its name and brings its row into view, marked. A new `key`
+   * locates again.
+   */
+  readonly locate?: {
+    readonly key: number;
+    readonly materialId: string;
+    readonly name: string;
+  } | null;
 }) {
   const { t, locale } = useI18n();
   const [queryInput, setQueryInput] = useState('');
@@ -585,8 +596,22 @@ export function MaterialLibraryPage({
   }, [queryInput]);
   const changeQuery = (value: string) => {
     setQueryInput(value);
+    setLocatedId(null);
     if (!value.trim()) setQuery('');
   };
+
+  // A located source: its name becomes the search (at once, not after the
+  // typing pause), and its row is marked until something else is searched.
+  const [locatedKey, setLocatedKey] = useState<number | null>(null);
+  const [locatedId, setLocatedId] = useState<string | null>(null);
+  const locateScrollOwed = useRef(false);
+  if (locate && locate.key !== locatedKey) {
+    setLocatedKey(locate.key);
+    setLocatedId(locate.materialId);
+    setQueryInput(locate.name);
+    setQuery(locate.name.trim());
+    locateScrollOwed.current = true;
+  }
 
   const fileInput = useRef<HTMLInputElement>(null);
   // The page's own changes read the list again (§7) -- but only while the
@@ -612,6 +637,19 @@ export function MaterialLibraryPage({
   const returnedTo = useRef<HTMLElement | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const list = useRef<HTMLDivElement>(null);
+  // The located row, once the search has listed it: into view, its ⋯ focused.
+  useEffect(() => {
+    if (!locateScrollOwed.current || !locatedId) return;
+    const row = list.current?.querySelector<HTMLElement>(
+      `[data-testid="kb-material-${locatedId}"]`,
+    );
+    if (!row) return;
+    locateScrollOwed.current = false;
+    row.scrollIntoView?.({ block: 'center' });
+    list.current
+      ?.querySelector<HTMLElement>(`[data-testid="kb-material-menu-${locatedId}"]`)
+      ?.focus({ preventScroll: true });
+  });
   const openFrom = (open: () => void) => (trigger: HTMLElement | null) => {
     opener.current = trigger;
     open();
@@ -1147,6 +1185,7 @@ export function MaterialLibraryPage({
         key={material.materialId}
         data-testid={`kb-material-${material.materialId}`}
         data-kb-row=""
+        data-located={material.materialId === locatedId ? 'true' : undefined}
         {...(!edit ? drag.rowProps('material', material.materialId) : {})}
         className={cn(
           layout.row,

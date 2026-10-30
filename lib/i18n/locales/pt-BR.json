@@ -2427,8 +2427,6 @@
       "cancelled": "Stopped"
     },
     "backToWorkspace": "Back to workspace",
-    "searchPlaceholder": "Filter by name",
-    "searchAria": "Search {{section}}",
     "searchEmpty": "No matches",
     "showMore": "Show {{count}} more",
     "showLess": "Show less",
@@ -2494,6 +2492,17 @@
     "nav": {
       "search": "Pesquisar",
       "myCourses": "Meus cursos"
+    },
+    "search": {
+      "placeholder": "Pesquisar conversas, cursos e materiais",
+      "recentChats": "Conversas recentes",
+      "recentCourses": "Cursos recentes",
+      "courses": "Cursos",
+      "materials": "Materiais",
+      "actions": "Ações rápidas",
+      "searching": "Pesquisando…",
+      "empty": "Nada corresponde a “{{query}}”",
+      "materialsFailed": "Não foi possível pesquisar na base de conhecimento"
     },
     "account": {
       "signIn": "Entrar",
