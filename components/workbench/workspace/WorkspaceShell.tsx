@@ -143,6 +143,7 @@ import { ResizeHandle } from './ResizeHandle';
 import { MaterialLibraryPage } from './MaterialLibraryPage';
 import { WorkspaceCoursesPage } from './WorkspaceCoursesPage';
 import { WorkspaceSearchPalette } from './WorkspaceSearchPalette';
+import { SettingsDialog } from '@/components/settings';
 import { isMacPlatform, isNewChatShortcut, isSearchShortcut } from '@/lib/workbench/shortcuts';
 import type { LibraryMaterial } from '@/lib/workbench/material-library-client';
 import { hostPageItems, useWorkbenchShellExtensions } from '@/lib/workbench/shell-extensions';
@@ -757,6 +758,12 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
 
   // ── Global search (⌘K / Ctrl K, or the rail's Search) ───────────────
   const [searchOpen, setSearchOpen] = useState(false);
+  /**
+   * The model/provider settings dialog — the same component the classic home
+   * opens from its header pill. The shell owns it: the account menu and the
+   * search's Settings action both open it.
+   */
+  const [settingsOpen, setSettingsOpen] = useState(false);
   useEffect(() => {
     const mac = isMacPlatform();
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1700,6 +1707,8 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     >
       {courses.importInput}
 
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+
       {/* Mounted only while open, so every opening starts from an empty query. */}
       {searchOpen ? (
         <WorkspaceSearchPalette
@@ -1713,6 +1722,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           onOpenMaterial={openMaterial}
           onNewSession={startNewConversation}
           onOpenView={openView}
+          onOpenSettings={() => setSettingsOpen(true)}
           coursesView={WORKSPACE_COURSES_VIEW}
           libraryView={WORKSPACE_LIBRARY_VIEW}
         />
@@ -1734,6 +1744,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           onSessionDeleted={handleSessionDeleted}
           onRenameSession={renameSession}
           onOpenSearch={() => setSearchOpen(true)}
+          onOpenSettings={() => setSettingsOpen(true)}
           activeView={render.view}
           onOpenView={openView}
           resizeHandle={

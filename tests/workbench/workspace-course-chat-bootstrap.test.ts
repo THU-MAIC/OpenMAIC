@@ -210,6 +210,8 @@ vi.mock('@/lib/workbench/owner-session-client', () => ({
 vi.mock('@/lib/generation-run-client/use-owner-runs', () => ({
   useOwnerRuns: () => mocks.ownerRuns,
 }));
+// The settings dialog (owned by the shell) has its own tests.
+vi.mock('@/components/settings', () => ({ SettingsDialog: () => null }));
 vi.mock('@/components/workbench/workspace/WorkspaceRail', () => ({
   WorkspaceRail: (props: Record<string, unknown>) => {
     mocks.railProps = props;

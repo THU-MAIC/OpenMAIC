@@ -2502,7 +2502,9 @@
       "actions": "إجراءات سريعة",
       "searching": "جارٍ البحث…",
       "empty": "لا توجد نتائج تطابق “{{query}}”",
-      "materialsFailed": "تعذّر البحث في قاعدة المعرفة"
+      "materialsFailed": "تعذّر البحث في قاعدة المعرفة",
+      "themeAction": "المظهر: {{name}}",
+      "languageAction": "اللغة: {{name}}"
     },
     "account": {
       "signIn": "تسجيل الدخول",

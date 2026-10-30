@@ -2487,7 +2487,9 @@
       "actions": "快捷操作",
       "searching": "正在搜尋…",
       "empty": "沒有與「{{query}}」相符的結果",
-      "materialsFailed": "知識庫搜尋失敗"
+      "materialsFailed": "知識庫搜尋失敗",
+      "themeAction": "主題：{{name}}",
+      "languageAction": "語言：{{name}}"
     },
     "account": {
       "signIn": "登入",

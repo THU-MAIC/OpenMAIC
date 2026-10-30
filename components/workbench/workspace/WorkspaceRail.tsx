@@ -59,7 +59,6 @@ import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useBrand } from '@/lib/brand/brand-context';
 import type { HomeDiscoveryState } from '@/lib/hooks/use-home-discovery';
-import { SettingsDialog } from '@/components/settings';
 import { cn } from '@/lib/utils/cn';
 import { relativeBucket, type ProHomeSessionItem } from '@/lib/workbench/pro-home-data';
 import {
@@ -110,6 +109,7 @@ export function WorkspaceRail({
   onSessionDeleted,
   onRenameSession,
   onOpenSearch,
+  onOpenSettings,
   activeView,
   onOpenView,
   resizeHandle,
@@ -139,6 +139,8 @@ export function WorkspaceRail({
   readonly onRenameSession: (sessionId: string, title: string) => Promise<string | null>;
   /** Open the global search palette (the shell owns it and its ⌘K). */
   readonly onOpenSearch: () => void;
+  /** Open the model/provider settings (the shell owns the dialog: the search opens it too). */
+  readonly onOpenSettings: () => void;
   /**
    * The main-area page on screen (`library`, `courses` or a host page id), or
    * null. Its destination row is marked current.
@@ -155,8 +157,6 @@ export function WorkspaceRail({
   // ── Row maintenance: rename in place, delete after a question ────────
   // Which row is currently an input: two rows cannot be renamed at once.
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
-  /** The model/provider settings dialog, opened from the account menu. */
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // "Search" opens the shell's global search palette (⌘K / Ctrl K), from the
   // expanded rail and the folded strip alike.
@@ -382,9 +382,8 @@ export function WorkspaceRail({
           data-testid="pro-rail-utilities-mini"
           className="flex shrink-0 flex-col items-center pb-3.5 pt-2"
         >
-          <WorkspaceAccountBlock mini onOpenSettings={() => setSettingsOpen(true)} />
+          <WorkspaceAccountBlock mini onOpenSettings={onOpenSettings} />
         </div>
-        <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       </nav>
     );
   }
@@ -561,20 +560,10 @@ export function WorkspaceRail({
         aria-label={t('workspace.utilitiesAria')}
         data-testid="pro-rail-utilities"
       >
-        <WorkspaceAccountBlock onOpenSettings={() => setSettingsOpen(true)} />
+        <WorkspaceAccountBlock onOpenSettings={onOpenSettings} />
       </div>
 
       {resizeHandle}
-
-      {/* The model/provider settings dialog — the same component the classic
-          home opens from its header pill. The rail owns the mount so the
-          trigger in the foot cluster stays one component away from its dialog. */}
-      <SettingsDialog
-        open={settingsOpen}
-        onOpenChange={(next) => {
-          setSettingsOpen(next);
-        }}
-      />
     </nav>
   );
 }

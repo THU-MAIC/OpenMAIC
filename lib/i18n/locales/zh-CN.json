@@ -2502,7 +2502,9 @@
       "actions": "快捷操作",
       "searching": "正在搜索…",
       "empty": "没有与“{{query}}”匹配的结果",
-      "materialsFailed": "知识库搜索失败"
+      "materialsFailed": "知识库搜索失败",
+      "themeAction": "主题：{{name}}",
+      "languageAction": "语言：{{name}}"
     },
     "account": {
       "signIn": "登录",

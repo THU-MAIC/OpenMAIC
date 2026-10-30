@@ -2502,7 +2502,9 @@
       "actions": "빠른 작업",
       "searching": "검색 중…",
       "empty": "“{{query}}”와(과) 일치하는 결과가 없습니다",
-      "materialsFailed": "지식 베이스를 검색하지 못했습니다"
+      "materialsFailed": "지식 베이스를 검색하지 못했습니다",
+      "themeAction": "테마: {{name}}",
+      "languageAction": "언어: {{name}}"
     },
     "account": {
       "signIn": "로그인",

@@ -11,13 +11,22 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { Images } from 'lucide-react';
+import {
+  WorkbenchShellExtensionsProvider,
+  type WorkbenchShellExtensions,
+} from '@/lib/workbench/shell-extensions';
 
+const setLocale = vi.fn();
+const setTheme = vi.fn();
 vi.mock('@/lib/hooks/use-i18n', () => ({
   useI18n: () => ({
     t: (key: string, options?: Record<string, unknown>) =>
       options ? `${key}:${JSON.stringify(options)}` : key,
+    setLocale,
   }),
 }));
+vi.mock('@/lib/hooks/use-theme', () => ({ useTheme: () => ({ theme: 'system', setTheme }) }));
 const fetchPage = vi.fn();
 import { isNewChatShortcut, isSearchShortcut, shortcutLabel } from '@/lib/workbench/shortcuts';
 
@@ -58,7 +67,7 @@ const idsIn = (group: string) =>
     (item) => item.dataset.testid,
   );
 
-async function renderPalette() {
+async function renderPalette(extensions?: WorkbenchShellExtensions) {
   const handlers = {
     onOpenChange: vi.fn(),
     onOpenSession: vi.fn(),
@@ -66,44 +75,48 @@ async function renderPalette() {
     onOpenMaterial: vi.fn(),
     onNewSession: vi.fn(),
     onOpenView: vi.fn(),
+    onOpenSettings: vi.fn(),
   };
   const container = document.createElement('div');
   document.body.append(container);
   const root = createRoot(container);
   roots.push(root);
   await act(async () => {
+    const element = createElement(palette.WorkspaceSearchPalette, {
+      open: true,
+      sessions: [
+        {
+          id: 's-old',
+          stageId: 'x',
+          prompt: 'Photosynthesis review',
+          status: 'succeeded',
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        {
+          id: 's-new',
+          stageId: 'y',
+          prompt: 'ignored',
+          title: 'Fractions warm-up',
+          status: 'succeeded',
+          createdAt: 2,
+          updatedAt: 5,
+        },
+      ],
+      courses: [
+        { id: 'c1', name: 'Fractions basics', folderId: 'f1', updatedAt: 3 },
+        { id: 'c2', name: 'Cell biology', updatedAt: 4 },
+        { id: 'c3', name: 'Decimals', folderId: 'f1', updatedAt: 2 },
+      ],
+      folders: [{ id: 'f1', name: 'Math' }],
+      coursesView: 'courses',
+      libraryView: 'library',
+      ...handlers,
+    });
     root.render(
-      createElement(palette.WorkspaceSearchPalette, {
-        open: true,
-        sessions: [
-          {
-            id: 's-old',
-            stageId: 'x',
-            prompt: 'Photosynthesis review',
-            status: 'succeeded',
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          {
-            id: 's-new',
-            stageId: 'y',
-            prompt: 'ignored',
-            title: 'Fractions warm-up',
-            status: 'succeeded',
-            createdAt: 2,
-            updatedAt: 5,
-          },
-        ],
-        courses: [
-          { id: 'c1', name: 'Fractions basics', folderId: 'f1', updatedAt: 3 },
-          { id: 'c2', name: 'Cell biology', updatedAt: 4 },
-          { id: 'c3', name: 'Decimals', folderId: 'f1', updatedAt: 2 },
-        ],
-        folders: [{ id: 'f1', name: 'Math' }],
-        coursesView: 'courses',
-        libraryView: 'library',
-        ...handlers,
-      }),
+      extensions
+        ? createElement(WorkbenchShellExtensionsProvider, { value: extensions }, element)
+        : element,
     );
   });
   return handlers;
@@ -249,5 +262,78 @@ describe('a query', () => {
     await press('ArrowDown');
     await press('Enter');
     expect(handlers.onOpenCourse).toHaveBeenCalledWith('c2');
+  });
+});
+
+describe('actions, found by name', () => {
+  const groupOrder = () =>
+    [...document.querySelectorAll<HTMLElement>('[data-testid^="workspace-search-group-"]')].map(
+      (group) => group.dataset.testid,
+    );
+
+  it('lead the results when the query names one, in Chinese or English', async () => {
+    fetchPage.mockResolvedValue({ materials: [] });
+    const handlers = await renderPalette();
+    await type('新建');
+    expect(groupOrder()[0]).toBe('workspace-search-group-actions');
+    expect(idsIn('workspace-search-group-actions')).toEqual(['workspace-search-action-new-chat']);
+    expect(byTestId('workspace-search-action-new-chat-shortcut')?.textContent).toBe(
+      shortcutLabel('newChat', false).label,
+    );
+    await type('new');
+    expect(idsIn('workspace-search-group-actions')).toContain('workspace-search-action-new-chat');
+    await act(async () => byTestId('workspace-search-action-new-chat')!.click());
+    expect(handlers.onNewSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('cover the pages, settings, theme and language', async () => {
+    fetchPage.mockResolvedValue({ materials: [] });
+    const handlers = await renderPalette();
+    await type('knowledge');
+    expect(idsIn('workspace-search-group-actions')).toEqual(['workspace-search-action-library']);
+    await type('课程');
+    expect(idsIn('workspace-search-group-actions')).toEqual(['workspace-search-action-my-courses']);
+    await type('设置');
+    await act(async () => byTestId('workspace-search-action-settings')!.click());
+    expect(handlers.onOpenSettings).toHaveBeenCalledTimes(1);
+    await type('theme');
+    expect(idsIn('workspace-search-group-actions')).toEqual([
+      'workspace-search-action-theme-light',
+      'workspace-search-action-theme-dark',
+      'workspace-search-action-theme-system',
+    ]);
+    await type('深色');
+    await act(async () => byTestId('workspace-search-action-theme-dark')!.click());
+    expect(setTheme).toHaveBeenCalledWith('dark');
+    await type('English');
+    await act(async () => byTestId('workspace-search-action-language-en-US')!.click());
+    expect(setLocale).toHaveBeenCalledWith('en-US');
+    await type('语言');
+    expect(idsIn('workspace-search-group-actions').length).toBeGreaterThan(1);
+  });
+
+  it('include the host’s pages', async () => {
+    fetchPage.mockResolvedValue({ materials: [] });
+    const handlers = await renderPalette({
+      navItems: [{ id: 'gallery', label: 'Gallery', icon: Images, render: () => null }],
+    });
+    await type('gall');
+    await act(async () => byTestId('workspace-search-action-host-gallery')!.click());
+    expect(handlers.onOpenView).toHaveBeenCalledWith('gallery');
+  });
+
+  it('follow the recent work when nothing is typed', async () => {
+    await renderPalette();
+    expect(groupOrder()).toEqual([
+      'workspace-search-group-chats',
+      'workspace-search-group-courses',
+      'workspace-search-group-actions',
+    ]);
+    expect(idsIn('workspace-search-group-actions')).toEqual([
+      'workspace-search-action-new-chat',
+      'workspace-search-action-my-courses',
+      'workspace-search-action-library',
+      'workspace-search-action-settings',
+    ]);
   });
 });

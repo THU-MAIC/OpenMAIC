@@ -2502,7 +2502,9 @@
       "actions": "Quick actions",
       "searching": "Searching…",
       "empty": "Nothing matches “{{query}}”",
-      "materialsFailed": "Couldn't search the knowledge base"
+      "materialsFailed": "Couldn't search the knowledge base",
+      "themeAction": "Theme: {{name}}",
+      "languageAction": "Language: {{name}}"
     },
     "account": {
       "signIn": "Sign in",

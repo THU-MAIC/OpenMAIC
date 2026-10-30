@@ -2502,7 +2502,9 @@
       "actions": "Ações rápidas",
       "searching": "Pesquisando…",
       "empty": "Nada corresponde a “{{query}}”",
-      "materialsFailed": "Não foi possível pesquisar na base de conhecimento"
+      "materialsFailed": "Não foi possível pesquisar na base de conhecimento",
+      "themeAction": "Tema: {{name}}",
+      "languageAction": "Idioma: {{name}}"
     },
     "account": {
       "signIn": "Entrar",

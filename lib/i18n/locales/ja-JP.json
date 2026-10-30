@@ -2502,7 +2502,9 @@
       "actions": "クイック操作",
       "searching": "検索中…",
       "empty": "「{{query}}」に一致する結果はありません",
-      "materialsFailed": "ナレッジベースを検索できませんでした"
+      "materialsFailed": "ナレッジベースを検索できませんでした",
+      "themeAction": "テーマ：{{name}}",
+      "languageAction": "言語：{{name}}"
     },
     "account": {
       "signIn": "ログイン",

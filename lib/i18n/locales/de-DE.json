@@ -2502,7 +2502,9 @@
       "actions": "Schnellaktionen",
       "searching": "Suche läuft…",
       "empty": "Keine Treffer für „{{query}}“",
-      "materialsFailed": "Die Wissensdatenbank konnte nicht durchsucht werden"
+      "materialsFailed": "Die Wissensdatenbank konnte nicht durchsucht werden",
+      "themeAction": "Design: {{name}}",
+      "languageAction": "Sprache: {{name}}"
     },
     "account": {
       "signIn": "Anmelden",

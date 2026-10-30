@@ -92,6 +92,7 @@ async function renderRail({
     onSessionDeleted: vi.fn(),
     onRenameSession: vi.fn(async () => null),
     onOpenSearch,
+    onOpenSettings: vi.fn(),
     activeView,
     onOpenView,
     resizeHandle: null as ReactNode,

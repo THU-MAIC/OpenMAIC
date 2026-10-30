@@ -2502,7 +2502,9 @@
       "actions": "Thao tác nhanh",
       "searching": "Đang tìm…",
       "empty": "Không có kết quả khớp với “{{query}}”",
-      "materialsFailed": "Không thể tìm trong kho kiến thức"
+      "materialsFailed": "Không thể tìm trong kho kiến thức",
+      "themeAction": "Giao diện: {{name}}",
+      "languageAction": "Ngôn ngữ: {{name}}"
     },
     "account": {
       "signIn": "Đăng nhập",

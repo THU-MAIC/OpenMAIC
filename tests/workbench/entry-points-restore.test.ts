@@ -192,9 +192,7 @@ describe('entry point 3 — the settings entry in the rail’s account menu', ()
 
   it('mounts the account block, whose menu carries settings, in the expanded foot', () => {
     const foot = rail.slice(rail.indexOf('data-testid="pro-rail-utilities"'));
-    expect(foot).toContain(
-      '<WorkspaceAccountBlock onOpenSettings={() => setSettingsOpen(true)} />',
-    );
+    expect(foot).toContain('<WorkspaceAccountBlock onOpenSettings={onOpenSettings} />');
     expect(account).toContain('data-testid="workspace-account-settings"');
     expect(account).toContain('onSelect={onOpenSettings}');
   });
@@ -204,15 +202,16 @@ describe('entry point 3 — the settings entry in the rail’s account menu', ()
       rail.indexOf('pro-rail-utilities-mini'),
       rail.indexOf('renderCourseRow'),
     );
-    expect(mini).toContain(
-      '<WorkspaceAccountBlock mini onOpenSettings={() => setSettingsOpen(true)} />',
-    );
+    expect(mini).toContain('<WorkspaceAccountBlock mini onOpenSettings={onOpenSettings} />');
   });
 
-  it('opens the model/provider dialog, mounted by the rail itself', () => {
-    expect(rail).toContain("import { SettingsDialog } from '@/components/settings'");
-    expect(rail).toContain('<SettingsDialog');
-    expect(rail).toContain('open={settingsOpen}');
+  it('opens the model/provider dialog, mounted by the shell for the rail and the search', () => {
+    const shell = read('components/workbench/workspace/WorkspaceShell.tsx');
+    expect(shell).toContain("import { SettingsDialog } from '@/components/settings'");
+    expect(shell).toContain(
+      '<SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />',
+    );
+    expect(shell).toContain('onOpenSettings={() => setSettingsOpen(true)}');
   });
 
   it('sits with the language and theme controls in the menu', () => {
