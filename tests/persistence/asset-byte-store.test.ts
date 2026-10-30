@@ -75,19 +75,22 @@ describe('lazyAssetByteStore transactional capability', () => {
     });
 
     const id = await store.put(PRINCIPAL, blob('routed bytes'));
-    // The write transaction's statements: the lock-wait budget, the blob-row
-    // claim, the byte write via the forwarded writeWith (an UPDATE on the
-    // transaction-pinned queryable, not an INSERT issued from the byte store's
-    // own connection), then the entry. This is the shape that used to be an
+    // The write transaction's statements: the lock-wait budget, the savepoint
+    // the write body runs under, the blob-row claim, the byte write via the
+    // forwarded writeWith (an UPDATE on the transaction-pinned queryable, not
+    // an INSERT issued from the byte store's own connection), the entry, and
+    // the savepoint's release. This is the shape that used to be an
     // INSERT-on-a-second-connection (the deadlock) before the wrapper
     // forwarded writeWith.
     expect(statements.map((sql) => sql.split(' ')[0])).toEqual([
       'SET',
+      'SAVEPOINT',
       'INSERT',
       'UPDATE',
       'INSERT',
+      'RELEASE',
     ]);
-    expect(statements[2]).toContain('UPDATE asset_blobs');
+    expect(statements[3]).toContain('UPDATE asset_blobs');
 
     statements.length = 0;
     const asset = await store.resolve(PRINCIPAL, id);
