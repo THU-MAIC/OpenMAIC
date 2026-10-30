@@ -53,6 +53,8 @@ import { insertSkillHandle, seedSlashQuery } from '@/lib/workbench/composer-skil
 import { resolveComposerMenu } from '@/lib/workbench/composer-menus';
 import { useSkillHandleBackspace } from '@/components/workbench/use-skill-handle-backspace';
 import { ComposerTextarea } from '@/components/workbench/composer-input';
+import { useInlineMentions } from '@/components/workbench/use-inline-mentions';
+import { stripMentions, type InlineMention } from '@/lib/workbench/composer-mentions';
 import { ComposerPillRow } from '@/components/workbench/composer-pill';
 import { CourseMentionMenu } from '@/components/workbench/course-mention-menu';
 import { stagedMaterialOf } from '@/lib/workbench/material-mention';
@@ -144,6 +146,10 @@ export function ProLaunchPanel({
   // Durable materials (upload first, referenced at session creation) and
   // the `/` skill menu.
   const materials = useComposerMaterials();
+  // Read by the mention hook's drop handler, which is declared before it is.
+  useEffect(() => {
+    materialsRef.current = materials;
+  });
   /**
    * Where the caret goes after a skill handle is written into the draft — the
    * same one-shot DOM instruction the conversation composer uses.
@@ -176,6 +182,20 @@ export function ProLaunchPanel({
    * refs are sent with session creation.
    */
   const [courseRefs, setCourseRefs] = useState<readonly CourseRef[]>([]);
+  /**
+   * The `@` picks, written into the draft as inline mentions; taking one out of
+   * the text takes its reference with it.
+   */
+  const materialsRef = useRef<{ remove: (id: string) => void } | null>(null);
+  const inlineMentions = useInlineMentions(
+    useCallback((dropped: InlineMention) => {
+      if (dropped.kind === 'course') {
+        setCourseRefs((current) => removeCourseRef(current, dropped.id));
+      } else {
+        materialsRef.current?.remove(dropped.id);
+      }
+    }, []),
+  );
   const [mentionOpen, setMentionOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState('');
   // One popover at a time, one rule for both composers. The `@` menu's two
@@ -218,16 +238,25 @@ export function ProLaunchPanel({
    * caret goes back to the gap the token left. Same rule as
    * `WorkbenchChat.finishMentionPick`.
    */
-  const finishMentionPick = () => {
+  const finishMentionPick = (pick?: Parameters<typeof inlineMentions.add>[3]) => {
     const removal = !mentionOpen && mention ? replaceCourseMention(prompt, mention) : null;
-    if (removal) {
-      pendingCaret.current = removal.caret;
-      setCaret(removal.caret);
-      setPrompt(removal.draft);
+    let next = removal?.draft ?? prompt;
+    let nextCaret = removal?.caret ?? textareaRef.current?.selectionStart ?? prompt.length;
+    // The pick goes into the sentence where the `@` was, as an inline mention.
+    const written = pick ? inlineMentions.add(next, nextCaret, nextCaret, pick) : null;
+    if (written) {
+      next = written.draft;
+      nextCaret = written.caret;
     }
-    setMentionDismissed(mentionOpen ? prompt : null);
+    if (next !== prompt) {
+      pendingCaret.current = nextCaret;
+      setCaret(nextCaret);
+      setPrompt(next);
+    }
+    // The mention just written must not reopen the menu it came from.
+    setMentionDismissed(next);
     setMentionOpen(false);
-    setSlashDismissed(removal?.draft ?? prompt);
+    setSlashDismissed(next);
     textareaRef.current?.focus();
   };
   // No conversation yet: nothing is attached, so no row is marked as such.
@@ -254,9 +283,14 @@ export function ProLaunchPanel({
           }),
     [courseOptions, courseRefs, mentionQuery, mentionMenuOpen, untitledCourse],
   );
+  // A reference written in the text as a mention needs no pill as well.
+  const pillCourseRefs = courseRefs.filter((ref) => !inlineMentions.has('course', ref.stageId));
+  const pillMaterials = materials.materials.filter(
+    (item) => !inlineMentions.has('material', item.materialId),
+  );
   const hasComposerExtras =
-    courseRefs.length > 0 ||
-    materials.materials.length > 0 ||
+    pillCourseRefs.length > 0 ||
+    pillMaterials.length > 0 ||
     materials.uploading.length > 0 ||
     materials.failed.length > 0;
 
@@ -267,14 +301,11 @@ export function ProLaunchPanel({
    */
   const { skills } = useAgentSkills();
   const installedSkillNames = useMemo(() => skills.map((skill) => skill.name), [skills]);
-  const onSkillHandleBackspace = useSkillHandleBackspace(
-    setPrompt,
-    (next) => {
-      pendingCaret.current = next;
-      setCaret(next);
-    },
-    installedSkillNames,
-  );
+  const moveCaret = useCallback((next: number) => {
+    pendingCaret.current = next;
+    setCaret(next);
+  }, []);
+  const onSkillHandleBackspace = useSkillHandleBackspace(setPrompt, moveCaret, installedSkillNames);
   const loadSkill = useCallback((picked: AgentSkillInfo) => {
     // The live selection: the element is the freshest answer either way.
     const at = textareaRef.current?.selectionStart ?? null;
@@ -327,6 +358,7 @@ export function ProLaunchPanel({
     setSubmitting(false);
     replacePrompt('');
     setCourseRefs([]);
+    inlineMentions.reset();
     setMentionOpen(false);
     setMentionDismissed(null);
     // Both dismissal memories go with the draft they named.
@@ -350,11 +382,13 @@ export function ProLaunchPanel({
     onConsumed: onMaterialSeedConsumed,
   });
 
+  // What is sent: the draft without its `@` mentions, which go as references.
+  const sentText = stripMentions(prompt, inlineMentions.mentions);
   const canSend =
-    !!prompt.trim() && !submitting && !materials.busy && !awaitingMaterial && openMenu === null;
+    !!sentText && !submitting && !materials.busy && !awaitingMaterial && openMenu === null;
 
   async function submit() {
-    const text = prompt.trim();
+    const text = sentText;
     if (!text || submitting || materials.busy || awaitingMaterial) return;
     setMentionOpen(false);
     setSubmitting(true);
@@ -435,15 +469,21 @@ export function ProLaunchPanel({
             onClose={closeMention}
             onPick={(candidate) => {
               const ref = makeCourseRef(candidate.stageId, candidate.title);
-              if (ref) setCourseRefs((current) => addCourseRef(current, ref));
-              finishMentionPick();
+              if (!ref) return finishMentionPick();
+              setCourseRefs((current) => addCourseRef(current, ref));
+              finishMentionPick({ kind: 'course', id: ref.stageId, name: ref.title });
             }}
             // A knowledge-base pick stages one more pill, attached when the
             // conversation starts -- the same rule as the conversation composer.
             materials={materialMentions}
             onPickMaterial={(candidate) => {
-              materials.addExisting(stagedMaterialOf(candidate));
-              finishMentionPick();
+              const staged = stagedMaterialOf(candidate);
+              const outcome = materials.addExisting(staged);
+              finishMentionPick(
+                outcome === 'staged' || outcome === 'already'
+                  ? { kind: 'material', id: staged.materialId, name: staged.name }
+                  : undefined,
+              );
             }}
           />
         ) : null}
@@ -451,7 +491,7 @@ export function ProLaunchPanel({
           <ComposerPillRow className="px-3 pb-0 pt-2">
             <MaterialChips
               inline
-              materials={materials.materials}
+              materials={pillMaterials}
               uploading={materials.uploading}
               failed={materials.failed}
               onRemove={materials.remove}
@@ -459,7 +499,7 @@ export function ProLaunchPanel({
             />
             <CourseRefPills
               inline
-              refs={courseRefs}
+              refs={pillCourseRefs}
               onRemove={(stageId) => setCourseRefs((current) => removeCourseRef(current, stageId))}
             />
           </ComposerPillRow>
@@ -476,7 +516,11 @@ export function ProLaunchPanel({
           value={prompt}
           readOnly={submitting}
           onCaretChange={setCaret}
-          onChange={(e) => setPrompt(e.target.value)}
+          mentionLabels={inlineMentions.labels}
+          onChange={(e) => {
+            setPrompt(e.target.value);
+            inlineMentions.afterEdit(e.target.value);
+          }}
           onPaste={(event) => {
             if (submitting || !materials.enabled) return;
             const images = composerImagesFromClipboard(event.clipboardData);
@@ -487,6 +531,7 @@ export function ProLaunchPanel({
           onKeyDown={(e) => {
             if (submitting) return;
             if (onSkillHandleBackspace(e)) return;
+            if (inlineMentions.backspace(e, setPrompt, moveCaret)) return;
             if (openMenu === 'skill') return; // a slash query is menu navigation, not a submit
             if (mentionMenuOpen) return; // …and so does the `@` course menu
             if (!shouldSendComposerKey(e)) return;

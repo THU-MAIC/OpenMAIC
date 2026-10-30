@@ -868,6 +868,9 @@ describe('a request still on its way when the teacher switches conversation', ()
     expect(stopButton()).not.toBeNull();
   }
 
+  /** B's draft once its document is picked: the pick is written in as a mention. */
+  const B_DRAFT = 'Typing in B @b-notes.pdf ';
+
   /** In B: type a draft and attach a document the library already holds. */
   async function draftInB() {
     expect(stopButton()).toBeNull();
@@ -910,7 +913,7 @@ describe('a request still on its way when the teacher switches conversation', ()
     expect(mocks.requestFullFetch).toHaveBeenCalled();
     expect(attachedTo('session-A')).toBe(false);
     expect(mocks.store.sessionId).toBe('session-B');
-    expect(textarea().value).toBe('Typing in B');
+    expect(textarea().value).toBe(B_DRAFT);
     expect(container!.textContent).toContain('b-notes.pdf');
     await sendInB();
   });
@@ -927,7 +930,7 @@ describe('a request still on its way when the teacher switches conversation', ()
     await act(async () => sendingA.resolve(started('session-A')));
     await followPanes();
     expect(attachedTo('session-A')).toBe(false);
-    expect(textarea().value).toBe('Typing in B');
+    expect(textarea().value).toBe(B_DRAFT);
     expect(container!.textContent).toContain('b-notes.pdf');
     await sendInB();
   });
@@ -942,7 +945,7 @@ describe('a request still on its way when the teacher switches conversation', ()
     await followPanes();
     expect(mocks.toastError).toHaveBeenCalledWith('send A failed');
     expect(attachedTo('session-A')).toBe(false);
-    expect(textarea().value).toBe('Typing in B');
+    expect(textarea().value).toBe(B_DRAFT);
     expect(container!.textContent).toContain('b-notes.pdf');
     expect(container!.textContent).not.toContain('a-notes.pdf');
     await sendInB();
@@ -1063,7 +1066,7 @@ describe('a request still on its way when the teacher switches conversation', ()
     await act(async () => uploads.get('a-upload.pdf')!.resolve(material('A-up', 'a-upload.pdf')));
     expect(container!.textContent).not.toContain('a-upload.pdf');
     expect(container!.textContent).toContain('b-notes.pdf');
-    expect(textarea().value).toBe('Typing in B');
+    expect(textarea().value).toBe(B_DRAFT);
     await sendInB();
   });
   describe('a new chat asked for on the draft whose first message is on its way', () => {

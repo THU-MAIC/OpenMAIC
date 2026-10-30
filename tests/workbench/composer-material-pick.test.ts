@@ -161,14 +161,16 @@ async function mount(mode: Mode, hasCourses = true): Promise<HTMLElement> {
   return container;
 }
 
+/** Type at the end of what the box holds (a picked `@mention` stays in it). */
 async function type(container: HTMLElement, text: string) {
   const textarea = container.querySelector('textarea')!;
   await act(async () => {
+    const next = textarea.value + text;
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(
       textarea,
-      text,
+      next,
     );
-    textarea.setSelectionRange(text.length, text.length);
+    textarea.setSelectionRange(next.length, next.length);
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }
@@ -212,9 +214,14 @@ describe.each(['launch', 'new', 'follow'] as const)('the %s composer', (mode) =>
     );
     expect(posts).toEqual([]);
     expect(container.querySelector('[data-testid="workbench-course-menu"]')).toBeNull();
-    expect(container.querySelector('textarea')!.value).toBe('Keep @literal');
+    // The pick is written into the sentence at the caret, as an inline mention;
+    // the literal `@` the teacher typed is left alone.
+    expect(container.querySelector('textarea')!.value).toBe('Keep @literal @document.pdf ');
     expect(document.activeElement).toBe(container.querySelector('textarea'));
-    expect(container.textContent).toContain('document.pdf');
+    expect(
+      container.querySelector('[data-pill="mention"]')?.textContent,
+      'drawn as a mention',
+    ).toBe('@document.pdf');
   });
 
   it('closes toolbar search with Escape and resets it when reopened', async () => {
@@ -260,6 +267,60 @@ describe.each(['launch', 'new', 'follow'] as const)('the %s composer', (mode) =>
       mode === 'launch' ? post.url === '/api/agent/sessions' : post.url.endsWith('/messages'),
     );
     expect(sent?.body.materialIds).toEqual(['src-doc']);
+  });
+});
+
+describe.each(['launch', 'follow'] as const)('an inline mention in the %s composer', (mode) => {
+  it('is taken whole by Backspace, and its material with it', async () => {
+    const container = await mount(mode);
+    await type(container, 'Teach @doc');
+    await wait(230);
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="workbench-material-option-src-doc"]')!
+        .click(),
+    );
+    const textarea = container.querySelector('textarea')!;
+    expect(textarea.value).toBe('Teach @document.pdf ');
+    // Written in the text, so not a pill above it as well.
+    expect(container.querySelector('[data-testid="workbench-materials"]')).toBeNull();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    await act(async () => {
+      textarea.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }),
+      );
+    });
+    expect(textarea.value).toBe('Teach ');
+    await type(container, 'this');
+    const send = container.querySelector<HTMLButtonElement>(
+      `[data-testid="${mode === 'launch' ? 'pro-launch-start' : 'workbench-send'}"]`,
+    );
+    await act(async () => send!.click());
+    const sent = posts.find((post) =>
+      mode === 'launch' ? post.url === '/api/agent/sessions' : post.url.endsWith('/messages'),
+    );
+    expect(sent?.body.materialIds ?? []).toEqual([]);
+  });
+
+  it('sends the same text and references as a pill did', async () => {
+    const container = await mount(mode);
+    await type(container, 'Teach @doc');
+    await wait(230);
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="workbench-material-option-src-doc"]')!
+        .click(),
+    );
+    await type(container, 'to the class');
+    const send = container.querySelector<HTMLButtonElement>(
+      `[data-testid="${mode === 'launch' ? 'pro-launch-start' : 'workbench-send'}"]`,
+    );
+    await act(async () => send!.click());
+    const sent = posts.find((post) =>
+      mode === 'launch' ? post.url === '/api/agent/sessions' : post.url.endsWith('/messages'),
+    );
+    expect(sent?.body.materialIds).toEqual(['src-doc']);
+    expect(sent?.body[mode === 'launch' ? 'prompt' : 'text']).toBe('Teach to the class');
   });
 });
 

@@ -55,6 +55,7 @@ import {
 import { cn } from '@/lib/utils/cn';
 import { useAgentSkills } from '@/lib/workbench/agent-skills';
 import { segmentSkillHandles } from '@/lib/workbench/composer-skills';
+import { segmentMentions } from '@/lib/workbench/composer-mentions';
 
 /**
  * The pill itself: A SOFT HIGHLIGHT IN A TEXT FLOW, not a chip.
@@ -94,6 +95,14 @@ export const SKILL_PILL_CLASS = cn(
 const MIRROR_CLASS =
   'pointer-events-none absolute inset-0 z-0 select-none overflow-hidden whitespace-pre-wrap break-words text-transparent';
 
+const NO_LABELS: readonly string[] = [];
+
+/** A run of the mirror's text, and which highlight it carries. */
+interface MirrorRun {
+  readonly text: string;
+  readonly pill: 'skill' | 'mention' | null;
+}
+
 export type ComposerTextareaProps = Omit<
   ComponentPropsWithoutRef<'textarea'>,
   'value' | 'children' | 'ref'
@@ -113,6 +122,12 @@ export type ComposerTextareaProps = Omit<
   readonly onCaretChange?: (caret: number) => void;
   readonly className?: string;
   readonly mirrorTestId?: string;
+  /**
+   * The `@` mentions the draft holds (`lib/workbench/composer-mentions`): drawn
+   * with the skill handle's own highlight, so a named course or material reads
+   * as one token in the sentence.
+   */
+  readonly mentionLabels?: readonly string[];
 };
 
 export function ComposerTextarea({
@@ -121,6 +136,7 @@ export function ComposerTextarea({
   onCaretChange,
   className,
   mirrorTestId,
+  mentionLabels = NO_LABELS,
   onScroll,
   onChange,
   onSelect,
@@ -142,8 +158,16 @@ export function ComposerTextarea({
   const { skills } = useAgentSkills();
   const installedNames = useMemo(() => skills.map((skill) => skill.name), [skills]);
   const segments = useMemo(
-    () => segmentSkillHandles(value, installedNames),
-    [value, installedNames],
+    () =>
+      segmentSkillHandles(value, installedNames).flatMap((segment): readonly MirrorRun[] =>
+        segment.skill
+          ? [{ text: segment.text, pill: 'skill' as const }]
+          : segmentMentions(segment.text, mentionLabels).map((run) => ({
+              text: run.text,
+              pill: run.mention ? ('mention' as const) : null,
+            })),
+      ),
+    [value, installedNames, mentionLabels],
   );
 
   const syncToInput = useCallback(() => {
@@ -204,8 +228,8 @@ export function ComposerTextarea({
         }}
       >
         {segments.map((segment, index) =>
-          segment.skill ? (
-            <span key={index} className={SKILL_PILL_CLASS}>
+          segment.pill ? (
+            <span key={index} data-pill={segment.pill} className={SKILL_PILL_CLASS}>
               {segment.text}
             </span>
           ) : (
