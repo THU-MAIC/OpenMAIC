@@ -19,11 +19,7 @@ import type { LegacySpeechAction, SpeechAction } from '@/lib/types/action';
 import type { GeneratedAgentConfig, Scene } from '@/lib/types/stage';
 import { adapterOptions } from '@/lib/server/model-config/adapter-options';
 import { serverMediaConnection, type MediaConnection } from '@/lib/server/model-config/media';
-import {
-  isServerProviderDisabled,
-  resolveTTSModel,
-  slotTTSModel,
-} from '@/lib/server/provider-config';
+import { resolveTTSModel, slotTTSModel } from '@/lib/server/provider-config';
 import { persistClassroomMediaBytes } from '@/lib/server/classroom-media-bytes';
 
 export interface SceneTtsFailure {
@@ -302,8 +298,8 @@ export function hasConfiguredTtsCapability(
     return true;
   }
   const connection =
-    'providerId' in depsOrConnection || depsOrConnection === 'off'
-      ? (depsOrConnection as MediaConnection | 'off' | null)
+    'providerId' in depsOrConnection
+      ? (depsOrConnection as MediaConnection)
       : depsOrConnection.ttsConnection;
   if (
     !connection ||
@@ -313,7 +309,6 @@ export function hasConfiguredTtsCapability(
     return false;
   }
   const providerId = connection.providerId as TTSProviderId;
-  if (isServerProviderDisabled('tts', providerId)) return false;
   const provider = TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS];
   if (provider?.requiresApiKey && !connection.apiKey) return false;
   return true;
