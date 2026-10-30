@@ -1875,6 +1875,20 @@ describe('DSL course-tool wiring', () => {
     store,
     stageAccess: async () => OWNED,
     onCheckpoint: () => undefined,
+    ttsConnection: {
+      providerId: 'qwen-tts',
+      apiKey: 'test-key',
+      managed: true,
+      userEndpoint: false,
+      origin: 'configuration' as const,
+    },
+    imageConnection: {
+      providerId: 'seedream',
+      apiKey: 'test-key',
+      managed: true,
+      userEndpoint: false,
+      origin: 'configuration' as const,
+    },
   });
 
   it('registers generation and DSL tools while excluding legacy editors', () => {
@@ -1901,8 +1915,10 @@ describe('DSL course-tool wiring', () => {
       'edit_deck',
     ]) {
       expect(names).toContain(name);
-      expect(buildCourseAllowlist()).toContain(name);
+      expect(buildCourseAllowlist(deps(current.store))).toContain(name);
     }
+    expect(buildCourseAllowlist()).not.toContain('generate_image');
+    expect(buildCourseAllowlist()).not.toContain('generate_tts');
     for (const name of [
       'read_scene',
       'edit_slide',

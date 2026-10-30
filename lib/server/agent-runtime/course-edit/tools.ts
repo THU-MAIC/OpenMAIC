@@ -4,11 +4,6 @@ import type { AgentTool } from '@earendil-works/pi-agent-core';
 
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
 import type { Scene } from '@/lib/types/stage';
-import { TTS_PROVIDERS } from '@/lib/audio/constants';
-import type { TTSProviderId } from '@/lib/audio/types';
-import { BROWSER_NATIVE_TTS_PROVIDER_ID } from '@/lib/audio/provider-enablement';
-import { isServerProviderDisabled } from '@/lib/server/provider-config';
-import type { MediaConnection } from '@/lib/server/model-config/media';
 import { matchOutlineEntries } from '../course-outline-union';
 import { putSceneBringingCurrent } from '../document-writes';
 import { createBlankScene } from './apply';
@@ -17,6 +12,7 @@ import { COURSE_STAGE_ID_DESCRIPTION } from '../course-stage';
 import {
   describeNarrationVoice,
   formatTtsFailureTally,
+  hasConfiguredTtsCapability,
   synthesizeSceneNarration,
 } from '../scene-tts';
 import { runStageMutation } from '../mutation-fence';
@@ -104,7 +100,7 @@ export function renumberCourseOrders(
   return { scenes: numbered, outline: { ...outline, outlines } };
 }
 
-export function buildCourseAudioAndDeckTools(deps: CourseToolDeps): AgentTool<never, never>[] {
+export function buildGenerateTtsTool(deps: CourseToolDeps): AgentTool<never, never> {
   const generateTts: AgentTool<typeof GenerateTtsParams> = {
     name: 'generate_tts',
     label: 'Generate narration audio',
@@ -166,6 +162,10 @@ export function buildCourseAudioAndDeckTools(deps: CourseToolDeps): AgentTool<ne
     },
   };
 
+  return generateTts as unknown as AgentTool<never, never>;
+}
+
+export function buildEditDeckTool(deps: CourseToolDeps): AgentTool<never, never> {
   const editDeck: AgentTool<typeof DeckParams> = {
     name: 'edit_deck',
     label: 'Edit course pages',
@@ -267,24 +267,15 @@ export function buildCourseAudioAndDeckTools(deps: CourseToolDeps): AgentTool<ne
     },
   };
 
-  return [generateTts, editDeck] as unknown as AgentTool<never, never>[];
+  return editDeck as unknown as AgentTool<never, never>;
 }
 
-export const COURSE_AUDIO_DECK_TOOL_NAMES = ['generate_tts', 'edit_deck'] as const;
-
-/**
- * Capability gate for narration audio synthesis (generate_tts).
- * Resolves true only when the run owner's TTS connection names an enabled,
- * non-browser-native provider supported by the server and with an API key if required.
- */
-export function hasConfiguredTtsCapability(connection?: MediaConnection | 'off' | null): boolean {
-  if (!connection || connection === 'off') return false;
-  if (connection.providerId === BROWSER_NATIVE_TTS_PROVIDER_ID) return false;
-  const providerId = connection.providerId as TTSProviderId;
-  if (isServerProviderDisabled('tts', providerId)) return false;
-  const provider = TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS];
-  if (provider?.requiresApiKey && !connection.apiKey) return false;
-  return true;
+export function buildCourseAudioAndDeckTools(deps: CourseToolDeps): AgentTool<never, never>[] {
+  return [buildGenerateTtsTool(deps), buildEditDeckTool(deps)];
 }
 
-export const hasConfiguredTtsGeneration = hasConfiguredTtsCapability;
+export const GENERATE_TTS_TOOL_NAME = 'generate_tts';
+export const EDIT_DECK_TOOL_NAME = 'edit_deck';
+export const COURSE_AUDIO_DECK_TOOL_NAMES = [GENERATE_TTS_TOOL_NAME, EDIT_DECK_TOOL_NAME] as const;
+
+export { hasConfiguredTtsCapability };

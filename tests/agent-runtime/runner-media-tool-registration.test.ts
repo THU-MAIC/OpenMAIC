@@ -6,7 +6,7 @@
  * - generate_image is registered only when the owner's image connection resolves to a usable provider;
  * - unavailable tools are omitted from both options.tools and options.allowedToolNames;
  * - list_voices and set_roster remain registered regardless of TTS provider availability;
- * - the system prompt includes the discipline instruction to use only registered tools.
+ * - prompt instructions for generate_tts and generate_image appear only when registered.
  */
 import type { AgentEvent, AgentMessage } from '@earendil-works/pi-agent-core';
 import { InMemorySessionRepo, Session } from '@earendil-works/pi-agent-core';
@@ -15,13 +15,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { runSession } from '@/lib/server/agent-runtime/runner';
 import {
-  hasConfiguredTtsCapability,
-  hasConfiguredTtsGeneration,
-} from '@/lib/server/agent-runtime/course-edit/tools';
-import {
-  hasConfiguredImageCapability,
-  hasConfiguredImageGeneration,
-} from '@/lib/server/agent-runtime/generate-image';
+  buildCourseAllowlist,
+  buildDslCourseToolset,
+  dslToolsPrompt,
+  DSL_TOOLS_PROMPT,
+} from '@/lib/server/agent-runtime/course-tools';
+import { hasConfiguredTtsCapability } from '@/lib/server/agent-runtime/course-edit/tools';
+import { hasConfiguredImageCapability } from '@/lib/server/agent-runtime/generate-image';
 
 const mocks = vi.hoisted(() => ({
   randomUUID: vi.fn(() => 'runner-test-uuid'),
@@ -262,8 +262,10 @@ describe('runner media tool capability registration', () => {
     expect(toolNames).toContain('edit_deck');
     expect(toolNames).toContain('ask_user');
 
-    // Runner prompt carries the discipline instruction
-    expect(options.systemPrompt).toContain(
+    // Runner prompt omits instructions for unavailable media tools
+    expect(options.systemPrompt).not.toContain('generate_tts');
+    expect(options.systemPrompt).not.toContain('generate_image');
+    expect(options.systemPrompt).not.toContain(
       'Use only registered tools and skip unavailable steps such as narration or image generation.',
     );
   });
@@ -288,7 +290,9 @@ describe('runner media tool capability registration', () => {
     expect(toolNames).toContain('set_roster');
     expect(toolNames).toContain('edit_deck');
 
-    expect(options.systemPrompt).toContain(
+    expect(options.systemPrompt).toContain('generate_tts');
+    expect(options.systemPrompt).not.toContain('generate_image');
+    expect(options.systemPrompt).not.toContain(
       'Use only registered tools and skip unavailable steps such as narration or image generation.',
     );
   });
@@ -313,7 +317,9 @@ describe('runner media tool capability registration', () => {
     expect(toolNames).toContain('set_roster');
     expect(toolNames).toContain('edit_deck');
 
-    expect(options.systemPrompt).toContain(
+    expect(options.systemPrompt).toContain('generate_image');
+    expect(options.systemPrompt).not.toContain('generate_tts');
+    expect(options.systemPrompt).not.toContain(
       'Use only registered tools and skip unavailable steps such as narration or image generation.',
     );
   });
@@ -339,9 +345,100 @@ describe('runner media tool capability registration', () => {
     expect(toolNames).toContain('set_roster');
     expect(toolNames).toContain('edit_deck');
 
-    expect(options.systemPrompt).toContain(
+    expect(options.systemPrompt).toContain('generate_tts');
+    expect(options.systemPrompt).toContain('generate_image');
+    expect(options.systemPrompt).not.toContain(
       'Use only registered tools and skip unavailable steps such as narration or image generation.',
     );
+  });
+});
+
+describe('buildCourseAllowlist and buildDslCourseToolset gating', () => {
+  const baseDeps = {
+    store: {} as never,
+    stageAccess: async () => ({ kind: 'owned' as const }),
+    onCheckpoint: () => undefined,
+  };
+
+  it('omits generate_tts and generate_image when neither capability is available', () => {
+    const allowlist = buildCourseAllowlist({});
+    expect(allowlist).not.toContain('generate_tts');
+    expect(allowlist).not.toContain('generate_image');
+    expect(allowlist).toContain('edit_deck');
+
+    const tools = buildDslCourseToolset({ ...baseDeps });
+    const names = tools.map((t) => t.name);
+    expect(names).not.toContain('generate_tts');
+    expect(names).not.toContain('generate_image');
+    expect(names).toContain('edit_deck');
+  });
+
+  it('registers generate_tts and includes it in allowlist only when TTS capability is available', () => {
+    const allowlist = buildCourseAllowlist({ ttsConnection: usableTtsConnection });
+    expect(allowlist).toContain('generate_tts');
+    expect(allowlist).not.toContain('generate_image');
+
+    const tools = buildDslCourseToolset({ ...baseDeps, ttsConnection: usableTtsConnection });
+    const names = tools.map((t) => t.name);
+    expect(names).toContain('generate_tts');
+    expect(names).not.toContain('generate_image');
+  });
+
+  it('registers generate_image and includes it in allowlist only when image capability is available', () => {
+    const allowlist = buildCourseAllowlist({ imageConnection: usableImageConnection });
+    expect(allowlist).toContain('generate_image');
+    expect(allowlist).not.toContain('generate_tts');
+
+    const tools = buildDslCourseToolset({ ...baseDeps, imageConnection: usableImageConnection });
+    const names = tools.map((t) => t.name);
+    expect(names).toContain('generate_image');
+    expect(names).not.toContain('generate_tts');
+  });
+
+  it('registers both tools when both capabilities are available', () => {
+    const allowlist = buildCourseAllowlist({
+      ttsConnection: usableTtsConnection,
+      imageConnection: usableImageConnection,
+    });
+    expect(allowlist).toContain('generate_tts');
+    expect(allowlist).toContain('generate_image');
+
+    const tools = buildDslCourseToolset({
+      ...baseDeps,
+      ttsConnection: usableTtsConnection,
+      imageConnection: usableImageConnection,
+    });
+    const names = tools.map((t) => t.name);
+    expect(names).toContain('generate_tts');
+    expect(names).toContain('generate_image');
+  });
+});
+
+describe('dslToolsPrompt conditional instructions', () => {
+  it('omits generate_tts and generate_image instructions when neither capability is active', () => {
+    const prompt = dslToolsPrompt({ tts: false, image: false });
+    expect(prompt).not.toContain('generate_tts');
+    expect(prompt).not.toContain('generate_image');
+    expect(prompt).toContain('edit_deck');
+  });
+
+  it('includes generate_tts instruction and omits generate_image when only TTS is active', () => {
+    const prompt = dslToolsPrompt({ tts: true, image: false });
+    expect(prompt).toContain('generate_tts');
+    expect(prompt).not.toContain('generate_image');
+  });
+
+  it('includes generate_image instruction and omits generate_tts when only image is active', () => {
+    const prompt = dslToolsPrompt({ tts: false, image: true });
+    expect(prompt).not.toContain('generate_tts');
+    expect(prompt).toContain('generate_image');
+  });
+
+  it('includes both instructions when both are active and matches DSL_TOOLS_PROMPT', () => {
+    const prompt = dslToolsPrompt({ tts: true, image: true });
+    expect(prompt).toContain('generate_tts');
+    expect(prompt).toContain('generate_image');
+    expect(prompt).toBe(DSL_TOOLS_PROMPT);
   });
 });
 
@@ -377,7 +474,8 @@ describe('media capability gates unit tests', () => {
         origin: 'configuration',
       }),
     ).toBe(true);
-    expect(hasConfiguredTtsGeneration).toBe(hasConfiguredTtsCapability);
+    expect(hasConfiguredTtsCapability({ ttsConnection: usableTtsConnection })).toBe(true);
+    expect(hasConfiguredTtsCapability({ ttsConnection: null })).toBe(false);
   });
 
   it('hasConfiguredImageCapability validates presence, off, and api key', () => {
@@ -402,6 +500,7 @@ describe('media capability gates unit tests', () => {
         origin: 'configuration',
       }),
     ).toBe(true);
-    expect(hasConfiguredImageGeneration).toBe(hasConfiguredImageCapability);
+    expect(hasConfiguredImageCapability({ imageConnection: usableImageConnection })).toBe(true);
+    expect(hasConfiguredImageCapability({ imageConnection: null })).toBe(false);
   });
 });
