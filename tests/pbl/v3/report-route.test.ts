@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
-const calls = vi.hoisted(() => ({ read: vi.fn(), generate: vi.fn() }));
+const calls = vi.hoisted(() => ({ read: vi.fn(), generate: vi.fn(), after: vi.fn() }));
+vi.mock('next/server', () => ({ after: calls.after }));
 vi.mock('@/lib/server/identity/with-owner', () => ({
   withRequestOwner: async (
     _request: Request,
@@ -44,5 +45,20 @@ it('keeps report reads token-free and forwards generation only for a deliberate 
     { ownerId: 'learner' },
     'study',
     expect.any(AbortSignal),
+    expect.any(Function),
   );
+});
+it('acknowledges scheduled generation with 202 instead of holding the HTTP request open', async () => {
+  const work = vi.fn(async () => ({ analysis: { status: 'ready' } }));
+  calls.generate.mockImplementationOnce(async (_p, _id, _signal, schedule) => {
+    schedule(work);
+    return { analysis: { status: 'generating' } };
+  });
+  const response = await POST(request('POST'));
+  expect(response.status).toBe(202);
+  expect((await response.json()).analysis.status).toBe('generating');
+  expect(work).not.toHaveBeenCalled();
+  expect(calls.after).toHaveBeenCalledOnce();
+  await calls.after.mock.calls[0][0]();
+  expect(work).toHaveBeenCalledOnce();
 });

@@ -14,6 +14,34 @@ import {
 } from '@/lib/server/pbl-v3/evaluation';
 const spec = installedProject({ id: 'greeting-python', version: '1.0.0' }).evaluations.greeting!;
 
+it.each(['\n', '\r\n', '\r'])(
+  'normalizes expected and actual line endings equally without relaxing output checks (%j)',
+  async (ending) => {
+    const installed = {
+      cases: [
+        {
+          id: 'line',
+          argv: ['python3', '-c', `import sys; sys.stdout.write(${JSON.stringify('ok' + ending)})`],
+          stdout: 'ok' + ending,
+        },
+      ],
+    };
+    const { stdout } = await promisify(execFile)('/bin/sh', [
+      '-c',
+      evaluationCommand(installed, 'line-endings'),
+    ]);
+    expect(evaluationPassed(installed, 'line-endings', stdout)).toBe(true);
+    for (const wrong of ['ok', 'ok \n', 'ok\n\n', 'wrong\n'])
+      expect(
+        evaluationPassed(
+          { cases: [{ ...installed.cases[0], stdout: wrong }] },
+          'line-endings',
+          stdout,
+        ),
+      ).toBe(false);
+  },
+);
+
 it.each([false, true])(
   'locates Python syntax errors with prepare=%s and permits a passing rerun',
   async (prepare) => {

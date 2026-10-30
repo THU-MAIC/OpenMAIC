@@ -6,6 +6,7 @@ import { fileSnapshot, projectFor, requireEnvironment, stageFor, stageKey } from
 import type { LearningStore, Study } from './store';
 import { checkpointFailure } from '@/lib/server/sandbox/checkpoint-errors';
 import { invalidateWorkspace } from './runtime';
+import { currentBuildCommand } from './build-command';
 
 type BuildFence = (db: PoolClient) => Promise<void>;
 
@@ -52,16 +53,18 @@ export async function startBuild(
   if (row.evaluation)
     return service.startCommand(requireEnvironment(row), {
       requestId: id,
-      command,
+      command: row.evaluation.buildCommand ?? command,
       timeoutMs: 60_000,
     });
   const snapshot = await fileSnapshot(service, row);
+  const currentCommand = currentBuildCommand(projectFor(row), Object.keys(snapshot.files))!;
   row.evaluation ??= {
     id,
     fingerprint: snapshot.fingerprint,
     stageKey: stageKey(row),
     startedAt: new Date().toISOString(),
     purpose: 'compile',
+    buildCommand: currentCommand,
   };
   Object.assign(
     row,
@@ -72,7 +75,7 @@ export async function startBuild(
   );
   return service.startCommand(requireEnvironment(row), {
     requestId: id,
-    command,
+    command: currentCommand,
     timeoutMs: 60_000,
   });
 }

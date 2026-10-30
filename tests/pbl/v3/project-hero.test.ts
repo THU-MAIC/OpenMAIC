@@ -5,6 +5,26 @@ import { installedProject } from '@/lib/server/pbl-v3/catalog';
 
 describe('authored project entrances', () => {
   const sample = installedProject({ id: 'greeting-python-lab', version: '1.1.0' }).definition;
+  it('uses optional public presentation without overriding authoritative title or counts', () => {
+    const definition = structuredClone(sample);
+    definition.presentation = {
+      hero: {
+        description: 'Authored project introduction',
+        gains: ['Review your own choices'],
+        instructorName: 'Learning guide',
+      },
+    };
+    expect(projectHeroDetails(definition)).toMatchObject({
+      title: definition.title,
+      ...definition.presentation.hero,
+      milestoneCount: 2,
+      taskCount: 14,
+    });
+    const old = structuredClone(sample);
+    expect(projectHeroDetails(old)).toEqual(
+      projectHeroDetails({ ...old, presentation: undefined }),
+    );
+  });
   it.each(['python-todo-two-milestones', 'future-self', 'greeting-python-lab', 'greeting-java'])(
     'uses public authored copy and actual stage counts for %s',
     (id) => {

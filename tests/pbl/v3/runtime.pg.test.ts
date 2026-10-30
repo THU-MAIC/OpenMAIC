@@ -1986,6 +1986,91 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     ).toEqual([question]);
     expect(report.facts).toMatchObject({ learnerTurns: 0, assistantTurns: 1 });
   });
+  it('counts distinct failed runs even when attended retries reuse the same attempt', async () => {
+    const study = await unpreparedStudy();
+    const sessionId = `report-runs-${randomUUID()}`;
+    await agents.createSession({
+      id: sessionId,
+      ownerId: principal.ownerId,
+      stageId: 'report-course',
+      prompt: 'Report fixture',
+      status: 'succeeded',
+    });
+    await pool.query(
+      "INSERT INTO pbl_v3_roles(session_id,study_id,role,context_key,stage_key) VALUES($1,$2,'discussion','greeting','greeting:0')",
+      [sessionId, study.id],
+    );
+    const events = [
+      ['user_message', { text: 'First turn' }],
+      ['session_start', {}],
+      ['session_interrupted', {}],
+      ['session_end', { status: 'failed' }],
+      ['pbl_turn_retried', {}],
+      ['session_resumed', {}],
+      ['session_end', { status: 'failed' }],
+      ['user_message', { text: 'Another turn' }],
+      ['session_resumed', {}],
+      ['session_end', { status: 'failed' }],
+    ] as const;
+    for (const [index, [type, data]] of events.entries())
+      await pool.query(
+        'INSERT INTO agent_session_events(session_id,seq,ts,attempt,type,data) VALUES($1,$2::integer,$2::integer,1,$3,$4)',
+        [sessionId, index + 1, type, JSON.stringify(data)],
+      );
+    expect((await learningEvidence(principal, study.id)).facts).toMatchObject({
+      interruptedRuns: 3,
+      learnerTurns: 2,
+    });
+  });
+  it.each(
+    [
+      { label: 'same-attempt resume', attempts: [1, 1], admitted: true },
+      { label: 'worker reclaim', attempts: [1, 2], admitted: true },
+      { label: 'several unattended recoveries', attempts: [1, 2, 3], admitted: true },
+      { label: 'legacy opening without an admission marker', attempts: [1, 2], admitted: false },
+    ].flatMap((scenario) => [1, 2].map((sessions) => ({ ...scenario, sessions }))),
+  )(
+    'counts $label once per admitted run (sessions: $sessions)',
+    async ({ attempts, admitted, sessions }) => {
+      const study = await unpreparedStudy();
+      for (let role = 0; role < sessions; role++) {
+        const sessionId = `report-resume-${randomUUID()}`;
+        await agents.createSession({
+          id: sessionId,
+          ownerId: principal.ownerId,
+          stageId: 'report-course',
+          prompt: 'Report recovery fixture',
+          status: 'succeeded',
+        });
+        await pool.query(
+          "INSERT INTO pbl_v3_roles(session_id,study_id,role,context_key,stage_key) VALUES($1,$2,'discussion',$3,'greeting:0')",
+          [sessionId, study.id, `recovery-${role}`],
+        );
+        let seq = 0;
+        const append = async (
+          type: string,
+          attempt: number,
+          data: Record<string, unknown> = {},
+        ) => {
+          await pool.query(
+            'INSERT INTO agent_session_events(session_id,seq,ts,attempt,type,data) VALUES($1,$2::integer,$2::integer,$3,$4,$5)',
+            [sessionId, ++seq, attempt, type, JSON.stringify(data)],
+          );
+        };
+        if (admitted) await append('user_message', 0, { text: 'Review the current work.' });
+        await append('session_start', attempts[0]!);
+        for (let claim = 0; claim < attempts.length - 1; claim++) {
+          await append('session_interrupted', attempts[claim]!, { reason: 'runner shutdown' });
+          await append('session_resumed', attempts[claim + 1]!, { reason: 'crash' });
+        }
+        await append('session_end', attempts.at(-1)!, { status: 'failed' });
+      }
+      expect((await learningEvidence(principal, study.id)).facts).toMatchObject({
+        interruptedRuns: sessions,
+        learnerTurns: admitted ? sessions : 0,
+      });
+    },
+  );
   it.each([
     { bindings: 1, automaticOpening: false },
     { bindings: 3, automaticOpening: false },
@@ -2204,6 +2289,82 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     },
   );
 
+  it('acknowledges a durable report claim before analysis and survives browser cancellation', async () => {
+    const study = await unpreparedStudy();
+    await pool.query(
+      "UPDATE pbl_v3_studies SET state=jsonb_set(state,'{status}','\"completed\"') WHERE id=$1",
+      [study.id],
+    );
+    mocked.reportAnalysis.mockReset().mockResolvedValue({ findings: [], omitted: false });
+    const controller = new AbortController();
+    let work!: () => Promise<unknown>;
+    const schedule = vi.fn((task) => {
+      work = task;
+    });
+    const accepted = await generateLearningReport(principal, study.id, controller.signal, schedule);
+    expect(accepted.analysis?.status).toBe('generating');
+    expect(mocked.reportAnalysis).not.toHaveBeenCalled();
+    expect((await learningReport(principal, study.id)).analysis?.status).toBe('generating');
+    await generateLearningReport(principal, study.id, controller.signal, schedule);
+    expect(schedule).toHaveBeenCalledOnce();
+    controller.abort();
+    await work();
+    expect((mocked.reportAnalysis.mock.calls[0]![2] as AbortSignal).aborted).toBe(false);
+    expect((await learningReport(principal, study.id)).analysis?.status).toBe('ready');
+  });
+  it.each(['ready', 'failed'])(
+    'finishes scheduled %s analysis without a post-save read changing its outcome',
+    async (outcome) => {
+      const study = await freshStudy();
+      const started = (await study.send('begin')) as { sessionId: string };
+      await pool.query("UPDATE agent_sessions SET status='succeeded' WHERE id=$1", [
+        started.sessionId,
+      ]);
+      await pool.query(
+        "UPDATE pbl_v3_studies SET state=jsonb_set(state,'{status}','\"completed\"') WHERE id=$1",
+        [study.id],
+      );
+      mocked.reportAnalysis.mockReset().mockImplementationOnce(async () => {
+        // Another final-response attempt can appear after the report claim was admitted.
+        await pool.query("UPDATE agent_sessions SET status='queued' WHERE id=$1", [
+          started.sessionId,
+        ]);
+        if (outcome === 'failed') throw new Error('Model unavailable');
+        return { findings: [], omitted: false };
+      });
+      let work!: () => Promise<void>;
+      await generateLearningReport(principal, study.id, new AbortController().signal, (task) => {
+        work = task;
+      });
+      try {
+        await expect(work()).resolves.toBeUndefined();
+        expect(
+          (await pool.query('SELECT status FROM pbl_v3_reports WHERE study_id=$1', [study.id]))
+            .rows[0].status,
+        ).toBe(outcome);
+      } finally {
+        await pool.query("UPDATE agent_sessions SET status='succeeded' WHERE id=$1", [
+          started.sessionId,
+        ]);
+      }
+    },
+  );
+  it('allows an explicit retry if post-response scheduling itself fails', async () => {
+    const study = await unpreparedStudy();
+    await pool.query(
+      "UPDATE pbl_v3_studies SET state=jsonb_set(state,'{status}','\"completed\"') WHERE id=$1",
+      [study.id],
+    );
+    await expect(
+      generateLearningReport(principal, study.id, new AbortController().signal, () => {
+        throw new Error('Scheduler unavailable');
+      }),
+    ).rejects.toThrow('Scheduler unavailable');
+    expect((await learningReport(principal, study.id)).analysis).toMatchObject({
+      status: 'failed',
+      canRetry: true,
+    });
+  });
   it('ends a cancelled report claim without allowing late analysis to overwrite its retry', async () => {
     const study = await unpreparedStudy();
     await pool.query(
@@ -2264,18 +2425,23 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(await learningReport(principal, id)).toEqual(ready);
     expect(await generateLearningReport(principal, id, signal)).toEqual(ready);
     expect(mocked.reportAnalysis).toHaveBeenCalledTimes(2);
-    // An old-format cached report is rebuilt token-free; one explicit retry upgrades it.
-    await pool.query(
-      "UPDATE pbl_v3_reports SET document=jsonb_set(document,'{formatVersion}','2') WHERE study_id=$1",
-      [id],
-    );
-    const upgradedFacts = await learningReport(principal, id);
-    expect(upgradedFacts.summary).toBeDefined();
-    expect(upgradedFacts.analysis?.status).toBe('not_generated');
-    expect(mocked.reportAnalysis).toHaveBeenCalledTimes(2);
-    mocked.reportAnalysis.mockResolvedValueOnce({ findings: [], omitted: false });
-    expect((await generateLearningReport(principal, id, signal)).analysis?.status).toBe('ready');
-    expect(mocked.reportAnalysis).toHaveBeenCalledTimes(3);
+    // Both recent and aged ready caches need regeneration rather than a failure retry.
+    for (const { age, format } of [4, 5].flatMap((format) =>
+      ['0 seconds', '3 minutes'].map((age) => ({ age, format })),
+    )) {
+      const calls = mocked.reportAnalysis.mock.calls.length;
+      await pool.query(
+        "UPDATE pbl_v3_reports SET document=jsonb_set(document,'{formatVersion}',$3::jsonb),updated_at=now()-$2::interval WHERE study_id=$1",
+        [id, age, JSON.stringify(format)],
+      );
+      const upgradedFacts = await learningReport(principal, id);
+      expect(upgradedFacts.summary).toBeDefined();
+      expect(upgradedFacts.analysis).toMatchObject({ status: 'not_generated', canRetry: true });
+      expect(mocked.reportAnalysis).toHaveBeenCalledTimes(calls);
+      mocked.reportAnalysis.mockResolvedValueOnce({ findings: [], omitted: false });
+      expect((await generateLearningReport(principal, id, signal)).analysis?.status).toBe('ready');
+      expect(mocked.reportAnalysis).toHaveBeenCalledTimes(calls + 1);
+    }
     await expect(
       learningReport({ ...principal, ownerId: 'another-owner' }, id),
     ).rejects.toMatchObject({ status: 404 });
@@ -4589,7 +4755,11 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       passed: false,
       score: 0,
       total: 1,
+      answers: [1],
     });
+    expect(wrongQuiz.questions[0].feedback).toMatchObject({ passed: false, selectedAnswer: 1 });
+    expect(wrongQuiz.questions[0]).not.toHaveProperty('answer');
+    expect(wrongQuiz.questions[0].feedback?.explanation).toBeUndefined();
     expect(wrongQuiz.actions).not.toContain('next');
     await expect(command('next')).rejects.toThrow('not available');
     // The repair passed tests, but was newer than the code-review checkpoint. Expiry at the

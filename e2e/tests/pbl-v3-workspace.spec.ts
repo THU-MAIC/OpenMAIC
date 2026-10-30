@@ -320,7 +320,21 @@ test('installed sample opens in the normal classroom and preserves progress afte
           score: passed ? 2 : 1,
           total: 2,
           wrong: passed ? [] : [0],
+          answers: [...command.answers],
         };
+        view.questions = view.questions.map((question, index) => ({
+          ...question,
+          feedback: {
+            passed: command.answers[index] === 0,
+            selectedAnswer: command.answers[index],
+            explanation:
+              command.answers[index] === 0
+                ? index === 0
+                  ? 'Return supplies a value to the caller.'
+                  : 'Saved changes are written to the workspace.'
+                : 'Printing displays text; consider whether this statement describes the value received by the caller.',
+          },
+        }));
         view.actions = passed ? ['quiz', 'next'] : ['quiz'];
       }
       if (command.type === 'retry')
@@ -827,7 +841,10 @@ test('installed sample opens in the normal classroom and preserves progress afte
   unavailableAutosave = true;
   const restoredEditor = page.locator('.monaco-editor textarea').first();
   await expect(restoredEditor).toBeEditable();
-  await restoredEditor.focus();
+  // Focus Monaco through the visible editor after model reload, as a learner
+  // does, before sending its select-all shortcut to the hidden input.
+  await page.locator('.monaco-editor .view-lines .view-line').first().click();
+  await expect(restoredEditor).toBeFocused();
   await restoredEditor.press('ControlOrMeta+A');
   await page.keyboard.insertText('print("Draft after idle")');
   await expect(retrySave).toBeVisible();
@@ -942,6 +959,22 @@ test('installed sample opens in the normal classroom and preserves progress afte
   await expect(
     page.getByText('1/2 correct. Review your answers and try again.', { exact: true }),
   ).toBeVisible();
+  await expect(page.getByTestId('pbl-quiz-feedback')).toHaveCount(2);
+  await expect(
+    page.getByText('Last submission: review this answer', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      'Printing displays text; consider whether this statement describes the value received by the caller.',
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByText('Saved changes are written to the workspace.', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('Return supplies a value to the caller.', { exact: true }),
+  ).toHaveCount(0);
   await page.reload();
   await page.getByRole('button', { name: /^(?:Start Project|Continue Project)$/ }).click();
   // The drawer closes on reload; its recorded quiz result remains available on reopening.
@@ -954,9 +987,15 @@ test('installed sample opens in the normal classroom and preserves progress afte
   ).toBeVisible();
   await expect(page.getByRole('button', { name: /^Continue(?: to|$)/ })).toHaveCount(0);
   await page.getByRole('radio', { name: 'Returns a value' }).check();
+  await expect(
+    page.getByText('Selection changed. Submit again to update feedback.', { exact: true }),
+  ).toBeVisible();
   await page.getByRole('button', { name: 'Submit answers' }).click();
   await expect(
     page.getByText('Quiz passed: 2/2 correct. You can continue.', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('Return supplies a value to the caller.', { exact: true }),
   ).toBeVisible();
   await expect(page.getByRole('button', { name: /^Continue(?: to|$)/ })).toBeEnabled();
   const beforeCompletedProject = calls.filter((c) => c.type === 'prepare').length;

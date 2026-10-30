@@ -1,4 +1,5 @@
 'use client';
+import { cn } from '@/lib/utils';
 import type { FileReference } from '@/lib/pbl/v3/file-reference';
 import { environmentNotice, environmentNoticeKeys } from '@/lib/pbl/v3/environment-status';
 import { ApplicationPreview, ApplicationPreviewToggle } from './application-preview';
@@ -93,7 +94,9 @@ function PBLV3WorkspaceContent({
   const [dirtyFiles, setDirtyFiles] = useState(false);
   const applicationPreview = useApplicationPreview(view, workbench, dirtyFiles);
   const answerKey = `${view?.id}:${view?.state.position.milestoneId}:${view?.state.position.stageIndex}`;
-  const answers = quizAnswers.key === answerKey ? quizAnswers.values : [];
+  const recordedAnswers =
+    view?.state.collected[view.state.position.milestoneId ?? '']?.quiz?.answers;
+  const answers = quizAnswers.key === answerKey ? quizAnswers.values : (recordedAnswers ?? []);
   const retry = useRef<{
     type: string;
     payload: Record<string, unknown>;
@@ -881,7 +884,10 @@ function PBLV3WorkspaceContent({
                       );
                     })}
                     {view.questions.map((question, index) => (
-                      <fieldset key={index}>
+                      <fieldset
+                        key={index}
+                        className="rounded-xl border border-border p-4 space-y-2"
+                      >
                         <legend>{question.q}</legend>
                         {question.options.map((option, i) => (
                           <label className="block" key={i}>
@@ -893,7 +899,9 @@ function PBLV3WorkspaceContent({
                               onChange={() =>
                                 setQuizAnswers((previous) => {
                                   const next =
-                                    previous.key === answerKey ? [...previous.values] : [];
+                                    previous.key === answerKey
+                                      ? [...previous.values]
+                                      : [...answers];
                                   next[index] = i;
                                   return { key: answerKey, values: next };
                                 })
@@ -902,6 +910,33 @@ function PBLV3WorkspaceContent({
                             {option}
                           </label>
                         ))}
+                        {question.feedback && (
+                          <div
+                            data-testid="pbl-quiz-feedback"
+                            role="status"
+                            className={cn(
+                              'mt-3 rounded-lg border p-3 text-sm',
+                              question.feedback.passed
+                                ? 'border-emerald-500/30 bg-emerald-500/10'
+                                : 'border-amber-500/30 bg-amber-500/10',
+                            )}
+                          >
+                            <p className="font-semibold">
+                              {t(
+                                question.feedback.passed
+                                  ? 'pblV3.quizCorrect'
+                                  : 'pblV3.quizIncorrect',
+                              )}
+                            </p>
+                            <p>{question.feedback.explanation ?? t('pblV3.quizReviewHint')}</p>
+                            {question.feedback.selectedAnswer !== undefined &&
+                              answers[index] !== question.feedback.selectedAnswer && (
+                                <p className="mt-1 text-muted-foreground">
+                                  {t('pblV3.quizChanged')}
+                                </p>
+                              )}
+                          </div>
+                        )}
                       </fieldset>
                     ))}
                     {view.questions.length > 0 && quiz && (

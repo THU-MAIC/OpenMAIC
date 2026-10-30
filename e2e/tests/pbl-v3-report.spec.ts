@@ -232,13 +232,15 @@ test('completed project reports stay discoverable, show facts before analysis, a
     if (url.pathname.endsWith('/report')) {
       if (route.request().method() === 'POST') {
         generations++;
-        if (generations === 1)
-          return route.fulfill({
-            json: { ...base, analysis: { ...base.analysis!, status: 'failed' } },
-          });
-        await gate;
-        generated = true;
-        return route.fulfill({ json: ready });
+        if (generations === 1) return route.fulfill({ status: 524, body: '' });
+        // Generation is acknowledged before the server finishes its model call.
+        void gate.then(() => {
+          generated = true;
+        });
+        return route.fulfill({
+          status: 202,
+          json: { ...base, analysis: { ...base.analysis!, status: 'generating' } },
+        });
       }
       return route.fulfill({ json: generated ? ready : base });
     }
@@ -321,6 +323,7 @@ test('completed project reports stay discoverable, show facts before analysis, a
     { exact: true },
   );
   await expect(failure).toBeVisible();
+  await expect(report).not.toContainText('Unexpected end of JSON');
   await report.getByRole('button', { name: 'Generate report / retry', exact: true }).click();
   await expect.poll(() => generations).toBe(2);
   await expect(report.getByText('Preparing your project report…', { exact: true })).toBeVisible();

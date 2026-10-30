@@ -21,6 +21,7 @@ import {
   attachClassroomProjects,
   installClassroomProjects,
   DECISION_RESPONSE_CAPABILITY,
+  PRESENTATION_CAPABILITY,
 } from '@/lib/pbl/v3/package-client';
 import type { ClassroomManifest } from '@/lib/export/classroom-zip-types';
 import { bindPackageReferences } from '@/lib/server/pbl-v3/project-resolver';
@@ -58,6 +59,120 @@ async function archive(bundle: ReturnType<typeof packageBuiltin>) {
   return JSZip.loadAsync(await zip.generateAsync({ type: 'uint8array' }));
 }
 describe('self-contained PBL project packages', () => {
+  it.each(['prepare', 'case'])(
+    'rejects package-supplied literal-argument metadata in %s',
+    (location) => {
+      const bundle = revised((files) => {
+        const descriptor = JSON.parse(files['project.json']);
+        const path = Object.values(descriptor.runtime.evaluations)[0] as string;
+        const spec = JSON.parse(files[path]);
+        if (location === 'prepare') spec.prepareLiteralArgIndexes = [0];
+        else spec.cases[0].literalArgIndexes = [0];
+        files[path] = JSON.stringify(spec);
+      });
+      expect(() => validateProjectPackage(bundle)).toThrow('Invalid evaluation resource');
+      expect(() => validateProjectPackage(bundle, 'resolve')).toThrow(
+        'Invalid evaluation resource',
+      );
+    },
+  );
+  it.each([undefined, 'choice'])(
+    'rejects an empty choice decision (%s) while retaining open text decisions',
+    (responseType) => {
+      const change = (type: string | undefined) =>
+        revised((files) => {
+          const descriptor = JSON.parse(files['project.json']);
+          Object.assign(descriptor.definition.decisions[0], { responseType: type, options: [] });
+          files['project.json'] = JSON.stringify(descriptor);
+        });
+      expect(() => validateProjectPackage(change(responseType))).toThrow('choice decision');
+      expect(() => validateProjectPackage(change('text'))).not.toThrow();
+    },
+  );
+  it.each(['empty-choice', 'quiz-feedback'])(
+    'keeps installed %s packages readable/exportable but rejects their new admission',
+    async (kind) => {
+      const bundle = revised((files) => {
+        const spec = JSON.parse(files['project.json']);
+        if (kind === 'empty-choice') spec.definition.decisions[0].options = [];
+        else spec.definition.milestones[0].quiz[0].optionFeedback = ['Only one hint'];
+        files['project.json'] = JSON.stringify(spec);
+      });
+      expect(() => validateProjectPackage(bundle)).toThrow();
+      expect(validateProjectPackage(bundle, 'resolve').bundle).toEqual(bundle);
+      const m = manifest();
+      const fetcher = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(Response.json({ projects: [bundle] }));
+      try {
+        const files = new Map<string, Blob>();
+        await attachClassroomProjects('installed-course', m, files);
+        expect(m.pblProjects).toEqual([bundle.entry]);
+        fetcher.mockClear();
+        await expect(installClassroomProjects(await archive(bundle), m)).rejects.toThrow(
+          'Invalid project definition',
+        );
+        expect(fetcher).not.toHaveBeenCalled();
+        const tampered = structuredClone(bundle);
+        tampered.files['docs/0.md'] = 'changed without reindexing';
+        expect(() => validateProjectPackage(tampered, 'resolve')).toThrow('checksum');
+      } finally {
+        fetcher.mockRestore();
+      }
+    },
+  );
+  it('retains the pre-existing quiz answer range guard on both installation and resolution', () => {
+    const bundle = revised((files) => {
+      const spec = JSON.parse(files['project.json']);
+      spec.definition.milestones[0].quiz[0].answer = 99;
+      files['project.json'] = JSON.stringify(spec);
+    });
+    expect(() => validateProjectPackage(bundle)).toThrow();
+    expect(() => validateProjectPackage(bundle, 'resolve')).toThrow('Invalid quiz answer');
+  });
+  it('round-trips public Hero metadata with its own capability and rejects missing declarations before upload', async () => {
+    const hero = {
+      description: 'Public entrance copy',
+      gains: ['Choose and verify'],
+      instructorName: 'Guide',
+    };
+    const bundle = revised((files) => {
+      const descriptor = JSON.parse(files['project.json']);
+      descriptor.definition.presentation = { hero };
+      files['project.json'] = JSON.stringify(descriptor);
+    });
+    expect(validateProjectPackage(bundle).project.definition.presentation).toEqual({ hero });
+    const m = manifest();
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      const input = JSON.parse(init!.body as string);
+      return Response.json(
+        input.action === 'install'
+          ? {
+              references: [
+                { ...source().ref, assetId: 'installed', checksum: bundle.entry.checksum },
+              ],
+            }
+          : { projects: input.refs.map(() => bundle) },
+      );
+    });
+    try {
+      await attachClassroomProjects('course', m, new Map());
+      expect(m.requiredCapabilities).toContain(PRESENTATION_CAPABILITY);
+      const zip = await archive(bundle);
+      expect((await readClassroomProjects(zip, [bundle.entry]))[0].files).toEqual(bundle.files);
+      const undeclared = structuredClone(m);
+      undeclared.requiredCapabilities = ['pbl-v3-projects@1'];
+      fetcher.mockClear();
+      await expect(installClassroomProjects(zip, undeclared)).rejects.toThrow(
+        PRESENTATION_CAPABILITY,
+      );
+      expect(fetcher).not.toHaveBeenCalled();
+      await installClassroomProjects(zip, m);
+      expect(fetcher).toHaveBeenCalledOnce();
+    } finally {
+      fetcher.mockRestore();
+    }
+  });
   it('opts into applications only through a profile-bound starter entrypoint', () => {
     const app = {
       title: 'My application',

@@ -11,7 +11,12 @@ import {
   resolveProject,
   exportProjectPackage,
 } from '@/lib/server/pbl-v3/project-resolver';
-import { packageBuiltin, indexProjectFiles } from '@/lib/server/pbl-v3/project-package';
+import {
+  packageBuiltin,
+  indexProjectFiles,
+  canonicalJson,
+  sha256,
+} from '@/lib/server/pbl-v3/project-package';
 import { installedProject } from '@/lib/server/pbl-v3/catalog';
 import { PgAssetByteStore } from '@openmaic/storage/asset/pg-bytes';
 import { AssetCollector } from '@openmaic/storage/asset/collector';
@@ -65,6 +70,67 @@ describe('persisted project templates and classroom lifecycle', () => {
     await database?.close();
     if (root) await rm(root, { recursive: true, force: true });
   });
+  it('resolves and exports previously installed authoring errors without weakening new admission or ownership', async () => {
+    vi.stubEnv('ASSET_S3_BUCKET', '');
+    vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', '');
+    const db = new PGlite();
+    await db.waitReady;
+    const pool = new DiskPool(db),
+      url = 'postgres://installed-authoring-validation';
+    vi.stubEnv('DATABASE_URL', url);
+    try {
+      const persistence = await getServerPersistenceProvider(url, () => pool as never);
+      const courses = await getOwnerScopedDocumentStore('existing-author');
+      const original = packageBuiltin(
+        installedProject({ id: 'greeting-python-lab', version: '1.1.0' }),
+      );
+      for (const kind of ['empty-choice', 'quiz-feedback']) {
+        const files = { ...original.files },
+          descriptor = JSON.parse(files['project.json']);
+        if (kind === 'empty-choice') descriptor.definition.decisions[0].options = [];
+        else descriptor.definition.milestones[0].quiz[0].optionFeedback = ['Only one hint'];
+        files['project.json'] = JSON.stringify(descriptor);
+        const bundle = indexProjectFiles(original.entry.id, original.entry.version, files);
+        await expect(installProjectPackage('existing-author', bundle)).rejects.toMatchObject({
+          code: 'PBL_PACKAGE_INVALID',
+        });
+        // Seed bytes admitted by the previous release; production admission stays strict.
+        const bytes = canonicalJson(bundle),
+          mime = 'application/vnd.openmaic.pbl-project+json';
+        const assetId = await persistence.assetStore.put(
+          assetPrincipalForOwner('existing-author'),
+          new Blob([bytes], { type: mime }),
+          { contentType: mime },
+        );
+        await persistence.pool.query(
+          'INSERT INTO pbl_project_installations(asset_id,project_id,project_version,checksum,content_hash) VALUES($1,$2,$3,$4,$5)',
+          [
+            assetId,
+            bundle.entry.id,
+            bundle.entry.version,
+            bundle.entry.checksum,
+            `sha256-${sha256(bytes)}`,
+          ],
+        );
+        const ref = {
+          id: bundle.entry.id,
+          version: bundle.entry.version,
+          assetId,
+          checksum: bundle.entry.checksum,
+        };
+        await courses.createDocument(document(kind, ref));
+        expect((await resolveProject('existing-author', kind, ref)).coursePackage?.bundle).toEqual(
+          bundle,
+        );
+        expect(await exportProjectPackage('existing-author', kind, ref)).toEqual(bundle);
+        await expect(resolveProject('other-owner', kind, ref)).rejects.toMatchObject({
+          status: 404,
+        });
+      }
+    } finally {
+      await db.close();
+    }
+  }, 30_000);
   it('keeps a study pin alive after its last scene changes or disappears, until the classroom is deleted', async () => {
     vi.stubEnv('ASSET_S3_BUCKET', '');
     vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', '');

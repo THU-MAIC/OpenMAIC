@@ -20,7 +20,7 @@ import { decisionResponseLabel } from '@/lib/pbl/v3/domain/orchestration/decisio
 import { abortable } from '@/lib/server/agent-runtime/abortable';
 
 // Evidence sampling is part of the cached report projection.
-const REPORT_FORMAT_VERSION = 4;
+const REPORT_FORMAT_VERSION = 6;
 const HISTORY_LIMIT = 1000;
 const RECORD_BYTES = 32768;
 const TEXT_LIMIT = 240000;
@@ -471,7 +471,9 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
     }>(
       `WITH events AS (
        SELECT e.*, max(e.seq) FILTER (WHERE e.type='user_message') OVER
-         (PARTITION BY e.session_id ORDER BY e.seq ROWS UNBOUNDED PRECEDING) AS input_id
+         (PARTITION BY e.session_id ORDER BY e.seq ROWS UNBOUNDED PRECEDING) AS input_id,
+         max(e.seq) FILTER (WHERE e.type IN ('user_message','pbl_turn_retried')) OVER
+         (PARTITION BY e.session_id ORDER BY e.seq ROWS UNBOUNDED PRECEDING) AS run_id
        FROM pbl_v3_roles r JOIN agent_sessions a ON a.id=r.session_id AND a.deleted_at IS NULL
        JOIN agent_session_events e ON e.session_id=r.session_id WHERE r.study_id=$1
       ) SELECT
@@ -487,7 +489,10 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
            AND e.data->>'toolName' IN ('request_skill_review','request_learner_help','respond_to_learner')
            AND jsonb_array_length(CASE WHEN jsonb_typeof(e.data#>'{result,content}')='array' THEN e.data#>'{result,content}' ELSE '[]'::jsonb END)>0)
        )::int AS assistant,
-       count(DISTINCT (e.session_id,e.attempt)) FILTER (WHERE e.type='session_interrupted' OR
+       -- Worker claims/attempts can change while recovering one admitted run.
+       -- Only a new input or explicit learner retry starts another report run;
+       -- legacy openings without either marker use one session-local fallback.
+       count(DISTINCT (e.session_id,COALESCE(e.run_id,0))) FILTER (WHERE e.type='session_interrupted' OR
          (e.type='session_end' AND e.data->>'status'='failed'))::int AS interrupted,
        (SELECT count(*)::int FROM pbl_v3_evidence WHERE study_id=$1 AND kind='file-edit') AS edits
      FROM events e`,
@@ -595,7 +600,7 @@ async function readReportSnapshot(
   if (saved?.status === 'ready' && saved.document?.formatVersion === REPORT_FORMAT_VERSION)
     return { report: saved.document, completionRevision };
   const evidence = await buildLearningEvidence(db, row);
-  const stale = !!saved && Date.now() - saved.updated_at.getTime() > 120000;
+  const stale = saved?.status === 'generating' && Date.now() - saved.updated_at.getTime() > 120000;
   const report: LearningReport = {
     ...evidence,
     analysis: {
@@ -608,7 +613,7 @@ async function readReportSnapshot(
             : 'not_generated',
       findings: [],
       omitted: evidence.truncated,
-      canRetry: !saved || saved.status === 'failed' || stale,
+      canRetry: !saved || saved.status === 'ready' || saved.status === 'failed' || stale,
     },
   };
   return { report, completionRevision };
@@ -630,12 +635,14 @@ export async function learningReport(
   return (await readReport(principal, id)).report;
 }
 
-/** Explicit report-button action. One bounded model call; no new queue or sandbox. */
+/** Explicit report-button action. Persist the claim before scheduling post-response work. */
 export async function generateLearningReport(
   principal: OwnerPrincipal,
   id: string,
   signal: AbortSignal,
+  schedule?: (work: () => Promise<void>) => void,
 ) {
+  signal.throwIfAborted();
   const { report, completionRevision } = await readReport(principal, id);
   if (report.analysis?.status === 'ready' || report.analysis?.status === 'generating')
     return report;
@@ -661,43 +668,66 @@ export async function generateLearningReport(
     return claim.rows.length > 0;
   });
   if (!claimed) return learningReport(principal, id);
-  try {
-    // One report budget spans resolution, primary and fallback, below the claim's
-    // two-minute expiry. Teaching Agent turns do not use this report-only limit.
-    const budget = AbortSignal.any([signal, AbortSignal.timeout(90_000)]);
-    const analysis = await abortable(
-      analyzeLearningReport(principal.ownerId, report, budget),
-      budget,
-    );
-    const document: LearningReport = {
-      ...report,
-      analysis: {
-        ...analysis,
-        omitted: report.truncated || analysis.omitted,
-        status: 'ready',
-        generatedAt: new Date().toISOString(),
-        canRetry: false,
-      },
-    };
-    await store.pool.query(
-      `UPDATE pbl_v3_reports SET status='ready',
+  const run = async () => {
+    const started = Date.now();
+    const budget = AbortSignal.any([...(schedule ? [] : [signal]), AbortSignal.timeout(90_000)]);
+    try {
+      // One report budget spans resolution, primary and fallback, below the claim's
+      // two-minute expiry. Teaching Agent turns do not use this report-only limit.
+      // Once a scheduled claim is accepted, browser navigation and an ingress
+      // timeout must not cancel its analysis. The existing report budget and
+      // attempt fence still apply; synchronous callers retain cancellation.
+      const analysis = await abortable(
+        analyzeLearningReport(principal.ownerId, report, budget),
+        budget,
+      );
+      const document: LearningReport = {
+        ...report,
+        analysis: {
+          ...analysis,
+          omitted: report.truncated || analysis.omitted,
+          status: 'ready',
+          generatedAt: new Date().toISOString(),
+          canRetry: false,
+        },
+      };
+      await store.pool.query(
+        `UPDATE pbl_v3_reports SET status='ready',
        document=jsonb_set($3::jsonb,'{revision}',to_jsonb(completion_revision)),updated_at=now()
        WHERE study_id=$1 AND attempt=$2`,
-      [id, attempt, JSON.stringify(document)],
-    );
-    return learningReport(principal, id);
-  } catch (error) {
-    // Keep operational diagnostics without retaining provider bodies or learner material.
-    createLogger('PBLReport').warn('Analysis failed', {
-      studyId: id,
-      attempt,
-      errorType: error instanceof Error ? error.name : 'UnknownError',
-      aborted: signal.aborted,
-    });
-    await store.pool.query(
-      `UPDATE pbl_v3_reports SET status='failed',updated_at=now() WHERE study_id=$1 AND attempt=$2`,
-      [id, attempt],
-    );
+        [id, attempt, JSON.stringify(document)],
+      );
+    } catch (error) {
+      // Keep operational diagnostics without retaining provider bodies or learner material.
+      createLogger('PBLReport').warn('Analysis failed', {
+        studyId: id,
+        attempt,
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+        aborted: budget.aborted,
+        scheduled: !!schedule,
+        durationMs: Date.now() - started,
+      });
+      await store.pool.query(
+        `UPDATE pbl_v3_reports SET status='failed',updated_at=now() WHERE study_id=$1 AND attempt=$2`,
+        [id, attempt],
+      );
+    }
+  };
+  if (!schedule) {
+    await run();
     return learningReport(principal, id);
   }
+  try {
+    schedule(run);
+  } catch (error) {
+    await store.pool.query(
+      "UPDATE pbl_v3_reports SET status='failed',updated_at=now() WHERE study_id=$1 AND attempt=$2",
+      [id, attempt],
+    );
+    throw error;
+  }
+  return {
+    ...report,
+    analysis: { ...report.analysis!, status: 'generating' as const, canRetry: false },
+  };
 }

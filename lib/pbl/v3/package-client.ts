@@ -1,3 +1,4 @@
+import { readPblJson } from '@/lib/pbl/v3/response';
 import type JSZip from 'jszip';
 import {
   isPBLV3Reference,
@@ -8,7 +9,7 @@ import {
 } from '@openmaic/dsl';
 import type { ClassroomManifest } from '@/lib/export/classroom-zip-types';
 import { PROJECT_LIMITS, projectResourcesWithinLimits, safeProjectPath } from './package-policy';
-import { projectSchema } from './domain/project/project-schema';
+import { projectSchema, projectAdmissionSchema } from './domain/project/project-schema';
 
 import { APPLICATION_CAPABILITY } from './application';
 
@@ -19,7 +20,13 @@ function needsApplication(projects: readonly PBLProjectPackage[]) {
 }
 
 export const DECISION_RESPONSE_CAPABILITY = 'pbl-v3-decision-responses@1';
-function needsDecisionResponses(projects: readonly PBLProjectPackage[]) {
+export const PRESENTATION_CAPABILITY = 'pbl-v3-presentation@1';
+function needsPresentation(projects: readonly PBLProjectPackage[]) {
+  return projects.some(
+    (project) => JSON.parse(project.files['project.json'])?.definition?.presentation !== undefined,
+  );
+}
+function needsDecisionResponses(projects: readonly PBLProjectPackage[], admission = false) {
   return projects
     .map((project) => {
       let descriptor: unknown;
@@ -28,7 +35,7 @@ function needsDecisionResponses(projects: readonly PBLProjectPackage[]) {
       } catch {
         throw new Error('Invalid JSON in project.json.');
       }
-      const definition = projectSchema.safeParse(
+      const definition = (admission ? projectAdmissionSchema : projectSchema).safeParse(
         descriptor && typeof descriptor === 'object' && 'definition' in descriptor
           ? descriptor.definition
           : undefined,
@@ -49,7 +56,7 @@ async function call(body: unknown) {
     headers: { 'content-type': 'application/json', 'x-openmaic-sandbox': '1' },
     body: JSON.stringify(body),
   });
-  const result = await response.json();
+  const result = await readPblJson(response);
   if (!response.ok)
     throw Object.assign(new Error(result.error?.message ?? 'Project resource operation failed.'), {
       code: result.error?.code,
@@ -74,6 +81,7 @@ export function validateClassroomPackageCompatibility(manifest: ClassroomManifes
             PBL_PROJECT_PACKAGE_CAPABILITY,
             DECISION_RESPONSE_CAPABILITY,
             APPLICATION_CAPABILITY,
+            PRESENTATION_CAPABILITY,
           ].includes(c),
       ))
   )
@@ -140,6 +148,7 @@ export async function attachClassroomProjects(
   if (needsDecisionResponses(projects))
     manifest.requiredCapabilities.push(DECISION_RESPONSE_CAPABILITY);
   if (needsApplication(projects)) manifest.requiredCapabilities.push(APPLICATION_CAPABILITY);
+  if (needsPresentation(projects)) manifest.requiredCapabilities.push(PRESENTATION_CAPABILITY);
   for (const scene of scenes) {
     const content = scene.content as { type: 'pbl'; projectV3: PBLV3Reference };
     const { entry } = byRef.get(JSON.stringify(content.projectV3))!;
@@ -242,10 +251,15 @@ export async function installClassroomProjects(zip: JSZip, manifest: ClassroomMa
   }
   const projects = await readClassroomProjects(zip, manifest.pblProjects);
   if (
-    needsDecisionResponses(projects) &&
+    needsDecisionResponses(projects, true) &&
     !manifest.requiredCapabilities?.includes(DECISION_RESPONSE_CAPABILITY)
   )
     throw new Error('Decision response forms require pbl-v3-decision-responses@1.');
+  if (
+    needsPresentation(projects) &&
+    !manifest.requiredCapabilities?.includes(PRESENTATION_CAPABILITY)
+  )
+    throw new Error('Project presentation requires pbl-v3-presentation@1.');
   if (
     needsApplication(projects) &&
     !manifest.requiredCapabilities?.includes(APPLICATION_CAPABILITY)

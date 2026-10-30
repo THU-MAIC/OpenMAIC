@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { PBLProjectPackage } from '@openmaic/dsl';
 import {
   projectSchema,
+  projectAdmissionSchema,
   type StageDefinition,
   type AgentRole,
 } from '@/lib/pbl/v3/domain/project/project-schema';
@@ -165,7 +166,10 @@ export function indexProjectFiles(
 }
 
 /** Validates only. No sandbox, filesystem extraction, global Skills or command execution. */
-export function validateProjectPackage(input: unknown): {
+export function validateProjectPackage(
+  input: unknown,
+  purpose: 'install' | 'resolve' = 'install',
+): {
   bundle: PBLProjectPackage;
   project: InstalledProject;
 } {
@@ -234,6 +238,11 @@ export function validateProjectPackage(input: unknown): {
     return invalid(
       `Unsupported project definition or runtime profile: ${descriptor.error.issues[0]?.message}`,
     );
+  if (purpose === 'install') {
+    const admission = projectAdmissionSchema.safeParse(descriptor.data.definition);
+    if (!admission.success)
+      return invalid(`Invalid project definition: ${admission.error.issues[0]?.message}`);
+  }
   const config = descriptor.data;
   const identifier = (value: string) =>
     /^[a-zA-Z0-9_-]{1,80}$/.test(value) && !Object.hasOwn(Object.prototype, value);
@@ -382,7 +391,7 @@ export function validateProjectPackage(input: unknown): {
   const buildCommand = buildSources
     ? config.runtime.profile === 'java'
       ? `javac -d /tmp/pbl-project-build ${buildSources.map((name) => quote(`./${name}`)).join(' ')}`
-      : `python3 -c ${quote(`import ast,pathlib; [ast.parse(pathlib.Path(p).read_text()) for p in ${JSON.stringify(buildSources)}]`)}`
+      : `python3 -c ${quote(`import ast,pathlib; [ast.parse(pathlib.Path(p).read_bytes(),filename=p) for p in ${JSON.stringify(buildSources)}]`)}`
     : undefined;
   if (buildCommand && Buffer.byteLength(buildCommand) > MAX_COMMAND_BYTES)
     return invalid('Build sources exceed the sandbox 32 KiB command limit.');

@@ -119,6 +119,8 @@ export interface QuizAttempt {
   score: number;
   total: number;
   wrong: number[];
+  /** Submitted learner choices, not the answer key; older attempts may omit them. */
+  answers?: number[];
   review?: Array<{
     questionIndex: number;
     correctAnswer: number;
