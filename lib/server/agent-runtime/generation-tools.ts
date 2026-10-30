@@ -91,7 +91,11 @@ const SceneParams = Type.Object({
         width: Type.Optional(Type.Number({ minimum: 1 })),
         height: Type.Optional(Type.Number({ minimum: 1 })),
       }),
-      { maxItems: 8 },
+      {
+        maxItems: 8,
+        description:
+          'Images this page must show. src is a use_material_media or generate_image id (ast_...), an HTTP(S) URL, or a same-origin path. description says what the figure shows and what the learner should read from it. Give width/height from the material listing when known.',
+      },
     ),
   ),
 });
@@ -277,7 +281,7 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
     name: 'generate_scene',
     label: 'Generate page',
     description:
-      'Generate and durably persist one page from an explicit title, type, and brief. Reusing an order replaces that page. Interactive pages accept widgetType (simulation/diagram/code/game/visualization3d) plus a matching widgetOutline object; both are rejected for other page types.',
+      'Generate and durably persist one page from an explicit title, type, and brief. Reusing an order replaces that page. Interactive pages accept widgetType (simulation/diagram/code/game/visualization3d) plus a matching widgetOutline object; both are rejected for other page types. To put a source figure, table image or generated image on the page, pass it in `media`: one { src, description, width, height } per image, where src is the id returned by use_material_media or generate_image. The content model sees those images and places them; a page generated without `media` has no images.',
     parameters: SceneParams,
     async execute(_callId, params, signal) {
       if (!Number.isInteger(params.order) || params.order < 1) {
