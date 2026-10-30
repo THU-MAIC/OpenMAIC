@@ -19,8 +19,11 @@ description: Встроенные модели и список провайде�
 | `tokendance` | TokenDance | Чат, изображения, видео, TTS, веб-поиск |
 | `volcengine-ark` | Volcengine Ark Agent Plan | Чат, изображения, видео, TTS, веб-поиск |
 | `kimi-coding-plan` | Kimi coding plan | Чат, веб-поиск, загрузка веб-страниц |
+| `deepseek-token-plan` | DeepSeek | Чат, веб-поиск, загрузка веб-страниц |
 
 Подключение Kimi Coding Plan в **Настройки → Token Plan** рекомендует чат, веб-поиск и загрузку веб-страниц с общим ключом тарифа и адресом `https://api.kimi.com/coding/v1`. Если загрузка использует только неявный встроенный ридер по умолчанию, подключение сразу назначает Kimi без подтверждения конфликта, даже при сохранении текущих настроек. Явные назначения рабочего пространства (включая `null`), а также невстроенный ридер или `null`, заданные развёртыванием, обрабатываются через существующий выбор при конфликте. Отключение удаляет назначения тарифа и восстанавливает серверное значение по умолчанию (встроенный ридер, если другой не настроен), но не прежний явный выбор рабочего пространства. Закреплённые слоты не меняются. Тарифы, не объявляющие загрузку веб-страниц, не меняют этот слот.
+
+Подключение DeepSeek в **Настройки → Token Plan** рекомендует чат (по умолчанию `deepseek-flash`), веб-поиск и загрузку веб-страниц с одним API-ключом DeepSeek и адресом `https://api.deepseek.com/v1`. Это тот же аккаунт с оплатой по факту использования и тот же адрес, что и у пресета `deepseek`; тариф использует собственный пресет `deepseek-token-plan`, поэтому отключение удаляет только провайдера и назначения тарифа, не затрагивая отдельный провайдер `deepseek`.
 
 Мастер первого запуска оставляет загрузку веб-страниц на встроенном ридере; рекомендация тарифа для загрузки применяется только при подключении через страницу настроек Token Plan.
 
@@ -35,8 +38,8 @@ description: Встроенные модели и список провайде�
 | ASR | `openai-whisper`, `qwen-asr`, `azure-asr`, `browser-native`, `funasr-asr`, `lemonade-asr` |
 | Изображения | `seedream`, `openai-image`, `qwen-image`, `nano-banana`, `minimax-image`, `grok-image`, `comfyui-image`, `lemonade-image`, `openrouter-image` |
 | Видео | `seedance`, `kling`, `minimax-video`, `grok-video`, `happyhorse`, `openrouter-video` |
-| Веб-поиск | `tavily`, `exa`, `firecrawl`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `deepseek`, `kimi`, `kimi-coding-plan`, `searxng` |
-| Загрузка веб-страниц | `builtin`, `deepseek`, `firecrawl`, `kimi`, `kimi-coding-plan` |
+| Веб-поиск | `tavily`, `exa`, `firecrawl`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `deepseek`, `deepseek-token-plan`, `kimi`, `kimi-coding-plan`, `searxng` |
+| Загрузка веб-страниц | `builtin`, `deepseek`, `deepseek-token-plan`, `firecrawl`, `kimi`, `kimi-coding-plan` |
 | Разбор документов | `unpdf`, `mineru`, `mineru-cloud`, `alidocmind` |
 
 `azure`, `openai-compatible`, `searxng` и `mineru` требуют `baseUrl`; `alidocmind` аутентифицируется через `credentials` (пару ключей). Собственные (self-hosted) пресеты TTS, ASR, изображений, поиска и документов, пресеты с парой ключей и Bedrock настраиваются только в `openmaic.yml`; см. [Конфигурацию](./configuration.mdx).
@@ -209,5 +212,6 @@ These IDs belong to the plan endpoint, independently of the direct provider cata
 | `volcengine-ark` | video | `doubao-seedance-2.0-mini`, `doubao-seedance-2.0` |
 | `volcengine-ark` | tts | `seed-tts-2.0` |
 | `kimi-coding-plan` | llm | `k3`, `k3-256k`, `kimi-for-coding`, `kimi-for-coding-highspeed` |
+| `deepseek-token-plan` | llm | `deepseek-flash`, `deepseek-v4-pro` |
 
 Ark migration targets follow the [supported model list](https://docs.volcengine.com/docs/ark/agent-plan-personal-plan-overview?lang=zh) and [retirement notice](https://docs.volcengine.com/docs/ark/agent-plan-personal-model-deprecation-announcement?lang=zh). Kimi K3 requires Medium or higher; Kimi K2.8 Preview is the Small-tier replacement for Kimi K2.7 Code.

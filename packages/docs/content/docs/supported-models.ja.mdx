@@ -19,8 +19,11 @@ description: オープンソース版 OpenMAIC の組み込みモデルと provi
 | `tokendance` | TokenDance | チャット、画像、動画、TTS、Web 検索 |
 | `volcengine-ark` | Volcengine Ark Agent Plan | チャット、画像、動画、TTS、Web 検索 |
 | `kimi-coding-plan` | Kimi コーディングプラン | チャット、Web 検索、Webページ取得 |
+| `deepseek-token-plan` | DeepSeek | チャット、Web 検索、Webページ取得 |
 
 **設定 → Token Plan** で Kimi Coding Plan を接続すると、プランのキーと `https://api.kimi.com/coding/v1` を共有するチャット、ウェブ検索、ウェブ取得が推奨されます。ウェブ取得が暗黙の内蔵リーダーの既定値のみを使っている場合、現在の設定を保持する場合も、競合の確認なしで Kimi が直接割り当てられます。ワークスペースの明示的な選択（`null` を含む）と、デプロイ設定の内蔵以外のリーダーまたは `null` には既存の競合時の選択肢が適用されます。切断するとプランの割り当てが削除され、サーバーの既定値（リーダー未設定時は内蔵リーダー）に戻りますが、以前のワークスペースの明示的な選択は復元されません。ロックされたスロットは変更されません。ウェブ取得を宣言しないプランは、このスロットを変更しません。
+
+**設定 → Token Plan** で DeepSeek を接続すると、1 つの DeepSeek API キーと `https://api.deepseek.com/v1` を共有するチャット（既定は `deepseek-flash`）、ウェブ検索、ウェブ取得がまとめて推奨されます。`deepseek` プリセットと同じ従量課金のアカウントとエンドポイントですが、プランは専用の `deepseek-token-plan` プリセットを使うため、切断してもプラン自身のプロバイダーと割り当てだけが削除され、別に設定した `deepseek` プロバイダーはそのまま残ります。
 
 初回設定ウィザードではウェブ取得に内蔵リーダーを維持し、Token Plan 設定ページからプランを接続した場合にのみ、その取得の推奨設定が適用されます。
 
@@ -35,8 +38,8 @@ description: オープンソース版 OpenMAIC の組み込みモデルと provi
 | ASR | `openai-whisper`、`qwen-asr`、`azure-asr`、`browser-native`、`funasr-asr`、`lemonade-asr` |
 | 画像 | `seedream`、`openai-image`、`qwen-image`、`nano-banana`、`minimax-image`、`grok-image`、`comfyui-image`、`lemonade-image`、`openrouter-image` |
 | 動画 | `seedance`、`kling`、`minimax-video`、`grok-video`、`happyhorse`、`openrouter-video` |
-| Web 検索 | `tavily`、`exa`、`firecrawl`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`deepseek`、`kimi`、`kimi-coding-plan`、`searxng` |
-| Webページ取得 | `builtin`、`deepseek`、`firecrawl`、`kimi`、`kimi-coding-plan` |
+| Web 検索 | `tavily`、`exa`、`firecrawl`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`deepseek`、`deepseek-token-plan`、`kimi`、`kimi-coding-plan`、`searxng` |
+| Webページ取得 | `builtin`、`deepseek`、`deepseek-token-plan`、`firecrawl`、`kimi`、`kimi-coding-plan` |
 | ドキュメント解析 | `unpdf`、`mineru`、`mineru-cloud`、`alidocmind` |
 
 `azure`、`openai-compatible`、`searxng`、`mineru` には `baseUrl` が必要で、`alidocmind` は `credentials`（キーペア）で認証します。セルフホストの TTS・ASR・画像・検索・ドキュメントのプリセット、キーペアのプリセット、Bedrock は `openmaic.yml` でのみ設定できます。[設定説明](./configuration.mdx)を参照してください。
@@ -209,5 +212,6 @@ These IDs belong to the plan endpoint, independently of the direct provider cata
 | `volcengine-ark` | video | `doubao-seedance-2.0-mini`, `doubao-seedance-2.0` |
 | `volcengine-ark` | tts | `seed-tts-2.0` |
 | `kimi-coding-plan` | llm | `k3`, `k3-256k`, `kimi-for-coding`, `kimi-for-coding-highspeed` |
+| `deepseek-token-plan` | llm | `deepseek-flash`, `deepseek-v4-pro` |
 
 Ark migration targets follow the [supported model list](https://docs.volcengine.com/docs/ark/agent-plan-personal-plan-overview?lang=zh) and [retirement notice](https://docs.volcengine.com/docs/ark/agent-plan-personal-model-deprecation-announcement?lang=zh). Kimi K3 requires Medium or higher; Kimi K2.8 Preview is the Small-tier replacement for Kimi K2.7 Code.

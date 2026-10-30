@@ -281,7 +281,7 @@ export function buildChildActionTools(opts: {
   messageId: string;
   send: SendEvent;
   onActionDone: (record?: WhiteboardActionRecord) => void;
-  maxActionsPerAgent: number;
+  abortSignal?: AbortSignal;
   enableWhiteboardTools: boolean;
   whiteboardState?: PiWhiteboardRuntimeState;
   /** Present only for a selected-element-grounded turn. */
@@ -316,7 +316,6 @@ export function buildChildActionTools(opts: {
       piActionAllowlist.includes(name),
     ),
   );
-  let emittedActionCount = 0;
   const whiteboardState = opts.whiteboardState ?? createPiWhiteboardRuntimeState(opts.body);
 
   const makeActionTool = <
@@ -399,18 +398,6 @@ export function buildChildActionTools(opts: {
             },
           ],
           details: { skipped: true, reason: 'whiteboard_empty', actionName: name },
-        };
-      }
-
-      if (emittedActionCount >= opts.maxActionsPerAgent) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Action ${name} skipped because this agent turn already used the allowed action budget.`,
-            },
-          ],
-          details: { skipped: true, reason: 'action_budget', actionName: name },
         };
       }
 
@@ -589,9 +576,9 @@ export function buildChildActionTools(opts: {
         }
       }
 
+      opts.abortSignal?.throwIfAborted();
       const actionId = nanoid();
-      emittedActionCount += 1;
-      await opts.send({
+      const delivery = opts.send({
         type: 'action',
         data: {
           actionId,
@@ -601,59 +588,78 @@ export function buildChildActionTools(opts: {
           messageId: opts.messageId,
         },
       });
-      if (name === 'wb_open') whiteboardState.open = true;
-      if (name === 'wb_close') whiteboardState.open = false;
-      if (name === 'wb_clear') {
-        whiteboardState.open = true;
-        whiteboardState.visibleElementCount = 0;
-        whiteboardState.knownElementIds.clear();
-        whiteboardState.codeLineIdsByElementId.clear();
-      }
-      if (isWhiteboardDrawAction(name)) {
-        whiteboardState.open = true;
-        whiteboardState.visibleElementCount += 1;
-        const elementId = actionParams.elementId;
-        if (typeof elementId === 'string' && elementId) {
-          whiteboardState.knownElementIds.add(elementId);
-          if (name === 'wb_draw_code') {
-            whiteboardState.codeLineIdsByElementId.set(
-              elementId,
-              new Set((actionParams.lineIds as string[]) ?? []),
-            );
+      let sendCompleted = false;
+      try {
+        await delivery;
+        sendCompleted = true;
+      } finally {
+        // A tool timeout stops waiting, but cannot retract an event already
+        // queued for the still-connected client. Retain that action's state
+        // and ledger before the Director delegates again; never start another
+        // action here. Ordinary send failures still do not count as dispatches.
+        if (sendCompleted || opts.abortSignal?.aborted) {
+          if (name === 'wb_open') whiteboardState.open = true;
+          if (name === 'wb_close') whiteboardState.open = false;
+          if (name === 'wb_clear') {
+            whiteboardState.open = true;
+            whiteboardState.visibleElementCount = 0;
+            whiteboardState.knownElementIds.clear();
+            whiteboardState.codeLineIdsByElementId.clear();
           }
-        }
-      }
-      if (name === 'wb_delete') {
-        whiteboardState.open = true;
-        const elementId = String(actionParams.elementId);
-        whiteboardState.knownElementIds.delete(elementId);
-        whiteboardState.visibleElementCount = Math.max(whiteboardState.visibleElementCount - 1, 0);
-        whiteboardState.codeLineIdsByElementId.delete(elementId);
-      }
-      if (name === 'wb_edit_code') {
-        const elementId = String(actionParams.elementId);
-        const lineIds = whiteboardState.codeLineIdsByElementId.get(elementId);
-        const operation = actionParams.operation;
-        if (lineIds && (operation === 'delete_lines' || operation === 'replace_lines')) {
-          const targetLineIds = (actionParams.lineIds as string[]) ?? [];
-          targetLineIds.forEach((lineId) => lineIds.delete(lineId));
-          if (operation === 'replace_lines') {
-            ((actionParams.newLineIds as string[]) ?? []).forEach((lineId) => lineIds.add(lineId));
-          }
-        } else if (lineIds && (operation === 'insert_after' || operation === 'insert_before')) {
-          ((actionParams.newLineIds as string[]) ?? []).forEach((lineId) => lineIds.add(lineId));
-        }
-      }
-      opts.onActionDone(
-        name.startsWith('wb_')
-          ? {
-              actionName: name as WhiteboardActionRecord['actionName'],
-              agentId: opts.agent.id,
-              agentName: opts.agent.name,
-              params: actionParams,
+          if (isWhiteboardDrawAction(name)) {
+            whiteboardState.open = true;
+            whiteboardState.visibleElementCount += 1;
+            const elementId = actionParams.elementId;
+            if (typeof elementId === 'string' && elementId) {
+              whiteboardState.knownElementIds.add(elementId);
+              if (name === 'wb_draw_code') {
+                whiteboardState.codeLineIdsByElementId.set(
+                  elementId,
+                  new Set((actionParams.lineIds as string[]) ?? []),
+                );
+              }
             }
-          : undefined,
-      );
+          }
+          if (name === 'wb_delete') {
+            whiteboardState.open = true;
+            const elementId = String(actionParams.elementId);
+            whiteboardState.knownElementIds.delete(elementId);
+            whiteboardState.visibleElementCount = Math.max(
+              whiteboardState.visibleElementCount - 1,
+              0,
+            );
+            whiteboardState.codeLineIdsByElementId.delete(elementId);
+          }
+          if (name === 'wb_edit_code') {
+            const elementId = String(actionParams.elementId);
+            const lineIds = whiteboardState.codeLineIdsByElementId.get(elementId);
+            const operation = actionParams.operation;
+            if (lineIds && (operation === 'delete_lines' || operation === 'replace_lines')) {
+              const targetLineIds = (actionParams.lineIds as string[]) ?? [];
+              targetLineIds.forEach((lineId) => lineIds.delete(lineId));
+              if (operation === 'replace_lines') {
+                ((actionParams.newLineIds as string[]) ?? []).forEach((lineId) =>
+                  lineIds.add(lineId),
+                );
+              }
+            } else if (lineIds && (operation === 'insert_after' || operation === 'insert_before')) {
+              ((actionParams.newLineIds as string[]) ?? []).forEach((lineId) =>
+                lineIds.add(lineId),
+              );
+            }
+          }
+          opts.onActionDone(
+            name.startsWith('wb_')
+              ? {
+                  actionName: name as WhiteboardActionRecord['actionName'],
+                  agentId: opts.agent.id,
+                  agentName: opts.agent.name,
+                  params: actionParams,
+                }
+              : undefined,
+          );
+        }
+      }
       return {
         content: [{ type: 'text', text: `Action ${name} was sent to the client.` }],
         details: { actionId, actionName: name, params },

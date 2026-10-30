@@ -17,11 +17,7 @@ import {
   isPiNativeChildSpotlightEnabled,
 } from '@/lib/config/feature-flags';
 import { createLogger } from '@/lib/logger';
-import {
-  getPiMaxActionsPerAgent,
-  getPiMaxAgentTurns,
-  resolveAgentConfigs,
-} from '@/lib/chat/pi/config';
+import { resolveAgentConfigs } from '@/lib/chat/pi/config';
 import { runPiDirectorLoop } from '@/lib/chat/pi/director-loop';
 import type { SendEvent } from '@/lib/chat/pi/types';
 import { requestWorkspaceId } from '@/lib/server/model-config/runtime';
@@ -198,8 +194,6 @@ async function chat(req: NextRequest, principal: OwnerPrincipal): Promise<Respon
     }
 
     const signal = req.signal;
-    const abortController = new AbortController();
-    signal.addEventListener('abort', () => abortController.abort(), { once: true });
 
     const { readable, writable } = new TransformStream();
     const writer = writable.getWriter();
@@ -213,8 +207,6 @@ async function chat(req: NextRequest, principal: OwnerPrincipal): Promise<Respon
       enabled: false,
     };
 
-    const maxAgentTurns = getPiMaxAgentTurns(body);
-    const maxActionsPerAgent = getPiMaxActionsPerAgent(body);
     const enableWhiteboardTools = body.config.piEnableWhiteboardTools === true;
     const childRuntimeMode = isPiNativeChildRuntimeEnabled() ? 'native' : 'legacy';
     const enableNativeChildSpotlight = isPiNativeChildSpotlightEnabled();
@@ -273,7 +265,7 @@ async function chat(req: NextRequest, principal: OwnerPrincipal): Promise<Respon
     }
 
     log.info(
-      `Pi request agents=${body.config.agentIds.join(', ')} messages=${body.messages.length} maxAgentTurns=${maxAgentTurns}`,
+      `Pi request agents=${body.config.agentIds.join(', ')} messages=${body.messages.length}`,
     );
 
     (async () => {
@@ -303,10 +295,8 @@ async function chat(req: NextRequest, principal: OwnerPrincipal): Promise<Respon
           thinkingConfig,
           maxOutputTokens: modelInfo?.outputWindow,
           contextWindow: modelInfo?.contextWindow,
-          abortSignal: abortController.signal,
+          abortSignal: signal,
           signal,
-          maxAgentTurns,
-          maxActionsPerAgent,
           enableWhiteboardTools,
           childRuntimeMode,
           enableNativeChildSpotlight,

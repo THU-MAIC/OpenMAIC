@@ -560,3 +560,83 @@ describe('token plan web fetch', () => {
     },
   );
 });
+
+describe('DeepSeek token plan', () => {
+  it.each(['keep', 'overwrite'] as const)(
+    'lights chat, search and fetch with one key in %s mode, and disconnect restores defaults',
+    async (mode) => {
+      const view = viewOf(null);
+      const preset = view.presets.find((entry) => entry.id === 'deepseek-token-plan')!;
+      expect(connectConflicts(view, preset)).toEqual([]);
+      const server = serverApply(null);
+      const result = await connectTokenPlan(server.apply, view, preset, 'sk-ds-plan', mode);
+      expect(result).toMatchObject({
+        status: 'done',
+        providerId: 'deepseek-token-plan',
+        assigned: ['llm', 'webFetch', 'webSearch'],
+      });
+      expect(server.config()?.slots).toEqual({
+        llm: 'deepseek-token-plan:deepseek-flash',
+        webSearch: 'deepseek-token-plan',
+        webFetch: 'deepseek-token-plan',
+      });
+      const { resolveSlot } = await import('@/lib/server/model-config/resolve-slot');
+      const layers = [{ source: 'workspace' as const, config: server.config()! }];
+      for (const slot of ['llm', 'webSearch', 'webFetch'] as const) {
+        expect(resolveSlot(slot, layers), slot).toMatchObject({
+          status: 'assigned',
+          registryId: 'deepseek',
+          apiKey: 'sk-ds-plan',
+          baseUrl: 'https://api.deepseek.com/v1',
+        });
+      }
+      await server.apply({ kind: 'remove-provider', id: 'deepseek-token-plan' });
+      expect(server.config()?.slots ?? {}).toEqual({});
+      expect(
+        viewOf(server.config()).slots.find((slot) => slot.slot === 'webFetch')?.effective,
+      ).toMatchObject({ status: 'assigned', providerId: 'builtin', registryId: 'builtin' });
+    },
+  );
+
+  it('leaves image, video and TTS and a personal DeepSeek provider untouched', async () => {
+    const initial = await configure(
+      { kind: 'provider', id: 'deepseek', preset: 'deepseek', apiKey: 'sk-personal-0001' },
+      {
+        kind: 'slots',
+        set: { llm: 'deepseek:deepseek-v4-pro', image: null, video: null, tts: null },
+      },
+    );
+    const view = viewOf(initial);
+    // A personal DeepSeek key is not the plan: the plan is not connected yet.
+    const preset = view.presets.find((entry) => entry.id === 'deepseek-token-plan')!;
+    expect(view.providers.some((provider) => provider.preset === preset.id)).toBe(false);
+    expect(connectConflicts(view, preset).map((conflict) => conflict.slot.slot)).toEqual(['llm']);
+
+    const server = serverApply(initial);
+    const result = await connectTokenPlan(server.apply, view, preset, 'sk-ds-plan', 'overwrite');
+    expect(result).toMatchObject({ status: 'done', providerId: 'deepseek-token-plan' });
+    expect(server.config()?.slots).toEqual({
+      llm: 'deepseek-token-plan:deepseek-flash',
+      image: null,
+      video: null,
+      tts: null,
+      webSearch: 'deepseek-token-plan',
+      webFetch: 'deepseek-token-plan',
+    });
+
+    await server.apply({ kind: 'remove-provider', id: 'deepseek-token-plan' });
+    expect(server.config()?.providers?.deepseek).toEqual(initial.providers?.deepseek);
+    expect(server.config()?.slots).toEqual({ image: null, video: null, tts: null });
+  });
+
+  it('yields the slots a higher-priority connected plan recommends', async () => {
+    const view = viewOf(
+      await configure(addPlan('kimi-coding-plan'), addPlan('deepseek-token-plan')),
+    );
+    expect([...slotsHeldByHigherPlans(view, 'deepseek-token-plan')]).toEqual(
+      expect.arrayContaining(['llm', 'webSearch', 'webFetch']),
+    );
+    expect(recommendationIn(view, 'deepseek-token-plan')).toEqual({});
+    expect(slotsHeldByHigherPlans(view, 'kimi-coding-plan').size).toBe(0);
+  });
+});
