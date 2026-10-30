@@ -74,6 +74,12 @@ export function deploymentAuthorizedModels(
   const providers = config?.providers;
   if (!providers || !Object.hasOwn(providers, providerId)) return [];
   const provider = providers[providerId];
+  // The operator-declared model list for this deployment provider
+  // (openmaic.yml providers.<id>.models) is the source of truth for what the
+  // UI picker offers and what generation-time authorization permits. A model
+  // the deployment wants available must be listed there; the model-config API
+  // refuses to edit a deployment-declared provider (PROVIDER_RESERVED), so it
+  // cannot be added through the settings UI and must be declared in the file.
   const models = new Set(provider.models ?? []);
   const prefix = `${providerId}:`;
   const addReference = (reference: string | undefined) => {

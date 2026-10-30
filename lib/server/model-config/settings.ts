@@ -41,6 +41,7 @@ import {
   type CatalogueModel,
   type ProviderPreset,
 } from '@/lib/config/provider-presets';
+import { getModelInfo, type ProviderId } from '@/lib/ai/providers';
 import { validateClientBaseUrl } from '@/lib/server/ssrf-guard';
 import {
   presetOfficialRegionalEndpoint,
@@ -314,11 +315,12 @@ function capabilityModels(
         : pinned;
     const models =
       (capability === 'chat' && pinned?.length) || strictModels
-        ? (authorized ?? []).map(
-            (id) =>
-              offered.find((model) => model.id === id) ??
-              catalogueModel(capability, registryId!, id),
-          )
+        ? (authorized ?? []).map((id) => {
+            const found = offered.find((model) => model.id === id);
+            if (found) return found;
+            const info = capability === 'chat' ? getModelInfo(registryId! as ProviderId, id) : undefined;
+            return catalogueModel(capability, registryId!, id, info);
+          })
         : offered;
     result[capability] = { models, ...(registryId ? { registryId } : {}) };
   }
