@@ -490,7 +490,8 @@ export interface UnloadWriteResult {
   readonly sent: readonly PendingChange[];
   /**
    * Document changes that could not be sent this way: a structural or outline
-   * change (those need the whole document), a project scene whose learner
+   * change (those need the whole document, and hold back every other document
+   * change of the course with them), a project scene whose learner
    * state must sync first, a course this page has not seen on the server, or
    * a body that does not fit the keepalive budget. Leaving now loses them.
    */
@@ -546,7 +547,19 @@ export function writeStageChangesForUnload(
   const documentChanges: Array<{ change: PendingChange; body: Scene | Stage }> = [];
   data = withKnownMediaAllocations(stageId, data);
   const now = Date.now();
+  // A structural or outline change needs the whole-document save, and the
+  // course's other document changes belong to that same save: written alone,
+  // a scene could land with an order that collides with its neighbours, or a
+  // stage that no longer lists media of a scene the structure change removes
+  // while that scene survives. So one such change holds back all of them.
+  const wholeDocumentOnly = changes.some(
+    (change) => change.kind === 'structure' || change.kind === 'outline',
+  );
   for (const change of changes) {
+    if (wholeDocumentOnly && (change.kind === 'scene' || change.kind === 'stage')) {
+      deferred.push(change);
+      continue;
+    }
     switch (change.kind) {
       case 'currentScene':
         // Device-local: the write completes without the network.

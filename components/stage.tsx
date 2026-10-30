@@ -285,7 +285,9 @@ export function Stage({
     if (mode === 'edit') {
       // Done editing: the edits reach the server before the editor goes away.
       await settlePendingStageSave();
-      setMode('playback');
+      // The wait can take a moment; act on the mode as it is now, not as it
+      // was when the switch was flipped.
+      if (useStageStore.getState().mode === 'edit') setMode('playback');
       return;
     }
     // Load the editor chunk (slide + quiz surfaces) BEFORE flipping mode,

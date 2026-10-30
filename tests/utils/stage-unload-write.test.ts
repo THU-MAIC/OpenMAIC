@@ -201,6 +201,31 @@ describe('writeStageChangesForUnload', () => {
     expect(result.sent).toEqual([]);
   });
 
+  it('holds back every document change of the course when one needs the whole document', async () => {
+    const scenes = [slide('scene-1'), slide('scene-2')];
+    await loadCourse(scenes);
+    const result = writeStageChangesForUnload(
+      'stage-1',
+      [
+        { kind: 'structure' },
+        { kind: 'scene', sceneId: 'scene-1' },
+        { kind: 'stage' },
+        { kind: 'currentScene' },
+      ],
+      data(scenes),
+      stageDeletionEpoch('stage-1'),
+    );
+    expect(putScene).not.toHaveBeenCalled();
+    expect(putStage).not.toHaveBeenCalled();
+    expect(result.deferred).toEqual([
+      { kind: 'structure' },
+      { kind: 'scene', sceneId: 'scene-1' },
+      { kind: 'stage' },
+    ]);
+    // The device-local reading position is not part of the document.
+    expect(result.sent).toEqual([{ kind: 'currentScene' }]);
+  });
+
   it('defers a project scene, whose learner state must sync before the write', async () => {
     const project = { ...slide('scene-pbl'), content: { type: 'pbl' } } as unknown as Scene;
     await loadCourse([project]);

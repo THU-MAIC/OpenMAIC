@@ -6,13 +6,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * request side (direct keepalive writes) is covered in
  * tests/utils/stage-unload-write.test.ts.
  */
-const { incrementalSave, unloadWrite } = vi.hoisted(() => ({
+const { aggregateSave, incrementalSave, unloadWrite } = vi.hoisted(() => ({
+  aggregateSave: vi.fn(),
   incrementalSave: vi.fn(),
   unloadWrite: vi.fn(),
 }));
 
 vi.mock('@/lib/utils/stage-storage', () => ({
-  saveStageData: vi.fn().mockResolvedValue(undefined),
+  saveStageData: (...args: unknown[]) => aggregateSave(...args),
   saveStageDataIncremental: (...args: unknown[]) => incrementalSave(...args),
   loadStageData: vi.fn().mockResolvedValue(null),
   writeStageChangesForUnload: (...args: unknown[]) => unloadWrite(...args),
@@ -71,6 +72,7 @@ function sendsSceneAndStage(settled: Promise<boolean> = Promise.resolve(true)) {
 beforeEach(async () => {
   vi.useFakeTimers();
   incrementalSave.mockReset().mockResolvedValue({ failedChanges: [] });
+  aggregateSave.mockReset().mockResolvedValue(undefined);
   unloadWrite.mockReset().mockImplementation(sendsSceneAndStage());
   useStageStore.getState().clearStore();
   useStageStore.setState({
@@ -168,6 +170,128 @@ describe('beforeunload', () => {
     expect(event.preventDefault).toHaveBeenCalledOnce();
     finishSave();
     await inFlight;
+  });
+
+  it('keeps a newer edit queued when the user stays after an older save overtook it', async () => {
+    let finishSave!: () => void;
+    incrementalSave.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishSave = () => resolve({ failedChanges: [] });
+        }),
+    );
+    useStageStore.getState().updateScene('scene-2', { title: 'copy1' });
+    const inFlight = flushStageSave();
+    await vi.advanceTimersByTimeAsync(0);
+    useStageStore.getState().updateScene('scene-2', { title: 'copy2' });
+
+    const event = unloadEvent();
+    handleBeforeUnload(event);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(unloadWrite).toHaveBeenCalledOnce();
+
+    // The user stays. The older save lands after the keepalive write...
+    finishSave();
+    await inFlight;
+    await vi.advanceTimersByTimeAsync(5_000);
+    // ...and the newer edit, still queued, is written again after it.
+    const lastCall = incrementalSave.mock.calls.at(-1)!;
+    expect(lastCall[1]).toEqual([{ kind: 'scene', sceneId: 'scene-2' }]);
+    expect(lastCall[2].scenes.find((s: Scene) => s.id === 'scene-2').title).toBe('copy2');
+  });
+
+  it('does not send the same revision twice while a save keeps it queued', async () => {
+    let finishSave!: () => void;
+    let finishKeepalive!: (ok: boolean) => void;
+    unloadWrite.mockImplementation(
+      sendsSceneAndStage(
+        new Promise<boolean>((resolve) => {
+          finishKeepalive = resolve;
+        }),
+      ),
+    );
+    incrementalSave.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishSave = () => resolve({ failedChanges: [] });
+        }),
+    );
+    useStageStore.getState().updateScene('scene-1', { title: 'in flight' });
+    const inFlight = flushStageSave();
+    await vi.advanceTimersByTimeAsync(0);
+    useStageStore.getState().updateScene('scene-2', { title: 'queued' });
+
+    handleBeforeUnload(unloadEvent());
+    writePendingChangesForUnload();
+    expect(unloadWrite).toHaveBeenCalledOnce();
+
+    finishKeepalive(true);
+    finishSave();
+    await inFlight;
+  });
+
+  it('does not ask when the save in flight writes only other rows', async () => {
+    let finishSave!: () => void;
+    incrementalSave.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishSave = () => resolve({ failedChanges: [] });
+        }),
+    );
+    useStageStore.getState().updateScene('scene-1', { title: 'in flight' });
+    const inFlight = flushStageSave();
+    await vi.advanceTimersByTimeAsync(0);
+    useStageStore.getState().updateScene('scene-2', { title: 'other scene' });
+
+    const event = unloadEvent();
+    handleBeforeUnload(event);
+    expect(unloadWrite).toHaveBeenCalledOnce();
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    finishSave();
+    await inFlight;
+  });
+
+  it('asks when the save in flight rewrites the whole document', async () => {
+    let finishSave!: () => void;
+    incrementalSave.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishSave = () => resolve({ failedChanges: [] });
+        }),
+    );
+    useStageStore.getState().addScene(scene('scene-3'));
+    const inFlight = flushStageSave();
+    await vi.advanceTimersByTimeAsync(0);
+    useStageStore.getState().updateScene('scene-2', { title: 'after the structure change' });
+
+    const event = unloadEvent();
+    handleBeforeUnload(event);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    finishSave();
+    await inFlight;
+  });
+
+  it('asks, and keeps the change queued, while an aggregate save of the course is in flight', async () => {
+    let finishAggregate!: () => void;
+    aggregateSave.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishAggregate = () => resolve(undefined);
+        }),
+    );
+    const aggregate = useStageStore.getState().saveToStorage();
+    await vi.advanceTimersByTimeAsync(0);
+    useStageStore.getState().updateScene('scene-2', { title: 'during the aggregate save' });
+
+    const event = unloadEvent();
+    handleBeforeUnload(event);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(unloadWrite).toHaveBeenCalledOnce();
+
+    finishAggregate();
+    await aggregate;
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(incrementalSave.mock.calls.at(-1)![1]).toEqual([{ kind: 'scene', sceneId: 'scene-2' }]);
   });
 
   it('does not ask when the save in flight already carries exactly the pending change', async () => {
