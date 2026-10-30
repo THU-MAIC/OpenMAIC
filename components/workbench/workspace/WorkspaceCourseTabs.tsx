@@ -27,7 +27,7 @@
  *
  * ── Keeping the active tab visible ───────────────────────────────────────
  *
- * `scrollIntoView` on every render is the naive version and it is worse than
+ * Re-aiming on every render is the naive version and it is worse than
  * nothing: it yanks the strip back the moment you scroll away to look at the
  * others, because unrelated renders happen too. It fires on a change of active
  * tab or of tab count, never otherwise — so a strip you scrolled by hand stays
@@ -62,6 +62,8 @@ export interface WorkspaceCourseTabItem {
 
 /** Long enough to outlast the pane's width transition before the second aim. */
 const SETTLE_MS = 340;
+/** Clear of the edge fade (26px in the stylesheet) when a tab is brought into view. */
+const EDGE_PX = 26;
 /** The drawn thumb stays grabbable when very many tabs are open. */
 const THUMB_MIN_PX = 28;
 
@@ -117,9 +119,17 @@ export function WorkspaceCourseTabs({
   }, []);
 
   const revealActive = useCallback(() => {
+    // Scroll the strip itself, never its ancestors: `scrollIntoView` would also
+    // scroll the workspace row while the pane is still opening, sliding the
+    // whole page sideways for a frame.
     const aim = () => {
-      const el = stripRef.current?.querySelector<HTMLElement>('[aria-selected="true"]');
-      el?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      const strip = stripRef.current;
+      const el = strip?.querySelector<HTMLElement>('[aria-selected="true"]');
+      if (!strip || !el) return;
+      const sb = strip.getBoundingClientRect();
+      const eb = el.getBoundingClientRect();
+      if (eb.left < sb.left + EDGE_PX) strip.scrollLeft -= sb.left + EDGE_PX - eb.left;
+      else if (eb.right > sb.right - EDGE_PX) strip.scrollLeft += eb.right - (sb.right - EDGE_PX);
     };
     aim();
     if (revealTimer.current) clearTimeout(revealTimer.current);

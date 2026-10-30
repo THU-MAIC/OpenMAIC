@@ -13,13 +13,17 @@
  * the text from running the full width of a wide window.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { LoaderCircle } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils/cn';
 import { WorkbenchChat } from '@/components/workbench/WorkbenchChat';
 import type { MaterialSeed } from '@/components/workbench/compose-extras';
 import { PaneFoldButton } from './PaneFoldButton';
+
+/** The split's timing: a gentle ease-out, a little slow on purpose. */
+export const PANE_SPLIT_MS = 420;
+export const PANE_SPLIT_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
 import { useWorkbenchStore } from '@/lib/workbench/session-store';
 import { presentWorkspaceSession } from '@/lib/workbench/workspace-navigation';
 import { SESSION_TITLE_MAX_LENGTH, workbenchSessionTitle } from '@/lib/workbench/session-title';
@@ -125,8 +129,45 @@ export function WorkspaceChatPane({
   const title = named ?? t(draftConversation ? 'workspace.newSession' : 'workspace.currentSession');
   const canRename = !!onRename && !draftConversation;
 
+  // ── The split, animated ─────────────────────────────────────────────
+  // When the right pane opens the conversation goes from filling the main
+  // area to its own column (and back when it closes). The layout changes at
+  // once — the classroom measures its final box one time — and the column's
+  // width is played from where it was to where it is, so nothing jumps.
+  const paneRef = useRef<HTMLElement>(null);
+  const lastWidth = useRef<number | null>(null);
+  const lastFill = useRef(fill);
+  useEffect(() => {
+    const pane = paneRef.current;
+    if (!pane || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(([entry]) => {
+      // Only a settled width: one read mid-animation is not where it rests.
+      if (!pane.getAnimations?.().length) lastWidth.current = entry.contentRect.width;
+    });
+    observer.observe(pane);
+    return () => observer.disconnect();
+  }, []);
+  useLayoutEffect(() => {
+    const pane = paneRef.current;
+    const from = lastWidth.current;
+    const changed = lastFill.current !== fill;
+    lastFill.current = fill;
+    if (!pane || !changed || hidden || from === null) return;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const to = pane.getBoundingClientRect().width;
+    if (Math.abs(to - from) < 8 || typeof pane.animate !== 'function') return;
+    pane.animate(
+      [
+        { width: `${from}px`, flexGrow: 0, flexShrink: 0 },
+        { width: `${to}px`, flexGrow: 0, flexShrink: 0 },
+      ],
+      { duration: PANE_SPLIT_MS, easing: PANE_SPLIT_EASING },
+    );
+  }, [fill, hidden]);
+
   return (
     <section
+      ref={paneRef}
       data-testid="workspace-chat-pane"
       aria-label={t('workspace.chatPaneAria')}
       aria-hidden={hidden || undefined}

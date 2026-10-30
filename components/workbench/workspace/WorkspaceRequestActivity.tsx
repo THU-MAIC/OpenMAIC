@@ -341,7 +341,7 @@ function RequestPreview({
       data-preview-awaiting={asking ? 'true' : undefined}
       aria-hidden={hidden || undefined}
       className={cn(
-        'ws-pane ws-pane-last h-full min-w-0 flex-1 flex-col',
+        'ws-pane ws-pane-last ws-pane-enter h-full min-w-0 flex-1 flex-col',
         hidden ? 'hidden' : 'flex',
       )}
     >

@@ -529,6 +529,40 @@
   animation: ws-fade 500ms var(--ws-ease) both;
 }
 
+/* The right pane opening: it comes in from the right edge, a beat after the
+   conversation starts to narrow beside it (see `WorkspaceChatPane`), on the
+   split's own curve. Replayed whenever the pane is shown again. Full screen
+   grows the classroom out of the pane the same way. */
+@keyframes ws-pane-in {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ws-full-in {
+  from {
+    opacity: 0.6;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.ws-pane-enter {
+  animation: ws-pane-in 420ms cubic-bezier(0.22, 1, 0.36, 1) 60ms both;
+}
+
+.ws-pane-enter.ws-classroom-fullscreen {
+  animation: ws-full-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 .ws-d1 {
   animation-delay: 40ms;
 }
@@ -544,7 +578,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   .ws-enter,
-  .ws-enter-rail {
+  .ws-enter-rail,
+  .ws-pane-enter,
+  .ws-pane-enter.ws-classroom-fullscreen {
     animation: none;
     opacity: 1;
     transform: none;
