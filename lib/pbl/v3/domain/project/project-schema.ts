@@ -114,55 +114,29 @@ const evaluationMetadataSchema = z.object({
   rubricRefs: z.array(nonEmptyString).default([]),
 });
 
-const decisionDefinitionSchema = z
-  .object({
-    id: nonEmptyString,
-    kind: decisionKindSchema.default('architecture'),
-    desc: nonEmptyString,
-    decisionPrompt: nonEmptyString,
-    responseType: z.enum(['choice', 'text']).optional(),
-    requiresRationale: z.boolean().optional(),
-    options: z.array(
-      z.object({ id: nonEmptyString, label: nonEmptyString, summary: nonEmptyString }),
-    ),
-    rubricAnchor: nonEmptyString,
-    gatesGlobs: z.array(nonEmptyString),
-    evaluation: evaluationMetadataSchema.optional(),
-  })
-  .superRefine((decision, context) => {
-    if (decision.responseType !== 'text' && decision.options.length === 0)
-      context.addIssue({
-        code: 'custom',
-        message: 'A choice decision requires at least one option.',
-        path: ['options'],
-      });
-  });
-
-const quizQuestionSchema = z
-  .object({
-    q: nonEmptyString,
-    options: z.array(nonEmptyString).min(2),
-    answer: z.number().int().nonnegative(),
-    explain: nonEmptyString,
-    /** Public misconception hints indexed by the selected option; never disclose an alternative answer. */
-    optionFeedback: z.array(nonEmptyString).optional(),
-    retryHint: nonEmptyString.optional(),
-  })
-  .superRefine((question, context) => {
-    if (question.answer >= question.options.length)
-      context.addIssue({
-        code: 'custom',
-        path: ['answer'],
-        message: 'Quiz answer must reference an existing option.',
-      });
-    if (question.optionFeedback && question.optionFeedback.length !== question.options.length)
-      context.addIssue({
-        code: 'custom',
-        path: ['optionFeedback'],
-        message: 'Provide one feedback entry per quiz option.',
-      });
-  });
-
+const decisionDefinitionSchema = z.object({
+  id: nonEmptyString,
+  kind: decisionKindSchema.default('architecture'),
+  desc: nonEmptyString,
+  decisionPrompt: nonEmptyString,
+  responseType: z.enum(['choice', 'text']).optional(),
+  requiresRationale: z.boolean().optional(),
+  options: z.array(
+    z.object({ id: nonEmptyString, label: nonEmptyString, summary: nonEmptyString }),
+  ),
+  rubricAnchor: nonEmptyString,
+  gatesGlobs: z.array(nonEmptyString),
+  evaluation: evaluationMetadataSchema.optional(),
+});
+const quizQuestionSchema = z.object({
+  q: nonEmptyString,
+  options: z.array(nonEmptyString).min(2),
+  answer: z.number().int().nonnegative(),
+  explain: nonEmptyString,
+  /** Public misconception hints indexed by the selected option; never disclose an alternative answer. */
+  optionFeedback: z.array(nonEmptyString).optional(),
+  retryHint: nonEmptyString.optional(),
+});
 const stagePolicySchema = z.object({
   workspaceAccessPolicyRef: nonEmptyString.optional(),
   evaluationPolicyRef: nonEmptyString.optional(),
@@ -471,5 +445,34 @@ export const projectSchema = z
       }
     }
   });
+
+/** Authoring checks run only on new admission; installed resources keep their read schema. */
+export const projectAdmissionSchema = projectSchema.superRefine((project, context) => {
+  for (const [index, decision] of project.decisions.entries()) {
+    if (decision.responseType !== 'text' && decision.options.length === 0)
+      context.addIssue({
+        code: 'custom',
+        message: 'A choice decision requires at least one option.',
+        path: ['decisions', index, 'options'],
+      });
+  }
+  for (const [milestoneIndex, milestone] of project.milestones.entries()) {
+    for (const [index, question] of milestone.quiz.entries()) {
+      const path = ['milestones', milestoneIndex, 'quiz', index];
+      if (question.answer >= question.options.length)
+        context.addIssue({
+          code: 'custom',
+          message: 'Quiz answer must reference an existing option.',
+          path: [...path, 'answer'],
+        });
+      if (question.optionFeedback && question.optionFeedback.length !== question.options.length)
+        context.addIssue({
+          code: 'custom',
+          message: 'Provide one feedback entry per quiz option.',
+          path: [...path, 'optionFeedback'],
+        });
+    }
+  }
+});
 
 export type ProjectDefinition = z.infer<typeof projectSchema>;

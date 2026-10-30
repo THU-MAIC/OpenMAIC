@@ -597,7 +597,7 @@ async function readReportSnapshot(
   if (saved?.status === 'ready' && saved.document?.formatVersion === REPORT_FORMAT_VERSION)
     return { report: saved.document, completionRevision };
   const evidence = await buildLearningEvidence(db, row);
-  const stale = !!saved && Date.now() - saved.updated_at.getTime() > 120000;
+  const stale = saved?.status === 'generating' && Date.now() - saved.updated_at.getTime() > 120000;
   const report: LearningReport = {
     ...evidence,
     analysis: {
@@ -610,7 +610,7 @@ async function readReportSnapshot(
             : 'not_generated',
       findings: [],
       omitted: evidence.truncated,
-      canRetry: !saved || saved.status === 'failed' || stale,
+      canRetry: !saved || saved.status === 'ready' || saved.status === 'failed' || stale,
     },
   };
   return { report, completionRevision };
@@ -637,7 +637,7 @@ export async function generateLearningReport(
   principal: OwnerPrincipal,
   id: string,
   signal: AbortSignal,
-  schedule?: (work: () => Promise<LearningReport>) => void,
+  schedule?: (work: () => Promise<void>) => void,
 ) {
   signal.throwIfAborted();
   const { report, completionRevision } = await readReport(principal, id);
@@ -694,7 +694,6 @@ export async function generateLearningReport(
        WHERE study_id=$1 AND attempt=$2`,
         [id, attempt, JSON.stringify(document)],
       );
-      return learningReport(principal, id);
     } catch (error) {
       // Keep operational diagnostics without retaining provider bodies or learner material.
       createLogger('PBLReport').warn('Analysis failed', {
@@ -709,10 +708,12 @@ export async function generateLearningReport(
         `UPDATE pbl_v3_reports SET status='failed',updated_at=now() WHERE study_id=$1 AND attempt=$2`,
         [id, attempt],
       );
-      return learningReport(principal, id);
     }
   };
-  if (!schedule) return run();
+  if (!schedule) {
+    await run();
+    return learningReport(principal, id);
+  }
   try {
     schedule(run);
   } catch (error) {

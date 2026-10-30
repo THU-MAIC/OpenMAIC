@@ -163,6 +163,7 @@ async function resolveAuthorizedProject(
   if (!asset || asset.mime !== MIME || asset.revision !== 1) throw unavailable();
   const { bundle, project } = validateProjectPackage(
     JSON.parse(new TextDecoder().decode(asset.bytes)),
+    'resolve',
   );
   if (
     bundle.entry.checksum !== ref.checksum ||

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { PBLProjectPackage } from '@openmaic/dsl';
 import {
   projectSchema,
+  projectAdmissionSchema,
   type StageDefinition,
   type AgentRole,
 } from '@/lib/pbl/v3/domain/project/project-schema';
@@ -165,7 +166,10 @@ export function indexProjectFiles(
 }
 
 /** Validates only. No sandbox, filesystem extraction, global Skills or command execution. */
-export function validateProjectPackage(input: unknown): {
+export function validateProjectPackage(
+  input: unknown,
+  purpose: 'install' | 'resolve' = 'install',
+): {
   bundle: PBLProjectPackage;
   project: InstalledProject;
 } {
@@ -234,6 +238,11 @@ export function validateProjectPackage(input: unknown): {
     return invalid(
       `Unsupported project definition or runtime profile: ${descriptor.error.issues[0]?.message}`,
     );
+  if (purpose === 'install') {
+    const admission = projectAdmissionSchema.safeParse(descriptor.data.definition);
+    if (!admission.success)
+      return invalid(`Invalid project definition: ${admission.error.issues[0]?.message}`);
+  }
   const config = descriptor.data;
   const identifier = (value: string) =>
     /^[a-zA-Z0-9_-]{1,80}$/.test(value) && !Object.hasOwn(Object.prototype, value);

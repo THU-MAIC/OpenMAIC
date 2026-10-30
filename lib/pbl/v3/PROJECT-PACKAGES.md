@@ -338,3 +338,10 @@ the implementation's actual result, without comparing against embedded answers. 
 host compares the returned actual-stdout digest to the expected value. See the authored
 `future-self-lite` example for this pattern. Do not make a support script read a rubric
 file or evaluation descriptor from `{resources}`: those files are intentionally absent.
+
+New installations/imports also validate authoring consistency: choice decisions need options,
+quiz answer indexes must exist, and optional feedback must align with the options. Reading or
+exporting an already installed package does not reapply newly introduced authoring checks.
+Both paths retain package integrity, resource limits, runtime policies and owner scope; the
+pre-existing server quiz-answer range check remains in place. Reimporting an exported package
+is a new admission and must pass the current authoring checks.

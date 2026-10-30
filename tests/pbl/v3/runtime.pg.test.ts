@@ -2263,6 +2263,43 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect((mocked.reportAnalysis.mock.calls[0]![2] as AbortSignal).aborted).toBe(false);
     expect((await learningReport(principal, study.id)).analysis?.status).toBe('ready');
   });
+  it.each(['ready', 'failed'])(
+    'finishes scheduled %s analysis without a post-save read changing its outcome',
+    async (outcome) => {
+      const study = await freshStudy();
+      const started = (await study.send('begin')) as { sessionId: string };
+      await pool.query("UPDATE agent_sessions SET status='succeeded' WHERE id=$1", [
+        started.sessionId,
+      ]);
+      await pool.query(
+        "UPDATE pbl_v3_studies SET state=jsonb_set(state,'{status}','\"completed\"') WHERE id=$1",
+        [study.id],
+      );
+      mocked.reportAnalysis.mockReset().mockImplementationOnce(async () => {
+        // Another final-response attempt can appear after the report claim was admitted.
+        await pool.query("UPDATE agent_sessions SET status='queued' WHERE id=$1", [
+          started.sessionId,
+        ]);
+        if (outcome === 'failed') throw new Error('Model unavailable');
+        return { findings: [], omitted: false };
+      });
+      let work!: () => Promise<void>;
+      await generateLearningReport(principal, study.id, new AbortController().signal, (task) => {
+        work = task;
+      });
+      try {
+        await expect(work()).resolves.toBeUndefined();
+        expect(
+          (await pool.query('SELECT status FROM pbl_v3_reports WHERE study_id=$1', [study.id]))
+            .rows[0].status,
+        ).toBe(outcome);
+      } finally {
+        await pool.query("UPDATE agent_sessions SET status='succeeded' WHERE id=$1", [
+          started.sessionId,
+        ]);
+      }
+    },
+  );
   it('allows an explicit retry if post-response scheduling itself fails', async () => {
     const study = await unpreparedStudy();
     await pool.query(
@@ -2339,18 +2376,21 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(await learningReport(principal, id)).toEqual(ready);
     expect(await generateLearningReport(principal, id, signal)).toEqual(ready);
     expect(mocked.reportAnalysis).toHaveBeenCalledTimes(2);
-    // An old-format cached report is rebuilt token-free; one explicit retry upgrades it.
-    await pool.query(
-      "UPDATE pbl_v3_reports SET document=jsonb_set(document,'{formatVersion}','2') WHERE study_id=$1",
-      [id],
-    );
-    const upgradedFacts = await learningReport(principal, id);
-    expect(upgradedFacts.summary).toBeDefined();
-    expect(upgradedFacts.analysis?.status).toBe('not_generated');
-    expect(mocked.reportAnalysis).toHaveBeenCalledTimes(2);
-    mocked.reportAnalysis.mockResolvedValueOnce({ findings: [], omitted: false });
-    expect((await generateLearningReport(principal, id, signal)).analysis?.status).toBe('ready');
-    expect(mocked.reportAnalysis).toHaveBeenCalledTimes(3);
+    // Both recent and aged ready caches need regeneration rather than a failure retry.
+    for (const age of ['0 seconds', '3 minutes']) {
+      const calls = mocked.reportAnalysis.mock.calls.length;
+      await pool.query(
+        "UPDATE pbl_v3_reports SET document=jsonb_set(document,'{formatVersion}','4'),updated_at=now()-$2::interval WHERE study_id=$1",
+        [id, age],
+      );
+      const upgradedFacts = await learningReport(principal, id);
+      expect(upgradedFacts.summary).toBeDefined();
+      expect(upgradedFacts.analysis).toMatchObject({ status: 'not_generated', canRetry: true });
+      expect(mocked.reportAnalysis).toHaveBeenCalledTimes(calls);
+      mocked.reportAnalysis.mockResolvedValueOnce({ findings: [], omitted: false });
+      expect((await generateLearningReport(principal, id, signal)).analysis?.status).toBe('ready');
+      expect(mocked.reportAnalysis).toHaveBeenCalledTimes(calls + 1);
+    }
     await expect(
       learningReport({ ...principal, ownerId: 'another-owner' }, id),
     ).rejects.toMatchObject({ status: 404 });

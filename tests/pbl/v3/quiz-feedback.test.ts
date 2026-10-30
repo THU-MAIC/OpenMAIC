@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 import { quizQuestions } from '@/lib/server/pbl-v3/quiz-feedback';
 import { installedProject } from '@/lib/server/pbl-v3/catalog';
-import { projectSchema } from '@/lib/pbl/v3/domain/project/project-schema';
+import { projectAdmissionSchema } from '@/lib/pbl/v3/domain/project/project-schema';
 
 const question = {
   q: 'What happens?',
@@ -52,7 +52,7 @@ it('rejects invalid authored answer indexes and misaligned option feedback', () 
     installedProject({ id: 'greeting-python-lab', version: '1.1.0' }).definition,
   );
   project.milestones[0].quiz = [{ ...question, answer: 3 }];
-  expect(projectSchema.safeParse(project).success).toBe(false);
+  expect(projectAdmissionSchema.safeParse(project).success).toBe(false);
   project.milestones[0].quiz = [{ ...question, optionFeedback: ['incomplete'] }];
-  expect(projectSchema.safeParse(project).success).toBe(false);
+  expect(projectAdmissionSchema.safeParse(project).success).toBe(false);
 });

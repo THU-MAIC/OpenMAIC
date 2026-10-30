@@ -9,7 +9,7 @@ import {
 } from '@openmaic/dsl';
 import type { ClassroomManifest } from '@/lib/export/classroom-zip-types';
 import { PROJECT_LIMITS, projectResourcesWithinLimits, safeProjectPath } from './package-policy';
-import { projectSchema } from './domain/project/project-schema';
+import { projectSchema, projectAdmissionSchema } from './domain/project/project-schema';
 
 import { APPLICATION_CAPABILITY } from './application';
 
@@ -26,7 +26,7 @@ function needsPresentation(projects: readonly PBLProjectPackage[]) {
     (project) => JSON.parse(project.files['project.json'])?.definition?.presentation !== undefined,
   );
 }
-function needsDecisionResponses(projects: readonly PBLProjectPackage[]) {
+function needsDecisionResponses(projects: readonly PBLProjectPackage[], admission = false) {
   return projects
     .map((project) => {
       let descriptor: unknown;
@@ -35,7 +35,7 @@ function needsDecisionResponses(projects: readonly PBLProjectPackage[]) {
       } catch {
         throw new Error('Invalid JSON in project.json.');
       }
-      const definition = projectSchema.safeParse(
+      const definition = (admission ? projectAdmissionSchema : projectSchema).safeParse(
         descriptor && typeof descriptor === 'object' && 'definition' in descriptor
           ? descriptor.definition
           : undefined,
@@ -251,7 +251,7 @@ export async function installClassroomProjects(zip: JSZip, manifest: ClassroomMa
   }
   const projects = await readClassroomProjects(zip, manifest.pblProjects);
   if (
-    needsDecisionResponses(projects) &&
+    needsDecisionResponses(projects, true) &&
     !manifest.requiredCapabilities?.includes(DECISION_RESPONSE_CAPABILITY)
   )
     throw new Error('Decision response forms require pbl-v3-decision-responses@1.');

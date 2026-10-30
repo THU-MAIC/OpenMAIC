@@ -72,6 +72,47 @@ describe('self-contained PBL project packages', () => {
       expect(() => validateProjectPackage(change('text'))).not.toThrow();
     },
   );
+  it.each(['empty-choice', 'quiz-feedback'])(
+    'keeps installed %s packages readable/exportable but rejects their new admission',
+    async (kind) => {
+      const bundle = revised((files) => {
+        const spec = JSON.parse(files['project.json']);
+        if (kind === 'empty-choice') spec.definition.decisions[0].options = [];
+        else spec.definition.milestones[0].quiz[0].optionFeedback = ['Only one hint'];
+        files['project.json'] = JSON.stringify(spec);
+      });
+      expect(() => validateProjectPackage(bundle)).toThrow();
+      expect(validateProjectPackage(bundle, 'resolve').bundle).toEqual(bundle);
+      const m = manifest();
+      const fetcher = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(Response.json({ projects: [bundle] }));
+      try {
+        const files = new Map<string, Blob>();
+        await attachClassroomProjects('installed-course', m, files);
+        expect(m.pblProjects).toEqual([bundle.entry]);
+        fetcher.mockClear();
+        await expect(installClassroomProjects(await archive(bundle), m)).rejects.toThrow(
+          'Invalid project definition',
+        );
+        expect(fetcher).not.toHaveBeenCalled();
+        const tampered = structuredClone(bundle);
+        tampered.files['docs/0.md'] = 'changed without reindexing';
+        expect(() => validateProjectPackage(tampered, 'resolve')).toThrow('checksum');
+      } finally {
+        fetcher.mockRestore();
+      }
+    },
+  );
+  it('retains the pre-existing quiz answer range guard on both installation and resolution', () => {
+    const bundle = revised((files) => {
+      const spec = JSON.parse(files['project.json']);
+      spec.definition.milestones[0].quiz[0].answer = 99;
+      files['project.json'] = JSON.stringify(spec);
+    });
+    expect(() => validateProjectPackage(bundle)).toThrow();
+    expect(() => validateProjectPackage(bundle, 'resolve')).toThrow('Invalid quiz answer');
+  });
   it('round-trips public Hero metadata with its own capability and rejects missing declarations before upload', async () => {
     const hero = {
       description: 'Public entrance copy',
