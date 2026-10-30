@@ -2324,7 +2324,9 @@
         "toolFolderLimit": "The knowledge base already has the maximum of {{limit}} folders.",
         "mediaUnsupported": "Only image, video or audio materials can be used as course media.",
         "mediaStorageFull": "There is not enough storage for this media. Free space, then try again.",
-        "mediaNotFound": "Media material not found or has no media bytes."
+        "mediaNotFound": "Media material not found or has no media bytes.",
+        "notMovableBatch": "Some selected files cannot be moved, so none were moved",
+        "tooMany": "Too many files to move at once. Select fewer"
       },
       "actions": {
         "parse": "Parse",
@@ -2352,10 +2354,24 @@
         "materialCourses": "Content already saved into a course is not affected.",
         "cannotUndo": "This cannot be undone.",
         "folderTitle": "Delete the folder “{{name}}”?",
-        "folderContents": "Files moved to the top level: {{count}}. No files will be deleted."
+        "folderContents": "Files moved to the top level: {{count}}. No files will be deleted.",
+        "batchTitle": "Delete {{count}} files?",
+        "batchTitle_one": "Delete {{count}} file?",
+        "batchTitle_other": "Delete {{count}} files?",
+        "batchLinks": "Conversations that use them can no longer read them; text already in those conversations stays.",
+        "batchPartial": "Files are deleted one by one: some may fail, and files already deleted are not restored.",
+        "batchResult": "Deleted {{deleted}} of {{total}}. Not deleted:"
       },
       "conversationFailure": {
         "serviceUnavailable": "No parser is configured for this file type. Ask an administrator to configure one."
+      },
+      "selection": {
+        "select": "Select “{{name}}”",
+        "count": "{{count}} selected",
+        "count_one": "{{count}} selected",
+        "count_other": "{{count}} selected",
+        "clear": "Clear selection",
+        "dragHint": "Drag a selected file onto a folder to move all selected files"
       }
     },
     "untitledCourse": "Untitled course",

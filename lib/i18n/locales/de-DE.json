@@ -2324,7 +2324,9 @@
         "toolFolderLimit": "Die Wissensdatenbank hat das Maximum von {{limit}} Ordnern erreicht.",
         "mediaUnsupported": "Nur Bilder, Videos oder Audiodateien können als Kursmedien verwendet werden.",
         "mediaStorageFull": "Für dieses Medium ist nicht genug Speicherplatz vorhanden. Gib Speicherplatz frei und versuche es erneut.",
-        "mediaNotFound": "Das Medienmaterial wurde nicht gefunden oder hat keine verfügbaren Mediendaten."
+        "mediaNotFound": "Das Medienmaterial wurde nicht gefunden oder hat keine verfügbaren Mediendaten.",
+        "notMovableBatch": "Einige ausgewählte Dateien können nicht verschoben werden, daher wurde nichts verschoben",
+        "tooMany": "Zu viele Dateien auf einmal. Wählen Sie weniger aus"
       },
       "actions": {
         "parse": "Analysieren",
@@ -2352,10 +2354,24 @@
         "materialCourses": "Inhalte, die bereits in einem Kurs gespeichert sind, sind nicht betroffen.",
         "cannotUndo": "Das lässt sich nicht rückgängig machen.",
         "folderTitle": "Ordner „{{name}}“ löschen?",
-        "folderContents": "Dateien, die auf die oberste Ebene verschoben werden: {{count}}. Es werden keine Dateien gelöscht."
+        "folderContents": "Dateien, die auf die oberste Ebene verschoben werden: {{count}}. Es werden keine Dateien gelöscht.",
+        "batchTitle": "{{count}} Dateien löschen?",
+        "batchTitle_one": "{{count}} Datei löschen?",
+        "batchTitle_other": "{{count}} Dateien löschen?",
+        "batchLinks": "Unterhaltungen, die sie verwenden, können sie danach nicht mehr lesen; Text, der schon in diesen Unterhaltungen steht, bleibt erhalten.",
+        "batchPartial": "Die Dateien werden einzeln gelöscht: Manche können fehlschlagen, bereits gelöschte Dateien werden nicht wiederhergestellt.",
+        "batchResult": "{{deleted}} von {{total}} gelöscht. Nicht gelöscht:"
       },
       "conversationFailure": {
         "serviceUnavailable": "Für diesen Dateityp ist kein Parser eingerichtet. Bitte einen Administrator, einen einzurichten."
+      },
+      "selection": {
+        "select": "„{{name}}“ auswählen",
+        "count": "{{count}} ausgewählt",
+        "count_one": "{{count}} ausgewählt",
+        "count_other": "{{count}} ausgewählt",
+        "clear": "Auswahl aufheben",
+        "dragHint": "Ziehen Sie eine ausgewählte Datei auf einen Ordner, um alle ausgewählten Dateien zu verschieben"
       }
     },
     "untitledCourse": "未命名课堂",
