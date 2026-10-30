@@ -225,7 +225,12 @@ it('obtains a fresh new-tab ticket without replacing the live iframe or its inpu
     close = vi.fn();
   const open = vi
     .spyOn(window, 'open')
-    .mockReturnValue({ location: { replace }, close, opener: window } as unknown as Window);
+    .mockReturnValue({
+      location: { replace },
+      close,
+      opener: window,
+      document: document.implementation.createHTMLDocument(),
+    } as unknown as Window);
   mocks.request.mockResolvedValueOnce(running).mockResolvedValueOnce({
     ...running,
     preview: { ...running.preview, url: 'https://isolated.example/preview#fresh-ticket' },

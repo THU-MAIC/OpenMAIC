@@ -128,6 +128,10 @@ export function useApplicationPreview(
     const tab = window.open('about:blank', '_blank');
     if (!tab) return;
     tab.opener = null;
+    const referrer = tab.document.createElement('meta');
+    referrer.name = 'referrer';
+    referrer.content = 'no-referrer';
+    tab.document.head.append(referrer);
     const serial = ++attempt.current;
     controller.current?.abort();
     const abort = new AbortController();
