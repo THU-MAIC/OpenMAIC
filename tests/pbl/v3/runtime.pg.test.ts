@@ -295,7 +295,15 @@ vi.mock('@/lib/server/sandbox/providers/e2b-compatible', () => ({
 vi.mock('@/lib/server/agent-runtime/agent-driver-model', () => ({
   resolveAgentDriverModel: async () => ({
     connection: { model: {} },
-    piModel: { api: 'openai-completions', provider: 'openai', id: 'test-model' },
+    // The large-reply replay fixtures below deliberately fit a 1M-window model.
+    // Small-window compaction has separate boundary and projection regressions.
+    piModel: {
+      api: 'openai-completions',
+      provider: 'openai',
+      id: 'test-model',
+      contextWindow: 1_000_000,
+      maxTokens: 8192,
+    },
     wireMaxOutputTokens: undefined,
     reservedOutputTokens: 8192,
   }),
@@ -2906,6 +2914,39 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       release();
       lease.mockRestore();
     }
+  });
+
+  it('rechecks cancellation after context compaction before the teaching model call', async () => {
+    const { sessionId } = await executionFixture();
+    const claim = await agents.claimNextSession('projection-cancel', process.pid, {
+      sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    const controller = new AbortController();
+    const config = await teachingRunnerConfig({
+      sessionId,
+      ownerId: principal.ownerId,
+      workerId: 'projection-cancel',
+      attempt: claim!.attempt,
+      signal: controller.signal,
+    });
+    const { withTeachingTurnBoundary } = await import('@/lib/server/pbl-v3/runner-tools');
+    const modelCall = vi.fn();
+    const project = vi.fn(async (context) => {
+      controller.abort();
+      return context;
+    });
+    const stream = withTeachingTurnBoundary(
+      modelCall,
+      config.isTurnComplete,
+      config.historyWindow,
+      config.liveContext,
+      project,
+    );
+    await expect(stream({} as never, { messages: [] })).rejects.toThrow();
+    expect(project).toHaveBeenCalledOnce();
+    expect(modelCall).not.toHaveBeenCalled();
   });
 
   const expireExecution = async (sessionId: string) =>

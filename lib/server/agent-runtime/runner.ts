@@ -1723,6 +1723,21 @@ async function executeSession(
     const askUserLatch = createAskUserTerminateLatch();
     let toolCalls = 0;
     if (leaseLost) throw new AgentSessionLeaseLostError(id, WORKER_ID, attempt);
+    const teachingProjection = teaching
+      ? (await import('@/lib/server/pbl-v3/context-projection')).createTeachingContextProjection(
+          createCallLlmStreamFn({
+            languageModel: driver.connection.model,
+            maxOutputTokens: 4096,
+            thinkingConfig: { mode: 'disabled' },
+            unbounded: true,
+            responseIdleTimeoutMs: LLM_FETCH_TIMEOUT_MS,
+            onProgress: progress,
+            source: 'pbl-context-compaction',
+            abortSignal: abort.signal,
+          }),
+        )
+      : null;
+    if (teachingProjection) cleanup.add(() => teachingProjection.dispose());
     const agent = buildAgent({
       streamFn: teaching
         ? (await import('@/lib/server/pbl-v3/runner-tools')).withTeachingTurnBoundary(
@@ -1730,6 +1745,7 @@ async function executeSession(
             teaching.isTurnComplete,
             teaching.historyWindow,
             teaching.liveContext,
+            teachingProjection?.prepare,
           )
         : streamFn,
       systemPrompt: execution.systemPrompt,
