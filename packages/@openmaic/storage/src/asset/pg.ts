@@ -415,6 +415,9 @@ const LOCK_STAGED_BLOB_SQL = `SELECT 1 FROM asset_blobs WHERE content_hash = $1 
  */
 const REGISTRY_WRITE_LOCK_TIMEOUT_SQL = `SET LOCAL lock_timeout = '30s'`;
 
+/** The savepoint every registry write body runs under (see `writeTransaction`). */
+const REGISTRY_WRITE_SAVEPOINT = 'openmaic_asset_registry_write';
+
 function registryConfigurationFailure(problem: string): Error {
   return new Error(`@openmaic/storage: ${problem}`);
 }
@@ -518,11 +521,36 @@ export class PgAssetStore implements AssetStore {
    * A write transaction: the same fresh pinned connection as
    * {@link transaction}, plus a lock-wait budget, so a future lock-contention
    * variant of a registry write fails loudly instead of hanging.
+   *
+   * The body also runs under a savepoint, so a write that fails leaves
+   * nothing behind whatever the transaction it ran in does next. On a store
+   * bound to fresh transactions that changes nothing: a failing body rolls the
+   * whole transaction back anyway. On a store bound to a caller's open
+   * transaction there is no inner transaction to roll back, and a caller that
+   * catches the error and commits its own work would otherwise commit
+   * whatever statements of the failed write had already run -- a blob row
+   * claimed, a stamp cleared, an entry locked -- with nothing to undo them.
+   * Rolling back to the savepoint also leaves the caller's transaction usable
+   * after a statement error, and releases the locks the write took.
    */
   private writeTransaction<T>(body: (queryable: Queryable) => Promise<T>): Promise<T> {
     return this.transactionHook(async (queryable) => {
       await queryable.query(REGISTRY_WRITE_LOCK_TIMEOUT_SQL);
-      return body(queryable);
+      await queryable.query(`SAVEPOINT ${REGISTRY_WRITE_SAVEPOINT}`);
+      let result: T;
+      try {
+        result = await body(queryable);
+      } catch (error) {
+        try {
+          await queryable.query(`ROLLBACK TO SAVEPOINT ${REGISTRY_WRITE_SAVEPOINT}`);
+        } catch {
+          // The connection is gone or the transaction is beyond saving; the
+          // caller's own rollback (or the failed commit) then discards it.
+        }
+        throw error;
+      }
+      await queryable.query(`RELEASE SAVEPOINT ${REGISTRY_WRITE_SAVEPOINT}`);
+      return result;
     });
   }
 
@@ -624,7 +652,19 @@ export class PgAssetStore implements AssetStore {
    * it.
    */
   private async claimStagedBlob(queryable: Queryable, staged: StagedRecord): Promise<void> {
-    await this.claimBlobRow(queryable, staged.contentHash, staged.byteLength);
+    // Lock, verify, then mutate: the blob row is locked without being
+    // changed, the pin is spent only if it is live, and only then is the
+    // row's reclamation stamp cleared. A dead or reclaimed stage therefore
+    // fails before anything about the blob changes -- no row created for
+    // bytes that may be gone, no stamp cleared on a blob nothing will name --
+    // and the lock order (blob row, then pin) is the one every pin writer
+    // and the collector use. The pin's foreign key means a live pin implies
+    // the row, so there is nothing to insert.
+    const locked = await queryable.query(
+      'SELECT 1 FROM asset_blobs WHERE content_hash = $1 FOR UPDATE',
+      [staged.contentHash],
+    );
+    if (!locked.rows[0]) throw new RegistryStageLost();
     const consumed = await queryable.query(
       `DELETE FROM asset_blob_stages
         WHERE id = $1 AND content_hash = $2 AND ${STAGE_PIN_LIVE_SQL}
@@ -632,6 +672,9 @@ export class PgAssetStore implements AssetStore {
       [staged.stageId, staged.contentHash],
     );
     if (!consumed.rows[0]) throw new RegistryStageLost();
+    await queryable.query('UPDATE asset_blobs SET unreferenced_at = NULL WHERE content_hash = $1', [
+      staged.contentHash,
+    ]);
   }
 
   /**

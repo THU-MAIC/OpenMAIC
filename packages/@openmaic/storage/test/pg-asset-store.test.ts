@@ -512,8 +512,16 @@ describe('PgAssetStore registry behavior with PGlite', () => {
     // the blob row's lock, and precede the entry that references it. The write
     // transaction also pins a lock-wait budget first, so a future
     // lock-contention variant of a registry write fails loudly instead of
-    // hanging.
-    expect(existing.map((sql) => sql.split(' ')[0])).toEqual(['SET', 'INSERT', 'UPDATE', 'INSERT']);
+    // hanging, and runs its body under a savepoint, so a failed write leaves
+    // nothing behind in a transaction its caller goes on to commit.
+    expect(existing.map((sql) => sql.split(' ')[0])).toEqual([
+      'SET',
+      'SAVEPOINT',
+      'INSERT',
+      'UPDATE',
+      'INSERT',
+      'RELEASE',
+    ]);
     // The bound is on the write transaction's lock waits, not a silent
     // statement timeout: the wait that must fail loudly is the row-lock wait
     // (the self-deadlock variant), while a long byte write is still allowed to

@@ -731,7 +731,7 @@ describe.skipIf(!contractUrl)('PgAssetStore with PostgreSQL 16', () => {
       });
       const registry = new PgAssetStore(probePool as Queryable, {
         byteStore: layer,
-        stageTtlMs: 1_000,
+        stageTtlMs: 60_000,
         withTransaction: (body) =>
           transactionFor(probePool)((queryable) =>
             body({
@@ -752,19 +752,22 @@ describe.skipIf(!contractUrl)('PgAssetStore with PostgreSQL 16', () => {
       const data = new Blob(['renewed under the collector']);
       const { contentHash } = await contentHashOf(data);
 
-      // The upload ends late in the pin's life, so the renewal decides the
-      // pin is live shortly before its first deadline.
       const writeGate = layer.gate('write');
       const putting = registry.put(principal, data);
       await writeGate.reached;
       // Otherwise collectable. Stamped now, since the renewal will hold the
       // row until it commits.
       await pool.query(`UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'`);
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      // The pin's current deadline is a second out: the renewal, which runs
+      // as soon as the upload ends, decides it is live and replaces it with
+      // one a minute out.
+      await pool.query(
+        `UPDATE asset_blob_stages SET expires_at = clock_timestamp() + interval '1 second'`,
+      );
       writeGate.open();
       await renewalPending;
       // The deadline the renewal replaces has now passed; the new one has not.
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
       const failingCollector = new AssetCollector(pool as Queryable, layer, {
         graceMs: 0,
         now: () => new Date('2026-01-01T00:00:00.000Z'),
@@ -881,6 +884,106 @@ describe.skipIf(!contractUrl)('PgAssetStore with PostgreSQL 16', () => {
       });
       expect(await later.collect()).toBe(1);
       expect(await layer.read(contentHash)).toBeNull();
+    });
+
+    describe('a failed write on a store bound to a caller transaction leaves nothing behind', () => {
+      async function stampOf(hash: ContentHash): Promise<string[]> {
+        const rows = await pool.query<{ stamp: string | null }>(
+          `SELECT to_char(unreferenced_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS stamp
+             FROM asset_blobs WHERE content_hash = $1`,
+          [hash],
+        );
+        return rows.rows.map((row) => row.stamp ?? 'NULL');
+      }
+
+      /** Run `write` in a caller transaction that catches its failure and commits. */
+      async function callerCatchesAndCommits(
+        write: (bound: PgAssetStore) => Promise<unknown>,
+        layer: AssetByteStore,
+      ): Promise<unknown> {
+        return transactionFor(probePool)(async (tx) => {
+          const bound = new PgAssetStore(tx, {
+            byteStore: layer,
+            withTransaction: (body) => body(tx),
+          });
+          let failure: unknown;
+          try {
+            await write(bound);
+          } catch (error) {
+            failure = error;
+          }
+          // The caller's own work still runs, and commits.
+          await tx.query('SELECT 1');
+          return failure;
+        });
+      }
+
+      test('an expired stage leaves the blob stamp exactly as it was', async () => {
+        const layer = new GatedByteStore();
+        const registry = stagedStore(layer);
+        const data = new Blob(['expired stage, caller commits']);
+        const { contentHash } = await contentHashOf(data);
+        const staged = await registry.stageBytes(data);
+        await pool.query(`UPDATE asset_blob_stages SET expires_at = '2000-01-01T00:00:00.000Z'`);
+        await pool.query(`UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'`);
+
+        const failure = await callerCatchesAndCommits(
+          (bound) => bound.putStaged(principal, staged),
+          layer,
+        );
+
+        expect(String(failure)).toMatch(/registry put failed/);
+        expect(await stampOf(contentHash)).toEqual(['2000-01-01']);
+        expect((await pool.query('SELECT * FROM asset_entries')).rows).toEqual([]);
+      });
+
+      test('a reclaimed stage creates no blob row', async () => {
+        const layer = new GatedByteStore();
+        const registry = stagedStore(layer);
+        const data = new Blob(['reclaimed stage, caller commits']);
+        const { contentHash } = await contentHashOf(data);
+        const staged = await registry.stageBytes(data);
+        await pool.query('DELETE FROM asset_blobs WHERE content_hash = $1', [contentHash]);
+
+        const failure = await callerCatchesAndCommits(
+          (bound) => bound.putStaged(principal, staged),
+          layer,
+        );
+
+        expect(String(failure)).toMatch(/registry put failed/);
+        expect(await stampOf(contentHash)).toEqual([]);
+        expect((await pool.query('SELECT * FROM asset_entries')).rows).toEqual([]);
+      });
+
+      test('an in-database put whose byte write fails keeps the stamp and the transaction usable', async () => {
+        // The single-transaction path claims the blob row -- clearing its
+        // stamp -- before it writes bytes. A statement error in the byte write
+        // must not leave that claim for the caller to commit, nor leave the
+        // caller's transaction aborted.
+        const data = new Blob(['in-database write fails']);
+        const { contentHash } = await contentHashOf(data);
+        await store.remove(principal, await store.put(principal, data));
+        await pool.query(`UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'`);
+        const failingColumn: AssetByteStore & {
+          writeWith(queryable: Queryable, hash: ContentHash, bytes: Uint8Array): Promise<void>;
+        } = {
+          write: async () => undefined,
+          read: async () => null,
+          delete: async () => undefined,
+          writeWith: async (queryable) => {
+            await queryable.query('SELECT * FROM no_such_byte_table');
+          },
+        };
+
+        const failure = await callerCatchesAndCommits(
+          (bound) => bound.put(principal, data),
+          failingColumn,
+        );
+
+        expect(String(failure)).toMatch(/registry put failed/);
+        expect(await stampOf(contentHash)).toEqual(['2000-01-01']);
+        expect((await pool.query('SELECT * FROM asset_entries')).rows).toEqual([]);
+      });
     });
 
     test('releasing a stage lets its bytes drain, and releasing again is a no-op', async () => {
