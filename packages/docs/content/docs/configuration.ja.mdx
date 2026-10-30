@@ -454,6 +454,9 @@ NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
 
 # 実験的 PPTX インポート入口表示
 NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
+
+# アカウントメニューの「ドキュメント」が開くドキュメントサイト（既定は同一オリジンの /docs）
+NEXT_PUBLIC_DOCS_URL=https://docs.example.com
 ```
 
 教室チャットは常に Pi で動作し、ツール／関数呼び出しに対応したモデルが必要です。**コースモデル設定**の**教室**で対応モデルを選択するか、`openmaic.yml` の `classroom` スロット（または継承元の `llm` スロット）を設定してください。Gemini では Google の OpenAI 互換エンドポイントではなく、ネイティブの `google` プリセットを使います。 組み込みカタログでツール呼び出し非対応とされているモデルは推論前に `400 MODEL_CONFIG_INVALID`（`reason: tool_calling_required`）で拒否され、**コースモデル設定**でも教室スロットにこの要件が表示されます。

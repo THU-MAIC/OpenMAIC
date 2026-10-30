@@ -38,7 +38,8 @@ import {
   useWorkbenchShellExtensions,
   type WorkbenchShellMenuItem,
 } from '@/lib/workbench/shell-extensions';
-import { OPENMAIC_DOCS_URL, OPENMAIC_GITHUB_URL } from '@/lib/workbench/shell-links';
+import { OPENMAIC_GITHUB_URL } from '@/lib/workbench/shell-links';
+import { docsHref } from '@/lib/docs-link';
 import { cn } from '@/lib/utils/cn';
 import {
   DropdownMenu,
@@ -359,7 +360,7 @@ function AccountMenu({
         </DropdownMenuItem>
         <DropdownMenuItem asChild className="ws-menu-item">
           <a
-            href={OPENMAIC_DOCS_URL}
+            href={docsHref(locale)}
             target="_blank"
             rel="noopener noreferrer"
             data-testid="workspace-account-docs"

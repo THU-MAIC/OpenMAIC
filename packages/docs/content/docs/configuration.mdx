@@ -454,6 +454,9 @@ NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
 
 # Show the experimental PPTX import entry point
 NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
+
+# Docs site opened from the account menu (default: /docs on the same origin)
+NEXT_PUBLIC_DOCS_URL=https://docs.example.com
 ```
 
 Classroom chat always runs on Pi, which requires a model with tool (function) calling: select one for **Classroom** in **Course Model Config**, or set the `classroom` slot (or the `llm` slot it inherits from) in `openmaic.yml`. For Gemini, use the native `google` preset rather than Google's OpenAI-compatible endpoint. It refuses a model that the built-in catalogue lists without tool calling before inference, with `400 MODEL_CONFIG_INVALID` (`reason: tool_calling_required`), and **Course Model Config** notes the requirement on the classroom slot.

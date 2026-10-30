@@ -454,6 +454,9 @@ NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
 
 # 显示实验性 PPTX 导入入口
 NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
+
+# 账户菜单「文档」打开的文档站地址（默认同源 /docs）
+NEXT_PUBLIC_DOCS_URL=https://docs.example.com
 ```
 
 课堂对话固定由 Pi 运行，需要支持工具／函数调用的模型：在**课程模型配置**中为**课堂互动**选择这样的模型，或在 `openmaic.yml` 中设置 `classroom` 槽位（或它继承的 `llm` 槽位）。Gemini 请使用原生 `google` 预设，不要使用 Google 的 OpenAI 兼容端点。 内置模型目录标明不支持工具调用的模型会在推理前被拒绝，返回 `400 MODEL_CONFIG_INVALID`（`reason: tool_calling_required`），**课程模型配置**也会在课堂互动槽位上注明这一要求。
