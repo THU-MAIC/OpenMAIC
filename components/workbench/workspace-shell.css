@@ -2326,15 +2326,6 @@
   background: rgba(30, 30, 40, 0.85);
 }
 
-/* A card's name while it is being renamed: the rename row's input, framed like
-   the find field. */
-.ws-card-rename {
-  min-height: 34px;
-  border-radius: 10px;
-  border: 1px solid var(--ws-line);
-  background: var(--ws-surface);
-}
-
 .ws-course-card[aria-disabled='true'] {
   cursor: default;
 }

@@ -305,10 +305,7 @@ beforeEach(() => {
     state: 'ready',
     reload: vi.fn(() => Promise.resolve()),
     importInput: null,
-    discoveryContent: null,
-    openNewFolder: vi.fn(),
     moveCourse: vi.fn(),
-    createAndMove: vi.fn(),
     deleteCourse: vi.fn(),
   };
   mocks.classroomProps = null;

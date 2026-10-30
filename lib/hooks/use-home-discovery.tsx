@@ -11,10 +11,9 @@
  * exclusive, so exactly one live instance exists at any time — the rule that
  * matters is "never two mounted copies", not "one module".
  *
- * The Pro sidebar's Courses list reads `classrooms` from this same hook rather
+ * The workspace's My courses page reads `classrooms` from this same hook rather
  * than firing its own `GET /api/stages`: two fetches of the same list can
- * disagree, and a sidebar that contradicts the course grid beside it is worse
- * than a sidebar that is one render late.
+ * disagree, and the page, the classroom tabs and the `@` picker must not.
  *
  * The reference (live deployment) also renders the Discover/featured feed
  * through this hook and branches on `isLiveMode`. This workspace is
@@ -38,7 +37,6 @@ import {
   type StageListItem,
 } from '@/lib/utils/stage-storage';
 import type { FolderRecord } from '@/lib/types/folder';
-import { NewFolderDialog } from '@/components/discovery/folder-dialogs';
 import { useImportClassroom } from '@/lib/import/use-import-classroom';
 import { createCoalescedLatestLoader } from '@/lib/workbench/course-discovery-sync';
 
@@ -55,7 +53,7 @@ export type HomeDiscoveryState = 'loading' | 'ready' | 'error';
  * course managers on one screen contradict each other.
  *
  * This is a parameter rather than a second hook on purpose: both routes keep
- * ONE data layer (one `listStages`, one `listFolders`, one folder dialog), and
+ * ONE data layer (one `listStages`, one `listFolders`), and
  * only the rendered surface differs.
  */
 export type HomeDiscoveryMode = 'full' | 'discover-only';
@@ -80,16 +78,15 @@ export interface HomeDiscovery {
   /** Open the mounted ZIP picker. Shared by the home library and Pro course tree. */
   readonly triggerImport: () => void;
   readonly importing: boolean;
-  /** The discovery/featured tree. Mount at most one of these per page. */
-  readonly discoveryContent: ReactElement;
   /** The user's folders, for shells that render their own course tree. */
   readonly folders: FolderRecord[];
-  /** Open the (already-mounted) new-folder dialog. */
-  readonly openNewFolder: () => void;
+  /**
+   * Create a folder and add it to `folders`. Resolves the new folder; a refused
+   * name rejects with the storage boundary's `FolderNameError`.
+   */
+  readonly createFolder: (name: string) => Promise<FolderRecord>;
   /** File a course into a folder, or out of one with `undefined`. */
   readonly moveCourse: (stageId: string, folderId: string | undefined) => Promise<void> | void;
-  /** Curried: open the folder dialog, then move this course into what it creates. */
-  readonly createAndMove: (stageId: string) => () => void;
   /**
    * Tombstone an authored course and remove it from this hook's list.
    * Resolves true when the delete landed, false when it failed (a failure is
@@ -110,10 +107,6 @@ export function useHomeDiscovery({
   // Course folders — folder navigation and the new-folder dialog ride along so
   // both home shells share one folder data layer.
   const [folders, setFolders] = useState<FolderRecord[]>([]);
-  const [newFolderOpen, setNewFolderOpen] = useState(false);
-  // When set, the new-folder dialog is creating a folder AND moving this course
-  // into it (entered via the move-menu's "new folder" entry).
-  const [createAndMoveTarget, setCreateAndMoveTarget] = useState<string | null>(null);
 
   // One coalesced loader per list, created lazily on first use (not during
   // render). A response is committed only when no newer request was made while
@@ -235,25 +228,11 @@ export function useHomeDiscovery({
     }
   };
 
-  const handleCreateFolder = async (name: string) => {
+  const handleCreateFolder = useCallback(async (name: string) => {
     const folder = await createFolder(name);
     setFolders((prev) => [...prev, folder]);
-    // If this create came from the move-menu's "new folder" entry, move the
-    // requesting course into the freshly created folder.
-    if (createAndMoveTarget) {
-      await handleMoveCourse(createAndMoveTarget, folder.id);
-      setCreateAndMoveTarget(null);
-    }
-  };
-
-  // From the move-menu's "new folder" entry: remember the course, then open the
-  // folder dialog. The actual create+move happens in handleCreateFolder once the
-  // name is confirmed. (A Radix DropdownMenu is modal, so the name input cannot
-  // live inside it; the dialog is the focus surface.)
-  const handleCreateAndMove = (stageId: string) => () => {
-    setCreateAndMoveTarget(stageId);
-    setNewFolderOpen(true);
-  };
+    return folder;
+  }, []);
 
   const importInput = (
     <input
@@ -265,26 +244,6 @@ export function useHomeDiscovery({
     />
   );
 
-  // One discovery tree per shell. This workspace has no Discover feed (there
-  // is nobody else's work to discover), so the slot stays empty in both modes
-  // and only the shared new-folder dialog rides along — it must stay mounted
-  // even while the course list is empty, and Radix portals it to the body
-  // anyway, so its position in the tree is irrelevant as long as it is mounted
-  // exactly once.
-  const discoveryContent = (
-    <>
-      <NewFolderDialog
-        open={newFolderOpen}
-        onOpenChange={(open) => {
-          setNewFolderOpen(open);
-          if (!open) setCreateAndMoveTarget(null);
-        }}
-        folders={folders}
-        onCreate={handleCreateFolder}
-      />
-    </>
-  );
-
   return {
     classrooms,
     state,
@@ -292,11 +251,9 @@ export function useHomeDiscovery({
     importInput,
     triggerImport,
     importing: isImporting,
-    discoveryContent,
     folders,
-    openNewFolder: () => setNewFolderOpen(true),
+    createFolder: handleCreateFolder,
     moveCourse: handleMoveCourse,
-    createAndMove: handleCreateAndMove,
     deleteCourse,
   };
 }

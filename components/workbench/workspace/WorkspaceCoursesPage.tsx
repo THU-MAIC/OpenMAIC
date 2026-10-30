@@ -12,10 +12,15 @@
  * be discarded. Everything reads the one `useHomeDiscovery` list, so this page,
  * the classroom tab strip and the composer's `@` picker cannot disagree.
  *
+ * Names are edited in place, the knowledge base's way (`inline-name`): "New
+ * folder" adds a folder card whose name field already holds a de-duplicated
+ * default, selected; a rename turns the name into that field. Enter or leaving
+ * the field saves, Escape cancels.
+ *
  * Opening a course opens it in the classroom pane.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Folder, FolderInput, FolderOpen, FolderPlus, Search, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Slide } from '@openmaic/dsl';
@@ -39,7 +44,9 @@ import { filterByName } from '@/lib/workbench/workspace-tree';
 import { apiRenameStage, StageRenameError, STAGE_NAME_MAX_LENGTH } from '@/lib/live/server-api';
 import {
   displayNameWidth,
+  FOLDER_COUNT_LIMIT,
   FOLDER_NAME_MAX_WIDTH,
+  FolderNameError,
   validateFolderName,
 } from '@/lib/utils/folder-name-validation';
 import { MoveToFolderMenu } from '@/components/discovery/move-to-folder-menu';
@@ -63,11 +70,25 @@ import {
   workspaceFoldersAvailable,
   WorkspaceFolderNameError,
 } from './workspace-folder-seam';
-import { InlineNameRow, WorkspaceRowMenu } from './workspace-row-controls';
+import { WorkspaceRowMenu } from './workspace-row-controls';
+import { InlineName, newFolderName, type CommitCause } from './inline-name';
 import { cn } from '@/lib/utils/cn';
 
 type Discovery = ReturnType<typeof useHomeDiscovery>;
 type Course = Discovery['classrooms'][number];
+
+/** A name being edited in place on the page. */
+interface NameEdit {
+  /** One per edit: an answer is only its own edit's. */
+  readonly id: number;
+  readonly kind: 'newFolder' | 'folder' | 'course';
+  readonly targetId: string | null;
+  /** The name the field opens with (what was typed, after a refusal). */
+  readonly name: string;
+  readonly moveCourseId?: string;
+  readonly busy: boolean;
+  readonly error: string | null;
+}
 
 export function WorkspaceCoursesPage({
   courses,
@@ -93,51 +114,108 @@ export function WorkspaceCoursesPage({
   const foldersAvailable = workspaceFoldersAvailable();
   const { thumbnails, requestThumbnail, retainThumbnails } = useCourseThumbnails();
 
-  // Which card is an input right now: one at a time.
-  const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
-  const [renamingCourseId, setRenamingCourseId] = useState<string | null>(null);
+  /**
+   * The name being edited in place — one at a time: a new folder's draft, a
+   * folder's rename or a course's. `moveCourseId` is the course whose "move to
+   * → new folder" asked for the draft; it is filed there once it exists.
+   */
+  const [edit, setEdit] = useState<NameEdit | null>(null);
+  const editSeq = useRef(0);
+  const startEdit = (
+    kind: NameEdit['kind'],
+    targetId: string | null,
+    name: string,
+    moveCourseId?: string,
+  ) => {
+    editSeq.current += 1;
+    setEdit({ id: editSeq.current, kind, targetId, name, moveCourseId, busy: false, error: null });
+  };
+  const ownEdit = (id: number, change: (current: NameEdit) => NameEdit | null) =>
+    setEdit((current) => (current?.id === id ? change(current) : current));
   /** The folder whose delete has been asked for, and not yet answered. */
   const [folderToDelete, setFolderToDelete] = useState<{ id: string; name: string } | null>(null);
 
-  const submitFolderRename = useCallback(
-    async (folderId: string, name: string): Promise<string | null> => {
+  /** Why a folder name is refused before asking the server, or null. */
+  const folderNameRefusal = useCallback(
+    (name: string, folderId: string | null): string | null => {
       const widthCheck = validateFolderName(name);
       if (!widthCheck.ok) {
         return widthCheck.kind === 'empty'
           ? t('classroom.folderNameEmpty')
           : t('classroom.folderWidth', { width: widthCheck.width, max: FOLDER_NAME_MAX_WIDTH });
       }
-      const trimmed = name.trim();
-      // Unchanged is not a rename; leave editing without writing anything.
-      if (courses.folders.find((folder) => folder.id === folderId)?.name === trimmed) return null;
+      const trimmed = name.trim().toLowerCase();
+      // The server's own rule (case-insensitive), so a name the list already
+      // holds does not cost a round trip to be told so.
       if (
         courses.folders.some(
-          (folder) => folder.id !== folderId && folder.name.toLowerCase() === trimmed.toLowerCase(),
+          (folder) => folder.id !== folderId && folder.name.toLowerCase() === trimmed,
         )
       ) {
         return t('classroom.folderNameExists');
       }
+      return null;
+    },
+    [courses.folders, t],
+  );
+
+  /** A refusal from the folder routes, as copy. */
+  const folderErrorMessage = useCallback(
+    (caught: unknown, name: string, fallback: string): string => {
+      const kind =
+        caught instanceof WorkspaceFolderNameError || caught instanceof FolderNameError
+          ? caught.kind
+          : null;
+      if (kind === 'duplicate') return t('classroom.folderNameExists');
+      if (kind === 'tooLong') {
+        return t('classroom.folderWidth', {
+          width: displayNameWidth(name),
+          max: FOLDER_NAME_MAX_WIDTH,
+        });
+      }
+      if (kind === 'empty') return t('classroom.folderNameEmpty');
+      if (kind === 'limit') return t('classroom.folderCountLimit');
+      if (kind) return t('classroom.folderNameHint');
+      return fallback;
+    },
+    [t],
+  );
+
+  const submitFolderRename = useCallback(
+    async (folderId: string, name: string): Promise<string | null> => {
+      const trimmed = name.trim();
+      // Unchanged is not a rename; leave editing without writing anything.
+      if (courses.folders.find((folder) => folder.id === folderId)?.name === trimmed) return null;
+      const refusal = folderNameRefusal(name, folderId);
+      if (refusal) return refusal;
       try {
         if (!workspaceFolderAdapter) return t('workspace.foldersUnavailable');
         await workspaceFolderAdapter.rename(folderId, trimmed);
         await courses.reload();
         return null;
       } catch (caught) {
-        if (caught instanceof WorkspaceFolderNameError) {
-          if (caught.kind === 'duplicate') return t('classroom.folderNameExists');
-          if (caught.kind === 'tooLong') {
-            return t('classroom.folderWidth', {
-              width: displayNameWidth(trimmed),
-              max: FOLDER_NAME_MAX_WIDTH,
-            });
-          }
-          if (caught.kind === 'empty') return t('classroom.folderNameEmpty');
-          return t('classroom.folderNameHint');
-        }
-        return t('classroom.folderRenameFailed');
+        return folderErrorMessage(caught, trimmed, t('classroom.folderRenameFailed'));
       }
     },
-    [courses, t],
+    [courses, folderErrorMessage, folderNameRefusal, t],
+  );
+
+  /** Create the drafted folder, and file the course that asked for it there. */
+  const submitNewFolder = useCallback(
+    async (name: string, moveCourseId: string | undefined): Promise<string | null> => {
+      const trimmed = name.trim();
+      const refusal = folderNameRefusal(name, null);
+      if (refusal) return refusal;
+      if (courses.folders.length >= FOLDER_COUNT_LIMIT) return t('classroom.folderCountLimit');
+      try {
+        const folder = await courses.createFolder(trimmed);
+        if (moveCourseId) await courses.moveCourse(moveCourseId, folder.id);
+        return null;
+      } catch (caught) {
+        return folderErrorMessage(caught, trimmed, t('classroom.folderCreateFailed'));
+      }
+    },
+    [courses, folderErrorMessage, folderNameRefusal, t],
   );
 
   /**
@@ -192,6 +270,52 @@ export function WorkspaceCoursesPage({
       }
     },
     [courses, t],
+  );
+
+  const commitEdit = async (current: NameEdit, typed: string, _cause: CommitCause) => {
+    if (current.busy) return;
+    // An empty name asks nothing: a draft folder goes away, a rename ends.
+    if (!typed.trim()) return ownEdit(current.id, () => null);
+    ownEdit(current.id, (value) => ({ ...value, busy: true, error: null }));
+    const refusal =
+      current.kind === 'newFolder'
+        ? await submitNewFolder(typed, current.moveCourseId)
+        : current.kind === 'folder'
+          ? await submitFolderRename(current.targetId!, typed)
+          : await submitCourseRename(current.targetId!, typed);
+    ownEdit(current.id, (value) =>
+      refusal ? { ...value, name: typed, busy: false, error: refusal } : null,
+    );
+  };
+
+  /** "New folder": a draft card at the head of the folders, its name selected. */
+  const startNewFolder = (moveCourseId?: string) => {
+    setQuery('');
+    startEdit(
+      'newFolder',
+      null,
+      newFolderName(t('classroom.newFolderTitle'), courses.folders),
+      moveCourseId,
+    );
+  };
+
+  /** The field of the edit in place, as the knowledge base draws it. */
+  const nameField = (current: NameEdit, testId: string, label: string) => (
+    <InlineName
+      key={current.id}
+      testId={testId}
+      errorTestId={`${testId}-error`}
+      label={label}
+      initialName={current.name}
+      maxLength={current.kind === 'course' ? STAGE_NAME_MAX_LENGTH : 80}
+      busy={current.busy}
+      error={current.error}
+      onEdit={() =>
+        ownEdit(current.id, (value) => (value.error ? { ...value, error: null } : value))
+      }
+      onCommit={(name, cause) => void commitEdit(current, name, cause)}
+      onCancel={() => ownEdit(current.id, () => null)}
+    />
   );
 
   // A folder deleted while this page looks into it.
@@ -262,7 +386,7 @@ export function WorkspaceCoursesPage({
               <button
                 type="button"
                 data-testid="workspace-courses-new-folder"
-                onClick={courses.openNewFolder}
+                onClick={() => startNewFolder()}
                 className="ws-page-btn"
               >
                 <FolderPlus className="size-4" aria-hidden="true" />
@@ -272,26 +396,42 @@ export function WorkspaceCoursesPage({
           </div>
         </header>
 
-        {foldersAvailable && courses.folders.length > 0 && !searching ? (
+        {foldersAvailable &&
+        (courses.folders.length > 0 || edit?.kind === 'newFolder') &&
+        !searching ? (
           <section
             aria-label={t('workspace.coursesPage.folders')}
             className="mt-7 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4"
           >
+            {edit?.kind === 'newFolder' ? (
+              <div
+                data-testid="workspace-courses-new-folder-card"
+                className="ws-folder-card ws-folder-card-on"
+              >
+                <span className="ws-folder-card-icon" aria-hidden="true">
+                  <Folder className="size-4" />
+                </span>
+                {nameField(
+                  edit,
+                  'workspace-courses-new-folder-input',
+                  t('classroom.folderNameLabel'),
+                )}
+              </div>
+            ) : null}
             {courses.folders.map((item) => {
               const open = item.id === activeFolderId;
-              if (item.id === renamingFolderId) {
+              if (edit?.kind === 'folder' && edit.targetId === item.id) {
                 return (
-                  <InlineNameRow
-                    key={item.id}
-                    testId={`workspace-courses-folder-rename-${item.id}`}
-                    initialName={item.name}
-                    placeholder={t('classroom.folderNamePlaceholder')}
-                    ariaLabel={t('classroom.folderNameLabel')}
-                    maxLength={80}
-                    className="ws-folder-card ws-card-rename"
-                    onSubmit={(name) => submitFolderRename(item.id, name)}
-                    onClose={() => setRenamingFolderId(null)}
-                  />
+                  <div key={item.id} className="ws-folder-card ws-folder-card-on">
+                    <span className="ws-folder-card-icon" aria-hidden="true">
+                      <FolderOpen className="size-4" />
+                    </span>
+                    {nameField(
+                      edit,
+                      `workspace-courses-folder-rename-${item.id}`,
+                      t('classroom.folderNameLabel'),
+                    )}
+                  </div>
                 );
               }
               return (
@@ -320,7 +460,7 @@ export function WorkspaceCoursesPage({
                       testId={`workspace-courses-folder-more-${item.id}`}
                       label={item.name}
                       triggerClassName="ws-card-more-btn"
-                      onRename={() => setRenamingFolderId(item.id)}
+                      onRename={() => startEdit('folder', item.id, item.name)}
                       // Asked as a question rather than confirmed in the menu:
                       // this delete moves courses, and that needs a sentence.
                       onDelete={() => setFolderToDelete(item)}
@@ -388,21 +528,30 @@ export function WorkspaceCoursesPage({
                 onOpen={() => onOpenCourse(course.id)}
                 folders={foldersAvailable ? courses.folders : null}
                 onMove={(target) => void courses.moveCourse(course.id, target)}
-                onCreateAndMove={courses.createAndMove(course.id)}
-                renaming={course.id === renamingCourseId}
-                onStartRename={() => setRenamingCourseId(course.id)}
-                onSubmitRename={(name) => submitCourseRename(course.id, name)}
-                onEndRename={() => setRenamingCourseId(null)}
+                onCreateAndMove={() => startNewFolder(course.id)}
+                nameField={
+                  edit?.kind === 'course' && edit.targetId === course.id
+                    ? nameField(
+                        edit,
+                        `workspace-courses-rename-${course.id}`,
+                        t('classroom.rename'),
+                      )
+                    : null
+                }
+                // While its name is a field, or a folder is being drafted for
+                // it, the card's ⋯ steps aside: the menu handing the focus back
+                // to its button would end the edit.
+                busyWithEdit={
+                  (edit?.kind === 'course' && edit.targetId === course.id) ||
+                  edit?.moveCourseId === course.id
+                }
+                onStartRename={() => startEdit('course', course.id, course.name)}
                 onDelete={() => onDeleteCourse(course.id)}
               />
             ))}
           </div>
         )}
       </div>
-
-      {/* The new-folder dialog the header button and "move to → new folder"
-          open; the home surface mounts it otherwise, never both at once. */}
-      {courses.discoveryContent}
 
       {/* Deleting a folder does something to the courses inside it, so it is
           asked as a question with that consequence stated. Only the keeping
@@ -453,10 +602,9 @@ function CourseCard({
   folders,
   onMove,
   onCreateAndMove,
-  renaming,
+  nameField,
+  busyWithEdit,
   onStartRename,
-  onSubmitRename,
-  onEndRename,
   onDelete,
 }: {
   readonly course: Course;
@@ -469,10 +617,10 @@ function CourseCard({
   readonly folders: Discovery['folders'] | null;
   readonly onMove: (folderId: string | undefined) => void;
   readonly onCreateAndMove: () => void;
-  readonly renaming: boolean;
+  /** The name's field while it is being renamed in place; null otherwise. */
+  readonly nameField: ReactNode;
+  readonly busyWithEdit: boolean;
   readonly onStartRename: () => void;
-  readonly onSubmitRename: (name: string) => Promise<string | null>;
-  readonly onEndRename: () => void;
   readonly onDelete: () => Promise<void> | void;
 }) {
   const { t } = useI18n();
@@ -533,8 +681,8 @@ function CourseCard({
             </span>
           ) : null}
         </div>
-        {renaming ? null : <div className="ws-course-card-name">{name}</div>}
-        {renaming ? null : (
+        {nameField ? null : <div className="ws-course-card-name">{name}</div>}
+        {nameField ? null : (
           <div className="ws-course-card-meta">
             {t('workspace.sceneCount', { count: course.sceneCount })}
             <span aria-hidden="true"> · </span>
@@ -542,21 +690,8 @@ function CourseCard({
           </div>
         )}
       </button>
-      {renaming ? (
-        <div className="mt-2">
-          <InlineNameRow
-            testId={`workspace-courses-rename-${course.id}`}
-            initialName={course.name}
-            placeholder={t('classroom.renamePlaceholder')}
-            ariaLabel={t('classroom.rename')}
-            maxLength={STAGE_NAME_MAX_LENGTH}
-            className="ws-card-rename"
-            onSubmit={onSubmitRename}
-            onClose={onEndRename}
-          />
-        </div>
-      ) : null}
-      {status ? null : (
+      {nameField ? <div className="mt-2.5 flex">{nameField}</div> : null}
+      {status || busyWithEdit ? null : (
         <div className="ws-card-more">
           <WorkspaceRowMenu
             testId={`workspace-courses-more-${course.id}`}

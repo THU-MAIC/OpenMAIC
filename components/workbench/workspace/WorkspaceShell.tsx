@@ -1771,7 +1771,6 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       {render.home ? (
         <WorkspaceHome
           composerReset={composerReset}
-          discoveryContent={courses.discoveryContent}
           // The home composer's `@` picker names courses from the same one list
           // the rail and the conversation composer use.
           courseOptions={courseOptions}

@@ -5,7 +5,8 @@
  * only. Everything the rail's old course tree offered is pinned here: a
  * course's ⋯ renames in place, files into a folder and deletes after a second
  * press; a folder's ⋯ renames and deletes (keeping its courses) after a
- * question.
+ * question. A new folder is a draft card with its name selected, Finder-style,
+ * not a dialog.
  */
 
 import { act, createElement } from 'react';
@@ -30,11 +31,12 @@ vi.mock('@/lib/live/server-api', () => ({
   STAGE_NAME_MAX_LENGTH: 200,
 }));
 const removeKeepingCourses = vi.fn(async () => undefined);
+const renameFolder = vi.fn(async () => undefined);
 vi.mock('@/components/workbench/workspace/workspace-folder-seam', () => ({
   workspaceFoldersAvailable: () => true,
   workspaceFolderAdapter: {
     create: vi.fn(async () => undefined),
-    rename: vi.fn(async () => undefined),
+    rename: (...args: unknown[]) => renameFolder(...(args as [])),
     removeKeepingCourses: (...args: unknown[]) => removeKeepingCourses(...(args as [])),
   },
   WorkspaceFolderNameError: class extends Error {},
@@ -71,6 +73,8 @@ const byTestId = (id: string) => document.querySelector<HTMLElement>(`[data-test
 async function renderPage() {
   const onDeleteCourse = vi.fn();
   const reload = vi.fn(async () => undefined);
+  const createFolder = vi.fn(async (name: string) => ({ id: 'f-new', name }));
+  const moveCourse = vi.fn(async () => undefined);
   const container = document.createElement('div');
   document.body.append(container);
   const root = createRoot(container);
@@ -95,11 +99,9 @@ async function renderPage() {
           importInput: null,
           triggerImport: vi.fn(),
           importing: false,
-          discoveryContent: null,
           folders: [{ id: 'f1', name: 'Math' }],
-          openNewFolder: vi.fn(),
-          moveCourse: vi.fn(),
-          createAndMove: () => () => {},
+          createFolder,
+          moveCourse,
           deleteCourse: vi.fn(async () => true),
         } as never,
         courseRuns: new Map(),
@@ -109,7 +111,7 @@ async function renderPage() {
       }),
     );
   });
-  return { onDeleteCourse, reload };
+  return { onDeleteCourse, reload, createFolder, moveCourse };
 }
 
 async function openMenu(testId: string) {
@@ -131,6 +133,54 @@ async function typeInto(input: HTMLInputElement, value: string) {
   });
 }
 
+async function pressKey(input: HTMLInputElement, key: string) {
+  await act(async () => {
+    input.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+  });
+}
+
+describe('a new folder, in place', () => {
+  it('appears as a draft card with a de-duplicated default name, selected', async () => {
+    await renderPage();
+    await act(async () => byTestId('workspace-courses-new-folder')!.click());
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    const input = byTestId('workspace-courses-new-folder-input') as HTMLInputElement;
+    expect(input).not.toBeNull();
+    expect(input.value).toBe('classroom.newFolderTitle');
+    expect(document.activeElement).toBe(input);
+    expect([input.selectionStart, input.selectionEnd]).toEqual([0, input.value.length]);
+  });
+
+  it('is created by Enter, and Escape drops the draft', async () => {
+    const { createFolder } = await renderPage();
+    await act(async () => byTestId('workspace-courses-new-folder')!.click());
+    let input = byTestId('workspace-courses-new-folder-input') as HTMLInputElement;
+    await pressKey(input, 'Escape');
+    expect(byTestId('workspace-courses-new-folder-card')).toBeNull();
+    expect(createFolder).not.toHaveBeenCalled();
+
+    await act(async () => byTestId('workspace-courses-new-folder')!.click());
+    input = byTestId('workspace-courses-new-folder-input') as HTMLInputElement;
+    await typeInto(input, 'Physics');
+    await pressKey(input, 'Enter');
+    expect(createFolder).toHaveBeenCalledWith('Physics');
+    expect(byTestId('workspace-courses-new-folder-card')).toBeNull();
+  });
+
+  it('refuses a name a folder already has, keeping what was typed', async () => {
+    const { createFolder } = await renderPage();
+    await act(async () => byTestId('workspace-courses-new-folder')!.click());
+    const input = byTestId('workspace-courses-new-folder-input') as HTMLInputElement;
+    await typeInto(input, 'math');
+    await pressKey(input, 'Enter');
+    expect(createFolder).not.toHaveBeenCalled();
+    expect(byTestId('workspace-courses-new-folder-input-error')?.textContent).toBe(
+      'classroom.folderNameExists',
+    );
+    expect((byTestId('workspace-courses-new-folder-input') as HTMLInputElement).value).toBe('math');
+  });
+});
+
 describe('a course card’s ⋯', () => {
   it('offers rename, move to folder and delete', async () => {
     await renderPage();
@@ -144,14 +194,10 @@ describe('a course card’s ⋯', () => {
     const { reload } = await renderPage();
     await openMenu('workspace-courses-more-c1');
     await act(async () => byTestId('workspace-courses-more-c1-rename')!.click());
-    const input = byTestId('workspace-courses-rename-c1-input') as HTMLInputElement;
+    const input = byTestId('workspace-courses-rename-c1') as HTMLInputElement;
     expect(input.value).toBe('Fractions');
     await typeInto(input, 'Fractions II');
-    await act(async () => {
-      byTestId('workspace-courses-rename-c1')!.dispatchEvent(
-        new Event('submit', { bubbles: true, cancelable: true }),
-      );
-    });
+    await pressKey(input, 'Enter');
     expect(renameStage).toHaveBeenCalledWith('c1', 'Fractions II');
     expect(reload).toHaveBeenCalled();
     expect(byTestId('workspace-courses-rename-c1')).toBeNull();
@@ -168,6 +214,17 @@ describe('a course card’s ⋯', () => {
 });
 
 describe('a folder card’s ⋯', () => {
+  it('renames in place', async () => {
+    await renderPage();
+    await openMenu('workspace-courses-folder-more-f1');
+    await act(async () => byTestId('workspace-courses-folder-more-f1-rename')!.click());
+    const input = byTestId('workspace-courses-folder-rename-f1') as HTMLInputElement;
+    expect(input.value).toBe('Math');
+    await typeInto(input, 'Maths');
+    await pressKey(input, 'Enter');
+    expect(renameFolder).toHaveBeenCalledWith('f1', 'Maths');
+  });
+
   it('asks before deleting, and keeps the folder’s courses', async () => {
     await renderPage();
     await openMenu('workspace-courses-folder-more-f1');

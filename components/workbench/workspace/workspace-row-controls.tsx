@@ -1,10 +1,9 @@
 'use client';
 
 /**
- * The two row controls the workspace's lists share: the rename-in-place row
- * and the hover ⋯ menu. The rail's chat rows and the My courses page's folder
- * and course cards both maintain their entries through them, so a rename or a
- * delete reads and confirms the same way wherever it is done.
+ * The rail's rename-in-place row, and the hover ⋯ menu the rail's chat rows
+ * and the My courses page's folder and course cards share, so a rename or a
+ * delete is offered and confirmed the same way wherever it is done.
  */
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -40,7 +39,6 @@ export function InlineNameRow({
   maxLength,
   leading,
   inputClassName,
-  className,
   allowEmpty = false,
   onSubmit,
   onClose,
@@ -53,8 +51,6 @@ export function InlineNameRow({
   /** Glyphs the row carries before the name, so the input lines up with it. */
   readonly leading?: ReactNode;
   readonly inputClassName?: string;
-  /** Replaces the rail row's own frame, for a host that is not a rail row. */
-  readonly className?: string;
   /**
    * An empty box is a legal answer. False for a folder or a course, whose names
    * are required; true for a chat, where clearing the box drops the override
@@ -96,10 +92,7 @@ export function InlineNameRow({
     <div>
       <form
         data-testid={testId}
-        className={cn(
-          className ?? 'ws-row ws-tree-row',
-          'ws-inline-folder flex w-full items-center px-2',
-        )}
+        className="ws-row ws-inline-folder ws-tree-row flex w-full items-center px-2"
         onSubmit={(event) => {
           event.preventDefault();
           void submit();

@@ -27,7 +27,7 @@
  * feed of other people's courses, so by default nothing follows the composer.
  */
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import { Github, Star } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useWorkbenchShellExtensions } from '@/lib/workbench/shell-extensions';
@@ -40,7 +40,6 @@ import type { MaterialSeed } from '@/components/workbench/compose-extras';
 
 export function WorkspaceHome({
   composerReset,
-  discoveryContent,
   courseOptions,
   onOpenSession,
   onOpenSessionAfterLeaving,
@@ -48,7 +47,6 @@ export function WorkspaceHome({
   onMaterialSeedConsumed,
 }: {
   readonly composerReset: number;
-  readonly discoveryContent: ReactNode;
   /**
    * What the composer's `@` picker may name. The shell already has this list
    * (the rail renders it), so it is handed down rather than fetched again here.
@@ -168,7 +166,6 @@ export function WorkspaceHome({
           data-testid="pro-workspace-featured"
           className="ws-featured flex w-full flex-col items-center [&>div]:mt-0"
         >
-          {discoveryContent}
           {homeSection ? (
             <div className="w-full" data-testid="pro-workspace-host-section">
               {homeSection}
