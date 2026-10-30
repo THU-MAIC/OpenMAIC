@@ -655,9 +655,24 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     [collapse, goTo, panes],
   );
 
+  /**
+   * The conversation the home composer just started on this page, and whether
+   * the rail has had its one fold for its first request's preview. Only that
+   * preview — the "focus on what is being built" moment — folds the rail;
+   * every other preview (a follow-up in an existing conversation, one
+   * restored with its conversation, switching back to a preview tab) leaves
+   * the rail as the teacher had it.
+   */
+  const [homeRequest, setHomeRequest] = useState<{
+    readonly sessionId: string | null;
+    readonly requestKey: string | null;
+    readonly used: boolean;
+  }>({ sessionId: null, requestKey: null, used: true });
+
   /** The home composer's conversation exists now, the composer still on screen. */
   const openCreatedSession = useCallback(
     (sessionId: string) => {
+      setHomeRequest({ sessionId, requestKey: null, used: false });
       // Opening the pane is immediate, but the rail still needs a pull fallback
       // when the owner EventSource is reconnecting or missed session_created.
       loadSessions();
@@ -1669,13 +1684,30 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     [courseOptions, generatingCourseIds, lookupCourse, openCourse, panes.courseId],
   );
 
-  // The preview on screen (not folded) folds the navigation, as a view state.
+  // The preview of the first request the home composer started on this page
+  // folds the navigation, once, as a view state: the teacher's saved rail
+  // preference is never written for it. See `homeRequest`.
   const previewPaneOpen = previewShowing && !collapse.value.classroom;
+  const homePreview =
+    homeRequest.sessionId !== null &&
+    homeRequest.sessionId === attachedSessionId &&
+    !homeRequest.used &&
+    (homeRequest.requestKey === null || homeRequest.requestKey === previewTab.requestKey);
+  if (homePreview && previewPaneOpen && homeRequest.requestKey === null && previewTab.requestKey) {
+    // The home request's preview is on screen: this is the one it folds for.
+    setHomeRequest({ ...homeRequest, requestKey: previewTab.requestKey });
+  }
+  if (homeRequest.requestKey !== null && !homeRequest.used && !(homePreview && previewPaneOpen)) {
+    // It left the screen (another tab, a fold, the next request, another
+    // conversation): the fold is spent, and showing it again leaves the rail be.
+    setHomeRequest({ ...homeRequest, used: true });
+  }
+  const autoFold = homePreview && previewPaneOpen && homeRequest.requestKey !== null;
   const [navReopenedForPreview, setNavReopenedForPreview] = useState(false);
-  if (!previewPaneOpen && navReopenedForPreview) setNavReopenedForPreview(false);
-  const navCollapsed = collapse.value.nav || (previewPaneOpen && !navReopenedForPreview);
+  if (!autoFold && navReopenedForPreview) setNavReopenedForPreview(false);
+  const navCollapsed = collapse.value.nav || (autoFold && !navReopenedForPreview);
   const toggleRail = useCallback(() => {
-    if (!previewPaneOpen) {
+    if (!autoFold) {
       collapse.toggleNav();
       return;
     }
@@ -1687,7 +1719,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     } else {
       setNavReopenedForPreview(false);
     }
-  }, [collapse, navCollapsed, previewPaneOpen]);
+  }, [autoFold, collapse, navCollapsed]);
 
   return (
     <div

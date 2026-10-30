@@ -2282,9 +2282,8 @@ describe('the knowledge base page', () => {
       expect(mocks.chatPaneProps?.fill).toBe(true);
     });
 
-    it('recomposes around the preview: folds the rail, narrows the chat, restores after', async () => {
-      await render();
-      expect(mocks.railProps?.collapsed).toBe(false);
+    /** The first request's tool call: the preview opens. */
+    const toolCall = async () => {
       mocks.store.status = 'running';
       mocks.store.chat = [
         { key: 'u', kind: 'user', text: 'Explain' },
@@ -2292,6 +2291,40 @@ describe('the knowledge base page', () => {
       ];
       await render();
       await render();
+    };
+    /** The run ends with an answer: the preview goes. */
+    const answered = async () => {
+      mocks.store.status = 'succeeded';
+      mocks.store.chat = [
+        { key: 'u', kind: 'user', text: 'Explain' },
+        { key: 'a', kind: 'assistant', text: 'Because…' },
+      ];
+      await render();
+      await render();
+    };
+    /** The home composer creates session-1 on this page, and the pane follows. */
+    // Not a React hook, despite its name.
+    const atUrl = useRealHistory;
+    const startFromHome = async () => {
+      atUrl('/workspace');
+      mocks.searchParams = new URLSearchParams();
+      mocks.store.sessionId = null;
+      await render();
+      const onOpenSession = mocks.homeProps?.onOpenSession as (id: string) => void;
+      await act(async () => onOpenSession('session-1'));
+      mocks.searchParams = new URLSearchParams('session=session-1');
+      mocks.store.sessionId = 'session-1';
+      await render();
+    };
+
+    it('recomposes around the preview of a request started from home: folds the rail once', async () => {
+      await startFromHome();
+      // Home starts folded; the teacher has the rail open.
+      if (mocks.railProps?.collapsed) {
+        await act(async () => (mocks.railProps?.onToggleCollapsed as () => void)());
+      }
+      expect(mocks.railProps?.collapsed).toBe(false);
+      await toolCall();
       expect(mocks.railProps?.collapsed).toBe(true);
       expect(mocks.chatPaneProps?.fill).toBe(false);
       expect(mocks.chatPaneProps?.width).toBe(400);
@@ -2303,17 +2336,29 @@ describe('the knowledge base page', () => {
       expect(mocks.railProps?.collapsed).toBe(false);
       await act(async () => (mocks.railProps?.onToggleCollapsed as () => void)());
       expect(mocks.railProps?.collapsed).toBe(true);
-      mocks.store.status = 'succeeded';
-      mocks.store.chat = [
-        { key: 'u', kind: 'user', text: 'Explain' },
-        { key: 'a', kind: 'assistant', text: 'Because…' },
-      ];
-      await render();
-      await render();
+      await answered();
       expect(container?.querySelector('[data-testid="workspace-request-activity"]')).toBeNull();
       expect(mocks.railProps?.collapsed).toBe(false);
       expect(mocks.chatPaneProps?.fill).toBe(true);
       expect(localStorage.getItem('openmaic:workspace:nav-collapsed')).not.toBe('1');
+
+      // The next request in the same conversation is not that moment: the rail stays.
+      mocks.store.chat = [];
+      await toolCall();
+      expect(container?.querySelector('[data-testid="workspace-request-activity"]')).not.toBeNull();
+      expect(mocks.railProps?.collapsed).toBe(false);
+    });
+
+    it('leaves the rail alone for a preview in a conversation opened any other way', async () => {
+      await render();
+      expect(mocks.railProps?.collapsed).toBe(false);
+      await toolCall();
+      expect(container?.querySelector('[data-testid="workspace-request-activity"]')).not.toBeNull();
+      // The split still recomposes around the preview; only the rail is left be.
+      expect(mocks.chatPaneProps?.fill).toBe(false);
+      expect(mocks.railProps?.collapsed).toBe(false);
+      await answered();
+      expect(mocks.railProps?.collapsed).toBe(false);
     });
 
     const previewRun = async () => {
