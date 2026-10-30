@@ -49,6 +49,23 @@ export interface HttpDocumentStoreOptions {
   validateStage?: StageValidator;
 }
 
+/**
+ * Per-request options for the HTTP store's row writes (`putScene`,
+ * `putStage`). Other `DocumentStore` implementations take no such argument;
+ * callers that hold an `HttpDocumentStore` pass it to shape the request.
+ */
+export interface HttpDocumentWriteOptions {
+  /**
+   * Send the write with `fetch(..., { keepalive: true })`, so it completes
+   * even if the page unloads while the request is in flight. The browser
+   * caps the combined body size of every keepalive request a page has in
+   * flight (64 KiB in current browsers) and rejects a request that would
+   * exceed it; a caller that writes on unload must keep its bodies inside
+   * that budget.
+   */
+  keepalive?: boolean;
+}
+
 interface ErrorResponseBody {
   error?: { code?: unknown; message?: unknown; details?: unknown };
 }
@@ -257,6 +274,7 @@ export class HttpDocumentStore<
     path: string,
     body?: unknown,
     versionErrorStageId?: string,
+    writeOptions?: HttpDocumentWriteOptions,
   ): Promise<T> {
     const headers = normalizeHeaders(await this.headersHook?.({ method, path }));
     let serializedBody: string | undefined;
@@ -278,6 +296,7 @@ export class HttpDocumentStore<
         headers,
         ...(deadline === null ? {} : { signal: deadline.signal }),
         ...(serializedBody === undefined ? {} : { body: serializedBody }),
+        ...(writeOptions?.keepalive === true ? { keepalive: true } : {}),
       });
     } catch (error) {
       // The deadline ended this wait, not the peer. Rejecting is the whole
@@ -384,13 +403,27 @@ export class HttpDocumentStore<
     await this.request<void>('DELETE', `/documents/${segment(stageId)}`);
   }
 
-  async putStage(stageId: string, stage: TStage): Promise<void> {
+  async putStage(
+    stageId: string,
+    stage: TStage,
+    options?: HttpDocumentWriteOptions,
+  ): Promise<void> {
     assertValid(this.validateStageFn(stage), `stage ${stage.id}`);
     assertJsonValue(stage, `stage ${JSON.stringify(stage.id)}`);
-    await this.request<void>('PUT', `/documents/${segment(stageId)}/stage`, stage, stageId);
+    await this.request<void>(
+      'PUT',
+      `/documents/${segment(stageId)}/stage`,
+      stage,
+      stageId,
+      options,
+    );
   }
 
-  async putScene(stageId: string, scene: TScene): Promise<void> {
+  async putScene(
+    stageId: string,
+    scene: TScene,
+    options?: HttpDocumentWriteOptions,
+  ): Promise<void> {
     this.validateSceneForWrite(stageId, scene);
     assertJsonValue(scene, `scene ${JSON.stringify(scene.id)}`);
     await this.request<void>(
@@ -398,6 +431,7 @@ export class HttpDocumentStore<
       `/documents/${segment(stageId)}/scenes/${segment(scene.id)}`,
       scene,
       stageId,
+      options,
     );
   }
 

@@ -122,6 +122,7 @@ export {
   type HttpDocumentHeadersContext,
   type HttpDocumentHeadersHook,
   type HttpDocumentStoreOptions,
+  type HttpDocumentWriteOptions,
 } from './document/http.js';
 export {
   SCHEMA_MIGRATION_LOCK_KEY,

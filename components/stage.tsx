@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'motion/react';
 import { useStageStore, useCanvasStore } from '@/lib/store';
+import { settlePendingStageSave } from '@/lib/store/stage';
 import {
   isCurrentSceneEditable,
   isHostedSceneEditable,
@@ -282,6 +283,8 @@ export function Stage({
   // before it unmounts.
   const handleToggleEditMode = useCallback(async () => {
     if (mode === 'edit') {
+      // Done editing: the edits reach the server before the editor goes away.
+      await settlePendingStageSave();
       setMode('playback');
       return;
     }
