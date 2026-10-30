@@ -194,8 +194,9 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
               the one pane-scope control left of the tab strip; every other one
               stays on the right. */}
           {onCollapse ? (
-            <span className="mr-1 flex shrink-0 items-center">
+            <span className="flex shrink-0 items-center">
               <PaneFoldButton
+                className="ws-pane-fold"
                 testId="workspace-classroom-fold"
                 label={t('workspace.collapseClassroom')}
                 direction="right"

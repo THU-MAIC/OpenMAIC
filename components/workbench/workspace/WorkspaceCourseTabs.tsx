@@ -47,12 +47,17 @@
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { BookOpen, Sparkles } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils/cn';
 
 export interface WorkspaceCourseTabItem {
   readonly id: string;
   readonly name: string;
+  /** A course (the default), or the request preview that precedes one. */
+  readonly kind?: 'course' | 'preview';
+  /** The preview's request is still working: its glyph pulses. */
+  readonly busy?: boolean;
 }
 
 /** Long enough to outlast the pane's width transition before the second aim. */
@@ -226,6 +231,17 @@ export function WorkspaceCourseTabs({
               onActivate(tab.id);
             }}
           >
+            <span className="ws-ctab-glyph" aria-hidden="true">
+              {tab.kind === 'preview' ? (
+                tab.busy ? (
+                  <span className="ws-ctab-pulse" />
+                ) : (
+                  <Sparkles className="size-3.5" />
+                )
+              ) : (
+                <BookOpen className="size-3.5" />
+              )}
+            </span>
             <span className="ws-ctab-name">{name}</span>
             <button
               type="button"

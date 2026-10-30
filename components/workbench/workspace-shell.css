@@ -1164,13 +1164,13 @@
    already scrolling — hence suppressed and redrawn. */
 .ws-ctabs {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   align-self: stretch;
   gap: 0;
   flex: 1;
   min-width: 0;
   height: auto;
-  padding-top: 6px;
+  padding: 0 2px;
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
@@ -1220,23 +1220,25 @@
   mask-image: linear-gradient(90deg, transparent, #000 26px, #000 calc(100% - 26px), transparent);
 }
 
-/* The floor is 86px, and it is derived, not guessed: 15px of padding leaves
-   71px of name, which is five CJK glyphs at 13px — four once the run dot has
-   taken its 12px. At 70px the name gets 32px, i.e. one character and an
-   apology. */
+/* Tabs are soft segments on one baseline with the Learn | Edit control, the
+   same 28px: the shell's calm register (the rail's rows, the account menu),
+   not a browser's raised folder tab. The active one is a quiet fill with
+   dark text; the others are muted text that tint on hover.
+
+   The floor is 96px: 8 + 14 (glyph) + 6 + 20 (close) + 6 + 8 of chrome leaves
+   ~34px of name, three CJK glyphs, before the strip starts to scroll. */
 .ws-ctab {
   position: relative;
-  z-index: 0;
   display: flex;
   align-items: center;
   gap: 6px;
   flex: 0 1 auto;
-  min-width: 86px;
-  max-width: 250px;
-  height: 31px;
-  padding: 0 6px 0 9px;
-  border-radius: 7px 7px 0 0;
-  font-size: 13px;
+  min-width: 96px;
+  max-width: 240px;
+  height: 28px;
+  padding: 0 4px 0 9px;
+  border-radius: 8px;
+  font-size: 12.5px;
   font-weight: 500;
   color: var(--ws-ink-mute);
   background: transparent;
@@ -1246,63 +1248,50 @@
     color 140ms var(--ws-ease);
 }
 
-/* Browser tabs communicate selection through topology, not a louder chip. The
-   selected surface rises to the header edge and its short tail covers the
-   header hairline, visually joining the classroom below. It still gets more of
-   the row than the tabs you are not reading.
+.ws-ctab + .ws-ctab {
+  margin-left: 2px;
+}
 
-   Its floor is 113px, not 86px: its × is permanently visible and permanently in
-   the name's padding, so 86 + 27 is what leaves it the same five glyphs its
-   neighbours get. At a uniform 86px every tab showed five characters except the
-   one you were reading, which showed two — the active tab must never identify
-   itself less well than the tabs beside it. */
 .ws-ctab-on {
-  flex: 1.6 1 auto;
-  min-width: 113px;
-  z-index: 1;
-  background: var(--ws-raised);
-  color: var(--ws-accent);
-  font-weight: 600;
-  box-shadow:
-    inset 1px 0 0 var(--ws-line),
-    inset -1px 0 0 var(--ws-line),
-    inset 0 1px 0 var(--ws-line),
-    0 -2px 7px -5px var(--ws-ink-faint);
-}
-
-.ws-ctab-on::after {
-  position: absolute;
-  right: 0;
-  bottom: -5px;
-  left: 0;
-  height: 5px;
-  content: '';
-  background: var(--ws-raised);
-  box-shadow:
-    inset 1px 0 0 var(--ws-line),
-    inset -1px 0 0 var(--ws-line);
-}
-
-/* Only background tabs divide from one another. The active surface already
-   supplies a stronger, structural boundary at either edge. */
-.ws-ctab:not(.ws-ctab-on) + .ws-ctab:not(.ws-ctab-on)::before {
-  position: absolute;
-  top: 6px;
-  bottom: 6px;
-  left: 0;
-  width: 1px;
-  content: '';
-  background: var(--ws-line);
+  flex: 1.4 1 auto;
+  background: var(--ws-tint-strong);
+  color: var(--ws-ink);
 }
 
 .ws-ctab:not(.ws-ctab-on):hover {
-  background: var(--ws-tint-strong);
+  background: var(--ws-tint);
   color: var(--ws-ink-soft);
 }
 
 .ws-ctab:focus-visible {
-  outline: 2px solid var(--ws-accent);
+  outline: 2px solid var(--ws-accent-thread);
   outline-offset: -2px;
+}
+
+/* The tab's kind: a course's book, the request preview's spark (a pulsing dot
+   while the request is still working). */
+.ws-ctab-glyph {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 14px;
+  justify-content: center;
+  color: inherit;
+  opacity: 0.75;
+}
+
+.ws-ctab-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--ws-accent);
+  animation: ws-ctab-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes ws-ctab-pulse {
+  50% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
 }
 
 .ws-ctab-name {
@@ -1314,35 +1303,18 @@
   text-align: left;
 }
 
-/* Per-tab close. It is OUT OF FLOW, which is a stronger guarantee than
-   reserving space for it: out-of-flow cannot affect any width, so the invariant
-   "revealing × never moves a tab" holds by construction rather than by
-   discipline, and every tab spends those 23px on its name instead.
-   A PERMANENT CONTROL GETS A PERMANENT SLOT; A TRANSIENT ONE BORROWS. On the
-   selected tab the × is always visible, so the name reserves 23px of padding
-   and text never runs beneath it. On the others it appears only under hover or
-   focus and borrows the tail of the name for as long as it is there.
-   Selectedness does not change on hover, so neither geometry does.
-
-   THE × MUST NOT SHOUT. It is an exit affordance, not a label — on the
-   selected tab, where it is permanently visible, it rests at MUTED ink pulled
-   down to 60% opacity with no chip, so the eye lands on the course name, not
-   on the way out. Hovering the tab, either tab, is what arms it: soft ink at
-   90% on a raised chip. Pointing directly at the × goes to full ink at full
-   opacity. One register for every tab, active or not — the accent belongs to
-   the tab's identity, never to its close glyph. */
+/* The close is IN the row, after the name, so a title can never run under it:
+   its 20px are always kept, and the glyph shows on the active tab and on
+   hover or focus of the others. No chip around it — a faint round ground
+   only under the pointer, which is also its hit area. */
 .ws-ctab-x {
-  position: absolute;
-  z-index: 2;
-  right: 4px;
-  top: 50%;
-  transform: translateY(-50%);
   display: grid;
+  flex-shrink: 0;
   place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  color: inherit;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  color: var(--ws-ink-mute);
   opacity: 0;
   pointer-events: none;
   transition:
@@ -1351,57 +1323,32 @@
     opacity 130ms var(--ws-ease);
 }
 
-.ws-ctab-on .ws-ctab-name {
-  padding-right: 27px;
-}
-
-.ws-ctab-on .ws-ctab-x {
-  color: var(--ws-ink-mute);
-  opacity: 0.6;
-  pointer-events: auto;
-}
-
-/* Because it can sit on top of the name, a visible × carries its own chip so it
-   never reads as a glyph in the title. The chip has to read RAISED in both
-   themes: white is a step up from the light tab's tint, but in dark mode the
-   panel colour is DARKER than the tab's hover tint and reads recessed, so dark
-   mode lifts with light instead of painting a surface. */
+.ws-ctab-on .ws-ctab-x,
 .ws-ctab:hover .ws-ctab-x,
 .ws-ctab:focus-within .ws-ctab-x {
-  color: var(--ws-ink-soft);
-  opacity: 0.9;
-  pointer-events: auto;
-  background: var(--ws-raised);
-  box-shadow: 0 0 0 1px var(--ws-line-soft);
-}
-
-.dark .ws-ctab:hover .ws-ctab-x,
-.dark .ws-ctab:focus-within .ws-ctab-x {
-  background: rgba(255, 255, 255, 0.16);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14);
-}
-
-/* Directly over the × it goes to full ink at full opacity — still on a chip.
-   The scope is repeated so this outranks the armed state above (4 classes to
-   3): pointing at the × is the one action that must read as unmistakably
-   armed. */
-.ws-ctab:hover .ws-ctab-x:hover,
-.ws-ctab:focus-within .ws-ctab-x:hover {
-  color: var(--ws-ink);
   opacity: 1;
+  pointer-events: auto;
 }
 
-.dark .ws-ctab:hover .ws-ctab-x:hover,
-.dark .ws-ctab:focus-within .ws-ctab-x:hover {
-  background: rgba(255, 255, 255, 0.24);
+.ws-ctab-x:hover {
+  background: var(--ws-tint-strong);
+  color: var(--ws-ink);
+}
+
+/* The pane's fold sits like the header's other icon buttons. */
+.ws-classroom-head .ws-pane-fold {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  opacity: 1;
 }
 
 /* Where the strip's scope ends and the pane's begins. */
 .ws-ctabs-rule {
   flex: 0 0 1px;
   width: 1px;
-  height: 20px;
-  margin: 0 2px;
+  height: 18px;
+  margin: 0 4px;
   background: var(--ws-line);
 }
 
@@ -1413,6 +1360,10 @@
   .ws-ctab,
   .ws-ctab-x {
     transition: none;
+  }
+
+  .ws-ctab-pulse {
+    animation: none;
   }
 }
 
@@ -2371,9 +2322,9 @@
 
 .ws-vsep {
   width: 1px;
-  height: 20px;
+  height: 18px;
   flex-shrink: 0;
-  margin: 0 2px;
+  margin: 0 4px;
   background: var(--ws-line);
 }
 
