@@ -841,7 +841,10 @@ test('installed sample opens in the normal classroom and preserves progress afte
   unavailableAutosave = true;
   const restoredEditor = page.locator('.monaco-editor textarea').first();
   await expect(restoredEditor).toBeEditable();
-  await restoredEditor.focus();
+  // Focus Monaco through the visible editor after model reload, as a learner
+  // does, before sending its select-all shortcut to the hidden input.
+  await page.locator('.monaco-editor .view-lines .view-line').first().click();
+  await expect(restoredEditor).toBeFocused();
   await restoredEditor.press('ControlOrMeta+A');
   await page.keyboard.insertText('print("Draft after idle")');
   await expect(retrySave).toBeVisible();
