@@ -72,6 +72,43 @@ describe('streamLLM slot fallback', () => {
     expect(await textOf(primary)).toBe('from fallback');
   });
 
+  it('uses the fallback output window for a streaming request', async () => {
+    const primary = new MockLanguageModelV3({
+      provider: 'mock',
+      modelId: 'main',
+      doStream: async () => {
+        throw overloaded();
+      },
+    });
+    attachModelFallback(primary, async () => ({
+      model: fallback,
+      modelString: 'mock:backup',
+      outputWindow: 4096,
+    }));
+
+    expect(await textOf(primary, undefined, { maxOutputTokens: 128000 })).toBe('from fallback');
+    expect(primary.doStreamCalls[0]?.maxOutputTokens).toBe(128000);
+    expect(fallback.doStreamCalls[0]?.maxOutputTokens).toBe(4096);
+  });
+
+  it('does not switch models for evaluation streams', async () => {
+    const primary = new MockLanguageModelV3({
+      provider: 'mock',
+      modelId: 'main',
+      doStream: async () => {
+        throw overloaded();
+      },
+    });
+    attach(primary);
+    const result = streamLLM({ model: primary, prompt: 'hi', maxRetries: 0 } as never, 'eval-test');
+    const errors: unknown[] = [];
+    for await (const part of result.fullStream) {
+      if (part.type === 'error') errors.push(part.error);
+    }
+    expect(errors).toContainEqual(expect.objectContaining({ message: 'overloaded' }));
+    expect(fallback.doStreamCalls).toHaveLength(0);
+  });
+
   it('streams on the fallback when the first part is an error', async () => {
     const primary = new MockLanguageModelV3({
       provider: 'mock',

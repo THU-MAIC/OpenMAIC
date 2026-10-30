@@ -9,9 +9,9 @@
  * resolved model carries with it (lib/ai/model-fallbacks.ts); a model from the
  * older request path retries on `MODEL_FALLBACK`.
  *
- * `verify-model` opts out (option in callLLM): it probes the exact model the
- * user typed in, and answering from a different model would report a dead or
- * mis-keyed model as healthy. Content-safety rejections and other 4xx failures
+ * `verify-model` and `eval-*` sources opt out in callLLM/streamLLM: they probe
+ * or score the requested model, and answering from a different model would
+ * misreport the result. Content-safety rejections and other 4xx failures
  * never fall back — retrying a rejected prompt on a second model would spend
  * that model's quota to reproduce the same rejection. A quota refusal is the
  * exception: another provider may still have credit.
@@ -41,6 +41,8 @@ export interface FallbackResolution {
   model: LanguageModel;
   /** Canonical `provider:model` string of the fallback, for logs. */
   modelString: string;
+  /** Catalog limit of the fallback, when known. */
+  outputWindow?: number;
 }
 
 /**
@@ -59,7 +61,7 @@ export async function resolveFallbackModel(): Promise<FallbackResolution | null>
   const apiKey = resolveApiKey(providerId, '');
   const baseUrl = resolveBaseUrl(providerId);
   const proxy = resolveProxy(providerId);
-  const { model } = getModel({
+  const { model, modelInfo } = getModel({
     providerId,
     modelId,
     apiKey,
@@ -68,7 +70,7 @@ export async function resolveFallbackModel(): Promise<FallbackResolution | null>
     // Re-validate every redirect hop of the outbound request, same as resolveModel.
     fetchImpl: fetchWithRedirectValidation,
   });
-  return { model, modelString: fallbackStr };
+  return { model, modelString: fallbackStr, outputWindow: modelInfo?.outputWindow };
 }
 
 /**

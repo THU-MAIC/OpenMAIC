@@ -12,6 +12,8 @@ export interface FallbackModel {
   model: LanguageModel;
   /** Canonical `provider:model`, for logs. */
   modelString: string;
+  /** Catalog limit of the fallback, when known. */
+  outputWindow?: number;
 }
 
 export type FallbackLoader = () => Promise<FallbackModel | null>;
