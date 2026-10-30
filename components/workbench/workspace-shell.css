@@ -2555,9 +2555,68 @@
 }
 
 .ws-search-note {
-  padding: 6px 8px;
+  padding: 8px 12px;
   font-size: 12.5px;
   color: rgb(100 116 139);
+}
+
+/* The palette: the input row is its top edge (52px, 16px sides, a hairline
+   below); results sit 8px in, rows 40px with 12px inner padding, so headings,
+   row text and the right-hand shortcuts share one column each. */
+.ws-search-head {
+  display: flex;
+  height: 52px;
+  align-items: center;
+  gap: 11px;
+  padding: 0 16px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  color: rgb(100 116 139);
+}
+
+.dark .ws-search-head {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+.ws-search-input {
+  height: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font-size: 15px;
+  color: var(--foreground);
+}
+
+.ws-search-input::placeholder {
+  color: rgb(148 163 184);
+}
+
+.ws-search-list {
+  padding: 8px;
+}
+
+.ws-search-group {
+  padding: 0;
+}
+
+.ws-search-group + .ws-search-group {
+  margin-top: 6px;
+}
+
+.ws-search-group [cmdk-group-heading] {
+  padding: 6px 12px 4px;
+}
+
+.ws-search-item {
+  min-height: 40px;
+  padding: 0 12px;
+  gap: 10px;
+  border-radius: 10px;
+}
+
+.ws-search-empty {
+  padding: 28px 12px;
 }
 
 /* A source the search located, in the knowledge base list. */

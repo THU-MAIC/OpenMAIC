@@ -31,6 +31,7 @@ import {
   MessageSquare,
   Monitor,
   Moon,
+  Search,
   Settings,
   SquarePen,
   SunMedium,
@@ -42,12 +43,12 @@ import {
   useWorkbenchShellExtensions,
   type WorkbenchShellIcon,
 } from '@/lib/workbench/shell-extensions';
+import { Command as CommandPrimitive } from 'cmdk';
 import {
   Command,
   CommandDialog,
   CommandEmpty,
   CommandGroup,
-  CommandInput,
   CommandItem,
   CommandList,
   CommandShortcut,
@@ -312,6 +313,7 @@ export function WorkspaceSearchPalette({
   const actionGroup =
     actionRows.length > 0 ? (
       <CommandGroup
+        className="ws-search-group"
         data-testid="workspace-search-group-actions"
         heading={t('workspace.search.actions')}
       >
@@ -319,6 +321,7 @@ export function WorkspaceSearchPalette({
           const Icon = action.icon;
           return (
             <CommandItem
+              className="ws-search-item"
               key={action.id}
               value={`action:${action.id}`}
               data-testid={`workspace-search-action-${action.id}`}
@@ -352,15 +355,20 @@ export function WorkspaceSearchPalette({
         className="rounded-none! p-0"
         data-testid="workspace-search"
       >
-        <CommandInput
-          data-testid="workspace-search-input"
-          value={query}
-          onValueChange={setQuery}
-          placeholder={t('workspace.search.placeholder')}
-        />
-        <CommandList className="max-h-[min(420px,60vh)] px-1 pb-1.5">
+        {/* The input row is the palette's top edge, not a box inside it. */}
+        <div className="ws-search-head">
+          <Search className="size-[17px] shrink-0" aria-hidden="true" />
+          <CommandPrimitive.Input
+            data-testid="workspace-search-input"
+            value={query}
+            onValueChange={setQuery}
+            placeholder={t('workspace.search.placeholder')}
+            className="ws-search-input"
+          />
+        </div>
+        <CommandList className="ws-search-list max-h-[min(440px,60vh)]">
           {nothing ? (
-            <CommandEmpty data-testid="workspace-search-empty">
+            <CommandEmpty data-testid="workspace-search-empty" className="ws-search-empty">
               {t('workspace.search.empty', { query: trimmed })}
             </CommandEmpty>
           ) : null}
@@ -369,6 +377,7 @@ export function WorkspaceSearchPalette({
 
           {sessionRows.length > 0 ? (
             <CommandGroup
+              className="ws-search-group"
               data-testid="workspace-search-group-chats"
               heading={
                 trimmed ? t('workspace.sections.sessions') : t('workspace.search.recentChats')
@@ -376,6 +385,7 @@ export function WorkspaceSearchPalette({
             >
               {sessionRows.map((row) => (
                 <CommandItem
+                  className="ws-search-item"
                   key={row.id}
                   value={`chat:${row.id}`}
                   data-testid={`workspace-search-chat-${row.id}`}
@@ -390,6 +400,7 @@ export function WorkspaceSearchPalette({
 
           {courseRows.length > 0 ? (
             <CommandGroup
+              className="ws-search-group"
               data-testid="workspace-search-group-courses"
               heading={
                 trimmed ? t('workspace.search.courses') : t('workspace.search.recentCourses')
@@ -397,6 +408,7 @@ export function WorkspaceSearchPalette({
             >
               {courseRows.map((row) => (
                 <CommandItem
+                  className="ws-search-item"
                   key={row.id}
                   value={`course:${row.id}`}
                   data-testid={`workspace-search-course-${row.id}`}
@@ -417,11 +429,13 @@ export function WorkspaceSearchPalette({
 
           {trimmed && (materialRows.length > 0 || materialsPending || materialsFailed) ? (
             <CommandGroup
+              className="ws-search-group"
               data-testid="workspace-search-group-materials"
               heading={t('workspace.search.materials')}
             >
               {materialRows.map((material) => (
                 <CommandItem
+                  className="ws-search-item"
                   key={material.materialId}
                   value={`material:${material.materialId}`}
                   data-testid={`workspace-search-material-${material.materialId}`}
