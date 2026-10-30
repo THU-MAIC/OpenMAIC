@@ -366,7 +366,7 @@ export function WorkspaceSearchPalette({
             className="ws-search-input"
           />
         </div>
-        <CommandList className="ws-search-list max-h-[min(440px,60vh)]">
+        <CommandList className="ws-search-list ws-scroll max-h-[min(440px,60vh)]">
           {nothing ? (
             <CommandEmpty data-testid="workspace-search-empty" className="ws-search-empty">
               {t('workspace.search.empty', { query: trimmed })}

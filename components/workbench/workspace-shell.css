@@ -841,41 +841,59 @@
 }
 
 /* ── The quiet scrollbar ──────────────────────────────────────────────────
-   Every scroll area of the workspace (the page canvases, the rail's lists, the
-   menus) gets a thin scrollbar on a transparent track whose thumb stays out of
-   sight until the pointer is over the area. Browsers that honour the standard
-   properties ignore the ::-webkit-scrollbar rules; the rest use them. */
-.ws-scroll,
-.ws-canvas {
+   EVERY scroll area of the workspace — the page canvases, the rail, the chat
+   stream, the preview, the menus, and anything inside the panes — gets a thin
+   scrollbar on a transparent track whose thumb shows while the pointer is
+   over the area, in a low-alpha ink for the theme (a dark track never paints
+   white). Scoped to the shell, so no container falls back to the native bar;
+   `.ws-scroll` carries the same treatment to surfaces portalled out of it
+   (the search palette). Browsers that honour the standard properties ignore
+   the ::-webkit-scrollbar rules; the rest use them. */
+.ws-root {
+  --ws-scroll-thumb: rgba(15, 23, 42, 0.2);
+}
+
+.dark .ws-root {
+  color-scheme: dark;
+}
+
+.dark .ws-root {
+  --ws-scroll-thumb: rgba(255, 255, 255, 0.2);
+}
+
+.ws-root,
+.ws-root *,
+.ws-scroll {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
 }
 
-.ws-scroll:hover,
-.ws-canvas:hover {
-  scrollbar-color: var(--ws-line) transparent;
+.ws-root :hover,
+.ws-scroll:hover {
+  scrollbar-color: var(--ws-scroll-thumb, rgba(100, 116, 139, 0.4)) transparent;
 }
 
-.ws-scroll::-webkit-scrollbar,
-.ws-canvas::-webkit-scrollbar {
+.ws-root ::-webkit-scrollbar,
+.ws-scroll::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
-.ws-scroll::-webkit-scrollbar-track,
-.ws-canvas::-webkit-scrollbar-track {
+.ws-root ::-webkit-scrollbar-track,
+.ws-root ::-webkit-scrollbar-corner,
+.ws-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.ws-scroll::-webkit-scrollbar-thumb,
-.ws-canvas::-webkit-scrollbar-thumb {
+.ws-root ::-webkit-scrollbar-thumb,
+.ws-scroll::-webkit-scrollbar-thumb {
   border-radius: 3px;
   background: transparent;
 }
 
-.ws-scroll:hover::-webkit-scrollbar-thumb,
-.ws-canvas:hover::-webkit-scrollbar-thumb {
-  background: var(--ws-line);
+.ws-root :hover::-webkit-scrollbar-thumb,
+.ws-scroll:hover::-webkit-scrollbar-thumb {
+  background: var(--ws-scroll-thumb, rgba(100, 116, 139, 0.4));
 }
 
 /* ── The classroom picker ────────────────────────────────────────────────── */
