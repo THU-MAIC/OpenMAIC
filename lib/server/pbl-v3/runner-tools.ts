@@ -962,6 +962,12 @@ export function withTeachingTurnBoundary(
   isComplete: () => boolean,
   historyWindow?: TeachingHistoryWindow,
   liveContext?: () => string | Promise<string>,
+  projectContext?: (
+    context: import('@earendil-works/pi-ai').Context,
+    window: TeachingHistoryWindow,
+    model: import('@earendil-works/pi-ai').Model<import('@earendil-works/pi-ai').Api>,
+    signal?: AbortSignal,
+  ) => Promise<import('@earendil-works/pi-ai').Context>,
 ): StreamFn {
   return async (model, context, options) => {
     if (!isComplete()) {
@@ -977,20 +983,42 @@ export function withTeachingTurnBoundary(
           ),
       );
       const live = await liveContext?.();
-      const current = {
+      const currentContext = (state: string | undefined) => ({
         ...context,
         messages,
-        ...(live
+        ...(state
           ? {
-              systemPrompt: `${context.systemPrompt ?? ''}${teachingLiveSuffix(live)}`,
+              systemPrompt: `${context.systemPrompt ?? ''}${teachingLiveSuffix(state)}`,
             }
           : {}),
-      };
-      return streamFn(
-        model,
-        historyWindow ? currentTeachingContext(current, historyWindow) : current,
-        options,
-      );
+      });
+      const current = currentContext(live);
+      let projected = historyWindow
+        ? projectContext
+          ? await projectContext(current, historyWindow, model, options?.signal)
+          : currentTeachingContext(current, historyWindow)
+        : current;
+      // Compaction can cross a cancellation or lease-loss boundary. Recheck
+      // authority before opening the actual teaching request.
+      if (projectContext && liveContext) {
+        const refreshed = await liveContext();
+        if (refreshed !== live && historyWindow) {
+          // Files or assessment facts can change during summary generation.
+          // Rebuild the request with those facts; never send the stale suffix.
+          projected = await projectContext(
+            currentContext(refreshed),
+            historyWindow,
+            model,
+            options?.signal,
+          );
+          if ((await liveContext()) !== refreshed)
+            throw sandboxConflict(
+              'The teaching state changed during context preparation. Retry with the saved current state.',
+            );
+        }
+      }
+      options?.signal?.throwIfAborted();
+      if (!isComplete()) return streamFn(model, projected, options);
     }
     const stream = createAssistantMessageEventStream();
     stream.push({

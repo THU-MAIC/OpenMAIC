@@ -15,6 +15,8 @@
 import type { AgentOptions } from '@earendil-works/pi-agent-core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('server-only', () => ({}));
+
 const mocks = vi.hoisted(() => {
   // The drain refuses to steer without a matching lease, and WORKER_ID is a
   // random-per-process value. Capture it from the first appendRunEvent call

@@ -1449,11 +1449,28 @@ async function executeSession(
     }
 
     const driver = await resolveAgentDriverModel(await backgroundWorkspaceId(meta.ownerId));
+    const requestDriver = teaching ? (driver.teaching ?? driver) : driver;
+    const teachingBudget = teaching
+      ? (await import('@/lib/server/pbl-v3/context-budget')).teachingModelBudget(
+          requestDriver.piModel,
+        )
+      : null;
+    // Only a confirmed provider output window may become a wire limit. Pi's
+    // unknown-model reservation is for input preparation, never a reply ceiling.
+    const confirmedOutputWindow =
+      requestDriver.wireMaxOutputTokens !== undefined &&
+      Number.isFinite(requestDriver.wireMaxOutputTokens) &&
+      requestDriver.wireMaxOutputTokens > 0;
+    const wireOutputTokens = teachingBudget
+      ? confirmedOutputWindow
+        ? teachingBudget.outputTokens
+        : undefined
+      : requestDriver.wireMaxOutputTokens;
     const streamFn = createCallLlmStreamFn({
       languageModel: driver.connection.model,
       supportsToolImages: driver.connection.modelInfo?.capabilities?.vision,
-      maxOutputTokens: teaching ? undefined : driver.wireMaxOutputTokens,
-      omitMaxOutputTokens: !!teaching || driver.wireMaxOutputTokens === undefined,
+      maxOutputTokens: wireOutputTokens,
+      omitMaxOutputTokens: wireOutputTokens === undefined,
       thinkingConfig: teaching ? teaching.thinkingConfig : driver.connection.thinkingConfig,
       unbounded: !!teaching,
       responseIdleTimeoutMs: teaching ? LLM_FETCH_TIMEOUT_MS : undefined,
@@ -1723,6 +1740,49 @@ async function executeSession(
     const askUserLatch = createAskUserTerminateLatch();
     let toolCalls = 0;
     if (leaseLost) throw new AgentSessionLeaseLostError(id, WORKER_ID, attempt);
+    const projectionModule = teaching
+      ? await import('@/lib/server/pbl-v3/context-projection')
+      : null;
+    const teachingProjection =
+      teaching && projectionModule
+        ? projectionModule.createTeachingContextProjection(
+            createCallLlmStreamFn({
+              languageModel: driver.connection.model,
+              // Summary reservations are not discovered provider limits either.
+              // Use the same primary/fallback capacity test as normal teaching.
+              maxOutputTokens: confirmedOutputWindow ? 4096 : undefined,
+              omitMaxOutputTokens: !confirmedOutputWindow,
+              thinkingConfig: { mode: 'disabled' },
+              unbounded: true,
+              responseIdleTimeoutMs: LLM_FETCH_TIMEOUT_MS,
+              onProgress: progress,
+              source: 'pbl-context-compaction',
+              abortSignal: abort.signal,
+            }),
+            {
+              checkpoint: projectionModule.readTeachingContextCheckpoint(recovery.branch),
+              saveCheckpoint: async (checkpoint) => {
+                // Keep derived summaries on the same fenced chain as source
+                // messages. Never change the model/delivery tree with a synthetic
+                // learner message or replay a tool to reconstruct a lost result.
+                await flushAll();
+                abort.signal.throwIfAborted();
+                await teaching.liveContext();
+                enqueue(async () => {
+                  await entrySession!.appendCustomEntry(
+                    projectionModule.TEACHING_CONTEXT_ENTRY,
+                    checkpoint,
+                  );
+                }, true);
+                await flushAll();
+                abort.signal.throwIfAborted();
+              },
+              onProjection: (metrics) =>
+                log.info(`session ${id}: teaching context projected`, metrics),
+            },
+          )
+        : null;
+    if (teachingProjection) cleanup.add(() => teachingProjection.dispose());
     const agent = buildAgent({
       streamFn: teaching
         ? (await import('@/lib/server/pbl-v3/runner-tools')).withTeachingTurnBoundary(
@@ -1730,10 +1790,11 @@ async function executeSession(
             teaching.isTurnComplete,
             teaching.historyWindow,
             teaching.liveContext,
+            teachingProjection?.prepare,
           )
         : streamFn,
       systemPrompt: execution.systemPrompt,
-      model: driver.piModel,
+      model: requestDriver.piModel,
       tools: execution.tools,
       ...(teaching ? { toolTimeoutMs: 0 } : {}),
       allowedToolNames: execution.allowedToolNames,

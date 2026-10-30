@@ -8,6 +8,8 @@ For the pre-course scope audit and its verification boundaries, see
 [Course readiness checklist](READINESS.md).
 For product-aware Agent guidance, assistance receipts and the course-content
 handoff, see [Teaching guidance and FS checklist](TEACHING-GUIDANCE.md).
+For role-local model budgets, incremental history summaries and recovery, see
+[Teaching context and model windows](TEACHING-CONTEXT.md).
 
 This slice opens an installed programming project in the normal classroom, runs
 four teaching roles in the existing Agent runner, and persists learning progress
@@ -60,8 +62,9 @@ repair. The mode follows authoritative teaching state on each model request, so 
 readiness transition takes effect within the same turn; tools have no separate mode.
 Report analysis keeps thinking disabled, including on provider model aliases.
 
-V3 teaching has no application-level turn duration,
-inactivity, model-output-token or tool-call-count ceiling. Its tool wrapper retains
+V3 teaching has no total learning duration, conversation-round or tool-call-count
+ceiling. Each model request has a physical input/output allowance; older history
+can be summarized without changing complete saved records. Its tool wrapper retains
 explicit cancellation/lease-loss handling without a timer. Its model transport has
 no total turn deadline. Each model request has an upstream-silence guard using the
 existing 15-minute LLM transport window: received stream parts reset it; local

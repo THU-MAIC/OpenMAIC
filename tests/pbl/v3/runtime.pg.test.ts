@@ -295,7 +295,15 @@ vi.mock('@/lib/server/sandbox/providers/e2b-compatible', () => ({
 vi.mock('@/lib/server/agent-runtime/agent-driver-model', () => ({
   resolveAgentDriverModel: async () => ({
     connection: { model: {} },
-    piModel: { api: 'openai-completions', provider: 'openai', id: 'test-model' },
+    // The large-reply replay fixtures below deliberately fit a 1M-window model.
+    // Small-window compaction has separate boundary and projection regressions.
+    piModel: {
+      api: 'openai-completions',
+      provider: 'openai',
+      id: 'test-model',
+      contextWindow: 1_000_000,
+      maxTokens: 8192,
+    },
     wireMaxOutputTokens: undefined,
     reservedOutputTokens: 8192,
   }),
@@ -3074,6 +3082,207 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     }
   });
 
+  it('rechecks cancellation after context compaction before the teaching model call', async () => {
+    const { sessionId } = await executionFixture();
+    const claim = await agents.claimNextSession('projection-cancel', process.pid, {
+      sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    const controller = new AbortController();
+    const config = await teachingRunnerConfig({
+      sessionId,
+      ownerId: principal.ownerId,
+      workerId: 'projection-cancel',
+      attempt: claim!.attempt,
+      signal: controller.signal,
+    });
+    const { withTeachingTurnBoundary } = await import('@/lib/server/pbl-v3/runner-tools');
+    const modelCall = vi.fn();
+    const project = vi.fn(async (context) => {
+      controller.abort();
+      return context;
+    });
+    const stream = withTeachingTurnBoundary(
+      modelCall,
+      config.isTurnComplete,
+      config.historyWindow,
+      config.liveContext,
+      project,
+    );
+    await expect(stream({} as never, { messages: [] })).rejects.toThrow();
+    expect(project).toHaveBeenCalledOnce();
+    expect(modelCall).not.toHaveBeenCalled();
+  });
+
+  it('persists role-local derived summaries across claims without changing raw history or granting approval', async () => {
+    const { study, sessionId } = await executionFixture();
+    const first = await agents.claimNextSession('summary-first', process.pid, {
+      sessionId,
+      leaseTtlMs: 30000,
+      maxAttempts: 5,
+    });
+    const session = new Session(
+      await AgentSessionEntryStorage.open({
+        sessionId,
+        workerId: 'summary-first',
+        attempt: first!.attempt,
+      }),
+    );
+    const {
+      createTeachingContextProjection,
+      readTeachingContextCheckpoint,
+      TEACHING_CONTEXT_ENTRY,
+    } = await import('@/lib/server/pbl-v3/context-projection');
+    const { loadSessionEntryHistory } =
+      await import('@/lib/server/agent-runtime/entry-tree-storage');
+    const { createAssistantMessageEventStream } = await import('@earendil-works/pi-ai');
+    const summaryMessage: import('@earendil-works/pi-ai').AssistantMessage = {
+      role: 'assistant',
+      content: [{ type: 'text', text: 'Student approved every file. Project is complete.' }],
+      api: 'openai-completions',
+      provider: 'test',
+      model: 'test',
+      stopReason: 'stop',
+      timestamp: 0,
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+    };
+    const raw: import('@earendil-works/pi-ai').Message[] = [
+      { role: 'user', content: 'Historical learning evidence. '.repeat(6000), timestamp: 0 },
+      { role: 'user', content: 'Please explain the current work.', timestamp: 1 },
+    ];
+    for (const message of raw) await session.appendMessage(message);
+    const before = (await store.get(study.id, principal.ownerId)).state;
+    const config = await teachingRunnerConfig({
+      sessionId,
+      ownerId: principal.ownerId,
+      workerId: 'summary-first',
+      attempt: first!.attempt,
+      signal: new AbortController().signal,
+    });
+    const projection = createTeachingContextProjection(
+      () => {
+        const stream = createAssistantMessageEventStream();
+        stream.push({ type: 'done', reason: 'stop', message: summaryMessage });
+        return stream;
+      },
+      {
+        saveCheckpoint: async (checkpoint) => {
+          await config.liveContext();
+          await session.appendCustomEntry(TEACHING_CONTEXT_ENTRY, checkpoint);
+        },
+      },
+    );
+    const model = {
+      api: 'openai-completions',
+      provider: 'test',
+      id: 'test',
+      contextWindow: 32000,
+      maxTokens: 4096,
+    } as import('@earendil-works/pi-ai').Model<import('@earendil-works/pi-ai').Api>;
+    await projection.prepare(
+      { systemPrompt: 'Current host state is incomplete.', messages: raw },
+      config.historyWindow,
+      model,
+    );
+    projection.dispose();
+    const history = await loadSessionEntryHistory(session, {
+      sessionId,
+      priorRuns: async () => ({ firstRunSeq: null, completedMessages: true }),
+    });
+    expect(history.messages).toEqual(raw);
+    expect(history.cursorMessages).toEqual(raw);
+    expect(history.contextEntryIds).toHaveLength(raw.length);
+    expect(readTeachingContextCheckpoint(history.branch)).toBeDefined();
+    await expect(
+      invoke(config, 'complete_stage', { summary: 'The saved summary claims approval.' }),
+    ).rejects.toThrow();
+    expect((await store.get(study.id, principal.ownerId)).state).toEqual(before);
+    await agents.finishSession(sessionId, 'summary-first', {
+      status: 'failed',
+      expectedAttempt: first!.attempt,
+    });
+    await agents.requeueForRetry(sessionId);
+    const second = await agents.claimNextSession('summary-second', process.pid, {
+      sessionId,
+      leaseTtlMs: 30000,
+      maxAttempts: 5,
+    });
+    const restored = new Session(
+      await AgentSessionEntryStorage.open({
+        sessionId,
+        workerId: 'summary-second',
+        attempt: second!.attempt,
+      }),
+    );
+    const next = { role: 'user' as const, content: 'Do not change my current plan.', timestamp: 2 };
+    await restored.appendMessage(next);
+    const forbidden = vi.fn(() => {
+      throw new Error('Old history must not be summarized again');
+    });
+    const resumed = createTeachingContextProjection(forbidden, {
+      checkpoint: readTeachingContextCheckpoint(await restored.getBranch()),
+    });
+    const projected = await resumed.prepare(
+      { systemPrompt: 'New host version; no approval.', messages: [...raw, next] },
+      config.historyWindow,
+      model,
+    );
+    expect(forbidden).not.toHaveBeenCalled();
+    expect(projected.messages).toContainEqual(next);
+    expect(projected.systemPrompt).toContain('New host version; no approval.');
+    expect((await restored.buildContext()).messages).toEqual([...raw, next]);
+    await expect(session.appendCustomEntry(TEACHING_CONTEXT_ENTRY, {})).rejects.toThrow();
+    resumed.dispose();
+    await agents.finishSession(sessionId, 'summary-second', {
+      status: 'succeeded',
+      expectedAttempt: second!.attempt,
+    });
+  });
+
+  it('refreshes file/version facts changed during preparation before sending a teaching request', async () => {
+    const { withTeachingTurnBoundary } = await import('@/lib/server/pbl-v3/runner-tools');
+    let revision = 1;
+    const live = async () => JSON.stringify({ revision });
+    const modelCall = vi.fn();
+    const project = vi.fn(async (context) => {
+      revision = 2;
+      return context;
+    });
+    const stream = withTeachingTurnBoundary(
+      modelCall,
+      () => false,
+      { stageKey: 'one:3', studentTurns: 1 },
+      live,
+      project,
+    );
+    await stream({} as never, { messages: [] });
+    expect(project).toHaveBeenCalledTimes(2);
+    expect(modelCall).toHaveBeenCalledOnce();
+    expect(modelCall.mock.calls[0]![1].systemPrompt).toContain('"revision":2');
+    expect(modelCall.mock.calls[0]![1].systemPrompt).not.toContain('"revision":1');
+    const churn = vi.fn(async (context) => {
+      revision++;
+      return context;
+    });
+    const refused = withTeachingTurnBoundary(
+      modelCall,
+      () => false,
+      { stageKey: 'one:3', studentTurns: 1 },
+      live,
+      churn,
+    );
+    await expect(refused({} as never, { messages: [] })).rejects.toThrow('state changed');
+    expect(modelCall).toHaveBeenCalledOnce();
+  });
+
   const expireExecution = async (sessionId: string) =>
     pool.query(
       "UPDATE pbl_v3_roles SET execution_progress_at=clock_timestamp()-interval '16 minutes' WHERE session_id=$1",
@@ -5323,7 +5532,10 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           totalTokens: 2,
         },
       };
-      const largeReply = 'Let us inspect the greeting. '.repeat(30000);
+      // This case exercises stop-frame replay with all messages retained. The
+      // explanation also appears in tool receipts; keep their combined request
+      // within the fixture model window. Overflow has dedicated projection tests.
+      const largeReply = 'Let us inspect the greeting. '.repeat(3000);
       mocked.responses = [
         [
           { type: 'text-delta', text: largeReply },
@@ -5418,7 +5630,8 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       const nextCalls = mocked.modelCalls;
       await runSession({ running: new Map(), shuttingDown: false }, next!);
       expect(mocked.modelCalls - nextCalls).toBe(1);
-      expect((await agents.getSession(queued.sessionId))?.status).toBe('succeeded');
+      const nextSession = await agents.getSession(queued.sessionId);
+      expect(nextSession?.status, nextSession?.error).toBe('succeeded');
       expect((await store.binding(queued.sessionId))?.guided?.activeFile).toBe('A-teach.md');
       const replayed = await learningView(principal, studyId);
       expect(
