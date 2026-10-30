@@ -2240,6 +2240,45 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     },
   );
 
+  it('acknowledges a durable report claim before analysis and survives browser cancellation', async () => {
+    const study = await unpreparedStudy();
+    await pool.query(
+      "UPDATE pbl_v3_studies SET state=jsonb_set(state,'{status}','\"completed\"') WHERE id=$1",
+      [study.id],
+    );
+    mocked.reportAnalysis.mockReset().mockResolvedValue({ findings: [], omitted: false });
+    const controller = new AbortController();
+    let work!: () => Promise<unknown>;
+    const schedule = vi.fn((task) => {
+      work = task;
+    });
+    const accepted = await generateLearningReport(principal, study.id, controller.signal, schedule);
+    expect(accepted.analysis?.status).toBe('generating');
+    expect(mocked.reportAnalysis).not.toHaveBeenCalled();
+    expect((await learningReport(principal, study.id)).analysis?.status).toBe('generating');
+    await generateLearningReport(principal, study.id, controller.signal, schedule);
+    expect(schedule).toHaveBeenCalledOnce();
+    controller.abort();
+    await work();
+    expect((mocked.reportAnalysis.mock.calls[0]![2] as AbortSignal).aborted).toBe(false);
+    expect((await learningReport(principal, study.id)).analysis?.status).toBe('ready');
+  });
+  it('allows an explicit retry if post-response scheduling itself fails', async () => {
+    const study = await unpreparedStudy();
+    await pool.query(
+      "UPDATE pbl_v3_studies SET state=jsonb_set(state,'{status}','\"completed\"') WHERE id=$1",
+      [study.id],
+    );
+    await expect(
+      generateLearningReport(principal, study.id, new AbortController().signal, () => {
+        throw new Error('Scheduler unavailable');
+      }),
+    ).rejects.toThrow('Scheduler unavailable');
+    expect((await learningReport(principal, study.id)).analysis).toMatchObject({
+      status: 'failed',
+      canRetry: true,
+    });
+  });
   it('ends a cancelled report claim without allowing late analysis to overwrite its retry', async () => {
     const study = await unpreparedStudy();
     await pool.query(
@@ -4625,7 +4664,11 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       passed: false,
       score: 0,
       total: 1,
+      answers: [1],
     });
+    expect(wrongQuiz.questions[0].feedback).toMatchObject({ passed: false, selectedAnswer: 1 });
+    expect(wrongQuiz.questions[0]).not.toHaveProperty('answer');
+    expect(wrongQuiz.questions[0].feedback?.explanation).toBeUndefined();
     expect(wrongQuiz.actions).not.toContain('next');
     await expect(command('next')).rejects.toThrow('not available');
     // The repair passed tests, but was newer than the code-review checkpoint. Expiry at the

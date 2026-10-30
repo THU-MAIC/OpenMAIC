@@ -36,6 +36,7 @@ import type { AgentRole } from '@/lib/pbl/v3/domain/project/project-schema';
 import { currentStage, currentMilestone } from '@/lib/pbl/v3/domain/orchestration/state';
 import * as transitions from '@/lib/pbl/v3/domain/orchestration/transition';
 import { judgeQuiz } from '@/lib/pbl/v3/domain/orchestration/quiz';
+import { quizQuestions } from './quiz-feedback';
 import {
   DECISION_RESPONSE_MAX_LENGTH,
   decisionResponseLabel,
@@ -838,6 +839,7 @@ export async function commandStudy(
         score: judged.score,
         total: judged.total,
         wrong: judged.wrong,
+        answers: [...command.answers],
       });
     } else if (command.type === 'compile') {
       check('edit');
@@ -1312,7 +1314,7 @@ export async function learningView(
         : [],
     questions:
       stage.kind === 'check' && stage.checker === 'quiz'
-        ? milestone.quiz.map((q) => ({ q: q.q, options: q.options }))
+        ? quizQuestions(milestone.quiz, row.state.collected[milestone.id]?.quiz)
         : [],
   };
 }

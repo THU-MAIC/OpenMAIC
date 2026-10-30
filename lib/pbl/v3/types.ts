@@ -62,7 +62,15 @@ export interface LearningView {
     options: { id: string; label: string }[];
   }[];
   decisionSummary?: { id: string; prompt: string; choice: string; rationale?: string }[];
-  questions: { q: string; options: string[] }[];
+  questions: {
+    q: string;
+    options: string[];
+    feedback?: {
+      passed: boolean;
+      selectedAnswer?: number;
+      explanation?: string;
+    };
+  }[];
   evaluation: {
     id: string;
     state: string;

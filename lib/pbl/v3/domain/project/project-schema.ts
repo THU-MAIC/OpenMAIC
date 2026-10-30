@@ -138,12 +138,30 @@ const decisionDefinitionSchema = z
       });
   });
 
-const quizQuestionSchema = z.object({
-  q: nonEmptyString,
-  options: z.array(nonEmptyString).min(2),
-  answer: z.number().int().nonnegative(),
-  explain: nonEmptyString,
-});
+const quizQuestionSchema = z
+  .object({
+    q: nonEmptyString,
+    options: z.array(nonEmptyString).min(2),
+    answer: z.number().int().nonnegative(),
+    explain: nonEmptyString,
+    /** Public misconception hints indexed by the selected option; never disclose an alternative answer. */
+    optionFeedback: z.array(nonEmptyString).optional(),
+    retryHint: nonEmptyString.optional(),
+  })
+  .superRefine((question, context) => {
+    if (question.answer >= question.options.length)
+      context.addIssue({
+        code: 'custom',
+        path: ['answer'],
+        message: 'Quiz answer must reference an existing option.',
+      });
+    if (question.optionFeedback && question.optionFeedback.length !== question.options.length)
+      context.addIssue({
+        code: 'custom',
+        path: ['optionFeedback'],
+        message: 'Provide one feedback entry per quiz option.',
+      });
+  });
 
 const stagePolicySchema = z.object({
   workspaceAccessPolicyRef: nonEmptyString.optional(),

@@ -632,12 +632,14 @@ export async function learningReport(
   return (await readReport(principal, id)).report;
 }
 
-/** Explicit report-button action. One bounded model call; no new queue or sandbox. */
+/** Explicit report-button action. Persist the claim before scheduling post-response work. */
 export async function generateLearningReport(
   principal: OwnerPrincipal,
   id: string,
   signal: AbortSignal,
+  schedule?: (work: () => Promise<LearningReport>) => void,
 ) {
+  signal.throwIfAborted();
   const { report, completionRevision } = await readReport(principal, id);
   if (report.analysis?.status === 'ready' || report.analysis?.status === 'generating')
     return report;
@@ -663,43 +665,65 @@ export async function generateLearningReport(
     return claim.rows.length > 0;
   });
   if (!claimed) return learningReport(principal, id);
-  try {
-    // One report budget spans resolution, primary and fallback, below the claim's
-    // two-minute expiry. Teaching Agent turns do not use this report-only limit.
-    const budget = AbortSignal.any([signal, AbortSignal.timeout(90_000)]);
-    const analysis = await abortable(
-      analyzeLearningReport(principal.ownerId, report, budget),
-      budget,
-    );
-    const document: LearningReport = {
-      ...report,
-      analysis: {
-        ...analysis,
-        omitted: report.truncated || analysis.omitted,
-        status: 'ready',
-        generatedAt: new Date().toISOString(),
-        canRetry: false,
-      },
-    };
-    await store.pool.query(
-      `UPDATE pbl_v3_reports SET status='ready',
+  const run = async () => {
+    const started = Date.now();
+    const budget = AbortSignal.any([...(schedule ? [] : [signal]), AbortSignal.timeout(90_000)]);
+    try {
+      // One report budget spans resolution, primary and fallback, below the claim's
+      // two-minute expiry. Teaching Agent turns do not use this report-only limit.
+      // Once a scheduled claim is accepted, browser navigation and an ingress
+      // timeout must not cancel its analysis. The existing report budget and
+      // attempt fence still apply; synchronous callers retain cancellation.
+      const analysis = await abortable(
+        analyzeLearningReport(principal.ownerId, report, budget),
+        budget,
+      );
+      const document: LearningReport = {
+        ...report,
+        analysis: {
+          ...analysis,
+          omitted: report.truncated || analysis.omitted,
+          status: 'ready',
+          generatedAt: new Date().toISOString(),
+          canRetry: false,
+        },
+      };
+      await store.pool.query(
+        `UPDATE pbl_v3_reports SET status='ready',
        document=jsonb_set($3::jsonb,'{revision}',to_jsonb(completion_revision)),updated_at=now()
        WHERE study_id=$1 AND attempt=$2`,
-      [id, attempt, JSON.stringify(document)],
-    );
-    return learningReport(principal, id);
+        [id, attempt, JSON.stringify(document)],
+      );
+      return learningReport(principal, id);
+    } catch (error) {
+      // Keep operational diagnostics without retaining provider bodies or learner material.
+      createLogger('PBLReport').warn('Analysis failed', {
+        studyId: id,
+        attempt,
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+        aborted: budget.aborted,
+        scheduled: !!schedule,
+        durationMs: Date.now() - started,
+      });
+      await store.pool.query(
+        `UPDATE pbl_v3_reports SET status='failed',updated_at=now() WHERE study_id=$1 AND attempt=$2`,
+        [id, attempt],
+      );
+      return learningReport(principal, id);
+    }
+  };
+  if (!schedule) return run();
+  try {
+    schedule(run);
   } catch (error) {
-    // Keep operational diagnostics without retaining provider bodies or learner material.
-    createLogger('PBLReport').warn('Analysis failed', {
-      studyId: id,
-      attempt,
-      errorType: error instanceof Error ? error.name : 'UnknownError',
-      aborted: signal.aborted,
-    });
     await store.pool.query(
-      `UPDATE pbl_v3_reports SET status='failed',updated_at=now() WHERE study_id=$1 AND attempt=$2`,
+      "UPDATE pbl_v3_reports SET status='failed',updated_at=now() WHERE study_id=$1 AND attempt=$2",
       [id, attempt],
     );
-    return learningReport(principal, id);
+    throw error;
   }
+  return {
+    ...report,
+    analysis: { ...report.analysis!, status: 'generating' as const, canRetry: false },
+  };
 }

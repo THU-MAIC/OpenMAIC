@@ -191,6 +191,28 @@ for concise clarification before relying on missing behavior, rather than guess.
 Saved responses, revisions and approval/workflow gates are unchanged. This bounds
 one model-input component, not total teaching time, conversation or tool use.
 
+## Quiz feedback
+
+Questions retain their private `answer` index and correct-answer `explain`.
+Optional `optionFeedback` contains one public misconception hint per option;
+`retryHint` is a general retry hint for older attempts without recorded choices.
+Hints should explain the selected misconception without naming another option
+or supplying the correct answer. The server returns only the hint for the last
+submitted wrong choice; a correct answer receives `explain`. Keys and unselected
+feedback are never included in the learner question response. Older packages
+remain usable with a generic localized retry hint when no authored hint exists.
+New attempts persist the learner's submitted `answers`; old attempts remain valid.
+Changing an unsubmitted choice does not regrade it or reveal another explanation.
+
+Report generation acknowledges its durable claim before executing analysis with
+Next.js `after`. The browser polls saved state with token-free GET requests;
+closing the page or the HTTP connection cannot cancel an accepted background
+analysis. The bounded report budget, owner scope, attempt fence and stale-claim
+retry remain in force, without introducing a new queue. Empty/non-JSON gateway
+responses keep the saved facts visible and offer a localized retry rather than
+exposing JSON parsing exceptions. Process loss can leave a stale claim, which
+becomes explicitly retryable through the existing expiry rule.
+
 ## Runtime profiles and private resources
 
 Version 1 registers `python3` and `java`. The platform generates builds from

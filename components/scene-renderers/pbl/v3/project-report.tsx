@@ -14,7 +14,7 @@ import {
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { reportConversationMessages, type LearningReport } from '@/lib/pbl/v3/report';
 import { TextBlock } from '@/components/workbench/chat/text-block';
-import { sandboxErrorMessage } from '@/lib/sandbox/error-message';
+import { readReportResponse, ReportResponseError } from '@/lib/pbl/v3/report-client';
 
 /** Report reads never prepare an environment; the same surface opens from hero or workbench. */
 export function ProjectReport({
@@ -51,13 +51,18 @@ export function ProjectReport({
           cache: 'no-store',
           signal,
         });
-        const data = await response.json();
-        if (!response.ok) throw new Error(sandboxErrorMessage(data.error));
+        const data = await readReportResponse(response, studyId);
         if (!signal.aborted) setReport(data);
         return data as LearningReport;
-      } catch (e) {
+      } catch (error) {
         if (!signal.aborted)
-          setError(e instanceof Error ? e.message : t('pblV3.reportCopy.failed'));
+          setError(
+            t(
+              error instanceof ReportResponseError && error.pendingFinal
+                ? 'pblV3.reportCopy.waitFinal'
+                : 'pblV3.reportCopy.failed',
+            ),
+          );
       } finally {
         if (!signal.aborted) setPending(false);
       }
