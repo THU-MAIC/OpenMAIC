@@ -1449,20 +1449,23 @@ async function executeSession(
     }
 
     const driver = await resolveAgentDriverModel(await backgroundWorkspaceId(meta.ownerId));
+    const requestDriver = teaching ? (driver.teaching ?? driver) : driver;
     const teachingBudget = teaching
-      ? (await import('@/lib/server/pbl-v3/context-budget')).teachingModelBudget(driver.piModel)
+      ? (await import('@/lib/server/pbl-v3/context-budget')).teachingModelBudget(
+          requestDriver.piModel,
+        )
       : null;
     // Only a confirmed provider output window may become a wire limit. Pi's
     // unknown-model reservation is for input preparation, never a reply ceiling.
     const confirmedOutputWindow =
-      driver.wireMaxOutputTokens !== undefined &&
-      Number.isFinite(driver.wireMaxOutputTokens) &&
-      driver.wireMaxOutputTokens > 0;
+      requestDriver.wireMaxOutputTokens !== undefined &&
+      Number.isFinite(requestDriver.wireMaxOutputTokens) &&
+      requestDriver.wireMaxOutputTokens > 0;
     const wireOutputTokens = teachingBudget
       ? confirmedOutputWindow
         ? teachingBudget.outputTokens
         : undefined
-      : driver.wireMaxOutputTokens;
+      : requestDriver.wireMaxOutputTokens;
     const streamFn = createCallLlmStreamFn({
       languageModel: driver.connection.model,
       supportsToolImages: driver.connection.modelInfo?.capabilities?.vision,
@@ -1788,7 +1791,7 @@ async function executeSession(
           )
         : streamFn,
       systemPrompt: execution.systemPrompt,
-      model: driver.piModel,
+      model: requestDriver.piModel,
       tools: execution.tools,
       ...(teaching ? { toolTimeoutMs: 0 } : {}),
       allowedToolNames: execution.allowedToolNames,

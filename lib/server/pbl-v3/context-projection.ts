@@ -168,9 +168,16 @@ export function createTeachingContextProjection(
       if (disposed) throw new Error('Teaching context projection is closed.');
       const budget = teachingModelBudget(model);
       const summarySpace = Math.min(24_000, Math.floor(budget.inputTokens / 4));
+      // Everything since the latest real input is the active tool execution.
+      // Summarizing it can erase a result just requested and cause reread loops.
+      // An opening/recovered turn without a learner frame is entirely active.
+      const activeStart = Math.max(
+        0,
+        context.messages.findLastIndex((message) => message.role === 'user'),
+      );
       const previous =
         checkpoint &&
-        checkpoint.coveredMessages <= context.messages.length &&
+        checkpoint.coveredMessages <= activeStart &&
         size(checkpoint.summary) <= summarySpace &&
         checkpoint.prefixHash === prefixHash(context.messages.slice(0, checkpoint.coveredMessages))
           ? checkpoint
@@ -197,17 +204,17 @@ export function createTeachingContextProjection(
 
       const base = currentTeachingContext({ ...context, messages: [] }, window);
       const historyBudget = budget.inputTokens - estimatedRequestTokens(base) - summarySpace - 1024;
-      const latestInput = context.messages.findLastIndex((message) => message.role === 'user');
-      let used = latestInput >= 0 ? size(context.messages[latestInput]) : 0;
+      let used = size(context.messages.slice(activeStart));
       if (historyBudget <= 0 || used > historyBudget)
         throw new Error(
-          'PBL_CONTEXT_CAPACITY: The current material and latest learner input exceed the configured model capacity. Adjust the model or authored material; saved progress is unchanged.',
+          'PBL_CONTEXT_CAPACITY: Current material and the active learner/tool turn exceed the configured model capacity. Use a larger model window or smaller file/tool reads; saved progress is unchanged.',
         );
       const coveredBefore = previous?.coveredMessages ?? 0;
-      let covered = context.messages.length;
+      let covered = activeStart;
       for (const group of groups(context.messages).reverse()) {
+        if (group.start >= activeStart) continue;
         if (group.start < coveredBefore) break;
-        const bytes = group.start === latestInput ? 0 : size(group.messages);
+        const bytes = size(group.messages);
         if (used + bytes > historyBudget) break;
         used += bytes;
         covered = group.start;

@@ -448,6 +448,50 @@ describe('runner: unbounded V3 teaching turns', () => {
       );
     },
   );
+  it.each([8192, undefined])('uses the shared teaching fallback allowance (%s)', async (output) => {
+    const meta = makeMeta({ id: 'pbl-role-shared-fallback-window' });
+    const session = await makeEntryTree(),
+      store = makeStore(meta);
+    mocks.resolveAgentDriverModel.mockResolvedValue({
+      connection: { model: {} as never },
+      piModel: {
+        api: 'openai-completions',
+        provider: 'openai',
+        id: 'primary',
+        contextWindow: 200_000,
+        maxTokens: 32_768,
+      },
+      wireMaxOutputTokens: 32_768,
+      teaching: {
+        piModel: {
+          api: 'openai-completions',
+          provider: 'openai',
+          id: 'primary',
+          contextWindow: 64_000,
+          maxTokens: 8192,
+        },
+        wireMaxOutputTokens: output,
+      },
+    });
+    mocks.openEntryStorage.mockResolvedValue(session.getStorage());
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    mocks.teachingRunnerConfig.mockResolvedValue({
+      tools: [],
+      systemPrompt: 'Teaching test',
+      allowedToolNames: new Set(),
+      needsTurnReceipt: () => false,
+      isTurnComplete: () => false,
+      thinkingConfig: () => ({ mode: 'enabled', effort: 'low', level: 'low' }),
+    });
+    useResponses([[{ type: 'text-delta', text: 'Ready.' }, finish('stop')]]);
+    await runSession({ running: new Map(), shuttingDown: false }, meta);
+    expect(mocks.streamLLM.mock.calls[0]![0].maxOutputTokens).toBe(output);
+    expect(store.finishSession).toHaveBeenCalledWith(
+      meta.id,
+      WORKER_ID,
+      expect.objectContaining({ status: 'succeeded' }),
+    );
+  });
   it('keeps progressing long replies uncapped when output capacity is unknown and uses low effort', async () => {
     vi.useFakeTimers();
     const meta = makeMeta({ id: 'pbl-role-thinking' }),

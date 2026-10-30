@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 vi.mock('server-only', () => ({}));
 import {
   createAssistantMessageEventStream,
@@ -422,6 +423,111 @@ describe('model-aware teaching context projection', () => {
       calls,
     );
     expect(calls).toEqual(['read-1']);
+    runtime.dispose();
+  });
+  it.each(['read', 'write', 'multiple', 'no-learner'])(
+    'fails before summarizing an oversized active tool group (%s)',
+    async (kind) => {
+      const stream = summarizer(),
+        saved = vi.fn();
+      const runtime = createTeachingContextProjection(stream, { saveCheckpoint: saved });
+      const target = { ...model, contextWindow: 128_000, maxTokens: 8192 };
+      const latest = { role: 'user' as const, content: 'Inspect the code.', timestamp: 1 };
+      const toolGroup = (id: string, bytes: number): Context['messages'] => [
+        {
+          ...assistant(''),
+          stopReason: 'toolUse',
+          content: [
+            {
+              type: 'toolCall',
+              id,
+              name: kind === 'write' ? 'write_file' : 'read_file',
+              arguments:
+                kind === 'write' ? { content: '源'.repeat(bytes / 3) } : { path: 'main.py' },
+            },
+          ],
+        },
+        {
+          role: 'toolResult',
+          toolCallId: id,
+          toolName: kind === 'write' ? 'write_file' : 'read_file',
+          content: [{ type: 'text', text: kind === 'write' ? 'Written' : '源'.repeat(bytes / 3) }],
+          isError: false,
+          timestamp: 2,
+        },
+      ];
+      const context: Context = {
+        systemPrompt: 'p'.repeat(21_000),
+        messages:
+          kind === 'no-learner'
+            ? toolGroup('opening-read', 100_000)
+            : [
+                { role: 'user', content: 'Historical work. '.repeat(15_000), timestamp: 0 },
+                latest,
+                ...toolGroup('first', kind === 'multiple' ? 40_000 : 80_000),
+                ...(kind === 'multiple' ? toolGroup('second', 40_000) : []),
+              ],
+      };
+      const original = structuredClone(context);
+      await expect(runtime.prepare(context, window, target)).rejects.toThrow(
+        'PBL_CONTEXT_CAPACITY',
+      );
+      expect(stream).not.toHaveBeenCalled();
+      expect(saved).not.toHaveBeenCalled();
+      expect(context).toEqual(original);
+      runtime.dispose();
+    },
+  );
+  it('invalidates legacy checkpoints that cover tools in the still-active learner turn', async () => {
+    const context: Context = {
+      systemPrompt: 'Current authoritative policy',
+      messages: [
+        { role: 'user', content: 'Inspect it.', timestamp: 0 },
+        {
+          ...assistant(''),
+          content: [
+            { type: 'toolCall', id: 'read', name: 'read_file', arguments: { path: 'main.py' } },
+          ],
+        },
+        {
+          role: 'toolResult',
+          toolCallId: 'read',
+          toolName: 'read_file',
+          isError: false,
+          content: [{ type: 'text', text: 'Exact current source' }],
+          timestamp: 1,
+        },
+      ],
+    };
+    const stream = summarizer();
+    const runtime = createTeachingContextProjection(stream, {
+      checkpoint: {
+        version: 1,
+        coveredMessages: 3,
+        summary: 'Legacy lossy memory',
+        prefixHash: createHash('sha256')
+          .update(
+            JSON.stringify(
+              context.messages.map((message) => ({
+                role: message.role,
+                content: message.content,
+                ...(message.role === 'toolResult'
+                  ? {
+                      toolCallId: message.toolCallId,
+                      toolName: message.toolName,
+                      isError: message.isError,
+                    }
+                  : {}),
+              })),
+            ),
+          )
+          .digest('hex'),
+      },
+    });
+    const result = await runtime.prepare(context, window, model);
+    expect(result.messages).toEqual(context.messages);
+    expect(result.systemPrompt).not.toContain('Legacy lossy memory');
+    expect(stream).not.toHaveBeenCalled();
     runtime.dispose();
   });
   it('refuses an oversized static policy or latest reply before sending any model request', async () => {

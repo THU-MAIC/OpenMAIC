@@ -20,7 +20,13 @@ without sharing the roles' full chats.
    pending review, declared visible decisions, current assessment receipts, and
    the exact active teaching section from the host. Do not widen artifact access.
 3. Compose current instructions/material, a quoted historical summary, and recent
-   complete interactions. Always retain the latest actual learner message.
+   complete interactions. Always retain the latest actual learner message and
+   every subsequent assistant/tool group verbatim. They are the active execution,
+   not historical memory. If that group cannot fit, fail with
+   `PBL_CONTEXT_CAPACITY` before making summary calls; never erase a just-read
+   result and ask the model to read it again. Ignore legacy checkpoints that
+   covered any part of the still-active turn. Once the learner sends a new input,
+   earlier completed groups can become historical context.
 4. Reserve output space and ten percent headroom when preparing input. When the
    connector declares an output window, bound the per-request allowance by that
    window and one quarter of the context. Without output metadata, the 8,192-token
@@ -28,6 +34,12 @@ without sharing the roles' full chats.
    teaching requests rather than imposing an invented reply ceiling. The provider's
    actual output behavior still applies. The route context override precedes the
    catalogue and 128,000 fallback; operator metadata must match the real route.
+   When the slot declares a fallback, teaching uses the smaller context and output
+   capacities of the two targets for input preparation, normal replies and summary
+   calls. This avoids passing a primary-only allowance or oversized input to a
+   smaller backup. Unknown output capacity on either target omits the normal
+   teaching wire allowance. Non-teaching Agent requests retain their existing
+   primary metadata and fallback behavior.
 5. When needed, summarize older history in bounded chunks through the same
    authorized connector, with thinking disabled and output at most 4,096 tokens.
    Include full textual tool results and their identities, not the SDK generic
@@ -89,3 +101,12 @@ large tool-result tails, output truncation, durable checkpoint reuse after worke
 restart, cancellation/lease loss, current-version changes, capacity errors and
 summary failures. Local/mock/PG evidence does not establish hosted real-model
 long-session acceptance; verify the deployment route separately.
+
+Deployment must verify the context window of **both** configured slot targets.
+The 128K value for a target with missing metadata is an estimate, not discovery
+of its real capacity; pin an appropriate slot context window before using a
+smaller uncatalogued route. Summary calls publish a checkpoint only after all
+chunks succeed. Interrupted preparation may therefore repeat completed summary
+work. A truncated/oversized summary fails safely rather than publishing incomplete
+memory; automatic retry with a different compression target, partial-chunk
+checkpoints and low-water-mark tuning remain performance follow-ups.
