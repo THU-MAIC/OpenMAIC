@@ -2616,6 +2616,8 @@
     },
     "retryResponse": "Retry response",
     "run": {
+      "contextCapacity": "目前課程材料或這則訊息超過所選模型的上下文容量。學習紀錄已儲存，請聯絡課程維護者檢查模型設定或材料後再試。",
+      "contextPreparation": "準備對話上下文暫時失敗。學習紀錄已儲存，可以重試本輪回覆。",
       "incomplete": "本輪回覆尚未完成目前審閱的記錄，請點擊「重試本輪回覆」繼續。學習進度未被跳過。",
       "authentication": "The teaching model could not authenticate. Check the model configuration before retrying.",
       "timeout": "The teaching response timed out. You can retry this turn.",

@@ -2616,6 +2616,8 @@
     },
     "retryResponse": "Retry response",
     "run": {
+      "contextCapacity": "The current course material or message exceeds the selected model’s context capacity. Your records are saved. Ask the course maintainer to check the model configuration or material before retrying.",
+      "contextPreparation": "Conversation preparation failed temporarily. Your records are saved; you can retry this reply.",
       "incomplete": "This reply did not finish recording the current review. Retry this reply to continue; your progress is unchanged.",
       "authentication": "The teaching model could not authenticate. Check the model configuration before retrying.",
       "timeout": "The teaching response timed out. You can retry this turn.",

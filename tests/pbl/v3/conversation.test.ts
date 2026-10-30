@@ -432,6 +432,12 @@ describe('student conversation projection', () => {
     ).toBe('incomplete');
     expect(learningRunFailure('request timed out')).toBe('timeout');
     expect(learningRunFailure('401 unauthorized')).toBe('authentication');
+    expect(learningRunFailure('PBL_CONTEXT_CAPACITY: oversized current policy')).toBe(
+      'contextCapacity',
+    );
+    expect(learningRunFailure('PBL_CONTEXT_COMPACTION_FAILED: upstream failed')).toBe(
+      'contextPreparation',
+    );
   });
   it('keeps queued student messages and successful worker replies in one turn across exchanges', () => {
     const history: PersistedAgentSessionEvent[] = [];

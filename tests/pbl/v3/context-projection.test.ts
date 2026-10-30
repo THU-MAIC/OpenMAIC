@@ -8,7 +8,14 @@ import {
   type Api,
 } from '@earendil-works/pi-ai';
 import type { StreamFn } from '@earendil-works/pi-agent-core';
-import { createTeachingContextProjection } from '@/lib/server/pbl-v3/context-projection';
+import {
+  createTeachingContextProjection,
+  serializeTeachingHistory,
+  readTeachingContextCheckpoint,
+  TEACHING_CONTEXT_ENTRY,
+  type TeachingContextCheckpoint,
+} from '@/lib/server/pbl-v3/context-projection';
+import { teachingModelBudget, estimatedRequestTokens } from '@/lib/server/pbl-v3/context-budget';
 import { currentTeachingContext } from '@/lib/server/pbl-v3/teaching-context';
 
 const usage = {
@@ -65,6 +72,188 @@ const longContext = (): Context => ({
   ],
 });
 describe('model-aware teaching context projection', () => {
+  it('shares a physical input/output allowance, including large and unknown output windows', () => {
+    for (const value of [
+      model,
+      { ...model, contextWindow: 1_048_576, maxTokens: 393_216 },
+      { ...model, contextWindow: 1_000_000, maxTokens: Number.NaN },
+    ]) {
+      const budget = teachingModelBudget(value);
+      expect(budget.inputTokens + budget.outputTokens).toBeLessThan(budget.contextWindow);
+      expect(budget.outputTokens).toBeLessThanOrEqual(budget.contextWindow / 4);
+    }
+    expect(teachingModelBudget({ ...model, maxTokens: 0 }).outputTokens).toBe(8000);
+  });
+
+  it('restores a checkpoint after restart and across stages without resummarizing old dialogue', async () => {
+    let checkpoint: TeachingContextCheckpoint | undefined;
+    const original = longContext(),
+      before = structuredClone(original);
+    const first = createTeachingContextProjection(
+      summarizer('Observed previous work; approval must be revalidated.'),
+      {
+        saveCheckpoint: async (value) => {
+          checkpoint = structuredClone(value);
+        },
+      },
+    );
+    await first.prepare(original, window, model);
+    first.dispose();
+    expect(checkpoint).toBeDefined();
+    const restored = readTeachingContextCheckpoint([
+      {
+        type: 'custom',
+        id: 'derived',
+        parentId: 'raw',
+        timestamp: new Date().toISOString(),
+        customType: TEACHING_CONTEXT_ENTRY,
+        data: checkpoint,
+      },
+    ]);
+    const next = summarizer(),
+      runtime = createTeachingContextProjection(next, { checkpoint: restored });
+    const input = {
+      role: 'user' as const,
+      content: 'Which part should I review next?',
+      timestamp: 21,
+    };
+    const context = {
+      ...original,
+      systemPrompt: 'NEW stage and file version; no approval.',
+      messages: [...original.messages, input],
+    };
+    const projected = await runtime.prepare(
+      context,
+      { stageKey: 'second:3', studentTurns: 1 },
+      model,
+    );
+    expect(next).not.toHaveBeenCalled();
+    expect(projected.messages).toContainEqual(input);
+    expect(projected.systemPrompt).toContain('NEW stage and file version; no approval.');
+    expect(projected.systemPrompt).toContain('Observed previous work');
+    expect(original).toEqual(before);
+    runtime.dispose();
+  });
+
+  it('extends a checkpoint using only new history and rejects a mismatched source prefix', async () => {
+    let checkpoint: TeachingContextCheckpoint | undefined;
+    const context = longContext(),
+      first = createTeachingContextProjection(summarizer('Initial evidence summary'), {
+        saveCheckpoint: async (value) => {
+          checkpoint = value;
+        },
+      });
+    await first.prepare(context, window, model);
+    first.dispose();
+    const covered = checkpoint!.coveredMessages;
+    const more = {
+      ...context,
+      messages: [
+        ...context.messages,
+        { role: 'user' as const, content: 'NEW HISTORY '.repeat(6000), timestamp: 21 },
+        { role: 'user' as const, content: 'Please explain this revision.', timestamp: 22 },
+      ],
+    };
+    const next = summarizer('Updated evidence summary');
+    const resumed = createTeachingContextProjection(next, { checkpoint });
+    await resumed.prepare(more, window, model);
+    const sent = JSON.stringify(next.mock.calls.map((call) => call[1]));
+    expect(sent).not.toContain('Historical learner 0:');
+    expect(sent).toContain('NEW HISTORY');
+    expect(covered).toBeGreaterThan(0);
+    resumed.dispose();
+    const changed = structuredClone(context);
+    changed.messages[0] = {
+      role: 'user',
+      content: 'DIFFERENT ROLE HISTORY '.repeat(2000),
+      timestamp: 0,
+    };
+    const fresh = summarizer('Recomputed facts'),
+      other = createTeachingContextProjection(fresh, { checkpoint });
+    const result = await other.prepare(changed, window, model);
+    expect(fresh).toHaveBeenCalled();
+    expect(result.systemPrompt).not.toContain('Initial evidence summary');
+    other.dispose();
+  });
+
+  it('summarizes full tool-result tails with identities and excludes unverified old thinking', async () => {
+    const tool: Context['messages'][number] = {
+      role: 'toolResult',
+      toolCallId: 'long-test',
+      toolName: 'collect_build',
+      isError: true,
+      content: [
+        {
+          type: 'text',
+          text:
+            'stdout '.repeat(15000) +
+            'TAIL: failing check delete zero; revision=19; hash=actual-file',
+        },
+      ],
+      timestamp: 0,
+    };
+    const source: Context['messages'] = [
+      { role: 'user', content: 'Review the real result.', timestamp: 0 },
+      {
+        ...assistant(''),
+        content: [
+          { type: 'thinking', thinking: 'UNVERIFIED OLD GUESS' },
+          {
+            type: 'toolCall',
+            id: 'long-test',
+            name: 'collect_build',
+            arguments: { commandId: 'existing-command' },
+          },
+        ],
+      },
+      tool,
+      { role: 'user', content: 'Why did this check fail?', timestamp: 1 },
+    ];
+    const serial = serializeTeachingHistory(source);
+    expect(serial).toContain('TAIL: failing check delete zero');
+    expect(serial).toContain('existing-command');
+    expect(serial).toContain('"isError":true');
+    expect(serial).not.toContain('UNVERIFIED OLD GUESS');
+    const stream = summarizer(),
+      runtime = createTeachingContextProjection(stream);
+    const result = await runtime.prepare(
+      { systemPrompt: 'Current authoritative policy', messages: source },
+      { ...window, studentTurns: 2 },
+      model,
+    );
+    expect(JSON.stringify(stream.mock.calls.map((call) => call[1]))).toContain(
+      'TAIL: failing check delete zero',
+    );
+    expect(result.messages).toEqual([source.at(-1)]);
+    expect(estimatedRequestTokens(result)).toBeLessThan(teachingModelBudget(model).inputTokens);
+    runtime.dispose();
+  });
+
+  it('does not publish a checkpoint after summary cancellation or a failed durable append', async () => {
+    const save = vi.fn(async () => {
+      throw new Error('lease lost during checkpoint append');
+    });
+    const runtime = createTeachingContextProjection(summarizer(), { saveCheckpoint: save });
+    const context = longContext(),
+      before = structuredClone(context);
+    await expect(runtime.prepare(context, window, model)).rejects.toThrow('lease lost');
+    expect(save).toHaveBeenCalledOnce();
+    expect(context).toEqual(before);
+    runtime.dispose();
+    const controller = new AbortController(),
+      cancelledSave = vi.fn();
+    const stream = summarizer();
+    stream.mockImplementation(() => {
+      controller.abort();
+      const result = createAssistantMessageEventStream();
+      result.push({ type: 'done', reason: 'stop', message: assistant('Late summary') });
+      return result;
+    });
+    const cancelled = createTeachingContextProjection(stream, { saveCheckpoint: cancelledSave });
+    await expect(cancelled.prepare(context, window, model, controller.signal)).rejects.toThrow();
+    expect(cancelledSave).not.toHaveBeenCalled();
+    cancelled.dispose();
+  });
   it('leaves ordinary context unchanged without extra model calls', async () => {
     const stream = summarizer(),
       runtime = createTeachingContextProjection(stream);
@@ -87,7 +276,7 @@ describe('model-aware teaching context projection', () => {
     expect(stream).toHaveBeenCalled();
     expect(result.messages).toContainEqual(context.messages.at(-1));
     expect(result.systemPrompt).toContain('Current authoritative policy');
-    expect(result.systemPrompt).toContain('never authoritative learner feedback');
+    expect(result.systemPrompt).toContain('not current learner feedback');
     expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(25000);
     expect(context).toEqual(before);
     const count = stream.mock.calls.length;
@@ -101,6 +290,27 @@ describe('model-aware teaching context projection', () => {
     const result = await runtime.prepare(context, { ...window, studentTurns: 16 }, model);
     expect(result.messages.filter((m) => m.role === 'user').length).toBeLessThan(16);
     expect(result.messages).toContainEqual(context.messages.at(-1));
+    runtime.dispose();
+  });
+  it('budgets escaped code and multilingual text in summary requests as well as the teaching request', async () => {
+    const stream = summarizer(),
+      runtime = createTeachingContextProjection(stream);
+    const context: Context = {
+      systemPrompt: 'Current authoritative policy',
+      messages: [
+        { role: 'user', content: '\\"\n中文🧠'.repeat(6000), timestamp: 0 },
+        { role: 'user', content: 'Review the unchanged current file.', timestamp: 1 },
+      ],
+    };
+    const projected = await runtime.prepare(context, { ...window, studentTurns: 2 }, model);
+    expect(stream).toHaveBeenCalled();
+    for (const [target, request] of stream.mock.calls)
+      expect(estimatedRequestTokens(request)).toBeLessThanOrEqual(
+        teachingModelBudget(target).inputTokens,
+      );
+    expect(estimatedRequestTokens(projected)).toBeLessThanOrEqual(
+      teachingModelBudget(model).inputTokens,
+    );
     runtime.dispose();
   });
   it('retains tool calls and results together while making space for the actual learner input', async () => {
@@ -182,6 +392,26 @@ describe('model-aware teaching context projection', () => {
     await expect(runtime.prepare(longContext(), window, model)).rejects.toThrow(
       'PBL_CONTEXT_COMPACTION_FAILED',
     );
+    runtime.dispose();
+  });
+  it('refuses a nonempty token-truncated summary instead of persisting partial memory', async () => {
+    const save = vi.fn();
+    const runtime = createTeachingContextProjection(
+      () => {
+        const stream = createAssistantMessageEventStream();
+        stream.push({
+          type: 'done',
+          reason: 'length',
+          message: { ...assistant('Incomplete prior facts'), stopReason: 'length' },
+        });
+        return stream;
+      },
+      { saveCheckpoint: save },
+    );
+    await expect(runtime.prepare(longContext(), window, model)).rejects.toThrow(
+      'PBL_CONTEXT_COMPACTION_FAILED',
+    );
+    expect(save).not.toHaveBeenCalled();
     runtime.dispose();
   });
   it('cancels a stalled summary without changing the saved-source conversation', async () => {

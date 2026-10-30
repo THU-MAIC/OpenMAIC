@@ -320,12 +320,28 @@ function teachingReview(review: TeachingPromptInput['pendingReview']) {
 /** Only changing state is repeated; the product guide is already in the system prompt. */
 export function teachingLiveContext(input: TeachingPromptInput): string {
   const guided = input.stage.kind === 'mentor_say' || input.stage.kind === 'produce';
+  const repair =
+    input.stage.kind === 'check' &&
+    input.stage.checker === 'tests' &&
+    !!input.collected.remediation;
+  const chosenVisible =
+    input.stage.kind === 'dialogue' ||
+    repair ||
+    ('reads' in input.stage && input.stage.reads.includes('decisions.chosen'));
+  const assessmentVisible =
+    input.stage.kind === 'check' ||
+    (input.stage.kind === 'mentor_say' &&
+      input.stage.agent === 'mentor' &&
+      input.stage.skill === 'recap');
   return JSON.stringify({
     productContext: { current: teachingProductContext(input).current },
     communication: input.communication ?? { uiLocale: 'en-US', responseLanguage: null },
     stageKey: input.stageKey,
     completionRecorded: input.completionRecorded ?? false,
-    ...(input.stage.kind === 'dialogue'
+    // Builds also run during planning/coding; their existing ID must survive
+    // compaction so the Agent collects it instead of starting another command.
+    pendingRun: input.pendingRun ?? null,
+    ...(chosenVisible
       ? projectArtifacts({
           reads: ['decisions.chosen'],
           milestone: input.milestone,
@@ -333,12 +349,46 @@ export function teachingLiveContext(input: TeachingPromptInput): string {
           decisionCatalog: input.definition.decisions,
         })
       : {}),
+    ...(assessmentVisible
+      ? {
+          currentAssessment: {
+            pendingRun: input.pendingRun ?? null,
+            tests: input.collected.tests
+              ? {
+                  status: input.collected.tests.status,
+                  publicFeedback: input.collected.tests.publicFeedback,
+                  workspaceRevision: input.collected.tests.revision,
+                  codeArtifactId: input.collected.tests.codeArtifactId,
+                }
+              : null,
+            quiz: input.collected.quiz
+              ? {
+                  passed: input.collected.quiz.passed,
+                  score: input.collected.quiz.score,
+                  total: input.collected.quiz.total,
+                  attempt: input.collected.quiz.attempt,
+                }
+              : null,
+          },
+        }
+      : {}),
     ...(guided
       ? {
           welcome: input.welcome,
           welcomePresented: input.welcomePresented,
           priorArtifactApproval: input.priorArtifactApproval ?? null,
           activeSection: input.activeSection || null,
+          // The active section may otherwise exist only in an old tool result.
+          // Restore its exact instructions after any history projection.
+          activeInstruction: input.activeSection
+            ? (() => {
+                const { referenceMaterials: _references, ...section } = teachingSection(
+                  input,
+                  input.activeSection!,
+                );
+                return section;
+              })()
+            : null,
           nextSection:
             (input.welcome === 'pending' && input.activeSection
               ? input.activeSection

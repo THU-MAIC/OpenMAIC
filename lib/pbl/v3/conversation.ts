@@ -1,6 +1,12 @@
 import type { AgentRole } from './domain/project/project-schema';
 
-export type LearningRunFailure = 'authentication' | 'timeout' | 'incomplete' | 'unavailable';
+export type LearningRunFailure =
+  | 'authentication'
+  | 'timeout'
+  | 'incomplete'
+  | 'unavailable'
+  | 'contextCapacity'
+  | 'contextPreparation';
 
 /** Learner-owned conversation with OpenPBL thinking and full tool activity. */
 export interface LearningConversationEntry {

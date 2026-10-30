@@ -45,7 +45,9 @@ export function buildPiDriverModel(
     // Pi requires Model.maxTokens. For known models this is the real catalog
     // output window. For unknown models 8192 is only a deterministic internal
     // compaction reservation; resolveAgentDriverModel deliberately exposes an
-    // independent undefined wireMaxOutputTokens so it never becomes an API cap.
+    // independent undefined wireMaxOutputTokens for ordinary conversations.
+    // PBL teaching separately allocates and sends a per-request output allowance
+    // from its physical context budget, without limiting the whole learning turn.
     maxTokens: connection.modelInfo?.outputWindow ?? UNKNOWN_MODEL_RESERVED_OUTPUT_TOKENS,
   } as Model<Api>;
 }

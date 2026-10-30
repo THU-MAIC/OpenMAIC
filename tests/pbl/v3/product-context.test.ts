@@ -40,13 +40,27 @@ function fixture(index: number) {
     role,
     workspace,
     packaged: false,
-    skill: { ...stageSkill(stage), documents: [] },
+    skill: { ...stageSkill(stage), documents: [] as { path: string; text: string }[] },
     stageKey: `${milestone.id}:${index}`,
     collected: state.collected[milestone.id]!,
   };
 }
 
 describe('authoritative product guidance', () => {
+  it('restores exact active-section instructions independently of old tool history', () => {
+    const input = fixture(2);
+    const section = input.skill.progression[1]!;
+    input.skill.documents.push({ path: 'reference.md', text: 'Static reference document' });
+    const live = JSON.parse(teachingLiveContext({ ...input, activeSection: section }));
+    expect(live.activeInstruction.instruction).toBe(input.skill.content[section]);
+    expect(live.activeInstruction.section).toBe(section);
+    expect(live.activeInstruction).not.toHaveProperty('referenceMaterials');
+    const welcome = JSON.parse(
+      teachingLiveContext({ ...input, activeSection: section, welcome: 'pending' }),
+    );
+    expect(welcome.activeInstruction.instruction).not.toBe(input.skill.content[section]);
+    expect(welcome.activeInstruction.delivery).toContain('Welcome only');
+  });
   it('names the visible task trigger and directs decisions to a presentation-only drawer link', () => {
     const input = fixture(1);
     const context = teachingProductContext({ ...input, uiLocale: 'zh-CN' });
@@ -139,10 +153,49 @@ describe('authoritative product guidance', () => {
     for (const index of [0, 2, 3, 4, 5, 6]) {
       const input = fixture(index);
       input.collected.decisions = [{ id: 'format', chosen: 'Private proposal', revision: 0 }];
-      expect(JSON.parse(teachingLiveContext(input))).not.toHaveProperty('decisionsChosen');
-      if (!('reads' in input.stage) || !input.stage.reads.includes('decisions.chosen'))
+      if ('reads' in input.stage && input.stage.reads.includes('decisions.chosen')) {
+        expect(JSON.parse(teachingLiveContext(input)).decisionsChosen).toEqual([
+          { id: 'format', chosen: 'Private proposal' },
+        ]);
+      } else {
+        expect(JSON.parse(teachingLiveContext(input))).not.toHaveProperty('decisionsChosen');
         expect(renderTeachingPrompt(input).systemPrompt).not.toContain('Private proposal');
+      }
     }
+  });
+  it('keeps current assessment receipts outside lossy summaries without exposing answer keys', () => {
+    expect(
+      JSON.parse(teachingLiveContext({ ...fixture(3), pendingRun: 'existing-build-id' }))
+        .pendingRun,
+    ).toBe('existing-build-id');
+    const input = fixture(5);
+    input.collected.quiz = {
+      id: 'quiz-2',
+      attempt: 2,
+      passed: false,
+      score: 3,
+      total: 4,
+      wrong: [1],
+      review: [{ questionIndex: 1, correctAnswer: 2, explanation: 'Private answer explanation' }],
+    };
+    Object.assign(input.collected.quiz, { answers: [0, 0, 1, 1] });
+    const live = JSON.parse(teachingLiveContext(input));
+    expect(live.currentAssessment.quiz).toEqual({ passed: false, score: 3, total: 4, attempt: 2 });
+    expect(JSON.stringify(live)).not.toContain('Private answer explanation');
+    expect(live.currentAssessment.quiz).not.toHaveProperty('answers');
+    input.collected.quiz = {
+      id: 'quiz-3',
+      attempt: 3,
+      passed: true,
+      score: 4,
+      total: 4,
+      wrong: [],
+    };
+    expect(JSON.parse(teachingLiveContext(input)).currentAssessment.quiz).toMatchObject({
+      passed: true,
+      attempt: 3,
+    });
+    expect(JSON.parse(teachingLiveContext(fixture(0)))).not.toHaveProperty('currentAssessment');
   });
 
   it.each([0, 1, 2, 3, 4, 5, 6])('uses existing UI and transition gates in step %s', (index) => {

@@ -1,0 +1,85 @@
+# Teaching context and model windows
+
+## Boundaries
+
+Learning may continue for any number of turns and tool calls. Each physical model
+request must fit its selected model's window. UI pagination, sandbox idleness,
+preview grants and report analysis are separate concerns. This policy applies to
+PBL v3 teaching; it does not change v2 or other Agent workloads.
+
+Discussion, Planner and Coder each have a session per milestone; Mentor has a
+project-level session. Summaries stay inside that existing role session. Handoffs
+continue through decisions, contracts, PLAN, code and formal assessment evidence,
+without sharing the roles' full chats.
+
+## Request construction
+
+1. Load the existing complete entry tree and run the normal delivery/resume and
+   orphan-tool reconciliation. Do not derive delivery cursors from summaries.
+2. Refresh owner/worker/stage authority, current file/version observations,
+   pending review, declared visible decisions, current assessment receipts, and
+   the exact active teaching section from the host. Do not widen artifact access.
+3. Compose current instructions/material, a quoted historical summary, and recent
+   complete interactions. Always retain the latest actual learner message.
+4. Use the same single-request output allowance in the context budget and HTTP
+   transport. Reserve at most one quarter of the model context for output, bounded
+   by the registered output window (8,192 fallback); keep ten percent headroom.
+   The route context override precedes the catalogue and 128,000 fallback.
+5. When needed, summarize older history in bounded chunks through the same
+   authorized connector, with thinking disabled and output at most 4,096 tokens.
+   Include full textual tool results and their identities, not the SDK generic
+   serializer's 2,000-character prefixes. Exclude old speculative thinking from
+   summary input; raw thinking and tools remain available in saved records.
+   Reject token-truncated summaries even when the SDK returns partial text as ok.
+6. Recheck authority after asynchronous preparation. If current facts changed,
+   rebuild with the fresh facts before sending. A further change fails safely
+   for retry; no tool or learner mutation is replayed.
+
+The input estimator conservatively charges serialized UTF-8 bytes as tokens,
+including system text, tools and messages. This is a safety estimate, not exact
+tokenization or reported usage. Operator route configuration must match the real
+model/gateway. Capacity errors identify oversized current material or input;
+transient summary failures have separate learner guidance. Neither sends an
+oversized original request as a fallback. Provider token truncation retains the
+existing incomplete-output/tool-call recovery behavior; it never proves success.
+
+## Incremental derived checkpoints
+
+Append `pbl.teaching-context.v1` custom entries on the existing ordered, leased
+session write chain. Store only a summary, its covered message count and source
+prefix hash. Restore only a matching prefix on the active branch, then summarize
+newly covered messages with the previous summary. A changed branch, incompatible
+summary size or mismatched prefix rebuilds from original records.
+
+The existing Session custom-entry mechanism is intentional: unlike a native
+compaction entry, it does not inject a synthetic user message into `buildContext`
+or change stage feedback counts, resume classification and delivery cursors.
+There is no new table, queue, shared memory service or schema migration.
+
+Summaries are untrusted derived reference data. They cannot grant readiness,
+understanding, approval, file permissions or completion. Current host receipts
+and artifact/version checks remain authoritative. Current files must be reread
+before editing or claiming their behavior. Report evidence, history and recovery
+retain the original messages and events.
+Free-form summaries are lossy model output: use them for historical context,
+ask for clarification when uncertain, and never substitute them for current
+decisions, formal outcomes or approval receipts.
+
+Checkpoint writes share the source-message chain and lease fence. Cancellation,
+lease loss, stage/environment changes and persistence failures stop the current
+request; stale workers cannot publish new history. An interrupted command is
+reconciled using its existing ID, never rerun to manufacture missing evidence.
+
+## Verification and operation
+
+Record projection estimates, budget, coverage, summary calls and checkpoint reuse
+without logging prompts, tool payloads or learner prose. Existing connector usage
+records remain the source of actual model usage. There is no global elapsed-time
+or tool-count cap: existing upstream-silence and execution-stall watchdogs still
+apply, with actual upstream/tool progress rather than browser heartbeats.
+
+Cover short requests, long single steps, milestone transitions, role isolation,
+large tool-result tails, output truncation, durable checkpoint reuse after worker
+restart, cancellation/lease loss, current-version changes, capacity errors and
+summary failures. Local/mock/PG evidence does not establish hosted real-model
+long-session acceptance; verify the deployment route separately.

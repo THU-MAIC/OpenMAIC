@@ -12,7 +12,7 @@
  * - a cancel request that lands while a tool is hung settles the session as
  *   `cancelled` promptly — without waiting for the tool to finish — and the
  *   abort signal is delivered to the tool's in-flight work;
- * - V3 teaching turns have no elapsed-time/output/tool-count cap, while
+ * - V3 teaching turns have no total duration, output or tool-count cap, while
  *   cancellation, shutdown, and lease-loss retain their meaning.
  */
 import type { AgentTool } from '@earendil-works/pi-agent-core';
@@ -404,7 +404,7 @@ describe('runner: unbounded V3 teaching turns', () => {
       expect(ctx.running.size).toBe(0);
     },
   );
-  it('allows progressing reasoning and a large reply beyond twenty minutes, uses low effort and omits the output cap', async () => {
+  it('allows progressing reasoning beyond twenty minutes and reserves only a single-request output allowance', async () => {
     vi.useFakeTimers();
     const meta = makeMeta({ id: 'pbl-role-thinking' }),
       session = await makeEntryTree(),
@@ -450,7 +450,9 @@ describe('runner: unbounded V3 teaching turns', () => {
       WORKER_ID,
       expect.objectContaining({ status: 'succeeded' }),
     );
-    expect(mocks.streamLLM.mock.calls[0]![0].maxOutputTokens).toBeUndefined();
+    // The single-request output allowance is reserved by the same context
+    // budget. It does not cap the duration, total rounds or persisted reply.
+    expect(mocks.streamLLM.mock.calls[0]![0].maxOutputTokens).toBeGreaterThan(0);
     expect(mocks.streamLLM.mock.calls[0]![2]).toMatchObject({ effort: 'low' });
     expect(JSON.stringify((await session.buildContext()).messages)).toContain(text);
     const snapshots = store.appendRunEvent.mock.calls
