@@ -1748,7 +1748,10 @@ async function executeSession(
         ? projectionModule.createTeachingContextProjection(
             createCallLlmStreamFn({
               languageModel: driver.connection.model,
-              maxOutputTokens: 4096,
+              // Summary reservations are not discovered provider limits either.
+              // Use the same primary/fallback capacity test as normal teaching.
+              maxOutputTokens: confirmedOutputWindow ? 4096 : undefined,
+              omitMaxOutputTokens: !confirmedOutputWindow,
               thinkingConfig: { mode: 'disabled' },
               unbounded: true,
               responseIdleTimeoutMs: LLM_FETCH_TIMEOUT_MS,

@@ -492,6 +492,106 @@ describe('runner: unbounded V3 teaching turns', () => {
       expect.objectContaining({ status: 'succeeded' }),
     );
   });
+  it.each([
+    ['unknown-primary', undefined, undefined],
+    ['unknown-backup', 16_384, undefined],
+    ['confirmed-backup', 16_384, 512],
+  ] as const)(
+    'compacts and continues with %s output capacity',
+    async (_name, primaryOutput, sharedOutput) => {
+      const meta = makeMeta({ id: 'pbl-role-long-summary-output' });
+      const session = await makeEntryTree(),
+        store = makeStore(meta);
+      const original = [
+        {
+          role: 'user' as const,
+          content: 'Historical learner reasoning. '.repeat(5000),
+          timestamp: 0,
+        },
+        { role: 'user' as const, content: 'Continue from my latest choice.', timestamp: 1 },
+      ];
+      for (const message of original) await session.appendMessage(message);
+      mocks.resolveAgentDriverModel.mockResolvedValue({
+        connection: { model: {} as never },
+        piModel: {
+          api: 'openai-completions',
+          provider: 'openai',
+          id: 'primary',
+          contextWindow: 200_000,
+          maxTokens: primaryOutput ?? 8192,
+        },
+        wireMaxOutputTokens: primaryOutput,
+        teaching: {
+          piModel: {
+            api: 'openai-completions',
+            provider: 'openai',
+            id: 'primary',
+            contextWindow: 32_000,
+            maxTokens: sharedOutput ?? 8192,
+          },
+          wireMaxOutputTokens: sharedOutput,
+        },
+      });
+      mocks.openEntryStorage.mockResolvedValue(session.getStorage());
+      mocks.getAgentSessionStore.mockResolvedValue(store);
+      mocks.teachingRunnerConfig.mockResolvedValue({
+        tools: [],
+        systemPrompt: 'Teaching test',
+        allowedToolNames: new Set(),
+        historyWindow: { stageKey: 'm:0', studentTurns: 1 },
+        liveContext: async () => JSON.stringify({ currentVersion: 1, approved: false }),
+        needsTurnReceipt: () => false,
+        isTurnComplete: () => false,
+        thinkingConfig: () => ({ mode: 'enabled', effort: 'low', level: 'low' }),
+      });
+      mocks.streamLLM.mockImplementation((params, source) => {
+        if (source === 'pbl-context-compaction') {
+          // This uncatalogued provider really accepts only 128 output tokens.
+          // Sending the internal summary reservation reproduces its API rejection.
+          if (
+            params.maxOutputTokens !== undefined &&
+            params.maxOutputTokens > (sharedOutput ?? 128)
+          )
+            return resultFrom([
+              { type: 'error', error: new Error('Provider output limit exceeded') },
+            ]);
+          return resultFrom([
+            {
+              type: 'text-delta',
+              text: 'Earlier learner preferred append; no approval is established.',
+            },
+            finish('stop'),
+          ]);
+        }
+        return resultFrom([
+          { type: 'text-delta', text: 'Continue from the current choice.' },
+          finish('stop'),
+        ]);
+      });
+      await runSession({ running: new Map(), shuttingDown: false }, meta);
+      const summaries = mocks.streamLLM.mock.calls.filter(
+        (call) => call[1] === 'pbl-context-compaction',
+      );
+      expect(store.finishSession).toHaveBeenCalledWith(
+        meta.id,
+        WORKER_ID,
+        expect.objectContaining({ status: 'succeeded' }),
+      );
+      expect(summaries.length).toBeGreaterThan(1);
+      for (const [params, , thinking] of summaries) {
+        if (sharedOutput === undefined) expect(params.maxOutputTokens).toBeUndefined();
+        else expect(params.maxOutputTokens).toBeLessThanOrEqual(sharedOutput);
+        expect(thinking).toEqual({ mode: 'disabled' });
+      }
+      expect(mocks.streamLLM.mock.calls.some((call) => call[1] === 'agent-runtime')).toBe(true);
+      expect((await session.buildContext()).messages.slice(0, original.length)).toEqual(original);
+      expect(
+        (await session.getBranch()).some(
+          (entry) => entry.type === 'custom' && entry.customType === 'pbl.teaching-context.v1',
+        ),
+      ).toBe(true);
+    },
+  );
   it('keeps progressing long replies uncapped when output capacity is unknown and uses low effort', async () => {
     vi.useFakeTimers();
     const meta = makeMeta({ id: 'pbl-role-thinking' }),

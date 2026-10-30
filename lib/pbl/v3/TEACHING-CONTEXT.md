@@ -37,11 +37,16 @@ without sharing the roles' full chats.
    When the slot declares a fallback, teaching uses the smaller context and output
    capacities of the two targets for input preparation, normal replies and summary
    calls. This avoids passing a primary-only allowance or oversized input to a
-   smaller backup. Unknown output capacity on either target omits the normal
-   teaching wire allowance. Non-teaching Agent requests retain their existing
-   primary metadata and fallback behavior.
+   smaller backup. Unknown output capacity on either target omits the wire
+   allowance for both normal teaching and compaction. Non-teaching Agent requests
+   retain their existing primary metadata and fallback behavior.
 5. When needed, summarize older history in bounded chunks through the same
-   authorized connector, with thinking disabled and output at most 4,096 tokens.
+   authorized connector, with thinking disabled and an internal summary target
+   of at most 4,096 tokens. Only confirmed provider output metadata allows that
+   target to become a wire limit (also clamped to the shared model allowance).
+   With unknown capacity, request a concise summary without sending an invented
+   `max_tokens`; input-space reservations and returned-summary validation still
+   apply.
    Include full textual tool results and their identities, not the SDK generic
    serializer's 2,000-character prefixes. Exclude old speculative thinking from
    summary input; raw thinking and tools remain available in saved records.
