@@ -2501,7 +2501,6 @@
     "account": {
       "signIn": "Iniciar sesión",
       "menu": "Cuenta y configuración",
-      "models": "Modelos",
       "language": "Idioma",
       "about": "Acerca de OpenMAIC",
       "aboutBody": "Una plataforma de código abierto que convierte cualquier tema en un aula interactiva con docentes y compañeros de IA. Publicada con la licencia MIT.",

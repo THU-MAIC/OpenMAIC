@@ -18,6 +18,7 @@ import {
   useWorkbenchShellExtensions,
   type WorkbenchShellExtensions,
 } from '@/lib/workbench/shell-extensions';
+import { useUserProfileStore } from '@/lib/store/user-profile';
 
 vi.mock('@/lib/hooks/use-i18n', () => ({
   useI18n: () => ({ t: (key: string) => key, locale: 'en-US', setLocale: vi.fn() }),
@@ -29,6 +30,10 @@ vi.mock('@/lib/brand/brand-context', () => ({
   useBrand: () => ({ markSrc: '/mark.svg', logoSrc: '/logo.svg' }),
 }));
 vi.mock('@/components/settings', () => ({ SettingsDialog: () => null }));
+vi.mock('@/components/agent/agent-bar', async () => {
+  const { createElement: h } = await import('react');
+  return { AgentBar: () => h('div', { 'data-testid': 'agent-bar' }) };
+});
 vi.mock('@/lib/workbench/workspace-actions', () => ({
   deleteWorkspaceSession: vi.fn(async () => ({ deleted: true })),
 }));
@@ -251,6 +256,32 @@ describe('the host extension slots', () => {
     ]) {
       expect(menu.querySelector(`[data-testid="${id}"]`), id).not.toBeNull();
     }
+  });
+
+  it('opens the local profile editor from the identity row and reflects the edit', async () => {
+    await renderRail();
+    const menu = await openAccountMenu();
+    const row = menu.querySelector<HTMLElement>('[data-testid="workspace-account-profile"]');
+    expect(row, 'the identity row').not.toBeNull();
+    // The settings entry carries no trailing hint.
+    expect(
+      menu.querySelector('[data-testid="workspace-account-settings"]')?.textContent,
+    ).not.toContain('workspace.account.models');
+    await act(async () => row!.click());
+    const dialog = byTestId('workspace-profile');
+    expect(dialog, 'the profile editor').not.toBeNull();
+    expect(dialog!.textContent).toContain('profile.title');
+    expect(dialog!.querySelector('textarea[placeholder="profile.bioPlaceholder"]')).not.toBeNull();
+    expect(dialog!.querySelector('[data-testid="agent-bar"]'), 'roster and voices').not.toBeNull();
+
+    await act(async () => useUserProfileStore.getState().setNickname('Grace'));
+    expect(byTestId('workspace-account')?.textContent).toContain('Grace');
+  });
+
+  it('offers no local profile editor for a host identity', async () => {
+    await renderRail({ extensions: { identity: { signedIn: true, name: 'Ada' } } });
+    const menu = await openAccountMenu();
+    expect(menu.querySelector('[data-testid="workspace-account-profile"]')).toBeNull();
   });
 
   it('shows a sign-in entry for a signed-out user, and sign-out for a signed-in one', async () => {

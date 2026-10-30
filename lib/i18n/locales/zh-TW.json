@@ -2486,7 +2486,6 @@
     "account": {
       "signIn": "登入",
       "menu": "帳號與設定",
-      "models": "模型服務",
       "language": "語言",
       "about": "關於 OpenMAIC",
       "aboutBody": "開源的多智慧體互動課堂平台：輸入任何主題，AI 老師和同學陪你一起學。以 MIT 授權條款發布。",

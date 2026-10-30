@@ -20,7 +20,12 @@ const MAX_AVATAR_SIZE = 5 * 1024 * 1024; // 5 MB
 
 const FILE_INPUT_ID = 'user-avatar-upload';
 
-export function UserProfileCard() {
+/**
+ * The learner profile editor: avatar (presets or an upload), nickname and bio,
+ * written straight to the local profile store. `className` adjusts the card's
+ * surface for the host it sits in (a dialog, for instance, supplies its own).
+ */
+export function UserProfileCard({ className }: { readonly className?: string } = {}) {
   const { t } = useI18n();
   const avatar = useUserProfileStore((s) => s.avatar);
   const nickname = useUserProfileStore((s) => s.nickname);
@@ -89,7 +94,12 @@ export function UserProfileCard() {
 
   if (!hydrated) {
     return (
-      <Card className="p-5 !gap-0 shadow-xl border-muted/40 backdrop-blur-xl bg-white/80 dark:bg-slate-900/80">
+      <Card
+        className={cn(
+          'p-5 !gap-0 shadow-xl border-muted/40 backdrop-blur-xl bg-white/80 dark:bg-slate-900/80',
+          className,
+        )}
+      >
         <div className="flex items-center gap-3">
           <div className="size-11 rounded-full bg-muted animate-pulse" />
           <div className="flex-1 space-y-2">
@@ -102,7 +112,12 @@ export function UserProfileCard() {
   }
 
   return (
-    <Card className="p-5 !gap-0 shadow-xl border-muted/40 backdrop-blur-xl bg-white/80 dark:bg-slate-900/80">
+    <Card
+      className={cn(
+        'p-5 !gap-0 shadow-xl border-muted/40 backdrop-blur-xl bg-white/80 dark:bg-slate-900/80',
+        className,
+      )}
+    >
       {/* File input — sr-only keeps it in the flow but invisible; label triggers it */}
       <input
         id={FILE_INPUT_ID}

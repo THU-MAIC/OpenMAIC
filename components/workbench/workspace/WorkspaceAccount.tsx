@@ -10,6 +10,8 @@
  * its own menu entries and a summary line through the shell extensions
  * (`lib/workbench/shell-extensions.tsx`); without them the block shows the
  * local learner profile, which is the identity a single-owner deployment has.
+ * That profile is edited from the menu's identity row, in the same editor the
+ * classic home's greeting bar offers, alongside the classroom roster and voices.
  */
 
 import { useState, type ReactNode } from 'react';
@@ -25,6 +27,7 @@ import {
   Monitor,
   Moon,
   MoreHorizontal,
+  Pencil,
   Settings,
   SunMedium,
   SquareArrowOutUpRight,
@@ -34,6 +37,8 @@ import { useTheme } from '@/lib/hooks/use-theme';
 import { supportedLocales } from '@/lib/i18n';
 import { useBrand } from '@/lib/brand/brand-context';
 import { useUserProfileStore } from '@/lib/store/user-profile';
+import { UserProfileCard } from '@/components/user-profile';
+import { AgentBar } from '@/components/agent/agent-bar';
 import {
   useWorkbenchShellExtensions,
   type WorkbenchShellMenuItem,
@@ -65,6 +70,8 @@ function useAccountIdentity() {
       name: identity.name || t('profile.defaultNickname'),
       avatar: identity.avatarUrl ?? null,
       detail: identity.detail ?? null,
+      /** The host owns this identity; the local profile editor cannot change it. */
+      editable: false,
     };
   }
   return {
@@ -72,6 +79,7 @@ function useAccountIdentity() {
     name: nickname || t('profile.defaultNickname'),
     avatar: avatar || null,
     detail: null,
+    editable: true,
   };
 }
 
@@ -119,6 +127,7 @@ export function WorkspaceAccountBlock({
   const extensions = useWorkbenchShellExtensions();
   const account = useAccountIdentity();
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const signIn = extensions.identity?.signIn;
   const badge = !!extensions.accountBadge;
 
@@ -128,6 +137,7 @@ export function WorkspaceAccountBlock({
       mini={mini}
       onOpenSettings={onOpenSettings}
       onOpenAbout={() => setAboutOpen(true)}
+      onEditProfile={account.editable ? () => setProfileOpen(true) : undefined}
     />
   );
 
@@ -219,6 +229,7 @@ export function WorkspaceAccountBlock({
     <>
       {block}
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
+      {account.editable ? <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} /> : null}
     </>
   );
 }
@@ -228,11 +239,14 @@ function AccountMenu({
   mini,
   onOpenSettings,
   onOpenAbout,
+  onEditProfile,
 }: {
   readonly trigger: ReactNode;
   readonly mini: boolean;
   readonly onOpenSettings: () => void;
   readonly onOpenAbout: () => void;
+  /** Present when the identity is the local profile, which the learner can edit. */
+  readonly onEditProfile?: () => void;
 }) {
   const { t, locale, setLocale } = useI18n();
   const { theme, setTheme } = useTheme();
@@ -257,7 +271,23 @@ function AccountMenu({
         sideOffset={8}
         className="ws-account-menu w-[272px] rounded-2xl p-1.5"
       >
-        {account.signedIn ? (
+        {account.signedIn && onEditProfile ? (
+          <DropdownMenuItem
+            data-testid="workspace-account-profile"
+            onSelect={onEditProfile}
+            title={t('profile.editTooltip')}
+            className="ws-menu-item ws-menu-profile group/profile mb-1"
+          >
+            <AccountAvatar src={account.avatar} name={account.name} size={36} />
+            <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-foreground">
+              {account.name}
+            </span>
+            <Pencil
+              className="size-3.5 shrink-0 text-muted-foreground opacity-50 transition-opacity group-hover/profile:opacity-100"
+              aria-hidden="true"
+            />
+          </DropdownMenuItem>
+        ) : account.signedIn ? (
           <div className="flex items-center gap-2.5 px-2.5 pb-2.5 pt-2">
             <AccountAvatar src={account.avatar} name={account.name} size={36} />
             <div className="min-w-0 flex-1">
@@ -297,7 +327,6 @@ function AccountMenu({
         >
           <Settings className="size-4" aria-hidden="true" />
           <span className="flex-1">{t('settings.title')}</span>
-          <span className="text-xs text-muted-foreground">{t('workspace.account.models')}</span>
         </DropdownMenuItem>
 
         <DropdownMenuSub>
@@ -435,6 +464,31 @@ function HostMenuItem({ item }: { readonly item: WorkbenchShellMenuItem }) {
     >
       {body}
     </DropdownMenuItem>
+  );
+}
+
+/**
+ * The local learner profile, in the classic home's greeting-bar editor, with the
+ * classroom roster and per-agent voices beside it: those two came with the
+ * greeting bar and have no other home in the workspace.
+ */
+function ProfileDialog({
+  open,
+  onOpenChange,
+}: {
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent data-testid="workspace-profile" className="gap-4 sm:max-w-[432px]">
+        <DialogTitle>{t('profile.title')}</DialogTitle>
+        <DialogDescription className="sr-only">{t('profile.avatarHint')}</DialogDescription>
+        <UserProfileCard className="border-border/60 bg-transparent p-4 shadow-none backdrop-blur-none dark:bg-transparent" />
+        <AgentBar />
+      </DialogContent>
+    </Dialog>
   );
 }
 

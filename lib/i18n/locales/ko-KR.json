@@ -2501,7 +2501,6 @@
     "account": {
       "signIn": "로그인",
       "menu": "계정 및 설정",
-      "models": "모델",
       "language": "언어",
       "about": "OpenMAIC 소개",
       "aboutBody": "어떤 주제든 AI 선생님과 친구들이 함께하는 인터랙티브 교실로 바꿔 주는 오픈소스 플랫폼입니다. MIT 라이선스로 배포됩니다.",

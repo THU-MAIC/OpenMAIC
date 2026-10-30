@@ -2284,6 +2284,11 @@
   cursor: default;
 }
 
+/* The identity row at the top of the account menu opens the profile editor. */
+.ws-menu-profile {
+  padding: 6px 10px;
+}
+
 .ws-account-summary {
   background: linear-gradient(135deg, #f6f3ff, #eef4ff);
   color: rgb(15 23 42);
