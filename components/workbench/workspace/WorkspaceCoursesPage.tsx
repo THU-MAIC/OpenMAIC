@@ -21,7 +21,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Folder, FolderInput, FolderOpen, FolderPlus, Search, Upload } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FolderInput, FolderPlus, Search, Upload } from 'lucide-react';
+import { FOLDER_TILE_FRAME, FolderTileCover } from '@/components/discovery/folder-card';
 import { toast } from 'sonner';
 import type { Slide } from '@openmaic/dsl';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -288,9 +289,11 @@ export function WorkspaceCoursesPage({
     );
   };
 
-  /** "New folder": a draft card at the head of the folders, its name selected. */
+  /** "New folder": a draft card at the head of the grid, its name selected. */
   const startNewFolder = (moveCourseId?: string) => {
     setQuery('');
+    // Folders live at the top level; a draft is made where they are.
+    setFolderId(null);
     startEdit(
       'newFolder',
       null,
@@ -331,19 +334,52 @@ export function WorkspaceCoursesPage({
   }, [courses.classrooms]);
 
   const searching = query.trim().length > 0;
+  const knownFolders = useMemo(
+    () => new Set(courses.folders.map((item) => item.id)),
+    [courses.folders],
+  );
   const visible = useMemo(() => {
     const newest = [...courses.classrooms].sort((a, b) => b.updatedAt - a.updatedAt);
     // A search looks through the whole library: a folder is a place, not a filter.
     if (searching) return filterByName(newest, query);
-    return activeFolderId ? newest.filter((course) => course.folderId === activeFolderId) : newest;
-  }, [activeFolderId, courses.classrooms, query, searching]);
+    if (activeFolderId) return newest.filter((course) => course.folderId === activeFolderId);
+    // The top level: the folders' cards, then the courses in no folder (one
+    // whose folder is gone counts as in none).
+    return newest.filter((course) => !course.folderId || !knownFolders.has(course.folderId));
+  }, [activeFolderId, courses.classrooms, knownFolders, query, searching]);
+
+  /**
+   * Each folder's cover: up to three member covers, newest first, as the
+   * classic home's folder tile shows them. The members that fill (or, not
+   * loaded yet, may fill) those slots are the card's candidates; a member
+   * without a slide gives its slot to the next.
+   */
+  const folderCovers = useMemo(() => {
+    const byFolder = new Map<string, { slides: Slide[]; candidates: Course[] }>();
+    for (const course of [...courses.classrooms].sort((a, b) => b.updatedAt - a.updatedAt)) {
+      if (!course.folderId) continue;
+      const covers = byFolder.get(course.folderId) ?? { slides: [], candidates: [] };
+      byFolder.set(course.folderId, covers);
+      if (covers.candidates.length >= 3) continue;
+      const slide = thumbnails[course.id];
+      if (slide === null) continue;
+      covers.candidates.push(course);
+      if (slide) covers.slides.push(slide);
+    }
+    return byFolder;
+  }, [courses.classrooms, thumbnails]);
+  const atTop = !searching && !activeFolderId;
+  const showFolders = foldersAvailable && atTop;
 
   useEffect(() => {
     retainThumbnails(new Set(courses.classrooms.map((course) => course.id)));
   }, [courses.classrooms, retainThumbnails]);
 
-  const showPending = !searching && !activeFolderId && pendingRuns.length > 0;
-  const empty = visible.length === 0 && !showPending;
+  const showPending = atTop && pendingRuns.length > 0;
+  const empty =
+    visible.length === 0 &&
+    !showPending &&
+    !(showFolders && (courses.folders.length > 0 || edit?.kind === 'newFolder'));
 
   return (
     <main
@@ -396,100 +432,35 @@ export function WorkspaceCoursesPage({
           </div>
         </header>
 
-        {foldersAvailable &&
-        (courses.folders.length > 0 || edit?.kind === 'newFolder') &&
-        !searching ? (
-          <section
-            aria-label={t('workspace.coursesPage.folders')}
-            className="mt-7 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4"
-          >
-            {edit?.kind === 'newFolder' ? (
-              <div
-                data-testid="workspace-courses-new-folder-card"
-                className="ws-folder-card ws-folder-card-on"
-              >
-                <span className="ws-folder-card-icon" aria-hidden="true">
-                  <Folder className="size-4" />
-                </span>
-                {nameField(
-                  edit,
-                  'workspace-courses-new-folder-input',
-                  t('classroom.folderNameLabel'),
-                )}
-              </div>
-            ) : null}
-            {courses.folders.map((item) => {
-              const open = item.id === activeFolderId;
-              if (edit?.kind === 'folder' && edit.targetId === item.id) {
-                return (
-                  <div key={item.id} className="ws-folder-card ws-folder-card-on">
-                    <span className="ws-folder-card-icon" aria-hidden="true">
-                      <FolderOpen className="size-4" />
-                    </span>
-                    {nameField(
-                      edit,
-                      `workspace-courses-folder-rename-${item.id}`,
-                      t('classroom.folderNameLabel'),
-                    )}
-                  </div>
-                );
-              }
-              return (
-                <div key={item.id} className="ws-card-wrap group relative">
-                  <button
-                    type="button"
-                    data-testid={`workspace-courses-folder-${item.id}`}
-                    aria-pressed={open}
-                    onClick={() => setFolderId(open ? null : item.id)}
-                    className={cn('ws-folder-card w-full', open && 'ws-folder-card-on')}
-                  >
-                    <span className="ws-folder-card-icon" aria-hidden="true">
-                      {open ? <FolderOpen className="size-4" /> : <Folder className="size-4" />}
-                    </span>
-                    <span className="min-w-0 flex-1 pr-6 text-left">
-                      <span className="block truncate text-[14px] font-semibold">{item.name}</span>
-                      <span className="block text-[12px] text-[color:var(--ws-ink-mute)]">
-                        {t('workspace.coursesPage.courseCount', {
-                          count: counts.get(item.id) ?? 0,
-                        })}
-                      </span>
-                    </span>
-                  </button>
-                  <div className="ws-card-more ws-card-more-folder">
-                    <WorkspaceRowMenu
-                      testId={`workspace-courses-folder-more-${item.id}`}
-                      label={item.name}
-                      triggerClassName="ws-card-more-btn"
-                      onRename={() => startEdit('folder', item.id, item.name)}
-                      // Asked as a question rather than confirmed in the menu:
-                      // this delete moves courses, and that needs a sentence.
-                      onDelete={() => setFolderToDelete(item)}
-                      deleteAsksElsewhere
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </section>
-        ) : null}
-
-        <div className="mb-3.5 mt-8 flex items-center justify-between">
-          <h2 className="ws-section-title">
-            {searching
-              ? t('workspace.coursesPage.results')
-              : folder
-                ? folder.name
-                : t('workspace.coursesPage.recent')}
-          </h2>
+        <div className="mb-3.5 mt-8 flex min-w-0 items-center gap-1.5">
           {folder && !searching ? (
-            <button
-              type="button"
-              onClick={() => setFolderId(null)}
-              className="ws-quiet text-[13px]"
-            >
-              {t('workspace.coursesPage.allCourses')}
-            </button>
-          ) : null}
+            // Inside a folder: the way back, then where you are.
+            <>
+              <button
+                type="button"
+                data-testid="workspace-courses-back"
+                onClick={() => setFolderId(null)}
+                className="ws-section-title ws-quiet inline-flex shrink-0 items-center gap-1"
+              >
+                <ChevronLeft className="size-4 rtl:rotate-180" aria-hidden="true" />
+                {t('workspace.coursesPage.allCourses')}
+              </button>
+              <ChevronRight
+                className="size-3.5 shrink-0 text-[color:var(--ws-ink-mute)] rtl:rotate-180"
+                aria-hidden="true"
+              />
+              <h2
+                className="ws-section-title min-w-0 truncate"
+                data-testid="workspace-courses-folder-title"
+              >
+                {folder.name}
+              </h2>
+            </>
+          ) : (
+            <h2 className="ws-section-title">
+              {searching ? t('workspace.coursesPage.results') : t('workspace.coursesPage.recent')}
+            </h2>
+          )}
         </div>
 
         {courses.state === 'loading' && courses.classrooms.length === 0 ? (
@@ -513,6 +484,62 @@ export function WorkspaceCoursesPage({
             data-testid="workspace-courses-grid"
             className="grid grid-cols-2 gap-x-5 gap-y-6 md:grid-cols-3 xl:grid-cols-4"
           >
+            {showFolders && edit?.kind === 'newFolder' ? (
+              <FolderTile
+                testId="workspace-courses-new-folder-card"
+                name={edit.name}
+                courseCount={0}
+                covers={NO_COVERS}
+                nameField={nameField(
+                  edit,
+                  'workspace-courses-new-folder-input',
+                  t('classroom.folderNameLabel'),
+                )}
+              />
+            ) : null}
+            {showFolders
+              ? courses.folders.map((item) => {
+                  const covers = folderCovers.get(item.id);
+                  const renaming = edit?.kind === 'folder' && edit.targetId === item.id;
+                  return (
+                    <FolderTile
+                      key={item.id}
+                      testId={`workspace-courses-folder-card-${item.id}`}
+                      openTestId={`workspace-courses-folder-${item.id}`}
+                      name={item.name}
+                      courseCount={counts.get(item.id) ?? 0}
+                      covers={covers?.slides ?? NO_COVERS}
+                      candidates={covers?.candidates}
+                      requestThumbnail={requestThumbnail}
+                      onOpen={() => setFolderId(item.id)}
+                      nameField={
+                        renaming
+                          ? nameField(
+                              edit,
+                              `workspace-courses-folder-rename-${item.id}`,
+                              t('classroom.folderNameLabel'),
+                            )
+                          : null
+                      }
+                      menu={
+                        renaming ? null : (
+                          <WorkspaceRowMenu
+                            testId={`workspace-courses-folder-more-${item.id}`}
+                            label={item.name}
+                            triggerClassName="ws-card-more-btn"
+                            onRename={() => startEdit('folder', item.id, item.name)}
+                            // Asked as a question rather than confirmed in the
+                            // menu: this delete moves courses, and that needs a
+                            // sentence.
+                            onDelete={() => setFolderToDelete(item)}
+                            deleteAsksElsewhere
+                          />
+                        )
+                      }
+                    />
+                  );
+                })
+              : null}
             {showPending
               ? pendingRuns.map((run) => (
                   <PendingRunCard key={run.id} run={run} onDiscard={onDiscardRun} />
@@ -590,6 +617,100 @@ export function WorkspaceCoursesPage({
         </AlertDialogContent>
       </AlertDialog>
     </main>
+  );
+}
+
+const NO_COVERS: Slide[] = [];
+
+/**
+ * A folder as a card in the course grid — the classic home's folder tile
+ * (`FolderTileCover` in the same 16:9 frame, the folder badge and the name),
+ * with the workspace's ⋯ in the corner. A draft folder is the same card with
+ * its name as a field.
+ */
+function FolderTile({
+  testId,
+  openTestId,
+  name,
+  courseCount,
+  covers,
+  candidates,
+  requestThumbnail,
+  onOpen,
+  nameField,
+  menu,
+}: {
+  readonly testId: string;
+  readonly openTestId?: string;
+  readonly name: string;
+  readonly courseCount: number;
+  readonly covers: Slide[];
+  /** The members whose thumbnails fill (or may fill) the cover. */
+  readonly candidates?: readonly Course[];
+  readonly requestThumbnail?: (stageId: string, version: number) => () => void;
+  /** Absent for a draft: nothing to open yet. */
+  readonly onOpen?: () => void;
+  /** The name's field while it is being named; null otherwise. */
+  readonly nameField: ReactNode;
+  readonly menu?: ReactNode;
+}) {
+  const { t } = useI18n();
+  const frameRef = useRef<HTMLDivElement>(null);
+  const near = useNearViewport(frameRef);
+  const candidateKey = (candidates ?? []).map((c) => `${c.id}@${c.updatedAt}`).join('|');
+  useEffect(() => {
+    if (!near || !requestThumbnail || !candidateKey) return;
+    const withdraws = candidateKey.split('|').map((key) => {
+      const at = key.lastIndexOf('@');
+      return requestThumbnail(key.slice(0, at), Number(key.slice(at + 1)));
+    });
+    return () => withdraws.forEach((withdraw) => withdraw());
+  }, [near, requestThumbnail, candidateKey]);
+
+  const frame = (
+    <div
+      ref={frameRef}
+      className={cn(
+        FOLDER_TILE_FRAME,
+        nameField ? 'ring-2 ring-violet-400/70' : 'ring-violet-200/50 dark:ring-violet-800/40',
+      )}
+    >
+      <FolderTileCover covers={covers} courseCount={courseCount} />
+    </div>
+  );
+  const badge = (
+    <span className="shrink-0 inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-medium text-violet-600 dark:bg-violet-900/30 dark:text-violet-400">
+      {t('classroom.folderBadge')}
+    </span>
+  );
+
+  return (
+    <div data-testid={testId} className="ws-card-wrap group relative min-w-0">
+      {nameField ? (
+        <>
+          {frame}
+          <div className="mt-2.5 flex items-start gap-2 px-1">
+            {badge}
+            {nameField}
+          </div>
+        </>
+      ) : (
+        <button
+          type="button"
+          data-testid={openTestId}
+          onClick={onOpen}
+          title={name}
+          className="block w-full text-left"
+        >
+          {frame}
+          <div className="mt-2.5 flex items-center gap-2 px-1">
+            {badge}
+            <span className="ws-course-card-name mt-0! min-w-0 truncate">{name}</span>
+          </div>
+        </button>
+      )}
+      {menu ? <div className="ws-card-more">{menu}</div> : null}
+    </div>
   );
 }
 

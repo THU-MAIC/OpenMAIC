@@ -139,6 +139,45 @@ async function pressKey(input: HTMLInputElement, key: string) {
   });
 }
 
+describe('folders as cards', () => {
+  const gridIds = () =>
+    [
+      ...byTestId('workspace-courses-grid')!.querySelectorAll<HTMLElement>(
+        '[data-testid^="workspace-courses-card-"], [data-testid^="workspace-courses-folder-card-"], [data-testid="workspace-courses-new-folder-card"]',
+      ),
+    ].map((card) => card.dataset.testid);
+
+  it('lead the one course grid, with the courses in no folder after them', async () => {
+    await renderPage();
+    expect(gridIds()).toEqual(['workspace-courses-folder-card-f1', 'workspace-courses-card-c1']);
+    const card = byTestId('workspace-courses-folder-card-f1')!;
+    expect(card.textContent).toContain('Math');
+    expect(card.textContent).toContain('classroom.folderBadge');
+    // The course count, as the classic tile shows it.
+    expect(card.textContent).toContain('1 classroom.folderCourseCountUnit');
+  });
+
+  it('open onto their courses, with a way back', async () => {
+    await renderPage();
+    await act(async () => byTestId('workspace-courses-folder-f1')!.click());
+    expect(byTestId('workspace-courses-folder-title')?.textContent).toBe('Math');
+    expect(gridIds()).toEqual(['workspace-courses-card-c2']);
+    await act(async () => byTestId('workspace-courses-back')!.click());
+    expect(gridIds()).toEqual(['workspace-courses-folder-card-f1', 'workspace-courses-card-c1']);
+  });
+
+  it('take a draft card at the head of the grid for a new folder', async () => {
+    await renderPage();
+    await act(async () => byTestId('workspace-courses-new-folder')!.click());
+    expect(gridIds()[0]).toBe('workspace-courses-new-folder-card');
+    expect(
+      byTestId('workspace-courses-new-folder-card')!.contains(
+        byTestId('workspace-courses-new-folder-input'),
+      ),
+    ).toBe(true);
+  });
+});
+
 describe('a new folder, in place', () => {
   it('appears as a draft card with a de-duplicated default name, selected', async () => {
     await renderPage();

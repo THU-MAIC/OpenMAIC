@@ -2233,57 +2233,12 @@
   color: var(--ws-ink-mute);
 }
 
-.ws-folder-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
-  border-radius: 13px;
-  border: 1px solid var(--ws-line);
-  background: #fff;
-  color: var(--ws-ink);
-  box-shadow: 0 1px 2px rgba(25, 25, 60, 0.04);
-  transition:
-    border-color 160ms var(--ws-ease),
-    box-shadow 160ms var(--ws-ease);
-}
-
-.ws-folder-card:hover {
-  border-color: rgba(124, 58, 237, 0.25);
-}
-
-.ws-folder-card-on {
-  border-color: rgba(124, 58, 237, 0.45);
-  box-shadow: 0 0 0 3px var(--ws-accent-wash);
-}
-
-.dark .ws-folder-card {
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.ws-folder-card-icon {
-  display: inline-flex;
-  width: 34px;
-  height: 34px;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9px;
-  background: #ede9fe;
-  color: #7c3aed;
-}
-
-.dark .ws-folder-card-icon {
-  background: rgba(139, 92, 246, 0.18);
-  color: #c4b5fd;
-}
-
 .ws-course-card {
   display: block;
   min-width: 0;
 }
 
-/* A card's ⋯ on My courses: over the thumbnail's (or the folder card's)
+/* A card's ⋯ on My courses (course or folder): over its thumbnail's
    top-right corner, shown on hover, on keyboard focus, and while its menu is
    open. A sibling of the card button, never inside it. */
 .ws-card-more {
@@ -2292,11 +2247,6 @@
   right: 8px;
   opacity: 0;
   transition: opacity 160ms var(--ws-ease);
-}
-
-.ws-card-more-folder {
-  top: 50%;
-  transform: translateY(-50%);
 }
 
 .ws-card-wrap:hover .ws-card-more,
