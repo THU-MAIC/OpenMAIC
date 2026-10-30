@@ -85,6 +85,50 @@ describe('model-aware teaching context projection', () => {
     expect(teachingModelBudget({ ...model, maxTokens: 0 }).outputTokens).toBe(8000);
   });
 
+  it.each([8192, 16384, 32000])(
+    'compacts old history within an actual %i-token summary request without a fixed reserve',
+    async (contextWindow) => {
+      const target = { ...model, contextWindow };
+      const stream = vi.fn<StreamFn>((selected, request) => {
+        expect(estimatedRequestTokens(request)).toBeLessThanOrEqual(
+          teachingModelBudget(selected).inputTokens,
+        );
+        const result = createAssistantMessageEventStream();
+        result.push({
+          type: 'done',
+          reason: 'stop',
+          message: assistant('Earlier discussion summarized.'),
+        });
+        return result;
+      });
+      const runtime = createTeachingContextProjection(stream);
+      const latest = { role: 'user' as const, content: 'Please continue.', timestamp: 1 };
+      const context: Context = {
+        systemPrompt: 'Current authoritative policy',
+        messages: [
+          {
+            role: 'user',
+            content: '\\"\n中文🧠 Earlier relevant discussion. '.repeat(1500),
+            timestamp: 0,
+          },
+          latest,
+        ],
+      };
+      try {
+        expect(estimatedRequestTokens({ ...context, messages: [latest] })).toBeLessThan(
+          teachingModelBudget(target).inputTokens,
+        );
+        const projected = await runtime.prepare(context, { ...window, studentTurns: 2 }, target);
+        expect(projected.messages).toContainEqual(latest);
+        expect(stream).toHaveBeenCalled();
+        expect(estimatedRequestTokens(projected)).toBeLessThanOrEqual(
+          teachingModelBudget(target).inputTokens,
+        );
+      } finally {
+        runtime.dispose();
+      }
+    },
+  );
   it('restores a checkpoint after restart and across stages without resummarizing old dialogue', async () => {
     let checkpoint: TeachingContextCheckpoint | undefined;
     const original = longContext(),
@@ -229,6 +273,43 @@ describe('model-aware teaching context projection', () => {
     runtime.dispose();
   });
 
+  it('includes the growing previous summary in every small-window chunk budget', async () => {
+    const target = { ...model, contextWindow: 8192 };
+    const saved = vi.fn();
+    const stream = vi.fn<StreamFn>((selected, request, options) => {
+      expect(estimatedRequestTokens(request)).toBeLessThanOrEqual(
+        teachingModelBudget(selected).inputTokens,
+      );
+      expect(options?.maxTokens).toBe(selected.maxTokens);
+      expect(options?.reasoning).toBeUndefined();
+      const payload = JSON.parse(request.messages[0]!.content as string);
+      expect(payload.history.isWellFormed()).toBe(true);
+      if (stream.mock.calls.length > 1)
+        expect(payload.previousSummary).toBe('Known learner choice. '.repeat(45));
+      const result = createAssistantMessageEventStream();
+      result.push({
+        type: 'done',
+        reason: 'stop',
+        message: assistant('Known learner choice. '.repeat(45)),
+      });
+      return result;
+    });
+    const runtime = createTeachingContextProjection(stream, { saveCheckpoint: saved });
+    try {
+      const context: Context = {
+        systemPrompt: 'Policy',
+        messages: [
+          { role: 'user', content: '\\"\n中文🧠'.repeat(7000), timestamp: 0 },
+          { role: 'user', content: 'Please continue.', timestamp: 1 },
+        ],
+      };
+      await runtime.prepare(context, { ...window, studentTurns: 2 }, target);
+      expect(stream.mock.calls.length).toBeGreaterThan(2);
+      expect(saved).toHaveBeenCalledOnce();
+    } finally {
+      runtime.dispose();
+    }
+  });
   it('does not publish a checkpoint after summary cancellation or a failed durable append', async () => {
     const save = vi.fn(async () => {
       throw new Error('lease lost during checkpoint append');

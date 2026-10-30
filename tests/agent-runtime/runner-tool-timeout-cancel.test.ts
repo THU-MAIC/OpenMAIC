@@ -404,7 +404,51 @@ describe('runner: unbounded V3 teaching turns', () => {
       expect(ctx.running.size).toBe(0);
     },
   );
-  it('allows progressing reasoning beyond twenty minutes and reserves only a single-request output allowance', async () => {
+  it.each([undefined, 0, Number.NaN, 16_384])(
+    'uses only a confirmed provider output window (%s) for teaching transport',
+    async (wireMaxOutputTokens) => {
+      const meta = makeMeta({ id: 'pbl-role-output-window' });
+      const session = await makeEntryTree(),
+        store = makeStore(meta);
+      mocks.resolveAgentDriverModel.mockResolvedValue({
+        connection: { model: {} as never },
+        piModel: {
+          api: 'openai-completions',
+          provider: 'openai',
+          id: 'driver-model',
+          contextWindow: 200_000,
+          maxTokens: wireMaxOutputTokens ?? 8192,
+        },
+        wireMaxOutputTokens,
+      });
+      mocks.openEntryStorage.mockResolvedValue(session.getStorage());
+      mocks.getAgentSessionStore.mockResolvedValue(store);
+      mocks.teachingRunnerConfig.mockResolvedValue({
+        tools: [],
+        systemPrompt: 'Teaching test',
+        allowedToolNames: new Set(),
+        needsTurnReceipt: () => false,
+        isTurnComplete: () => false,
+        thinkingConfig: () => ({ mode: 'enabled', effort: 'low', level: 'low' }),
+      });
+      mocks.streamLLM.mockImplementation(() => ({
+        fullStream: (async function* () {
+          yield { type: 'text-delta', text: 'Ready for review.' };
+          yield finish('stop');
+        })(),
+      }));
+      await runSession({ running: new Map(), shuttingDown: false }, meta);
+      expect(mocks.streamLLM.mock.calls[0]![0].maxOutputTokens).toBe(
+        wireMaxOutputTokens === 16_384 ? 16_384 : undefined,
+      );
+      expect(store.finishSession).toHaveBeenCalledWith(
+        meta.id,
+        WORKER_ID,
+        expect.objectContaining({ status: 'succeeded' }),
+      );
+    },
+  );
+  it('keeps progressing long replies uncapped when output capacity is unknown and uses low effort', async () => {
     vi.useFakeTimers();
     const meta = makeMeta({ id: 'pbl-role-thinking' }),
       session = await makeEntryTree(),
@@ -412,7 +456,7 @@ describe('runner: unbounded V3 teaching turns', () => {
     mocks.resolveAgentDriverModel.mockResolvedValue({
       connection: { model: {} as never },
       piModel: { api: 'openai-completions', provider: 'openai', id: 'driver-model' },
-      wireMaxOutputTokens: 8192,
+      wireMaxOutputTokens: undefined,
     });
     mocks.openEntryStorage.mockResolvedValue(session.getStorage());
     mocks.getAgentSessionStore.mockResolvedValue(store);
@@ -429,7 +473,7 @@ describe('runner: unbounded V3 teaching turns', () => {
       started = r;
     });
     const text = 'Detailed explanation. '.repeat(40_000);
-    mocks.streamLLM.mockImplementation(() => ({
+    mocks.streamLLM.mockImplementation((params) => ({
       fullStream: (async function* () {
         started();
         for (let i = 0; i < 4; i++) {
@@ -437,7 +481,7 @@ describe('runner: unbounded V3 teaching turns', () => {
           yield { type: 'reasoning-delta', text: 'Still reasoning.' };
         }
         yield { type: 'text-delta', text };
-        yield finish('stop');
+        yield finish(params.maxOutputTokens ? 'length' : 'stop');
       })(),
       usage: new Promise(() => {}),
     }));
@@ -450,9 +494,8 @@ describe('runner: unbounded V3 teaching turns', () => {
       WORKER_ID,
       expect.objectContaining({ status: 'succeeded' }),
     );
-    // The single-request output allowance is reserved by the same context
-    // budget. It does not cap the duration, total rounds or persisted reply.
-    expect(mocks.streamLLM.mock.calls[0]![0].maxOutputTokens).toBeGreaterThan(0);
+    // An internal fallback reservation is not a confirmed provider output limit.
+    expect(mocks.streamLLM.mock.calls[0]![0].maxOutputTokens).toBeUndefined();
     expect(mocks.streamLLM.mock.calls[0]![2]).toMatchObject({ effort: 'low' });
     expect(JSON.stringify((await session.buildContext()).messages)).toContain(text);
     const snapshots = store.appendRunEvent.mock.calls

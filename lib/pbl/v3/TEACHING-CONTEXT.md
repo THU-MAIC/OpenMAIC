@@ -21,16 +21,22 @@ without sharing the roles' full chats.
    the exact active teaching section from the host. Do not widen artifact access.
 3. Compose current instructions/material, a quoted historical summary, and recent
    complete interactions. Always retain the latest actual learner message.
-4. Use the same single-request output allowance in the context budget and HTTP
-   transport. Reserve at most one quarter of the model context for output, bounded
-   by the registered output window (8,192 fallback); keep ten percent headroom.
-   The route context override precedes the catalogue and 128,000 fallback.
+4. Reserve output space and ten percent headroom when preparing input. When the
+   connector declares an output window, bound the per-request allowance by that
+   window and one quarter of the context. Without output metadata, the 8,192-token
+   fallback is only an internal input reservation: omit `max_tokens` on normal
+   teaching requests rather than imposing an invented reply ceiling. The provider's
+   actual output behavior still applies. The route context override precedes the
+   catalogue and 128,000 fallback; operator metadata must match the real route.
 5. When needed, summarize older history in bounded chunks through the same
    authorized connector, with thinking disabled and output at most 4,096 tokens.
    Include full textual tool results and their identities, not the SDK generic
    serializer's 2,000-character prefixes. Exclude old speculative thinking from
    summary input; raw thinking and tools remain available in saved records.
-   Reject token-truncated summaries even when the SDK returns partial text as ok.
+   Construct and measure the exact summary request (policy, previous summary,
+   escaped source and output reservation) before sending it through the existing
+   connector. Reduce source chunks until they fit, without a fixed 8K deduction or
+   a total chunk-count limit. Never persist empty, failed or token-truncated summaries.
 6. Recheck authority after asynchronous preparation. If current facts changed,
    rebuild with the fresh facts before sending. A further change fails safely
    for retry; no tool or learner mutation is replayed.

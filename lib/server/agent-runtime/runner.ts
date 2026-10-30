@@ -1452,11 +1452,22 @@ async function executeSession(
     const teachingBudget = teaching
       ? (await import('@/lib/server/pbl-v3/context-budget')).teachingModelBudget(driver.piModel)
       : null;
+    // Only a confirmed provider output window may become a wire limit. Pi's
+    // unknown-model reservation is for input preparation, never a reply ceiling.
+    const confirmedOutputWindow =
+      driver.wireMaxOutputTokens !== undefined &&
+      Number.isFinite(driver.wireMaxOutputTokens) &&
+      driver.wireMaxOutputTokens > 0;
+    const wireOutputTokens = teachingBudget
+      ? confirmedOutputWindow
+        ? teachingBudget.outputTokens
+        : undefined
+      : driver.wireMaxOutputTokens;
     const streamFn = createCallLlmStreamFn({
       languageModel: driver.connection.model,
       supportsToolImages: driver.connection.modelInfo?.capabilities?.vision,
-      maxOutputTokens: teachingBudget?.outputTokens ?? driver.wireMaxOutputTokens,
-      omitMaxOutputTokens: !teaching && driver.wireMaxOutputTokens === undefined,
+      maxOutputTokens: wireOutputTokens,
+      omitMaxOutputTokens: wireOutputTokens === undefined,
       thinkingConfig: teaching ? teaching.thinkingConfig : driver.connection.thinkingConfig,
       unbounded: !!teaching,
       responseIdleTimeoutMs: teaching ? LLM_FETCH_TIMEOUT_MS : undefined,

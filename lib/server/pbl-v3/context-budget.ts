@@ -16,7 +16,9 @@ export function estimatedRequestTokens(context: Context): number {
   );
 }
 
-/** Shared by projection and transport. A per-request allowance does not limit learning. */
+/** Input reservation shared with transport only for a confirmed output window.
+ * Unknown output capacity uses an estimate here; it must not become a wire cap.
+ */
 export function teachingModelBudget(model: Model<Api>) {
   const contextWindow =
     Number.isFinite(model.contextWindow) && model.contextWindow > 0
