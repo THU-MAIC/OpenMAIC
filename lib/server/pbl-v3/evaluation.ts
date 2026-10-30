@@ -1,5 +1,6 @@
 import 'server-only';
 import { createHash } from 'node:crypto';
+import { posix } from 'node:path';
 import { sandboxConflict } from '@/lib/sandbox/errors';
 import type {
   EvaluationResult,
@@ -8,14 +9,24 @@ import type {
 import type { SandboxCommandResult } from '@/lib/sandbox/types';
 import type { InstalledProject } from './catalog';
 import { additionalBuildSources } from './build-command';
+import { validSourcePath } from './workspace-files';
 
 export interface ProjectEvaluation {
   /** Private course resources, staged only in the evaluation's temporary directory. */
   resources?: Record<string, string>;
   /** Deployment-owned argv, not user-provided shell text. */
   prepare?: string[];
+  /** Host-derived positions of appended source filenames; these are not template arguments. */
+  prepareLiteralArgIndexes?: number[];
   /** Expected stdout stays on the host; it is never part of the execution payload. */
-  cases: { id: string; label?: string; argv: string[]; stdout: string; stdin?: string }[];
+  cases: {
+    id: string;
+    label?: string;
+    argv: string[];
+    stdout: string;
+    stdin?: string;
+    literalArgIndexes?: number[];
+  }[];
 }
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 export function evaluationFor(
@@ -27,23 +38,42 @@ export function evaluationFor(
   if (!installed?.cases.length)
     throw sandboxConflict('No evaluation is installed for this milestone.');
   const added = additionalBuildSources(project, paths, '.java');
-  const compile = (argv: string[]) =>
-    argv[0] === 'javac' &&
-    added.length &&
-    argv.some(
-      (arg) => Object.hasOwn(project.files, arg.replace(/^\.\//, '')) && arg.endsWith('.java'),
+  // Normalize only for matching/deduplication; preserve authored argv verbatim.
+  // Template arguments are not learner-source references. Additional sources
+  // still come exclusively from the existing project-source permission policy.
+  const sourcePath = (arg: string) => {
+    if (/\{(?:build|resources)\}/.test(arg)) return '';
+    const path = posix.normalize(arg);
+    return validSourcePath(path) ? path : '';
+  };
+  const compile = (argv: string[]) => {
+    const existing = new Set(argv.map(sourcePath));
+    if (
+      argv[0] !== 'javac' ||
+      !added.length ||
+      ![...existing].some((path) => Object.hasOwn(project.files, path) && path.endsWith('.java'))
     )
-      ? [
-          ...argv,
-          ...added
-            .filter((path) => !argv.includes(path) && !argv.includes(`./${path}`))
-            .map((path) => `./${path}`),
-        ]
-      : argv;
+      return { argv };
+    const sources = added.filter((path) => !existing.has(path));
+    return {
+      argv: [...argv, ...sources.map((path) => `./${path}`)],
+      ...(sources.length
+        ? { literalArgIndexes: sources.map((_, index) => argv.length + index) }
+        : {}),
+    };
+  };
+  const prepare = installed.prepare ? compile(installed.prepare) : undefined;
   const spec = {
     ...installed,
-    ...(installed.prepare ? { prepare: compile(installed.prepare) } : {}),
-    cases: installed.cases.map((test) => ({ ...test, argv: compile(test.argv) })),
+    ...(prepare
+      ? {
+          prepare: prepare.argv,
+          ...(prepare.literalArgIndexes
+            ? { prepareLiteralArgIndexes: prepare.literalArgIndexes }
+            : {}),
+        }
+      : {}),
+    cases: installed.cases.map((test) => ({ ...test, ...compile(test.argv) })),
   };
   if (!project.coursePackage) return spec;
   const privateFiles = new Set([
@@ -63,8 +93,16 @@ export function evaluationFor(
 export function evaluationCommand(spec: ProjectEvaluation, requestId: string) {
   const execution = {
     prepare: spec.prepare,
+    ...(spec.prepareLiteralArgIndexes?.length
+      ? { prepareLiteralArgIndexes: spec.prepareLiteralArgIndexes }
+      : {}),
     resources: spec.resources,
-    cases: spec.cases.map(({ id, argv, stdin }) => ({ id, argv, stdin })),
+    cases: spec.cases.map(({ id, argv, stdin, literalArgIndexes }) => ({
+      id,
+      argv,
+      stdin,
+      ...(literalArgIndexes?.length ? { literalArgIndexes } : {}),
+    })),
   };
   const payload = Buffer.from(JSON.stringify({ spec: execution, requestId })).toString('base64');
   const script = `import base64,json,subprocess,tempfile,os,hashlib,resource,re
@@ -89,9 +127,10 @@ with tempfile.TemporaryDirectory(prefix='pbl-check-') as out:
  for path,text in spec.get('resources',{}).items():
   target=os.path.join(resources,path); os.makedirs(os.path.dirname(target),exist_ok=True)
   with open(target,'w',encoding='utf-8') as f: f.write(text)
- def run(argv,stdin=''):
+ def run(argv,stdin='',literal=()):
+  literal=set(literal)
   with tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as errors:
-   proc=subprocess.Popen([a.replace('{build}',out).replace('{resources}',resources) for a in argv],stdin=subprocess.PIPE,stdout=output,stderr=errors,preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_FSIZE,(1048576,1048576)))
+   proc=subprocess.Popen([a if i in literal else a.replace('{build}',out).replace('{resources}',resources) for i,a in enumerate(argv)],stdin=subprocess.PIPE,stdout=output,stderr=errors,preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_FSIZE,(1048576,1048576)))
    try: proc.communicate(input=stdin.encode('utf-8'),timeout=15)
    except subprocess.TimeoutExpired:
     proc.kill(); proc.communicate(); raise
@@ -103,13 +142,13 @@ with tempfile.TemporaryDirectory(prefix='pbl-check-') as out:
    return proc.returncode,hashlib.sha256(text.encode('utf-8')).hexdigest(),diagnostic
  try:
   if spec.get('prepare'):
-   code,_,locations=run(spec['prepare']); build=code==0
+   code,_,locations=run(spec['prepare'],literal=spec.get('prepareLiteralArgIndexes',())); build=code==0
    if not build: buildReason='build'
   for case in spec['cases']:
    observed=None; exitCode=None; reason='not_run'
    if build:
     try:
-     exitCode,observed,diagnostic=run(case['argv'],case.get('stdin','')); locations.extend(diagnostic)
+     exitCode,observed,diagnostic=run(case['argv'],case.get('stdin',''),case.get('literalArgIndexes',())); locations.extend(diagnostic)
      reason='execution' if exitCode else ('output' if observed is None else None)
     except subprocess.TimeoutExpired: reason='timeout'
     except (OSError,UnicodeError): reason='environment'

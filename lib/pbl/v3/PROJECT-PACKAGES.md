@@ -227,6 +227,16 @@ permits `java`, `javac` and `python3`. Case IDs must be unique. The parent check
 exit status and stdout, normalizing CRLF and CR to LF on both expected and actual
 output while preserving all other whitespace, and records the existing evaluation receipts.
 
+Formal Java evaluation compiles learner-created `.java` dependencies under the
+declared source roots too. An unfinished or broken scratch source there can block
+compilation; fix or remove it before rerunning evaluation. It is not silently skipped.
+Source arguments are matched using canonical relative paths without rewriting the
+authored command. Appended learner filenames remain literal, including `{build}`
+and `{resources}` text; authored template arguments keep their existing expansion.
+Literal-argument positions are host-derived execution metadata, not package fields.
+Python AST checks consume source bytes so valid BOM/encoding declarations follow
+Python's own decoding rules, without executing the program.
+
 Tests, answer keys and rubric files stay outside the learner workspace. The
 evaluation runner stages `tests/` and `rubric/` in its temporary directory; argv
 can name `{resources}/tests/check.py` and `{resources}/rubric/...`. `{build}`

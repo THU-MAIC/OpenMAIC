@@ -59,6 +59,23 @@ async function archive(bundle: ReturnType<typeof packageBuiltin>) {
   return JSZip.loadAsync(await zip.generateAsync({ type: 'uint8array' }));
 }
 describe('self-contained PBL project packages', () => {
+  it.each(['prepare', 'case'])(
+    'rejects package-supplied literal-argument metadata in %s',
+    (location) => {
+      const bundle = revised((files) => {
+        const descriptor = JSON.parse(files['project.json']);
+        const path = Object.values(descriptor.runtime.evaluations)[0] as string;
+        const spec = JSON.parse(files[path]);
+        if (location === 'prepare') spec.prepareLiteralArgIndexes = [0];
+        else spec.cases[0].literalArgIndexes = [0];
+        files[path] = JSON.stringify(spec);
+      });
+      expect(() => validateProjectPackage(bundle)).toThrow('Invalid evaluation resource');
+      expect(() => validateProjectPackage(bundle, 'resolve')).toThrow(
+        'Invalid evaluation resource',
+      );
+    },
+  );
   it.each([undefined, 'choice'])(
     'rejects an empty choice decision (%s) while retaining open text decisions',
     (responseType) => {

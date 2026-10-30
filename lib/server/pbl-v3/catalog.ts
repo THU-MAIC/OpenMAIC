@@ -275,7 +275,7 @@ function extendedProject(language: 'Python' | 'Java'): InstalledProject {
     },
     buildCommand: java
       ? 'javac -d /tmp/pbl-greeting-build src/Greeting.java'
-      : 'python3 -c \'import ast,pathlib; ast.parse(pathlib.Path("src/greeting.py").read_text())\'',
+      : 'python3 -c \'import ast,pathlib; ast.parse(pathlib.Path("src/greeting.py").read_bytes(),filename="src/greeting.py")\'',
     evaluations: {
       greeting: { prepare, cases: baseline },
       normalize: { prepare, cases: [...baseline, check('whitespace', '  Ada  ', 'Hello, Ada!')] },

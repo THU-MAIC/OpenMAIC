@@ -2022,6 +2022,55 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       learnerTurns: 2,
     });
   });
+  it.each(
+    [
+      { label: 'same-attempt resume', attempts: [1, 1], admitted: true },
+      { label: 'worker reclaim', attempts: [1, 2], admitted: true },
+      { label: 'several unattended recoveries', attempts: [1, 2, 3], admitted: true },
+      { label: 'legacy opening without an admission marker', attempts: [1, 2], admitted: false },
+    ].flatMap((scenario) => [1, 2].map((sessions) => ({ ...scenario, sessions }))),
+  )(
+    'counts $label once per admitted run (sessions: $sessions)',
+    async ({ attempts, admitted, sessions }) => {
+      const study = await unpreparedStudy();
+      for (let role = 0; role < sessions; role++) {
+        const sessionId = `report-resume-${randomUUID()}`;
+        await agents.createSession({
+          id: sessionId,
+          ownerId: principal.ownerId,
+          stageId: 'report-course',
+          prompt: 'Report recovery fixture',
+          status: 'succeeded',
+        });
+        await pool.query(
+          "INSERT INTO pbl_v3_roles(session_id,study_id,role,context_key,stage_key) VALUES($1,$2,'discussion',$3,'greeting:0')",
+          [sessionId, study.id, `recovery-${role}`],
+        );
+        let seq = 0;
+        const append = async (
+          type: string,
+          attempt: number,
+          data: Record<string, unknown> = {},
+        ) => {
+          await pool.query(
+            'INSERT INTO agent_session_events(session_id,seq,ts,attempt,type,data) VALUES($1,$2::integer,$2::integer,$3,$4,$5)',
+            [sessionId, ++seq, attempt, type, JSON.stringify(data)],
+          );
+        };
+        if (admitted) await append('user_message', 0, { text: 'Review the current work.' });
+        await append('session_start', attempts[0]!);
+        for (let claim = 0; claim < attempts.length - 1; claim++) {
+          await append('session_interrupted', attempts[claim]!, { reason: 'runner shutdown' });
+          await append('session_resumed', attempts[claim + 1]!, { reason: 'crash' });
+        }
+        await append('session_end', attempts.at(-1)!, { status: 'failed' });
+      }
+      expect((await learningEvidence(principal, study.id)).facts).toMatchObject({
+        interruptedRuns: sessions,
+        learnerTurns: admitted ? sessions : 0,
+      });
+    },
+  );
   it.each([
     { bindings: 1, automaticOpening: false },
     { bindings: 3, automaticOpening: false },
@@ -2377,11 +2426,13 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(await generateLearningReport(principal, id, signal)).toEqual(ready);
     expect(mocked.reportAnalysis).toHaveBeenCalledTimes(2);
     // Both recent and aged ready caches need regeneration rather than a failure retry.
-    for (const age of ['0 seconds', '3 minutes']) {
+    for (const { age, format } of [4, 5].flatMap((format) =>
+      ['0 seconds', '3 minutes'].map((age) => ({ age, format })),
+    )) {
       const calls = mocked.reportAnalysis.mock.calls.length;
       await pool.query(
-        "UPDATE pbl_v3_reports SET document=jsonb_set(document,'{formatVersion}','4'),updated_at=now()-$2::interval WHERE study_id=$1",
-        [id, age],
+        "UPDATE pbl_v3_reports SET document=jsonb_set(document,'{formatVersion}',$3::jsonb),updated_at=now()-$2::interval WHERE study_id=$1",
+        [id, age, JSON.stringify(format)],
       );
       const upgradedFacts = await learningReport(principal, id);
       expect(upgradedFacts.summary).toBeDefined();

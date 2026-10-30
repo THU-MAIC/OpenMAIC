@@ -44,7 +44,7 @@ export function currentBuildCommand(
   const command =
     profile === 'java'
       ? `javac -d /tmp/pbl-project-build ${sources.map((path) => quote(`./${path}`)).join(' ')}`
-      : `python3 -c ${quote(`import ast,pathlib; [ast.parse(pathlib.Path(p).read_text()) for p in ${JSON.stringify(sources)}]`)}`;
+      : `python3 -c ${quote(`import ast,pathlib; [ast.parse(pathlib.Path(p).read_bytes(),filename=p) for p in ${JSON.stringify(sources)}]`)}`;
   if (Buffer.byteLength(command) > MAX_COMMAND_BYTES)
     throw sandboxInvalid(
       'Current build sources exceed the sandbox 32 KiB command limit.',

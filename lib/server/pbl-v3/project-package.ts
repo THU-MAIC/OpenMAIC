@@ -391,7 +391,7 @@ export function validateProjectPackage(
   const buildCommand = buildSources
     ? config.runtime.profile === 'java'
       ? `javac -d /tmp/pbl-project-build ${buildSources.map((name) => quote(`./${name}`)).join(' ')}`
-      : `python3 -c ${quote(`import ast,pathlib; [ast.parse(pathlib.Path(p).read_text()) for p in ${JSON.stringify(buildSources)}]`)}`
+      : `python3 -c ${quote(`import ast,pathlib; [ast.parse(pathlib.Path(p).read_bytes(),filename=p) for p in ${JSON.stringify(buildSources)}]`)}`
     : undefined;
   if (buildCommand && Buffer.byteLength(buildCommand) > MAX_COMMAND_BYTES)
     return invalid('Build sources exceed the sandbox 32 KiB command limit.');
