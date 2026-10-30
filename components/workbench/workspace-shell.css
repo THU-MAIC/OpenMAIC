@@ -986,6 +986,44 @@
   color: var(--ws-ink-mute);
 }
 
+/* ── The quiet scrollbar ──────────────────────────────────────────────────
+   Every scroll area of the workspace (the page canvases, the rail's lists, the
+   menus) gets a thin scrollbar on a transparent track whose thumb stays out of
+   sight until the pointer is over the area. Browsers that honour the standard
+   properties ignore the ::-webkit-scrollbar rules; the rest use them. */
+.ws-scroll,
+.ws-canvas {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.ws-scroll:hover,
+.ws-canvas:hover {
+  scrollbar-color: var(--ws-line) transparent;
+}
+
+.ws-scroll::-webkit-scrollbar,
+.ws-canvas::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.ws-scroll::-webkit-scrollbar-track,
+.ws-canvas::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ws-scroll::-webkit-scrollbar-thumb,
+.ws-canvas::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: transparent;
+}
+
+.ws-scroll:hover::-webkit-scrollbar-thumb,
+.ws-canvas:hover::-webkit-scrollbar-thumb {
+  background: var(--ws-line);
+}
+
 /* ── The classroom picker ────────────────────────────────────────────────── */
 .ws-cmenu-row {
   height: var(--ws-cmenu-row-h);

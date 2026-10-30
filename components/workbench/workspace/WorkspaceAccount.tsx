@@ -305,7 +305,13 @@ function AccountMenu({
             <span className="flex-1">{t('workspace.account.language')}</span>
             <span className="text-xs text-muted-foreground">{currentLocale?.label ?? locale}</span>
           </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="max-h-[320px] min-w-[160px] overflow-y-auto">
+          {/* Sized to its content: the whole list fits any ordinary viewport, and
+              collision handling slides it up from the trigger to make room. It
+              scrolls only when the viewport is genuinely shorter than the list. */}
+          <DropdownMenuSubContent
+            collisionPadding={8}
+            className="ws-scroll max-h-(--radix-dropdown-menu-content-available-height) min-w-[160px] overflow-y-auto"
+          >
             {supportedLocales.map((l) => (
               <DropdownMenuItem
                 key={l.code}

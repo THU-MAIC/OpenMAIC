@@ -1165,7 +1165,7 @@ export function WorkspaceRail({
         id="pro-nav-tabpanel"
         data-testid="pro-nav-tabpanel"
         aria-labelledby={`pro-nav-tab-${tab}`}
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2 pt-1.5"
+        className="ws-scroll flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2 pt-1.5"
       >
         {tab === 'sessions' ? (
           <RailList
