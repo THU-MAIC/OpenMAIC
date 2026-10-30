@@ -1373,6 +1373,39 @@ describe('asset entry lifecycle with PGlite', () => {
       expect(await lifecycleOf(id)).toBeDefined();
     });
 
+    test('referenced-but-stamped entries do not block releasable entries behind them', async () => {
+      const docReferenced = await store.put(PRINCIPAL, new Blob(['doc-referenced']));
+      await syncDocumentAssetReferences(db, {
+        stageId: 'stage-1',
+        scope: { scope: 'scene', sceneId: 'scene-a', candidates: [docReferenced] },
+      });
+      await unreferencedSince(docReferenced, '2000-01-01T00:00:00.000Z');
+
+      const rootReferenced = await store.put(PRINCIPAL, new Blob(['root-referenced']));
+      await committed(rootReferenced);
+      await db.query(
+        `INSERT INTO asset_root_refs (root_kind, root_id, asset_id)
+         VALUES ('material', 'root-1', $1)`,
+        [rootReferenced],
+      );
+      await unreferencedSince(rootReferenced, '2000-01-01T00:00:00.000Z');
+
+      const releasable = await store.put(PRINCIPAL, new Blob(['releasable']));
+      await expired(releasable);
+      await db.query(
+        `UPDATE asset_entries SET expires_at = '2000-01-02T00:00:00.000Z' WHERE id = $1`,
+        [releasable],
+      );
+
+      const pass = await collector({ batchSize: 2 }).collectPass();
+
+      expect(pass.entriesCollected).toBe(1);
+      expect(pass.entriesCapped).toBe(false);
+      expect(await lifecycleOf(releasable)).toBeUndefined();
+      expect(await lifecycleOf(docReferenced)).toBeDefined();
+      expect(await lifecycleOf(rootReferenced)).toBeDefined();
+    });
+
     test('the entry pass is bounded and re-runnable', async () => {
       const ids: string[] = [];
       for (const value of ['a', 'b', 'c', 'd', 'e']) {
@@ -2166,17 +2199,26 @@ describe('asset entry lifecycle with PGlite', () => {
 
     test('a rooted entry carrying a stale stamp reaches the final check and is kept', async () => {
       const id = await store.put(PRINCIPAL, new Blob(['kept by its root']));
-      await root('material-1', id);
       // A stamp that should not be there -- restored out of band, say -- long
-      // past grace: the entry passes every column-based filter, so only the
-      // release's own reference check stands between it and deletion.
+      // past grace: the candidate query selects it, and a concurrent root
+      // addition races it before the row lock. Only the release's separate
+      // post-lock reference check stands between it and deletion.
       await db.query(
         `UPDATE asset_entries SET unreferenced_at = now() - interval '2 days' WHERE id = $1`,
         [id],
       );
       const released: { text: string; params?: unknown[] }[] = [];
-      const recordedTransactions: WithTransaction = (body) =>
-        db.transaction((tx: Queryable) =>
+      let raced = false;
+      const recordedTransactions: WithTransaction = async (body) => {
+        if (!raced) {
+          raced = true;
+          await db.query(
+            `INSERT INTO asset_root_refs (root_kind, root_id, asset_id)
+             VALUES ('material', 'material-1', $1)`,
+            [id],
+          );
+        }
+        return db.transaction((tx: Queryable) =>
           body({
             query: <TRow extends Record<string, unknown> = Record<string, unknown>>(
               text: string,
@@ -2187,6 +2229,7 @@ describe('asset entry lifecycle with PGlite', () => {
             },
           }),
         );
+      };
 
       const pass = await collector({
         graceMs: 60 * 60 * 1000,
