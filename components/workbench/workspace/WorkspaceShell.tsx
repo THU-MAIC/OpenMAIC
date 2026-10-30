@@ -96,6 +96,7 @@ import {
   withCourse,
   withLibrary,
   withSession,
+  type WorkspaceCourseTabs,
   type WorkspacePanes,
 } from '@/lib/workbench/workspace-panes';
 import { useWorkspacePaneNavigation } from '@/lib/workbench/use-workspace-pane-navigation';
