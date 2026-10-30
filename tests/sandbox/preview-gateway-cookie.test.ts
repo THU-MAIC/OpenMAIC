@@ -47,12 +47,16 @@ describe.each(['http:', 'https:'])('preview cookie exchange (%s)', (protocol) =>
         res.end('{}');
         return;
       }
+      const expiresAt = Date.now() + 60000;
       res.end(
         JSON.stringify({
           transport: 'native',
           url: 'https://sandbox.example.test',
           headers: { 'e2b-traffic-access-token': 'test-only-provider-token' },
-          expiresAt: Date.now() + 60000,
+          expiresAt,
+          ...(JSON.parse(text).activity === true
+            ? { authorization: { ticket: 'renewed-input-grant', expiresAt } }
+            : {}),
         }),
       );
     });
@@ -187,7 +191,13 @@ describe.each(['http:', 'https:'])('preview cookie exchange (%s)', (protocol) =>
       ).status,
     ).toBe(403);
     expect(activitySignals).toBe(0);
-    expect((await request('/__openmaic_activity', { method: 'POST', headers })).status).toBe(204);
+    const renewed = await request('/__openmaic_activity', { method: 'POST', headers });
+    expect(renewed.status).toBe(204);
+    expect(renewed.headers.get('set-cookie')).toContain('renewed-input-grant');
+    expect(Number(renewed.headers.get('x-openmaic-preview-expires-at'))).toBeGreaterThan(
+      Date.now(),
+    );
+    expect(renewed.body).toBe('');
     expect(activitySignals).toBe(1);
     expect(
       (

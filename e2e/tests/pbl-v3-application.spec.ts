@@ -9,6 +9,7 @@ for (const legacyMove of [false, true]) {
     learningEvents,
   }, testInfo) => {
     test.setTimeout(180000);
+    if (!legacyMove) await page.clock.install();
     await page.addInitScript((legacy) => {
       localStorage.setItem('locale', 'en-US');
       if (legacy) Reflect.deleteProperty(Element.prototype, 'moveBefore');
@@ -236,6 +237,27 @@ for (const legacyMove of [false, true]) {
     expect(launches).toBe(1);
     expect(documents).toBe(1);
     expect(commands).toEqual([]);
+    if (!legacyMove) {
+      // A renewal response can arrive just after the old local deadline. Keep
+      // the hidden document alive so its confirmed response can restore it.
+      await page.clock.fastForward(300_001);
+      await expect(panel.locator('iframe')).toBeHidden();
+      await expect(panel.locator('iframe')).toHaveAttribute('inert', '');
+      const renewedDeadline = await page.evaluate(() => Date.now() + 300_000);
+      await app.locator('body').evaluate((_body, expiresAt) => {
+        parent.postMessage({ type: 'openmaic-preview-activity', expiresAt }, location.origin);
+      }, renewedDeadline);
+      await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toBeVisible();
+      await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toHaveValue(
+        'Unsaved form input',
+      );
+      expect(
+        await app.locator('body').evaluate(() => (window as unknown as { boot: string }).boot),
+      ).toBe(boot);
+      expect(documents).toBe(1);
+      expect(launches).toBe(1);
+      await page.clock.setSystemTime(new Date());
+    }
     // The dock does not trap focus or block learner input. A busy server state does
     // suspend application interaction, then requires a deliberate reopen.
     const composer = page.locator('textarea[placeholder]').last();

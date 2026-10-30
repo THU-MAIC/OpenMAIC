@@ -529,7 +529,9 @@ export class SandboxService {
         {
           ...body,
           // Leave the provider envelope time to persist the supervisor's terminal receipt.
-          timeoutMs: Math.min(this.config.lifetimeMs, 3_585_000),
+          // The environment lease is renewable; it is not the lifetime of an
+          // application process. Keep the existing one-hour supervisor ceiling.
+          timeoutMs: 3_585_000,
         },
         epoch,
         'application',
@@ -557,7 +559,8 @@ export class SandboxService {
       typeof timeoutMs !== 'number' ||
       !Number.isInteger(timeoutMs) ||
       timeoutMs < 100 ||
-      timeoutMs > Math.min(this.config.lifetimeMs, 3_600_000)
+      timeoutMs >
+        (purpose === 'application' ? 3_585_000 : Math.min(this.config.lifetimeMs, 3_600_000))
     )
       throw sandboxInvalid(
         'Command timeout must be finite and no longer than the sandbox lifetime.',
@@ -1085,25 +1088,41 @@ export class SandboxService {
       throw sandboxConflict('Preview environment is unavailable or access was revoked.');
     const { E2BCompatibleSandboxProvider } = await import('./providers/e2b-compatible');
     const provider = new E2BCompatibleSandboxProvider(config);
-    const expiresAt = Math.min(
-      await provider.previewLifetime(row.resource_id, row.id),
-      grant.expiresAt,
-    );
-    return { row, grant, provider, expiresAt };
+    const environmentExpiresAt = await provider.previewLifetime(row.resource_id, row.id);
+    const expiresAt = Math.min(environmentExpiresAt, grant.expiresAt);
+    return { row, grant, provider, expiresAt, environmentExpiresAt };
   }
 
   static async previewTarget(ticket: string, host: string, activity = false) {
-    const { row, grant, provider, expiresAt } = await this.resolvePreview(ticket, host);
+    const resolved = await this.resolvePreview(ticket, host);
+    const { row, grant, provider, environmentExpiresAt } = resolved;
     if (activity && isLearningWorkspace(row.workspace_id)) {
       const { recordLearningPreviewActivity } = await import('@/lib/server/pbl-v3/application');
       await recordLearningPreviewActivity(grant.ownerId, row.workspace_id, row.id, grant.port);
     }
+    // Only authenticated real input renews access, after the old grant and current
+    // environment/epoch have passed the same revocation checks as every request.
+    const renewal = activity
+      ? issuePreviewGrant({
+          ownerId: grant.ownerId,
+          environmentId: grant.environmentId,
+          port: grant.port,
+          epoch: grant.epoch,
+        })
+      : null;
+    const expiresAt = renewal
+      ? Math.min(environmentExpiresAt, renewal.expiresAt)
+      : resolved.expiresAt;
+    const authorization = renewal
+      ? { ticket: new URL(renewal.url).hash.slice(1), expiresAt }
+      : undefined;
+    const common = { expiresAt, authorization, appOrigin: previewConfig().appOrigin };
     if (previewConfig().transport === 'sdk')
-      return { transport: 'sdk', url: `http://127.0.0.1:${grant.port}`, expiresAt };
+      return { transport: 'sdk', url: `http://127.0.0.1:${grant.port}`, ...common };
     return {
       transport: 'native',
       ...(await provider.nativePreview(row.resource_id!, row.id, grant.port)),
-      expiresAt,
+      ...common,
     };
   }
 

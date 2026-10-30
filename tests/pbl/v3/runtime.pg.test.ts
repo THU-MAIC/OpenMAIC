@@ -22,7 +22,7 @@ import {
 } from '@/lib/server/pbl-v3/project-package';
 import { WORKSPACE_FILE_RUNNER } from '@/lib/server/sandbox/workspace-archive';
 import { workbenchCommand, workbenchView } from '@/lib/server/pbl-v3/workbench';
-import { issuePreviewGrant } from '@/lib/server/sandbox/preview';
+import { issuePreviewGrant, verifyPreviewGrant } from '@/lib/server/sandbox/preview';
 import { applicationRequest } from '@/lib/server/pbl-v3/application';
 import type { ModelMessage } from 'ai';
 import { PgAgentSessionStore, ensureAgentSessionSchema } from '@openmaic/storage/agent-session/pg';
@@ -9858,6 +9858,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         ) {
           if (!input.command.startsWith('exec '))
             return originalStart.call(this, id, operation, input);
+          expect(input.timeoutMs).toBe(3_585_000);
           launches.push(input.id);
           await writeFile(
             join(mocked.root, id, `.command-${input.id}`),
@@ -9995,61 +9996,130 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       await releasePreparationFixtures(ids);
     }
   }, 15000);
-  it('keeps an active application out of the one-shot watchdog and quiesces it on idle', async () => {
-    const fresh = await freshStudy(),
-      row = await store.get(fresh.id, principal.ownerId);
-    const commandId = randomUUID(),
-      result = {
-        id: commandId,
-        state: 'running',
-        stdout: '',
-        stderr: '',
-        exitCode: null,
-        truncated: false,
-      };
-    const statusFile = join(mocked.root, row.environment_id!, `.command-${commandId}`);
-    await writeFile(statusFile, JSON.stringify(result));
-    await pool.query(
-      `INSERT INTO sandbox_commands(environment_id,id,request_fingerprint,purpose,result_json,created_at) VALUES($1,$2,'fixture','application',$3,now()-interval '20 minutes')`,
-      [row.environment_id, commandId, JSON.stringify(result)],
-    );
-    await pool.query('UPDATE pbl_v3_studies SET workspace_dirty_at=NULL WHERE id=$1', [row.id]);
-    const cancel = vi
-      .spyOn(E2BCompatibleSandboxProvider.prototype, 'cancelCommand')
-      .mockImplementation(async () => {
-        await writeFile(
-          statusFile,
-          JSON.stringify({ ...result, state: 'cancelled', exitCode: -15 }),
-        );
-      });
+  it('renews only authenticated preview activity and preserves revocation and teaching state', async () => {
+    const previousApplication = project.application;
+    const env = {
+      OPENMAIC_SECRET_KEY: 'test-only-secret-'.repeat(3),
+      OPENMAIC_PREVIEW_GATEWAY_KEY: 'test-only-gateway-'.repeat(3),
+      OPENMAIC_SANDBOX_PREVIEW_ORIGIN: 'https://{id}.preview-example.net',
+      OPENMAIC_APP_ORIGIN: 'https://app.example.com',
+    };
+    const previous = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
+    Object.assign(process.env, env);
+    project.application = {
+      title: 'Application',
+      description: 'Try it',
+      argv: ['python3', 'greeting.py'],
+      port: 8000,
+      healthPath: '/',
+    };
+    let id: string | undefined;
     try {
-      const read = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'readCommand');
+      const fresh = await freshStudy();
+      id = fresh.id;
+      const row = await store.get(id, principal.ownerId);
+      const service = await SandboxService.forOwner(principal);
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() - 270_000);
+      let old: URL;
       try {
-        const workbench = await workbenchView(principal, row.id, { passive: true });
-        expect(workbench.commands.some((entry) => entry.id === commandId)).toBe(false);
-        expect(read.mock.calls.some((args) => args.includes(commandId))).toBe(false);
-        expect(
-          (await (await SandboxService.forOwner(principal)).listCommands(row.environment_id!)).some(
-            (entry) => entry.id === commandId && entry.purpose === 'application',
-          ),
-        ).toBe(true);
+        old = new URL(
+          issuePreviewGrant({
+            ownerId: principal.ownerId,
+            environmentId: row.environment_id!,
+            port: 8000,
+            epoch: await service.workspaceEpoch(row.environment_id!),
+          }).url,
+        );
       } finally {
-        read.mockRestore();
+        clock.mockRestore();
       }
-      await maintainStudy(store, row.id, principal.ownerId);
-      expect(cancel).not.toHaveBeenCalled();
-      expect((await store.get(row.id, principal.ownerId)).checkpoint_failure).toBeNull();
-      await ageStudy(row.id);
-      await maintainStudy(store, row.id, principal.ownerId);
-      expect(cancel).toHaveBeenCalled();
-      expect(
-        (await (await SandboxStore.open()).get(principal.ownerId, row.environment_id!)).state,
-      ).toBe('destroyed');
+      const passive = await SandboxService.previewTarget(old.hash.slice(1), old.host);
+      expect(passive.authorization).toBeUndefined();
+      const active = await SandboxService.previewTarget(old.hash.slice(1), old.host, true);
+      expect(active.expiresAt).toBeGreaterThan(passive.expiresAt);
+      expect(active.authorization?.expiresAt).toBe(active.expiresAt);
+      expect(verifyPreviewGrant(active.authorization!.ticket, old.host)).toMatchObject({
+        ownerId: principal.ownerId,
+        environmentId: row.environment_id,
+        port: 8000,
+      });
+      expect((await store.get(id, principal.ownerId)).revision).toBe(row.revision);
+      await service.revokePreviews(row.environment_id!);
+      await expect(
+        SandboxService.previewTarget(active.authorization!.ticket, old.host, true),
+      ).rejects.toMatchObject({ status: 409 });
     } finally {
-      cancel.mockRestore();
-      await releasePreparationFixtures([row.id]);
+      project.application = previousApplication;
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      if (id) await releasePreparationFixtures([id]);
     }
-  }, 15000);
+  });
+
+  it.each([false, true])(
+    'keeps an active application through periodic backup and quiesces it on idle (dirty: %s)',
+    async (dirty) => {
+      const fresh = await freshStudy(),
+        row = await store.get(fresh.id, principal.ownerId);
+      const commandId = randomUUID(),
+        result = {
+          id: commandId,
+          state: 'running',
+          stdout: '',
+          stderr: '',
+          exitCode: null,
+          truncated: false,
+        };
+      const statusFile = join(mocked.root, row.environment_id!, `.command-${commandId}`);
+      await writeFile(statusFile, JSON.stringify(result));
+      await pool.query(
+        `INSERT INTO sandbox_commands(environment_id,id,request_fingerprint,purpose,result_json,created_at) VALUES($1,$2,'fixture','application',$3,now()-interval '20 minutes')`,
+        [row.environment_id, commandId, JSON.stringify(result)],
+      );
+      await pool.query(
+        "UPDATE pbl_v3_studies SET workspace_dirty_at=CASE WHEN $2 THEN now()-interval '90 seconds' ELSE NULL END WHERE id=$1",
+        [row.id, dirty],
+      );
+      const cancel = vi
+        .spyOn(E2BCompatibleSandboxProvider.prototype, 'cancelCommand')
+        .mockImplementation(async () => {
+          await writeFile(
+            statusFile,
+            JSON.stringify({ ...result, state: 'cancelled', exitCode: -15 }),
+          );
+        });
+      try {
+        const read = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'readCommand');
+        try {
+          const workbench = await workbenchView(principal, row.id, { passive: true });
+          expect(workbench.commands.some((entry) => entry.id === commandId)).toBe(false);
+          expect(read.mock.calls.some((args) => args.includes(commandId))).toBe(false);
+          expect(
+            (
+              await (await SandboxService.forOwner(principal)).listCommands(row.environment_id!)
+            ).some((entry) => entry.id === commandId && entry.purpose === 'application'),
+          ).toBe(true);
+        } finally {
+          read.mockRestore();
+        }
+        await maintainStudy(store, row.id, principal.ownerId);
+        expect(cancel).not.toHaveBeenCalled();
+        expect((await store.get(row.id, principal.ownerId)).checkpoint_failure).toBeNull();
+        await ageStudy(row.id);
+        await maintainStudy(store, row.id, principal.ownerId);
+        expect(cancel).toHaveBeenCalled();
+        expect(
+          (await (await SandboxStore.open()).get(principal.ownerId, row.environment_id!)).state,
+        ).toBe('destroyed');
+      } finally {
+        cancel.mockRestore();
+        await releasePreparationFixtures([row.id]);
+      }
+    },
+    15000,
+  );
 
   it('records a finite recovery cycle when an idle application cannot confirm shutdown', async () => {
     const fresh = await freshStudy(),
