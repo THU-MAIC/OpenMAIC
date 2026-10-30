@@ -1,4 +1,5 @@
 import type { LearningReport } from './report';
+import { readPblJson } from './response';
 
 export class ReportResponseError extends Error {
   constructor(readonly pendingFinal = false) {
@@ -13,7 +14,7 @@ export async function readReportResponse(
 ): Promise<LearningReport> {
   let value: unknown;
   try {
-    value = JSON.parse(await response.text());
+    value = await readPblJson(response);
   } catch {
     throw new ReportResponseError();
   }

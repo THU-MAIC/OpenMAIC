@@ -1,3 +1,4 @@
+import { readPblJson } from '@/lib/pbl/v3/response';
 import { sandboxErrorMessage } from '@/lib/sandbox/error-message';
 import { SandboxRequestError } from '@/components/sandbox/client';
 
@@ -8,7 +9,7 @@ export async function pblRequest<T>(url: string, body?: unknown, signal?: AbortS
     ...(signal ? { signal } : {}),
     ...(body === undefined ? {} : { method: 'POST', body: JSON.stringify(body) }),
   });
-  const data = await response.json();
+  const data = await readPblJson(response);
   if (!response.ok)
     throw new SandboxRequestError(
       sandboxErrorMessage(data.error),

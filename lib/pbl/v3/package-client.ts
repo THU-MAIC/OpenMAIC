@@ -1,3 +1,4 @@
+import { readPblJson } from '@/lib/pbl/v3/response';
 import type JSZip from 'jszip';
 import {
   isPBLV3Reference,
@@ -55,7 +56,7 @@ async function call(body: unknown) {
     headers: { 'content-type': 'application/json', 'x-openmaic-sandbox': '1' },
     body: JSON.stringify(body),
   });
-  const result = await response.json();
+  const result = await readPblJson(response);
   if (!response.ok)
     throw Object.assign(new Error(result.error?.message ?? 'Project resource operation failed.'), {
       code: result.error?.code,

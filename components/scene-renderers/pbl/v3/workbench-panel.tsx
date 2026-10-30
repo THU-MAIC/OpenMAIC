@@ -1,4 +1,5 @@
 'use client';
+import { readPblJson } from '@/lib/pbl/v3/response';
 import type { FileReference, FileChangeRange } from '@/lib/pbl/v3/file-reference';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
@@ -37,7 +38,7 @@ export async function workbenchRequest<T>(url: string, body?: unknown): Promise<
     headers: { 'content-type': 'application/json', 'x-openmaic-sandbox': '1' },
     ...(body ? { method: 'POST', body: JSON.stringify(body) } : {}),
   });
-  const data = await response.json();
+  const data = await readPblJson(response);
   if (!response.ok)
     throw new SandboxRequestError(
       sandboxErrorMessage(data.error),
