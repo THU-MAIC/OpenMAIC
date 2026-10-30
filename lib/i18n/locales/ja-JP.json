@@ -2519,12 +2519,7 @@
     "coursesPage": {
       "subtitle": "作成またはインポートしたコースと、それを整理するフォルダー",
       "searchPlaceholder": "マイコースを検索",
-      "folders": "フォルダー",
-      "courseCount": "{{count}} コース",
-      "courseCount_one": "{{count}} コース",
-      "courseCount_other": "{{count}} コース",
       "results": "検索結果",
-      "recent": "最近の編集",
       "allCourses": "すべてのコース"
     },
     "fullscreen": {

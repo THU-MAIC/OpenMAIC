@@ -64,13 +64,14 @@ beforeAll(async () => {
 const roots: Root[] = [];
 afterEach(() => {
   for (const root of roots.splice(0)) act(() => root.unmount());
+  window.localStorage.clear();
   document.body.replaceChildren();
   vi.clearAllMocks();
 });
 
 const byTestId = (id: string) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
 
-async function renderPage() {
+async function renderPage(extraCourses: readonly Record<string, unknown>[] = []) {
   const onDeleteCourse = vi.fn();
   const reload = vi.fn(async () => undefined);
   const createFolder = vi.fn(async (name: string) => ({ id: 'f-new', name }));
@@ -93,6 +94,7 @@ async function renderPage() {
               updatedAt: 1,
               folderId: 'f1',
             },
+            ...extraCourses,
           ],
           state: 'ready',
           reload,
@@ -273,5 +275,90 @@ describe('a folder card’s ⋯', () => {
     expect(removeKeepingCourses).not.toHaveBeenCalled();
     await act(async () => byTestId('workspace-courses-folder-delete-confirm')!.click());
     expect(removeKeepingCourses).toHaveBeenCalledWith('f1');
+  });
+});
+
+describe('dragging courses', () => {
+  /** Carry a course card to `target` with the shared pointer gesture. */
+  async function carry(courseId: string, target: Element) {
+    const card = byTestId(`workspace-courses-card-${courseId}`)!;
+    const box = target.getBoundingClientRect();
+    const original = document.elementFromPoint;
+    document.elementFromPoint = () => target;
+    try {
+      await act(async () => {
+        card.dispatchEvent(
+          new PointerEvent('pointerdown', { bubbles: true, button: 0, clientX: 0, clientY: 0 }),
+        );
+        window.dispatchEvent(
+          new PointerEvent('pointermove', { clientX: box.left + 1, clientY: box.top + 20 }),
+        );
+      });
+      await act(async () => {
+        window.dispatchEvent(
+          new PointerEvent('pointerup', { clientX: box.left + 1, clientY: box.top + 20 }),
+        );
+      });
+    } finally {
+      document.elementFromPoint = original;
+    }
+  }
+
+  it('files a course dropped on a folder card', async () => {
+    const { moveCourse } = await renderPage();
+    await carry('c1', byTestId('workspace-courses-folder-f1')!);
+    expect(moveCourse).toHaveBeenCalledExactlyOnceWith('c1', 'f1');
+  });
+
+  it('takes a course out of the folder on screen through "All courses"', async () => {
+    const { moveCourse } = await renderPage();
+    await act(async () => byTestId('workspace-courses-folder-f1')!.click());
+    await carry('c2', byTestId('workspace-courses-back')!);
+    expect(moveCourse).toHaveBeenCalledExactlyOnceWith('c2', undefined);
+  });
+
+  it('shows the way out of the folder only while a course is carried', async () => {
+    await renderPage();
+    await act(async () => byTestId('workspace-courses-folder-f1')!.click());
+    expect(byTestId('workspace-courses-unfile-zone')).toBeNull();
+    const card = byTestId('workspace-courses-card-c2')!;
+    const zoneTarget = byTestId('workspace-courses-back')!;
+    const original = document.elementFromPoint;
+    document.elementFromPoint = () => zoneTarget;
+    try {
+      await act(async () => {
+        card.dispatchEvent(
+          new PointerEvent('pointerdown', { bubbles: true, button: 0, clientX: 0, clientY: 0 }),
+        );
+        window.dispatchEvent(new PointerEvent('pointermove', { clientX: 30, clientY: 30 }));
+      });
+      expect(byTestId('workspace-courses-unfile-zone')).not.toBeNull();
+      await act(async () => window.dispatchEvent(new PointerEvent('pointercancel')));
+      expect(byTestId('workspace-courses-unfile-zone')).toBeNull();
+    } finally {
+      document.elementFromPoint = original;
+    }
+  });
+
+  it('reorders by dropping beside another card, and remembers the order', async () => {
+    const { moveCourse } = await renderPage([
+      { id: 'c3', name: 'Geometry', sceneCount: 2, createdAt: 1, updatedAt: 1 },
+    ]);
+    const order = () =>
+      [...document.querySelectorAll<HTMLElement>('[data-testid^="workspace-courses-card-"]')].map(
+        (card) => card.dataset.testid,
+      );
+    // Most recently edited first, with no manual order yet.
+    expect(order()).toEqual(['workspace-courses-card-c1', 'workspace-courses-card-c3']);
+    // jsdom has no layout: a zero-sized card puts the pointer on its right half.
+    await carry('c1', byTestId('workspace-courses-card-c3')!.parentElement!);
+    expect(order()).toEqual(['workspace-courses-card-c3', 'workspace-courses-card-c1']);
+    expect(moveCourse).not.toHaveBeenCalled();
+    // The whole library's sequence: the filed course keeps its place in it.
+    expect(JSON.parse(window.localStorage.getItem('openmaic:workspace:course-order')!)).toEqual([
+      'c2',
+      'c3',
+      'c1',
+    ]);
   });
 });

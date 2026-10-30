@@ -2519,12 +2519,7 @@
     "coursesPage": {
       "subtitle": "Courses you made or imported, and the folders you keep them in",
       "searchPlaceholder": "Search my courses",
-      "folders": "Folders",
-      "courseCount": "{{count}} courses",
-      "courseCount_one": "{{count}} course",
-      "courseCount_other": "{{count}} courses",
       "results": "Search results",
-      "recent": "Recently edited",
       "allCourses": "All courses"
     },
     "fullscreen": {

@@ -2519,12 +2519,7 @@
     "coursesPage": {
       "subtitle": "Курсы, которые вы создали или импортировали, и папки, в которых они лежат",
       "searchPlaceholder": "Поиск по моим курсам",
-      "folders": "Папки",
-      "courseCount": "Курсов: {{count}}",
-      "courseCount_one": "Курсов: {{count}}",
-      "courseCount_other": "Курсов: {{count}}",
       "results": "Результаты поиска",
-      "recent": "Недавно изменённые",
       "allCourses": "Все курсы"
     },
     "fullscreen": {

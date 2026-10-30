@@ -17,10 +17,24 @@
  * default, selected; a rename turns the name into that field. Enter or leaving
  * the field saves, Escape cancels.
  *
+ * Courses are dragged, the classic home's way and with the rail's gesture
+ * (`use-tree-drag`): onto a folder card to file them, onto "All courses" (or
+ * the drop zone that appears) to take them out of the folder on screen, and
+ * between two cards to reorder. The manual order is a per-browser preference
+ * (`workspace-order`); with none, the most recently edited come first.
+ *
  * Opening a course opens it in the classroom pane.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from 'react';
 import { ChevronLeft, ChevronRight, FolderInput, FolderPlus, Search, Upload } from 'lucide-react';
 import { FOLDER_TILE_FRAME, FolderTileCover } from '@/components/discovery/folder-card';
 import { toast } from 'sonner';
@@ -73,6 +87,15 @@ import {
 } from './workspace-folder-seam';
 import { WorkspaceRowMenu } from './workspace-row-controls';
 import { InlineName, newFolderName, type CommitCause } from './inline-name';
+import { useTreeDrag, type DragKind } from './use-tree-drag';
+import {
+  applyCustomOrder,
+  COURSE_ORDER_STORAGE_KEY,
+  parseOrder,
+  reorderIds,
+  serializeOrder,
+  type DropTarget,
+} from '@/lib/workbench/workspace-order';
 import { cn } from '@/lib/utils/cn';
 
 type Discovery = ReturnType<typeof useHomeDiscovery>;
@@ -338,15 +361,31 @@ export function WorkspaceCoursesPage({
     () => new Set(courses.folders.map((item) => item.id)),
     [courses.folders],
   );
+  // ── Manual order ─────────────────────────────────────────────────────
+  // Read once on the client (storage does not exist during SSR), applied over
+  // newest-first before anything filters, so every view inherits it.
+  const [courseOrder, setCourseOrder] = useState<readonly string[]>(NO_ORDER);
+  useEffect(() => {
+    setCourseOrder(parseOrder(readStored(COURSE_ORDER_STORAGE_KEY)));
+  }, []);
+  const ordered = useMemo(
+    () =>
+      applyCustomOrder(
+        [...courses.classrooms].sort((a, b) => b.updatedAt - a.updatedAt),
+        courseOrder,
+      ),
+    [courses.classrooms, courseOrder],
+  );
+
   const visible = useMemo(() => {
-    const newest = [...courses.classrooms].sort((a, b) => b.updatedAt - a.updatedAt);
+    const newest = ordered;
     // A search looks through the whole library: a folder is a place, not a filter.
     if (searching) return filterByName(newest, query);
     if (activeFolderId) return newest.filter((course) => course.folderId === activeFolderId);
     // The top level: the folders' cards, then the courses in no folder (one
     // whose folder is gone counts as in none).
     return newest.filter((course) => !course.folderId || !knownFolders.has(course.folderId));
-  }, [activeFolderId, courses.classrooms, knownFolders, query, searching]);
+  }, [activeFolderId, knownFolders, ordered, query, searching]);
 
   /**
    * Each folder's cover: up to three member covers, newest first, as the
@@ -370,6 +409,28 @@ export function WorkspaceCoursesPage({
   }, [courses.classrooms, thumbnails]);
   const atTop = !searching && !activeFolderId;
   const showFolders = foldersAvailable && atTop;
+
+  // ── Drag: file into a folder, out of one, or reorder ────────────────
+  const drag = useTreeDrag({
+    axis: 'horizontal',
+    onReorder: (_kind: DragKind, dragId: string, target: DropTarget) => {
+      const next = reorderIds(
+        ordered.map((course) => course.id),
+        dragId,
+        target,
+      );
+      setCourseOrder(next);
+      writeStored(COURSE_ORDER_STORAGE_KEY, serializeOrder(next));
+    },
+    onMoveToFolder: (courseId: string, target: string | undefined) => {
+      const current = courses.classrooms.find((course) => course.id === courseId)?.folderId;
+      // Onto the folder it is in, or out of none: not a move.
+      if ((current ?? undefined) === target) return;
+      void courses.moveCourse(courseId, target);
+    },
+  });
+  /** A course from the folder on screen is in flight: it can be taken out. */
+  const carryingOut = drag.dragKind === 'course' && !!activeFolderId && !searching;
 
   useEffect(() => {
     retainThumbnails(new Set(courses.classrooms.map((course) => course.id)));
@@ -432,7 +493,12 @@ export function WorkspaceCoursesPage({
           </div>
         </header>
 
-        <div className="mb-3.5 mt-8 flex min-w-0 items-center gap-1.5">
+        <div
+          className={cn(
+            'flex min-w-0 items-center gap-1.5',
+            (folder && !searching) || searching ? 'mb-3.5 mt-8' : 'mt-7',
+          )}
+        >
           {folder && !searching ? (
             // Inside a folder: the way back, then where you are.
             <>
@@ -440,7 +506,11 @@ export function WorkspaceCoursesPage({
                 type="button"
                 data-testid="workspace-courses-back"
                 onClick={() => setFolderId(null)}
-                className="ws-section-title ws-quiet inline-flex shrink-0 items-center gap-1"
+                {...(drag.folderProps() as Record<string, string>)}
+                className={cn(
+                  'ws-section-title ws-quiet inline-flex shrink-0 items-center gap-1 rounded-md px-1 -mx-1',
+                  carryingOut && drag.folderTarget === '' && 'ws-crumb-drop',
+                )}
               >
                 <ChevronLeft className="size-4 rtl:rotate-180" aria-hidden="true" />
                 {t('workspace.coursesPage.allCourses')}
@@ -456,12 +526,23 @@ export function WorkspaceCoursesPage({
                 {folder.name}
               </h2>
             </>
-          ) : (
-            <h2 className="ws-section-title">
-              {searching ? t('workspace.coursesPage.results') : t('workspace.coursesPage.recent')}
-            </h2>
-          )}
+          ) : searching ? (
+            <h2 className="ws-section-title">{t('workspace.coursesPage.results')}</h2>
+          ) : null}
         </div>
+        {carryingOut ? (
+          // Out of the folder: the trail's "All courses" takes the drop too.
+          <div
+            data-testid="workspace-courses-unfile-zone"
+            {...(drag.folderProps() as Record<string, string>)}
+            className={cn(
+              'ws-ground-drop ws-ground-drop-armed ws-courses-unfile mb-4',
+              drag.folderTarget === '' && 'ws-drop-into',
+            )}
+          >
+            <span className="ws-ground-drop-label">{t('workspace.dropToUnfile')}</span>
+          </div>
+        ) : null}
 
         {courses.state === 'loading' && courses.classrooms.length === 0 ? (
           <div className="grid grid-cols-2 gap-x-5 gap-y-6 md:grid-cols-3 xl:grid-cols-4">
@@ -512,6 +593,8 @@ export function WorkspaceCoursesPage({
                       candidates={covers?.candidates}
                       requestThumbnail={requestThumbnail}
                       onOpen={() => setFolderId(item.id)}
+                      dropProps={drag.folderProps(item.id) as Record<string, string>}
+                      dropActive={drag.dragKind === 'course' && drag.folderTarget === item.id}
                       nameField={
                         renaming
                           ? nameField(
@@ -574,6 +657,9 @@ export function WorkspaceCoursesPage({
                 }
                 onStartRename={() => startEdit('course', course.id, course.name)}
                 onDelete={() => onDeleteCourse(course.id)}
+                dragProps={drag.rowProps('course', course.id)}
+                dragging={drag.dragId === course.id}
+                dropEdge={drag.indicator?.rowId === course.id ? drag.indicator.edge : null}
               />
             ))}
           </div>
@@ -621,6 +707,24 @@ export function WorkspaceCoursesPage({
 }
 
 const NO_COVERS: Slide[] = [];
+const NO_ORDER: readonly string[] = [];
+
+function readStored(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    // Private mode, or storage disabled by policy: no preference, no crash.
+    return null;
+  }
+}
+
+function writeStored(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // The change still took effect in this session; it just will not survive.
+  }
+}
 
 /**
  * A folder as a card in the course grid — the classic home's folder tile
@@ -639,9 +743,15 @@ function FolderTile({
   onOpen,
   nameField,
   menu,
+  dropProps,
+  dropActive = false,
 }: {
   readonly testId: string;
   readonly openTestId?: string;
+  /** `use-tree-drag`'s container hooks: a course dropped here is filed in. */
+  readonly dropProps?: Record<string, string>;
+  /** A course is over this card right now. */
+  readonly dropActive?: boolean;
   readonly name: string;
   readonly courseCount: number;
   readonly covers: Slide[];
@@ -672,10 +782,19 @@ function FolderTile({
       ref={frameRef}
       className={cn(
         FOLDER_TILE_FRAME,
-        nameField ? 'ring-2 ring-violet-400/70' : 'ring-violet-200/50 dark:ring-violet-800/40',
+        nameField || dropActive
+          ? 'ring-2 ring-violet-500'
+          : 'ring-violet-200/50 dark:ring-violet-800/40',
+        dropActive && 'scale-[1.03]',
       )}
     >
       <FolderTileCover covers={covers} courseCount={courseCount} />
+      {dropActive ? (
+        // The classic tile's drop state: the whole card lights up.
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-violet-500/20">
+          <FolderInput className="size-8 text-white drop-shadow" aria-hidden="true" />
+        </div>
+      ) : null}
     </div>
   );
   const badge = (
@@ -685,7 +804,11 @@ function FolderTile({
   );
 
   return (
-    <div data-testid={testId} className="ws-card-wrap group relative min-w-0">
+    <div
+      data-testid={testId}
+      {...(nameField ? {} : dropProps)}
+      className="ws-card-wrap group relative min-w-0"
+    >
       {nameField ? (
         <>
           {frame}
@@ -709,7 +832,11 @@ function FolderTile({
           </div>
         </button>
       )}
-      {menu ? <div className="ws-card-more">{menu}</div> : null}
+      {menu ? (
+        <div data-ws-no-drag="true" className="ws-card-more">
+          {menu}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -727,6 +854,9 @@ function CourseCard({
   busyWithEdit,
   onStartRename,
   onDelete,
+  dragProps,
+  dragging = false,
+  dropEdge = null,
 }: {
   readonly course: Course;
   readonly run: RunSnapshot | undefined;
@@ -742,6 +872,11 @@ function CourseCard({
   readonly nameField: ReactNode;
   readonly busyWithEdit: boolean;
   readonly onStartRename: () => void;
+  /** `use-tree-drag`'s row hooks; a course its run still produces is not dragged. */
+  readonly dragProps?: Record<string, unknown>;
+  readonly dragging?: boolean;
+  /** The side of this card a dragged course will land on. */
+  readonly dropEdge?: 'before' | 'after' | null;
   readonly onDelete: () => Promise<void> | void;
 }) {
   const { t } = useI18n();
@@ -773,9 +908,18 @@ function CourseCard({
     : onOpen;
 
   return (
-    <div className="ws-card-wrap group relative min-w-0">
+    <div
+      {...(status || nameField ? {} : (dragProps as ComponentProps<'div'> | undefined))}
+      className={cn(
+        'ws-card-wrap group relative min-w-0',
+        dragging && 'ws-card-dragging',
+        dropEdge === 'before' && 'ws-card-drop-before',
+        dropEdge === 'after' && 'ws-card-drop-after',
+      )}
+    >
       <button
         type="button"
+        draggable={false}
         data-testid={`workspace-courses-card-${course.id}`}
         data-generating={status ? 'true' : undefined}
         onClick={open}
@@ -813,7 +957,7 @@ function CourseCard({
       </button>
       {nameField ? <div className="mt-2.5 flex">{nameField}</div> : null}
       {status || busyWithEdit ? null : (
-        <div className="ws-card-more">
+        <div data-ws-no-drag="true" className="ws-card-more">
           <WorkspaceRowMenu
             testId={`workspace-courses-more-${course.id}`}
             label={name}

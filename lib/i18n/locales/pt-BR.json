@@ -2519,12 +2519,7 @@
     "coursesPage": {
       "subtitle": "Os cursos que você criou ou importou, e as pastas onde os organiza",
       "searchPlaceholder": "Pesquisar meus cursos",
-      "folders": "Pastas",
-      "courseCount": "{{count}} cursos",
-      "courseCount_one": "{{count}} curso",
-      "courseCount_other": "{{count}} cursos",
       "results": "Resultados",
-      "recent": "Editados recentemente",
       "allCourses": "Todos os cursos"
     },
     "fullscreen": {

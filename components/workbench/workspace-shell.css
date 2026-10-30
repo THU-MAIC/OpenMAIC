@@ -2575,3 +2575,51 @@
   background-color: var(--ws-accent-wash);
   box-shadow: inset 2px 0 0 var(--ws-accent);
 }
+
+/* ── Dragging courses on My courses ──────────────────────────────────────
+   The grid's insertion mark is a vertical accent bar beside the card the
+   course will land next to; the carried card stays in place, lifted and
+   dimmed, so nothing reflows under the pointer. */
+.ws-card-drop-before::before,
+.ws-card-drop-after::before {
+  content: '';
+  position: absolute;
+  z-index: 3;
+  top: 4px;
+  height: calc(100% - 8px);
+  width: 3px;
+  border-radius: 3px;
+  background: var(--ws-accent);
+  box-shadow: 0 0 0 3px var(--ws-accent-wash);
+  pointer-events: none;
+}
+
+.ws-card-drop-before::before {
+  left: -11px;
+}
+
+.ws-card-drop-after::before {
+  right: -11px;
+}
+
+.ws-card-dragging {
+  z-index: 4;
+  opacity: 0.55;
+  transform: scale(0.97);
+  transition:
+    opacity 120ms var(--ws-ease),
+    transform 120ms var(--ws-ease);
+}
+
+/* While a course from a folder is carried, "All courses" and the zone under
+   the trail take it back to the top level. */
+.ws-courses-unfile {
+  position: static;
+  min-height: 52px;
+  margin: 0 0 16px;
+}
+
+.ws-crumb-drop {
+  background-color: var(--ws-accent-wash);
+  box-shadow: 0 0 0 2px var(--ws-accent-thread);
+}

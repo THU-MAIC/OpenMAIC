@@ -2504,12 +2504,7 @@
     "coursesPage": {
       "subtitle": "你產生或匯入的課程，以及整理它們的資料夾",
       "searchPlaceholder": "搜尋我的課程",
-      "folders": "資料夾",
-      "courseCount": "{{count}} 門課",
-      "courseCount_one": "{{count}} 門課",
-      "courseCount_other": "{{count}} 門課",
       "results": "搜尋結果",
-      "recent": "最近編輯",
       "allCourses": "全部課程"
     },
     "fullscreen": {

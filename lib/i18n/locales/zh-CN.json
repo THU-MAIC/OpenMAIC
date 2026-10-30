@@ -2519,12 +2519,7 @@
     "coursesPage": {
       "subtitle": "你生成或导入的课程，以及整理它们的文件夹",
       "searchPlaceholder": "搜索我的课程",
-      "folders": "文件夹",
-      "courseCount": "{{count}} 门课",
-      "courseCount_one": "{{count}} 门课",
-      "courseCount_other": "{{count}} 门课",
       "results": "搜索结果",
-      "recent": "最近编辑",
       "allCourses": "全部课程"
     },
     "fullscreen": {

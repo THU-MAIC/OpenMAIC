@@ -2519,12 +2519,7 @@
     "coursesPage": {
       "subtitle": "Les cours que vous avez créés ou importés, et les dossiers où vous les rangez",
       "searchPlaceholder": "Rechercher dans mes cours",
-      "folders": "Dossiers",
-      "courseCount": "{{count}} cours",
-      "courseCount_one": "{{count}} cours",
-      "courseCount_other": "{{count}} cours",
       "results": "Résultats",
-      "recent": "Modifiés récemment",
       "allCourses": "Tous les cours"
     },
     "fullscreen": {

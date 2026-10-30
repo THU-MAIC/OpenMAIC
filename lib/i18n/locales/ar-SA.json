@@ -2519,12 +2519,7 @@
     "coursesPage": {
       "subtitle": "الدورات التي أنشأتها أو استوردتها، والمجلدات التي تنظمها فيها",
       "searchPlaceholder": "البحث في دوراتي",
-      "folders": "المجلدات",
-      "courseCount": "{{count}} دورات",
-      "courseCount_one": "دورة واحدة",
-      "courseCount_other": "{{count}} دورة",
       "results": "نتائج البحث",
-      "recent": "عُدّلت مؤخرًا",
       "allCourses": "كل الدورات"
     },
     "fullscreen": {

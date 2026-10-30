@@ -2519,12 +2519,7 @@
     "coursesPage": {
       "subtitle": "직접 만들거나 가져온 코스와 이를 정리하는 폴더",
       "searchPlaceholder": "내 코스 검색",
-      "folders": "폴더",
-      "courseCount": "코스 {{count}}개",
-      "courseCount_one": "코스 {{count}}개",
-      "courseCount_other": "코스 {{count}}개",
       "results": "검색 결과",
-      "recent": "최근 편집",
       "allCourses": "전체 코스"
     },
     "fullscreen": {
