@@ -27,11 +27,12 @@
  * feed of other people's courses, so by default nothing follows the composer.
  */
 
-import type { ReactNode } from 'react';
-import { Github } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Github, Star } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useWorkbenchShellExtensions } from '@/lib/workbench/shell-extensions';
 import { OPENMAIC_GITHUB_URL } from '@/lib/workbench/shell-links';
+import { GITHUB_STARS_ENDPOINT, formatStarCount } from '@/lib/workbench/github-stars';
 import { useBrand, useIsDesktop } from '@/lib/brand/brand-context';
 import { ProLaunchPanel } from '@/components/workbench/ProLaunchPanel';
 import type { CourseMentionSource } from '@/lib/workbench/course-mention';
@@ -130,6 +131,7 @@ export function WorkspaceHome({
               >
                 <Github className="size-3.5" aria-hidden="true" />
                 GitHub
+                <GitHubStarCount />
               </a>
             </div>
           </div>
@@ -175,5 +177,34 @@ export function WorkspaceHome({
         </section>
       </div>
     </main>
+  );
+}
+
+/**
+ * The repository's star count, appended to the GitHub pill. Until it arrives,
+ * or when it cannot be had, nothing renders, so the pill looks as it always did.
+ */
+function GitHubStarCount() {
+  const [stars, setStars] = useState<number | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(GITHUB_STARS_ENDPOINT, { signal: controller.signal })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { stars?: unknown } | null) => {
+        if (typeof body?.stars === 'number') setStars(body.stars);
+      })
+      .catch(() => {
+        // The count is decoration; the pill stands without it.
+      });
+    return () => controller.abort();
+  }, []);
+
+  if (stars === null) return null;
+  return (
+    <span className="ws-gh-stars" data-testid="pro-workspace-hero-github-stars">
+      <Star className="size-3 fill-amber-400 text-amber-400" aria-hidden="true" />
+      {formatStarCount(stars)}
+    </span>
   );
 }

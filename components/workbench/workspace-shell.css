@@ -2634,6 +2634,13 @@
   background: rgba(255, 255, 255, 0.06);
 }
 
+.ws-gh-stars {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
 .ws-root .ws-composer {
   border-color: #ddd6ff;
   border-radius: 18px;
