@@ -2067,6 +2067,44 @@
   }
 }
 
+/* The profile editor in the account menu, on the menu's type scale: the bio
+   reads at a menu row's 13.5px, the name one step up, the hint and the
+   secondary labels at 12px. Scoped here, so the classic editor keeps its own. */
+[data-profile-editor] [data-profile-avatar] {
+  width: 40px;
+  height: 40px;
+}
+
+[data-profile-editor] [data-profile-name] {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+[data-profile-editor] [data-profile-hint] {
+  margin-top: 1px;
+  font-size: 12px;
+  line-height: 16px;
+  color: rgb(100 116 139 / 0.85);
+}
+
+[data-profile-editor] [data-profile-bio],
+[data-profile-editor] [data-profile-bio]::placeholder {
+  font-size: 13.5px;
+  line-height: 20px;
+}
+
+[data-profile-editor] [data-profile-bio] {
+  min-height: 76px;
+  padding: 8px 10px;
+  border-radius: 10px;
+}
+
+.ws-account-menu .ws-menu-item .text-xs,
+.ws-profile-saved {
+  font-size: 12px;
+}
+
 /* The "Saved" tick beside the profile editor. */
 
 .ws-profile-saved {

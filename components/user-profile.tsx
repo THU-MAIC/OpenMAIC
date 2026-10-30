@@ -184,7 +184,10 @@ export function UserProfileCard({
           onClick={() => setAvatarPickerOpen(!avatarPickerOpen)}
           className="shrink-0 group/avatar relative cursor-pointer"
         >
-          <div className="size-11 rounded-full bg-gray-50 dark:bg-gray-800 overflow-hidden ring-2 ring-violet-300/50 dark:ring-violet-600/40 group-hover/avatar:ring-violet-400 dark:group-hover/avatar:ring-violet-500 transition-all">
+          <div
+            data-profile-avatar=""
+            className="size-11 rounded-full bg-gray-50 dark:bg-gray-800 overflow-hidden ring-2 ring-violet-300/50 dark:ring-violet-600/40 group-hover/avatar:ring-violet-400 dark:group-hover/avatar:ring-violet-500 transition-all"
+          >
             <img src={avatar} alt="" className="size-full object-cover" />
           </div>
           <div className="absolute -bottom-0.5 -right-0.5 size-4 rounded-full bg-white dark:bg-slate-800 border border-muted/60 flex items-center justify-center">
@@ -212,6 +215,7 @@ export function UserProfileCard({
                 onBlur={commitName}
                 maxLength={20}
                 placeholder={t('profile.defaultNickname')}
+                data-profile-name=""
                 className="flex-1 min-w-0 h-7 bg-transparent border-b-2 border-violet-400 dark:border-violet-500 text-sm font-semibold text-foreground outline-none placeholder:text-muted-foreground/40"
               />
               <button
@@ -226,11 +230,15 @@ export function UserProfileCard({
               onClick={startEditName}
               className="group/name flex items-center gap-1.5 cursor-pointer"
             >
-              <span className="text-sm font-semibold text-foreground truncate">{displayName}</span>
+              <span data-profile-name="" className="text-sm font-semibold text-foreground truncate">
+                {displayName}
+              </span>
               <Pencil className="size-3 text-muted-foreground/40 opacity-0 group-hover/name:opacity-100 transition-opacity" />
             </button>
           )}
-          <p className="text-[10px] text-muted-foreground/50 mt-0.5">{t('profile.avatarHint')}</p>
+          <p data-profile-hint="" className="text-[10px] text-muted-foreground/50 mt-0.5">
+            {t('profile.avatarHint')}
+          </p>
         </div>
       </div>
 
@@ -294,6 +302,7 @@ export function UserProfileCard({
         placeholder={t('profile.bioPlaceholder')}
         maxLength={200}
         rows={3}
+        data-profile-bio=""
         className="mt-3 resize-none bg-background/50 min-h-[80px]"
       />
     </Card>
