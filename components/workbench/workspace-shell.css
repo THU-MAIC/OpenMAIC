@@ -555,12 +555,25 @@
   }
 }
 
+/* While the split plays, a column's content holds its final width, clipped,
+   so nothing rewraps or relays out frame by frame (see `WorkspaceChatPane`). */
+.ws-pane[data-ws-freeze] {
+  overflow: hidden;
+}
+
+.ws-pane[data-ws-freeze] > * {
+  width: var(--ws-pane-freeze);
+  min-width: var(--ws-pane-freeze);
+  max-width: none;
+  flex-shrink: 0;
+}
+
 .ws-pane-enter {
-  animation: ws-pane-in 420ms cubic-bezier(0.22, 1, 0.36, 1) 60ms both;
+  animation: ws-pane-in 400ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .ws-pane-enter.ws-classroom-fullscreen {
-  animation: ws-full-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: ws-full-in 400ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .ws-d1 {
@@ -2025,6 +2038,35 @@
   padding: 6px 10px;
 }
 
+/* The account menu's positioned box is a transparent shell (pointer events
+   pass through its spacer) around the visible panel. */
+.ws-account-menu-shell {
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+.ws-account-menu-shell > * {
+  pointer-events: auto;
+}
+
+.ws-account-menu-shell > .ws-profile-spacer {
+  flex-shrink: 0;
+  pointer-events: none;
+  transition: height 400ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* The identity row folds while the editor opens, on the same curve. */
+.ws-profile-row {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 400ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ws-profile-row[data-folded] {
+  grid-template-rows: 0fr;
+}
+
 /* The profile editor opens at the top of the account menu: the panel grows
    upward from its anchor as the editor's row track goes from 0 to its height,
    and folds back the same way. */
@@ -2033,8 +2075,8 @@
   grid-template-rows: 0fr;
   opacity: 0;
   transition:
-    grid-template-rows 280ms cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 200ms ease;
+    grid-template-rows 400ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 400ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .ws-profile-expand[data-open] {
@@ -2062,7 +2104,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ws-profile-expand {
+  .ws-profile-expand,
+  .ws-profile-row,
+  .ws-account-menu-shell > .ws-profile-spacer {
     transition: none;
   }
 }
