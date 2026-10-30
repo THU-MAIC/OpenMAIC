@@ -2525,8 +2525,6 @@
     },
     "fullscreen": {
       "expand": "Vollbild",
-      "leave": "Kurs verlassen",
-      "leaveHint": "Diesen Kurs schließen und zum Arbeitsbereich zurückkehren",
       "collapse": "Vollbild beenden (Esc)"
     }
   },

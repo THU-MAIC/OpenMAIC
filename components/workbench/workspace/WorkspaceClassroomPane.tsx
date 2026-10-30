@@ -23,7 +23,7 @@
  * course, at either size, is a perfectly legitimate thing to do with one.
  */
 
-import { ArrowLeft, Eye, Maximize, Minimize2 } from 'lucide-react';
+import { Eye, Maximize, Minimize2 } from 'lucide-react';
 import { memo, useEffect, useLayoutEffect, useState } from 'react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
@@ -238,21 +238,6 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
           data-testid="workbench-fullscreen-header"
           className="ws-full-head flex shrink-0 items-center gap-3 pl-4 pr-3"
         >
-          {/* Leave THIS course: its tab closes and the workspace comes back
-              around whatever is left — the conversation, the other tabs. */}
-          <button
-            type="button"
-            data-testid="workbench-leave-course"
-            onClick={() => {
-              setFullscreen(false);
-              browser.onCloseCourse(courseId);
-            }}
-            title={t('workspace.fullscreen.leaveHint')}
-            className="ws-full-leave"
-          >
-            <ArrowLeft className="size-4" aria-hidden="true" />
-            <span>{t('workspace.fullscreen.leave')}</span>
-          </button>
           <div className="min-w-0 flex-1">
             <div className="ws-full-crumb truncate">
               {courseName}

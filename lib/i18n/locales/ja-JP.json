@@ -2525,8 +2525,6 @@
     },
     "fullscreen": {
       "expand": "全画面",
-      "leave": "コースを閉じる",
-      "leaveHint": "このコースを閉じてワークスペースに戻る",
       "collapse": "全画面を終了（Esc）"
     }
   },

@@ -206,15 +206,18 @@ describe('classroom tab modes', () => {
 describe('the full-screen classroom', () => {
   const q = (id: string) => document.querySelector<HTMLButtonElement>(`[data-testid="${id}"]`);
 
-  it('keeps a header: leave on the left, Learn | Edit and collapse on the right', async () => {
+  it('keeps a header: the title on the left, Learn | Edit and collapse on the right', async () => {
     await render({ fullscreen: true });
     expect(q('workbench-fullscreen-header')).not.toBeNull();
     expect(q('workbench-editor-header')).toBeNull();
-    expect(q('workbench-leave-course')).not.toBeNull();
+    // No way out but collapsing: the course's tab closes from the tab strip.
+    expect(q('workbench-leave-course')).toBeNull();
     expect(q('workbench-mode-learning')).not.toBeNull();
     expect(q('workbench-exit-fullscreen')).not.toBeNull();
     // The collapse sits where the split view's maximize sits: the last control.
     const header = q('workbench-fullscreen-header')!;
+    // The title block leads, where the leave button used to be.
+    expect(header.firstElementChild?.querySelector('.ws-full-crumb')).not.toBeNull();
     expect(header.lastElementChild?.getAttribute('data-testid')).toBe('workbench-exit-fullscreen');
   });
 
@@ -251,12 +254,5 @@ describe('the full-screen classroom', () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true })),
     );
     expect(setPlaybackOn).not.toHaveBeenCalled();
-  });
-
-  it('leaves this course: closes its tab and returns to the workspace', async () => {
-    await render({ fullscreen: true });
-    await act(async () => q('workbench-leave-course')!.click());
-    expect(setPlaybackOn).toHaveBeenCalledWith(false);
-    expect(onCloseCourse).toHaveBeenCalledWith('stage-1');
   });
 });

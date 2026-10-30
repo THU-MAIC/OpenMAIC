@@ -2510,8 +2510,6 @@
     },
     "fullscreen": {
       "expand": "全螢幕",
-      "leave": "離開課程",
-      "leaveHint": "關閉這門課，回到工作台",
       "collapse": "結束全螢幕（Esc）"
     }
   },

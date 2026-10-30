@@ -2525,8 +2525,6 @@
     },
     "fullscreen": {
       "expand": "Toàn màn hình",
-      "leave": "Rời khóa học",
-      "leaveHint": "Đóng khóa học này và quay lại không gian làm việc",
       "collapse": "Thoát toàn màn hình (Esc)"
     }
   },

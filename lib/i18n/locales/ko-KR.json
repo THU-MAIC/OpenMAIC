@@ -2525,8 +2525,6 @@
     },
     "fullscreen": {
       "expand": "전체 화면",
-      "leave": "코스 닫기",
-      "leaveHint": "이 코스를 닫고 작업 공간으로 돌아가기",
       "collapse": "전체 화면 종료 (Esc)"
     }
   },

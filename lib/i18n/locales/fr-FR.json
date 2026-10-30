@@ -2525,8 +2525,6 @@
     },
     "fullscreen": {
       "expand": "Plein écran",
-      "leave": "Quitter le cours",
-      "leaveHint": "Fermer ce cours et revenir à l’espace de travail",
       "collapse": "Quitter le plein écran (Échap)"
     }
   },

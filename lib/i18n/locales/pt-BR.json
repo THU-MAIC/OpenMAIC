@@ -2525,8 +2525,6 @@
     },
     "fullscreen": {
       "expand": "Tela cheia",
-      "leave": "Sair do curso",
-      "leaveHint": "Fechar este curso e voltar ao espaço de trabalho",
       "collapse": "Sair da tela cheia (Esc)"
     }
   },

@@ -2525,8 +2525,6 @@
     },
     "fullscreen": {
       "expand": "全屏",
-      "leave": "离开课程",
-      "leaveHint": "关闭这门课，回到工作台",
       "collapse": "退出全屏（Esc）"
     }
   },

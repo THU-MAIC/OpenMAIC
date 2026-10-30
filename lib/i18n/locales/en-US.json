@@ -2525,8 +2525,6 @@
     },
     "fullscreen": {
       "expand": "Full screen",
-      "leave": "Leave course",
-      "leaveHint": "Close this course and return to the workspace",
       "collapse": "Exit full screen (Esc)"
     }
   },
