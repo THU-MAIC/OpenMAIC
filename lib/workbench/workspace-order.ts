@@ -1,18 +1,16 @@
 /**
- * Manual ordering for the workspace navigation tree.
+ * Manual ordering for the workspace rail's chat list.
  *
- * Courses and agent sessions are both drag-reorderable in the rail. Neither has
- * a server-side order field — `live_folders.order` orders the FOLDERS, not the
- * courses inside them, and the agent session list has no order column at all —
- * so a custom order is a per-browser view preference, persisted in
- * `localStorage` beside the rail's width and the panes' collapse flags. It is
+ * Agent sessions are drag-reorderable in the rail. The session list has no
+ * server-side order column, so a custom order is a per-browser view
+ * preference, persisted in `localStorage` beside the rail's width and the panes' collapse flags. It is
  * NOT synced across devices and NOT partitioned per account, exactly like those
  * neighbours; a server field is the follow-up, not something to fake here.
  *
  * Everything in this file is pure. The rules that matter:
  *
  *  - an id the stored order has never seen sorts FIRST, in the incoming list's
- *    own order — the list arrives newest-first, so a course created after the
+ *    own order — the list arrives newest-first, so a chat created after the
  *    last drag lands at the top where the user will look for it, instead of
  *    silently at the bottom;
  *  - an id the stored order still holds but the list no longer has is dropped;
@@ -21,8 +19,7 @@
  *    worst a corrupt entry can do is give the shipped order back.
  */
 
-/** localStorage keys. Same `openmaic:workspace:` namespace as the rail width. */
-export const COURSE_ORDER_STORAGE_KEY = 'openmaic:workspace:course-order';
+/** localStorage key. Same `openmaic:workspace:` namespace as the rail width. */
 export const SESSION_ORDER_STORAGE_KEY = 'openmaic:workspace:session-order';
 
 /** Where a dragged row is being dropped, relative to the row under the pointer. */

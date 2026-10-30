@@ -353,69 +353,12 @@
   transition: opacity 160ms var(--ws-ease);
 }
 
-/* ── Course rows vs. chat rows ───────────────────────────────────────────
-   Both populations are compact, single-line lists. Course entries retain the
-   stronger 13px artifact name and put their page count at the far edge; chat
-   entries stay lighter and put time/status there. The surrounding tree vs.
-   stream structure supplies the remaining distinction without spending a
-   second line per course. */
-
-.ws-course {
-  min-height: var(--ws-tree-row-h);
-}
-
-/* The darkest, heaviest text in the rail body — at REST, not on hover. This is
-   the thing the user came to the rail to find; making it wait for a pointer is
-   what made the whole column read as grey. */
-.ws-course-name {
-  font-size: 13px;
-  font-weight: 550;
-  line-height: 1.25;
-  letter-spacing: -0.006em;
-  color: var(--ws-ink);
-}
-
-/* A course a generation run is still producing: read-only until the run
-   completes, so its row is quieter than an openable one and states the run's
-   progress where the page count goes. Not a link to nowhere — the pointer
-   says so. */
-.ws-course-generating .ws-course-name {
-  color: var(--ws-ink-mute);
-}
-
-.ws-course-generating .ws-row-meta {
-  color: var(--ws-accent);
-  min-width: 0;
-}
-
 .ws-row[aria-disabled='true'] {
   cursor: default;
 }
 
-.ws-row-run-icon {
-  flex-shrink: 0;
-  width: 12px;
-  height: 12px;
-  margin-left: 4px;
-  color: var(--ws-accent);
-}
-
-.ws-row-run-icon-paused,
-.ws-course-generating:has(.ws-row-run-icon-paused) .ws-row-meta {
-  color: #d97706; /* amber-600, the home card's paused tone */
-}
-
 .ws-meta-sep {
   color: var(--ws-ink-faint);
-}
-
-/* A folder heads its group: same ink as the courses under it, a shade heavier,
-   so the hierarchy reads without a second label style. */
-.ws-folder-name {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: -0.004em;
-  color: var(--ws-ink);
 }
 
 /* Chats: one step back from the courses, in weight and in ink. Deliberately
@@ -480,26 +423,6 @@
 
 .ws-skeleton {
   background-color: var(--ws-tint-strong);
-}
-
-/* ── Status dots ─────────────────────────────────────────────────────────
-   Same emerald/rose/neutral the v2 shell used; a running session gets a
-   small spinner instead of the old breathing halo — live states spin, static
-   states stay put. Every session row reserves the SAME slot for its mark, so
-   the 12px spinner and the 6px dot hold identical layout width and the names
-   in the list line up column-to-column whichever state a row is in. */
-.ws-status-slot {
-  /* A TRAILING mark now, beside the timestamp — not a leading one. A chat's
-     status is metadata like its time, and putting it at the head of the row was
-     what made every chat name start a slot right of every course name. The box
-     stays fixed so the 12px spinner and the 6px dot hold identical width and a
-     running row does not shift its neighbours. */
-  width: 16px;
-  height: 16px;
-  margin-left: 6px;
-  flex-shrink: 0;
-  display: grid;
-  place-items: center;
 }
 
 .ws-dot {
@@ -739,102 +662,6 @@
     drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
 }
 
-/* ── The tab switch ──────────────────────────────────────────────────────
-   Chat | courses, over one body — a SEGMENTED CONTROL of two equal halves.
-
-   It used to be an underline strip sized to its labels and parked at the left,
-   because a filled segment "reads as a mode" while tabs read as views. Two
-   lists that take turns owning the whole body ARE a mode, and at rail width
-   the underline was the quietest mark in a column of louder ones: the selected
-   tab took a 2px hairline while every row below it could take a filled pill.
-   So the switch spends the width it has — one tinted track, two equal halves,
-   the selected half lifted onto a solid ground with a hairline and a contact
-   shadow. Same materials as the compose button above it (surface + line +
-   `lift-sm`), one notch of the accent kept for the selected count, so the
-   strip is louder without introducing a colour the rail does not already own.
-
-   The track is `mx-3`, flush with the compose button and the findrow, so the
-   three stack as one control column.
-
-   Equal halves cost the wider label its last characters — that was the whole
-   objection to them — and the fix is TYPE, not width (see `.ws-navtab-label`
-   below), which buys back roughly a third of the label's box. */
-.ws-navtabs {
-  height: 34px;
-  padding: 3px;
-  gap: 3px;
-  border-radius: 10px;
-  background-color: var(--ws-tint);
-  box-shadow: inset 0 0 0 1px var(--ws-line-soft);
-}
-
-/* Two halves, always: `flex: 1 1 0` (not `auto`) so the wider label cannot
-   claim more of the track than the narrower one, and `min-width: 0` so it
-   truncates inside its own half instead of pushing the track open. */
-.ws-navtab {
-  position: relative;
-  flex: 1 1 0;
-  min-width: 0;
-  height: 100%;
-  padding: 0 8px;
-  border-radius: 7px;
-  color: var(--ws-ink-mute);
-  transition:
-    color 160ms var(--ws-ease),
-    background-color 160ms var(--ws-ease),
-    box-shadow 160ms var(--ws-ease);
-}
-
-/* The unselected half stays quiet — it is the other view, not a second
-   destination competing with the one you are reading. */
-.ws-navtab:hover:not([aria-selected='true']) {
-  color: var(--ws-ink-soft);
-  background-color: var(--ws-tint);
-}
-
-.ws-navtab:focus-visible {
-  outline: none;
-  color: var(--ws-ink);
-  box-shadow:
-    0 0 0 1px var(--ws-accent-thread),
-    0 0 0 3px var(--ws-accent-wash);
-}
-
-/* The selected half. A solid ground rather than a mark drawn under the label:
-   at 200px a 2px underline is the quietest mark in a column of louder ones. */
-.ws-navtab[aria-selected='true'] {
-  color: var(--ws-ink);
-  background-color: rgba(255, 255, 255, 0.92);
-  box-shadow:
-    inset 0 0 0 1px var(--ws-line-soft),
-    var(--ws-lift-sm);
-}
-
-/* Dark inverts which way "raised" points: a chip that is DARKER than its track
-   reads as a hole, so the selected half goes up the white ramp instead, and
-   drops the cast shadow (a shadow on slate-900 is noise, not lift). */
-.dark .ws-navtab[aria-selected='true'] {
-  background-color: rgba(255, 255, 255, 0.12);
-  box-shadow: inset 0 0 0 1px var(--ws-line);
-}
-
-.ws-navtab[aria-selected='true'] .ws-navtab-label {
-  font-weight: 600;
-}
-
-/* Sentence case at 11px, no tracking — NOT the rail's 10px uppercase section
-   label. That label was built for a full-width heading with the whole rail to
-   spread over; inside half of a 200px track, 0.145em of tracking on seven
-   uppercase characters is the difference between "Courses" and "COU…".
-   It stays a label by size and by ink, not by case. */
-.ws-navtab-label {
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1;
-  letter-spacing: 0.005em;
-  color: inherit;
-}
-
 /* ── Find, under the tabs ────────────────────────────────────────────────
    The prototype's findrow, copied in form and density: one always-visible
    icon+input row heading the tab content, filtering whichever list the
@@ -874,33 +701,6 @@
 
 .ws-find-input::placeholder {
   color: var(--ws-ink-mute);
-}
-
-/* The header row's icon button — the new-folder button on the courses tab. The
-   find input's own height, so the two read as one control group. */
-.ws-find-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  color: var(--ws-ink-mute);
-  transition:
-    background-color 160ms var(--ws-ease),
-    color 160ms var(--ws-ease);
-}
-
-.ws-find-icon:hover {
-  background-color: var(--ws-tint);
-  color: var(--ws-ink);
-}
-
-.ws-find-icon:focus-visible {
-  outline: none;
-  color: var(--ws-ink);
-  box-shadow: 0 0 0 1px var(--ws-accent-thread);
 }
 
 /* Folder creation and renaming are one row in the tree, with the input starting
@@ -981,11 +781,6 @@
   line-height: 14px;
 }
 
-/* Folder glyphs: present, never loud. */
-.ws-glyph {
-  color: var(--ws-ink-mute);
-}
-
 /* ── The quiet scrollbar ──────────────────────────────────────────────────
    Every scroll area of the workspace (the page canvases, the rail's lists, the
    menus) gets a thin scrollbar on a transparent track whose thumb stays out of
@@ -1049,42 +844,9 @@
   background: transparent;
 }
 
-/* The leading glyph slot — only on rows that carry a glyph (a folder, a folder
-   being created). Courses, chats and pager rows have no leading element at all,
-   so their names begin at the row's own `px-2`: the panel edge, which is where
-   the eye already is. A folder's name sits one glyph further in, and that offset
-   IS the hierarchy — it is not a misalignment to be padded away on every other
-   row. */
-.ws-tree-lead {
-  display: grid;
-  place-items: center;
-  flex: 0 0 var(--ws-tree-lead);
-  width: var(--ws-tree-lead);
-  margin-right: var(--ws-tree-lead-gap);
-  color: var(--ws-ink-mute);
-}
-
 /* Every row in the tree, folders and courses alike. */
 .ws-tree-row {
   height: var(--ws-tree-row-h);
-}
-
-/* Nested rows sit ONE step in, and the step is a margin — nothing else. There
-   used to be a guide line here (a `border-left`, plus the 6px of padding that
-   held it off the names), which is exactly the kind of vertical rule this tree
-   does not use: depth is one modest inset under the folder row that owns it. */
-.ws-nest {
-  margin-left: var(--ws-tree-indent);
-}
-
-/* The tree's top level holds two kinds of row: folders, and the courses that
-   are in no folder. The loose run takes no indent — an inset would put it at a
-   folder member's depth and read as membership in the folder above it — so the
-   only thing marking the change of kind is space, and enough of it to read as a
-   break rather than a nudge. Padding, not a margin: this div is a child of a
-   `space-y-px` list, whose own margin rule outranks a single class. */
-.ws-loose {
-  padding-top: 10px;
 }
 
 /* Show-more / collapse — a plain line of quiet text belonging to the list it
@@ -1254,8 +1016,7 @@
    and easing a value that already tracks the cursor only adds lag. */
 @media (prefers-reduced-motion: reduce) {
   .ws-row-wrap,
-  .ws-row-trailing,
-  .ws-navtab::after {
+  .ws-row-trailing {
     transition: none;
   }
 }
@@ -2113,28 +1874,6 @@
   color: var(--ws-accent);
 }
 
-/* The chats | courses switch, as the demo's segmented track. */
-.ws-root .ws-navtabs {
-  padding: 3px;
-  border-radius: 10px;
-  background: #efeff4;
-  border: 0;
-  box-shadow: none;
-}
-
-.dark .ws-root .ws-navtabs {
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.ws-root .ws-navtab {
-  height: 26px;
-  border-radius: 8px;
-}
-
-.ws-root .ws-navtab .ws-navtab-label {
-  font-size: 12.5px;
-}
-
 /* ── Account block ── */
 .ws-rail-foot {
   box-shadow: inset 0 1px 0 0 var(--ws-line-soft);
@@ -2471,6 +2210,58 @@
 .ws-course-card {
   display: block;
   min-width: 0;
+}
+
+/* A card's ⋯ on My courses: over the thumbnail's (or the folder card's)
+   top-right corner, shown on hover, on keyboard focus, and while its menu is
+   open. A sibling of the card button, never inside it. */
+.ws-card-more {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  opacity: 0;
+  transition: opacity 160ms var(--ws-ease);
+}
+
+.ws-card-more-folder {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.ws-card-wrap:hover .ws-card-more,
+.ws-card-more:focus-within,
+.ws-card-more:has([data-state='open']) {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  .ws-card-more {
+    opacity: 1;
+  }
+}
+
+.ws-card-more-btn {
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ws-ink-soft, var(--ws-ink));
+  box-shadow: 0 1px 3px rgba(25, 25, 60, 0.14);
+}
+
+.ws-card-more-btn:hover {
+  background: #fff;
+  color: var(--ws-ink);
+}
+
+.dark .ws-card-more-btn {
+  background: rgba(30, 30, 40, 0.85);
+}
+
+/* A card's name while it is being renamed: the rename row's input, framed like
+   the find field. */
+.ws-card-rename {
+  min-height: 34px;
+  border-radius: 10px;
+  border: 1px solid var(--ws-line);
+  background: var(--ws-surface);
 }
 
 .ws-course-card[aria-disabled='true'] {

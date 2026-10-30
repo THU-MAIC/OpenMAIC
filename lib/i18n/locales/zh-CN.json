@@ -2395,7 +2395,6 @@
     "heroSubtitle": "说出你的想法，把它变成一段可以亲历的学习旅程",
     "newSession": "新建对话",
     "sections": {
-      "courses": "课程",
       "sessions": "对话"
     },
     "coursesEmpty": "还没有课程",
@@ -2451,7 +2450,6 @@
     "coursePausedDesc": "有一页生成失败。请在课堂中重试，生成完成后课程会在这里打开。",
     "viewGenerationProgress": "查看生成进度",
     "openToRetry": "前往重试",
-    "courseGeneratingRowHint": "生成完成后可打开",
     "noCourseTitle": "还没有打开课堂",
     "noCourseHint": "点对话里的课堂链接打开，或在左侧列表里选一节；对话会一直在这儿",
     "resizeChatAria": "拖动调整对话栏宽度",
@@ -2473,7 +2471,6 @@
     "confirmDelete": "确认删除",
     "deleting": "删除中…",
     "deleteFailed": "删除失败，请重试",
-    "tabsAria": "对话与课程",
     "courseTabsAria": "右栏标签页",
     "courseTabClose": "关闭标签页《{{name}}》",
     "courseTabRunning": "生成中",

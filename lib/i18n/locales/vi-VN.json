@@ -2395,7 +2395,6 @@
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
     "newSession": "New chat",
     "sections": {
-      "courses": "Courses",
       "sessions": "Chats"
     },
     "coursesEmpty": "No courses yet",
@@ -2451,7 +2450,6 @@
     "coursePausedDesc": "Một trang tạo không thành công. Hãy thử lại trong lớp học; khóa học sẽ mở ở đây khi tạo xong.",
     "viewGenerationProgress": "Xem tiến độ tạo",
     "openToRetry": "Mở để thử lại",
-    "courseGeneratingRowHint": "Có thể mở khi tạo xong",
     "noCourseTitle": "No course open",
     "noCourseHint": "Open one from a course link in the conversation, or pick one from the list on the left — the conversation stays put",
     "resizeChatAria": "Drag to resize the conversation pane",
@@ -2473,7 +2471,6 @@
     "confirmDelete": "Xác nhận xóa",
     "deleting": "Đang xóa…",
     "deleteFailed": "Không thể xóa. Vui lòng thử lại.",
-    "tabsAria": "Chats and courses",
     "courseTabsAria": "Open courses",
     "courseTabClose": "Close tab: {{name}}",
     "courseTabRunning": "Generating",

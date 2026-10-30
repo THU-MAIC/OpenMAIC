@@ -2395,7 +2395,6 @@
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
     "newSession": "New chat",
     "sections": {
-      "courses": "Courses",
       "sessions": "Chats"
     },
     "coursesEmpty": "No courses yet",
@@ -2451,7 +2450,6 @@
     "coursePausedDesc": "生成に失敗したページがあります。教室で再試行してください。生成が完了するとここで開きます。",
     "viewGenerationProgress": "生成の進捗を見る",
     "openToRetry": "開いて再試行",
-    "courseGeneratingRowHint": "生成完了後に開けます",
     "noCourseTitle": "No course open",
     "noCourseHint": "会話内のコースリンクから開くか、左のリストから選んでください。会話はそのまま残ります",
     "resizeChatAria": "Drag to resize the conversation pane",
@@ -2473,7 +2471,6 @@
     "confirmDelete": "削除を確認",
     "deleting": "削除中…",
     "deleteFailed": "削除できませんでした。もう一度お試しください。",
-    "tabsAria": "Chats and courses",
     "courseTabsAria": "開いているコース",
     "courseTabClose": "タブを閉じる：{{name}}",
     "courseTabRunning": "生成中",

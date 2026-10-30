@@ -3,8 +3,8 @@
 /**
  * The three restored entry points, pinned:
  *
- *  1. the workspace rail's courses tab carries an upload control next to the
- *     name filter (it imports a course package from disk into the list);
+ *  1. the My courses page carries an upload control next to its name filter
+ *     (it imports a course package from disk into the library);
  *  2. the Pro launch composer (and the chat composer) carries an attach
  *     control in the glyph row, rendered exactly when the material upload
  *     path can serve a request;
@@ -65,44 +65,32 @@ async function flushProbe() {
   });
 }
 
-describe('entry point 1 — the courses-tab upload control', () => {
-  const rail = read('components/workbench/workspace/WorkspaceRail.tsx');
+describe('entry point 1 — the course upload control on My courses', () => {
+  const page = read('components/workbench/workspace/WorkspaceCoursesPage.tsx');
   const shell = read('components/workbench/workspace/WorkspaceShell.tsx');
   const discovery = read('lib/hooks/use-home-discovery.tsx');
 
-  it('renders the upload button beside the course name filter', () => {
-    // The find row lives under the tab strip and above the tabpanel.
-    const findRow = rail.slice(
-      rail.indexOf('pro-nav-search-input'),
-      rail.indexOf('role="tabpanel"'),
-    );
-    expect(findRow).toContain('data-testid="pro-nav-import-course"');
-    expect(findRow).toContain('<Upload className="size-4"');
+  it('renders the upload button in the page header, beside the name filter', () => {
+    const header = page.slice(page.indexOf('<header'), page.indexOf('</header>'));
+    expect(header).toContain('data-testid="workspace-courses-search"');
+    expect(header).toContain('data-testid="workspace-courses-import"');
+    expect(header).toContain('<Upload className="size-4"');
   });
 
   it('opens the same course-package import the home surface uses, disabled while one runs', () => {
-    const button = rail.slice(
-      rail.indexOf('data-testid="pro-nav-import-course"'),
-      rail.indexOf('data-testid="pro-nav-new-folder"'),
+    const button = page.slice(
+      page.indexOf('data-testid="workspace-courses-import"'),
+      page.indexOf('data-testid="workspace-courses-new-folder"'),
     );
-    // Clearing the filter first means the imported course is not hidden by a
-    // stale query, then the discovery hook's import trigger fires.
-    expect(button).toContain("coursesSection.setQuery('')");
-    expect(button).toContain('courses.triggerImport()');
+    expect(button).toContain('courses.triggerImport');
     expect(button).toContain('disabled={courses.importing}');
-    expect(button).toContain("aria-label={t('import.classroom')}");
-    expect(button).toContain("title={t('import.classroom')}");
+    expect(button).toContain("t('import.classroom')");
   });
 
-  it('is gated by the same condition as its action: the courses tab', () => {
-    const coursesTab = rail.indexOf("{tab === 'courses' ? (");
-    const upload = rail.indexOf('pro-nav-import-course');
-    const conditionalEnd = rail.indexOf(') : null}', upload);
-    expect(coursesTab).toBeGreaterThan(-1);
-    expect(upload).toBeGreaterThan(coursesTab);
-    // The button sits inside the conditional (before its close), so a session-
-    // tab view never shows an import affordance.
-    expect(upload).toBeLessThan(conditionalEnd);
+  it('is no longer in the rail, which lists chats only', () => {
+    const rail = read('components/workbench/workspace/WorkspaceRail.tsx');
+    expect(rail).not.toContain('pro-nav-import-course');
+    expect(rail).not.toContain('role="tablist"');
   });
 
   it('mounts the hidden file input once, from the discovery hook the button calls', () => {

@@ -60,6 +60,7 @@ const mocks = vi.hoisted(() => ({
   } | null,
   courses: null as Record<string, unknown> | null,
   railProps: null as Record<string, unknown> | null,
+  coursesPageProps: null as Record<string, unknown> | null,
   railCollapsedSeen: [] as unknown[],
   homeProps: null as Record<string, unknown> | null,
   libraryProps: null as Record<string, unknown> | null,
@@ -243,6 +244,20 @@ vi.mock('@/components/workbench/workspace/PaneTab', () => ({ PaneTab: () => null
 // The preview tab renders the real course tab strip, which keeps its active
 // tab in view; jsdom has no layout to scroll.
 Element.prototype.scrollIntoView ??= function scrollIntoView() {};
+// My courses carries the library's course actions (open, delete, the
+// generating cards); the page itself is tested on its own.
+vi.mock('@/components/workbench/workspace/WorkspaceCoursesPage', () => ({
+  WorkspaceCoursesPage: (props: Record<string, unknown>) => {
+    mocks.coursesPageProps = props;
+    return createElement('main', { 'data-testid': 'workspace-courses-page' });
+  },
+}));
+/** Open My courses from the rail and hand back the page's props. */
+const openMyCourses = async (): Promise<Record<string, unknown>> => {
+  await act(async () => (mocks.railProps!.onOpenView as (view: string) => void)('courses'));
+  expect(mocks.coursesPageProps).not.toBeNull();
+  return mocks.coursesPageProps!;
+};
 vi.mock('@/components/workbench/workspace/MaterialLibraryPage', () => ({
   MaterialLibraryPage: (props: Record<string, unknown>) => {
     mocks.libraryProps = props;
@@ -322,6 +337,7 @@ beforeEach(() => {
   mocks.classroomMounts = 0;
   mocks.chatPaneProps = null;
   mocks.railProps = null;
+  mocks.coursesPageProps = null;
   mocks.railCollapsedSeen = [];
   mocks.homeProps = null;
   mocks.libraryProps = null;
@@ -914,7 +930,8 @@ describe('a course a generation run is still producing', () => {
     await render();
     await act(async () => {});
 
-    const courseRuns = mocks.railProps?.courseRuns as ReadonlyMap<string, unknown>;
+    const page = await openMyCourses();
+    const courseRuns = page.courseRuns as ReadonlyMap<string, unknown>;
     expect([...courseRuns.keys()]).toEqual(['stage-2']);
     expect(courseRuns.get('stage-2')).toBe(run);
     const navigation = mocks.chatPaneProps?.navigation as {
@@ -923,11 +940,9 @@ describe('a course a generation run is still producing', () => {
     };
     expect(navigation.courseOptions.map((option) => option.id)).toEqual(['stage-1']);
     expect([...navigation.generatingCourseIds]).toEqual(['stage-2']);
-    // The run with no course yet is the rail's placeholder row — and, having
+    // The run with no course yet is My courses' placeholder card — and, having
     // no course, never a mention candidate.
-    expect((mocks.railProps?.pendingRuns as Array<{ id: string }>).map((r) => r.id)).toEqual([
-      'run-2',
-    ]);
+    expect((page.pendingRuns as Array<{ id: string }>).map((r) => r.id)).toEqual(['run-2']);
     expect(navigation.courseOptions.some((option) => option.id === 'run-2')).toBe(false);
   });
 });
@@ -950,8 +965,7 @@ describe('opening a course from a card in the conversation', () => {
     await render();
     await act(async () => {});
 
-    const onOpenCourse = mocks.railProps?.onOpenCourse as (id: string) => void;
-    await act(async () => onOpenCourse('stage-2'));
+    await act(async () => navigation().openCourse('stage-2'));
 
     expect(localStorage.getItem(CLASSROOM_COLLAPSED_STORAGE_KEY)).toBe('0');
     expect(localStorage.getItem(CHAT_COLLAPSED_STORAGE_KEY)).toBe('1');
@@ -1394,7 +1408,7 @@ describe('the knowledge base page', () => {
     expect(libraryShown()).toBe(true);
   });
 
-  it('stays open when the rail deletes the conversation or the course under it', async () => {
+  it('stays open when the rail deletes the conversation under it', async () => {
     mocks.searchParams = new URLSearchParams('session=session-1&course=stage-1');
     mocks.store.sessionId = 'session-1';
     mocks.sessionRows = [{ id: 'session-1', stageId: 'stage-1', updatedAt: 9 }];
@@ -1406,11 +1420,6 @@ describe('the knowledge base page', () => {
 
     await act(async () => (mocks.railProps?.onSessionDeleted as (id: string) => void)('session-1'));
     expect(mocks.routerReplace).toHaveBeenLastCalledWith('/workspace?course=stage-1&view=library');
-
-    await act(async () => {
-      await (mocks.railProps?.onDeleteCourse as (id: string) => Promise<void>)('stage-1');
-    });
-    expect(mocks.routerReplace).toHaveBeenLastCalledWith('/workspace?view=library');
     expect(mocks.routerPush).toHaveBeenCalledTimes(1);
     expect(libraryShown()).toBe(true);
   });
@@ -1501,9 +1510,18 @@ describe('the knowledge base page', () => {
       await travel('back');
       expect(window.location.search).toBe('?session=session-1');
       expect(libraryShown()).toBe(false);
-      expect(mocks.railProps?.activeCourseId).toBeNull();
       expect(
-        (mocks.railProps?.courses as { classrooms: { id: string }[] }).classrooms.map((c) => c.id),
+        (
+          mocks.chatPaneProps?.navigation as {
+            activeCourseId: string | null;
+            courseOptions: ReadonlyArray<{ id: string }>;
+          }
+        ).activeCourseId,
+      ).toBeNull();
+      expect(
+        (
+          mocks.chatPaneProps?.navigation as { courseOptions: ReadonlyArray<{ id: string }> }
+        ).courseOptions.map((c) => c.id),
       ).toContain('stage-1');
       expect(
         (mocks.courses as { deleteCourse: ReturnType<typeof vi.fn> }).deleteCourse,
@@ -2914,11 +2932,14 @@ describe('the knowledge base page', () => {
       deleteCourse: vi.fn(() => pending.promise),
     };
     await render();
+    const page = await openMyCourses();
     let completed!: Promise<void>;
     await act(async () => {
-      completed = (mocks.railProps?.onDeleteCourse as (id: string) => Promise<void>)('stage-1');
+      completed = (page.onDeleteCourse as (id: string) => Promise<void>)('stage-1');
     });
-    await act(async () => (mocks.railProps?.onOpenCourse as (id: string) => void)('stage-2'));
+    await act(async () =>
+      (mocks.coursesPageProps!.onOpenCourse as (id: string) => void)('stage-2'),
+    );
     await openLibrary();
     const navigations = mocks.routerPush.mock.calls.length + mocks.routerReplace.mock.calls.length;
 
@@ -3085,9 +3106,10 @@ describe('the knowledge base page', () => {
       );
       mocks.searchParams = new URLSearchParams('course=stage-1');
       await render();
+      const page = await openMyCourses();
       let deleted!: Promise<void>;
       await act(async () => {
-        deleted = (mocks.railProps?.onDeleteCourse as (id: string) => Promise<void>)('stage-2');
+        deleted = (page.onDeleteCourse as (id: string) => Promise<void>)('stage-2');
       });
       await openLibrary();
       await chatWith();

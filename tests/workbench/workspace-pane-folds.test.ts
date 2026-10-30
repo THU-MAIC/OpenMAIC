@@ -323,11 +323,11 @@ describe('fold placement', () => {
     expect(mini).toContain('<RailDestinationButton key={item.id} item={item} mini />');
     expect(mini).toContain('<WorkspaceAccountBlock mini');
 
-    // The chat list's glyph expands, and says so on top of naming its tab.
+    // The chat list's glyph expands, and says so on top of naming the list.
     const button = /data-testid="pro-nav-mini-sessions"[\s\S]*?\/>\s*<\/button>/.exec(mini);
     expect(button).not.toBeNull();
     expect(button![0]).toContain('expandLabel(');
     expect(button![0]).toContain('aria-expanded={false}');
-    expect(button![0]).toContain('expandInto(');
+    expect(button![0]).toContain('onClick={onToggleCollapsed}');
   });
 });

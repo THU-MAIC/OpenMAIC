@@ -2395,7 +2395,6 @@
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
     "newSession": "New chat",
     "sections": {
-      "courses": "Courses",
       "sessions": "Chats"
     },
     "coursesEmpty": "No courses yet",
@@ -2451,7 +2450,6 @@
     "coursePausedDesc": "Одну страницу не удалось создать. Повторите попытку в классе; курс откроется здесь, когда создание завершится.",
     "viewGenerationProgress": "Посмотреть ход создания",
     "openToRetry": "Открыть и повторить",
-    "courseGeneratingRowHint": "Доступно после завершения создания",
     "noCourseTitle": "No course open",
     "noCourseHint": "Откройте по ссылке на курс в переписке или выберите курс в списке слева — переписка останется на месте",
     "resizeChatAria": "Drag to resize the conversation pane",
@@ -2473,7 +2471,6 @@
     "confirmDelete": "Подтвердить удаление",
     "deleting": "Удаление…",
     "deleteFailed": "Не удалось удалить. Повторите попытку.",
-    "tabsAria": "Chats and courses",
     "courseTabsAria": "Открытые курсы",
     "courseTabClose": "Закрыть вкладку: {{name}}",
     "courseTabRunning": "Генерируется",

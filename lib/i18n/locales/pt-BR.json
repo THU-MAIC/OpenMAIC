@@ -2395,7 +2395,6 @@
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
     "newSession": "New chat",
     "sections": {
-      "courses": "Courses",
       "sessions": "Chats"
     },
     "coursesEmpty": "No courses yet",
@@ -2451,7 +2450,6 @@
     "coursePausedDesc": "Uma página não pôde ser gerada. Tente novamente na sala de aula; o curso abrirá aqui quando a geração terminar.",
     "viewGenerationProgress": "Ver o progresso",
     "openToRetry": "Abrir para tentar novamente",
-    "courseGeneratingRowHint": "Disponível quando a geração terminar",
     "noCourseTitle": "No course open",
     "noCourseHint": "Abra por um link de curso na conversa, ou escolha um na lista à esquerda — a conversa fica onde está",
     "resizeChatAria": "Drag to resize the conversation pane",
@@ -2473,7 +2471,6 @@
     "confirmDelete": "Confirmar exclusão",
     "deleting": "Excluindo…",
     "deleteFailed": "Não foi possível excluir. Tente novamente.",
-    "tabsAria": "Chats and courses",
     "courseTabsAria": "Cursos abertos",
     "courseTabClose": "Fechar aba: {{name}}",
     "courseTabRunning": "Gerando",

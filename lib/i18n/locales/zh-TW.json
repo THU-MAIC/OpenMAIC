@@ -2380,7 +2380,6 @@
     "heroSubtitle": "說出你的想法，把它變成一段可以親歷的學習旅程",
     "newSession": "新增對話",
     "sections": {
-      "courses": "課程",
       "sessions": "對話"
     },
     "coursesEmpty": "還沒有課程",
@@ -2436,7 +2435,6 @@
     "coursePausedDesc": "有一頁生成失敗。請在課堂中重試，生成完成後課程會在這裡開啟。",
     "viewGenerationProgress": "查看生成進度",
     "openToRetry": "前往重試",
-    "courseGeneratingRowHint": "生成完成後可開啟",
     "noCourseTitle": "還沒有開啟課堂",
     "noCourseHint": "點對話裡的課堂連結開啟，或在左側清單裡選一節；對話會一直在這兒",
     "resizeChatAria": "拖曳調整對話欄寬度",
@@ -2458,7 +2456,6 @@
     "confirmDelete": "確認刪除",
     "deleting": "刪除中…",
     "deleteFailed": "刪除失敗，請重試",
-    "tabsAria": "對話與課程",
     "courseTabsAria": "右欄標籤頁",
     "courseTabClose": "關閉標籤頁《{{name}}》",
     "courseTabRunning": "產生中",

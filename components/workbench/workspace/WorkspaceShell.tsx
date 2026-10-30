@@ -856,7 +856,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   );
 
   /**
-   * A course was deleted from the rail. `deleteCourse` already removed the
+   * A course was deleted from My courses. `deleteCourse` already removed the
    * row optimistically and rolls the list back (plus toast) on failure; the
    * shell's part is the classroom pane: on success the course's tab closes,
    * handing the pane to its neighbour, or shutting the pane entirely when it
@@ -1647,26 +1647,19 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
 
       {classroomOpen && playbackOn ? null : (
         <WorkspaceRail
-          courses={courses}
-          courseRuns={courseRuns}
-          pendingRuns={pendingRuns}
-          onDiscardRun={discardPendingRun}
           sessions={visibleSessions}
           sessionState={sessionState}
           onReloadSessions={() => {
             loadSessions(true);
           }}
-          activeCourseId={panes.courseId}
           activeSessionId={panes.sessionId}
           collapsed={navCollapsed}
           onToggleCollapsed={toggleRail}
-          onOpenCourse={openCourse}
           onOpenSession={openSession}
           onNewSession={startNewConversation}
           onGoHome={goHome}
           onSessionDeleted={handleSessionDeleted}
           onRenameSession={renameSession}
-          onDeleteCourse={handleCourseDeleted}
           activeView={render.view}
           onOpenView={openView}
           resizeHandle={
@@ -1801,6 +1794,8 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           courseRuns={courseRuns}
           pendingRuns={pendingRuns}
           onOpenCourse={openCourse}
+          onDeleteCourse={handleCourseDeleted}
+          onDiscardRun={discardPendingRun}
         />
       ) : render.view ? (
         <main

@@ -82,32 +82,17 @@ async function renderRail({
   const root = createRoot(container);
   roots.push(root);
   const rail = createElement(WorkspaceRail, {
-    courses: {
-      classrooms: [],
-      state: 'ready',
-      reload: vi.fn(),
-      importInput: null,
-      discoveryContent: null,
-      folders: [],
-      openNewFolder: vi.fn(),
-      moveCourse: vi.fn(),
-      createAndMove: () => () => {},
-      deleteCourse: vi.fn(async () => true),
-    } as never,
     sessions: [],
     sessionState: 'ready',
     onReloadSessions: vi.fn(),
-    activeCourseId: null,
     activeSessionId: null,
     collapsed,
     onToggleCollapsed,
-    onOpenCourse: vi.fn(),
     onOpenSession: vi.fn(),
     onNewSession: vi.fn(),
     onGoHome: vi.fn(),
     onSessionDeleted: vi.fn(),
     onRenameSession: vi.fn(async () => null),
-    onDeleteCourse: vi.fn(),
     activeView,
     onOpenView,
     resizeHandle: null as ReactNode,
@@ -150,9 +135,7 @@ describe('the rail’s destinations', () => {
   it('focuses the list filter from Search', async () => {
     await renderRail();
     await act(async () => byTestId('pro-nav-search')!.click());
-    expect(document.activeElement?.getAttribute('data-testid')).toBe(
-      'pro-nav-search-input-sessions',
-    );
+    expect(document.activeElement?.getAttribute('data-testid')).toBe('pro-nav-search-input');
   });
 
   it('unfolds the folded strip before focusing the filter', async () => {

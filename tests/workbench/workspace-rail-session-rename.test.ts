@@ -6,7 +6,7 @@
  * The chat rows used to be the one list whose overflow menu had no rename item — a chat was
  * whatever its first message said, forever. This pins the row-level half of the
  * rename: the entry exists, the row turns into an input in place (the same
- * `InlineNameRow` a course row uses), and — unlike a course or a folder — an
+ * `InlineNameRow` the My courses cards use), and — unlike a course or a folder — an
  * EMPTY box is a legal answer, because clearing the name is how a chat goes
  * back to being titled by its first message.
  */
@@ -14,7 +14,6 @@
 import { act, createElement, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { RAIL_TAB_STORAGE_KEY } from '@/lib/workbench/workspace-rail-tab';
 
 vi.mock('@/lib/hooks/use-i18n', () => ({
   useI18n: () => ({ t: (key: string) => key }),
@@ -27,11 +26,6 @@ vi.mock('@/components/workbench/workspace/WorkspaceAccount', () => ({
 }));
 vi.mock('@/lib/workbench/workspace-actions', () => ({
   deleteWorkspaceSession: vi.fn(async () => ({ deleted: true })),
-}));
-vi.mock('@/lib/utils/stage-storage', () => ({
-  createFolder: vi.fn(),
-  renameFolder: vi.fn(async () => undefined),
-  deleteFolder: vi.fn(async () => undefined),
 }));
 
 const roots: Root[] = [];
@@ -72,12 +66,8 @@ afterEach(() => {
 const NAMED = 'session-named';
 const UNNAMED = 'session-unnamed';
 
-async function renderRail(
-  courseFolder?: 'top' | 'folder',
-): Promise<{ onRenameSession: ReturnType<typeof vi.fn>; moveCourse: ReturnType<typeof vi.fn> }> {
+async function renderRail(): Promise<{ onRenameSession: ReturnType<typeof vi.fn> }> {
   const onRenameSession = vi.fn(async () => null);
-  const moveCourse = vi.fn();
-  window.localStorage.setItem(RAIL_TAB_STORAGE_KEY, courseFolder ? 'courses' : 'sessions');
 
   const container = document.createElement('div');
   container.className = 'ws-root';
@@ -87,28 +77,6 @@ async function renderRail(
   await act(async () => {
     root.render(
       createElement(WorkspaceRail, {
-        courses: {
-          classrooms: courseFolder
-            ? [
-                {
-                  id: 'drag-course',
-                  name: 'Course',
-                  createdAt: 1,
-                  updatedAt: 1,
-                  ...(courseFolder === 'folder' ? { folderId: 'folder-1' } : {}),
-                },
-              ]
-            : [],
-          state: 'ready',
-          reload: vi.fn(),
-          importInput: null,
-          discoveryContent: null,
-          folders: courseFolder === 'folder' ? [{ id: 'folder-1', name: 'Folder' }] : [],
-          openNewFolder: vi.fn(),
-          moveCourse,
-          createAndMove: () => () => {},
-          deleteCourse: vi.fn(async () => true),
-        } as never,
         sessions: [
           {
             id: NAMED,
@@ -130,24 +98,21 @@ async function renderRail(
         ],
         sessionState: 'ready',
         onReloadSessions: vi.fn(),
-        activeCourseId: null,
         activeSessionId: null,
         collapsed: false,
         onToggleCollapsed: vi.fn(),
-        onOpenCourse: vi.fn(),
         onOpenSession: vi.fn(),
         onNewSession: vi.fn(),
         onGoHome: vi.fn(),
         onSessionDeleted: vi.fn(),
         onRenameSession,
-        onDeleteCourse: vi.fn(),
         activeView: null,
         onOpenView: vi.fn(),
         resizeHandle: null as ReactNode,
       }),
     );
   });
-  return { onRenameSession, moveCourse };
+  return { onRenameSession };
 }
 
 const byTestId = (id: string) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
@@ -247,58 +212,22 @@ describe('renaming a chat from its row', () => {
   });
 }, 30_000);
 
-describe('course rail move-out destination', () => {
-  it.each(['top', 'folder'] as const)(
-    'only arms for a foldered course and handles release after the activating move: %s',
-    async (location) => {
-      const { moveCourse } = await renderRail(location);
-      if (location === 'folder') {
-        await act(async () => byTestId('pro-nav-folder-folder-1')!.click());
-      }
-      const row = byTestId('pro-nav-course-drag-course')!;
-      expect(row).not.toBeNull();
-      const ground = byTestId('pro-nav-tree-ground-drop')!;
-      expect(ground.getAttribute('data-armed')).toBe('false');
-      expect(ground.getAttribute('data-ws-drop-folder')).toBe('');
-      // Hit testing is controlled; the production pointer gesture and row rendering are real.
-      const original = document.elementFromPoint;
-      document.elementFromPoint = () => ground;
-      try {
-        await act(async () => {
-          row.dispatchEvent(
-            new PointerEvent('pointerdown', { bubbles: true, button: 0, clientX: 0, clientY: 0 }),
-          );
-          window.dispatchEvent(
-            new PointerEvent('pointermove', { bubbles: true, clientX: 20, clientY: 20 }),
-          );
-        });
-        expect(ground.getAttribute('data-armed')).toBe(location === 'folder' ? 'true' : 'false');
-        expect(ground.getAttribute('data-ws-drop-folder')).toBe('');
-        expect(ground.textContent).toBe(location === 'folder' ? 'workspace.dropToUnfile' : '');
-        // Cancellation still clears the first gesture without moving anything.
-        await act(async () => window.dispatchEvent(new PointerEvent('pointercancel')));
-        expect(ground.getAttribute('data-armed')).toBe('false');
-        expect(moveCourse).not.toHaveBeenCalled();
-        await act(async () => {
-          row.dispatchEvent(
-            new PointerEvent('pointerdown', { bubbles: true, button: 0, clientX: 0, clientY: 0 }),
-          );
-          window.dispatchEvent(new PointerEvent('pointermove', { clientX: 20, clientY: 20 }));
-        });
-        // Release immediately: no second move may repair the activation hit test.
-        await act(async () =>
-          window.dispatchEvent(new PointerEvent('pointerup', { clientX: 20, clientY: 20 })),
-        );
-        if (location === 'folder') {
-          expect(moveCourse).toHaveBeenCalledExactlyOnceWith('drag-course', undefined);
-        } else {
-          expect(moveCourse).not.toHaveBeenCalled();
-        }
+describe('the rail is a chat list', () => {
+  it('has no Chats | Courses switch and no course rows', async () => {
+    await renderRail();
+    await vi.waitFor(() => expect(byTestId(`pro-nav-session-${NAMED}`)).not.toBeNull());
+    expect(document.querySelector('[role="tablist"]')).toBeNull();
+    expect(document.querySelector('[data-testid^="pro-nav-course-"]')).toBeNull();
+    expect(document.querySelector('[data-testid^="pro-nav-folder-"]')).toBeNull();
+    expect(byTestId('pro-nav-import-course')).toBeNull();
+  });
 
-        expect(ground.getAttribute('data-armed')).toBe('false');
-      } finally {
-        document.elementFromPoint = original;
-      }
-    },
-  );
-});
+  it('shows a chat row as its title and relative time, with no status mark', async () => {
+    await renderRail();
+    await vi.waitFor(() => expect(byTestId(`pro-nav-session-${NAMED}`)).not.toBeNull());
+    const row = byTestId(`pro-nav-session-${NAMED}`)!;
+    expect(row.textContent).toContain('期末复习课');
+    expect(row.querySelector('.ws-dot, .ws-spin-live, .ws-status-slot')).toBeNull();
+    expect(row.textContent).not.toContain('workspace.sessionStatus');
+  });
+}, 30_000);
