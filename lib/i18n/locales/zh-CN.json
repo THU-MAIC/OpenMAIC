@@ -2498,6 +2498,7 @@
     "account": {
       "signIn": "登录",
       "menu": "账号与设置",
+      "profileDone": "完成",
       "language": "语言",
       "about": "关于 OpenMAIC",
       "aboutBody": "开源的多智能体互动课堂平台：输入任何主题，AI 老师和同学陪你一起学。基于 MIT 许可证发布。",

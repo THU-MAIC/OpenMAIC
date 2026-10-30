@@ -2498,6 +2498,7 @@
     "account": {
       "signIn": "Se connecter",
       "menu": "Compte et paramètres",
+      "profileDone": "Terminé",
       "language": "Langue",
       "about": "À propos d’OpenMAIC",
       "aboutBody": "Une plateforme open source qui transforme n’importe quel sujet en classe interactive, avec des enseignants et des camarades IA. Publiée sous licence MIT.",
