@@ -6,7 +6,6 @@
  * recovery. A client connection is never part of the execution lifetime.
  */
 import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
-import { serverMediaConnection } from '@/lib/server/model-config/media';
 import { backgroundWorkspaceId } from '@/lib/server/model-config/runtime';
 import { randomUUID } from 'node:crypto';
 import { Session, type AgentEvent, type AgentMessage } from '@earendil-works/pi-agent-core';
@@ -37,35 +36,21 @@ import {
 } from './course-tools';
 import {
   buildCurriculumTools,
-  CURRICULUM_ALLOWLIST,
   CURRICULUM_TOOLS_PROMPT,
   probeStageAccess,
 } from './curriculum-tools';
-import {
-  buildFetchUrlTool,
-  resolveWebFetchCapability,
-  fetchPromptBlock,
-  untrustedContentPolicyPromptBlock,
-} from './fetch-url';
+import { buildFetchUrlTool } from './fetch-url';
+import { assembleCapabilityRuntime, resolveRunnerCapabilities } from './capability-tools';
 import { assembleRunnerTools, buildRunnerCoursePrompt } from './runner-contract';
-import { buildMaterialTools, MATERIAL_TOOL_NAMES } from './material-tools';
+import { buildMaterialTools } from './material-tools';
 import { defaultLocale, supportedLocaleOf, type Locale } from '@/lib/i18n/types';
 import { startExtractionWatcher, type ExtractionWatcher } from './extraction-watcher';
-import {
-  buildMaterialLibraryTools,
-  MATERIAL_LIBRARY_TOOL_NAMES,
-  type MaterialLibraryChange,
-} from './material-library-tools';
-import { buildRosterTools, ROSTER_TOOL_NAMES, ROSTER_TOOLS_PROMPT } from './roster-tools';
-import {
-  buildVoiceCloneTools,
-  hasConfiguredVoiceRegistrationCapability,
-  VOICE_CLONE_TOOL_NAMES,
-  voiceCloneToolsPrompt,
-} from './voice-clone-tools';
+import { buildMaterialLibraryTools, type MaterialLibraryChange } from './material-library-tools';
+import { buildRosterTools, ROSTER_TOOLS_PROMPT } from './roster-tools';
+import { buildVoiceCloneTools, voiceCloneToolsPrompt } from './voice-clone-tools';
 import type { RegisteredVoiceInfo } from '@/lib/audio/voice-catalog';
-import { buildSkillEditTools, SKILL_EDIT_TOOL_NAMES } from './skill-edit-tools';
-import { buildWebSearchTool, resolveWebSearchCapability, searchPromptBlock } from './web-search';
+import { buildSkillEditTools } from './skill-edit-tools';
+import { buildWebSearchTool } from './web-search';
 import {
   buildSkillPreload,
   preloadConstraintTarget,
@@ -1423,21 +1408,30 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         emit(LIFECYCLE.userQuestion, question);
       },
     });
-    // web_search is capability-registered: the tool exists in the toolset
-    // exactly when this deployment has a working web-search backend. An
-    // unconfigured deployment gets no tool, so the model never sees a dead one.
+    // Unified capability-dependent tool registration: capabilities are
+    // resolved once per run and assembled through the shared assembler.
     // Every result URL is registered with this session's durable URL trust
     // gate before the tool result is returned (reference semantics).
     const workspaceId = await backgroundWorkspaceId(meta.ownerId);
-    const search = await resolveWebSearchCapability(workspaceId);
-    const fetchConnection = await resolveWebFetchCapability(workspaceId);
-    const webSearchTools = search
-      ? [
-          buildWebSearchTool(search, (urls) =>
-            registerSessionUrls(id, urls, 'web_search').then(() => undefined),
-          ),
-        ]
-      : [];
+    const capabilities = await resolveRunnerCapabilities({
+      ownerId: meta.ownerId,
+      workspaceId,
+    });
+    const webSearchTools =
+      typeof buildWebSearchTool === 'function'
+        ? [
+            buildWebSearchTool(capabilities.connections.web_search, (urls) =>
+              registerSessionUrls(id, urls, 'web_search').then(() => undefined),
+            ),
+          ]
+        : [];
+    const fetchUrlTools = [
+      buildFetchUrlTool({
+        sessionId: id,
+        ownerId: meta.ownerId,
+        connection: capabilities.connections.web_fetch ?? undefined,
+      }),
+    ];
     // The owner-bound document store: ONE store per run, bound to the claimed
     // session's owner, shared by every stage tool. The owner id is
     // deliberately absent from every model-visible parameter — the model cannot
@@ -1546,14 +1540,13 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     // (course-tools.ts).
     // The tts slot for this run's owner: narration, the voice catalog and
     // voice registration all use its provider.
-    const ttsConnection = await serverMediaConnection('tts', meta.ownerId);
+    const ttsConnection = capabilities.connections.tts;
     const dslTools = buildDslCourseToolset({
       locale: () => runLocale,
       store: ownerScopedStore,
       backgroundStore: mediaJobStore,
-      // The video slot for this run's owner; generate_video exists only when
-      // it resolves to a usable provider.
-      videoConnection: await serverMediaConnection('video', meta.ownerId),
+      imageConnection: capabilities.connections.image,
+      videoConnection: capabilities.connections.video,
       stageAccess,
       onCheckpoint: (info) => emit(LIFECYCLE.checkpoint, info),
       sessionId: id,
@@ -1644,7 +1637,6 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       registeredVoices: sessionRegisteredVoices,
       ttsConnection,
     });
-    const voiceRegistrationEnabled = hasConfiguredVoiceRegistrationCapability(ttsConnection);
     const personalHistoryTools = buildPersonalHistoryTools(
       meta.ownerId,
       createPersonalHistorySource({
@@ -1654,62 +1646,55 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       id,
       courseGenerations,
     );
-    const tools = withCourseGenerationNotice(
-      assembleRunnerTools(
-        [askUserTool],
-        webSearchTools,
-        // ownerId is captured from the claimed durable session. It is deliberately
-        // absent from the model-visible parameters, so the model cannot forge a
-        // target owner.
-        [buildCreateSkillTool(meta.ownerId)],
-        // read_skill / patch_skill close the loop create_skill opens. Registered
-        // unconditionally rather than gated on "the user already has Skills": a
-        // Skill created earlier IN THIS RUN is not in `installedSkills` (loaded
-        // once at start), and a tool that appears only on the next run would be a
-        // capability the model cannot discover when it needs it.
-        buildSkillEditTools(meta.ownerId, currentOwner, (skill) =>
-          skillAvailableForMessage(skill, skillMessageSeq),
-        ),
-        // The native `read` tool is restricted to installed skill resources; it is
-        // present exactly when skills exist. Discovery and invocation stay pi-native.
-        skillReadTool ? [skillReadTool] : [],
-        ...(fetchConnection
-          ? [
-              [
-                buildFetchUrlTool({
-                  sessionId: id,
-                  ownerId: meta.ownerId,
-                  connection: fetchConnection,
-                }),
-              ],
-            ]
-          : []),
-        dslTools,
-        curriculumTools,
-        scenePreviewTools,
-        materialTools,
-        materialLibraryTools,
-        rosterTools,
-        voiceCloneTools,
-        personalHistoryTools,
+
+    const candidateTools = assembleRunnerTools(
+      [askUserTool],
+      webSearchTools,
+      // ownerId is captured from the claimed durable session. It is deliberately
+      // absent from the model-visible parameters, so the model cannot forge a
+      // target owner.
+      [buildCreateSkillTool(meta.ownerId)],
+      // read_skill / patch_skill close the loop create_skill opens. Registered
+      // unconditionally rather than gated on "the user already has Skills": a
+      // Skill created earlier IN THIS RUN is not in `installedSkills` (loaded
+      // once at start), and a tool that appears only on the next run would be a
+      // capability the model cannot discover when it needs it.
+      buildSkillEditTools(meta.ownerId, currentOwner, (skill) =>
+        skillAvailableForMessage(skill, skillMessageSeq),
       ),
-      courseGenerations,
+      // The native `read` tool is restricted to installed skill resources; it is
+      // present exactly when skills exist. Discovery and invocation stay pi-native.
+      skillReadTool ? [skillReadTool] : [],
+      fetchUrlTools,
+      dslTools,
+      curriculumTools,
+      scenePreviewTools,
+      materialTools,
+      materialLibraryTools,
+      rosterTools,
+      voiceCloneTools,
+      personalHistoryTools,
     );
-    const askUserLatch = createAskUserTerminateLatch();
-    let toolCalls = 0;
-    const systemPromptForTurn = () =>
-      buildRunnerCoursePrompt({
+
+    const runtime = assembleCapabilityRuntime({
+      capabilities,
+      candidateTools,
+      baseAllowedToolNames: [...PERSONAL_HISTORY_TOOL_NAMES],
+      basePromptBlocks: () => ({
         availableSkills: availableSkillsPromptBlock(currentSkills()),
         curriculum: CURRICULUM_TOOLS_PROMPT,
-        ...(search ? { search: searchPromptBlock() } : {}),
-        ...(fetchConnection ? { fetch: fetchPromptBlock() } : {}),
-        untrustedContent: untrustedContentPolicyPromptBlock(!!fetchConnection),
         // Always: a conversation with nothing attached can still use the
         // knowledge base.
         materials: materialsPromptBlock(materials),
         roster: ROSTER_TOOLS_PROMPT,
-        voice: voiceCloneToolsPrompt(voiceRegistrationEnabled),
-      });
+        voice: voiceCloneToolsPrompt(),
+      }),
+      wrapTools: (rawTools) => withCourseGenerationNotice(rawTools, courseGenerations),
+    });
+
+    const askUserLatch = createAskUserTerminateLatch();
+    let toolCalls = 0;
+    const systemPromptForTurn = () => buildRunnerCoursePrompt(runtime.systemPromptBlocks);
     const agent = buildAgent({
       // Pi snapshots the system prompt at run start. Rebuild discovery at the
       // provider boundary too, after a fresh steered user frame is consumed.
@@ -1717,26 +1702,8 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         streamFn(model, { ...context, systemPrompt: systemPromptForTurn() }, options),
       systemPrompt: systemPromptForTurn(),
       model: driver.piModel,
-      tools,
-      allowedToolNames: new Set([
-        ...MINIMAL_AGENT_TOOL_NAMES,
-        ...(search ? ['web_search'] : []),
-        'create_skill',
-        ...SKILL_EDIT_TOOL_NAMES,
-        ...(skillReadTool ? ['read'] : []),
-        ...MATERIAL_TOOL_NAMES,
-        ...MATERIAL_LIBRARY_TOOL_NAMES,
-        ...(fetchConnection ? ['fetch_url'] : []),
-        ...dslTools.map((tool) => tool.name),
-        ...scenePreviewTools.map((tool) => tool.name),
-        ...CURRICULUM_ALLOWLIST,
-        ...ROSTER_TOOL_NAMES,
-        ...PERSONAL_HISTORY_TOOL_NAMES,
-        // register_voice is registered only when the deployment has a voice
-        // registration backend, so the allowlist follows: clip_audio is always
-        // available, register_voice only with a backend.
-        ...(voiceRegistrationEnabled ? VOICE_CLONE_TOOL_NAMES : ['clip_audio']),
-      ]),
+      tools: runtime.tools,
+      allowedToolNames: runtime.allowedToolNames,
       ...(plan.kind === 'start' ? {} : { history: modelMessages }),
       afterToolCall: (toolContext) => {
         toolCalls += 1;
