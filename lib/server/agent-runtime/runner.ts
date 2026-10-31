@@ -83,7 +83,7 @@ import {
   type LoadedSkill,
 } from './skills';
 import { registerSessionUrls } from './session-urls';
-import { buildScenePreviewTools } from './scene-preview';
+import { buildScenePreviewTools, resolveScenePreviewRenderService } from './scene-preview';
 import {
   AgentSessionEntryStorage,
   loadSessionEntryHistory,
@@ -1575,11 +1575,12 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     // owner probe (reference semantics) — it is not wrapped by the generic
     // stage authorization of the course toolset, and it refuses a foreign
     // stage with its own message shape. It contributes nothing when the
-    // render service is not configured.
+    // render service is not configured or fails its health probe.
     const scenePreviewTools = buildScenePreviewTools({
       store: ownerScopedStore,
       stageAccess,
       ownerId: meta.ownerId,
+      renderService: await resolveScenePreviewRenderService(),
     });
     // Session-scoped material tools are wired from durable session identity
     // on every start and resume (the tools are always registered alongside

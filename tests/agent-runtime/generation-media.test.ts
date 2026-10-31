@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSessionMaterial } from '@openmaic/storage';
 
 const mocks = vi.hoisted(() => ({
@@ -10,7 +10,10 @@ vi.mock('@/lib/server/classroom-media-bytes', () => ({
 }));
 
 import { buildMaterialMediaTool } from '@/lib/server/agent-runtime/material-media';
-import { buildScenePreviewTools } from '@/lib/server/agent-runtime/scene-preview';
+import {
+  buildScenePreviewTools,
+  resolveScenePreviewRenderService,
+} from '@/lib/server/agent-runtime/scene-preview';
 import { toModelMessages } from '@/lib/agent/runtime/stream-fn';
 import type { CourseStore } from '@/lib/server/agent-runtime/course-tools';
 
@@ -268,5 +271,48 @@ describe('generation media tools', () => {
         renderService: { error: 'not_configured' },
       }),
     ).toEqual([]);
+  });
+
+  it('omits preview when the render service is configured but unreachable', () => {
+    expect(
+      buildScenePreviewTools({
+        store: {} as CourseStore,
+        stageAccess: async () => ({ kind: 'owned' as const }),
+        ownerId: 'user:u1',
+        renderService: { error: 'unreachable' },
+      }),
+    ).toEqual([]);
+  });
+
+  describe('resolveScenePreviewRenderService', () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it('reports not_configured without probing when no URL is set', async () => {
+      vi.stubEnv('RENDER_SERVICE_URL', '');
+      const probe = vi.fn(async () => ({ enabled: true }));
+      await expect(resolveScenePreviewRenderService(probe)).resolves.toEqual({
+        error: 'not_configured',
+      });
+      expect(probe).not.toHaveBeenCalled();
+    });
+
+    it('reports unreachable when the URL is set but the health probe fails', async () => {
+      vi.stubEnv('RENDER_SERVICE_URL', 'http://render-service:9000');
+      const probe = vi.fn(async () => ({ enabled: false }));
+      await expect(resolveScenePreviewRenderService(probe)).resolves.toEqual({
+        error: 'unreachable',
+      });
+      expect(probe).toHaveBeenCalledOnce();
+    });
+
+    it('returns the URL when the health probe reports the service enabled', async () => {
+      vi.stubEnv('RENDER_SERVICE_URL', 'http://render-service:9000/');
+      const probe = vi.fn(async () => ({ enabled: true, accepting: false }));
+      await expect(resolveScenePreviewRenderService(probe)).resolves.toEqual({
+        url: 'http://render-service:9000',
+      });
+    });
   });
 });
