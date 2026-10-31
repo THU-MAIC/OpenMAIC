@@ -1861,6 +1861,160 @@ describe('the knowledge base page', () => {
       expect(tabs.activeCourseId).toBe('stage-1');
     });
 
+    it('accumulates tabs safely when multiple first-scene probes resolve in the same tick (#2070)', async () => {
+      const { createInitialSessionState, foldEvent } = await vi.importActual<
+        typeof import('@/lib/workbench/session-store')
+      >('@/lib/workbench/session-store');
+      let id = 0;
+      let folded: import('@/lib/workbench/session-store').WorkbenchFold =
+        createInitialSessionState();
+      const event = (type: string, data: unknown = {}) => {
+        folded = foldEvent(folded, { id: ++id, ts: id, attempt: 1, type, data });
+      };
+      event('session_start', { prompt: 'Make a two-unit series' });
+      for (const stageId of ['stage-1', 'stage-2']) {
+        event('tool_execution_start', {
+          toolCallId: `create-${stageId}`,
+          toolName: 'create_stage',
+          args: { title: stageId },
+        });
+        event('stage_link', { stageId });
+        event('tool_execution_end', {
+          toolCallId: `create-${stageId}`,
+          toolName: 'create_stage',
+          result: { content: [], details: { stageId, title: stageId } },
+        });
+      }
+      mocks.courses = {
+        ...mocks.courses!,
+        classrooms: [
+          { ...classroom('stage-1'), sceneCount: 0 },
+          { ...classroom('stage-2'), sceneCount: 0 },
+        ],
+      };
+      const attach = () =>
+        Object.assign(mocks.store, folded, {
+          sessionId: 'session-1',
+          status: 'running',
+          replaying: false,
+          replayedStageLinkCount: 2,
+        });
+      attach();
+
+      const ready = new Set<string>(['stage-1', 'stage-2']);
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        const stageId = url.includes('stage-2') ? 'stage-2' : 'stage-1';
+        return {
+          ok: true,
+          status: 200,
+          json: async () =>
+            url.includes('/manifest')
+              ? {
+                  rev: 1,
+                  scenes: ready.has(stageId) ? [{ id: `first-${stageId}`, order: 0, rev: 1 }] : [],
+                }
+              : { scenes: [{ id: `first-${stageId}`, stageId }] },
+        } as Response;
+      });
+
+      await render();
+      await render();
+
+      const tabs = mocks.classroomProps?.browser as {
+        tabs: readonly { id: string }[];
+        activeCourseId: string;
+      };
+      expect(tabs.tabs.map((tab) => tab.id)).toEqual(['stage-1', 'stage-2']);
+      expect(tabs.activeCourseId).toBe('stage-1');
+    });
+
+    it('preserves creation order and initial focus when stage-2 probe resolves before stage-1 (#2070)', async () => {
+      const { createInitialSessionState, foldEvent } = await vi.importActual<
+        typeof import('@/lib/workbench/session-store')
+      >('@/lib/workbench/session-store');
+      let id = 0;
+      let folded: import('@/lib/workbench/session-store').WorkbenchFold =
+        createInitialSessionState();
+      const event = (type: string, data: unknown = {}) => {
+        folded = foldEvent(folded, { id: ++id, ts: id, attempt: 1, type, data });
+      };
+      event('session_start', { prompt: 'Make a two-unit series' });
+      for (const stageId of ['stage-1', 'stage-2']) {
+        event('tool_execution_start', {
+          toolCallId: `create-${stageId}`,
+          toolName: 'create_stage',
+          args: { title: stageId },
+        });
+        event('stage_link', { stageId });
+        event('tool_execution_end', {
+          toolCallId: `create-${stageId}`,
+          toolName: 'create_stage',
+          result: { content: [], details: { stageId, title: stageId } },
+        });
+      }
+      mocks.courses = {
+        ...mocks.courses!,
+        classrooms: [
+          { ...classroom('stage-1'), sceneCount: 0 },
+          { ...classroom('stage-2'), sceneCount: 0 },
+        ],
+      };
+      const attach = () =>
+        Object.assign(mocks.store, folded, {
+          sessionId: 'session-1',
+          status: 'running',
+          replaying: false,
+          replayedStageLinkCount: 2,
+        });
+      attach();
+
+      let resolveStage1: (() => void) | null = null;
+      const stage1Gate = new Promise<void>((resolve) => {
+        resolveStage1 = resolve;
+      });
+
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        const stageId = url.includes('stage-2') ? 'stage-2' : 'stage-1';
+        if (stageId === 'stage-1') {
+          await stage1Gate;
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () =>
+            url.includes('/manifest')
+              ? {
+                  rev: 1,
+                  scenes: [{ id: `first-${stageId}`, order: 0, rev: 1 }],
+                }
+              : { scenes: [{ id: `first-${stageId}`, stageId }] },
+        } as Response;
+      });
+
+      await render();
+      await render();
+
+      const intermediateTabs = mocks.classroomProps?.browser as {
+        tabs: readonly { id: string }[];
+        activeCourseId: string;
+      };
+      expect(intermediateTabs.tabs.map((tab) => tab.id)).toEqual(['stage-2']);
+      expect(intermediateTabs.activeCourseId).toBe('stage-2');
+
+      resolveStage1!();
+      await render();
+      await render();
+
+      const tabs = mocks.classroomProps?.browser as {
+        tabs: readonly { id: string }[];
+        activeCourseId: string;
+      };
+      expect(tabs.tabs.map((tab) => tab.id)).toEqual(['stage-1', 'stage-2']);
+      expect(tabs.activeCourseId).toBe('stage-1');
+    });
+
     it('keeps a course created before a question with its request, and hands off after the answer', async () => {
       const { createInitialSessionState, foldEvent } = await vi.importActual<
         typeof import('@/lib/workbench/session-store')

@@ -96,6 +96,7 @@ import {
   withCourse,
   withLibrary,
   withSession,
+  type WorkspaceCourseTabs,
   type WorkspacePanes,
 } from '@/lib/workbench/workspace-panes';
 import { useWorkspacePaneNavigation } from '@/lib/workbench/use-workspace-pane-navigation';
@@ -938,6 +939,10 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const libraryRevision = useWorkbenchStore((s) => s.libraryRevision);
   // Course links in first-seen order — each stage opens at most once per session.
   const stageLinkStageIds = useWorkbenchStore((s) => s.stageLinkStageIds);
+  const stageLinkStageIdsRef = useRef(stageLinkStageIds);
+  useLayoutEffect(() => {
+    stageLinkStageIdsRef.current = stageLinkStageIds;
+  }, [stageLinkStageIds]);
   const attachedSessionReplaying = useWorkbenchStore((s) => s.replaying);
   const replayedStageLinkCount = useWorkbenchStore((s) => s.replayedStageLinkCount);
   // Serialize only provenance ids: streaming text changes must not restart the
@@ -1087,27 +1092,83 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   }
   /** The preview is the tab on screen: it is active, or there is no course tab to show. */
   const previewShowing = previewTabOpen && (previewFocus.active || !panes.courseId);
+  const previewHandedOffCourseIdRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (previewShowing) {
+      previewHandedOffCourseIdRef.current = null;
+    }
+  }, [previewShowing]);
+  useEffect(() => {
+    previewHandedOffCourseIdRef.current = null;
+  }, [attachedSessionId]);
   /**
-   * The conversation's first course replaces its preview tab. The preview is
-   * always the strip's last tab and a new course tab joins at the end, so the
-   * course lands where the preview was. It takes focus if the preview had it
-   * (or nothing else is open); a teacher on another course tab stays there.
+   * The conversation's course replaces its preview tab, inserted in
+   * `stage_link` creation order. The earliest-created course keeps initial
+   * preview focus regardless of which probe resolves first. A teacher on
+   * another course tab stays there.
    */
   const handOffPreview = useCallback(
     (courseId: string) => {
-      const opened = openCourseTabs(courseTabs, [courseId]);
-      const focus = previewShowing || !courseTabs.activeCourseId;
-      const next = focus
-        ? activateCourseTab(opened, courseId)
-        : activateCourseTab(opened, courseTabs.activeCourseId as string);
+      const current = courseTabsRef.current;
+      if (
+        current.courseIds.includes(courseId) ||
+        (current.closedCourseIds ?? []).includes(courseId)
+      ) {
+        return;
+      }
+      const stageLinks = stageLinkStageIdsRef.current;
+      const targetIndex = stageLinks.indexOf(courseId);
+      let nextCourseIds: readonly string[];
+      if (targetIndex >= 0) {
+        const insertBeforeIndex = current.courseIds.findIndex((id) => {
+          const idx = stageLinks.indexOf(id);
+          return idx > targetIndex;
+        });
+        if (insertBeforeIndex >= 0) {
+          nextCourseIds = [
+            ...current.courseIds.slice(0, insertBeforeIndex),
+            courseId,
+            ...current.courseIds.slice(insertBeforeIndex),
+          ];
+        } else {
+          nextCourseIds = [...current.courseIds, courseId];
+        }
+      } else {
+        nextCourseIds = [...current.courseIds, courseId];
+      }
+
+      const isInitialPreview =
+        previewHandedOffCourseIdRef.current === null && (previewShowing || !current.activeCourseId);
+      const activeCourseId = current.activeCourseId;
+      const handedOffCourseId = previewHandedOffCourseIdRef.current;
+      const handedOffIndex = handedOffCourseId ? stageLinks.indexOf(handedOffCourseId) : -1;
+      const isEarlierThanHandedOff =
+        handedOffCourseId !== null &&
+        activeCourseId === handedOffCourseId &&
+        targetIndex >= 0 &&
+        handedOffIndex >= 0 &&
+        targetIndex < handedOffIndex;
+
+      const focus = isInitialPreview || isEarlierThanHandedOff || !activeCourseId;
+      if (focus) {
+        previewHandedOffCourseIdRef.current = courseId;
+      }
+      const closedCourseIds = (current.closedCourseIds ?? []).filter((id) => id !== courseId);
+      const opened: WorkspaceCourseTabs = {
+        courseIds: nextCourseIds,
+        activeCourseId: current.activeCourseId,
+        ...(closedCourseIds.length > 0 ? { closedCourseIds } : {}),
+      };
+      const next = focus ? activateCourseTab(opened, courseId) : opened;
+      courseTabsRef.current = next;
       setCourseTabs(next);
       persistCourseTabs(next);
       if (focus) {
         collapse.expandClassroom();
-        navigateInBackground((current) => withCourse(current, courseId), 'push');
+        navigateInBackground((panesNow) => withCourse(panesNow, courseId), 'push');
       }
     },
-    [collapse, courseTabs, navigateInBackground, persistCourseTabs, previewShowing],
+    [collapse, navigateInBackground, persistCourseTabs, previewShowing],
   );
   // The readiness reads outlive a render; they hand off through the latest
   // handoff, and skip a course the user has reconciled meanwhile.
