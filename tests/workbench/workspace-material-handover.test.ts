@@ -895,7 +895,8 @@ describe('a request still on its way when the teacher switches conversation', ()
   async function sendInB() {
     await send();
     expect(sentToB()).toHaveLength(1);
-    expect(messageBodies.at(-1)!.body.text).toBe('Typing in B');
+    // The picked document is named in the sentence, where it was written.
+    expect(messageBodies.at(-1)!.body.text).toBe('Typing in B @b-notes.pdf');
     expect(messageBodies.at(-1)!.body.materialIds).toEqual(['B-doc']);
   }
 

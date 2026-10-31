@@ -31,6 +31,10 @@ export const wbStyles = {
     // drawn in tints of the bubble's own violet instead of the composer's tones.
     materialChip:
       'inline-flex max-w-[220px] items-center gap-1 rounded-[7px] border border-violet-300/60 bg-white/60 px-1.5 py-0.5 text-[11px] leading-4 text-slate-700 dark:border-violet-300/25 dark:bg-white/10 dark:text-slate-200',
+    // A course or material the message named with `@`, where it stood in the
+    // sentence: the composer's inline highlight, in the bubble's violet.
+    mention:
+      'rounded-[6px] bg-white/70 px-1 py-px font-medium text-violet-700 [box-decoration-break:clone] dark:bg-white/10 dark:text-violet-200',
     chipOrdinal:
       'grid size-[14px] shrink-0 place-items-center rounded-full bg-violet-200 font-mono text-[9px] font-semibold tabular-nums dark:bg-violet-400/30',
   },

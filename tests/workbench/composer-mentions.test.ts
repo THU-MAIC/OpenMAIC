@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   deleteMentionBefore,
+  expandMentions,
   insertMention,
   mentionLabel,
   mentionsInDraft,
@@ -10,8 +11,18 @@ import {
   type InlineMention,
 } from '@/lib/workbench/composer-mentions';
 
-const course: InlineMention = { label: '@Fractions', kind: 'course', id: 'stage-1' };
-const doc: InlineMention = { label: '@worksheet.pdf', kind: 'material', id: 'm-1' };
+const course: InlineMention = {
+  label: '@Fractions',
+  kind: 'course',
+  id: 'stage-1',
+  name: 'Fractions',
+};
+const doc: InlineMention = {
+  label: '@worksheet.pdf',
+  kind: 'material',
+  id: 'm-1',
+  name: 'worksheet.pdf',
+};
 
 describe('a mention label', () => {
   it('is the name after an @, shortened inside the token when long, numbered when taken', () => {
@@ -58,13 +69,27 @@ describe('writing and deleting a mention', () => {
   });
 });
 
-describe('the text that is sent', () => {
+describe('the words of a message', () => {
   it('leaves the mentions out and closes up around them, keeping the rest as typed', () => {
     expect(stripMentions('Compare @Fractions with @worksheet.pdf  please', [course, doc])).toBe(
       'Compare with  please',
     );
     expect(stripMentions('@Fractions ', [course])).toBe('');
     expect(stripMentions('Teach @fra', [course])).toBe('Teach @fra');
+  });
+});
+
+describe('the text that is sent', () => {
+  it('writes each mention out with the whole name', () => {
+    const long: InlineMention = {
+      label: '@浮力：为什么铁块沉底，轮船却…',
+      kind: 'course',
+      id: 'stage-2',
+      name: '浮力：为什么铁块沉底，轮船却浮着',
+    };
+    expect(expandMentions(`对比 ${long.label} 和 @worksheet.pdf 出讲义 `, [long, doc])).toBe(
+      '对比 @浮力：为什么铁块沉底，轮船却浮着 和 @worksheet.pdf 出讲义',
+    );
   });
 });
 

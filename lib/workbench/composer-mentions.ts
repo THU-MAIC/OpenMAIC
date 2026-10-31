@@ -22,6 +22,8 @@ export interface InlineMention {
   readonly kind: 'course' | 'material';
   /** The course's stage id, or the material's id. */
   readonly id: string;
+  /** The item's whole name (the label may shorten it). */
+  readonly name: string;
 }
 
 /** Characters of a name kept inside its token before it is shortened. */
@@ -107,6 +109,19 @@ export function stripMentions(draft: string, mentions: readonly InlineMention[])
       text = text.slice(0, start) + text.slice(end);
       at = text.indexOf(mention.label, start);
     }
+  }
+  return text.trim();
+}
+
+/**
+ * The text that is sent: each mention written out as `@` and the item's whole
+ * name, so the message reads as the teacher wrote it and its bubble can show
+ * the mention where it stood. The references themselves go as before.
+ */
+export function expandMentions(draft: string, mentions: readonly InlineMention[]): string {
+  let text = draft;
+  for (const mention of [...mentions].sort((a, b) => b.label.length - a.label.length)) {
+    text = text.split(mention.label).join(`@${mention.name}`);
   }
   return text.trim();
 }

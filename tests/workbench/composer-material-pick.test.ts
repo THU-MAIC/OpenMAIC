@@ -18,7 +18,21 @@ vi.mock('@/lib/workbench/agent-skills', () => ({
   useAgentSkills: () => ({ skills: [], loading: false, error: null, reload: async () => {} }),
   invalidateAgentSkills: async () => {},
 }));
-vi.mock('@/components/workbench/chat/chat-timeline', () => ({ ChatTimeline: () => null }));
+// The timeline's own rows are tested elsewhere; here only the user bubbles show.
+vi.mock('@/components/workbench/chat/chat-timeline', async () => {
+  const { createElement: h } = await import('react');
+  const { UserBubble } = await import('@/components/workbench/chat/user-bubble');
+  return {
+    ChatTimeline: ({ chat }: { chat: Array<{ key: string; kind: string; text: string }> }) =>
+      h(
+        'div',
+        null,
+        chat
+          .filter((node) => node.kind === 'user')
+          .map((node) => h(UserBubble, { ...(node as object as { text: string }), key: node.key })),
+      ),
+  };
+});
 vi.mock('@/components/workbench/chat/autoscroll', () => ({
   useWorkbenchAutoscroll: () => ({
     scrollRef: { current: null },
@@ -302,7 +316,7 @@ describe.each(['launch', 'follow'] as const)('an inline mention in the %s compos
     expect(sent?.body.materialIds ?? []).toEqual([]);
   });
 
-  it('sends the same text and references as a pill did', async () => {
+  it('sends the mention written out in the text, and the same references as a pill did', async () => {
     const container = await mount(mode);
     await type(container, 'Teach @doc');
     await wait(230);
@@ -320,7 +334,9 @@ describe.each(['launch', 'follow'] as const)('an inline mention in the %s compos
       mode === 'launch' ? post.url === '/api/agent/sessions' : post.url.endsWith('/messages'),
     );
     expect(sent?.body.materialIds).toEqual(['src-doc']);
-    expect(sent?.body[mode === 'launch' ? 'prompt' : 'text']).toBe('Teach to the class');
+    expect(sent?.body[mode === 'launch' ? 'prompt' : 'text']).toBe(
+      'Teach @document.pdf to the class',
+    );
   });
 });
 
@@ -451,7 +467,7 @@ describe('material picks while sending', () => {
       const target = { same: 'ses-follow', switch: 'ses-second', draft: 'ses-new' }[scenario];
       const second = posts.at(-1);
       expect(second?.url).toBe(`/api/agent/sessions/${target}/messages`);
-      expect(second?.body.text).toBe('Second message');
+      expect(second?.body.text).toBe('@next.pdf Second message');
       expect(second?.body.materialIds).toEqual(['src-next']);
     },
   );
@@ -499,5 +515,104 @@ describe('the @ menu', () => {
     expect(meta('m-done')).toBe('Unit 1 · workspace.knowledgeBase.status.searchable');
     expect(meta('m-running')).toBe('Unit 1 · workspace.knowledgeBase.status.parsing');
     expect(meta('m-failed')).toBe('Unit 1 · workspace.knowledgeBase.status.failed');
+  });
+});
+
+describe('a message that names a course with @', () => {
+  async function mentionCourse(container: HTMLElement, before: string) {
+    await type(container, before);
+    await wait(30);
+    const option = container.querySelector<HTMLButtonElement>(
+      '[data-testid="workbench-course-option-stage-1"]',
+    );
+    expect(option, 'the course in the @ menu').not.toBeNull();
+    await act(async () => option!.click());
+  }
+
+  it('is on screen the moment it is sent from a draft, and takes its course with it', async () => {
+    const originalFetch = globalThis.fetch;
+    let release!: (response: Response) => void;
+    const creating = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === 'POST' && url === '/api/agent/sessions') {
+          posts.push({ url, body: JSON.parse(String(init.body)) });
+          return creating;
+        }
+        return originalFetch(input, init);
+      }),
+    );
+    const container = await mount('new');
+    await mentionCourse(container, 'Explain @Class');
+    await type(container, 'gently');
+    const textarea = container.querySelector('textarea')!;
+    expect(textarea.value).toBe('Explain @Classroom gently');
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[data-testid="workbench-send"]')!.click(),
+    );
+
+    // Before the conversation even exists: the bubble, with the course where it
+    // stood, an empty composer, and no course left behind as a pill.
+    const mention = container.querySelector('[data-testid="user-bubble-mention"]');
+    expect(mention?.textContent).toBe('@Classroom');
+    expect(container.textContent).toContain('Explain');
+    expect(textarea.value).toBe('');
+    expect(container.querySelector('[data-testid="course-ref-pill"]')).toBeNull();
+    expect(container.querySelector('[data-testid="user-bubble-course-ref"]')).toBeNull();
+
+    await act(async () =>
+      release(
+        Response.json({ id: 'ses-new', stageId: 'stage-1', status: 'succeeded', prompt: '' }),
+      ),
+    );
+    await wait(20);
+    const message = posts.find((post) => post.url === '/api/agent/sessions/ses-new/messages');
+    expect(message?.body.text).toBe('Explain @Classroom gently');
+    expect(message?.body.courseRefs).toEqual([
+      { kind: 'course', stageId: 'stage-1', title: 'Classroom' },
+    ]);
+    expect(container.querySelector('[data-testid="course-ref-pill"]')).toBeNull();
+  });
+
+  it('keeps a course mention working in the next conversation when the course is there', async () => {
+    const container = await mount('follow');
+    await mentionCourse(container, 'Look at @Class');
+    await act(async () => {
+      useWorkbenchStore.getState().attach('ses-second', 'stage-1');
+      useWorkbenchStore.setState({ replaying: false, status: 'succeeded' });
+    });
+    await wait(10);
+    expect(container.querySelector('[data-pill="mention"]')?.textContent).toBe('@Classroom');
+    await type(container, 'please');
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[data-testid="workbench-send"]')!.click(),
+    );
+    const sent = posts.at(-1);
+    expect(sent?.url).toBe('/api/agent/sessions/ses-second/messages');
+    expect(sent?.body.courseRefs).toEqual([
+      { kind: 'course', stageId: 'stage-1', title: 'Classroom' },
+    ]);
+  });
+
+  it('turns a course mention to plain text when the next conversation cannot name it', async () => {
+    const container = await mount('follow');
+    await mentionCourse(container, 'Look at @Class');
+    // The course is no longer one this composer can name.
+    courseOptions.splice(0, courseOptions.length);
+    try {
+      await act(async () => {
+        useWorkbenchStore.getState().attach('ses-second', 'stage-1');
+        useWorkbenchStore.setState({ replaying: false, status: 'succeeded' });
+      });
+      await wait(10);
+      expect(container.querySelector('textarea')!.value).toBe('Look at @Classroom ');
+      expect(container.querySelector('[data-pill="mention"]')).toBeNull();
+    } finally {
+      courseOptions.push({ id: 'stage-1', name: 'Classroom' });
+    }
   });
 });

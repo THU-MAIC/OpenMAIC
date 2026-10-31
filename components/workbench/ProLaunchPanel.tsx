@@ -54,11 +54,14 @@ import { resolveComposerMenu } from '@/lib/workbench/composer-menus';
 import { useSkillHandleBackspace } from '@/components/workbench/use-skill-handle-backspace';
 import { ComposerTextarea } from '@/components/workbench/composer-input';
 import { useInlineMentions } from '@/components/workbench/use-inline-mentions';
-import { stripMentions, type InlineMention } from '@/lib/workbench/composer-mentions';
+import {
+  expandMentions,
+  stripMentions,
+  type InlineMention,
+} from '@/lib/workbench/composer-mentions';
 import { ComposerPillRow } from '@/components/workbench/composer-pill';
 import { CourseMentionMenu } from '@/components/workbench/course-mention-menu';
 import { stagedMaterialOf } from '@/lib/workbench/material-mention';
-import { CourseRefPills } from '@/components/workbench/course-ref-pills';
 import {
   orderCourseMentionCandidates,
   replaceCourseMention,
@@ -283,16 +286,13 @@ export function ProLaunchPanel({
           }),
     [courseOptions, courseRefs, mentionQuery, mentionMenuOpen, untitledCourse],
   );
-  // A reference written in the text as a mention needs no pill as well.
-  const pillCourseRefs = courseRefs.filter((ref) => !inlineMentions.has('course', ref.stageId));
+  // A course is only ever named in the text; a material picked from the `@`
+  // menu is too, so only uploads keep a pill.
   const pillMaterials = materials.materials.filter(
     (item) => !inlineMentions.has('material', item.materialId),
   );
   const hasComposerExtras =
-    pillCourseRefs.length > 0 ||
-    pillMaterials.length > 0 ||
-    materials.uploading.length > 0 ||
-    materials.failed.length > 0;
+    pillMaterials.length > 0 || materials.uploading.length > 0 || materials.failed.length > 0;
 
   /**
    * Write `/skill-name ` into the draft and leave NO menu open behind it. Same
@@ -382,14 +382,15 @@ export function ProLaunchPanel({
     onConsumed: onMaterialSeedConsumed,
   });
 
-  // What is sent: the draft without its `@` mentions, which go as references.
-  const sentText = stripMentions(prompt, inlineMentions.mentions);
+  // A message needs words of its own, not only mentions; what is sent is the
+  // draft with each mention written out in full (the references go as before).
+  const hasWords = !!stripMentions(prompt, inlineMentions.mentions);
   const canSend =
-    !!sentText && !submitting && !materials.busy && !awaitingMaterial && openMenu === null;
+    hasWords && !submitting && !materials.busy && !awaitingMaterial && openMenu === null;
 
   async function submit() {
-    const text = sentText;
-    if (!text || submitting || materials.busy || awaitingMaterial) return;
+    const text = expandMentions(prompt, inlineMentions.mentions);
+    if (!hasWords || submitting || materials.busy || awaitingMaterial) return;
     setMentionOpen(false);
     setSubmitting(true);
     const generation = ++requestGeneration.current;
@@ -496,11 +497,6 @@ export function ProLaunchPanel({
               failed={materials.failed}
               onRemove={materials.remove}
               onRemoveFailed={materials.removeFailed}
-            />
-            <CourseRefPills
-              inline
-              refs={pillCourseRefs}
-              onRemove={(stageId) => setCourseRefs((current) => removeCourseRef(current, stageId))}
             />
           </ComposerPillRow>
         ) : null}

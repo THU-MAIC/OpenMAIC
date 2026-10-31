@@ -54,7 +54,6 @@ import {
 import { ComposerTextarea } from './composer-input';
 import { ComposerPillRow } from './composer-pill';
 import { ElementRefPills } from './element-ref-pills';
-import { CourseRefPills } from './course-ref-pills';
 import { CourseMentionMenu } from './course-mention-menu';
 import { stagedMaterialOf, type MaterialMentionCandidate } from '@/lib/workbench/material-mention';
 import {
@@ -87,7 +86,11 @@ import {
 import { insertSkillHandle, seedSlashQuery } from '@/lib/workbench/composer-skills';
 import { useSkillHandleBackspace } from './use-skill-handle-backspace';
 import { useInlineMentions } from './use-inline-mentions';
-import { stripMentions, type InlineMention } from '@/lib/workbench/composer-mentions';
+import {
+  expandMentions,
+  stripMentions,
+  type InlineMention,
+} from '@/lib/workbench/composer-mentions';
 import { resolveComposerMenu } from '@/lib/workbench/composer-menus';
 import {
   isComposerLive,
@@ -205,16 +208,46 @@ export function WorkbenchChat({
    * the next fold is ready. An initial deep link still gets the ordinary loader
    * because there is no previous content to retain.
    */
+  /**
+   * A draft's first message, on screen from the moment it is sent. The draft
+   * has no conversation yet — the message is what creates it — so nothing in
+   * the store can show it until the new conversation is attached and its log
+   * replayed; without this the column sat empty in between. It steps aside
+   * the moment the store shows a message of the teacher's own.
+   */
+  const [openingMessage, setOpeningMessage] = useState<ChatNode | null>(null);
+  const [openingOwner, setOpeningOwner] = useState(composerOwnerId);
+  if (openingOwner !== composerOwnerId) {
+    setOpeningOwner(composerOwnerId);
+    // The draft becoming its own conversation keeps the bubble; another
+    // conversation, or a new draft, does not.
+    if (!(openingOwner?.startsWith('draft:') && !composerOwnerId?.startsWith('draft:'))) {
+      setOpeningMessage(null);
+    }
+  }
+  const liveChat = useMemo(
+    () =>
+      openingMessage && !chat.some((node) => node.kind === 'user')
+        ? [...chat, openingMessage]
+        : chat,
+    [chat, openingMessage],
+  );
   const settledTranscriptRef = useRef<{
     readonly chat: ChatNode[];
     readonly plan: PlannedPage[];
   } | null>(null);
   useEffect(() => {
     if (catchingUp) return;
-    settledTranscriptRef.current = { chat, plan };
-  }, [catchingUp, chat, plan]);
+    settledTranscriptRef.current = { chat: liveChat, plan };
+  }, [catchingUp, liveChat, plan]);
   const retainedTranscript = catchingUp ? settledTranscriptRef.current : null;
-  const displayedChat = retainedTranscript?.chat ?? chat;
+  // While a just-created conversation replays, the bubble already sent stays.
+  const displayedChat =
+    catchingUp && openingMessage && retainedTranscript
+      ? retainedTranscript.chat.some((node) => node.key === openingMessage.key)
+        ? retainedTranscript.chat
+        : [...retainedTranscript.chat, openingMessage]
+      : (retainedTranscript?.chat ?? liveChat);
   const displayedPlan = retainedTranscript?.plan ?? plan;
 
   const [draft, setDraft] = useState('');
@@ -451,6 +484,35 @@ export function WorkbenchChat({
       [],
     ),
   );
+  /**
+   * Another conversation in this composer: a course mention the draft still
+   * holds keeps its reference there if the course can be named in it
+   * (re-bound to the new owner's references), and otherwise becomes plain
+   * text — never a highlight that stands for nothing.
+   */
+  const mentionsOwner = useRef(composerOwnerId);
+  useEffect(() => {
+    if (mentionsOwner.current === composerOwnerId) return;
+    mentionsOwner.current = composerOwnerId;
+    const mentions = inlineMentions.mentions;
+    if (!mentions.some((mention) => mention.kind === 'course')) return;
+    const courses = useCourseRefsStore.getState();
+    const kept = mentions.filter((mention) => {
+      if (mention.kind !== 'course') return true;
+      if (courses.ownerSessionId !== composerOwnerId) return false;
+      if (courses.refs.some((ref) => ref.stageId === mention.id)) return true;
+      const accessible = (navigation?.courseOptions ?? []).some(
+        (course) => course.id === mention.id,
+      );
+      const ref = accessible ? makeCourseRef(mention.id, mention.name) : null;
+      if (!ref) return false;
+      courses.add(ref);
+      return true;
+    });
+    if (kept.length !== mentions.length) inlineMentions.restore(kept);
+    // Once per owner change; the mentions and options are read as they are then.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [composerOwnerId]);
   const refreshedCreateCalls = useRef(new Set<string>());
 
   // The durable completed tool node is the source of truth: replay and a live
@@ -676,7 +738,7 @@ export function WorkbenchChat({
   // Pure-derived: the idle placeholder owns the rail only while it is truly
   // empty — no messages, not catching up, no run live. It disappears the
   // instant a bubble lands or a send flips the composer to STOP.
-  const showEmptyState = shouldShowWorkbenchEmptyState({ chat, catchingUp, live });
+  const showEmptyState = shouldShowWorkbenchEmptyState({ chat: liveChat, catchingUp, live });
   // Where the composer sits, and therefore how much of the viewport the
   // transcript gets. See `composerLayout`.
   const layout = composerLayout(takeover !== null);
@@ -684,8 +746,8 @@ export function WorkbenchChat({
   // box exists only when it has something to hold, so an empty composer is the
   // same height it always was. A loaded skill is NOT one of these things: it is
   // text in the box, not something staged beside it.
-  // A reference written in the text as a mention needs no pill as well.
-  const pillCourseRefs = courseRefs.filter((ref) => !inlineMentions.has('course', ref.stageId));
+  // A course is only ever named in the text; a material picked from the `@`
+  // menu is too, so only uploads keep a pill.
   const pillMaterials = materials.materials.filter(
     (item) => !inlineMentions.has('material', item.materialId),
   );
@@ -693,8 +755,7 @@ export function WorkbenchChat({
     pillMaterials.length > 0 ||
     materials.uploading.length > 0 ||
     materials.failed.length > 0 ||
-    elementRefs.length > 0 ||
-    pillCourseRefs.length > 0;
+    elementRefs.length > 0;
 
   /**
    * A skill handle was written into the draft (picked from the `/` menu, opened
@@ -988,13 +1049,14 @@ export function WorkbenchChat({
   }, [answerQuestion]);
 
   async function send() {
-    // What is in the box IS the message — skill handles included — less the
-    // `@` mentions, which go as the references they stand for.
-    const text = stripMentions(draft, inlineMentions.mentions);
+    // What is in the box IS the message — skill handles included — with each
+    // `@` mention written out in full; the references go beside it as before.
+    const text = expandMentions(draft, inlineMentions.mentions);
+    const hasWords = !!stripMentions(draft, inlineMentions.mentions);
     const typed = draft;
     const sentMentions = inlineMentions.mentions;
     if (
-      (!text && materials.materials.length === 0) ||
+      (!hasWords && materials.materials.length === 0) ||
       busy ||
       !canSend ||
       materials.busy ||
@@ -1016,6 +1078,20 @@ export function WorkbenchChat({
     const coursesState = useCourseRefsStore.getState();
     const selectedCourses =
       coursesState.ownerSessionId === composerOwnerId ? coursesState.refs : NO_COURSE_REFS;
+    // The named courses go WITH this message: out of the composer now, so the
+    // next message does not carry them and nothing is left behind as a pill.
+    if (selectedCourses.length > 0) useCourseRefsStore.getState().clear();
+    // A draft's first message is on screen at once (see `openingMessage`).
+    if (!sessionId && draftConversation) {
+      setOpeningMessage({
+        key: `opening-${Date.now()}`,
+        kind: 'user',
+        text,
+        ...(selectedMaterials.length ? { materials: selectedMaterials.map((m) => m.name) } : {}),
+        ...(selectedRefs.length ? { elementRefs: [...selectedRefs] } : {}),
+        ...(selectedCourses.length ? { courseRefs: [...selectedCourses] } : {}),
+      });
+    }
     // Clear first so Enter does not freeze the box on the in-flight POST.
     replaceDraft('');
     inlineMentions.reset();
@@ -1051,9 +1127,14 @@ export function WorkbenchChat({
         warnUnsupported: () => toast.warning(t('workspace.courseMention.notAccepted')),
       });
     } else {
-      // Back as it was typed, mentions and all.
+      // Back as it was typed, mentions and all, with the courses they name.
+      setOpeningMessage(null);
       replaceDraft(typed);
       inlineMentions.restore(sentMentions);
+      const courses = useCourseRefsStore.getState();
+      if (courses.ownerSessionId === composerOwnerId) {
+        for (const ref of selectedCourses) courses.add(ref);
+      }
     }
   }
 
@@ -1238,11 +1319,6 @@ export function WorkbenchChat({
                       inline
                       refs={elementRefs}
                       onRemove={useElementRefsStore.getState().removeRef}
-                    />
-                    <CourseRefPills
-                      inline
-                      refs={pillCourseRefs}
-                      onRemove={useCourseRefsStore.getState().remove}
                     />
                   </ComposerPillRow>
                 ) : null}

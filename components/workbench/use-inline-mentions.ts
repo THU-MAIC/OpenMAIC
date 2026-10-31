@@ -76,7 +76,7 @@ export function useInlineMentions(onDropped: (mention: InlineMention) => void): 
         pick.name,
         list.map((mention) => mention.label),
       );
-      commit([...list, { label, kind: pick.kind, id: pick.id }]);
+      commit([...list, { label, kind: pick.kind, id: pick.id, name: pick.name }]);
       return insertMention(draft, label, start, end);
     },
     [commit],
