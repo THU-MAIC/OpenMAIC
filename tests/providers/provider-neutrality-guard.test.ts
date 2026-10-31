@@ -171,7 +171,8 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
     'lib/server/provider-config.ts',
     'Temporary: provider configuration is still a mixed catalog and resolver composition root.',
     [
-      ['qwen', 20],
+      // Includes the retired grouping sentinel import and exact migration comparison.
+      ['qwen', 22],
       ['openai', 24],
       ['azure', 6],
       ['atlascloud', 2],
@@ -230,7 +231,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
     'lib/server/generation/steps/narration.ts',
     'Temporary: TTS request preparation has not moved behind adapters.',
     [
-      ['qwen', 7],
+      ['qwen', 5],
       ['voxcpm', 11],
       ['browser-native-tts', 2],
       ['browser-native', 2],

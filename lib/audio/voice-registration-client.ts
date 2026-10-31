@@ -28,7 +28,8 @@ export interface VoiceRegistrationRequestConfig {
 export interface UserVoiceRegistrationParams {
   name: string;
   referenceAudio: Blob;
-  refText: string;
+  /** Optional metadata; current enrollment APIs do not require a transcript. */
+  refText?: string;
 }
 
 function base64ToBlob(base64: string, mimeType?: string): Blob {

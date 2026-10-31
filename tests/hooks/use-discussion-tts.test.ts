@@ -516,6 +516,37 @@ describe('discussion TTS synthesis lookahead', () => {
     expect(hook.shouldHold()).toEqual({ holding: false, segmentDone: 2 });
   });
 
+  it('shows reclone guidance for an incompatible saved voice without queuing a substitute', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    agents = [
+      teacher,
+      {
+        ...teacher,
+        id: 'clone-teacher',
+        voiceConfig: { providerId: 'qwen-tts', voiceId: 'qwen-tts-vc-retired-id' },
+      },
+    ];
+    act(() => root.render(createElement(Probe)));
+    await seal('A');
+    await seal('B', 'clone-teacher');
+    await respond(0);
+    await act(async () =>
+      requests[1].response.resolve(
+        Response.json(
+          {
+            error: 'Re-clone this saved voice',
+            errorCode: 'QWEN_VC_RECLONE_REQUIRED',
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    await act(async () => FakeAudio.instances[0].end());
+    expect(requests.map((r) => r.body.audioId)).toEqual(['A', 'B']);
+    expect(mocks.warning).toHaveBeenCalledExactlyOnceWith('settings.qwenCloneMigrationHint');
+    expect(hook.shouldHold()).toEqual({ holding: false, segmentDone: 2 });
+  });
+
   it('preserves browser/server ordering and resumes after browser speech ends while paused', async () => {
     agents = [
       teacher,

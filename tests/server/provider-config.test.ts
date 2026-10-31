@@ -1102,6 +1102,60 @@ video:
   });
 
   describe('Qwen TTS resolution', () => {
+    it.each([
+      ['', 'cosyvoice-v3.5-plus'],
+      ['  \t ', 'cosyvoice-v3.5-plus'],
+      ['qwen3-tts-vc-2026-01-22', 'cosyvoice-v3.5-plus'],
+      ['  qwen3-tts-vc-2026-01-22  ', 'cosyvoice-v3.5-plus'],
+      [' custom-clone-model ', 'custom-clone-model'],
+      [' cosyvoice-v3.5-flash ', 'cosyvoice-v3.5-flash'],
+      [' qwen3-tts-vc-custom ', 'qwen3-tts-vc-custom'],
+    ])('resolves the clone environment override %j to %s', async (value, expected) => {
+      vi.stubEnv('TTS_QWEN_VOICE_CLONE_MODEL', value);
+      const { resolveQwenVoiceCloneModel } = await import('@/lib/server/provider-config');
+      expect(resolveQwenVoiceCloneModel()).toBe(expected);
+    });
+
+    it.each(['cosyvoice-v3.5-plus', 'cosyvoice-v3.5-flash'])(
+      'authorizes the persisted grouping ID as its configured clone target %s',
+      async (target) => {
+        vi.stubEnv('TTS_QWEN_API_KEY', 'key');
+        vi.stubEnv('TTS_QWEN_MODELS', `qwen3-tts-flash,${target}`);
+        vi.stubEnv('TTS_QWEN_VOICE_CLONE_MODEL', target);
+        const { resolveTTSModel } = await import('@/lib/server/provider-config');
+        expect(resolveTTSModel('qwen-tts', ' qwen3-tts-vc-2026-01-22 ', `${target}-voice`)).toBe(
+          target,
+        );
+      },
+    );
+
+    it.each([
+      ['Cherry', undefined],
+      ['provider-catalog-voice', [{ id: 'provider-catalog-voice' }]],
+    ])(
+      'authorizes a grouping ID with catalog voice %s against the normal model',
+      async (voiceId, configuredVoices) => {
+        vi.stubEnv('TTS_QWEN_API_KEY', 'key');
+        vi.stubEnv('TTS_QWEN_MODELS', 'qwen3-tts-flash');
+        const { resolveTTSModel } = await import('@/lib/server/provider-config');
+        expect(
+          resolveTTSModel('qwen-tts', ' qwen3-tts-vc-2026-01-22 ', voiceId, configuredVoices),
+        ).toBe('qwen3-tts-flash');
+        expect(() =>
+          resolveTTSModel('qwen-tts', 'unlisted-model', voiceId, configuredVoices),
+        ).toThrow('not authorized');
+      },
+    );
+
+    it('does not let the grouping ID authorize an unlisted clone target', async () => {
+      vi.stubEnv('TTS_QWEN_API_KEY', 'key');
+      vi.stubEnv('TTS_QWEN_MODELS', 'qwen3-tts-flash,qwen3-tts-vc-2026-01-22');
+      const { resolveTTSModel } = await import('@/lib/server/provider-config');
+      expect(() => resolveTTSModel('qwen-tts', 'qwen3-tts-vc-2026-01-22', 'clone-1')).toThrow(
+        'not authorized',
+      );
+    });
+
     it('uses the provider default base URL when none is configured or supplied', async () => {
       const { resolveTTSBaseUrl } = await import('@/lib/server/provider-config');
       expect(resolveTTSBaseUrl('qwen-tts')).toBe('https://dashscope.aliyuncs.com/api/v1');

@@ -29,6 +29,7 @@ import {
   markVoiceBindingNoticeShown,
   markVoiceBindingUnavailable,
   trackAssignedVoiceBinding,
+  voiceBindingKey,
 } from '@/lib/audio/unavailable-voice-bindings';
 
 interface DiscussionTTSOptions {
@@ -392,6 +393,12 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
         return;
       }
       abortControllerRef.current = null;
+      if (
+        (err as { errorCode?: unknown })?.errorCode === 'QWEN_VC_RECLONE_REQUIRED' &&
+        markVoiceBindingNoticeShown(voiceBindingKey(item))
+      ) {
+        toast.warning(t('settings.qwenCloneMigrationHint'));
+      }
       const cloneUnavailable =
         err &&
         typeof err === 'object' &&

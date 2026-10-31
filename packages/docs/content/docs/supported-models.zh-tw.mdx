@@ -106,7 +106,7 @@ description: 開源版 OpenMAIC 的內建模型與 provider 清單。
 | OpenAI TTS     | `openai-tts`         | GPT-4o Mini TTS (`gpt-4o-mini-tts`)<br />TTS-1 (`tts-1`)<br />TTS-1 HD (`tts-1-hd`)                                                                                                                                                    |
 | Azure TTS      | `azure-tts`          | 無模型選擇器，使用已設定的 Azure Neural Voices。                                                                                                                                                                                       |
 | GLM TTS        | `glm-tts`            | GLM TTS (`glm-tts`)                                                                                                                                                                                                                    |
-| Qwen TTS       | `qwen-tts`           | Qwen3 TTS Flash (`qwen3-tts-flash`)<br />Qwen3 TTS Voice Clone (`qwen3-tts-vc-2026-01-22`)<br />Voice Clone is a legacy grouping ID for saved voices; the retired model cannot register or synthesize cloned voices. |
+| Qwen TTS       | `qwen-tts`           | Qwen3 TTS Flash (`qwen3-tts-flash`)<br />CosyVoice Voice Clone (`cosyvoice-v3.5-plus`)<br />Cloned voices keep the legacy `qwen3-tts-vc-2026-01-22` grouping ID. Re-clone retired Qwen voices from their reference audio. Allow the CosyVoice target in the provider models list; the API key needs both voice-enrollment and target-model permissions. |
 | MiniMax TTS    | `minimax-tts`        | Speech 2.8 HD (`speech-2.8-hd`)<br />Speech 2.8 Turbo (`speech-2.8-turbo`)<br />Speech 2.6 HD (`speech-2.6-hd`)<br />Speech 2.6 Turbo (`speech-2.6-turbo`)<br />Speech 02 HD (`speech-02-hd`)<br />Speech 02 Turbo (`speech-02-turbo`) |
 | VoxCPM2        | `voxcpm-tts`         | VoxCPM2 (`voxcpm2`)<br />後端：vLLM-Omni、Python API、Nano-vLLM                                                                                                                                                                        |
 | Lemonade TTS   | `lemonade-tts`       | Kokoro v1 (`kokoro-v1`)                                                                                                                                                                                                                |
@@ -116,6 +116,16 @@ description: 開源版 OpenMAIC 的內建模型與 provider 清單。
 | 瀏覽器原生 TTS | `browser-native-tts` | 無模型選擇器，使用瀏覽器和作業系統提供的音色清單。                                                                                                                                                                                     |
 
 Google TTS 預設使用 `gemini-3.8-flash-lite-tts`，已明確選取的模型保持不變。Google 列出的上述三個預覽模型的[最早下線日期](https://ai.google.dev/gemini-api/docs/deprecations)為 **2026 年 11 月 17 日**。請在下線前切換至 3.8 模型；使用部署託管憑證時，也須更新 `openmaic.yml` 中的 `tts` 槽位或供應商的 `models` 允許清單。Gemini 3.8 回傳的 WAV 會原樣保留，舊模型回傳的 PCM 仍會轉換為 WAV 供播放。
+
+### Qwen 複刻音色
+
+音色註冊使用參考音訊，無需填寫逐字稿。
+
+本整合使用 CosyVoice 非即時 HTTP 合成介面，目前文件列出的適用地域是**北京**，請使用北京地域的端點和 API Key。新加坡支援為 `cosyvoice-v3-plus`、`cosyvoice-v3-flash` 建立音色，但[非即時合成支援清單](https://www.alibabacloud.com/help/en/model-studio/non-realtime-tts-user-guide#supported-models)未列出新加坡的 CosyVoice；僅切換模型無法使本整合支援新加坡播放。另見[音色複刻地域](https://www.alibabacloud.com/help/en/model-studio/voice-cloning-user-guide#supported-models)和 [CosyVoice HTTP API](https://www.alibabacloud.com/help/en/model-studio/cosyvoice-tts-http-api)。
+
+預設目標模型為 `cosyvoice-v3.5-plus`。`TTS_QWEN_VOICE_CLONE_MODEL` 同時作用於伺服器託管和 BYOK 的註冊及播放；空值或精確的舊值 `qwen3-tts-vc-2026-01-22` 使用預設模型。其他明確覆寫值保持不變，仍須取得模型授權。系統不依 API Key 推斷地域，模型覆寫也不會改變合成協定。
+
+舊音色資料及其參考樣本會保留，但沒有一鍵重用樣本的遷移介面。需要重建不相容音色時，請在音色設定中重新上傳原始參考音訊並建立新音色。樣本應清晰且包含至少五秒語音；不足五秒的舊樣本需要更換為更長的錄音。資料中存有樣本不代表系統會自動重新註冊。
 
 ## ASR 模型
 

@@ -41,6 +41,7 @@
  * owner-bound document store); a worker executing it loses its lease.
  */
 import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
+import { QwenVoiceCloneError } from '@/lib/audio/qwen-voice-clone';
 import { isAbortError } from '@openmaic/generation';
 import type { Queryable } from '@openmaic/storage/document/pg';
 
@@ -431,6 +432,8 @@ async function executeClaimedRun(
     refusalStatus,
     sleep: services.sleep,
     signal: retrySignal,
+    rethrow: (error) =>
+      error instanceof QwenVoiceCloneError && error.code === 'QWEN_VC_RECLONE_REQUIRED',
     onRetry: async (event) => {
       log.warn(
         `run ${run.id}: retrying ${stepId} (${event.attempt}/${event.maxAttempts}): ${event.cause}`,

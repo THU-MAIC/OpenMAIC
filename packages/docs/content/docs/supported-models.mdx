@@ -106,7 +106,7 @@ This table lists model selectors and self-hosted backends. It does not enumerate
 | OpenAI TTS         | `openai-tts`         | GPT-4o Mini TTS (`gpt-4o-mini-tts`)<br />TTS-1 (`tts-1`)<br />TTS-1 HD (`tts-1-hd`)                                                                                                                                                    |
 | Azure TTS          | `azure-tts`          | No model selector. Uses configured Azure neural voices.                                                                                                                                                                                |
 | GLM TTS            | `glm-tts`            | GLM TTS (`glm-tts`)                                                                                                                                                                                                                    |
-| Qwen TTS           | `qwen-tts`           | Qwen3 TTS Flash (`qwen3-tts-flash`)<br />Qwen3 TTS Voice Clone (`qwen3-tts-vc-2026-01-22`)<br />Voice Clone is a legacy grouping ID for saved voices; the retired model cannot register or synthesize cloned voices. |
+| Qwen TTS           | `qwen-tts`           | Qwen3 TTS Flash (`qwen3-tts-flash`)<br />CosyVoice Voice Clone (`cosyvoice-v3.5-plus`)<br />Cloned voices keep the legacy `qwen3-tts-vc-2026-01-22` grouping ID. Re-clone retired Qwen voices from their reference audio. Allow the CosyVoice target in the provider models list; the API key needs both voice-enrollment and target-model permissions. |
 | MiniMax TTS        | `minimax-tts`        | Speech 2.8 HD (`speech-2.8-hd`)<br />Speech 2.8 Turbo (`speech-2.8-turbo`)<br />Speech 2.6 HD (`speech-2.6-hd`)<br />Speech 2.6 Turbo (`speech-2.6-turbo`)<br />Speech 02 HD (`speech-02-hd`)<br />Speech 02 Turbo (`speech-02-turbo`) |
 | VoxCPM2            | `voxcpm-tts`         | VoxCPM2 (`voxcpm2`)<br />Backends: vLLM-Omni, Python API, Nano-vLLM                                                                                                                                                                    |
 | Lemonade TTS       | `lemonade-tts`       | Kokoro v1 (`kokoro-v1`)                                                                                                                                                                                                                |
@@ -116,6 +116,16 @@ This table lists model selectors and self-hosted backends. It does not enumerate
 | Browser Native TTS | `browser-native-tts` | No model selector. Uses the browser and operating system voice catalog.                                                                                                                                                                |
 
 Google TTS defaults to `gemini-3.8-flash-lite-tts`. Existing explicit model selections are preserved. Google lists **November 17, 2026** as the [earliest shutdown date](https://ai.google.dev/gemini-api/docs/deprecations) for the three preview models above. Select a 3.8 model before they retire; for deployment-managed credentials, update the `tts` slot or the provider's `models` allowlist in `openmaic.yml` as well. Gemini 3.8 WAV responses are preserved; older PCM responses are still converted to WAV for playback.
+
+### Qwen cloned voices
+
+This integration uses CosyVoice's non-real-time HTTP synthesis API. Its documented region is **Beijing**; use a Beijing endpoint and API key. Singapore supports enrollment for `cosyvoice-v3-plus` and `cosyvoice-v3-flash`, but the [non-real-time synthesis support table](https://www.alibabacloud.com/help/en/model-studio/non-realtime-tts-user-guide#supported-models) does not list CosyVoice in Singapore. Selecting one of those models alone does not make this integration support Singapore playback. See the [enrollment regions](https://www.alibabacloud.com/help/en/model-studio/voice-cloning-user-guide#supported-models) and [CosyVoice HTTP API](https://www.alibabacloud.com/help/en/model-studio/cosyvoice-tts-http-api).
+
+The default target is `cosyvoice-v3.5-plus`. `TTS_QWEN_VOICE_CLONE_MODEL` applies to both server-managed and BYOK registration and playback; an empty value or the exact retired value `qwen3-tts-vc-2026-01-22` uses that default. Other explicit overrides are preserved and still require model authorization. The API key is not used to infer a region, and an override does not change the synthesis transport.
+
+Voice registration uses the audio sample and does not require a transcript.
+
+Saved legacy profiles and their reference samples are retained, but there is no one-click sample migration. To recreate an incompatible voice, upload its original reference audio again through voice settings and create a new clone. Use a clean sample with at least five seconds of speech; older samples shorter than five seconds must be replaced with a longer recording. Keeping a sample in a profile does not automatically re-enroll it.
 
 ## ASR models
 

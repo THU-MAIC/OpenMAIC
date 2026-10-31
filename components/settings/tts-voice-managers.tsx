@@ -506,7 +506,6 @@ export function QwenVoiceCloneManager() {
   const { previewing, startPreview, stopPreview } = useTTSPreview();
 
   const [name, setName] = useState('');
-  const [refText, setRefText] = useState('');
   const [referenceFile, setReferenceFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -630,15 +629,14 @@ export function QwenVoiceCloneManager() {
   }, [previewing]);
 
   const handleSave = async () => {
-    if (!name.trim() || !refText.trim() || !referenceFile) return;
+    if (!name.trim() || !referenceFile) return;
     setSaving(true);
     try {
-      const voiceId = await addCloneVoice({ name, referenceAudio: referenceFile, refText });
+      const voiceId = await addCloneVoice({ name, referenceAudio: referenceFile });
       // A new clone becomes the narration voice (this manager shows only while
       // the tts slot is Qwen).
       setTTSVoice(voiceId, 'qwen-tts');
       setName('');
-      setRefText('');
       setReferenceFile(null);
       toast.success(t('settings.qwenCloneSaved'));
     } catch (error) {
@@ -688,6 +686,11 @@ export function QwenVoiceCloneManager() {
           {t('settings.qwenCloneVoicesTitle')}
         </Label>
         <p className="mt-1 text-xs text-muted-foreground">{t('settings.qwenCloneRefAudioHint')}</p>
+        {profiles.some(({ id }) => /^qwen(?:3)?-tts-vc-/iu.test(id)) && (
+          <p role="status" className="mt-1 text-xs text-amber-600 dark:text-amber-300">
+            {t('settings.qwenCloneMigrationHint')}
+          </p>
+        )}
         {!recordingSupported && (
           <p className="mt-1 text-xs text-amber-600 dark:text-amber-300">
             {t('settings.qwenCloneUnsupported')}
@@ -767,12 +770,6 @@ export function QwenVoiceCloneManager() {
                   )}
                 </Button>
               </div>
-              <Textarea
-                value={refText}
-                onChange={(event) => setRefText(event.target.value)}
-                placeholder={t('settings.qwenCloneRefText')}
-                className="min-h-24 resize-none rounded-md text-sm"
-              />
               <Input
                 value={name}
                 onChange={(event) => setName(event.target.value)}
@@ -782,7 +779,7 @@ export function QwenVoiceCloneManager() {
               <Button
                 size="sm"
                 onClick={handleSave}
-                disabled={saving || !name.trim() || !refText.trim() || !referenceFile}
+                disabled={saving || !name.trim() || !referenceFile}
                 className="h-10 w-full gap-1.5 rounded-md"
               >
                 {saving ? (

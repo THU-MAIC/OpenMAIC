@@ -961,16 +961,13 @@ async function generateQwenTTS(
   const cloneVoice = isQwenCloneVoice(config.voice, config.voices);
 
   if (cloneVoice) {
-    const targetModel =
-      config.providerOptions?.qwenVoiceClone === true
-        ? config.modelId
-        : resolveTTSModelForVoice('qwen-tts', config.voice, config.modelId, config.voices);
     try {
       return await synthesizeQwenVoiceClone(
         {
           apiKey: config.apiKey,
           baseUrl,
-          targetModel,
+          // Server callers resolve and authorize the actual target before dispatch.
+          targetModel: config.modelId,
           publicOnly: config.publicOnly,
           managed: config.managed,
         },

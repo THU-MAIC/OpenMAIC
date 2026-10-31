@@ -7,6 +7,9 @@ import {
 } from '@/lib/agent/runtime/tool-timeout';
 import { configuredDefaultVoice } from '@/lib/audio/provider-default-voice';
 import { authorizeMediaModel } from '@/lib/server/model-config/media';
+import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
+import { getVoiceRegistrationAdapter } from '@/lib/audio/voice-registration';
+import { QwenVoiceCloneError } from '@/lib/audio/qwen-voice-clone';
 import { DEFAULT_TTS_MODELS, DEFAULT_TTS_VOICES, TTS_PROVIDERS } from '@/lib/audio/constants';
 import { generateTTS, TTSRateLimitError, TTSRequestTimeoutError } from '@/lib/audio/tts-providers';
 import { runFailureCode, type RunFailureErrorCode } from '@/lib/server/generation/run/failure-code';
@@ -170,7 +173,10 @@ export function formatTtsFailureTally(failed: readonly { reason: string }[]): st
     counts.set(failure.reason, (counts.get(failure.reason) ?? 0) + 1);
   }
   const breakdown = [...counts].map(([code, count]) => `${code}\u00d7${count}`).join(', ');
-  return `${failed.length} failed (${breakdown})`;
+  const guidance = counts.has('QWEN_VC_RECLONE_REQUIRED')
+    ? ' Re-upload the reference audio to clone the saved voice again.'
+    : '';
+  return `${failed.length} failed (${breakdown})${guidance}`;
 }
 
 export interface SceneTtsInput {
@@ -309,12 +315,6 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
         '';
   const model =
     connection.modelId ?? (DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '');
-  // A configured slot's own model; the legacy server pins apply only to a default.
-  const modelId =
-    (connection.origin === 'configuration'
-      ? slotTTSModel(providerId, model, voice, connection.voices)
-      : resolveTTSModel(providerId, model, voice, connection.voices)) || '';
-  authorizeMediaModel(connection, 'tts', modelId);
   let generated = 0;
   let skipped = 0;
   const failed: SceneTtsFailure[] = [];
@@ -354,6 +354,16 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
                   return undefined;
                 }
                 try {
+                  getVoiceRegistrationAdapter(providerId)?.assertVoiceCompatible?.(
+                    voice,
+                    connection.voices,
+                  );
+                  // Resolve and authorize the wire model only after checking the saved voice.
+                  const modelId =
+                    (connection.origin === 'configuration'
+                      ? slotTTSModel(providerId, model, voice, connection.voices)
+                      : resolveTTSModel(providerId, model, voice, connection.voices)) || '';
+                  authorizeMediaModel(connection, 'tts', modelId);
                   return await generateTTS(
                     {
                       providerId,
@@ -414,6 +424,8 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
             },
             rethrow: (error) =>
               error instanceof TTSRequestTimeoutError ||
+              (error instanceof QwenVoiceCloneError &&
+                (error.code === 'QWEN_VC_RECLONE_REQUIRED' || error.code === 'QWEN_VC_TIMEOUT')) ||
               input.signal?.aborted === true ||
               isTtsBudgetWaitError(error),
           },
@@ -442,7 +454,12 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
         // A hung provider must fail the tool call with the retryable timeout
         // error instead of degrading into a per-action failure: the remaining
         // actions would hit the same hung upstream and the session would wedge.
-        if (error instanceof TTSRequestTimeoutError) throw error;
+        if (
+          error instanceof TTSRequestTimeoutError ||
+          error instanceof ModelAuthorizationError ||
+          (error instanceof QwenVoiceCloneError && error.code === 'QWEN_VC_TIMEOUT')
+        )
+          throw error;
         failed.push({ id: action.id, reason: runFailureCode(error).errorCode });
       }
     }
