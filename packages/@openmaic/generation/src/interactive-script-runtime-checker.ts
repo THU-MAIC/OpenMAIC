@@ -182,6 +182,7 @@ function buildMockDom(
   context: Context;
   sliderEls: MockElement[];
   buttonEls: MockElement[];
+  elements: MockElement[];
   docHandlers: MockHandlers;
 } {
   const registry = new Map<string, MockElement>();
