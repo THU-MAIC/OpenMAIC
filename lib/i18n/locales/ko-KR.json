@@ -796,7 +796,11 @@
     "restore": "복원",
     "noHistory": "아직 기록이 없습니다",
     "restored": "화이트보드가 복원되었습니다",
-    "elementCount": "요소 {{count}}개"
+    "elementCount": "요소 {{count}}개",
+    "copyAllText": "모든 텍스트 복사",
+    "copySuccess": "모든 텍스트가 클립보드에 복사되었습니다",
+    "copyError": "텍스트 복사 실패",
+    "copyEmpty": "복사할 텍스트가 없습니다"
   },
   "quiz": {
     "title": "퀴즈",

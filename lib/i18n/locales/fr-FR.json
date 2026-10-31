@@ -796,7 +796,11 @@
     "restore": "Restaurer",
     "noHistory": "Aucun historique pour l’instant",
     "restored": "Tableau blanc restauré",
-    "elementCount": "{{count}} éléments"
+    "elementCount": "{{count}} éléments",
+    "copyAllText": "Copier tout le texte",
+    "copySuccess": "Tout le texte copié dans le presse-papiers",
+    "copyError": "Échec de la copie du texte",
+    "copyEmpty": "Aucun texte à copier"
   },
   "quiz": {
     "title": "Quiz",

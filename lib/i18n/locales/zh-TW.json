@@ -781,7 +781,11 @@
     "restore": "恢復",
     "noHistory": "暫無歷史紀錄",
     "restored": "已恢復白板內容",
-    "elementCount": "{{count}} 個元素"
+    "elementCount": "{{count}} 個元素",
+    "copyAllText": "複製全部文字",
+    "copySuccess": "已複製全部文字到剪貼簿",
+    "copyError": "複製文字失敗",
+    "copyEmpty": "沒有可複製的文字"
   },
   "quiz": {
     "title": "課堂小測",

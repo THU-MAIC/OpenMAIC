@@ -99,6 +99,7 @@
     "docx": "9.4.1",
     "echarts": "^6.0.0",
     "embla-carousel-react": "^8.6.0",
+    "entities": "^6.0.1",
     "es-module-lexer": "^2.0.0",
     "file-saver": "^2.0.5",
     "geist": "^1.7.0",

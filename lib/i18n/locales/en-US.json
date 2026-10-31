@@ -796,7 +796,11 @@
     "restore": "Restore",
     "noHistory": "No history yet",
     "restored": "Whiteboard restored",
-    "elementCount": "{{count}} elements"
+    "elementCount": "{{count}} elements",
+    "copyAllText": "Copy all text",
+    "copySuccess": "Copied all text to clipboard",
+    "copyError": "Failed to copy text",
+    "copyEmpty": "No text to copy"
   },
   "quiz": {
     "title": "Quiz",
