@@ -6,7 +6,11 @@ import {
   DEFAULT_AGENT_TOOL_TIMEOUT_MS,
 } from '@/lib/agent/runtime/tool-timeout';
 import { configuredDefaultVoice } from '@/lib/audio/provider-default-voice';
-import { authorizeMediaModel } from '@/lib/server/model-config/media';
+import {
+  authorizeMediaModel,
+  serverMediaConnection,
+  type MediaConnection,
+} from '@/lib/server/model-config/media';
 import { DEFAULT_TTS_MODELS, DEFAULT_TTS_VOICES, TTS_PROVIDERS } from '@/lib/audio/constants';
 import { generateTTS, TTSRateLimitError, TTSRequestTimeoutError } from '@/lib/audio/tts-providers';
 import { runFailureCode, type RunFailureErrorCode } from '@/lib/server/generation/run/failure-code';
@@ -18,7 +22,6 @@ import { BROWSER_NATIVE_TTS_PROVIDER_ID } from '@/lib/audio/provider-enablement'
 import type { LegacySpeechAction, SpeechAction } from '@/lib/types/action';
 import type { GeneratedAgentConfig, Scene } from '@/lib/types/stage';
 import { adapterOptions } from '@/lib/server/model-config/adapter-options';
-import { serverMediaConnection } from '@/lib/server/model-config/media';
 import { resolveTTSModel, slotTTSModel } from '@/lib/server/provider-config';
 import { persistClassroomMediaBytes } from '@/lib/server/classroom-media-bytes';
 
@@ -313,7 +316,6 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
   const activeConnection = connection as MediaConnection;
   const providerId = activeConnection.providerId as TTSProviderId;
   const bound = narratorVoice(input.roster);
-  const provider = TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS];
   const apiKey = activeConnection.apiKey ?? '';
   const voice =
     bound?.providerId === providerId && bound.voiceId
@@ -322,7 +324,8 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
         DEFAULT_TTS_VOICES[providerId as keyof typeof DEFAULT_TTS_VOICES] ||
         '';
   const model =
-    activeConnection.modelId ?? (DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '');
+    activeConnection.modelId ??
+    (DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '');
   // A configured slot's own model; the legacy server pins apply only to a default.
   const modelId =
     (activeConnection.origin === 'configuration'
@@ -373,14 +376,14 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
                       providerId,
                       modelId,
                       apiKey,
-                      baseUrl: connection.baseUrl,
-                      managed: connection.managed,
-                      publicOnly: connection.userEndpoint,
+                      baseUrl: activeConnection.baseUrl,
+                      managed: activeConnection.managed,
+                      publicOnly: activeConnection.userEndpoint,
                       voice,
-                      ...(connection.voices ? { voices: connection.voices } : {}),
+                      ...(activeConnection.voices ? { voices: activeConnection.voices } : {}),
                       speed: speech.speed,
                       // The provider's own options (a VoxCPM backend, say).
-                      providerOptions: adapterOptions(connection),
+                      providerOptions: adapterOptions(activeConnection),
                       signal: input.signal,
                     },
                     speech.text,

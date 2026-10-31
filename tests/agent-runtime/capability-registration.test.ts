@@ -3,7 +3,6 @@ import type { AgentTool } from '@earendil-works/pi-agent-core';
 import {
   assembleCapabilityRuntime,
   createCapabilityMap,
-  resolveRunnerCapabilities,
   type CapabilityDependentTool,
   type ResolvedCapabilityMap,
 } from '@/lib/server/agent-runtime/capability-tools';
@@ -42,7 +41,7 @@ function makeCapabilityTool(
   capability: keyof ResolvedCapabilityMap['available'],
   promptBlock?: string,
 ): CapabilityDependentTool {
-  const tool = makeMockTool(name) as CapabilityDependentTool;
+  const tool = makeMockTool(name) as unknown as CapabilityDependentTool;
   tool.capability = capability;
   if (promptBlock) {
     tool.promptBlock = promptBlock;
@@ -220,6 +219,7 @@ describe('capability-dependent tool registration (#2102)', () => {
           apiKey: '',
           managed: true,
           userEndpoint: false,
+          origin: 'configuration',
         }),
       ).toBe(false);
       expect(
@@ -228,6 +228,7 @@ describe('capability-dependent tool registration (#2102)', () => {
           apiKey: 'key',
           managed: true,
           userEndpoint: false,
+          origin: 'configuration',
         }),
       ).toBe(true);
     });
@@ -241,6 +242,7 @@ describe('capability-dependent tool registration (#2102)', () => {
           providerId: 'browser',
           managed: true,
           userEndpoint: false,
+          origin: 'configuration',
         }),
       ).toBe(true);
     });
@@ -267,7 +269,7 @@ describe('capability-dependent tool registration (#2102)', () => {
       expect(fetchPromptBlock()).toContain('fetch_url');
 
       expect(typeof searchPromptBlock).toBe('function');
-      expect(searchPromptBlock({ provider: 'tavily' } as never)).toContain('web_search');
+      expect(searchPromptBlock()).toContain('web_search');
     });
   });
 

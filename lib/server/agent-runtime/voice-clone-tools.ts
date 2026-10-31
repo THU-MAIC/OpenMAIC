@@ -37,7 +37,7 @@ import {
   type AgentSessionMaterial,
   type CreateAgentSessionMaterialInput,
 } from '@openmaic/storage';
-import { Type } from 'typebox';
+import { Type, type Static } from 'typebox';
 
 import type { RegisteredVoiceInfo } from '@/lib/audio/voice-catalog';
 import {
@@ -296,7 +296,11 @@ export function buildVoiceCloneTools(deps: VoiceCloneToolDependencies): AgentToo
       'Read the material transcript first and choose the interval yourself. Prefer 10–20 seconds ' +
       'with no background music, other speakers, or noise. Returns a 24 kHz mono PCM WAV clip.',
     parameters: CLIP_AUDIO_SCHEMA,
-    execute: async (_callId, params, signal) => {
+    execute: async (
+      _callId: string,
+      params: Static<typeof CLIP_AUDIO_SCHEMA>,
+      signal?: AbortSignal,
+    ) => {
       validateClipRange(params.startSec, params.endSec);
       throwIfAborted(signal);
       const source = await resolveSource(deps.sessionId, params.materialId);
@@ -346,14 +350,18 @@ export function buildVoiceCloneTools(deps: VoiceCloneToolDependencies): AgentToo
     },
   };
 
-  const registerVoiceTool: AgentTool<typeof REGISTER_VOICE_SCHEMA> = {
+  const registerVoiceTool = {
     name: 'register_voice',
     label: 'Register cloned voice',
     description:
       'Register a reference audio clip as a named cloned voice on this deployment. Returns the ' +
       'provider and voice id that can be bound to a teacher with set_roster.',
     parameters: REGISTER_VOICE_SCHEMA,
-    execute: async (_callId, params, signal) => {
+    execute: async (
+      _callId: string,
+      params: Static<typeof REGISTER_VOICE_SCHEMA>,
+      signal?: AbortSignal,
+    ) => {
       const providerId = resolveRegistrationProviderId(deps.ttsConnection);
       const adapter = providerId ? getVoiceRegistrationAdapter(providerId) : undefined;
       const connection =

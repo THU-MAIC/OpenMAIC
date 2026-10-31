@@ -230,13 +230,13 @@ function slotImageConfig(
 }
 
 function imageProviderSource(deps: Partial<GenerateImageToolDeps>) {
-  if (deps.imageConnection !== undefined) {
+  const connection = deps.imageConnection;
+  if (connection !== undefined) {
     return {
-      configuredProviders:
-        deps.getConfiguredProviders ?? (() => slotImageListing(deps.imageConnection)),
+      configuredProviders: deps.getConfiguredProviders ?? (() => slotImageListing(connection)),
       resolveProviderConfig:
         deps.resolveProviderConfig ??
-        ((providerId: ImageProviderId) => slotImageConfig(deps.imageConnection, providerId)),
+        ((providerId: ImageProviderId) => slotImageConfig(connection, providerId)),
     };
   }
   const slot = slotImageProvider(deps.ownerId);
@@ -247,12 +247,13 @@ function imageProviderSource(deps: Partial<GenerateImageToolDeps>) {
 }
 
 export function hasConfiguredImageGeneration(
-  depsOrConnection?: Partial<GenerateImageToolDeps> | ReturnType<typeof serverMediaConnection> extends Promise<infer T> ? T : never,
+  depsOrConnection?: Partial<GenerateImageToolDeps> | MediaConnection | 'off' | null,
 ): boolean {
   if (!depsOrConnection) return false;
   const isConnection =
     depsOrConnection === 'off' ||
-    ('providerId' in (depsOrConnection as object) && typeof (depsOrConnection as { providerId?: unknown }).providerId === 'string');
+    ('providerId' in (depsOrConnection as object) &&
+      typeof (depsOrConnection as { providerId?: unknown }).providerId === 'string');
   const deps: Partial<GenerateImageToolDeps> = isConnection
     ? { imageConnection: depsOrConnection as MediaConnection | 'off' | null }
     : (depsOrConnection as Partial<GenerateImageToolDeps>);
@@ -277,9 +278,10 @@ export function generateImagePromptBlock(): string {
   ].join('\n');
 }
 
-export function buildGenerateImageTool(
-  deps: GenerateImageToolDeps,
-): AgentTool<typeof GenerateImageParams, unknown> & {
+export function buildGenerateImageTool(deps: GenerateImageToolDeps): AgentTool<
+  typeof GenerateImageParams,
+  unknown
+> & {
   capability: 'image';
   promptBlock: string;
 } {

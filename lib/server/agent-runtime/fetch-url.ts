@@ -177,7 +177,7 @@ export function buildFetchUrlTool(deps: FetchUrlToolDependencies): AgentTool<nev
   const fetchUrl = deps.fetchUrl ?? fetchAndExtractUrl;
   const saveWebMaterial = deps.saveWebMaterial ?? createWebMaterial;
 
-  const tool: AgentTool<typeof FETCH_URL_SCHEMA, unknown> = {
+  const tool = {
     name: 'fetch_url',
     label: 'Fetch URL into materials',
     description:
@@ -186,7 +186,11 @@ export function buildFetchUrlTool(deps: FetchUrlToolDependencies): AgentTool<nev
       'with the material id. Use it when the user references a specific page or when a search hit ' +
       'needs its full content.',
     parameters: FETCH_URL_SCHEMA,
-    execute: async (_callId, params: Static<typeof FETCH_URL_SCHEMA>, signal) => {
+    execute: async (
+      _callId: string,
+      params: Static<typeof FETCH_URL_SCHEMA>,
+      signal?: AbortSignal,
+    ) => {
       throwIfAborted(signal);
       if (!(await urlAllowed(deps.sessionId, params.url))) {
         const message =

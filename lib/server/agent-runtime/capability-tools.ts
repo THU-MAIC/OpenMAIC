@@ -2,23 +2,13 @@ import type { AgentTool } from '@earendil-works/pi-agent-core';
 import type { TSchema } from 'typebox';
 import type { MediaConnection } from '@/lib/server/model-config/media';
 import { serverMediaConnection } from '@/lib/server/model-config/media';
-import {
-  resolveWebSearchCapability,
-  type WebSearchCapability,
-} from './web-search';
+import { resolveWebSearchCapability, type WebSearchCapability } from './web-search';
 import { resolveWebFetchCapability, untrustedContentPolicyPromptBlock } from './fetch-url';
 import { hasConfiguredImageGeneration } from './generate-image';
 import { hasConfiguredVideoGeneration } from './generate-video';
 import { hasConfiguredTtsCapability } from './scene-tts';
-import {
-  hasConfiguredVoiceRegistrationCapability,
-  voiceCloneToolsPrompt,
-} from './voice-clone-tools';
-import {
-  courseSystemPrompt,
-  DSL_TOOLS_PROMPT,
-  type CoursePromptBlocks,
-} from './course-tools';
+import { hasConfiguredVoiceRegistrationCapability } from './voice-clone-tools';
+import { courseSystemPrompt, DSL_TOOLS_PROMPT, type CoursePromptBlocks } from './course-tools';
 
 export type CapabilityRequirement =
   | 'tts'
@@ -30,7 +20,7 @@ export type CapabilityRequirement =
 
 export interface CapabilityDependentTool<
   TParameters extends TSchema = TSchema,
-  TDetails = any,
+  TDetails = unknown,
 > extends AgentTool<TParameters, TDetails> {
   capability: CapabilityRequirement;
   promptBlock?: string | (() => string);
@@ -120,9 +110,8 @@ export function createCapabilityMap(
 export interface AssembleCapabilityRuntimeOptions {
   capabilities: ResolvedCapabilityMap;
   candidateTools: ReadonlyArray<AgentTool | ReadonlyArray<AgentTool>>;
-  basePromptBlocks?:
-    | CoursePromptBlocks
-    | (() => CoursePromptBlocks);
+  baseAllowedToolNames?: ReadonlyArray<string> | ReadonlySet<string>;
+  basePromptBlocks?: CoursePromptBlocks | (() => CoursePromptBlocks);
   wrapTools?: (tools: AgentTool[]) => AgentTool[];
 }
 
@@ -156,7 +145,10 @@ export function assembleCapabilityRuntime(
   }
 
   const tools = options.wrapTools ? options.wrapTools(keptTools) : keptTools;
-  const allowedToolNames = new Set(tools.map((t) => t.name));
+  const allowedToolNames = new Set([
+    ...(options.baseAllowedToolNames ?? []),
+    ...tools.map((t) => t.name),
+  ]);
 
   const buildPromptBlocks = (): CoursePromptBlocks => {
     const base =
