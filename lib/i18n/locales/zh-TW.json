@@ -2245,6 +2245,12 @@
         "processing_interrupted": {
           "label": "解析未完成",
           "description": "本次解析未能完成，可以稍後重試。"
+        },
+        "too_many_pages": {
+          "label": "頁數過多",
+          "description": "這份 PDF 有 {{pages}} 頁，超過 {{maxPages}} 頁的解析上限。請拆分後上傳，或只上傳需要的章節。",
+          "descriptionWithoutCount": "這份 PDF 超過 {{maxPages}} 頁的解析上限。請拆分後上傳，或只上傳需要的章節。",
+          "descriptionWithoutLimit": "這份 PDF 的頁數超過了解析服務的上限。請拆分後上傳，或只上傳需要的章節。"
         }
       },
       "status": {

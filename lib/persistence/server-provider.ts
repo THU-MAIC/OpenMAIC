@@ -28,6 +28,21 @@ import { ensureOwnerAgentSchema } from '@/lib/server/agents/store';
 export type PersistencePoolFactory = (connectionString: string) => Pool;
 
 /**
+ * How long a caller waits for a pooled connection before the acquire fails.
+ * `pg` waits forever by default, so an exhausted pool would leave every
+ * request queued behind it hanging with no error, no log and no way for its
+ * caller to fail over.
+ */
+export const PERSISTENCE_POOL_CONNECTION_TIMEOUT_MS = 10_000;
+
+/** The persistence pool a deployment gets unless it passes its own factory. */
+export const defaultPersistencePool: PersistencePoolFactory = (connectionString) =>
+  new Pool({
+    connectionString,
+    connectionTimeoutMillis: PERSISTENCE_POOL_CONNECTION_TIMEOUT_MS,
+  });
+
+/**
  * The process's persistence stores. There is deliberately no document store
  * here: an unscoped `PgDocumentStore` would write courses with no owner check
  * and no host create hooks. Documents are reached only through the
@@ -164,7 +179,7 @@ async function createServerPersistenceProvider(
  */
 export function getServerPersistenceProvider(
   connectionString: string,
-  poolFactory: PersistencePoolFactory = (value) => new Pool({ connectionString: value }),
+  poolFactory: PersistencePoolFactory = defaultPersistencePool,
 ): Promise<ServerPersistenceProvider> {
   const key = connectionString.trim();
   if (providerState.providerPromise && providerState.connectionString === key) {

@@ -1081,6 +1081,12 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
       openWaiting(next, `${key}-w`, event.ts);
       break;
     }
+    case 'skill_detached': {
+      // Recovery is an internal state repair, not a new chat message. Keep the
+      // historical Skill loads intact without exposing the frozen binding.
+      next.skillId = null;
+      break;
+    }
     case 'session_interrupted': {
       // PR1: the runner parked the job WITHOUT a terminal status (deploy
       // handoff / lease lost). The row stays `running`; another instance will

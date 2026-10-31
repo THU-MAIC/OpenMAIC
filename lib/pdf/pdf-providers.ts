@@ -147,6 +147,7 @@ import { extractMinerUResult } from './mineru-parser';
 import { parseWithMinerUCloud } from './mineru-cloud';
 import { parseWithAliDocMindClient } from './alidocmind-client';
 import { providerFetch, type ProviderFetchPolicy } from '@/lib/server/provider-fetch';
+import { MaterialSourceRefusedError } from '@/lib/server/material-extraction/errors';
 
 const log = createLogger('PDFProviders');
 const DEFAULT_MINERU_BACKEND = 'pipeline';
@@ -184,9 +185,101 @@ export function describeSelfHostedMinerUError(status: number, rawBody: string): 
     );
   }
 
-  // Unknown failure: report the status only. The body is logged by the caller
-  // and never echoed, so the parse route cannot relay a target's content.
+  // Unknown failure: report the status only, whoever configured the service.
+  // The thrown message reaches clients (the parse route's response, stored
+  // extraction errors), so the body -- which can name a server's paths or
+  // configuration -- is only written to the server log by the caller.
   return `MinerU API error (${status})`;
+}
+
+/** How much of a failed response's body is read. */
+const MINERU_ERROR_BODY_MAX_BYTES = 64 * 1024;
+
+/**
+ * A MinerU (or MinerU gateway) error body: an OpenAI-style
+ * `{"error":{"code","message"}}`, FastAPI's `{"detail": "..."}`, or plain
+ * text. Exported for unit testing.
+ */
+export function parseMinerUErrorBody(rawBody: string): { code?: string; message: string } {
+  const text = rawBody.trim();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { message: text };
+  }
+  if (!parsed || typeof parsed !== 'object') return { message: text };
+  const body = parsed as { error?: unknown; detail?: unknown; message?: unknown };
+  const string = (value: unknown) => (typeof value === 'string' ? value.trim() : undefined);
+  if (body.error && typeof body.error === 'object') {
+    const error = body.error as { code?: unknown; type?: unknown; message?: unknown };
+    const code = string(error.code) || string(error.type);
+    return { ...(code ? { code } : {}), message: string(error.message) ?? '' };
+  }
+  return { message: string(body.error) ?? string(body.detail) ?? string(body.message) ?? text };
+}
+
+/**
+ * The page count and page limit a "too many pages" refusal states, as far as
+ * its message says them ("PDF has 461 pages, which exceeds the 200-page
+ * limit"). Exported for unit testing.
+ */
+export function pageLimitOf(message: string): { pages?: number; maxPages?: number } {
+  const number = (match: RegExpMatchArray | null) => {
+    const value = match ? Number(match[1]) : NaN;
+    return Number.isSafeInteger(value) && value > 0 ? value : undefined;
+  };
+  const pages = number(message.match(/\b(\d+)\s+pages\b/i));
+  const maxPages =
+    number(message.match(/\b(\d+)[-\s]pages?\s+limit\b/i)) ??
+    number(message.match(/\b(?:limit|maximum|max)\b\D{0,24}?(\d+)/i));
+  return { ...(pages ? { pages } : {}), ...(maxPages ? { maxPages } : {}) };
+}
+
+/** A failed response's body, read up to a bound: an error page can be large. */
+async function readBoundedErrorBody(response: Response): Promise<string> {
+  const reader = response.body?.getReader();
+  if (!reader) return '';
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (total < MINERU_ERROR_BODY_MAX_BYTES) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      total += value.byteLength;
+    }
+  } catch {
+    // A body that breaks off is read as far as it came.
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks).subarray(0, MINERU_ERROR_BODY_MAX_BYTES));
+}
+
+/**
+ * The error a failed `/file_parse` throws. A refusal of the document itself
+ * (a MinerU gateway's `pdf_too_many_pages`) is a {@link MaterialSourceRefusedError}
+ * with the counts it states: not retried, and no other provider is tried for
+ * the same file. Its message carries only those counts, never the body.
+ */
+export function selfHostedMinerUFailure(status: number, rawBody: string): Error {
+  const { code, message } = parseMinerUErrorBody(rawBody);
+  if (code === 'pdf_too_many_pages') {
+    const { pages, maxPages } = pageLimitOf(message);
+    const counts = [
+      pages ? `${pages} pages` : undefined,
+      maxPages ? `limit ${maxPages} pages` : undefined,
+    ].filter(Boolean);
+    return new MaterialSourceRefusedError(
+      `MinerU refused the document: too many pages (status ${status}${counts.length ? `; ${counts.join(', ')}` : ''})`,
+      {
+        reasonCode: 'too_many_pages',
+        reasonValues: { ...(pages ? { pages } : {}), ...(maxPages ? { maxPages } : {}) },
+      },
+    );
+  }
+  return new Error(describeSelfHostedMinerUError(status, rawBody));
 }
 
 // A caller-supplied self-hosted MinerU URL runs under the operator address
@@ -693,9 +786,9 @@ export async function parseWithMinerUDocument(
   }
 
   if (!response.ok) {
-    const errorText = await response.text().catch(() => '');
+    const errorText = await readBoundedErrorBody(response);
     log.error(`[MinerU] file_parse failed [status=${response.status}]: ${errorText.slice(0, 500)}`);
-    throw new Error(describeSelfHostedMinerUError(response.status, errorText));
+    throw selfHostedMinerUFailure(response.status, errorText);
   }
 
   // A body that is not JSON must not surface the parser's message: Node's

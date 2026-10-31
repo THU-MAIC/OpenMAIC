@@ -26,6 +26,7 @@ import {
   type AgentSessionMeta,
   type AgentSessionAutomaticTitleStore,
   type AgentSessionStore,
+  type AgentSessionSkillStore,
   type AgentSessionTitleStore,
   type AgentSessionTransaction,
   type AgentSessionUrlSource,
@@ -503,6 +504,7 @@ let savepointSerial = 0;
 export class PgAgentSessionStore
   implements
     AgentSessionStore,
+    AgentSessionSkillStore,
     AgentSessionTitleStore,
     AgentSessionAutomaticTitleStore,
     AgentSessionEventLog,
@@ -1040,6 +1042,26 @@ export class PgAgentSessionStore
       const parent = await this.lockForAppend(tx, sessionId, workerId);
       if (!parent || Number(parent.attempt) !== event.attempt) return null;
       return this.insertEvent(tx, sessionId, event);
+    });
+  }
+
+  async detachSessionSkill(
+    sessionId: string,
+    input: Parameters<AgentSessionSkillStore['detachSessionSkill']>[1],
+  ): Promise<boolean> {
+    return this.transaction(async (tx) => {
+      const result = await tx.query<{ id: string }>(
+        `UPDATE ${this.table('sessions')}
+         SET skill_id = NULL, updated_at = now()
+         WHERE id = $1 AND owner_id = $2 AND skill_id = $3
+           AND lease_worker_id = $4 AND attempt = $5
+           AND status = 'running' AND deleted_at IS NULL
+         RETURNING id`,
+        [sessionId, input.ownerId, input.skillId, input.workerId, input.attempt],
+      );
+      if (!result.rows.length) return false;
+      await this.insertEvent(tx, sessionId, { ...input.notice, attempt: input.attempt });
+      return true;
     });
   }
 

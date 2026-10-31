@@ -1,4 +1,5 @@
-import { AssetQuotaExceededError, type AssetStore } from '@openmaic/storage';
+import { AssetQuotaExceededError, type AssetPrincipal, type AssetStore } from '@openmaic/storage';
+import type { PgAssetStore } from '@openmaic/storage/asset/pg';
 import type { AssetMeta } from '@openmaic/dsl';
 import type { Queryable } from '@openmaic/storage/document/pg';
 
@@ -125,15 +126,36 @@ export async function storeGeneratedAsset(
     ? (meta, blob) => input.assetStore!.put(assetPrincipalForOwner(input.ownerId), blob, meta)
     : async (meta, blob) => {
         const provider = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
-        return provider.withTransaction(async (tx) => {
-          const ownerId = await forwardOwnerWrite(tx, input.ownerId);
-          await input.fence?.(tx);
-          const assetId = await provider
-            .assetStoreIn(tx)
-            .put(assetPrincipalForOwner(ownerId), blob, meta);
-          await input.afterPut?.(tx, assetId);
-          return assetId;
-        });
+        const allocateFenced = (
+          put: (store: PgAssetStore, principal: AssetPrincipal) => Promise<string>,
+        ): Promise<string> =>
+          provider.withTransaction(async (tx) => {
+            const ownerId = await forwardOwnerWrite(tx, input.ownerId);
+            await input.fence?.(tx);
+            const assetId = await put(provider.assetStoreIn(tx), assetPrincipalForOwner(ownerId));
+            await input.afterPut?.(tx, assetId);
+            return assetId;
+          });
+        // With an in-database byte layer the write joins the transaction
+        // anyway, and staging would only add one.
+        if (!provider.assetStore.stagesByteWrites()) {
+          return allocateFenced((store, principal) => store.put(principal, blob, meta));
+        }
+        // An object store: the bytes go up first, on the pool-bound store, so
+        // the transaction below -- and the owner lock it takes -- is never held
+        // open across an upload that may be hundreds of MiB. Nothing names the
+        // staged bytes until `putStaged` commits; a stage this transaction does
+        // not spend (a fence refusal, a full quota, a failing `afterPut`) is
+        // given back at once instead of holding its bytes until it expires.
+        const staged = await provider.assetStore.stageBytes(blob);
+        try {
+          return await allocateFenced((store, principal) =>
+            store.putStaged(principal, staged, meta),
+          );
+        } catch (error) {
+          await provider.assetStore.releaseStaged(staged);
+          throw error;
+        }
       };
   // `stageId` rides in the entry's metadata rather than in a dedicated column:
   // the browser's `putAsset(bytes, meta)` never sends a stage to the server, so

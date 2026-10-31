@@ -2260,6 +2260,12 @@
         "processing_interrupted": {
           "label": "분석 미완료",
           "description": "분석을 완료하지 못했습니다. 나중에 다시 시도할 수 있습니다."
+        },
+        "too_many_pages": {
+          "label": "페이지 수 초과",
+          "description": "이 PDF는 {{pages}}페이지로, 분석 한도인 {{maxPages}}페이지를 초과합니다. 파일을 나누어 업로드하거나 필요한 장만 업로드하세요.",
+          "descriptionWithoutCount": "이 PDF는 분석 한도인 {{maxPages}}페이지를 초과합니다. 파일을 나누어 업로드하거나 필요한 장만 업로드하세요.",
+          "descriptionWithoutLimit": "이 PDF는 분석 서비스가 처리할 수 있는 페이지 수를 초과합니다. 파일을 나누어 업로드하거나 필요한 장만 업로드하세요."
         }
       },
       "status": {

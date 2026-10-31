@@ -62,9 +62,11 @@ export {
   ASSET_PG_MIGRATIONS,
   ASSET_PG_SCHEMA,
   DEFAULT_ASSET_PENDING_TTL_MS,
+  DEFAULT_ASSET_STAGE_TTL_MS,
   PgAssetStore,
   ensureAssetSchema,
   type PgAssetStoreOptions,
+  type StagedAssetBytes,
 } from './asset/pg.js';
 // `./asset/references.js` is deliberately NOT re-exported. Its functions are
 // transaction-scoped maintenance primitives that replace and delete reference
@@ -120,6 +122,7 @@ export {
   type HttpDocumentHeadersContext,
   type HttpDocumentHeadersHook,
   type HttpDocumentStoreOptions,
+  type HttpDocumentWriteOptions,
 } from './document/http.js';
 export {
   SCHEMA_MIGRATION_LOCK_KEY,
@@ -191,6 +194,7 @@ export {
   type AgentSessionMessageEntry,
   type AgentSessionMeta,
   type AgentSessionStatus,
+  type AgentSessionSkillStore,
   type AgentSessionStore,
   type AgentSessionTitleStore,
   type AgentSessionTransaction,

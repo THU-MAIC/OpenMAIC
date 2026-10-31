@@ -2260,6 +2260,12 @@
         "processing_interrupted": {
           "label": "解析未完成",
           "description": "本次解析未能完成，可以稍后重试。"
+        },
+        "too_many_pages": {
+          "label": "页数过多",
+          "description": "这份 PDF 有 {{pages}} 页，超过 {{maxPages}} 页的解析上限。请拆分后上传，或只上传需要的章节。",
+          "descriptionWithoutCount": "这份 PDF 超过 {{maxPages}} 页的解析上限。请拆分后上传，或只上传需要的章节。",
+          "descriptionWithoutLimit": "这份 PDF 的页数超过了解析服务的上限。请拆分后上传，或只上传需要的章节。"
         }
       },
       "status": {

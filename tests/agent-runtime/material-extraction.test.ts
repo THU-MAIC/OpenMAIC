@@ -22,6 +22,8 @@ import { runNextMaterialExtraction } from '@/lib/server/material-extraction/runn
 import { LocalMediaExtractionError } from '@/lib/document/extractors/local-media';
 import type { DocumentExtractorProvider, MediaExtractorProvider } from '@/lib/document';
 import { getDocumentExtractorManifestEntry } from '@/lib/document/extractors/manifest';
+import { selfHostedMinerUFailure } from '@/lib/pdf/pdf-providers';
+import { materialModelCopy } from '@/lib/server/agent-runtime/material-model-copy';
 
 function mediaProvider(
   extract: MediaExtractorProvider['extract'],
@@ -453,6 +455,66 @@ describe('document parsing service unavailable (session chain)', () => {
     expect(failure.reasonCode).toBeUndefined();
   });
 
+  it('stops at a page-limit refusal: no fallback provider, not retried', async () => {
+    const unpdf = vi.fn(async () => ({
+      metadata: { pageCount: 1 },
+      blocks: [{ id: 'b1', type: 'text', text: 'unpdf text' }],
+    }));
+    const refusing = {
+      ...documentService('mineru', ['application/pdf']),
+      extract: vi.fn(async () => {
+        throw selfHostedMinerUFailure(
+          422,
+          JSON.stringify({
+            error: {
+              code: 'pdf_too_many_pages',
+              message: 'PDF has 461 pages, which exceeds the 200-page limit',
+            },
+          }),
+        );
+      }) as never,
+    };
+    const plan = await planSourceExtraction(
+      { bytes: Buffer.from('%PDF'), mime: 'application/pdf' },
+      'long.pdf',
+      {
+        providers: () => [
+          refusing,
+          { ...documentService('unpdf', ['application/pdf']), extract: unpdf as never },
+        ],
+        configuredProviderIds: () => ['mineru'],
+      },
+    );
+    const failure = await runSourceExtraction(plan, 'long.pdf').catch((error) => error);
+    expect(failure).toMatchObject({
+      reasonCode: 'too_many_pages',
+      reasonValues: { pages: 461, maxPages: 200 },
+      retryable: false,
+    });
+    expect(failure.message).toContain('mineru: MinerU refused the document: too many pages');
+    expect(unpdf).not.toHaveBeenCalled();
+  });
+
+  it('keeps a MinerU error body out of the failure it stores and reports', async () => {
+    const failing = {
+      ...documentService('mineru', ['application/pdf']),
+      extract: vi.fn(async () => {
+        throw selfHostedMinerUFailure(
+          500,
+          JSON.stringify({ detail: 'config not found at /srv/internal/mineru.yaml' }),
+        );
+      }) as never,
+    };
+    const plan = await planSourceExtraction(
+      { bytes: Buffer.from('%PDF'), mime: 'application/pdf' },
+      'doc.pdf',
+      { providers: () => [failing], configuredProviderIds: () => ['mineru'] },
+    );
+    const failure = await runSourceExtraction(plan, 'doc.pdf').catch((error) => error);
+    expect(failure.message).toContain('mineru: MinerU API error (500)');
+    expect(failure.message).not.toContain('/srv/internal');
+  });
+
   it('reads whether a candidate is a service from its metadata, not its id', async () => {
     const reasonFor = async (requiresServiceConfig: boolean) => {
       const plan = await planSourceExtraction(
@@ -471,4 +533,19 @@ describe('document parsing service unavailable (session chain)', () => {
     expect(await reasonFor(true)).toBe('service_unavailable');
     expect(await reasonFor(false)).toBeUndefined();
   });
+});
+
+it('tells the model a page-limit refusal in the page words, with the stored counts', async () => {
+  const zh = await materialModelCopy('zh-CN');
+  expect(zh.failure('too_many_pages', 'library', { pages: 461, maxPages: 200 })).toEqual({
+    reasonCode: 'too_many_pages',
+    reason: '页数过多',
+    guidance: '这份 PDF 有 461 页，超过 200 页的解析上限。请拆分后上传，或只上传需要的章节。',
+  });
+  const en = await materialModelCopy('en-US');
+  expect(en.failure('too_many_pages', 'conversation', { maxPages: 200 }).guidance).toBe(
+    'This PDF is over the 200-page parsing limit. Split it and upload the parts, or upload only the chapters you need.',
+  );
+  expect(en.failure('too_many_pages', 'conversation').guidance).not.toMatch(/{{|\d/);
+  expect(en.failure('media_too_long').guidance).toContain('90 minutes');
 });

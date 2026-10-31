@@ -104,7 +104,7 @@ function makeBody(question: string): StatelessChatRequest {
 describe('Pi Director scene tool wiring', () => {
   it('can resolve a question whose evidence exists only on the next slide', async () => {
     const body = makeBody('下一页才会讲到的对称轴是什么？');
-    const prompt = buildDirectorPrompt(body, [teacher], 4);
+    const prompt = buildDirectorPrompt(body, [teacher]);
     const tool = buildReadSceneTool({ body });
 
     const result = await tool.execute('read-next', { sceneId: 'scene-2' });

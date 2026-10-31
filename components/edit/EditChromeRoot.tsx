@@ -9,7 +9,7 @@ import { isMaicEditorEnabled } from '@/lib/config/feature-flags';
 import { preloadEditor } from '@/lib/edit/preload-editor';
 import { sceneEditorRegistry } from '@/lib/edit/scene-editor-registry';
 import { getScenePagerState } from '@/lib/edit/scene-pager';
-import { useStageStore } from '@/lib/store/stage';
+import { flushStageSave, useStageStore } from '@/lib/store/stage';
 import { useInWorkbenchPanel } from '@/lib/workbench/panel-context';
 import { supportsNarrationTimeline } from './scene-timeline';
 import type { Scene } from '@/lib/types/stage';
@@ -88,6 +88,18 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChro
   useEffect(() => {
     void preloadEditor();
   }, []);
+
+  // Leaving the editor (Done editing, the Learn tab, a route change) saves
+  // what is pending now rather than after the autosave's debounce, so the
+  // next screen, or a reload soon after, finds the edit on the server.
+  useEffect(
+    () => () => {
+      void flushStageSave().catch(() => {
+        // Logged by the save; the pending changes stay queued for retry.
+      });
+    },
+    [],
+  );
 
   // Whether this scene type has a registered canvas editor surface (slide/quiz).
   // Authoring surface is separate from narration timeline availability.

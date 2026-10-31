@@ -17,11 +17,15 @@ export const PRESET_ID_OVERRIDES: Partial<Record<SlotCapability, Record<string, 
 };
 
 /**
- * Token plans whose id matches a chat provider but whose endpoint differs from
- * it (the Kimi coding plan is not the Moonshot open platform), so the plan gets
- * its own preset id and the chat provider keeps its id.
+ * Token plans whose id matches another preset, so the plan gets its own preset
+ * id and the other preset keeps its id: the Kimi coding plan is not the
+ * Moonshot open platform, and the DeepSeek plan's provider stays apart from a
+ * personal DeepSeek provider on the same endpoint.
  */
-export const TOKEN_PLAN_ID_OVERRIDES: Record<string, string> = { kimi: 'kimi-coding-plan' };
+export const TOKEN_PLAN_ID_OVERRIDES: Record<string, string> = {
+  kimi: 'kimi-coding-plan',
+  deepseek: 'deepseek-token-plan',
+};
 
 /** The preset of a capability's built-in registry entry. */
 export function presetIdFor(capability: SlotCapability, registryId: string): string {

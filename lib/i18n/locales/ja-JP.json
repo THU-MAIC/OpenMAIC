@@ -2260,6 +2260,12 @@
         "processing_interrupted": {
           "label": "解析が完了しませんでした",
           "description": "解析を完了できませんでした。しばらくしてから再試行できます。"
+        },
+        "too_many_pages": {
+          "label": "ページ数が多すぎます",
+          "description": "この PDF は {{pages}} ページあり、解析できる上限の {{maxPages}} ページを超えています。分割してアップロードするか、必要な章だけをアップロードしてください。",
+          "descriptionWithoutCount": "この PDF は解析できる上限の {{maxPages}} ページを超えています。分割してアップロードするか、必要な章だけをアップロードしてください。",
+          "descriptionWithoutLimit": "この PDF のページ数は解析サービスの上限を超えています。分割してアップロードするか、必要な章だけをアップロードしてください。"
         }
       },
       "status": {

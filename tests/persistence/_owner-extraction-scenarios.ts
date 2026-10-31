@@ -11,6 +11,7 @@
  */
 import { OwnerMaterialBytesUnavailableError } from '@/lib/server/materials/owner-material-bytes';
 import { MaterialExtractionError } from '@/lib/server/material-extraction/errors';
+import { selfHostedMinerUFailure } from '@/lib/pdf/pdf-providers';
 import { createHash, randomUUID } from 'node:crypto';
 
 import { ensureAgentSessionSchema } from '@openmaic/storage/agent-session/pg';
@@ -1816,6 +1817,53 @@ export async function documentFallbackScenario(h: ExtractionHarness): Promise<vo
       provider('alidocmind', ['image/png'], h.documentExtract),
     ]),
   ).toMatchObject({ status: 'done', reason_code: null });
+}
+
+/**
+ * A configured MinerU (gateway) that refuses a PDF for its page count ends
+ * the attempt: the local unpdf behind it is not tried, the first claim is
+ * the last (no retry), and the counts are kept with the public reason for
+ * the page to state. Parsing again queues it afresh, without the old counts.
+ */
+export async function tooManyPagesScenario(h: ExtractionHarness): Promise<void> {
+  const { provider, run } = documentCandidates(h);
+  const pdf = ['application/pdf'];
+  const refusal = vi.fn(async () => {
+    throw selfHostedMinerUFailure(
+      422,
+      JSON.stringify({
+        error: {
+          code: 'pdf_too_many_pages',
+          message: 'PDF has 461 pages, which exceeds the 200-page limit',
+        },
+      }),
+    );
+  });
+  const providers = [provider('mineru', pdf, refusal), provider('unpdf', pdf, h.documentExtract)];
+  expect(await run('pdf-long', 'application/pdf', providers, ['mineru'])).toMatchObject({
+    status: 'failed',
+    reason_code: 'too_many_pages',
+    extraction_claims: 1,
+    extraction_result: null,
+  });
+  expect(refusal).toHaveBeenCalledTimes(1);
+  expect(h.documentExtract).not.toHaveBeenCalled();
+  const stored = async () =>
+    (
+      await h.pool.query<{ extraction: Record<string, unknown>; extraction_error: string }>(
+        'SELECT extraction, extraction_error FROM owner_material WHERE id = $1',
+        ['pdf-long'],
+      )
+    ).rows[0]!;
+  const failed = await stored();
+  expect(failed.extraction).toEqual({
+    status: 'failed',
+    reasonCode: 'too_many_pages',
+    reasonValues: { pages: 461, maxPages: 200 },
+  });
+  expect(failed.extraction_error).toContain('MinerU refused the document: too many pages');
+  await ensure(h, 'pdf-long');
+  expect((await stored()).extraction).toEqual({ status: 'pending' });
 }
 
 /** Public failure reasons survive only a terminal, current claim. */

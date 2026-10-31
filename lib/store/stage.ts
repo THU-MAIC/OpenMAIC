@@ -56,8 +56,55 @@ type FlushRound = {
 };
 let flushInFlight: FlushRound | null = null;
 let stageStorageModulePromise: Promise<typeof import('@/lib/utils/stage-storage')> | null = null;
+/**
+ * The storage module once it has loaded. The unload write must start its
+ * requests synchronously, so it cannot wait for the dynamic import; loading a
+ * course loads the module long before there is anything to write.
+ */
+let stageStorageModule: typeof import('@/lib/utils/stage-storage') | null = null;
+
+function loadStageStorageModule(): Promise<typeof import('@/lib/utils/stage-storage')> {
+  stageStorageModulePromise ??= import('@/lib/utils/stage-storage').then(
+    (module) => {
+      stageStorageModule = module;
+      return module;
+    },
+    (error: unknown) => {
+      // A failed chunk load is retried by the next caller, not cached.
+      stageStorageModulePromise = null;
+      throw error;
+    },
+  );
+  return stageStorageModulePromise;
+}
 
 const DEPARTING_STAGE_RETRY_DELAY_MS = 100;
+
+/**
+ * Saves outside the debounced flush that are writing a course right now: the
+ * aggregate `saveToStorage` and the departing-course flush in `setStage`. Both
+ * may write any part of the document from a snapshot older than the queue, so
+ * the unload write treats them like a whole-document flush round.
+ */
+const wholeDocumentSavesInFlight = new Map<string, number>();
+
+function trackWholeDocumentSave<T>(stageId: string, save: Promise<T>): Promise<T> {
+  wholeDocumentSavesInFlight.set(stageId, (wholeDocumentSavesInFlight.get(stageId) ?? 0) + 1);
+  const release = () => {
+    const count = (wholeDocumentSavesInFlight.get(stageId) ?? 1) - 1;
+    if (count > 0) wholeDocumentSavesInFlight.set(stageId, count);
+    else wholeDocumentSavesInFlight.delete(stageId);
+  };
+  return save.finally(release);
+}
+
+/**
+ * Pending entries already handed to a keepalive write that is still in
+ * flight, by key: the revision sent. Such an entry stays queued when another
+ * save is in flight (see `writePendingChangesForUnload`), and this keeps a
+ * second unload event from sending the same revision again.
+ */
+const keepaliveSentRevisions = new Map<string, number>();
 
 const SAVE_DEBOUNCE_MS = 500;
 const SAVE_BACKOFF_MAX_MS = 30_000;
@@ -511,8 +558,7 @@ async function persistDirtySnapshot(
   // was taken; a deletion after that moment permanently invalidates this
   // write, even if a same-id restore has since lifted the deleted flag.
   if (isStageWriteStale(stageId, capturedEpoch)) return 'stale-dropped';
-  stageStorageModulePromise ??= import('@/lib/utils/stage-storage');
-  const { saveStageDataIncremental } = await stageStorageModulePromise;
+  const { saveStageDataIncremental } = await loadStageStorageModule();
   const result = await saveStageDataIncremental(
     stageId,
     [...dirtySnapshot.values()].map(({ change }) => change),
@@ -593,36 +639,39 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
        * short delay, then logged and dropped so it cannot leak into the next
        * document or block navigation indefinitely.
        */
-      void (async () => {
-        let lastFailedKeys = new Set<string>();
-        for (let attempt = 0; attempt < 2; attempt += 1) {
-          try {
-            const result = await persistDirtySnapshot(
-              departingStageId,
-              departingDirty,
-              departingSnapshot,
-              departingEpoch,
-            );
-            // A fenced drop has nothing to retry: the deletion epoch outlives
-            // any restore, so the retry would be dropped identically. This
-            // departing snapshot is NOT covered by the deletion path's
-            // failed-delete restore (that restore is scoped to the pending
-            // map and an in-flight flush round, which this dirt already
-            // left) — on a failed delete it is fenced and dropped, an
-            // accepted consequence of navigation not being a durability
-            // barrier.
-            if (result === 'stale-dropped') return;
-            lastFailedKeys = result;
-            if (lastFailedKeys.size === 0) return;
-          } catch (error) {
-            if (attempt === 1) throw error;
+      void trackWholeDocumentSave(
+        departingStageId,
+        (async () => {
+          let lastFailedKeys = new Set<string>();
+          for (let attempt = 0; attempt < 2; attempt += 1) {
+            try {
+              const result = await persistDirtySnapshot(
+                departingStageId,
+                departingDirty,
+                departingSnapshot,
+                departingEpoch,
+              );
+              // A fenced drop has nothing to retry: the deletion epoch outlives
+              // any restore, so the retry would be dropped identically. This
+              // departing snapshot is NOT covered by the deletion path's
+              // failed-delete restore (that restore is scoped to the pending
+              // map and an in-flight flush round, which this dirt already
+              // left) — on a failed delete it is fenced and dropped, an
+              // accepted consequence of navigation not being a durability
+              // barrier.
+              if (result === 'stale-dropped') return;
+              lastFailedKeys = result;
+              if (lastFailedKeys.size === 0) return;
+            } catch (error) {
+              if (attempt === 1) throw error;
+            }
+            await delay(DEPARTING_STAGE_RETRY_DELAY_MS);
           }
-          await delay(DEPARTING_STAGE_RETRY_DELAY_MS);
-        }
-        log.warn(
-          `Departing stage ${departingStageId} dropped failed changes after one retry: ${[...lastFailedKeys].join(', ')}`,
-        );
-      })().catch((error) => {
+          log.warn(
+            `Departing stage ${departingStageId} dropped failed changes after one retry: ${[...lastFailedKeys].join(', ')}`,
+          );
+        })(),
+      ).catch((error) => {
         log.error(
           `Failed to flush departing stage ${departingStageId} after one retry; changes were dropped:`,
           error,
@@ -882,86 +931,92 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   // Storage methods. Returns true on a verified write so callers that gate on
   // durability (e.g. setGenerationComplete) can avoid recording state that
   // outruns the scene data.
-  saveToStorage: async () => {
-    const { stage, scenes, currentSceneId, chats, chatSnapshot, outlines, generationComplete } =
-      get();
-    if (!stage?.id) {
-      log.warn('Cannot save: stage.id is required');
-      return false;
-    }
-    // The run producing this course writes it; the server refuses anyone else.
-    if (isServerGeneratingStage(stage.id)) return false;
-
-    // Epoch captured with the state read above: a deletion during the PBL
-    // preparation await below permanently invalidates this write.
-    const capturedEpoch = stageDeletionEpoch(stage.id);
-    const pendingAtStart = new Map(pendingChanges);
-    try {
-      const persistedScenes = await preparePBLScenesForDocumentPersistence(stage.id, scenes);
-      const { saveStageData } = await import('@/lib/utils/stage-storage');
-      const result = await saveStageData(
-        stage.id,
-        {
-          stage,
-          scenes: persistedScenes,
-          currentSceneId,
-          chats,
-          chatSnapshot,
-          outline: {
-            outlines,
-            generationComplete,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          },
-        },
-        capturedEpoch,
-      );
-
-      // An epoch-stale drop persisted nothing: skip every piece of success
-      // bookkeeping. The chatSnapshot must not rebind to a snapshot that
-      // never landed, and the pending map must keep its dirt (the deletion
-      // path owns its discard/restore). Report the write as not durable.
-      if (result === 'stale-dropped') {
-        log.info(`Save dropped by deletion fence for stage ${stage.id}; nothing persisted`);
+  saveToStorage: () => {
+    const run = async (): Promise<boolean> => {
+      const { stage, scenes, currentSceneId, chats, chatSnapshot, outlines, generationComplete } =
+        get();
+      if (!stage?.id) {
+        log.warn('Cannot save: stage.id is required');
         return false;
       }
+      // The run producing this course writes it; the server refuses anyone else.
+      if (isServerGeneratingStage(stage.id)) return false;
 
-      const failedKeys = new Set((result?.failedChanges ?? []).map(pendingChangeKey));
-      if (
-        failedKeys.has('chats') &&
-        pendingStageId === stage.id &&
-        !pendingChanges.has('chats') &&
-        get().stage?.id === stage.id &&
-        get().chats === chats
-      ) {
-        markPendingChanges(stage.id, { kind: 'chats' });
-      }
-      // Bind future saves to the exact chat snapshot this successful write
-      // represented. Keep the restore marker unchanged: a stale no-op after a
-      // restore must remain stale until the editor reloads.
-      if (!failedKeys.has('chats') && get().stage?.id === stage.id && get().chats === chats) {
-        set({
-          chatSnapshot: {
-            sessions: structuredClone(chats),
-            restoreMarker: chatSnapshot.restoreMarker,
+      // Epoch captured with the state read above: a deletion during the PBL
+      // preparation await below permanently invalidates this write.
+      const capturedEpoch = stageDeletionEpoch(stage.id);
+      const pendingAtStart = new Map(pendingChanges);
+      try {
+        const persistedScenes = await preparePBLScenesForDocumentPersistence(stage.id, scenes);
+        const { saveStageData } = await loadStageStorageModule();
+        const result = await saveStageData(
+          stage.id,
+          {
+            stage,
+            scenes: persistedScenes,
+            currentSceneId,
+            chats,
+            chatSnapshot,
+            outline: {
+              outlines,
+              generationComplete,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            },
           },
-        });
-      }
-      if (pendingStageId === stage.id) {
-        for (const [key, entry] of pendingAtStart) {
-          if (!failedKeys.has(key) && pendingChanges.get(key)?.revision === entry.revision) {
-            pendingChanges.delete(key);
-          }
-        }
-        if (pendingChanges.size === 0) cancelScheduledSave();
-        else schedulePendingSave();
-      }
+          capturedEpoch,
+        );
 
-      return true;
-    } catch (error) {
-      log.error('Failed to save to storage:', error);
-      return false;
-    }
+        // An epoch-stale drop persisted nothing: skip every piece of success
+        // bookkeeping. The chatSnapshot must not rebind to a snapshot that
+        // never landed, and the pending map must keep its dirt (the deletion
+        // path owns its discard/restore). Report the write as not durable.
+        if (result === 'stale-dropped') {
+          log.info(`Save dropped by deletion fence for stage ${stage.id}; nothing persisted`);
+          return false;
+        }
+
+        const failedKeys = new Set((result?.failedChanges ?? []).map(pendingChangeKey));
+        if (
+          failedKeys.has('chats') &&
+          pendingStageId === stage.id &&
+          !pendingChanges.has('chats') &&
+          get().stage?.id === stage.id &&
+          get().chats === chats
+        ) {
+          markPendingChanges(stage.id, { kind: 'chats' });
+        }
+        // Bind future saves to the exact chat snapshot this successful write
+        // represented. Keep the restore marker unchanged: a stale no-op after a
+        // restore must remain stale until the editor reloads.
+        if (!failedKeys.has('chats') && get().stage?.id === stage.id && get().chats === chats) {
+          set({
+            chatSnapshot: {
+              sessions: structuredClone(chats),
+              restoreMarker: chatSnapshot.restoreMarker,
+            },
+          });
+        }
+        if (pendingStageId === stage.id) {
+          for (const [key, entry] of pendingAtStart) {
+            if (!failedKeys.has(key) && pendingChanges.get(key)?.revision === entry.revision) {
+              pendingChanges.delete(key);
+            }
+          }
+          if (pendingChanges.size === 0) cancelScheduledSave();
+          else schedulePendingSave();
+        }
+
+        return true;
+      } catch (error) {
+        log.error('Failed to save to storage:', error);
+        return false;
+      }
+    };
+    const stageId = get().stage?.id;
+    // Tracked so an unload during the save knows a whole-document write is
+    // still on its way (see writePendingChangesForUnload).
+    return stageId ? trackWholeDocumentSave(stageId, run()) : run();
   },
 
   loadFromStorage: async (stageId: string, loadToken?: StageSceneLoadToken) => {
@@ -1058,7 +1113,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         }
       }
 
-      const { loadStageData } = await import('@/lib/utils/stage-storage');
+      const { loadStageData } = await loadStageStorageModule();
       const data = await loadStageData(stageId);
 
       const outlinesRecord = data?.outline;
@@ -1302,14 +1357,152 @@ export async function flushStageSave(): Promise<void> {
   throw new Error(`Stage persistence did not quiesce after ${MAX_FLUSH_DRAIN_ROUNDS} flush rounds`);
 }
 
-if (typeof window !== 'undefined') {
-  const kickPendingSave = () => {
-    void flushStageSave().catch(() => {
-      // Best effort during page shutdown; pending dirt remains for a live retry.
+/**
+ * Settle the pending save before leaving the editor, so what the user just
+ * did is on the server before the next screen (or a reload) can ask for it.
+ * Bounded: a stalled request must not hold the user in the editor; whatever
+ * is still pending afterwards stays queued for the regular retry.
+ */
+export async function settlePendingStageSave(timeoutMs = 3_000): Promise<void> {
+  await Promise.race([flushStageSave().catch(() => undefined), delay(timeoutMs)]);
+}
+
+/**
+ * Whether a flush round writes the whole document rather than single rows:
+ * the incremental save takes the aggregate path for a structural or outline
+ * change, or for a batch that spans more than one document category.
+ */
+function roundWritesWholeDocument(round: FlushRound): boolean {
+  const categories = new Set<PendingChange['kind']>();
+  for (const { change } of round.dirtySnapshot.values()) {
+    if (change.kind === 'structure' || change.kind === 'outline') return true;
+    if (DOCUMENT_CHANGE_KINDS.has(change.kind)) categories.add(change.kind);
+  }
+  return categories.size > 1;
+}
+
+/**
+ * Write what is pending while the page unloads; returns true when leaving now
+ * would lose a document change, so `beforeunload` should ask first.
+ *
+ * The regular save reads the document before it writes, and an unload aborts
+ * that read, so the write never leaves the page. Here the pending scene and
+ * stage changes go straight out as keepalive requests (see
+ * `writeStageChangesForUnload`).
+ *
+ * A sent change normally leaves the queue, and comes back if its request
+ * fails while the page is still alive. While another save of the course is in
+ * flight it stays queued instead: that save may land after the keepalive
+ * write with an older copy, and if the user stays (or the page returns from
+ * the back/forward cache) the queued change is written again after it.
+ *
+ * Leaving would lose a change when it could not be sent this way, or when a
+ * save in flight could overwrite the copy sent now with an older one: a
+ * whole-document save (a structural flush round, the aggregate save, the
+ * departing-course flush), or a flush round writing an older revision of the
+ * same scene or stage.
+ */
+export function writePendingChangesForUnload(): boolean {
+  const stageId = pendingStageId;
+  if (!stageId || pendingChanges.size === 0) return false;
+  const state = useStageStore.getState();
+  if (state.stage?.id !== stageId) return false;
+
+  const pendingDocumentEntries = [...pendingChanges].filter(([, entry]) =>
+    DOCUMENT_CHANGE_KINDS.has(entry.change.kind),
+  );
+  const round = flushInFlight?.stageId === stageId ? flushInFlight : null;
+  const wholeDocumentSaveInFlight =
+    (wholeDocumentSavesInFlight.get(stageId) ?? 0) > 0 ||
+    (round !== null && roundWritesWholeDocument(round));
+  const saveInFlight = wholeDocumentSaveInFlight || round !== null;
+  const overtakesInFlightSave = pendingDocumentEntries.some(([key, entry]) => {
+    if (wholeDocumentSaveInFlight) return true;
+    const attempted = round?.dirtySnapshot.get(key);
+    return attempted !== undefined && attempted.revision !== entry.revision;
+  });
+
+  const storage = stageStorageModule;
+  if (!storage) return pendingDocumentEntries.length > 0;
+
+  // Entries whose revision a keepalive write in flight already carries.
+  const entries = new Map(
+    [...pendingChanges].filter(
+      ([key, entry]) => keepaliveSentRevisions.get(key) !== entry.revision,
+    ),
+  );
+  if (entries.size === 0) return overtakesInFlightSave;
+  const snapshot = persistenceSnapshot(state);
+  if (!snapshot.stage) return false;
+  const result = storage.writeStageChangesForUnload(
+    stageId,
+    [...entries.values()].map(({ change }) => change),
+    {
+      stage: snapshot.stage,
+      scenes: snapshot.scenes,
+      currentSceneId: snapshot.currentSceneId,
+      chats: snapshot.chats,
+      chatSnapshot: snapshot.chatSnapshot,
+    },
+    stageDeletionEpoch(stageId),
+  );
+
+  const sentEntries = new Map<string, PendingEntry>();
+  for (const change of result.sent) {
+    const key = pendingChangeKey(change);
+    const entry = entries.get(key);
+    if (!entry) continue;
+    sentEntries.set(key, entry);
+    keepaliveSentRevisions.set(key, entry.revision);
+    if (!saveInFlight) pendingChanges.delete(key);
+  }
+  if (sentEntries.size > 0) {
+    void result.settled.then((succeeded) => {
+      for (const [key, entry] of sentEntries) {
+        if (keepaliveSentRevisions.get(key) === entry.revision) keepaliveSentRevisions.delete(key);
+      }
+      if (succeeded || pendingStageId !== stageId) return;
+      // The page stayed and a write failed: queue the changes again, unless
+      // a newer edit of the same unit is already waiting.
+      for (const [key, entry] of sentEntries) {
+        if (!pendingChanges.has(key)) pendingChanges.set(key, entry);
+      }
+      schedulePendingSave();
     });
-  };
+  }
+  return result.deferred.length > 0 || overtakesInFlightSave;
+}
+
+function kickPendingSave(): void {
+  void flushStageSave().catch(() => {
+    // Best effort during page shutdown; pending dirt remains for a live retry.
+  });
+}
+
+/**
+ * The page's `beforeunload` handler: write what can be written now, and ask
+ * the user to confirm leaving only when a document change would be lost.
+ * Nothing pending, nothing asked.
+ */
+export function handleBeforeUnload(event: Pick<BeforeUnloadEvent, 'preventDefault'>): void {
+  const wouldLoseChanges = writePendingChangesForUnload();
+  // Whatever is left (chats, and anything that could not be sent above)
+  // still gets the regular attempt, which completes if the user stays.
+  kickPendingSave();
+  if (wouldLoseChanges) {
+    event.preventDefault();
+    // Older browsers ask only when returnValue is set.
+    (event as { returnValue?: unknown }).returnValue = '';
+  }
+}
+
+if (typeof window !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') kickPendingSave();
   });
-  window.addEventListener('beforeunload', kickPendingSave);
+  window.addEventListener('beforeunload', handleBeforeUnload);
+  // Mobile browsers often skip beforeunload; pagehide still fires on the way out.
+  window.addEventListener('pagehide', () => {
+    writePendingChangesForUnload();
+  });
 }

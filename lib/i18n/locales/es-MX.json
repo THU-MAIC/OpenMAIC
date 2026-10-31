@@ -2260,6 +2260,12 @@
         "processing_interrupted": {
           "label": "Análisis sin completar",
           "description": "No se pudo completar el análisis. Puedes volver a intentarlo más tarde."
+        },
+        "too_many_pages": {
+          "label": "Demasiadas páginas",
+          "description": "Este PDF tiene {{pages}} páginas y supera el límite de análisis de {{maxPages}} páginas. Divídelo antes de subirlo o sube solo los capítulos que necesites.",
+          "descriptionWithoutCount": "Este PDF supera el límite de análisis de {{maxPages}} páginas. Divídelo antes de subirlo o sube solo los capítulos que necesites.",
+          "descriptionWithoutLimit": "Este PDF tiene más páginas de las que acepta el servicio de análisis. Divídelo antes de subirlo o sube solo los capítulos que necesites."
         }
       },
       "status": {

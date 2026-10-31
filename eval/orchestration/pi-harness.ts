@@ -2,7 +2,7 @@
  * In-process Pi classroom run shared by the orchestration evals.
  *
  * Calls the real runPiDirectorLoop with the defaults /api/chat/pi applies to
- * an in-class request: agent configs and budgets from lib/chat/pi/config,
+ * an in-class request: agent configs from lib/chat/pi/config,
  * whiteboard tools on (the app always enables them for classroom requests),
  * thinking off, and the legacy child runtime. The model resolved for the eval
  * drives the whole chain — Director and child alike — as the route does.
@@ -12,11 +12,7 @@
  */
 
 import { runPiDirectorLoop } from '@/lib/chat/pi/director-loop';
-import {
-  getPiMaxActionsPerAgent,
-  getPiMaxAgentTurns,
-  resolveAgentConfigs,
-} from '@/lib/chat/pi/config';
+import { resolveAgentConfigs } from '@/lib/chat/pi/config';
 import type { DirectorToolTraceEntry } from '@/lib/chat/pi/types';
 import { getActionsForRole } from '@/lib/orchestration/registry/types';
 import type { StatelessChatRequest, StatelessEvent } from '@/lib/types/chat';
@@ -82,8 +78,6 @@ export async function runPiClassroomRequest(
       contextWindow: evalModel.modelInfo?.contextWindow,
       abortSignal: controller.signal,
       signal: controller.signal,
-      maxAgentTurns: getPiMaxAgentTurns(body),
-      maxActionsPerAgent: getPiMaxActionsPerAgent(body),
       enableWhiteboardTools: true,
       childRuntimeMode: 'legacy',
     });

@@ -14,9 +14,9 @@
  *   group (user → assistant(toolCall read) → toolResult), and a session with a
  *   frozen `skillId` loads that skill even when the text names no handle.
  */
-import type { AgentEvent, AgentMessage } from '@earendil-works/pi-agent-core';
+import type { AgentEvent, AgentMessage, AgentTool, StreamFn } from '@earendil-works/pi-agent-core';
 import { InMemorySessionRepo, Session } from '@earendil-works/pi-agent-core';
-import type { ClaimedAgentSession } from '@openmaic/storage';
+import type { ClaimedAgentSession, PersistedAgentSessionEvent } from '@openmaic/storage';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /** Point the real skill loader at a temp directory BEFORE config.ts loads. */
@@ -51,6 +51,10 @@ const mocks = vi.hoisted(() => ({
   resolveAgentDriverModel: vi.fn(),
   createCallLlmStreamFn: vi.fn(),
   buildAgent: vi.fn(),
+  findDeletedUserSkill: vi.fn(),
+  listUserSkills: vi.fn(),
+  findUserSkillByRef: vi.fn(),
+  patchUserSkill: vi.fn(),
 }));
 
 vi.mock('node:crypto', async (importActual) => {
@@ -107,15 +111,25 @@ vi.mock('@/lib/agent/runtime/stream-fn', () => ({
 vi.mock('@/lib/agent/runtime/build-agent', () => ({
   buildAgent: mocks.buildAgent,
 }));
+vi.mock('@/lib/persistence/owner-merges', async (importActual) => {
+  const actual = await importActual<typeof import('@/lib/persistence/owner-merges')>();
+  return { ...actual, canonicalizeStoredOwner: async (ownerId: string) => ownerId };
+});
 
 // Real skill loader, real read tool, real preload builder; only the
 // owner-scoped user-skill store is neutralized (no database in this test).
 vi.mock('@/lib/server/agent-runtime/user-skills', async (importActual) => {
   const actual = await importActual<typeof import('@/lib/server/agent-runtime/user-skills')>();
-  return { ...actual, listUserSkills: vi.fn(async () => []) };
+  return {
+    ...actual,
+    listUserSkills: mocks.listUserSkills,
+    findDeletedUserSkill: mocks.findDeletedUserSkill,
+    findUserSkillByRef: mocks.findUserSkillByRef,
+    patchUserSkill: mocks.patchUserSkill,
+  };
 });
 
-import { runSession } from '@/lib/server/agent-runtime/runner';
+import { runSession, tagDurableUserMessage } from '@/lib/server/agent-runtime/runner';
 
 const SESSION_ID = 'session-1';
 /** Mirrors the runner's `WORKER_ID` derivation with the fixed mock uuid. */
@@ -139,7 +153,7 @@ function makeMeta(overrides: Partial<ClaimedAgentSession> = {}): ClaimedAgentSes
   };
 }
 
-function makeStore(meta: ClaimedAgentSession) {
+function makeStore(meta: ClaimedAgentSession, events: PersistedAgentSessionEvent[] = []) {
   let seq = 0;
   return {
     appendRunEvent: vi.fn(
@@ -155,15 +169,22 @@ function makeStore(meta: ClaimedAgentSession) {
     clearCancel: vi.fn(async () => undefined),
     finishSession: vi.fn(async () => true),
     getSession: vi.fn(async () => ({ ...meta, lease: { workerId: WORKER_ID } })),
-    readEventsAfter: vi.fn(async () => []),
+    readEventsAfter: vi.fn(async (_id: string, after: number) =>
+      events.filter((event) => event.id > after),
+    ),
     heartbeat: vi.fn(async () => true),
     getCancelRequestedAt: vi.fn(async () => null),
     isCancelRequested: vi.fn(async () => false),
     listUserMessages: vi.fn(async () => []),
+    markUserMessageDelivered: vi.fn(async () => true),
     registerSessionUrls: vi.fn(async () => []),
     releaseLease: vi.fn(async () => undefined),
     requeueForRetry: vi.fn(async () => false),
     requeueSession: vi.fn(async () => false),
+    detachSessionSkill: vi.fn(async () => {
+      delete meta.skillId;
+      return true;
+    }),
   };
 }
 
@@ -173,6 +194,7 @@ async function makeEntryTree(): Promise<Session> {
 }
 
 interface FakeAgent {
+  emit(event: AgentEvent): void;
   subscribe(listener: (event: AgentEvent, signal?: AbortSignal) => void): () => void;
   prompt(input: unknown): Promise<void>;
   continue(): Promise<void>;
@@ -186,6 +208,9 @@ function makeFakeAgent(promptSpy: (input: unknown) => void): FakeAgent {
   const messages: AgentMessage[] = [];
   const listeners = new Set<(event: AgentEvent, signal?: AbortSignal) => void>();
   return {
+    emit: (event) => {
+      for (const listener of listeners) listener(event);
+    },
     subscribe: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -205,20 +230,24 @@ function makeFakeAgent(promptSpy: (input: unknown) => void): FakeAgent {
 }
 
 interface BuildAgentOptions {
+  streamFn: StreamFn;
   systemPrompt: string;
-  tools: Array<{ name: string }>;
+  tools: AgentTool[];
   allowedToolNames?: ReadonlySet<string>;
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.findDeletedUserSkill.mockResolvedValue(null);
+  mocks.listUserSkills.mockResolvedValue([]);
+  mocks.findUserSkillByRef.mockResolvedValue(null);
   mocks.resolveAgentDriverModel.mockResolvedValue({
     connection: { model: undefined, thinkingConfig: undefined },
     piModel: { api: 'openai-completions', provider: 'openai', id: 'driver-model' },
     wireMaxOutputTokens: undefined,
     reservedOutputTokens: 8192,
   });
-  mocks.createCallLlmStreamFn.mockReturnValue((() => {}) as never);
+  mocks.createCallLlmStreamFn.mockReturnValue(vi.fn());
   // The owner-bound document store is never touched in these runner pins
   // (buildAgent is mocked), so a bare forOwner facade is enough.
   mocks.getServerPersistenceProvider.mockResolvedValue({
@@ -229,14 +258,20 @@ beforeEach(() => {
 interface RunOutcome {
   options: BuildAgentOptions;
   promptedWith: unknown;
+  meta: ClaimedAgentSession;
+  store: ReturnType<typeof makeStore>;
 }
 
 async function runToBuildAgent(
   metaOverrides: Partial<ClaimedAgentSession> = {},
+  events: PersistedAgentSessionEvent[] = [],
+  history: AgentMessage[] = [],
+  onPrompt?: (options: BuildAgentOptions, agent: FakeAgent) => Promise<void>,
 ): Promise<RunOutcome> {
   const meta = makeMeta(metaOverrides);
   const session = await makeEntryTree();
-  const store = makeStore(meta);
+  for (const message of history) await session.appendMessage(message);
+  const store = makeStore(meta, events);
   mocks.openEntryStorage.mockResolvedValue(session.getStorage());
   mocks.getAgentSessionStore.mockResolvedValue(store);
 
@@ -244,7 +279,13 @@ async function runToBuildAgent(
   const promptedWith: unknown[] = [];
   mocks.buildAgent.mockImplementation((agentOptions: BuildAgentOptions) => {
     options = agentOptions;
-    return makeFakeAgent((input) => promptedWith.push(input));
+    const agent = makeFakeAgent((input) => promptedWith.push(input));
+    const prompt = agent.prompt;
+    agent.prompt = async (input) => {
+      await prompt(input);
+      await onPrompt?.(agentOptions, agent);
+    };
+    return agent;
   });
 
   await runSession({ running: new Map(), shuttingDown: false }, meta);
@@ -255,7 +296,7 @@ async function runToBuildAgent(
     WORKER_ID,
     expect.objectContaining({ status: 'succeeded' }),
   );
-  return { options: options!, promptedWith: promptedWith[0] };
+  return { options: options!, promptedWith: promptedWith[0], meta, store };
 }
 
 describe('skills runner registration', () => {
@@ -409,6 +450,328 @@ describe('skills runner registration', () => {
 
     expect(promptedWith).toBe('Just help me out');
   });
+
+  it('persists deletion recovery, continues the same request, and does not detach again next run', async () => {
+    mocks.findDeletedUserSkill.mockResolvedValue({ id: 'usk_deleted', name: 'my-method' });
+    const first = await runToBuildAgent({ skillId: 'usk_deleted', prompt: 'Just help me out' });
+    expect(first.promptedWith).toBe('Just help me out');
+    expect(mocks.findDeletedUserSkill).toHaveBeenCalledWith('usk_deleted', 'owner-1');
+    expect(first.store.detachSessionSkill).toHaveBeenCalledWith(
+      SESSION_ID,
+      expect.objectContaining({
+        ownerId: 'owner-1',
+        workerId: WORKER_ID,
+        attempt: 1,
+        skillId: 'usk_deleted',
+        notice: expect.objectContaining({
+          type: 'skill_detached',
+          data: { skillName: 'my-method', throughMessageSeq: 0 },
+        }),
+      }),
+    );
+    expect(first.store.appendRunEvent.mock.calls[0]![2].type).toBe('session_start');
+    expect(first.meta).not.toHaveProperty('skillId');
+    const second = await runToBuildAgent(first.meta);
+    expect(second.store.detachSessionSkill).not.toHaveBeenCalled();
+    expect(second.promptedWith).toBe('Just help me out');
+  });
+
+  it('still preloads an explicitly requested available Skill after deletion recovery', async () => {
+    mocks.findDeletedUserSkill.mockResolvedValue({ id: 'usk_deleted', name: 'my-method' });
+    const result = await runToBuildAgent({
+      skillId: 'usk_deleted',
+      prompt: '/pro-editing adjust the title',
+    });
+    const group = result.promptedWith as Array<{ role: string; details?: { skill?: string } }>;
+    expect(group.map((message) => message.role)).toEqual(['user', 'assistant', 'toolResult']);
+    expect(group[2]!.details?.skill).toBe('pro-editing');
+  });
+
+  it.each(['recover', 'restart', 'explicit follow-up', 'first follow-up'])(
+    'handles a same-name replacement without replaying old intent (%s)',
+    async (mode) => {
+      mocks.findDeletedUserSkill.mockResolvedValue({ id: 'usk_deleted', name: 'my-method' });
+      const replacement = {
+        id: 'usk_replacement',
+        ownerId: 'owner-1',
+        name: 'my-method',
+        title: 'Replacement',
+        description: 'New instructions',
+        content: 'Only these new instructions.',
+        version: 1,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      mocks.listUserSkills.mockResolvedValue([replacement]);
+      mocks.findUserSkillByRef.mockResolvedValue(replacement);
+      mocks.patchUserSkill.mockResolvedValue({
+        skill: replacement,
+        applied: [{ status: 'applied' }],
+        changed: true,
+      });
+      const prompt = '/my-method Just help me out';
+      const events: PersistedAgentSessionEvent[] = [
+        { id: 1, ts: 1, attempt: 0, type: 'user_message', data: { text: prompt } },
+      ];
+      if (mode !== 'recover' && mode !== 'first follow-up') {
+        events.push({
+          id: 2,
+          ts: 2,
+          attempt: 1,
+          type: 'skill_detached',
+          data: { skillName: 'my-method', throughMessageSeq: 1 },
+        });
+      }
+      if (mode === 'explicit follow-up') {
+        events.push({ id: 3, ts: 3, attempt: 0, type: 'user_message', data: { text: prompt } });
+      }
+      const history: AgentMessage[] = [];
+      if (mode === 'first follow-up') {
+        events.splice(
+          0,
+          events.length,
+          { id: 1, ts: 1, attempt: 1, type: 'session_start', data: { prompt } },
+          { id: 2, ts: 2, attempt: 1, type: 'session_end', data: { status: 'succeeded' } },
+          { id: 3, ts: 3, attempt: 0, type: 'user_message', data: { text: prompt } },
+        );
+        history.push({ role: 'user', content: prompt, timestamp: 1 }, {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'done' }],
+          stopReason: 'stop',
+          timestamp: 2,
+        } as unknown as AgentMessage);
+      }
+      const explicit = mode === 'explicit follow-up' || mode === 'first follow-up';
+      const result = await runToBuildAgent(
+        {
+          skillId: mode === 'recover' || mode === 'first follow-up' ? 'usk_deleted' : undefined,
+          prompt,
+          deliveredUserMessageSeq: mode === 'explicit follow-up' ? 1 : 0,
+        },
+        events,
+        history,
+      );
+      const group = result.promptedWith as Array<{ role: string; details?: { skill?: string } }>;
+      expect(group.map((message) => message.role)).toEqual(
+        explicit ? ['user', 'assistant', 'toolResult'] : ['user'],
+      );
+      if (explicit) expect(group[2]!.details?.skill).toBe('usk_replacement');
+      const read = result.options.tools.find((tool) => tool.name === 'read')!;
+      const nativeRead = () =>
+        read.execute('read-replacement', {
+          path: '/__openmaic_user_skills__/usk_replacement/SKILL.md',
+        });
+      const sourceRead = await result.options.tools
+        .find((tool) => tool.name === 'read_skill')!
+        .execute('read-source', { skillId: '/my-method' });
+      const patch = await result.options.tools
+        .find((tool) => tool.name === 'patch_skill')!
+        .execute('patch-replacement', {
+          skillId: '/my-method',
+          intent: 'Change the Skill',
+          ops: [{ op: 'set', path: '/content', value: 'Changed' }],
+        });
+      if (explicit) {
+        expect(result.options.systemPrompt).toContain('usk_replacement');
+        expect(await nativeRead()).toMatchObject({ details: { skill: 'usk_replacement' } });
+        expect(sourceRead).not.toHaveProperty('isError', true);
+        expect(patch).not.toHaveProperty('isError', true);
+        expect(mocks.patchUserSkill).toHaveBeenCalledWith(
+          'owner-1',
+          replacement.id,
+          expect.any(Array),
+        );
+      } else {
+        await expect(nativeRead()).rejects.toThrow('read is limited');
+        expect(result.options.systemPrompt).not.toContain('usk_replacement');
+        expect(sourceRead).toHaveProperty('isError', true);
+        expect(JSON.stringify(sourceRead)).not.toContain(replacement.content);
+        expect(patch).toHaveProperty('isError', true);
+        expect(mocks.patchUserSkill).not.toHaveBeenCalled();
+      }
+      expect(result.meta.skillId).toBeUndefined();
+    },
+  );
+
+  it('includes a transcript-consumed message in the durable detachment boundary', async () => {
+    mocks.findDeletedUserSkill.mockResolvedValue({ id: 'usk_deleted', name: 'my-method' });
+    mocks.listUserSkills.mockResolvedValue([
+      {
+        id: 'usk_replacement',
+        ownerId: 'owner-1',
+        name: 'my-method',
+        title: 'Replacement',
+        description: 'Replacement',
+        content: 'New instructions',
+        version: 1,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ]);
+    const prompt = '/my-method continue';
+    const result = await runToBuildAgent(
+      { skillId: 'usk_deleted', prompt, claimReason: 'orphaned', deliveredUserMessageSeq: 1 },
+      [
+        { id: 1, ts: 1, attempt: 0, type: 'user_message', data: { text: 'Start' } },
+        { id: 2, ts: 2, attempt: 1, type: 'session_start', data: {} },
+        { id: 7, ts: 7, attempt: 0, type: 'user_message', data: { text: prompt } },
+      ],
+      [tagDurableUserMessage({ role: 'user', content: prompt, timestamp: 7 }, 7)],
+    );
+    expect(result.store.detachSessionSkill).toHaveBeenCalledWith(
+      SESSION_ID,
+      expect.objectContaining({
+        notice: expect.objectContaining({
+          data: { skillName: 'my-method', throughMessageSeq: 7 },
+        }),
+      }),
+    );
+    expect(result.promptedWith).toBeUndefined(); // continue, without replacement preload
+    expect(result.options.systemPrompt).not.toContain('usk_replacement');
+    await expect(
+      result.options.tools
+        .find((tool) => tool.name === 'read')!
+        .execute('read-replacement', {
+          path: '/__openmaic_user_skills__/usk_replacement/SKILL.md',
+        }),
+    ).rejects.toThrow('read is limited');
+  });
+
+  it('updates discovery and both readers only when a fresh same-run message is consumed', async () => {
+    const replacement = {
+      id: 'usk_replacement',
+      ownerId: 'owner-1',
+      name: 'my-method',
+      title: 'Replacement',
+      description: 'Replacement',
+      content: 'New instructions',
+      version: 1,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    mocks.listUserSkills.mockResolvedValue([replacement]);
+    mocks.findUserSkillByRef.mockResolvedValue(replacement);
+    const prompt = '/my-method Start';
+    await runToBuildAgent(
+      { prompt },
+      [
+        { id: 1, ts: 1, attempt: 0, type: 'user_message', data: { text: prompt } },
+        {
+          id: 2,
+          ts: 2,
+          attempt: 1,
+          type: 'skill_detached',
+          data: { skillName: 'my-method', throughMessageSeq: 1 },
+        },
+      ],
+      [],
+      async (options, agent) => {
+        const nativeRead = () =>
+          options.tools
+            .find((tool) => tool.name === 'read')!
+            .execute('read-replacement', {
+              path: '/__openmaic_user_skills__/usk_replacement/SKILL.md',
+            });
+        const sourceRead = () =>
+          options.tools
+            .find((tool) => tool.name === 'read_skill')!
+            .execute('read-source', { skillId: '/my-method' });
+        const callProvider = () =>
+          options.streamFn({} as Parameters<StreamFn>[0], {
+            systemPrompt: options.systemPrompt,
+            messages: [],
+          });
+        await callProvider();
+        expect(mocks.createCallLlmStreamFn.mock.results[0]!.value).toHaveBeenLastCalledWith(
+          expect.anything(),
+          expect.objectContaining({ systemPrompt: expect.not.stringContaining('usk_replacement') }),
+          undefined,
+        );
+        await expect(nativeRead()).rejects.toThrow('read is limited');
+        expect(await sourceRead()).toHaveProperty('isError', true);
+        agent.emit({
+          type: 'message_end',
+          message: tagDurableUserMessage(
+            {
+              role: 'user',
+              content: '/my-method use the replacement',
+              timestamp: 3,
+            },
+            3,
+          ),
+        });
+        await callProvider();
+        expect(mocks.createCallLlmStreamFn.mock.results[0]!.value).toHaveBeenLastCalledWith(
+          expect.anything(),
+          expect.objectContaining({ systemPrompt: expect.stringContaining('usk_replacement') }),
+          undefined,
+        );
+        expect(await nativeRead()).toMatchObject({ details: { skill: replacement.id } });
+        expect(await sourceRead()).not.toHaveProperty('isError', true);
+      },
+    );
+  });
+
+  it('discards a confirmed deletion from the snapshot even for a fresh follow-up', async () => {
+    const deleted = {
+      id: 'usk_deleted',
+      ownerId: 'owner-1',
+      name: 'my-method',
+      title: 'Old',
+      description: 'Old skill',
+      content: 'Deleted instructions',
+      version: 1,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    mocks.listUserSkills.mockResolvedValueOnce([deleted]).mockResolvedValue([]);
+    mocks.findDeletedUserSkill.mockResolvedValue({ id: deleted.id, name: deleted.name });
+    const result = await runToBuildAgent(
+      { skillId: deleted.id, deliveredUserMessageSeq: 1, prompt: 'Start' },
+      [
+        { id: 1, ts: 1, attempt: 0, type: 'user_message', data: { text: 'Start' } },
+        { id: 2, ts: 2, attempt: 1, type: 'session_start', data: {} },
+        { id: 3, ts: 3, attempt: 0, type: 'user_message', data: { text: '/my-method continue' } },
+      ],
+      [
+        { role: 'user', content: 'Start', timestamp: 1 },
+        {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Done' }],
+          stopReason: 'stop',
+          timestamp: 2,
+        } as unknown as AgentMessage,
+      ],
+    );
+    const group = result.promptedWith as AgentMessage[];
+    expect(group.map((message) => message.role)).toEqual(['user']);
+    expect(result.options.systemPrompt).not.toContain(deleted.id);
+    await expect(
+      result.options.tools
+        .find((tool) => tool.name === 'read')!
+        .execute('read-deleted', { path: `/__openmaic_user_skills__/${deleted.id}/SKILL.md` }),
+    ).rejects.toThrow('read is limited');
+  });
+
+  it.each(['missing', 'database', 'lease'])(
+    'does not silently recover from %s errors',
+    async (failure) => {
+      const meta = makeMeta({ skillId: 'usk_deleted' });
+      const session = await makeEntryTree();
+      const store = makeStore(meta);
+      mocks.openEntryStorage.mockResolvedValue(session.getStorage());
+      mocks.getAgentSessionStore.mockResolvedValue(store);
+      if (failure === 'database')
+        mocks.findDeletedUserSkill.mockRejectedValue(new Error('database unavailable'));
+      if (failure === 'lease') {
+        mocks.findDeletedUserSkill.mockResolvedValue({ id: 'usk_deleted', name: 'my-method' });
+        store.detachSessionSkill.mockResolvedValue(false);
+      }
+      await runSession({ running: new Map(), shuttingDown: false }, meta);
+      expect(mocks.buildAgent).not.toHaveBeenCalled();
+      if (failure !== 'lease') expect(store.detachSessionSkill).not.toHaveBeenCalled();
+    },
+  );
 
   it('reuses the fixture temp dir so the loader reads real files', () => {
     expect(fixture.root).toBe(process.env.OPENMAIC_AGENT_SKILLS_DIR);

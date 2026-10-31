@@ -67,11 +67,7 @@ function buildThinChildContext(body: StatelessChatRequest): string {
   ].join('\n');
 }
 
-export function buildDirectorPrompt(
-  body: StatelessChatRequest,
-  agents: AgentConfig[],
-  maxAgentTurns: number,
-): string {
+export function buildDirectorPrompt(body: StatelessChatRequest, agents: AgentConfig[]): string {
   const agentList = agents
     .map(
       (agent) =>
@@ -98,9 +94,7 @@ export function buildDirectorPrompt(
     'You are the director of an in-class multi-agent classroom.',
     'Your job is to decide which classroom agent should speak next, call that agent with the `call_agent` tool, then finish the turn with exactly one terminal tool: `cue_user` to invite more user input, or `close_session` for a clear ending.',
     'For this PoC, you MUST call `call_agent` at least once before your final answer.',
-    `You may call at most ${maxAgentTurns} classroom agent turns in this server-side loop.`,
-    'Stop earlier if the classroom answer is already clear. Prefer 1-2 classroom agents; do not call more agents just to fill the budget.',
-    'Once the classroom agent turn limit is reached, do not call another classroom agent. Finish the director loop with exactly one terminal tool: `cue_user` or `close_session`.',
+    'Finish when the classroom answer is clear. Prefer 1-2 classroom agents; call another agent only when it would help answer the user.',
     'Do not write the classroom response yourself. The selected agent should produce the visible response.',
     'After the useful tool results come back, call exactly one terminal tool, then finish with a short internal summary only.',
     '',
