@@ -322,3 +322,7 @@ const objectY = baseY - BOTTOM_MARGIN - (value / maxValue) * playableHeight;
 {{snippet:interactive-math}}
 
 {{snippet:interactive-observation}}
+
+---
+
+{{snippet:interactive-js-safety}}

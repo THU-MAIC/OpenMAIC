@@ -163,3 +163,7 @@ Return exactly ONE complete HTML document. No markdown fences, no duplication.
 {{snippet:interactive-math}}
 
 {{snippet:interactive-observation}}
+
+---
+
+{{snippet:interactive-js-safety}}
