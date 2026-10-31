@@ -160,10 +160,9 @@ export async function runPiDirectorLoop(opts: {
       thinkingConfig: opts.thinkingConfig,
       maxOutputTokens: opts.maxOutputTokens,
       abortSignal: signal,
-      getAgentResponses: () => [
-        ...(opts.body.directorState?.agentResponses ?? []),
-        ...piAgentResponses,
-      ],
+      // Peer context describes only this request's speakers. Earlier turns stay
+      // in message history and directorState for the Director's routing context.
+      getAgentResponses: () => piAgentResponses,
       // storeState is already the request-start whiteboard snapshot, so replay
       // only mutations produced during this request in child-agent prompts.
       getWhiteboardLedger: () => piWhiteboardLedger,
