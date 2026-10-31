@@ -3,7 +3,11 @@ import type { AgentTool } from '@earendil-works/pi-agent-core';
 
 import { resolveOwnedAsset } from '@/lib/persistence/resolve-server-asset';
 import { proxyFetch } from '@/lib/server/proxy-fetch';
-import { resolveRenderServiceUrl } from '@/lib/server/render-service';
+import {
+  getRenderServiceCapability,
+  resolveRenderServiceUrl,
+  type RenderServiceCapability,
+} from '@/lib/server/render-service';
 import type { Scene } from '@/lib/types/stage';
 import type { CourseStore } from './course-tools';
 import { COURSE_STAGE_ID_DESCRIPTION } from './course-stage';
@@ -42,7 +46,7 @@ export interface ScenePreviewDeps {
   ) => Promise<{ kind: 'owned' | 'missing' | 'foreign' | 'tombstoned' }>;
   /** The session owner; rides the render request as the trusted client id. */
   ownerId: string;
-  renderService?: ReturnType<typeof resolveRenderServiceUrl>;
+  renderService?: ScenePreviewRenderService;
   fetchPreview?: typeof proxyFetch;
   /**
    * Read an asset's bytes as `ownerId` may read them (the persistence route's
@@ -135,6 +139,26 @@ function pageList(scenes: readonly Scene[]): string {
     .sort((a, b) => a.order - b.order)
     .map((scene) => `${scene.order}=${scene.id}`)
     .join(', ');
+}
+
+export type ScenePreviewRenderService =
+  | ReturnType<typeof resolveRenderServiceUrl>
+  | { error: 'unreachable' };
+
+/**
+ * The render service to register `render_scene_preview` against. A configured
+ * URL alone is not enough: the service must also pass the `/health` probe the
+ * MP4 export capability uses, so a configured-but-unreachable service (e.g. the
+ * compose `video-export` profile is off) never hands the agent a tool that can
+ * only fail (#2108).
+ */
+export async function resolveScenePreviewRenderService(
+  probe: () => Promise<RenderServiceCapability> = getRenderServiceCapability,
+): Promise<ScenePreviewRenderService> {
+  const service = resolveRenderServiceUrl();
+  if ('error' in service) return service;
+  const capability = await probe();
+  return capability.enabled ? service : { error: 'unreachable' };
 }
 
 export function buildScenePreviewTools(deps: ScenePreviewDeps): AgentTool<never, never>[] {
