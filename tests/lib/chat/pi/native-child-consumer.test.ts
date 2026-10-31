@@ -12,6 +12,11 @@ vi.mock('@/lib/web-search', async (importOriginal) => {
 });
 
 import { buildCallAgentTool } from '@/lib/chat/pi/tools/call-agent';
+import {
+  AGENT_TOOL_TIMEOUT_ENV,
+  AgentToolTimeoutError,
+  withAgentToolTimeout,
+} from '@/lib/agent/runtime/tool-timeout';
 
 const ZERO_USAGE = {
   inputTokens: 0,
@@ -930,6 +935,40 @@ describe('Native Child production consumer', () => {
         },
       },
     });
+  });
+
+  it('rejects a timed-out native child without recording a completed agent turn or emitting late lifecycle events', async () => {
+    vi.useFakeTimers();
+    const previousTimeout = process.env[AGENT_TOOL_TIMEOUT_ENV];
+    process.env[AGENT_TOOL_TIMEOUT_ENV] = '5000';
+    try {
+      mocks.streamLLM.mockImplementation(() => ({
+        fullStream: (async function* () {
+          await new Promise(() => {});
+        })(),
+        usage: new Promise(() => {}),
+      }));
+      const harness = makeHarness();
+      const tool = withAgentToolTimeout(harness.tool);
+      const promise = tool.execute('delegate-timeout', {
+        agentId: teacher.id,
+        instruction: 'Explain briefly.',
+      });
+      const settled = expect(promise).rejects.toBeInstanceOf(AgentToolTimeoutError);
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      await settled;
+
+      expect(harness.events.filter((event) => event.type === 'agent_start')).toHaveLength(1);
+      expect(harness.events.filter((event) => event.type === 'agent_end')).toHaveLength(0);
+      expect(harness.summaries).toEqual([]);
+      expect(harness.onActionDone).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      if (previousTimeout === undefined) delete process.env[AGENT_TOOL_TIMEOUT_ENV];
+      else process.env[AGENT_TOOL_TIMEOUT_ENV] = previousTimeout;
+      vi.useRealTimers();
+    }
   });
 
   it('performs zero Child transport and zero search request when already aborted', async () => {

@@ -746,8 +746,6 @@ export function buildCallAgentTool(opts: {
             allowedToolNames: new Set(availableToolNames),
             history: toHistoryMessages(opts.body.messages),
             abortSignal: childAbort.signal,
-            timeoutMs: 60_000,
-            maxProviderTransports: 5,
             onVisibleTextDelta: async (delta) => {
               const visibleDelta = sanitizeNativeDelta(delta);
               if (!visibleDelta) return '';
