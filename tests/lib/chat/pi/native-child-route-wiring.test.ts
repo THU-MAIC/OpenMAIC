@@ -604,6 +604,133 @@ describe('PR2 Native Child route production wiring', () => {
     ).toEqual(['element_added', 'element_deleted']);
   }, 15_000);
 
+  it('completes a 12-provider-request whiteboard Child with reads and a corrective call without a turn deadline or transport cap', async () => {
+    process.env.DATABASE_URL = 'postgres://shared-provider-test';
+    const directorResponses = [
+      [toolCall('read-1', 'read_scene', { sceneId: 'scene-current' }), finish('tool-calls')],
+      [
+        toolCall('delegate-1', 'call_agent', {
+          agentId: 'teacher-1',
+          instruction: 'Build the whiteboard in four steps, checking it as you go.',
+        }),
+        finish('tool-calls'),
+      ],
+      [toolCall('cue-1', 'cue_user', { prompt: 'Continue?' }), finish('tool-calls')],
+    ];
+    const childResponses = [
+      [toolCall('wb-read-1', 'wb_read', {}), finish('tool-calls')],
+      [
+        toolCall('wb-draw-1', 'wb_draw_text', {
+          expectedLastSeq: null,
+          content: 'Step one',
+          x: 80,
+          y: 100,
+        }),
+        finish('tool-calls'),
+      ],
+      [toolCall('wb-read-2', 'wb_read', {}), finish('tool-calls')],
+      [
+        toolCall('wb-draw-invalid', 'wb_draw_text', {
+          content: 'Missing the required sequence',
+          x: 80,
+          y: 160,
+        }),
+        finish('tool-calls'),
+      ],
+      [toolCall('wb-read-3', 'wb_read', {}), finish('tool-calls')],
+      [
+        toolCall('wb-draw-2', 'wb_draw_text', {
+          expectedLastSeq: 0,
+          content: 'Step two',
+          x: 80,
+          y: 160,
+        }),
+        finish('tool-calls'),
+      ],
+      [toolCall('wb-read-4', 'wb_read', {}), finish('tool-calls')],
+      [
+        toolCall('wb-draw-3', 'wb_draw_text', {
+          expectedLastSeq: 1,
+          content: 'Step three',
+          x: 80,
+          y: 220,
+        }),
+        finish('tool-calls'),
+      ],
+      [toolCall('wb-read-5', 'wb_read', {}), finish('tool-calls')],
+      [
+        toolCall('wb-draw-4', 'wb_draw_text', {
+          expectedLastSeq: 2,
+          content: 'Step four',
+          x: 80,
+          y: 280,
+        }),
+        finish('tool-calls'),
+      ],
+      [toolCall('wb-read-6', 'wb_read', {}), finish('tool-calls')],
+      [
+        {
+          type: 'text-delta',
+          text: 'The board is complete after the corrective step.',
+        },
+        finish('stop'),
+      ],
+    ];
+    const payloads: Array<{ source: string; options: Record<string, unknown> }> = [];
+    mocks.streamLLM.mockImplementation((options, source) => {
+      payloads.push({ source, options });
+      const parts =
+        source === 'pi-chat-native-child' ? childResponses.shift() : directorResponses.shift();
+      return resultFrom(parts ?? [finish('stop')]);
+    });
+
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(
+      makeRequest({
+        config: {
+          agentIds: ['teacher-1'],
+          piEnableWhiteboardTools: true,
+          agentConfigs: [
+            {
+              id: 'teacher-1',
+              name: 'Teacher',
+              role: 'teacher',
+              persona: 'Use the whiteboard directly.',
+              avatar: '',
+              color: '#3366ff',
+              allowedActions: ['wb_draw_text'],
+              priority: 10,
+            },
+          ],
+        },
+      }),
+    );
+    const events = await readSseEvents(response);
+
+    expect(response.status).toBe(200);
+    const childPayloads = payloads.filter((payload) => payload.source === 'pi-chat-native-child');
+    expect(childPayloads).toHaveLength(12);
+    expect(JSON.stringify(childPayloads[4]?.options.messages)).toContain('wb-draw-invalid');
+    expect(events.filter((event) => event.type === 'agent_start')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'agent_end')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'text_delta')).toEqual([
+      expect.objectContaining({
+        data: expect.objectContaining({
+          content: 'The board is complete after the corrective step.',
+        }),
+      }),
+    ]);
+    expect(events.find((event) => event.type === 'done')).toMatchObject({
+      data: { totalAgents: 1, totalActions: 4, agentHadContent: true },
+    });
+
+    const provider = await mocks.getServerPersistenceProvider.mock.results[0]?.value;
+    const sessions = await provider.runtimeStore.listSessions('stage-1', LEARNER_KEY);
+    expect(sessions).toHaveLength(1);
+    const records: RuntimeRecord[] = await provider.runtimeStore.listRecords(sessions[0]!.id);
+    expect(records.map((record) => record.seq)).toEqual([0, 1, 2, 3]);
+  }, 15_000);
+
   it.each([
     {
       name: 'an invalid request-start Stage ID',
