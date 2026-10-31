@@ -159,6 +159,7 @@ export function hasConfiguredVoiceRegistrationCapability(
 ): boolean {
   return registrationCapableProviderIds(tts).length > 0;
 }
+export const hasConfiguredVoiceRegistration = hasConfiguredVoiceRegistrationCapability;
 
 /** The registration provider the tool registers on: the tts slot's. */
 function resolveRegistrationProviderId(tts?: MediaConnection | 'off' | null): string | undefined {
@@ -449,6 +450,8 @@ export function buildVoiceCloneTools(deps: VoiceCloneToolDependencies): AgentToo
         details: result,
       };
     },
+    capability: 'voice_registration',
+    promptBlock: voiceRegistrationPromptBlock,
   };
 
   // register_voice is only offered when the deployment has a registration
@@ -456,7 +459,10 @@ export function buildVoiceCloneTools(deps: VoiceCloneToolDependencies): AgentToo
   // "deployment has no voice registration backend configured". The internal
   // guard above stays as defense in depth for direct calls.
   const tools: AgentTool<never, never>[] = [clipAudioTool] as unknown as AgentTool<never, never>[];
-  if (hasConfiguredVoiceRegistrationCapability(deps.ttsConnection)) {
+  if (
+    deps.ttsConnection === undefined ||
+    hasConfiguredVoiceRegistrationCapability(deps.ttsConnection)
+  ) {
     tools.push(registerVoiceTool as unknown as AgentTool<never, never>);
   }
   return tools;
@@ -464,16 +470,16 @@ export function buildVoiceCloneTools(deps: VoiceCloneToolDependencies): AgentToo
 
 export const VOICE_CLONE_TOOL_NAMES = ['clip_audio', 'register_voice'] as const;
 
+export function voiceRegistrationPromptBlock(): string {
+  return 'After clipping, register_voice the returned clipId with an accurate verbatim transcript. The returned `providerId::voiceId` pair can be bound with set_roster.';
+}
+
 /** Voice-cloning guidance layered into every runner prompt. */
-export function voiceCloneToolsPrompt(registrationEnabled: boolean): string {
-  return [
-    'To clone a voice, clip_audio a clean 10–20 second single-speaker monologue from an audio or video material (read its transcript first and choose the interval yourself); it returns a 24 kHz mono PCM WAV clip stored as a session material.',
-    ...(registrationEnabled
-      ? [
-          'After clipping, register_voice the returned clipId with an accurate verbatim transcript. The returned `providerId::voiceId` pair can be bound with set_roster.',
-        ]
-      : [
-          'This deployment has no voice registration backend, so cloned voices cannot be registered; do not attempt register_voice.',
-        ]),
-  ].join(' ');
+export function voiceCloneToolsPrompt(registrationEnabled?: boolean): string {
+  const base =
+    'To clone a voice, clip_audio a clean 10–20 second single-speaker monologue from an audio or video material (read its transcript first and choose the interval yourself); it returns a 24 kHz mono PCM WAV clip stored as a session material.';
+  if (registrationEnabled === true) {
+    return `${base} ${voiceRegistrationPromptBlock()}`;
+  }
+  return base;
 }

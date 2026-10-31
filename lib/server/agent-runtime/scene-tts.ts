@@ -281,44 +281,58 @@ function audioMime(format: string) {
   return format === 'wav' ? 'audio/wav' : format === 'ogg' ? 'audio/ogg' : 'audio/mpeg';
 }
 
+/** Check whether a TTS connection is enabled and usable. */
+export function hasConfiguredTtsCapability(
+  connection: MediaConnection | 'off' | null | undefined,
+): boolean {
+  if (
+    !connection ||
+    connection === 'off' ||
+    !connection.providerId ||
+    connection.providerId === BROWSER_NATIVE_TTS_PROVIDER_ID
+  ) {
+    return false;
+  }
+  const providerId = connection.providerId as TTSProviderId;
+  const provider = TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS];
+  if (provider?.requiresApiKey && !connection.apiKey) {
+    return false;
+  }
+  return true;
+}
+
 /** Server-configured narration synthesis into the stage's classroom-media path. */
 export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<SceneTtsSummary> {
   const startedAt = Date.now();
   // The tts slot decides the provider; the narrator's bound voice applies
   // only when it belongs to that provider.
   const connection = await serverMediaConnection('tts', input.ownerId);
-  if (
-    !connection ||
-    connection === 'off' ||
-    connection.providerId === BROWSER_NATIVE_TTS_PROVIDER_ID
-  ) {
+  if (!hasConfiguredTtsCapability(connection)) {
     return { available: false, changed: false, generated: 0, skipped: 0, failed: [] };
   }
-  const providerId = connection.providerId as TTSProviderId;
+  const activeConnection = connection as MediaConnection;
+  const providerId = activeConnection.providerId as TTSProviderId;
   const bound = narratorVoice(input.roster);
   const provider = TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS];
-  const apiKey = connection.apiKey ?? '';
-  if (provider?.requiresApiKey && !apiKey) {
-    return { available: false, changed: false, generated: 0, skipped: 0, failed: [] };
-  }
+  const apiKey = activeConnection.apiKey ?? '';
   const voice =
     bound?.providerId === providerId && bound.voiceId
       ? bound.voiceId
-      : configuredDefaultVoice(connection.options, connection.voices) ||
+      : configuredDefaultVoice(activeConnection.options, activeConnection.voices) ||
         DEFAULT_TTS_VOICES[providerId as keyof typeof DEFAULT_TTS_VOICES] ||
         '';
   const model =
-    connection.modelId ?? (DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '');
+    activeConnection.modelId ?? (DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '');
   // A configured slot's own model; the legacy server pins apply only to a default.
   const modelId =
-    (connection.origin === 'configuration'
-      ? slotTTSModel(providerId, model, voice, connection.voices)
-      : resolveTTSModel(providerId, model, voice, connection.voices)) || '';
-  authorizeMediaModel(connection, 'tts', modelId);
+    (activeConnection.origin === 'configuration'
+      ? slotTTSModel(providerId, model, voice, activeConnection.voices)
+      : resolveTTSModel(providerId, model, voice, activeConnection.voices)) || '';
+  authorizeMediaModel(activeConnection, 'tts', modelId);
   let generated = 0;
   let skipped = 0;
   const failed: SceneTtsFailure[] = [];
-  const held = holdProviderGate(connection);
+  const held = holdProviderGate(activeConnection);
   try {
     for (const action of input.scene.actions ?? []) {
       if (action.type !== 'speech' || !(action as SpeechAction).text) continue;

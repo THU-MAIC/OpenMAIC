@@ -329,7 +329,18 @@ function videoProviderSource(deps: Partial<GenerateVideoToolDeps>) {
 }
 
 /** Capability gate used before the tool enters a session's registered toolset. */
-export function hasConfiguredVideoGeneration(deps: Partial<GenerateVideoToolDeps> = {}): boolean {
+export function hasConfiguredVideoGeneration(
+  depsOrConnection?: Partial<GenerateVideoToolDeps> | MediaConnection | 'off' | null,
+): boolean {
+  if (!depsOrConnection || depsOrConnection === 'off') return false;
+  const isConnection =
+    typeof depsOrConnection === 'object' &&
+    'providerId' in depsOrConnection &&
+    typeof (depsOrConnection as { providerId?: unknown }).providerId === 'string';
+  const deps: Partial<GenerateVideoToolDeps> = isConnection
+    ? { videoConnection: depsOrConnection as MediaConnection }
+    : (depsOrConnection as Partial<GenerateVideoToolDeps>);
+  if (deps.videoConnection === 'off' || deps.videoConnection === null) return false;
   const { getConfigured, resolveConfig } = videoProviderSource(deps);
   return configuredProviderIds(getConfigured()).some((providerId) => {
     const provider = VIDEO_PROVIDERS[providerId];
@@ -687,9 +698,16 @@ async function runVideoGenerationJob(input: VideoJobInput): Promise<void> {
   }
 }
 
+export function generateVideoPromptBlock(): string {
+  return 'generate_video is asynchronous: it returns a `gen_vid_...` placeholder immediately and the video completes in the background. Patch the placeholder onto a video element with patch_stage right away; the page updates itself when the video is ready.';
+}
+
 export function buildGenerateVideoTool(
   deps: GenerateVideoToolDeps,
-): AgentTool<typeof GenerateVideoParams, unknown> {
+): AgentTool<typeof GenerateVideoParams, unknown> & {
+  capability: 'video';
+  promptBlock: string;
+} {
   const { getConfigured, resolveConfig } = videoProviderSource(deps);
   const callProvider = deps.generateConfiguredVideo ?? generateVideo;
   const persist = deps.persistGeneratedVideo ?? defaultPersistGeneratedVideo;
@@ -700,6 +718,8 @@ export function buildGenerateVideoTool(
     description:
       'Start creating a new video from a prompt for the explicitly targeted course. Returns IMMEDIATELY with a placeholder ref (gen_vid_...): the video generates in the background (this can take minutes) and the page updates itself when it is ready. Right after this call, put the returned ref on a video element — patch_stage set mediaRef (or src) of an existing element, or add a new video element carrying it. Video elements also support autoplay and poster. Do not wait for the video and do not retry while a ref is pending. This tool never edits a page itself.',
     parameters: GenerateVideoParams,
+    capability: 'video',
+    promptBlock: generateVideoPromptBlock(),
     async execute(toolCallId, params: Static<typeof GenerateVideoParams>, signal) {
       const callerSignal = signal ?? deps.abortSignal;
       throwIfAborted(callerSignal);

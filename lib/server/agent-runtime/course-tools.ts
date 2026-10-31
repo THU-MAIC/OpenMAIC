@@ -266,11 +266,8 @@ export const DSL_TOOLS_PROMPT = [
   'Start with detail:"tree" to see structure; read source only for the subtree you will edit; for long content, prefer grep_stage over paging with offset.',
   'When the user asks for a new course and has not chosen a skill, read the `stage-design` skill before planning; topic skills build on it.',
   'Use generate_scene once per page: each successful call is a durable checkpoint. Use list_scenes to inspect persisted pages and generate_actions to rebuild playback actions for one page.',
-  'Use duplicate_scene to copy a layout, edit_deck for retitle/insert/delete/reorder, and generate_tts after narration edits. Page-list writers keep the saved outline numbering aligned with the real pages.',
+  'Use duplicate_scene to copy a layout and edit_deck for retitle/insert/delete/reorder. Page-list writers keep the saved outline numbering aligned with the real pages.',
   'To fill an uploaded .pptx into an existing stage as appended pages with its original slides kept, read the `pptx-import` skill first (it carries the import-and-repair sequence) and use `import_pptx` after `create_stage` — never extract_material + generate_scene for a layout-preserving import. The stage keeps its own title; the PPT is content, not the classroom identity.',
-  'When the page needs a new visual rather than an existing URL, call `generate_image` first, then apply its returned `src` with `patch_stage` set or add an image element; generate_image never edits the page.',
-  'When a NEW page needs visuals, obtain every real src first by reusing material or calling generate_image, then pass each image src with its description and dimensions in `generate_scene.media` so the content model sees the media while composing the page; media generation tools never edit the page.',
-  'generate_video is asynchronous: it returns a `gen_vid_...` placeholder immediately and the video completes in the background. Patch the placeholder onto a video element with patch_stage right away; the page updates itself when the video is ready.',
   'Use use_material_media before placing session image, video, or audio bytes into a page. Use render_scene_preview selectively to inspect a persisted page when the render capability is available.',
 ].join(' ');
 
@@ -296,7 +293,7 @@ export const COURSE_SYSTEM_PROMPT = [
   "Keep the final report brief: what was done, what is left if anything, and what needs the user's decision.",
 ].join('\n');
 
-interface CoursePromptBlocks {
+export interface CoursePromptBlocks {
   /** Pi's native `<available_skills>` discovery block. */
   availableSkills?: string;
   /** Multi-stage workflow guidance (explicit stage ids and folders). */
@@ -317,8 +314,16 @@ interface CoursePromptBlocks {
   materials?: string;
   /** Roster guidance (list_voices / set_roster; always registered). */
   roster?: string;
-  /** Voice-cloning guidance (clip_audio / register_voice; always registered). */
+  /** Voice-cloning guidance (clip_audio; always registered). */
   voice?: string;
+  /** Voice registration guidance; present only when voice_registration is enabled. */
+  voiceRegistration?: string;
+  /** Image generation guidance; present only when image capability is available. */
+  image?: string;
+  /** Video generation guidance; present only when video capability is available. */
+  video?: string;
+  /** TTS narration guidance; present only when tts capability is available. */
+  tts?: string;
 }
 
 /**
@@ -332,10 +337,14 @@ export function courseSystemPrompt(blocks: CoursePromptBlocks): string {
   if (blocks.curriculum) parts.push('', blocks.curriculum);
   if (blocks.search) parts.push('', blocks.search);
   if (blocks.dslTools) parts.push('', blocks.dslTools);
+  if (blocks.image) parts.push('', blocks.image);
+  if (blocks.video) parts.push('', blocks.video);
+  if (blocks.tts) parts.push('', blocks.tts);
   if (blocks.fetch) parts.push('', blocks.fetch);
   if (blocks.untrustedContent) parts.push('', blocks.untrustedContent);
   if (blocks.materials) parts.push('', blocks.materials);
   if (blocks.roster) parts.push('', blocks.roster);
   if (blocks.voice) parts.push('', blocks.voice);
+  if (blocks.voiceRegistration) parts.push('', blocks.voiceRegistration);
   return parts.join('\n');
 }

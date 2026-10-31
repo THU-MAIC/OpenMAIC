@@ -37,9 +37,12 @@ const SEARCH_SCHEMA = Type.Object({
 });
 
 export function buildWebSearchTool(
-  capability: WebSearchCapability,
+  capability: WebSearchCapability | null | undefined,
   onUrlsObserved?: (urls: string[]) => Promise<void>,
-): AgentTool<never, never> {
+): AgentTool<never, never> & {
+  capability: 'web_search';
+  promptBlock: string;
+} {
   const tool: AgentTool<typeof SEARCH_SCHEMA, unknown> = {
     name: 'web_search',
     label: 'Search the web',
@@ -49,6 +52,7 @@ export function buildWebSearchTool(
       'already know. Prefer one precise query over several vague ones.',
     parameters: SEARCH_SCHEMA,
     async execute(_id, params: Static<typeof SEARCH_SCHEMA>, signal) {
+      if (!capability) throw new Error('web_search is not configured');
       // The abort signal is the pi loop's per-run signal (the same one
       // agent.abort() fires); the provider fetch below carries it too, so an
       // in-flight request is cut short rather than merely abandoned.
@@ -76,7 +80,10 @@ export function buildWebSearchTool(
       };
     },
   };
-  return tool as unknown as AgentTool<never, never>;
+  return Object.assign(tool as unknown as AgentTool<never, never>, {
+    capability: 'web_search' as const,
+    promptBlock: searchPromptBlock(),
+  });
 }
 
 /**

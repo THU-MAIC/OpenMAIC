@@ -265,8 +265,16 @@ export function buildFetchUrlTool(deps: FetchUrlToolDependencies): AgentTool<nev
         details: structured,
       };
     },
+    capability: 'web_fetch',
+    promptBlock: fetchPromptBlock,
   };
   return tool as unknown as AgentTool<never, never>;
+}
+
+export function hasConfiguredWebFetchCapability(
+  connection: MediaConnection | 'off' | null | undefined,
+): boolean {
+  return connection !== null && connection !== undefined && connection !== 'off';
 }
 
 /** Follow the media resolver's failure rules: disabled/unassigned omit the tool; stale references fail loudly. */
