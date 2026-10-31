@@ -520,15 +520,15 @@ export function WorkspaceRail({
 
       {/* New chat: the one raised object in the rail. It starts a conversation
           and leaves an open classroom where it is (`startNewConversation`). */}
-      <div className="shrink-0 px-3 pb-1.5 pt-1">
+      <div className="shrink-0 px-2 pb-1.5 pt-1">
         <button
           type="button"
           data-testid="pro-workspace-new-session"
           onClick={onNewSession}
           aria-keyshortcuts={newChatShortcut.aria}
-          className="ws-new flex h-[38px] w-full min-w-0 items-center gap-2.5 rounded-[11px] px-3 text-[13.5px] font-medium focus-visible:outline-none"
+          className="ws-new flex h-[38px] w-full min-w-0 items-center gap-2.5 rounded-[10px] px-[9px] text-[13.5px] font-medium focus-visible:outline-none"
         >
-          <SquarePen className="size-4 shrink-0" aria-hidden="true" />
+          <SquarePen className="size-[18px] shrink-0" aria-hidden="true" />
           <span className="min-w-0 flex-1 truncate text-left">{t('workspace.newSession')}</span>
           <kbd
             data-testid="pro-workspace-new-session-shortcut"
