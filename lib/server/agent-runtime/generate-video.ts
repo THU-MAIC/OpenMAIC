@@ -702,9 +702,10 @@ export function generateVideoPromptBlock(): string {
   return 'generate_video is asynchronous: it returns a `gen_vid_...` placeholder immediately and the video completes in the background. Patch the placeholder onto a video element with patch_stage right away; the page updates itself when the video is ready.';
 }
 
-export function buildGenerateVideoTool(
-  deps: GenerateVideoToolDeps,
-): AgentTool<typeof GenerateVideoParams, unknown> & {
+export function buildGenerateVideoTool(deps: GenerateVideoToolDeps): AgentTool<
+  typeof GenerateVideoParams,
+  unknown
+> & {
   capability: 'video';
   promptBlock: string;
 } {
