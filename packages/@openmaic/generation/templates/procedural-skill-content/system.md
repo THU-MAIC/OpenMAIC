@@ -359,3 +359,7 @@ Follow the requested language directive exactly when provided.
 {{snippet:interactive-math}}
 
 {{snippet:interactive-observation}}
+
+---
+
+{{snippet:interactive-js-safety}}
