@@ -123,8 +123,8 @@ Amazon Bedrock（`preset: bedrock`）使用服务端的 AWS 凭证链（环境�
 | `course.content.pbl` | chat | `course.content` | 项目式学习（PBL）场景 |
 | `course.actions` | chat | `llm` | 场景动作（智能体在每个场景里说什么、做什么） |
 | `classroom` | chat | `llm` | 课堂对话、测验评分和 PBL 运行时 |
-| `agent` | chat | `llm` | Pro 工作台智能体。**需要工具调用能力。** 还支持 `api` 和 `contextWindow` |
-| `agent.title` | chat | `agent` | Pro 会话标题。只能在 `openmaic.yml` 中配置，模型设置里不显示 |
+| `agent` | chat | `llm` | 工作台智能体。**需要工具调用能力。** 还支持 `api` 和 `contextWindow` |
+| `agent.title` | chat | `agent` | 工作台会话标题。只能在 `openmaic.yml` 中配置，模型设置里不显示 |
 | `tts` | tts | — | 语音合成 |
 | `asr` | asr | — | 语音识别（语音输入、音视频转写） |
 | `image` | image | — | 图像生成 |
@@ -313,7 +313,7 @@ slots:
   webSearch: tavily
 ```
 
-之后删除 `DEFAULT_MODEL` 和 `MODEL_FALLBACK`。服务商变量可以保留，作为 `${VAR}` 引用的来源。`<PREFIX>_BASE_URL` 对应服务商的 `baseUrl`（`OPENAI_BASE_URL` → `openai` 下的 `baseUrl`；直接写 URL，或在变量仍然设置时写 `${OPENAI_BASE_URL}`），`<PREFIX>_MODELS` 对应它的 `models` 列表。与转换得到的 `DEFAULT_MODEL` 一样，这里写出的 `llm` 是工作区可以修改的服务端默认值；如需对所有人固定，请加上 `lock: [llm]`。与转换结果不同，`agent` 现在会沿用 `llm`：如需保持 Pro 智能体关闭，请写 `agent: null`。
+之后删除 `DEFAULT_MODEL` 和 `MODEL_FALLBACK`。服务商变量可以保留，作为 `${VAR}` 引用的来源。`<PREFIX>_BASE_URL` 对应服务商的 `baseUrl`（`OPENAI_BASE_URL` → `openai` 下的 `baseUrl`；直接写 URL，或在变量仍然设置时写 `${OPENAI_BASE_URL}`），`<PREFIX>_MODELS` 对应它的 `models` 列表。与转换得到的 `DEFAULT_MODEL` 一样，这里写出的 `llm` 是工作区可以修改的服务端默认值；如需对所有人固定，请加上 `lock: [llm]`。与转换结果不同，`agent` 现在会沿用 `llm`：如需保持工作台智能体关闭，请写 `agent: null`。
 
 **server-providers.yml。** 迁移前：
 
@@ -437,7 +437,7 @@ ACCESS_CODE=your-secret-code
 功能开关的值为 `true` 或 `1`；除非另有说明，其他值视为关闭。`NEXT_PUBLIC_*` 开关会在构建时注入客户端，修改后需要重新构建：
 
 ```bash
-# MAIC Editor（Pro 模式）
+# MAIC Editor（课堂编辑器）
 NEXT_PUBLIC_MAIC_EDITOR_ENABLED=true
 
 # Pi 播放态中的 PPT 与互动页课件引用（构建时开关；不影响编辑态引用）
@@ -454,6 +454,9 @@ NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
 
 # 显示实验性 PPTX 导入入口
 NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
+
+# 账户菜单「文档」打开的文档站地址（默认同源 /docs）
+NEXT_PUBLIC_DOCS_URL=https://docs.example.com
 ```
 
 课堂对话固定由 Pi 运行，需要支持工具／函数调用的模型：在**课程模型配置**中为**课堂互动**选择这样的模型，或在 `openmaic.yml` 中设置 `classroom` 槽位（或它继承的 `llm` 槽位）。Gemini 请使用原生 `google` 预设，不要使用 Google 的 OpenAI 兼容端点。 内置模型目录标明不支持工具调用的模型会在推理前被拒绝，返回 `400 MODEL_CONFIG_INVALID`（`reason: tool_calling_required`），**课程模型配置**也会在课堂互动槽位上注明这一要求。

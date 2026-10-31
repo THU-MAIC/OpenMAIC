@@ -26,7 +26,6 @@
     "examplesLabel": "Примеры тем",
     "examplePython": "Python с нуля",
     "exampleFourier": "Преобразование Фурье на простых примерах",
-    "desktopOnly": "Для редактора и режима Pro используйте компьютер.",
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
     "greetingWithName": "Привет, {{name}}"
   },
@@ -350,10 +349,12 @@
     "exitFullscreen": "Свернуть",
     "editCourse": "Редактировать курс",
     "doneEditing": "Завершить редактирование",
-    "proModeDisabledHint": "Редактирование недоступно на этой странице — откройте слайд курса, чтобы редактировать в Pro-режиме."
+    "editDisabledHint": "Редактирование недоступно на этой странице — откройте слайд курса, чтобы его отредактировать.",
+    "editToggle": "Правка",
+    "openInWorkspace": "Открыть в рабочем пространстве",
+    "openInWorkspaceHint": "Открыть в рабочем пространстве, чтобы продолжить работу над курсом в диалоге"
   },
   "edit": {
-    "proMode": "Pro",
     "undo": "Отменить",
     "redo": "Повторить",
     "delete": "Удалить",
@@ -2394,7 +2395,6 @@
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
     "newSession": "New chat",
     "sections": {
-      "courses": "Courses",
       "sessions": "Chats"
     },
     "coursesEmpty": "No courses yet",
@@ -2404,7 +2404,6 @@
     "retry": "Retry",
     "untitledSession": "Untitled chat",
     "pagePosition": "Page {{index}} of {{total}}",
-    "exitPro": "Exit Pro",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
@@ -2413,7 +2412,6 @@
     "learningMode": "Учиться",
     "editingMode": "Править",
     "editingUnavailableGenerating": "Редактирование недоступно во время создания курса.",
-    "fullscreenLearning": "Учиться на весь экран",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2429,8 +2427,6 @@
       "cancelled": "Stopped"
     },
     "backToWorkspace": "Back to workspace",
-    "searchPlaceholder": "Filter by name",
-    "searchAria": "Search {{section}}",
     "searchEmpty": "No matches",
     "showMore": "Show {{count}} more",
     "showLess": "Show less",
@@ -2452,7 +2448,6 @@
     "coursePausedDesc": "Одну страницу не удалось создать. Повторите попытку в классе; курс откроется здесь, когда создание завершится.",
     "viewGenerationProgress": "Посмотреть ход создания",
     "openToRetry": "Открыть и повторить",
-    "courseGeneratingRowHint": "Доступно после завершения создания",
     "noCourseTitle": "No course open",
     "noCourseHint": "Откройте по ссылке на курс в переписке или выберите курс в списке слева — переписка останется на месте",
     "resizeChatAria": "Drag to resize the conversation pane",
@@ -2461,7 +2456,6 @@
     "autoSaved": "Сохранено",
     "collapsedTitle": "Both panes are collapsed",
     "collapsedHint": "Use the tabs on the left to bring the conversation or the classroom back",
-    "moreUtilities": "More",
     "rowMore": "Другие действия для {{name}}",
     "folderDeleteHint": "Курсы из папки вернутся на верхний уровень. Ничего не удаляется.",
     "dropToUnfile": "Перетащите сюда, чтобы убрать из папки",
@@ -2475,11 +2469,64 @@
     "confirmDelete": "Подтвердить удаление",
     "deleting": "Удаление…",
     "deleteFailed": "Не удалось удалить. Повторите попытку.",
-    "tabsAria": "Chats and courses",
     "courseTabsAria": "Открытые курсы",
     "courseTabClose": "Закрыть вкладку: {{name}}",
     "courseTabRunning": "Генерируется",
-    "foldersUnavailable": "Папки недоступны в этой сборке"
+    "foldersUnavailable": "Папки недоступны в этой сборке",
+    "composer": {
+      "attach": "Прикрепить материал",
+      "mentionCourse": "引用课堂",
+      "mentionCourseOrMaterial": "Упомянуть кабинет или материал из базы знаний",
+      "loadSkill": "加载 skill",
+      "skillMenuTitle": "选择课程设计技能",
+      "skillsLoading": "正在加载 skill…",
+      "noSkillsAvailable": "暂无可用 skill",
+      "userSkillsGroup": "我的 Skill",
+      "builtinSkillsGroup": "内置 Skill",
+      "skillsLoadFailed": "Skill 加载失败，点击重试",
+      "retrySkills": "重试",
+      "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+      "launchPlaceholder": "Опишите учебный опыт, который хотите создать",
+      "launchSend": "Начать сборку"
+    },
+    "nav": {
+      "search": "Поиск",
+      "myCourses": "Мои курсы"
+    },
+    "search": {
+      "placeholder": "Поиск по чатам, курсам и материалам",
+      "recentChats": "Недавние чаты",
+      "recentCourses": "Недавние курсы",
+      "courses": "Курсы",
+      "materials": "Материалы",
+      "actions": "Быстрые действия",
+      "searching": "Поиск…",
+      "empty": "Ничего не найдено по запросу «{{query}}»",
+      "materialsFailed": "Не удалось выполнить поиск в базе знаний",
+      "themeAction": "Тема: {{name}}",
+      "languageAction": "Язык: {{name}}"
+    },
+    "account": {
+      "signIn": "Войти",
+      "menu": "Аккаунт и настройки",
+      "profileSaved": "Сохранено",
+      "language": "Язык",
+      "about": "Об OpenMAIC",
+      "aboutBody": "Платформа с открытым исходным кодом, которая превращает любую тему в интерактивный класс с ИИ-преподавателями и одноклассниками. Распространяется по лицензии MIT.",
+      "viewOnGithub": "Открыть на GitHub",
+      "docs": "Документация",
+      "signOut": "Выйти"
+    },
+    "coursesPage": {
+      "subtitle": "Курсы, которые вы создали или импортировали, и папки, в которых они лежат",
+      "searchPlaceholder": "Поиск по моим курсам",
+      "results": "Результаты поиска",
+      "allCourses": "Все курсы"
+    },
+    "fullscreen": {
+      "expand": "Во весь экран",
+      "collapse": "Выйти из полноэкранного режима (Esc)"
+    }
   },
   "profile": {
     "title": "Профиль",
@@ -2510,25 +2557,6 @@
     "title": "Введите код доступа",
     "placeholder": "Код доступа",
     "error": "Неверный код доступа. Попробуйте ещё раз."
-  },
-  "proMode": {
-    "attach": "Прикрепить материал",
-    "mentionCourse": "引用课堂",
-    "loadSkill": "加载 skill",
-    "skillMenuTitle": "选择课程设计技能",
-    "skillsLoading": "正在加载 skill…",
-    "noSkillsAvailable": "暂无可用 skill",
-    "userSkillsGroup": "我的 Skill",
-    "builtinSkillsGroup": "内置 Skill",
-    "skillsLoadFailed": "Skill 加载失败，点击重试",
-    "retrySkills": "重试",
-    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
-    "badgeAria": "Pro-режим",
-    "badgeEnter": "Pro-режим",
-    "badgeExit": "Вернуться в обычный режим",
-    "launchPlaceholder": "Опишите учебный опыт, который хотите создать",
-    "launchSend": "Начать сборку",
-    "mentionCourseOrMaterial": "Упомянуть кабинет или материал из базы знаний"
   },
   "workbench": {
     "tool": {

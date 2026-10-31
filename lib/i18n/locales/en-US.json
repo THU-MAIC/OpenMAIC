@@ -26,7 +26,6 @@
     "examplesLabel": "Try an example",
     "examplePython": "Learn Python from scratch",
     "exampleFourier": "Explain the Fourier transform with intuitive examples",
-    "desktopOnly": "Please use a computer for the editor and Pro mode.",
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
     "greetingWithName": "Hi, {{name}}"
   },
@@ -350,10 +349,12 @@
     "exitFullscreen": "Exit Fullscreen",
     "editCourse": "Edit course",
     "doneEditing": "Done editing",
-    "proModeDisabledHint": "Editing isn't available on this page — open a course slide to edit with Pro mode."
+    "editDisabledHint": "Editing isn't available on this page — open a course slide to edit it.",
+    "editToggle": "Edit",
+    "openInWorkspace": "Open in workspace",
+    "openInWorkspaceHint": "Open in the workspace, to keep working on this course in a conversation"
   },
   "edit": {
-    "proMode": "Pro",
     "undo": "Undo",
     "redo": "Redo",
     "delete": "Delete",
@@ -2394,7 +2395,6 @@
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
     "newSession": "New chat",
     "sections": {
-      "courses": "Courses",
       "sessions": "Chats"
     },
     "coursesEmpty": "No courses yet",
@@ -2404,7 +2404,6 @@
     "retry": "Retry",
     "untitledSession": "Untitled chat",
     "pagePosition": "Page {{index}} of {{total}}",
-    "exitPro": "Exit Pro",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
@@ -2413,7 +2412,6 @@
     "learningMode": "Learn",
     "editingMode": "Edit",
     "editingUnavailableGenerating": "Editing is unavailable while this course is generating.",
-    "fullscreenLearning": "Full-screen learning",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2429,8 +2427,6 @@
       "cancelled": "Stopped"
     },
     "backToWorkspace": "Back to workspace",
-    "searchPlaceholder": "Filter by name",
-    "searchAria": "Search {{section}}",
     "searchEmpty": "No matches",
     "showMore": "Show {{count}} more",
     "showLess": "Show less",
@@ -2452,7 +2448,6 @@
     "coursePausedDesc": "A page failed to generate. Retry it in the classroom; the course opens here once generation completes.",
     "viewGenerationProgress": "View generation progress",
     "openToRetry": "Open to retry",
-    "courseGeneratingRowHint": "Available once generation completes",
     "noCourseTitle": "No course open",
     "noCourseHint": "Open one from a course link in the conversation, or pick one from the list on the left — the conversation stays put",
     "resizeChatAria": "Drag to resize the conversation pane",
@@ -2461,7 +2456,6 @@
     "autoSaved": "Saved",
     "collapsedTitle": "Both panes are collapsed",
     "collapsedHint": "Use the tabs on the left to bring the conversation or the classroom back",
-    "moreUtilities": "More",
     "rowMore": "More actions for {{name}}",
     "folderDeleteHint": "The courses inside move back to the top level. Nothing is deleted.",
     "dropToUnfile": "Drop here to move out of the folder",
@@ -2475,11 +2469,64 @@
     "confirmDelete": "Confirm delete",
     "deleting": "Deleting…",
     "deleteFailed": "Couldn't delete. Please try again.",
-    "tabsAria": "Chats and courses",
     "courseTabsAria": "Open courses",
     "courseTabClose": "Close tab: {{name}}",
     "courseTabRunning": "Generating",
-    "foldersUnavailable": "Folders are not available in this build"
+    "foldersUnavailable": "Folders are not available in this build",
+    "composer": {
+      "attach": "Attach material",
+      "mentionCourse": "Reference a classroom",
+      "mentionCourseOrMaterial": "Reference a classroom or a knowledge base material",
+      "loadSkill": "Load a skill",
+      "skillMenuTitle": "Choose a course-design skill",
+      "skillsLoading": "Loading skills…",
+      "noSkillsAvailable": "No skills available",
+      "userSkillsGroup": "My Skills",
+      "builtinSkillsGroup": "Built-in Skills",
+      "skillsLoadFailed": "Skills failed to load. Click to retry",
+      "retrySkills": "Retry",
+      "noSkillMatch": "No Skills match “{{query}}”",
+      "launchPlaceholder": "Describe the learning experience you want to create",
+      "launchSend": "Start build"
+    },
+    "nav": {
+      "search": "Search",
+      "myCourses": "My courses"
+    },
+    "search": {
+      "placeholder": "Search chats, courses and materials",
+      "recentChats": "Recent chats",
+      "recentCourses": "Recent courses",
+      "courses": "Courses",
+      "materials": "Materials",
+      "actions": "Quick actions",
+      "searching": "Searching…",
+      "empty": "Nothing matches “{{query}}”",
+      "materialsFailed": "Couldn't search the knowledge base",
+      "themeAction": "Theme: {{name}}",
+      "languageAction": "Language: {{name}}"
+    },
+    "account": {
+      "signIn": "Sign in",
+      "menu": "Account and settings",
+      "profileSaved": "Saved",
+      "language": "Language",
+      "about": "About OpenMAIC",
+      "aboutBody": "An open-source platform that turns any topic into an interactive classroom with AI teachers and classmates. Released under the MIT license.",
+      "viewOnGithub": "View on GitHub",
+      "docs": "Docs",
+      "signOut": "Sign out"
+    },
+    "coursesPage": {
+      "subtitle": "Courses you made or imported, and the folders you keep them in",
+      "searchPlaceholder": "Search my courses",
+      "results": "Search results",
+      "allCourses": "All courses"
+    },
+    "fullscreen": {
+      "expand": "Full screen",
+      "collapse": "Exit full screen (Esc)"
+    }
   },
   "profile": {
     "title": "Profile",
@@ -2505,25 +2552,6 @@
     "voice": "Voice",
     "speed": "Speed",
     "language": "Language"
-  },
-  "proMode": {
-    "attach": "Attach material",
-    "mentionCourse": "Reference a classroom",
-    "loadSkill": "Load a skill",
-    "skillMenuTitle": "Choose a course-design skill",
-    "skillsLoading": "Loading skills…",
-    "noSkillsAvailable": "No skills available",
-    "userSkillsGroup": "My Skills",
-    "builtinSkillsGroup": "Built-in Skills",
-    "skillsLoadFailed": "Skills failed to load. Click to retry",
-    "retrySkills": "Retry",
-    "noSkillMatch": "No Skills match “{{query}}”",
-    "badgeAria": "Pro mode",
-    "badgeEnter": "Pro mode",
-    "badgeExit": "Back to classic",
-    "launchPlaceholder": "Describe the learning experience you want to create",
-    "launchSend": "Start build",
-    "mentionCourseOrMaterial": "Reference a classroom or a knowledge base material"
   },
   "accessCode": {
     "title": "Enter Access Code",

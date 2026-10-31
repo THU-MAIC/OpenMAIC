@@ -3,14 +3,13 @@
 /**
  * The three restored entry points, pinned:
  *
- *  1. the workspace rail's courses tab carries an upload control next to the
- *     name filter (it imports a course package from disk into the list);
+ *  1. the My courses page carries an upload control next to its name filter
+ *     (it imports a course package from disk into the library);
  *  2. the Pro launch composer (and the chat composer) carries an attach
  *     control in the glyph row, rendered exactly when the material upload
  *     path can serve a request;
- *  3. the rail's foot cluster — the bottom-left utilities — mounts the
- *     settings trigger for the model/provider dialog, in the slot the removed
- *     saved-courses drawer left.
+ *  3. the rail's account menu, at its foot, carries the settings entry for the
+ *     model/provider dialog beside the language and theme controls.
  *
  * Items 1 and 3 are pinned from source (the rail and the shell are heavy
  * client surfaces the suite renders nowhere else); item 2 is pinned by an
@@ -66,44 +65,32 @@ async function flushProbe() {
   });
 }
 
-describe('entry point 1 — the courses-tab upload control', () => {
-  const rail = read('components/workbench/workspace/WorkspaceRail.tsx');
+describe('entry point 1 — the course upload control on My courses', () => {
+  const page = read('components/workbench/workspace/WorkspaceCoursesPage.tsx');
   const shell = read('components/workbench/workspace/WorkspaceShell.tsx');
   const discovery = read('lib/hooks/use-home-discovery.tsx');
 
-  it('renders the upload button beside the course name filter', () => {
-    // The find row lives under the tab strip and above the tabpanel.
-    const findRow = rail.slice(
-      rail.indexOf('pro-nav-search-input'),
-      rail.indexOf('role="tabpanel"'),
-    );
-    expect(findRow).toContain('data-testid="pro-nav-import-course"');
-    expect(findRow).toContain('<Upload className="size-4"');
+  it('renders the upload button in the page header, beside the name filter', () => {
+    const header = page.slice(page.indexOf('<header'), page.indexOf('</header>'));
+    expect(header).toContain('data-testid="workspace-courses-search"');
+    expect(header).toContain('data-testid="workspace-courses-import"');
+    expect(header).toContain('<Upload className="size-4"');
   });
 
   it('opens the same course-package import the home surface uses, disabled while one runs', () => {
-    const button = rail.slice(
-      rail.indexOf('data-testid="pro-nav-import-course"'),
-      rail.indexOf('data-testid="pro-nav-new-folder"'),
+    const button = page.slice(
+      page.indexOf('data-testid="workspace-courses-import"'),
+      page.indexOf('data-testid="workspace-courses-new-folder"'),
     );
-    // Clearing the filter first means the imported course is not hidden by a
-    // stale query, then the discovery hook's import trigger fires.
-    expect(button).toContain("coursesSection.setQuery('')");
-    expect(button).toContain('courses.triggerImport()');
+    expect(button).toContain('courses.triggerImport');
     expect(button).toContain('disabled={courses.importing}');
-    expect(button).toContain("aria-label={t('import.classroom')}");
-    expect(button).toContain("title={t('import.classroom')}");
+    expect(button).toContain("t('import.classroom')");
   });
 
-  it('is gated by the same condition as its action: the courses tab', () => {
-    const coursesTab = rail.indexOf("{tab === 'courses' ? (");
-    const upload = rail.indexOf('pro-nav-import-course');
-    const conditionalEnd = rail.indexOf(') : null}', upload);
-    expect(coursesTab).toBeGreaterThan(-1);
-    expect(upload).toBeGreaterThan(coursesTab);
-    // The button sits inside the conditional (before its close), so a session-
-    // tab view never shows an import affordance.
-    expect(upload).toBeLessThan(conditionalEnd);
+  it('is no longer in the rail, which lists chats only', () => {
+    const rail = read('components/workbench/workspace/WorkspaceRail.tsx');
+    expect(rail).not.toContain('pro-nav-import-course');
+    expect(rail).not.toContain('role="tablist"');
   });
 
   it('mounts the hidden file input once, from the discovery hook the button calls', () => {
@@ -192,46 +179,47 @@ describe('entry point 2 — the composer attach control', () => {
     };
     for (const [locale, copy] of Object.entries(expected)) {
       const parsed = JSON.parse(read(`lib/i18n/locales/${locale}.json`)) as {
-        proMode?: { attach?: string };
+        workspace?: { composer?: { attach?: string } };
       };
-      expect(parsed.proMode?.attach, locale).toBe(copy);
+      expect(parsed.workspace?.composer?.attach, locale).toBe(copy);
     }
   });
 });
 
-describe('entry point 3 — the settings entry in the rail’s foot cluster', () => {
+describe('entry point 3 — the settings entry in the rail’s account menu', () => {
   const rail = read('components/workbench/workspace/WorkspaceRail.tsx');
+  const account = read('components/workbench/workspace/WorkspaceAccount.tsx');
 
-  it('mounts the settings trigger in the expanded foot cluster', () => {
-    const utilities = rail.slice(rail.indexOf('function RailUtilities'));
-    expect(utilities).toContain('data-testid="pro-nav-settings"');
-    expect(utilities).toContain('<Settings className="size-4"');
-    expect(utilities).toContain("aria-label={t('settings.title')}");
-    expect(utilities).toContain("title={t('settings.title')}");
+  it('mounts the account block, whose menu carries settings, in the expanded foot', () => {
+    const foot = rail.slice(rail.indexOf('data-testid="pro-rail-utilities"'));
+    expect(foot).toContain('<WorkspaceAccountBlock onOpenSettings={onOpenSettings} />');
+    expect(account).toContain('data-testid="workspace-account-settings"');
+    expect(account).toContain('onSelect={onOpenSettings}');
   });
 
-  it('keeps the trigger on the collapsed strip too', () => {
+  it('keeps it on the collapsed strip too', () => {
     const mini = rail.slice(
       rail.indexOf('pro-rail-utilities-mini'),
       rail.indexOf('renderCourseRow'),
     );
-    expect(mini).toContain('data-testid="pro-nav-settings-mini"');
-    expect(mini).toContain('onClick={() => setSettingsOpen(true)}');
+    expect(mini).toContain('<WorkspaceAccountBlock mini onOpenSettings={onOpenSettings} />');
   });
 
-  it('opens the model/provider dialog, mounted by the rail itself', () => {
-    expect(rail).toContain("import { SettingsDialog } from '@/components/settings'");
-    expect(rail).toContain('<SettingsDialog');
-    expect(rail).toContain('open={settingsOpen}');
-    const trigger = rail.slice(rail.indexOf('data-testid="pro-nav-settings"'));
-    expect(trigger.slice(0, trigger.indexOf('</button>'))).toContain('onClick={onOpenSettings}');
-  });
-
-  it('sits beside the language and display toggles in the cluster order', () => {
-    const utilities = rail.slice(rail.indexOf('function RailUtilities'));
-    const order = ['<LanguageSwitcher', '<ThemeToggle', 'pro-nav-settings'].map((token) =>
-      utilities.indexOf(token),
+  it('opens the model/provider dialog, mounted by the shell for the rail and the search', () => {
+    const shell = read('components/workbench/workspace/WorkspaceShell.tsx');
+    expect(shell).toContain("import { SettingsDialog } from '@/components/settings'");
+    expect(shell).toContain(
+      '<SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />',
     );
+    expect(shell).toContain('onOpenSettings={() => setSettingsOpen(true)}');
+  });
+
+  it('sits with the language and theme controls in the menu', () => {
+    const order = [
+      'workspace-account-settings',
+      'workspace-account-language',
+      'workspace-account-theme',
+    ].map((token) => account.indexOf(token));
     for (const index of order) expect(index).toBeGreaterThan(-1);
     expect(order[0]).toBeLessThan(order[1]);
     expect(order[1]).toBeLessThan(order[2]);

@@ -353,69 +353,12 @@
   transition: opacity 160ms var(--ws-ease);
 }
 
-/* ── Course rows vs. chat rows ───────────────────────────────────────────
-   Both populations are compact, single-line lists. Course entries retain the
-   stronger 13px artifact name and put their page count at the far edge; chat
-   entries stay lighter and put time/status there. The surrounding tree vs.
-   stream structure supplies the remaining distinction without spending a
-   second line per course. */
-
-.ws-course {
-  min-height: var(--ws-tree-row-h);
-}
-
-/* The darkest, heaviest text in the rail body — at REST, not on hover. This is
-   the thing the user came to the rail to find; making it wait for a pointer is
-   what made the whole column read as grey. */
-.ws-course-name {
-  font-size: 13px;
-  font-weight: 550;
-  line-height: 1.25;
-  letter-spacing: -0.006em;
-  color: var(--ws-ink);
-}
-
-/* A course a generation run is still producing: read-only until the run
-   completes, so its row is quieter than an openable one and states the run's
-   progress where the page count goes. Not a link to nowhere — the pointer
-   says so. */
-.ws-course-generating .ws-course-name {
-  color: var(--ws-ink-mute);
-}
-
-.ws-course-generating .ws-row-meta {
-  color: var(--ws-accent);
-  min-width: 0;
-}
-
 .ws-row[aria-disabled='true'] {
   cursor: default;
 }
 
-.ws-row-run-icon {
-  flex-shrink: 0;
-  width: 12px;
-  height: 12px;
-  margin-left: 4px;
-  color: var(--ws-accent);
-}
-
-.ws-row-run-icon-paused,
-.ws-course-generating:has(.ws-row-run-icon-paused) .ws-row-meta {
-  color: #d97706; /* amber-600, the home card's paused tone */
-}
-
 .ws-meta-sep {
   color: var(--ws-ink-faint);
-}
-
-/* A folder heads its group: same ink as the courses under it, a shade heavier,
-   so the hierarchy reads without a second label style. */
-.ws-folder-name {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: -0.004em;
-  color: var(--ws-ink);
 }
 
 /* Chats: one step back from the courses, in weight and in ink. Deliberately
@@ -482,26 +425,6 @@
   background-color: var(--ws-tint-strong);
 }
 
-/* ── Status dots ─────────────────────────────────────────────────────────
-   Same emerald/rose/neutral the v2 shell used; a running session gets a
-   small spinner instead of the old breathing halo — live states spin, static
-   states stay put. Every session row reserves the SAME slot for its mark, so
-   the 12px spinner and the 6px dot hold identical layout width and the names
-   in the list line up column-to-column whichever state a row is in. */
-.ws-status-slot {
-  /* A TRAILING mark now, beside the timestamp — not a leading one. A chat's
-     status is metadata like its time, and putting it at the head of the row was
-     what made every chat name start a slot right of every course name. The box
-     stays fixed so the 12px spinner and the 6px dot hold identical width and a
-     running row does not shift its neighbours. */
-  width: 16px;
-  height: 16px;
-  margin-left: 6px;
-  flex-shrink: 0;
-  display: grid;
-  place-items: center;
-}
-
 .ws-dot {
   width: 6px;
   height: 6px;
@@ -518,6 +441,16 @@
   flex-shrink: 0;
   color: var(--ws-live);
   animation: ws-spin 0.9s linear infinite;
+}
+
+.ws-row-status {
+  display: inline-flex;
+  align-items: center;
+}
+
+.ws-row-fail {
+  display: inline-flex;
+  color: var(--ws-fail);
 }
 
 .ws-dot-fail {
@@ -596,6 +529,53 @@
   animation: ws-fade 500ms var(--ws-ease) both;
 }
 
+/* The right pane opening: it comes in from the right edge, a beat after the
+   conversation starts to narrow beside it (see `WorkspaceChatPane`), on the
+   split's own curve. Replayed whenever the pane is shown again. Full screen
+   grows the classroom out of the pane the same way. */
+@keyframes ws-pane-in {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ws-full-in {
+  from {
+    opacity: 0.6;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* While the split plays, a column's content holds its final width, clipped,
+   so nothing rewraps or relays out frame by frame (see `WorkspaceChatPane`). */
+.ws-pane[data-ws-freeze] {
+  overflow: hidden;
+}
+
+.ws-pane[data-ws-freeze] > * {
+  width: var(--ws-pane-freeze);
+  min-width: var(--ws-pane-freeze);
+  max-width: none;
+  flex-shrink: 0;
+}
+
+.ws-pane-enter {
+  animation: ws-pane-in 400ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.ws-pane-enter.ws-classroom-fullscreen {
+  animation: ws-full-in 400ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 .ws-d1 {
   animation-delay: 40ms;
 }
@@ -611,7 +591,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   .ws-enter,
-  .ws-enter-rail {
+  .ws-enter-rail,
+  .ws-pane-enter,
+  .ws-pane-enter.ws-classroom-fullscreen {
     animation: none;
     opacity: 1;
     transform: none;
@@ -739,102 +721,6 @@
     drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
 }
 
-/* ── The tab switch ──────────────────────────────────────────────────────
-   Chat | courses, over one body — a SEGMENTED CONTROL of two equal halves.
-
-   It used to be an underline strip sized to its labels and parked at the left,
-   because a filled segment "reads as a mode" while tabs read as views. Two
-   lists that take turns owning the whole body ARE a mode, and at rail width
-   the underline was the quietest mark in a column of louder ones: the selected
-   tab took a 2px hairline while every row below it could take a filled pill.
-   So the switch spends the width it has — one tinted track, two equal halves,
-   the selected half lifted onto a solid ground with a hairline and a contact
-   shadow. Same materials as the compose button above it (surface + line +
-   `lift-sm`), one notch of the accent kept for the selected count, so the
-   strip is louder without introducing a colour the rail does not already own.
-
-   The track is `mx-3`, flush with the compose button and the findrow, so the
-   three stack as one control column.
-
-   Equal halves cost the wider label its last characters — that was the whole
-   objection to them — and the fix is TYPE, not width (see `.ws-navtab-label`
-   below), which buys back roughly a third of the label's box. */
-.ws-navtabs {
-  height: 34px;
-  padding: 3px;
-  gap: 3px;
-  border-radius: 10px;
-  background-color: var(--ws-tint);
-  box-shadow: inset 0 0 0 1px var(--ws-line-soft);
-}
-
-/* Two halves, always: `flex: 1 1 0` (not `auto`) so the wider label cannot
-   claim more of the track than the narrower one, and `min-width: 0` so it
-   truncates inside its own half instead of pushing the track open. */
-.ws-navtab {
-  position: relative;
-  flex: 1 1 0;
-  min-width: 0;
-  height: 100%;
-  padding: 0 8px;
-  border-radius: 7px;
-  color: var(--ws-ink-mute);
-  transition:
-    color 160ms var(--ws-ease),
-    background-color 160ms var(--ws-ease),
-    box-shadow 160ms var(--ws-ease);
-}
-
-/* The unselected half stays quiet — it is the other view, not a second
-   destination competing with the one you are reading. */
-.ws-navtab:hover:not([aria-selected='true']) {
-  color: var(--ws-ink-soft);
-  background-color: var(--ws-tint);
-}
-
-.ws-navtab:focus-visible {
-  outline: none;
-  color: var(--ws-ink);
-  box-shadow:
-    0 0 0 1px var(--ws-accent-thread),
-    0 0 0 3px var(--ws-accent-wash);
-}
-
-/* The selected half. A solid ground rather than a mark drawn under the label:
-   at 200px a 2px underline is the quietest mark in a column of louder ones. */
-.ws-navtab[aria-selected='true'] {
-  color: var(--ws-ink);
-  background-color: rgba(255, 255, 255, 0.92);
-  box-shadow:
-    inset 0 0 0 1px var(--ws-line-soft),
-    var(--ws-lift-sm);
-}
-
-/* Dark inverts which way "raised" points: a chip that is DARKER than its track
-   reads as a hole, so the selected half goes up the white ramp instead, and
-   drops the cast shadow (a shadow on slate-900 is noise, not lift). */
-.dark .ws-navtab[aria-selected='true'] {
-  background-color: rgba(255, 255, 255, 0.12);
-  box-shadow: inset 0 0 0 1px var(--ws-line);
-}
-
-.ws-navtab[aria-selected='true'] .ws-navtab-label {
-  font-weight: 600;
-}
-
-/* Sentence case at 11px, no tracking — NOT the rail's 10px uppercase section
-   label. That label was built for a full-width heading with the whole rail to
-   spread over; inside half of a 200px track, 0.145em of tracking on seven
-   uppercase characters is the difference between "Courses" and "COU…".
-   It stays a label by size and by ink, not by case. */
-.ws-navtab-label {
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1;
-  letter-spacing: 0.005em;
-  color: inherit;
-}
-
 /* ── Find, under the tabs ────────────────────────────────────────────────
    The prototype's findrow, copied in form and density: one always-visible
    icon+input row heading the tab content, filtering whichever list the
@@ -874,33 +760,6 @@
 
 .ws-find-input::placeholder {
   color: var(--ws-ink-mute);
-}
-
-/* The header row's icon button — the new-folder button on the courses tab. The
-   find input's own height, so the two read as one control group. */
-.ws-find-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  color: var(--ws-ink-mute);
-  transition:
-    background-color 160ms var(--ws-ease),
-    color 160ms var(--ws-ease);
-}
-
-.ws-find-icon:hover {
-  background-color: var(--ws-tint);
-  color: var(--ws-ink);
-}
-
-.ws-find-icon:focus-visible {
-  outline: none;
-  color: var(--ws-ink);
-  box-shadow: 0 0 0 1px var(--ws-accent-thread);
 }
 
 /* Folder creation and renaming are one row in the tree, with the input starting
@@ -981,9 +840,60 @@
   line-height: 14px;
 }
 
-/* Folder glyphs: present, never loud. */
-.ws-glyph {
-  color: var(--ws-ink-mute);
+/* ── The quiet scrollbar ──────────────────────────────────────────────────
+   EVERY scroll area of the workspace — the page canvases, the rail, the chat
+   stream, the preview, the menus, and anything inside the panes — gets a thin
+   scrollbar on a transparent track whose thumb shows while the pointer is
+   over the area, in a low-alpha ink for the theme (a dark track never paints
+   white). Scoped to the shell, so no container falls back to the native bar;
+   `.ws-scroll` carries the same treatment to surfaces portalled out of it
+   (the search palette). Browsers that honour the standard properties ignore
+   the ::-webkit-scrollbar rules; the rest use them. */
+.ws-root {
+  --ws-scroll-thumb: rgba(15, 23, 42, 0.2);
+}
+
+.dark .ws-root {
+  color-scheme: dark;
+}
+
+.dark .ws-root {
+  --ws-scroll-thumb: rgba(255, 255, 255, 0.2);
+}
+
+.ws-root,
+.ws-root *,
+.ws-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.ws-root :hover,
+.ws-scroll:hover {
+  scrollbar-color: var(--ws-scroll-thumb, rgba(100, 116, 139, 0.4)) transparent;
+}
+
+.ws-root ::-webkit-scrollbar,
+.ws-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.ws-root ::-webkit-scrollbar-track,
+.ws-root ::-webkit-scrollbar-corner,
+.ws-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ws-root ::-webkit-scrollbar-thumb,
+.ws-scroll::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: transparent;
+}
+
+.ws-root :hover::-webkit-scrollbar-thumb,
+.ws-scroll:hover::-webkit-scrollbar-thumb {
+  background: var(--ws-scroll-thumb, rgba(100, 116, 139, 0.4));
 }
 
 /* ── The classroom picker ────────────────────────────────────────────────── */
@@ -1011,42 +921,9 @@
   background: transparent;
 }
 
-/* The leading glyph slot — only on rows that carry a glyph (a folder, a folder
-   being created). Courses, chats and pager rows have no leading element at all,
-   so their names begin at the row's own `px-2`: the panel edge, which is where
-   the eye already is. A folder's name sits one glyph further in, and that offset
-   IS the hierarchy — it is not a misalignment to be padded away on every other
-   row. */
-.ws-tree-lead {
-  display: grid;
-  place-items: center;
-  flex: 0 0 var(--ws-tree-lead);
-  width: var(--ws-tree-lead);
-  margin-right: var(--ws-tree-lead-gap);
-  color: var(--ws-ink-mute);
-}
-
 /* Every row in the tree, folders and courses alike. */
 .ws-tree-row {
   height: var(--ws-tree-row-h);
-}
-
-/* Nested rows sit ONE step in, and the step is a margin — nothing else. There
-   used to be a guide line here (a `border-left`, plus the 6px of padding that
-   held it off the names), which is exactly the kind of vertical rule this tree
-   does not use: depth is one modest inset under the folder row that owns it. */
-.ws-nest {
-  margin-left: var(--ws-tree-indent);
-}
-
-/* The tree's top level holds two kinds of row: folders, and the courses that
-   are in no folder. The loose run takes no indent — an inset would put it at a
-   folder member's depth and read as membership in the folder above it — so the
-   only thing marking the change of kind is space, and enough of it to read as a
-   break rather than a nudge. Padding, not a margin: this div is a child of a
-   `space-y-px` list, whose own margin rule outranks a single class. */
-.ws-loose {
-  padding-top: 10px;
 }
 
 /* Show-more / collapse — a plain line of quiet text belonging to the list it
@@ -1138,21 +1015,6 @@
   box-shadow: 0 0 0 1px var(--ws-accent-thread);
 }
 
-/* ── Rail foot ───────────────────────────────────────────────────────────
-   SiteHeader's own widgets, dropped into the rail. They bring their own
-   (grey-ramp) styling; this only quiets them to the rail's contrast and gives
-   the cluster a divider of the rail's own kind. */
-.ws-utils {
-  color: var(--ws-ink-mute);
-}
-
-.ws-utils-sep {
-  width: 1px;
-  height: 16px;
-  margin: 0 4px;
-  background: var(--ws-line);
-}
-
 /* ── Resize handle ───────────────────────────────────────────────────────
    A 6px hit strip straddles each pane edge, but the only visible affordance is
    the seam itself: a fine resting thread that strengthens on hover. On a seam
@@ -1231,8 +1093,7 @@
    and easing a value that already tracks the cursor only adds lag. */
 @media (prefers-reduced-motion: reduce) {
   .ws-row-wrap,
-  .ws-row-trailing,
-  .ws-navtab::after {
+  .ws-row-trailing {
     transition: none;
   }
 }
@@ -1370,13 +1231,13 @@
    already scrolling — hence suppressed and redrawn. */
 .ws-ctabs {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   align-self: stretch;
   gap: 0;
   flex: 1;
   min-width: 0;
   height: auto;
-  padding-top: 6px;
+  padding: 0 2px;
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
@@ -1426,23 +1287,25 @@
   mask-image: linear-gradient(90deg, transparent, #000 26px, #000 calc(100% - 26px), transparent);
 }
 
-/* The floor is 86px, and it is derived, not guessed: 15px of padding leaves
-   71px of name, which is five CJK glyphs at 13px — four once the run dot has
-   taken its 12px. At 70px the name gets 32px, i.e. one character and an
-   apology. */
+/* Tabs are soft segments on one baseline with the Learn | Edit control, the
+   same 28px: the shell's calm register (the rail's rows, the account menu),
+   not a browser's raised folder tab. The active one is a quiet fill with
+   dark text; the others are muted text that tint on hover.
+
+   The floor is 96px: 8 + 14 (glyph) + 6 + 20 (close) + 6 + 8 of chrome leaves
+   ~34px of name, three CJK glyphs, before the strip starts to scroll. */
 .ws-ctab {
   position: relative;
-  z-index: 0;
   display: flex;
   align-items: center;
   gap: 6px;
   flex: 0 1 auto;
-  min-width: 86px;
-  max-width: 250px;
-  height: 31px;
-  padding: 0 6px 0 9px;
-  border-radius: 7px 7px 0 0;
-  font-size: 13px;
+  min-width: 96px;
+  max-width: 240px;
+  height: 28px;
+  padding: 0 4px 0 9px;
+  border-radius: 8px;
+  font-size: 12.5px;
   font-weight: 500;
   color: var(--ws-ink-mute);
   background: transparent;
@@ -1452,63 +1315,50 @@
     color 140ms var(--ws-ease);
 }
 
-/* Browser tabs communicate selection through topology, not a louder chip. The
-   selected surface rises to the header edge and its short tail covers the
-   header hairline, visually joining the classroom below. It still gets more of
-   the row than the tabs you are not reading.
+.ws-ctab + .ws-ctab {
+  margin-left: 2px;
+}
 
-   Its floor is 113px, not 86px: its × is permanently visible and permanently in
-   the name's padding, so 86 + 27 is what leaves it the same five glyphs its
-   neighbours get. At a uniform 86px every tab showed five characters except the
-   one you were reading, which showed two — the active tab must never identify
-   itself less well than the tabs beside it. */
 .ws-ctab-on {
-  flex: 1.6 1 auto;
-  min-width: 113px;
-  z-index: 1;
-  background: var(--ws-raised);
-  color: var(--ws-accent);
-  font-weight: 600;
-  box-shadow:
-    inset 1px 0 0 var(--ws-line),
-    inset -1px 0 0 var(--ws-line),
-    inset 0 1px 0 var(--ws-line),
-    0 -2px 7px -5px var(--ws-ink-faint);
-}
-
-.ws-ctab-on::after {
-  position: absolute;
-  right: 0;
-  bottom: -5px;
-  left: 0;
-  height: 5px;
-  content: '';
-  background: var(--ws-raised);
-  box-shadow:
-    inset 1px 0 0 var(--ws-line),
-    inset -1px 0 0 var(--ws-line);
-}
-
-/* Only background tabs divide from one another. The active surface already
-   supplies a stronger, structural boundary at either edge. */
-.ws-ctab:not(.ws-ctab-on) + .ws-ctab:not(.ws-ctab-on)::before {
-  position: absolute;
-  top: 6px;
-  bottom: 6px;
-  left: 0;
-  width: 1px;
-  content: '';
-  background: var(--ws-line);
+  flex: 1.4 1 auto;
+  background: var(--ws-tint-strong);
+  color: var(--ws-ink);
 }
 
 .ws-ctab:not(.ws-ctab-on):hover {
-  background: var(--ws-tint-strong);
+  background: var(--ws-tint);
   color: var(--ws-ink-soft);
 }
 
 .ws-ctab:focus-visible {
-  outline: 2px solid var(--ws-accent);
+  outline: 2px solid var(--ws-accent-thread);
   outline-offset: -2px;
+}
+
+/* The tab's kind: a course's book, the request preview's spark (a pulsing dot
+   while the request is still working). */
+.ws-ctab-glyph {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 14px;
+  justify-content: center;
+  color: inherit;
+  opacity: 0.75;
+}
+
+.ws-ctab-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--ws-accent);
+  animation: ws-ctab-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes ws-ctab-pulse {
+  50% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
 }
 
 .ws-ctab-name {
@@ -1520,35 +1370,18 @@
   text-align: left;
 }
 
-/* Per-tab close. It is OUT OF FLOW, which is a stronger guarantee than
-   reserving space for it: out-of-flow cannot affect any width, so the invariant
-   "revealing × never moves a tab" holds by construction rather than by
-   discipline, and every tab spends those 23px on its name instead.
-   A PERMANENT CONTROL GETS A PERMANENT SLOT; A TRANSIENT ONE BORROWS. On the
-   selected tab the × is always visible, so the name reserves 23px of padding
-   and text never runs beneath it. On the others it appears only under hover or
-   focus and borrows the tail of the name for as long as it is there.
-   Selectedness does not change on hover, so neither geometry does.
-
-   THE × MUST NOT SHOUT. It is an exit affordance, not a label — on the
-   selected tab, where it is permanently visible, it rests at MUTED ink pulled
-   down to 60% opacity with no chip, so the eye lands on the course name, not
-   on the way out. Hovering the tab, either tab, is what arms it: soft ink at
-   90% on a raised chip. Pointing directly at the × goes to full ink at full
-   opacity. One register for every tab, active or not — the accent belongs to
-   the tab's identity, never to its close glyph. */
+/* The close is IN the row, after the name, so a title can never run under it:
+   its 20px are always kept, and the glyph shows on the active tab and on
+   hover or focus of the others. No chip around it — a faint round ground
+   only under the pointer, which is also its hit area. */
 .ws-ctab-x {
-  position: absolute;
-  z-index: 2;
-  right: 4px;
-  top: 50%;
-  transform: translateY(-50%);
   display: grid;
+  flex-shrink: 0;
   place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  color: inherit;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  color: var(--ws-ink-mute);
   opacity: 0;
   pointer-events: none;
   transition:
@@ -1557,57 +1390,32 @@
     opacity 130ms var(--ws-ease);
 }
 
-.ws-ctab-on .ws-ctab-name {
-  padding-right: 27px;
-}
-
-.ws-ctab-on .ws-ctab-x {
-  color: var(--ws-ink-mute);
-  opacity: 0.6;
-  pointer-events: auto;
-}
-
-/* Because it can sit on top of the name, a visible × carries its own chip so it
-   never reads as a glyph in the title. The chip has to read RAISED in both
-   themes: white is a step up from the light tab's tint, but in dark mode the
-   panel colour is DARKER than the tab's hover tint and reads recessed, so dark
-   mode lifts with light instead of painting a surface. */
+.ws-ctab-on .ws-ctab-x,
 .ws-ctab:hover .ws-ctab-x,
 .ws-ctab:focus-within .ws-ctab-x {
-  color: var(--ws-ink-soft);
-  opacity: 0.9;
-  pointer-events: auto;
-  background: var(--ws-raised);
-  box-shadow: 0 0 0 1px var(--ws-line-soft);
-}
-
-.dark .ws-ctab:hover .ws-ctab-x,
-.dark .ws-ctab:focus-within .ws-ctab-x {
-  background: rgba(255, 255, 255, 0.16);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14);
-}
-
-/* Directly over the × it goes to full ink at full opacity — still on a chip.
-   The scope is repeated so this outranks the armed state above (4 classes to
-   3): pointing at the × is the one action that must read as unmistakably
-   armed. */
-.ws-ctab:hover .ws-ctab-x:hover,
-.ws-ctab:focus-within .ws-ctab-x:hover {
-  color: var(--ws-ink);
   opacity: 1;
+  pointer-events: auto;
 }
 
-.dark .ws-ctab:hover .ws-ctab-x:hover,
-.dark .ws-ctab:focus-within .ws-ctab-x:hover {
-  background: rgba(255, 255, 255, 0.24);
+.ws-ctab-x:hover {
+  background: var(--ws-tint-strong);
+  color: var(--ws-ink);
+}
+
+/* The pane's fold sits like the header's other icon buttons. */
+.ws-classroom-head .ws-pane-fold {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  opacity: 1;
 }
 
 /* Where the strip's scope ends and the pane's begins. */
 .ws-ctabs-rule {
   flex: 0 0 1px;
   width: 1px;
-  height: 20px;
-  margin: 0 2px;
+  height: 18px;
+  margin: 0 4px;
   background: var(--ws-line);
 }
 
@@ -1619,6 +1427,10 @@
   .ws-ctab,
   .ws-ctab-x {
     transition: none;
+  }
+
+  .ws-ctab-pulse {
+    animation: none;
   }
 }
 
@@ -1720,43 +1532,6 @@
   clip-path: inset(50%);
 }
 
-/* Full-screen classroom playback hosts this existing control inside the
-   classroom chrome. It inherits the rail row's quiet ghost language: compact
-   by default, a soft tint only on hover. The ArrowLeft's shaft is hidden so
-   the visible mark is the requested chevron-left from the same Lucide path. */
-.ws-root [data-testid='workbench-return'] {
-  height: 28px;
-  gap: 4px;
-  padding: 0 7px;
-  border-radius: 7px;
-  color: var(--ws-ink-mute);
-  background: transparent;
-  transition:
-    background-color 160ms var(--ws-ease),
-    color 160ms var(--ws-ease);
-}
-
-.ws-root [data-testid='workbench-return']:hover {
-  color: var(--ws-ink);
-  background: var(--ws-tint);
-}
-
-.ws-root [data-testid='workbench-return']:focus-visible {
-  outline: none;
-  color: var(--ws-ink);
-  background: var(--ws-tint);
-  box-shadow: 0 0 0 1px var(--ws-accent-thread);
-}
-
-.ws-root [data-testid='workbench-return'] svg {
-  width: 14px;
-  height: 14px;
-}
-
-.ws-root [data-testid='workbench-return'] svg path:last-child {
-  display: none;
-}
-
 /* ── Slim navigation rail ────────────────────────────────────────────────
    The collapsed navigation: icons only, same glass, same hover pill. */
 .ws-mini {
@@ -1808,10 +1583,8 @@
   box-shadow: 0 0 0 2px var(--ws-accent-thread);
 }
 
-/* ── Utility overflow ────────────────────────────────────────────────────
-   The ⋯ matches its neighbours in the foot, which are SiteHeader's 32px
-   round ghost buttons — a differently-shaped sibling would read as a
-   different kind of thing. */
+/* ── Small round ghost buttons ───────────────────────────────────────────
+   The knowledge base dialogs' close and spacer controls. */
 .ws-util-btn {
   display: inline-flex;
   align-items: center;
@@ -1833,63 +1606,6 @@
 .ws-util-btn:focus-visible {
   outline: none;
   box-shadow: 0 0 0 1px var(--ws-accent-thread);
-}
-
-/* The panel is portalled to `.ws-root` and positioned against the viewport,
-   so it is never clipped by the rail's scrolling body nor re-based by the
-   rail's backdrop-filter. `z-index` clears the rail (10) and the panes. */
-.ws-pop {
-  position: fixed;
-  z-index: 60;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  width: max-content;
-  padding: 4px 6px;
-  border-radius: 12px;
-  border: 1px solid var(--ws-line);
-  background-color: var(--ws-raised);
-  background-image: var(--ws-grain);
-  box-shadow: var(--ws-lift);
-  animation: ws-pop-in 140ms var(--ws-ease) both;
-}
-
-.ws-pop:focus {
-  outline: none;
-}
-
-/* One row, in the same order and at the same size as the foot cluster it
-   continues — the overflow is the rest of that cluster, not a second kind of
-   menu. */
-.ws-pop-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-}
-
-@keyframes ws-pop-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-/* SiteHeader's own dropdowns open downward and are right-aligned, which at the
-   foot of a full-height rail is off the bottom of the window and — for a
-   control sitting 100px from the left edge — off the left of it too. Inside
-   the rail's utility clusters they open upward and hang to the right instead.
-   Radix-based menus position themselves and are unaffected. */
-.ws-utils [class~='top-full'] {
-  top: auto;
-  bottom: 100%;
-  left: 0;
-  right: auto;
-  margin-top: 0;
-  margin-bottom: 8px;
 }
 
 /* ── Drag to reorder ─────────────────────────────────────────────────────
@@ -2040,10 +1756,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ws-pop {
-    animation: none;
-  }
-
   .ws-home,
   .ws-util-btn,
   .ws-kb-row-menu {
@@ -2054,4 +1766,959 @@
   .ws-resize-thread::after {
     transition: none;
   }
+}
+
+/* ══ Shell refresh ═══════════════════════════════════════════════════════
+   The workspace without a top bar: the rail carries the destinations and the
+   account block, the home and the pages sit on one lit canvas, and the
+   classroom pane keeps a header at both sizes. Same tokens as above; these
+   rules only add the pieces the bar-less shell needs. */
+
+/* The canvas: three soft pools of the brand's light (violet behind the hero,
+   lavender low right, a cool blue low left) over the slate base. */
+.ws-root .ws-canvas {
+  background-color: #f7f7fb;
+  background-image:
+    radial-gradient(900px 420px at 50% 18%, rgba(176, 160, 255, 0.16), transparent 70%),
+    radial-gradient(700px 500px at 92% 85%, rgba(214, 196, 255, 0.2), transparent 70%),
+    radial-gradient(600px 400px at 6% 70%, rgba(190, 215, 255, 0.16), transparent 70%);
+  background-repeat: no-repeat;
+  background-size: auto;
+  background-attachment: local;
+}
+
+.dark .ws-root .ws-canvas {
+  background-color: #0b1020;
+  background-image:
+    radial-gradient(900px 420px at 50% 18%, rgba(139, 92, 246, 0.14), transparent 70%),
+    radial-gradient(700px 500px at 92% 85%, rgba(124, 58, 237, 0.1), transparent 70%),
+    radial-gradient(600px 400px at 6% 70%, rgba(59, 130, 246, 0.08), transparent 70%);
+}
+
+/* ── Rail ── */
+.ws-root .ws-rail {
+  background-color: rgba(250, 250, 253, 0.94);
+  background-image: none;
+  box-shadow: inset -1px 0 0 0 rgba(15, 23, 42, 0.07);
+}
+
+.dark .ws-root .ws-rail {
+  background-color: rgba(15, 23, 42, 0.86);
+  box-shadow: inset -1px 0 0 0 rgba(255, 255, 255, 0.07);
+}
+
+.ws-root .ws-new {
+  background-color: #fff;
+  border-color: rgba(15, 23, 42, 0.09);
+  color: var(--ws-ink);
+}
+
+.ws-root .ws-new:hover {
+  border-color: rgba(124, 58, 237, 0.3);
+  transform: none;
+}
+
+.dark .ws-root .ws-new {
+  background-color: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.ws-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 9px;
+  font-size: 13.5px;
+  color: var(--ws-ink-soft);
+  text-align: left;
+  transition:
+    background-color 160ms var(--ws-ease),
+    color 160ms var(--ws-ease);
+}
+
+.ws-nav-item svg {
+  color: var(--ws-ink-mute);
+}
+
+.ws-nav-item:hover {
+  background: rgba(124, 58, 237, 0.06);
+  color: var(--ws-ink);
+}
+
+.ws-nav-item[aria-current='page'] {
+  background: #fff;
+  color: var(--ws-ink);
+  font-weight: 600;
+  box-shadow:
+    0 1px 2px rgba(25, 25, 60, 0.05),
+    0 1px 1px rgba(25, 25, 60, 0.03);
+}
+
+.ws-nav-item[aria-current='page'] svg {
+  color: var(--ws-accent);
+}
+
+.dark .ws-nav-item:hover {
+  background: rgba(167, 139, 250, 0.08);
+}
+
+.dark .ws-nav-item[aria-current='page'] {
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+}
+
+.ws-nav-item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--ws-accent-thread);
+}
+
+.ws-nav-tag {
+  margin-left: auto;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ws-accent);
+}
+
+.ws-mini-rule {
+  width: 28px;
+  height: 1px;
+  flex-shrink: 0;
+  background: var(--ws-line);
+}
+
+.ws-root .ws-mini-btn.ws-mini-on {
+  background: #fff;
+  color: var(--ws-accent);
+  box-shadow: 0 1px 2px rgba(25, 25, 60, 0.06);
+}
+
+.dark .ws-root .ws-mini-btn.ws-mini-on {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ws-mini-accent {
+  color: var(--ws-accent);
+}
+
+/* ── Account block ── */
+.ws-rail-foot {
+  box-shadow: inset 0 1px 0 0 var(--ws-line-soft);
+}
+
+.ws-avatar {
+  overflow: visible;
+  color: #fff;
+  background: linear-gradient(135deg, #c4b5fd, #8b5cf6);
+}
+
+.ws-avatar img {
+  background: #f1f0f7;
+}
+
+.ws-avatar-badge {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: #f04438;
+  box-shadow: 0 0 0 2px #fff;
+}
+
+.dark .ws-avatar-badge {
+  box-shadow: 0 0 0 2px #0f172a;
+}
+
+.ws-account {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 11px;
+  color: var(--ws-ink);
+  transition: background-color 160ms var(--ws-ease);
+}
+
+.ws-account:hover,
+.ws-account[data-state='open'] {
+  background: rgba(124, 58, 237, 0.07);
+}
+
+.dark .ws-account:hover,
+.dark .ws-account[data-state='open'] {
+  background: rgba(167, 139, 250, 0.1);
+}
+
+.ws-account:focus-visible,
+.ws-account-mini:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--ws-accent-thread);
+}
+
+.ws-account-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.ws-account-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--ws-ink-mute);
+}
+
+.ws-account-mini {
+  border-radius: 9999px;
+}
+
+.ws-account-mini[data-state='open'] {
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.18);
+}
+
+.ws-account-signin {
+  display: inline-flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 10px;
+  background: #7c3aed;
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px -4px rgba(124, 58, 237, 0.6);
+}
+
+.ws-account-signin:hover {
+  background: #6d28d9;
+}
+
+.ws-account-more {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 1px solid var(--ws-line);
+  background: #fff;
+  color: var(--ws-ink-mute);
+}
+
+.dark .ws-account-more {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ws-account-hint {
+  text-align: center;
+  font-size: 12px;
+  color: var(--ws-ink-mute);
+}
+
+/* The account menu is portalled to the body, outside `.ws-root`, so it is
+   styled with the product's own palette rather than the shell's tokens. */
+.ws-account-menu {
+  border-color: rgba(15, 23, 42, 0.08);
+  box-shadow:
+    0 18px 50px -12px rgba(50, 40, 120, 0.22),
+    0 4px 12px rgba(25, 25, 60, 0.06);
+}
+
+.ws-menu-item {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border-radius: 9px;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.ws-menu-item svg {
+  color: rgb(100 116 139);
+}
+
+.ws-menu-static {
+  cursor: default;
+}
+
+/* The identity row at the top of the account menu opens the profile editor. */
+.ws-menu-profile {
+  padding: 6px 10px;
+}
+
+/* The account menu's positioned box is a transparent shell (pointer events
+   pass through its spacer) around the visible panel. */
+.ws-account-menu-shell {
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+.ws-account-menu-shell > * {
+  pointer-events: auto;
+}
+
+.ws-account-menu-shell > .ws-profile-spacer {
+  flex-shrink: 0;
+  pointer-events: none;
+  transition: height 400ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* The identity row folds while the editor opens, on the same curve. */
+.ws-profile-row {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 400ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ws-profile-row[data-folded] {
+  grid-template-rows: 0fr;
+}
+
+/* The profile editor opens at the top of the account menu: the panel grows
+   upward from its anchor as the editor's row track goes from 0 to its height,
+   and folds back the same way. */
+.ws-profile-expand {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 400ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 400ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ws-profile-expand[data-open] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.ws-profile-collapse {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  color: rgb(100 116 139);
+}
+
+.ws-profile-collapse:hover {
+  background: rgba(15, 23, 42, 0.06);
+  color: rgb(15 23 42);
+}
+
+.dark .ws-profile-collapse:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgb(241 245 249);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-profile-expand,
+  .ws-profile-row,
+  .ws-account-menu-shell > .ws-profile-spacer {
+    transition: none;
+  }
+}
+
+/* The profile editor in the account menu, on the menu's type scale: the bio
+   reads at a menu row's 13.5px, the name one step up, the hint and the
+   secondary labels at 12px. Scoped here, so the classic editor keeps its own. */
+[data-profile-editor] [data-profile-avatar] {
+  width: 40px;
+  height: 40px;
+}
+
+[data-profile-editor] [data-profile-name] {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+[data-profile-editor] [data-profile-hint] {
+  margin-top: 1px;
+  font-size: 12px;
+  line-height: 16px;
+  color: rgb(100 116 139 / 0.85);
+}
+
+[data-profile-editor] [data-profile-bio],
+[data-profile-editor] [data-profile-bio]::placeholder {
+  font-size: 13.5px;
+  line-height: 20px;
+}
+
+[data-profile-editor] [data-profile-bio] {
+  min-height: 76px;
+  padding: 8px 10px;
+  border-radius: 10px;
+}
+
+.ws-account-menu .ws-menu-item .text-xs,
+.ws-profile-saved {
+  font-size: 12px;
+}
+
+/* The "Saved" tick beside the profile editor. */
+
+.ws-profile-saved {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 3px;
+  font-size: 11.5px;
+  color: rgb(22 163 74);
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+.ws-profile-saved-on {
+  opacity: 1;
+}
+
+.ws-account-summary {
+  background: linear-gradient(135deg, #f6f3ff, #eef4ff);
+  color: rgb(15 23 42);
+}
+
+.dark .ws-account-summary {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.16), rgba(59, 130, 246, 0.1));
+  color: rgb(241 245 249);
+}
+
+.ws-mini-seg {
+  display: flex;
+  padding: 2px;
+  border-radius: 8px;
+  background: #f0eff5;
+}
+
+.dark .ws-mini-seg {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.ws-mini-seg-btn {
+  display: inline-flex;
+  width: 30px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: rgb(100 116 139);
+}
+
+.ws-mini-seg-btn:hover {
+  color: rgb(15 23 42);
+}
+
+.ws-mini-seg-on {
+  background: #fff;
+  color: #7c3aed;
+  box-shadow: 0 1px 2px rgba(25, 25, 60, 0.08);
+}
+
+.dark .ws-mini-seg-btn:hover {
+  color: #fff;
+}
+
+.dark .ws-mini-seg-on {
+  background: rgba(255, 255, 255, 0.12);
+  color: #c4b5fd;
+}
+
+.ws-mini-seg-on svg,
+.ws-menu-item .ws-mini-seg-on svg {
+  color: inherit;
+}
+
+/* ── Pages in the main area (my courses, host pages) ── */
+.ws-page-title {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ws-ink);
+}
+
+.ws-page-sub {
+  margin-top: 4px;
+  font-size: 14px;
+  color: var(--ws-ink-mute);
+}
+
+.ws-page-search {
+  display: flex;
+  width: 240px;
+  height: 38px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-radius: 11px;
+  border: 1px solid var(--ws-line);
+  background: #fff;
+  font-size: 13.5px;
+  color: var(--ws-ink-mute);
+  box-shadow: 0 1px 2px rgba(25, 25, 60, 0.04);
+}
+
+.ws-page-search input {
+  color: var(--ws-ink);
+}
+
+.ws-page-search:focus-within {
+  border-color: var(--ws-accent-thread);
+  box-shadow: 0 0 0 3px var(--ws-accent-wash);
+}
+
+.ws-page-btn {
+  display: inline-flex;
+  height: 38px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px;
+  border-radius: 11px;
+  border: 1px solid var(--ws-line);
+  background: #fff;
+  font-size: 13.5px;
+  color: var(--ws-ink-soft);
+  white-space: nowrap;
+}
+
+.ws-page-btn:hover:not(:disabled) {
+  border-color: rgba(124, 58, 237, 0.3);
+  color: var(--ws-ink);
+}
+
+.ws-page-btn:disabled {
+  opacity: 0.5;
+}
+
+.dark .ws-page-search,
+.dark .ws-page-btn {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.ws-section-title {
+  font-size: 16px;
+  font-weight: 650;
+  color: var(--ws-ink);
+}
+
+.ws-page-empty {
+  padding: 48px 0;
+  text-align: center;
+  font-size: 13.5px;
+  color: var(--ws-ink-mute);
+}
+
+.ws-course-card {
+  display: block;
+  min-width: 0;
+}
+
+/* A card's ⋯ on My courses (course or folder): over its thumbnail's
+   top-right corner, shown on hover, on keyboard focus, and while its menu is
+   open. A sibling of the card button, never inside it. */
+.ws-card-more {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  opacity: 0;
+  transition: opacity 160ms var(--ws-ease);
+}
+
+.ws-card-wrap:hover .ws-card-more,
+.ws-card-more:focus-within,
+.ws-card-more:has([data-state='open']) {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  .ws-card-more {
+    opacity: 1;
+  }
+}
+
+.ws-card-more-btn {
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ws-ink-soft, var(--ws-ink));
+  box-shadow: 0 1px 3px rgba(25, 25, 60, 0.14);
+}
+
+.ws-card-more-btn:hover {
+  background: #fff;
+  color: var(--ws-ink);
+}
+
+.dark .ws-card-more-btn {
+  background: rgba(30, 30, 40, 0.85);
+}
+
+.ws-course-card[aria-disabled='true'] {
+  cursor: default;
+}
+
+.ws-course-card-thumb {
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid var(--ws-line-soft);
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(25, 25, 60, 0.05);
+  transition:
+    transform 160ms var(--ws-ease),
+    box-shadow 160ms var(--ws-ease);
+}
+
+.dark .ws-course-card-thumb {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ws-course-card:hover:not([aria-disabled='true']) .ws-course-card-thumb {
+  transform: translateY(-2px);
+  box-shadow:
+    0 6px 24px -8px rgba(60, 50, 140, 0.14),
+    0 2px 6px rgba(25, 25, 60, 0.05);
+}
+
+.ws-course-card-blank {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, #f3f0ff, #eef4ff);
+}
+
+.dark .ws-course-card-blank {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.12), rgba(59, 130, 246, 0.08));
+}
+
+.ws-course-card-status {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 9999px;
+  background: rgba(40, 40, 55, 0.62);
+  color: #fff;
+  font-size: 11px;
+  backdrop-filter: blur(4px);
+}
+
+.ws-course-card-name {
+  margin-top: 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--ws-ink);
+}
+
+.ws-course-card-meta {
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  color: var(--ws-ink-mute);
+}
+
+/* ── Classroom pane header ── */
+.ws-root .ws-classroom-head {
+  background: rgba(255, 255, 255, 0.92);
+  gap: 6px;
+}
+
+.dark .ws-root .ws-classroom-head {
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.ws-vsep {
+  width: 1px;
+  height: 18px;
+  flex-shrink: 0;
+  margin: 0 4px;
+  background: var(--ws-line);
+}
+
+.ws-head-icon {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  color: var(--ws-ink-mute);
+  transition:
+    background-color 160ms var(--ws-ease),
+    color 160ms var(--ws-ease);
+}
+
+.ws-head-icon:hover:not(:disabled) {
+  background: rgba(124, 58, 237, 0.08);
+  color: var(--ws-ink);
+}
+
+.ws-head-icon:disabled {
+  opacity: 0.4;
+}
+
+.ws-head-icon:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--ws-accent-thread);
+}
+
+.ws-head-icon-on {
+  background: #fff;
+  color: var(--ws-accent);
+  box-shadow: 0 1px 2px rgba(25, 25, 60, 0.08);
+}
+
+.dark .ws-head-icon-on {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ── Full-screen classroom ── */
+.ws-root .ws-classroom-fullscreen {
+  background: linear-gradient(180deg, #f7f7fb, #f3f2f9);
+}
+
+.dark .ws-root .ws-classroom-fullscreen {
+  background: linear-gradient(180deg, #0b1020, #0f172a);
+}
+
+.ws-full-head {
+  height: 56px;
+  position: relative;
+  z-index: 5;
+}
+
+.ws-full-crumb {
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  color: var(--ws-ink-mute);
+}
+
+.ws-full-title {
+  margin-top: 1px;
+  font-size: 15.5px;
+  font-weight: 650;
+  color: var(--ws-ink);
+}
+
+/* ── Home ── */
+.ws-gh-pill {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 11px;
+  border-radius: 9999px;
+  border: 1px solid var(--ws-line);
+  background: #fff;
+  font-size: 12.5px;
+  color: var(--ws-ink-soft);
+  transition: border-color 160ms var(--ws-ease);
+}
+
+.ws-gh-pill:hover {
+  border-color: rgba(124, 58, 237, 0.3);
+  color: var(--ws-ink);
+}
+
+.dark .ws-gh-pill {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ws-gh-stars {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ws-root .ws-composer {
+  border-color: #ddd6ff;
+  border-radius: 18px;
+  background-color: rgba(255, 255, 255, 0.92);
+  box-shadow:
+    0 10px 40px -14px rgba(108, 92, 231, 0.3),
+    0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.ws-root .ws-composer:hover {
+  border-color: #cfc5ff;
+}
+
+.dark .ws-root .ws-composer {
+  border-color: rgba(167, 139, 250, 0.28);
+  background-color: rgba(15, 23, 42, 0.82);
+  box-shadow:
+    0 10px 40px -14px rgba(139, 92, 246, 0.35),
+    0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* The horizontal logo is drawn for light grounds: its "Open" is a dark ink
+   that disappears on the dark canvas. Inverting and turning the hue half way
+   round keeps the violet violet and lifts the ink to a light lavender. */
+.dark .ws-root .ws-wordmark {
+  filter: invert(1) hue-rotate(180deg) brightness(1.08);
+}
+
+/* ── Global search ────────────────────────────────────────────────────────
+   The rail's Search row states its shortcut; the palette itself is portalled
+   out of the shell, so it uses the product's palette directly. */
+.ws-kbd {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border-radius: 5px;
+  border: 1px solid var(--ws-line);
+  font-family: inherit;
+  font-size: 10.5px;
+  line-height: 15px;
+  color: var(--ws-ink-mute);
+}
+
+.ws-kbd:empty {
+  display: none;
+}
+
+.ws-search-context {
+  display: inline-flex;
+  max-width: 40%;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: rgb(100 116 139);
+}
+
+.ws-search-note {
+  padding: 8px 12px;
+  font-size: 12.5px;
+  color: rgb(100 116 139);
+}
+
+/* The palette: the input row is its top edge (52px, 16px sides, a hairline
+   below); results sit 8px in, rows 40px with 12px inner padding, so headings,
+   row text and the right-hand shortcuts share one column each. */
+.ws-search-head {
+  display: flex;
+  height: 52px;
+  align-items: center;
+  gap: 11px;
+  padding: 0 16px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  color: rgb(100 116 139);
+}
+
+.dark .ws-search-head {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+.ws-search-input {
+  height: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font-size: 15px;
+  color: var(--foreground);
+}
+
+.ws-search-input::placeholder {
+  color: rgb(148 163 184);
+}
+
+.ws-search-list {
+  padding: 8px;
+}
+
+.ws-search-group {
+  padding: 0;
+}
+
+.ws-search-group + .ws-search-group {
+  margin-top: 6px;
+}
+
+.ws-search-group [cmdk-group-heading] {
+  padding: 6px 12px 4px;
+}
+
+.ws-search-item {
+  min-height: 40px;
+  padding: 0 12px;
+  gap: 10px;
+  border-radius: 10px;
+}
+
+.ws-search-empty {
+  padding: 28px 12px;
+}
+
+/* A source the search located, in the knowledge base list. */
+.ws-root [data-kb-row][data-located='true'] {
+  background-color: var(--ws-accent-wash);
+  box-shadow: inset 2px 0 0 var(--ws-accent);
+}
+
+/* ── Dragging courses on My courses ──────────────────────────────────────
+   The grid's insertion mark is a vertical accent bar beside the card the
+   course will land next to; the carried card stays in place, lifted and
+   dimmed, so nothing reflows under the pointer. */
+.ws-card-drop-before::before,
+.ws-card-drop-after::before {
+  content: '';
+  position: absolute;
+  z-index: 3;
+  top: 4px;
+  height: calc(100% - 8px);
+  width: 3px;
+  border-radius: 3px;
+  background: var(--ws-accent);
+  box-shadow: 0 0 0 3px var(--ws-accent-wash);
+  pointer-events: none;
+}
+
+.ws-card-drop-before::before {
+  left: -11px;
+}
+
+.ws-card-drop-after::before {
+  right: -11px;
+}
+
+.ws-card-dragging {
+  z-index: 4;
+  opacity: 0.55;
+  transform: scale(0.97);
+  transition:
+    opacity 120ms var(--ws-ease),
+    transform 120ms var(--ws-ease);
+}
+
+/* While a course from a folder is carried, "All courses" and the zone under
+   the trail take it back to the top level. */
+.ws-courses-unfile {
+  position: static;
+  min-height: 52px;
+  margin: 0 0 16px;
+}
+
+.ws-crumb-drop {
+  background-color: var(--ws-accent-wash);
+  box-shadow: 0 0 0 2px var(--ws-accent-thread);
 }

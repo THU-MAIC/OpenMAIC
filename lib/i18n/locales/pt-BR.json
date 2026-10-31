@@ -26,7 +26,6 @@
     "examplesLabel": "Experimente um tema",
     "examplePython": "Aprender Python do zero",
     "exampleFourier": "Transformada de Fourier com exemplos intuitivos",
-    "desktopOnly": "Use um computador para o editor e o modo Pro.",
     "slogan": "Aprendizagem Generativa em Sala de Aula Interativa Multi-Agente",
     "greetingWithName": "Olá, {{name}}"
   },
@@ -337,7 +336,6 @@
     "stopListening": "Parar gravação"
   },
   "edit": {
-    "proMode": "Pro",
     "undo": "Desfazer",
     "redo": "Refazer",
     "delete": "Excluir",
@@ -764,7 +762,10 @@
     "exitFullscreen": "Sair da tela cheia",
     "editCourse": "Editar curso",
     "doneEditing": "Concluir edição",
-    "proModeDisabledHint": "A edição não está disponível nesta página — abra um slide do curso para editar no modo Pro."
+    "editDisabledHint": "A edição não está disponível nesta página — abra um slide do curso para editá-lo.",
+    "editToggle": "Editar",
+    "openInWorkspace": "Abrir no espaço de trabalho",
+    "openInWorkspaceHint": "Abrir no espaço de trabalho para continuar este curso em uma conversa"
   },
   "classroomComplete": {
     "title": "Curso concluído",
@@ -2394,7 +2395,6 @@
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
     "newSession": "New chat",
     "sections": {
-      "courses": "Courses",
       "sessions": "Chats"
     },
     "coursesEmpty": "No courses yet",
@@ -2404,7 +2404,6 @@
     "retry": "Retry",
     "untitledSession": "Untitled chat",
     "pagePosition": "Page {{index}} of {{total}}",
-    "exitPro": "Exit Pro",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
@@ -2413,7 +2412,6 @@
     "learningMode": "Aprender",
     "editingMode": "Editar",
     "editingUnavailableGenerating": "A edição está indisponível durante a geração do curso.",
-    "fullscreenLearning": "Aprender em tela cheia",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2429,8 +2427,6 @@
       "cancelled": "Stopped"
     },
     "backToWorkspace": "Back to workspace",
-    "searchPlaceholder": "Filter by name",
-    "searchAria": "Search {{section}}",
     "searchEmpty": "No matches",
     "showMore": "Show {{count}} more",
     "showLess": "Show less",
@@ -2452,7 +2448,6 @@
     "coursePausedDesc": "Uma página não pôde ser gerada. Tente novamente na sala de aula; o curso abrirá aqui quando a geração terminar.",
     "viewGenerationProgress": "Ver o progresso",
     "openToRetry": "Abrir para tentar novamente",
-    "courseGeneratingRowHint": "Disponível quando a geração terminar",
     "noCourseTitle": "No course open",
     "noCourseHint": "Abra por um link de curso na conversa, ou escolha um na lista à esquerda — a conversa fica onde está",
     "resizeChatAria": "Drag to resize the conversation pane",
@@ -2461,7 +2456,6 @@
     "autoSaved": "Salvo",
     "collapsedTitle": "Both panes are collapsed",
     "collapsedHint": "Use the tabs on the left to bring the conversation or the classroom back",
-    "moreUtilities": "More",
     "rowMore": "Mais ações para {{name}}",
     "folderDeleteHint": "Os cursos dentro dela voltam para o nível principal. Nada é excluído.",
     "dropToUnfile": "Solte aqui para tirar da pasta",
@@ -2475,11 +2469,64 @@
     "confirmDelete": "Confirmar exclusão",
     "deleting": "Excluindo…",
     "deleteFailed": "Não foi possível excluir. Tente novamente.",
-    "tabsAria": "Chats and courses",
     "courseTabsAria": "Cursos abertos",
     "courseTabClose": "Fechar aba: {{name}}",
     "courseTabRunning": "Gerando",
-    "foldersUnavailable": "As pastas não estão disponíveis nesta versão"
+    "foldersUnavailable": "As pastas não estão disponíveis nesta versão",
+    "composer": {
+      "attach": "Anexar material",
+      "mentionCourse": "引用课堂",
+      "mentionCourseOrMaterial": "Mencionar uma sala ou um material da base de conhecimento",
+      "loadSkill": "加载 skill",
+      "skillMenuTitle": "选择课程设计技能",
+      "skillsLoading": "正在加载 skill…",
+      "noSkillsAvailable": "暂无可用 skill",
+      "userSkillsGroup": "我的 Skill",
+      "builtinSkillsGroup": "内置 Skill",
+      "skillsLoadFailed": "Skill 加载失败，点击重试",
+      "retrySkills": "重试",
+      "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+      "launchPlaceholder": "Descreva a experiência de aprendizagem que você quer criar",
+      "launchSend": "Iniciar construção"
+    },
+    "nav": {
+      "search": "Pesquisar",
+      "myCourses": "Meus cursos"
+    },
+    "search": {
+      "placeholder": "Pesquisar conversas, cursos e materiais",
+      "recentChats": "Conversas recentes",
+      "recentCourses": "Cursos recentes",
+      "courses": "Cursos",
+      "materials": "Materiais",
+      "actions": "Ações rápidas",
+      "searching": "Pesquisando…",
+      "empty": "Nada corresponde a “{{query}}”",
+      "materialsFailed": "Não foi possível pesquisar na base de conhecimento",
+      "themeAction": "Tema: {{name}}",
+      "languageAction": "Idioma: {{name}}"
+    },
+    "account": {
+      "signIn": "Entrar",
+      "menu": "Conta e configurações",
+      "profileSaved": "Salvo",
+      "language": "Idioma",
+      "about": "Sobre o OpenMAIC",
+      "aboutBody": "Uma plataforma de código aberto que transforma qualquer tema em uma sala de aula interativa com professores e colegas de IA. Publicada sob a licença MIT.",
+      "viewOnGithub": "Ver no GitHub",
+      "docs": "Documentação",
+      "signOut": "Sair"
+    },
+    "coursesPage": {
+      "subtitle": "Os cursos que você criou ou importou, e as pastas onde os organiza",
+      "searchPlaceholder": "Pesquisar meus cursos",
+      "results": "Resultados",
+      "allCourses": "Todos os cursos"
+    },
+    "fullscreen": {
+      "expand": "Tela cheia",
+      "collapse": "Sair da tela cheia (Esc)"
+    }
   },
   "profile": {
     "title": "Perfil",
@@ -2510,25 +2557,6 @@
     "title": "Digite o Código de Acesso",
     "placeholder": "Código de acesso",
     "error": "Código inválido. Tente novamente."
-  },
-  "proMode": {
-    "attach": "Anexar material",
-    "mentionCourse": "引用课堂",
-    "loadSkill": "加载 skill",
-    "skillMenuTitle": "选择课程设计技能",
-    "skillsLoading": "正在加载 skill…",
-    "noSkillsAvailable": "暂无可用 skill",
-    "userSkillsGroup": "我的 Skill",
-    "builtinSkillsGroup": "内置 Skill",
-    "skillsLoadFailed": "Skill 加载失败，点击重试",
-    "retrySkills": "重试",
-    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
-    "badgeAria": "Modo Pro",
-    "badgeEnter": "Modo Pro",
-    "badgeExit": "Voltar ao modo clássico",
-    "launchPlaceholder": "Descreva a experiência de aprendizagem que você quer criar",
-    "launchSend": "Iniciar construção",
-    "mentionCourseOrMaterial": "Mencionar uma sala ou um material da base de conhecimento"
   },
   "workbench": {
     "tool": {

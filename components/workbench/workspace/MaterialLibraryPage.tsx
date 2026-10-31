@@ -86,6 +86,7 @@ import {
   menuIcons,
   type LibraryMenuItem,
 } from './MaterialLibraryDialogs';
+import { InlineName, newFolderName, type CommitCause } from './inline-name';
 import { useTreeDrag } from './use-tree-drag';
 import { WORKBENCH_MATERIAL_ACCEPT } from '@/lib/workbench/material-upload-policy';
 import { materialAttachable } from '@/lib/workbench/material-mention';
@@ -510,180 +511,11 @@ function useLibraryUploads(onUploaded: (stored: boolean) => void) {
   };
 }
 
-/** The default name of a new folder, numbered when the folders shown already have it. */
-export function newFolderName(base: string, folders: readonly LibraryFolder[]): string {
-  // The server's comparison (the folders' normalized name); it stays the authority.
-  const taken = new Set(folders.map((folder) => folder.name.toLocaleLowerCase('en-US')));
-  if (!taken.has(base.toLocaleLowerCase('en-US'))) return base;
-  for (let number = 2; ; number += 1) {
-    const name = `${base} ${number}`;
-    if (!taken.has(name.toLocaleLowerCase('en-US'))) return name;
-  }
-}
-
 /** Where a file's name stops before its extension, for selecting it. */
 const nameStemEnd = (name: string) => {
   const dot = name.lastIndexOf('.');
   return dot > 0 ? dot : name.length;
 };
-
-/** How an edit in place asked to be saved. */
-type CommitCause = 'enter' | 'blur';
-
-/**
- * A name edited in place, in its row (#1835 review §1): Enter or leaving the
- * field saves, Escape cancels. One edit asks once: the blur after Enter or
- * Escape, or while the answer is awaited, asks nothing, and the Enter that
- * ends an input method's composition belongs to the composition. What was
- * typed stays the field's own; an answer never rewrites it.
- */
-function InlineName({
-  testId,
-  errorTestId,
-  label,
-  initialName,
-  selection,
-  maxLength,
-  busy,
-  error,
-  onEdit,
-  onCaret,
-  onFocusChange,
-  takeFocus = true,
-  cause,
-  onCommit,
-  onCancel,
-}: {
-  readonly testId: string;
-  readonly errorTestId: string;
-  readonly label: string;
-  readonly initialName: string;
-  /** What is selected when the field appears; all of it unless given. */
-  readonly selection?: readonly [number, number];
-  readonly maxLength?: number;
-  readonly busy: boolean;
-  /** Why the last attempt was refused, already translated. */
-  readonly error: string | null;
-  /** What is typed, as it is typed: a page keeping it can show it again in a new row. */
-  readonly onEdit: (value: string) => void;
-  /** Where the caret or selection is, whenever it changes, for the same reason. */
-  readonly onCaret?: (selection: readonly [number, number]) => void;
-  /** Whether the field has the focus, whenever that changes, for the same reason. */
-  readonly onFocusChange?: (focused: boolean) => void;
-  /** Take the focus when it appears: not in a new row for a field the teacher had left. */
-  readonly takeFocus?: boolean;
-  /** How the attempt being answered was asked, for a field that appears while it is. */
-  readonly cause?: CommitCause;
-  readonly onCommit: (name: string, cause: CommitCause) => void;
-  readonly onCancel: () => void;
-}) {
-  const field = useRef<HTMLInputElement>(null);
-  const [value, setValue] = useState(initialName);
-  const firstSelection = useRef(selection);
-  /** Enter or a blur asked; nothing asks again until the page has answered. */
-  const asked = useRef(false);
-  /** Escape ended the edit: the blur that follows saves nothing. */
-  const cancelled = useRef(false);
-  const wasBusy = useRef(false);
-  const reportCaret = (input: HTMLInputElement) =>
-    onCaret?.([
-      input.selectionStart ?? input.value.length,
-      input.selectionEnd ?? input.value.length,
-    ]);
-  /** How the answered attempt was asked: only an Enter's refusal takes the focus back. */
-  const lastCause = useRef<CommitCause>(cause ?? 'enter');
-  const focusOnMount = useRef(takeFocus);
-  useLayoutEffect(() => {
-    const input = field.current;
-    if (!input) return;
-    // Not from a field the teacher is typing in elsewhere (the search).
-    const active = document.activeElement;
-    const typing =
-      active instanceof HTMLElement &&
-      active !== input &&
-      (active.isContentEditable ||
-        active instanceof HTMLInputElement ||
-        active instanceof HTMLTextAreaElement);
-    if (typing || !focusOnMount.current) return;
-    input.focus();
-    const [start, end] = firstSelection.current ?? [0, input.value.length];
-    input.setSelectionRange(start, end);
-  }, []);
-  // Every render the page answered in: a kept edit can ask again, and after
-  // an Enter's refusal it takes the focus back if nothing else has it.
-  useEffect(() => {
-    if (busy) {
-      wasBusy.current = true;
-      return;
-    }
-    asked.current = false;
-    if (!wasBusy.current) return;
-    wasBusy.current = false;
-    if (
-      lastCause.current === 'enter' &&
-      (document.activeElement === null || document.activeElement === document.body)
-    ) {
-      field.current?.focus();
-    }
-  });
-  return (
-    <div className="min-w-0 flex-1">
-      <input
-        ref={field}
-        data-testid={testId}
-        data-kb-inline-name=""
-        aria-label={label}
-        aria-invalid={error ? true : undefined}
-        value={value}
-        maxLength={maxLength}
-        disabled={busy}
-        onChange={(event) => {
-          setValue(event.target.value);
-          onEdit(event.target.value);
-          reportCaret(event.target);
-        }}
-        onSelect={(event) => reportCaret(event.currentTarget)}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') {
-            event.preventDefault();
-            cancelled.current = true;
-            onCancel();
-            return;
-          }
-          if (event.key !== 'Enter') return;
-          // WebKit sends the composition's Enter after compositionend, as 229.
-          if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-          event.preventDefault();
-          if (asked.current) return;
-          asked.current = true;
-          lastCause.current = 'enter';
-          onCommit(value, 'enter');
-        }}
-        onFocus={() => onFocusChange?.(true)}
-        onBlur={(event) => {
-          // A row taken out of the page blurs nothing the teacher did.
-          if (event.currentTarget.isConnected) onFocusChange?.(false);
-          if (cancelled.current || asked.current || busy || !event.currentTarget.isConnected) {
-            return;
-          }
-          asked.current = true;
-          lastCause.current = 'blur';
-          onCommit(event.currentTarget.value, 'blur');
-        }}
-        className="-my-1 h-7 w-full min-w-0 rounded-md border border-[color:var(--ws-accent)] bg-transparent px-1.5 text-[13px] outline-none disabled:opacity-60"
-      />
-      {error ? (
-        <p
-          data-testid={errorTestId}
-          role="alert"
-          className="mt-1 text-[12px] text-[color:var(--ws-fail)]"
-        >
-          {error}
-        </p>
-      ) : null}
-    </div>
-  );
-}
 
 /**
  * Rows share one grid once the list itself is wide enough -- a container
@@ -735,11 +567,22 @@ const LAYOUT = {
 export function MaterialLibraryPage({
   onChatWithMaterial,
   onLeave,
+  locate = null,
 }: {
   /** Start a conversation with this source staged (the shell decides where). */
   readonly onChatWithMaterial: (material: WorkbenchMaterial) => void;
   /** Leave the page for what it covers (the compact header's way back). */
   readonly onLeave: () => void;
+  /**
+   * A source to open the page on (the workspace search picked it): the page
+   * searches for its name and brings its row into view, marked. A new `key`
+   * locates again.
+   */
+  readonly locate?: {
+    readonly key: number;
+    readonly materialId: string;
+    readonly name: string;
+  } | null;
 }) {
   const { t, locale } = useI18n();
   const [queryInput, setQueryInput] = useState('');
@@ -753,8 +596,22 @@ export function MaterialLibraryPage({
   }, [queryInput]);
   const changeQuery = (value: string) => {
     setQueryInput(value);
+    setLocatedId(null);
     if (!value.trim()) setQuery('');
   };
+
+  // A located source: its name becomes the search (at once, not after the
+  // typing pause), and its row is marked until something else is searched.
+  const [locatedKey, setLocatedKey] = useState<number | null>(null);
+  const [locatedId, setLocatedId] = useState<string | null>(null);
+  const locateScrollOwed = useRef(false);
+  if (locate && locate.key !== locatedKey) {
+    setLocatedKey(locate.key);
+    setLocatedId(locate.materialId);
+    setQueryInput(locate.name);
+    setQuery(locate.name.trim());
+    locateScrollOwed.current = true;
+  }
 
   const fileInput = useRef<HTMLInputElement>(null);
   // The page's own changes read the list again (§7) -- but only while the
@@ -780,6 +637,19 @@ export function MaterialLibraryPage({
   const returnedTo = useRef<HTMLElement | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const list = useRef<HTMLDivElement>(null);
+  // The located row, once the search has listed it: into view, its ⋯ focused.
+  useEffect(() => {
+    if (!locateScrollOwed.current || !locatedId) return;
+    const row = list.current?.querySelector<HTMLElement>(
+      `[data-testid="kb-material-${locatedId}"]`,
+    );
+    if (!row) return;
+    locateScrollOwed.current = false;
+    row.scrollIntoView?.({ block: 'center' });
+    list.current
+      ?.querySelector<HTMLElement>(`[data-testid="kb-material-menu-${locatedId}"]`)
+      ?.focus({ preventScroll: true });
+  });
   const openFrom = (open: () => void) => (trigger: HTMLElement | null) => {
     opener.current = trigger;
     open();
@@ -1315,6 +1185,7 @@ export function MaterialLibraryPage({
         key={material.materialId}
         data-testid={`kb-material-${material.materialId}`}
         data-kb-row=""
+        data-located={material.materialId === locatedId ? 'true' : undefined}
         {...(!edit ? drag.rowProps('material', material.materialId) : {})}
         className={cn(
           layout.row,

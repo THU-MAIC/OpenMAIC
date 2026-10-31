@@ -370,10 +370,10 @@ Use a long random value, at least 16 characters from a random generator: it is t
 
 ### Optional: Agent workbench and runtime
 
-The Pro workbench, a course-building surface entered from the home page, is off by default. Turn on its build-time entry point and the server runtime; it uses the same PostgreSQL as the rest of the app:
+The workbench, a course-building surface entered from the home page, is off by default. Turn on its build-time entry point and the server runtime; it uses the same PostgreSQL as the rest of the app:
 
 ```env
-NEXT_PUBLIC_PRO_WORKBENCH_ENABLED=true
+NEXT_PUBLIC_WORKBENCH_ENABLED=true
 OPENMAIC_AGENT_RUNTIME_ENABLED=true
 DATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic
 ```
@@ -532,18 +532,21 @@ Without `openmaic.yml`, the legacy `TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
 
 ## ✨ Features
 
-### Agent Workbench and Pro Mode (v1.0.0)
+### Agent Workbench (v1.0.0)
 
 The workbench adds a conversational course-building agent to OpenMAIC.
 Its durable sessions can be resumed after a worker restart, accept follow-up
 instructions while running, and stream a replayable event history to the chat
 surface.
 
-Open it from the Pro control on the home page. The workspace combines a
-transient, collapsible folders/conversations rail with a chat pane and a
-classroom pane whose open courses stay in tabs. Workspace controls return to
-classic mode, and either entry remains gated by the public workbench flag plus
-the configured server runtime.
+Where it is enabled, the workbench is the home page (`/`, also at
+`/workspace`). Its rail carries search, My courses, the knowledge base, the
+conversation and course lists, and an account menu with the language, theme,
+model settings and project links; beside it sit a chat pane and a classroom
+pane whose open courses stay in tabs. A classroom opens full screen with
+Learn | Edit, and a standalone classroom page opens in the workspace from its
+collapse button. Every entry remains gated by the public workbench flag plus
+the configured server runtime; with it off, the classic home page is unchanged.
 
 The agent works through explicit, validated tools rather than editing opaque
 blobs:
@@ -965,7 +968,7 @@ OpenMAIC/
 │   │   └── components/element/ #     Element renderers (text, image, shape, table, chart …)
 │   ├── scene-renderers/        #   Quiz, Interactive, PBL scene renderers
 │   ├── generation/             #   Lesson generation toolbar & progress
-│   ├── workbench/              #   Pro workbench conversation and course-reference UI
+│   ├── workbench/              #   Workbench conversation and course-reference UI
 │   ├── chat/                   #   Chat area & session management
 │   ├── settings/               #   Settings panel (providers, TTS, ASR, media …)
 │   ├── whiteboard/             #   SVG-based whiteboard drawing

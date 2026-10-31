@@ -26,7 +26,6 @@
     "examplesLabel": "テーマの例",
     "examplePython": "Python を基礎から学ぶ",
     "exampleFourier": "フーリエ変換を直感的に学ぶ",
-    "desktopOnly": "エディターと Pro モードはパソコンをご利用ください。",
     "slogan": "マルチエージェント対話型教室で生成的に学ぶ",
     "greetingWithName": "こんにちは、{{name}}さん"
   },
@@ -350,10 +349,12 @@
     "exitFullscreen": "全画面表示を終了",
     "editCourse": "コースを編集",
     "doneEditing": "編集を完了",
-    "proModeDisabledHint": "このページでは編集できません。コースのスライドを開くと Pro モードで編集できます。"
+    "editDisabledHint": "このページでは編集できません。コースのスライドを開くと編集できます。",
+    "editToggle": "編集",
+    "openInWorkspace": "ワークスペースで開く",
+    "openInWorkspaceHint": "ワークスペースで開き、会話しながらこのコースの作業を続ける"
   },
   "edit": {
-    "proMode": "プロモード",
     "undo": "元に戻す",
     "redo": "やり直し",
     "delete": "削除",
@@ -2394,7 +2395,6 @@
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
     "newSession": "New chat",
     "sections": {
-      "courses": "Courses",
       "sessions": "Chats"
     },
     "coursesEmpty": "No courses yet",
@@ -2404,7 +2404,6 @@
     "retry": "Retry",
     "untitledSession": "Untitled chat",
     "pagePosition": "Page {{index}} of {{total}}",
-    "exitPro": "Exit Pro",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
@@ -2413,7 +2412,6 @@
     "learningMode": "学習",
     "editingMode": "編集",
     "editingUnavailableGenerating": "コース生成中は編集できません。",
-    "fullscreenLearning": "全画面で学習",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2429,8 +2427,6 @@
       "cancelled": "Stopped"
     },
     "backToWorkspace": "Back to workspace",
-    "searchPlaceholder": "Filter by name",
-    "searchAria": "Search {{section}}",
     "searchEmpty": "No matches",
     "showMore": "Show {{count}} more",
     "showLess": "Show less",
@@ -2452,7 +2448,6 @@
     "coursePausedDesc": "生成に失敗したページがあります。教室で再試行してください。生成が完了するとここで開きます。",
     "viewGenerationProgress": "生成の進捗を見る",
     "openToRetry": "開いて再試行",
-    "courseGeneratingRowHint": "生成完了後に開けます",
     "noCourseTitle": "No course open",
     "noCourseHint": "会話内のコースリンクから開くか、左のリストから選んでください。会話はそのまま残ります",
     "resizeChatAria": "Drag to resize the conversation pane",
@@ -2461,7 +2456,6 @@
     "autoSaved": "保存済み",
     "collapsedTitle": "Both panes are collapsed",
     "collapsedHint": "Use the tabs on the left to bring the conversation or the classroom back",
-    "moreUtilities": "More",
     "rowMore": "{{name}}のその他の操作",
     "folderDeleteHint": "フォルダー内のコースはトップレベルに戻ります。削除はされません。",
     "dropToUnfile": "ここにドロップするとフォルダーから外れます",
@@ -2475,11 +2469,64 @@
     "confirmDelete": "削除を確認",
     "deleting": "削除中…",
     "deleteFailed": "削除できませんでした。もう一度お試しください。",
-    "tabsAria": "Chats and courses",
     "courseTabsAria": "開いているコース",
     "courseTabClose": "タブを閉じる：{{name}}",
     "courseTabRunning": "生成中",
-    "foldersUnavailable": "このビルドではフォルダーは利用できません"
+    "foldersUnavailable": "このビルドではフォルダーは利用できません",
+    "composer": {
+      "attach": "教材を添付",
+      "mentionCourse": "引用课堂",
+      "mentionCourseOrMaterial": "クラスまたはナレッジベースの素材を参照",
+      "loadSkill": "加载 skill",
+      "skillMenuTitle": "选择课程设计技能",
+      "skillsLoading": "正在加载 skill…",
+      "noSkillsAvailable": "暂无可用 skill",
+      "userSkillsGroup": "我的 Skill",
+      "builtinSkillsGroup": "内置 Skill",
+      "skillsLoadFailed": "Skill 加载失败，点击重试",
+      "retrySkills": "重试",
+      "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+      "launchPlaceholder": "作りたい学習体験を描いてください",
+      "launchSend": "構築を開始"
+    },
+    "nav": {
+      "search": "検索",
+      "myCourses": "マイコース"
+    },
+    "search": {
+      "placeholder": "チャット、コース、資料を検索",
+      "recentChats": "最近のチャット",
+      "recentCourses": "最近のコース",
+      "courses": "コース",
+      "materials": "資料",
+      "actions": "クイック操作",
+      "searching": "検索中…",
+      "empty": "「{{query}}」に一致する結果はありません",
+      "materialsFailed": "ナレッジベースを検索できませんでした",
+      "themeAction": "テーマ：{{name}}",
+      "languageAction": "言語：{{name}}"
+    },
+    "account": {
+      "signIn": "ログイン",
+      "menu": "アカウントと設定",
+      "profileSaved": "保存しました",
+      "language": "言語",
+      "about": "OpenMAIC について",
+      "aboutBody": "どんなテーマでも、AI の先生とクラスメートがいるインタラクティブな教室に変えるオープンソースのプラットフォームです。MIT ライセンスで公開しています。",
+      "viewOnGithub": "GitHub で見る",
+      "docs": "ドキュメント",
+      "signOut": "ログアウト"
+    },
+    "coursesPage": {
+      "subtitle": "作成またはインポートしたコースと、それを整理するフォルダー",
+      "searchPlaceholder": "マイコースを検索",
+      "results": "検索結果",
+      "allCourses": "すべてのコース"
+    },
+    "fullscreen": {
+      "expand": "全画面",
+      "collapse": "全画面を終了（Esc）"
+    }
   },
   "profile": {
     "title": "プロフィール",
@@ -2510,25 +2557,6 @@
     "title": "アクセスコードを入力",
     "placeholder": "アクセスコード",
     "error": "アクセスコードが正しくありません。もう一度お試しください。"
-  },
-  "proMode": {
-    "attach": "教材を添付",
-    "mentionCourse": "引用课堂",
-    "loadSkill": "加载 skill",
-    "skillMenuTitle": "选择课程设计技能",
-    "skillsLoading": "正在加载 skill…",
-    "noSkillsAvailable": "暂无可用 skill",
-    "userSkillsGroup": "我的 Skill",
-    "builtinSkillsGroup": "内置 Skill",
-    "skillsLoadFailed": "Skill 加载失败，点击重试",
-    "retrySkills": "重试",
-    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
-    "badgeAria": "Pro モード",
-    "badgeEnter": "Pro モード",
-    "badgeExit": "通常モードに戻る",
-    "launchPlaceholder": "作りたい学習体験を描いてください",
-    "launchSend": "構築を開始",
-    "mentionCourseOrMaterial": "クラスまたはナレッジベースの素材を参照"
   },
   "workbench": {
     "tool": {

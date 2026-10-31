@@ -24,15 +24,19 @@ export const wbStyles = {
   userBubble: {
     row: 'flex justify-end',
     bubble:
-      'flex max-w-[85%] flex-col gap-1.5 whitespace-pre-wrap break-words rounded-2xl rounded-tr-md bg-primary px-3 py-2 text-[length:var(--wb-text-base)] leading-relaxed text-primary-foreground [overflow-wrap:anywhere]',
+      'flex max-w-[85%] flex-col gap-1.5 whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-violet-100 px-3.5 py-2.5 text-[length:var(--wb-text-base)] leading-relaxed text-slate-900 [overflow-wrap:anywhere] dark:bg-violet-500/20 dark:text-slate-100',
     materials: 'flex flex-wrap gap-1',
     // One chip skin for both kinds of attachment inside the bubble (a file, an
     // element reference): 7px radius to match the composer's pill geometry, but
-    // drawn in on-primary tints instead of the composer's tones.
+    // drawn in tints of the bubble's own violet instead of the composer's tones.
     materialChip:
-      'inline-flex max-w-[220px] items-center gap-1 rounded-[7px] border border-primary-foreground/20 bg-primary-foreground/10 px-1.5 py-0.5 text-[11px] leading-4 text-primary-foreground',
+      'inline-flex max-w-[220px] items-center gap-1 rounded-[7px] border border-violet-300/60 bg-white/60 px-1.5 py-0.5 text-[11px] leading-4 text-slate-700 dark:border-violet-300/25 dark:bg-white/10 dark:text-slate-200',
+    // A course or material the message named with `@`, where it stood in the
+    // sentence: the composer's inline highlight, in the bubble's violet.
+    mention:
+      'rounded-[6px] bg-white/70 px-1 py-px font-medium text-violet-700 [box-decoration-break:clone] dark:bg-white/10 dark:text-violet-200',
     chipOrdinal:
-      'grid size-[14px] shrink-0 place-items-center rounded-full bg-primary-foreground/20 font-mono text-[9px] font-semibold tabular-nums',
+      'grid size-[14px] shrink-0 place-items-center rounded-full bg-violet-200 font-mono text-[9px] font-semibold tabular-nums dark:bg-violet-400/30',
   },
   /**
    * System notice — everything the run says about itself (a recovery, a queued
@@ -349,7 +353,7 @@ export const wbStyles = {
  * (once on the scroll viewport, once on the composer footer) and the two were
  * expected to stay equal by hand.
  */
-const WB_CHAT_GUTTER = 'px-3';
+const WB_CHAT_GUTTER = 'px-5';
 
 /**
  * THE one column class that decides where the transcript and the composer begin.
@@ -379,14 +383,14 @@ const WB_CHAT_GUTTER = 'px-3';
  * by hand.
  *
  * `760px` is the reading measure of the text itself; the cap carries the gutter
- * on top of it (760 + 2 * 12) so the measure stays exactly what it was.
+ * on top of it (760 + 2 * 20) so the measure stays exactly what it was.
  *
  * @param measured Full-width conversation. Beside the classroom the chat is the
  *   flex leftover (min 400), so dragging the splitter moves the border instead
  *   of a right-side gutter — there the column is the pane.
  */
 export function chatColumn(measured: boolean): string {
-  return measured ? `mx-auto w-full max-w-[784px] ${WB_CHAT_GUTTER}` : WB_CHAT_GUTTER;
+  return measured ? `mx-auto w-full max-w-[800px] ${WB_CHAT_GUTTER}` : WB_CHAT_GUTTER;
 }
 
 /**

@@ -26,7 +26,6 @@
     "examplesLabel": "試試這些主題",
     "examplePython": "從零學習 Python",
     "exampleFourier": "用直觀的例子講解傅立葉轉換",
-    "desktopOnly": "編輯器和專業模式請在電腦上使用。",
     "slogan": "多智能體互動課室中的生成式學習",
     "greetingWithName": "嗨，{{name}}"
   },
@@ -350,10 +349,12 @@
     "exitFullscreen": "離開全螢幕",
     "editCourse": "編輯課程",
     "doneEditing": "完成編輯",
-    "proModeDisabledHint": "此頁面無法編輯——開啟課程投影片以使用 Pro 模式編輯。"
+    "editDisabledHint": "此頁面無法編輯——開啟課程投影片即可編輯。",
+    "editToggle": "編輯",
+    "openInWorkspace": "在工作台中開啟",
+    "openInWorkspaceHint": "在工作台中開啟，可以繼續對話修改這門課"
   },
   "edit": {
-    "proMode": "專業模式",
     "undo": "復原",
     "redo": "重做",
     "delete": "刪除",
@@ -2379,7 +2380,6 @@
     "heroSubtitle": "說出你的想法，把它變成一段可以親歷的學習旅程",
     "newSession": "新增對話",
     "sections": {
-      "courses": "課程",
       "sessions": "對話"
     },
     "coursesEmpty": "還沒有課程",
@@ -2389,7 +2389,6 @@
     "retry": "重試",
     "untitledSession": "未命名對話",
     "pagePosition": "第 {{index}} / {{total}} 頁",
-    "exitPro": "退出 Pro",
     "navAria": "工作區導覽",
     "homeAria": "返回首頁",
     "currentSession": "目前對話",
@@ -2398,7 +2397,6 @@
     "learningMode": "學習",
     "editingMode": "編輯",
     "editingUnavailableGenerating": "課程生成期間無法編輯。",
-    "fullscreenLearning": "全螢幕學習",
     "time": {
       "justNow": "剛剛",
       "minutesAgo": "{{count}} 分鐘前",
@@ -2414,8 +2412,6 @@
       "cancelled": "已停止"
     },
     "backToWorkspace": "返回工作區",
-    "searchPlaceholder": "依名稱篩選",
-    "searchAria": "在{{section}}中搜尋",
     "searchEmpty": "沒有符合的內容",
     "showMore": "顯示更多 {{count}}",
     "showLess": "收合",
@@ -2437,7 +2433,6 @@
     "coursePausedDesc": "有一頁生成失敗。請在課堂中重試，生成完成後課程會在這裡開啟。",
     "viewGenerationProgress": "查看生成進度",
     "openToRetry": "前往重試",
-    "courseGeneratingRowHint": "生成完成後可開啟",
     "noCourseTitle": "還沒有開啟課堂",
     "noCourseHint": "點對話裡的課堂連結開啟，或在左側清單裡選一節；對話會一直在這兒",
     "resizeChatAria": "拖曳調整對話欄寬度",
@@ -2446,7 +2441,6 @@
     "autoSaved": "已儲存",
     "collapsedTitle": "兩側面板都收合了",
     "collapsedHint": "點左邊的標籤，把對話或課堂展開",
-    "moreUtilities": "更多",
     "rowMore": "{{name}}的更多操作",
     "folderDeleteHint": "資料夾裡的課堂會回到列表最上層，不會被刪除。",
     "dropToUnfile": "放到這裡移出資料夾",
@@ -2460,11 +2454,64 @@
     "confirmDelete": "確認刪除",
     "deleting": "刪除中…",
     "deleteFailed": "刪除失敗，請重試",
-    "tabsAria": "對話與課程",
     "courseTabsAria": "右欄標籤頁",
     "courseTabClose": "關閉標籤頁《{{name}}》",
     "courseTabRunning": "產生中",
-    "foldersUnavailable": "此版本不支援資料夾"
+    "foldersUnavailable": "此版本不支援資料夾",
+    "composer": {
+      "attach": "添加材料",
+      "mentionCourse": "引用课堂",
+      "mentionCourseOrMaterial": "引用課堂或知識庫材料",
+      "loadSkill": "加载 skill",
+      "skillMenuTitle": "选择课程设计技能",
+      "skillsLoading": "正在加载 skill…",
+      "noSkillsAvailable": "暂无可用 skill",
+      "userSkillsGroup": "我的 Skill",
+      "builtinSkillsGroup": "内置 Skill",
+      "skillsLoadFailed": "Skill 加载失败，点击重试",
+      "retrySkills": "重试",
+      "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+      "launchPlaceholder": "描述你想創造的學習體驗",
+      "launchSend": "開始構建"
+    },
+    "nav": {
+      "search": "搜尋",
+      "myCourses": "我的課程"
+    },
+    "search": {
+      "placeholder": "搜尋對話、課程和資料",
+      "recentChats": "最近對話",
+      "recentCourses": "最近課程",
+      "courses": "課程",
+      "materials": "資料",
+      "actions": "快捷操作",
+      "searching": "正在搜尋…",
+      "empty": "沒有與「{{query}}」相符的結果",
+      "materialsFailed": "知識庫搜尋失敗",
+      "themeAction": "主題：{{name}}",
+      "languageAction": "語言：{{name}}"
+    },
+    "account": {
+      "signIn": "登入",
+      "menu": "帳號與設定",
+      "profileSaved": "已儲存",
+      "language": "語言",
+      "about": "關於 OpenMAIC",
+      "aboutBody": "開源的多智慧體互動課堂平台：輸入任何主題，AI 老師和同學陪你一起學。以 MIT 授權條款發布。",
+      "viewOnGithub": "在 GitHub 上查看",
+      "docs": "文件",
+      "signOut": "登出"
+    },
+    "coursesPage": {
+      "subtitle": "你產生或匯入的課程，以及整理它們的資料夾",
+      "searchPlaceholder": "搜尋我的課程",
+      "results": "搜尋結果",
+      "allCourses": "全部課程"
+    },
+    "fullscreen": {
+      "expand": "全螢幕",
+      "collapse": "結束全螢幕（Esc）"
+    }
   },
   "profile": {
     "title": "個人資料",
@@ -2510,25 +2557,6 @@
       "mid": "做得好，繼續保持！",
       "low": "不錯的開始，回顧一下再試一次。"
     }
-  },
-  "proMode": {
-    "attach": "添加材料",
-    "mentionCourse": "引用课堂",
-    "loadSkill": "加载 skill",
-    "skillMenuTitle": "选择课程设计技能",
-    "skillsLoading": "正在加载 skill…",
-    "noSkillsAvailable": "暂无可用 skill",
-    "userSkillsGroup": "我的 Skill",
-    "builtinSkillsGroup": "内置 Skill",
-    "skillsLoadFailed": "Skill 加载失败，点击重试",
-    "retrySkills": "重试",
-    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
-    "badgeAria": "專業模式",
-    "badgeEnter": "專業模式",
-    "badgeExit": "返回普通模式",
-    "launchPlaceholder": "描述你想創造的學習體驗",
-    "launchSend": "開始構建",
-    "mentionCourseOrMaterial": "引用課堂或知識庫材料"
   },
   "workbench": {
     "tool": {

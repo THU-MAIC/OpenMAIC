@@ -13,18 +13,15 @@ export interface WorkbenchPanelState {
   readonly hosted: boolean;
   /** Whether the classroom column is actually visible in the workspace. */
   readonly visible: boolean;
-  /** Whether the hosted classroom is in full-screen learning playback. */
-  readonly playback: boolean;
   /** Whether this pane currently requests the learning chrome. */
   readonly learning: boolean;
-  /** Editing intent after applying visibility, playback and course access gates. */
+  /** Editing intent after applying visibility and course access gates. */
   readonly editPinned: boolean;
 }
 
 const OUTSIDE_WORKBENCH: WorkbenchPanelState = {
   hosted: false,
   visible: true,
-  playback: false,
   editPinned: false,
   learning: false,
 };
@@ -34,23 +31,23 @@ const WorkbenchPanelContext = createContext<WorkbenchPanelState>(OUTSIDE_WORKBEN
 export function WorkbenchPanelProvider({
   children,
   visible = true,
-  playback = false,
-  learning = playback,
+  learning = true,
 }: {
   readonly children: ReactNode;
   readonly visible?: boolean;
-  readonly playback?: boolean;
   readonly learning?: boolean;
 }) {
+  // The pane's size (split or full screen) is not part of this: the hosted
+  // classroom renders the same chrome at either size, and the pane draws the
+  // header around it.
   const value = useMemo<WorkbenchPanelState>(
     () => ({
       hosted: true,
       visible,
-      playback,
       learning,
-      editPinned: visible && !playback && !learning,
+      editPinned: visible && !learning,
     }),
-    [playback, visible, learning],
+    [visible, learning],
   );
   return <WorkbenchPanelContext.Provider value={value}>{children}</WorkbenchPanelContext.Provider>;
 }

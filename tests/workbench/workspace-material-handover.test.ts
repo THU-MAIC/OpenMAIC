@@ -62,6 +62,7 @@ const mocks = vi.hoisted(() => ({
   } | null,
   courses: null as Record<string, unknown> | null,
   railProps: null as Record<string, unknown> | null,
+  coursesPageProps: null as Record<string, unknown> | null,
   homeProps: null as Record<string, unknown> | null,
   libraryProps: null as Record<string, unknown> | null,
   store: {
@@ -208,7 +209,8 @@ vi.mock('@/lib/workbench/owner-session-client', () => ({
     }
   },
 }));
-vi.mock('@/lib/workbench/pro-swap', () => ({ startProSwap: vi.fn() }));
+// The settings dialog (owned by the shell) has its own tests.
+vi.mock('@/components/settings', () => ({ SettingsDialog: () => null }));
 vi.mock('@/components/workbench/workspace/WorkspaceRail', () => ({
   WorkspaceRail: (props: Record<string, unknown>) => {
     mocks.railProps = props;
@@ -244,6 +246,20 @@ vi.mock('@/components/workbench/workspace/WorkspaceClassroomPane', async () => {
   };
 });
 vi.mock('@/components/workbench/workspace/PaneTab', () => ({ PaneTab: () => null }));
+// My courses carries the library's course actions (open, delete, the
+// generating cards); the page itself is tested on its own.
+vi.mock('@/components/workbench/workspace/WorkspaceCoursesPage', () => ({
+  WorkspaceCoursesPage: (props: Record<string, unknown>) => {
+    mocks.coursesPageProps = props;
+    return createElement('main', { 'data-testid': 'workspace-courses-page' });
+  },
+}));
+/** Open My courses from the rail and hand back the page's props. */
+const openMyCourses = async (): Promise<Record<string, unknown>> => {
+  await act(async () => (mocks.railProps!.onOpenView as (view: string) => void)('courses'));
+  expect(mocks.coursesPageProps).not.toBeNull();
+  return mocks.coursesPageProps!;
+};
 vi.mock('@/components/workbench/workspace/MaterialLibraryPage', () => ({
   MaterialLibraryPage: (props: Record<string, unknown>) => {
     mocks.libraryProps = props;
@@ -291,16 +307,14 @@ beforeEach(() => {
     state: 'ready',
     reload: vi.fn(() => Promise.resolve()),
     importInput: null,
-    discoveryContent: null,
-    openNewFolder: vi.fn(),
     moveCourse: vi.fn(),
-    createAndMove: vi.fn(),
     deleteCourse: vi.fn(),
   };
   mocks.classroomProps = null;
   mocks.classroomMounts = 0;
   mocks.chatPaneProps = null;
   mocks.railProps = null;
+  mocks.coursesPageProps = null;
   mocks.homeProps = null;
   mocks.libraryProps = null;
   mocks.searchParams = new URLSearchParams('course=stage-1');
@@ -405,7 +419,8 @@ const type = async (textarea: HTMLTextAreaElement, text: string) => {
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
   });
 };
-const openLibrary = () => act(async () => (mocks.railProps!.onOpenLibrary as () => void)());
+const openLibrary = () =>
+  act(async () => (mocks.railProps!.onOpenView as (view: string) => void)('library'));
 const chatWith = async (id: string) => {
   await openLibrary();
   await act(async () =>
@@ -541,7 +556,8 @@ describe('a home conversation created while the knowledge base was opened', () =
 
   it('leaves it in the rail when the teacher moved on to a classroom', async () => {
     const answer = await sendFromHome();
-    await act(async () => (mocks.railProps!.onOpenCourse as (id: string) => void)('stage-1'));
+    const page = await openMyCourses();
+    await act(async () => (page.onOpenCourse as (id: string) => void)('stage-1'));
     expect(container!.querySelector('[data-testid="pro-launch-panel"]')).toBeNull();
     mocks.routerPush.mockClear();
     mocks.routerReplace.mockClear();
@@ -852,6 +868,9 @@ describe('a request still on its way when the teacher switches conversation', ()
     expect(stopButton()).not.toBeNull();
   }
 
+  /** B's draft once its document is picked: the pick is written in as a mention. */
+  const B_DRAFT = 'Typing in B @b-notes.pdf ';
+
   /** In B: type a draft and attach a document the library already holds. */
   async function draftInB() {
     expect(stopButton()).toBeNull();
@@ -876,7 +895,8 @@ describe('a request still on its way when the teacher switches conversation', ()
   async function sendInB() {
     await send();
     expect(sentToB()).toHaveLength(1);
-    expect(messageBodies.at(-1)!.body.text).toBe('Typing in B');
+    // The picked document is named in the sentence, where it was written.
+    expect(messageBodies.at(-1)!.body.text).toBe('Typing in B @b-notes.pdf');
     expect(messageBodies.at(-1)!.body.materialIds).toEqual(['B-doc']);
   }
 
@@ -894,7 +914,7 @@ describe('a request still on its way when the teacher switches conversation', ()
     expect(mocks.requestFullFetch).toHaveBeenCalled();
     expect(attachedTo('session-A')).toBe(false);
     expect(mocks.store.sessionId).toBe('session-B');
-    expect(textarea().value).toBe('Typing in B');
+    expect(textarea().value).toBe(B_DRAFT);
     expect(container!.textContent).toContain('b-notes.pdf');
     await sendInB();
   });
@@ -911,7 +931,7 @@ describe('a request still on its way when the teacher switches conversation', ()
     await act(async () => sendingA.resolve(started('session-A')));
     await followPanes();
     expect(attachedTo('session-A')).toBe(false);
-    expect(textarea().value).toBe('Typing in B');
+    expect(textarea().value).toBe(B_DRAFT);
     expect(container!.textContent).toContain('b-notes.pdf');
     await sendInB();
   });
@@ -926,7 +946,7 @@ describe('a request still on its way when the teacher switches conversation', ()
     await followPanes();
     expect(mocks.toastError).toHaveBeenCalledWith('send A failed');
     expect(attachedTo('session-A')).toBe(false);
-    expect(textarea().value).toBe('Typing in B');
+    expect(textarea().value).toBe(B_DRAFT);
     expect(container!.textContent).toContain('b-notes.pdf');
     expect(container!.textContent).not.toContain('a-notes.pdf');
     await sendInB();
@@ -1047,7 +1067,7 @@ describe('a request still on its way when the teacher switches conversation', ()
     await act(async () => uploads.get('a-upload.pdf')!.resolve(material('A-up', 'a-upload.pdf')));
     expect(container!.textContent).not.toContain('a-upload.pdf');
     expect(container!.textContent).toContain('b-notes.pdf');
-    expect(textarea().value).toBe('Typing in B');
+    expect(textarea().value).toBe(B_DRAFT);
     await sendInB();
   });
   describe('a new chat asked for on the draft whose first message is on its way', () => {

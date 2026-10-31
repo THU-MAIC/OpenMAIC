@@ -123,8 +123,8 @@ Amazon Bedrock (`preset: bedrock`) signs requests with the AWS credential chain 
 | `course.content.pbl` | chat | `course.content` | Project-based learning scenes |
 | `course.actions` | chat | `llm` | Scene actions (what the agents say and do on each scene) |
 | `classroom` | chat | `llm` | Classroom chat, quiz grading and the project-based learning runtime |
-| `agent` | chat | `llm` | The Pro workbench agent. **Requires tool calling.** Also accepts `api` and `contextWindow` |
-| `agent.title` | chat | `agent` | Pro session titles. Configurable in `openmaic.yml` only; the model settings do not show it |
+| `agent` | chat | `llm` | The workbench agent. **Requires tool calling.** Also accepts `api` and `contextWindow` |
+| `agent.title` | chat | `agent` | Workbench session titles. Configurable in `openmaic.yml` only; the model settings do not show it |
 | `tts` | tts | — | Text to speech |
 | `asr` | asr | — | Speech recognition (voice input, audio and video transcripts) |
 | `image` | image | — | Image generation |
@@ -313,7 +313,7 @@ slots:
   webSearch: tavily
 ```
 
-Remove `DEFAULT_MODEL` and `MODEL_FALLBACK` afterwards. The provider variables can stay as the source of the `${VAR}` references. A `<PREFIX>_BASE_URL` becomes the provider's `baseUrl` (`OPENAI_BASE_URL` → `baseUrl` under `openai`; write the URL, or `${OPENAI_BASE_URL}` while the variable stays set), and `<PREFIX>_MODELS` becomes its `models` list. As with the translated `DEFAULT_MODEL`, the `llm` written here is a server default workspaces may change; add `lock: [llm]` to fix it for everyone. Unlike the translation, `agent` now follows `llm`: write `agent: null` to keep the Pro agent off.
+Remove `DEFAULT_MODEL` and `MODEL_FALLBACK` afterwards. The provider variables can stay as the source of the `${VAR}` references. A `<PREFIX>_BASE_URL` becomes the provider's `baseUrl` (`OPENAI_BASE_URL` → `baseUrl` under `openai`; write the URL, or `${OPENAI_BASE_URL}` while the variable stays set), and `<PREFIX>_MODELS` becomes its `models` list. As with the translated `DEFAULT_MODEL`, the `llm` written here is a server default workspaces may change; add `lock: [llm]` to fix it for everyone. Unlike the translation, `agent` now follows `llm`: write `agent: null` to keep the workbench agent off.
 
 **server-providers.yml.** Before:
 
@@ -437,7 +437,7 @@ Use a long random value (at least 16 characters) — this code is the only secre
 Feature flags accept `true` or `1`; unless noted otherwise, all other values are treated as disabled. `NEXT_PUBLIC_*` flags are injected into the client at build time, so changing them requires a rebuild:
 
 ```bash
-# MAIC Editor (Pro mode)
+# MAIC Editor (classroom editor)
 NEXT_PUBLIC_MAIC_EDITOR_ENABLED=true
 
 # PPT and Interactive courseware references in Pi playback (build-time; editor references are separate)
@@ -454,6 +454,9 @@ NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
 
 # Show the experimental PPTX import entry point
 NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
+
+# Docs site opened from the account menu (default: /docs on the same origin)
+NEXT_PUBLIC_DOCS_URL=https://docs.example.com
 ```
 
 Classroom chat always runs on Pi, which requires a model with tool (function) calling: select one for **Classroom** in **Course Model Config**, or set the `classroom` slot (or the `llm` slot it inherits from) in `openmaic.yml`. For Gemini, use the native `google` preset rather than Google's OpenAI-compatible endpoint. It refuses a model that the built-in catalogue lists without tool calling before inference, with `400 MODEL_CONFIG_INVALID` (`reason: tool_calling_required`), and **Course Model Config** notes the requirement on the classroom slot.

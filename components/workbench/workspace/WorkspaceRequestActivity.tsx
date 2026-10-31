@@ -341,15 +341,16 @@ function RequestPreview({
       data-preview-awaiting={asking ? 'true' : undefined}
       aria-hidden={hidden || undefined}
       className={cn(
-        'ws-pane ws-pane-last h-full min-w-0 flex-1 flex-col',
+        'ws-pane ws-pane-last ws-pane-enter h-full min-w-0 flex-1 flex-col',
         hidden ? 'hidden' : 'flex',
       )}
     >
       {/* The course pane's header, with the one preview tab in its strip. */}
       <header className="ws-pane-head ws-classroom-head flex shrink-0 items-center px-2">
         {onCollapse ? (
-          <span className="mr-1 flex shrink-0 items-center">
+          <span className="flex shrink-0 items-center">
             <PaneFoldButton
+              className="ws-pane-fold"
               testId="workspace-preview-fold"
               label={t('workspace.collapseClassroom')}
               direction="right"
@@ -358,7 +359,10 @@ function RequestPreview({
           </span>
         ) : null}
         <WorkspaceCourseTabs
-          tabs={[...(strip?.tabs ?? []), { id: PREVIEW_TAB_ID, name: label }]}
+          tabs={[
+            ...(strip?.tabs ?? []),
+            { id: PREVIEW_TAB_ID, name: label, kind: 'preview', busy: copy.key !== 'resting' },
+          ]}
           activeCourseId={PREVIEW_TAB_ID}
           onActivate={(id) => (id === PREVIEW_TAB_ID ? undefined : strip?.onActivate(id))}
           onClose={(id) => (id === PREVIEW_TAB_ID ? onClose() : strip?.onCloseCourse(id))}

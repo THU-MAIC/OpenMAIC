@@ -26,7 +26,6 @@
     "examplesLabel": "试试这些主题",
     "examplePython": "零基础学习 Python",
     "exampleFourier": "用直观的例子讲解傅里叶变换",
-    "desktopOnly": "编辑器和专业模式请在电脑上使用。",
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
     "greetingWithName": "嗨，{{name}}"
   },
@@ -350,10 +349,12 @@
     "exitFullscreen": "退出全屏",
     "editCourse": "编辑课程",
     "doneEditing": "完成编辑",
-    "proModeDisabledHint": "本页不支持编辑——打开任意课程页即可使用 Pro 模式编辑。"
+    "editDisabledHint": "本页不支持编辑——打开任意课程页即可编辑。",
+    "editToggle": "编辑",
+    "openInWorkspace": "在工作台中打开",
+    "openInWorkspaceHint": "在工作台中打开，可以继续对话修改这门课"
   },
   "edit": {
-    "proMode": "专业模式",
     "undo": "撤销",
     "redo": "重做",
     "delete": "删除",
@@ -2394,7 +2395,6 @@
     "heroSubtitle": "说出你的想法，把它变成一段可以亲历的学习旅程",
     "newSession": "新建对话",
     "sections": {
-      "courses": "课程",
       "sessions": "对话"
     },
     "coursesEmpty": "还没有课程",
@@ -2404,7 +2404,6 @@
     "retry": "重试",
     "untitledSession": "未命名对话",
     "pagePosition": "第 {{index}} / {{total}} 页",
-    "exitPro": "退出 Pro",
     "navAria": "工作区导航",
     "homeAria": "返回首页",
     "currentSession": "当前对话",
@@ -2413,7 +2412,6 @@
     "learningMode": "学习",
     "editingMode": "编辑",
     "editingUnavailableGenerating": "课程生成期间无法编辑。",
-    "fullscreenLearning": "全屏学习",
     "time": {
       "justNow": "刚刚",
       "minutesAgo": "{{count}} 分钟前",
@@ -2429,8 +2427,6 @@
       "cancelled": "已停止"
     },
     "backToWorkspace": "返回工作区",
-    "searchPlaceholder": "按名称筛选",
-    "searchAria": "在{{section}}中搜索",
     "searchEmpty": "没有匹配的内容",
     "showMore": "展示更多 {{count}}",
     "showLess": "收起",
@@ -2452,7 +2448,6 @@
     "coursePausedDesc": "有一页生成失败。请在课堂中重试，生成完成后课程会在这里打开。",
     "viewGenerationProgress": "查看生成进度",
     "openToRetry": "前往重试",
-    "courseGeneratingRowHint": "生成完成后可打开",
     "noCourseTitle": "还没有打开课堂",
     "noCourseHint": "点对话里的课堂链接打开，或在左侧列表里选一节；对话会一直在这儿",
     "resizeChatAria": "拖动调整对话栏宽度",
@@ -2461,7 +2456,6 @@
     "autoSaved": "已保存",
     "collapsedTitle": "两侧面板都收起了",
     "collapsedHint": "点左边的标签，把对话或课堂展开",
-    "moreUtilities": "更多",
     "rowMore": "{{name}}的更多操作",
     "folderDeleteHint": "文件夹里的课堂会回到列表顶层，不会被删除。",
     "dropToUnfile": "放到这里移出文件夹",
@@ -2475,11 +2469,64 @@
     "confirmDelete": "确认删除",
     "deleting": "删除中…",
     "deleteFailed": "删除失败，请重试",
-    "tabsAria": "对话与课程",
     "courseTabsAria": "右栏标签页",
     "courseTabClose": "关闭标签页《{{name}}》",
     "courseTabRunning": "生成中",
-    "foldersUnavailable": "此版本不支持文件夹"
+    "foldersUnavailable": "此版本不支持文件夹",
+    "composer": {
+      "attach": "添加材料",
+      "mentionCourse": "引用课堂",
+      "mentionCourseOrMaterial": "引用课堂或知识库材料",
+      "loadSkill": "加载 skill",
+      "skillMenuTitle": "选择课程设计技能",
+      "skillsLoading": "正在加载 skill…",
+      "noSkillsAvailable": "暂无可用 skill",
+      "userSkillsGroup": "我的 Skill",
+      "builtinSkillsGroup": "内置 Skill",
+      "skillsLoadFailed": "Skill 加载失败，点击重试",
+      "retrySkills": "重试",
+      "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+      "launchPlaceholder": "描述你想创造的学习体验",
+      "launchSend": "开始构建"
+    },
+    "nav": {
+      "search": "搜索",
+      "myCourses": "我的课程"
+    },
+    "search": {
+      "placeholder": "搜索对话、课程和资料",
+      "recentChats": "最近对话",
+      "recentCourses": "最近课程",
+      "courses": "课程",
+      "materials": "资料",
+      "actions": "快捷操作",
+      "searching": "正在搜索…",
+      "empty": "没有与“{{query}}”匹配的结果",
+      "materialsFailed": "知识库搜索失败",
+      "themeAction": "主题：{{name}}",
+      "languageAction": "语言：{{name}}"
+    },
+    "account": {
+      "signIn": "登录",
+      "menu": "账号与设置",
+      "profileSaved": "已保存",
+      "language": "语言",
+      "about": "关于 OpenMAIC",
+      "aboutBody": "开源的多智能体互动课堂平台：输入任何主题，AI 老师和同学陪你一起学。基于 MIT 许可证发布。",
+      "viewOnGithub": "在 GitHub 上查看",
+      "docs": "文档",
+      "signOut": "退出登录"
+    },
+    "coursesPage": {
+      "subtitle": "你生成或导入的课程，以及整理它们的文件夹",
+      "searchPlaceholder": "搜索我的课程",
+      "results": "搜索结果",
+      "allCourses": "全部课程"
+    },
+    "fullscreen": {
+      "expand": "全屏",
+      "collapse": "退出全屏（Esc）"
+    }
   },
   "profile": {
     "title": "个人资料",
@@ -2510,25 +2557,6 @@
     "title": "请输入访问码",
     "placeholder": "访问码",
     "error": "访问码错误，请重试。"
-  },
-  "proMode": {
-    "attach": "添加材料",
-    "mentionCourse": "引用课堂",
-    "loadSkill": "加载 skill",
-    "skillMenuTitle": "选择课程设计技能",
-    "skillsLoading": "正在加载 skill…",
-    "noSkillsAvailable": "暂无可用 skill",
-    "userSkillsGroup": "我的 Skill",
-    "builtinSkillsGroup": "内置 Skill",
-    "skillsLoadFailed": "Skill 加载失败，点击重试",
-    "retrySkills": "重试",
-    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
-    "badgeAria": "专业模式",
-    "badgeEnter": "专业模式",
-    "badgeExit": "返回普通模式",
-    "launchPlaceholder": "描述你想创造的学习体验",
-    "launchSend": "开始构建",
-    "mentionCourseOrMaterial": "引用课堂或知识库材料"
   },
   "workbench": {
     "tool": {

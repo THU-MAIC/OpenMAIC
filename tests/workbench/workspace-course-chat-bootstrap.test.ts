@@ -60,6 +60,9 @@ const mocks = vi.hoisted(() => ({
   } | null,
   courses: null as Record<string, unknown> | null,
   railProps: null as Record<string, unknown> | null,
+  coursesPageProps: null as Record<string, unknown> | null,
+  searchProps: null as Record<string, unknown> | null,
+  railCollapsedSeen: [] as unknown[],
   homeProps: null as Record<string, unknown> | null,
   libraryProps: null as Record<string, unknown> | null,
   ownerRuns: { runs: [] as readonly unknown[], forget: () => {} },
@@ -202,15 +205,17 @@ vi.mock('@/lib/workbench/owner-session-client', () => ({
     }
   },
 }));
-vi.mock('@/lib/workbench/pro-swap', () => ({ startProSwap: vi.fn() }));
 // The owner's generation runs (the rail's generating courses) are a separate
 // stream with nothing to say about the session and pane wiring under test.
 vi.mock('@/lib/generation-run-client/use-owner-runs', () => ({
   useOwnerRuns: () => mocks.ownerRuns,
 }));
+// The settings dialog (owned by the shell) has its own tests.
+vi.mock('@/components/settings', () => ({ SettingsDialog: () => null }));
 vi.mock('@/components/workbench/workspace/WorkspaceRail', () => ({
   WorkspaceRail: (props: Record<string, unknown>) => {
     mocks.railProps = props;
+    mocks.railCollapsedSeen.push(props.collapsed);
     return null;
   },
 }));
@@ -242,6 +247,32 @@ vi.mock('@/components/workbench/workspace/PaneTab', () => ({ PaneTab: () => null
 // The preview tab renders the real course tab strip, which keeps its active
 // tab in view; jsdom has no layout to scroll.
 Element.prototype.scrollIntoView ??= function scrollIntoView() {};
+// The palette itself is tested on its own; the shell owns its shortcut and wiring.
+vi.mock('@/components/workbench/workspace/WorkspaceSearchPalette', async (importActual) => {
+  const actual =
+    await importActual<typeof import('@/components/workbench/workspace/WorkspaceSearchPalette')>();
+  return {
+    ...actual,
+    WorkspaceSearchPalette: (props: Record<string, unknown>) => {
+      mocks.searchProps = props;
+      return createElement('div', { 'data-testid': 'workspace-search' });
+    },
+  };
+});
+// My courses carries the library's course actions (open, delete, the
+// generating cards); the page itself is tested on its own.
+vi.mock('@/components/workbench/workspace/WorkspaceCoursesPage', () => ({
+  WorkspaceCoursesPage: (props: Record<string, unknown>) => {
+    mocks.coursesPageProps = props;
+    return createElement('main', { 'data-testid': 'workspace-courses-page' });
+  },
+}));
+/** Open My courses from the rail and hand back the page's props. */
+const openMyCourses = async (): Promise<Record<string, unknown>> => {
+  await act(async () => (mocks.railProps!.onOpenView as (view: string) => void)('courses'));
+  expect(mocks.coursesPageProps).not.toBeNull();
+  return mocks.coursesPageProps!;
+};
 vi.mock('@/components/workbench/workspace/MaterialLibraryPage', () => ({
   MaterialLibraryPage: (props: Record<string, unknown>) => {
     mocks.libraryProps = props;
@@ -254,6 +285,7 @@ import { WorkspaceShell } from '@/components/workbench/workspace/WorkspaceShell'
 import {
   CHAT_COLLAPSED_STORAGE_KEY,
   CLASSROOM_COLLAPSED_STORAGE_KEY,
+  NAV_COLLAPSED_STORAGE_KEY,
 } from '@/lib/workbench/workspace-panes';
 import { COURSE_TABS_STORAGE_KEY } from '@/lib/workbench/workspace-course-tabs';
 import {
@@ -310,16 +342,16 @@ beforeEach(() => {
     state: 'ready',
     reload: vi.fn(() => Promise.resolve()),
     importInput: null,
-    discoveryContent: null,
-    openNewFolder: vi.fn(),
     moveCourse: vi.fn(),
-    createAndMove: vi.fn(),
     deleteCourse: vi.fn(),
   };
   mocks.classroomProps = null;
   mocks.classroomMounts = 0;
   mocks.chatPaneProps = null;
   mocks.railProps = null;
+  mocks.coursesPageProps = null;
+  mocks.searchProps = null;
+  mocks.railCollapsedSeen = [];
   mocks.homeProps = null;
   mocks.libraryProps = null;
   mocks.ownerRuns = { runs: [], forget: () => {} };
@@ -785,6 +817,58 @@ describe('workspace home intent', () => {
   });
 });
 
+describe('the navigation rail default', () => {
+  it('starts folded on the home surface, from the first render, without storing it', async () => {
+    mocks.searchParams = new URLSearchParams('');
+
+    await render();
+
+    expect(mocks.railCollapsedSeen.length).toBeGreaterThan(0);
+    expect(mocks.railCollapsedSeen.every((collapsed) => collapsed === true)).toBe(true);
+    expect(localStorage.getItem(NAV_COLLAPSED_STORAGE_KEY)).toBeNull();
+  });
+
+  it.each([
+    ['0', false],
+    ['1', true],
+  ])('keeps a stored preference %s on the home surface', async (stored, collapsed) => {
+    mocks.searchParams = new URLSearchParams('');
+    localStorage.setItem(NAV_COLLAPSED_STORAGE_KEY, stored);
+
+    await render();
+
+    expect(mocks.railProps?.collapsed).toBe(collapsed);
+  });
+
+  it.each(['course=stage-1', 'session=session-1', 'view=library'])(
+    'keeps the expanded default for the deep link ?%s',
+    async (query) => {
+      mocks.searchParams = new URLSearchParams(query);
+      mocks.store.sessionId = query.startsWith('session=') ? 'session-1' : null;
+      mocks.sessionRows = [{ id: 'session-1', stageId: 'stage-1', updatedAt: 9 }];
+
+      await render();
+
+      expect(mocks.railProps?.collapsed).toBe(false);
+      expect(localStorage.getItem(NAV_COLLAPSED_STORAGE_KEY)).toBeNull();
+    },
+  );
+
+  it('stays as entered when a conversation opens, and remembers the first toggle', async () => {
+    mocks.searchParams = new URLSearchParams('');
+    mocks.sessionRows = [{ id: 'session-1', stageId: 'stage-1', updatedAt: 9 }];
+    await render();
+
+    await act(async () => (mocks.railProps?.onOpenSession as (id: string) => void)('session-1'));
+    expect(mocks.routerPush).toHaveBeenLastCalledWith('/workspace?session=session-1');
+    expect(mocks.railProps?.collapsed).toBe(true);
+
+    await act(async () => (mocks.railProps?.onToggleCollapsed as () => void)());
+    expect(mocks.railProps?.collapsed).toBe(false);
+    expect(localStorage.getItem(NAV_COLLAPSED_STORAGE_KEY)).toBe('0');
+  });
+});
+
 /**
  * The bug this pair of assertions exists for: after "new chat" the middle column
  * showed a spinner and "connecting" forever. The pane must be handed a DRAFT (which is
@@ -859,7 +943,8 @@ describe('a course a generation run is still producing', () => {
     await render();
     await act(async () => {});
 
-    const courseRuns = mocks.railProps?.courseRuns as ReadonlyMap<string, unknown>;
+    const page = await openMyCourses();
+    const courseRuns = page.courseRuns as ReadonlyMap<string, unknown>;
     expect([...courseRuns.keys()]).toEqual(['stage-2']);
     expect(courseRuns.get('stage-2')).toBe(run);
     const navigation = mocks.chatPaneProps?.navigation as {
@@ -868,11 +953,9 @@ describe('a course a generation run is still producing', () => {
     };
     expect(navigation.courseOptions.map((option) => option.id)).toEqual(['stage-1']);
     expect([...navigation.generatingCourseIds]).toEqual(['stage-2']);
-    // The run with no course yet is the rail's placeholder row — and, having
+    // The run with no course yet is My courses' placeholder card — and, having
     // no course, never a mention candidate.
-    expect((mocks.railProps?.pendingRuns as Array<{ id: string }>).map((r) => r.id)).toEqual([
-      'run-2',
-    ]);
+    expect((page.pendingRuns as Array<{ id: string }>).map((r) => r.id)).toEqual(['run-2']);
     expect(navigation.courseOptions.some((option) => option.id === 'run-2')).toBe(false);
   });
 });
@@ -895,8 +978,7 @@ describe('opening a course from a card in the conversation', () => {
     await render();
     await act(async () => {});
 
-    const onOpenCourse = mocks.railProps?.onOpenCourse as (id: string) => void;
-    await act(async () => onOpenCourse('stage-2'));
+    await act(async () => navigation().openCourse('stage-2'));
 
     expect(localStorage.getItem(CLASSROOM_COLLAPSED_STORAGE_KEY)).toBe('0');
     expect(localStorage.getItem(CHAT_COLLAPSED_STORAGE_KEY)).toBe('1');
@@ -1238,15 +1320,82 @@ describe('owner title projection in the workspace shell', () => {
   });
 });
 
+describe('the global search', () => {
+  const searchShown = () => container?.querySelector('[data-testid="workspace-search"]') !== null;
+  const chord = (init: KeyboardEventInit) =>
+    act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', bubbles: true, ...init }));
+    });
+
+  it('opens and closes with the platform chord, and from the rail', async () => {
+    await render();
+    expect(searchShown()).toBe(false);
+    // jsdom is not a Mac: Ctrl+K.
+    await chord({ metaKey: true });
+    expect(searchShown()).toBe(false);
+    await chord({ ctrlKey: true });
+    expect(searchShown()).toBe(true);
+    await chord({ ctrlKey: true });
+    expect(searchShown()).toBe(false);
+
+    await act(async () => (mocks.railProps?.onOpenSearch as () => void)());
+    expect(searchShown()).toBe(true);
+    await act(async () => (mocks.searchProps?.onOpenChange as (open: boolean) => void)(false));
+    expect(searchShown()).toBe(false);
+  });
+
+  it('starts a new chat with the platform chord, as the rail’s button does', async () => {
+    mocks.searchParams = new URLSearchParams('session=session-1');
+    mocks.store.sessionId = 'session-1';
+    mocks.sessionRows = [{ id: 'session-1', stageId: 'stage-1', updatedAt: 9 }];
+    await render();
+    mocks.routerPush.mockClear();
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', code: 'KeyJ', ctrlKey: true }));
+    });
+    expect(mocks.routerPush).toHaveBeenLastCalledWith('/workspace');
+  });
+
+  it('leaves the chord to an editor that already handled it', async () => {
+    await render();
+    const event = new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, cancelable: true });
+    event.preventDefault();
+    await act(async () => {
+      window.dispatchEvent(event);
+    });
+    expect(searchShown()).toBe(false);
+  });
+
+  it('opens a material on the knowledge base, located', async () => {
+    await render();
+    await chord({ ctrlKey: true });
+    await act(async () =>
+      (mocks.searchProps?.onOpenMaterial as (material: unknown) => void)({
+        materialId: 'm1',
+        name: 'worksheet.pdf',
+      }),
+    );
+    expect(String(mocks.routerPush.mock.calls.at(-1)?.[0])).toContain('view=library');
+    expect(mocks.libraryProps?.locate).toMatchObject({ materialId: 'm1', name: 'worksheet.pdf' });
+  });
+
+  it('opens chats and courses through the shell’s own handlers', async () => {
+    await render();
+    await chord({ ctrlKey: true });
+    expect(mocks.searchProps?.onOpenSession).toBe(mocks.railProps?.onOpenSession);
+    expect(mocks.searchProps?.onOpenView).toBe(mocks.railProps?.onOpenView);
+  });
+});
+
 describe('the knowledge base page', () => {
   const libraryShown = () =>
     container?.querySelector('[data-testid="pro-workspace-library"]') !== null;
   const layout = () =>
     container?.querySelector('[data-testid="pro-workspace"]')?.getAttribute('data-ws-layout');
   const openLibrary = async () => {
-    const onOpenLibrary = mocks.railProps?.onOpenLibrary as () => void;
-    expect(onOpenLibrary).toBeTypeOf('function');
-    await act(async () => onOpenLibrary());
+    const onOpenView = mocks.railProps?.onOpenView as (view: string) => void;
+    expect(onOpenView).toBeTypeOf('function');
+    await act(async () => onOpenView('library'));
   };
 
   it('opens from the rail into the main area, leaving the conversation mounted', async () => {
@@ -1254,15 +1403,15 @@ describe('the knowledge base page', () => {
     mocks.store.sessionId = 'session-1';
     mocks.sessionRows = [{ id: 'session-1', stageId: 'stage-1', updatedAt: 9 }];
     await render();
-    expect(mocks.railProps?.libraryOpen).toBe(false);
+    expect(mocks.railProps?.activeView).toBe(null);
     mocks.detach.mockClear();
 
     await openLibrary();
 
     expect(mocks.routerPush).toHaveBeenCalledWith('/workspace?session=session-1&view=library');
     expect(libraryShown()).toBe(true);
-    expect(layout()).toBe('library');
-    expect(mocks.railProps?.libraryOpen).toBe(true);
+    expect(layout()).toBe('view:library');
+    expect(mocks.railProps?.activeView).toBe('library');
     // Hidden, not unmounted: the run's stream and the draft survive the page.
     expect(container?.querySelector('[data-testid="chat-pane"]')).not.toBeNull();
     expect(mocks.chatPaneProps?.hidden).toBe(true);
@@ -1339,7 +1488,7 @@ describe('the knowledge base page', () => {
     expect(libraryShown()).toBe(true);
   });
 
-  it('stays open when the rail deletes the conversation or the course under it', async () => {
+  it('stays open when the rail deletes the conversation under it', async () => {
     mocks.searchParams = new URLSearchParams('session=session-1&course=stage-1');
     mocks.store.sessionId = 'session-1';
     mocks.sessionRows = [{ id: 'session-1', stageId: 'stage-1', updatedAt: 9 }];
@@ -1351,11 +1500,6 @@ describe('the knowledge base page', () => {
 
     await act(async () => (mocks.railProps?.onSessionDeleted as (id: string) => void)('session-1'));
     expect(mocks.routerReplace).toHaveBeenLastCalledWith('/workspace?course=stage-1&view=library');
-
-    await act(async () => {
-      await (mocks.railProps?.onDeleteCourse as (id: string) => Promise<void>)('stage-1');
-    });
-    expect(mocks.routerReplace).toHaveBeenLastCalledWith('/workspace?view=library');
     expect(mocks.routerPush).toHaveBeenCalledTimes(1);
     expect(libraryShown()).toBe(true);
   });
@@ -1446,9 +1590,18 @@ describe('the knowledge base page', () => {
       await travel('back');
       expect(window.location.search).toBe('?session=session-1');
       expect(libraryShown()).toBe(false);
-      expect(mocks.railProps?.activeCourseId).toBeNull();
       expect(
-        (mocks.railProps?.courses as { classrooms: { id: string }[] }).classrooms.map((c) => c.id),
+        (
+          mocks.chatPaneProps?.navigation as {
+            activeCourseId: string | null;
+            courseOptions: ReadonlyArray<{ id: string }>;
+          }
+        ).activeCourseId,
+      ).toBeNull();
+      expect(
+        (
+          mocks.chatPaneProps?.navigation as { courseOptions: ReadonlyArray<{ id: string }> }
+        ).courseOptions.map((c) => c.id),
       ).toContain('stage-1');
       expect(
         (mocks.courses as { deleteCourse: ReturnType<typeof vi.fn> }).deleteCourse,
@@ -2129,9 +2282,8 @@ describe('the knowledge base page', () => {
       expect(mocks.chatPaneProps?.fill).toBe(true);
     });
 
-    it('recomposes around the preview: folds the rail, narrows the chat, restores after', async () => {
-      await render();
-      expect(mocks.railProps?.collapsed).toBe(false);
+    /** The first request's tool call: the preview opens. */
+    const toolCall = async () => {
       mocks.store.status = 'running';
       mocks.store.chat = [
         { key: 'u', kind: 'user', text: 'Explain' },
@@ -2139,6 +2291,40 @@ describe('the knowledge base page', () => {
       ];
       await render();
       await render();
+    };
+    /** The run ends with an answer: the preview goes. */
+    const answered = async () => {
+      mocks.store.status = 'succeeded';
+      mocks.store.chat = [
+        { key: 'u', kind: 'user', text: 'Explain' },
+        { key: 'a', kind: 'assistant', text: 'Because…' },
+      ];
+      await render();
+      await render();
+    };
+    /** The home composer creates session-1 on this page, and the pane follows. */
+    // Not a React hook, despite its name.
+    const atUrl = useRealHistory;
+    const startFromHome = async () => {
+      atUrl('/workspace');
+      mocks.searchParams = new URLSearchParams();
+      mocks.store.sessionId = null;
+      await render();
+      const onOpenSession = mocks.homeProps?.onOpenSession as (id: string) => void;
+      await act(async () => onOpenSession('session-1'));
+      mocks.searchParams = new URLSearchParams('session=session-1');
+      mocks.store.sessionId = 'session-1';
+      await render();
+    };
+
+    it('recomposes around the preview of a request started from home: folds the rail once', async () => {
+      await startFromHome();
+      // Home starts folded; the teacher has the rail open.
+      if (mocks.railProps?.collapsed) {
+        await act(async () => (mocks.railProps?.onToggleCollapsed as () => void)());
+      }
+      expect(mocks.railProps?.collapsed).toBe(false);
+      await toolCall();
       expect(mocks.railProps?.collapsed).toBe(true);
       expect(mocks.chatPaneProps?.fill).toBe(false);
       expect(mocks.chatPaneProps?.width).toBe(400);
@@ -2150,17 +2336,29 @@ describe('the knowledge base page', () => {
       expect(mocks.railProps?.collapsed).toBe(false);
       await act(async () => (mocks.railProps?.onToggleCollapsed as () => void)());
       expect(mocks.railProps?.collapsed).toBe(true);
-      mocks.store.status = 'succeeded';
-      mocks.store.chat = [
-        { key: 'u', kind: 'user', text: 'Explain' },
-        { key: 'a', kind: 'assistant', text: 'Because…' },
-      ];
-      await render();
-      await render();
+      await answered();
       expect(container?.querySelector('[data-testid="workspace-request-activity"]')).toBeNull();
       expect(mocks.railProps?.collapsed).toBe(false);
       expect(mocks.chatPaneProps?.fill).toBe(true);
       expect(localStorage.getItem('openmaic:workspace:nav-collapsed')).not.toBe('1');
+
+      // The next request in the same conversation is not that moment: the rail stays.
+      mocks.store.chat = [];
+      await toolCall();
+      expect(container?.querySelector('[data-testid="workspace-request-activity"]')).not.toBeNull();
+      expect(mocks.railProps?.collapsed).toBe(false);
+    });
+
+    it('leaves the rail alone for a preview in a conversation opened any other way', async () => {
+      await render();
+      expect(mocks.railProps?.collapsed).toBe(false);
+      await toolCall();
+      expect(container?.querySelector('[data-testid="workspace-request-activity"]')).not.toBeNull();
+      // The split still recomposes around the preview; only the rail is left be.
+      expect(mocks.chatPaneProps?.fill).toBe(false);
+      expect(mocks.railProps?.collapsed).toBe(false);
+      await answered();
+      expect(mocks.railProps?.collapsed).toBe(false);
     });
 
     const previewRun = async () => {
@@ -2859,11 +3057,14 @@ describe('the knowledge base page', () => {
       deleteCourse: vi.fn(() => pending.promise),
     };
     await render();
+    const page = await openMyCourses();
     let completed!: Promise<void>;
     await act(async () => {
-      completed = (mocks.railProps?.onDeleteCourse as (id: string) => Promise<void>)('stage-1');
+      completed = (page.onDeleteCourse as (id: string) => Promise<void>)('stage-1');
     });
-    await act(async () => (mocks.railProps?.onOpenCourse as (id: string) => void)('stage-2'));
+    await act(async () =>
+      (mocks.coursesPageProps!.onOpenCourse as (id: string) => void)('stage-2'),
+    );
     await openLibrary();
     const navigations = mocks.routerPush.mock.calls.length + mocks.routerReplace.mock.calls.length;
 
@@ -3030,9 +3231,10 @@ describe('the knowledge base page', () => {
       );
       mocks.searchParams = new URLSearchParams('course=stage-1');
       await render();
+      const page = await openMyCourses();
       let deleted!: Promise<void>;
       await act(async () => {
-        deleted = (mocks.railProps?.onDeleteCourse as (id: string) => Promise<void>)('stage-2');
+        deleted = (page.onDeleteCourse as (id: string) => Promise<void>)('stage-2');
       });
       await openLibrary();
       await chatWith();

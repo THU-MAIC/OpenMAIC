@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import { Pencil, Check, ImagePlus, ChevronDown } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Card } from '@/components/ui/card';
@@ -20,7 +20,60 @@ const MAX_AVATAR_SIZE = 5 * 1024 * 1024; // 5 MB
 
 const FILE_INPUT_ID = 'user-avatar-upload';
 
-export function UserProfileCard() {
+/**
+ * Turn a picked image file into the stored avatar: a 128px, centre-cropped
+ * JPEG data-URL. Resolves null (after saying why) for a file that is too large
+ * or not an image.
+ */
+export function readAvatarUpload(file: File, t: (key: string) => string): Promise<string | null> {
+  if (file.size > MAX_AVATAR_SIZE) {
+    toast.error(t('profile.fileTooLarge'));
+    return Promise.resolve(null);
+  }
+  if (!file.type.startsWith('image/')) {
+    toast.error(t('profile.invalidFileType'));
+    return Promise.resolve(null);
+  }
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d')!;
+        const scale = Math.max(128 / img.width, 128 / img.height);
+        const w = img.width * scale;
+        const h = img.height * scale;
+        ctx.drawImage(img, (128 - w) / 2, (128 - h) / 2, w, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.onerror = () => resolve(null);
+      img.src = reader.result as string;
+    };
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+}
+
+/** How long typing in the bio settles before it is saved. */
+export const PROFILE_BIO_SAVE_DELAY_MS = 500;
+
+/**
+ * The learner profile editor: avatar (presets or an upload, from the chevron
+ * on the avatar), the name (text until pressed, then a field; saved on Enter
+ * or leaving it) with its hint, and the bio (saved once typing settles, on
+ * leaving it, and when the editor goes away). It saves itself — there is no
+ * button — and reports each save through `onSaved`.
+ *
+ * `className` adjusts the card's surface for the host it sits in (the account
+ * menu supplies its own).
+ */
+export function UserProfileCard({
+  className,
+  onSaved,
+}: { readonly className?: string; readonly onSaved?: () => void } = {}) {
   const { t } = useI18n();
   const avatar = useUserProfileStore((s) => s.avatar);
   const nickname = useUserProfileStore((s) => s.nickname);
@@ -29,6 +82,24 @@ export function UserProfileCard() {
   const setNickname = useUserProfileStore((s) => s.setNickname);
   const setBio = useUserProfileStore((s) => s.setBio);
 
+  const [bioDraft, setBioDraft] = useState(bio);
+  const bioPending = useRef<string | null>(null);
+  const bioTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedRef = useRef(onSaved);
+  useEffect(() => {
+    savedRef.current = onSaved;
+  });
+  const flushBio = useCallback(() => {
+    if (bioTimer.current) clearTimeout(bioTimer.current);
+    bioTimer.current = null;
+    const next = bioPending.current;
+    bioPending.current = null;
+    if (next === null) return;
+    setBio(next);
+    savedRef.current?.();
+  }, [setBio]);
+  // Leaving (the menu closing, a page change) must not lose typing.
+  useEffect(() => flushBio, [flushBio]);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
@@ -51,45 +122,34 @@ export function UserProfileCard() {
   };
 
   const commitName = () => {
-    setNickname(nameDraft.trim());
+    if (nameDraft.trim() !== nickname) {
+      setNickname(nameDraft.trim());
+      onSaved?.();
+    }
     setEditingName(false);
+  };
+  const pickAvatar = (next: string) => {
+    setAvatar(next);
+    onSaved?.();
   };
 
   const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > MAX_AVATAR_SIZE) {
-      toast.error(t('profile.fileTooLarge'));
-      return;
-    }
-    if (!file.type.startsWith('image/')) {
-      toast.error(t('profile.invalidFileType'));
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = 128;
-        canvas.height = 128;
-        const ctx = canvas.getContext('2d')!;
-        const scale = Math.max(128 / img.width, 128 / img.height);
-        const w = img.width * scale;
-        const h = img.height * scale;
-        ctx.drawImage(img, (128 - w) / 2, (128 - h) / 2, w, h);
-        setAvatar(canvas.toDataURL('image/jpeg', 0.85));
-      };
-      img.src = reader.result as string;
-    };
-    reader.readAsDataURL(file);
     e.target.value = '';
+    if (!file) return;
+    void readAvatarUpload(file, t).then((avatar) => {
+      if (avatar) pickAvatar(avatar);
+    });
   };
 
   if (!hydrated) {
     return (
-      <Card className="p-5 !gap-0 shadow-xl border-muted/40 backdrop-blur-xl bg-white/80 dark:bg-slate-900/80">
+      <Card
+        className={cn(
+          'p-5 !gap-0 shadow-xl border-muted/40 backdrop-blur-xl bg-white/80 dark:bg-slate-900/80',
+          className,
+        )}
+      >
         <div className="flex items-center gap-3">
           <div className="size-11 rounded-full bg-muted animate-pulse" />
           <div className="flex-1 space-y-2">
@@ -102,7 +162,12 @@ export function UserProfileCard() {
   }
 
   return (
-    <Card className="p-5 !gap-0 shadow-xl border-muted/40 backdrop-blur-xl bg-white/80 dark:bg-slate-900/80">
+    <Card
+      className={cn(
+        'p-5 !gap-0 shadow-xl border-muted/40 backdrop-blur-xl bg-white/80 dark:bg-slate-900/80',
+        className,
+      )}
+    >
       {/* File input — sr-only keeps it in the flow but invisible; label triggers it */}
       <input
         id={FILE_INPUT_ID}
@@ -119,7 +184,10 @@ export function UserProfileCard() {
           onClick={() => setAvatarPickerOpen(!avatarPickerOpen)}
           className="shrink-0 group/avatar relative cursor-pointer"
         >
-          <div className="size-11 rounded-full bg-gray-50 dark:bg-gray-800 overflow-hidden ring-2 ring-violet-300/50 dark:ring-violet-600/40 group-hover/avatar:ring-violet-400 dark:group-hover/avatar:ring-violet-500 transition-all">
+          <div
+            data-profile-avatar=""
+            className="size-11 rounded-full bg-gray-50 dark:bg-gray-800 overflow-hidden ring-2 ring-violet-300/50 dark:ring-violet-600/40 group-hover/avatar:ring-violet-400 dark:group-hover/avatar:ring-violet-500 transition-all"
+          >
             <img src={avatar} alt="" className="size-full object-cover" />
           </div>
           <div className="absolute -bottom-0.5 -right-0.5 size-4 rounded-full bg-white dark:bg-slate-800 border border-muted/60 flex items-center justify-center">
@@ -147,6 +215,7 @@ export function UserProfileCard() {
                 onBlur={commitName}
                 maxLength={20}
                 placeholder={t('profile.defaultNickname')}
+                data-profile-name=""
                 className="flex-1 min-w-0 h-7 bg-transparent border-b-2 border-violet-400 dark:border-violet-500 text-sm font-semibold text-foreground outline-none placeholder:text-muted-foreground/40"
               />
               <button
@@ -161,11 +230,15 @@ export function UserProfileCard() {
               onClick={startEditName}
               className="group/name flex items-center gap-1.5 cursor-pointer"
             >
-              <span className="text-sm font-semibold text-foreground truncate">{displayName}</span>
+              <span data-profile-name="" className="text-sm font-semibold text-foreground truncate">
+                {displayName}
+              </span>
               <Pencil className="size-3 text-muted-foreground/40 opacity-0 group-hover/name:opacity-100 transition-opacity" />
             </button>
           )}
-          <p className="text-[10px] text-muted-foreground/50 mt-0.5">{t('profile.avatarHint')}</p>
+          <p data-profile-hint="" className="text-[10px] text-muted-foreground/50 mt-0.5">
+            {t('profile.avatarHint')}
+          </p>
         </div>
       </div>
 
@@ -184,7 +257,7 @@ export function UserProfileCard() {
               {AVATAR_OPTIONS.map((url) => (
                 <button
                   key={url}
-                  onClick={() => setAvatar(url)}
+                  onClick={() => pickAvatar(url)}
                   className={cn(
                     'size-8 rounded-full overflow-hidden bg-gray-50 dark:bg-gray-800 cursor-pointer transition-all duration-150',
                     'hover:scale-110 active:scale-95',
@@ -218,11 +291,18 @@ export function UserProfileCard() {
 
       {/* Bio input */}
       <Textarea
-        value={bio}
-        onChange={(e) => setBio(e.target.value)}
+        value={bioDraft}
+        onChange={(e) => {
+          setBioDraft(e.target.value);
+          bioPending.current = e.target.value;
+          if (bioTimer.current) clearTimeout(bioTimer.current);
+          bioTimer.current = setTimeout(flushBio, PROFILE_BIO_SAVE_DELAY_MS);
+        }}
+        onBlur={flushBio}
         placeholder={t('profile.bioPlaceholder')}
         maxLength={200}
         rows={3}
+        data-profile-bio=""
         className="mt-3 resize-none bg-background/50 min-h-[80px]"
       />
     </Card>

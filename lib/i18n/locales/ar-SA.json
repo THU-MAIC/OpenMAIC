@@ -26,7 +26,6 @@
     "examplesLabel": "جرّب موضوعًا",
     "examplePython": "تعلم Python من الصفر",
     "exampleFourier": "شرح تحويل فورييه بأمثلة مبسطة",
-    "desktopOnly": "استخدم الكمبيوتر للمحرر ووضع Pro.",
     "slogan": "التعلّم التوليدي في فصل تفاعلي متعدد الوكلاء",
     "greetingWithName": "مرحبًا، {{name}}"
   },
@@ -350,10 +349,12 @@
     "exitFullscreen": "الخروج من ملء الشاشة",
     "editCourse": "تحرير الدورة",
     "doneEditing": "إنهاء التحرير",
-    "proModeDisabledHint": "التحرير غير متاح في هذه الصفحة — افتح شريحة من الدورة للتحرير باستخدام وضع Pro."
+    "editDisabledHint": "التحرير غير متاح في هذه الصفحة — افتح شريحة من الدورة لتحريرها.",
+    "editToggle": "تحرير",
+    "openInWorkspace": "فتح في مساحة العمل",
+    "openInWorkspaceHint": "افتح في مساحة العمل لمتابعة العمل على هذه الدورة في محادثة"
   },
   "edit": {
-    "proMode": "احترافي",
     "undo": "تراجع",
     "redo": "إعادة",
     "delete": "حذف",
@@ -2394,7 +2395,6 @@
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
     "newSession": "New chat",
     "sections": {
-      "courses": "Courses",
       "sessions": "Chats"
     },
     "coursesEmpty": "No courses yet",
@@ -2404,7 +2404,6 @@
     "retry": "Retry",
     "untitledSession": "Untitled chat",
     "pagePosition": "Page {{index}} of {{total}}",
-    "exitPro": "Exit Pro",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
@@ -2413,7 +2412,6 @@
     "learningMode": "تعلّم",
     "editingMode": "تحرير",
     "editingUnavailableGenerating": "التحرير غير متاح أثناء إنشاء الدورة.",
-    "fullscreenLearning": "التعلّم بملء الشاشة",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2429,8 +2427,6 @@
       "cancelled": "Stopped"
     },
     "backToWorkspace": "Back to workspace",
-    "searchPlaceholder": "Filter by name",
-    "searchAria": "Search {{section}}",
     "searchEmpty": "No matches",
     "showMore": "Show {{count}} more",
     "showLess": "Show less",
@@ -2452,7 +2448,6 @@
     "coursePausedDesc": "تعذّر إنشاء إحدى الصفحات. أعد المحاولة في الفصل؛ سيُفتح المقرر هنا عند اكتمال الإنشاء.",
     "viewGenerationProgress": "عرض تقدّم الإنشاء",
     "openToRetry": "افتح لإعادة المحاولة",
-    "courseGeneratingRowHint": "متاح عند اكتمال الإنشاء",
     "noCourseTitle": "No course open",
     "noCourseHint": "افتحها من رابط دورة في المحادثة، أو اختر واحدة من القائمة على اليسار — تبقى المحادثة كما هي",
     "resizeChatAria": "Drag to resize the conversation pane",
@@ -2461,7 +2456,6 @@
     "autoSaved": "تم الحفظ",
     "collapsedTitle": "Both panes are collapsed",
     "collapsedHint": "Use the tabs on the left to bring the conversation or the classroom back",
-    "moreUtilities": "More",
     "rowMore": "إجراءات أخرى لـ {{name}}",
     "folderDeleteHint": "ستعود الدورات داخله إلى المستوى الأعلى، ولن يُحذف شيء.",
     "dropToUnfile": "أفلِت هنا لإخراجه من المجلد",
@@ -2475,11 +2469,64 @@
     "confirmDelete": "تأكيد الحذف",
     "deleting": "جارٍ الحذف…",
     "deleteFailed": "تعذر الحذف. حاول مرة أخرى.",
-    "tabsAria": "Chats and courses",
     "courseTabsAria": "الدورات المفتوحة",
     "courseTabClose": "إغلاق التبويب: {{name}}",
     "courseTabRunning": "قيد التوليد",
-    "foldersUnavailable": "المجلدات غير متوفرة في هذا الإصدار"
+    "foldersUnavailable": "المجلدات غير متوفرة في هذا الإصدار",
+    "composer": {
+      "attach": "إرفاق مواد",
+      "mentionCourse": "引用课堂",
+      "mentionCourseOrMaterial": "الإشارة إلى فصل أو مادة من قاعدة المعرفة",
+      "loadSkill": "加载 skill",
+      "skillMenuTitle": "选择课程设计技能",
+      "skillsLoading": "正在加载 skill…",
+      "noSkillsAvailable": "暂无可用 skill",
+      "userSkillsGroup": "我的 Skill",
+      "builtinSkillsGroup": "内置 Skill",
+      "skillsLoadFailed": "Skill 加载失败，点击重试",
+      "retrySkills": "重试",
+      "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+      "launchPlaceholder": "صِف تجربة التعلم التي تريد إنشاءها",
+      "launchSend": "بدء الإنشاء"
+    },
+    "nav": {
+      "search": "بحث",
+      "myCourses": "دوراتي"
+    },
+    "search": {
+      "placeholder": "ابحث في المحادثات والدورات والمواد",
+      "recentChats": "المحادثات الأخيرة",
+      "recentCourses": "الدورات الأخيرة",
+      "courses": "الدورات",
+      "materials": "المواد",
+      "actions": "إجراءات سريعة",
+      "searching": "جارٍ البحث…",
+      "empty": "لا توجد نتائج تطابق “{{query}}”",
+      "materialsFailed": "تعذّر البحث في قاعدة المعرفة",
+      "themeAction": "المظهر: {{name}}",
+      "languageAction": "اللغة: {{name}}"
+    },
+    "account": {
+      "signIn": "تسجيل الدخول",
+      "menu": "الحساب والإعدادات",
+      "profileSaved": "تم الحفظ",
+      "language": "اللغة",
+      "about": "حول OpenMAIC",
+      "aboutBody": "منصة مفتوحة المصدر تحوّل أي موضوع إلى فصل دراسي تفاعلي مع معلمين وزملاء بالذكاء الاصطناعي. صادرة بموجب ترخيص MIT.",
+      "viewOnGithub": "عرض على GitHub",
+      "docs": "الوثائق",
+      "signOut": "تسجيل الخروج"
+    },
+    "coursesPage": {
+      "subtitle": "الدورات التي أنشأتها أو استوردتها، والمجلدات التي تنظمها فيها",
+      "searchPlaceholder": "البحث في دوراتي",
+      "results": "نتائج البحث",
+      "allCourses": "كل الدورات"
+    },
+    "fullscreen": {
+      "expand": "ملء الشاشة",
+      "collapse": "الخروج من ملء الشاشة (Esc)"
+    }
   },
   "profile": {
     "title": "الملف الشخصي",
@@ -2510,25 +2557,6 @@
     "title": "أدخل رمز الوصول",
     "placeholder": "رمز الوصول",
     "error": "رمز الوصول غير صالح. يرجى المحاولة مرة أخرى."
-  },
-  "proMode": {
-    "attach": "إرفاق مواد",
-    "mentionCourse": "引用课堂",
-    "loadSkill": "加载 skill",
-    "skillMenuTitle": "选择课程设计技能",
-    "skillsLoading": "正在加载 skill…",
-    "noSkillsAvailable": "暂无可用 skill",
-    "userSkillsGroup": "我的 Skill",
-    "builtinSkillsGroup": "内置 Skill",
-    "skillsLoadFailed": "Skill 加载失败，点击重试",
-    "retrySkills": "重试",
-    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
-    "badgeAria": "وضع Pro",
-    "badgeEnter": "وضع Pro",
-    "badgeExit": "العودة إلى الوضع العادي",
-    "launchPlaceholder": "صِف تجربة التعلم التي تريد إنشاءها",
-    "launchSend": "بدء الإنشاء",
-    "mentionCourseOrMaterial": "الإشارة إلى فصل أو مادة من قاعدة المعرفة"
   },
   "workbench": {
     "tool": {

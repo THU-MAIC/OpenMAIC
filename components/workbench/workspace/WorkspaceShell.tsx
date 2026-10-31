@@ -51,7 +51,7 @@ import { WORKSPACE_NARROW_QUERY } from '@/lib/adaptive/media-queries';
  */
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 // The workspace's visual layer. Imported HERE rather than from `globals.css`
 // so it lands in this route's CSS chunk only — `/` must not receive it.
@@ -65,7 +65,6 @@ import {
 import { OwnerSessionClient } from '@/lib/workbench/owner-session-client';
 import { resolveCourseChatBootstrap } from '@/lib/workbench/course-chat-bootstrap';
 import { startConversationWithFirstMessage } from '@/lib/workbench/first-message-session';
-import { startProSwap } from '@/lib/workbench/pro-swap';
 import { createdCourseTabsToOpen } from '@/lib/workbench/created-course-tabs';
 import { isCourseReadOnly } from '@/lib/workbench/course-read-only';
 import {
@@ -83,6 +82,7 @@ import {
   CLASSROOM_COLLAPSED_STORAGE_KEY,
   clampChatWidth,
   closeCourseTab,
+  defaultNavCollapsed,
   NAV_COLLAPSED_STORAGE_KEY,
   NO_COURSE_TABS,
   openCourseTab,
@@ -94,7 +94,9 @@ import {
   restoreCourseTabs,
   samePanes,
   withCourse,
-  withLibrary,
+  withView,
+  WORKSPACE_COURSES_VIEW,
+  WORKSPACE_LIBRARY_VIEW,
   withSession,
   type WorkspacePanes,
 } from '@/lib/workbench/workspace-panes';
@@ -139,6 +141,12 @@ import {
 import { PaneTab } from './PaneTab';
 import { ResizeHandle } from './ResizeHandle';
 import { MaterialLibraryPage } from './MaterialLibraryPage';
+import { WorkspaceCoursesPage } from './WorkspaceCoursesPage';
+import { WorkspaceSearchPalette } from './WorkspaceSearchPalette';
+import { SettingsDialog } from '@/components/settings';
+import { isMacPlatform, isNewChatShortcut, isSearchShortcut } from '@/lib/workbench/shortcuts';
+import type { LibraryMaterial } from '@/lib/workbench/material-library-client';
+import { hostPageItems, useWorkbenchShellExtensions } from '@/lib/workbench/shell-extensions';
 import type { MaterialSeed, MaterialSeedTarget } from '@/components/workbench/compose-extras';
 
 const EMPTY_SESSIONS: ProHomeSessionItem[] = [];
@@ -184,7 +192,6 @@ export function WorkspaceShell() {
 
 function WorkspaceShellController({ initialPanes }: { readonly initialPanes: WorkspacePanes }) {
   const { t } = useI18n();
-  const router = useRouter();
   const navigation = useWorkspacePaneNavigation(initialPanes);
 
   // Discover-only: course management lives in the navigation tree.
@@ -279,17 +286,15 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const surface =
     panes.sessionId !== null || panes.courseId !== null
       ? 'elsewhere'
-      : panes.library
-        ? 'library'
+      : panes.view
+        ? 'page'
         : 'home';
   const [homeVisit, setHomeVisit] = useState({ surface, visit: 0 });
   if (homeVisit.surface !== surface) {
     setHomeVisit({
       surface,
       visit:
-        homeVisit.surface === 'home' && surface === 'library'
-          ? homeVisit.visit
-          : homeVisit.visit + 1,
+        homeVisit.surface === 'home' && surface === 'page' ? homeVisit.visit : homeVisit.visit + 1,
     });
   }
   // What a late answer is checked against. -1 once the shell is gone: an
@@ -319,7 +324,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       navigation.update((current) => {
         const next = change(current);
         if (!next) return null;
-        return { next, mode: current.library ? 'replace' : mode };
+        return { next, mode: current.view ? 'replace' : mode };
       });
     },
     [navigation],
@@ -337,7 +342,8 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       rememberWorkspaceHome();
     }
   }, [panes.courseId, panes.sessionId]);
-  const collapse = usePaneCollapse();
+  const [navDefault] = useState(() => defaultNavCollapsed(initialPanes));
+  const collapse = usePaneCollapse(navDefault);
   const [courseTabs, setCourseTabs] = useState(() => restoreCourseTabs(null, panes.courseId));
   /**
    * The tab set as last committed, for work that finishes after later
@@ -609,7 +615,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       persistCourseTabs(next);
       collapse.expandClassroom();
       setMaterialSeed(null);
-      goTo(withLibrary(withCourse(panes, next.activeCourseId), false));
+      goTo(withView(withCourse(panes, next.activeCourseId), null));
     },
     [collapse, courseTabs, goTo, panes, persistCourseTabs],
   );
@@ -644,14 +650,29 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       setNewConversationRequested(false);
       collapse.expandChat();
       setMaterialSeed(null);
-      goTo(withLibrary(withSession(panes, sessionId), false));
+      goTo(withView(withSession(panes, sessionId), null));
     },
     [collapse, goTo, panes],
   );
 
+  /**
+   * The conversation the home composer just started on this page, and whether
+   * the rail has had its one fold for its first request's preview. Only that
+   * preview — the "focus on what is being built" moment — folds the rail;
+   * every other preview (a follow-up in an existing conversation, one
+   * restored with its conversation, switching back to a preview tab) leaves
+   * the rail as the teacher had it.
+   */
+  const [homeRequest, setHomeRequest] = useState<{
+    readonly sessionId: string | null;
+    readonly requestKey: string | null;
+    readonly used: boolean;
+  }>({ sessionId: null, requestKey: null, used: true });
+
   /** The home composer's conversation exists now, the composer still on screen. */
   const openCreatedSession = useCallback(
     (sessionId: string) => {
+      setHomeRequest({ sessionId, requestKey: null, used: false });
       // Opening the pane is immediate, but the rail still needs a pull fallback
       // when the owner EventSource is reconnecting or missed session_created.
       loadSessions();
@@ -679,7 +700,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       if (currentHomeVisit.current !== sentInHomeVisit) return;
       let attached = false;
       navigateInBackground((current) => {
-        if (!current.library || current.sessionId !== null || current.courseId !== null) {
+        if (!current.view || current.sessionId !== null || current.courseId !== null) {
           return null;
         }
         attached = true;
@@ -741,21 +762,81 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     [navigateInBackground],
   );
 
-  /** The rail's knowledge base row: the page takes the main area. */
-  const openLibrary = useCallback(() => {
-    setMaterialSeed(null);
-    goTo(withLibrary(panes, true));
-  }, [goTo, panes]);
+  /** A rail destination (the knowledge base, my courses, a host page) takes the main area. */
+  const openView = useCallback(
+    (view: string) => {
+      setMaterialSeed(null);
+      goTo(withView(panes, view));
+    },
+    [goTo, panes],
+  );
+
+  // ── Global search (⌘K / Ctrl K, or the rail's Search) ───────────────
+  const [searchOpen, setSearchOpen] = useState(false);
+  /**
+   * The model/provider settings dialog — the same component the classic home
+   * opens from its header pill. The shell owns it: the account menu and the
+   * search's Settings action both open it.
+   */
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  useEffect(() => {
+    const mac = isMacPlatform();
+    const onKeyDown = (event: KeyboardEvent) => {
+      // An editor inside the page that binds the chord itself keeps it.
+      if (event.defaultPrevented || !isSearchShortcut(event, mac)) return;
+      event.preventDefault();
+      setSearchOpen((open) => !open);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+  /**
+   * A material picked in the search: the knowledge base opens on it. The key
+   * makes picking the same file twice locate it twice.
+   */
+  const [locatedMaterial, setLocatedMaterial] = useState<{
+    readonly key: number;
+    readonly materialId: string;
+    readonly name: string;
+  } | null>(null);
+  const openMaterial = useCallback(
+    (material: LibraryMaterial) => {
+      setLocatedMaterial((current) => ({
+        key: (current?.key ?? 0) + 1,
+        materialId: material.materialId,
+        name: material.name,
+      }));
+      openView(WORKSPACE_LIBRARY_VIEW);
+    },
+    [openView],
+  );
 
   /**
    * The page's own way back (its compact header, where the rail is hidden):
    * the panes it covers come back as they were. A navigation that drops the
    * view, not a history step, so a page opened from a pasted link leaves too.
    */
-  const leaveLibrary = useCallback(() => {
+  const leaveView = useCallback(() => {
     setMaterialSeed(null);
-    goTo(withLibrary(panes, false));
+    goTo(withView(panes, null));
   }, [goTo, panes]);
+
+  /*
+   * The pages a host registered (`WorkbenchShellExtensions.navItems` with a
+   * `render`). A `?view=` naming no page this deployment has -- a stale link,
+   * a host page since removed -- is dropped rather than leaving an empty main
+   * area.
+   */
+  const shellExtensions = useWorkbenchShellExtensions();
+  const hostPages = useMemo(() => hostPageItems(shellExtensions), [shellExtensions]);
+  const unknownView =
+    !!panes.view &&
+    panes.view !== WORKSPACE_LIBRARY_VIEW &&
+    panes.view !== WORKSPACE_COURSES_VIEW &&
+    !hostPages.has(panes.view);
+  useEffect(() => {
+    if (unknownView) navigation.replace(withView(panes, null));
+  }, [navigation, panes, unknownView]);
 
   /**
    * The title a chat is displaying right now, wherever it is displayed: the
@@ -834,7 +915,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   );
 
   /**
-   * A course was deleted from the rail. `deleteCourse` already removed the
+   * A course was deleted from My courses. `deleteCourse` already removed the
    * row optimistically and rolls the list back (plus toast) on failure; the
    * shell's part is the classroom pane: on success the course's tab closes,
    * handing the pane to its neighbour, or shutting the pane entirely when it
@@ -849,11 +930,6 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     [closeCourse, courses],
   );
 
-  // Leaving Pro is a state change: the two surfaces crossfade while the
-  // lockup stays fixed. `startProSwap` falls back to a plain push where the
-  // browser has no View Transitions or the user asked for less motion, and
-  // swallows a second click while one swap is already running.
-  const exitPro = () => startProSwap('/', (href) => router.push(href));
   /**
    * Back to the bare workspace: both panes dropped, the composer refocused.
    *
@@ -863,7 +939,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    * course away. That is `startNewConversation` below.
    */
   const goHome = () => {
-    if (panes.sessionId || panes.courseId || panes.library) {
+    if (panes.sessionId || panes.courseId || panes.view) {
       navigation.push({ sessionId: null, courseId: null });
     }
     setCourseTabs(NO_COURSE_TABS);
@@ -893,16 +969,34 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     setMaterialSeed(null);
     // The teacher's own choice, so it also leaves the knowledge base page.
     if (panes.courseId) {
-      if (panes.sessionId || panes.library) {
+      if (panes.sessionId || panes.view) {
         navigation.push({ sessionId: null, courseId: panes.courseId });
       }
     } else {
-      if (panes.sessionId || panes.library) navigation.push({ sessionId: null, courseId: null });
+      if (panes.sessionId || panes.view) navigation.push({ sessionId: null, courseId: null });
       setCourseTabs(NO_COURSE_TABS);
       persistCourseTabs(NO_COURSE_TABS);
     }
     setComposerReset((value) => value + 1);
   };
+
+  // ⌘J / Ctrl+J: a new chat from anywhere, exactly as the rail's button.
+  const startNewConversationRef = useRef(startNewConversation);
+  useEffect(() => {
+    startNewConversationRef.current = startNewConversation;
+  });
+  useEffect(() => {
+    const mac = isMacPlatform();
+    const onKeyDown = (event: KeyboardEvent) => {
+      // An editor inside the page that binds the chord itself keeps it.
+      if (event.defaultPrevented || !isNewChatShortcut(event, mac)) return;
+      event.preventDefault();
+      setSearchOpen(false);
+      startNewConversationRef.current();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   /**
    * The knowledge base page's "chat with this material": a new conversation
@@ -1058,7 +1152,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
      stays there. Closing it is remembered for that request
      (`lib/workbench/preview-tab.ts`); folding it is the pane's own fold. */
   const previewEligible =
-    !render.library && !narrow && beforeFirstScene && panes.sessionId === attachedSessionId;
+    !render.view && !narrow && beforeFirstScene && panes.sessionId === attachedSessionId;
   const [reportedPreviewTab, setPreviewTab] = useState<PreviewTabState>(NO_PREVIEW_TAB);
   // The preview reports a render behind; a report from the previous
   // conversation (whose request keys may repeat here) is no report.
@@ -1179,9 +1273,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       !courseTabs.courseIds.includes(id) &&
       !(courseTabs.closedCourseIds ?? []).includes(id);
     const liveOwn =
-      live && !panes.library && !earlierCourseHasScene
-        ? createdThisRequest.filter(unreconciled)
-        : [];
+      live && !panes.view && !earlierCourseHasScene ? createdThisRequest.filter(unreconciled) : [];
     // Admitted while live, kept until reconciled, through the end of the run.
     const keptOwn =
       pendingOwn.sessionId === attachedSessionId ? pendingOwn.ids.filter(unreconciled) : [];
@@ -1272,7 +1364,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     libraryRevision,
     pageCount,
     attachedSessionStatus,
-    panes.library,
+    panes.view,
     thisRequestScenes,
     pendingOwn,
   ]);
@@ -1592,13 +1684,30 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     [courseOptions, generatingCourseIds, lookupCourse, openCourse, panes.courseId],
   );
 
-  // The preview on screen (not folded) folds the navigation, as a view state.
+  // The preview of the first request the home composer started on this page
+  // folds the navigation, once, as a view state: the teacher's saved rail
+  // preference is never written for it. See `homeRequest`.
   const previewPaneOpen = previewShowing && !collapse.value.classroom;
+  const homePreview =
+    homeRequest.sessionId !== null &&
+    homeRequest.sessionId === attachedSessionId &&
+    !homeRequest.used &&
+    (homeRequest.requestKey === null || homeRequest.requestKey === previewTab.requestKey);
+  if (homePreview && previewPaneOpen && homeRequest.requestKey === null && previewTab.requestKey) {
+    // The home request's preview is on screen: this is the one it folds for.
+    setHomeRequest({ ...homeRequest, requestKey: previewTab.requestKey });
+  }
+  if (homeRequest.requestKey !== null && !homeRequest.used && !(homePreview && previewPaneOpen)) {
+    // It left the screen (another tab, a fold, the next request, another
+    // conversation): the fold is spent, and showing it again leaves the rail be.
+    setHomeRequest({ ...homeRequest, used: true });
+  }
+  const autoFold = homePreview && previewPaneOpen && homeRequest.requestKey !== null;
   const [navReopenedForPreview, setNavReopenedForPreview] = useState(false);
-  if (!previewPaneOpen && navReopenedForPreview) setNavReopenedForPreview(false);
-  const navCollapsed = collapse.value.nav || (previewPaneOpen && !navReopenedForPreview);
+  if (!autoFold && navReopenedForPreview) setNavReopenedForPreview(false);
+  const navCollapsed = collapse.value.nav || (autoFold && !navReopenedForPreview);
   const toggleRail = useCallback(() => {
-    if (!previewPaneOpen) {
+    if (!autoFold) {
       collapse.toggleNav();
       return;
     }
@@ -1610,15 +1719,15 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     } else {
       setNavReopenedForPreview(false);
     }
-  }, [collapse, navCollapsed, previewPaneOpen]);
+  }, [autoFold, collapse, navCollapsed]);
 
   return (
     <div
       ref={rootRef}
       data-testid="pro-workspace"
       data-ws-layout={
-        render.library
-          ? 'library'
+        render.view
+          ? `view:${render.view}`
           : render.home
             ? 'home'
             : `${chatOpen ? 'chat' : ''}${classroomOpen ? 'classroom' : ''}`
@@ -1630,31 +1739,46 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     >
       {courses.importInput}
 
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+
+      {/* Mounted only while open, so every opening starts from an empty query. */}
+      {searchOpen ? (
+        <WorkspaceSearchPalette
+          open
+          onOpenChange={setSearchOpen}
+          sessions={visibleSessions}
+          courses={courses.classrooms}
+          folders={courses.folders}
+          onOpenSession={openSession}
+          onOpenCourse={openCourse}
+          onOpenMaterial={openMaterial}
+          onNewSession={startNewConversation}
+          onOpenView={openView}
+          onOpenSettings={() => setSettingsOpen(true)}
+          coursesView={WORKSPACE_COURSES_VIEW}
+          libraryView={WORKSPACE_LIBRARY_VIEW}
+        />
+      ) : null}
+
       {classroomOpen && playbackOn ? null : (
         <WorkspaceRail
-          courses={courses}
-          courseRuns={courseRuns}
-          pendingRuns={pendingRuns}
-          onDiscardRun={discardPendingRun}
           sessions={visibleSessions}
           sessionState={sessionState}
           onReloadSessions={() => {
             loadSessions(true);
           }}
-          activeCourseId={panes.courseId}
           activeSessionId={panes.sessionId}
           collapsed={navCollapsed}
           onToggleCollapsed={toggleRail}
-          onOpenCourse={openCourse}
           onOpenSession={openSession}
           onNewSession={startNewConversation}
           onGoHome={goHome}
-          onExitPro={exitPro}
           onSessionDeleted={handleSessionDeleted}
           onRenameSession={renameSession}
-          onDeleteCourse={handleCourseDeleted}
-          libraryOpen={render.library}
-          onOpenLibrary={openLibrary}
+          onOpenSearch={() => setSearchOpen(true)}
+          onOpenSettings={() => setSettingsOpen(true)}
+          activeView={render.view}
+          onOpenView={openView}
           resizeHandle={
             <ResizeHandle
               testId="pro-rail-resize-handle"
@@ -1681,7 +1805,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       {chatOpen || chatMounted ? (
         <WorkspaceChatPane
           hidden={!chatOpen}
-          covered={render.library}
+          covered={render.view !== null}
           fill={chatFills && !previewPaneOpen}
           width={chatWidth.value}
           navigation={courseNavigation}
@@ -1744,7 +1868,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           browser={classroomBrowser}
           hidden={!classroomOpen || previewShowing}
           readOnly={readOnlyCourse}
-          playback={playbackOn}
+          fullscreen={playbackOn}
           // Symmetric with the conversation's fold: offered only while both
           // panes are on screen (the last visible pane cannot fold — see
           // `resolveWorkspaceRender`). Its button lives in the pane's own header.
@@ -1764,24 +1888,42 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       {render.home ? (
         <WorkspaceHome
           composerReset={composerReset}
-          discoveryContent={courses.discoveryContent}
           // The home composer's `@` picker names courses from the same one list
           // the rail and the conversation composer use.
           courseOptions={courseOptions}
           onOpenSession={openCreatedSession}
           onOpenSessionAfterLeaving={openCreatedSessionAfterLeaving}
-          onExitPro={exitPro}
           materialSeed={materialSeed}
           onMaterialSeedConsumed={consumeMaterialSeed}
         />
       ) : null}
 
-      {/* The knowledge base page covers the main area. The conversation and
-          classroom panes above stay mounted, hidden (`render` turns both off),
-          so leaving the page finds them as they were and the run's stream is
-          never detached. */}
-      {render.library ? (
-        <MaterialLibraryPage onChatWithMaterial={chatWithMaterial} onLeave={leaveLibrary} />
+      {/* A page covers the main area: the knowledge base, my courses, or a
+          host page. The conversation and classroom panes above stay mounted,
+          hidden (`render` turns both off), so leaving the page finds them as
+          they were and the run's stream is never detached. */}
+      {render.view === WORKSPACE_LIBRARY_VIEW ? (
+        <MaterialLibraryPage
+          onChatWithMaterial={chatWithMaterial}
+          onLeave={leaveView}
+          locate={locatedMaterial}
+        />
+      ) : render.view === WORKSPACE_COURSES_VIEW ? (
+        <WorkspaceCoursesPage
+          courses={courses}
+          courseRuns={courseRuns}
+          pendingRuns={pendingRuns}
+          onOpenCourse={openCourse}
+          onDeleteCourse={handleCourseDeleted}
+          onDiscardRun={discardPendingRun}
+        />
+      ) : render.view ? (
+        <main
+          data-testid={`workspace-host-view-${render.view}`}
+          className="ws-canvas relative flex min-w-0 flex-1 flex-col overflow-y-auto"
+        >
+          {hostPages.get(render.view)?.render?.()}
+        </main>
       ) : null}
     </div>
   );
@@ -1791,7 +1933,9 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    A viewing preference, not a location: it is remembered in `localStorage`
    and deliberately never travels in a shared link. Read in a layout effect
    rather than during render, because `localStorage` does not exist on the
-   server and reading it in an initializer is a hydration mismatch. */
+   server and reading it in an initializer is a hydration mismatch. The rail's
+   default is the exception that needs no storage: it comes from the entry
+   panes, which the server sees too, so the first paint already has it. */
 
 interface PaneCollapseState {
   readonly value: { readonly nav: boolean; readonly chat: boolean; readonly classroom: boolean };
@@ -1802,18 +1946,18 @@ interface PaneCollapseState {
   readonly expandClassroom: () => void;
 }
 
-function usePaneCollapse(): PaneCollapseState {
-  const [nav, setNav] = useState(false);
+function usePaneCollapse(navDefault: boolean): PaneCollapseState {
+  const [nav, setNav] = useState(navDefault);
   const [chat, setChat] = useState(false);
   const [classroom, setClassroom] = useState(false);
 
   useLayoutEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect -- storage is client-only; see the block comment above */
-    setNav(parseCollapsed(readFlag(NAV_COLLAPSED_STORAGE_KEY)));
+    setNav(parseCollapsed(readFlag(NAV_COLLAPSED_STORAGE_KEY), navDefault));
     setChat(parseCollapsed(readFlag(CHAT_COLLAPSED_STORAGE_KEY)));
     setClassroom(parseCollapsed(readFlag(CLASSROOM_COLLAPSED_STORAGE_KEY)));
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, []);
+  }, [navDefault]);
 
   const value = useMemo(() => ({ nav, chat, classroom }), [nav, chat, classroom]);
   const toggleNav = useCallback(

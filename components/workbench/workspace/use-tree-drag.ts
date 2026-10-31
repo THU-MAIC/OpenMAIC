@@ -15,7 +15,8 @@
  * behaves differently per platform, and its drop targets fight the row buttons
  * underneath. Pointer events give the same gesture with a drop model we own —
  * hit-test whatever is under the pointer, split each row at its midpoint (see
- * `edgeFor`), and draw one hairline.
+ * `edgeFor`; across for a list, down the middle for a grid of cards), and draw
+ * one hairline.
  *
  * Two drop shapes:
  *   - onto a ROW of the same kind → insert before/after it (reorder);
@@ -43,8 +44,19 @@ import {
 /** Same public shape consumed by the data layer's reorder operation. */
 export type DropTarget = { readonly before: string } | { readonly after: string };
 
-const edgeFor = (clientY: number, rect: Pick<DOMRect, 'top' | 'height'>) =>
-  clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+/** Which half of the row the pointer is in: top/bottom in a list, left/right in a grid. */
+const edgeFor = (
+  point: { readonly x: number; readonly y: number },
+  rect: Pick<DOMRect, 'top' | 'height' | 'left' | 'width'>,
+  axis: 'vertical' | 'horizontal',
+) =>
+  axis === 'horizontal'
+    ? point.x < rect.left + rect.width / 2
+      ? 'before'
+      : 'after'
+    : point.y < rect.top + rect.height / 2
+      ? 'before'
+      : 'after';
 
 export type DragKind = 'course' | 'session' | 'material';
 
@@ -74,6 +86,7 @@ export function useTreeDrag({
   onMoveToFolder,
   onHoverFolder,
   scrollRef,
+  axis = 'vertical',
 }: {
   readonly onReorder?: (kind: DragKind, dragId: string, target: DropTarget) => void;
   readonly onMoveToFolder: (id: string, folderId: string | undefined) => void;
@@ -81,6 +94,8 @@ export function useTreeDrag({
   readonly onHoverFolder?: (folderId: string) => void;
   /** Constrain drops to this tree and scroll it near the pointer. */
   readonly scrollRef?: RefObject<HTMLElement | null>;
+  /** How rows are laid out: a list (the default) splits rows top/bottom, a grid left/right. */
+  readonly axis?: 'vertical' | 'horizontal';
 }): TreeDrag {
   const owner = useId();
   const [dragId, setDragId] = useState<string | null>(null);
@@ -161,7 +176,7 @@ export function useTreeDrag({
         setFolderTarget(null);
         return;
       }
-      const edge = edgeFor(point.y, row.getBoundingClientRect());
+      const edge = edgeFor(point, row.getBoundingClientRect(), axis);
       g.drop = { kind: 'row', target: edge === 'before' ? { before: rowId } : { after: rowId } };
       setIndicator({ rowId, edge });
       setFolderTarget(null);
@@ -261,7 +276,7 @@ export function useTreeDrag({
       window.removeEventListener('keydown', onKey);
       document.documentElement.removeAttribute('data-ws-dragging');
     };
-  }, [scrollRef, reset, owner]);
+  }, [scrollRef, reset, owner, axis]);
 
   const rowProps = useCallback(
     (kind: DragKind, id: string) => ({

@@ -22,7 +22,7 @@ const probe = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: vi.fn() }) }));
 vi.mock('@/lib/config/feature-flags', () => ({
   isMaicEditorEnabled: () => true,
-  isProWorkbenchEnabled: () => true,
+  isWorkbenchEnabled: () => true,
 }));
 vi.mock('@/lib/edit/preload-editor', () => ({
   preloadEditor: () => probe.preload(),
@@ -45,9 +45,6 @@ vi.mock('@/components/edit/PlaybackChromeRoot', () => ({
 }));
 vi.mock('@/components/scene-renderers/InteractiveIframeHost', () => ({
   InteractiveIframeHost: () => null,
-}));
-vi.mock('@/components/workbench/WorkbenchReturnControl', () => ({
-  WorkbenchReturnControl: () => null,
 }));
 vi.mock('motion/react', () => ({
   AnimatePresence: ({ children }: { children: ReactNode }) => children,

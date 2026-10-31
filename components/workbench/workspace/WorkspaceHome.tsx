@@ -18,45 +18,35 @@
  * page nobody reads. Discovery runs in `discover-only` mode: folders, courses
  * and sessions are managed in the navigation tree, never twice on one screen.
  *
- * The hero is the CLASSIC home's hero, not a composed one. An earlier cut put
- * an invented headline here ("What will you create today?") over a lone mark;
- * it was a second voice for a product that already has one. What the homepage
- * puts above its composer is the horizontal logo with the Pro badge at the
- * wordmark's shoulder, the tagline, and the GitHub pill — the same three
- * things, the same components, sized for a column that is narrower than a full
- * page but not shrunk out of the page's weight class: the round that pinned
- * the mark at 40px left the surface top-light, and no amount of trimming below
- * fixes a masthead nobody sees.
+ * The hero is the CLASSIC home's hero, not a composed one: the horizontal
+ * logo, the tagline and the GitHub link, sized for a column that is narrower
+ * than a full page but not shrunk out of the page's weight class.
  *
- * The badge here is also the mode switch. It sits beside the product identity,
- * so making that visible Pro state actionable keeps both home surfaces
- * symmetrical: off enters Pro on `/`, on returns to classic here. The rail
- * keeps its copy because the hero only exists on this resting surface.
+ * Under the composer, a host may add a section of its own (a featured-course
+ * strip, say) through `WorkbenchShellExtensions.homeSection`. Upstream has no
+ * feed of other people's courses, so by default nothing follows the composer.
  */
 
-import { type ReactNode, useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Github, Star } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { useWorkbenchShellExtensions } from '@/lib/workbench/shell-extensions';
+import { OPENMAIC_GITHUB_URL } from '@/lib/workbench/shell-links';
+import { GITHUB_STARS_ENDPOINT, formatStarCount } from '@/lib/workbench/github-stars';
 import { useBrand, useIsDesktop } from '@/lib/brand/brand-context';
-import { arrivedByProSwap } from '@/lib/workbench/pro-swap';
-import { cn } from '@/lib/utils/cn';
-import { ProBadge } from '@/components/workbench/ProBadge';
 import { ProLaunchPanel } from '@/components/workbench/ProLaunchPanel';
 import type { CourseMentionSource } from '@/lib/workbench/course-mention';
 import type { MaterialSeed } from '@/components/workbench/compose-extras';
 
 export function WorkspaceHome({
   composerReset,
-  discoveryContent,
   courseOptions,
   onOpenSession,
   onOpenSessionAfterLeaving,
-  onExitPro,
   materialSeed,
   onMaterialSeedConsumed,
 }: {
   readonly composerReset: number;
-  readonly discoveryContent: ReactNode;
   /**
    * What the composer's `@` picker may name. The shell already has this list
    * (the rail renders it), so it is handed down rather than fetched again here.
@@ -65,7 +55,6 @@ export function WorkspaceHome({
   readonly onOpenSession: (sessionId: string) => void;
   /** The composer's conversation exists, but home was left meanwhile. */
   readonly onOpenSessionAfterLeaving: (sessionId: string) => void;
-  readonly onExitPro: () => void;
   /** A knowledge base hand-over, passed through to the composer. */
   readonly materialSeed?: MaterialSeed | null;
   readonly onMaterialSeedConsumed?: (key: number) => void;
@@ -73,13 +62,7 @@ export function WorkspaceHome({
   const { t } = useI18n();
   const brand = useBrand();
   const isDesktop = useIsDesktop();
-
-  // Someone who arrived through the Pro swap has just watched the surfaces
-  // crossfade around a fixed lockup and the composer turn over into this face;
-  // staggering the hero again would replay that arrival, and would slide the
-  // composer up out of the flip it just landed. Read once at mount — the answer
-  // must not change under the surface while it is on screen.
-  const [swapped] = useState(arrivedByProSwap);
+  const { homeSection } = useWorkbenchShellExtensions();
 
   return (
     <main
@@ -87,20 +70,9 @@ export function WorkspaceHome({
       aria-label={t('workspace.homeAria')}
       className="ws-canvas relative flex min-w-0 flex-1 flex-col overflow-y-auto"
     >
-      {/* Below `md` the sidebar is gone, so the exit switch needs a home. A
-          plain button, not a second ProBadge: two elements answering to
-          `pro-mode-exit` would be one testid too many. */}
-      <div className="flex h-12 shrink-0 items-center justify-between px-4 md:hidden">
+      {/* Below `md` the sidebar is gone, so the brand needs a home. */}
+      <div className="flex h-12 shrink-0 items-center px-4 md:hidden">
         <img src={brand.logoSrc} alt={brand.productName} className="h-5 w-auto" />
-        <button
-          type="button"
-          data-testid="pro-workspace-exit-compact"
-          onClick={onExitPro}
-          className="ws-quiet inline-flex items-center gap-1.5 text-[12px]"
-        >
-          <ArrowLeft className="size-3.5" aria-hidden="true" />
-          {t('workspace.exitPro')}
-        </button>
       </div>
 
       {/* One column, not two. The discover feed used to run to 1180px under a
@@ -119,20 +91,9 @@ export function WorkspaceHome({
           className="ws-home-first relative mx-auto w-full max-w-[760px]"
           data-testid="pro-workspace-first-screen"
         >
-          {/* Beat one: the lockup. Same structure as `app/page.tsx` — the badge
-              hangs off the wordmark's right edge absolutely, so it never
-              shifts the logo off the column's centre line.
-
-              `data-pro-morph` names it for the Pro swap: this box and `/`'s
-              equivalent are the fixed anchor while the two surfaces fade.
-              The name sits on the lockup itself, not on the `ws-enter`
-              wrapper, so the entrance animation is never captured. */}
-          <div className={cn('flex flex-col items-center', !swapped && 'ws-enter ws-d1')}>
-            <div
-              className="relative w-fit"
-              data-testid="pro-workspace-hero-lockup"
-              data-pro-morph="lockup"
-            >
+          {/* Beat one: the lockup. */}
+          <div className="ws-enter ws-d1 flex flex-col items-center">
+            <div className="relative w-fit" data-testid="pro-workspace-hero-lockup">
               {isDesktop && !brand.logoHasWordmark ? (
                 // A brand whose mark carries no wordmark gets the product name
                 // beside it, exactly as the classic hero does.
@@ -150,32 +111,33 @@ export function WorkspaceHome({
                   src={brand.logoSrc}
                   alt={brand.productName}
                   data-testid="pro-workspace-hero-logo"
-                  className="ws-hero-logo"
+                  className="ws-hero-logo ws-wordmark"
                 />
               )}
-              {/* At the wordmark's cap height, where a trademark mark goes —
-                  offset from the image TOP, not centred on it, and scaled with
-                  the 46/56px lockup rather than the classic page's 48/64px. */}
-              <div
-                className="absolute left-full top-0 ml-2 mt-[9px] md:mt-[12px]"
-                data-pro-morph="badge"
-                data-pro-stamp
-              >
-                <ProBadge active onToggle={onExitPro} testId="pro-workspace-hero-badge" />
-              </div>
             </div>
 
-            <div className="mt-3.5 flex items-center gap-3">
+            <div className="mt-3.5 flex flex-wrap items-center justify-center gap-3">
               <p className="ws-tagline" data-testid="pro-workspace-hero-tagline">
                 {t('home.slogan')}
               </p>
+              <a
+                href={OPENMAIC_GITHUB_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                data-testid="pro-workspace-hero-github"
+                className="ws-gh-pill"
+              >
+                <Github className="size-3.5" aria-hidden="true" />
+                GitHub
+                <GitHubStarCount />
+              </a>
             </div>
           </div>
 
           {/* Beat two: the composer, the one object on this page with real
               craft spent on it. It gets the larger gap of the two, because the
               gap is what says which of them the page is actually about. */}
-          <div className={cn('mt-8', !swapped && 'ws-enter ws-d2')}>
+          <div className="ws-enter ws-d2 mt-8">
             <ProLaunchPanel
               autoFocus
               focusSignal={composerReset}
@@ -204,9 +166,42 @@ export function WorkspaceHome({
           data-testid="pro-workspace-featured"
           className="ws-featured flex w-full flex-col items-center [&>div]:mt-0"
         >
-          {discoveryContent}
+          {homeSection ? (
+            <div className="w-full" data-testid="pro-workspace-host-section">
+              {homeSection}
+            </div>
+          ) : null}
         </section>
       </div>
     </main>
+  );
+}
+
+/**
+ * The repository's star count, appended to the GitHub pill. Until it arrives,
+ * or when it cannot be had, nothing renders, so the pill looks as it always did.
+ */
+function GitHubStarCount() {
+  const [stars, setStars] = useState<number | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(GITHUB_STARS_ENDPOINT, { signal: controller.signal })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { stars?: unknown } | null) => {
+        if (typeof body?.stars === 'number') setStars(body.stars);
+      })
+      .catch(() => {
+        // The count is decoration; the pill stands without it.
+      });
+    return () => controller.abort();
+  }, []);
+
+  if (stars === null) return null;
+  return (
+    <span className="ws-gh-stars" data-testid="pro-workspace-hero-github-stars">
+      <Star className="size-3 fill-amber-400 text-amber-400" aria-hidden="true" />
+      {formatStarCount(stars)}
+    </span>
   );
 }

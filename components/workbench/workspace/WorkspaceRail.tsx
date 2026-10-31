@@ -10,50 +10,35 @@
  * rather than a route change to a different shell.
  *
  * Shape, deliberately:
- *  - TWO TABS over one body — chat and courses, a segmented control of two
- *    equal halves. The three used to be stacked peer sections, which meant
- *    three heads, three counts and three resting windows competing for one
- *    column; only one of the three is ever the thing you came for. Tabs make
- *    the active list own the rail's height (`workspace-paging` re-tuned with
- *    it);
- *  - the courses tab is ONE TREE, and only FOLDERS are containers in it. A
- *    course that is in no folder is a row at the tree's top level, under the
- *    folders — not a member of an "unfiled" group, which was a head, a count
- *    and a twisty around the absence of filing, and which let one press fold
- *    away the bulk of the list. There is still exactly one unbounded list in
- *    the rail, and therefore one pager;
- *  - course and chat rows are both compact, single-line entries. A course keeps
- *    the stronger name treatment and states its page count at the far edge,
- *    matching the folder/count rhythm above it; run state belongs to the chat
- *    row that is actually running;
- *  - the course list is `useHomeDiscovery`'s `classrooms`, never a second
- *    `GET /api/stages` — a rail that contradicts the grid beside it is worse
- *    than a rail that is one render late;
+ *  - ONE LIST: the conversations, newest first, like any chat app. Courses
+ *    used to share the body with them behind a Chats | Courses switch; they
+ *    now live on the My courses page in the main area, which carries the
+ *    whole library (folders, import, filing, rename, delete, generating
+ *    courses), so the rail is navigation and nothing else;
+ *  - a chat row is its title and its relative time; only a state worth a mark
+ *    replaces the time — a quiet spinner while it runs, a small alert when it
+ *    failed. A finished run goes back to rest, with no "unread" dot;
  *  - long lists reveal one page at a time (`workspace-paging`), because this
- *    account has 139 courses and "reveal everything" is not a navigation;
- *  - the header utilities the classic chrome carries — language, theme,
- *    feedback, community, account — survive at the foot, as the SAME
- *    components SiteHeader mounts, with the two least-pressed behind one ⋯;
- *  - rows are draggable: courses and sessions reorder against a hairline
- *    insertion line, a course dropped on a folder row is filed into it, a
- *    course dropped on the BLANK GROUND at the tree's foot is moved back out to
- *    the top level (Finder's own gesture — the tree lost its "unfiled" row,
- *    and with it the only place a filed course could be dropped to unfile it),
- *    and the resulting sequence is decided entirely by `workspace-order` — this
+ *    account can hold hundreds of chats and "reveal everything" is not a
+ *    navigation;
+ *  - above the list, the destinations: search (the global palette, ⌘K), my
+ *    courses and the knowledge base (pages in the main area), then whatever
+ *    the host registered (`lib/workbench/shell-extensions.tsx`);
+ *  - at the foot, the account block. The workspace has no top bar, so its
+ *    menu carries everything one would: language, theme, settings, the
+ *    project's links, and the host's own entries (`WorkspaceAccount`);
+ *  - rows are draggable: chats reorder against a hairline insertion line, and
+ *    the resulting sequence is decided entirely by `workspace-order` — this
  *    file only wires the events;
- *  - every row you authored carries the same hover-revealed ⋯: rename edits
- *    the name IN PLACE (the row becomes an input; Enter commits, Escape leaves
- *    it alone) and delete asks first. Folders and courses answer to different
- *    endpoints — `PATCH /api/folders/:id` and `PATCH /api/stages/:id` — but not
- *    to different interactions.
+ *  - every row carries the same hover-revealed ⋯ (`workspace-row-controls`):
+ *    rename edits the name IN PLACE (the row becomes an input; Enter commits,
+ *    Escape leaves it alone) and delete asks first.
  *
- * Collapsed, it becomes a 60px icon strip: an explicit expand button in the
- * header slot, a new-session button, one glyph per destination (which expands
- * the rail INTO that destination — the chat tab, the course tab), and the
- * utilities. The compact header is an action rather than a second brand/home
- * affordance, so the way back out is visible immediately.
+ * Collapsed, it becomes a 60px icon strip with the same items: the mark, the
+ * expand button, new chat and search, one glyph per destination, the chat
+ * list's glyph (which expands the rail into it), and the account avatar.
  *
- * It folds from its own header — the row with the wordmark and the PRO pill —
+ * It folds from its own header — the row with the wordmark —
  * with the same `PaneFoldButton` the conversation and the classroom use. It used
  * to fold from a pill floating in the middle of its seam, on the argument that
  * the rail had no header; that left one line carrying two meanings, because the
@@ -64,73 +49,30 @@
 import {
   useCallback,
   useEffect,
-  useId,
   useMemo,
-  useRef,
   useState,
   type ComponentProps,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from 'react';
-import { createPortal } from 'react-dom';
 import {
-  Check,
-  Folder,
-  FolderOpen,
-  FolderPlus,
+  AlertCircle,
   BookOpen,
   Library,
   LoaderCircle,
   MessagesSquare,
-  MoreHorizontal,
-  Pencil,
-  Plus,
   RefreshCw,
   Search,
-  Settings,
-  Trash2,
-  Upload,
-  X,
+  SquarePen,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useBrand } from '@/lib/brand/brand-context';
-import type { HomeDiscoveryState, useHomeDiscovery } from '@/lib/hooks/use-home-discovery';
-import { ProBadge } from '@/components/workbench/ProBadge';
-import { LanguageSwitcher } from '@/components/language-switcher';
-import { ThemeToggle } from '@/components/site-header/theme-toggle';
-import { SettingsDialog } from '@/components/settings';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import type { HomeDiscoveryState } from '@/lib/hooks/use-home-discovery';
 import { cn } from '@/lib/utils/cn';
-import {
-  FloatingLayerOwner,
-  installFloatingLayerDismissListeners,
-} from '@/components/ui/floating-layer-owner';
-import {
-  newestFirst,
-  relativeBucket,
-  type ProHomeSessionItem,
-} from '@/lib/workbench/pro-home-data';
-import { filterByName, groupCoursesByFolder } from '@/lib/workbench/workspace-tree';
+import { relativeBucket, type ProHomeSessionItem } from '@/lib/workbench/pro-home-data';
 import {
   EMPTY_PAGES,
-  RAIL_INITIAL_ROWS,
   nextPage,
   pageList,
   pagesFor,
@@ -142,106 +84,52 @@ import {
   parseOrder,
   reorderIds,
   serializeOrder,
-  COURSE_ORDER_STORAGE_KEY,
   SESSION_ORDER_STORAGE_KEY,
   type DropTarget,
 } from '@/lib/workbench/workspace-order';
-import {
-  RAIL_TAB_STORAGE_KEY,
-  resolveRailTab,
-  type RailTab,
-} from '@/lib/workbench/workspace-rail-tab';
 import { useTreeDrag, type DragKind } from './use-tree-drag';
-import {
-  CourseRunStatusIcon,
-  courseRunStatusText,
-} from '@/components/generation/course-run-status-label';
-import {
-  courseRunHref,
-  courseRunStatus,
-  pendingCourseName,
-} from '@/lib/generation-run-client/course-card';
-import type { RunSnapshot } from '@/lib/generation-run-client/types';
 import { PaneFoldButton } from './PaneFoldButton';
+import { WorkspaceAccountBlock } from './WorkspaceAccount';
+import {
+  useWorkbenchShellExtensions,
+  type WorkbenchShellIcon,
+} from '@/lib/workbench/shell-extensions';
+import { WORKSPACE_COURSES_VIEW, WORKSPACE_LIBRARY_VIEW } from '@/lib/workbench/workspace-panes';
 import { deleteWorkspaceSession } from '@/lib/workbench/workspace-actions';
-import { apiRenameStage, StageRenameError, STAGE_NAME_MAX_LENGTH } from '@/lib/live/server-api';
 import { SESSION_TITLE_MAX_LENGTH, workbenchSessionTitle } from '@/lib/workbench/session-title';
-import {
-  displayNameWidth,
-  FOLDER_COUNT_LIMIT,
-  FOLDER_NAME_MAX_WIDTH,
-  validateFolderName,
-} from '@/lib/utils/folder-name-validation';
-import {
-  workspaceFolderAdapter,
-  workspaceFoldersAvailable,
-  WorkspaceFolderNameError,
-} from './workspace-folder-seam';
-
-type Discovery = ReturnType<typeof useHomeDiscovery>;
-type StageListItem = Discovery['classrooms'][number];
+import { InlineNameRow, WorkspaceRowMenu } from './workspace-row-controls';
+import { shortcutLabel, useIsMac } from '@/lib/workbench/shortcuts';
 
 /**
- * Rows a chat list shows before it pages.
- *
- * Twelve against the courses' ten (`RAIL_INITIAL_ROWS`). Both numbers grew
- * with the tab switch — one list on screen instead of three sections sharing
- * it — and both are still a window, not a dump.
+ * Rows the chat list shows before it pages: the list owns the rail's body,
+ * and this is still a window, not a dump.
  */
 const SESSION_ROW_LIMIT = 12;
 
-const NO_PENDING_RUNS: readonly RunSnapshot[] = [];
-
 export function WorkspaceRail({
-  courses,
-  courseRuns,
-  pendingRuns = NO_PENDING_RUNS,
-  onDiscardRun,
   sessions,
   sessionState,
   onReloadSessions,
-  activeCourseId,
   activeSessionId,
   collapsed,
   onToggleCollapsed,
-  onOpenCourse,
   onOpenSession,
   onNewSession,
   onGoHome,
-  onExitPro,
   onSessionDeleted,
   onRenameSession,
-  onDeleteCourse,
-  libraryOpen,
-  onOpenLibrary,
+  onOpenSearch,
+  onOpenSettings,
+  activeView,
+  onOpenView,
   resizeHandle,
 }: {
-  readonly courses: Discovery;
-  /**
-   * The runs producing courses, by course id (the owner's active runs). A
-   * course in here is read-only until its run completes: its row shows the
-   * run's progress and is neither opened, dragged, renamed nor deleted from
-   * here. A paused run's row opens the classroom where its Retry lives.
-   */
-  readonly courseRuns?: ReadonlyMap<string, RunSnapshot>;
-  /**
-   * The runs whose course is not listed yet, in the home page's order (see
-   * `pendingCourseRuns`). Each is a placeholder row at the top of the loose
-   * courses, where its course row appears once the course is listed — the
-   * home page's pending card, from the moment the run starts. It opens what
-   * that card opens (the run's preview, or its classroom), in a new tab.
-   */
-  readonly pendingRuns?: readonly RunSnapshot[];
-  /** Discard a pending run — the home card's delete, confirmed the same way as a row delete. */
-  readonly onDiscardRun?: (runId: string) => Promise<void> | void;
   readonly sessions: readonly ProHomeSessionItem[];
   readonly sessionState: HomeDiscoveryState;
   readonly onReloadSessions: () => void;
-  readonly activeCourseId: string | null;
   readonly activeSessionId: string | null;
   readonly collapsed: boolean;
   readonly onToggleCollapsed: () => void;
-  readonly onOpenCourse: (id: string) => void;
   readonly onOpenSession: (id: string) => void;
   /**
    * A new conversation in the middle column. Both entries below (the compose row
@@ -251,7 +139,6 @@ export function WorkspaceRail({
   readonly onNewSession: () => void;
   /** Back to the bare `/workspace` — the logo, and the shell's own handler. */
   readonly onGoHome: () => void;
-  readonly onExitPro: () => void;
   /** The shell drops the deleted chat's pane and URL param, once the server
    *  confirmed the delete. Rows are already gone optimistically down here. */
   readonly onSessionDeleted: (sessionId: string) => void;
@@ -260,225 +147,88 @@ export function WorkspaceRail({
    * pane header both) and answers with a readable message when it is refused.
    */
   readonly onRenameSession: (sessionId: string, title: string) => Promise<string | null>;
-  /** The shell deletes the course AND closes its classroom tab on success. */
-  readonly onDeleteCourse: (courseId: string) => Promise<void> | void;
-  /** The knowledge base page fills the main area right now. */
-  readonly libraryOpen: boolean;
-  /** Open the knowledge base page (RFC #1716 §7: from the foot of the rail). */
-  readonly onOpenLibrary: () => void;
+  /** Open the global search palette (the shell owns it and its ⌘K). */
+  readonly onOpenSearch: () => void;
+  /** Open the model/provider settings (the shell owns the dialog: the search opens it too). */
+  readonly onOpenSettings: () => void;
+  /**
+   * The main-area page on screen (`library`, `courses` or a host page id), or
+   * null. Its destination row is marked current.
+   */
+  readonly activeView: string | null;
+  /** Open a main-area page: my courses, the knowledge base, a host page. */
+  readonly onOpenView: (view: string) => void;
   /** The width drag, owned by the shell (it writes the CSS variable on the root). */
   readonly resizeHandle: ReactNode;
 }) {
   const { t } = useI18n();
   const brand = useBrand();
-  const foldersAvailable = workspaceFoldersAvailable();
-
-  const coursesSection = useListSearch();
-  const sessionsSection = useListSearch();
-
-  // The rail survives while the home surface is unmounted, so folder creation
-  // belongs to this tree. It is an inline row at the top of the course tree:
-  // creating organization should not interrupt navigation with a modal.
-  const [newFolderOpen, setNewFolderOpen] = useState(false);
-  const handleCreateFolder = useCallback(
-    async (name: string) => {
-      if (!workspaceFolderAdapter) return;
-      await workspaceFolderAdapter.create(name);
-      courses.reload();
-    },
-    [courses],
-  );
 
   // ── Row maintenance: rename in place, delete after a question ────────
-  // Which row is currently an input. One id each, because two rows cannot be
-  // renamed at once and a rename that survived a tab switch would be an input
-  // hovering over a list it no longer belongs to.
-  const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
-  const [renamingCourseId, setRenamingCourseId] = useState<string | null>(null);
+  // Which row is currently an input: two rows cannot be renamed at once.
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
-  /** The folder whose delete has been asked for, and not yet answered. */
-  const [folderToDelete, setFolderToDelete] = useState<{ id: string; name: string } | null>(null);
-  /** The model/provider settings dialog, opened from the rail's foot cluster. */
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
-  /**
-   * Commit a folder rename. Returns null when it landed and a readable message
-   * when the name was refused — the same three refusals the create row maps
-   * (`PATCH /api/folders/:id` answers 409 `FOLDER_NAME_DUPLICATE` / 400
-   * validation, and the live adapter turns both into `FolderNameError`).
-   *
-   * The duplicate check runs here as well as on the server: a name the local
-   * list already holds should not cost a round trip to be told so.
+  // "Search" opens the shell's global search palette (⌘K / Ctrl K), from the
+  // expanded rail and the folded strip alike.
+  const mac = useIsMac();
+  const searchShortcut = shortcutLabel('search', mac);
+  const newChatShortcut = shortcutLabel('newChat', mac);
+
+  /*
+   * The rail's destinations: the built-in pages, then whatever the host
+   * registered (`WorkbenchShellExtensions.navItems`). A host item that renders
+   * a page opens it in the main area like the built-ins do; one with a link
+   * navigates.
    */
-  const submitFolderRename = useCallback(
-    async (folderId: string, name: string): Promise<string | null> => {
-      const widthCheck = validateFolderName(name);
-      if (!widthCheck.ok) {
-        return widthCheck.kind === 'empty'
-          ? t('classroom.folderNameEmpty')
-          : t('classroom.folderWidth', { width: widthCheck.width, max: FOLDER_NAME_MAX_WIDTH });
-      }
-      const trimmed = name.trim();
-      // Unchanged is not a rename; leave editing without writing anything.
-      if (courses.folders.find((folder) => folder.id === folderId)?.name === trimmed) return null;
-      if (
-        courses.folders.some(
-          (folder) => folder.id !== folderId && folder.name.toLowerCase() === trimmed.toLowerCase(),
-        )
-      ) {
-        return t('classroom.folderNameExists');
-      }
-      try {
-        if (!workspaceFolderAdapter) return t('workspace.foldersUnavailable');
-        await workspaceFolderAdapter.rename(folderId, trimmed);
-        await courses.reload();
-        return null;
-      } catch (caught) {
-        if (caught instanceof WorkspaceFolderNameError) {
-          if (caught.kind === 'duplicate') return t('classroom.folderNameExists');
-          if (caught.kind === 'tooLong') {
-            return t('classroom.folderWidth', {
-              width: displayNameWidth(trimmed),
-              max: FOLDER_NAME_MAX_WIDTH,
-            });
-          }
-          if (caught.kind === 'empty') return t('classroom.folderNameEmpty');
-          return t('classroom.folderNameHint');
-        }
-        return t('classroom.folderRenameFailed');
-      }
+  const extensions = useWorkbenchShellExtensions();
+  const destinations: readonly RailDestination[] = [
+    {
+      id: WORKSPACE_COURSES_VIEW,
+      testId: 'pro-nav-my-courses',
+      label: t('workspace.nav.myCourses'),
+      icon: BookOpen,
+      active: activeView === WORKSPACE_COURSES_VIEW,
+      onSelect: () => onOpenView(WORKSPACE_COURSES_VIEW),
     },
-    [courses, t],
-  );
-
-  /**
-   * Commit a course rename through `PATCH /api/stages/:id` — the route owns the
-   * owner gate and the write, so this only maps its refusals onto copy. NOT the
-   * storage boundary's `renameStage`: that reads and rewrites the whole document
-   * client-side, which a name change in a list has no reason to do.
-   */
-  const submitCourseRename = useCallback(
-    async (courseId: string, name: string): Promise<string | null> => {
-      const trimmed = name.trim();
-      if (!trimmed || trimmed.length > STAGE_NAME_MAX_LENGTH) {
-        return t('workspace.renameInvalid');
-      }
-      if (courses.classrooms.find((course) => course.id === courseId)?.name === trimmed)
-        return null;
-      try {
-        await apiRenameStage(courseId, trimmed);
-        // The authoritative list is what every surface reads a course's name
-        // from — the rail row, the classroom tab strip, an in-chat course link.
-        // One reload renames all of them.
-        await courses.reload();
-        return null;
-      } catch (caught) {
-        if (caught instanceof StageRenameError) {
-          if (caught.kind === 'invalidName') return t('workspace.renameInvalid');
-          if (caught.kind === 'forbidden') return t('workspace.renameForbidden');
-          if (caught.kind === 'notFound') return t('workspace.renameGone');
-        }
-        return t('classroom.renameFailed');
-      }
+    {
+      id: WORKSPACE_LIBRARY_VIEW,
+      testId: 'pro-nav-library',
+      label: t('workspace.knowledgeBase.title'),
+      icon: Library,
+      active: activeView === WORKSPACE_LIBRARY_VIEW,
+      onSelect: () => onOpenView(WORKSPACE_LIBRARY_VIEW),
     },
-    [courses, t],
-  );
-
-  /**
-   * Delete a folder, keeping its courses (`mode=ungroup`, the endpoint's
-   * default): they return to the tree's top level. The destructive mode that
-   * also deletes the courses is deliberately NOT offered here — the rail is
-   * navigation, and a container's ⋯ must not be able to destroy work.
-   */
-  const deleteFolderKeepingCourses = useCallback(
-    async (folderId: string) => {
-      try {
-        if (!workspaceFolderAdapter) return;
-        await workspaceFolderAdapter.removeKeepingCourses(folderId);
-      } catch {
-        toast.error(t('classroom.folderDeleteFailed'));
-      } finally {
-        // Either way: the tree must show what the server actually has.
-        await courses.reload();
-      }
-    },
-    [courses, t],
-  );
-
-  // ── Which list is on screen ──────────────────────────────────────────
-  // A view preference, read from storage after mount (see the shell's own
-  // collapse state for why never during render), and written on every press.
-  const [tab, setTab] = useState<RailTab>('sessions');
-  const tabResolved = useRef(false);
-  useEffect(() => {
-    if (tabResolved.current) return;
-    tabResolved.current = true;
-    setTab(
-      resolveRailTab({
-        stored: readStored(RAIL_TAB_STORAGE_KEY),
-        hasOpenCourse: Boolean(activeCourseId),
+    ...(extensions.navItems ?? []).map(
+      (item): RailDestination => ({
+        id: item.id,
+        testId: `pro-nav-host-${item.id}`,
+        label: item.label,
+        icon: item.icon,
+        tag: item.tag,
+        active: activeView === item.id,
+        href: item.render ? undefined : item.href,
+        external: item.external,
+        onSelect: item.render ? () => onOpenView(item.id) : item.onSelect,
       }),
-    );
-  }, [activeCourseId]);
+    ),
+  ];
 
-  const selectTab = useCallback((next: RailTab) => {
-    // A press is a preference even before the stored one was read: it must not
-    // be overwritten by a late first-visit resolution.
-    tabResolved.current = true;
-    // An open rename belongs to a row on the tab being left. Leaving it armed
-    // would put an input back into a list the user has since walked away from.
-    if (next !== 'courses') {
-      setNewFolderOpen(false);
-      setRenamingFolderId(null);
-      setRenamingCourseId(null);
-    }
-    if (next !== 'sessions') setRenamingSessionId(null);
-    setTab(next);
-    writeStored(RAIL_TAB_STORAGE_KEY, next);
-  }, []);
-
-  // Which folders are open. One set keyed by id, so adding a folder costs no
-  // new state.
-  const [openFolders, setOpenFolders] = useState<ReadonlySet<string>>(() => new Set());
-
-  // How many extra pages each capped list has revealed. One integer per list
-  // (see `workspace-paging`); absent means "at rest".
+  // How many extra pages the list has revealed (see `workspace-paging`);
+  // absent means "at rest".
   const [pages, setPages] = useState<PageMap>(EMPTY_PAGES);
-
-  const toggleIn = (
-    set: ReadonlySet<string>,
-    apply: (next: ReadonlySet<string>) => void,
-    id: string,
-  ) => {
-    const next = new Set(set);
-    if (!next.delete(id)) next.add(id);
-    apply(next);
-  };
 
   // ── Manual order ─────────────────────────────────────────────────────
   // A per-browser view preference (see `workspace-order`): read once on the
-  // client, applied before anything filters or groups, so every sub-list the
-  // tree derives inherits it.
-  const [courseOrder, setCourseOrder] = useState<readonly string[]>(EMPTY_ORDER);
+  // client, applied before the list is filtered.
   const [sessionOrder, setSessionOrder] = useState<readonly string[]>(EMPTY_ORDER);
   const [deletedSessionIds, setDeletedSessionIds] = useState<ReadonlySet<string>>(() => new Set());
 
   useEffect(() => {
     // localStorage does not exist during SSR and reading it while rendering
     // would make the first client paint disagree with the served HTML.
-    setCourseOrder(parseOrder(readStored(COURSE_ORDER_STORAGE_KEY)));
     setSessionOrder(parseOrder(readStored(SESSION_ORDER_STORAGE_KEY)));
   }, []);
 
-  // ── The course tree ──────────────────────────────────────────────────
-  // Sorted once, ordered, then filtered, then grouped. There is no ownership
-  // split to make first: the home/workspace listing is owner-scoped, so every
-  // course in it is the user's own and the whole list is one tree.
-  const sortedCourses = useMemo(() => newestFirst(courses.classrooms), [courses.classrooms]);
-  const orderedCourses = useMemo(
-    () => applyCustomOrder(sortedCourses, courseOrder),
-    [sortedCourses, courseOrder],
-  );
   const orderedSessions = useMemo(
     () =>
       applyCustomOrder(sessions, sessionOrder).filter((item) => !deletedSessionIds.has(item.id)),
@@ -507,44 +257,6 @@ export function WorkspaceRail({
     },
     [onReloadSessions, onSessionDeleted, t],
   );
-  const courseQuery = coursesSection.query;
-  const searchingCourses = courseQuery.trim().length > 0;
-  const matchedOwned = useMemo(
-    () => filterByName(orderedCourses, courseQuery),
-    [orderedCourses, courseQuery],
-  );
-  const tree = useMemo(
-    () => groupCoursesByFolder(matchedOwned, courses.folders),
-    [matchedOwned, courses.folders],
-  );
-
-  const matchedSessions = useMemo(
-    () =>
-      filterByName(
-        // Search what the row SHOWS: a renamed chat has to be findable by the
-        // name the user gave it, not only by its first message.
-        orderedSessions.map((session) => ({
-          ...session,
-          name: workbenchSessionTitle(session) ?? '',
-        })),
-        sessionsSection.query,
-      ),
-    [orderedSessions, sessionsSection.query],
-  );
-
-  // ── Paging × search ──────────────────────────────────────────────────
-  // Typing a query builds a different list under the same list ids, so the
-  // pages a user opened on the unfiltered list must not carry over: five open
-  // pages on 139 courses would otherwise cash themselves in the moment the
-  // query was cleared. Adjusting state during render (React's own recipe for
-  // "derived from a prop that changed") rather than in an effect, so the tree
-  // never paints one frame with the stale window.
-  const querySignature = `${courseQuery.trim()}\u0000${sessionsSection.query.trim()}`;
-  const [pagedFor, setPagedFor] = useState(querySignature);
-  if (pagedFor !== querySignature) {
-    setPagedFor(querySignature);
-    setPages(EMPTY_PAGES);
-  }
 
   const openPage = useCallback((id: string, items: readonly unknown[], initial: number) => {
     setPages((current) =>
@@ -559,49 +271,22 @@ export function WorkspaceRail({
   // ── Drag to reorder ──────────────────────────────────────────────────
   // The rail wires events and renders; every decision about the resulting
   // sequence is made by the pure module. A drop is always expressed relative
-  // to a concrete neighbour, so reordering inside one folder cannot disturb
-  // any other list even though the persisted sequence is flat.
+  // to a concrete neighbour.
   const handleReorder = useCallback(
-    (kind: DragKind, dragId: string, target: DropTarget) => {
-      if (kind === 'course') {
-        const next = reorderIds(
-          orderedCourses.map((course) => course.id),
-          dragId,
-          target,
-        );
-        setCourseOrder(next);
-        writeStoredOrder(COURSE_ORDER_STORAGE_KEY, next);
-      } else {
-        const next = reorderIds(
-          orderedSessions.map((session) => session.id),
-          dragId,
-          target,
-        );
-        setSessionOrder(next);
-        writeStoredOrder(SESSION_ORDER_STORAGE_KEY, next);
-      }
+    (_kind: DragKind, dragId: string, target: DropTarget) => {
+      const next = reorderIds(
+        orderedSessions.map((session) => session.id),
+        dragId,
+        target,
+      );
+      setSessionOrder(next);
+      writeStoredOrder(SESSION_ORDER_STORAGE_KEY, next);
     },
-    [orderedCourses, orderedSessions],
+    [orderedSessions],
   );
 
-  const handleDropIntoFolder = useCallback(
-    (courseId: string, folderId: string | undefined) => {
-      // Filing belongs to the tree: dropping a course onto a folder row files
-      // it there, and dropping it onto the tree's blank ground (`folderId ===
-      // undefined`, decoded from the empty drop zone at the foot) unfiles it.
-      // A drop onto the folder the course already lives in is not a move, and
-      // neither is dropping an already-loose course onto the blank ground.
-      const current = courses.classrooms.find((course) => course.id === courseId)?.folderId;
-      if (current === folderId) return;
-      void courses.moveCourse(courseId, folderId);
-    },
-    [courses],
-  );
-
-  const drag = useTreeDrag({ onReorder: handleReorder, onMoveToFolder: handleDropIntoFolder });
-  const carriedFromFolder =
-    drag.dragKind === 'course' &&
-    Boolean(courses.classrooms.find((course) => course.id === drag.dragId)?.folderId);
+  // Chats are never filed: a drop onto a folder cannot happen in this list.
+  const drag = useTreeDrag({ onReorder: handleReorder, onMoveToFolder: () => {} });
 
   /**
    * The keyboard's version of the same gesture: Alt+↑/↓ on a focused row moves
@@ -620,34 +305,10 @@ export function WorkspaceRail({
     [handleReorder],
   );
 
-  // A folder holding the open course opens itself, once: the row must be
-  // reachable after a refresh that restored `?course=` without any clicks.
-  const revealedFor = useRef<string | null>(null);
-  useEffect(() => {
-    if (!activeCourseId || revealedFor.current === activeCourseId) return;
-    const folderId = courses.classrooms.find((c) => c.id === activeCourseId)?.folderId;
-    revealedFor.current = activeCourseId;
-    if (!folderId) return;
-    // Syncing a disclosure to an external fact (the URL), which is exactly
-    // what an effect is for: the folder is not derivable during render
-    // because the course list arrives asynchronously.
-    setOpenFolders((open) => (open.has(folderId) ? open : new Set(open).add(folderId)));
-  }, [activeCourseId, courses.classrooms]);
-
   /**
-   * The collapsed strip's glyphs are DESTINATIONS, not one repeated "expand"
-   * button: each opens the rail onto the thing it depicts. A strip whose three
-   * marks all did the same thing would be describing a structure the expanded
-   * rail no longer has.
-   *
-   * Each still reopens the rail into its destination. The compact header now
-   * carries a separate, unambiguous expand control, while these shortcuts keep
-   * their more specific "expand into this section" behavior.
+   * The collapsed strip's chat glyph is a destination, not a second "expand"
+   * button: it opens the rail onto the chat list it depicts.
    */
-  const expandInto = (destination: RailTab) => {
-    selectTab(destination);
-    onToggleCollapsed();
-  };
 
   /**
    * What a collapsed glyph says it will do — BOTH halves of it. Naming only the
@@ -663,10 +324,17 @@ export function WorkspaceRail({
         aria-label={t('workspace.navAria')}
         className="ws-rail ws-mini relative z-10 hidden h-full shrink-0 flex-col items-center md:flex"
       >
-        <div className="flex h-16 shrink-0 items-center">
-          {/* The expanded header's fold stays in the same spatial slot when the
-              rail closes. The mark disappears so this compact state exposes
-              its primary recovery action without changing the logo's meaning. */}
+        <div className="flex shrink-0 flex-col items-center gap-1 pb-2 pt-3">
+          <HomeLink testId="pro-nav-home-mini" onGoHome={onGoHome} className="mb-1 p-1">
+            <img
+              src={brand.markSrc}
+              alt=""
+              aria-hidden="true"
+              className="size-7 shrink-0 object-contain"
+            />
+          </HomeLink>
+          {/* The expanded header's fold keeps its slot's meaning here: the one
+              control that brings the rail back as it was. */}
           <PaneFoldButton
             testId="pro-nav-expand"
             label={t('workspace.expandNav')}
@@ -675,219 +343,64 @@ export function WorkspaceRail({
             className="ws-mini-btn"
             onClick={onToggleCollapsed}
           />
-        </div>
-        <div className="ws-seam-rail w-8 shrink-0" aria-hidden="true" />
-        <div className="flex flex-1 flex-col items-center gap-1 pt-3">
           <button
             type="button"
             data-testid="pro-workspace-new-session-mini"
             onClick={onNewSession}
+            aria-keyshortcuts={newChatShortcut.aria}
             aria-label={t('workspace.newSession')}
             title={t('workspace.newSession')}
             className="ws-mini-btn"
           >
-            <Plus className="size-4" aria-hidden="true" />
+            <SquarePen className="size-[18px]" aria-hidden="true" />
           </button>
-          <div className="my-1 h-px w-6 bg-[color:var(--ws-line-soft)]" aria-hidden="true" />
+          <button
+            type="button"
+            data-testid="pro-nav-search-mini"
+            onClick={onOpenSearch}
+            aria-label={t('workspace.nav.search')}
+            title={t('workspace.nav.search')}
+            className="ws-mini-btn"
+          >
+            <Search className="size-[18px]" aria-hidden="true" />
+          </button>
+        </div>
+        <div className="ws-mini-rule" aria-hidden="true" />
+        <div className="flex flex-col items-center gap-1 py-2">
+          {destinations.map((item) => (
+            <RailDestinationButton key={item.id} item={item} mini />
+          ))}
+        </div>
+        <div className="ws-mini-rule" aria-hidden="true" />
+        <div className="flex flex-1 flex-col items-center gap-1 py-2">
+          {/* The chat list is a destination too: its glyph reopens the rail. */}
           <button
             type="button"
             data-testid="pro-nav-mini-sessions"
-            onClick={() => expandInto('sessions')}
+            onClick={onToggleCollapsed}
             aria-label={expandLabel(t('workspace.sections.sessions'))}
             title={expandLabel(t('workspace.sections.sessions'))}
             aria-current={activeSessionId ? 'true' : undefined}
             aria-expanded={false}
             className="ws-mini-btn"
           >
-            <MessagesSquare className="size-4" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            data-testid="pro-nav-mini-courses"
-            onClick={() => expandInto('courses')}
-            aria-label={expandLabel(t('workspace.sections.courses'))}
-            title={expandLabel(t('workspace.sections.courses'))}
-            aria-current={activeCourseId ? 'true' : undefined}
-            aria-expanded={false}
-            className="ws-mini-btn"
-          >
-            <BookOpen className="size-4" aria-hidden="true" />
+            <MessagesSquare className="size-[18px]" aria-hidden="true" />
           </button>
         </div>
-        <div className="ws-seam-rail w-8 shrink-0" aria-hidden="true" />
         <div
           aria-label={t('workspace.utilitiesAria')}
           data-testid="pro-rail-utilities-mini"
-          className="ws-utils flex shrink-0 flex-col items-center gap-0.5 py-2.5"
+          className="flex shrink-0 flex-col items-center pb-3.5 pt-2"
         >
-          {/* 60px of width does not hold five controls, so at this size the
-              overflow is where everything but the most-used entries lives —
-              including the locale switcher. Settings stays on the surface: the
-              collapsed rail must not lose the one entry that configures the
-              providers the surface depends on. */}
-          <button
-            type="button"
-            data-testid="pro-nav-library-mini"
-            onClick={onOpenLibrary}
-            aria-label={t('workspace.knowledgeBase.title')}
-            title={t('workspace.knowledgeBase.title')}
-            aria-current={libraryOpen ? 'page' : undefined}
-            className="ws-mini-btn"
-          >
-            <Library className="size-4" aria-hidden="true" />
-          </button>
-          <RailOverflow testId="pro-rail-more-mini" mini withLanguage />
-          <ThemeToggle />
-          <button
-            type="button"
-            data-testid="pro-nav-settings-mini"
-            onClick={() => setSettingsOpen(true)}
-            aria-label={t('settings.title')}
-            title={t('settings.title')}
-            className="ws-mini-btn"
-          >
-            <Settings className="size-4" aria-hidden="true" />
-          </button>
+          <WorkspaceAccountBlock mini onOpenSettings={onOpenSettings} />
         </div>
       </nav>
     );
   }
 
-  const renderCourseRow = (course: StageListItem, siblings: readonly string[]) => {
-    const label = course.name || t('workspace.untitledCourse');
-    const run = courseRuns?.get(course.id);
-    const runStatus = run ? courseRunStatus(run) : null;
-    if (run && runStatus) {
-      const paused = runStatus.kind === 'paused';
-      return (
-        <RailRow
-          key={course.id}
-          testId={`pro-nav-course-${course.id}`}
-          label={label}
-          labelClassName="ws-course-name"
-          course
-          generating
-          hint={paused ? t('workspace.openToRetry') : t('workspace.courseGeneratingRowHint')}
-          active={course.id === activeCourseId}
-          meta={courseRunStatusText(runStatus, t)}
-          metaTestId={`pro-nav-course-meta-${course.id}`}
-          trailingMark={
-            <CourseRunStatusIcon
-              status={runStatus}
-              className={cn('ws-row-run-icon', paused && 'ws-row-run-icon-paused')}
-            />
-          }
-          onClick={paused ? () => window.open(courseRunHref(run), '_blank', 'noopener') : undefined}
-        />
-      );
-    }
-    // Being renamed: the row IS the input, in place, at the row's own height.
-    // Not a dialog — the thing being edited is the row you are looking at.
-    if (course.id === renamingCourseId) {
-      return (
-        <InlineNameRow
-          key={course.id}
-          testId={`pro-nav-course-rename-${course.id}`}
-          initialName={course.name}
-          placeholder={t('classroom.renamePlaceholder')}
-          ariaLabel={t('classroom.rename')}
-          maxLength={STAGE_NAME_MAX_LENGTH}
-          inputClassName="ws-course-name"
-          onSubmit={(name) => submitCourseRename(course.id, name)}
-          onClose={() => setRenamingCourseId(null)}
-        />
-      );
-    }
-    return (
-      <RailRow
-        key={course.id}
-        testId={`pro-nav-course-${course.id}`}
-        label={label}
-        labelClassName="ws-course-name"
-        course
-        active={course.id === activeCourseId}
-        dragProps={drag.rowProps('course', course.id)}
-        dragging={drag.dragId === course.id}
-        dropEdge={drag.indicator?.rowId === course.id ? drag.indicator.edge : null}
-        onMove={(delta) => moveWithKeyboard('course', course.id, siblings, delta)}
-        // The page count takes the same trailing slot as a folder's count.
-        // On actionable rows the hover-only menu overlays this slot while the
-        // count fades, so the resting layout never reserves an action column.
-        meta={t('workspace.sceneCount', { count: course.sceneCount })}
-        metaTestId={`pro-nav-course-meta-${course.id}`}
-        onClick={() => onOpenCourse(course.id)}
-        trailing={
-          // Rename and one quiet destructive entry; filing is the tree's drag
-          // interaction, so it is not repeated behind a nested "move" path.
-          <WorkspaceRowMenu
-            testId={`pro-nav-course-more-${course.id}`}
-            label={label}
-            onRename={() => setRenamingCourseId(course.id)}
-            onDelete={() => onDeleteCourse(course.id)}
-          />
-        }
-      />
-    );
-  };
-
-  const renderPendingRunRow = (run: RunSnapshot) => {
-    const status = courseRunStatus(run);
-    if (!status) return null;
-    const label = pendingCourseName(run) || t('workspace.untitledCourse');
-    return (
-      <RailRow
-        key={run.id}
-        testId={`pro-nav-run-${run.id}`}
-        label={label}
-        labelClassName="ws-course-name"
-        course
-        generating
-        hint={t('workspace.viewGenerationProgress')}
-        meta={courseRunStatusText(status, t)}
-        metaTestId={`pro-nav-run-meta-${run.id}`}
-        trailingMark={
-          <CourseRunStatusIcon
-            status={status}
-            className={cn('ws-row-run-icon', status.kind === 'paused' && 'ws-row-run-icon-paused')}
-          />
-        }
-        onClick={() => window.open(courseRunHref(run), '_blank', 'noopener')}
-        trailing={
-          onDiscardRun ? (
-            <WorkspaceRowMenu
-              testId={`pro-nav-run-more-${run.id}`}
-              label={label}
-              onDelete={() => onDiscardRun(run.id)}
-            />
-          ) : undefined
-        }
-      />
-    );
-  };
-
-  // The home page lists pending runs only at its top level and not in a search.
-  const renderPendingRuns = () => pendingRuns.map(renderPendingRunRow);
-
-  const renderCourseList = (list: readonly StageListItem[], listId: string) => {
-    // The sibling sequence the keyboard move walks: the whole sub-list, not
-    // just the rows currently inside the page window.
-    const siblings = list.map((course) => course.id);
-    return (
-      <PagedRows
-        id={listId}
-        items={list}
-        initial={RAIL_INITIAL_ROWS}
-        pages={pagesFor(pages, listId)}
-        onMore={() => openPage(listId, list, RAIL_INITIAL_ROWS)}
-        onCollapse={() => collapsePage(listId)}
-        render={(course) => renderCourseRow(course, siblings)}
-      />
-    );
-  };
-
-  const renderSessionRow = (session: (typeof matchedSessions)[number]) => {
+  const renderSessionRow = (session: (typeof orderedSessions)[number]) => {
     const label = workbenchSessionTitle(session) ?? t('workspace.untitledSession');
-    // Being renamed: the row IS the input, in place, exactly as a course row is.
+    // Being renamed: the row IS the input, in place.
     if (session.id === renamingSessionId) {
       return (
         <InlineNameRow
@@ -927,13 +440,38 @@ export function WorkspaceRail({
           moveWithKeyboard(
             'session',
             session.id,
-            matchedSessions.map((item) => item.id),
+            orderedSessions.map((item) => item.id),
             delta,
           )
         }
-        meta={relativeLabel(session.updatedAt || session.createdAt, t)}
-        trailingMark={<SessionDot status={session.status} />}
-        statusLabel={t(`workspace.sessionStatus.${session.status}`)}
+        // A chat at rest shows when it last moved. A running one shows a quiet
+        // spinner there instead, and a failed one a small alert; a run that
+        // finished while the teacher was elsewhere simply returns to rest.
+        meta={
+          sessionRunning(session.status) || session.status === 'failed'
+            ? null
+            : relativeLabel(session.updatedAt || session.createdAt, t)
+        }
+        statusMark={
+          sessionRunning(session.status) ? (
+            <LoaderCircle
+              role="img"
+              aria-label={t(`workspace.sessionStatus.${session.status}`)}
+              data-testid={`pro-nav-session-running-${session.id}`}
+              className="ws-spin-live"
+            />
+          ) : session.status === 'failed' ? (
+            <span
+              role="img"
+              aria-label={t('workspace.sessionStatus.failed')}
+              title={t('workspace.sessionStatus.failed')}
+              data-testid={`pro-nav-session-failed-${session.id}`}
+              className="ws-row-fail"
+            >
+              <AlertCircle className="size-3.5" aria-hidden="true" />
+            </span>
+          ) : null
+        }
         onClick={() => onOpenSession(session.id)}
         trailing={
           <WorkspaceRowMenu
@@ -957,24 +495,19 @@ export function WorkspaceRail({
       className="ws-rail ws-enter-rail relative z-10 hidden h-full shrink-0 flex-col md:flex"
       style={{ width: 'var(--ws-rail-w)' }}
     >
-      <div className="flex h-16 shrink-0 items-center gap-2 px-4">
-        {/* The wordmark is the way home; the PRO pill beside it is the switch
-            that leaves Pro. Two different destinations, so two hit targets —
-            never one control wearing both meanings. */}
+      <div className="flex h-14 shrink-0 items-center gap-2 pl-4 pr-3">
+        {/* The wordmark is the way home: back to the bare workspace. */}
         <HomeLink testId="pro-nav-home" onGoHome={onGoHome} className="-ml-1.5 px-1.5 py-1">
           <img
             src={brand.logoSrc}
             alt=""
             aria-hidden="true"
-            className="h-[21px] w-auto max-w-[110px] shrink-0"
+            className="ws-wordmark h-[22px] w-auto max-w-[128px] shrink-0"
           />
         </HomeLink>
-        <ProBadge active onToggle={onExitPro} />
         {/* THE rail's header, and therefore where the rail folds — the same
             button, in the same place, that the conversation and the classroom
-            fold from. It used to be a pill floating in the middle of the rail's
-            own seam, which made one line mean two things: that seam also drags
-            the rail's width. The seam now only resizes. */}
+            fold from. The seam only resizes. */}
         <PaneFoldButton
           testId="pro-nav-collapse"
           label={t('workspace.collapseNav')}
@@ -985,736 +518,98 @@ export function WorkspaceRail({
         />
       </div>
 
-      {/* A hairline that fades before the rail's right edge, rather than a
-          full-width border: the rail already has one edge, and two hard
-          rules meeting in a corner is the boxy look this pass removes. */}
-      <div className="ws-seam-rail mx-4 shrink-0" aria-hidden="true" />
-
-      {/* Compose, one row to itself — the prototype's newrow shape. Find is no
-          longer its square sibling: a search box is an action on the LIST, not
-          on the act of starting one, so it moved under the tab strip, where it
-          filters whichever list the active tab shows (see the findrow below). */}
-      <div className="flex shrink-0 items-center gap-2 px-3 pb-3 pt-3">
+      {/* New chat: the one raised object in the rail. It starts a conversation
+          and leaves an open classroom where it is (`startNewConversation`). */}
+      <div className="shrink-0 px-2 pb-1.5 pt-1">
         <button
           type="button"
           data-testid="pro-workspace-new-session"
           onClick={onNewSession}
-          className="ws-new flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg px-3 text-[13px] font-medium focus-visible:outline-none"
+          aria-keyshortcuts={newChatShortcut.aria}
+          className="ws-new flex h-[38px] w-full min-w-0 items-center gap-2.5 rounded-[10px] px-[9px] text-[13.5px] font-medium focus-visible:outline-none"
         >
-          <Plus className="size-4 shrink-0 opacity-50" aria-hidden="true" />
-          <span className="min-w-0 truncate">{t('workspace.newSession')}</span>
+          <SquarePen className="size-[18px] shrink-0" aria-hidden="true" />
+          <span className="min-w-0 flex-1 truncate text-left">{t('workspace.newSession')}</span>
+          <kbd
+            data-testid="pro-workspace-new-session-shortcut"
+            className="ws-kbd"
+            aria-hidden="true"
+          >
+            {newChatShortcut.label}
+          </kbd>
         </button>
       </div>
 
-      {/* ── Two tabs, one body ───────────────────────────────────────────
-          Chat and courses are both yours and both maintained, so they are two
-          VIEWS OF ONE REGION rather than two stacked lists dividing one
-          column between them — at rest the old shape gave each of them five
-          rows and spent the difference on heads. */}
-      <RailTabs
-        active={tab}
-        onSelect={selectTab}
-        tabs={[
-          {
-            id: 'sessions',
-            label: t('workspace.sections.sessions'),
-          },
-          {
-            id: 'courses',
-            label: t('workspace.sections.courses'),
-          },
-        ]}
-      />
-
-      {/* Find, under the tabs — the prototype's findrow in form and density:
-          one ALWAYS-VISIBLE icon+input row heading the tab content, filtering
-          whichever list is on screen. Each tab keeps its own query (the two
-          sections' hooks are untouched), so a search typed on one tab stays
-          put while the other is visited. On the courses tab the row also
-          carries a new-folder button as an icon button grouped with the input:
-          the prototype hangs it at the tree's foot, where in this rail it read
-          as a row the tree contained; in the header row it reads as an action
-          on the whole
-          list, which is what it is. */}
-      <div className="flex shrink-0 items-center gap-1.5 px-3 pb-2 pt-2.5">
-        <div className="ws-find min-w-0 flex-1">
-          <Search className="size-3.5 shrink-0" aria-hidden="true" />
-          <input
-            data-testid={`pro-nav-search-input-${tab}`}
-            value={tab === 'sessions' ? sessionsSection.query : coursesSection.query}
-            onChange={(event) => {
-              const value = event.target.value;
-              if (tab === 'sessions') sessionsSection.setQuery(value);
-              else {
-                // Searching switches to a flat result list. End inline folder
-                // creation, and any folder rename, explicitly before changing
-                // that tree structure — neither row exists in the flat list.
-                if (value && newFolderOpen) setNewFolderOpen(false);
-                if (value && renamingFolderId) setRenamingFolderId(null);
-                coursesSection.setQuery(value);
-              }
-            }}
-            onKeyDown={(event) => {
-              if (event.key !== 'Escape') return;
-              event.preventDefault();
-              if (tab === 'sessions') sessionsSection.setQuery('');
-              else coursesSection.setQuery('');
-            }}
-            placeholder={t('workspace.searchPlaceholder')}
-            aria-label={t('workspace.searchAria', {
-              section:
-                tab === 'sessions'
-                  ? t('workspace.sections.sessions')
-                  : t('workspace.sections.courses'),
-            })}
-            className="ws-find-input min-w-0 flex-1"
-          />
-        </div>
-        {tab === 'courses' ? (
-          <>
-            <button
-              type="button"
-              data-testid="pro-nav-import-course"
-              onClick={() => {
-                coursesSection.setQuery('');
-                courses.triggerImport();
-              }}
-              disabled={courses.importing}
-              aria-label={t('import.classroom')}
-              title={t('import.classroom')}
-              className="ws-find-icon disabled:pointer-events-none disabled:opacity-50"
-            >
-              <Upload className="size-4" aria-hidden="true" />
-            </button>
-            {foldersAvailable ? (
-              <button
-                type="button"
-                data-testid="pro-nav-new-folder"
-                onClick={() => {
-                  coursesSection.setQuery('');
-                  setNewFolderOpen(true);
-                }}
-                aria-expanded={newFolderOpen}
-                aria-controls={newFolderOpen ? 'pro-nav-inline-new-folder' : undefined}
-                aria-label={t('classroom.newFolderTitle')}
-                title={t('classroom.newFolderTitle')}
-                className="ws-find-icon"
-              >
-                <FolderPlus className="size-4" aria-hidden="true" />
-              </button>
-            ) : null}
-          </>
-        ) : null}
+      {/* Destinations: search, the built-in pages, then the host's. */}
+      <div
+        className="flex shrink-0 flex-col gap-px px-2 pb-1 pt-1"
+        data-testid="pro-nav-destinations"
+      >
+        <button
+          type="button"
+          data-testid="pro-nav-search"
+          onClick={onOpenSearch}
+          aria-keyshortcuts={searchShortcut.aria}
+          className="ws-nav-item"
+        >
+          <Search className="size-[18px] shrink-0" aria-hidden="true" />
+          <span className="min-w-0 flex-1 truncate text-left">{t('workspace.nav.search')}</span>
+          <kbd data-testid="pro-nav-search-shortcut" className="ws-kbd" aria-hidden="true">
+            {searchShortcut.label}
+          </kbd>
+        </button>
+        {destinations.map((item) => (
+          <RailDestinationButton key={item.id} item={item} />
+        ))}
       </div>
+
+      <div className="ws-seam-rail mx-4 my-2 shrink-0" aria-hidden="true" />
 
       <div
-        role="tabpanel"
-        id="pro-nav-tabpanel"
-        data-testid="pro-nav-tabpanel"
-        aria-labelledby={`pro-nav-tab-${tab}`}
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2 pt-1.5"
+        data-testid="pro-nav-list"
+        className="ws-scroll flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2 pt-1.5"
       >
-        {tab === 'sessions' ? (
-          <RailList
+        <RailList
+          id="sessions"
+          title={t('workspace.sections.sessions')}
+          count={sessions.length}
+          state={sessionState}
+          emptyLabel={t('workspace.sessionsEmpty')}
+          onRetry={onReloadSessions}
+        >
+          <PagedRows
             id="sessions"
-            title={t('workspace.sections.sessions')}
-            count={sessions.length}
-            state={sessionState}
-            emptyLabel={t('workspace.sessionsEmpty')}
-            onRetry={onReloadSessions}
-          >
-            {sessionsSection.query.trim() && matchedSessions.length === 0 ? (
-              <RailEmpty label={t('workspace.searchEmpty')} />
-            ) : (
-              <PagedRows
-                id="sessions"
-                items={matchedSessions}
-                initial={SESSION_ROW_LIMIT}
-                pages={pagesFor(pages, 'sessions')}
-                onMore={() => openPage('sessions', matchedSessions, SESSION_ROW_LIMIT)}
-                onCollapse={() => collapsePage('sessions')}
-                render={(session) => renderSessionRow(session)}
-              />
-            )}
-          </RailList>
-        ) : (
-          <RailList
-            id="courses"
-            title={t('workspace.sections.courses')}
-            count={orderedCourses.length + pendingRuns.length}
-            state={courses.state}
-            emptyLabel={t('workspace.coursesEmpty')}
-            onRetry={courses.reload}
-          >
-            {!foldersAvailable ? (
-              <>
-                {searchingCourses ? null : renderPendingRuns()}
-                {renderCourseList(matchedOwned, 'unfiled')}
-              </>
-            ) : searchingCourses ? (
-              // Flattened: folders are not a filter, they are a location, and a
-              // search that only looked inside the open one would lie. It stays
-              // inside this tab's own population — searching your work does not
-              // silently start returning other people's.
-              matchedOwned.length === 0 ? (
-                <RailEmpty label={t('workspace.searchEmpty')} />
-              ) : (
-                renderCourseList(matchedOwned, 'search-owned')
-              )
-            ) : (
-              <>
-                {newFolderOpen ? (
-                  <InlineNewFolderRow
-                    folders={courses.folders}
-                    onCreate={handleCreateFolder}
-                    onCancel={() => setNewFolderOpen(false)}
-                  />
-                ) : null}
-
-                {tree.groups.map((group) => {
-                  const open = openFolders.has(group.folder.id);
-                  return (
-                    <div key={group.folder.id}>
-                      {group.folder.id === renamingFolderId ? (
-                        <InlineNameRow
-                          testId={`pro-nav-folder-rename-${group.folder.id}`}
-                          initialName={group.folder.name}
-                          placeholder={t('classroom.folderNamePlaceholder')}
-                          ariaLabel={t('classroom.folderNameLabel')}
-                          maxLength={80}
-                          leading={<span className="ws-tree-lead" aria-hidden="true" />}
-                          inputClassName="ws-folder-name"
-                          onSubmit={(name) => submitFolderRename(group.folder.id, name)}
-                          onClose={() => setRenamingFolderId(null)}
-                        />
-                      ) : (
-                        // The wrapper, not the button, carries the drop target and
-                        // the hover state: the ⋯ is a SIBLING of the disclosure
-                        // button (never a button inside a button), and a course
-                        // dropped anywhere on the row — glyph, name, count, menu —
-                        // is filed into this folder.
-                        <div
-                          {...(drag.folderProps(group.folder.id) as Record<string, string>)}
-                          className={cn(
-                            'ws-row-wrap ws-row-wrap-actionable group relative flex items-center',
-                            drag.folderTarget === group.folder.id && 'ws-drop-into',
-                          )}
-                        >
-                          <button
-                            type="button"
-                            data-testid={`pro-nav-folder-${group.folder.id}`}
-                            aria-expanded={open}
-                            onClick={() => toggleIn(openFolders, setOpenFolders, group.folder.id)}
-                            title={group.folder.name}
-                            className="ws-row ws-folder-row ws-tree-row flex min-w-0 flex-1 items-center px-2 text-left"
-                          >
-                            {/* The one leading glyph in the tree. A folder is the
-                                only row kind that carries one, and its name
-                                therefore sits one glyph in — that offset IS the
-                                hierarchy. Courses and chats reserve nothing, so
-                                their names start at the panel's own edge. Open /
-                                closed is the disclosure state; there is no
-                                separate twisty to read as well. */}
-                            <span className="ws-tree-lead" aria-hidden="true">
-                              {open ? (
-                                <FolderOpen className="size-4" aria-hidden="true" />
-                              ) : (
-                                <Folder className="size-4" aria-hidden="true" />
-                              )}
-                            </span>
-                            {/* A folder heads the group beneath it, so it carries a
-                                touch more weight than the rows it contains — without
-                                becoming a second section label. */}
-                            <span className="ws-folder-name min-w-0 flex-1 truncate">
-                              {group.folder.name}
-                            </span>
-                            {group.courses.length > 0 ? (
-                              // Same class as a course's page count, so the numbers
-                              // land in one right column.
-                              <span className="ws-row-meta shrink-0">{group.courses.length}</span>
-                            ) : null}
-                          </button>
-                          <div data-ws-no-drag="true" className="ws-row-trailing absolute right-1">
-                            <WorkspaceRowMenu
-                              testId={`pro-nav-folder-more-${group.folder.id}`}
-                              label={group.folder.name}
-                              onRename={() => setRenamingFolderId(group.folder.id)}
-                              // Asked as a question rather than confirmed in the
-                              // menu: unlike a row delete this one moves courses,
-                              // and that consequence needs a sentence.
-                              onDelete={() => setFolderToDelete(group.folder)}
-                              deleteAsksElsewhere
-                            />
-                          </div>
-                        </div>
-                      )}
-                      {open ? (
-                        <div className="ws-nest">
-                          {group.courses.length === 0 ? (
-                            <RailEmpty label={t('classroom.emptyFolderHint')} />
-                          ) : (
-                            renderCourseList(group.courses, `folder-${group.folder.id}`)
-                          )}
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                })}
-
-                {/* Courses that are in no folder are not a group: they are
-                    ROWS, flat at the tree's top level, under the folders. The
-                    tree used to wrap them in an "unfiled" container — a head, a
-                    count and a twisty around "everything that has no head" —
-                    which made the common case (an account with a few folders
-                    and a hundred loose courses) pay a collapsible section for
-                    the absence of filing, and let one press hide the bulk of
-                    the list behind a row that names nothing. Filed courses sit
-                    inside their folder; everything else sits in the tree. The
-                    page window is still one per list (`unfiled`), because this
-                    is still exactly one unbounded list.
-
-                    NOT indented: an inset would put these rows at the same
-                    depth as a folder's members and read as membership in the
-                    folder directly above them, which is the one thing the
-                    retired head was good for. A hair of space says "different
-                    kind of row" without claiming a container. */}
-                <div className={cn('space-y-px', tree.groups.length > 0 && 'ws-loose')}>
-                  {renderPendingRuns()}
-                  {renderCourseList(tree.ungrouped, 'unfiled')}
-                </div>
-              </>
-            )}
-          </RailList>
-        )}
-        {/* The tree's blank ground, as a destination — Finder's own gesture.
-            Filing is a drop onto a folder row; UNFILING needs somewhere to drop
-            too, and the row that used to serve ("unfiled") is gone. So the
-            empty space below the tree takes the drop: it is armed only while a
-            course from a folder is in flight, it says what it will do, and it lights up whole
-            when the pointer is actually over it. It is pinned to the panel's
-            foot
-            (see `.ws-ground-drop`) because a tree this deep would otherwise put
-            it out of reach exactly when it is needed.
-
-            It is a SIBLING of the rows, never their ancestor — `useTreeDrag`
-            hit-tests with `closest()`, so a zone wrapping the tree would turn
-            every row into an unfile target and break reordering outright. And
-            the 1px gaps between rows are not inside it, which is why hovering
-            between two rows still commits nothing. Its target metadata stays
-            present before activation so the first pointermove can hit-test it. */}
-        {tab === 'courses' && foldersAvailable ? (
-          <TreeGroundDrop
-            armed={carriedFromFolder}
-            active={carriedFromFolder && drag.folderTarget === ''}
-            dropProps={drag.folderProps()}
+            items={orderedSessions}
+            initial={SESSION_ROW_LIMIT}
+            pages={pagesFor(pages, 'sessions')}
+            onMore={() => openPage('sessions', orderedSessions, SESSION_ROW_LIMIT)}
+            onCollapse={() => collapsePage('sessions')}
+            render={(session) => renderSessionRow(session)}
           />
-        ) : null}
+        </RailList>
       </div>
 
-      <RailUtilities
-        libraryOpen={libraryOpen}
-        onOpenLibrary={onOpenLibrary}
-        onOpenSettings={() => setSettingsOpen(true)}
-      />
+      {/* The account block: who is here, and the menu with everything a top
+          bar would otherwise carry (language, theme, settings, the project's
+          links, and the host's own entries). */}
+      <div
+        className="ws-rail-foot shrink-0 px-2.5 pb-2.5 pt-2"
+        aria-label={t('workspace.utilitiesAria')}
+        data-testid="pro-rail-utilities"
+      >
+        <WorkspaceAccountBlock onOpenSettings={onOpenSettings} />
+      </div>
 
       {resizeHandle}
-
-      {/* The model/provider settings dialog — the same component the classic
-          home opens from its header pill. The rail owns the mount so the
-          trigger in the foot cluster stays one component away from its dialog,
-          like the folder-delete question below. */}
-      <SettingsDialog
-        open={settingsOpen}
-        onOpenChange={(next) => {
-          setSettingsOpen(next);
-        }}
-      />
-
-      {/* Deleting a folder does something to the courses inside it, so it is
-          asked as a question with that consequence stated — not the two-press
-          confirm a row delete gets. Only the keeping mode is offered (see
-          `deleteFolderKeepingCourses`). */}
-      <AlertDialog
-        open={folderToDelete !== null}
-        onOpenChange={(next) => {
-          if (!next) setFolderToDelete(null);
-        }}
-      >
-        <AlertDialogContent data-testid="pro-nav-folder-delete-dialog" className="sm:max-w-[400px]">
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t('classroom.deleteFolderTitle', { name: folderToDelete?.name ?? '' })}
-            </AlertDialogTitle>
-            <AlertDialogDescription>{t('workspace.folderDeleteHint')}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              data-testid="pro-nav-folder-delete-confirm"
-              onClick={() => {
-                const folder = folderToDelete;
-                setFolderToDelete(null);
-                if (folder) void deleteFolderKeepingCourses(folder.id);
-              }}
-            >
-              {t('workspace.delete')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </nav>
   );
 }
 
 /* ── Rail lists ───────────────────────────────────────────────────────── */
 
-interface ListSearch {
-  readonly query: string;
-  readonly setQuery: (value: string) => void;
-  readonly searchOpen: boolean;
-  readonly openSearch: () => void;
-  readonly closeSearch: () => void;
-}
-
 /**
- * One list's filter state. Called once per list, and per-list is the point:
- * each tab keeps its own query, so switching tabs does not carry a search
- * across to a population it was never typed against.
- *
- * Collapse used to live here too. It does not any more — the chat and course
- * lists are collapsed by choosing the OTHER tab.
- */
-function useListSearch(): ListSearch {
-  const [query, setQuery] = useState('');
-  const [searchOpen, setSearchOpen] = useState(false);
-
-  return {
-    query,
-    setQuery,
-    searchOpen,
-    openSearch: () => setSearchOpen(true),
-    closeSearch: () => {
-      setSearchOpen(false);
-      setQuery('');
-    },
-  };
-}
-
-/**
- * A row being renamed, in place.
- *
- * The row you are editing IS the row you were looking at: same height, same
- * indent, same type — a dialog would move the name somewhere else to change it,
- * and at rail width there is nothing a dialog could show that the row cannot.
- * Enter commits, Escape leaves the name alone, and a refusal from the server
- * (a duplicate folder name, a course that is not yours) is shown under the row
- * with the input still holding what was typed, so it can be fixed rather than
- * retyped.
- *
- * `onSubmit` returns the message to show, or null when the rename landed.
- */
-function InlineNameRow({
-  testId,
-  initialName,
-  placeholder,
-  ariaLabel,
-  maxLength,
-  leading,
-  inputClassName,
-  allowEmpty = false,
-  onSubmit,
-  onClose,
-}: {
-  readonly testId: string;
-  readonly initialName: string;
-  readonly placeholder: string;
-  readonly ariaLabel: string;
-  readonly maxLength: number;
-  /** Glyphs the row carries before the name, so the input lines up with it. */
-  readonly leading?: ReactNode;
-  readonly inputClassName?: string;
-  /**
-   * An empty box is a legal answer. False for a folder or a course, whose names
-   * are required; true for a chat, where clearing the box drops the override
-   * and the title goes back to being derived from the first message.
-   */
-  readonly allowEmpty?: boolean;
-  readonly onSubmit: (name: string) => Promise<string | null>;
-  readonly onClose: () => void;
-}) {
-  const { t } = useI18n();
-  const [name, setName] = useState(initialName);
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const errorId = `${testId}-error`;
-
-  useEffect(() => {
-    // Selected, not just focused: renaming usually means replacing.
-    inputRef.current?.focus();
-    inputRef.current?.select();
-  }, []);
-
-  const submit = async () => {
-    if (submitting) return;
-    setSubmitting(true);
-    try {
-      const message = await onSubmit(name);
-      if (message) {
-        setError(message);
-        return;
-      }
-      onClose();
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div>
-      <form
-        data-testid={testId}
-        className="ws-row ws-inline-folder ws-tree-row flex w-full items-center px-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void submit();
-        }}
-      >
-        {leading}
-        <input
-          ref={inputRef}
-          data-testid={`${testId}-input`}
-          value={name}
-          onChange={(event) => {
-            setName(event.target.value);
-            setError(null);
-          }}
-          onKeyDown={(event) => {
-            if (event.key !== 'Escape') return;
-            event.preventDefault();
-            onClose();
-          }}
-          placeholder={placeholder}
-          aria-label={ariaLabel}
-          aria-invalid={Boolean(error)}
-          aria-describedby={error ? errorId : undefined}
-          maxLength={maxLength}
-          disabled={submitting}
-          className={cn('ws-inline-folder-input min-w-0 flex-1', inputClassName)}
-        />
-        <button
-          type="submit"
-          data-testid={`${testId}-confirm`}
-          disabled={(!allowEmpty && !name.trim()) || submitting}
-          aria-label={t('common.confirm')}
-          title={t('common.confirm')}
-          className="ws-inline-folder-action"
-        >
-          <Check className="size-3.5" aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          data-testid={`${testId}-cancel`}
-          onClick={onClose}
-          disabled={submitting}
-          aria-label={t('common.cancel')}
-          title={t('common.cancel')}
-          className="ws-inline-folder-action"
-        >
-          <X className="size-3.5" aria-hidden="true" />
-        </button>
-      </form>
-      {error ? (
-        <p id={errorId} role="alert" className="ws-inline-folder-error pb-1 pr-2 pt-0.5">
-          {error}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-/**
- * The blank ground under the tree, as the place a course is dropped to leave
- * its folder.
- *
- * Invisible and inert at rest — it is just the breathing room at the foot of
- * the list. While a course is being carried it becomes a stated destination
- * (a dashed outline and one line of copy), and it fills whole the moment the
- * pointer is over it, which is the same "this is a container, not an insertion
- * point" language a folder row speaks.
- */
-function TreeGroundDrop({
-  armed,
-  active,
-  dropProps,
-}: {
-  readonly armed: boolean;
-  readonly active: boolean;
-  readonly dropProps: Record<string, unknown>;
-}) {
-  const { t } = useI18n();
-  return (
-    <div
-      data-testid="pro-nav-tree-ground-drop"
-      data-armed={armed ? 'true' : 'false'}
-      {...(dropProps as Record<string, string>)}
-      className={cn('ws-ground-drop', armed && 'ws-ground-drop-armed', active && 'ws-drop-into')}
-    >
-      {armed ? <span className="ws-ground-drop-label">{t('workspace.dropToUnfile')}</span> : null}
-    </div>
-  );
-}
-
-/** A folder row in the course tree while its name is being entered. */
-function InlineNewFolderRow({
-  folders,
-  onCreate,
-  onCancel,
-}: {
-  readonly folders: readonly { readonly name: string }[];
-  readonly onCreate: (name: string) => Promise<void>;
-  readonly onCancel: () => void;
-}) {
-  const { t } = useI18n();
-  const [name, setName] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  const submit = async () => {
-    if (submitting) return;
-
-    const widthCheck = validateFolderName(name);
-    if (!widthCheck.ok) {
-      setError(
-        widthCheck.kind === 'empty'
-          ? t('classroom.folderNameEmpty')
-          : t('classroom.folderWidth', {
-              width: widthCheck.width,
-              max: FOLDER_NAME_MAX_WIDTH,
-            }),
-      );
-      return;
-    }
-
-    const trimmed = name.trim();
-    if (folders.some((folder) => folder.name.toLowerCase() === trimmed.toLowerCase())) {
-      setError(t('classroom.folderNameExists'));
-      return;
-    }
-    if (folders.length >= FOLDER_COUNT_LIMIT) {
-      setError(t('classroom.folderCountLimit'));
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      await onCreate(trimmed);
-      onCancel();
-    } catch (caught) {
-      if (caught instanceof WorkspaceFolderNameError) {
-        setError(
-          caught.kind === 'duplicate'
-            ? t('classroom.folderNameExists')
-            : caught.kind === 'tooLong'
-              ? t('classroom.folderWidth', {
-                  width: displayNameWidth(trimmed),
-                  max: FOLDER_NAME_MAX_WIDTH,
-                })
-              : caught.kind === 'limit'
-                ? t('classroom.folderCountLimit')
-                : t('classroom.folderNameHint'),
-        );
-      } else {
-        setError(t('classroom.folderCreateFailed'));
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div id="pro-nav-inline-new-folder">
-      <form
-        data-testid="pro-nav-inline-new-folder"
-        className="ws-row ws-inline-folder ws-tree-row flex w-full items-center px-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void submit();
-        }}
-      >
-        {/* The tree's leading slot, with the glyph inside it: a creation row keeps
-            saying WHAT is being created, and its input still starts in the same
-            column as every name in the list. */}
-        <span className="ws-tree-lead" aria-hidden="true">
-          <Folder className="ws-glyph size-4" aria-hidden="true" />
-        </span>
-        <input
-          ref={inputRef}
-          data-testid="pro-nav-inline-new-folder-input"
-          value={name}
-          onChange={(event) => {
-            setName(event.target.value);
-            setError(null);
-          }}
-          onKeyDown={(event) => {
-            if (event.key !== 'Escape') return;
-            event.preventDefault();
-            onCancel();
-          }}
-          placeholder={t('classroom.folderNamePlaceholder')}
-          aria-label={t('classroom.folderNameLabel')}
-          aria-invalid={Boolean(error)}
-          aria-describedby={error ? 'pro-nav-inline-new-folder-error' : undefined}
-          maxLength={80}
-          disabled={submitting}
-          className="ws-inline-folder-input min-w-0 flex-1"
-        />
-        <button
-          type="submit"
-          data-testid="pro-nav-inline-new-folder-confirm"
-          disabled={!name.trim() || submitting}
-          aria-label={t('classroom.folderCreate')}
-          title={t('classroom.folderCreate')}
-          className="ws-inline-folder-action"
-        >
-          <Check className="size-3.5" aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={submitting}
-          aria-label={t('common.cancel')}
-          title={t('common.cancel')}
-          className="ws-inline-folder-action"
-        >
-          <X className="size-3.5" aria-hidden="true" />
-        </button>
-      </form>
-      {error ? (
-        <p
-          id="pro-nav-inline-new-folder-error"
-          role="alert"
-          className="ws-inline-folder-error pb-1 pr-2 pt-0.5"
-        >
-          {error}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-/**
- * One tab's list, without a head of its own.
- *
- * The tab above it already carries the name, so repeating it here would rebuild
- * the stacked-section shape this pass replaced. The filter lives in the findrow
- * under the tab strip (see the rail's render); what is left here is the three
- * states a list can be in before it has any rows to show. `count` is read, not
+ * The chat list, without a head of its own: the three states a list can be
+ * in before it has any rows to show. `count` is read, not
  * rendered — it is how this component knows the list is empty.
  */
 function RailList({
@@ -1727,7 +622,7 @@ function RailList({
   children,
 }: {
   readonly id: string;
-  /** Names the region for assistive tech; the tab states it on screen. */
+  /** Names the region for assistive tech. */
   readonly title: string;
   readonly state: HomeDiscoveryState;
   readonly count: number;
@@ -1761,100 +656,6 @@ function RailList({
         ) : null}
       </div>
     </section>
-  );
-}
-
-/* ── The tab switch ───────────────────────────────────────────────────── */
-
-export interface RailTabSpec {
-  readonly id: RailTab;
-  readonly label: string;
-}
-
-/**
- * Chat | courses, over one body — a SEGMENTED CONTROL of two equal halves.
- *
- * It used to be an underline strip sized to its own labels and parked at the
- * left, on the reasoning that a filled segment reads as a mode while tabs read
- * as views. Two lists that take turns owning the whole body ARE a mode, and at
- * rail width the underline was the quietest mark in a column of louder ones:
- * the selected tab got a 2px hairline while every row beneath it could take a
- * filled pill. So the switch spends the width it has — one track, two halves,
- * the selected half on a raised solid ground — and becomes the first thing the
- * eye lands on under the compose button.
- *
- * The truncation the old shape was avoiding is real and is paid for in TYPE,
- * not in width: "COURSES" as a 10px uppercase label with 0.145em of tracking
- * does not fit in half of a 200px rail, so the label drops the case transform
- * and the tracking (see `.ws-navtab-label`). Same two words, a third narrower,
- * and still legible at the narrowest rail.
- *
- * NOTHING but the label. Each half used to carry its list's total; a switch is
- * for choosing which list you are looking at, and how many things are in the
- * other one is not part of that choice — the totals said nothing you could act
- * on and were the loudest numerals in the rail. No glyph either, for the same
- * reason: a two-word text label does not need one. Run state is likewise not
- * summarized here; it stays on the chat row inside the chat list.
- */
-function RailTabs({
-  tabs,
-  active,
-  onSelect,
-}: {
-  readonly tabs: readonly RailTabSpec[];
-  readonly active: RailTab;
-  readonly onSelect: (tab: RailTab) => void;
-}) {
-  const { t } = useI18n();
-  const buttons = useRef(new Map<RailTab, HTMLButtonElement | null>());
-
-  const step = (delta: 1 | -1) => {
-    const index = tabs.findIndex((tab) => tab.id === active);
-    if (index < 0) return;
-    // Wraps, as the ARIA tabs pattern expects of a horizontal tablist.
-    const next = tabs[(index + delta + tabs.length) % tabs.length];
-    if (!next) return;
-    onSelect(next.id);
-    buttons.current.get(next.id)?.focus();
-  };
-
-  return (
-    <div
-      role="tablist"
-      aria-label={t('workspace.tabsAria')}
-      data-testid="pro-nav-tablist"
-      className="ws-navtabs mx-3 flex shrink-0 items-stretch"
-      onKeyDown={(event) => {
-        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-        event.preventDefault();
-        step(event.key === 'ArrowRight' ? 1 : -1);
-      }}
-    >
-      {tabs.map((tab) => {
-        const selected = tab.id === active;
-        return (
-          <button
-            key={tab.id}
-            ref={(node) => {
-              buttons.current.set(tab.id, node);
-            }}
-            type="button"
-            role="tab"
-            id={`pro-nav-tab-${tab.id}`}
-            data-testid={`pro-nav-tab-${tab.id}`}
-            aria-selected={selected}
-            aria-controls="pro-nav-tabpanel"
-            // Roving tabindex: one stop for the whole strip, arrows inside.
-            tabIndex={selected ? 0 : -1}
-            onClick={() => onSelect(tab.id)}
-            title={tab.label}
-            className="ws-navtab flex min-w-0 flex-1 items-center justify-center"
-          >
-            <span className="ws-navtab-label min-w-0 truncate">{tab.label}</span>
-          </button>
-        );
-      })}
-    </div>
   );
 }
 
@@ -1929,148 +730,32 @@ function PagedRows<T>({
   );
 }
 
-/**
- * The ⋯ shared by folder rows, authored course rows and chat rows.
- *
- * One menu shape for every maintainable row in the rail: rename first (it is
- * the one you press on purpose), then the destructive entry. The delete answers
- * in one of two places — in the menu, as a second press on the same item, or
- * elsewhere entirely (`deleteAsksElsewhere`) when the consequence needs a
- * sentence, as a folder's does.
- */
-function WorkspaceRowMenu({
-  testId,
-  label,
-  onRename,
-  onDelete,
-  deleteAsksElsewhere = false,
-}: {
-  readonly testId: string;
-  readonly label: string;
-  /** Absent on rows that cannot be renamed (a course somebody else authored). */
-  readonly onRename?: () => void;
-  readonly onDelete: () => Promise<void> | void;
-  /** True when `onDelete` opens its own confirmation instead of deleting. */
-  readonly deleteAsksElsewhere?: boolean;
-}) {
-  const { t } = useI18n();
-  const [open, setOpen] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
-  return (
-    <DropdownMenu
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (!next) setConfirming(false);
-      }}
-    >
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          data-testid={testId}
-          aria-label={t('workspace.rowMore', { name: label })}
-          title={t('workspace.rowMore', { name: label })}
-          onClick={(event) => event.stopPropagation()}
-          onPointerDown={(event) => event.stopPropagation()}
-          className="ws-row-action inline-flex size-6 shrink-0 items-center justify-center rounded-md"
-        >
-          <MoreHorizontal className="size-3.5" aria-hidden="true" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        className="pro-popover w-40"
-        onClick={(event) => event.stopPropagation()}
-        onPointerDown={(event) => event.stopPropagation()}
-      >
-        {onRename ? (
-          <>
-            <DropdownMenuItem
-              data-testid={`${testId}-rename`}
-              onSelect={() => {
-                setOpen(false);
-                onRename();
-              }}
-            >
-              <Pencil className="size-3.5" aria-hidden="true" />
-              {t('classroom.rename')}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-          </>
-        ) : null}
-        <DropdownMenuItem
-          data-testid={`${testId}-${confirming ? 'confirm-delete' : 'delete'}`}
-          variant="destructive"
-          disabled={deleting}
-          onSelect={(event) => {
-            if (deleteAsksElsewhere) {
-              setOpen(false);
-              onDelete();
-              return;
-            }
-            if (!confirming) {
-              event.preventDefault();
-              setConfirming(true);
-              return;
-            }
-            setDeleting(true);
-            void Promise.resolve(onDelete()).finally(() => {
-              setDeleting(false);
-              setOpen(false);
-            });
-          }}
-        >
-          <Trash2 className="size-3.5" aria-hidden="true" />
-          {deleting
-            ? t('workspace.deleting')
-            : confirming
-              ? t('workspace.confirmDelete')
-              : t('workspace.delete')}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
 function RailRow({
   testId,
   label,
   meta,
   metaTestId,
-  leading,
+  statusMark,
   trailing,
-  statusLabel,
-  course = false,
   rowClassName,
   labelClassName,
   active = false,
-  generating = false,
-  hint,
   onClick,
   dragProps,
   dragging = false,
   dropEdge = null,
   onMove,
-  trailingMark,
 }: {
   readonly testId?: string;
   readonly label: string;
   readonly meta?: string | null;
   readonly metaTestId?: string;
-  readonly leading?: ReactNode;
+  /** A state worth a mark (running, failed), in the metadata's place. */
+  readonly statusMark?: ReactNode;
   readonly trailing?: ReactNode;
-  readonly statusLabel?: string;
-  /** Course entries use the rail's tighter artifact row and stronger name. */
-  readonly course?: boolean;
   readonly rowClassName?: string;
   readonly labelClassName?: string;
   readonly active?: boolean;
-  /** A course a generation run is still producing (see `courseRuns`). */
-  readonly generating?: boolean;
-  /** Said after the label in the tooltip — why the row does what it does. */
-  readonly hint?: string;
   /** Absent: the row is shown but cannot be acted on (`aria-disabled`). */
   readonly onClick?: () => void;
   /** `useTreeDrag`'s row hooks — data attributes plus the pointer-down. */
@@ -2079,13 +764,6 @@ function RailRow({
   readonly dropEdge?: 'before' | 'after' | null;
   /** Alt+↑/↓, the keyboard's version of the drag. */
   readonly onMove?: (delta: -1 | 1) => void;
-  /**
-   * A mark that belongs with the row's metadata, not before its name — a chat's
-   * status dot / spinner. It renders after `meta` so a chat name and a course
-   * name begin in the same column; a leading mark is what made the two tabs
-   * disagree about where the column is.
-   */
-  readonly trailingMark?: ReactNode;
 }) {
   return (
     // The row is a button; `trailing` (a menu) is a sibling, not a child, so
@@ -2113,39 +791,28 @@ function RailRow({
           onMove(event.key === 'ArrowUp' ? -1 : 1);
         }}
         data-testid={testId}
-        data-generating={generating || undefined}
-        title={hint ? `${label} · ${hint}` : label}
+        title={label}
         aria-current={active ? 'page' : undefined}
         aria-disabled={onClick ? undefined : true}
         className={cn(
           'ws-row flex min-w-0 flex-1 items-center px-2 text-left',
-          // NO flex gap, on either row kind: the leading slot's own width is the
-          // only space before the name and `.ws-row-meta`'s margin the only
-          // space after it, so the whole leading column is one number and a
-          // chat's name lands in the same column as a course's.
+          // NO flex gap: `.ws-row-meta`'s margin is the only space after the name.
           'ws-tree-row',
-          course && 'ws-course',
-          generating && 'ws-course-generating',
           rowClassName,
           active && 'ws-row-active',
         )}
       >
-        {/* No leading slot on a course or a chat row: the name starts at the
-            row's own `px-2`, which is the panel edge the eye is already on. Only
-            a folder carries a glyph, and only a folder's name is offset by it.
-            Nothing is drawn outside the row either — hover and selection are one
-            pill filling it, so neither state can move the text by a pixel. */}
-        {leading}
         <span className="min-w-0 flex-1">
           <span className={cn('block truncate', labelClassName ?? 'text-[13px]')}>{label}</span>
         </span>
-        {statusLabel ? <span className="sr-only">{statusLabel}</span> : null}
         {meta ? (
           <span data-testid={metaTestId} className="ws-row-meta shrink-0">
             {meta}
           </span>
         ) : null}
-        {trailingMark}
+        {statusMark ? (
+          <span className="ws-row-meta ws-row-status shrink-0">{statusMark}</span>
+        ) : null}
       </button>
       {trailing ? (
         // Its own pointer semantics — a press here opens the menu, it never
@@ -2157,221 +824,68 @@ function RailRow({
     </div>
   );
 }
+/* ── Destinations ─────────────────────────────────────────────────────── */
 
-function SessionDot({ status }: { readonly status: ProHomeSessionItem['status'] }) {
-  // Live states spin; EVERY other status — failed and the rest of the
-  // terminal set — is a static dot, so a dead session can never render a
-  // spinner even before the store's failure-status fix lands. Both marks sit
-  // in the row's TRAILING metadata (`ws-status-slot`), beside the timestamp: a
-  // chat's status is metadata like its time, and a leading mark was what made
-  // every chat name start a slot right of every course name. The box is fixed
-  // width so the spinner and the dot hold identical footprint and a running row
-  // does not shift its neighbours.
-  const live = status === 'running' || status === 'queued';
-  return (
-    <span aria-hidden="true" className="ws-status-slot">
-      {live ? (
-        <LoaderCircle className="ws-spin-live" />
-      ) : (
-        <span className={cn('ws-dot', status === 'failed' ? 'ws-dot-fail' : undefined)} />
-      )}
-    </span>
-  );
-}
-
-/* ── Rail foot ────────────────────────────────────────────────────────── */
-
-/**
- * The classic header's utilities, at the rail's foot.
- *
- * These are SiteHeader's own components — locale, theme, feedback, community
- * and the account entry each keep exactly one implementation. Nothing the
- * classic chrome offers is dropped; what changes is only which of them are on
- * the surface. Theme and account are one press away because they are pressed
- * daily; feedback and the community links are a press further, behind one
- * quiet ⋯, because a rail is navigation first and a settings bar second.
- *
- * The settings entry lives here too, in the slot the removed saved-courses
- * drawer left in this cluster (a product decision on this branch: the drawer
- * could only ever render empty, and the model/provider dialog is the one
- * surface-wide setting the workspace still needs). It is the same dialog the
- * classic home opens from its header pill; the rail trigger owns its own
- * mount.
- *
- * The product ships no reusable notification bell (the only Bell in the tree
- * belongs to the community dialog), so there is nothing to cluster here for
- * notifications.
- */
-function RailUtilities({
-  libraryOpen,
-  onOpenLibrary,
-  onOpenSettings,
-}: {
-  readonly libraryOpen: boolean;
-  readonly onOpenLibrary: () => void;
-  readonly onOpenSettings: () => void;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="shrink-0" data-testid="pro-rail-utilities">
-      {/* The knowledge base is a page, not a third tab beside Chats and
-          Courses (RFC #1716): one row at the foot, selected while it fills
-          the main area. */}
-      <div className="px-3 pb-2">
-        <button
-          type="button"
-          data-testid="pro-nav-library"
-          onClick={onOpenLibrary}
-          aria-current={libraryOpen ? 'page' : undefined}
-          className={cn(
-            'ws-row flex h-9 w-full min-w-0 items-center gap-2 px-2 text-left text-[13px]',
-            libraryOpen && 'ws-row-active',
-          )}
-        >
-          <Library className="size-4 shrink-0 opacity-60" aria-hidden="true" />
-          <span className="min-w-0 truncate">{t('workspace.knowledgeBase.title')}</span>
-        </button>
-      </div>
-      <div className="ws-seam-rail mx-4" aria-hidden="true" />
-      <div
-        aria-label={t('workspace.utilitiesAria')}
-        className="ws-utils flex items-center gap-0.5 px-3 py-2.5"
-      >
-        <LanguageSwitcher />
-        <ThemeToggle />
-        <button
-          type="button"
-          data-testid="pro-nav-settings"
-          onClick={onOpenSettings}
-          aria-label={t('settings.title')}
-          title={t('settings.title')}
-          className="ws-util-btn"
-        >
-          <Settings className="size-4" aria-hidden="true" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Widest the one-row panel can get (locale + feedback + separator + three
- * community icons). Only the viewport clamp uses it, so an estimate on the
- * generous side is exactly right — the panel itself is `max-content`.
- */
-const OVERFLOW_WIDTH_PX = 240;
-
-/**
- * The ⋯ at the foot, and the small panel it opens.
- *
- * Portalled to `.ws-root` rather than rendered in place, for two reasons that
- * are both about the rail: the rail carries `backdrop-filter`, which makes it
- * the containing block for any `position: fixed` descendant, and the rail is a
- * narrow column whose scrolling body clips. Escaping to the shell root fixes
- * both while keeping the `--ws-*` tokens (they are declared on `.ws-root`) and
- * the dark-mode variants in scope.
- */
-export function RailOverflow({
-  testId,
-  mini = false,
-  withLanguage = false,
-}: {
+interface RailDestination {
+  readonly id: string;
   readonly testId: string;
+  readonly label: string;
+  readonly icon: WorkbenchShellIcon;
+  readonly active: boolean;
+  readonly tag?: string;
+  readonly href?: string;
+  readonly external?: boolean;
+  readonly onSelect?: () => void;
+}
+
+/**
+ * One destination row (or, folded, one glyph): a page in the main area, or a
+ * link out. The current page is marked `aria-current` and raised.
+ */
+function RailDestinationButton({
+  item,
+  mini = false,
+}: {
+  readonly item: RailDestination;
   readonly mini?: boolean;
-  /** Collapsed rails have no room for the locale switcher on the surface. */
-  readonly withLanguage?: boolean;
 }) {
-  const { t } = useI18n();
-  const [open, setOpen] = useState(false);
-  const [anchor, setAnchor] = useState<{ left: number; bottom: number } | null>(null);
-  const [host, setHost] = useState<HTMLElement | null>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const ownerId = useId();
-
-  const close = useCallback((refocus: boolean) => {
-    setOpen(false);
-    if (refocus) triggerRef.current?.focus();
-  }, []);
-
-  const toggle = () => {
-    if (open) {
-      close(false);
-      return;
-    }
-    const trigger = triggerRef.current;
-    const rect = trigger?.getBoundingClientRect();
-    if (!trigger || !rect) return;
-    // Opens upward: this sits at the bottom of a full-height rail.
-    setAnchor({
-      left: Math.max(8, Math.min(rect.left, window.innerWidth - OVERFLOW_WIDTH_PX - 8)),
-      bottom: Math.max(8, window.innerHeight - rect.top + 8),
-    });
-    setHost(trigger.closest<HTMLElement>('.ws-root') ?? document.body);
-    setOpen(true);
-  };
-
-  // Focus moves into the panel on open: it is portalled to the end of the
-  // tree, so Tab from the trigger would otherwise walk past it entirely.
-  useEffect(() => {
-    if (!open) return;
-    const panel = panelRef.current;
-    const first = panel?.querySelector<HTMLElement>(
-      'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    );
-    (first ?? panel)?.focus();
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    // The anchor is a snapshot of the trigger's box; anything that moves the
-    // trigger (a resize, a pane scrolling) invalidates it, and a stale panel
-    // is worse than no panel.
-    return installFloatingLayerDismissListeners({
-      ownerId,
-      roots: () => [panelRef.current, triggerRef.current],
-      onDismiss: close,
-    });
-  }, [open, close, ownerId]);
-
-  return (
+  const Icon = item.icon;
+  const className = mini ? cn('ws-mini-btn', item.active && 'ws-mini-on') : 'ws-nav-item';
+  const content = mini ? (
+    <Icon className="size-[18px]" aria-hidden />
+  ) : (
     <>
-      <button
-        ref={triggerRef}
-        type="button"
-        data-testid={testId}
-        onClick={toggle}
-        aria-haspopup="true"
-        aria-expanded={open}
-        aria-label={t('workspace.moreUtilities')}
-        title={t('workspace.moreUtilities')}
-        className={mini ? 'ws-mini-btn' : 'ws-util-btn'}
-      >
-        <MoreHorizontal className="size-4" aria-hidden="true" />
-      </button>
-      {open && host && anchor
-        ? createPortal(
-            <FloatingLayerOwner ownerId={ownerId}>
-              <div
-                ref={panelRef}
-                role="group"
-                tabIndex={-1}
-                data-testid={`${testId}-panel`}
-                aria-label={t('workspace.moreUtilities')}
-                className="ws-pop ws-utils"
-                style={{ left: anchor.left, bottom: anchor.bottom }}
-              >
-                {withLanguage ? (
-                  <span className="ws-pop-item" data-testid={`${testId}-language`}>
-                    <LanguageSwitcher />
-                  </span>
-                ) : null}
-              </div>
-            </FloatingLayerOwner>,
-            host,
-          )
-        : null}
+      <Icon className="size-[18px] shrink-0" aria-hidden />
+      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+      {item.tag ? <span className="ws-nav-tag">{item.tag}</span> : null}
     </>
+  );
+  if (item.href && !item.onSelect) {
+    return (
+      <a
+        href={item.href}
+        data-testid={item.testId}
+        aria-label={mini ? item.label : undefined}
+        title={mini ? item.label : undefined}
+        className={className}
+        {...(item.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+      >
+        {content}
+      </a>
+    );
+  }
+  return (
+    <button
+      type="button"
+      data-testid={item.testId}
+      onClick={item.onSelect}
+      aria-current={item.active ? 'page' : undefined}
+      aria-label={mini ? item.label : undefined}
+      title={mini ? item.label : undefined}
+      className={className}
+    >
+      {content}
+    </button>
   );
 }
 
@@ -2436,6 +950,11 @@ function writeStored(key: string, value: string): void {
 
 function writeStoredOrder(key: string, order: readonly string[]): void {
   writeStored(key, serializeOrder(order));
+}
+
+/** A chat whose run is under way (the owner list's live statuses). */
+function sessionRunning(status: ProHomeSessionItem['status']): boolean {
+  return status === 'running' || status === 'queued';
 }
 
 /** Bucket → locale copy. The bucketing itself lives in `pro-home-data`, tested. */

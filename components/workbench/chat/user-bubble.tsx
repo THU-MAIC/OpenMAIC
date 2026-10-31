@@ -1,13 +1,14 @@
 'use client';
 
 /**
- * User bubble — solid fill (the OpenPBL shape: `bg-primary` on
- * `primary-foreground`, tightened trailing corner). Right alignment is the
- * whole authorship signal; there is no avatar and no name.
+ * User bubble — a soft violet fill with ink text and a tightened trailing
+ * corner. Right alignment is the whole authorship signal; there is no avatar
+ * and no name.
  */
 import { BookOpen, Paperclip } from 'lucide-react';
 import type { ElementRef } from '@/lib/workbench/element-refs';
 import type { CourseRef } from '@/lib/workbench/course-refs';
+import { segmentMentions } from '@/lib/workbench/composer-mentions';
 import { wbStyles as styles } from './chat-styles';
 
 /**
@@ -56,16 +57,42 @@ export function UserBubble({
   elementRefs?: readonly ElementRef[];
   courseRefs?: readonly CourseRef[];
 }) {
+  // A course or material named in the sentence (`@name`, as the composer
+  // writes a mention out) is shown there, highlighted; only one the text does
+  // not name keeps its chip below.
+  const named = (name: string) => !!name && text.includes(`@${name}`);
+  const inlineNames = [
+    ...courseRefs.filter((ref) => named(ref.title)).map((ref) => `@${ref.title}`),
+    ...materials.filter(named).map((name) => `@${name}`),
+  ];
+  const chipCourses = courseRefs.filter((ref) => !named(ref.title));
+  const chipMaterials = materials.filter((name) => !named(name));
   return (
     <div className={styles.userBubble.row}>
       <div className={styles.userBubble.bubble}>
-        {text ? <div>{text}</div> : null}
-        {courseRefs.length > 0 ? (
+        {text ? (
+          <div>
+            {segmentMentions(text, inlineNames).map((run, index) =>
+              run.mention ? (
+                <span
+                  key={index}
+                  data-testid="user-bubble-mention"
+                  className={styles.userBubble.mention}
+                >
+                  {run.text}
+                </span>
+              ) : (
+                <span key={index}>{run.text}</span>
+              ),
+            )}
+          </div>
+        ) : null}
+        {chipCourses.length > 0 ? (
           // Which classroom this turn was aimed at, kept with the sentence that
           // aimed it. The title is the snapshot the message carried, not today's
           // name: the receipt has to say what the user picked, then.
           <div className={styles.userBubble.materials}>
-            {courseRefs.map((courseRef) => (
+            {chipCourses.map((courseRef) => (
               <span
                 key={courseRef.stageId}
                 data-testid="user-bubble-course-ref"
@@ -79,9 +106,9 @@ export function UserBubble({
           </div>
         ) : null}
         {elementRefs.length > 0 ? <SentElementRefs refs={elementRefs} /> : null}
-        {materials.length > 0 ? (
+        {chipMaterials.length > 0 ? (
           <div className={styles.userBubble.materials}>
-            {materials.map((name, index) => (
+            {chipMaterials.map((name, index) => (
               <span key={`${name}-${index}`} className={styles.userBubble.materialChip}>
                 <Paperclip size={10} className="shrink-0" aria-hidden="true" />
                 <span className="truncate">{name}</span>
