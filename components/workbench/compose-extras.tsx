@@ -332,11 +332,16 @@ async function probeMaterialsEnabled(): Promise<boolean> {
   if (materialsEnabledCache !== null) return materialsEnabledCache;
   if (!materialsProbe) {
     materialsProbe = fetch('/api/agent/runtime')
-      .then(async (response) => (response.ok ? ((await response.json()) as unknown) : null))
-      .then((body) => {
+      .then(async (response) => {
+        const body = response.ok ? ((await response.json()) as unknown) : null;
+        return { body, ok: response.ok };
+      })
+      .then(({ body, ok }) => {
         const enabled =
           !!body && typeof body === 'object' && (body as { enabled?: unknown }).enabled === true;
-        materialsEnabledCache = enabled;
+        // Only cache authenticated results: a 401 (access-code modal still up)
+        // is not an answer and must not pin the gate off for the whole tab.
+        if (ok) materialsEnabledCache = enabled;
         return enabled;
       })
       .catch(() => false)
@@ -356,11 +361,20 @@ function useMaterialUploadsGate(): MaterialUploadsGate {
   );
   useEffect(() => {
     let cancelled = false;
-    void probeMaterialsEnabled().then((value) => {
-      if (!cancelled) setGate(value ? 'on' : 'off');
-    });
+    const probe = () => {
+      void probeMaterialsEnabled().then((value) => {
+        if (!cancelled) setGate(value ? 'on' : 'off');
+      });
+    };
+    probe();
+    const onAccessVerified = () => {
+      materialsEnabledCache = null;
+      probe();
+    };
+    window.addEventListener('openmaic:access-code-verified', onAccessVerified);
     return () => {
       cancelled = true;
+      window.removeEventListener('openmaic:access-code-verified', onAccessVerified);
     };
   }, []);
   return gate;
