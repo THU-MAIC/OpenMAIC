@@ -194,20 +194,137 @@ describe('Pi Director completion and request cancellation', () => {
         .join(''),
     ).toContain('All steps explained');
   });
-  it('allows a third delegation after two empty Legacy results', async () => {
-    let n = 0;
-    let child = 0;
+  it('terminates the request after two consecutive empty Legacy child results', async () => {
+    let directorCalls = 0;
+    let childCalls = 0;
     mocks.streamLLM.mockImplementation((_p, source) => {
-      if (source !== 'pi-chat-director') {
-        child++;
-        return result([finish()]);
+      if (source === 'pi-chat-director') {
+        directorCalls++;
+        return result([invoke('d' + directorCalls), finish('tool-calls')]);
       }
-      return ++n <= 3 ? result([invoke('d' + n), finish('tool-calls')]) : speech('done');
+      childCalls++;
+      return result([finish()]);
     });
     const events: StatelessEvent[] = [];
-    await run(events);
-    expect(child).toBe(3);
+    await runRoute(events);
+    expect(childCalls).toBe(2);
+    expect(directorCalls).toBe(2);
+    expect(events.some((e) => e.type === 'done')).toBe(false);
+    const errorEvent = events.find((e) => e.type === 'error');
+    expect(errorEvent?.type === 'error' ? errorEvent.data.message : '').toMatch(
+      /usable responses/i,
+    );
+  });
+  it('terminates the request after two consecutive Native child failures', async () => {
+    let directorCalls = 0;
+    let childCalls = 0;
+    mocks.streamLLM.mockImplementation((_p, source) => {
+      if (source === 'pi-chat-director') {
+        directorCalls++;
+        return result([invoke('d' + directorCalls), finish('tool-calls')]);
+      }
+      childCalls++;
+      return result([finish('error')]);
+    });
+    const events: StatelessEvent[] = [];
+    await runRoute(events, 'native');
+    expect(childCalls).toBe(2);
+    expect(events.some((e) => e.type === 'done')).toBe(false);
+    const errorEvent = events.find((e) => e.type === 'error');
+    expect(errorEvent?.type === 'error' ? errorEvent.data.message : '').toMatch(
+      /usable responses/i,
+    );
+  });
+  it('counts a child failure that bypasses onAgentDone', async () => {
+    vi.stubEnv('OPENMAIC_AGENT_TOOL_TIMEOUT_MS', '25');
+    let directorCalls = 0;
+    let childCalls = 0;
+    mocks.streamLLM.mockImplementation((_p, source) => {
+      if (source === 'pi-chat-director') {
+        directorCalls++;
+        return result([invoke('d' + directorCalls), finish('tool-calls')]);
+      }
+      childCalls++;
+      return new Promise(() => {});
+    });
+    const events: StatelessEvent[] = [];
+    await expect(run(events)).rejects.toThrow(/usable responses/i);
+    expect(childCalls).toBe(2);
+    expect(events.some((e) => e.type === 'done')).toBe(false);
+  });
+  it('resets the failure counter after a usable child result', async () => {
+    let directorCalls = 0;
+    let childCalls = 0;
+    mocks.streamLLM.mockImplementation((_p, source) => {
+      if (source === 'pi-chat-director') {
+        directorCalls++;
+        return result([
+          directorCalls <= 3 ? invoke('d' + directorCalls) : call('cue_user', 'cue', {}),
+          finish('tool-calls'),
+        ]);
+      }
+      childCalls++;
+      return childCalls === 2 ? speech('Useful answer') : result([finish()]);
+    });
+    const events: StatelessEvent[] = [];
+    await runRoute(events);
+    expect(childCalls).toBe(3);
+    expect(events.some((e) => e.type === 'error')).toBe(false);
     expect(done(events).totalAgents).toBe(3);
+    expect(done(events).cueUserReceived).toBe(true);
+  });
+  it('does not treat successfully dispatched actions as child failures', async () => {
+    let directorCalls = 0;
+    let childCalls = 0;
+    mocks.streamLLM.mockImplementation((_p, source) => {
+      if (source === 'pi-chat-director') {
+        directorCalls++;
+        return result([
+          directorCalls <= 3 ? invoke('d' + directorCalls) : call('cue_user', 'cue', {}),
+          finish('tool-calls'),
+        ]);
+      }
+      childCalls++;
+      return speech(
+        JSON.stringify([
+          {
+            type: 'action',
+            name: 'wb_draw_text',
+            params: { content: 'item', x: 20, y: 40 },
+          },
+        ]),
+      );
+    });
+    const events: StatelessEvent[] = [];
+    await runRoute(events);
+    expect(childCalls).toBe(3);
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+    expect(done(events).totalActions).toBe(3);
+  });
+  it('does not count request cancellation as a child failure', async () => {
+    const controller = new AbortController();
+    const started = deferred();
+    let directorCalls = 0;
+    let childCalls = 0;
+    mocks.streamLLM.mockImplementation((_p, source) => {
+      if (source === 'pi-chat-director') {
+        directorCalls++;
+        return result([invoke('d' + directorCalls), finish('tool-calls')]);
+      }
+      childCalls++;
+      if (childCalls === 1) return result([finish()]);
+      started.resolve();
+      return new Promise(() => {});
+    });
+    const events: StatelessEvent[] = [];
+    const running = run(events, controller);
+    await started.promise;
+    controller.abort();
+    await running;
+    expect(childCalls).toBe(2);
+    expect(
+      events.some((e) => e.type === 'done' || e.type === 'error' || e.type === 'cue_user'),
+    ).toBe(false);
   });
   it('allows a third Native delegation after two partial token-limited responses', async () => {
     let n = 0;
@@ -225,6 +342,7 @@ describe('Pi Director completion and request cancellation', () => {
     const events: StatelessEvent[] = [];
     await run(events, new AbortController(), 'native');
     expect(child).toBe(3);
+    expect(events.some((e) => e.type === 'error')).toBe(false);
     expect(
       events
         .filter((e) => e.type === 'text_delta')
