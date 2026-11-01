@@ -17,8 +17,10 @@ import {
   parseCritique,
   parseRevisionPatch,
   planLongFormCourse,
+  prioritizeDefects,
   shouldRevise,
 } from '@/lib/generation/long-form';
+import type { AuditDefect } from '@/lib/generation/long-form';
 import type { SceneOutline } from '@/lib/types/generation';
 
 function scene(id: string, type: SceneOutline['type'] = 'slide'): SceneOutline {
@@ -551,5 +553,49 @@ describe('isSafeRevision', () => {
     const result = isSafeRevision(draft, revised);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toContain('scene type');
+  });
+});
+
+describe('prioritizeDefects', () => {
+  /** One page-level finding per page, the shape a draft with a systemic gap has. */
+  function perPage(code: AuditDefect['code'], pages: number): AuditDefect[] {
+    return Array.from({ length: pages }, (_, index) => ({
+      code,
+      pageIndex: index + 1,
+      detail: `${code} on page ${index + 1}`,
+    }));
+  }
+
+  it('keeps a module finding that arrives after thirty page findings', () => {
+    // The repair prompt takes a capped list, and the critic is told not to repeat
+    // the arithmetic. A prefix of six page-level findings therefore meant a
+    // confirmed missing retrieval page never reached the rewriter and shipped.
+    const defects: AuditDefect[] = [
+      ...perPage('missing-objective', 29),
+      { code: 'missing-check', pageIndex: 12, detail: 'module 3 must end with a retrieval page' },
+    ];
+
+    const kept = prioritizeDefects(defects, 8);
+    expect(kept.length).toBeLessThanOrEqual(8);
+    expect(kept.some((defect) => defect.code === 'missing-check')).toBe(true);
+    expect(kept[0]?.code).toBe('missing-check');
+  });
+
+  it('folds a repeated page-level finding into one line', () => {
+    const kept = prioritizeDefects(perPage('missing-objective', 29), 8);
+    const objective = kept.filter((defect) => defect.code === 'missing-objective');
+
+    // Two examples, then one line naming the rest — not twenty-nine entries.
+    expect(objective).toHaveLength(3);
+    expect(objective[2]?.detail).toContain('27 more pages');
+    expect(objective[2]?.detail).toContain('3, 4');
+  });
+
+  it('leaves a short list alone', () => {
+    const defects: AuditDefect[] = [
+      { code: 'duration-drift', pageIndex: null, detail: 'runs 48 minutes' },
+      { code: 'missing-objective', pageIndex: 4, detail: 'no teachingObjective' },
+    ];
+    expect(prioritizeDefects(defects, 8)).toEqual(defects);
   });
 });

@@ -22,7 +22,7 @@
 import type { SceneOutline } from '@/lib/types/generation';
 
 import type { AuditCode, OutlineAudit } from './audit';
-import { auditIsClean } from './audit';
+import { auditIsClean, prioritizeDefects } from './audit';
 
 /** The five things a long-form outline is reviewed on. */
 export const CRITIQUE_DIMENSIONS = [
@@ -65,6 +65,16 @@ export const CRITIQUE_PASS_SCORE = 4;
 
 /** No revision is asked to fix more than this; past it the outline is rewritten, not patched. */
 export const MAX_DEFECTS = 12;
+
+/**
+ * How many arithmetic findings may take part of that list.
+ *
+ * Eight, not twelve: the critic's own judgement still needs room, and a draft
+ * with thirty page-level findings has to be summarised rather than enumerated.
+ * What matters is that the structural codes are inside the eight regardless of
+ * how many pages were checked.
+ */
+export const AUDIT_DEFECT_BUDGET = 8;
 
 /** A revision may not change the page count by more than this fraction. */
 export const MAX_REVISION_DRIFT = 0.25;
@@ -572,16 +582,21 @@ const AUDIT_FIX: Readonly<Record<AuditCode, string>> = {
  *
  * Arithmetic defects come first because they are certain: a rewriter with room
  * for three fixes should spend them on the things that are definitely wrong.
+ * They also come first *within* the arithmetic, because a draft where every page
+ * omits its objective produces one finding per page — enough to fill the list
+ * twice over and push a missing retrieval page out of it entirely.
  */
 export function mergeAuditIntoCritique(critique: Critique, audit: OutlineAudit): Critique {
   if (auditIsClean(audit)) return critique;
 
-  const fromAudit: CritiqueDefect[] = audit.defects.slice(0, 6).map((defect) => ({
-    pageIndex: defect.pageIndex,
-    dimension: 'structure',
-    problem: defect.detail,
-    fix: AUDIT_FIX[defect.code],
-  }));
+  const fromAudit: CritiqueDefect[] = prioritizeDefects(audit.defects, AUDIT_DEFECT_BUDGET).map(
+    (defect) => ({
+      pageIndex: defect.pageIndex,
+      dimension: 'structure',
+      problem: defect.detail,
+      fix: AUDIT_FIX[defect.code],
+    }),
+  );
 
   return {
     ...critique,

@@ -85,6 +85,38 @@ describe('auditOutline', () => {
     expect(defect.pageIndex).toBe(3);
   });
 
+  it('reports a malformed duration instead of letting it poison the totals', () => {
+    // `"120 seconds"` is truthy, so the old guard accepted it; summing it
+    // concatenated into the accumulator, which made the drift NaN — and NaN
+    // fails every comparison, so the page reported clean on both duration checks
+    // at once while the drift silently stopped being checked.
+    const malformed = goodOutline();
+    (malformed[5] as unknown as { estimatedDuration: unknown }).estimatedDuration = '120 seconds';
+    const audit = auditOutline(plan, malformed);
+
+    expect(Number.isNaN(audit.driftPct)).toBe(false);
+    const defect = audit.defects.find((candidate) => candidate.code === 'missing-duration')!;
+    expect(defect.pageIndex).toBe(6);
+  });
+
+  it('keeps module findings on pages the outline actually has', () => {
+    // 24 pages against a 29-page plan is inside the page tolerance, so module
+    // checks still run. Using plan indices named page 25 — which this outline
+    // does not have — and the rewriter's patch for it was rejected as out of
+    // range, taking the whole repair with it.
+    const drifted = goodOutline()
+      .slice(0, 24)
+      .map((scene, index) => ({ ...scene, estimatedDuration: 150, order: index + 1 }));
+    const audit = auditOutline(plan, drifted);
+
+    expect(audit.pages).toBe(24);
+    for (const defect of audit.defects) {
+      if (defect.pageIndex === null) continue;
+      expect(defect.pageIndex).toBeGreaterThanOrEqual(1);
+      expect(defect.pageIndex).toBeLessThanOrEqual(24);
+    }
+  });
+
   it('does not count an interactive page the pipeline would turn into a slide', () => {
     // `applyOutlineFallbacks` converts an interactive page with no widget config
     // into a slide before content generation, and the patch protocol lets a

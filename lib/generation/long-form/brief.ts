@@ -206,10 +206,26 @@ export function buildSceneBrief(input: ScenePositionInput): string {
   const modulePlan = moduleAtPage(plan, pageIndex, totalPages);
   const unit = speechUnit(plan);
 
-  const secondsPerPage = totalPages > 0 ? (plan.minutes * 60) / totalPages : 0;
-  const startSeconds = Math.max(0, pageIndex - 1) * secondsPerPage;
+  // The plan's slot knows this page's own clock and speech allowance, and it is
+  // what the audit measures the page against. Equal-width division is only for
+  // an outline whose page count drifted away from the plan, where this page has
+  // no slot: on a 29-page hour it put page 8 — the exact start of module 3 at
+  // 16:00 — at 14:29, and derived its allowance from 124 seconds instead of the
+  // slot's 120.
+  const slot = totalPages === plan.scenes.length ? plan.scenes[pageIndex - 1] : undefined;
+  const secondsPerPage = slot
+    ? slot.durationSeconds
+    : totalPages > 0
+      ? (plan.minutes * 60) / totalPages
+      : 0;
+  const startSeconds = slot
+    ? plan.scenes
+        .slice(0, pageIndex - 1)
+        .reduce((acc, previous) => acc + previous.durationSeconds, 0)
+    : Math.max(0, pageIndex - 1) * secondsPerPage;
   const endSeconds = startSeconds + secondsPerPage;
-  const speechBudget = Math.round((secondsPerPage / 60) * plan.speechRate * SPEECH_DENSITY);
+  const speechBudget =
+    slot?.speechBudget ?? Math.round((secondsPerPage / 60) * plan.speechRate * SPEECH_DENSITY);
 
   const neighbours: string[] = [];
   if (previousTitle) neighbours.push(`- Previous page: 「${previousTitle}」`);

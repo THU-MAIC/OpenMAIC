@@ -15,6 +15,7 @@
 
 import type { SceneOutline } from '@/lib/types/generation';
 
+import { moduleAtPage } from './brief';
 import type { LongFormCoursePlan } from './types';
 
 export type AuditCode =
@@ -91,13 +92,51 @@ function isRetrievalScene(scene: SceneOutline): boolean {
   return Boolean(scene.interactiveConfig || (scene.widgetType && scene.widgetOutline));
 }
 
-/** Page indices each module owns, in the plan's own numbering. */
-function modulePageRanges(plan: LongFormCoursePlan): Map<number, { first: number; last: number }> {
+/**
+ * A page's own duration, when it has a usable one.
+ *
+ * The streaming parser casts JSON to `SceneOutline` without validating it, so
+ * `"estimatedDuration": "120 seconds"` reaches this module as a truthy string.
+ * Summing it concatenates into the accumulator and makes the drift NaN, and
+ * every per-page comparison against it is NaN and therefore false — so a page
+ * with no usable duration would report clean on both checks at once.
+ */
+function durationOf(scene: SceneOutline): number | null {
+  const value = scene.estimatedDuration;
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/**
+ * Page indices each module owns, in this outline's numbering.
+ *
+ * When the outline kept the planned page count, the plan's own assignment is
+ * exact. When it drifted — 24 pages for a 29-page plan is still inside the page
+ * tolerance — the plan's indices name pages this outline does not have: module 6
+ * would slice pages 21-24 but report a missing check at page 25, and module 7
+ * would have no pages at all and be skipped. A defect pointing at page 25 sends
+ * the rewriter to a page it cannot patch, and the patch protocol rejects the
+ * whole repair over it. So the ranges are projected onto the actual count with
+ * the same proportional rule the narration stage uses.
+ */
+function modulePageRanges(
+  plan: LongFormCoursePlan,
+  totalPages: number,
+): Map<number, { first: number; last: number }> {
   const ranges = new Map<number, { first: number; last: number }>();
-  for (const slot of plan.scenes) {
-    const current = ranges.get(slot.moduleIndex);
-    if (!current) ranges.set(slot.moduleIndex, { first: slot.index, last: slot.index });
-    else current.last = slot.index;
+
+  const add = (moduleIndex: number, pageIndex: number) => {
+    const current = ranges.get(moduleIndex);
+    if (!current) ranges.set(moduleIndex, { first: pageIndex, last: pageIndex });
+    else current.last = pageIndex;
+  };
+
+  if (totalPages === plan.scenes.length) {
+    for (const slot of plan.scenes) add(slot.moduleIndex, slot.index);
+    return ranges;
+  }
+
+  for (let pageIndex = 1; pageIndex <= totalPages; pageIndex += 1) {
+    add(moduleAtPage(plan, pageIndex, totalPages).index, pageIndex);
   }
   return ranges;
 }
@@ -125,7 +164,7 @@ export function auditOutline(
 
   const defects: AuditDefect[] = [];
   const targetSeconds = plan.minutes * 60;
-  const totalSeconds = outlines.reduce((acc, scene) => acc + (scene.estimatedDuration ?? 0), 0);
+  const totalSeconds = outlines.reduce((acc, scene) => acc + (durationOf(scene) ?? 0), 0);
   const driftPct = targetSeconds > 0 ? (totalSeconds - targetSeconds) / targetSeconds : 0;
 
   if (outlines.length === 0) {
@@ -162,22 +201,22 @@ export function auditOutline(
   outlines.forEach((scene, position) => {
     const pageIndex = position + 1;
     const slot = plan.scenes[position];
+    const duration = durationOf(scene);
 
-    if (!scene.estimatedDuration || scene.estimatedDuration <= 0) {
+    if (duration === null) {
       defects.push({
         code: 'missing-duration',
         pageIndex,
-        detail: 'no estimatedDuration, so this page cannot be checked against its budget',
+        detail: 'no usable estimatedDuration, so this page cannot be checked against its budget',
       });
     } else if (
       slot &&
-      Math.abs(scene.estimatedDuration - slot.durationSeconds) / slot.durationSeconds >
-        pageDurationTolerance
+      Math.abs(duration - slot.durationSeconds) / slot.durationSeconds > pageDurationTolerance
     ) {
       defects.push({
         code: 'page-duration',
         pageIndex,
-        detail: `planned ${slot.durationSeconds}s for this slot, outline says ${scene.estimatedDuration}s`,
+        detail: `planned ${slot.durationSeconds}s for this slot, outline says ${duration}s`,
       });
     }
 
@@ -192,7 +231,7 @@ export function auditOutline(
   });
 
   if (structurallyComparable) {
-    const ranges = modulePageRanges(plan);
+    const ranges = modulePageRanges(plan, outlines.length);
 
     for (const modulePlan of plan.modules) {
       const range = ranges.get(modulePlan.index);
@@ -265,4 +304,69 @@ function formatAudit(
 /** True when the outline has no arithmetic defect worth a repair round. */
 export function auditIsClean(audit: OutlineAudit): boolean {
   return audit.defects.length === 0;
+}
+
+/**
+ * How much a defect matters when the list has to be shortened.
+ *
+ * A missing retrieval page or a course that runs eight minutes short is a
+ * structural failure; a single page with no objective is a detail. The repair
+ * prompt takes a capped list, so the order is what decides whether the
+ * structural ones survive.
+ */
+const CODE_PRIORITY: Readonly<Record<AuditCode, number>> = {
+  'page-count': 0,
+  'duration-drift': 1,
+  'missing-check': 2,
+  'missing-decision': 3,
+  'missing-objective': 4,
+  'missing-duration': 5,
+  'page-duration': 6,
+};
+
+/** Page-level findings of one code kept before the rest are folded together. */
+const PER_CODE_KEPT = 2;
+
+/**
+ * The audit's findings, shortened without losing the ones that matter.
+ *
+ * A draft where every page omits its objective produces 29 `missing-objective`
+ * findings, and appending the module findings after them meant a prefix of six
+ * carried nothing but page 1-6 objectives. The critic is told not to repeat the
+ * arithmetic, so a confirmed missing retrieval page then shipped: it never
+ * reached the rewriter. Structural codes go in first and in full; page-level
+ * codes get what is left, collapsed into one finding per code once they repeat.
+ */
+export function prioritizeDefects(defects: readonly AuditDefect[], limit: number): AuditDefect[] {
+  const structural = defects
+    .filter((defect) => CODE_PRIORITY[defect.code] <= CODE_PRIORITY['missing-decision'])
+    .sort((a, b) => CODE_PRIORITY[a.code] - CODE_PRIORITY[b.code]);
+
+  const byCode = new Map<AuditCode, AuditDefect[]>();
+  for (const defect of defects) {
+    if (CODE_PRIORITY[defect.code] <= CODE_PRIORITY['missing-decision']) continue;
+    const list = byCode.get(defect.code);
+    if (list) list.push(defect);
+    else byCode.set(defect.code, [defect]);
+  }
+
+  const pageLevel: AuditDefect[] = [];
+  for (const code of [...byCode.keys()].sort((a, b) => CODE_PRIORITY[a] - CODE_PRIORITY[b])) {
+    const list = byCode.get(code)!;
+    if (list.length <= PER_CODE_KEPT + 1) {
+      pageLevel.push(...list);
+      continue;
+    }
+    pageLevel.push(...list.slice(0, PER_CODE_KEPT));
+    const rest = list.slice(PER_CODE_KEPT);
+    pageLevel.push({
+      code,
+      pageIndex: null,
+      detail: `${rest.length} more pages have the same finding: ${rest
+        .map((defect) => defect.pageIndex)
+        .join(', ')}`,
+    });
+  }
+
+  return [...structural, ...pageLevel].slice(0, limit);
 }

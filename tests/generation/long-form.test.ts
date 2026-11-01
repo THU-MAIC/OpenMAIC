@@ -379,6 +379,19 @@ describe('buildSceneBrief', () => {
     const check = buildSceneBrief({ plan, pageIndex: 12, totalPages: plan.scenes.length });
     expect(check).toContain('Page role: check');
   });
+
+  it('uses the planned clock and budget when the page count matches', () => {
+    // Equal-width division put page 8 — the exact start of module 3 at 16:00 — at
+    // 14:29, and derived its allowance from 124 seconds instead of the slot's 120.
+    // Those are the durations the outline was audited against, so the two stages
+    // disagreed about the same page.
+    const brief = buildSceneBrief({ plan, pageIndex: 8, totalPages: plan.scenes.length });
+    expect(brief).toContain('16:00 – 18:00');
+    expect(brief).toContain('120s of screen time');
+
+    const slot = plan.scenes[7]!;
+    expect(brief).toContain(`about ${slot.speechBudget} characters`);
+  });
 });
 
 describe('moduleAtPage', () => {
