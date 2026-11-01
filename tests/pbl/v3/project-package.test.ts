@@ -22,6 +22,7 @@ import {
   installClassroomProjects,
   DECISION_RESPONSE_CAPABILITY,
   PRESENTATION_CAPABILITY,
+  DECISION_CONTEXT_CAPABILITY,
 } from '@/lib/pbl/v3/package-client';
 import type { ClassroomManifest } from '@/lib/export/classroom-zip-types';
 import { bindPackageReferences } from '@/lib/server/pbl-v3/project-resolver';
@@ -59,6 +60,54 @@ async function archive(bundle: ReturnType<typeof packageBuiltin>) {
   return JSZip.loadAsync(await zip.generateAsync({ type: 'uint8array' }));
 }
 describe('self-contained PBL project packages', () => {
+  it.each(['missing', 'text', 'duplicate', 'host-context'])(
+    'rejects invalid assessment choice bindings: %s',
+    (kind) => {
+      const bundle = revised((files) => {
+        const descriptor = JSON.parse(files['project.json']);
+        const id = descriptor.definition.decisions[0].id;
+        const resource = Object.values(descriptor.runtime.evaluations)[0] as string;
+        const spec = JSON.parse(files[resource]);
+        spec.decisionInputs =
+          kind === 'missing' ? ['unknown'] : kind === 'duplicate' ? [id, id] : [id];
+        if (kind === 'text')
+          Object.assign(descriptor.definition.decisions[0], { responseType: 'text', options: [] });
+        if (kind === 'host-context') spec.decisionContext = { [id]: 'concat' };
+        files['project.json'] = JSON.stringify(descriptor);
+        files[resource] = JSON.stringify(spec);
+      });
+      expect(() => validateProjectPackage(bundle)).toThrow();
+    },
+  );
+  it('exports and requires the decision-context capability while retaining old packages', async () => {
+    const bundle = revised((files) => {
+      const descriptor = JSON.parse(files['project.json']);
+      const resource = Object.values(descriptor.runtime.evaluations)[0] as string;
+      const spec = JSON.parse(files[resource]);
+      spec.decisionInputs = [descriptor.definition.decisions[0].id];
+      files[resource] = JSON.stringify(spec);
+    });
+    expect(() => validateProjectPackage(bundle)).not.toThrow();
+    const m = manifest();
+    const fetcher = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(Response.json({ projects: [bundle] }));
+    try {
+      await attachClassroomProjects('choice-course', m, new Map());
+      expect(m.requiredCapabilities).toContain(DECISION_CONTEXT_CAPABILITY);
+      m.requiredCapabilities = m.requiredCapabilities!.filter(
+        (id) => id !== DECISION_CONTEXT_CAPABILITY,
+      );
+      fetcher.mockClear();
+      await expect(installClassroomProjects(await archive(bundle), m)).rejects.toThrow(
+        'decision-context',
+      );
+      expect(fetcher).not.toHaveBeenCalled();
+    } finally {
+      fetcher.mockRestore();
+    }
+    expect(() => validateProjectPackage(packageBuiltin(source()))).not.toThrow();
+  });
   it.each(['prepare', 'case'])(
     'rejects package-supplied literal-argument metadata in %s',
     (location) => {
@@ -190,6 +239,15 @@ describe('self-contained PBL project packages', () => {
         files['project.json'] = JSON.stringify(spec);
       });
     expect(validateProjectPackage(withApplication()).project.application).toEqual(app);
+    for (const decisionIds of [['unknown'], ['format', 'format']]) {
+      const invalid = revised((files) => {
+        files['skeleton/src/app.py'] = 'print("Application")\n';
+        const descriptor = JSON.parse(files['project.json']);
+        descriptor.runtime.application = { ...app, decisionIds };
+        files['project.json'] = JSON.stringify(descriptor);
+      });
+      expect(() => validateProjectPackage(invalid)).toThrow('decision labels');
+    }
     for (const change of [
       (a: typeof app) => {
         a.argv = ['python3', '-c', 'print("bypass")'];

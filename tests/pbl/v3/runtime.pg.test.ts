@@ -1644,7 +1644,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         if (readFirst) {
           const welcome = JSON.stringify(await invoke(config, 'read_next_skill'));
           expect(welcome).toContain('Welcome only');
-          expect(welcome).toContain('how learning works');
+          expect(welcome).toContain('seven steps and four collaborating role types');
         }
         expect(config.systemPrompt).not.toContain('"teaching":{');
         await invoke(config, 'request_skill_review', {
@@ -4886,6 +4886,65 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     ).toBe(true);
     expect(mocked.reportAnalysis.mock.calls[0]![1].truncated).toBe(true);
     await agents.softDeleteSession(started.sessionId, principal.ownerId);
+  });
+  it('binds an assessment and preview label to a saved choice through collection and retry', async () => {
+    const originalId = studyId;
+    const originalApplication = project.application;
+    const originalEvaluation = project.evaluations.greeting!;
+    project.application = {
+      title: 'Choice preview',
+      description: 'Read-only intent',
+      argv: ['python3', 'greeting.py'],
+      port: 8000,
+      healthPath: '/',
+      decisionIds: ['format'],
+    };
+    project.evaluations.greeting = {
+      ...originalEvaluation,
+      decisionInputs: ['format'],
+      cases: [
+        {
+          id: 'choice',
+          argv: ['python3', '-c', 'import os; print(os.environ["OPENMAIC_PBL_DECISIONS"])'],
+          stdout: '{"format": "concat"}\n',
+        },
+      ],
+    };
+    const fresh = await freshStudy();
+    studyId = fresh.id;
+    try {
+      expect((await learningView(principal, studyId)).application?.choices).toEqual([]);
+      await guided('teaching');
+      await command('decide', { decisionId: 'format', chosen: 'concat' });
+      const expected = [
+        { id: 'format', label: project.definition.decisions[0].desc, choice: 'Concatenation' },
+      ];
+      expect((await learningView(principal, studyId)).application?.choices).toEqual(expected);
+      await command('next');
+      await guided('plan');
+      await guided('code');
+      const row = await store.get(studyId, principal.ownerId);
+      const request = { type: 'evaluate', id: randomUUID(), revision: row.revision };
+      await commandStudy(principal, studyId, request);
+      const pending = (await store.get(studyId, principal.ownerId)).evaluation!;
+      expect(pending.evaluationCommand).toBeTruthy();
+      await commandStudy(principal, studyId, request);
+      expect((await store.get(studyId, principal.ownerId)).evaluation?.evaluationCommand).toBe(
+        pending.evaluationCommand,
+      );
+      await command('collect');
+      expect(
+        (await store.get(studyId, principal.ownerId)).state.collected.greeting!.tests?.status,
+      ).toBe('passed');
+      expect((await learningView(principal, studyId)).application?.choices).toEqual(expected);
+      await command('next');
+      expect((await learningView(principal, studyId)).application?.choices).toEqual(expected);
+    } finally {
+      studyId = originalId;
+      project.application = originalApplication;
+      project.evaluations.greeting = originalEvaluation;
+      await releasePreparationFixtures([fresh.id]);
+    }
   });
   it('prepares once and runs the complete learning flow with actual Python tests', async () => {
     await command('prepare');

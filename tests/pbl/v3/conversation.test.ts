@@ -804,7 +804,10 @@ describe('general teaching protocols', () => {
       welcome: 'pending' as const,
     };
     const pending = renderTeachingPrompt(input).systemPrompt;
-    expect(pending).toContain('three compact Markdown headings');
+    expect(pending).toContain('practical purpose and observable finished result');
+    expect(pending).toContain('what the learner will decide or build');
+    expect(pending).toContain('instead of repeating the tour');
+    expect(pending).toContain('constraints you must obey, not a script to recite');
     expect(pending).toContain('Do not teach concepts');
     expect(pending).not.toContain('LESSON_RESOURCE_SENTINEL');
     const opening = teachingSection(input, skill.progression[1]!);

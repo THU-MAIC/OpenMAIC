@@ -11,8 +11,44 @@ import {
   evaluationCommand,
   evaluationPassed,
   evaluationOutcome,
+  evaluationFor,
 } from '@/lib/server/pbl-v3/evaluation';
 const spec = installedProject({ id: 'greeting-python', version: '1.0.0' }).evaluations.greeting!;
+
+it('binds only declared formal choices without changing the installed assessment', async () => {
+  const original = installedProject({ id: 'greeting-python', version: '1.0.0' });
+  const project = structuredClone(original);
+  project.evaluations.greeting!.decisionInputs = ['format'];
+  project.evaluations.greeting!.cases = [
+    {
+      id: 'choice',
+      argv: ['python3', '-c', 'import os; print(os.environ["OPENMAIC_PBL_DECISIONS"])'],
+      stdout: '{"format": "concat"}\n',
+    },
+  ];
+  expect(() => evaluationFor(project, 'greeting')).toThrow('Submit');
+  expect(() =>
+    evaluationFor(project, 'greeting', [], [{ id: 'format', chosen: 'unknown', revision: 0 }]),
+  ).toThrow('Submit');
+  const bound = evaluationFor(
+    project,
+    'greeting',
+    [],
+    [
+      { id: 'format', chosen: 'concat', rationale: 'Do not send my prose', revision: 0 },
+      { id: 'unrelated', chosen: 'private-text', revision: 0 },
+    ],
+  );
+  expect(bound.decisionContext).toEqual({ format: 'concat' });
+  expect(project.evaluations.greeting!.decisionContext).toBeUndefined();
+  expect(() => evaluationCommand(project.evaluations.greeting!, 'missing')).toThrow('formal');
+  const command = evaluationCommand(bound, 'bound');
+  const { stdout } = await promisify(execFile)('/bin/sh', ['-c', command], {
+    env: { ...process.env, OPENMAIC_PBL_DECISIONS: '{"format":"format"}' },
+  });
+  expect(evaluationPassed(bound, 'bound', stdout)).toBe(true);
+  expect(command).not.toContain('private-text');
+});
 
 it.each(['\n', '\r\n', '\r'])(
   'normalizes expected and actual line endings equally without relaxing output checks (%j)',

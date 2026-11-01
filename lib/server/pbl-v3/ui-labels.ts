@@ -42,6 +42,7 @@ export function visibleProductLabels(locale = 'en-US') {
     toggleWorkspace: p.ide.toggleWorkspace,
     toggleAssistant: p.ide.toggleAssistant,
     application: p.application.open,
+    applicationChoice: p.application.yourChoice,
     applicationRestart: p.application.restart,
     applicationCollapse: p.application.collapse,
     applicationHelp: p.application.help,

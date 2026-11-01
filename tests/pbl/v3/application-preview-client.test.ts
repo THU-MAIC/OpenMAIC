@@ -29,6 +29,32 @@ const view = {
   application: { title: 'Preview', description: 'Course-specific help.' },
 } as LearningView;
 const workbench = { environmentId: 'environment', epoch: 0 } as LearningWorkbench;
+it('shows only submitted choice labels as read-only context, without claiming implementation success', async () => {
+  const f = await fixture();
+  try {
+    expect(f.host.querySelector('[data-testid="pbl-application-choices"]')).toBeNull();
+    await act(async () =>
+      f.root.render(
+        createElement(Harness, {
+          current: {
+            ...view,
+            application: {
+              ...view.application!,
+              choices: [{ id: 'position', label: 'New item position', choice: 'New items first' }],
+            },
+          },
+        }),
+      ),
+    );
+    const badge = f.host.querySelector('[data-testid="pbl-application-choices"]')!;
+    expect(badge.textContent).toContain('New items first');
+    expect(badge.textContent).toContain('pblV3.application.yourChoice');
+    expect(badge.querySelector('button, input, select')).toBeNull();
+    expect(mocks.request).not.toHaveBeenCalled();
+  } finally {
+    await f.cleanup();
+  }
+});
 const running = {
   observedAt: '',
   state: 'running',

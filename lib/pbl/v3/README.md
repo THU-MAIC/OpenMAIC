@@ -512,6 +512,15 @@ boundary. PBL thinking bars retain the full emitted text in both streaming and r
 compact preview expands in place, matching OpenPBL. Replay presentation follows
 the aggregate bounds above without clipping the retained payloads.
 
+An assessment may declare `decisionInputs: ["choice-id"]` to consume selected option IDs
+from formal decisions in its own milestone. The host binds these at test dispatch and
+freezes them in the existing evaluation command receipt; retries reuse that command.
+Support processes receive the JSON object in `OPENMAIC_PBL_DECISIONS`, replacing any
+inherited value. Free-text answers and rationales are excluded. Read this snapshot before
+importing learner code; do not derive expected behavior from editable plans or settings.
+Packages cannot supply the host-only `decisionContext`. This opt-in feature requires
+`pbl-v3-decision-context@1`; assessments without it retain their existing behavior.
+
 ### Execution and lifecycle handoff
 
 See [the execution contract](../../server/pbl-v3/execution-lifecycle.md) for persisted
@@ -527,6 +536,12 @@ Export/import requires `pbl-v3-application@1`; earlier packages keep their exist
 This is a runnable learner artifact, not a generated deployment service or a terminal.
 Keep its UI/protocol guide in role-bound course documents. Protect supplied entry/UI
 files when learners should change only their business functions.
+
+Optional `runtime.application.decisionIds` displays a read-only **Your choice** label for
+each submitted choice in the preview panel. Labels come from formal host records, never
+an editable application configuration, and describe intent rather than verified behavior.
+Unsubmitted choices and free-text decisions are not displayed. This also requires
+`pbl-v3-decision-context@1`; old packages need no new fields or migration.
 
 The header's **Open application** starts the saved code and opens the existing protected,
 isolated preview gateway. Deployment must configure the preview origin, app origin,

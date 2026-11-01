@@ -58,6 +58,7 @@ const descriptorSchema = z
           .object({
             title: z.string().trim().min(1).max(100),
             description: z.string().trim().min(1).max(2000),
+            decisionIds: z.array(z.string().min(1).max(128)).max(8).optional(),
             argv: z
               .array(
                 z
@@ -104,6 +105,7 @@ function teachingResources(
 
 const evaluationSchema = z
   .object({
+    decisionInputs: z.array(z.string().min(1).max(128)).max(16).optional(),
     prepare: z.array(z.string().max(16_384)).min(1).max(128).optional(),
     cases: z
       .array(
@@ -310,6 +312,23 @@ export function validateProjectPackage(
     const parsed = evaluationSchema.safeParse(parseJson(resource(name, 'tests'), name));
     if (!parsed.success) return invalid(`Invalid evaluation resource: ${name}`);
     const spec = parsed.data;
+    const decisionInputs = spec.decisionInputs ?? [];
+    const currentMilestone = config.definition.milestones.find((item) => item.id === milestone)!;
+    if (
+      new Set(decisionInputs).size !== decisionInputs.length ||
+      decisionInputs.some((id) => {
+        const decision = config.definition.decisions.find((item) => item.id === id);
+        return (
+          !currentMilestone.decisions.includes(id) ||
+          !decision ||
+          decision.responseType === 'text' ||
+          !decision.options.length
+        );
+      })
+    )
+      return invalid(
+        `Assessment decision inputs must name distinct choice decisions from ${milestone}`,
+      );
     const allowed = config.runtime.profile === 'java' ? ['java', 'javac', 'python3'] : ['python3'];
     if (
       [...(spec.prepare ? [spec.prepare] : []), ...spec.cases.map((c) => c.argv)].some(
@@ -335,7 +354,30 @@ export function validateProjectPackage(
     // Runtime request IDs are UUIDs. Account for the complete encoded runner, not just its JSON.
     if (
       Buffer.byteLength(
-        evaluationCommand({ ...spec, resources }, '00000000-0000-0000-0000-000000000000'),
+        evaluationCommand(
+          {
+            ...spec,
+            resources,
+            ...(decisionInputs.length
+              ? {
+                  decisionContext: Object.fromEntries(
+                    decisionInputs.map((id) => [
+                      id,
+                      config.definition.decisions
+                        .find((item) => item.id === id)!
+                        .options.reduce((a, b) =>
+                          Buffer.byteLength(JSON.stringify(a.id)) >
+                          Buffer.byteLength(JSON.stringify(b.id))
+                            ? a
+                            : b,
+                        ).id,
+                    ]),
+                  ),
+                }
+              : {}),
+          },
+          '00000000-0000-0000-0000-000000000000',
+        ),
       ) > MAX_COMMAND_BYTES
     )
       return invalid(`Evaluation exceeds the sandbox 32 KiB command limit: ${name}`);
@@ -365,6 +407,20 @@ export function validateProjectPackage(
   if (config.runtime.sourceRoots.some((root) => /^(skills|docs|tests|rubric)(\/|$)/.test(root)))
     return invalid('Source roots overlap private course resources.');
   const application = config.runtime.application;
+  if (
+    application?.decisionIds &&
+    (new Set(application.decisionIds).size !== application.decisionIds.length ||
+      application.decisionIds.some((id) => {
+        const decision = config.definition.decisions.find((item) => item.id === id);
+        return (
+          !decision ||
+          decision.responseType === 'text' ||
+          !decision.options.length ||
+          !config.definition.milestones.some((item) => item.decisions.includes(id))
+        );
+      }))
+  )
+    return invalid('Application decision labels must name distinct declared choice decisions.');
   if (
     application &&
     (config.runtime.profile !== 'python3' ||

@@ -21,6 +21,7 @@ export interface TeachingWorkspaceFacts {
   application?: {
     title: string;
     description: string;
+    choices?: { id: string; label: string; choice: string }[];
     observation?: import('@/lib/pbl/v3/application').ApplicationObservation | null;
   };
   state: PblSessionState;
@@ -116,6 +117,9 @@ export function teachingProductContext(input: {
       ? {
           title: workspace.application.title,
           description: workspace.application.description,
+          choices: workspace.application.choices ?? [],
+          choiceMeaning:
+            'When declared by the course, read-only choice labels come from submitted formal decisions. They describe the learner’s intent, not observed implementation or a test result; they are not application settings or another action to perform.',
           entry:
             'Workbench header: Open application. Toggles the application panel between the IDE and learning assistant (stacked in narrow windows). The panel has a collapse control, Restart application and Open temporary preview in a new tab. Collapsing only hides the panel; it does not stop the backend. Restart application starts the saved code again. Available independently of the seven learning steps, including after completion.',
           lifetime:

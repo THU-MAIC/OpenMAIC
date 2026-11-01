@@ -149,6 +149,19 @@ function ApplicationPreviewContent({
           <ChevronRight size={15} />
         </button>
       </header>
+      {!!application.choices?.length && (
+        <div
+          className="flex shrink-0 flex-wrap gap-x-3 gap-y-1 border-b bg-primary/5 px-3 py-2 text-xs"
+          data-testid="pbl-application-choices"
+        >
+          {application.choices.map((choice) => (
+            <p key={choice.id} title={choice.label}>
+              <span className="text-muted-foreground">{t('pblV3.application.yourChoice')}：</span>{' '}
+              <span className="font-medium">{choice.choice}</span>
+            </p>
+          ))}
+        </div>
+      )}
       {observation?.sourceChanged && (
         <p role="status" className="px-3 py-2 text-xs text-amber-600">
           {t('pblV3.application.changed')}

@@ -2940,6 +2940,7 @@
     "decisionTooLong": "回答和理由各最多 {max} 個字元，合計還需符合編碼後的大小限制。請縮短後再提交。",
     "decisionInvalidText": "回答或理由中含有無法儲存的字元，請替換這些字元後再提交。",
     "application": {
+      "yourChoice": "你的選擇",
       "updating": "作品更新中…",
       "open": "Open application",
       "restart": "Restart application",

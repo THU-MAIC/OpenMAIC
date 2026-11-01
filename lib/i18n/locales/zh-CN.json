@@ -2940,6 +2940,7 @@
     "decisionTooLong": "回答和理由各最多 {max} 个字符，合计还需符合编码后的大小限制。请缩短后再提交。",
     "decisionInvalidText": "回答或理由中含有无法保存的字符，请替换这些字符后再提交。",
     "application": {
+      "yourChoice": "你的选择",
       "updating": "作品更新中…",
       "open": "打开应用",
       "restart": "重启应用",

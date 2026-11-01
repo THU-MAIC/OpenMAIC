@@ -1,3 +1,4 @@
+import { applicationChoices } from '@/lib/pbl/v3/application-choices';
 import { changedLineRanges } from './file-changes';
 import { fileReferenceHref } from '@/lib/pbl/v3/file-reference';
 import 'server-only';
@@ -871,6 +872,11 @@ export async function teachingRunnerConfig(input: {
             application: {
               title: project.application.title,
               description: project.application.description,
+              choices: applicationChoices(
+                project.definition,
+                observedStudy.state,
+                project.application.decisionIds,
+              ),
               observation: observedApplication,
             },
           }
