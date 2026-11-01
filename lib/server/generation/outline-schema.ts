@@ -16,8 +16,16 @@ import { WIDGET_TYPES } from '@openmaic/dsl';
 
 import type { SceneOutline } from '@/lib/types/generation';
 
-/** The most scenes an outline may plan (the outline step stops reading the model there). */
-export const MAX_OUTLINE_SCENES = 100;
+/**
+ * The most scenes an outline may plan (the outline step stops reading the
+ * model there).
+ *
+ * Raised from 100 for long-form courses. A 60-minute sitting plans ~27 pages at
+ * the long-form density, but a two-hour one plans ~110, and the cap has to clear
+ * the longest course the planner will produce rather than the typical one. The
+ * byte cap below still bounds the actual payload.
+ */
+export const MAX_OUTLINE_SCENES = 240;
 /**
  * The most an outline may be, in UTF-8 bytes of JSON: the outline step's own
  * read cap on the model's output, in the same unit.

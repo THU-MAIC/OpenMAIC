@@ -75,6 +75,7 @@ import {
 } from '@/lib/server/generation-run-hooks/runtime';
 import type { GeneratedAgentConfig, Scene, Stage } from '@/lib/types/stage';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
+import { buildLedgerText, buildSceneBrief, planForRequirement } from '@/lib/generation/long-form';
 
 import {
   appendRunScene,
@@ -714,6 +715,22 @@ async function executeClaimedRun(
         const { outlines, languageDirective } = outline();
         const content = output<SceneContentResult>(sceneStepId(index, 'content'))!;
         const userProfile = learnerProfileText(input);
+        // Long-form: the page's place in the course, its module, its
+        // narration budget, and what the whole course has established so far.
+        // Rendered against the outline that actually exists, so a course that
+        // came back with 24 pages still gets correct clock marks instead of the
+        // plan's 27.
+        const longFormPlan = planForRequirement(input.requirement);
+        const longFormBrief = longFormPlan
+          ? buildSceneBrief({
+              plan: longFormPlan,
+              pageIndex: index + 1,
+              totalPages: outlines.length,
+              ...(outlines[index - 1]?.title ? { previousTitle: outlines[index - 1].title } : {}),
+              ...(outlines[index + 1]?.title ? { nextTitle: outlines[index + 1].title } : {}),
+              ledger: buildLedgerText(outlines, index + 1),
+            })
+          : undefined;
         const result = await withRouteRetry(
           () =>
             withDeadline(stepId, STEP_DEADLINES_MS.sceneActions, signal, async (callSignal) => {
@@ -729,6 +746,7 @@ async function executeClaimedRun(
                   previousSpeeches: previousSpeechesFor(index),
                   ...(userProfile ? { userProfile } : {}),
                   languageDirective,
+                  ...(longFormBrief ? { longFormBrief } : {}),
                 },
                 { log, signal: callSignal },
               );
@@ -811,8 +829,16 @@ async function executeClaimedRun(
       }
     };
     let result: OutlineResult;
+    // A long-form outline also runs critique/repair rounds after its stream, so
+    // it gets the revision budget on top. The step is told the combined
+    // deadline so the loop can decline a round it could not finish — the
+    // deadline firing would abort the draft along with it.
+    const longForm = planForRequirement(input.requirement) !== null;
+    const outlineBudgetMs =
+      STEP_DEADLINES_MS.outline + (longForm ? STEP_DEADLINES_MS.outlineRevision : 0);
+    const outlineDeadlineAt = Date.now() + outlineBudgetMs;
     try {
-      result = await withDeadline(stepId, STEP_DEADLINES_MS.outline, signal, (callSignal) =>
+      result = await withDeadline(stepId, outlineBudgetMs, signal, (callSignal) =>
         services.outline(
           owner,
           {
@@ -820,6 +846,7 @@ async function executeClaimedRun(
             ...(pdfText ? { pdfText } : {}),
             ...materialImages(),
             ...(research?.context ? { researchContext: research.context } : {}),
+            deadlineAt: outlineDeadlineAt,
           },
           { log, signal: callSignal, emit },
         ),

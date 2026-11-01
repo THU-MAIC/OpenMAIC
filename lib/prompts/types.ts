@@ -5,7 +5,12 @@
 /**
  * Prompt template identifier
  */
-export type PromptId = 'interactive-outlines' | 'task-engine-outlines' | 'web-search-query-rewrite';
+export type PromptId =
+  | 'interactive-outlines'
+  | 'task-engine-outlines'
+  | 'web-search-query-rewrite'
+  | 'long-form-critique'
+  | 'long-form-revise';
 
 /**
  * Snippet identifier

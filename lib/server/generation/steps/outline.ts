@@ -30,6 +30,8 @@ import type { AgentInfo } from '@openmaic/generation';
 import { DEFAULT_LANGUAGE_DIRECTIVE } from '@openmaic/generation';
 import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import { MAX_OUTLINE_SCENES } from '@/lib/server/generation/outline-schema';
+import { buildLongFormBrief, planForRequirement } from '@/lib/generation/long-form';
+import { reviseLongFormOutline } from './long-form-revision';
 import { nanoid } from 'nanoid';
 import type {
   UserRequirements,
@@ -310,6 +312,11 @@ export interface OutlineInput {
   /** The scene-outlines-stream stage's model. */
   model: StepLanguageModel;
   /**
+   * Epoch ms by which the whole outline — stream plus long-form revision — must
+   * be done. The caller sets it because the caller owns the step's deadline.
+   */
+  deadlineAt?: number;
+  /**
    * Whether the outline may plan generated images and videos, as far as the
    * caller is concerned (default true). It only opts out: the workspace's
    * image and video slots decide whether media is offered at all.
@@ -478,6 +485,12 @@ async function prepareOutline(
   // The standard branch receives the N3 RESOLVED slice (unresolvable vision
   // images removed, mapping naming only resolved ids) so its placeholder
   // text never promises an image this step will not attach.
+  // Long-form: a request that named a long sitting gets a budget it must spend,
+  // instead of the flat "1-2 scenes per minute" default that produces either a
+  // 60-page sprint or a 12-page course that claims an hour it cannot fill.
+  const longFormPlan = planForRequirement(requirements.requirement);
+  const longFormBrief = longFormPlan ? buildLongFormBrief(longFormPlan) : undefined;
+
   let prompts: { system: string; user: string } | null = buildOutlinePrompt(requirements, {
     pdfText,
     pdfImages: resolvedPdfImages ?? pdfImages,
@@ -487,6 +500,7 @@ async function prepareOutline(
     videoGenerationEnabled,
     researchContext,
     teacherContext,
+    ...(longFormBrief ? { longFormBrief } : {}),
   });
 
   if (taskEngineMode || interactiveMode) {
@@ -801,10 +815,30 @@ async function streamOutlines(
   };
 }
 
-/** Prepare and stream one outline generation. */
+/** Prepare and stream one outline generation, then revise it when it is long-form. */
 export async function generateOutlines(
   input: OutlineInput,
   ctx: OwnerStepContext<OutlineEvent> & WorkspaceStepContext<OutlineEvent>,
 ): Promise<OutlineResult> {
-  return streamOutlines(await prepareOutline(input, ctx), ctx);
+  const prepared = await prepareOutline(input, ctx);
+  const draft = await streamOutlines(prepared, ctx);
+
+  // Long-form courses are reviewed before any page is built. A structural defect
+  // in the outline — a claim nobody derives, a module attached to no system, a
+  // prerequisite nobody supplies — costs 3 model calls per page to discover
+  // later and cannot be fixed there. The two modes with their own templates
+  // keep their own behaviour.
+  if (prepared.taskEngineMode || input.requirements.interactiveMode) return draft;
+
+  const plan = planForRequirement(input.requirements.requirement);
+  if (!plan) return draft;
+
+  return reviseLongFormOutline({
+    draft,
+    requirement: input.requirements.requirement,
+    plan,
+    model: prepared.model,
+    ctx,
+    ...(input.deadlineAt !== undefined ? { deadlineAt: input.deadlineAt } : {}),
+  });
 }

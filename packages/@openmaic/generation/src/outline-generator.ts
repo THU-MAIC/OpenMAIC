@@ -29,6 +29,16 @@ export interface OutlinePromptContext {
   videoGenerationEnabled?: boolean;
   researchContext?: string;
   teacherContext?: string;
+  /**
+   * The long-form budget block, already rendered by the host.
+   *
+   * Present only for a request that asked for a long sitting. The package does
+   * not plan the budget itself — the host owns duration detection and the
+   * minutes/pages arithmetic — so the prompt simply switches to the long-form
+   * contract when this arrives and stays on the flat short-lesson contract when
+   * it does not.
+   */
+  longFormBrief?: string;
 }
 
 export interface OutlineGenerationOptions extends Omit<
@@ -95,6 +105,7 @@ export function buildOutlinePrompt(
   const videoEnabled = context.videoGenerationEnabled ?? false;
   const mediaEnabled = imageEnabled || videoEnabled;
   const hasSourceImages = (pdfImages?.length ?? 0) > 0;
+  const longFormMode = Boolean(context.longFormBrief);
 
   const prompts = buildPrompt(PROMPT_IDS.REQUIREMENTS_TO_OUTLINES, {
     requirement: requirements.requirement,
@@ -107,6 +118,16 @@ export function buildOutlinePrompt(
     mediaEnabled,
     researchContext: context.researchContext || 'None',
     teacherContext: context.teacherContext || '',
+    longFormMode,
+    longFormBrief: context.longFormBrief ?? '',
+    ...(longFormMode
+      ? {
+          durationGuidance:
+            '- Course duration: **already fixed by the Long-Form Budget above — do not re-infer it**',
+          sceneCountGuidance:
+            '- **Scene count**: exactly the page counts in the Long-Form Budget table, in its module order. Set `estimatedDuration` on every scene from the page budgets.',
+        }
+      : {}),
   });
 
   if (!prompts) {

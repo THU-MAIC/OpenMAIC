@@ -1,0 +1,722 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>长课修订实验 · OpenMAIC</title>
+    <style>
+      :root {
+        --bg: #f6f7f9;
+        --panel: #ffffff;
+        --ink: #16181d;
+        --muted: #646b78;
+        --line: #e3e6ec;
+        --accent: #2f5bd7;
+        --pass: #1a7f4b;
+        --fail: #b4342c;
+        --skip: #8a8f99;
+        --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        --sans:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Noto Sans SC', sans-serif;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #12141a;
+          --panel: #1a1d25;
+          --ink: #e8eaf0;
+          --muted: #9aa1af;
+          --line: #2a2f3a;
+          --accent: #7d9bff;
+          --pass: #4ec98a;
+          --fail: #ff7b70;
+          --skip: #7d828c;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: var(--sans);
+        line-height: 1.65;
+        font-size: 15px;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 40px 24px 80px;
+      }
+      h1 {
+        font-size: 26px;
+        margin: 0 0 6px;
+        letter-spacing: -0.01em;
+      }
+      .sub {
+        color: var(--muted);
+        margin: 0 0 28px;
+        font-size: 14px;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 22px 24px;
+        margin-bottom: 18px;
+      }
+      .card h2 {
+        font-size: 15px;
+        margin: 0 0 14px;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+      }
+      label {
+        display: block;
+        font-size: 13px;
+        color: var(--muted);
+        margin: 0 0 6px;
+      }
+      input[type='text'],
+      input[type='password'] {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--bg);
+        color: var(--ink);
+        font-size: 14px;
+        font-family: var(--mono);
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+      .row3 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        margin-bottom: 14px;
+      }
+      .field {
+        margin-bottom: 14px;
+      }
+      .check {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        color: var(--muted);
+        margin: 4px 0 18px;
+      }
+      button {
+        background: var(--accent);
+        color: #fff;
+        border: 0;
+        border-radius: 9px;
+        padding: 11px 22px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      button.ghost {
+        background: transparent;
+        color: var(--accent);
+        border: 1px solid var(--line);
+        margin-left: 8px;
+      }
+      .hint {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 10px;
+      }
+      .verdict {
+        display: flex;
+        align-items: baseline;
+        gap: 12px;
+        margin-bottom: 6px;
+      }
+      .verdict b {
+        font-size: 30px;
+        letter-spacing: -0.02em;
+      }
+      .verdict span {
+        color: var(--muted);
+        font-size: 14px;
+      }
+      ul.cp {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      ul.cp li {
+        display: grid;
+        grid-template-columns: 52px 1fr;
+        gap: 12px;
+        padding: 11px 0;
+        border-top: 1px solid var(--line);
+      }
+      ul.cp li:first-child {
+        border-top: 0;
+      }
+      .id {
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--muted);
+        padding-top: 2px;
+      }
+      .name {
+        font-weight: 500;
+      }
+      .detail {
+        color: var(--muted);
+        font-size: 13px;
+        margin-top: 2px;
+        word-break: break-word;
+      }
+      .tag {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 1px 7px;
+        border-radius: 5px;
+        margin-right: 8px;
+        vertical-align: 1px;
+        letter-spacing: 0.04em;
+        background: #eef0f4;
+        color: var(--skip);
+      }
+      .tag.pass {
+        background: #e3f5eb;
+        color: var(--pass);
+      }
+      .tag.fail {
+        background: #fdecea;
+        color: var(--fail);
+      }
+      .tag.skip {
+        background: #eef0f4;
+        color: var(--skip);
+      }
+      .tag.running {
+        background: #e8edfd;
+        color: var(--accent);
+        animation: pulse 1.4s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.4;
+        }
+      }
+      @supports (background: color-mix(in srgb, red 10%, transparent)) {
+        .tag.pass {
+          background: color-mix(in srgb, var(--pass) 16%, transparent);
+        }
+        .tag.fail {
+          background: color-mix(in srgb, var(--fail) 16%, transparent);
+        }
+        .tag.skip {
+          background: color-mix(in srgb, var(--skip) 16%, transparent);
+        }
+        .tag.running {
+          background: color-mix(in srgb, var(--accent) 16%, transparent);
+        }
+      }
+      .banner {
+        border: 1px solid #e0b4ae;
+        background: #fdf2f0;
+        color: #8c2f26;
+        border-radius: 10px;
+        padding: 14px 18px;
+        margin-bottom: 18px;
+        font-size: 14px;
+      }
+      .banner b {
+        display: block;
+        margin-bottom: 4px;
+      }
+      .banner code {
+        font-family: var(--mono);
+        font-size: 13px;
+        background: #fff;
+        padding: 1px 6px;
+        border-radius: 4px;
+      }
+      @media (prefers-color-scheme: dark) {
+        .banner {
+          border-color: #5c2f2a;
+          background: #2a1a18;
+          color: #ffb3a8;
+        }
+        .banner code {
+          background: #1a1d25;
+        }
+      }
+      pre {
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px 14px;
+        overflow: auto;
+        font-family: var(--mono);
+        font-size: 12px;
+        line-height: 1.6;
+        max-height: 340px;
+        margin: 0;
+      }
+      details {
+        margin-top: 10px;
+      }
+      summary {
+        cursor: pointer;
+        font-size: 13px;
+        color: var(--accent);
+        user-select: none;
+      }
+      .log {
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--muted);
+        max-height: 180px;
+        overflow: auto;
+        white-space: pre-wrap;
+        margin: 0;
+      }
+      .grid2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 7px 8px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+      th {
+        color: var(--muted);
+        font-weight: 600;
+        font-size: 12px;
+      }
+      .pill {
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .hidden {
+        display: none;
+      }
+      @media (max-width: 720px) {
+        .row,
+        .row3,
+        .grid2 {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>长课修订实验</h1>
+      <p class="sub">
+        用真实模型验证「审校 → 修复」这条链路。十一个检查点，每个都指明具体哪一环坏了。
+      </p>
+
+      <div id="offline" class="banner" style="display: none">
+        <b>这个页面没有连上实验服务</b>
+        直接打开 HTML 文件、或者用静态预览打开，都没有后端，点「开始实验」不会有任何反应。
+        请先启动服务，再从 <code>http://localhost:8787</code> 打开本页。
+        <div style="margin-top: 10px">
+          在仓库根目录运行：<code>pnpm experiment:long-form</code>（Windows 也可以双击
+          <code>start-long-form-experiment.cmd</code>）
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>接口</h2>
+        <div class="field">
+          <label for="baseUrl">Base URL</label>
+          <input
+            id="baseUrl"
+            type="text"
+            value="https://api.stepfun.com/step_plan/v1"
+            spellcheck="false"
+          />
+        </div>
+        <div class="row3">
+          <div>
+            <label for="apiKey">API Key</label>
+            <input
+              id="apiKey"
+              type="password"
+              placeholder="粘贴你的 key"
+              spellcheck="false"
+              autocomplete="off"
+            />
+          </div>
+          <div>
+            <label for="model">Model</label>
+            <input id="model" type="text" value="step-5-preview" spellcheck="false" />
+          </div>
+        </div>
+        <div class="check">
+          <input id="generateReal" type="checkbox" />
+          <label for="generateReal" style="margin: 0"
+            >额外跑一次真实大纲生成（+1 次调用，较慢，约 1-3 分钟）</label
+          >
+        </div>
+        <button id="run">开始实验</button>
+        <button id="probe" class="ghost">接口诊断</button>
+        <p class="hint">
+          密钥只进入本机进程的内存，用于这一次请求，不写文件、不打印、不回传。刷新页面即消失。
+        </p>
+      </div>
+
+      <div id="probeCard" class="card hidden">
+        <h2>接口诊断</h2>
+        <pre id="probeOut"></pre>
+      </div>
+
+      <div id="progressCard" class="card hidden">
+        <h2>进度</h2>
+        <pre id="log" class="log"></pre>
+      </div>
+
+      <div id="planCard" class="card hidden">
+        <h2>实验素材</h2>
+        <table>
+          <tbody id="planBody"></tbody>
+        </table>
+      </div>
+
+      <div id="resultCard" class="card hidden">
+        <h2>结果</h2>
+        <div class="verdict"><b id="score">—</b><span id="scoreNote"></span></div>
+        <ul class="cp" id="checkpoints"></ul>
+      </div>
+
+      <div id="afterCard" class="card hidden">
+        <h2>修复前后（算术审计）</h2>
+        <div class="grid2">
+          <div>
+            <label>修复前</label>
+            <pre id="before"></pre>
+          </div>
+          <div>
+            <label>修复后</label>
+            <pre id="after"></pre>
+          </div>
+        </div>
+        <div id="previewWrap" class="hidden" style="margin-top: 16px">
+          <label>修复后前六页</label>
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>标题</th>
+                <th>要点</th>
+                <th>目标</th>
+                <th>秒</th>
+              </tr>
+            </thead>
+            <tbody id="previewBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="artifactCard" class="card hidden">
+        <h2>原始输出</h2>
+        <div id="artifacts"></div>
+      </div>
+    </div>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const logEl = $('log');
+      let lines = 0;
+
+      function log(text) {
+        lines += 1;
+        logEl.textContent += `${String(lines).padStart(2, '0')}  ${text}\n`;
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      function tag(status) {
+        const map = { pass: '通过', fail: '失败', skip: '跳过', running: '运行中' };
+        return `<span class="tag ${status}">${map[status] || status}</span>`;
+      }
+
+      function renderCheckpoint(cp) {
+        const li = document.createElement('li');
+        li.innerHTML = `<div class="id">${cp.id}</div>
+    <div><div class="name">${tag(cp.status)}${escapeHtml(cp.label)}</div>
+    <div class="detail">${escapeHtml(cp.detail || '')}</div></div>`;
+        return li;
+      }
+
+      // A model call can take minutes, and silence during it reads as "it
+      // died". A pending row with a running clock is the difference between
+      // waiting and wondering.
+      const pending = new Map();
+
+      function startPending(label) {
+        endPending(label);
+        const li = document.createElement('li');
+        li.innerHTML = `<div class="id">··</div>
+    <div><div class="name">${tag('running')}${escapeHtml(label)}</div>
+    <div class="detail">等待模型返回… 0s</div></div>`;
+        $('resultCard').classList.remove('hidden');
+        $('checkpoints').appendChild(li);
+        li.scrollIntoView({ block: 'nearest' });
+
+        const detail = li.querySelector('.detail');
+        const started = Date.now();
+        const timer = setInterval(() => {
+          const seconds = Math.round((Date.now() - started) / 1000);
+          const hint =
+            seconds > 120
+              ? '推理模型较慢，仍在等待；如果超过 5 分钟请点「接口诊断」'
+              : '等待模型返回';
+          detail.textContent = `${hint}… ${seconds}s`;
+        }, 1000);
+
+        pending.set(label, { li, timer });
+      }
+
+      function endPending(label) {
+        const entry = pending.get(label);
+        if (!entry) return;
+        clearInterval(entry.timer);
+        entry.li.remove();
+        pending.delete(label);
+      }
+
+      function clearPending() {
+        for (const label of [...pending.keys()]) endPending(label);
+      }
+
+      function escapeHtml(text) {
+        return String(text).replace(
+          /[&<>"']/g,
+          (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
+        );
+      }
+
+      function addArtifact(name, content) {
+        $('artifactCard').classList.remove('hidden');
+        const box = document.createElement('details');
+        box.innerHTML = `<summary>${escapeHtml(name)} · ${content.length} 字符</summary><pre></pre>`;
+        box.querySelector('pre').textContent = content;
+        $('artifacts').appendChild(box);
+      }
+
+      function reset() {
+        lines = 0;
+        logEl.textContent = '';
+        $('checkpoints').innerHTML = '';
+        $('artifacts').innerHTML = '';
+        for (const id of ['progressCard', 'planCard', 'resultCard', 'afterCard', 'artifactCard']) {
+          $(id).classList.add('hidden');
+        }
+        $('previewWrap').classList.add('hidden');
+      }
+
+      async function run() {
+        const baseUrl = $('baseUrl').value.trim();
+        const apiKey = $('apiKey').value.trim();
+        const model = $('model').value.trim();
+        const generateReal = $('generateReal').checked;
+
+        if (!baseUrl || !apiKey || !model) {
+          alert('Base URL、API Key、Model 三项都要填。');
+          return;
+        }
+
+        reset();
+        $('run').disabled = true;
+        $('run').textContent = '运行中…';
+        $('progressCard').classList.remove('hidden');
+        log('开始');
+
+        const checkpoints = [];
+
+        try {
+          const response = await fetch('/api/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ baseUrl, apiKey, model, generateReal }),
+          });
+
+          if (!response.ok || !response.body) {
+            const text = await response.text();
+            throw new Error(text || `HTTP ${response.status}`);
+          }
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            let split;
+            while ((split = buffer.indexOf('\n\n')) !== -1) {
+              const chunk = buffer.slice(0, split);
+              buffer = buffer.slice(split + 2);
+              if (!chunk.startsWith('data: ')) continue;
+              handle(JSON.parse(chunk.slice(6)));
+            }
+          }
+        } catch (error) {
+          log(`出错：${error.message}`);
+        } finally {
+          clearPending();
+          $('run').disabled = false;
+          $('run').textContent = '开始实验';
+        }
+
+        function handle(event) {
+          if (event.type === 'plan') {
+            $('planCard').classList.remove('hidden');
+            const p = event.plan;
+            const f = event.fixture;
+            $('planBody').innerHTML = `
+        <tr><th>素材</th><td>${escapeHtml(f.title)} · ${f.pages} 页 · ${f.minutes} 分钟（真人课）</td></tr>
+        <tr><th>预算</th><td>${p.minutes} 分钟 → ${p.modules} 模块 / ${p.pages} 页 / ${p.speech} 字</td></tr>
+        <tr><th>义务</th><td>补丁模块 ${p.patchModules.join(',')} · 决策模块 ${p.decisionModules.join(',')}</td></tr>`;
+            log(`素材就绪：${p.modules} 模块 / ${p.pages} 页`);
+            return;
+          }
+          if (event.type === 'call') {
+            if (event.phase === 'start') {
+              log(`调用：${event.label} …`);
+              startPending(event.label);
+            } else {
+              log(`调用：${event.label} 完成 ${event.ms}ms`);
+              endPending(event.label);
+            }
+            return;
+          }
+          if (event.type === 'checkpoint') {
+            checkpoints.push(event.checkpoint);
+            $('resultCard').classList.remove('hidden');
+            $('checkpoints').appendChild(renderCheckpoint(event.checkpoint));
+            log(
+              `${event.checkpoint.id} ${event.checkpoint.status === 'pass' ? '✓' : event.checkpoint.status === 'fail' ? '✗' : '·'} ${event.checkpoint.label}`,
+            );
+            return;
+          }
+          if (event.type === 'after') {
+            $('afterCard').classList.remove('hidden');
+            $('before').textContent = event.before;
+            $('after').textContent = event.after;
+            if (event.preview && event.preview.length) {
+              $('previewWrap').classList.remove('hidden');
+              $('previewBody').innerHTML = event.preview
+                .map(
+                  (row) => `
+          <tr><td class="pill">${row.page}</td><td>${escapeHtml(row.title)}</td>
+          <td>${escapeHtml((row.keyPoints || []).join(' · ')).slice(0, 160)}</td>
+          <td>${escapeHtml(row.objective || '—')}</td><td class="pill">${row.seconds ?? '—'}</td></tr>`,
+                )
+                .join('');
+            }
+            return;
+          }
+          if (event.type === 'artifact') {
+            addArtifact(event.name, event.content);
+            return;
+          }
+          if (event.type === 'fatal') {
+            clearPending();
+            log(`致命错误：${event.message}`);
+            return;
+          }
+          if (event.type === 'done') {
+            clearPending();
+            const total = event.checkpoints.length;
+            const passed = event.checkpoints.filter((cp) => cp.status === 'pass').length;
+            const failed = event.checkpoints.filter((cp) => cp.status === 'fail').length;
+            $('score').textContent =
+              failed === 0 ? `${passed}/${total} 全通过` : `${passed}/${total}`;
+            $('scoreNote').textContent =
+              failed === 0 ? '审校与修复链路可以用于生产' : `${failed} 项失败 —— 看下面哪一环坏了`;
+            log(`结束：${passed}/${total} 通过`);
+          }
+        }
+      }
+
+      $('run').addEventListener('click', run);
+      $('probe').addEventListener('click', probe);
+      $('apiKey').addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') run();
+      });
+
+      // One raw round trip. When the endpoint does not behave the way the
+      // experiment needs, this says how, instead of leaving "no content" to be
+      // guessed at.
+      async function probe() {
+        const baseUrl = $('baseUrl').value.trim();
+        const apiKey = $('apiKey').value.trim();
+        const model = $('model').value.trim();
+        if (!baseUrl || !apiKey || !model) {
+          alert('Base URL、API Key、Model 三项都要填。');
+          return;
+        }
+
+        $('probe').disabled = true;
+        $('probeCard').classList.remove('hidden');
+        $('probeOut').textContent = '请求中…';
+
+        try {
+          const response = await fetch('/api/probe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ baseUrl, apiKey, model }),
+          });
+          const json = await response.json();
+          $('probeOut').textContent = JSON.stringify(json, null, 2);
+        } catch (error) {
+          $('probeOut').textContent = `请求失败：${error.message}`;
+        } finally {
+          $('probe').disabled = false;
+        }
+      }
+
+      // Opened from disk or from a static preview there is no server behind the
+      // page, and every button fails silently. Say so instead.
+      (async () => {
+        try {
+          const health = await fetch('/api/health', { cache: 'no-store' });
+          if (!health.ok) throw new Error(String(health.status));
+          const body = await health.json();
+          if (body.service !== 'long-form-experiment') throw new Error('wrong service');
+        } catch {
+          $('offline').style.display = 'block';
+          $('run').disabled = true;
+          $('run').textContent = '未连接服务';
+          $('probe').disabled = true;
+        }
+      })();
+    </script>
+  </body>
+</html>

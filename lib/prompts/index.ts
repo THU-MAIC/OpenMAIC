@@ -27,4 +27,6 @@ export const PROMPT_IDS = {
   INTERACTIVE_OUTLINES: 'interactive-outlines',
   TASK_ENGINE_OUTLINES: 'task-engine-outlines',
   WEB_SEARCH_QUERY_REWRITE: 'web-search-query-rewrite',
+  LONG_FORM_CRITIQUE: 'long-form-critique',
+  LONG_FORM_REVISE: 'long-form-revise',
 } as const satisfies Record<string, PromptId>;

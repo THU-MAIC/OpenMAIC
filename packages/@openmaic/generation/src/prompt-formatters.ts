@@ -46,6 +46,13 @@ export function buildCourseContext(ctx?: SceneGenerationContext): string {
     lines.push(`  "...${lastSpeech.slice(-150)}"`);
   }
 
+  // Long-form position: module, course clock and this page's narration budget.
+  // Appended last so the short path's context stays byte-identical.
+  if (ctx.longFormBrief) {
+    lines.push('');
+    lines.push(ctx.longFormBrief);
+  }
+
   return lines.join('\n');
 }
 

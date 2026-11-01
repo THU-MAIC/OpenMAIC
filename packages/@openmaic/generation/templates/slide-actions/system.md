@@ -166,8 +166,21 @@ Elements to focus on should be **key content currently being discussed**:
 
 ### 3. Pacing Control
 
-- Generate 5-10 action/text objects for a natural teaching flow
-- Each spotlight should be paired with a corresponding text object
+{{pacingGuidance}}
+- Each spotlight should be paired with a corresponding text object{{#if longFormMode}}
+
+### 4. Long-Form Elaboration (how a page earns three minutes)
+
+An hour-long lesson fails differently from a short one: nothing is *wrong*, everything is thin. A page that states the point and moves on is a page the learner forgets by minute 40. So on a long page, the narration must do real work:
+
+- **Never announce a conclusion without the step that produces it.** If the page says "therefore the rate saturates", the speech walks the "therefore".
+- **Ground abstractions in one concrete instance before generalising.** Name the case, put numbers or a situation on it, then lift to the rule.
+- **Say why this page exists in this module, once, near the start.** "We need this because the previous page left us unable to say what happens at high dose."
+- **Use the learner's likely wrong answer.** State the intuitive-but-wrong expectation, then show the collision with the evidence. This is the single highest-value move available on a long page.
+- **Close the page by handing forward**, in one sentence, unless this is the last page of the module — then consolidate instead.
+- **Vary the register across a module.** Two consecutive pages that both open with a definition and close with a summary is what makes an hour feel like a list. This page should not open the same way the previous one did.
+- **Write the words that will be spoken, not presenter cues.** A slide deck's speaker notes say "定义抓三个成分：…" and the presenter expands it live; measured against its own minute budget, such notes run at about 90 characters a minute, while speech runs at 240. You are not that presenter's notes — you are the voice. Expand every cue into the sentence the learner actually hears.
+{{/if}}
 
 ---
 

@@ -1766,6 +1766,24 @@ function buildPBLProjectSummary(outline: SceneOutline, project: PBLProject | und
 }
 
 /**
+ * The long-form replacements for the slide-actions prompt's pacing and
+ * elaboration blocks.
+ *
+ * The templates carry the short-lesson wording as prompt-variable defaults, so
+ * an unaware caller gets the short prompts byte for byte. A caller that renders
+ * a `longFormBrief` swaps these in, and the prompt switches to the long-form
+ * contract without a second template.
+ */
+const LONG_FORM_ACTION_VARIABLES = {
+  segmentCount: '9-16',
+  pacingGuidance: [
+    '- This page carries 2-3 minutes of a long lesson: generate **9-16** action/text objects, not 5-10.',
+    '- Spend the budget on *elaboration*, not on repetition. A long page earns its length by doing at least three of: making the claim, showing why it must be true, running a concrete case, naming the boundary where it fails, and connecting it back to the module’s question.',
+    '- The speech budget is stated in the page’s position block. Stay within roughly ±15% of it — a page that runs half its budget leaves dead air in an hour-long lesson, and a page that doubles it forces the lesson to be cut elsewhere.',
+  ].join('\n'),
+};
+
+/**
  * Step 3.2: Generate Actions based on content and script
  */
 export async function generateSceneActions(
@@ -1803,6 +1821,7 @@ export async function generateSceneActions(
       agents: agentsText,
       userProfile: userProfile || '',
       languageDirective: languageDirective || '',
+      ...(ctx?.longFormBrief ? LONG_FORM_ACTION_VARIABLES : {}),
     });
 
     if (!prompts) {

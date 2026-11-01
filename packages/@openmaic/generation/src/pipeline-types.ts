@@ -20,6 +20,15 @@ export interface SceneGenerationContext {
   totalPages: number; // Total number of pages
   allTitles: string[]; // All page titles in order
   previousSpeeches: string[]; // Speech texts from the previous page only
+  /**
+   * Where this page sits in a long-form course, already rendered by the host.
+   *
+   * Absent on the short path, where page/total is the whole story. Present on a
+   * long sitting, where it carries the module, the course clock and this page's
+   * narration budget — the three things a model writing page 19 of 27 cannot
+   * infer from a title list.
+   */
+  longFormBrief?: string;
 }
 
 // ==================== Generated Slide Data Interface ====================

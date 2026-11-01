@@ -66,7 +66,9 @@ Produce a **`courseTitle`** (required): a concise, human-readable name for the *
 - **Quiz Scene**: Supports single-choice, multiple-choice, and short-answer (text) questions
 - **Interactive Scene**: Self-contained interactive HTML page rendered in an iframe, ideal for simulations and visualizations
 - **PBL Scene**: Complete project-based learning module with roles, issues, and collaboration workflow. Ideal for complex projects, engineering practice, and research tasks
-- **Duration Control**: Each scene should be 1-3 minutes (PBL scenes are longer, typically 15-30 minutes)
+- **Duration Control**: Each scene should be 1-3 minutes (PBL scenes are longer, typically 15-30 minutes){{#if longFormMode}}
+- **Long-form override**: this course is one long sitting. The module table, page counts and speech budgets in the Long-Form Budget carried by the user message replace the 1-3 minute and 1-2-scenes-per-minute defaults. Follow the table, not the defaults.
+{{/if}}
 
 ### Instructional Design Principles
 
@@ -74,7 +76,36 @@ Produce a **`courseTitle`** (required): a concise, human-readable name for the *
 - **Logical Flow**: Scenes form a natural teaching progression
 - **Experience Design**: Consider learning experience and emotional response from the student's perspective
 
----
+---{{#if longFormMode}}
+
+## Long-Form Course Design
+
+This is one long sitting, not a short lesson. Three things change at this length, and the outline is where all three are decided.
+
+### 1. The budget is fixed before the content
+
+The user message carries a Long-Form Budget: modules, their minutes, their page counts and their speech budgets. It was computed from the requested length and it is not negotiable. Your outline must contain exactly the pages it allows, in the module order it lists.
+
+The same block states the four contracts the outline is reviewed against once you finish — derivation, systems, foundation and agency — and which modules carry which obligation. Write for them the first time: the outline is critiqued after this pass, and the pages that fail are sent back.
+
+### 2. Every knowledge point is elaborated, never announced
+
+A page title plus three bullets is what a short lesson can get away with. Over an hour it is what makes a course feel like a slide reading. Each page's `description` and `keyPoints` must therefore carry an **elaboration plan**, not a topic label:
+
+- **`description`** states what this page makes the learner able to *do or predict* afterwards, and which single move gets them there. Write "Derive why the second dose clears faster by walking the same half-life twice with different starting amounts", not "Explain half-life".
+- **`keyPoints`** are the argument's steps, in order — the thing the narration will walk. Each point must be a claim with content in it, not a heading. "Steady state is reached after roughly four to five half-lives" beats "Steady state".
+- Where a page is a **worked example**, the keyPoints are the example's steps; where it is a **derivation**, they are the derivation's links; where it is a **contrast**, they are the two cases and the discriminating feature.
+- A page that only restates the previous page has no reason to exist. Every page advances the module's single claim.
+
+### 3. Continuity is written into the outline
+
+- **Every page's `description` ends with where it hands forward** — the question the next page answers. Not just module boundaries: an hour has too many seams to leave any of them implicit.
+- The `description` of the first page of a module must also state what it picks up from the module before it.
+- The `description` of the last page of a module must state what it consolidates before it hands forward.
+- Do not repeat the same page shape back to back for a whole module: a module of six identical "concept + bullets" pages is a module the learner leaves. Vary the move — derivation, worked example, contrast, case, chart reading, prediction.
+- Name the difficulty curve: early pages in a module may assume less, later pages may assume the module's earlier pages. The course as a whole may not assume anything it has not itself taught.
+
+---{{/if}}
 
 ## Default Assumption Rules
 
@@ -86,7 +117,9 @@ When user requirements don't specify, use these defaults:
 | Target Audience     | General learners       |
 | Teaching Style      | Interactive (engaging) |
 | Visual Style        | Professional           |
-| Interactivity Level | Medium                 |
+| Interactivity Level | Medium                 |{{#if longFormMode}}
+> The **Course Duration** default above does not apply to this request. The Long-Form Budget section fixes the duration, the module count, the page count and the speech budget, and none of them may be re-inferred.
+{{/if}}
 
 ---
 
@@ -380,7 +413,9 @@ Omit `scenarioRoleplay` and `scenarioBrief` entirely for ordinary build-an-artef
 5. `quiz` scenes must include `quizConfig`.
 6. `interactive` scenes must include `widgetType` and `widgetOutline` (preferred). `interactiveConfig` is deprecated and only accepted for backwards compatibility.
 7. `pbl` scenes must include `pblConfig` with `projectTopic`, `projectDescription`, `targetSkills`, `issueCount`.
-8. Arrange scenes by inferred duration (typically 1-2 scenes per minute). Insert quizzes at appropriate points. Use interactive scenes sparingly (max 1-2 per course).
+8. Arrange scenes by inferred duration (typically 1-2 scenes per minute). Insert quizzes at appropriate points. Use interactive scenes sparingly (max 1-2 per course).{{#if longFormMode}}
+8a. **Long-form requests override rule 8.** Use the page counts in the Long-Form Budget table (roughly one page per 2-3 minutes), place a retrieval scene at each module end the budget marks, and set `estimatedDuration` on every scene from the page budgets.
+{{/if}}
 9. **Language**: Infer from the user's requirement text and context. Output all scene content in the inferred language.
 10. Regardless of information completeness, always output conforming JSON - do not ask questions or request more information
 11. **No teacher identity on slides**: Scene titles and keyPoints must be neutral and topic-focused. Never include the teacher's name or role (e.g., avoid "Teacher Wang's Tips", "Teacher's Wishes"). Use generic labels like "Tips", "Summary", "Key Takeaways" instead.

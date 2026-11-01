@@ -15,6 +15,16 @@ export const STEP_DEADLINES_MS = {
   research: 300_000,
   /** The outline, its own stream retries included. */
   outline: 300_000,
+  /**
+   * The critique/repair rounds that follow a long-form outline.
+   *
+   * Added on top of {@link outline} rather than carved out of it: a long outline
+   * stream can spend the whole 300s on its own, and a revision phase that starts
+   * with nothing left would silently do nothing on exactly the courses that
+   * need it most. The revision loop self-limits against the combined deadline,
+   * so a stream that ran long simply leaves fewer rounds.
+   */
+  outlineRevision: 240_000,
   agentProfiles: 120_000,
   /** Per attempt. */
   sceneContent: 300_000,

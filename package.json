@@ -34,7 +34,10 @@
     "eval:outline-language": "tsx eval/outline-language/runner.ts",
     "eval:orchestration:answering": "tsx --conditions=import eval/orchestration/answering-runner.ts",
     "eval:orchestration:answer-content": "tsx --conditions=import eval/orchestration/answer-content-runner.ts",
-    "sync:interactive-assets": "node scripts/sync-interactive-assets.mjs"
+    "sync:interactive-assets": "node scripts/sync-interactive-assets.mjs",
+    "eval:long-form": "tsx eval/long-form/runner.ts",
+    "parse:deck": "node scripts/long-form/parse-deck.mjs",
+    "experiment:long-form": "tsx --conditions=import scripts/long-form/experiment-server.ts"
   },
   "dependencies": {
     "@ai-sdk/amazon-bedrock": "^4.0.103",

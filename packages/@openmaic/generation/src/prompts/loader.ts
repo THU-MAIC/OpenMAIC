@@ -18,6 +18,28 @@ const PROMPT_VARIABLE_DEFAULTS = {
     projectSummary:
       '(No generated milestones are available; introduce the project topic without inventing any.)',
   },
+  /**
+   * The short-lesson wording of every block a long-form course replaces.
+   *
+   * Variables rather than `{{#if shortFormMode}}` blocks: a conditional whose
+   * flag is absent deletes the short wording too, so a caller that never heard
+   * of long form would silently lose the scene-count and pacing rules. With
+   * defaults, an unaware caller keeps the short-lesson wording; only a
+   * long-form caller swaps it.
+   *
+   * Sections that exist *only* for long form (the elaboration contract) stay
+   * behind `{{#if longFormMode}}`, where removal loses nothing.
+   */
+  'requirements-to-outlines': {
+    durationGuidance: '- Course duration (default 15-30 minutes if not specified)',
+    sceneCountGuidance:
+      '- **Scene count**: Based on inferred duration, typically 1-2 scenes per minute',
+    longFormBrief: '',
+  },
+  'slide-actions': {
+    segmentCount: '5-10',
+    pacingGuidance: '- Generate 5-10 action/text objects for a natural teaching flow',
+  },
 } satisfies PromptVariableDefaults;
 
 function isMissingFileError(error: unknown): boolean {

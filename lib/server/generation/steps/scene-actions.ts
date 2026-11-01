@@ -43,6 +43,14 @@ export interface SceneActionsInput {
   previousSpeeches?: string[];
   userProfile?: string;
   languageDirective?: string;
+  /**
+   * Where this page sits in a long-form course, rendered by the caller.
+   *
+   * The engine owns the course plan (it has the requirement), so it renders the
+   * position block and passes it in. Absent on the short path, where the page
+   * index and the title list are the whole story.
+   */
+  longFormBrief?: string;
   /** The scene-actions stage's model. */
   model: StepLanguageModel;
 }
@@ -129,6 +137,7 @@ export async function generateSceneActions(
     totalPages: allOutlines.length,
     allTitles,
     previousSpeeches: input.previousSpeeches ?? [],
+    ...(input.longFormBrief ? { longFormBrief: input.longFormBrief } : {}),
   };
 
   // ── Generate actions ──
