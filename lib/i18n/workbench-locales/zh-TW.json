@@ -47,7 +47,9 @@
     "fileTooLargeWithLimit": "檔案過大，請選擇不超過 {{limit}}MB 的檔案。",
     "unsupportedType": "不支援此檔案類型，請選擇受支援的檔案。",
     "quotaExceeded": "已達到材料上傳限額。",
-    "storageFull": "儲存空間已達上限，無法上傳這份資料。"
+    "storageFull": "儲存空間已達上限，無法上傳這份資料。",
+    "uploadFailedShort": "上傳失敗",
+    "retryFailed": "無法重新解析，請稍後再試。"
   },
   "skill": {
     "listFailed": "Skill 清單載入失敗",

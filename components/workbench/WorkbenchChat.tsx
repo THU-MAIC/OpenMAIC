@@ -1314,6 +1314,9 @@ export function WorkbenchChat({
                       failed={materials.failed}
                       onRemove={materials.remove}
                       onRemoveFailed={materials.removeFailed}
+                      extraction={materials.extraction}
+                      onRetryFailed={materials.retryFailed}
+                      onRetryExtraction={materials.retryExtraction}
                     />
                     <ElementRefPills
                       inline

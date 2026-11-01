@@ -294,6 +294,9 @@ function deferred<T>() {
 
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  // Uploads report progress through XMLHttpRequest when the page has it; here
+  // they go through the fetch mock instead.
+  vi.stubGlobal('XMLHttpRequest', undefined);
   mocks.router = { push: mocks.routerPush, replace: mocks.routerReplace };
   vi.spyOn(window.history, 'pushState').mockImplementation((_state, _unused, url) => {
     mocks.routerPush(String(url));

@@ -2272,8 +2272,72 @@ async function workbenchMaterialPolicy(): Promise<MaterialPolicy | undefined> {
   }
 }
 
-/** Upload one file into the caller's durable material library. */
-export async function uploadWorkbenchMaterial(file: File): Promise<WorkbenchMaterial> {
+/** A finished `POST /api/materials`: its status, request id and parsed body. */
+interface MaterialPostAnswer {
+  readonly ok: boolean;
+  readonly status: number;
+  readonly requestId?: string;
+  readonly body: unknown;
+}
+
+/**
+ * Send the bytes. With `onProgress`, through XMLHttpRequest -- fetch reports
+ * no upload progress -- calling it with the share of the bytes sent (0 to 1).
+ */
+function postMaterialBytes(
+  file: File,
+  headers: Record<string, string>,
+  onProgress?: (sent: number) => void,
+): Promise<MaterialPostAnswer> {
+  const url = '/api/materials?scope=library';
+  if (onProgress && typeof XMLHttpRequest !== 'undefined') {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', url);
+      for (const [name, value] of Object.entries(headers)) xhr.setRequestHeader(name, value);
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && event.total > 0) onProgress(event.loaded / event.total);
+      };
+      xhr.onload = () => {
+        let body: unknown = {};
+        try {
+          body = JSON.parse(xhr.responseText);
+        } catch {
+          body = {};
+        }
+        resolve({
+          ok: xhr.status >= 200 && xhr.status < 300,
+          status: xhr.status,
+          requestId: xhr.getResponseHeader('x-request-id') ?? undefined,
+          body,
+        });
+      };
+      xhr.onerror = () => reject(new TypeError('Failed to upload the material'));
+      xhr.send(file);
+    });
+  }
+  return fetch(url, {
+    method: 'POST',
+    headers,
+    body: file,
+    // Required by undici for streaming bodies; harmless otherwise.
+    duplex: 'half',
+  } as RequestInit).then(async (res) => ({
+    ok: res.ok,
+    status: res.status,
+    requestId: res.headers.get('x-request-id') ?? undefined,
+    body: await res.json().catch(() => ({})),
+  }));
+}
+
+/**
+ * Upload one file into the caller's durable material library. `onProgress`
+ * hears the share of its bytes sent, 0 to 1.
+ */
+export async function uploadWorkbenchMaterial(
+  file: File,
+  { onProgress }: { onProgress?: (sent: number) => void } = {},
+): Promise<WorkbenchMaterial> {
   // Some Linux browsers report every OOXML file with the generic
   // `application/vnd.ms-office` MIME (#1497) — resolve the concrete type
   // from the filename so the server gate sees what the file actually is.
@@ -2302,17 +2366,15 @@ export async function uploadWorkbenchMaterial(file: File): Promise<WorkbenchMate
   }
   // A session extracts what it binds itself: the library's own extraction
   // (for classic generation) is not started for it.
-  const res = await fetch('/api/materials?scope=library', {
-    method: 'POST',
-    headers: {
+  const res = await postMaterialBytes(
+    file,
+    {
       'content-type': mimeType || 'application/octet-stream',
       'x-material-filename': encodeURIComponent(file.name),
     },
-    body: file,
-    // Required by undici for streaming bodies; harmless otherwise.
-    duplex: 'half',
-  } as RequestInit);
-  const body = (await res.json().catch(() => ({}))) as {
+    onProgress,
+  );
+  const body = (res.body ?? {}) as {
     materialId?: string;
     originalName?: string;
     bytes?: number;
@@ -2323,7 +2385,7 @@ export async function uploadWorkbenchMaterial(file: File): Promise<WorkbenchMate
     maxBytes?: unknown;
   };
   if (!res.ok || !body.materialId) {
-    const requestId = res.headers.get('x-request-id') ?? undefined;
+    const requestId = res.requestId;
     const message = body.message ?? body.error ?? `POST /api/materials -> ${res.status}`;
     throw new WorkbenchMaterialUploadError(
       requestId ? `${message} [requestId=${requestId}]` : message,

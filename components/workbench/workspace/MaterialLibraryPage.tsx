@@ -26,12 +26,6 @@ import {
   ChevronDown,
   ChevronRight,
   Database,
-  File,
-  FileAudio,
-  FileImage,
-  FileSpreadsheet,
-  FileText,
-  FileVideo,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -39,7 +33,6 @@ import {
   Info,
   Library,
   LoaderCircle,
-  Presentation,
   Search,
   Upload,
   X,
@@ -87,6 +80,7 @@ import {
   type LibraryMenuItem,
 } from './MaterialLibraryDialogs';
 import { InlineName, newFolderName, type CommitCause } from './inline-name';
+import { MaterialKindIcon } from '../material-kind';
 import { useTreeDrag } from './use-tree-drag';
 import { WORKBENCH_MATERIAL_ACCEPT } from '@/lib/workbench/material-upload-policy';
 import { materialAttachable } from '@/lib/workbench/material-mention';
@@ -144,48 +138,15 @@ function RowChevron({ open }: { readonly open?: boolean }) {
   return open ? <ChevronDown {...ROW_ICON} /> : <ChevronRight {...ROW_ICON} />;
 }
 
-/**
- * A file's kind, from its type (or, without one, its extension): each kind
- * keeps the list's one icon size and stroke, and is told apart by its tint,
- * the colours people already know these formats by.
- */
-const MATERIAL_KINDS = {
-  pdf: { Icon: FileText, tint: 'text-rose-500 dark:text-rose-400' },
-  document: { Icon: FileText, tint: 'text-blue-600 dark:text-blue-400' },
-  slides: { Icon: Presentation, tint: 'text-orange-500 dark:text-orange-400' },
-  sheet: { Icon: FileSpreadsheet, tint: 'text-emerald-600 dark:text-emerald-400' },
-  image: { Icon: FileImage, tint: 'text-sky-600 dark:text-sky-400' },
-  audio: { Icon: FileAudio, tint: 'text-fuchsia-600 dark:text-fuchsia-400' },
-  video: { Icon: FileVideo, tint: 'text-indigo-600 dark:text-indigo-400' },
-  text: { Icon: FileText, tint: 'text-[color:var(--ws-ink-mute)]' },
-  other: { Icon: File, tint: 'text-[color:var(--ws-ink-mute)]' },
-} as const;
-
-function materialKind(mime?: string, name?: string): keyof typeof MATERIAL_KINDS {
-  const type = mime?.toLowerCase() ?? '';
-  const extension = name?.includes('.') ? name.slice(name.lastIndexOf('.') + 1).toLowerCase() : '';
-  if (type === 'application/pdf' || extension === 'pdf') return 'pdf';
-  if (type.includes('presentation') || extension === 'pptx' || extension === 'ppt') return 'slides';
-  if (
-    type.includes('spreadsheet') ||
-    type === 'text/csv' ||
-    ['xlsx', 'xls', 'csv'].includes(extension)
-  ) {
-    return 'sheet';
-  }
-  if (type.includes('wordprocessing') || type === 'application/msword' || extension === 'docx') {
-    return 'document';
-  }
-  if (type.startsWith('image/')) return 'image';
-  if (type.startsWith('audio/')) return 'audio';
-  if (type.startsWith('video/')) return 'video';
-  if (type.startsWith('text/') || ['md', 'markdown', 'txt'].includes(extension)) return 'text';
-  return 'other';
-}
-
 function MaterialIcon({ mime, name }: { readonly mime?: string; readonly name?: string }) {
-  const { Icon, tint } = MATERIAL_KINDS[materialKind(mime, name)];
-  return <Icon {...ROW_ICON} className={cn(ROW_ICON.className, tint)} />;
+  return (
+    <MaterialKindIcon
+      mime={mime}
+      name={name}
+      strokeWidth={ROW_ICON.strokeWidth}
+      className={ROW_ICON.className}
+    />
+  );
 }
 
 /** A folder: the product's accent, filled lightly, open while its files show. */
