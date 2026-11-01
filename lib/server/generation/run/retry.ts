@@ -59,6 +59,12 @@ export interface RouteRetryOptions {
   signal?: AbortSignal;
   /** `cause` is the failure being retried, as the step reported it. */
   onRetry?: (event: GenerationRetryEvent & { cause: string }) => Promise<void> | void;
+  /**
+   * Surface this failure immediately, without the route's retry sleep.
+   * A hung TTS request matches the retryable "timed out" message, so it is
+   * marked non-retryable here instead of being thrown raw into the retry loop.
+   */
+  rethrow?: (error: unknown) => boolean;
 }
 
 /** Run `operation`, retried as the browser retries the route it replaces; throws the last failure. */
@@ -75,10 +81,16 @@ export async function withRouteRetry<T>(
         } catch (error) {
           if (isAbortError(error)) throw error;
           cause = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+          // `rethrow` still goes through RouteStatusError so the retry loop
+          // sees `isRetryable: false` and the caller gets the original error.
+          // Rethrowing it raw would let a "timed out" message be retried.
+          const passthrough = options.rethrow?.(error) === true;
           throw new RouteStatusError(
             error,
             routeStatus(error, options.refusalStatus),
-            isProviderQuotaRefusal(error) ? false : classifyHostFailure(error)?.retryable,
+            passthrough || isProviderQuotaRefusal(error)
+              ? false
+              : classifyHostFailure(error)?.retryable,
           );
         }
       },

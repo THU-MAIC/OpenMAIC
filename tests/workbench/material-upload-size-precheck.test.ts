@@ -4,7 +4,7 @@ import { createWorkbenchTranslator } from '@/lib/i18n/workbench';
 import { retryMaterialUpload } from '@/lib/workbench/material-upload-scheduling';
 
 const capabilitiesUrl = '/api/generate-classroom/capabilities';
-const uploadUrl = '/api/materials?extract=false';
+const uploadUrl = '/api/materials?scope=library';
 const MiB = 1024 * 1024;
 
 let client: typeof import('@/lib/workbench/session-store');

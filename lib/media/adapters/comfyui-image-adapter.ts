@@ -27,6 +27,7 @@ import type {
   ImageGenerationResult,
 } from '../types';
 import { mediaFetchFor } from '../media-fetch';
+import { MAX_PROVIDER_MEDIA_BYTES, readResponseBodyWithLimit } from '../bounded-download';
 import { connectivityHttpFailure, connectivityTransportFailure } from '../probe-auth';
 import { aspectRatioToDimensions, IMAGE_PROVIDERS } from '../image-providers';
 import { assertNotRedirected } from '../redirect-guard';
@@ -532,18 +533,20 @@ async function fetchImageAsBase64(
     throw new Error(`ComfyUI /view failed (${response.status}) for image "${filename}"`);
   }
 
-  const buffer = await response.arrayBuffer();
+  const image = await readResponseBodyWithLimit(response, {
+    maxBytes: MAX_PROVIDER_MEDIA_BYTES,
+    label: `ComfyUI image "${filename}"`,
+  });
 
   // This runs server-side, so encode with Buffer (single native pass) rather
   // than a multi-MB per-byte String.fromCharCode loop. The btoa fallback is
   // retained only to keep this module import-safe in the browser bundle; it
   // is never exercised in practice because generation runs server-side.
   if (typeof Buffer !== 'undefined') {
-    return Buffer.from(buffer).toString('base64');
+    return image.toString('base64');
   }
-  const bytes = new Uint8Array(buffer);
   let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
+  for (const byte of image) binary += String.fromCharCode(byte);
   return btoa(binary);
 }
 

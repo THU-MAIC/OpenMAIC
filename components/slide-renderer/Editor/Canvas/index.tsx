@@ -97,7 +97,7 @@ export function Canvas(_props: CanvasProps) {
 
   // Sync store elements to local state
   useEffect(() => {
-    const newElements = elements ? JSON.parse(JSON.stringify(elements)) : [];
+    const newElements = elements ? structuredClone(elements) : [];
     elementListRef.current = newElements;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Sync store elements to local state
     setElementList(newElements);

@@ -4,6 +4,7 @@ import typescript from '@rollup/plugin-typescript';
 import preserveDirectives from 'rollup-plugin-preserve-directives';
 
 const external = [
+  /^@openmaic\/geometry($|\/)/,
   /^@openmaic\/dsl($|\/)/,
   /^react($|\/)/,
   /^react-dom($|\/)/,

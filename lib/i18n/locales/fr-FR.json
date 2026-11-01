@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "Retour",
     "you": "Vous",
     "confirm": "Confirmer",
     "cancel": "Annuler",
@@ -10,6 +11,22 @@
     "close": "Fermer"
   },
   "home": {
+    "resumeGeneration": "Poursuivre la génération",
+    "emptyLibraryTitle": "Vos cours commencent ici",
+    "emptyLibraryBody": "Créez un cours sur l’accueil et revenez ici pour le poursuivre.",
+    "mobileTitle": "Que voulez-vous apprendre ?",
+    "mobileSubtitle": "Indiquez un sujet et l’IA créera un cours interactif.",
+    "mobilePlaceholder": "Saisissez un sujet ou ajoutez des documents",
+    "courseOptions": "Options du cours",
+    "courseMaterials": "Supports de cours",
+    "courseMaterialsCount": "Supports de cours · {{n}}",
+    "backToCourseOptions": "Retour aux options du cours",
+    "materialsDone": "Terminé",
+    "allSettings": "Tous les paramètres",
+    "examplesLabel": "Exemples de sujets",
+    "examplePython": "Apprendre Python de zéro",
+    "exampleFourier": "Comprendre la transformée de Fourier par des exemples",
+    "desktopOnly": "Utilisez un ordinateur pour l’éditeur et le mode Pro.",
     "slogan": "L’apprentissage génératif en classe interactive multi-agents",
     "greetingWithName": "Bonjour, {{name}}"
   },
@@ -475,6 +492,7 @@
       "moreActions": "Autres actions",
       "rename": "Renommer",
       "sceneIncomplete": "Le contenu de cette page est incomplet",
+      "sceneHasErrors": "Cette page contient des erreurs",
       "addPage": "Ajouter une page",
       "nextPage": "Page suivante",
       "prevPage": "Page précédente"
@@ -1346,11 +1364,13 @@
       "ollama": "Ollama (local)",
       "tavily": "Tavily",
       "exa": "Exa",
+      "firecrawl": "Firecrawl",
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
       "claude": "Claude",
-      "searxng": "SearXNG"
+      "searxng": "SearXNG",
+      "builtin": "Lecteur intégré"
     },
     "modelCount": "modèles",
     "modelSingular": "modèle",
@@ -1716,7 +1736,6 @@
     "videoModel": "Modèle de génération de vidéos",
     "providerSeedance": "Seedance (ByteDance)",
     "providerKling": "Kling (Kuaishou)",
-    "providerVeo": "Veo (Google)",
     "providerSora": "Sora (OpenAI)",
     "providerMiniMaxVideo": "MiniMax Video",
     "providerGrokVideo": "Grok Video (xAI)",
@@ -1798,7 +1817,7 @@
     "tokenPlan": {
       "nav": "Forfait de jetons",
       "title": "Configuration du forfait de jetons",
-      "desc": "Choisissez votre fournisseur de forfait de jetons et saisissez la clé : toutes les modalités prises en charge sont configurées automatiquement (LLM, image, vidéo, parole, recherche web).",
+      "desc": "Choisissez votre fournisseur de forfait de jetons et saisissez la clé : toutes les modalités prises en charge sont configurées automatiquement (LLM, image, vidéo, parole, recherche web, récupération web).",
       "selectPlan": "Choisir un fournisseur",
       "apiKey": "Clé d’API",
       "updateKey": "Mettre à jour la clé",
@@ -1824,6 +1843,7 @@
       "capTts": "Synthèse vocale",
       "capVideo": "Génération de vidéo",
       "capWebSearch": "Recherche web",
+      "capWebFetch": "Récupération web",
       "saved": "Paramètres de connexion enregistrés",
       "stageInteractive": "Interactif",
       "stageSlide": "Diapositives",
@@ -1947,7 +1967,8 @@
         "providers": "Configurer les identifiants, points de terminaison et catalogues de modèles des services de modèles de langue",
         "tts": "Configurer les services de synthèse vocale, les voix et les modèles",
         "video": "Configurer les identifiants et catalogues de modèles des services de génération vidéo",
-        "webSearch": "Configurer les services de recherche web et les sources de récupération"
+        "webSearch": "Configurer les services de recherche web et les sources de récupération",
+        "webFetch": "Configurer les services d’extraction de pages web"
       },
       "nav": "Services de modèles",
       "notConfigured": "Non configuré",
@@ -2149,6 +2170,10 @@
         "document": {
           "name": "Analyse de documents",
           "desc": "Lit les documents importés."
+        },
+        "webFetch": {
+          "name": "Récupération web",
+          "desc": "Permet à l’agent de lire les pages web autorisées dans la session."
         }
       },
       "source": {
@@ -2162,6 +2187,7 @@
         "lines": {
           "rewrite": "Requête",
           "search": "Recherche",
+          "fetch": "Lecture",
           "image": "Image",
           "video": "Vidéo"
         }
@@ -2194,9 +2220,144 @@
         "unconfirmed": "Le serveur n'a pas confirmé l'importation."
       }
     },
-    "serverConfiguredAddOwn": "Pour utiliser vos propres identifiants, ajoutez un fournisseur distinct."
+    "serverConfiguredAddOwn": "Pour utiliser vos propres identifiants, ajoutez un fournisseur distinct.",
+    "webFetchSettings": "Récupération web",
+    "webFetchHint": "Choisissez comment lire les pages web. Les services hébergés reçoivent les URL publiques autorisées dans la session. Les résultats restent non fiables et aucun autre lecteur n’est utilisé en cas d’échec.",
+    "webFetchApiKey": "Clé API",
+    "webFetchSharedKeyHint": "Cette clé sert aussi au chat avec ce fournisseur. La modifier ou la supprimer affecte le chat."
   },
   "workspace": {
+    "knowledgeBase": {
+      "title": "Base de connaissances",
+      "topLevel": "Niveau supérieur",
+      "back": "Retour",
+      "search": "Rechercher par nom ou type de fichier",
+      "loading": "Chargement…",
+      "retry": "Réessayer",
+      "loadMore": "Charger plus",
+      "failure": {
+        "more": "À propos de cet échec : {{reason}}",
+        "storage_full": {
+          "label": "Espace de stockage insuffisant",
+          "description": "L’espace disponible ne permet pas d’enregistrer les résultats. Libérez de l’espace et réessayez."
+        },
+        "source_unavailable": {
+          "label": "Fichier original indisponible",
+          "description": "Le fichier original n’a pas pu être lu. Importez-le à nouveau et réessayez."
+        },
+        "service_unavailable": {
+          "label": "Service d’analyse indisponible",
+          "description": "Aucun service d’analyse n’est configuré pour ce type de fichier. Demandez à votre administrateur d’en configurer un, puis relancez l’analyse."
+        },
+        "media_too_long": {
+          "label": "Audio ou vidéo trop long",
+          "description": "Cette méthode d’analyse traite les médias jusqu’à {{minutes}} minutes. Raccourcissez ou divisez le fichier, puis importez-le à nouveau."
+        },
+        "no_text_extracted": {
+          "label": "Aucun texte extrait",
+          "description": "Aucun texte exploitable n’a été extrait cette fois. Vérifiez le contenu ou essayez un autre fichier."
+        },
+        "processing_interrupted": {
+          "label": "Analyse non terminée",
+          "description": "L’analyse n’a pas pu être terminée. Vous pouvez réessayer plus tard."
+        },
+        "too_many_pages": {
+          "label": "Trop de pages",
+          "description": "Ce PDF compte {{pages}} pages, au-delà de la limite d’analyse de {{maxPages}} pages. Divisez-le avant de l’importer, ou importez uniquement les chapitres nécessaires.",
+          "descriptionWithoutCount": "Ce PDF dépasse la limite d’analyse de {{maxPages}} pages. Divisez-le avant de l’importer, ou importez uniquement les chapitres nécessaires.",
+          "descriptionWithoutLimit": "Ce PDF compte plus de pages que le service d’analyse n’en accepte. Divisez-le avant de l’importer, ou importez uniquement les chapitres nécessaires."
+        }
+      },
+      "status": {
+        "uploading": "Importation",
+        "stored": "Enregistré · non analysé",
+        "parsing": "Analyse en cours",
+        "searchable": "Consultable",
+        "failed": "Échec de l’analyse"
+      },
+      "column": {
+        "name": "Nom",
+        "status": "État",
+        "folder": "Dossier",
+        "size": "Taille",
+        "date": "Date"
+      },
+      "limits": {
+        "perFile": "Jusqu’à {{document}} par document ou image, {{media}} par audio ou vidéo"
+      },
+      "usage": {
+        "summary": "{{used}} utilisés sur {{max}} · {{count}} fichiers sur {{maxCount}}",
+        "fileStorage": "Stockage de fichiers séparé : {{used}} utilisés sur {{max}} (contenu analysé et médias de cours inclus)",
+        "fileStorageUnlimited": "Stockage de fichiers séparé : {{used}} utilisés (contenu analysé et médias de cours inclus)"
+      },
+      "empty": {
+        "title": "Votre base de connaissances est vide",
+        "body": "Importez vos supports de cours, laissez l’assistant les organiser et les analyser, puis choisissez-les avec @ en préparant un cours.",
+        "folder": "Aucun document dans ce dossier pour l’instant",
+        "query": "Aucun document ne correspond à « {{query}} »"
+      },
+      "upload": {
+        "button": "Importer des documents",
+        "dismiss": "Masquer"
+      },
+      "error": {
+        "load": "Impossible de charger la base de connaissances",
+        "busy": "Votre compte est en cours de mise à jour. Réessayez dans un instant",
+        "identity": "Votre connexion a changé. Rechargez la page",
+        "stale": "l’affichage n’est peut-être pas à jour",
+        "nameTaken": "Un autre dossier porte déjà ce nom",
+        "invalidName": "Saisissez un nom de 255 caractères maximum",
+        "folderNameEmpty": "Saisissez un nom de dossier",
+        "folderNameTooLong": "Ce nom de dossier est trop long",
+        "folderLimit": "Vous avez atteint le nombre maximal de dossiers",
+        "notMovable": "Ce document ne peut pas être déplacé",
+        "gone": "Il n’existe plus",
+        "save": "L’opération a échoué. Réessayez",
+        "notEmpty": "Ce dossier contient encore des documents. Déplacez-les d’abord",
+        "materialNotFound": "Document introuvable ou inaccessible.",
+        "folderNotFound": "Dossier introuvable ou inaccessible.",
+        "textUnavailable": "Le texte du document est indisponible.",
+        "derivative": "Un document dérivé porte le nom de sa source ; renommez la source.",
+        "moveTooMany": "Déplacez au maximum {{limit}} documents à la fois.",
+        "moveNotMovable": "Aucun document déplacé. Certains documents sélectionnés sont indisponibles ou ne peuvent pas être déplacés.",
+        "toolFolderNameTooLong": "Le nom du dossier est trop long (40 caractères demi-chasse ou 20 caractères pleine chasse maximum).",
+        "toolFolderLimit": "La base de connaissances a atteint la limite de {{limit}} dossiers.",
+        "mediaUnsupported": "Seuls les images, vidéos ou fichiers audio peuvent servir de médias du cours.",
+        "mediaStorageFull": "L’espace disponible ne suffit pas pour ce média. Libérez de l’espace, puis réessayez.",
+        "mediaNotFound": "Le document multimédia est introuvable ou ne contient aucun fichier multimédia disponible."
+      },
+      "actions": {
+        "parse": "Analyser",
+        "reparse": "Analyser à nouveau",
+        "more": "Autres actions pour {{name}}",
+        "rename": "Renommer",
+        "delete": "Supprimer",
+        "open": "Ouvrir",
+        "downloadOriginal": "Télécharger l’original",
+        "chat": "Discuter de ce document"
+      },
+      "folder": {
+        "new": "Nouveau dossier",
+        "items": "{{count}} éléments",
+        "items_one": "{{count}} élément",
+        "items_other": "{{count}} éléments"
+      },
+      "dialog": {
+        "cancel": "Annuler",
+        "close": "Fermer"
+      },
+      "delete": {
+        "materialTitle": "Supprimer « {{name}} » ?",
+        "materialLinks": "Les conversations qui l’utilisent ne pourront plus le lire ; le texte déjà présent dans ces conversations est conservé.",
+        "materialCourses": "Le contenu déjà enregistré dans un cours n’est pas concerné.",
+        "cannotUndo": "Cette action est irréversible.",
+        "folderTitle": "Supprimer le dossier « {{name}} » ?",
+        "folderContents": "Fichiers déplacés au niveau supérieur : {{count}}. Aucun fichier ne sera supprimé."
+      },
+      "conversationFailure": {
+        "serviceUnavailable": "Aucun service d’analyse n’est configuré pour ce type de fichier. Demandez à un administrateur d’en configurer un."
+      }
+    },
     "untitledCourse": "未命名课堂",
     "sceneCount": "{{count}} 页",
     "sceneCount_one": "{{count}} 页",
@@ -2204,14 +2365,30 @@
     "courseLinkHint": "在右侧打开《{{name}}》",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
+      "search": "Rechercher des classes et des documents",
+      "searchMaterials": "Rechercher des documents",
+      "searchClassrooms": "Rechercher des classes",
+      "courseOrder": "Classe ouverte en premier, puis mises à jour récentes",
+      "materialOrder": "Envois les plus récents en premier",
       "title": "为这条消息引用课堂",
+      "titleBoth": "Mentionner une classe ou joindre un document de la base de connaissances à ce message",
+      "titleMaterials": "Joindre un document de la base de connaissances à ce message",
       "empty": "没有匹配的课堂",
       "alreadyNamed": "已引用",
       "remove": "移除{{name}}",
       "pillHint": "这条消息引用了「{{name}}」",
       "notAccepted": "Le serveur est temporairement indisponible. Veuillez réessayer dans un instant.",
       "reference": "引用「{{name}}」",
-      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
+      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围",
+      "classrooms": "Classes",
+      "knowledgeBase": "Base de connaissances",
+      "emptyWithMaterials": "Aucune classe ni aucun document ne correspond",
+      "attachMaterial": "Joindre {{name}} à ce message",
+      "materialUnavailable": "Impossible de joindre {{name}} ({{reason}}). Ouvrez la base de connaissances pour voir pourquoi et relancer l’analyse.",
+      "materialAttached": "Déjà dans cette conversation",
+      "materialStaged": "Déjà dans ce message",
+      "materialsCapped": "Les {{count}} premiers documents — continuez à taper pour affiner",
+      "materialUnavailableGuidance": "Impossible de joindre {{name}}. {{guidance}} Vous pouvez gérer ce document sur la page de la base de connaissances."
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
@@ -2232,6 +2409,11 @@
     "homeAria": "Back to home",
     "currentSession": "Current chat",
     "startLearning": "Commencer à apprendre",
+    "classroomMode": "Mode de la classe",
+    "learningMode": "Apprendre",
+    "editingMode": "Modifier",
+    "editingUnavailableGenerating": "La modification est indisponible pendant la génération du cours.",
+    "fullscreenLearning": "Apprendre en plein écran",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2345,7 +2527,8 @@
     "badgeEnter": "Mode Pro",
     "badgeExit": "Revenir au mode classique",
     "launchPlaceholder": "Décrivez l'expérience d'apprentissage que vous souhaitez créer",
-    "launchSend": "Lancer la création"
+    "launchSend": "Lancer la création",
+    "mentionCourseOrMaterial": "Mentionner une classe ou un document de la base de connaissances"
   },
   "workbench": {
     "tool": {

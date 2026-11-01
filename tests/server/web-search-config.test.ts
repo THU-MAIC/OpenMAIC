@@ -8,6 +8,8 @@ describe('server web search config', () => {
     delete process.env.TAVILY_BASE_URL;
     delete process.env.EXA_API_KEY;
     delete process.env.EXA_BASE_URL;
+    delete process.env.FIRECRAWL_API_KEY;
+    delete process.env.FIRECRAWL_BASE_URL;
     delete process.env.BOCHA_API_KEY;
     delete process.env.BOCHA_BASE_URL;
     delete process.env.BRAVE_API_KEY;
@@ -20,6 +22,9 @@ describe('server web search config', () => {
     delete process.env.WEB_SEARCH_CLAUDE_BASE_URL;
     delete process.env.WEB_SEARCH_CLAUDE_MODELS;
     delete process.env.SEARXNG_BASE_URL;
+    delete process.env.KIMI_API_KEY;
+    delete process.env.KIMI_BASE_URL;
+    delete process.env.WEB_SEARCH_KIMI_ENABLED;
   });
 
   it('rejects client-controlled base URLs outside the provider allowlist', async () => {
@@ -88,6 +93,43 @@ describe('server web search config', () => {
       providerId: 'exa',
       apiKey: 'exa-server-key',
       baseUrl: 'https://proxy.example.com/exa',
+    });
+  });
+
+  it('allows official Firecrawl client base URLs and resolves client credentials', async () => {
+    const { resolveClassroomWebSearchConfig, resolveSafeClientWebSearchBaseUrl } =
+      await import('@/lib/server/web-search-config');
+
+    expect(
+      resolveSafeClientWebSearchBaseUrl('firecrawl', 'https://api.firecrawl.dev/v2/search'),
+    ).toBe('https://api.firecrawl.dev/v2/search');
+    expect(() => resolveSafeClientWebSearchBaseUrl('firecrawl', 'http://127.0.0.1:3002')).toThrow(
+      'Unsupported Firecrawl base URL',
+    );
+    expect(
+      await resolveClassroomWebSearchConfig(null, {
+        webSearchProviderId: 'firecrawl',
+        webSearchApiKey: 'fc-client-key',
+        webSearchBaseUrl: 'https://api.firecrawl.dev',
+      }),
+    ).toEqual({
+      providerId: 'firecrawl',
+      apiKey: 'fc-client-key',
+      baseUrl: 'https://api.firecrawl.dev',
+    });
+  });
+
+  it('resolves Firecrawl classroom config from server environment variables', async () => {
+    vi.stubEnv('FIRECRAWL_API_KEY', 'fc-server-key');
+    vi.stubEnv('FIRECRAWL_BASE_URL', 'https://firecrawl.internal');
+    const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
+
+    expect(
+      await resolveClassroomWebSearchConfig(null, { webSearchProviderId: 'firecrawl' }),
+    ).toEqual({
+      providerId: 'firecrawl',
+      apiKey: 'fc-server-key',
+      baseUrl: 'https://firecrawl.internal',
     });
   });
 
@@ -303,5 +345,50 @@ describe('server web search config', () => {
       baseUrl: undefined,
       baiduSubSources: { webSearch: false, baike: true, scholar: false },
     });
+  });
+});
+
+describe('Kimi official search bases', () => {
+  it.each([
+    'https://api.moonshot.cn/v1',
+    'https://api.moonshot.ai/v1',
+    'https://api.kimi.com/coding/v1',
+    'https://api.kimi.ai/coding/v1',
+  ])('accepts %s', async (baseUrl) => {
+    const { resolveSafeClientWebSearchBaseUrl } = await import('@/lib/server/web-search-config');
+    expect(resolveSafeClientWebSearchBaseUrl('kimi', baseUrl)).toBe(baseUrl);
+  });
+  it('rejects lookalike endpoints', async () => {
+    const { resolveSafeClientWebSearchBaseUrl } = await import('@/lib/server/web-search-config');
+    expect(() =>
+      resolveSafeClientWebSearchBaseUrl('kimi', 'https://api.kimi.com.openmaic.test/coding/v1'),
+    ).toThrow('Unsupported Kimi base URL');
+  });
+});
+
+describe('chat-only Kimi search requests', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.unstubAllEnvs();
+    vi.stubEnv('KIMI_API_KEY', 'operator-chat-key');
+    vi.stubEnv('WEB_SEARCH_KIMI_ENABLED', '');
+    vi.stubEnv('TAVILY_API_KEY', '');
+    vi.stubEnv('SEARXNG_BASE_URL', '');
+  });
+
+  it('does not redirect a user Tavily request to the operator chat account', async () => {
+    const { resolveWebSearchConnection, resolveClassroomWebSearchConfig } =
+      await import('@/lib/server/web-search-config');
+    expect(await resolveClassroomWebSearchConfig(null)).toBeUndefined();
+    expect(
+      await resolveWebSearchConnection(
+        null,
+        {
+          webSearchProviderId: 'tavily',
+          webSearchApiKey: 'user-search-key',
+        },
+        { preferServerProvider: true },
+      ),
+    ).toMatchObject({ providerId: 'tavily', apiKey: 'user-search-key' });
   });
 });

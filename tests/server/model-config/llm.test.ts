@@ -47,7 +47,7 @@ describe('resolveStageModel', () => {
           'course.content': {
             model: 'ds:deepseek-v4-pro',
             thinking: { enabled: false },
-            fallback: 'ds:deepseek-v4-flash',
+            fallback: 'ds:deepseek-flash',
           },
         },
       }),
@@ -65,7 +65,7 @@ describe('resolveStageModel', () => {
       apiKey: 'sk-user',
       thinkingConfig: { enabled: false },
       serverManaged: true,
-      resolution: { fallback: { modelId: 'deepseek-v4-flash' } },
+      resolution: { fallback: { modelId: 'deepseek-flash' } },
     });
     // The request's own choice is not even looked at.
     expect(legacyRequest).not.toHaveBeenCalled();

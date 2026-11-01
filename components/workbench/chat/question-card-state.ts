@@ -18,6 +18,7 @@
  * `composer-send-state.ts` / `tool-group-state.ts`).
  */
 import { useState } from 'react';
+import { useQuestionDraft } from '@/lib/workbench/question-host';
 import type { ChatNode, QuestionOption } from '@/lib/workbench/session-store';
 import { defaultWorkbenchTranslator, type WorkbenchTranslator } from '@/lib/i18n/workbench';
 
@@ -65,6 +66,23 @@ export function togglePicked(picked: readonly string[], id: string): string[] {
  */
 export function multiAnswerSeparator(t: WorkbenchTranslator): string {
   return t('workbench.question.multiAnswerSeparator');
+}
+
+/**
+ * The option id the agent uses for its own free-text choice (`ask_user`'s
+ * schema says so). That option IS the form's "other…" row — with the agent's
+ * label — rather than a second free-text row beside it. Matched on the id,
+ * never on wording.
+ */
+export const FREE_TEXT_OPTION_ID = 'other';
+
+/**
+ * Whether an option is the agent's free-text choice. Its label is a prompt to
+ * write, never an answer: every surface (the form, the preview's form, the
+ * transcript card) routes it to text entry through this one rule.
+ */
+export function isFreeTextOption(id: string): boolean {
+  return id === FREE_TEXT_OPTION_ID;
 }
 
 /**
@@ -152,12 +170,15 @@ export function useQuestionAnswer(
   /** Send the picked labels as one message (multi-select confirm). */
   confirm: () => void;
 } {
-  const [picked, setPicked] = useState<readonly string[]>([]);
   const [sending, setSending] = useState(false);
 
   const options = node.questionOptions ?? [];
   const mode = questionMode(node);
   const answered = Boolean(node.questionAnswered);
+  // The question's one shared draft (`useQuestionDraft`): picks made here are
+  // the form's picks, and the form's written answer is sent with them.
+  const { draft, update } = useQuestionDraft(node.key, answered);
+  const picked = draft.picked;
   const locked = isQuestionLocked({ answered, sending, canSend: Boolean(onAnswer) });
 
   const send = (text: string) => {
@@ -172,15 +193,21 @@ export function useQuestionAnswer(
     mode,
     options,
     picked,
-    isPicked: (id) => mode === 'multi' && picked.includes(id),
+    isPicked: (id) =>
+      mode === 'multi' && (isFreeTextOption(id) ? draft.otherPicked : picked.includes(id)),
     toggle: (id) => {
       if (locked) return;
-      setPicked((current) => togglePicked(current, id));
+      update({ picked: togglePicked(picked, id) });
     },
     locked,
     hint: questionHint(node, t),
     answered,
     answerWith: send,
-    confirm: () => send(answerTextFor(options, picked, t)),
+    // Everything in the draft: canned picks, plus the written answer if its row is on.
+    confirm: () => {
+      const written = draft.otherPicked ? draft.otherText.trim() : '';
+      const labels = answerTextFor(options, picked, t);
+      send([labels, written].filter(Boolean).join(multiAnswerSeparator(t)));
+    },
   };
 }

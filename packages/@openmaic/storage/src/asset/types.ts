@@ -80,6 +80,26 @@ export class AssetQuotaExceededError extends Error {
 }
 
 /**
+ * Raised when `remove` or `replace` names an entry that a reference root
+ * (`asset_root_refs`) holds.
+ *
+ * A root belongs to a record outside any document that this package does not
+ * interpret, so it cannot tell whether the caller may take the asset away from
+ * that record. A rooted entry is therefore immutable through the generic
+ * mutation paths: the record that holds it withdraws the root first. Declared
+ * for the same reason as {@link AssetNotFoundError}: a handler maps it to a
+ * status of its own instead of an internal error.
+ */
+export class AssetRootedError extends Error {
+  readonly code = 'ASSET_ROOTED' as const;
+
+  constructor(message = '@openmaic/storage: asset is held by a reference root') {
+    super(message);
+    this.name = 'AssetRootedError';
+  }
+}
+
+/**
  * Media types served inline by default.
  *
  * A deployment may narrow this. Widening it is a decision about executable
@@ -197,6 +217,10 @@ export interface AssetStore {
    * id — all three succeed, indistinguishably. Any difference between them is
    * an existence oracle.
    *
+   * A backend that keeps reference roots refuses an own entry a root holds
+   * with {@link AssetRootedError} and leaves it in place. The check comes after
+   * ownership, so a foreign rooted id is still the same silent no-op.
+   *
    * When the removed entry was the last one naming its bytes, those bytes
    * become reclaimable. The count that decides this spans all principals, which
    * is what makes global deduplication reclaimable, and its value must not
@@ -226,7 +250,8 @@ export interface AssetStore {
    * Advances and returns the entry's revision. The exact value lets an HTTP
    * handler report the revision produced by this write without a racy follow-up
    * read. Rejects an unknown id and another principal's id identically, with
-   * {@link AssetNotFoundError}.
+   * {@link AssetNotFoundError}. A backend that keeps reference roots refuses an
+   * own entry a root holds with {@link AssetRootedError}, writing nothing.
    */
   replace(
     principal: AssetPrincipal,

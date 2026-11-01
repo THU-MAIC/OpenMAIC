@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useMemo, useEffect } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import {
   AlertCircle,
   Bot,
@@ -42,11 +42,7 @@ import { serviceEntries, slotThinking, thinkingChange } from '@/lib/model-settin
 import { canChangeDefaultModel, settingsSections, slotEditable } from '@/lib/model-settings/shape';
 import { useModelSettingsView } from '@/lib/model-settings/use-model-settings';
 import { modelSettingsClient } from '@/lib/model-settings/client';
-import {
-  getAcceptStringForProviders,
-  getFormatLabelsForProviders,
-  isMimeSupportedByProviders,
-} from '@/lib/document/mime';
+import { getAcceptStringForProviders, isMimeSupportedByProviders } from '@/lib/document/mime';
 import { MAX_DOCUMENT_BUNDLE_FILES } from '@/lib/document/bundle';
 import {
   combinedTruncation,
@@ -56,34 +52,24 @@ import {
 import { ModelPicker } from '@/components/settings/model-picker';
 import { useLLMPickerGroups } from '@/components/settings/use-llm-picker-groups';
 
+import {
+  courseMaterialFormatList,
+  unsupportedCourseMaterialMessage,
+  type Translate,
+} from '@/lib/generation-run-client/course-material-formats';
+export {
+  courseMaterialFormatList,
+  unsupportedCourseMaterialMessage,
+} from '@/lib/generation-run-client/course-material-formats';
+
 // ─── Constants ───────────────────────────────────────────────
 const MAX_COURSE_MATERIAL_SIZE_MB = 50;
 
-type Translate = (key: string, options?: Record<string, unknown>) => string;
-
-/**
- * The formats the active extractors accept, as a localized list ("PDF, TXT,
- * MD"). The format labels are file-type names shared by every locale; only
- * the separator is localized.
- */
-export function courseMaterialFormatList(t: Translate, providerIds: readonly string[]): string {
-  return getFormatLabelsForProviders(providerIds).join(t('upload.formatListSeparator'));
-}
-
-/** The "this file type is unsupported" message, naming the extractor and what it accepts. */
-export function unsupportedCourseMaterialMessage(
-  t: Translate,
-  extractorName: string,
-  providerIds: readonly string[],
-): string {
-  return t('upload.unsupportedCourseMaterial', {
-    parser: extractorName,
-    formats: courseMaterialFormatList(t, providerIds),
-  });
-}
-
 // ─── Types ───────────────────────────────────────────────────
 export interface GenerationToolbarProps {
+  /** Desktop popover, phone navigation entry, or the shared material body. */
+  materialView?: 'popover' | 'entry' | 'panel';
+  onMaterialOpen?: () => void;
   /** The attached materials, each uploading, extracting, ready or failed. */
   courseMaterials: CourseMaterialEntry[];
   /** Attach files (the parent checks them against the server's policy and uploads them). */
@@ -92,6 +78,8 @@ export interface GenerationToolbarProps {
   /** Upload or extract a failed material again. */
   onCourseMaterialRetry?: (id: string) => void;
   onPdfError: (error: string | null) => void;
+  materialNotice?: string | null;
+  onMaterialClose?: () => void;
   /**
    * When set, the course-material add/remove/Retry affordances and the
    * extractor Select are all disabled (the parent freezes the material set
@@ -108,11 +96,15 @@ export interface GenerationToolbarProps {
 
 // ─── Component ───────────────────────────────────────────────
 export function GenerationToolbar({
+  materialView = 'popover',
+  onMaterialOpen,
   courseMaterials,
   onCourseMaterialsAdd,
   onCourseMaterialRemove,
   onCourseMaterialRetry,
   onPdfError,
+  materialNotice,
+  onMaterialClose,
   materialsLocked = false,
   onSettingsOpen,
 }: GenerationToolbarProps) {
@@ -204,28 +196,6 @@ export function GenerationToolbar({
   const unsupportedMessage = () =>
     unsupportedCourseMaterialMessage(t, extractorName, activeDocumentProviderIds);
 
-  // If the user switches to a provider that doesn't support already attached
-  // materials, drop only the incompatible files so the eventual extraction
-  // request matches the current provider capability.
-  useEffect(() => {
-    const unsupportedMaterials = courseMaterials.filter(
-      (file) =>
-        !isMimeSupportedByProviders(
-          { mimeType: file.type, fileName: file.name },
-          activeDocumentProviderIds,
-        ),
-    );
-    if (unsupportedMaterials.length === 0) return;
-
-    for (const file of unsupportedMaterials) {
-      onCourseMaterialRemove(file.id);
-    }
-    onPdfError(unsupportedMessage());
-    // Intentionally omit callbacks/t from deps: adding them would re-run this
-    // provider capability cleanup on unrelated parent re-renders.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeDocumentProviderIds, courseMaterials]);
-
   const handleFilesSelect = (incomingFiles: File[]) => {
     // Belt-and-braces mirror of the parent's freeze guard: while generate-prep
     // is running the material set must not change, whatever the UI state says.
@@ -256,6 +226,185 @@ export function GenerationToolbar({
     'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all cursor-pointer select-none whitespace-nowrap border';
   const pillMuted = `${pillCls} border-border/50 text-muted-foreground/70 hover:text-foreground hover:bg-muted/60`;
   const pillActive = `${pillCls} border-violet-200/60 dark:border-violet-700/50 bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300`;
+
+  const materialTrigger =
+    courseMaterials.length > 0 ? (
+      <button
+        className={pillActive}
+        data-testid="course-material-pill"
+        onClick={materialView === 'entry' ? onMaterialOpen : undefined}
+      >
+        {courseMaterials.some((item) => item.status === 'failed') ? (
+          <AlertCircle className="size-3.5 text-destructive" />
+        ) : courseMaterials.some(
+            (item) => item.status === 'uploading' || item.status === 'extracting',
+          ) ? (
+          <Loader2 className="size-3.5 animate-spin" />
+        ) : (
+          <Paperclip className="size-3.5" />
+        )}
+        <span className="max-w-[140px] truncate">
+          {materialView === 'entry'
+            ? t('home.courseMaterialsCount', { n: courseMaterials.length })
+            : courseMaterials.length === 1
+              ? courseMaterials[0].name
+              : t('toolbar.courseMaterialsSelected', { n: courseMaterials.length })}
+        </span>
+      </button>
+    ) : (
+      <button
+        className={pillMuted}
+        data-testid="course-material-button"
+        onClick={materialView === 'entry' ? onMaterialOpen : undefined}
+      >
+        <Paperclip className="size-3.5" />
+        {materialView === 'entry' && <span>{t('home.courseMaterials')}</span>}
+      </button>
+    );
+  const materialContent = (
+    <>
+      {/* Extractor selector: the workspace's document slot, shown only
+              where the user may change it (not when the deployment locks it). */}
+      {documentEditable && (
+        <div className="flex items-center gap-2 px-3 pt-3 pb-2">
+          <span className="text-xs font-medium text-muted-foreground shrink-0">
+            {t('toolbar.documentExtractor')}
+          </span>
+          <Select
+            value={documentTarget?.providerId ?? ''}
+            onValueChange={(v) => void selectExtractor(v)}
+            disabled={materialsLocked}
+          >
+            <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
+              <SelectValue placeholder={PDF_PROVIDERS.unpdf?.name ?? 'unpdf'} />
+            </SelectTrigger>
+            <SelectContent>
+              {documentEntries.map((entry) => {
+                const provider = PDF_PROVIDERS[entry.registryId as PDFProviderId];
+                return (
+                  <SelectItem key={entry.id} value={entry.id}>
+                    <div className="flex items-center gap-1.5">
+                      {provider?.icon && (
+                        <img src={provider.icon} alt={provider.name} className="w-3.5 h-3.5" />
+                      )}
+                      {provider?.name ?? entry.id}
+                      {entry.state === 'deployment' && (
+                        <span className="text-[9px] px-1 py-0 rounded border text-muted-foreground">
+                          {t('settings.serverConfigured')}
+                        </span>
+                      )}
+                    </div>
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      {/* Upload area / file info */}
+      <div className={cn('px-3 pb-3', !documentEditable && 'pt-3')}>
+        <input
+          type="file"
+          ref={fileInputRef}
+          className="hidden"
+          accept={acceptForCurrentProvider}
+          multiple
+          disabled={materialsLocked}
+          onChange={(e) => {
+            const files = Array.from(e.target.files ?? []);
+            if (files.length > 0) handleFilesSelect(files);
+            e.target.value = '';
+          }}
+        />
+        <div className="space-y-3">
+          <div
+            className={cn(
+              'flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-4 transition-colors',
+              isDragging
+                ? 'border-violet-400 bg-violet-50 dark:bg-violet-950/20'
+                : 'border-muted-foreground/20 hover:border-violet-300',
+              materialsLocked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
+            )}
+            onClick={() => {
+              if (!materialsLocked) fileInputRef.current?.click();
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              if (!materialsLocked) setIsDragging(true);
+            }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setIsDragging(false);
+              if (materialsLocked) return;
+              const files = Array.from(e.dataTransfer.files ?? []);
+              if (files.length > 0) handleFilesSelect(files);
+            }}
+          >
+            <Paperclip className="size-5 text-muted-foreground/50 mb-1.5" />
+            <p className="text-xs font-medium">{t('toolbar.courseMaterialUpload')}</p>
+            <p className="text-[10px] text-muted-foreground/70 mt-0.5 text-center">
+              {t('upload.courseMaterialFormats', {
+                formats: courseMaterialFormatList(t, activeDocumentProviderIds),
+                size: MAX_COURSE_MATERIAL_SIZE_MB,
+              })}
+            </p>
+            <p className="text-[10px] text-muted-foreground/70 text-center">
+              {t('upload.courseMaterialCountLimit', { n: MAX_DOCUMENT_BUNDLE_FILES })}
+            </p>
+          </div>
+
+          {materialNotice && (
+            <p
+              role="status"
+              data-testid="course-material-notice"
+              className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
+            >
+              {materialNotice}
+            </p>
+          )}
+          {courseMaterials.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-[10px] text-muted-foreground/70">
+                {t('toolbar.courseMaterialMergeOrder')}
+              </p>
+              <div
+                className={cn(
+                  'space-y-1.5',
+                  materialView !== 'panel' && 'max-h-60 overflow-y-auto',
+                )}
+              >
+                {[...courseMaterials]
+                  .sort((a, b) => a.order - b.order)
+                  .map((file) => (
+                    <CourseMaterialChip
+                      key={file.id}
+                      material={file}
+                      locked={materialsLocked}
+                      onRemove={() => onCourseMaterialRemove(file.id)}
+                      onRetry={() => onCourseMaterialRetry?.(file.id)}
+                    />
+                  ))}
+              </div>
+              {combined && (
+                <div className="space-y-0.5" data-testid="course-material-combined-truncation">
+                  {truncationNotices(t, combined).map((notice) => (
+                    <p key={notice} className="text-[10px] text-amber-600 dark:text-amber-400">
+                      {notice}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+  if (materialView === 'panel') {
+    return <div data-testid="course-material-panel-content">{materialContent}</div>;
+  }
 
   return (
     <div className="flex items-center gap-1 flex-wrap">
@@ -305,161 +454,24 @@ export function GenerationToolbar({
         )
       )}
 
-      {/* ── Course material (extractor + upload) combined Popover ── */}
-      <Popover>
-        <PopoverTrigger asChild>
-          {courseMaterials.length > 0 ? (
-            <button className={pillActive} data-testid="course-material-pill">
-              {courseMaterials.some((item) => item.status === 'failed') ? (
-                <AlertCircle className="size-3.5 text-destructive" />
-              ) : courseMaterials.some(
-                  (item) => item.status === 'uploading' || item.status === 'extracting',
-                ) ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Paperclip className="size-3.5" />
-              )}
-              <span className="max-w-[140px] truncate">
-                {courseMaterials.length === 1
-                  ? courseMaterials[0].name
-                  : t('toolbar.courseMaterialsSelected', { n: courseMaterials.length })}
-              </span>
-            </button>
-          ) : (
-            <button className={pillMuted} data-testid="course-material-button">
-              <Paperclip className="size-3.5" />
-            </button>
-          )}
-        </PopoverTrigger>
-        <PopoverContent
-          align="start"
-          className="max-h-[calc(var(--radix-popover-content-available-height)-8px)] w-72 overflow-y-auto p-0"
+      {materialView === 'entry' ? (
+        materialTrigger
+      ) : (
+        <Popover
+          onOpenChange={(open) => {
+            if (!open) onMaterialClose?.();
+          }}
         >
-          {/* Extractor selector: the workspace's document slot, shown only
-              where the user may change it (not when the deployment locks it). */}
-          {documentEditable && (
-            <div className="flex items-center gap-2 px-3 pt-3 pb-2">
-              <span className="text-xs font-medium text-muted-foreground shrink-0">
-                {t('toolbar.documentExtractor')}
-              </span>
-              <Select
-                value={documentTarget?.providerId ?? ''}
-                onValueChange={(v) => void selectExtractor(v)}
-                disabled={materialsLocked}
-              >
-                <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
-                  <SelectValue placeholder={PDF_PROVIDERS.unpdf?.name ?? 'unpdf'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {documentEntries.map((entry) => {
-                    const provider = PDF_PROVIDERS[entry.registryId as PDFProviderId];
-                    return (
-                      <SelectItem key={entry.id} value={entry.id}>
-                        <div className="flex items-center gap-1.5">
-                          {provider?.icon && (
-                            <img src={provider.icon} alt={provider.name} className="w-3.5 h-3.5" />
-                          )}
-                          {provider?.name ?? entry.id}
-                          {entry.state === 'deployment' && (
-                            <span className="text-[9px] px-1 py-0 rounded border text-muted-foreground">
-                              {t('settings.serverConfigured')}
-                            </span>
-                          )}
-                        </div>
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {/* Upload area / file info */}
-          <div className={cn('px-3 pb-3', !documentEditable && 'pt-3')}>
-            <input
-              type="file"
-              ref={fileInputRef}
-              className="hidden"
-              accept={acceptForCurrentProvider}
-              multiple
-              disabled={materialsLocked}
-              onChange={(e) => {
-                const files = Array.from(e.target.files ?? []);
-                if (files.length > 0) handleFilesSelect(files);
-                e.target.value = '';
-              }}
-            />
-            <div className="space-y-3">
-              <div
-                className={cn(
-                  'flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-4 transition-colors',
-                  isDragging
-                    ? 'border-violet-400 bg-violet-50 dark:bg-violet-950/20'
-                    : 'border-muted-foreground/20 hover:border-violet-300',
-                  materialsLocked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
-                )}
-                onClick={() => {
-                  if (!materialsLocked) fileInputRef.current?.click();
-                }}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  if (!materialsLocked) setIsDragging(true);
-                }}
-                onDragLeave={() => setIsDragging(false)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setIsDragging(false);
-                  if (materialsLocked) return;
-                  const files = Array.from(e.dataTransfer.files ?? []);
-                  if (files.length > 0) handleFilesSelect(files);
-                }}
-              >
-                <Paperclip className="size-5 text-muted-foreground/50 mb-1.5" />
-                <p className="text-xs font-medium">{t('toolbar.courseMaterialUpload')}</p>
-                <p className="text-[10px] text-muted-foreground/70 mt-0.5 text-center">
-                  {t('upload.courseMaterialFormats', {
-                    formats: courseMaterialFormatList(t, activeDocumentProviderIds),
-                    size: MAX_COURSE_MATERIAL_SIZE_MB,
-                  })}
-                </p>
-                <p className="text-[10px] text-muted-foreground/70 text-center">
-                  {t('upload.courseMaterialCountLimit', { n: MAX_DOCUMENT_BUNDLE_FILES })}
-                </p>
-              </div>
-
-              {courseMaterials.length > 0 && (
-                <div className="space-y-1.5">
-                  <p className="text-[10px] text-muted-foreground/70">
-                    {t('toolbar.courseMaterialMergeOrder')}
-                  </p>
-                  <div className="max-h-60 space-y-1.5 overflow-y-auto">
-                    {[...courseMaterials]
-                      .sort((a, b) => a.order - b.order)
-                      .map((file) => (
-                        <CourseMaterialChip
-                          key={file.id}
-                          material={file}
-                          locked={materialsLocked}
-                          onRemove={() => onCourseMaterialRemove(file.id)}
-                          onRetry={() => onCourseMaterialRetry?.(file.id)}
-                        />
-                      ))}
-                  </div>
-                  {combined && (
-                    <div className="space-y-0.5" data-testid="course-material-combined-truncation">
-                      {truncationNotices(t, combined).map((notice) => (
-                        <p key={notice} className="text-[10px] text-amber-600 dark:text-amber-400">
-                          {notice}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </PopoverContent>
-      </Popover>
+          <PopoverTrigger asChild>{materialTrigger}</PopoverTrigger>
+          <PopoverContent
+            align="start"
+            collisionPadding={12}
+            className="max-w-[calc(100vw-24px)] max-h-[calc(var(--radix-popover-content-available-height)-8px)] w-72 overflow-y-auto p-0"
+          >
+            {materialContent}
+          </PopoverContent>
+        </Popover>
+      )}
     </div>
   );
 }

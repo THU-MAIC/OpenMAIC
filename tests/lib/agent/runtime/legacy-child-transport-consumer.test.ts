@@ -105,11 +105,10 @@ function makeHarness() {
     thinkingConfig: { mode: 'disabled', enabled: false },
     maxOutputTokens: 384,
     abortSignal: abortController.signal,
-    maxAgentTurns: 3,
-    getAgentTurnCount: () => summaries.length,
+
     getAgentResponses: () => summaries,
     getWhiteboardLedger: () => [],
-    maxActionsPerAgent: 2,
+
     enableWhiteboardTools: true,
   });
   return { events, summaries, onActionDone, tool };

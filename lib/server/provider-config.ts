@@ -1,4 +1,5 @@
 import { presetIdFor } from '@/lib/config/preset-ids';
+import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
 import {
   assertDeploymentModelAuthorized,
   selectsUpstreamModel,
@@ -137,7 +138,6 @@ const IMAGE_ENV_MAP: Record<string, string> = {
 const VIDEO_ENV_MAP: Record<string, string> = {
   VIDEO_SEEDANCE: 'seedance',
   VIDEO_KLING: 'kling',
-  VIDEO_VEO: 'veo',
   VIDEO_MINIMAX: 'minimax-video',
   VIDEO_GROK: 'grok-video',
   VIDEO_HAPPYHORSE: 'happyhorse',
@@ -147,6 +147,7 @@ const VIDEO_ENV_MAP: Record<string, string> = {
 const WEB_SEARCH_ENV_MAP: Record<string, string> = {
   TAVILY: 'tavily',
   EXA: 'exa',
+  FIRECRAWL: 'firecrawl',
   BOCHA: 'bocha',
   BRAVE: 'brave',
   BAIDU: 'baidu',
@@ -193,7 +194,11 @@ const DISABLE_ENV_MAPS: Record<CapabilitySection, Record<string, string>> = {
     IMAGE_COMFYUI: 'comfyui-image',
   },
   video: { ...VIDEO_ENV_MAP },
-  webSearch: { ...WEB_SEARCH_ENV_MAP },
+  webSearch: {
+    ...WEB_SEARCH_ENV_MAP,
+    WEB_SEARCH_KIMI: 'kimi',
+    WEB_SEARCH_DEEPSEEK: 'deepseek',
+  },
 };
 
 /** YAML section key per capability (web-search is hyphenated in YAML). */
@@ -529,6 +534,30 @@ function buildConfig(yamlData: YamlData): ServerConfig {
     yamlData.providers,
   );
 
+  const webSearch = loadEnvSection(WEB_SEARCH_ENV_MAP, yamlData['web-search'], {
+    keylessProviders: new Set(['brave', 'searxng']),
+  });
+  for (const provider of Object.values(WEB_SEARCH_PROVIDERS)) {
+    if (!provider.sharedChatProviderId) continue;
+    const explicit = yamlData['web-search']?.[provider.id];
+    const optIn = provider.enableEnvVar && process.env[provider.enableEnvVar];
+    if (!explicit && !(optIn?.trim() && parseBooleanEnv(optIn))) continue;
+    const shared = providers[provider.sharedChatProviderId];
+    const configured = webSearch[provider.id];
+    const apiKey = configured?.apiKey || shared?.apiKey;
+    // Append shared accounts after existing search providers, including when
+    // their explicit YAML entry was loaded earlier, preserving default order.
+    delete webSearch[provider.id];
+    if (!apiKey) continue;
+    webSearch[provider.id] = {
+      apiKey,
+      baseUrl: configured?.baseUrl ?? explicit?.baseUrl ?? shared?.baseUrl,
+      proxy: configured?.proxy ?? explicit?.proxy ?? shared?.proxy,
+      // Search has no model selector; chat pins must stay on the chat account.
+      models: undefined,
+    };
+  }
+
   return {
     providers,
     tts: loadEnvSection(TTS_ENV_MAP, yamlData.tts, {
@@ -546,9 +575,7 @@ function buildConfig(yamlData: YamlData): ServerConfig {
     ),
     image,
     video: loadEnvSection(VIDEO_ENV_MAP, yamlData.video),
-    webSearch: loadEnvSection(WEB_SEARCH_ENV_MAP, yamlData['web-search'], {
-      keylessProviders: new Set(['brave', 'searxng']),
-    }),
+    webSearch,
     disabled: collectDisabledProviders(yamlData),
   };
 }
@@ -771,8 +798,9 @@ export function slotTTSModel(
   providerId: string,
   modelId: string | undefined,
   voiceId?: string,
+  configuredVoices?: readonly { id: string }[],
 ): string | undefined {
-  return ttsModelFor(providerId, [], modelId, voiceId);
+  return ttsModelFor(providerId, [], modelId, voiceId, configuredVoices);
 }
 
 /** Resolve a TTS model authorized by the deployment, or the BYOK client's choice. */
@@ -780,9 +808,10 @@ export function resolveTTSModel(
   providerId: string,
   clientModel?: string,
   voiceId?: string,
+  configuredVoices?: readonly { id: string }[],
 ): string | undefined {
   const requested = resolveManagedMediaModel('tts', providerId, clientModel);
-  const model = ttsModelFor(providerId, [], requested, voiceId);
+  const model = ttsModelFor(providerId, [], requested, voiceId, configuredVoices);
   // Voice compatibility may change the wire model; it still needs authorization.
   return resolveManagedMediaModel('tts', providerId, model);
 }
@@ -792,6 +821,7 @@ function ttsModelFor(
   pinnedModels: string[],
   clientModel?: string,
   voiceId?: string,
+  configuredVoices?: readonly { id: string }[],
 ): string | undefined {
   if (providerId === 'qwen-tts') {
     const vcModel = resolveQwenVoiceCloneModel();
@@ -808,7 +838,7 @@ function ttsModelFor(
     }
 
     if (voiceId) {
-      if (!isQwenCatalogVoice(voiceId)) return vcModel;
+      if (!isQwenCatalogVoice(voiceId, configuredVoices)) return vcModel;
       const pinnedCatalogModel = pinnedModels.find((model) => model !== vcModel);
       if (pinnedModels.length > 0 && !pinnedCatalogModel) {
         throw new TTSModelNotAllowedError(providerId, TTS_PROVIDERS['qwen-tts'].defaultModelId);
@@ -1047,6 +1077,7 @@ export function resolveServerWebSearchProviderId(preferredProviderId?: string): 
   if (enabled('baidu') && webSearch.baidu?.apiKey) return 'baidu';
   if (enabled('minimax') && webSearch.minimax?.apiKey) return 'minimax';
   if (enabled('claude') && webSearch.claude?.apiKey) return 'claude';
+  if (enabled('firecrawl') && webSearch.firecrawl?.apiKey) return 'firecrawl';
   return Object.keys(webSearch).find(enabled);
 }
 

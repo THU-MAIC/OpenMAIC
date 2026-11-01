@@ -2,6 +2,8 @@
 
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import type { PPTShapeElement, ShapeText } from '@openmaic/dsl';
+import { validateShapeGeometry, RENDER_PATH_LIMITS, shapeToTextFallback } from '@openmaic/geometry';
+import { BaseTextElement } from '@openmaic/renderer/elements';
 import { useCanvasStore } from '@/lib/store';
 import { useCanvasOperations } from '@/lib/hooks/use-canvas-operations';
 import { useHistorySnapshot } from '@/lib/hooks/use-history-snapshot';
@@ -29,6 +31,19 @@ export interface ShapeElementProps {
  * Supports gradients, patterns, and rich text content
  */
 export function ShapeElement({ elementInfo, selectElement }: ShapeElementProps) {
+  const geometry = useMemo(
+    () =>
+      validateShapeGeometry(
+        {
+          path: elementInfo.path,
+          viewBox: elementInfo.viewBox,
+          width: elementInfo.width,
+          height: elementInfo.height,
+        },
+        RENDER_PATH_LIMITS,
+      ),
+    [elementInfo.path, elementInfo.viewBox, elementInfo.width, elementInfo.height],
+  );
   const handleElementId = useCanvasStore.use.handleElementId();
   const { updateElement, removeElementProps } = useCanvasOperations();
   const { addHistorySnapshot } = useHistorySnapshot();
@@ -112,6 +127,46 @@ export function ShapeElement({ elementInfo, selectElement }: ShapeElementProps) 
   const startEdit = () => {
     setEditable(true);
   };
+
+  if (!geometry.ok) {
+    const fallback = shapeToTextFallback(elementInfo);
+    if (!fallback) return null;
+    return (
+      <div
+        className={`editable-element-shape absolute pointer-events-auto ${elementInfo.lock ? 'lock' : ''}`}
+        data-shape-geometry-error={geometry.error.code}
+        style={{
+          top: fallback.top,
+          left: fallback.left,
+          width: fallback.width,
+          height: fallback.height,
+        }}
+        onMouseDown={(e) => handleSelectElement(e)}
+        onTouchStart={(e) => handleSelectElement(e)}
+        onDoubleClick={startEdit}
+      >
+        <BaseTextElement
+          elementInfo={{ ...fallback, left: 0, top: 0 }}
+          renderContent={(_element, content) =>
+            editable ? (
+              <ProsemirrorEditor
+                elementId={elementInfo.id}
+                defaultColor={fallback.defaultColor}
+                defaultFontName={fallback.defaultFontName}
+                editable={!elementInfo.lock}
+                value={fallback.content}
+                onUpdate={({ value, ignore }) => updateText(value, ignore)}
+                onBlur={checkEmptyText}
+                onMouseDown={(e) => handleSelectElement(e as React.MouseEvent, false)}
+              />
+            ) : (
+              content
+            )
+          }
+        />
+      </div>
+    );
+  }
 
   return (
     <div

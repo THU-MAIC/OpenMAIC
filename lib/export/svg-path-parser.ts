@@ -1,3 +1,4 @@
+import { validateSvgPath, RENDER_PATH_LIMITS } from '@openmaic/geometry';
 import { SVGPathData } from 'svg-pathdata';
 import arcToBezier from 'svg-arc-to-cubic-bezier';
 import { createLogger } from '@/lib/logger';
@@ -22,7 +23,9 @@ const typeMap = {
  * @param d SVG path d属性
  */
 export const parseSvgPath = (d: string) => {
-  const pathData = new SVGPathData(d);
+  const validation = validateSvgPath(d, RENDER_PATH_LIMITS);
+  if (!validation.ok) throw new Error(`${validation.error.field}: ${validation.error.message}`);
+  const pathData = new SVGPathData(validation.commands);
 
   const ret = pathData.commands.map((item) => {
     return { ...item, type: typeMap[item.type] };
@@ -44,9 +47,14 @@ export type SvgPath = ReturnType<typeof parseSvgPath>;
 export const toPoints = (d: string) => {
   let pathData: SVGPathData;
   try {
-    pathData = new SVGPathData(d);
+    const validation = validateSvgPath(d, RENDER_PATH_LIMITS);
+    if (!validation.ok) {
+      log.warn('Invalid SVG path:', validation.error);
+      return [];
+    }
+    pathData = new SVGPathData(validation.commands);
   } catch (err) {
-    log.warn(`Failed to parse SVG path "${d}":`, err);
+    log.warn('Failed to parse SVG path:', err);
     return [];
   }
 
@@ -137,7 +145,9 @@ export const getSvgPathRange = (path: string) => {
     // commands, H/V/Z (which have no x/y), and arc bulge. The previous hand-rolled
     // version defaulted missing coordinates to 0 — injecting a spurious (0,0) for
     // Z, treating relative deltas as absolute, and ignoring arc extent.
-    const { minX, minY, maxX, maxY } = new SVGPathData(path).getBounds();
+    const validation = validateSvgPath(path, RENDER_PATH_LIMITS);
+    if (!validation.ok) return { ...ZERO_RANGE };
+    const { minX, minY, maxX, maxY } = new SVGPathData(validation.commands).getBounds();
     if ([minX, minY, maxX, maxY].some((v) => v == null || !Number.isFinite(v))) {
       return { ...ZERO_RANGE };
     }

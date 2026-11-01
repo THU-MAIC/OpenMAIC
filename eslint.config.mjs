@@ -152,7 +152,7 @@ const eslintConfig = defineConfig([
         {
           selector: 'Literal[value=/^@\\//]',
           message:
-            '@openmaic/generation must not reference a host-app path (@/…). Depend only on @openmaic/dsl, Node built-ins, and relative modules.',
+            '@openmaic/generation must not reference a host-app path (@/…). Depend only on @openmaic/dsl, @openmaic/geometry, Node built-ins, and relative modules.',
         },
         {
           selector: 'TemplateElement[value.cooked=/^@\\//]',
@@ -161,26 +161,26 @@ const eslintConfig = defineConfig([
         },
         {
           selector:
-            'ImportDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|(jsonrepair|katex|nanoid|parse5|partial-json)(\\/|$)|node:|\\.\\.?\\/).+/]',
+            'ImportDeclaration > Literal.source[value=/^(?!@openmaic\\/(dsl|geometry)(\\/|$)|(jsonrepair|katex|nanoid|parse5|partial-json|es-module-lexer|postcss|postcss-value-parser)(\\/|$)|node:|\\.\\.?\\/).+/]',
           message:
-            '@openmaic/generation may import only from @openmaic/dsl, approved leaf runtime dependencies, Node built-ins, or relative modules (./… or ../…).',
+            '@openmaic/generation may import only from @openmaic/dsl, @openmaic/geometry, approved leaf runtime dependencies, Node built-ins, or relative modules (./… or ../…).',
         },
         {
           selector:
-            'ExportNamedDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|(jsonrepair|katex|nanoid|parse5|partial-json)(\\/|$)|node:|\\.\\.?\\/).+/]',
+            'ExportNamedDeclaration > Literal.source[value=/^(?!@openmaic\\/(dsl|geometry)(\\/|$)|(jsonrepair|katex|nanoid|parse5|partial-json|es-module-lexer|postcss|postcss-value-parser)(\\/|$)|node:|\\.\\.?\\/).+/]',
           message:
-            '@openmaic/generation may re-export only from @openmaic/dsl, approved leaf runtime dependencies, Node built-ins, or relative modules (./… or ../…).',
+            '@openmaic/generation may re-export only from @openmaic/dsl, @openmaic/geometry, approved leaf runtime dependencies, Node built-ins, or relative modules (./… or ../…).',
         },
         {
           selector:
-            'ExportAllDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|(jsonrepair|katex|nanoid|parse5|partial-json)(\\/|$)|node:|\\.\\.?\\/).+/]',
+            'ExportAllDeclaration > Literal.source[value=/^(?!@openmaic\\/(dsl|geometry)(\\/|$)|(jsonrepair|katex|nanoid|parse5|partial-json|es-module-lexer|postcss|postcss-value-parser)(\\/|$)|node:|\\.\\.?\\/).+/]',
           message:
-            '@openmaic/generation may re-export only from @openmaic/dsl, approved leaf runtime dependencies, Node built-ins, or relative modules (./… or ../…).',
+            '@openmaic/generation may re-export only from @openmaic/dsl, @openmaic/geometry, approved leaf runtime dependencies, Node built-ins, or relative modules (./… or ../…).',
         },
         {
           selector: 'ImportExpression',
           message:
-            '@openmaic/generation must use static imports from @openmaic/dsl, Node built-ins, or relative modules.',
+            '@openmaic/generation must use static imports from @openmaic/dsl, @openmaic/geometry, Node built-ins, or relative modules.',
         },
         {
           selector: "CallExpression[callee.name='require']",
@@ -213,21 +213,21 @@ const eslintConfig = defineConfig([
         },
         {
           selector:
-            'ImportDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|@openmaic\\/generation(\\/|$)|node:|vitest(\\/|$)|\\.\\.?\\/).+/]',
+            'ImportDeclaration > Literal.source[value=/^(?!@openmaic\\/(dsl|geometry)(\\/|$)|@openmaic\\/generation(\\/|$)|node:|vitest(\\/|$)|\\.\\.?\\/).+/]',
           message:
-            '@openmaic/generation tests and test config may import only @openmaic/dsl, the package public entry, Node built-ins, Vitest, or relative modules (./… or ../…).',
+            '@openmaic/generation tests and test config may import only @openmaic/dsl, @openmaic/geometry, the package public entry, Node built-ins, Vitest, or relative modules (./… or ../…).',
         },
         {
           selector:
-            'ExportNamedDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|@openmaic\\/generation(\\/|$)|node:|vitest(\\/|$)|\\.\\.?\\/).+/]',
+            'ExportNamedDeclaration > Literal.source[value=/^(?!@openmaic\\/(dsl|geometry)(\\/|$)|@openmaic\\/generation(\\/|$)|node:|vitest(\\/|$)|\\.\\.?\\/).+/]',
           message:
-            '@openmaic/generation tests and test config may re-export only @openmaic/dsl, the package public entry, Node built-ins, Vitest, or relative modules (./… or ../…).',
+            '@openmaic/generation tests and test config may re-export only @openmaic/dsl, @openmaic/geometry, the package public entry, Node built-ins, Vitest, or relative modules (./… or ../…).',
         },
         {
           selector:
-            'ExportAllDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|@openmaic\\/generation(\\/|$)|node:|vitest(\\/|$)|\\.\\.?\\/).+/]',
+            'ExportAllDeclaration > Literal.source[value=/^(?!@openmaic\\/(dsl|geometry)(\\/|$)|@openmaic\\/generation(\\/|$)|node:|vitest(\\/|$)|\\.\\.?\\/).+/]',
           message:
-            '@openmaic/generation tests and test config may re-export only @openmaic/dsl, the package public entry, Node built-ins, Vitest, or relative modules (./… or ../…).',
+            '@openmaic/generation tests and test config may re-export only @openmaic/dsl, @openmaic/geometry, the package public entry, Node built-ins, Vitest, or relative modules (./… or ../…).',
         },
         {
           selector: 'ImportExpression',

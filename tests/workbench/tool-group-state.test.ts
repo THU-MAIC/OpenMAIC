@@ -24,6 +24,14 @@ describe('aggregateToolGroupStatus', () => {
     expect(aggregateToolGroupStatus(nodes)).toBe('error');
   });
 
+  it('is done when a successful material listing reports a file that failed to parse', () => {
+    const listing: ChatNode = {
+      ...tool('list_materials', 'l1', 'done'),
+      toolDetails: { materials: [{ materialId: 'mat_x', extraction: { status: 'failed' } }] },
+    };
+    expect(aggregateToolGroupStatus([listing])).toBe('done');
+  });
+
   it('is done once every call settled successfully', () => {
     const nodes = [tool('read_scene', 'r1', 'done'), tool('generate_scene', 'g1', 'done')];
     expect(aggregateToolGroupStatus(nodes)).toBe('done');

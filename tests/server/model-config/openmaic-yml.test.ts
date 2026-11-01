@@ -106,6 +106,21 @@ describe('parseModelConfig', () => {
     ]);
   });
 
+  it('keeps loading a provider whose preset was retired (veo) and the slots naming it', () => {
+    // Google shut down the Veo provider's last models (#1940). A file written
+    // for an earlier version must not stop the server; the deployment layer
+    // leaves the provider unused and says so.
+    expect(
+      parseModelConfig(
+        'providers:\n  veo:\n    preset: veo\n    apiKey: k\nslots:\n  video: veo:veo-3.1-generate-preview\n',
+        { env },
+      ),
+    ).toEqual({
+      providers: { veo: { preset: 'veo', apiKey: 'k' } },
+      slots: { video: 'veo:veo-3.1-generate-preview' },
+    });
+  });
+
   it('refuses an OpenAI-compatible provider without a base URL', () => {
     expect(issuesOf('providers:\n  local:\n    preset: openai-compatible\n')).toEqual([
       'providers.local.baseUrl: preset "openai-compatible" needs a baseUrl',
@@ -132,7 +147,7 @@ describe('parseModelConfig', () => {
 
   it('refuses a fallback on every slot whose calls never use one', () => {
     const base = 'providers:\n  m:\n    preset: minimax\n    apiKey: k\nslots:\n';
-    for (const slot of ['tts', 'asr', 'image', 'video', 'webSearch', 'document']) {
+    for (const slot of ['tts', 'asr', 'image', 'video', 'webSearch', 'webFetch', 'document']) {
       expect(issuesOf(`${base}  ${slot}:\n    model: m\n    fallback: m\n`)).toContain(
         `slots.${slot}.fallback: only language model slots use a fallback`,
       );

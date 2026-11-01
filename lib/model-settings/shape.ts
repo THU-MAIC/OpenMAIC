@@ -30,6 +30,7 @@ export const SERVICE_CAPABILITIES: readonly SlotCapability[] = [
   'tts',
   'asr',
   'document',
+  'webFetch',
   'webSearch',
 ];
 

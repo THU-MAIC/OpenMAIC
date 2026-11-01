@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   resolvePDFBaseUrl: vi.fn(),
   promisesLookup: vi.fn(),
   callbackLookup: vi.fn(),
+  logError: vi.fn(),
 }));
 
 vi.mock('@/lib/server/provider-config', async (importOriginal) => ({
@@ -49,7 +50,7 @@ vi.mock('node:dns', async (importOriginal) => {
 });
 
 vi.mock('@/lib/logger', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: mocks.logError, debug: vi.fn() }),
 }));
 
 const CONNECTION_FAILED = {
@@ -137,6 +138,40 @@ describe('POST /api/parse-pdf with self-hosted MinerU', () => {
       });
     });
 
+    it('names a page-limit refusal with its counts only', async () => {
+      const mineru = await startLoopback((_req, res) => {
+        res.writeHead(422, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            error: {
+              code: 'pdf_too_many_pages',
+              message: 'PDF has 461 pages, which exceeds the 200-page limit internal-secret',
+            },
+          }),
+        );
+      });
+
+      const res = await postParsePdf({ providerId: 'mineru', baseUrl: mineru.origin });
+
+      expect(res.json).toMatchObject({
+        success: false,
+        error:
+          'MinerU refused the document: too many pages (status 422; 461 pages, limit 200 pages)',
+      });
+      expect(res.json.error).not.toContain('internal-secret');
+    });
+
+    it('reads only a bounded prefix of a large error body', async () => {
+      const mineru = await startLoopback((_req, res) => {
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('x'.repeat(4 * 1024 * 1024));
+      });
+
+      const res = await postParsePdf({ providerId: 'mineru', baseUrl: mineru.origin });
+
+      expect(res.json.error).toBe('MinerU API error (500)');
+    });
+
     it('keeps the missing-dependency classification without quoting the body', async () => {
       const mineru = await startLoopback((_req, res) => {
         res.writeHead(500, { 'Content-Type': 'text/plain' });
@@ -220,6 +255,28 @@ describe('POST /api/parse-pdf with self-hosted MinerU', () => {
     expect(res.status).toBe(200);
     expect(managed.requests()).toBe(1);
     expect(clientTarget.requests()).toBe(0);
+  });
+
+  it('keeps a server-managed MinerU error body in the server log only', async () => {
+    const managed = await startLoopback((_req, res) => {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ detail: 'config not found at /srv/internal/mineru.yaml' }));
+    });
+    mocks.isServerConfiguredProvider.mockReturnValue(true);
+    mocks.resolvePDFBaseUrl.mockImplementation((_id: string, baseUrl?: string) =>
+      baseUrl === undefined ? managed.origin : baseUrl,
+    );
+
+    const res = await postParsePdf({ providerId: 'mineru' });
+
+    expect(res).toEqual({
+      status: 500,
+      json: { success: false, errorCode: 'PARSE_FAILED', error: 'MinerU API error (500)' },
+    });
+    expect(JSON.stringify(res.json)).not.toContain('/srv/internal');
+    expect(mocks.logError).toHaveBeenCalledWith(
+      expect.stringContaining('config not found at /srv/internal/mineru.yaml'),
+    );
   });
 
   it('still refuses cloud metadata as a server-managed base URL', async () => {

@@ -1,0 +1,47 @@
+{
+  "name": "@openmaic/geometry",
+  "version": "0.1.0",
+  "description": "Pure SVG path and shape geometry validation for OpenMAIC producers and renderers.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "pnpm run build"
+  },
+  "dependencies": {
+    "@openmaic/dsl": "workspace:^",
+    "entities": "^6.0.0",
+    "svg-pathdata": "^8.0.0",
+    "tinycolor2": "^1.6.0"
+  },
+  "devDependencies": {
+    "typescript": "^5",
+    "vitest": "^4.1.8",
+    "@types/tinycolor2": "^1.4.6"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/THU-MAIC/OpenMAIC",
+    "directory": "packages/@openmaic/geometry"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  }
+}

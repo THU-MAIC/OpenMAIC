@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "Back",
     "you": "You",
     "confirm": "Confirm",
     "cancel": "Cancel",
@@ -10,6 +11,22 @@
     "close": "Close"
   },
   "home": {
+    "resumeGeneration": "Continue generation",
+    "emptyLibraryTitle": "Your classes start here",
+    "emptyLibraryBody": "Create a course on the homepage. You can return here to continue learning.",
+    "mobileTitle": "What would you like to learn?",
+    "mobileSubtitle": "Tell us your topic. AI will build an interactive classroom.",
+    "mobilePlaceholder": "Enter a learning topic, or upload materials",
+    "courseOptions": "Course options",
+    "courseMaterials": "Course materials",
+    "courseMaterialsCount": "Course materials · {{n}} attached",
+    "backToCourseOptions": "Back to course options",
+    "materialsDone": "Done",
+    "allSettings": "All settings",
+    "examplesLabel": "Try an example",
+    "examplePython": "Learn Python from scratch",
+    "exampleFourier": "Explain the Fourier transform with intuitive examples",
+    "desktopOnly": "Please use a computer for the editor and Pro mode.",
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
     "greetingWithName": "Hi, {{name}}"
   },
@@ -475,6 +492,7 @@
       "moreActions": "More actions",
       "rename": "Rename",
       "sceneIncomplete": "This page has incomplete content",
+      "sceneHasErrors": "This page has errors",
       "addPage": "Add page",
       "nextPage": "Next page",
       "prevPage": "Previous page"
@@ -1346,11 +1364,13 @@
       "ollama": "Ollama (Local)",
       "tavily": "Tavily",
       "exa": "Exa",
+      "firecrawl": "Firecrawl",
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
       "claude": "Claude",
-      "searxng": "SearXNG"
+      "searxng": "SearXNG",
+      "builtin": "Built-in reader"
     },
     "modelCount": "models",
     "modelSingular": "model",
@@ -1716,7 +1736,6 @@
     "videoModel": "Video Generation Model",
     "providerSeedance": "Seedance (ByteDance)",
     "providerKling": "Kling (Kuaishou)",
-    "providerVeo": "Veo (Google)",
     "providerSora": "Sora (OpenAI)",
     "providerMiniMaxVideo": "MiniMax Video",
     "providerGrokVideo": "Grok Video (xAI)",
@@ -1798,7 +1817,7 @@
     "tokenPlan": {
       "nav": "Token Plan",
       "title": "Token Plan Setup",
-      "desc": "Pick your token plan provider and enter the key — it auto-configures every adapted modality (LLM/image/video/speech/web search).",
+      "desc": "Pick your token plan provider and enter the key — it auto-configures every adapted modality (LLM/image/video/speech/web search/web fetch).",
       "selectPlan": "Select Provider",
       "apiKey": "API Key",
       "updateKey": "Update key",
@@ -1824,6 +1843,7 @@
       "capTts": "Speech synthesis",
       "capVideo": "Video generation",
       "capWebSearch": "Web search",
+      "capWebFetch": "Web fetch",
       "saved": "Connection settings saved",
       "stageInteractive": "Interactive",
       "stageSlide": "Slides",
@@ -1947,7 +1967,8 @@
         "providers": "Configure credentials, endpoints and model catalogs for language model services",
         "tts": "Configure speech synthesis services, voices and models",
         "video": "Configure credentials and model catalogs for video generation services",
-        "webSearch": "Configure web search services and retrieval sources"
+        "webSearch": "Configure web search services and retrieval sources",
+        "webFetch": "Configure web page extraction services"
       },
       "nav": "Model Services",
       "notConfigured": "Not configured",
@@ -2149,6 +2170,10 @@
         "document": {
           "name": "Document parsing",
           "desc": "Reads uploaded documents."
+        },
+        "webFetch": {
+          "name": "Web Fetch",
+          "desc": "Lets the agent read web pages approved in the session."
         }
       },
       "source": {
@@ -2162,6 +2187,7 @@
         "lines": {
           "rewrite": "Query",
           "search": "Search",
+          "fetch": "Fetch",
           "image": "Image",
           "video": "Video"
         }
@@ -2194,9 +2220,144 @@
         "unconfirmed": "The server did not confirm that it was imported."
       }
     },
-    "serverConfiguredAddOwn": "To use your own credentials, add a separate provider."
+    "serverConfiguredAddOwn": "To use your own credentials, add a separate provider.",
+    "webFetchSettings": "Web Fetch",
+    "webFetchHint": "Choose how web pages are read. Hosted readers receive session-approved public URLs. Results remain untrusted, and failures do not switch readers.",
+    "webFetchApiKey": "API Key",
+    "webFetchSharedKeyHint": "This key is also used for chat with this provider. Changing or removing it affects chat."
   },
   "workspace": {
+    "knowledgeBase": {
+      "title": "Knowledge base",
+      "topLevel": "Top level",
+      "back": "Back",
+      "search": "Search names and file types",
+      "loading": "Loading…",
+      "retry": "Retry",
+      "loadMore": "Load more",
+      "failure": {
+        "more": "About this failure: {{reason}}",
+        "storage_full": {
+          "label": "Not enough storage",
+          "description": "There is not enough space to save the parsed results. Free up space and try again."
+        },
+        "source_unavailable": {
+          "label": "Original file unavailable",
+          "description": "The original file could not be read. Upload it again and retry."
+        },
+        "service_unavailable": {
+          "label": "Parsing service unavailable",
+          "description": "No parsing service is configured for this file type. Ask your administrator to configure one, then choose Parse again."
+        },
+        "media_too_long": {
+          "label": "Audio or video too long",
+          "description": "This parsing method handles audio or video up to {{minutes}} minutes. Shorten or split the file and upload it again."
+        },
+        "no_text_extracted": {
+          "label": "No text extracted",
+          "description": "No usable text was extracted this time. Check the content or try another file."
+        },
+        "processing_interrupted": {
+          "label": "Parsing did not finish",
+          "description": "Parsing could not be completed. You can try again later."
+        },
+        "too_many_pages": {
+          "label": "Too many pages",
+          "description": "This PDF has {{pages}} pages, more than the {{maxPages}}-page parsing limit. Split it and upload the parts, or upload only the chapters you need.",
+          "descriptionWithoutCount": "This PDF is over the {{maxPages}}-page parsing limit. Split it and upload the parts, or upload only the chapters you need.",
+          "descriptionWithoutLimit": "This PDF has more pages than the parsing service accepts. Split it and upload the parts, or upload only the chapters you need."
+        }
+      },
+      "status": {
+        "uploading": "Uploading",
+        "stored": "Stored · not parsed",
+        "parsing": "Parsing",
+        "searchable": "Searchable",
+        "failed": "Parse failed"
+      },
+      "column": {
+        "name": "Name",
+        "status": "Status",
+        "folder": "Folder",
+        "size": "Size",
+        "date": "Date"
+      },
+      "limits": {
+        "perFile": "Up to {{document}} per document or image, {{media}} per audio or video"
+      },
+      "usage": {
+        "summary": "Used {{used}} of {{max}} · {{count}} of {{maxCount}} files",
+        "fileStorage": "File storage, counted separately: {{used}} of {{max}} (includes parsed content and course media)",
+        "fileStorageUnlimited": "File storage, counted separately: {{used}} used (includes parsed content and course media)"
+      },
+      "empty": {
+        "title": "Your knowledge base is empty",
+        "body": "Upload your teaching materials, let the assistant organize and parse them, then pick them with @ while you prepare a course.",
+        "folder": "No materials in this folder yet",
+        "query": "No materials match “{{query}}”"
+      },
+      "upload": {
+        "button": "Upload materials",
+        "dismiss": "Dismiss"
+      },
+      "error": {
+        "load": "The knowledge base could not be loaded",
+        "busy": "Your account is being updated. Try again in a moment",
+        "identity": "Your sign-in changed. Reload the page",
+        "stale": "what is shown may be out of date",
+        "nameTaken": "Another folder already has this name",
+        "invalidName": "Enter a name of at most 255 characters",
+        "folderNameEmpty": "Enter a folder name",
+        "folderNameTooLong": "This folder name is too long",
+        "folderLimit": "You have reached the folder limit",
+        "notMovable": "This material cannot be moved",
+        "gone": "It no longer exists",
+        "save": "That did not work. Try again",
+        "notEmpty": "This folder still holds materials. Move them out first",
+        "materialNotFound": "Material not found.",
+        "folderNotFound": "Folder not found.",
+        "textUnavailable": "Material text is unavailable.",
+        "derivative": "A derivative is named after its source; rename the source instead.",
+        "moveTooMany": "Move at most {{limit}} materials at a time.",
+        "moveNotMovable": "Nothing was moved. Some selected materials are unavailable or cannot be moved.",
+        "toolFolderNameTooLong": "The folder name is too long (at most 40 half-width or 20 full-width characters).",
+        "toolFolderLimit": "The knowledge base already has the maximum of {{limit}} folders.",
+        "mediaUnsupported": "Only image, video or audio materials can be used as course media.",
+        "mediaStorageFull": "There is not enough storage for this media. Free space, then try again.",
+        "mediaNotFound": "Media material not found or has no media bytes."
+      },
+      "actions": {
+        "parse": "Parse",
+        "reparse": "Parse again",
+        "more": "More actions for {{name}}",
+        "rename": "Rename",
+        "delete": "Delete",
+        "open": "Open",
+        "downloadOriginal": "Download original",
+        "chat": "Chat with this material"
+      },
+      "folder": {
+        "new": "New folder",
+        "items": "{{count}} items",
+        "items_one": "{{count}} item",
+        "items_other": "{{count}} items"
+      },
+      "dialog": {
+        "cancel": "Cancel",
+        "close": "Close"
+      },
+      "delete": {
+        "materialTitle": "Delete “{{name}}”?",
+        "materialLinks": "Conversations that use it can no longer read it; text already in those conversations stays.",
+        "materialCourses": "Content already saved into a course is not affected.",
+        "cannotUndo": "This cannot be undone.",
+        "folderTitle": "Delete the folder “{{name}}”?",
+        "folderContents": "Files moved to the top level: {{count}}. No files will be deleted."
+      },
+      "conversationFailure": {
+        "serviceUnavailable": "No parser is configured for this file type. Ask an administrator to configure one."
+      }
+    },
     "untitledCourse": "Untitled course",
     "sceneCount": "{{count}} pages",
     "sceneCount_one": "{{count}} page",
@@ -2204,14 +2365,30 @@
     "courseLinkHint": "Open {{name}} in the right pane",
     "courseLinkMore": "{{count}} more classroom(s)",
     "courseMention": {
+      "search": "Search classrooms and materials",
+      "searchMaterials": "Search materials",
+      "searchClassrooms": "Search classrooms",
+      "courseOrder": "Open classroom first, then recently updated",
+      "materialOrder": "Newest uploads first",
       "title": "Reference a classroom for this message",
+      "titleBoth": "Reference a classroom or attach knowledge base material to this message",
+      "titleMaterials": "Attach knowledge base material to this message",
       "empty": "No classroom matches",
       "alreadyNamed": "Already referenced",
       "remove": "Remove {{name}}",
       "pillHint": "This message references {{name}}",
       "notAccepted": "The server is temporarily unavailable. Please try again shortly.",
       "reference": "Reference {{name}}",
-      "capped": "Showing the first {{count}} — keep typing to narrow it down"
+      "capped": "Showing the first {{count}} — keep typing to narrow it down",
+      "classrooms": "Classrooms",
+      "knowledgeBase": "Knowledge base",
+      "emptyWithMaterials": "No classroom or material matches",
+      "attachMaterial": "Attach {{name}} to this message",
+      "materialUnavailable": "{{name}} can't be attached ({{reason}}). Open the knowledge base to see why and parse it again.",
+      "materialAttached": "Already in this conversation",
+      "materialStaged": "Already on this message",
+      "materialsCapped": "Showing the first {{count}} materials — keep typing to narrow it down",
+      "materialUnavailableGuidance": "{{name}} can't be attached. {{guidance}} You can manage it on the knowledge base page."
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
@@ -2232,6 +2409,11 @@
     "homeAria": "Back to home",
     "currentSession": "Current chat",
     "startLearning": "Start learning",
+    "classroomMode": "Classroom mode",
+    "learningMode": "Learn",
+    "editingMode": "Edit",
+    "editingUnavailableGenerating": "Editing is unavailable while this course is generating.",
+    "fullscreenLearning": "Full-screen learning",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2340,7 +2522,8 @@
     "badgeEnter": "Pro mode",
     "badgeExit": "Back to classic",
     "launchPlaceholder": "Describe the learning experience you want to create",
-    "launchSend": "Start build"
+    "launchSend": "Start build",
+    "mentionCourseOrMaterial": "Reference a classroom or a knowledge base material"
   },
   "accessCode": {
     "title": "Enter Access Code",

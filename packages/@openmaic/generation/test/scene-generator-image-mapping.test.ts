@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
 
 import { generateSceneContent, resolveImageIds } from '@openmaic/generation';
-import type { GeneratedSlideData, PdfImage } from '@openmaic/generation';
+import type { GeneratedSlideContent, GeneratedSlideData, PdfImage } from '@openmaic/generation';
 
 import { slideOutline } from './scene-fixtures.js';
 
@@ -83,5 +83,71 @@ describe('generateSceneContent — non-vision text ordering with a mapping prese
     expect(ids).toEqual(['img_1', 'img_2', 'img_3', 'img_4']);
     // No `[see attached]` promise in the non-vision text.
     expect(availableMedia).not.toContain('[see attached]');
+  });
+});
+
+describe('generateSceneContent — image aspect-ratio reconciliation (contain-fit)', () => {
+  // 1189×479 → ratio ≈ 2.48.
+  const wideImage: PdfImage = { id: 'img_1', src: '', pageNumber: 1, width: 1189, height: 479 };
+
+  async function fitImage(
+    box: { left: number; top: number; width: number; height: number },
+    assignedImages: PdfImage[] = [wideImage],
+  ) {
+    const aiCall = vi.fn(async () =>
+      JSON.stringify({
+        elements: [{ ...imageElement('img_1'), ...box }],
+        remark: '',
+      }),
+    );
+    const content = (await generateSceneContent(slideOutline(), aiCall, {
+      assignedImages,
+      imageMapping: { img_1: 'ast_1' },
+    })) as GeneratedSlideContent;
+    expect(content.elements).toHaveLength(1);
+    const [image] = content.elements;
+    if (image.type !== 'image') throw new Error(`expected an image, got ${image.type}`);
+    const { left, top, width, height } = image;
+    return { left, top, width, height };
+  }
+
+  test('a box flatter than the image shrinks the width and centers horizontally, never growing down', async () => {
+    // Keeping the width would have made the box 363 tall and covered the
+    // elements laid out below it.
+    expect(await fitImage({ left: 50, top: 160, width: 900, height: 120 })).toEqual({
+      left: 351,
+      top: 160,
+      width: 298,
+      height: 120,
+    });
+  });
+
+  test('a box taller than the image keeps the width, shrinks the height and centers vertically', async () => {
+    // 400 / 2.482 ≈ 161; (400 - 161) / 2 ≈ 119.5 → 120 offset.
+    expect(await fitImage({ left: 100, top: 50, width: 400, height: 400 })).toEqual({
+      left: 100,
+      top: 170,
+      width: 400,
+      height: 161,
+    });
+  });
+
+  test('a box within the 10% ratio tolerance is left unchanged', async () => {
+    expect(await fitImage({ left: 10, top: 20, width: 500, height: 210 })).toEqual({
+      left: 10,
+      top: 20,
+      width: 500,
+      height: 210,
+    });
+  });
+
+  test('an image with unknown dimensions is left unchanged', async () => {
+    const unknown: PdfImage = { id: 'img_1', src: '', pageNumber: 1 };
+    expect(await fitImage({ left: 50, top: 160, width: 900, height: 120 }, [unknown])).toEqual({
+      left: 50,
+      top: 160,
+      width: 900,
+      height: 120,
+    });
   });
 });

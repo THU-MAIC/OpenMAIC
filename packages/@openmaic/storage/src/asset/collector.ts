@@ -2,13 +2,15 @@
 import type { ContentHash } from './blob.js';
 import type { AssetByteStore } from './byte-store.js';
 import {
-  assetReferenceTrackingEnabled,
+  ASSET_REFERENCE_RULE_VERSION,
+  assetReferenceTrackingState,
   backfillDocumentAssetReferences,
   documentAssetReferencesWithdrawn,
   lockBackfillEntries,
   sceneAssetScope,
   stageAssetScope,
 } from './references.js';
+import { ENTRY_UNREFERENCED_SQL, entryIsReferenced } from './liveness.js';
 import {
   ownerOfSql,
   resolveDocumentOwnership,
@@ -16,6 +18,8 @@ import {
   type ResolvedDocumentOwnership,
 } from '../document/ownership.js';
 import { asStorageLockUnavailable } from '../runtime/pg.js';
+
+export { ASSET_REFERENCE_RULE_VERSION } from './references.js';
 
 export type { DocumentOwnershipRelation } from '../document/ownership.js';
 import type { Queryable, WithTransaction } from '../runtime/pg.js';
@@ -80,7 +84,8 @@ export interface AssetCollectorOptions {
   now?: () => Date;
   /**
    * Reclaim unreferenced `asset_entries` as well as unreferenced bytes,
-   * using the `document_asset_refs` table. Defaults to `false`.
+   * using the `document_asset_refs` and `asset_root_refs` tables: an entry
+   * either one names is referenced (`./liveness.ts`). Defaults to `false`.
    *
    * **A deployment that turns this on MUST also construct its
    * `PgDocumentStore` with `trackAssetReferences: true`.** The two halves are
@@ -272,6 +277,30 @@ export class AssetReferenceTrackingNotEnabledError extends Error {
         'assets live documents still name.',
     );
     this.name = 'AssetReferenceTrackingNotEnabledError';
+  }
+}
+
+/**
+ * The database records reference rules newer than this package applies: some
+ * writer on it keeps entries alive through a kind of reference this collector
+ * does not consult.
+ *
+ * Releasing anyway could delete entries only that newer kind of reference
+ * keeps, so the entry level refuses, exactly as it does without a reference
+ * writer; the blob pass, which asks only whether any entry still names the
+ * bytes, still runs. Upgrade the process running the collector.
+ */
+export class AssetReferenceRuleVersionError extends Error {
+  constructor(
+    readonly databaseVersion: number,
+    readonly knownVersion: number,
+  ) {
+    super(
+      `@openmaic/storage: this database records reference rules version ${databaseVersion}, ` +
+        `newer than the version ${knownVersion} this asset collector applies. The entry level ` +
+        'releases nothing until the collector runs a version that knows every kind of reference.',
+    );
+    this.name = 'AssetReferenceRuleVersionError';
   }
 }
 
@@ -514,20 +543,32 @@ export class AssetCollector {
     // recorded entry-level failure travels on it as `entryLevelFailure` (see
     // AssetCollectionEntryLevelFailure) rather than being dropped. Otherwise
     // the recorded failure is thrown at the end, once the blob pass is done.
-    let trackingFailure: AssetReferenceTrackingNotEnabledError | undefined;
+    let trackingFailure:
+      | AssetReferenceTrackingNotEnabledError
+      | AssetReferenceRuleVersionError
+      | undefined;
     // Wrapped rather than held bare, so "there was a failure" cannot be
     // confused with a falsy thrown value.
     let entryFailure: { readonly error: unknown } | undefined;
     let entries = EMPTY_ENTRY_LEVEL;
     if (this.documentReferences) {
       try {
-        if (await this.referenceTrackingEnabled()) {
-          entries = await this.entryLevelPass(now, cutoff);
-        } else {
+        const tracking = await this.referenceTracking();
+        if (!tracking.enabled) {
           trackingFailure = new AssetReferenceTrackingNotEnabledError();
+        } else if (tracking.ruleVersion > ASSET_REFERENCE_RULE_VERSION) {
+          trackingFailure = new AssetReferenceRuleVersionError(
+            tracking.ruleVersion,
+            ASSET_REFERENCE_RULE_VERSION,
+          );
+        } else {
+          entries = await this.entryLevelPass(now, cutoff);
         }
       } catch (error) {
-        entryFailure = { error };
+        // A version raised while the pass ran is the same refusal as one
+        // found before it started, not a fault of the entry level.
+        if (error instanceof AssetReferenceRuleVersionError) trackingFailure = error;
+        else entryFailure = { error };
       }
     }
     // Whichever of the two was recorded; they are exclusive.
@@ -547,9 +588,29 @@ export class AssetCollector {
         // The hash is the tiebreaker within one timestamp only, where the tied
         // set is bounded and every member of it is taken by the same pass or
         // the next one.
+        //
+        // The page holds only blobs the locked recheck below would take: no
+        // entry names them and no live stage pin holds them. A row that fails
+        // either test is skipped by that recheck without being deleted, so a
+        // page that kept such rows would select them again on the next pass;
+        // a backlog of at least `batchSize` of them -- stages over old
+        // unreferenced blobs, say -- would then stall every later blob and
+        // report `capped` forever. Filtering them here keeps the page moving
+        // past them, and the locked recheck still decides races. Both
+        // subqueries are index lookups (`asset_entries_content_hash_idx`,
+        // `asset_blob_stages_content_hash_idx`).
         `SELECT content_hash
            FROM asset_blobs
           WHERE unreferenced_at < $1::timestamptz
+            AND NOT EXISTS (
+              SELECT 1 FROM asset_entries AS entries
+               WHERE entries.content_hash = asset_blobs.content_hash
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM asset_blob_stages AS stages
+               WHERE stages.content_hash = asset_blobs.content_hash
+                 AND stages.expires_at > now()
+            )
           ORDER BY unreferenced_at ASC, content_hash ASC
           LIMIT $2`,
         [cutoff, this.batchSize],
@@ -574,6 +635,23 @@ export class AssetCollector {
             [candidate.content_hash, cutoff],
           );
           if (!locked.rows[0]) return false;
+          // A live stage pin means a write is uploading these bytes, or has
+          // uploaded them and not yet allocated its entry, with no lock held
+          // (see `PgAssetStore.stageBytes`). Read in a statement of its own,
+          // after the row lock: every writer of a pin -- the stage that
+          // inserts it, the renewal that extends it -- holds a lock on this
+          // row while it does, so a pin write either committed before this
+          // lock was granted -- and this fresh READ COMMITTED snapshot sees it
+          // -- or it is waiting behind this transaction and will find the row
+          // gone. An expired pin protects nothing; it cascades away with the
+          // row below.
+          const staged = await queryable.query(
+            `SELECT 1 FROM asset_blob_stages
+              WHERE content_hash = $1 AND expires_at > now()
+              LIMIT 1`,
+            [candidate.content_hash],
+          );
+          if (staged.rows[0]) return false;
           if (hasTransactionalDeleter(this.byteStore)) {
             await this.byteStore.deleteWith(queryable, candidate.content_hash);
           } else {
@@ -593,6 +671,39 @@ export class AssetCollector {
         throw carryingEntryFailure(collectorFailure(undefined, error), pendingEntryLevelFailure);
       }
     }
+    try {
+      // Expired stage pins whose blob is still referenced -- an abandoned
+      // stage of content some entry already names -- would otherwise stay
+      // forever, since only reclaiming the blob cascades them away. Bounded
+      // like the rest of the pass, and harmless to a stage racing it: a stage
+      // that finds its pin gone fails rather than trusting bytes it can no
+      // longer vouch for.
+      //
+      // `SKIP LOCKED`, inside the pass's lock-bounded transaction: a pin row
+      // can be locked by a transaction this pass must never wait for -- a
+      // caller's own transaction that spent the pin (`putStaged`) and stays
+      // open past its deadline, or a renewal in flight. Such a row is left for
+      // a later pass; this housekeeping never parks the pass, and a lock wait
+      // that still exceeds the budget skips the cleanup rather than failing a
+      // pass whose real work is done.
+      await this.lockBoundedTransaction((queryable) =>
+        queryable.query(
+          `DELETE FROM asset_blob_stages
+            WHERE id IN (
+              SELECT id FROM asset_blob_stages
+               WHERE expires_at < now()
+               ORDER BY expires_at ASC
+               LIMIT $1
+               FOR UPDATE SKIP LOCKED
+            )`,
+          [this.batchSize],
+        ),
+      );
+    } catch (error) {
+      if (!asStorageLockUnavailable(error)) {
+        throw carryingEntryFailure(collectorFailure(undefined, error), pendingEntryLevelFailure);
+      }
+    }
     if (trackingFailure) throw trackingFailure;
     if (entryFailure) throw entryFailure.error;
     return {
@@ -602,9 +713,9 @@ export class AssetCollector {
     };
   }
 
-  private async referenceTrackingEnabled(): Promise<boolean> {
+  private async referenceTracking(): Promise<{ enabled: boolean; ruleVersion: number }> {
     try {
-      return await assetReferenceTrackingEnabled(this.queryable);
+      return await assetReferenceTrackingState(this.queryable);
     } catch (error) {
       throw collectorFailure(undefined, error);
     }
@@ -644,6 +755,13 @@ export class AssetCollector {
    * stamp, and even if there were, such a row is not a release candidate --
    * `releaseEntries` takes only entries with `expires_at` or `unreferenced_at`
    * set.
+   *
+   * Reference roots (`asset_root_refs`) take part in every stamp and in the
+   * release check, but need nothing from the backfill or the legacy gate:
+   * roots are written explicitly by their owner (`./roots.ts`), never derived
+   * from stored content, so there is no pre-tracking root for a walk to
+   * recover; and adding a root commits its entry, so a rooted entry is never
+   * legacy.
    */
   private async entryLevelPass(now: string, cutoff: string): Promise<EntryLevelPass> {
     let backfilledDocuments = 0;
@@ -753,9 +871,7 @@ export class AssetCollector {
               SET unreferenced_at = now()
             WHERE entries.id = ANY($1::text[])
               AND entries.unreferenced_at IS NULL
-              AND NOT EXISTS (
-                    SELECT 1 FROM document_asset_refs AS refs WHERE refs.asset_id = entries.id
-                  )`,
+              AND ${ENTRY_UNREFERENCED_SQL}`,
           [ids],
         );
       });
@@ -1091,9 +1207,7 @@ export class AssetCollector {
               SET unreferenced_at = now()
             WHERE entries.id = ANY($1::text[])
               AND entries.unreferenced_at IS NULL
-              AND NOT EXISTS (
-                    SELECT 1 FROM document_asset_refs AS refs WHERE refs.asset_id = entries.id
-                  )`,
+              AND ${ENTRY_UNREFERENCED_SQL}`,
           [ids],
         );
         return ids.length;
@@ -1136,8 +1250,9 @@ export class AssetCollector {
           // TWO statements, deliberately, and the split is load-bearing.
           //
           // The first one locks: it re-checks the entry's own timestamps and
-          // takes `FOR UPDATE`. A document write racing the candidate query
-          // above both clears those timestamps and inserts a reference row, so
+          // takes `FOR UPDATE`. A document write -- or a root being added --
+          // racing the candidate query above both clears those timestamps and
+          // inserts a reference row, so
           // when this statement waits on that writer's lock PostgreSQL
           // re-evaluates the predicate against the updated row (EvalPlanQual)
           // and the entry is skipped.
@@ -1171,13 +1286,17 @@ export class AssetCollector {
           );
           const entry = locked.rows[0];
           if (!entry) return false;
-          const referenced = await queryable.query(
-            'SELECT 1 FROM document_asset_refs WHERE asset_id = $1 LIMIT 1',
-            [entry.id],
-          );
-          // What makes "eligible" mean "no document names it" rather than "a
-          // column says so".
-          if (referenced.rows.length > 0) return false;
+          // What makes "eligible" mean "nothing references it" -- no document
+          // and no reference root (./liveness.ts) -- rather than "a column
+          // says so".
+          if (await entryIsReferenced(queryable, entry.id)) return false;
+          // The rules this pass started under may have changed since: a
+          // writer of a newer kind of reference raises the version in (or
+          // before) the transaction that writes its first row, and that row
+          // would wait on the lock held here. Read again, in a fresh snapshot,
+          // before deleting anything.
+          const ruleVersion = (await assetReferenceTrackingState(queryable)).ruleVersion;
+          if (ruleVersion > ASSET_REFERENCE_RULE_VERSION) return { refusedAt: ruleVersion };
           // Exactly what `remove` does, in the same order: delete the one row,
           // then stamp the blob when no entry names those bytes any more. Any
           // reference row would go with it through the table's cascade; the
@@ -1195,8 +1314,15 @@ export class AssetCollector {
           );
           return true;
         });
+        if (typeof didCollect === 'object') {
+          throw new AssetReferenceRuleVersionError(
+            didCollect.refusedAt,
+            ASSET_REFERENCE_RULE_VERSION,
+          );
+        }
         if (didCollect) entriesCollected += 1;
       } catch (error) {
+        if (error instanceof AssetReferenceRuleVersionError) throw error;
         throw collectorFailure(undefined, error);
       }
     }

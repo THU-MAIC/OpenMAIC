@@ -13,7 +13,6 @@
  * Currently Supported Video Providers (Phase 2):
  * - Seedance (ByteDance video generation)
  * - Kling (Kuaishou video generation)
- * - Veo (Google DeepMind video generation)
  * - HappyHorse (Alibaba Cloud Model Studio video generation)
  *
  * HOW TO ADD A NEW PROVIDER:
@@ -216,7 +215,6 @@ export interface ImageGenerationResult {
 export type VideoProviderId =
   | 'seedance'
   | 'kling'
-  | 'veo'
   | 'minimax-video'
   | 'grok-video'
   | 'openrouter-video'

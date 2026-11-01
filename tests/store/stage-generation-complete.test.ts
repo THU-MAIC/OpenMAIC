@@ -52,6 +52,7 @@ vi.mock('@/lib/device-storage/database', () => ({
 }));
 
 import { claimStageSceneLoadToken, useStageStore } from '@/lib/store/stage';
+import { isScriptExportReady } from '@/lib/export/use-export-script';
 import { markStageDeleted, unmarkStageDeleted } from '@/lib/utils/deleted-stages';
 import type { Scene, Stage } from '@/lib/types/stage';
 import type { SceneOutline } from '@/lib/types/generation';
@@ -353,6 +354,8 @@ describe('generationComplete', () => {
     await useStageStore.getState().loadFromStorage('stage-1');
 
     expect(useStageStore.getState().generationComplete).toBe(false);
+    expect(useStageStore.getState().failedOutlines).toEqual([makeOutline(2)]);
+    expect(isScriptExportReady(useStageStore.getState(), {})).toBe(false);
     expect(stageOutlinesPut).not.toHaveBeenCalled();
   });
 
@@ -375,9 +378,34 @@ describe('generationComplete', () => {
     await useStageStore.getState().loadFromStorage('stage-1');
 
     expect(useStageStore.getState().generationComplete).toBe(true);
+    expect(useStageStore.getState().failedOutlines).toEqual([]);
+    expect(isScriptExportReady(useStageStore.getState(), {})).toBe(true);
     await vi.waitFor(() => expect(stageOutlinesPut).toHaveBeenCalled());
     const healed = stageOutlinesPut.mock.calls.at(-1)![0] as { generationComplete?: boolean };
     expect(healed.generationComplete).toBe(true);
+  });
+
+  it('restores export readiness when switching to an explicitly completed classroom', async () => {
+    useStageStore.setState({
+      stage: makeStage('failed-stage'),
+      scenes: [makeSlideScene('failed-scene', 1, 'failed-stage')],
+      failedOutlines: [makeOutline(2)],
+    });
+    expect(isScriptExportReady(useStageStore.getState(), {})).toBe(false);
+    loadStageDataMock.mockResolvedValue(makeStoredLoad('completed-stage', 'completed-scene'));
+    stageOutlinesGet.mockResolvedValue({
+      stageId: 'completed-stage',
+      outlines: [makeOutline(1)],
+      generationComplete: true,
+    });
+
+    await useStageStore.getState().loadFromStorage('completed-stage');
+
+    const loaded = useStageStore.getState();
+    expect(loaded.stage?.id).toBe('completed-stage');
+    expect(loaded.failedOutlines).toEqual([]);
+    expect(loaded.generatingOutlines).toEqual([]);
+    expect(isScriptExportReady(loaded, {})).toBe(true);
   });
 
   // A course the browser was generating before runs: its missing outline
@@ -599,6 +627,8 @@ describe('generationComplete', () => {
 
     expect(useStageStore.getState().generationComplete).toBe(true);
     expect(useStageStore.getState().stage?.id).toBe('stage-a');
+    expect(useStageStore.getState().failedOutlines).toEqual([]);
+    expect(isScriptExportReady(useStageStore.getState(), {})).toBe(true);
     expect(useStageStore.getState().scenes).toHaveLength(1);
     expect(useStageStore.getState().scenes[0]).toMatchObject({
       id: 'disk-a',

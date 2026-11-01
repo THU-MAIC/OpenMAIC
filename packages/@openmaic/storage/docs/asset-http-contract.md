@@ -50,7 +50,7 @@ Each of these turns a pinned miss into a thrown error, and none is predictable c
 | `GET` | `/assets/{id}/content` | Read the bytes stored under an id. | `200` with the bytes |
 | `HEAD` | `/assets/{id}/content` | Read identity headers without reading the byte layer. | `200`, no body |
 | `PUT` | `/assets/{id}/content` | Replace the bytes stored under an existing id. | `204` with `X-Asset-Revision` |
-| `DELETE` | `/assets/{id}` | Remove the registry entry. | `204` for any id the policy admits |
+| `DELETE` | `/assets/{id}` | Remove the registry entry. | `204` for any id the policy admits, except an own entry a reference root holds (`409`) |
 
 The route table admits exactly one segment after `assets`, and it is the id. There is no principal segment and no digest segment to supply, so any other path shape is `404 ROUTE_NOT_FOUND` — a routing outcome that requires inspecting nothing. A path that *does* match a table entry but with a method that entry does not list is `405 METHOD_NOT_ALLOWED`, carrying an `Allow` header naming that route's methods; since route matching never consults the registry, neither outcome discloses anything about an id.
 
@@ -337,6 +337,7 @@ The client raises `HttpAssetStoreError` in every throwing case below.
 | Method not allowed on this route | `405` | `METHOD_NOT_ALLOWED` | Throw |
 | Metadata, bytes, or the whole request exceed the deployment's bound | `413` | `PAYLOAD_TOO_LARGE` | Throw |
 | The principal's logical bytes would exceed its quota | `507` | `ASSET_QUOTA_EXCEEDED` | Throw |
+| `DELETE` or `PUT` names an entry of this principal that a reference root holds | `409` | `ASSET_ROOTED` | Throw |
 | Request target exceeds the deployment's ceiling | `431` | (transport) | A transport limit for a pathologically long id, not an id-domain rejection |
 | No entry is stored under the id, or the entry is not this principal's | `404` | `ASSET_NOT_FOUND` | `resolve` returns `null`; `remove` succeeds; `replace` throws |
 | Route does not exist | `404` | `ROUTE_NOT_FOUND` | Throw |

@@ -112,7 +112,7 @@ export interface LegacyModelSettingsState {
   pdfProvidersConfig?: ServiceMap;
 }
 
-type ServiceCapability = Exclude<SlotCapability, 'chat'>;
+type ServiceCapability = Exclude<SlotCapability, 'chat' | 'webFetch'>;
 
 /** The built-in registries of the capabilities other than chat. */
 const SERVICE_REGISTRIES: Record<
@@ -139,6 +139,7 @@ const TOKEN_PLAN_CAPABILITY: Record<TokenPlanModality, SlotCapability> = {
   video: 'video',
   tts: 'tts',
   webSearch: 'webSearch',
+  webFetch: 'webFetch',
 };
 
 /** Capabilities a slot names without a model: the provider's own default. */
@@ -337,7 +338,8 @@ export function planModelSettingsImport(
     });
     chatIds.set(llm.providerId, id);
     for (const [modality, target] of Object.entries(plan.modalities)) {
-      if (modality === 'llm' || !target) continue;
+      // Web fetch did not exist in the legacy browser settings.
+      if (modality === 'llm' || modality === 'webFetch' || !target) continue;
       const capability = TOKEN_PLAN_CAPABILITY[modality as TokenPlanModality] as ServiceCapability;
       const service = serviceMap(state, capability)?.[target.providerId];
       if (text(service?.apiKey) === key) planServices.set(`${capability}:${target.providerId}`, id);
@@ -698,4 +700,29 @@ export function readProposal(storage: StorageLike): ModelSettingsProposal | unde
   if (!raw) return undefined;
   const parsed = JSON.parse(raw) as unknown;
   return parsed && typeof parsed === 'object' ? (parsed as ModelSettingsProposal) : undefined;
+}
+
+/** Labels for historical browser settings, without importing executable server registries. */
+export function legacyPresetInfo(
+  presetId: string,
+): { name: string; capability: SlotCapability } | undefined {
+  const plan = TOKEN_PLAN_PRESETS.find((entry) => tokenPlanPresetId(entry.id) === presetId);
+  if (plan) {
+    const modality = Object.keys(plan.modalities)[0] as TokenPlanModality;
+    return { name: plan.name, capability: TOKEN_PLAN_CAPABILITY[modality] };
+  }
+  if (presetId === 'openai-compatible')
+    return { name: 'OpenAI-compatible endpoint', capability: 'chat' };
+  const registries = { chat: PROVIDERS, ...SERVICE_REGISTRIES };
+  for (const [capability, registry] of Object.entries(registries)) {
+    for (const [id, entry] of Object.entries(registry)) {
+      if (presetIdFor(capability as SlotCapability, id) === presetId) {
+        return {
+          name: (entry as { name?: string }).name ?? id,
+          capability: capability as SlotCapability,
+        };
+      }
+    }
+  }
+  return undefined;
 }

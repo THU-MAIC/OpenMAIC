@@ -35,6 +35,7 @@
     "submit": "送出",
     "dismiss": "放棄",
     "inFormBelow": "在下方表單裡回答",
+    "inPreview": "在右側預覽中回答",
     "multiAnswerSeparator": "、"
   },
   "material": {
@@ -45,7 +46,8 @@
     "fileTooLarge": "檔案過大，請壓縮或分割後重試。",
     "fileTooLargeWithLimit": "檔案過大，請選擇不超過 {{limit}}MB 的檔案。",
     "unsupportedType": "不支援此檔案類型，請選擇受支援的檔案。",
-    "quotaExceeded": "已達到材料上傳限額。"
+    "quotaExceeded": "已達到材料上傳限額。",
+    "storageFull": "儲存空間已達上限，無法上傳這份資料。"
   },
   "skill": {
     "listFailed": "Skill 清單載入失敗",
@@ -97,6 +99,21 @@
       "vocational": "職業實訓",
       "workshop-style": "互動工作坊"
     }
+  },
+  "preview": {
+    "eyebrow": "正在進行",
+    "understanding": "理解你的需求",
+    "understandingDesc": "正在閱讀你的要求和相關資料…",
+    "asking": "需要你確認一下",
+    "askingDesc": "回答後繼續。",
+    "assembling": "搭建課堂",
+    "assemblingDesc": "正在建立課程，安排老師和同學…",
+    "opening": "正在開啟課堂",
+    "page": "第 {{order}} 頁",
+    "pageCaption": "第 {{order}} 頁 · {{title}}",
+    "skills": "已裝備的技能",
+    "resting": "課程會出現在這裡",
+    "restingDesc": "在對話裡繼續；生成課程後會在這個分頁開啟。"
   },
   "thinking": {
     "active": "思考中…",
@@ -188,7 +205,12 @@
       "listFolderCourses": "檢視課堂目錄",
       "createStage": "新增課堂",
       "renameStage": "重新命名課堂",
-      "readStageOutline": "讀取課堂大綱"
+      "readStageOutline": "讀取課堂大綱",
+      "listMaterialFolders": "查看知識庫資料夾",
+      "createMaterialFolder": "新增知識庫資料夾",
+      "renameMaterialFolder": "重新命名知識庫資料夾",
+      "moveMaterials": "移動材料",
+      "renameMaterial": "重新命名材料"
     },
     "chip": {
       "seconds": "{{count}} 秒",
@@ -222,7 +244,19 @@
       "allCourses": "全部課堂",
       "folderCourses": "某個資料夾內",
       "reusedCourse": "沿用已建課堂",
-      "movedToFolder": "已歸入資料夾"
+      "movedToFolder": "已歸入資料夾",
+      "materialFolders": "{{count}} 個資料夾",
+      "materials": "{{count}} 份材料",
+      "extractionStarted": "已開始解析",
+      "extractionInProgress": "已在解析中",
+      "extractionDone": "此前已解析完成",
+      "extractionComplete": "解析完成",
+      "extractionStillRunning": "仍在解析",
+      "parseFailed": "解析失敗",
+      "folderExisted": "資料夾已存在",
+      "unchanged": "沒有變化",
+      "movedOutOfFolder": "已移出資料夾",
+      "material": "{{count}} 份材料"
     },
     "error": {
       "materialExtraction": "材料解析失敗",
@@ -263,7 +297,12 @@
       "createStage": "課堂沒能建好",
       "renameStage": "課堂沒能改名",
       "readStageOutline": "課堂大綱沒能讀出來",
-      "generic": "呼叫失敗"
+      "generic": "呼叫失敗",
+      "listMaterialFolders": "沒能查看知識庫資料夾",
+      "createMaterialFolder": "知識庫資料夾沒能建好",
+      "renameMaterialFolder": "知識庫資料夾沒能改名",
+      "moveMaterials": "材料沒能移動",
+      "renameMaterial": "材料沒能改名"
     },
     "progress": {
       "scene": {

@@ -33,10 +33,17 @@ const formulas = {
   },
 };
 
-function Harness({ onElementsChange }: { onElementsChange: (intents: EditIntent[]) => void }) {
+function Harness({
+  onElementsChange,
+  selectedElementId,
+}: {
+  onElementsChange: (intents: EditIntent[]) => void;
+  selectedElementId?: string | null;
+}) {
   const { shapeKeypointDrag, onShapeKeypointPointerDown } = useShapeKeypointGesture({
     scale: 2,
     shapePathFormulas: formulas,
+    selectedElementId,
     onElementsChange,
   });
 
@@ -77,5 +84,21 @@ describe('useShapeKeypointGesture', () => {
         props: { keypoints: [0.5], path: 'M 200 100 0.5' },
       },
     ]);
+  });
+
+  it('clears a pending keypoint preview when selection changes and does not commit it', () => {
+    const onElementsChange = vi.fn<(intents: EditIntent[]) => void>();
+    const { container, rerender } = render(
+      <Harness onElementsChange={onElementsChange} selectedElementId="shape-1" />,
+    );
+    const trigger = container.querySelector('[data-keypoint-trigger]') as HTMLButtonElement;
+    fireEvent.pointerDown(trigger, { pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(window, { pointerId: 1, clientX: 200, clientY: 100 });
+    expect(container.querySelector('output')).not.toBeNull();
+
+    rerender(<Harness onElementsChange={onElementsChange} selectedElementId={null} />);
+    expect(container.querySelector('output')).toBeNull();
+    fireEvent.pointerUp(window, { pointerId: 1, clientX: 200, clientY: 100 });
+    expect(onElementsChange).not.toHaveBeenCalled();
   });
 });

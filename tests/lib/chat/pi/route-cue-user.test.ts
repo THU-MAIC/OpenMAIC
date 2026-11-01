@@ -2,9 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
 import { convertToLlm } from '@earendil-works/pi-agent-core';
 
-const PI_CHAT_FLAG = 'NEXT_PUBLIC_PI_CHAT_ENABLED';
 const COURSEWARE_REFERENCE_FLAG = 'NEXT_PUBLIC_COURSEWARE_REFERENCE_ENABLED';
-let originalPiChatFlag: string | undefined;
 let originalCoursewareReferenceFlag: string | undefined;
 
 type MockTool = {
@@ -354,9 +352,9 @@ function mockDirectorWithTwoTeacherTurns() {
             agentId: 'default-1',
             instruction: 'Give a normal answer.',
           });
-          await callAgent?.execute('normal-2-over-local-limit', {
+          await callAgent?.execute('normal-2', {
             agentId: 'default-1',
-            instruction: 'This second normal turn should be skipped locally.',
+            instruction: 'Add a second explanation.',
           });
           await cueUser?.execute('cue-1', { prompt: 'Any follow-up?' });
         },
@@ -506,9 +504,7 @@ function mockDirectorWithFailedSceneRead() {
 
 describe('POST /api/chat/pi cue_user', () => {
   beforeEach(() => {
-    originalPiChatFlag = process.env[PI_CHAT_FLAG];
     originalCoursewareReferenceFlag = process.env[COURSEWARE_REFERENCE_FLAG];
-    process.env[PI_CHAT_FLAG] = 'true';
     process.env[COURSEWARE_REFERENCE_FLAG] = 'false';
     vi.resetModules();
     mocks.resolveModel.mockReset();
@@ -527,11 +523,6 @@ describe('POST /api/chat/pi cue_user', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
-    if (originalPiChatFlag === undefined) {
-      delete process.env[PI_CHAT_FLAG];
-    } else {
-      process.env[PI_CHAT_FLAG] = originalPiChatFlag;
-    }
     if (originalCoursewareReferenceFlag === undefined) {
       delete process.env[COURSEWARE_REFERENCE_FLAG];
     } else {
@@ -962,7 +953,7 @@ describe('POST /api/chat/pi cue_user', () => {
     expect(doneEvent?.data.cueUserReceived).toBe(false);
   });
 
-  it('terminates the director after the hard tool-call budget', async () => {
+  it('does not terminate the Director based on the number of rejected calls', async () => {
     const counter = { value: 0 };
     mockDirectorWithRejectedCalls(counter);
 
@@ -971,14 +962,13 @@ describe('POST /api/chat/pi cue_user', () => {
     const response = await POST(
       makeRequest({
         ...body,
-        config: { ...body.config, piMaxAgentTurns: 1 },
       }),
     );
     const events = await readSseEvents(response);
     const doneEvent = events.find((event) => event.type === 'done');
 
     expect(response.status).toBe(200);
-    expect(counter.value).toBe(4);
+    expect(counter.value).toBe(20);
     expect(doneEvent?.data.totalAgents).toBe(0);
     expect(doneEvent?.data.agentHadContent).toBe(false);
   });
@@ -1006,7 +996,7 @@ describe('POST /api/chat/pi cue_user', () => {
     ]);
   });
 
-  it('uses only this loop turn count for the classroom agent turn cap', async () => {
+  it('reports only this loop turn count while retaining earlier responses', async () => {
     mockDirectorWithTwoTeacherTurns();
 
     const { POST } = await import('@/app/api/chat/pi/route');
@@ -1015,7 +1005,6 @@ describe('POST /api/chat/pi cue_user', () => {
         ...makeBody(),
         config: {
           ...makeBody().config,
-          piMaxAgentTurns: 1,
         },
         directorState: {
           turnCount: 6,
@@ -1039,12 +1028,8 @@ describe('POST /api/chat/pi cue_user', () => {
     const doneEvent = events.find((event) => event.type === 'done');
 
     expect(response.status).toBe(200);
-    expect(agentStarts).toEqual([
-      {
-        type: 'agent_start',
-        data: expect.objectContaining({ agentId: 'default-1', agentName: 'Teacher' }),
-      },
-    ]);
+    expect(agentStarts).toHaveLength(2);
+    expect(agentStarts.every((event) => event.data.agentId === 'default-1')).toBe(true);
     expect(cueUserEvents).toEqual([
       {
         type: 'cue_user',
@@ -1052,15 +1037,15 @@ describe('POST /api/chat/pi cue_user', () => {
       },
     ]);
     expectCueUserBeforeDone(events);
-    expect(doneEvent?.data.totalAgents).toBe(1);
-    expect(doneEvent?.data.directorState.agentResponses).toHaveLength(2);
+    expect(doneEvent?.data.totalAgents).toBe(2);
+    expect(doneEvent?.data.directorState.agentResponses).toHaveLength(3);
     expect(doneEvent?.data.directorState.agentResponses.at(-1)).toEqual(
       expect.objectContaining({
         agentId: 'default-1',
         contentPreview: 'Fresh answer.',
       }),
     );
-    expect(doneEvent?.data.directorState.turnCount).toBe(1);
+    expect(doneEvent?.data.directorState.turnCount).toBe(2);
   });
 
   it('returns only this turn whiteboard ledger, not the carried-forward history', async () => {

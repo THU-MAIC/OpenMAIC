@@ -6,6 +6,7 @@
 
 import type { ParsedPdfContent } from '@/lib/types/pdf';
 import { createLogger } from '@/lib/logger';
+import { base64ImageMimeType } from '@/lib/utils/base64';
 
 const log = createLogger('MinerUParser');
 
@@ -15,10 +16,16 @@ export function extractMinerUResult(fileResult: Record<string, unknown>): Parsed
   const imageData: Record<string, string> = {};
   let pageCount = 0;
 
-  // Extract images from the images object (key → base64 string)
+  // Extract images from the images object (key → base64 string). Only bare
+  // base64 of an image is wrapped as a data URL, typed as what its bytes are:
+  // a MinerU gateway that hosts the images answers a URL instead, kept as is
+  // (the server downloads it when it stores the extraction), and any other
+  // value (a path, even one made of base64 characters) is kept as is too, to
+  // be dropped, never decoded into garbage bytes.
   if (fileResult.images && typeof fileResult.images === 'object') {
     Object.entries(fileResult.images as Record<string, string>).forEach(([key, value]) => {
-      imageData[key] = value.startsWith('data:') ? value : `data:image/png;base64,${value}`;
+      const mimeType = value.startsWith('data:') ? null : base64ImageMimeType(value);
+      imageData[key] = mimeType ? `data:${mimeType};base64,${value}` : value;
     });
   }
 
@@ -41,12 +48,15 @@ export function extractMinerUResult(fileResult: Record<string, unknown>): Parsed
     );
     pageCount = pages.size;
 
+    // Tables and display equations are cropped into images too and referenced by img_path
+    const imageTypes = new Set(['image', 'table', 'equation']);
     for (const item of contentList) {
-      if (item.type === 'image' && item.img_path) {
+      if (imageTypes.has(item.type) && item.img_path) {
+        const captions = item.type === 'table' ? item.table_caption : item.image_caption;
         const metaEntry = {
           pageIdx: item.page_idx ?? 0,
           bbox: item.bbox || [0, 0, 1000, 1000],
-          caption: Array.isArray(item.image_caption) ? item.image_caption[0] : undefined,
+          caption: Array.isArray(captions) ? captions[0] : undefined,
         };
         // Store under both the full path and basename so lookup works
         // regardless of whether images dict uses "abc.jpg" or "images/abc.jpg"
@@ -68,13 +78,18 @@ export function extractMinerUResult(fileResult: Record<string, unknown>): Parsed
     description?: string;
     width?: number;
     height?: number;
+    path?: string;
   }> = [];
 
   Object.entries(imageData).forEach(([key, base64Url], index) => {
     const imageId = key.startsWith('img_') ? key : `img_${index + 1}`;
     imageMapping[imageId] = base64Url;
-    // Try exact key first, then with 'images/' prefix (MinerU content_list uses prefixed paths)
-    const meta = imageMetaLookup.get(key) || imageMetaLookup.get(`images/${key}`);
+    // Try exact key first, then with 'images/' prefix (MinerU content_list uses prefixed paths).
+    // A gateway that hosts the images names them by their URL in content_list too.
+    const meta =
+      imageMetaLookup.get(key) ||
+      imageMetaLookup.get(`images/${key}`) ||
+      imageMetaLookup.get(base64Url);
     pdfImages.push({
       id: imageId,
       src: base64Url,
@@ -82,6 +97,8 @@ export function extractMinerUResult(fileResult: Record<string, unknown>): Parsed
       description: meta?.caption,
       width: meta ? meta.bbox[2] - meta.bbox[0] : undefined,
       height: meta ? meta.bbox[3] - meta.bbox[1] : undefined,
+      // The file the markdown names this image by; the id above replaces it.
+      path: key,
     });
   });
 

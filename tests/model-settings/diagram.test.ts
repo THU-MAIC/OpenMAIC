@@ -29,6 +29,24 @@ describe('model map layout', () => {
     ]);
   });
 
+  it('draws web fetch as a line of the research station, not a station of its own', () => {
+    const stations = placeStations(makeView());
+    const research = stations.find((station) => station.id === 'research');
+    expect(research?.lines.map((line) => [line.slot, line.labelKey, !!line.toggle])).toEqual([
+      ['course.research', 'rewrite', false],
+      ['webSearch', 'search', true],
+      ['webFetch', 'fetch', true],
+    ]);
+    expect(
+      stations.some(
+        (station) =>
+          station.id !== 'research' && station.lines.some((line) => line.slot === 'webFetch'),
+      ),
+    ).toBe(false);
+    expect(STATIONS.map((station) => station.id)).not.toContain('webFetch');
+    expect(STATIONS[0].id).toBe('llm');
+  });
+
   it('runs the flow left to right on the first row and right to left on the second', () => {
     const byId = new Map(STATIONS.map((station) => [station.id, station]));
     const rows = FLOW.map((id) => byId.get(id)!);

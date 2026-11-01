@@ -15,7 +15,7 @@
 import { authorizeLegacyReferences } from './model-authorization';
 import { PROVIDERS, parseModelString } from '@/lib/ai/providers';
 import type { SlotCapability, SlotId } from '@/lib/config/model-slots';
-import { presetIdFor } from '@/lib/config/preset-ids';
+import { presetIdFor, retiredPresetReason } from '@/lib/config/preset-ids';
 import { getProviderPreset } from '@/lib/config/provider-presets';
 import {
   providerSchema,
@@ -97,7 +97,7 @@ const MEDIA_DEFAULTS: ReadonlyArray<[Section, SlotId]> = [
 ];
 
 /** The order the server preferred web search providers in (with a key). */
-const WEB_SEARCH_PRIORITY = ['tavily', 'exa', 'bocha', 'baidu', 'minimax', 'claude'];
+const WEB_SEARCH_PRIORITY = ['tavily', 'exa', 'bocha', 'baidu', 'minimax', 'claude', 'firecrawl'];
 
 /**
  * The document services the browser switched to when the server configured
@@ -125,6 +125,7 @@ export function translateLegacyConfig(
   const providers: NonNullable<ModelConfigFile['providers']> = {};
   /** Provider ids translated from the providers (chat) section. */
   const chatProviders = new Set<string>();
+  const rejected = new Set<string>();
 
   for (const section of Object.keys(SECTION_CAPABILITY) as Section[]) {
     const capability = SECTION_CAPABILITY[section];
@@ -134,8 +135,14 @@ export function translateLegacyConfig(
       const id = legacyProviderId(capability, registryId);
       const preset = getProviderPreset(id);
       if (!preset || !isKnown(capability, registryId)) {
+        const retired = retiredPresetReason(id);
         // Not a registry id, so possibly anything: the key is not repeated.
-        notices.push(`An entry in ${section} has no matching preset and is not carried over`);
+        // A retired id is a known name and safe to repeat.
+        notices.push(
+          retired
+            ? `${section}.${registryId} is not carried over: ${retired}`
+            : `An entry in ${section} has no matching preset and is not carried over`,
+        );
         continue;
       }
       const provider = translateProvider(entry, id);
@@ -148,6 +155,23 @@ export function translateLegacyConfig(
       }
       if (preset.requiresBaseUrl && !provider.baseUrl) {
         notices.push(`${section}.${registryId} is not carried over: it needs a base URL`);
+        continue;
+      }
+      const existing = providers[id];
+      if (existing) {
+        // Shared accounts may occur in both sections, but search must never
+        // replace chat credentials or its model pins.
+        if (
+          existing.apiKey !== checked.data.apiKey ||
+          existing.baseUrl !== checked.data.baseUrl ||
+          existing.proxy !== checked.data.proxy ||
+          JSON.stringify(existing.credentials) !== JSON.stringify(checked.data.credentials)
+        ) {
+          notices.push(
+            `${section}.${registryId} conflicts with the existing provider "${id}"; this entry is not carried over. Use separate provider ids in openmaic.yml for separate accounts`,
+          );
+          rejected.add(`${section}.${registryId}`);
+        }
         continue;
       }
       providers[id] = checked.data;
@@ -214,8 +238,10 @@ export function translateLegacyConfig(
   // priority), with the first pinned model, else the provider's default.
   for (const [section, slot] of MEDIA_DEFAULTS) {
     const capability = SECTION_CAPABILITY[section];
-    const usable = Object.entries(server[section]).filter(([registryId]) =>
-      Object.hasOwn(providers, legacyProviderId(capability, registryId)),
+    const usable = Object.entries(server[section]).filter(
+      ([registryId]) =>
+        !rejected.has(`${section}.${registryId}`) &&
+        Object.hasOwn(providers, legacyProviderId(capability, registryId)),
     );
     const preferred =
       section === 'webSearch'

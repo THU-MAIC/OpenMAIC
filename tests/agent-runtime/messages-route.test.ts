@@ -56,6 +56,23 @@ beforeEach(() => {
 });
 
 describe('POST agent session message', () => {
+  it('keeps a supported interface locale on the message and ignores anything else (#1880)', async () => {
+    await call({ text: 'Continue', locale: 'en-US' });
+    expect(mocks.postUserMessage).toHaveBeenLastCalledWith(
+      'session-1',
+      { text: 'Continue', locale: 'en-US' },
+      { expectedOwnerId: 'owner-1' },
+    );
+    for (const locale of ['xx-YY', 'en', 42, '../../etc/passwd']) {
+      await call({ text: 'Continue', locale });
+      expect(mocks.postUserMessage).toHaveBeenLastCalledWith(
+        'session-1',
+        { text: 'Continue' },
+        { expectedOwnerId: 'owner-1' },
+      );
+    }
+  });
+
   it('posts a trimmed message with an owner fence and returns its delivery', async () => {
     const response = await call({ text: ' Continue ' });
 

@@ -17,7 +17,7 @@ import {
   type TargetView,
 } from './client';
 
-export type MediaRoot = 'tts' | 'asr' | 'image' | 'video' | 'webSearch' | 'document';
+export type MediaRoot = 'tts' | 'asr' | 'image' | 'video' | 'webSearch' | 'webFetch' | 'document';
 
 /** The provider and model a slot resolves to, without anything secret. */
 export type EffectiveTarget = TargetView;
@@ -34,6 +34,7 @@ export interface ModelCapabilities {
   asr: EffectiveTarget | null;
   image: EffectiveTarget | null;
   video: EffectiveTarget | null;
+  webFetch: EffectiveTarget | null;
   webSearch: EffectiveTarget | null;
   document: EffectiveTarget | null;
   /**
@@ -90,6 +91,7 @@ export function modelCapabilities(view: ModelSettingsView | null | undefined): M
     asr: speechInput(view),
     image: effectiveTarget(view, 'image'),
     video: effectiveTarget(view, 'video'),
+    webFetch: effectiveTarget(view, 'webFetch'),
     webSearch: effectiveTarget(view, 'webSearch'),
     document: effectiveTarget(view, 'document'),
     resolved: new Set(

@@ -26,6 +26,7 @@ import {
   Video,
   Volume2,
   Search,
+  Globe,
   type LucideIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -78,6 +79,7 @@ const MODALITY_LABEL_KEYS: Record<TokenPlanModality, string> = {
   video: 'settings.videoSettings',
   tts: 'settings.ttsSettings',
   webSearch: 'settings.webSearchSettings',
+  webFetch: 'settings.webFetchSettings',
 };
 
 const MODALITY_ICONS: Record<TokenPlanModality, LucideIcon> = {
@@ -86,6 +88,7 @@ const MODALITY_ICONS: Record<TokenPlanModality, LucideIcon> = {
   video: Video,
   tts: Volume2,
   webSearch: Search,
+  webFetch: Globe,
 };
 
 /** Display-name mapping: the volcengine-ark preset is shown as "Seed". */
@@ -124,6 +127,7 @@ const MODEL_PLAN_CAPABILITY_LABEL_KEYS: Record<TokenPlanModality, string> = {
   video: 'settings.tokenPlan.capVideo',
   tts: 'settings.tokenPlan.capTts',
   webSearch: 'settings.tokenPlan.capWebSearch',
+  webFetch: 'settings.tokenPlan.capWebFetch',
 };
 
 function modelPlanItems(preset: TokenPlanPreset): ModelPlanItem[] {
@@ -145,7 +149,9 @@ function modelPlanItems(preset: TokenPlanPreset): ModelPlanItem[] {
     }
   }
   // Modalities with no model concept (e.g. web search) do not disclose a model.
-  if (preset.modalities.webSearch) items.push({ capability: 'webSearch' });
+  for (const capability of ['webSearch', 'webFetch'] as const) {
+    if (preset.modalities[capability]) items.push({ capability });
+  }
   return items;
 }
 
@@ -296,7 +302,7 @@ export function TokenPlanSettings({
     const capability = conflict.slot.capability;
     const { providerId, modelId } = splitRef(ref);
     const known = view.providers.some((provider) => provider.id === providerId);
-    const provider = known ? providerLabel(view, providerId) : (preset?.name ?? providerId);
+    const provider = known ? providerLabel(view, providerId, t) : (preset?.name ?? providerId);
     if (!modelId) return provider;
     const model = known
       ? modelName(view, capability, providerId, modelId)

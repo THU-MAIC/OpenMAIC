@@ -144,7 +144,16 @@ async function entryOwnership(
   return principal === LEGACY_SHARED_ASSET_PRINCIPAL ? 'legacy' : 'foreign';
 }
 
-/** Every course referencing `ref` (at least one) belongs to `ownerId`. */
+/**
+ * Every course referencing `ref` (at least one) belongs to `ownerId`, and no
+ * reference root holds it.
+ *
+ * A root is refused outright rather than attributed: `root_kind` / `root_id`
+ * name a record the asset layer does not interpret, so it cannot tell whose
+ * the root is, and a `remove` or `replace` would take it (and with it whatever
+ * relies on it) away. A shared entry something roots is therefore immutable
+ * to every owner, however its courses are owned.
+ */
 async function ownsEveryReference(
   queryable: OwnerAssetQueryable,
   ref: string,
@@ -152,16 +161,17 @@ async function ownsEveryReference(
 ): Promise<boolean> {
   const refs = await queryable.query(
     `SELECT count(*)::int AS total,
-            count(*) FILTER (WHERE m.owner_id = $2)::int AS owned
+            count(*) FILTER (WHERE m.owner_id = $2)::int AS owned,
+            EXISTS (SELECT 1 FROM asset_root_refs WHERE asset_id = $1) AS rooted
        FROM document_asset_refs r
        LEFT JOIN stage_meta m ON m.stage_id = r.stage_id
       WHERE r.asset_id = $1`,
     [ref, ownerId],
   );
-  const counts = refs.rows[0] as { total?: unknown; owned?: unknown } | undefined;
+  const counts = refs.rows[0] as { total?: unknown; owned?: unknown; rooted?: unknown } | undefined;
   const total = Number(counts?.total ?? 0);
   const owned = Number(counts?.owned ?? 0);
-  return total > 0 && owned === total;
+  return total > 0 && owned === total && counts?.rooted !== true;
 }
 
 /**
@@ -213,8 +223,8 @@ export function createOwnerAssetStore(
    * Run `mutate` under the principal the caller may mutate `ref` as, or return
    * `refused()` when it may not. A legacy entry is re-checked under its row
    * lock inside the transaction the mutation commits in: adding a reference
-   * row takes a key-share lock on the entry, so no reference can arrive
-   * between the check and the write.
+   * row or a root row takes a key-share lock on the entry, so neither can
+   * arrive between the check and the write.
    */
   async function withMutablePrincipal<T>(
     principal: AssetPrincipal,

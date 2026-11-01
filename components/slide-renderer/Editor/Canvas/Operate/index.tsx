@@ -19,6 +19,8 @@ import { LineElementOperate } from './LineElementOperate';
 import { TableElementOperate } from './TableElementOperate';
 import { CommonElementOperate } from './CommonElementOperate';
 import type { SlideContent } from '@/lib/types/stage';
+import { validateShapeGeometry } from '@openmaic/geometry';
+import { projectInteractionElement } from '../interaction-elements';
 
 interface OperateProps {
   readonly elementInfo: PPTElement;
@@ -65,6 +67,11 @@ export function Operate({
 }: OperateProps) {
   const canvasScale = useCanvasStore.use.canvasScale();
   const toolbarState = useCanvasStore.use.toolbarState();
+  const interactionElement = useMemo(() => projectInteractionElement(elementInfo), [elementInfo]);
+  const geometryWritable = useMemo(
+    () => elementInfo.type !== 'shape' || validateShapeGeometry(elementInfo).ok,
+    [elementInfo],
+  );
 
   // Get the formatted animations using a proper selector to avoid infinite loops
   const currentSlide = useSceneSelector<SlideContent, Slide>((content) => content.canvas);
@@ -126,27 +133,31 @@ export function Operate({
     return indexList;
   }, [formatedAnimations, elementInfo.id]);
 
-  const rotate = useMemo(() => ('rotate' in elementInfo ? elementInfo.rotate : 0), [elementInfo]);
-  const height = useMemo(() => ('height' in elementInfo ? elementInfo.height : 0), [elementInfo]);
+  const rotate =
+    interactionElement && 'rotate' in interactionElement ? interactionElement.rotate : 0;
+  const height =
+    interactionElement && 'height' in interactionElement ? interactionElement.height : 0;
 
   const handlerVisible = !elementInfo.lock && (isActiveGroupElement || !isMultiSelect);
+  if (!interactionElement) return null;
 
   return (
     <div
       className={`operate absolute z-43 select-none ${isMultiSelect && !isActive ? 'opacity-20' : ''}`}
       style={{
-        top: elementInfo.top * canvasScale + 'px',
-        left: elementInfo.left * canvasScale + 'px',
+        top: interactionElement.top * canvasScale + 'px',
+        left: interactionElement.left * canvasScale + 'px',
         transform: `rotate(${rotate}deg)`,
-        transformOrigin: `${(elementInfo.width * canvasScale) / 2}px ${(height * canvasScale) / 2}px`,
+        transformOrigin: `${(interactionElement.width * canvasScale) / 2}px ${(height * canvasScale) / 2}px`,
         pointerEvents: 'auto', // Enable mouse events for operate controls
       }}
     >
       {/* eslint-disable @typescript-eslint/no-explicit-any -- dynamic component dispatch requires type widening */}
       {isSelected && CurrentOperateComponent && (
         <CurrentOperateComponent
-          elementInfo={elementInfo as any}
+          elementInfo={interactionElement as any}
           handlerVisible={handlerVisible}
+          geometryWritable={geometryWritable}
           rotateElement={rotateElement as any}
           scaleElement={scaleElement as any}
           dragLineElement={dragLineElement as any}

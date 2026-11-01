@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "戻る",
     "you": "あなた",
     "confirm": "確認",
     "cancel": "キャンセル",
@@ -10,6 +11,22 @@
     "close": "閉じる"
   },
   "home": {
+    "resumeGeneration": "生成を続ける",
+    "emptyLibraryTitle": "ここから学びが始まります",
+    "emptyLibraryBody": "ホームで授業を作成すると、ここから学習を再開できます。",
+    "mobileTitle": "今日は何を学びますか？",
+    "mobileSubtitle": "学びたいことを伝えると、AI が対話型授業を作ります。",
+    "mobilePlaceholder": "学習テーマを入力、または資料をアップロード",
+    "courseOptions": "授業オプション",
+    "courseMaterials": "授業資料",
+    "courseMaterialsCount": "授業資料 · {{n}} 件",
+    "backToCourseOptions": "授業オプションに戻る",
+    "materialsDone": "完了",
+    "allSettings": "すべての設定",
+    "examplesLabel": "テーマの例",
+    "examplePython": "Python を基礎から学ぶ",
+    "exampleFourier": "フーリエ変換を直感的に学ぶ",
+    "desktopOnly": "エディターと Pro モードはパソコンをご利用ください。",
     "slogan": "マルチエージェント対話型教室で生成的に学ぶ",
     "greetingWithName": "こんにちは、{{name}}さん"
   },
@@ -475,6 +492,7 @@
       "moreActions": "その他の操作",
       "rename": "名前を変更",
       "sceneIncomplete": "このページの内容が未完成です",
+      "sceneHasErrors": "このページにはエラーがあります",
       "addPage": "ページを追加",
       "nextPage": "次のページ",
       "prevPage": "前のページ"
@@ -1346,11 +1364,13 @@
       "ollama": "Ollama（ローカルモデル）",
       "tavily": "Tavily",
       "exa": "Exa",
+      "firecrawl": "Firecrawl",
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
       "claude": "Claude",
-      "searxng": "SearXNG"
+      "searxng": "SearXNG",
+      "builtin": "組み込みリーダー"
     },
     "modelCount": "モデル",
     "modelSingular": "モデル",
@@ -1716,7 +1736,6 @@
     "videoModel": "動画生成モデル",
     "providerSeedance": "Seedance（ByteDance）",
     "providerKling": "Kling（快手）",
-    "providerVeo": "Veo（Google）",
     "providerSora": "Sora（OpenAI）",
     "providerMiniMaxVideo": "MiniMax Video",
     "providerGrokVideo": "Grok Video（xAI）",
@@ -1798,7 +1817,7 @@
     "tokenPlan": {
       "nav": "Token Plan",
       "title": "Token Plan Setup",
-      "desc": "Pick your token plan provider and enter the key — it auto-configures every adapted modality (LLM/image/video/speech/web search).",
+      "desc": "Pick your token plan provider and enter the key — it auto-configures every adapted modality (LLM/image/video/speech/web search/web fetch).",
       "selectPlan": "Select Provider",
       "apiKey": "API Key",
       "updateKey": "Update key",
@@ -1824,6 +1843,7 @@
       "capTts": "音声合成",
       "capVideo": "動画生成",
       "capWebSearch": "ウェブ検索",
+      "capWebFetch": "Webページ取得",
       "saved": "接続設定を保存しました",
       "stageInteractive": "インタラクティブ",
       "stageSlide": "スライド",
@@ -1947,7 +1967,8 @@
         "providers": "言語モデルサービスの認証情報・API アドレス・モデルカタログを設定します",
         "tts": "音声合成サービス・ボイス・モデルを設定します",
         "video": "動画生成サービスの認証情報とモデルカタログを設定します",
-        "webSearch": "ウェブ検索サービスと検索ソースを設定します"
+        "webSearch": "ウェブ検索サービスと検索ソースを設定します",
+        "webFetch": "Webページの抽出サービスを設定"
       },
       "nav": "モデルサービス",
       "notConfigured": "未設定",
@@ -2149,6 +2170,10 @@
         "document": {
           "name": "ドキュメント解析",
           "desc": "アップロードされたドキュメントを読み取ります。"
+        },
+        "webFetch": {
+          "name": "Webページ取得",
+          "desc": "エージェントがセッションで許可されたWebページを読み取るために使います。"
         }
       },
       "source": {
@@ -2162,6 +2187,7 @@
         "lines": {
           "rewrite": "クエリ",
           "search": "検索",
+          "fetch": "取得",
           "image": "画像",
           "video": "動画"
         }
@@ -2194,9 +2220,144 @@
         "unconfirmed": "サーバーがインポートを確認しませんでした。"
       }
     },
-    "serverConfiguredAddOwn": "独自の認証情報を使うには、別のプロバイダーを追加してください。"
+    "serverConfiguredAddOwn": "独自の認証情報を使うには、別のプロバイダーを追加してください。",
+    "webFetchSettings": "Webページ取得",
+    "webFetchHint": "Webページの読み取り方法を選択します。ホスト型サービスには、セッションで許可された公開URLのみが送信されます。結果は信頼できないデータとして扱い、失敗しても別のサービスには切り替えません。",
+    "webFetchApiKey": "APIキー",
+    "webFetchSharedKeyHint": "このキーは同じプロバイダーとのチャットにも使用されます。変更や削除はチャットにも影響します。"
   },
   "workspace": {
+    "knowledgeBase": {
+      "title": "ナレッジベース",
+      "topLevel": "最上位",
+      "back": "戻る",
+      "search": "名前やファイル形式で検索",
+      "loading": "読み込み中…",
+      "retry": "再試行",
+      "loadMore": "さらに読み込む",
+      "failure": {
+        "more": "失敗の説明：{{reason}}",
+        "storage_full": {
+          "label": "保存容量が不足しています",
+          "description": "解析結果を保存する空き容量がありません。容量を確保してから再試行してください。"
+        },
+        "source_unavailable": {
+          "label": "元のファイルを読み取れません",
+          "description": "元のファイルを読み取れませんでした。もう一度アップロードして再試行してください。"
+        },
+        "service_unavailable": {
+          "label": "解析サービスを利用できません",
+          "description": "このファイル形式に対応する解析サービスが設定されていません。管理者に設定を依頼してから、再解析してください。"
+        },
+        "media_too_long": {
+          "label": "音声・動画が長すぎます",
+          "description": "この解析方法で処理できるのは {{minutes}} 分までの音声・動画です。短くするか分割して、もう一度アップロードしてください。"
+        },
+        "no_text_extracted": {
+          "label": "テキストを抽出できませんでした",
+          "description": "今回の解析では利用可能なテキストを抽出できませんでした。内容を確認するか、別のファイルをお試しください。"
+        },
+        "processing_interrupted": {
+          "label": "解析が完了しませんでした",
+          "description": "解析を完了できませんでした。しばらくしてから再試行できます。"
+        },
+        "too_many_pages": {
+          "label": "ページ数が多すぎます",
+          "description": "この PDF は {{pages}} ページあり、解析できる上限の {{maxPages}} ページを超えています。分割してアップロードするか、必要な章だけをアップロードしてください。",
+          "descriptionWithoutCount": "この PDF は解析できる上限の {{maxPages}} ページを超えています。分割してアップロードするか、必要な章だけをアップロードしてください。",
+          "descriptionWithoutLimit": "この PDF のページ数は解析サービスの上限を超えています。分割してアップロードするか、必要な章だけをアップロードしてください。"
+        }
+      },
+      "status": {
+        "uploading": "アップロード中",
+        "stored": "保存済み · 未解析",
+        "parsing": "解析中",
+        "searchable": "検索可能",
+        "failed": "解析失敗"
+      },
+      "column": {
+        "name": "名前",
+        "status": "状態",
+        "folder": "フォルダー",
+        "size": "サイズ",
+        "date": "日付"
+      },
+      "limits": {
+        "perFile": "文書・画像は {{document}} まで、音声・動画は {{media}} まで"
+      },
+      "usage": {
+        "summary": "{{max}} 中 {{used}} を使用 · {{count}} / {{maxCount}} ファイル",
+        "fileStorage": "別枠のファイルストレージ：{{max}} 中 {{used}} を使用（解析内容とコース素材を含む）",
+        "fileStorageUnlimited": "別枠のファイルストレージ：{{used}} を使用（解析内容とコース素材を含む）"
+      },
+      "empty": {
+        "title": "ナレッジベースはまだ空です",
+        "body": "教材をアップロードすると、アシスタントが整理・解析します。授業準備のときに @ で選べます。",
+        "folder": "このフォルダーにはまだ資料がありません",
+        "query": "「{{query}}」に一致する資料はありません"
+      },
+      "upload": {
+        "button": "資料をアップロード",
+        "dismiss": "閉じる"
+      },
+      "error": {
+        "load": "ナレッジベースを読み込めませんでした",
+        "busy": "アカウントを更新中です。しばらくしてからもう一度お試しください",
+        "identity": "ログイン状態が変わりました。ページを再読み込みしてください",
+        "stale": "表示内容が最新でない可能性があります",
+        "nameTaken": "同じ名前のフォルダーがすでにあります",
+        "invalidName": "255 文字以内の名前を入力してください",
+        "folderNameEmpty": "フォルダー名を入力してください",
+        "folderNameTooLong": "フォルダー名が長すぎます",
+        "folderLimit": "フォルダー数の上限に達しました",
+        "notMovable": "この資料は移動できません",
+        "gone": "すでに存在しません",
+        "save": "うまくいきませんでした。もう一度お試しください",
+        "notEmpty": "このフォルダーにはまだ資料があります。先に移動してください",
+        "materialNotFound": "資料が見つからないか、アクセスできません。",
+        "folderNotFound": "フォルダーが見つからないか、アクセスできません。",
+        "textUnavailable": "資料のテキストを利用できません。",
+        "derivative": "派生資料には元の資料の名前が使われます。元の資料の名前を変更してください。",
+        "moveTooMany": "一度に移動できる資料は {{limit}} 件までです。",
+        "moveNotMovable": "資料は移動されませんでした。一部の資料を利用または移動できません。",
+        "toolFolderNameTooLong": "フォルダー名が長すぎます（半角40文字、全角20文字まで）。",
+        "toolFolderLimit": "ナレッジベースのフォルダー数が上限の {{limit}} 件に達しています。",
+        "mediaUnsupported": "授業のメディアには画像、動画、音声の資料のみ使用できます。",
+        "mediaStorageFull": "このメディアを保存する空き容量がありません。空き容量を確保して再試行してください。",
+        "mediaNotFound": "メディア資料が見つからないか、利用できるメディアファイルがありません。"
+      },
+      "actions": {
+        "parse": "解析",
+        "reparse": "再解析",
+        "more": "{{name}} のその他の操作",
+        "rename": "名前を変更",
+        "delete": "削除",
+        "open": "開く",
+        "downloadOriginal": "元のファイルをダウンロード",
+        "chat": "この資料で会話する"
+      },
+      "folder": {
+        "new": "新しいフォルダー",
+        "items": "{{count}} 件",
+        "items_one": "{{count}} 件",
+        "items_other": "{{count}} 件"
+      },
+      "dialog": {
+        "cancel": "キャンセル",
+        "close": "閉じる"
+      },
+      "delete": {
+        "materialTitle": "「{{name}}」を削除しますか？",
+        "materialLinks": "削除すると、会話からこの資料を読み込めなくなります。会話にすでにある文章は残ります。",
+        "materialCourses": "コースに保存済みの内容には影響しません。",
+        "cannotUndo": "この操作は元に戻せません。",
+        "folderTitle": "フォルダー「{{name}}」を削除しますか？",
+        "folderContents": "{{count}} 件のファイルを最上位に移動します。ファイルは削除されません。"
+      },
+      "conversationFailure": {
+        "serviceUnavailable": "この種類のファイルに対応する解析サービスが設定されていません。管理者に設定を依頼してください。"
+      }
+    },
     "untitledCourse": "未命名课堂",
     "sceneCount": "{{count}} 页",
     "sceneCount_one": "{{count}} 页",
@@ -2204,14 +2365,30 @@
     "courseLinkHint": "在右侧打开《{{name}}》",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
+      "search": "教室と資料を検索",
+      "searchMaterials": "資料を検索",
+      "searchClassrooms": "教室を検索",
+      "courseOrder": "表示中の教室を先頭に、更新日時の新しい順",
+      "materialOrder": "アップロード日時の新しい順",
       "title": "为这条消息引用课堂",
+      "titleBoth": "このメッセージで教室を参照するか、ナレッジベースの資料を添付",
+      "titleMaterials": "このメッセージにナレッジベースの資料を添付",
       "empty": "没有匹配的课堂",
       "alreadyNamed": "已引用",
       "remove": "移除{{name}}",
       "pillHint": "这条消息引用了「{{name}}」",
       "notAccepted": "サーバーは一時的に利用できません。しばらくしてからもう一度お試しください。",
       "reference": "引用「{{name}}」",
-      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
+      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围",
+      "classrooms": "クラス",
+      "knowledgeBase": "ナレッジベース",
+      "emptyWithMaterials": "一致するクラスや素材はありません",
+      "attachMaterial": "{{name}} をこのメッセージに添付",
+      "materialUnavailable": "{{name}} は添付できません（{{reason}}）。ナレッジベースで理由を確認し、もう一度解析してください。",
+      "materialAttached": "この会話にすでにあります",
+      "materialStaged": "このメッセージにすでにあります",
+      "materialsCapped": "最初の {{count}} 件の素材を表示中 — 入力を続けて絞り込めます",
+      "materialUnavailableGuidance": "{{name}} を添付できません。{{guidance}} ナレッジベースのページで対応できます。"
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
@@ -2232,6 +2409,11 @@
     "homeAria": "Back to home",
     "currentSession": "Current chat",
     "startLearning": "学習を開始",
+    "classroomMode": "教室モード",
+    "learningMode": "学習",
+    "editingMode": "編集",
+    "editingUnavailableGenerating": "コース生成中は編集できません。",
+    "fullscreenLearning": "全画面で学習",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2345,7 +2527,8 @@
     "badgeEnter": "Pro モード",
     "badgeExit": "通常モードに戻る",
     "launchPlaceholder": "作りたい学習体験を描いてください",
-    "launchSend": "構築を開始"
+    "launchSend": "構築を開始",
+    "mentionCourseOrMaterial": "クラスまたはナレッジベースの素材を参照"
   },
   "workbench": {
     "tool": {

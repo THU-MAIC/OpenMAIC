@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "Volver",
     "you": "Tú",
     "confirm": "Confirmar",
     "cancel": "Cancelar",
@@ -10,6 +11,22 @@
     "close": "Cerrar"
   },
   "home": {
+    "resumeGeneration": "Continuar generación",
+    "emptyLibraryTitle": "Tus clases empiezan aquí",
+    "emptyLibraryBody": "Crea un curso en el inicio y vuelve aquí para continuar.",
+    "mobileTitle": "¿Qué quieres aprender?",
+    "mobileSubtitle": "Cuéntanos el tema y la IA creará una clase interactiva.",
+    "mobilePlaceholder": "Escribe un tema o sube materiales",
+    "courseOptions": "Opciones de clase",
+    "courseMaterials": "Material del curso",
+    "courseMaterialsCount": "Material del curso · {{n}}",
+    "backToCourseOptions": "Volver a las opciones de clase",
+    "materialsDone": "Listo",
+    "allSettings": "Todos los ajustes",
+    "examplesLabel": "Prueba un tema",
+    "examplePython": "Aprender Python desde cero",
+    "exampleFourier": "Transformada de Fourier con ejemplos intuitivos",
+    "desktopOnly": "Usa una computadora para el editor y el modo Pro.",
     "slogan": "Aprendizaje generativo en un aula interactiva multiagente",
     "greetingWithName": "Hola, {{name}}"
   },
@@ -475,6 +492,7 @@
       "moreActions": "Más acciones",
       "rename": "Renombrar",
       "sceneIncomplete": "Esta página tiene contenido incompleto",
+      "sceneHasErrors": "Esta página contiene errores",
       "addPage": "Agregar página",
       "nextPage": "Página siguiente",
       "prevPage": "Página anterior"
@@ -1346,11 +1364,13 @@
       "ollama": "Ollama (local)",
       "tavily": "Tavily",
       "exa": "Exa",
+      "firecrawl": "Firecrawl",
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
       "claude": "Claude",
-      "searxng": "SearXNG"
+      "searxng": "SearXNG",
+      "builtin": "Lector integrado"
     },
     "modelCount": "modelos",
     "modelSingular": "modelo",
@@ -1716,7 +1736,6 @@
     "videoModel": "Modelo de generación de videos",
     "providerSeedance": "Seedance (ByteDance)",
     "providerKling": "Kling (Kuaishou)",
-    "providerVeo": "Veo (Google)",
     "providerSora": "Sora (OpenAI)",
     "providerMiniMaxVideo": "MiniMax Video",
     "providerGrokVideo": "Grok Video (xAI)",
@@ -1798,7 +1817,7 @@
     "tokenPlan": {
       "nav": "Plan de tokens",
       "title": "Configuración del plan de tokens",
-      "desc": "Elige tu proveedor de plan de tokens e ingresa la clave — se autoconfigura cada modalidad adaptada (LLM/imagen/video/voz/búsqueda web).",
+      "desc": "Elige tu proveedor de plan de tokens e ingresa la clave — se autoconfigura cada modalidad adaptada (LLM/imagen/video/voz/búsqueda web/obtención de páginas web).",
       "selectPlan": "Seleccionar proveedor",
       "apiKey": "Clave API",
       "updateKey": "Actualizar clave",
@@ -1824,6 +1843,7 @@
       "capTts": "Síntesis de voz",
       "capVideo": "Generación de video",
       "capWebSearch": "Búsqueda web",
+      "capWebFetch": "Obtener páginas web",
       "saved": "Ajustes de conexión guardados",
       "stageInteractive": "Interactivo",
       "stageSlide": "Diapositivas",
@@ -1947,7 +1967,8 @@
         "providers": "Configura credenciales, endpoints y catálogos de modelos de los servicios de modelos de lenguaje",
         "tts": "Configura servicios de síntesis de voz, voces y modelos",
         "video": "Configura credenciales y catálogos de modelos de los servicios de generación de video",
-        "webSearch": "Configura servicios de búsqueda web y fuentes de recuperación"
+        "webSearch": "Configura servicios de búsqueda web y fuentes de recuperación",
+        "webFetch": "Configurar servicios de extracción de páginas web"
       },
       "nav": "Servicios de modelos",
       "notConfigured": "Sin configurar",
@@ -2149,6 +2170,10 @@
         "document": {
           "name": "Análisis de documentos",
           "desc": "Lee los documentos subidos."
+        },
+        "webFetch": {
+          "name": "Obtener páginas web",
+          "desc": "Permite al agente leer páginas web autorizadas en la sesión."
         }
       },
       "source": {
@@ -2162,6 +2187,7 @@
         "lines": {
           "rewrite": "Consulta",
           "search": "Búsqueda",
+          "fetch": "Lectura",
           "image": "Imagen",
           "video": "Video"
         }
@@ -2194,9 +2220,144 @@
         "unconfirmed": "El servidor no confirmó que se importara."
       }
     },
-    "serverConfiguredAddOwn": "Para usar tus propias credenciales, agrega un proveedor aparte."
+    "serverConfiguredAddOwn": "Para usar tus propias credenciales, agrega un proveedor aparte.",
+    "webFetchSettings": "Obtener páginas web",
+    "webFetchHint": "Elige cómo leer las páginas web. Los servicios alojados reciben URL públicas autorizadas en la sesión. Los resultados siguen siendo datos no confiables y los errores no cambian el lector.",
+    "webFetchApiKey": "Clave de API",
+    "webFetchSharedKeyHint": "Esta clave también se usa para chatear con este proveedor. Cambiarla o eliminarla afecta al chat."
   },
   "workspace": {
+    "knowledgeBase": {
+      "title": "Base de conocimientos",
+      "topLevel": "Nivel superior",
+      "back": "Volver",
+      "search": "Buscar por nombre o tipo de archivo",
+      "loading": "Cargando…",
+      "retry": "Reintentar",
+      "loadMore": "Cargar más",
+      "failure": {
+        "more": "Información del error: {{reason}}",
+        "storage_full": {
+          "label": "Espacio insuficiente",
+          "description": "No hay espacio suficiente para guardar los resultados. Libera espacio e inténtalo de nuevo."
+        },
+        "source_unavailable": {
+          "label": "Archivo original no disponible",
+          "description": "No se pudo leer el archivo original. Súbelo de nuevo y vuelve a intentarlo."
+        },
+        "service_unavailable": {
+          "label": "Servicio de análisis no disponible",
+          "description": "No hay ningún servicio de análisis configurado para este tipo de archivo. Pide a tu administrador que configure uno y vuelve a analizar el archivo."
+        },
+        "media_too_long": {
+          "label": "Audio o video demasiado largo",
+          "description": "Este método de análisis procesa audio o video de hasta {{minutes}} minutos. Acórtalo o divídelo y vuelve a subirlo."
+        },
+        "no_text_extracted": {
+          "label": "No se extrajo texto",
+          "description": "Esta vez no se extrajo texto utilizable. Revisa el contenido o prueba con otro archivo."
+        },
+        "processing_interrupted": {
+          "label": "Análisis sin completar",
+          "description": "No se pudo completar el análisis. Puedes volver a intentarlo más tarde."
+        },
+        "too_many_pages": {
+          "label": "Demasiadas páginas",
+          "description": "Este PDF tiene {{pages}} páginas y supera el límite de análisis de {{maxPages}} páginas. Divídelo antes de subirlo o sube solo los capítulos que necesites.",
+          "descriptionWithoutCount": "Este PDF supera el límite de análisis de {{maxPages}} páginas. Divídelo antes de subirlo o sube solo los capítulos que necesites.",
+          "descriptionWithoutLimit": "Este PDF tiene más páginas de las que acepta el servicio de análisis. Divídelo antes de subirlo o sube solo los capítulos que necesites."
+        }
+      },
+      "status": {
+        "uploading": "Subiendo",
+        "stored": "Guardado · sin analizar",
+        "parsing": "Analizando",
+        "searchable": "Consultable",
+        "failed": "Error al analizar"
+      },
+      "column": {
+        "name": "Nombre",
+        "status": "Estado",
+        "folder": "Carpeta",
+        "size": "Tamaño",
+        "date": "Fecha"
+      },
+      "limits": {
+        "perFile": "Hasta {{document}} por documento o imagen, {{media}} por audio o video"
+      },
+      "usage": {
+        "summary": "{{used}} usados de {{max}} · {{count}} de {{maxCount}} archivos",
+        "fileStorage": "Almacenamiento de archivos aparte: {{used}} usados de {{max}} (incluye contenido analizado y medios de cursos)",
+        "fileStorageUnlimited": "Almacenamiento de archivos aparte: {{used}} usados (incluye contenido analizado y medios de cursos)"
+      },
+      "empty": {
+        "title": "Tu base de conocimientos está vacía",
+        "body": "Sube tus materiales didácticos, deja que el asistente los organice y analice, y elígelos con @ al preparar un curso.",
+        "folder": "Esta carpeta aún no tiene materiales",
+        "query": "Ningún material coincide con “{{query}}”"
+      },
+      "upload": {
+        "button": "Subir materiales",
+        "dismiss": "Descartar"
+      },
+      "error": {
+        "load": "No se pudo cargar la base de conocimientos",
+        "busy": "Tu cuenta se está actualizando. Inténtalo de nuevo en un momento",
+        "identity": "Tu inicio de sesión cambió. Vuelve a cargar la página",
+        "stale": "lo que se muestra podría no estar actualizado",
+        "nameTaken": "Ya existe otra carpeta con este nombre",
+        "invalidName": "Escribe un nombre de 255 caracteres como máximo",
+        "folderNameEmpty": "Escribe un nombre de carpeta",
+        "folderNameTooLong": "El nombre de la carpeta es demasiado largo",
+        "folderLimit": "Llegaste al límite de carpetas",
+        "notMovable": "Este material no se puede mover",
+        "gone": "Ya no existe",
+        "save": "No funcionó. Inténtalo de nuevo",
+        "notEmpty": "Esta carpeta aún tiene materiales. Muévelos primero",
+        "materialNotFound": "Material no encontrado o inaccesible.",
+        "folderNotFound": "Carpeta no encontrada o inaccesible.",
+        "textUnavailable": "El texto del material no está disponible.",
+        "derivative": "El material derivado usa el nombre del original; cambia el nombre del original.",
+        "moveTooMany": "Mueve como máximo {{limit}} materiales a la vez.",
+        "moveNotMovable": "No se movió ningún material. Algunos materiales seleccionados no están disponibles o no se pueden mover.",
+        "toolFolderNameTooLong": "El nombre de la carpeta es demasiado largo (máximo 40 caracteres de ancho medio o 20 de ancho completo).",
+        "toolFolderLimit": "La base de conocimientos alcanzó el máximo de {{limit}} carpetas.",
+        "mediaUnsupported": "Solo imágenes, videos o audios pueden usarse como medios del curso.",
+        "mediaStorageFull": "No hay espacio suficiente para este medio. Libera espacio e inténtalo de nuevo.",
+        "mediaNotFound": "No se encontró el material multimedia o no tiene archivos multimedia disponibles."
+      },
+      "actions": {
+        "parse": "Analizar",
+        "reparse": "Volver a analizar",
+        "more": "Más acciones para {{name}}",
+        "rename": "Cambiar nombre",
+        "delete": "Eliminar",
+        "open": "Abrir",
+        "downloadOriginal": "Descargar el original",
+        "chat": "Conversar sobre este material"
+      },
+      "folder": {
+        "new": "Nueva carpeta",
+        "items": "{{count}} elementos",
+        "items_one": "{{count}} elemento",
+        "items_other": "{{count}} elementos"
+      },
+      "dialog": {
+        "cancel": "Cancelar",
+        "close": "Cerrar"
+      },
+      "delete": {
+        "materialTitle": "¿Eliminar “{{name}}”?",
+        "materialLinks": "Las conversaciones que lo usan ya no podrán leerlo; el texto que ya está en esas conversaciones se conserva.",
+        "materialCourses": "El contenido ya guardado en un curso no se ve afectado.",
+        "cannotUndo": "Esta acción no se puede deshacer.",
+        "folderTitle": "¿Eliminar la carpeta “{{name}}”?",
+        "folderContents": "Archivos que se moverán al nivel superior: {{count}}. No se eliminará ningún archivo."
+      },
+      "conversationFailure": {
+        "serviceUnavailable": "No hay un servicio de análisis configurado para este tipo de archivo. Pide a un administrador que lo configure."
+      }
+    },
     "untitledCourse": "未命名课堂",
     "sceneCount": "{{count}} 页",
     "sceneCount_one": "{{count}} 页",
@@ -2204,14 +2365,30 @@
     "courseLinkHint": "在右侧打开《{{name}}》",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
+      "search": "Buscar aulas y materiales",
+      "searchMaterials": "Buscar materiales",
+      "searchClassrooms": "Buscar aulas",
+      "courseOrder": "Aula abierta primero, luego actualizaciones recientes",
+      "materialOrder": "Cargas más recientes primero",
       "title": "为这条消息引用课堂",
+      "titleBoth": "Mencionar un aula o adjuntar material de la base de conocimientos a este mensaje",
+      "titleMaterials": "Adjuntar material de la base de conocimientos a este mensaje",
       "empty": "没有匹配的课堂",
       "alreadyNamed": "已引用",
       "remove": "移除{{name}}",
       "pillHint": "这条消息引用了「{{name}}」",
       "notAccepted": "El servidor no está disponible temporalmente. Vuelve a intentarlo en un momento.",
       "reference": "引用「{{name}}」",
-      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
+      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围",
+      "classrooms": "Aulas",
+      "knowledgeBase": "Base de conocimientos",
+      "emptyWithMaterials": "Ningún aula ni material coincide",
+      "attachMaterial": "Adjuntar {{name}} a este mensaje",
+      "materialUnavailable": "No se puede adjuntar {{name}} ({{reason}}). Abre la base de conocimientos para ver por qué y analizarlo de nuevo.",
+      "materialAttached": "Ya está en esta conversación",
+      "materialStaged": "Ya está en este mensaje",
+      "materialsCapped": "Se muestran los primeros {{count}} materiales — sigue escribiendo para acotar",
+      "materialUnavailableGuidance": "No se puede adjuntar {{name}}. {{guidance}} Puedes gestionarlo en la página de la base de conocimientos."
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
@@ -2232,6 +2409,11 @@
     "homeAria": "Back to home",
     "currentSession": "Current chat",
     "startLearning": "Comenzar a aprender",
+    "classroomMode": "Modo del aula",
+    "learningMode": "Aprender",
+    "editingMode": "Editar",
+    "editingUnavailableGenerating": "No se puede editar mientras se genera el curso.",
+    "fullscreenLearning": "Aprender en pantalla completa",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2345,7 +2527,8 @@
     "badgeEnter": "Modo Pro",
     "badgeExit": "Volver al modo clásico",
     "launchPlaceholder": "Describe la experiencia de aprendizaje que quieres crear",
-    "launchSend": "Iniciar construcción"
+    "launchSend": "Iniciar construcción",
+    "mentionCourseOrMaterial": "Mencionar un aula o un material de la base de conocimientos"
   },
   "workbench": {
     "tool": {

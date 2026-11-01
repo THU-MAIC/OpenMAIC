@@ -1,9 +1,8 @@
 /**
  * Pi Director Chat API Endpoint
  *
- * POST /api/chat/pi - default path for running the in-class multi-agent chain
- * as a single server-side Pi agent loop. The build-time flag can disable this
- * route together with the corresponding client path for legacy rollback.
+ * POST /api/chat/pi - runs the in-class multi-agent chain as a single
+ * server-side Pi agent loop.
  */
 import { attachInteractiveState } from '@/lib/chat/pi/interactive-state-evidence';
 import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
@@ -14,16 +13,11 @@ import { NextRequest } from 'next/server';
 import { isProviderKeyRequired } from '@/lib/ai/providers';
 import {
   isCoursewareReferenceEnabled,
-  isPiChatEnabled,
   isPiNativeChildRuntimeEnabled,
   isPiNativeChildSpotlightEnabled,
 } from '@/lib/config/feature-flags';
 import { createLogger } from '@/lib/logger';
-import {
-  getPiMaxActionsPerAgent,
-  getPiMaxAgentTurns,
-  resolveAgentConfigs,
-} from '@/lib/chat/pi/config';
+import { resolveAgentConfigs } from '@/lib/chat/pi/config';
 import { runPiDirectorLoop } from '@/lib/chat/pi/director-loop';
 import type { SendEvent } from '@/lib/chat/pi/types';
 import { requestWorkspaceId } from '@/lib/server/model-config/runtime';
@@ -52,10 +46,6 @@ import {
 const log = createLogger('Pi Chat API');
 
 export async function POST(req: NextRequest) {
-  if (!isPiChatEnabled()) {
-    return apiError('INVALID_REQUEST', 404, 'Pi chat runtime is disabled');
-  }
-
   // Like every owner-resolving route, a request whose credential an owner
   // auth method refuses is refused here, before any model work. With the
   // default anonymous fallback resolution always succeeds, so this only
@@ -204,8 +194,6 @@ async function chat(req: NextRequest, principal: OwnerPrincipal): Promise<Respon
     }
 
     const signal = req.signal;
-    const abortController = new AbortController();
-    signal.addEventListener('abort', () => abortController.abort(), { once: true });
 
     const { readable, writable } = new TransformStream();
     const writer = writable.getWriter();
@@ -219,8 +207,6 @@ async function chat(req: NextRequest, principal: OwnerPrincipal): Promise<Respon
       enabled: false,
     };
 
-    const maxAgentTurns = getPiMaxAgentTurns(body);
-    const maxActionsPerAgent = getPiMaxActionsPerAgent(body);
     const enableWhiteboardTools = body.config.piEnableWhiteboardTools === true;
     const childRuntimeMode = isPiNativeChildRuntimeEnabled() ? 'native' : 'legacy';
     const enableNativeChildSpotlight = isPiNativeChildSpotlightEnabled();
@@ -279,7 +265,7 @@ async function chat(req: NextRequest, principal: OwnerPrincipal): Promise<Respon
     }
 
     log.info(
-      `Pi request agents=${body.config.agentIds.join(', ')} messages=${body.messages.length} maxAgentTurns=${maxAgentTurns}`,
+      `Pi request agents=${body.config.agentIds.join(', ')} messages=${body.messages.length}`,
     );
 
     (async () => {
@@ -309,10 +295,8 @@ async function chat(req: NextRequest, principal: OwnerPrincipal): Promise<Respon
           thinkingConfig,
           maxOutputTokens: modelInfo?.outputWindow,
           contextWindow: modelInfo?.contextWindow,
-          abortSignal: abortController.signal,
+          abortSignal: signal,
           signal,
-          maxAgentTurns,
-          maxActionsPerAgent,
           enableWhiteboardTools,
           childRuntimeMode,
           enableNativeChildSpotlight,

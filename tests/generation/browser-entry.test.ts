@@ -32,7 +32,14 @@ describe('generation browser entry', () => {
           /^(node:|fs$|path$|url$|crypto$|child_process$)/,
         );
         if (name.startsWith('.')) visit(resolve(dirname(file), name));
-        else expect(['jsonrepair']).toContain(name);
+        else
+          expect([
+            'jsonrepair',
+            'parse5',
+            'es-module-lexer/js',
+            'postcss',
+            'postcss-value-parser',
+          ]).toContain(name);
       }
     }
 

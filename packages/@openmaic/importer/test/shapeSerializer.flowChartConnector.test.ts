@@ -5,6 +5,7 @@ import { renderShape } from '../src/serializer/shapeSerializer';
 import { transformParsedToSlides } from '../src/import-pipeline/transformParsedToSlides';
 import { createMockImportContext } from '../src/import-pipeline/mockContext';
 import { minimalCtx } from './helpers';
+import { validateShapeGeometry, RENDER_PATH_LIMITS } from '../../geometry/src/index';
 
 async function importPreset(preset: string) {
   const shape = await renderShape(
@@ -40,6 +41,16 @@ async function importPreset(preset: string) {
 }
 
 describe('flowchart nodes versus connector lines', () => {
+  it.each(['ellipse', 'gear6', 'circularArrow', 'arc', 'pie', 'leftBrace'])(
+    'preserves complex imported %s paths under the rendering policy',
+    async (preset) => {
+      const { element } = await importPreset(preset);
+      if (element.type !== 'shape') throw new Error('Expected an imported shape');
+      const before = element.path;
+      expect(validateShapeGeometry(element, RENDER_PATH_LIMITS)).toMatchObject({ ok: true });
+      expect(element.path).toBe(before);
+    },
+  );
   it.each(['flowChartConnector', 'flowChartOffpageConnector'])(
     'retains %s as a filled area through the full pipeline',
     async (preset) => {
@@ -50,6 +61,7 @@ describe('flowchart nodes versus connector lines', () => {
       expect(element.gradient?.colors).toHaveLength(2);
       expect(element.path).toContain('Z');
       if (preset === 'flowChartConnector') expect(element.path).toContain('A');
+      expect(validateShapeGeometry(element, RENDER_PATH_LIMITS)).toMatchObject({ ok: true });
     },
   );
   it('preserves the inverse diagonal path of lineInv', async () => {

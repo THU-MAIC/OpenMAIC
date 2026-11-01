@@ -112,6 +112,7 @@ export function parsedPdfToDocumentArtifact(
           description: image.description,
           width: image.width,
           height: image.height,
+          ...(image.path ? { metadata: { path: image.path } } : {}),
         }))
       : parsed.images.map((src, index) => ({
           id: `img_${index + 1}`,

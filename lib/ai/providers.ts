@@ -50,7 +50,7 @@ import type {
   ThinkingConfig,
 } from '@/lib/types/provider';
 import { applyModelMetadata, getCatalogThinkingCapability } from './model-metadata';
-import { findModelById } from './model-aliases';
+import { findModelById, getCatalogAliasModelId } from './model-aliases';
 import {
   getDefaultThinkingConfig,
   getThinkingMode,
@@ -831,22 +831,6 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         },
       },
       {
-        id: 'qwen3.6-max-preview',
-        name: 'Qwen3.6 Max Preview',
-        contextWindow: 256000,
-        outputWindow: 64000,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: false,
-          thinking: {
-            toggleable: true,
-            budgetAdjustable: true,
-            defaultEnabled: false,
-          },
-        },
-      },
-      {
         id: 'qwen3.6-plus',
         name: 'Qwen3.6 Plus',
         contextWindow: 1000000,
@@ -941,13 +925,6 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         capabilities: { streaming: true, tools: true, vision: true },
       },
       {
-        id: 'qwen3-max',
-        name: 'Qwen3 Max',
-        contextWindow: 262144,
-        outputWindow: 65536,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
         id: 'qwen3-vl-plus',
         name: 'Qwen3 VL Plus',
         contextWindow: 262144,
@@ -982,24 +959,8 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         },
       },
       {
-        id: 'deepseek-v4-flash',
-        name: 'DeepSeek V4 Flash',
-        contextWindow: 1048576,
-        outputWindow: 393216,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: false,
-          thinking: {
-            toggleable: true,
-            budgetAdjustable: true,
-            defaultEnabled: true,
-          },
-        },
-      },
-      {
-        id: 'deepseek-v4-flash-vision-exp',
-        name: 'DeepSeek V4 Flash Vision (Exp)',
+        id: 'deepseek-flash',
+        name: 'DeepSeek Flash',
         contextWindow: 1048576,
         outputWindow: 393216,
         capabilities: {
@@ -1092,39 +1053,6 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
           },
         },
       },
-      // K2.5 Series (2026) - 1T MoE, 32B active parameters
-      {
-        id: 'kimi-k2.5',
-        name: 'Kimi K2.5',
-        contextWindow: 256000,
-        outputWindow: 8192,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: true,
-          thinking: {
-            toggleable: true,
-            budgetAdjustable: false,
-            defaultEnabled: true,
-          },
-        },
-      },
-      {
-        id: 'kimi-k2-thinking',
-        name: 'Kimi K2 Thinking',
-        contextWindow: 256000,
-        outputWindow: 8192,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: false,
-          thinking: {
-            toggleable: true,
-            budgetAdjustable: false,
-            defaultEnabled: true,
-          },
-        },
-      },
     ],
   },
 
@@ -1154,6 +1082,49 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         outputWindow: 8192,
         capabilities: { streaming: true, tools: true, vision: false },
       },
+      // Text-generation table: context 204,800. M3 is the multimodal model;
+      // these are language-only, with the same tool calling as M2.7.
+      // Highspeed "效果不变", so M2.7-highspeed keeps M2.7's 8192 output.
+      // M2's documented max output is 128k (including chain of thought).
+      // M2.5 and M2.1 do not publish a max output, so it is omitted.
+      {
+        id: 'MiniMax-M2.7-highspeed',
+        name: 'MiniMax M2.7 Highspeed',
+        contextWindow: 204800,
+        outputWindow: 8192,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'MiniMax-M2.5',
+        name: 'MiniMax M2.5',
+        contextWindow: 204800,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'MiniMax-M2.5-highspeed',
+        name: 'MiniMax M2.5 Highspeed',
+        contextWindow: 204800,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'MiniMax-M2.1',
+        name: 'MiniMax M2.1',
+        contextWindow: 204800,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'MiniMax-M2.1-highspeed',
+        name: 'MiniMax M2.1 Highspeed',
+        contextWindow: 204800,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'MiniMax-M2',
+        name: 'MiniMax M2',
+        contextWindow: 204800,
+        outputWindow: 131072,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
     ],
   },
 
@@ -1180,13 +1151,6 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         outputWindow: 8192,
         capabilities: { streaming: true, tools: true, vision: false },
       },
-      {
-        id: 'deepseek-ai/DeepSeek-R1-Distill-Qwen-7B',
-        name: 'DeepSeek-R1-Distill-Qwen-7B',
-        contextWindow: 128000,
-        outputWindow: 8192,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
       // Qwen Series
       {
         id: 'Qwen/Qwen3-VL-32B-Instruct',
@@ -1194,29 +1158,6 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         contextWindow: 256000,
         outputWindow: 32768,
         capabilities: { streaming: true, tools: true, vision: true },
-      },
-      // Kimi Series
-      {
-        id: 'Pro/moonshotai/Kimi-K2.5',
-        name: 'Kimi-K2.5',
-        contextWindow: 256000,
-        outputWindow: 96000,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      // GLM Series
-      {
-        id: 'THUDM/GLM-4.1V-9B-Thinking',
-        name: 'GLM-4.1V-9B-Thinking',
-        contextWindow: 64000,
-        outputWindow: 8192,
-        capabilities: { streaming: true, tools: true, vision: true },
-      },
-      {
-        id: 'THUDM/GLM-Z1-Rumination-32B-0414',
-        name: 'GLM-Z1-Rumination-32B',
-        contextWindow: 32000,
-        outputWindow: 16384,
-        capabilities: { streaming: true, tools: true, vision: false },
       },
     ],
   },
@@ -1274,13 +1215,6 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
       {
         id: 'doubao-seed-2-0-mini-260215',
         name: 'Doubao Seed 2.0 Mini',
-        contextWindow: 128000,
-        outputWindow: 32768,
-        capabilities: { streaming: true, tools: true, vision: true },
-      },
-      {
-        id: 'doubao-seed-1-8-251228',
-        name: 'Doubao Seed 1.8',
         contextWindow: 128000,
         outputWindow: 32768,
         capabilities: { streaming: true, tools: true, vision: true },
@@ -1424,36 +1358,6 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
           },
         },
       },
-      {
-        id: 'grok-4-1-fast-reasoning',
-        name: 'Grok 4.1 Fast Reasoning',
-        contextWindow: 2000000,
-        outputWindow: 131072,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: true,
-          thinking: {
-            toggleable: false,
-            budgetAdjustable: false,
-            defaultEnabled: true,
-          },
-        },
-      },
-      {
-        id: 'grok-4-1-fast-non-reasoning',
-        name: 'Grok 4.1 Fast',
-        contextWindow: 2000000,
-        outputWindow: 131072,
-        capabilities: { streaming: true, tools: true, vision: true },
-      },
-      {
-        id: 'grok-code-fast-1',
-        name: 'Grok Code Fast',
-        contextWindow: 256000,
-        outputWindow: 32768,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
     ],
   },
 
@@ -1473,8 +1377,8 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     icon: '/logos/hunyuan.svg',
     models: [
       {
-        id: 'hy3-preview',
-        name: 'Tencent Hy3 Preview',
+        id: 'hy3',
+        name: 'Tencent Hy3',
         contextWindow: 256000,
         outputWindow: 64000,
         capabilities: { streaming: true, tools: true, vision: false },
@@ -1555,22 +1459,6 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         },
       },
       {
-        id: 'mimo-v2-pro',
-        name: 'MiMo V2 Pro',
-        contextWindow: 1048576,
-        outputWindow: 131072,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: false,
-          thinking: {
-            toggleable: true,
-            budgetAdjustable: false,
-            defaultEnabled: true,
-          },
-        },
-      },
-      {
         id: 'mimo-v2.5',
         name: 'MiMo V2.5',
         contextWindow: 1048576,
@@ -1579,38 +1467,6 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
           streaming: true,
           tools: true,
           vision: true,
-          thinking: {
-            toggleable: true,
-            budgetAdjustable: false,
-            defaultEnabled: true,
-          },
-        },
-      },
-      {
-        id: 'mimo-v2-omni',
-        name: 'MiMo V2 Omni',
-        contextWindow: 262144,
-        outputWindow: 131072,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: true,
-          thinking: {
-            toggleable: true,
-            budgetAdjustable: false,
-            defaultEnabled: true,
-          },
-        },
-      },
-      {
-        id: 'mimo-v2-flash',
-        name: 'MiMo V2 Flash',
-        contextWindow: 262144,
-        outputWindow: 65536,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: false,
           thinking: {
             toggleable: true,
             budgetAdjustable: false,
@@ -1629,6 +1485,12 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     requiresApiKey: true,
     icon: '/logos/tokendance.svg',
     models: [
+      // The plan's own family. Context, output and vision are not published,
+      // so this row only gives the id a catalog entry. Thinking is attached
+      // from model-metadata.
+      { id: 'cogevol-base', name: 'Cogevol Base' },
+      { id: 'cogevol-slide-0828', name: 'Cogevol Slide' },
+      { id: 'cogevol-interactive-0828', name: 'Cogevol Interactive' },
       {
         id: 'deepseek-v4.1-flash',
         name: 'DeepSeek V4.1 Flash',
@@ -1791,6 +1653,49 @@ export function preservesReasoningForModel(model: LanguageModel | string): boole
   const separator = provider.indexOf('.');
   const providerId = separator > 0 ? provider.slice(0, separator) : provider;
   return providerId in PROVIDERS && preservesReasoning(providerId, modelId);
+}
+
+/**
+ * Whether an error body is DeepSeek's thinking-mode rejection of an assistant
+ * turn without reasoning_content ("The `reasoning_content` in the thinking
+ * mode must be passed back to the API."). Matches the error message, not the
+ * whole body, so an unrelated 400 that merely echoes the request cannot match.
+ */
+function isReasoningContentPassBackError(errorText: string): boolean {
+  let message = errorText;
+  try {
+    const parsed = JSON.parse(errorText) as { error?: { message?: unknown }; message?: unknown };
+    const candidate = parsed?.error?.message ?? parsed?.message;
+    if (typeof candidate === 'string') message = candidate;
+  } catch {
+    /* not JSON: match the raw text */
+  }
+  return /reasoning_content/i.test(message) && /passed\s+back/i.test(message);
+}
+
+/**
+ * Add an empty reasoning_content to every assistant tool-call message that
+ * lacks one. Returns undefined when nothing changed (a retry could not help).
+ */
+function withEmptyToolCallReasoning(requestBody: string): string | undefined {
+  try {
+    const body = JSON.parse(requestBody);
+    let changed = false;
+    for (const message of body?.messages ?? []) {
+      if (
+        message?.role === 'assistant' &&
+        message.reasoning_content === undefined &&
+        Array.isArray(message.tool_calls) &&
+        message.tool_calls.length > 0
+      ) {
+        message.reasoning_content = '';
+        changed = true;
+      }
+    }
+    return changed ? JSON.stringify(body) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function getCompatThinkingBodyParams(
@@ -2468,9 +2373,11 @@ export function getModel(config: ModelConfig): ModelWithInfo {
         config.providerId !== 'openai' ||
         (usesCustomOpenAIBaseUrl(config.baseUrl) && !usesOpenAIResponses);
       const roundTripProvider = preservesReasoning(config.providerId, config.modelId);
-      const deepseekAdapter =
-        getCatalogThinkingCapability(config.providerId, config.modelId)?.requestAdapter ===
-        'deepseek';
+      const catalogThinking = getCatalogThinkingCapability(config.providerId, config.modelId);
+      const deepseekAdapter = catalogThinking?.requestAdapter === 'deepseek';
+      // No catalog thinking metadata: a custom provider, or an unlisted model
+      // behind a gateway, which may still be a DeepSeek-style thinking model.
+      const uncataloguedThinking = !catalogThinking;
       if (usesCompatTransport) {
         const providerId = config.providerId;
         const compatFetch = async (url: RequestInfo | URL, init?: RequestInit) => {
@@ -2541,9 +2448,36 @@ export function getModel(config: ModelConfig): ModelWithInfo {
               /* leave body as-is */
             }
           }
-          const response = useStreamingChatCompat
-            ? await fetchCustomOpenAIChat(url, init, transportFetch)
-            : await transportFetch(url, init);
+          const send = (requestInit: RequestInit | undefined) =>
+            useStreamingChatCompat
+              ? fetchCustomOpenAIChat(url, requestInit, transportFetch)
+              : transportFetch(url, requestInit);
+          let response = await send(init);
+
+          // A thinking model the catalog does not know may reject a prior
+          // tool-call turn that carries no reasoning_content (for example a
+          // synthesized skill preload turn). Requests go out unchanged; only
+          // on that specific rejection is the request re-sent once with an
+          // empty reasoning_content on those turns.
+          if (
+            uncataloguedThinking &&
+            !thinkingDisabledOnWire &&
+            response.status === 400 &&
+            typeof init?.body === 'string'
+          ) {
+            const errorText = await response
+              .clone()
+              .text()
+              .catch(() => '');
+            if (isReasoningContentPassBackError(errorText)) {
+              const retryBody = withEmptyToolCallReasoning(init.body);
+              if (retryBody !== undefined) {
+                await response.body?.cancel().catch(() => {});
+                init = { ...init, body: retryBody };
+                response = await send(init);
+              }
+            }
+          }
 
           // Recover reasoning that @ai-sdk/openai's chat schema drops: rewrite
           // streamed `reasoning_content` deltas into an inline <think> block
@@ -2731,8 +2665,8 @@ export function getModel(config: ModelConfig): ModelWithInfo {
       throw new Error(`Unsupported provider type: ${providerType}`);
   }
 
-  // Look up model info from the provider registry
-  const modelInfo = findModelById(config.providerId, provider?.models, config.modelId) ?? null;
+  // Catalog metadata only. config.modelId is still the id sent on the wire.
+  const modelInfo = getModelInfo(config.providerId, config.modelId) ?? null;
 
   return { model, modelInfo };
 }
@@ -2812,9 +2746,122 @@ export function getProvider(providerId: ProviderId): ProviderConfig | undefined 
 }
 
 /**
+ * Token-plan chat ids whose endpoints are not the open-platform catalogs.
+ * `getModelInfo` reads this after a miss on `PROVIDERS[provider].models`.
+ * Those arrays back the official presets, which list every registry row, and
+ * api.moonshot.cn / Ark `/api/v3` reject these ids.
+ *
+ * Kimi Code (kimi.com/code/docs, 2026-10-15): `k3` aliases to `kimi-k3`.
+ * Context is from that page; max output is not listed, so it is omitted.
+ * `k3-256k` accepts images (not video). `kimi-for-coding` is K2.8 Preview
+ * (images); the highspeed id is K2.7 Code HighSpeed at 262144 context, not
+ * the open-platform highspeed row's 256000. Tool calling is not stated for
+ * the two coding ids, so it stays unset.
+ *
+ * Ark Agent Plan (套餐概览, 2026-10-19). Not the dated direct-API snapshots:
+ * the plan table lists 1024k context and 256k max output, and the model list
+ * marks Seed 2.1 / Seed 2.0 Mini as 多模态理解. 1k = 1024. `kimi-k2.8-preview`
+ * documents 1024k / 1024k and image input, but callers send `outputWindow` as
+ * `max_tokens` without subtracting the prompt, which exceeds Ark's
+ * input+output limit, so that ceiling is omitted.
+ */
+const PLAN_ONLY_MODELS: Partial<Record<ProviderId, readonly ModelInfo[]>> = {
+  kimi: [
+    {
+      id: 'k3-256k',
+      name: 'Kimi K3 256K',
+      contextWindow: 262144,
+      capabilities: { streaming: true, tools: true, vision: true },
+    },
+    {
+      id: 'kimi-for-coding',
+      name: 'Kimi for Coding',
+      contextWindow: 1048576,
+      capabilities: { streaming: true, vision: true },
+    },
+    {
+      id: 'kimi-for-coding-highspeed',
+      name: 'Kimi for Coding HighSpeed',
+      contextWindow: 262144,
+      capabilities: { streaming: true, vision: true },
+    },
+  ],
+  doubao: [
+    {
+      id: 'doubao-seed-2.1-pro',
+      name: 'Doubao Seed 2.1 Pro',
+      contextWindow: 1048576,
+      outputWindow: 262144,
+      capabilities: { streaming: true, tools: true, vision: true },
+    },
+    {
+      id: 'doubao-seed-2.1-lite',
+      name: 'Doubao Seed 2.1 Lite',
+      contextWindow: 1048576,
+      outputWindow: 262144,
+      capabilities: { streaming: true, tools: true, vision: true },
+    },
+    {
+      id: 'doubao-seed-2.0-mini',
+      name: 'Doubao Seed 2.0 Mini',
+      contextWindow: 262144,
+      outputWindow: 131072,
+      capabilities: { streaming: true, tools: true, vision: true },
+    },
+    // Console auto-router, not one model, so it has no single window.
+    // The plan calls tools; image input is not a property of the router.
+    {
+      id: 'ark-code-latest',
+      name: 'Ark Code Latest',
+      capabilities: { streaming: true, tools: true, vision: false },
+    },
+    // Plan deepseek-v4-flash is its own 1024k/384k model. The plan page's
+    // vision sentence is for deepseek-v4.1-flash, not this id, and the
+    // direct deepseek-flash row has vision, so this is not an alias.
+    {
+      id: 'deepseek-v4-flash',
+      name: 'DeepSeek V4 Flash',
+      contextWindow: 1048576,
+      outputWindow: 393216,
+      capabilities: { streaming: true, tools: true, vision: false },
+    },
+    // Plan table 1024k/128k and 原生多模态. MiniMax-M3's own output is 32k.
+    {
+      id: 'minimax-m3',
+      name: 'MiniMax M3',
+      contextWindow: 1048576,
+      outputWindow: 131072,
+      capabilities: { streaming: true, tools: true, vision: true },
+    },
+    // 支持文本和图片输入. Output ceiling omitted; see the comment above.
+    {
+      id: 'kimi-k2.8-preview',
+      name: 'Kimi K2.8 Preview',
+      contextWindow: 1048576,
+      capabilities: { streaming: true, tools: true, vision: true },
+    },
+  ],
+};
+
+/**
  * Get model info
  */
 export function getModelInfo(providerId: ProviderId, modelId: string): ModelInfo | undefined {
   const provider = PROVIDERS[providerId];
-  return findModelById(providerId, provider?.models, modelId);
+  const local = findModelById(providerId, provider?.models, modelId);
+  if (local) return local;
+
+  const planOnly = findModelById(providerId, PLAN_ONLY_MODELS[providerId], modelId);
+  if (planOnly) return planOnly;
+
+  const borrowedId = getCatalogAliasModelId(providerId, modelId);
+  if (!borrowedId) return undefined;
+
+  // Native catalogs are declared before gateway copies (TokenDance), so the
+  // first exact id keeps the row that stores output windows.
+  for (const candidate of Object.values(PROVIDERS)) {
+    const match = candidate.models.find((model) => model.id === borrowedId);
+    if (match) return match;
+  }
+  return undefined;
 }

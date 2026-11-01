@@ -33,6 +33,10 @@ vi.mock('@/lib/server/agent-runtime/session-materials', async (importActual) => 
     await importActual<typeof import('@/lib/server/agent-runtime/session-materials')>();
   return { ...actual, listSessionMaterials: vi.fn(async () => []) };
 });
+vi.mock('@/lib/server/agent-runtime/material-resolver', async (original) => ({
+  ...(await original<typeof import('@/lib/server/agent-runtime/material-resolver')>()),
+  listSessionScopeMaterials: vi.fn(async () => []),
+}));
 vi.mock('@/lib/server/agent-runtime/entry-tree-storage', async (importActual) => {
   const actual =
     await importActual<typeof import('@/lib/server/agent-runtime/entry-tree-storage')>();

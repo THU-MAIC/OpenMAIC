@@ -36,8 +36,12 @@ function buildMathRPr(szHundredths?: number): string {
 /**
  * Post-process OMML for PPTX compatibility:
  * 1. Strip xmlns:w (wordprocessingml is DOCX-only, not valid in PPTX)
- * 2. Strip redundant xmlns:m (already declared at <p:sld> level)
- * 3. Inject <a:rPr> with Cambria Math font (and optional sz) into <m:r> and <m:ctrlPr>
+ * 2. Strip the <w:rPr> run properties mathml2omml emits for styled runs (e.g.
+ *    upright Greek letters, `<m:nor/>`): the `w:` prefix is never declared in a
+ *    slide part, so one such run makes the whole slide XML malformed and
+ *    PowerPoint refuses to open the deck
+ * 3. Strip redundant xmlns:m (already declared at <p:sld> level)
+ * 4. Inject <a:rPr> with Cambria Math font (and optional sz) into <m:r> and <m:ctrlPr>
  */
 function postProcessOmml(omml: string, szHundredths?: number): string {
   let result = omml;
@@ -47,8 +51,13 @@ function postProcessOmml(omml: string, szHundredths?: number): string {
   result = result.replace(/ xmlns:w="[^"]*"/g, '');
   result = result.replace(/ xmlns:m="[^"]*"/g, '');
 
-  // Insert <a:rPr> before <m:t> inside <m:r> (only if not already present)
+  // Strip DOCX-only <w:rPr> (with its <w:b/> / <w:i/> children) from styled runs
+  result = result.replace(/<w:rPr\/>|<w:rPr>[\s\S]*?<\/w:rPr>/g, '');
+
+  // Insert <a:rPr> before <m:t> inside <m:r> (only if not already present),
+  // after an <m:rPr> when the run has one (schema order: m:rPr, a:rPr, m:t)
   result = result.replace(/<m:r>(\s*)<m:t/g, `<m:r>$1${rpr}$1<m:t`);
+  result = result.replace(/(<\/m:rPr>)(\s*)<m:t/g, `$1$2${rpr}$2<m:t`);
 
   // Fill empty <m:ctrlPr/> with <a:rPr>
   result = result.replace(/<m:ctrlPr\/>/g, `<m:ctrlPr>${rpr}</m:ctrlPr>`);

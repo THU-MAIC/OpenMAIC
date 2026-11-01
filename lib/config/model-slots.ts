@@ -17,7 +17,15 @@
  */
 import type { LlmStage } from '@/lib/server/model-routes';
 
-export type SlotCapability = 'chat' | 'tts' | 'asr' | 'image' | 'video' | 'webSearch' | 'document';
+export type SlotCapability =
+  | 'chat'
+  | 'tts'
+  | 'asr'
+  | 'image'
+  | 'video'
+  | 'webSearch'
+  | 'webFetch'
+  | 'document';
 
 /** A property the resolved model must have for the slot to be usable. */
 export type SlotRequirement = 'toolCalling';
@@ -70,6 +78,7 @@ export const MODEL_SLOTS = [
   { id: 'asr', capability: 'asr', parent: null },
   { id: 'image', capability: 'image', parent: null },
   { id: 'video', capability: 'video', parent: null },
+  { id: 'webFetch', capability: 'webFetch', parent: null },
   { id: 'webSearch', capability: 'webSearch', parent: null },
   { id: 'document', capability: 'document', parent: null },
 ] as const satisfies readonly SlotDefinition[];

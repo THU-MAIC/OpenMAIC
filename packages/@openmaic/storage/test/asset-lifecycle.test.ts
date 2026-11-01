@@ -15,8 +15,10 @@ import { DSL_VERSION } from '@openmaic/dsl';
 import type { Scene } from '@openmaic/dsl';
 import type { AssetByteStore } from '../src/asset/byte-store.js';
 import {
+  ASSET_REFERENCE_RULE_VERSION,
   AssetCollectionFailure,
   AssetCollector,
+  AssetReferenceRuleVersionError,
   AssetReferenceTrackingNotEnabledError,
   type AssetCollectionEntryLevelFailure,
   type AssetCollectionPass,
@@ -25,9 +27,13 @@ import {
 import type { ContentHash } from '../src/asset/blob.js';
 import {
   ASSET_PG_SCHEMA,
+  AssetRootInputError,
+  AssetRootTargetError,
   DEFAULT_ASSET_PENDING_TTL_MS,
   PgAssetStore,
+  changeAssetRoots,
   ensureAssetSchema,
+  type ChangeAssetRootsInput,
   type PgAssetStoreOptions,
   type QueryResult,
   type Queryable,
@@ -41,7 +47,11 @@ import {
   syncDocumentAssetReferences,
   syncStageAssetReferences,
 } from '../src/asset/references.js';
-import { AssetQuotaExceededError } from '../src/asset/types.js';
+import {
+  AssetNotFoundError,
+  AssetQuotaExceededError,
+  AssetRootedError,
+} from '../src/asset/types.js';
 import { PgDocumentStore, ensureDocumentSchema } from '../src/document/pg.js';
 import type { MaicDocument } from '../src/document/types.js';
 
@@ -972,6 +982,87 @@ describe('asset entry lifecycle with PGlite', () => {
       expect((await collector().collectPass()).entriesCollected).toBe(1);
     });
 
+    test('the marker records the reference-rule version, raised by a write and never lowered', async () => {
+      const ruleVersion = async () =>
+        Number(
+          (await db.query<{ v: number }>('SELECT rule_version AS v FROM asset_reference_tracking'))
+            .rows[0]!.v,
+        );
+      expect(ASSET_REFERENCE_RULE_VERSION).toBe(2);
+      await documentStore(true).saveDocument(documentWith('stage-1', []));
+      expect(await ruleVersion()).toBe(ASSET_REFERENCE_RULE_VERSION);
+
+      // A marker an older writer left (documents only) is raised by the next write.
+      await db.query('UPDATE asset_reference_tracking SET rule_version = 1');
+      await documentStore(true).saveDocument(documentWith('stage-2', []));
+      expect(await ruleVersion()).toBe(ASSET_REFERENCE_RULE_VERSION);
+
+      // A newer writer's version is never lowered.
+      await db.query('UPDATE asset_reference_tracking SET rule_version = $1', [
+        ASSET_REFERENCE_RULE_VERSION + 1,
+      ]);
+      await documentStore(true).saveDocument(documentWith('stage-3', []));
+      expect(await ruleVersion()).toBe(ASSET_REFERENCE_RULE_VERSION + 1);
+    });
+
+    test('a root change raises an existing marker and never creates one', async () => {
+      const id = await store.put(PRINCIPAL, new Blob(['rooted']));
+      const root = { rootKind: 'material', rootId: 'material-1', assetIds: [id] };
+      await db.transaction((tx: Queryable) =>
+        changeAssetRoots(tx, { add: [root], principals: [PRINCIPAL.key] }),
+      );
+      // No document store has declared anything: a root is not that evidence.
+      expect(await trackingMarkers()).toBe(0);
+
+      await documentStore(true).saveDocument(documentWith('stage-1', []));
+      await db.query('UPDATE asset_reference_tracking SET rule_version = 1');
+      await db.transaction((tx: Queryable) =>
+        changeAssetRoots(tx, { remove: [root], principals: [PRINCIPAL.key] }),
+      );
+      const raised = await db.query<{ v: number }>(
+        'SELECT rule_version AS v FROM asset_reference_tracking',
+      );
+      expect(Number(raised.rows[0]!.v)).toBe(ASSET_REFERENCE_RULE_VERSION);
+    });
+
+    test('the entry pass refuses newer reference rules, and the blob pass still runs', async () => {
+      const id = await store.put(PRINCIPAL, new Blob(['kept by a newer kind of reference']));
+      await documentStore(true).saveDocument(documentWith('stage-1', []));
+      await db.query(
+        `UPDATE asset_entries SET expires_at = '2000-01-01T00:00:00.000Z' WHERE id = $1`,
+        [id],
+      );
+      const doomed = await store.put(PRINCIPAL, new Blob(['unreferenced bytes']));
+      await store.remove(PRINCIPAL, doomed);
+      await db.query(
+        `UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'
+          WHERE NOT EXISTS (SELECT 1 FROM asset_entries WHERE content_hash = asset_blobs.content_hash)`,
+      );
+      await db.query('UPDATE asset_reference_tracking SET rule_version = $1', [
+        ASSET_REFERENCE_RULE_VERSION + 1,
+      ]);
+
+      const failure = await collector()
+        .collectPass()
+        .catch((error: unknown) => error);
+
+      expect(failure).toBeInstanceOf(AssetReferenceRuleVersionError);
+      expect(failure).toMatchObject({
+        databaseVersion: ASSET_REFERENCE_RULE_VERSION + 1,
+        knownVersion: ASSET_REFERENCE_RULE_VERSION,
+      });
+      // Nothing released at the entry level...
+      expect(await store.resolve(PRINCIPAL, id)).not.toBeNull();
+      // ...and the byte level still ran.
+      expect((await db.query('SELECT content_hash FROM asset_blobs')).rows).toHaveLength(1);
+
+      // The version this collector knows lets the entry level run again.
+      await db.query('UPDATE asset_reference_tracking SET rule_version = $1', [
+        ASSET_REFERENCE_RULE_VERSION,
+      ]);
+      expect((await collector().collectPass()).entriesCollected).toBe(1);
+    });
+
     test('the blob pass alone never asks about the marker', async () => {
       const doomed = await store.put(PRINCIPAL, new Blob(['bytes only']));
       await store.remove(PRINCIPAL, doomed);
@@ -1814,6 +1905,411 @@ describe('asset entry lifecycle with PGlite', () => {
 
       expect(pass.backfilledDocuments).toBe(0);
       expect(pass.legacyEntriesCommitted).toBe(0);
+    });
+  });
+
+  describe('reference roots keep entries alive alongside document references', () => {
+    const principals = [PRINCIPAL.key];
+    const DAY = 24 * 60 * 60 * 1000;
+
+    const change = (input: Omit<ChangeAssetRootsInput, 'principals'>): Promise<void> =>
+      db.transaction((tx: Queryable) => changeAssetRoots(tx, { principals, ...input }));
+    const root = (rootId: string, ...assetIds: string[]): Promise<void> =>
+      change({ add: [{ rootKind: 'material', rootId, assetIds }] });
+    const unroot = (rootId: string, ...assetIds: string[]): Promise<void> =>
+      change({ remove: [{ rootKind: 'material', rootId, assetIds }] });
+    const rootRows = async (): Promise<{ root_id: string; asset_id: string }[]> =>
+      (
+        await db.query<{ root_id: string; asset_id: string }>(
+          'SELECT root_id, asset_id FROM asset_root_refs ORDER BY root_id, asset_id',
+        )
+      ).rows;
+    const referenceFrom = (stageId: string, id: string): Promise<void> =>
+      syncDocumentAssetReferences(db, {
+        stageId,
+        scope: { scope: 'scene', sceneId: 'scene-a', candidates: [id] },
+      });
+    const entryExists = async (id: string): Promise<boolean> =>
+      (await db.query('SELECT 1 FROM asset_entries WHERE id = $1', [id])).rows.length > 0;
+    const passAt = (now: Date, graceMs = 0): Promise<AssetCollectionPass> =>
+      collector({ graceMs, now: () => now }).collectPass();
+
+    beforeEach(enableReferenceTracking);
+
+    test('an entry held only by a root commits and outlives its pending deadline', async () => {
+      const id = await store.put(PRINCIPAL, new Blob(['rooted only']));
+      expect((await lifecycleOf(id))?.expires_at).not.toBeNull();
+
+      await root('material-1', id);
+
+      const lifecycle = await lifecycleOf(id);
+      expect(lifecycle?.committed_at).not.toBeNull();
+      expect(lifecycle?.expires_at).toBeNull();
+      expect(lifecycle?.unreferenced_at).toBeNull();
+      const later = new Date(Date.now() + DEFAULT_ASSET_PENDING_TTL_MS + DAY);
+      expect((await passAt(later)).entriesCollected).toBe(0);
+      expect(await entryExists(id)).toBe(true);
+    });
+
+    test('withdrawing a course reference leaves an entry a root still holds unstamped', async () => {
+      const id = await store.put(PRINCIPAL, new Blob(['shared by both']));
+      await referenceFrom('course-1', id);
+      await root('material-1', id);
+
+      await removeDocumentAssetReferences(db, { stageId: 'course-1' });
+
+      expect((await lifecycleOf(id))?.unreferenced_at).toBeNull();
+      expect((await passAt(new Date(Date.now() + DAY))).entriesCollected).toBe(0);
+      expect(await entryExists(id)).toBe(true);
+    });
+
+    test('an entry both kinds let go of drains after the usual grace period', async () => {
+      const id = await store.put(PRINCIPAL, new Blob(['let go']));
+      await referenceFrom('course-1', id);
+      await root('material-1', id);
+      await removeDocumentAssetReferences(db, { stageId: 'course-1' });
+
+      await unroot('material-1', id);
+
+      expect((await lifecycleOf(id))?.unreferenced_at).not.toBeNull();
+      const hour = 60 * 60 * 1000;
+      expect((await passAt(new Date(), hour)).entriesCollected).toBe(0);
+      expect(await entryExists(id)).toBe(true);
+      expect((await passAt(new Date(Date.now() + 2 * hour), hour)).entriesCollected).toBe(1);
+      expect(await entryExists(id)).toBe(false);
+    });
+
+    test('adding a root clears a stamp the entry already carries', async () => {
+      const id = await store.put(PRINCIPAL, new Blob(['brought back']));
+      await referenceFrom('course-1', id);
+      await removeDocumentAssetReferences(db, { stageId: 'course-1' });
+      expect((await lifecycleOf(id))?.unreferenced_at).not.toBeNull();
+
+      await root('material-1', id);
+
+      expect((await lifecycleOf(id))?.unreferenced_at).toBeNull();
+    });
+
+    test('the legacy mark and the standing sweep do not stamp a rooted entry', async () => {
+      // Roots written directly, bypassing changeAssetRoots, so the entries keep
+      // the exact states each collector predicate selects on: that is what
+      // proves each predicate consults the root table itself.
+      const legacy = await store.put(PRINCIPAL, new Blob(['legacy rooted']));
+      await db.query(
+        'UPDATE asset_entries SET committed_at = NULL, expires_at = NULL WHERE id = $1',
+        [legacy],
+      );
+      const swept = await store.put(PRINCIPAL, new Blob(['swept rooted']));
+      await db.query(
+        'UPDATE asset_entries SET committed_at = now(), expires_at = NULL WHERE id = $1',
+        [swept],
+      );
+      await db.query(
+        `INSERT INTO asset_root_refs (root_kind, root_id, asset_id)
+         VALUES ('material', 'legacy-owner', $1), ('material', 'swept-owner', $2)`,
+        [legacy, swept],
+      );
+
+      // The first pass completes the (empty) walk and marks the legacy entry;
+      // the second runs the standing sweep over the committed ones.
+      const first = await passAt(new Date());
+      expect(first.legacyEntriesCommitted).toBe(1);
+      await passAt(new Date());
+
+      for (const id of [legacy, swept]) {
+        const lifecycle = await lifecycleOf(id);
+        expect(lifecycle?.committed_at).not.toBeNull();
+        expect(lifecycle?.unreferenced_at).toBeNull();
+      }
+      expect((await passAt(new Date(Date.now() + DAY))).entriesCollected).toBe(0);
+    });
+
+    test('removing a root never deletes the entry or its bytes', async () => {
+      const id = await store.put(PRINCIPAL, new Blob(['still here']));
+      await root('material-1', id);
+
+      await unroot('material-1', id);
+
+      expect(await entryExists(id)).toBe(true);
+      expect((await store.resolve(PRINCIPAL, id))?.bytes).toEqual(
+        new TextEncoder().encode('still here'),
+      );
+    });
+
+    test('a missing or foreign entry refuses the whole call and writes nothing', async () => {
+      const own = await store.put(PRINCIPAL, new Blob(['own']));
+      const foreign = await store.put({ key: 'someone-else' }, new Blob(['foreign']));
+      const before = await lifecycleOf(own);
+
+      await expect(root('material-1', own, 'no-such-entry')).rejects.toBeInstanceOf(
+        AssetRootTargetError,
+      );
+      await expect(root('material-1', own, foreign)).rejects.toBeInstanceOf(AssetRootTargetError);
+      expect(await rootRows()).toEqual([]);
+      expect(await lifecycleOf(own)).toEqual(before);
+
+      // Unrooting another principal's entry is refused too, even with a row.
+      await db.query(
+        `INSERT INTO asset_root_refs (root_kind, root_id, asset_id)
+         VALUES ('material', 'material-2', $1)`,
+        [foreign],
+      );
+      await expect(unroot('material-2', foreign)).rejects.toBeInstanceOf(AssetRootTargetError);
+      expect(await rootRows()).toEqual([{ root_id: 'material-2', asset_id: foreign }]);
+    });
+
+    test('one call cannot name the same root twice, and moving between roots keeps the entry', async () => {
+      const id = await store.put(PRINCIPAL, new Blob(['moved']));
+      await root('material-a', id);
+
+      await expect(
+        change({
+          add: [{ rootKind: 'material', rootId: 'material-a', assetIds: [id] }],
+          remove: [{ rootKind: 'material', rootId: 'material-a', assetIds: [id] }],
+        }),
+      ).rejects.toBeInstanceOf(AssetRootInputError);
+      await expect(
+        change({
+          add: [
+            { rootKind: 'material', rootId: 'material-b', assetIds: [id] },
+            { rootKind: 'material', rootId: 'material-b', assetIds: [id] },
+          ],
+        }),
+      ).rejects.toBeInstanceOf(AssetRootInputError);
+      await expect(
+        db.transaction((tx: Queryable) => changeAssetRoots(tx, { principals: [], add: [] })),
+      ).rejects.toBeInstanceOf(AssetRootInputError);
+      expect(await rootRows()).toEqual([{ root_id: 'material-a', asset_id: id }]);
+
+      await change({
+        remove: [{ rootKind: 'material', rootId: 'material-a', assetIds: [id] }],
+        add: [{ rootKind: 'material', rootId: 'material-b', assetIds: [id, id] }],
+      });
+
+      expect(await rootRows()).toEqual([{ root_id: 'material-b', asset_id: id }]);
+      expect((await lifecycleOf(id))?.unreferenced_at).toBeNull();
+    });
+
+    /** `queryable`, recording the text of every statement it is asked to run. */
+    const recording = (queryable: Queryable, log: string[]): Queryable => ({
+      query: <TRow extends Record<string, unknown> = Record<string, unknown>>(
+        text: string,
+        params?: unknown[],
+      ): Promise<QueryResult<TRow>> => {
+        log.push(text);
+        return queryable.query<TRow>(text, params);
+      },
+    });
+
+    test('malformed input and a root named twice are refused before any SQL runs', async () => {
+      const id = await store.put(PRINCIPAL, new Blob(['untouched']));
+      const one = { rootKind: 'material', rootId: 'material-a', assetIds: [id] };
+      const refused: ChangeAssetRootsInput[] = [
+        { principals, add: [one, one] },
+        { principals, remove: [one, one] },
+        { principals, add: [one], remove: [one] },
+        { principals: [], add: [one] },
+        { principals, add: [{ ...one, rootKind: '' }] },
+        { principals, add: [{ ...one, assetIds: 'not-a-list' as unknown as string[] }] },
+      ];
+      for (const input of refused) {
+        const log: string[] = [];
+        await expect(changeAssetRoots(recording(db, log), input)).rejects.toBeInstanceOf(
+          AssetRootInputError,
+        );
+        expect(log).toEqual([]);
+      }
+    });
+
+    test('a missing or foreign target writes nothing, even when the transaction then commits', async () => {
+      const own = await store.put(PRINCIPAL, new Blob(['own']));
+      const foreign = await store.put({ key: 'someone-else' }, new Blob(['foreign']));
+      await root('material-own', own);
+      await db.query(
+        `INSERT INTO asset_root_refs (root_kind, root_id, asset_id)
+         VALUES ('material', 'material-foreign', $1)`,
+        [foreign],
+      );
+      const rootsBefore = await rootRows();
+      const ownBefore = await lifecycleOf(own);
+      const foreignBefore = await lifecycleOf(foreign);
+      const refused: Omit<ChangeAssetRootsInput, 'principals'>[] = [
+        { add: [{ rootKind: 'material', rootId: 'material-new', assetIds: [own, 'missing'] }] },
+        { add: [{ rootKind: 'material', rootId: 'material-new', assetIds: [own, foreign] }] },
+        { remove: [{ rootKind: 'material', rootId: 'material-foreign', assetIds: [foreign] }] },
+        // A valid removal in the same call as a bad addition must not happen either.
+        {
+          remove: [{ rootKind: 'material', rootId: 'material-own', assetIds: [own] }],
+          add: [{ rootKind: 'material', rootId: 'material-new', assetIds: ['missing'] }],
+        },
+      ];
+
+      for (const input of refused) {
+        const log: string[] = [];
+        // The refusal is caught INSIDE the transaction, which then commits: a
+        // write made before the refusal would survive, instead of being
+        // hidden by the rollback of a failed transaction.
+        await db.transaction(async (tx: Queryable) => {
+          await expect(
+            changeAssetRoots(recording(tx, log), { principals, ...input }),
+          ).rejects.toBeInstanceOf(AssetRootTargetError);
+        });
+        // Only the lock read ran.
+        expect(log.length).toBeGreaterThan(0);
+        expect(log.every((text) => text.trimStart().startsWith('SELECT'))).toBe(true);
+      }
+
+      expect(await rootRows()).toEqual(rootsBefore);
+      expect(await lifecycleOf(own)).toEqual(ownBefore);
+      expect(await lifecycleOf(foreign)).toEqual(foreignBefore);
+    });
+
+    test('a rooted entry carrying a stale stamp reaches the final check and is kept', async () => {
+      const id = await store.put(PRINCIPAL, new Blob(['kept by its root']));
+      await root('material-1', id);
+      // A stamp that should not be there -- restored out of band, say -- long
+      // past grace: the entry passes every column-based filter, so only the
+      // release's own reference check stands between it and deletion.
+      await db.query(
+        `UPDATE asset_entries SET unreferenced_at = now() - interval '2 days' WHERE id = $1`,
+        [id],
+      );
+      const released: { text: string; params?: unknown[] }[] = [];
+      const recordedTransactions: WithTransaction = (body) =>
+        db.transaction((tx: Queryable) =>
+          body({
+            query: <TRow extends Record<string, unknown> = Record<string, unknown>>(
+              text: string,
+              params?: unknown[],
+            ): Promise<QueryResult<TRow>> => {
+              released.push({ text, params });
+              return tx.query<TRow>(text, params);
+            },
+          }),
+        );
+
+      const pass = await collector({
+        graceMs: 60 * 60 * 1000,
+        withTransaction: recordedTransactions,
+      }).collectPass();
+
+      expect(pass.entriesCollected).toBe(0);
+      expect(await entryExists(id)).toBe(true);
+      expect(await rootRows()).toEqual([{ root_id: 'material-1', asset_id: id }]);
+      // It got as far as the release's separate, post-lock reference check.
+      expect(
+        released.some(
+          (statement) =>
+            statement.text.includes('FROM asset_root_refs WHERE asset_id = $1') &&
+            statement.params?.[0] === id,
+        ),
+      ).toBe(true);
+    });
+
+    test('removing a root row that is not there changes no lifecycle column', async () => {
+      const pending = await store.put(PRINCIPAL, new Blob(['pending']));
+      const before = await lifecycleOf(pending);
+
+      await unroot('material-1', pending);
+      expect(await lifecycleOf(pending)).toEqual(before);
+
+      const released = await store.put(PRINCIPAL, new Blob(['released once']));
+      await root('material-2', released);
+      await unroot('material-2', released);
+      const stamped = await lifecycleOf(released);
+      expect(stamped?.unreferenced_at).not.toBeNull();
+
+      await unroot('material-2', released);
+      expect(await lifecycleOf(released)).toEqual(stamped);
+    });
+  });
+
+  describe('the generic mutation paths leave a rooted entry alone', () => {
+    const principals = [PRINCIPAL.key];
+    const root = (rootId: string, ...assetIds: string[]): Promise<void> =>
+      db.transaction((tx: Queryable) =>
+        changeAssetRoots(tx, { principals, add: [{ rootKind: 'material', rootId, assetIds }] }),
+      );
+    const unroot = (rootId: string, ...assetIds: string[]): Promise<void> =>
+      db.transaction((tx: Queryable) =>
+        changeAssetRoots(tx, { principals, remove: [{ rootKind: 'material', rootId, assetIds }] }),
+      );
+    const rootCount = async (id: string): Promise<number> =>
+      (await db.query('SELECT 1 FROM asset_root_refs WHERE asset_id = $1', [id])).rows.length;
+    const entryRow = async (id: string) =>
+      (
+        await db.query<{ content_hash: string; revision: number }>(
+          'SELECT content_hash, revision FROM asset_entries WHERE id = $1',
+          [id],
+        )
+      ).rows[0];
+    const text = async (id: string): Promise<string | undefined> => {
+      const bytes = await store.resolve(PRINCIPAL, id);
+      return bytes ? Buffer.from(bytes.bytes).toString() : undefined;
+    };
+
+    test('remove refuses a rooted entry and changes nothing', async () => {
+      const id = await store.put(PRINCIPAL, new Blob(['kept by a root']));
+      await root('material-1', id);
+      const before = await entryRow(id);
+
+      await expect(store.remove(PRINCIPAL, id)).rejects.toBeInstanceOf(AssetRootedError);
+
+      expect(await entryRow(id)).toEqual(before);
+      expect(await rootCount(id)).toBe(1);
+      expect(await text(id)).toBe('kept by a root');
+    });
+
+    test('replace refuses a rooted entry and writes no bytes or revision', async () => {
+      const id = await store.put(PRINCIPAL, new Blob(['original']));
+      await root('material-1', id);
+      const before = await entryRow(id);
+
+      await expect(store.replace(PRINCIPAL, id, new Blob(['changed']))).rejects.toBeInstanceOf(
+        AssetRootedError,
+      );
+
+      expect(await entryRow(id)).toEqual(before);
+      expect(await rootCount(id)).toBe(1);
+      expect(await text(id)).toBe('original');
+    });
+
+    test("another principal's rooted id is still the silent no-op an unknown id is", async () => {
+      const id = await store.put(PRINCIPAL, new Blob(['someone else']));
+      await root('material-1', id);
+
+      await expect(store.remove({ key: 'other' }, id)).resolves.toBeUndefined();
+      await expect(store.replace({ key: 'other' }, id, new Blob(['x']))).rejects.toBeInstanceOf(
+        AssetNotFoundError,
+      );
+      expect(await rootCount(id)).toBe(1);
+    });
+
+    test('once its root is withdrawn the entry is removable again', async () => {
+      const id = await store.put(PRINCIPAL, new Blob(['let go']));
+      await root('material-1', id);
+      await unroot('material-1', id);
+
+      await expect(store.replace(PRINCIPAL, id, new Blob(['regenerated']))).resolves.toBe(2);
+      await store.remove(PRINCIPAL, id);
+      expect(await entryRow(id)).toBeUndefined();
+    });
+
+    test('a rooted entry whose replacement is also over quota reports the quota', async () => {
+      const quotaStore = new PgAssetStore(db, assetOptions({ quotaBytes: 10 }));
+      const id = await quotaStore.put(PRINCIPAL, new Blob(['12345']));
+      await root('material-1', id);
+      const before = await entryRow(id);
+
+      // The quota check precedes the entry lock (it takes the principal's lock
+      // first), so it answers before the root check does; neither writes.
+      await expect(
+        quotaStore.replace(PRINCIPAL, id, new Blob(['x'.repeat(11)])),
+      ).rejects.toBeInstanceOf(AssetQuotaExceededError);
+      await expect(
+        quotaStore.replace(PRINCIPAL, id, new Blob(['x'.repeat(10)])),
+      ).rejects.toBeInstanceOf(AssetRootedError);
+      expect(await entryRow(id)).toEqual(before);
     });
   });
 

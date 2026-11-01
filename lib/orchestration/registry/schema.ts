@@ -44,6 +44,7 @@ const voiceDesignSchema = z
     identity: z.string().max(500),
     texture: z.string().max(500),
     delivery: z.string().max(500),
+    gender: z.enum(['male', 'female']).optional(),
   })
   .strict();
 
@@ -108,6 +109,9 @@ export function customAgentFields(agent: Partial<AgentConfig> | Record<string, u
       identity: voiceDesign.identity,
       texture: voiceDesign.texture,
       delivery: voiceDesign.delivery,
+      ...(voiceDesign.gender === 'male' || voiceDesign.gender === 'female'
+        ? { gender: voiceDesign.gender }
+        : {}),
     };
   }
   return picked;

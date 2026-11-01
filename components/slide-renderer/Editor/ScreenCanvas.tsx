@@ -17,6 +17,11 @@ import { useViewportSize } from './Canvas/hooks/useViewportSize';
 import { useRef, useMemo } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { isPlaybackRendererEnabled } from '@/lib/config/feature-flags';
+import { createTextProseStyles } from '@openmaic/renderer';
+
+const LEGACY_SHAPE_PROSE_STYLES = createTextProseStyles(
+  '.legacy-screen-canvas .screen-element .slide-renderer-prose',
+);
 
 export function ScreenCanvas() {
   useSyncCanvasViewportFromSlide();
@@ -63,7 +68,11 @@ export function ScreenCanvas() {
   }, [zoomTarget, elements]);
 
   return (
-    <div className="relative h-full w-full overflow-hidden select-none" ref={canvasRef}>
+    <div
+      className="legacy-screen-canvas relative h-full w-full overflow-hidden select-none"
+      ref={canvasRef}
+    >
+      <style dangerouslySetInnerHTML={{ __html: LEGACY_SHAPE_PROSE_STYLES }} />
       <div
         className="absolute shadow-[0_0_0_1px_rgba(0,0,0,0.01),0_0_12px_0_rgba(0,0,0,0.1)] rounded-lg overflow-hidden transition-transform duration-700"
         style={{

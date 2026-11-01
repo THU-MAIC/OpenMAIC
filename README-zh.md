@@ -31,7 +31,6 @@
   <img src="https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js" alt="Next.js"/>
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=white" alt="React"/>
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript"/>
-  <img src="https://img.shields.io/badge/LangGraph-1.1-purple?style=flat-square" alt="LangGraph"/>
   <img src="https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white" alt="Tailwind CSS"/>
 </p>
 
@@ -44,7 +43,9 @@
 
 ## 🗞️ 动态
 
-- **2026-10-04** — [v1.2.0-rc.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.0-rc.1)（预发布）：**服务端优先。** 1.1.x 及以前，课程生成由浏览器一步步驱动，课程、密钥和模型设置也都存在浏览器里：关掉页面课程就停在半路，每个浏览器都要单独配置，无头 API 还是另一套流水线。1.2.0 把这些都交给服务端：生成在服务端运行，关页面、重启都不中断；模型在 `openmaic.yml` 里统一配置（默认值、锁定、可禁止用户自带密钥）；资料添加即解析；网页端和 API 共用同一条流水线。需要 PostgreSQL 和常驻的 Node 服务，Vercel 部署请继续使用 1.1.x。升级前请先阅读[更新日志](CHANGELOG.md)。
+- **2026-10-29** — [v1.3.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.3.0)：**知识库与 Pro 工作台升级。** 上传的文件都会保存在知识库里，直到手动删除；支持文件夹，每个文件只解析一次、所有会话共用；输入框可以用 `@` 引用，agent 也能读取、搜索和整理资料。Pro 工作台中，发出请求后在第一页生成之前就能看到 agent 的工作预览，课堂标签页可以在学习和编辑之间切换。升级有发布条件（先停掉所有旧实例，不能回滚到 1.3.0 之前），升级前请先阅读 [changelog](CHANGELOG.md)。
+- **2026-10-18** — [v1.2.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.1)：**联网调研。** 新增 Kimi、DeepSeek、Firecrawl 联网搜索；新增 `webFetch` 网页抓取槽位，agent 可以通过托管的阅读服务（DeepSeek、Kimi 或 Firecrawl）读取网页，不再只能用内置读取，均需手动开启。课堂聊天支持建议回复；内置模型目录移除了已下线的模型。课堂聊天现在固定走 Pi，Classroom 模型需要支持工具调用，升级前请先阅读该版本的 **Breaking Changes**。
+- **2026-10-16** — [v1.2.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.0)：**服务端优先正式发布。** 生成在服务端运行，关页面、重启都不中断；模型在 `openmaic.yml` 里统一配置（默认值、锁定、可禁止用户自带密钥）；资料添加即解析；网页端和 API 共用同一条流水线。新增[课堂导出](packages/docs/content/docs/getting-started.zh-cn.mdx#导出课堂)：导出保留全部场景的 PPTX，或一个能离线播放整堂课的 HTML 文件。需要 PostgreSQL 和常驻的 Node 服务，Vercel 部署请继续使用 1.1.x。升级前请先阅读[从 1.1.x 升级](packages/docs/content/docs/deployment.zh-cn.mdx#从-11x-升级)。
 - **2026-09-28** — [v1.1.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.2)：安全更新——provider 请求只连接已校验地址并拒绝重定向（[GHSA-g87c-cm4q-cw5x](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-g87c-cm4q-cw5x)）。
 - **2026-09-27** — [v1.1.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.1)：安全更新——加固 MinerU Cloud 文档解析（[GHSA-cpjc-vgjh-c5jp](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-cpjc-vgjh-c5jp)）。
 - **2026-09-24** — [v1.1.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.0)：课堂对话改为 Agent 循环（可针对幻灯片元素、交互组件、白板内容提问）；设置按课程流程重构；Token Plan 一键接入。
@@ -81,7 +82,7 @@ https://github.com/user-attachments/assets/f4a2f1be-6615-4330-aea1-b86ccf42045e
 - **多智能体课堂** — AI 老师和智能体同学实时授课、讨论、互动
 - **丰富的场景类型** — 幻灯片、测验、HTML 交互式模拟、项目制学习（PBL）
 - **白板 & 语音** — 智能体实时绘制图表、书写公式、语音讲解
-- **灵活导出** — 下载可编辑的 `.pptx` 幻灯片或交互式 `.html` 网页
+- **[灵活导出](packages/docs/content/docs/getting-started.zh-cn.mdx#导出课堂)** — 保留全部场景的 `.pptx`、能离线播放整堂课的单个 `.html` 文件，或用于迁移到其他部署的课堂 ZIP
 - **[Agent 工作台集成](#-agent-工作台集成)** — OpenMAIC Skill 支持 OpenClaw、Codex、DeepSeek、WorkBuddy 等，在飞书、Slack、Telegram 等 20+ 聊天应用或 IDE 里直接生成课堂
 
 ## 🚀 快速开始
@@ -131,16 +132,17 @@ slots:
 | 槽位、预设、回退模型、`lock`、`allowUserKeys`、`OPENMAIC_SECRET_KEY` | [配置说明](packages/docs/content/docs/configuration.zh-cn.mdx) |
 | 所有服务商预设与模型 ID | [支持的模型](packages/docs/content/docs/supported-models.zh-cn.mdx) |
 | 升级：没有 `openmaic.yml` 时，服务商环境变量、`server-providers.yml`、`DEFAULT_MODEL` 和 `MODEL_FALLBACK` 仍然有效；`MODEL_ROUTES` 需改写为槽位 | [从旧配置迁移](packages/docs/content/docs/configuration.zh-cn.mdx#从旧配置迁移) |
+| 用户可选哪些模型：由服务端持有 key、并选择上游模型的服务商只提供其 `models` 列表（`*_MODELS`）中的模型，以及槽位、默认和回退模型 | [模型授权](packages/docs/content/docs/configuration.zh-cn.mdx#服务端托管服务商的模型授权) |
 
 **支持的服务商：** OpenAI、Azure OpenAI、Anthropic、Amazon Bedrock、Google Gemini、DeepSeek、通义千问 Qwen、Kimi、MiniMax、Grok (xAI)、OpenRouter、TokenDance、豆包、腾讯混元 / TokenHub、小米 MiMo、智谱 GLM、Ollama、[Lemonade](#lemonade-local-ai) 与 [FunASR](#funasr-local-asr)（本地），以及任何兼容 OpenAI API 的服务。
 
 > [!TIP]
-> **推荐配置：** 打开全部模态时 OpenMAIC 效果最好——配图、语音讲解、视频片段与联网检索都会参与生成。最省事的方式是用一个 Key 覆盖全部模态（见下方的 Token Plan 示例），默认模型选 `deepseek-v4.1-flash` 这类速度快、长上下文的模型即可。
+> **推荐配置：** 打开全部模态时 OpenMAIC 效果最好——配图、语音讲解、视频片段、联网检索与网页抓取都会参与生成。Token Plan 可以用一个 Key 配置该套餐支持的能力（见下方示例），默认模型选 `deepseek-v4.1-flash` 这类速度快、长上下文的模型即可。
 
 <details>
 <summary><b>更多示例</b>：Token Plan、小米 MiMo 与智谱 GLM、Amazon Bedrock</summary>
 
-Token Plan 快速示例（一个 Key 同时覆盖对话、图像、视频、TTS 与联网搜索；`tokendance` 用法相同）：
+MiniMax Token Plan 快速示例（一个 Key 同时覆盖对话、图像、视频、TTS 与联网搜索；`tokendance` 用法相同）：
 
 ```yaml
 providers:
@@ -418,6 +420,7 @@ slots:
 docker compose --profile video-export up --build
 ```
 
+升级时，请在升级应用的同时或之前升级渲染服务：渲染任务绑定到所有者，新旧版本混用时会拒绝请求。
 
 ### 可选：MinerU（增强文档解析）
 
@@ -742,9 +745,12 @@ clawhub install openmaic
 
 | 格式 | 说明 |
 |------|------|
-| **PowerPoint (.pptx)** | 可编辑的幻灯片，包含图片、图表和 LaTeX 公式 |
-| **交互式 HTML** | 自包含的网页，包含交互式模拟实验 |
+| **PowerPoint (.pptx)** | 可编辑的幻灯片，包含图片、图表和 LaTeX 公式；互动、测验和 PBL 场景可以保留为原位置的占位页，带**在线打开**按钮和二维码 |
+| **教学资源包** | 上述 PPTX，加上每个互动场景的独立网页 |
+| **离线 HTML** | 一个无需联网即可播放整堂课的文件：带字幕的旁白、聚光灯与激光笔、幻灯片视频、测验和互动场景；可选含旁白或不含旁白 |
 | **课堂 ZIP** | 完整课堂导出（课程结构 + 媒体文件），可备份或分享 |
+
+各选项的区别、超过 400 MB 的课堂会导出为 ZIP、以及如何在手机上打开导出的文件，见[导出课堂](packages/docs/content/docs/getting-started.zh-cn.mdx#导出课堂)。
 
 导入课堂 ZIP 会先将包内音频、图片、视频及封面保存到服务器资源池，再保存课程，因此其他浏览器无需导入端的本地缓存即可读取这些资源。ZIP 也可用于在部署之间迁移课程：从一处导出，在另一处导入。
 
@@ -821,7 +827,7 @@ OpenMAIC/
 │
 ├── lib/                        # 核心业务逻辑
 │   ├── generation/             #   两阶段课堂生成流水线
-│   ├── orchestration/          #   LangGraph 多智能体编排（导演图）
+│   ├── orchestration/          #   智能体注册表、共享摘要器与类型
 │   ├── playback/               #   回放状态机（idle → playing → live）
 │   ├── action/                 #   动作执行引擎（语音、白板、特效）
 │   ├── ai/                     #   LLM 服务商抽象层
@@ -873,7 +879,7 @@ OpenMAIC/
 ### 核心架构
 
 - **生成流水线** (`@openmaic/generation`) — 两阶段：大纲生成 → 场景内容生成
-- **多智能体编排** (`lib/orchestration/`) — 基于 LangGraph 的状态机，管理智能体轮次和讨论
+- **多智能体编排** (`lib/chat/pi/`) — 服务端 Pi 导演循环，通过 `call_agent` 把每轮课堂对话交给各智能体
 - **回放引擎** (`lib/playback/`) — 驱动课堂回放和实时互动的状态机
 - **动作引擎** (`lib/action/`) — 执行 21 种动作类型（语音、白板绘图/文字/形状/图表、聚光灯、激光笔…）
 - **存储层** (`@openmaic/storage`) — Runtime/Document/资产存储抽象，附 Postgres 参考实现，HTTP 契约可对接任意外部存储服务

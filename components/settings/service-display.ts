@@ -38,7 +38,6 @@ const IMAGE_PROVIDER_ICONS: Record<string, string> = {
 const VIDEO_PROVIDER_ICONS: Record<string, string> = {
   seedance: '/logos/doubao.svg',
   kling: '/logos/kling.svg',
-  veo: '/logos/gemini.svg',
   'minimax-video': '/logos/minimax.svg',
   'grok-video': '/logos/grok.svg',
   'openrouter-video': '/logos/openrouter.svg',
@@ -108,6 +107,7 @@ export const REGISTRY_INFO: Record<SlotCapability, RegistryInfo> = {
     icon: (id) => entryOf(PDF_PROVIDERS, id)?.icon,
     requiresApiKey: (id) => entryOf(PDF_PROVIDERS, id)?.requiresApiKey !== false,
   },
+  webFetch: { ids: [], name: (id) => id, icon: () => undefined, requiresApiKey: () => true },
   webSearch: {
     ids: Object.keys(WEB_SEARCH_PROVIDERS),
     name: (id, t) => getWebSearchProviderDisplayName(id as never, t),
@@ -126,6 +126,10 @@ const PLAN_BY_PRESET = new Map(
  * id ("OpenAI-compatible · gateway"), so two accounts of one service stay apart.
  */
 export function entryName(entry: ServiceEntry, capability: SlotCapability, t: T): string {
+  if (entry.metadata && (!entry.provider || entry.serviceId))
+    return entry.metadata.nameKey
+      ? translated(t, entry.metadata.nameKey, entry.metadata.name)
+      : entry.metadata.name;
   const provider = entry.provider;
   const plan = provider ? PLAN_BY_PRESET.get(provider.preset) : undefined;
   if (plan) return plan.id === 'volcengine-ark' ? 'Seed' : plan.name;
@@ -135,12 +139,13 @@ export function entryName(entry: ServiceEntry, capability: SlotCapability, t: T)
   const presetName =
     provider.preset === 'openai-compatible'
       ? t('settings.serverConfig.openaiCompatible')
-      : REGISTRY_INFO[capability].name(entry.registryId, t);
+      : (entry.metadata?.name ?? REGISTRY_INFO[capability].name(entry.registryId, t));
   return `${presetName} · ${provider.id}`;
 }
 
 /** A service's logo: its plan's or built-in service's; none (a generic box) for a custom endpoint. */
 export function entryIcon(entry: ServiceEntry, capability: SlotCapability): string | undefined {
+  if (entry.metadata) return entry.metadata.icon;
   const plan = entry.provider ? PLAN_BY_PRESET.get(entry.provider.preset) : undefined;
   if (plan) return plan.icon;
   if (entry.serviceId) return REGISTRY_INFO[capability].icon(entry.serviceId);
@@ -149,7 +154,10 @@ export function entryIcon(entry: ServiceEntry, capability: SlotCapability): stri
 }
 
 export function isEntryConfigured(entry: ServiceEntry, capability: SlotCapability): boolean {
-  return entryConfigured(entry, REGISTRY_INFO[capability].requiresApiKey(entry.registryId));
+  return entryConfigured(
+    entry,
+    entry.metadata?.requiresApiKey ?? REGISTRY_INFO[capability].requiresApiKey(entry.registryId),
+  );
 }
 
 /**
@@ -162,7 +170,7 @@ export function providerLogo(
   providerId: string,
   capability: SlotCapability,
 ): string | undefined {
-  const entry = serviceEntries(view, capability, REGISTRY_INFO[capability].ids).find(
+  const entry = serviceEntries(view, capability, registryIdsFor(view, capability)).find(
     (item) => item.id === providerId,
   );
   return entry ? entryIcon(entry, capability) : undefined;
@@ -174,8 +182,32 @@ export function logoInverts(
   providerId: string,
   capability: SlotCapability,
 ) {
-  const entry = serviceEntries(view, capability, REGISTRY_INFO[capability].ids).find(
+  const entry = serviceEntries(view, capability, registryIdsFor(view, capability)).find(
     (item) => item.id === providerId,
   );
   return !!entry && MONO_LOGO_PROVIDERS.has(entry.serviceId ?? entry.registryId);
+}
+
+export function registryIdsFor(
+  view: ModelSettingsView,
+  capability: SlotCapability,
+): readonly string[] {
+  return capability === 'webFetch'
+    ? (view.webFetchProviders ?? []).map((provider) => provider.id)
+    : REGISTRY_INFO[capability].ids;
+}
+
+export function registryInfoFor(view: ModelSettingsView, capability: SlotCapability): RegistryInfo {
+  if (capability !== 'webFetch') return REGISTRY_INFO[capability];
+  const providers = view.webFetchProviders ?? [];
+  const find = (id: string) => providers.find((provider) => provider.id === id);
+  return {
+    ids: providers.map((provider) => provider.id),
+    name: (id, t) => {
+      const entry = find(id);
+      return entry?.nameKey ? translated(t, entry.nameKey, entry.name) : (entry?.name ?? id);
+    },
+    icon: (id) => find(id)?.icon,
+    requiresApiKey: (id) => find(id)?.requiresApiKey !== false,
+  };
 }

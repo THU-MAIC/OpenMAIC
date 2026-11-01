@@ -22,6 +22,8 @@
  *    `lastEventId` instead of replaying the whole run.
  */
 import { create } from 'zustand';
+import i18n from 'i18next';
+import { supportedLocaleOf } from '@/lib/i18n/types';
 import { isSkillLoadTool, skillLoadId } from './skill-load';
 import {
   defaultWorkbenchTranslator,
@@ -207,6 +209,12 @@ export interface ChatNode {
    * see `answerOpenQuestions`.
    */
   questionAnswered?: boolean;
+  /**
+   * User, assistant and question nodes: the timestamp of the event that drew them. The
+   * request preview places the conversation's own moments (the request, the
+   * plan question, its answer) on the same clock as the tool cards.
+   */
+  at?: number;
 }
 
 export interface PlannedPage {
@@ -290,6 +298,15 @@ export interface WorkbenchFold {
    * diff would be state that can go stale in a way the list cannot.
    */
   libraryRevision: number;
+  /**
+   * The same counter for the owner's MATERIAL library: bumped by a
+   * `library_changed` whose `library` is `materials` (a folder created or
+   * renamed, materials moved or renamed, an extraction started or settled).
+   * What lists materials -- the composer's picker and `@` -- refetches on an
+   * increase. Course writes never bump it, and material writes never bump
+   * `libraryRevision`, so neither list refetches for the other's changes.
+   */
+  materialLibraryRevision: number;
   /**
    * Stage ids seen in `stage_link` events (legacy `course_link` accepted on
    * replay), in first-seen order. The workspace records how many came from the
@@ -551,6 +568,7 @@ export function createInitialSessionState(): WorkbenchSessionState {
     pages: {},
     chat: [],
     libraryRevision: 0,
+    materialLibraryRevision: 0,
     stageLinkStageIds: [],
     touchedStageIds: [],
     runCourseStageIds: [],
@@ -998,6 +1016,7 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
             key: `${key}-u`,
             kind: 'user',
             text: startPrompt,
+            at: event.ts,
             ...(startCourseRefs.length ? { courseRefs: startCourseRefs } : {}),
           },
         ];
@@ -1062,6 +1081,12 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
       openWaiting(next, `${key}-w`, event.ts);
       break;
     }
+    case 'skill_detached': {
+      // Recovery is an internal state repair, not a new chat message. Keep the
+      // historical Skill loads intact without exposing the frozen binding.
+      next.skillId = null;
+      break;
+    }
     case 'session_interrupted': {
       // PR1: the runner parked the job WITHOUT a terminal status (deploy
       // handoff / lease lost). The row stays `running`; another instance will
@@ -1124,6 +1149,7 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
           key,
           kind: 'user',
           text: messageText,
+          at: event.ts,
           ...(attachments.length ? { materials: attachments } : {}),
           ...(elementRefs.length ? { elementRefs } : {}),
           ...(courseRefs.length ? { courseRefs } : {}),
@@ -1171,6 +1197,7 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
         key,
         kind: 'question',
         text: question,
+        at: event.ts,
         ...(options.length > 0 ? { questionOptions: options } : {}),
         // Multi-select only means something when there is a set to pick from.
         ...(data.multiSelect && options.length > 0 ? { questionMultiSelect: true } : {}),
@@ -1300,7 +1327,7 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
           // `message_start`, `session_end` — are the fallback for a run that
           // ends before its own marker lands. All of them replay, so the
           // duration converges (OpenPBL: a part's completion is durable).
-          chat = [...chat, { key, kind: 'assistant', text, streaming: true }];
+          chat = [...chat, { key, kind: 'assistant', text, streaming: true, at: event.ts }];
           next.assistantKey = key;
         }
       }
@@ -1427,7 +1454,7 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
           ? chat.map((n, i) => (i === streamIdx ? { ...n, text, streaming: false } : n))
           : chat.filter((_, i) => i !== streamIdx);
       } else if (text && canCreate) {
-        chat = [...chat, { key, kind: 'assistant', text }];
+        chat = [...chat, { key, kind: 'assistant', text, at: event.ts }];
       }
       next.chat = chat;
       next.thinkingKey = null;
@@ -1610,6 +1637,12 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
       break;
     }
     case 'library_changed': {
+      // A material-library write is not a course-library write: it bumps its
+      // own counter and stops here (it names no stage to sight).
+      if (data.library === 'materials') {
+        next.materialLibraryRevision = state.materialLibraryRevision + 1;
+        break;
+      }
       // A stage or folder write landed. The workspace's tree cannot know from
       // here WHAT it should look like — only that what it is showing predates a
       // write — so the fold counts the write and the shell refetches the
@@ -1965,6 +1998,7 @@ export async function createWorkbenchSession(input: {
       ...(input.materials?.length
         ? { materialIds: input.materials.map((material) => material.materialId) }
         : {}),
+      ...interfaceLocale(),
     }),
   });
   const body = (await res.json().catch(() => ({}))) as {
@@ -2077,6 +2111,16 @@ export function recoverTerminalCancelStatus(sessionId: string, error: unknown): 
 }
 
 /**
+ * The interface language a request is sent from, for the run's material
+ * wording (#1880): the shared i18next instance's current language when it is
+ * a supported one; otherwise nothing is sent and the server falls back.
+ */
+function interfaceLocale(): { locale?: string } {
+  const locale = supportedLocaleOf(i18n.language);
+  return locale ? { locale } : {};
+}
+
+/**
  * Send a follow-up into a live conversation. The server decides the delivery
  * shape (steer into a live run, or queue a new run on an idle session); the
  * event stream carries the bubble and whatever the agent does next, so there
@@ -2106,6 +2150,7 @@ export async function postWorkbenchMessage(
         : {}),
       ...(elementRefs.length ? { elementRefs } : {}),
       ...(courseRefs.length ? { courseRefs } : {}),
+      ...interfaceLocale(),
     }),
   });
   if (!res.ok) {
@@ -2173,6 +2218,9 @@ export class WorkbenchMaterialUploadError extends Error {
   userMessage(t: WorkbenchTranslator, locale: string): string {
     if (this.status === 415) return t('workbench.material.unsupportedType');
     if (this.status === 429) return t('workbench.material.quotaExceeded');
+    // The owner's asset pool is full (`ASSET_QUOTA_EXCEEDED`): not the
+    // per-owner material limits of a 429.
+    if (this.status === 507) return t('workbench.material.storageFull');
     if (this.status !== 413) return this.message;
     const limit = formatMaterialUploadLimit(this.maxBytes, locale);
     return limit === undefined
@@ -2254,7 +2302,7 @@ export async function uploadWorkbenchMaterial(file: File): Promise<WorkbenchMate
   }
   // A session extracts what it binds itself: the library's own extraction
   // (for classic generation) is not started for it.
-  const res = await fetch('/api/materials?extract=false', {
+  const res = await fetch('/api/materials?scope=library', {
     method: 'POST',
     headers: {
       'content-type': mimeType || 'application/octet-stream',

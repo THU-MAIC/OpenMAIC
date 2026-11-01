@@ -86,6 +86,14 @@ describe('fetchProviderResultUrl', () => {
     expect((await res.arrayBuffer()).byteLength).toBe(10);
   });
 
+  it('refuses a base64 data: URL whose payload is not base64, instead of decoding garbage', async () => {
+    await expect(
+      fetchProviderResultUrl('data:image/png;base64,https://files.example.com/media/abc', {
+        maxBytes: 1024,
+      }),
+    ).rejects.toThrow('Invalid base64 payload');
+  });
+
   it.each([
     ['base64', `data:image/png;base64,${Buffer.alloc(11).toString('base64')}`],
     ['percent-encoded', `data:text/plain,${'%41'.repeat(11)}`],

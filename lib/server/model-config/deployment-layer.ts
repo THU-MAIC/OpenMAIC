@@ -14,13 +14,19 @@ import {
   type ServerConfig,
   type ServerProviderEntry,
 } from '@/lib/server/provider-config';
+import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
+import type { ModelConfigFile } from './openmaic-yml';
 import { translateLegacyConfig } from '@/lib/server/model-config/legacy-config';
 import { loadModelConfigFile } from '@/lib/server/model-config/openmaic-yml';
-import { presetIdFor } from '@/lib/config/preset-ids';
+import { presetIdFor, RETIRED_PRESETS, retiredPresetReason } from '@/lib/config/preset-ids';
 import { usesServerCredentials, selectsUpstreamModel } from './model-authorization';
 import { getProviderPreset } from '@/lib/config/provider-presets';
 import type { SlotCapability } from '@/lib/config/model-slots';
-import type { ModelConfigLayer } from '@/lib/server/model-config/resolve-slot';
+import {
+  retiredProviderIds,
+  withoutAssignmentsNaming,
+  type ModelConfigLayer,
+} from '@/lib/server/model-config/resolve-slot';
 
 export interface DeploymentLayer {
   /** Providers, server defaults and locks: openmaic.yml, or the legacy configuration. */
@@ -63,19 +69,72 @@ function hasLegacyConfiguration(): boolean {
   );
 }
 
+/** Explain why a legacy search opt-in cannot fill an unassigned file-backed slot. */
+function ignoredSearchOptInNotices(file: ModelConfigFile): string[] {
+  if (file.slots?.webSearch !== undefined) return [];
+  const server = getServerProviderConfig();
+  return Object.values(WEB_SEARCH_PROVIDERS)
+    .filter(
+      (provider) =>
+        provider.enableEnvVar &&
+        process.env[provider.enableEnvVar]?.trim() &&
+        server.webSearch[provider.id] &&
+        !server.disabled.webSearch.has(provider.id),
+    )
+    .map(
+      (provider) =>
+        `${provider.enableEnvVar} is set but openmaic.yml is present; declare a provider with preset: ${provider.sharedChatProviderId ?? provider.id} and assign slots.webSearch to that provider to use ${provider.name} search`,
+    );
+}
+
+/** Legacy variables of a retired preset that are still set: they no longer configure anything. */
+function retiredVariableNotices(): string[] {
+  return Object.values(RETIRED_PRESETS).flatMap(({ reason, envPrefix }) =>
+    envPrefix &&
+    ['API_KEY', 'BASE_URL', 'MODELS'].some((s) => process.env[`${envPrefix}_${s}`]?.trim())
+      ? [`${envPrefix}_* is set but no longer used: ${reason}`]
+      : [],
+  );
+}
+
+/**
+ * The file without the slot assignments that name a provider whose preset
+ * this build retired (those slots follow their parents again), with a notice
+ * for each such provider. The provider itself stays declared and resolves
+ * nothing, so the file keeps loading.
+ */
+function withoutRetiredAssignments(file: ModelConfigFile): {
+  config: ModelConfigFile;
+  notices: string[];
+} {
+  const retired = retiredProviderIds([{ source: 'deployment', config: file }]);
+  if (!retired.size) return { config: file, notices: [] };
+  return {
+    config: { ...file, slots: withoutAssignmentsNaming(file.slots, retired) } as ModelConfigFile,
+    notices: [...retired].map(
+      (id) =>
+        `providers.${id} is not used: ${retiredPresetReason(file.providers![id].preset)}. Slots that named it follow their parents again; remove it from openmaic.yml and assign another provider`,
+    ),
+  };
+}
+
 /**
  * Reads the process environment and working directory, like the legacy
  * loaders it translates (which cache what they read). Throws
  * LegacyRoutesError for MODEL_ROUTES without openmaic.yml.
  */
 export function loadDeploymentLayer(): DeploymentLayer {
-  const file = loadModelConfigFile();
+  const loaded = loadModelConfigFile();
   const legacy = hasLegacyConfiguration();
-  if (file) {
+  if (loaded) {
+    const { config: file, notices: retiredNotices } = withoutRetiredAssignments(loaded);
     return {
       layer: { source: 'deployment', config: file },
       legacy: false,
       notices: [
+        ...retiredNotices,
+        ...retiredVariableNotices(),
+        ...ignoredSearchOptInNotices(file),
         ...(legacy
           ? [
               'openmaic.yml is present, so slot resolution uses it and not the legacy provider variables, server-providers.yml, DEFAULT_MODEL, MODEL_ROUTES or MODEL_FALLBACK',
@@ -97,7 +156,7 @@ export function loadDeploymentLayer(): DeploymentLayer {
       ],
     };
   }
-  if (!legacy) return { layer: null, legacy: false, notices: [] };
+  if (!legacy) return { layer: null, legacy: false, notices: retiredVariableNotices() };
   if (process.env.MODEL_ROUTES?.trim()) throw new LegacyRoutesError();
   const { config, notices } = translateLegacyConfig(getServerProviderConfig(), {
     defaultModel: process.env.DEFAULT_MODEL?.trim() || undefined,
@@ -109,6 +168,7 @@ export function loadDeploymentLayer(): DeploymentLayer {
     legacy: true,
     notices: [
       'The model configuration comes from the legacy provider variables, server-providers.yml, DEFAULT_MODEL and MODEL_FALLBACK, which are deprecated; move it to openmaic.yml',
+      ...retiredVariableNotices(),
       ...notices,
       ...Object.entries(getServerProviderConfig()).flatMap(([section, entries]) =>
         section === 'disabled' || section === 'pdf'

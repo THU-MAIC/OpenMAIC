@@ -40,6 +40,7 @@ const blankFold: WorkbenchFold = {
   pages: {},
   chat: [],
   libraryRevision: 0,
+  materialLibraryRevision: 0,
   stageLinkStageIds: [],
   touchedStageIds: [],
   runCourseStageIds: [],
@@ -68,6 +69,40 @@ const assistantMessage = (parts: { type: string; text?: string; thinking?: strin
 const contentOf = (state: WorkbenchFold) => state.chat.filter((n) => n.kind !== 'waiting');
 
 describe('lifecycle events', () => {
+  it('silently clears a deleted Skill binding without changing the conversation or course', () => {
+    const initial = foldAll([
+      ev('session_start', { prompt: 'Keep this conversation' }),
+      ev('tool_execution_start', {
+        toolCallId: 'skill-read',
+        toolName: 'read',
+        args: { path: 'skill://usk_deleted/SKILL.md' },
+      }),
+      ev('tool_execution_end', {
+        toolCallId: 'skill-read',
+        toolName: 'read',
+        isError: false,
+        result: {
+          content: [{ type: 'text', text: 'Original Skill instructions' }],
+          details: { skill: 'usk_deleted' },
+        },
+      }),
+    ]);
+    initial.skillId = 'usk_deleted';
+    initial.stageId = 'saved-course';
+    const receipt = ev('skill_detached', {});
+    const next = foldEvent(initial, receipt);
+    expect(next.skillId).toBeNull();
+    expect(next.stageId).toBe('saved-course');
+    expect(next.status).toBe('running');
+    expect(next.chat).toContainEqual(
+      expect.objectContaining({ kind: 'user', text: 'Keep this conversation' }),
+    );
+    expect(next.chat).toEqual(initial.chat);
+    expect(next.chat).toContainEqual(
+      expect.objectContaining({ kind: 'tool', toolName: 'read', toolState: 'done' }),
+    );
+    expect(foldEvent(next, receipt)).toEqual(next);
+  });
   it('session_start opens the run with the user prompt and nothing else', () => {
     const state = foldAll([ev('session_start', { prompt: '给我讲讲光的折射', workerId: 'w1' })]);
     expect(state.status).toBe('running');
@@ -267,6 +302,34 @@ describe('lifecycle events', () => {
     expect(contentOf(state).map((n) => n.kind)).toEqual(['user']);
     // And it says nothing about a stage link; that is a separate event.
     expect(state.stageId).toBeNull();
+  });
+
+  it('library_changed of the material library counts on its own counter, never the course tree’s', () => {
+    let state = foldAll([ev('session_start', { prompt: 'p' })]);
+    state = foldEvent(
+      state,
+      ev('library_changed', { library: 'materials', change: 'folder_created', folderId: 'mf1' }),
+    );
+    state = foldEvent(
+      state,
+      ev('library_changed', {
+        library: 'materials',
+        change: 'materials_moved',
+        materialIds: ['m1'],
+        folderId: null,
+      }),
+    );
+    expect(state.materialLibraryRevision).toBe(2);
+    expect(state.libraryRevision).toBe(0);
+    expect(state.stageLinkStageIds).toEqual([]);
+    // A course write leaves the material counter alone.
+    state = foldEvent(
+      state,
+      ev('library_changed', { change: 'stage_created', stageId: 'stage-day-1', title: 'Day 1' }),
+    );
+    expect(state.materialLibraryRevision).toBe(2);
+    expect(state.libraryRevision).toBe(1);
+    expect(contentOf(state).map((n) => n.kind)).toEqual(['user']);
   });
 
   it('remembers WHICH stages the run created, in creation order (one tab each)', () => {

@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "返回",
     "you": "你",
     "confirm": "确定",
     "cancel": "取消",
@@ -10,6 +11,22 @@
     "close": "关闭"
   },
   "home": {
+    "resumeGeneration": "继续生成",
+    "emptyLibraryTitle": "你的课程，从这里开始",
+    "emptyLibraryBody": "在首页创建课程后，可以在这里继续学习。",
+    "mobileTitle": "今天想学什么？",
+    "mobileSubtitle": "说说你想学什么，AI 为你生成互动课堂",
+    "mobilePlaceholder": "输入学习主题，或上传资料",
+    "courseOptions": "课程选项",
+    "courseMaterials": "课程资料",
+    "courseMaterialsCount": "课程资料 · {{n}} 个文件",
+    "backToCourseOptions": "返回课程选项",
+    "materialsDone": "完成",
+    "allSettings": "全部设置",
+    "examplesLabel": "试试这些主题",
+    "examplePython": "零基础学习 Python",
+    "exampleFourier": "用直观的例子讲解傅里叶变换",
+    "desktopOnly": "编辑器和专业模式请在电脑上使用。",
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
     "greetingWithName": "嗨，{{name}}"
   },
@@ -475,6 +492,7 @@
       "moreActions": "更多操作",
       "rename": "重命名",
       "sceneIncomplete": "本页内容不完整",
+      "sceneHasErrors": "本页存在错误",
       "addPage": "新增页面",
       "nextPage": "下一页",
       "prevPage": "上一页"
@@ -1346,11 +1364,13 @@
       "ollama": "Ollama（本地模型）",
       "tavily": "Tavily",
       "exa": "Exa",
+      "firecrawl": "Firecrawl",
       "bocha": "博查",
       "brave": "Brave Search",
       "baidu": "百度",
       "claude": "Claude",
-      "searxng": "SearXNG"
+      "searxng": "SearXNG",
+      "builtin": "内置读取服务"
     },
     "modelCount": "个模型",
     "modelSingular": "个模型",
@@ -1716,7 +1736,6 @@
     "videoModel": "视频生成模型",
     "providerSeedance": "Seedance（字节跳动）",
     "providerKling": "可灵（快手）",
-    "providerVeo": "Veo（Google）",
     "providerSora": "Sora（OpenAI）",
     "providerMiniMaxVideo": "MiniMax 视频",
     "providerGrokVideo": "Grok Video（xAI）",
@@ -1798,7 +1817,7 @@
     "tokenPlan": {
       "nav": "Token Plan",
       "title": "Token Plan 一键配置",
-      "desc": "选择你的 Token Plan 服务商并填入密钥，将自动配置所有已适配的模态(语言模型/图像/视频/语音/网络搜索)。",
+      "desc": "选择你的 Token Plan 服务商并填入密钥，将自动配置所有已适配的模态(语言模型/图像/视频/语音/网络搜索/网页抓取)。",
       "selectPlan": "选择服务商",
       "apiKey": "API 密钥",
       "updateKey": "更新密钥",
@@ -1824,6 +1843,7 @@
       "capTts": "语音合成",
       "capVideo": "视频生成",
       "capWebSearch": "联网搜索",
+      "capWebFetch": "网页抓取",
       "saved": "连接设置已保存",
       "stageInteractive": "互动页面",
       "stageSlide": "课件页面",
@@ -1947,7 +1967,8 @@
         "providers": "配置语言模型服务的凭证、接口地址与模型目录",
         "tts": "配置语音合成服务、音色与模型",
         "video": "配置视频生成服务的凭证与模型目录",
-        "webSearch": "配置网络搜索服务与检索来源"
+        "webSearch": "配置网络搜索服务与检索来源",
+        "webFetch": "配置网页内容提取服务"
       },
       "nav": "模型服务",
       "notConfigured": "未配置",
@@ -2058,7 +2079,7 @@
       },
       "picker": {
         "follow": "跟随{{name}}",
-        "providers": "Provider",
+        "providers": "服务商",
         "providerDefault": "默认模型",
         "modelId": "模型 ID",
         "use": "使用",
@@ -2149,6 +2170,10 @@
         "document": {
           "name": "文档解析",
           "desc": "读取上传的文档。"
+        },
+        "webFetch": {
+          "name": "网页抓取",
+          "desc": "供智能体读取会话中已获准的网页。"
         }
       },
       "source": {
@@ -2162,6 +2187,7 @@
         "lines": {
           "rewrite": "改写",
           "search": "搜索",
+          "fetch": "抓取",
           "image": "图像",
           "video": "视频"
         }
@@ -2194,9 +2220,144 @@
         "unconfirmed": "服务器未确认已导入。"
       }
     },
-    "serverConfiguredAddOwn": "如需使用自己的凭据，请新增一个提供方。"
+    "serverConfiguredAddOwn": "如需使用自己的凭据，请新增一个提供方。",
+    "webFetchSettings": "网页抓取",
+    "webFetchHint": "选择网页读取方式。托管服务只会收到会话中已获准的公开网址。结果仍是不可信数据，失败时不会切换读取服务。",
+    "webFetchApiKey": "API 密钥",
+    "webFetchSharedKeyHint": "此密钥也用于与同一服务商进行对话。修改或移除密钥也会影响对话。"
   },
   "workspace": {
+    "knowledgeBase": {
+      "title": "知识库",
+      "topLevel": "顶层",
+      "back": "返回",
+      "search": "搜索名称或文件类型",
+      "loading": "加载中…",
+      "retry": "重试",
+      "loadMore": "加载更多",
+      "failure": {
+        "more": "失败说明：{{reason}}",
+        "storage_full": {
+          "label": "存储空间不足",
+          "description": "没有足够空间保存解析结果，请释放空间后重试。"
+        },
+        "source_unavailable": {
+          "label": "原文件不可用",
+          "description": "无法读取这份资料的原文件，请重新上传后再试。"
+        },
+        "service_unavailable": {
+          "label": "解析服务不可用",
+          "description": "尚未配置可处理此类文件的解析服务。请联系管理员完成配置，然后选择「重新解析」。"
+        },
+        "media_too_long": {
+          "label": "音视频过长",
+          "description": "当前解析方式最长支持 {{minutes}} 分钟的音视频，请缩短或分段后重新上传。"
+        },
+        "no_text_extracted": {
+          "label": "未提取到文字",
+          "description": "这次解析未获得可用文字，请检查资料内容，或尝试其他文件。"
+        },
+        "processing_interrupted": {
+          "label": "解析未完成",
+          "description": "本次解析未能完成，可以稍后重试。"
+        },
+        "too_many_pages": {
+          "label": "页数过多",
+          "description": "这份 PDF 有 {{pages}} 页，超过 {{maxPages}} 页的解析上限。请拆分后上传，或只上传需要的章节。",
+          "descriptionWithoutCount": "这份 PDF 超过 {{maxPages}} 页的解析上限。请拆分后上传，或只上传需要的章节。",
+          "descriptionWithoutLimit": "这份 PDF 的页数超过了解析服务的上限。请拆分后上传，或只上传需要的章节。"
+        }
+      },
+      "status": {
+        "uploading": "上传中",
+        "stored": "已存入 · 未解析",
+        "parsing": "解析中",
+        "searchable": "可检索",
+        "failed": "解析失败"
+      },
+      "column": {
+        "name": "名称",
+        "status": "状态",
+        "folder": "文件夹",
+        "size": "大小",
+        "date": "日期"
+      },
+      "limits": {
+        "perFile": "单个文档或图片不超过 {{document}}，音视频不超过 {{media}}"
+      },
+      "usage": {
+        "summary": "已用 {{used}} / {{max}} · {{count}} / {{maxCount}} 个文件",
+        "fileStorage": "另计文件存储：已用 {{used}} / {{max}}（含解析内容与课程素材）",
+        "fileStorageUnlimited": "另计文件存储：已用 {{used}}（含解析内容与课程素材）"
+      },
+      "empty": {
+        "title": "知识库还是空的",
+        "body": "上传教学资料，让助手帮你整理和解析，备课时用 @ 选用。",
+        "folder": "这个文件夹里还没有资料",
+        "query": "没有找到与“{{query}}”匹配的资料"
+      },
+      "upload": {
+        "button": "上传资料",
+        "dismiss": "移除"
+      },
+      "error": {
+        "load": "知识库加载失败",
+        "busy": "账号正在更新，请稍后重试",
+        "identity": "登录状态已变化，请刷新页面",
+        "stale": "显示的可能不是最新内容",
+        "nameTaken": "已有同名文件夹",
+        "invalidName": "请输入不超过 255 个字符的名称",
+        "folderNameEmpty": "请输入文件夹名称",
+        "folderNameTooLong": "文件夹名称太长",
+        "folderLimit": "文件夹数量已达上限",
+        "notMovable": "这份资料不能移动",
+        "gone": "它已经不存在了",
+        "save": "操作没有成功，请重试",
+        "notEmpty": "文件夹里还有资料，请先移走",
+        "materialNotFound": "资料不存在或不可访问。",
+        "folderNotFound": "文件夹不存在或不可访问。",
+        "textUnavailable": "资料的文字内容不可用。",
+        "derivative": "衍生资料沿用原资料名称，请重命名原资料。",
+        "moveTooMany": "每次最多移动 {{limit}} 份资料。",
+        "moveNotMovable": "未移动任何资料。部分所选资料不可用或无法移动。",
+        "toolFolderNameTooLong": "文件夹名称过长，最多支持 40 个半角字符或 20 个全角字符。",
+        "toolFolderLimit": "知识库已达到 {{limit}} 个文件夹的上限。",
+        "mediaUnsupported": "只有图片、视频或音频资料可以用作课程媒体。",
+        "mediaStorageFull": "没有足够空间保存这份媒体，请释放空间后重试。",
+        "mediaNotFound": "找不到这份媒体资料，或它没有可用的媒体文件。"
+      },
+      "actions": {
+        "parse": "解析",
+        "reparse": "重新解析",
+        "more": "{{name}} 的更多操作",
+        "rename": "改名",
+        "delete": "删除",
+        "open": "打开",
+        "downloadOriginal": "下载原文件",
+        "chat": "用这份资料对话"
+      },
+      "folder": {
+        "new": "新建文件夹",
+        "items": "{{count}} 项",
+        "items_one": "{{count}} 项",
+        "items_other": "{{count}} 项"
+      },
+      "dialog": {
+        "cancel": "取消",
+        "close": "关闭"
+      },
+      "delete": {
+        "materialTitle": "删除“{{name}}”？",
+        "materialLinks": "删除后，对话里再读取这份资料会失败，对话里已有的文字保留。",
+        "materialCourses": "已保存到课程中的内容不受影响。",
+        "cannotUndo": "此操作不能撤销。",
+        "folderTitle": "删除文件夹“{{name}}”？",
+        "folderContents": "{{count}} 个文件将移到顶层，不会删除任何文件。"
+      },
+      "conversationFailure": {
+        "serviceUnavailable": "尚未配置可处理此类文件的解析服务，请联系管理员完成配置。"
+      }
+    },
     "untitledCourse": "未命名课堂",
     "sceneCount": "{{count}} 页",
     "sceneCount_one": "{{count}} 页",
@@ -2204,14 +2365,30 @@
     "courseLinkHint": "在右侧打开《{{name}}》",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
+      "search": "搜索课堂和资料",
+      "searchMaterials": "搜索资料",
+      "searchClassrooms": "搜索课堂",
+      "courseOrder": "当前课堂优先，其余按最近更新时间排序",
+      "materialOrder": "按上传时间从新到旧",
       "title": "为这条消息引用课堂",
+      "titleBoth": "为这条消息引用课堂或附加知识库资料",
+      "titleMaterials": "为这条消息附加知识库资料",
       "empty": "没有匹配的课堂",
       "alreadyNamed": "已引用",
       "remove": "移除{{name}}",
       "pillHint": "这条消息引用了「{{name}}」",
       "notAccepted": "服务暂时不可用，请稍后重试。",
       "reference": "引用「{{name}}」",
-      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
+      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围",
+      "classrooms": "课堂",
+      "knowledgeBase": "知识库",
+      "emptyWithMaterials": "没有匹配的课堂或材料",
+      "attachMaterial": "把 {{name}} 附加到这条消息",
+      "materialUnavailable": "{{name}} 无法附加（{{reason}}）。请在知识库中查看原因并重新解析。",
+      "materialAttached": "本会话已有",
+      "materialStaged": "已在这条消息里",
+      "materialsCapped": "只显示前 {{count}} 份材料，继续输入可缩小范围",
+      "materialUnavailableGuidance": "{{name}} 无法附加。{{guidance}}可在知识库页面处理。"
     },
     "heroTitle": "今天想创造点什么？",
     "heroSubtitle": "说出你的想法，把它变成一段可以亲历的学习旅程",
@@ -2232,6 +2409,11 @@
     "homeAria": "返回首页",
     "currentSession": "当前对话",
     "startLearning": "开始学习",
+    "classroomMode": "课堂模式",
+    "learningMode": "学习",
+    "editingMode": "编辑",
+    "editingUnavailableGenerating": "课程生成期间无法编辑。",
+    "fullscreenLearning": "全屏学习",
     "time": {
       "justNow": "刚刚",
       "minutesAgo": "{{count}} 分钟前",
@@ -2345,7 +2527,8 @@
     "badgeEnter": "专业模式",
     "badgeExit": "返回普通模式",
     "launchPlaceholder": "描述你想创造的学习体验",
-    "launchSend": "开始构建"
+    "launchSend": "开始构建",
+    "mentionCourseOrMaterial": "引用课堂或知识库材料"
   },
   "workbench": {
     "tool": {

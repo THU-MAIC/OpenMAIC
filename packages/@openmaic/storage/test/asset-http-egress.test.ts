@@ -8,6 +8,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { AssetId } from '../src/asset/id.js';
 import {
   AssetQuotaExceededError,
+  AssetRootedError,
   type AssetIndirectReadRequest,
   type AssetPrincipal,
   type AssetStore,
@@ -138,6 +139,40 @@ describe('store refusals are classified by contract, not by class identity', () 
 
     expect(response.status).toBe(500);
     expect(await response.json()).toMatchObject({ error: { code: 'INTERNAL_ERROR' } });
+  });
+
+  test('answers a rooted entry with 409 on DELETE and on PUT', async () => {
+    const rooted = new AssetRootedError();
+    const { url } = await serve({
+      ...stubStore(),
+      remove: () => Promise.reject(rooted),
+      replace: () => Promise.reject(rooted),
+    });
+
+    const deleted = await fetch(`${url}/assets/ast_example`, { method: 'DELETE' });
+    expect(deleted.status).toBe(409);
+    expect(await deleted.json()).toMatchObject({ error: { code: 'ASSET_ROOTED' } });
+
+    const body = new FormData();
+    body.append('bytes', new Blob([BYTES], { type: 'image/png' }), 'bytes');
+    const replaced = await fetch(`${url}/assets/ast_example/content`, { method: 'PUT', body });
+    expect(replaced.status).toBe(409);
+    expect(await replaced.json()).toMatchObject({ error: { code: 'ASSET_ROOTED' } });
+  });
+
+  test('answers a rooted refusal from another module realm the same way', async () => {
+    class ForeignRootedError extends Error {
+      readonly code = 'ASSET_ROOTED';
+    }
+    const { url } = await serve({
+      ...stubStore(),
+      remove: () => Promise.reject(new ForeignRootedError()),
+    });
+
+    const deleted = await fetch(`${url}/assets/ast_example`, { method: 'DELETE' });
+
+    expect(deleted.status).toBe(409);
+    expect(await deleted.json()).toMatchObject({ error: { code: 'ASSET_ROOTED' } });
   });
 });
 

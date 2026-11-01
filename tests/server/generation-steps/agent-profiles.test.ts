@@ -87,3 +87,43 @@ describe('agent profiles step', () => {
     expect((failure as StepRefusal).reason).toBe(reason);
   });
 });
+
+it('preserves a catalogue-backed provider default through profile generation and narration', async () => {
+  const { advertisedVoices, narratorVoiceForGeneration, clipVoice } =
+    await import('@/lib/server/generation/run/narration-voice');
+  const target = {
+    providerId: 'openai-tts' as const,
+    modelId: 'qwen3-tts',
+    connection: {
+      providerId: 'openai-tts',
+      managed: true,
+      userEndpoint: false,
+      origin: 'configuration' as const,
+      options: { defaultVoice: 'vivian' },
+      voices: [{ id: 'vivian', name: 'Vivian' }],
+    },
+  };
+  answer(classroom.map((agent) => ({ ...agent, voice: 'openai-tts::alloy' })));
+  const agents = await generateAgentProfiles(
+    {
+      ...request,
+      model,
+      availableVoices: advertisedVoices(target),
+      narratorVoice: narratorVoiceForGeneration(target, undefined),
+    },
+    { log: testLogger() },
+  );
+  const teacher = agents.find((agent) => agent.role === 'teacher');
+  expect(teacher?.voiceConfig).toEqual({ providerId: 'openai-tts', voiceId: 'vivian' });
+  expect(
+    clipVoice({
+      target,
+      preference: undefined,
+      bound: teacher?.voiceConfig
+        ? { ...teacher.voiceConfig, providerId: 'openai-tts' }
+        : undefined,
+      unavailable: new Set(),
+    })?.voice.voiceId,
+  ).toBe('vivian');
+  expect(advertisedVoices(target).map((voice) => voice.voiceId)).toEqual(['vivian']);
+});

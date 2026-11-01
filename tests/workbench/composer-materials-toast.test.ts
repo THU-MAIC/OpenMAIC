@@ -2,6 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { ComponentProps } from 'react';
 import type { ComposerMaterials } from '@/components/workbench/compose-extras';
 
 const LOCALE_STORAGE_KEY = 'locale';
@@ -118,7 +119,7 @@ async function mountComposer(locale: string, fetchImpl: typeof fetch) {
         { i18n: instance },
         modules.react.createElement(
           modules.I18nProvider,
-          null,
+          { initialLocale: locale } as ComponentProps<typeof modules.I18nProvider>,
           modules.react.createElement(Harness),
         ),
       ),

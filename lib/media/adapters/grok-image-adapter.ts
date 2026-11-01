@@ -6,7 +6,6 @@
  *
  * Supported models:
  * - grok-imagine-image      (standard, $0.02/image)
- * - grok-imagine-image-pro  (pro quality, $0.07/image)
  *
  * Authentication: Bearer token via Authorization header
  *

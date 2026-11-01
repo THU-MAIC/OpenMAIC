@@ -1,26 +1,30 @@
+import { usesClassicExtraction } from '@/lib/persistence/material-extraction-format';
+import { fenceOwnerWrite } from '@/lib/persistence/owner-merges';
 /**
- * GET /api/materials/[id] — one of the caller's own library uploads (the ids
- * `POST /api/materials` returns) with its extraction (reading it keeps an
- * upload in use from the unused-upload sweep): `idle`, `extracting`,
- * `ready` (with what it found and what a course would leave out of it), or
- * `failed` (with the extractor's error). Needs only server persistence; an id
- * the owner does not have answers a plain 404.
- *
- * GET /api/materials/[id]?sessionId= — one owned session's material, in the
- * same public projection the list and the agent's `list_materials` tool use.
+ * GET /api/materials/[id]?sessionId= — one material an owned session
+ * reaches (its own row, or a library material its links reach), in the same
+ * public projection the list uses.
  *
  * Materials are session-scoped; the client names the session and the session's
  * owner row is the authorization. A foreign or missing session, and a material
- * id that does not exist or belongs to another session, all answer the same
- * plain 404 (no existence oracle). Session materials live with the agent
- * runtime, so the read sits behind its gate.
+ * id the session does not reach, all answer the same plain 404 (no existence
+ * oracle).
  *
- * DELETE /api/materials/[id] — delete one of the caller's own library uploads
- * (the ids `POST /api/materials` returns), releasing its quota, with its
- * extraction result; an extraction still running is dropped. It needs only
- * server persistence. Session material rows are not deletable: an agent
- * session keeps its own copy of a bound upload, and binding a deleted id
- * fails as unavailable.
+ * PATCH /api/materials/[id] `{ name }` renames a source of the request
+ * owner's library: its display name, keeping the uploaded file name;
+ * `unchanged` when it already shows that name. A derivative answers 409
+ * `derivative` (it is named after its source); a missing or another owner's
+ * material 404. A thin adapter over `lib/persistence/material-library.ts`,
+ * which the agent's `rename_material` calls too.
+ *
+ * DELETE /api/materials/[id] deletes the request owner's ready source and
+ * its derivatives atomically (204, no body). Missing, foreign, uploading
+ * and deleted rows answer 404; a derivative answers 409 `derivative`. The
+ * request fence refuses retired owners (403), and busy writes answer 503
+ * with Retry-After. Links become unreadable; conversation text, old session
+ * copies and independent course media remain. Legacy originals are cleaned
+ * only after commit, with failures retried by a cleanup pass on every start.
+ * Page-only: no agent deletion tool and no library event.
  */
 import type { NextRequest } from 'next/server';
 
@@ -28,25 +32,28 @@ import {
   isAgentRuntimeConfigured,
   isServerPersistenceConfigured,
 } from '@/lib/config/feature-flags';
-import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
 
 import {
-  deleteOwnerMaterial,
   publicMaterial,
   touchOwnerMaterial,
+  getOwnerMaterial,
 } from '@/lib/persistence/owner-materials';
-import { ownerWriteErrorResponse } from '@/lib/persistence/owner-merges';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
-import { deleteMaterialObjects, getMaterialByteStore } from '@/lib/server/materials/bytes';
 import { isMaterialId } from '@/lib/server/materials/material-id';
 import { apiError } from '@/lib/server/api-response';
-import {
-  getSessionMaterial,
-  publicMaterialView,
-  resolveOwnedSession,
-} from '@/lib/server/agent-runtime/session-materials';
+import { resolveOwnedSession } from '@/lib/server/agent-runtime/session-materials';
+import { resolveMaterial } from '@/lib/server/agent-runtime/material-resolver';
+import { sessionScopeMaterialView } from '@/lib/server/materials/library-view';
 import { ownerJson, ownerNotFound } from '@/lib/server/agent-runtime/route-response';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
+import { deleteMaterial, renameMaterial } from '@/lib/persistence/material-library';
+import {
+  jsonObjectBody,
+  libraryNotFound,
+  libraryPersistence,
+  libraryRefusal,
+  libraryWriteError,
+} from '@/lib/server/materials/library-routes';
 
 export const runtime = 'nodejs';
 
@@ -78,34 +85,75 @@ export async function GET(req: NextRequest, { params }: Params) {
     const session = await resolveOwnedSession(sessionId, ownerId);
     if (!session) return ownerNotFound(responseHeaders);
     const { id } = await params;
-    const material = await getSessionMaterial(sessionId, id);
+    const material = await resolveMaterial(sessionId, id);
     if (!material) return ownerNotFound(responseHeaders);
-    return ownerJson({ material: publicMaterialView(material) }, 200, responseHeaders);
+    return ownerJson({ material: sessionScopeMaterialView(material) }, 200, responseHeaders);
+  });
+}
+
+export async function PATCH(req: NextRequest, { params }: Params) {
+  if (!isAgentRuntimeConfigured()) return new Response('Not found', { status: 404 });
+  const body = await jsonObjectBody(req);
+  if (typeof body?.name !== 'string') {
+    return libraryRefusal(400, 'invalid_body', 'name is required', new Headers());
+  }
+  const name = body.name;
+  const { id } = await params;
+  return withRequestOwner(req, async ({ ownerId }, headers) => {
+    try {
+      const outcome = await renameMaterial(await libraryPersistence(), {
+        ownerId,
+        materialId: id,
+        name,
+        fence: 'request',
+      });
+      switch (outcome.status) {
+        case 'invalid_name':
+          return libraryRefusal(400, 'invalid_name', 'The name is empty or too long', headers);
+        case 'not_found':
+          return libraryNotFound(headers);
+        case 'derivative':
+          return libraryRefusal(409, 'derivative', 'Rename the source instead', headers);
+        default:
+          return ownerJson(outcome, 200, headers);
+      }
+    } catch (error) {
+      return libraryWriteError(error, headers);
+    }
   });
 }
 
 export async function DELETE(req: NextRequest, { params }: Params) {
   if (!isServerPersistenceConfigured()) return new Response('Not found', { status: 404 });
-
-  return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
-    const { id } = await params;
-    if (!isMaterialId(id)) return ownerNotFound(responseHeaders);
-    const provider = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
-    const byteStore = getMaterialByteStore();
-    let deleted: boolean;
+  const { id } = await params;
+  return withRequestOwner(req, async ({ ownerId }, headers) => {
     try {
-      deleted = await deleteOwnerMaterial(
-        provider.pool as unknown as ConnectableQueryable,
+      const persistence = await libraryPersistence();
+      const record = await persistence.withTransaction(async (tx) => {
+        await fenceOwnerWrite(tx, ownerId);
+        return getOwnerMaterial(tx, ownerId, id);
+      });
+      if (!record) return libraryNotFound(headers);
+      const classic = usesClassicExtraction(record);
+      if (!classic && !isAgentRuntimeConfigured())
+        return new Response('Not found', { status: 404, headers });
+      const outcome = await deleteMaterial(persistence, {
         ownerId,
-        id,
-        (ossKey) => deleteMaterialObjects(byteStore, ossKey),
-      );
+        materialId: id,
+        fence: 'request',
+      });
+      switch (outcome.status) {
+        case 'not_found':
+          return libraryNotFound(headers);
+        case 'derivative':
+          return libraryRefusal(409, 'derivative', 'Delete the source instead', headers);
+        case 'deleted':
+          return classic
+            ? ownerJson({ materialId: id, deleted: true }, 200, headers)
+            : new Response(null, { status: 204, headers });
+      }
     } catch (error) {
-      const claimed = ownerWriteErrorResponse(error, responseHeaders);
-      if (claimed) return claimed;
-      throw error;
+      return libraryWriteError(error, headers);
     }
-    if (!deleted) return ownerNotFound(responseHeaders);
-    return ownerJson({ materialId: id, deleted: true }, 200, responseHeaders);
   });
 }

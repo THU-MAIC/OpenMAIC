@@ -17,7 +17,8 @@ export function loadChartRuntime(): Promise<EChartsRuntime> {
     import('echarts/charts'),
     import('echarts/components'),
     import('echarts/renderers'),
-  ]).then(([echarts, charts, components, renderers]) => {
+    import('echarts/features'),
+  ]).then(([echarts, charts, components, renderers, features]) => {
     echarts.use([
       charts.BarChart,
       charts.PictorialBarChart,
@@ -28,6 +29,8 @@ export function loadChartRuntime(): Promise<EChartsRuntime> {
       components.LegendComponent,
       renderers.SVGRenderer,
     ]);
+    // ECharts 5 includes containLabel; ECharts 6 exposes it as an opt-in.
+    if (features.LegacyGridContainLabel) echarts.use(features.LegacyGridContainLabel);
     return echarts;
   });
 

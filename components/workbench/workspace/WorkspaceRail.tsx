@@ -79,6 +79,7 @@ import {
   FolderOpen,
   FolderPlus,
   BookOpen,
+  Library,
   LoaderCircle,
   MessagesSquare,
   MoreHorizontal,
@@ -211,6 +212,8 @@ export function WorkspaceRail({
   onSessionDeleted,
   onRenameSession,
   onDeleteCourse,
+  libraryOpen,
+  onOpenLibrary,
   resizeHandle,
 }: {
   readonly courses: Discovery;
@@ -259,6 +262,10 @@ export function WorkspaceRail({
   readonly onRenameSession: (sessionId: string, title: string) => Promise<string | null>;
   /** The shell deletes the course AND closes its classroom tab on success. */
   readonly onDeleteCourse: (courseId: string) => Promise<void> | void;
+  /** The knowledge base page fills the main area right now. */
+  readonly libraryOpen: boolean;
+  /** Open the knowledge base page (RFC #1716 §7: from the foot of the rail). */
+  readonly onOpenLibrary: () => void;
   /** The width drag, owned by the shell (it writes the CSS variable on the root). */
   readonly resizeHandle: ReactNode;
 }) {
@@ -592,6 +599,9 @@ export function WorkspaceRail({
   );
 
   const drag = useTreeDrag({ onReorder: handleReorder, onMoveToFolder: handleDropIntoFolder });
+  const carriedFromFolder =
+    drag.dragKind === 'course' &&
+    Boolean(courses.classrooms.find((course) => course.id === drag.dragId)?.folderId);
 
   /**
    * The keyboard's version of the same gesture: Alt+↑/↓ on a focused row moves
@@ -715,6 +725,17 @@ export function WorkspaceRail({
               including the locale switcher. Settings stays on the surface: the
               collapsed rail must not lose the one entry that configures the
               providers the surface depends on. */}
+          <button
+            type="button"
+            data-testid="pro-nav-library-mini"
+            onClick={onOpenLibrary}
+            aria-label={t('workspace.knowledgeBase.title')}
+            title={t('workspace.knowledgeBase.title')}
+            aria-current={libraryOpen ? 'page' : undefined}
+            className="ws-mini-btn"
+          >
+            <Library className="size-4" aria-hidden="true" />
+          </button>
           <RailOverflow testId="pro-rail-more-mini" mini withLanguage />
           <ThemeToggle />
           <button
@@ -1269,7 +1290,7 @@ export function WorkspaceRail({
             Filing is a drop onto a folder row; UNFILING needs somewhere to drop
             too, and the row that used to serve ("unfiled") is gone. So the
             empty space below the tree takes the drop: it is armed only while a
-            course is in flight, it says what it will do, and it lights up whole
+            course from a folder is in flight, it says what it will do, and it lights up whole
             when the pointer is actually over it. It is pinned to the panel's
             foot
             (see `.ws-ground-drop`) because a tree this deep would otherwise put
@@ -1279,17 +1300,22 @@ export function WorkspaceRail({
             hit-tests with `closest()`, so a zone wrapping the tree would turn
             every row into an unfile target and break reordering outright. And
             the 1px gaps between rows are not inside it, which is why hovering
-            between two rows still commits nothing. */}
+            between two rows still commits nothing. Its target metadata stays
+            present before activation so the first pointermove can hit-test it. */}
         {tab === 'courses' && foldersAvailable ? (
           <TreeGroundDrop
-            armed={drag.dragKind === 'course'}
-            active={drag.folderTarget === ''}
+            armed={carriedFromFolder}
+            active={carriedFromFolder && drag.folderTarget === ''}
             dropProps={drag.folderProps()}
           />
         ) : null}
       </div>
 
-      <RailUtilities onOpenSettings={() => setSettingsOpen(true)} />
+      <RailUtilities
+        libraryOpen={libraryOpen}
+        onOpenLibrary={onOpenLibrary}
+        onOpenSettings={() => setSettingsOpen(true)}
+      />
 
       {resizeHandle}
 
@@ -2176,10 +2202,36 @@ function SessionDot({ status }: { readonly status: ProHomeSessionItem['status'] 
  * belongs to the community dialog), so there is nothing to cluster here for
  * notifications.
  */
-function RailUtilities({ onOpenSettings }: { readonly onOpenSettings: () => void }) {
+function RailUtilities({
+  libraryOpen,
+  onOpenLibrary,
+  onOpenSettings,
+}: {
+  readonly libraryOpen: boolean;
+  readonly onOpenLibrary: () => void;
+  readonly onOpenSettings: () => void;
+}) {
   const { t } = useI18n();
   return (
     <div className="shrink-0" data-testid="pro-rail-utilities">
+      {/* The knowledge base is a page, not a third tab beside Chats and
+          Courses (RFC #1716): one row at the foot, selected while it fills
+          the main area. */}
+      <div className="px-3 pb-2">
+        <button
+          type="button"
+          data-testid="pro-nav-library"
+          onClick={onOpenLibrary}
+          aria-current={libraryOpen ? 'page' : undefined}
+          className={cn(
+            'ws-row flex h-9 w-full min-w-0 items-center gap-2 px-2 text-left text-[13px]',
+            libraryOpen && 'ws-row-active',
+          )}
+        >
+          <Library className="size-4 shrink-0 opacity-60" aria-hidden="true" />
+          <span className="min-w-0 truncate">{t('workspace.knowledgeBase.title')}</span>
+        </button>
+      </div>
       <div className="ws-seam-rail mx-4" aria-hidden="true" />
       <div
         aria-label={t('workspace.utilitiesAria')}

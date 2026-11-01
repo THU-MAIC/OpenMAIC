@@ -89,21 +89,53 @@ export function shouldBypassProxy(url: URL): boolean {
   return entries.some((entry) => matchesNoProxyEntry(hostname, port, entry));
 }
 
-let cachedAgent: ProxyAgent | null = null;
-let cachedProxyUrl: string | undefined;
+// Retain independent transport profiles without growing indefinitely as providers change.
+const PROXY_AGENT_CACHE_LIMIT = 8;
+const proxyAgents = new Map<string, ProxyAgent>();
 
-function getProxyAgent(): ProxyAgent | undefined {
-  const proxyUrl = getProxyUrl();
+export interface ProxyFetchOptions {
+  /** An operator-configured provider proxy takes precedence over the environment. */
+  proxy?: string;
+  timeouts?: { connectTimeout: number; headersTimeout: number; bodyTimeout: number };
+}
+
+function getProxyAgent(options?: ProxyFetchOptions): ProxyAgent | undefined {
+  const proxyUrl = options?.proxy ?? getProxyUrl();
   if (!proxyUrl) return undefined;
 
-  // Reuse agent if proxy URL hasn't changed
-  if (cachedAgent && cachedProxyUrl === proxyUrl) {
-    return cachedAgent;
+  const timeouts = options?.timeouts;
+  const key = JSON.stringify([
+    proxyUrl,
+    timeouts ? [timeouts.connectTimeout, timeouts.headersTimeout, timeouts.bodyTimeout] : null,
+  ]);
+  const cached = proxyAgents.get(key);
+  if (cached) {
+    // Refresh insertion order so the least recently used profile is evicted first.
+    proxyAgents.delete(key);
+    proxyAgents.set(key, cached);
+    return cached;
   }
 
-  cachedAgent = new ProxyAgent(proxyUrl);
-  cachedProxyUrl = proxyUrl;
-  return cachedAgent;
+  const agent = new ProxyAgent({
+    uri: proxyUrl,
+    ...(options?.timeouts
+      ? {
+          requestTls: { timeout: options.timeouts.connectTimeout },
+          proxyTls: { timeout: options.timeouts.connectTimeout },
+          headersTimeout: options.timeouts.headersTimeout,
+          bodyTimeout: options.timeouts.bodyTimeout,
+        }
+      : {}),
+  });
+  proxyAgents.set(key, agent);
+  if (proxyAgents.size > PROXY_AGENT_CACHE_LIMIT) {
+    const oldestKey = proxyAgents.keys().next().value!;
+    const oldest = proxyAgents.get(oldestKey)!;
+    proxyAgents.delete(oldestKey);
+    // Graceful close lets active requests finish before releasing their sockets.
+    void oldest.close().catch(() => log.warn('Could not close an evicted proxy agent'));
+  }
+  return agent;
 }
 
 /**
@@ -111,8 +143,12 @@ function getProxyAgent(): ProxyAgent | undefined {
  * Falls back to global fetch when no proxy is configured, when the target
  * is a loopback address, or when the target matches no_proxy / NO_PROXY.
  */
-export async function proxyFetch(input: string | URL, init?: RequestInit): Promise<Response> {
-  const agent = getProxyAgent();
+export async function proxyFetch(
+  input: string | URL,
+  init?: RequestInit,
+  options?: ProxyFetchOptions,
+): Promise<Response> {
+  const agent = getProxyAgent(options);
   const url = typeof input === 'string' ? input : input.toString();
 
   if (!agent) {
@@ -126,12 +162,12 @@ export async function proxyFetch(input: string | URL, init?: RequestInit): Promi
   } catch {
     // Unparseable input — let fetch surface the real error below.
   }
-  if (parsed && shouldBypassProxy(parsed)) {
+  if (!options?.proxy && parsed && shouldBypassProxy(parsed)) {
     log.info('Bypassing proxy (loopback/NO_PROXY) for:', url.slice(0, 80));
     return fetch(input, init);
   }
 
-  log.info('Using proxy', cachedProxyUrl, 'for:', url.slice(0, 80));
+  log.info('Using proxy for:', url.slice(0, 80));
   // Use undici's fetch with the proxy dispatcher
   const res = await undiciFetch(input, {
     ...(init as UndiciRequestInit),

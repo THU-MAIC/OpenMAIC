@@ -1,3 +1,4 @@
+import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
 /**
  * Runner-level pins for capability-registered `web_search` wiring.
  *
@@ -15,7 +16,7 @@
 import type { AgentEvent, AgentMessage } from '@earendil-works/pi-agent-core';
 import { InMemorySessionRepo, Session } from '@earendil-works/pi-agent-core';
 import type { AgentSessionMaterial, ClaimedAgentSession } from '@openmaic/storage';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   randomUUID: vi.fn(() => 'runner-test-uuid'),
@@ -28,8 +29,34 @@ const mocks = vi.hoisted(() => ({
   resolveWebSearchCapability: vi.fn(),
   searchWeb: vi.fn(),
   formatSearchResultsAsContext: vi.fn(),
-  listSessionMaterials: vi.fn(async (): Promise<AgentSessionMaterial[]> => []),
+  listSessionMaterials: vi.fn(async (_sessionId: string): Promise<AgentSessionMaterial[]> => []),
+  /** When set, the resolver returns these rows instead of session records. */
+  resolvedMaterials: vi.fn(
+    async (): Promise<
+      import('@/lib/server/agent-runtime/material-resolver').ResolvedMaterial[] | null
+    > => null,
+  ),
+  extractionWatcher: undefined as
+    | import('@/lib/server/agent-runtime/extraction-watcher').ExtractionWatcher
+    | undefined,
+  readSettled: vi.fn(async (_ids: readonly string[]): Promise<string[]> => []),
 }));
+
+vi.mock('@/lib/server/agent-runtime/extraction-watcher', async (importActual) => {
+  const actual =
+    await importActual<typeof import('@/lib/server/agent-runtime/extraction-watcher')>();
+  return {
+    ...actual,
+    startExtractionWatcher: (options: Parameters<typeof actual.startExtractionWatcher>[0]) => {
+      mocks.extractionWatcher = actual.startExtractionWatcher({
+        ...options,
+        intervalMs: 1,
+        readSettled: mocks.readSettled,
+      });
+      return mocks.extractionWatcher;
+    },
+  };
+});
 
 vi.mock('node:crypto', async (importActual) => {
   const actual = await importActual<typeof import('node:crypto')>();
@@ -44,13 +71,30 @@ vi.mock('@/lib/persistence/server-provider', () => ({
   getServerPersistenceProvider: mocks.getServerPersistenceProvider,
 }));
 
-// The runner lists the session's materials to build the materials prompt
-// block. The mock defaults to no materials; individual tests override it to
-// observe the prompt block. The real tool builders stay loaded.
+// The runner resolves the session's materials when it builds the prompt.
+// That set must not change the prompt bytes. The mock defaults to none;
+// the stability test overrides it. The real tool builders stay loaded.
 vi.mock('@/lib/server/agent-runtime/session-materials', async (importActual) => {
   const actual =
     await importActual<typeof import('@/lib/server/agent-runtime/session-materials')>();
   return { ...actual, listSessionMaterials: mocks.listSessionMaterials };
+});
+// The runner lists what the session reaches through the shared resolver;
+// links need a database these tests do not have.
+vi.mock('@/lib/server/agent-runtime/material-resolver', async (importActual) => {
+  const actual =
+    await importActual<typeof import('@/lib/server/agent-runtime/material-resolver')>();
+  return {
+    ...actual,
+    listSessionScopeMaterials: async (sessionId: string) => {
+      const resolved = await mocks.resolvedMaterials();
+      if (resolved) return resolved;
+      return (await mocks.listSessionMaterials(sessionId)).map((record) => ({
+        origin: 'session' as const,
+        record,
+      }));
+    },
+  };
 });
 
 vi.mock('@/lib/web-search', () => ({
@@ -205,7 +249,11 @@ interface BuildAgentOptions {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.extractionWatcher = undefined;
+  mocks.readSettled.mockResolvedValue([]);
+  setDeploymentConfigForTests({ layer: null, legacy: false, notices: [] });
   mocks.listSessionMaterials.mockResolvedValue([]);
+  mocks.resolvedMaterials.mockResolvedValue(null);
   mocks.resolveAgentDriverModel.mockResolvedValue({
     connection: { model: undefined, thinkingConfig: undefined },
     piModel: { api: 'openai-completions', provider: 'openai', id: 'driver-model' },
@@ -305,6 +353,11 @@ describe('web_search runner registration', () => {
       'search_material',
       'extract_material',
       'wait_for_materials',
+      'list_material_folders',
+      'create_material_folder',
+      'rename_material_folder',
+      'move_materials',
+      'rename_material',
       'list_voices',
       'set_roster',
       'clip_audio',
@@ -317,6 +370,7 @@ describe('web_search runner registration', () => {
       'ask_user',
       'clip_audio',
       'create_folder',
+      'create_material_folder',
       'create_skill',
       'create_stage',
       'duplicate_scene',
@@ -330,9 +384,11 @@ describe('web_search runner registration', () => {
       'grep_stage',
       'import_pptx',
       'list_folder_stages',
+      'list_material_folders',
       'list_materials',
       'list_scenes',
       'list_voices',
+      'move_materials',
       'move_to_folder',
       'patch_skill',
       'patch_stage',
@@ -342,6 +398,8 @@ describe('web_search runner registration', () => {
       'read_skill',
       'read_stage',
       'read_stage_outline',
+      'rename_material',
+      'rename_material_folder',
       'rename_stage',
       'search_chats',
       'search_classrooms',
@@ -396,6 +454,11 @@ describe('web_search runner registration', () => {
       'search_material',
       'extract_material',
       'wait_for_materials',
+      'list_material_folders',
+      'create_material_folder',
+      'rename_material_folder',
+      'move_materials',
+      'rename_material',
       'list_voices',
       'set_roster',
       'clip_audio',
@@ -408,6 +471,7 @@ describe('web_search runner registration', () => {
       'ask_user',
       'clip_audio',
       'create_folder',
+      'create_material_folder',
       'create_skill',
       'create_stage',
       'duplicate_scene',
@@ -421,9 +485,11 @@ describe('web_search runner registration', () => {
       'grep_stage',
       'import_pptx',
       'list_folder_stages',
+      'list_material_folders',
       'list_materials',
       'list_scenes',
       'list_voices',
+      'move_materials',
       'move_to_folder',
       'patch_skill',
       'patch_stage',
@@ -433,6 +499,8 @@ describe('web_search runner registration', () => {
       'read_skill',
       'read_stage',
       'read_stage_outline',
+      'rename_material',
+      'rename_material_folder',
       'rename_stage',
       'search_chats',
       'search_classrooms',
@@ -494,8 +562,12 @@ describe('web_search runner registration', () => {
     );
   });
 
-  it('lists the session materials in the system prompt so the model knows what it can read', async () => {
+  it('keeps the system prompt byte-identical when materials change between runs', async () => {
     mocks.resolveWebSearchCapability.mockReturnValue(null);
+
+    mocks.listSessionMaterials.mockResolvedValue([]);
+    const none = await runToBuildAgent();
+
     mocks.listSessionMaterials.mockResolvedValue([
       {
         id: 'mat_web1',
@@ -511,23 +583,152 @@ describe('web_search runner registration', () => {
         createdAt: new Date(0).toISOString(),
       },
     ]);
+    const web = await runToBuildAgent();
 
-    const options = await runToBuildAgent();
+    mocks.listSessionMaterials.mockResolvedValue([
+      {
+        id: 'mat_pdf',
+        sessionId: SESSION_ID,
+        kind: 'source',
+        title: 'lecture.pdf',
+        sourceUrl: null,
+        textAssetId: null,
+        rawAssetId: null,
+        textChars: 0,
+        derivedFrom: null,
+        extraction: { status: 'idle', attempts: 0 },
+        createdAt: new Date(0).toISOString(),
+      },
+    ]);
+    const attached = await runToBuildAgent();
 
+    const owner = (
+      status: 'idle' | 'done',
+    ): import('@/lib/server/agent-runtime/material-resolver').ResolvedMaterial => ({
+      origin: 'owner',
+      entry: {
+        id: 'src_lesson',
+        ownerId: 'user:alice',
+        kind: 'source',
+        derivedFrom: null,
+        mime: 'application/pdf',
+        bytes: 3,
+        originalName: 'lesson.pdf',
+        ossKey: 'objects/secret-key',
+        assetId: 'ast_secret_pool',
+        sha256: 'digest',
+        status: 'ready',
+        extraction: { status },
+        createdAt: 0,
+        deletedAt: null,
+        folderId: null,
+        displayName: null,
+        extractionError: null,
+        extractionResult: null,
+        lineage: null,
+      },
+    });
+    mocks.resolvedMaterials.mockResolvedValue([owner('idle')]);
+    const extractionIdle = await runToBuildAgent();
+    mocks.resolvedMaterials.mockResolvedValue([owner('done')]);
+    const extractionDone = await runToBuildAgent();
+
+    expect(web.systemPrompt).toBe(none.systemPrompt);
+    expect(attached.systemPrompt).toBe(none.systemPrompt);
+    expect(extractionIdle.systemPrompt).toBe(none.systemPrompt);
+    expect(extractionDone.systemPrompt).toBe(extractionIdle.systemPrompt);
+    expect(none.systemPrompt).toContain('## Materials and the knowledge base');
+    expect(none.systemPrompt).toContain('list_materials');
+    expect(none.systemPrompt).toContain('read_material');
+    expect(none.systemPrompt).toContain('search_material');
+    expect(none.systemPrompt).toContain("scope: 'library'");
+    expect(none.systemPrompt).not.toContain('Nothing is attached');
+    expect(none.systemPrompt).not.toContain('Example article');
+    expect(none.systemPrompt).not.toContain('lecture.pdf');
+    expect(none.systemPrompt).not.toContain('lesson.pdf');
+    expect(none.systemPrompt).not.toContain('mat_web1');
+    expect(none.systemPrompt).not.toContain('src_lesson');
+    expect(none.systemPrompt).not.toContain('extraction idle');
+    expect(none.systemPrompt).not.toContain('extraction done');
     expect(mocks.listSessionMaterials).toHaveBeenCalledWith(SESSION_ID);
-    expect(options.systemPrompt).toContain('## Registered session materials');
-    expect(options.systemPrompt).toContain('Example article');
-    expect(options.systemPrompt).toContain('list_materials');
-    expect(options.systemPrompt).toContain('read_material');
-    expect(options.systemPrompt).toContain('search_material');
   });
+});
 
-  it('omits the materials block when the session has no materials', async () => {
-    mocks.resolveWebSearchCapability.mockReturnValue(null);
-    mocks.listSessionMaterials.mockResolvedValue([]);
+describe('extraction watcher at run termination', () => {
+  it.each(['succeeded', 'failed', 'interrupted'] as const)(
+    'does not append a settlement after the %s terminal frame',
+    async (exit) => {
+      const meta = makeMeta();
+      const session = await makeEntryTree();
+      const store = makeStore(meta);
+      mocks.openEntryStorage.mockResolvedValue(session.getStorage());
+      mocks.getAgentSessionStore.mockResolvedValue(store);
+      mocks.resolveWebSearchCapability.mockReturnValue(null);
+      const ctx = { running: new Map(), shuttingDown: false };
+      let resolveRead!: () => void;
+      const maySettle = new Promise<void>((resolve) => {
+        resolveRead = resolve;
+      });
+      let markPolling!: () => void;
+      const polling = new Promise<void>((resolve) => {
+        markPolling = resolve;
+      });
+      mocks.readSettled.mockImplementation(async (ids) => {
+        markPolling();
+        await maySettle;
+        return [...ids];
+      });
+      mocks.buildAgent.mockImplementation(() => {
+        const agent = makeFakeAgent();
+        agent.prompt = async () => {
+          mocks.extractionWatcher!.watch(['pending-source']);
+          await polling;
+          if (exit === 'failed') throw new Error('agent failed after starting extraction');
+          if (exit === 'interrupted') {
+            ctx.shuttingDown = true;
+            ctx.running.get(meta.id)!.abort.abort();
+          }
+        };
+        return agent;
+      });
+      const events: string[] = [];
+      store.appendRunEvent.mockImplementation(async (_id, _workerId, event) => {
+        events.push(event.type);
+        if (event.type === 'session_end' || event.type === 'session_interrupted') resolveRead();
+        return events.length;
+      });
+      // Keep settlement open while an already-started status read completes.
+      store.finishSession.mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return true;
+      });
+      store.releaseLease.mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+      try {
+        await runSession(ctx, meta);
+        expect(mocks.readSettled).toHaveBeenCalled();
+        expect(events).not.toContain('library_changed');
+        expect(events.at(-1)).toBe(exit === 'interrupted' ? 'session_interrupted' : 'session_end');
+      } finally {
+        resolveRead();
+        mocks.extractionWatcher?.stop();
+      }
+    },
+  );
+});
 
-    const options = await runToBuildAgent();
-
-    expect(options.systemPrompt).not.toContain('## Registered session materials');
+afterEach(() => setDeploymentConfigForTests());
+it('omits fetch_url and its prompt when the webFetch slot is disabled', async () => {
+  mocks.resolveWebSearchCapability.mockResolvedValue(null);
+  setDeploymentConfigForTests({
+    layer: { source: 'deployment', config: { slots: { webFetch: null } } },
+    legacy: false,
+    notices: [],
   });
+  const options = await runToBuildAgent();
+  expect(options.tools.map((tool) => tool.name)).not.toContain('fetch_url');
+  expect(options.allowedToolNames?.has('fetch_url')).toBe(false);
+  expect(options.systemPrompt).not.toContain('## Fetch URL');
+  expect(options.systemPrompt).not.toContain('`fetch_url`');
 });

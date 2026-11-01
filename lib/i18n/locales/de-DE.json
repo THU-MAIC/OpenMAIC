@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "Zurück",
     "you": "Du",
     "confirm": "Bestätigen",
     "cancel": "Abbrechen",
@@ -10,6 +11,22 @@
     "close": "Schließen"
   },
   "home": {
+    "resumeGeneration": "Generierung fortsetzen",
+    "emptyLibraryTitle": "Hier beginnen deine Kurse",
+    "emptyLibraryBody": "Erstelle einen Kurs auf der Startseite und lerne hier weiter.",
+    "mobileTitle": "Was möchtest du lernen?",
+    "mobileSubtitle": "Nenne dein Thema und die KI erstellt einen interaktiven Kurs.",
+    "mobilePlaceholder": "Lernthema eingeben oder Materialien hochladen",
+    "courseOptions": "Kursoptionen",
+    "courseMaterials": "Kursmaterialien",
+    "courseMaterialsCount": "Kursmaterialien · {{n}}",
+    "backToCourseOptions": "Zurück zu den Kursoptionen",
+    "materialsDone": "Fertig",
+    "allSettings": "Alle Einstellungen",
+    "examplesLabel": "Beispielthemen",
+    "examplePython": "Python von Grund auf lernen",
+    "exampleFourier": "Fourier-Transformation mit anschaulichen Beispielen",
+    "desktopOnly": "Verwende für den Editor und Pro-Modus einen Computer.",
     "slogan": "Generatives Lernen im interaktiven Lernraum mit mehreren KI-Agenten",
     "greetingWithName": "Hallo, {{name}}"
   },
@@ -475,6 +492,7 @@
       "moreActions": "Weitere Aktionen",
       "rename": "Umbenennen",
       "sceneIncomplete": "Diese Seite enthält unvollständige Inhalte",
+      "sceneHasErrors": "Diese Seite enthält Fehler",
       "addPage": "Seite hinzufügen",
       "nextPage": "Next page",
       "prevPage": "Previous page"
@@ -1346,11 +1364,13 @@
       "ollama": "Ollama (Lokal)",
       "tavily": "Tavily",
       "exa": "Exa",
+      "firecrawl": "Firecrawl",
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
       "claude": "Claude",
-      "searxng": "SearXNG"
+      "searxng": "SearXNG",
+      "builtin": "Integrierter Leser"
     },
     "modelCount": "Modelle",
     "modelSingular": "Modell",
@@ -1716,7 +1736,6 @@
     "videoModel": "Videogenerierungsmodell",
     "providerSeedance": "Seedance (ByteDance)",
     "providerKling": "Kling (Kuaishou)",
-    "providerVeo": "Veo (Google)",
     "providerSora": "Sora (OpenAI)",
     "providerMiniMaxVideo": "MiniMax Video",
     "providerGrokVideo": "Grok Video (xAI)",
@@ -1798,7 +1817,7 @@
     "tokenPlan": {
       "nav": "Token-Tarif",
       "title": "Token-Tarif einrichten",
-      "desc": "Wähle deinen Token-Tarifanbieter und gib den Schlüssel ein – damit werden alle angebundenen Modalitäten automatisch konfiguriert (LLM/Bild/Video/Sprachausgabe/Websuche).",
+      "desc": "Wähle deinen Token-Tarifanbieter und gib den Schlüssel ein – damit werden alle angebundenen Modalitäten automatisch konfiguriert (LLM/Bild/Video/Sprachausgabe/Websuche/Webseiten abrufen).",
       "selectPlan": "Anbieter auswählen",
       "apiKey": "API-Schlüssel",
       "updateKey": "Schlüssel aktualisieren",
@@ -1824,6 +1843,7 @@
       "capTts": "Sprachsynthese",
       "capVideo": "Videogenerierung",
       "capWebSearch": "Websuche",
+      "capWebFetch": "Webseiten abrufen",
       "saved": "Verbindungseinstellungen gespeichert",
       "stageInteractive": "Interaktiv",
       "stageSlide": "Kursfolien",
@@ -1947,7 +1967,8 @@
         "providers": "Zugangsdaten, Endpunkte und Modellkataloge für Sprachmodell-Dienste konfigurieren",
         "tts": "Sprachsynthese-Dienste, Stimmen und Modelle konfigurieren",
         "video": "Zugangsdaten und Modellkataloge für Videogenerierungs-Dienste konfigurieren",
-        "webSearch": "Websuch-Dienste und Abrufquellen konfigurieren"
+        "webSearch": "Websuch-Dienste und Abrufquellen konfigurieren",
+        "webFetch": "Dienste zur Extraktion von Webseiten konfigurieren"
       },
       "nav": "Modelldienste",
       "notConfigured": "Nicht konfiguriert",
@@ -2149,6 +2170,10 @@
         "document": {
           "name": "Dokumentanalyse",
           "desc": "Liest hochgeladene Dokumente."
+        },
+        "webFetch": {
+          "name": "Webseiten abrufen",
+          "desc": "Lässt den Agent in der Sitzung zugelassene Webseiten lesen."
         }
       },
       "source": {
@@ -2162,6 +2187,7 @@
         "lines": {
           "rewrite": "Anfrage",
           "search": "Suche",
+          "fetch": "Abruf",
           "image": "Bild",
           "video": "Video"
         }
@@ -2194,9 +2220,144 @@
         "unconfirmed": "Der Server hat den Import nicht bestätigt."
       }
     },
-    "serverConfiguredAddOwn": "Um eigene Zugangsdaten zu verwenden, füge einen separaten Anbieter hinzu."
+    "serverConfiguredAddOwn": "Um eigene Zugangsdaten zu verwenden, füge einen separaten Anbieter hinzu.",
+    "webFetchSettings": "Webseiten abrufen",
+    "webFetchHint": "Wählen Sie, wie Webseiten gelesen werden. Gehostete Dienste erhalten nur öffentliche URLs, die in der Sitzung zugelassen sind. Ergebnisse bleiben nicht vertrauenswürdig; bei Fehlern wird der Dienst nicht gewechselt.",
+    "webFetchApiKey": "API-Schlüssel",
+    "webFetchSharedKeyHint": "Dieser Schlüssel wird auch für den Chat mit diesem Anbieter verwendet. Änderungen oder das Entfernen wirken sich auf den Chat aus."
   },
   "workspace": {
+    "knowledgeBase": {
+      "title": "Wissensbasis",
+      "topLevel": "Oberste Ebene",
+      "back": "Zurück",
+      "search": "Namen und Dateitypen durchsuchen",
+      "loading": "Wird geladen…",
+      "retry": "Erneut versuchen",
+      "loadMore": "Mehr laden",
+      "failure": {
+        "more": "Hinweis zum Fehler: {{reason}}",
+        "storage_full": {
+          "label": "Nicht genügend Speicherplatz",
+          "description": "Die Analyseergebnisse können wegen Platzmangels nicht gespeichert werden. Geben Sie Speicherplatz frei und versuchen Sie es erneut."
+        },
+        "source_unavailable": {
+          "label": "Originaldatei nicht verfügbar",
+          "description": "Die Originaldatei konnte nicht gelesen werden. Laden Sie sie erneut hoch und versuchen Sie es noch einmal."
+        },
+        "service_unavailable": {
+          "label": "Analysedienst nicht verfügbar",
+          "description": "Für diesen Dateityp ist kein Analysedienst konfiguriert. Bitten Sie Ihre Administration, einen einzurichten, und starten Sie dann die Analyse erneut."
+        },
+        "media_too_long": {
+          "label": "Audio oder Video zu lang",
+          "description": "Diese Analysemethode verarbeitet Audio und Video bis zu {{minutes}} Minuten. Kürzen oder teilen Sie die Datei und laden Sie sie erneut hoch."
+        },
+        "no_text_extracted": {
+          "label": "Kein Text extrahiert",
+          "description": "Diesmal wurde kein nutzbarer Text extrahiert. Prüfen Sie den Inhalt oder versuchen Sie eine andere Datei."
+        },
+        "processing_interrupted": {
+          "label": "Analyse nicht abgeschlossen",
+          "description": "Die Analyse konnte nicht abgeschlossen werden. Sie können es später erneut versuchen."
+        },
+        "too_many_pages": {
+          "label": "Zu viele Seiten",
+          "description": "Dieses PDF hat {{pages}} Seiten und überschreitet das Analyselimit von {{maxPages}} Seiten. Teilen Sie es auf und laden Sie die Teile hoch, oder laden Sie nur die benötigten Kapitel hoch.",
+          "descriptionWithoutCount": "Dieses PDF überschreitet das Analyselimit von {{maxPages}} Seiten. Teilen Sie es auf und laden Sie die Teile hoch, oder laden Sie nur die benötigten Kapitel hoch.",
+          "descriptionWithoutLimit": "Dieses PDF hat mehr Seiten, als der Analysedienst verarbeitet. Teilen Sie es auf und laden Sie die Teile hoch, oder laden Sie nur die benötigten Kapitel hoch."
+        }
+      },
+      "status": {
+        "uploading": "Wird hochgeladen",
+        "stored": "Gespeichert · nicht analysiert",
+        "parsing": "Wird analysiert",
+        "searchable": "Durchsuchbar",
+        "failed": "Analyse fehlgeschlagen"
+      },
+      "column": {
+        "name": "Name",
+        "status": "Status",
+        "folder": "Ordner",
+        "size": "Größe",
+        "date": "Datum"
+      },
+      "limits": {
+        "perFile": "Bis {{document}} pro Dokument oder Bild, {{media}} pro Audio oder Video"
+      },
+      "usage": {
+        "summary": "{{used}} von {{max}} belegt · {{count}} von {{maxCount}} Dateien",
+        "fileStorage": "Separater Dateispeicher: {{used}} von {{max}} belegt (inkl. analysierter Inhalte und Kursmedien)",
+        "fileStorageUnlimited": "Separater Dateispeicher: {{used}} belegt (inkl. analysierter Inhalte und Kursmedien)"
+      },
+      "empty": {
+        "title": "Deine Wissensbasis ist leer",
+        "body": "Lade Unterrichtsmaterialien hoch, lass den Assistenten sie ordnen und analysieren, und wähle sie bei der Kursvorbereitung mit @ aus.",
+        "folder": "In diesem Ordner sind noch keine Materialien",
+        "query": "Keine Materialien passen zu „{{query}}“"
+      },
+      "upload": {
+        "button": "Materialien hochladen",
+        "dismiss": "Ausblenden"
+      },
+      "error": {
+        "load": "Die Wissensbasis konnte nicht geladen werden",
+        "busy": "Dein Konto wird gerade aktualisiert. Versuche es gleich noch einmal",
+        "identity": "Deine Anmeldung hat sich geändert. Lade die Seite neu",
+        "stale": "die Anzeige ist möglicherweise nicht aktuell",
+        "nameTaken": "Ein anderer Ordner hat bereits diesen Namen",
+        "invalidName": "Gib einen Namen mit höchstens 255 Zeichen ein",
+        "folderNameEmpty": "Gib einen Ordnernamen ein",
+        "folderNameTooLong": "Dieser Ordnername ist zu lang",
+        "folderLimit": "Die maximale Anzahl an Ordnern ist erreicht",
+        "notMovable": "Dieses Material kann nicht verschoben werden",
+        "gone": "Es existiert nicht mehr",
+        "save": "Das hat nicht geklappt. Versuche es erneut",
+        "notEmpty": "In diesem Ordner liegen noch Materialien. Verschiebe sie zuerst",
+        "materialNotFound": "Material nicht gefunden oder nicht zugänglich.",
+        "folderNotFound": "Ordner nicht gefunden oder nicht zugänglich.",
+        "textUnavailable": "Der Text des Materials ist nicht verfügbar.",
+        "derivative": "Ein abgeleitetes Material übernimmt den Namen der Quelle. Benenne die Quelle um.",
+        "moveTooMany": "Verschiebe höchstens {{limit}} Materialien auf einmal.",
+        "moveNotMovable": "Nichts wurde verschoben. Einige ausgewählte Materialien sind nicht verfügbar oder können nicht verschoben werden.",
+        "toolFolderNameTooLong": "Der Ordnername ist zu lang (höchstens 40 Zeichen mit halber oder 20 mit voller Breite).",
+        "toolFolderLimit": "Die Wissensdatenbank hat das Maximum von {{limit}} Ordnern erreicht.",
+        "mediaUnsupported": "Nur Bilder, Videos oder Audiodateien können als Kursmedien verwendet werden.",
+        "mediaStorageFull": "Für dieses Medium ist nicht genug Speicherplatz vorhanden. Gib Speicherplatz frei und versuche es erneut.",
+        "mediaNotFound": "Das Medienmaterial wurde nicht gefunden oder hat keine verfügbaren Mediendaten."
+      },
+      "actions": {
+        "parse": "Analysieren",
+        "reparse": "Erneut analysieren",
+        "more": "Weitere Aktionen für {{name}}",
+        "rename": "Umbenennen",
+        "delete": "Löschen",
+        "open": "Öffnen",
+        "downloadOriginal": "Original herunterladen",
+        "chat": "Mit diesem Material chatten"
+      },
+      "folder": {
+        "new": "Neuer Ordner",
+        "items": "{{count}} Elemente",
+        "items_one": "{{count}} Element",
+        "items_other": "{{count}} Elemente"
+      },
+      "dialog": {
+        "cancel": "Abbrechen",
+        "close": "Schließen"
+      },
+      "delete": {
+        "materialTitle": "„{{name}}“ löschen?",
+        "materialLinks": "Unterhaltungen, die es verwenden, können es danach nicht mehr lesen; Text, der schon in diesen Unterhaltungen steht, bleibt erhalten.",
+        "materialCourses": "Inhalte, die bereits in einem Kurs gespeichert sind, sind nicht betroffen.",
+        "cannotUndo": "Das lässt sich nicht rückgängig machen.",
+        "folderTitle": "Ordner „{{name}}“ löschen?",
+        "folderContents": "Dateien, die auf die oberste Ebene verschoben werden: {{count}}. Es werden keine Dateien gelöscht."
+      },
+      "conversationFailure": {
+        "serviceUnavailable": "Für diesen Dateityp ist kein Parser eingerichtet. Bitte einen Administrator, einen einzurichten."
+      }
+    },
     "untitledCourse": "未命名课堂",
     "sceneCount": "{{count}} 页",
     "sceneCount_one": "{{count}} 页",
@@ -2204,14 +2365,30 @@
     "courseLinkHint": "在右侧打开《{{name}}》",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
+      "search": "Klassenzimmer und Materialien suchen",
+      "searchMaterials": "Materialien suchen",
+      "searchClassrooms": "Klassenzimmer suchen",
+      "courseOrder": "Geöffnetes Klassenzimmer zuerst, dann zuletzt aktualisiert",
+      "materialOrder": "Neueste Uploads zuerst",
       "title": "为这条消息引用课堂",
+      "titleBoth": "Ein Klassenzimmer referenzieren oder Material aus der Wissensbasis an diese Nachricht anhängen",
+      "titleMaterials": "Material aus der Wissensbasis an diese Nachricht anhängen",
       "empty": "没有匹配的课堂",
       "alreadyNamed": "已引用",
       "remove": "移除{{name}}",
       "pillHint": "这条消息引用了「{{name}}」",
       "notAccepted": "Der Server ist vorübergehend nicht verfügbar. Bitte versuche es gleich noch einmal.",
       "reference": "引用「{{name}}」",
-      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
+      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围",
+      "classrooms": "Kursräume",
+      "knowledgeBase": "Wissensbasis",
+      "emptyWithMaterials": "Kein Kursraum und kein Material passt",
+      "attachMaterial": "{{name}} an diese Nachricht anhängen",
+      "materialUnavailable": "{{name}} kann nicht angehängt werden ({{reason}}). Öffnen Sie die Wissensbasis, um den Grund zu sehen und die Datei erneut zu analysieren.",
+      "materialAttached": "Schon in dieser Unterhaltung",
+      "materialStaged": "Schon in dieser Nachricht",
+      "materialsCapped": "Die ersten {{count}} Materialien — weiter tippen, um einzugrenzen",
+      "materialUnavailableGuidance": "{{name}} kann nicht angehängt werden. {{guidance}} Du kannst das Material auf der Seite der Wissensdatenbank verwalten."
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
@@ -2232,6 +2409,11 @@
     "homeAria": "Back to home",
     "currentSession": "Current chat",
     "startLearning": "Start learning",
+    "classroomMode": "Unterrichtsmodus",
+    "learningMode": "Lernen",
+    "editingMode": "Bearbeiten",
+    "editingUnavailableGenerating": "Während der Kurserstellung ist die Bearbeitung nicht verfügbar.",
+    "fullscreenLearning": "Im Vollbild lernen",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2345,7 +2527,8 @@
     "badgeEnter": "Pro mode",
     "badgeExit": "Back to classic",
     "launchPlaceholder": "Describe the learning experience you want to create",
-    "launchSend": "Start build"
+    "launchSend": "Start build",
+    "mentionCourseOrMaterial": "Auf einen Kursraum oder ein Material der Wissensbasis verweisen"
   },
   "workbench": {
     "tool": {

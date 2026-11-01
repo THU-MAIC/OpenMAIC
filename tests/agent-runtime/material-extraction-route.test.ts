@@ -13,6 +13,11 @@ const mocks = vi.hoisted(() => ({
   wake: vi.fn(),
 }));
 
+vi.mock('@/lib/persistence/owner-merges', async (original) => ({
+  ...(await original<typeof import('@/lib/persistence/owner-merges')>()),
+  fenceOwnerWrite: vi.fn(async () => {}),
+}));
+
 vi.mock('@/lib/config/feature-flags', () => ({
   isServerPersistenceConfigured: () => true,
 }));
@@ -22,7 +27,10 @@ vi.mock('@/lib/server/identity/resolve', async () =>
   ),
 );
 vi.mock('@/lib/persistence/server-provider', () => ({
-  getServerPersistenceProvider: async () => ({ pool: {} }),
+  getServerPersistenceProvider: async () => ({
+    pool: {},
+    withTransaction: async (body: (tx: object) => Promise<unknown>) => body({}),
+  }),
 }));
 vi.mock('@/lib/persistence/owner-materials', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/persistence/owner-materials')>()),
@@ -40,6 +48,7 @@ const ID = 'mat_00000000000000000000000000';
 function record(status: string) {
   return {
     id: ID,
+    retention: 'temporary',
     ownerId: 'owner-1',
     kind: 'source',
     derivedFrom: null,
@@ -76,7 +85,7 @@ describe('POST /api/materials/[id]/extraction', () => {
       {},
       'owner-1',
       [ID],
-      ['failed', 'idle'],
+      ['idle', 'failed'],
     );
     expect(mocks.wake).toHaveBeenCalled();
   });

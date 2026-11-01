@@ -118,11 +118,14 @@ function rendererPaintNode(elementId: string, root?: HTMLElement | null): HTMLEl
     return hitTarget.querySelector<HTMLElement>(NEW_RENDERER_PAINT_SELECTOR);
   }
 
-  // Legacy ScreenElement renders its positioned paint root as the host's direct child.
-  return (
+  // Legacy ScreenElement normally renders its positioned paint root directly.
+  // Recovered shapes add an unpositioned error wrapper around their text box.
+  const paintRoot =
     Array.from(host.children).find((child): child is HTMLElement => child instanceof HTMLElement) ??
-    null
-  );
+    null;
+  return paintRoot?.hasAttribute('data-shape-geometry-error')
+    ? paintRoot.querySelector<HTMLElement>(NEW_RENDERER_PAINT_SELECTOR)
+    : paintRoot;
 }
 
 function measurableRect(elementId: string, root?: HTMLElement | null): DOMRect | null {
