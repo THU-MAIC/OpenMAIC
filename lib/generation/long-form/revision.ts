@@ -220,6 +220,19 @@ export function shouldRevise(critique: Critique, round: number): boolean {
   return true;
 }
 
+/**
+ * Whether a repair left the outline worse than it found it.
+ *
+ * `isSafeRevision` is structural — page count, ids, types — and a new page may
+ * arrive without a duration or an objective, because both are optional in the
+ * patch. The last round has no next critique to catch that, so the repair is
+ * measured against the arithmetic before it is adopted: a repair that raises the
+ * defect count is not an improvement, whatever the critic asked for.
+ */
+export function repairWorsens(before: OutlineAudit, after: OutlineAudit): boolean {
+  return after.defects.length > before.defects.length;
+}
+
 /** The defect list as the rewriter receives it. */
 export function formatCritiqueForRevision(critique: Critique): string {
   const lines = critique.defects.map((defect, index) => {

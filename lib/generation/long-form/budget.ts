@@ -122,9 +122,14 @@ const LENGTH_FOLLOWER = new RegExp(
 
 interface DurationMatch {
   minutes: number;
+  /** Index of the first character of the whole duration phrase. */
+  start: number;
   /** Index just past the last character of the whole duration phrase. */
   end: number;
 }
+
+/** How a duration phrase relates to the lesson, judged from what surrounds it. */
+type DurationContext = 'course' | 'bare' | 'attributive';
 
 const CN_DIGITS: Readonly<Record<string, number>> = {
   一: 1,
@@ -192,11 +197,16 @@ function normalizeDurationWords(text: string): string {
 }
 
 /**
- * The duration phrase in a requirement, with where it ends.
+ * Every duration phrase in a requirement, in the order they appear.
  *
  * Read as a person would, from the largest unit mentioned: `1.5小时` is 90
  * minutes, not 1 and not 5. Compound phrases are summed, because `1 小时 30 分钟`
  * read as hours alone is 60 — a course half an hour shorter than requested.
+ *
+ * All of them, not the first: a requirement can name a duration without naming a
+ * lesson length, and it can name both. `Create a 60-minute course about the
+ * 2-hour insulin response` is an hour, and returning the first figure — or the
+ * first hour — picks the phenomenon over the course.
  *
  * A figure above the longest supported sitting is skipped, not clamped and not
  * fatal to the search. "为什么睡 12 小时还是累" is a lesson about sleep, not a
@@ -207,8 +217,10 @@ function normalizeDurationWords(text: string): string {
  * same guard: clamping a `300-minute` request to 240 ships a course an hour short
  * with nothing to say it did.
  */
-function matchDuration(text: string): DurationMatch | null {
-  if (!text) return null;
+function matchDurations(text: string): DurationMatch[] {
+  if (!text) return [];
+
+  const found: DurationMatch[] = [];
 
   /**
    * Spans of a rejected compound, so its minutes are not read a second time as
@@ -244,7 +256,7 @@ function matchDuration(text: string): DurationMatch | null {
       rejected.push({ start, end });
       continue;
     }
-    return { minutes, end };
+    found.push({ minutes, start, end });
   }
 
   const minutePattern = new RegExp(String.raw`(\d+(?:\.\d+)?)${UNIT_JOIN}${MINUTE_UNITS}`, 'gi');
@@ -257,39 +269,47 @@ function matchDuration(text: string): DurationMatch | null {
 
     const minutes = Math.round(value);
     if (minutes > LONG_FORM_MAX_MINUTES) continue;
-    return { minutes, end: start + plain[0].length };
+    found.push({ minutes, start, end: start + plain[0].length });
   }
 
-  return null;
+  return found.sort((a, b) => a.start - b.start);
 }
 
 /**
  * The duration a request asks for, in whole minutes, or `null` when it asks for
  * none.
  *
- * This reads the number; whether that number is the length of a lesson is
+ * This reads the first number; whether that number is the length of a lesson is
  * {@link detectLongForm}'s question, because `第 3 分钟出现的心电图` is a real
  * duration in a real requirement that is not a three-minute course.
  */
 export function detectRequestedMinutes(requirement: string): number | null {
-  return matchDuration(normalizeDurationWords(requirement))?.minutes ?? null;
+  return matchDurations(normalizeDurationWords(requirement))[0]?.minutes ?? null;
 }
 
 /**
- * Whether a duration phrase describes the length of the lesson.
+ * How a duration phrase relates to the lesson, judged from what surrounds it.
  *
  * A requirement can name a duration without naming a lesson length: `explain the
- * 30-minute insulin response` is about a phenomenon that lasts half an hour, and
- * treating it as a 30-minute sitting hands it the long-form budget and the
- * extended outline it does not want. So a figure inside the long-form range
- * counts only when the sentence frames it as a lesson — a course noun anywhere,
- * a duration word before it, or nothing but a preposition or a teaching verb
- * after it.
+ * 30-minute insulin response` is about a phenomenon that lasts half an hour. And
+ * it can name both, which is why this is per-candidate rather than per-request:
+ * in `Create a 60-minute course about the 2-hour insulin response` the course is
+ * the first figure and the phenomenon is the second, and only the surrounding
+ * words say which is which.
+ *
+ * - `course`: a course noun follows it, or a duration word precedes it.
+ * - `bare`: only a preposition or a teaching verb follows — `60 minutes on
+ *   entropy`, `60 分钟讲透镇痛药`, or the whole requirement.
+ * - `attributive`: a plain noun phrase follows, so the figure describes that
+ *   thing rather than the sitting.
  */
-function describesCourseLength(text: string, match: DurationMatch): boolean {
-  if (COURSE_NOUN.test(text)) return true;
-  if (DURATION_INTENT.test(text.slice(Math.max(0, match.end - 24), match.end))) return true;
-  return LENGTH_FOLLOWER.test(text.slice(match.end));
+function durationContext(text: string, match: DurationMatch): DurationContext {
+  if (DURATION_INTENT.test(text.slice(Math.max(0, match.start - 24), match.end))) return 'course';
+
+  const after = text.slice(match.end, match.end + 12);
+  if (COURSE_NOUN.test(after)) return 'course';
+  if (LENGTH_FOLLOWER.test(after)) return 'bare';
+  return 'attributive';
 }
 
 /**
@@ -297,6 +317,13 @@ function describesCourseLength(text: string, match: DurationMatch): boolean {
  *
  * `requestedMinutes` is `null` when the requirement names no duration; such a
  * request keeps the flat path's default rather than being guessed into an hour.
+ *
+ * The candidate is chosen by context, not by unit or by order. Hours used to win
+ * outright, so `Create a 60-minute course about the 2-hour insulin response`
+ * planned two hours; and the context test then accepted it because `course`
+ * appeared somewhere in the sentence. A figure the sentence frames as the
+ * course's length beats one it frames as a topic, and a bare duration beats an
+ * attributive one.
  */
 export function detectLongForm(requirement: string): {
   isLongForm: boolean;
@@ -305,11 +332,23 @@ export function detectLongForm(requirement: string): {
   // Normalized once, so the context checks read the same string the match was
   // taken from and its indices still line up.
   const text = normalizeDurationWords(requirement);
-  const match = matchDuration(text);
-  if (!match) return { isLongForm: false, requestedMinutes: null };
-  const requestedMinutes = match.minutes;
-  if (requestedMinutes < LONG_FORM_MIN_MINUTES) return { isLongForm: false, requestedMinutes };
-  return { isLongForm: describesCourseLength(text, match), requestedMinutes };
+  const candidates = matchDurations(text);
+  if (candidates.length === 0) return { isLongForm: false, requestedMinutes: null };
+
+  const eligible = candidates
+    .filter((candidate) => candidate.minutes >= LONG_FORM_MIN_MINUTES)
+    .map((candidate) => ({ candidate, context: durationContext(text, candidate) }));
+
+  const chosen =
+    eligible.find((entry) => entry.context === 'course') ??
+    eligible.find((entry) => entry.context === 'bare');
+
+  if (!chosen) {
+    // A duration was named, but every candidate describes something the lesson
+    // is about rather than the lesson. Report the figure, keep the flat path.
+    return { isLongForm: false, requestedMinutes: candidates[0]!.minutes };
+  }
+  return { isLongForm: true, requestedMinutes: chosen.candidate.minutes };
 }
 
 export function clampMinutes(minutes: number): number {

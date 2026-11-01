@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { auditIsClean, auditOutline, planLongFormCourse } from '@/lib/generation/long-form';
+import {
+  auditIsClean,
+  auditOutline,
+  pageCeilingFor,
+  planLongFormCourse,
+} from '@/lib/generation/long-form';
+import { normalizeSceneOutlines } from '@/lib/server/generation/outline-schema';
 import type { SceneOutline } from '@/lib/types/generation';
 
 const plan = planLongFormCourse({ minutes: 60, language: 'zh' });
@@ -247,5 +253,36 @@ describe('auditOutline', () => {
     expect(audit.summary).toContain('Arithmetic:');
     expect(audit.summary).toContain('already confirmed');
     expect(audit.summary).toContain('course level');
+  });
+});
+
+describe('pageCeilingFor', () => {
+  it('bounds a long-form outline at the page tolerance', () => {
+    // A 240-minute request plans 108 pages. A model that ignores the budget and
+    // emits one page per minute produces 240; the audit would call that a defect,
+    // but a repair may not remove more than a quarter of the pages, so nothing
+    // downstream can shrink it.
+    const fourHours = planLongFormCourse({ minutes: 240, language: 'zh' });
+    expect(fourHours.scenes.length).toBeLessThan(120);
+    expect(pageCeilingFor(fourHours)).toBe(Math.ceil(fourHours.scenes.length * 1.25));
+    expect(pageCeilingFor(plan)).toBe(Math.ceil(plan.scenes.length * 1.25));
+  });
+
+  it('refuses an outline the plan cannot account for', () => {
+    const fourHours = planLongFormCourse({ minutes: 240, language: 'zh' });
+    const onePagePerMinute = Array.from({ length: 240 }, (_, index) => ({
+      id: `scene_${index + 1}`,
+      type: 'slide',
+      title: `P${index + 1}`,
+      description: '',
+      keyPoints: ['a'],
+      order: index + 1,
+    }));
+
+    // The shared cap still accepts it, which is why the caller has to narrow it.
+    expect(normalizeSceneOutlines(onePagePerMinute).ok).toBe(true);
+    expect(
+      normalizeSceneOutlines(onePagePerMinute, { maxScenes: pageCeilingFor(fourHours) }).ok,
+    ).toBe(false);
   });
 });

@@ -44,7 +44,7 @@ export {
 export { buildLongFormBrief, buildSceneBrief, moduleAtPage, speechUnit } from './brief';
 export type { ScenePositionInput } from './brief';
 
-export { auditIsClean, auditOutline, prioritizeDefects } from './audit';
+export { auditIsClean, auditOutline, pageCeilingFor, prioritizeDefects } from './audit';
 export type { AuditCode, AuditDefect, AuditOptions, OutlineAudit } from './audit';
 
 export { buildLedgerText } from './ledger';
@@ -72,6 +72,7 @@ export {
   mergeAuditIntoCritique,
   parseCritique,
   parseRevisionPatch,
+  repairWorsens,
   serializeOutlineForCritic,
   shouldRevise,
 } from './revision';

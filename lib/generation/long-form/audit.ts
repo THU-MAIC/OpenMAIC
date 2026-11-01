@@ -77,6 +77,22 @@ const DEFAULTS = {
 };
 
 /**
+ * The most pages this plan can be built from without the outline being a
+ * different course.
+ *
+ * The audit's own tolerance, used as a hard bound at the edge of the pipeline:
+ * a 240-minute request plans 108 pages, and a model that ignores the budget and
+ * emits one page per minute produces 240. The audit reports that as a defect, but
+ * a repair may not remove more than a quarter of the pages, so nothing downstream
+ * can shrink it — and the engine then schedules content, actions and narration
+ * for all 240. Refusing it at normalization is the last point where that is still
+ * cheap.
+ */
+export function pageCeilingFor(plan: LongFormCoursePlan): number {
+  return Math.ceil(plan.scenes.length * (1 + DEFAULTS.pageTolerance));
+}
+
+/**
  * Whether a page makes the learner produce something, as the pipeline will build
  * it.
  *

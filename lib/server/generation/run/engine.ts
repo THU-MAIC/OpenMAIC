@@ -75,7 +75,12 @@ import {
 } from '@/lib/server/generation-run-hooks/runtime';
 import type { GeneratedAgentConfig, Scene, Stage } from '@/lib/types/stage';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
-import { buildLedgerText, buildSceneBrief, planForRequirement } from '@/lib/generation/long-form';
+import {
+  buildLedgerText,
+  buildSceneBrief,
+  pageCeilingFor,
+  planForRequirement,
+} from '@/lib/generation/long-form';
 
 import {
   appendRunScene,
@@ -863,7 +868,17 @@ async function executeClaimedRun(
     if (appendFailure) throw appendFailure;
     // The outline in the normal form a confirmation takes, so the outline
     // as generated is always confirmable unchanged.
-    const normalized = normalizeSceneOutlines(result.outlines);
+    //
+    // A long-form run is bounded by its own plan: 240 minutes plans 108 pages,
+    // and an outline of 240 is a model that ignored the budget. The audit would
+    // report it, but a repair may not remove more than a quarter of the pages, so
+    // by the time it is a defect nothing can shrink it — and the engine would go
+    // on to schedule three model calls for every one of those pages.
+    const longFormPlan = result.longForm ? planForRequirement(input.requirement) : null;
+    const normalized = normalizeSceneOutlines(
+      result.outlines,
+      longFormPlan ? { maxScenes: pageCeilingFor(longFormPlan) } : {},
+    );
     if (!normalized.ok) throw new Error(`The generated outline is unusable: ${normalized.message}`);
     result = { ...result, outlines: normalized.value };
     const confirmed: GenerationRunOutline = {

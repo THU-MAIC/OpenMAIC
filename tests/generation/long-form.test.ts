@@ -91,6 +91,16 @@ describe('detectRequestedMinutes', () => {
     expect(detectLongForm('a 4 hour 30 minute course').isLongForm).toBe(false);
     expect(detectRequestedMinutes('一节 5 小时 30 分钟的课')).toBeNull();
   });
+
+  it('picks the figure the sentence frames as the course', () => {
+    // Hours used to win outright, and the context test then accepted the result
+    // because `course` appeared somewhere — so the phenomenon became the length.
+    const topicalFirst = 'Create a course about the 2-hour insulin response lasting 60 minutes';
+    expect(detectLongForm(topicalFirst)).toEqual({ isLongForm: true, requestedMinutes: 60 });
+
+    const courseFirst = 'Create a 60-minute course about the 2-hour insulin response';
+    expect(detectLongForm(courseFirst)).toEqual({ isLongForm: true, requestedMinutes: 60 });
+  });
 });
 
 describe('detectLongForm', () => {

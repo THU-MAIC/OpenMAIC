@@ -29,6 +29,7 @@ import {
   mergeAuditIntoCritique,
   parseCritique,
   parseRevisionPatch,
+  repairWorsens,
   serializeOutlineForCritic,
   shouldRevise,
   type Critique,
@@ -222,8 +223,21 @@ export async function reviseLongFormOutline(input: LongFormRevisionInput): Promi
       return current;
     }
 
+    // `isSafeRevision` is structural — page count, ids, types — and says nothing
+    // about a new page that arrived without a duration or an objective, which
+    // `coerceNewScene` allows because both fields are optional. On the last round
+    // there is no next critique to catch that, so the repair is re-audited here
+    // and a repair that raises the arithmetic defect count is not adopted.
+    const after = auditOutline(input.plan, revised.outlines);
+    if (repairWorsens(audit, after)) {
+      log.warn(
+        `long-form revision: rejected the repair — arithmetic defects went from ${audit.defects.length} to ${after.defects.length}`,
+      );
+      return current;
+    }
+
     log.info(
-      `long-form revision round ${round}: adopted ${revised.outlines.length} pages (was ${current.outlines.length})`,
+      `long-form revision round ${round}: adopted ${revised.outlines.length} pages (was ${current.outlines.length}), ${audit.defects.length} → ${after.defects.length} defects`,
     );
     current = revised;
   }

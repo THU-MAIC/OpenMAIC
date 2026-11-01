@@ -211,12 +211,24 @@ function sceneOutline(value: unknown, index: number): SceneOutline {
  * The outline in its normal form, or why it cannot be one: not 1 to
  * {@link MAX_OUTLINE_SCENES} scenes, over {@link MAX_OUTLINE_JSON_BYTES},
  * or a scene without a usable id, type or order (ids and orders unique).
+ *
+ * `maxScenes` narrows the ceiling for a caller that knows how many pages this
+ * particular course should have. A long-form plan produces at most ~110 pages, so
+ * an outline of 240 is not a long course — it is a model that ignored the budget,
+ * and nothing downstream can shrink it far enough to matter.
  */
-export function normalizeSceneOutlines(value: unknown): NormalizedOutlines {
-  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_OUTLINE_SCENES) {
+export function normalizeSceneOutlines(
+  value: unknown,
+  options: { maxScenes?: number } = {},
+): NormalizedOutlines {
+  const limit = Math.min(
+    options.maxScenes !== undefined ? Math.max(1, options.maxScenes) : MAX_OUTLINE_SCENES,
+    MAX_OUTLINE_SCENES,
+  );
+  if (!Array.isArray(value) || value.length === 0 || value.length > limit) {
     return {
       ok: false,
-      message: `outlines must be an array of 1 to ${MAX_OUTLINE_SCENES} scene outlines`,
+      message: `outlines must be an array of 1 to ${limit} scene outlines`,
     };
   }
   const tooLarge = {

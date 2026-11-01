@@ -18,6 +18,7 @@ import {
   parseRevisionPatch,
   planLongFormCourse,
   prioritizeDefects,
+  repairWorsens,
   shouldRevise,
 } from '@/lib/generation/long-form';
 import type { AuditDefect } from '@/lib/generation/long-form';
@@ -627,5 +628,44 @@ describe('prioritizeDefects', () => {
       { code: 'missing-objective', pageIndex: 4, detail: 'no teachingObjective' },
     ];
     expect(prioritizeDefects(defects, 8)).toEqual(defects);
+  });
+});
+
+describe('repairWorsens', () => {
+  const plan = planLongFormCourse({ minutes: 60, language: 'zh' });
+
+  function outline(mutate: (index: number) => Partial<SceneOutline> = () => ({})): SceneOutline[] {
+    return plan.scenes.map((slot, index) => ({
+      id: `scene_${index + 1}`,
+      type: slot.role === 'check' ? ('quiz' as const) : ('slide' as const),
+      title: `P${index + 1}`,
+      description: '',
+      keyPoints: ['a'],
+      teachingObjective: 'predict',
+      estimatedDuration: slot.durationSeconds,
+      order: index + 1,
+      ...mutate(index),
+    }));
+  }
+
+  it('accepts a repair that keeps the arithmetic clean', () => {
+    const before = auditOutline(plan, outline());
+    const after = auditOutline(plan, outline());
+    expect(repairWorsens(before, after)).toBe(false);
+  });
+
+  it('rejects a repair that drops a duration or an objective', () => {
+    // A repair may add a page, and `coerceNewScene` accepts one without either
+    // field. On the last round nothing critiques it afterwards, so it is measured
+    // here instead: the outline must not leave worse than it arrived.
+    const before = auditOutline(plan, outline());
+    const after = auditOutline(
+      plan,
+      outline((index) =>
+        index === 3 ? { estimatedDuration: undefined, teachingObjective: undefined } : {},
+      ),
+    );
+    expect(after.defects.length).toBeGreaterThan(before.defects.length);
+    expect(repairWorsens(before, after)).toBe(true);
   });
 });
