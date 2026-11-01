@@ -22,7 +22,7 @@
 import type { SceneOutline } from '@/lib/types/generation';
 
 import type { AuditCode, OutlineAudit } from './audit';
-import { auditIsClean, prioritizeDefects } from './audit';
+import { auditIsClean, auditSeverity, prioritizeDefects } from './audit';
 
 /** The five things a long-form outline is reviewed on. */
 export const CRITIQUE_DIMENSIONS = [
@@ -230,7 +230,7 @@ export function shouldRevise(critique: Critique, round: number): boolean {
  * defect count is not an improvement, whatever the critic asked for.
  */
 export function repairWorsens(before: OutlineAudit, after: OutlineAudit): boolean {
-  return after.defects.length > before.defects.length;
+  return auditSeverity(after) > auditSeverity(before);
 }
 
 /** The defect list as the rewriter receives it. */

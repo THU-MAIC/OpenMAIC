@@ -31,11 +31,14 @@ import {
   auditOutline,
   applyRevisionPatch,
   buildLongFormBrief,
+  CRITIQUE_DIMENSIONS,
   critiquePasses,
   extractJsonObject,
   formatCritiqueForRevision,
   isSafeRevision,
   mergeAuditIntoCritique,
+  pageCeilingFor,
+  pageFloorFor,
   parseCritique,
   parseRevisionPatch,
   planLongFormCourse,
@@ -499,16 +502,25 @@ async function runExperiment(
     // so counting the parsed keys always returns five and C3 could never fail.
     // The question it asks is whether the model answered all five, which only
     // the raw object can answer.
+    // The five *named* dimensions, each with a number. A key count proves neither:
+    // a critic that omits `structure` and adds `overall` still returns five keys,
+    // and `parseCritique` fills the missing score with a default, so the parsed
+    // object cannot answer this either.
     const rawScores = (extractJsonObject(badRaw) as { scores?: unknown } | null)?.scores;
-    const suppliedScores =
-      rawScores && typeof rawScores === 'object' ? Object.keys(rawScores).length : 0;
+    const scoreRecord =
+      rawScores && typeof rawScores === 'object' ? (rawScores as Record<string, unknown>) : {};
+    const suppliedScores = CRITIQUE_DIMENSIONS.filter(
+      (dimension) => typeof scoreRecord[dimension] === 'number',
+    ).length;
 
     record({
       id: 'C3',
       label: '五个维度都有分数',
-      status: suppliedScores === 5 ? 'pass' : 'fail',
+      status: suppliedScores === CRITIQUE_DIMENSIONS.length ? 'pass' : 'fail',
       detail: badCritique
-        ? `原始返回 ${suppliedScores}/5 个维度 · ${Object.entries(badCritique.scores)
+        ? `原始返回 ${suppliedScores}/${CRITIQUE_DIMENSIONS.length} 个命名维度 · ${Object.entries(
+            badCritique.scores,
+          )
             .map(([key, value]) => `${key}=${value}`)
             .join(' ')}`
         : '没有分数',
@@ -705,9 +717,13 @@ async function runExperiment(
       // R1 feeds the console's readiness verdict, so a substring is not enough:
       // "I cannot produce outlines" contains `outlines`, and so does a response
       // truncated at `"outlines": [`. Parse the wrapper and run the production
-      // normalizer — the same acceptance the outline step applies.
+      // normalizer — with the plan's own bounds, which production passes too, so a
+      // one-page or 200-page answer fails here exactly as it would there.
       const parsedOutline = extractJsonObject(generated.text) as { outlines?: unknown } | null;
-      const normalized = normalizeSceneOutlines(parsedOutline?.outlines);
+      const normalized = normalizeSceneOutlines(parsedOutline?.outlines, {
+        minScenes: pageFloorFor(plan),
+        maxScenes: pageCeilingFor(plan),
+      });
       record({
         id: 'R1',
         label: '真实大纲生成',

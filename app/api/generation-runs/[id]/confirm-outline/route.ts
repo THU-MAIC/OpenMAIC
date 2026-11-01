@@ -29,6 +29,7 @@ import {
   confirmGenerationRunOutline,
   isRunId,
   RunCommandConflictError,
+  RunCommandInvalidError,
 } from '@/lib/server/generation/run/store';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
 
@@ -56,6 +57,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     } catch (error) {
       if (error instanceof ActiveRunLimitError) {
         return ownerApiError('ACTIVE_RUN_LIMIT', 429, error.message, responseHeaders);
+      }
+      if (error instanceof RunCommandInvalidError) {
+        return ownerApiError('INVALID_REQUEST', 400, error.message, responseHeaders);
       }
       if (error instanceof RunCommandConflictError) {
         return ownerApiError('RUN_STATE_CONFLICT', 409, error.message, responseHeaders);

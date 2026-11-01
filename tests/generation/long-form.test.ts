@@ -77,6 +77,15 @@ describe('detectRequestedMinutes', () => {
     expect(detectRequestedMinutes('half an hour on recursion')).toBe(30);
   });
 
+  it('reads a minute count written in English words', () => {
+    // The hour rule covered `a one-hour lecture` but the same request in minutes —
+    // `a thirty-minute course` — still found nothing.
+    expect(detectRequestedMinutes('a thirty-minute course')).toBe(30);
+    expect(detectRequestedMinutes('a ninety-minute lecture')).toBe(90);
+    expect(detectRequestedMinutes('a forty-five minute lesson')).toBe(45);
+    expect(detectLongForm('a thirty-minute course').isLongForm).toBe(true);
+  });
+
   it('keeps looking when a topical figure is out of range', () => {
     // The hours branch runs first over the whole string; stopping at the first
     // candidate threw away the hour that was actually asked for.

@@ -13,6 +13,8 @@
  * nothing anywhere would notice the course runs 48 minutes.
  */
 
+import { WIDGET_TYPES } from '@openmaic/dsl';
+
 import type { SceneOutline } from '@/lib/types/generation';
 
 import { modulePageRanges } from './brief';
@@ -103,7 +105,10 @@ export function pageCeilingFor(plan: LongFormCoursePlan): number {
  * is the only place left that can.
  */
 export function pageFloorFor(plan: LongFormCoursePlan): number {
-  return Math.max(1, Math.floor(plan.scenes.length * (1 - DEFAULTS.pageTolerance)));
+  // Rounded up, not down: 21 pages for a 29-page plan is 27.6% below it, which
+  // the audit itself calls a page-count defect. A bound that admits an outline
+  // the audit rejects is not a bound.
+  return Math.max(1, Math.ceil(plan.scenes.length * (1 - DEFAULTS.pageTolerance)));
 }
 
 /**
@@ -119,7 +124,23 @@ export function pageFloorFor(plan: LongFormCoursePlan): number {
 function isRetrievalScene(scene: SceneOutline): boolean {
   if (scene.type === 'quiz') return true;
   if (scene.type !== 'interactive') return false;
-  return Boolean(scene.interactiveConfig || (scene.widgetType && scene.widgetOutline));
+
+  // The config has to be one the normalizer will keep. `interactiveConfig:
+  // "simulation"` is truthy, and so is an unknown `widgetType` with an object
+  // beside it; both are dropped before content generation, and
+  // `applyOutlineFallbacks` then turns the bare page into a slide. Counting either
+  // as the module's retrieval beat reports a check that never ships.
+  const config = scene.interactiveConfig;
+  if (typeof config === 'object' && config !== null && !Array.isArray(config)) return true;
+
+  const widget = scene.widgetOutline;
+  return (
+    typeof scene.widgetType === 'string' &&
+    (WIDGET_TYPES as readonly string[]).includes(scene.widgetType) &&
+    typeof widget === 'object' &&
+    widget !== null &&
+    !Array.isArray(widget)
+  );
 }
 
 /**
@@ -323,6 +344,29 @@ function formatAudit(
 /** True when the outline has no arithmetic defect worth a repair round. */
 export function auditIsClean(audit: OutlineAudit): boolean {
   return audit.defects.length === 0;
+}
+
+/** What a defect of each kind costs. Structural findings outweigh per-page ones. */
+const CODE_WEIGHT: Readonly<Record<AuditCode, number>> = {
+  'page-count': 7,
+  'duration-drift': 6,
+  'missing-check': 5,
+  'missing-decision': 4,
+  'missing-objective': 3,
+  'missing-duration': 2,
+  'page-duration': 1,
+};
+
+/**
+ * One number for how bad an outline's arithmetic is.
+ *
+ * Counting defects is not enough to compare two drafts. A repair that writes a
+ * page's missing objective (3) while turning a module-end quiz into a slide (5)
+ * leaves the count unchanged and the course worse. Weighting by kind makes that
+ * visible, and it is what decides whether a repair is adopted.
+ */
+export function auditSeverity(audit: OutlineAudit): number {
+  return audit.defects.reduce((total, defect) => total + CODE_WEIGHT[defect.code], 0);
 }
 
 /**

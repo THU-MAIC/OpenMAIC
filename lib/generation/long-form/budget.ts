@@ -157,7 +157,35 @@ const EN_NUMERALS: Readonly<Record<string, number>> = {
   ten: 10,
   eleven: 11,
   twelve: 12,
+  thirteen: 13,
+  fourteen: 14,
+  fifteen: 15,
+  sixteen: 16,
+  seventeen: 17,
+  eighteen: 18,
+  nineteen: 19,
+  twenty: 20,
+  thirty: 30,
+  forty: 40,
+  fifty: 50,
+  sixty: 60,
+  seventy: 70,
+  eighty: 80,
+  ninety: 90,
 };
+
+/** `thirty`, `thirty-five`, `forty five` — the tens a minute count is written with. */
+const EN_TENS =
+  /^(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:[- ](one|two|three|four|five|six|seven|eight|nine))?$/i;
+
+function englishNumeral(words: string): number | null {
+  const lower = words.trim().toLowerCase();
+  const tens = EN_TENS.exec(lower);
+  if (tens) {
+    return (EN_NUMERALS[tens[1]!.toLowerCase()] ?? 0) + (tens[2] ? (EN_NUMERALS[tens[2]] ?? 0) : 0);
+  }
+  return EN_NUMERALS[lower] ?? null;
+}
 
 /**
  * 一 to 九, 十, 十五, 二十, 四十五 — the counts a lesson length is written with.
@@ -209,8 +237,14 @@ function normalizeDurationWords(text: string): string {
       .replace(/half\s*(?:an?\s*)?[- ]?hours?/gi, '0.5 hour')
       .replace(/\ban?\s+hours?\b/gi, '1 hour')
       .replace(
-        /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)[- ]hours?\b/gi,
-        (_match, word: string) => `${EN_NUMERALS[word.toLowerCase()] ?? 1} hours`,
+        /\b((?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen)[- ]hours?\b/gi,
+        (_match, words: string) => `${englishNumeral(words) ?? 1} hours`,
+      )
+      // Minutes too: `a thirty-minute course` and `a ninety-minute lecture` are
+      // the same ordinary request as their digit forms.
+      .replace(
+        /\b((?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen)[- ]minutes?\b/gi,
+        (_match, words: string) => `${englishNumeral(words) ?? 1} minutes`,
       )
   );
 }

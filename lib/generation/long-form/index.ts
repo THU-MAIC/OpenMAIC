@@ -47,6 +47,7 @@ export type { ScenePositionInput } from './brief';
 export {
   auditIsClean,
   auditOutline,
+  auditSeverity,
   pageCeilingFor,
   pageFloorFor,
   prioritizeDefects,

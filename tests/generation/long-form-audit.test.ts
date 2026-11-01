@@ -294,7 +294,7 @@ describe('pageFloorFor', () => {
     // cannot rescue it: turning one page into two exceeds MAX_REVISION_DRIFT, so
     // the repair is rejected as unsafe. The engine would then schedule a one-page
     // course for an explicit hour.
-    const onePage = [
+    const onePage: SceneOutline[] = [
       {
         id: 'scene_1',
         type: 'slide',
@@ -305,8 +305,62 @@ describe('pageFloorFor', () => {
       },
     ];
 
-    expect(pageFloorFor(plan)).toBe(Math.floor(plan.scenes.length * 0.75));
+    // Rounded up, so the floor and the audit agree: 21 pages for a 29-page plan
+    // is 27.6% below it, which the audit calls a page-count defect — a bound that
+    // admits an outline the audit rejects is not a bound.
+    expect(pageFloorFor(plan)).toBe(Math.ceil(plan.scenes.length * 0.75));
     expect(normalizeSceneOutlines(onePage).ok).toBe(true);
     expect(normalizeSceneOutlines(onePage, { minScenes: pageFloorFor(plan) }).ok).toBe(false);
+
+    const atFloor = Array.from({ length: pageFloorFor(plan) }, (_, index) => ({
+      ...onePage[0]!,
+      id: `scene_${index + 1}`,
+      order: index + 1,
+    }));
+    expect(auditOutline(plan, atFloor).defects.some((defect) => defect.code === 'page-count')).toBe(
+      false,
+    );
+  });
+});
+
+describe('retrieval config validity', () => {
+  it('does not count an interactive page whose config the normalizer will drop', () => {
+    // `interactiveConfig: "simulation"` is truthy and so is an unknown widgetType
+    // beside an object, but both are dropped before content generation and
+    // `applyOutlineFallbacks` turns the bare page into a slide.
+    const moduleWithCheck = plan.modules.find((module) => module.endsWithCheck)!;
+    const lastPage = plan.scenes
+      .filter((slot) => slot.moduleIndex === moduleWithCheck.index)
+      .pop()!;
+
+    for (const bogus of [
+      { type: 'interactive' as const, interactiveConfig: 'simulation' },
+      { type: 'interactive' as const, widgetType: 'not-a-widget' as never, widgetOutline: {} },
+    ]) {
+      const outline = goodOutline().map((scene, index) =>
+        index + 1 === lastPage.index ? ({ ...scene, ...bogus } as SceneOutline) : scene,
+      );
+      const audit = auditOutline(plan, outline);
+      expect(audit.defects.some((defect) => defect.code === 'missing-check')).toBe(true);
+    }
+  });
+
+  it('counts one whose config survives', () => {
+    const moduleWithCheck = plan.modules.find((module) => module.endsWithCheck)!;
+    const lastPage = plan.scenes
+      .filter((slot) => slot.moduleIndex === moduleWithCheck.index)
+      .pop()!;
+    const outline = goodOutline().map((scene, index) =>
+      index + 1 === lastPage.index
+        ? {
+            ...scene,
+            type: 'interactive' as const,
+            widgetType: 'game' as never,
+            widgetOutline: { gameType: 'puzzle' } as never,
+          }
+        : scene,
+    );
+    const audit = auditOutline(plan, outline);
+    expect(audit.defects.some((defect) => defect.code === 'missing-check')).toBe(false);
   });
 });

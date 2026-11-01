@@ -7,6 +7,7 @@ import {
   REVISE_MIN_MS,
   applyRevisionPatch,
   auditOutline,
+  auditSeverity,
   critiquePasses,
   defectPages,
   extractJsonObject,
@@ -667,5 +668,30 @@ describe('repairWorsens', () => {
     );
     expect(after.defects.length).toBeGreaterThan(before.defects.length);
     expect(repairWorsens(before, after)).toBe(true);
+  });
+});
+
+describe('auditSeverity', () => {
+  it('weighs a structural defect above a per-page one', () => {
+    // The comparison that decides whether a repair is adopted cannot be a count:
+    // a repair that writes one page's objective while turning a module-end quiz
+    // into a slide leaves the count unchanged and the course worse.
+    const pageLevel = {
+      defects: [{ code: 'missing-objective' as const, pageIndex: 4, detail: 'no objective' }],
+      totalSeconds: 3600,
+      targetSeconds: 3600,
+      driftPct: 0,
+      pages: 29,
+      summary: '',
+    };
+    const structural = {
+      ...pageLevel,
+      defects: [{ code: 'missing-check' as const, pageIndex: 12, detail: 'no retrieval' }],
+    };
+
+    expect(pageLevel.defects.length).toBe(structural.defects.length);
+    expect(auditSeverity(structural)).toBeGreaterThan(auditSeverity(pageLevel));
+    expect(repairWorsens(pageLevel, structural)).toBe(true);
+    expect(repairWorsens(structural, pageLevel)).toBe(false);
   });
 });

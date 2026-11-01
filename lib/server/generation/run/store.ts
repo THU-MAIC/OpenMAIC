@@ -22,6 +22,7 @@ import type { Queryable } from '@openmaic/storage/document/pg';
 import { encodeJson } from '@openmaic/storage/pg-json';
 import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
 
+import { pageCeilingFor, pageFloorFor, planForRequirement } from '@/lib/generation/long-form';
 import { ensureGenerationRunSchema } from '@/lib/persistence/generation-runs';
 import { startOwnerMaterialExtractions } from '@/lib/persistence/owner-materials';
 import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
@@ -85,6 +86,14 @@ export class ActiveRunLimitError extends Error {
         'one to finish or pause, or delete its course, and try again.',
     );
     this.name = 'ActiveRunLimitError';
+  }
+}
+
+/** A command whose payload the run cannot accept at all. The message is caller-facing. */
+export class RunCommandInvalidError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RunCommandInvalidError';
   }
 }
 
@@ -1428,6 +1437,25 @@ export async function confirmGenerationRunOutline(
       // The run is confirmable: whether the owner may run one more decides.
       if (refusal) throw refusal;
       const edited = command.outlines !== undefined;
+      // A long-form course has a shape the plan owns, and an edit has to keep it.
+      // The generated outline is bounded when it arrives, but this is the other
+      // way an outline gets here: one page would generate a one-page course, and
+      // 240 would schedule three model calls for each of them.
+      if (edited && run.outline.longForm) {
+        const requirement = typeof run.requirement === 'string' ? run.requirement : '';
+        const plan = requirement ? planForRequirement(requirement) : null;
+        if (plan) {
+          const count = command.outlines!.length;
+          const floor = pageFloorFor(plan);
+          const ceiling = pageCeilingFor(plan);
+          if (count < floor || count > ceiling) {
+            throw new RunCommandInvalidError(
+              `This course is planned for ${plan.scenes.length} pages. An edit of ${count} is ` +
+                `outside the ${floor}-${ceiling} the plan allows.`,
+            );
+          }
+        }
+      }
       const outline: GenerationRunOutline = edited
         ? { ...run.outline, outlines: command.outlines! }
         : run.outline;

@@ -29,6 +29,7 @@ import {
   mergeAuditIntoCritique,
   parseCritique,
   parseRevisionPatch,
+  auditSeverity,
   repairWorsens,
   serializeOutlineForCritic,
   shouldRevise,
@@ -227,17 +228,17 @@ export async function reviseLongFormOutline(input: LongFormRevisionInput): Promi
     // about a new page that arrived without a duration or an objective, which
     // `coerceNewScene` allows because both fields are optional. On the last round
     // there is no next critique to catch that, so the repair is re-audited here
-    // and a repair that raises the arithmetic defect count is not adopted.
+    // and a repair that leaves the arithmetic worse is not adopted.
     const after = auditOutline(input.plan, revised.outlines);
     if (repairWorsens(audit, after)) {
       log.warn(
-        `long-form revision: rejected the repair — arithmetic defects went from ${audit.defects.length} to ${after.defects.length}`,
+        `long-form revision: rejected the repair — arithmetic severity went from ${auditSeverity(audit)} to ${auditSeverity(after)}`,
       );
       return current;
     }
 
     log.info(
-      `long-form revision round ${round}: adopted ${revised.outlines.length} pages (was ${current.outlines.length}), ${audit.defects.length} → ${after.defects.length} defects`,
+      `long-form revision round ${round}: adopted ${revised.outlines.length} pages (was ${current.outlines.length}), severity ${auditSeverity(audit)} → ${auditSeverity(after)}`,
     );
     current = revised;
   }
