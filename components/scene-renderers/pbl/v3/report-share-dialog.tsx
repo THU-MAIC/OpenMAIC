@@ -110,7 +110,7 @@ export function ReportShareDialog({
           </div>
         </div>
         <div
-          className="flex min-h-32 justify-center rounded-xl bg-muted/40 p-2"
+          className="flex min-h-32 shrink-0 justify-center rounded-xl bg-muted/40 p-2"
           aria-busy={!ready && failure !== key}
         >
           {ready ? (
