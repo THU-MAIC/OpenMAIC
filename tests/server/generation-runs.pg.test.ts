@@ -397,19 +397,24 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     });
     expect(await claim(run.id)).toBeNull();
 
-    // The outline step got the browser's requirements, with the research decision.
+    // The outline step got the browser's requirements, with the research
+    // decision, and the wall-clock instant its budget runs out — a long-form
+    // revision loop declines a round it cannot finish inside that.
     expect(calls.research).toEqual([{ query: 'Teach photosynthesis' }]);
-    expect(calls.outline).toEqual([
-      {
-        requirements: {
-          requirement: 'Teach photosynthesis',
-          userNickname: 'Sam',
-          userBio: 'Grade 8',
-          webSearch: true,
-        },
-        researchContext: 'research context',
-      },
+    const [outlineCall] = calls.outline as Array<Record<string, unknown>>;
+    expect(outlineCall!.requirements).toEqual({
+      requirement: 'Teach photosynthesis',
+      userNickname: 'Sam',
+      userBio: 'Grade 8',
+      webSearch: true,
+    });
+    expect(outlineCall!.researchContext).toBe('research context');
+    expect(Object.keys(outlineCall!).sort()).toEqual([
+      'deadlineAt',
+      'researchContext',
+      'requirements',
     ]);
+    expect(outlineCall!.deadlineAt).toBeGreaterThan(Date.now());
 
     // Outline items streamed while the step ran, a retry reset them, and the
     // outline was ready only after them.

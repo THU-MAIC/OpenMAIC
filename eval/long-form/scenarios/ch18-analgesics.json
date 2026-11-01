@@ -571,95 +571,61 @@
       "section": "概述",
       "minutes": 4,
       "pages": 2,
-      "pageIds": [
-        "ch18-02",
-        "ch18-03"
-      ]
+      "pageIds": ["ch18-02", "ch18-03"]
     },
     {
       "section": "来源",
       "minutes": 2,
       "pages": 1,
-      "pageIds": [
-        "ch18-05"
-      ]
+      "pageIds": ["ch18-05"]
     },
     {
       "section": "构效",
       "minutes": 5,
       "pages": 2,
-      "pageIds": [
-        "ch18-06",
-        "ch18-07"
-      ]
+      "pageIds": ["ch18-06", "ch18-07"]
     },
     {
       "section": "体内过程",
       "minutes": 2,
       "pages": 1,
-      "pageIds": [
-        "ch18-08"
-      ]
+      "pageIds": ["ch18-08"]
     },
     {
       "section": "药理作用",
       "minutes": 2,
       "pages": 1,
-      "pageIds": [
-        "ch18-09"
-      ]
+      "pageIds": ["ch18-09"]
     },
     {
       "section": "机制",
       "minutes": 9,
       "pages": 4,
-      "pageIds": [
-        "ch18-10",
-        "ch18-11",
-        "ch18-12",
-        "ch18-13"
-      ]
+      "pageIds": ["ch18-10", "ch18-11", "ch18-12", "ch18-13"]
     },
     {
       "section": "药理作用",
       "minutes": 8,
       "pages": 3,
-      "pageIds": [
-        "ch18-14",
-        "ch18-15",
-        "ch18-16"
-      ]
+      "pageIds": ["ch18-14", "ch18-15", "ch18-16"]
     },
     {
       "section": "临床应用",
       "minutes": 5,
       "pages": 2,
-      "pageIds": [
-        "ch18-17",
-        "ch18-18"
-      ]
+      "pageIds": ["ch18-17", "ch18-18"]
     },
     {
       "section": "安全",
       "minutes": 8,
       "pages": 3,
-      "pageIds": [
-        "ch18-19",
-        "ch18-20",
-        "ch18-21"
-      ]
+      "pageIds": ["ch18-19", "ch18-20", "ch18-21"]
     },
     {
       "section": "药物各论",
       "minutes": 12,
       "pages": 5,
-      "pageIds": [
-        "ch18-23",
-        "ch18-24",
-        "ch18-25",
-        "ch18-26",
-        "ch18-27"
-      ]
+      "pageIds": ["ch18-23", "ch18-24", "ch18-25", "ch18-26", "ch18-27"]
     }
   ]
 }
