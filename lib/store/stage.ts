@@ -262,6 +262,14 @@ export function discardPendingStageChanges(stageId: string): void {
 }
 
 /**
+ * Whether this browser holds a stage-level edit (the roster included) not yet
+ * written, queued or in flight: a server read must not overwrite it.
+ */
+export function hasUnsavedStageEdit(stageId: string): boolean {
+  return snapshotPendingStageChangesForDeletion(stageId).some((change) => change.kind === 'stage');
+}
+
+/**
  * Snapshot the logical changes a deletion is about to throw away: everything
  * still queued for the stage plus the in-flight flush round's dirt (whose
  * write the deletion fence will drop). Taken by the deletion path BEFORE the
@@ -490,7 +498,15 @@ interface StageState {
   setChats: (chats: ChatSession[]) => void;
   setMode: (mode: StageMode) => void;
   setToolbarState: (state: ToolbarState) => void;
-  setStageAgents: (configs: GeneratedAgentConfig[]) => void;
+  /**
+   * Replace the roster. `fromServer`: the server already holds it (the
+   * freshness sync read it back), so the classroom follows it without the
+   * write a local edit makes; `agentIds` then comes along with it.
+   */
+  setStageAgents: (
+    configs: GeneratedAgentConfig[],
+    options?: { readonly fromServer?: boolean; readonly agentIds?: string[] },
+  ) => void;
   setOutlines: (outlines: SceneOutline[]) => void;
   setGenerationComplete: (complete: boolean) => void;
   /**
@@ -848,14 +864,21 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
 
   setToolbarState: (toolbarState) => set({ toolbarState }),
 
-  setStageAgents: (configs) => {
+  setStageAgents: (configs, options) => {
     const stage = get().stage;
     if (!stage) return;
-    set({ stage: { ...stage, generatedAgentConfigs: configs } });
+    set({
+      stage: {
+        ...stage,
+        generatedAgentConfigs: configs,
+        ...(options?.agentIds ? { agentIds: options.agentIds } : {}),
+      },
+    });
     // The roster is part of the stage document — persistence rides the shared
     // pending-change scheduler like every other stage mutation. The registry
-    // and selection updates below are synchronous in-memory mirrors only.
-    markPendingChanges(stage.id, { kind: 'stage' });
+    // and selection updates below are synchronous in-memory mirrors only. A
+    // roster read back from the server is already stored: no write.
+    if (!options?.fromServer) markPendingChanges(stage.id, { kind: 'stage' });
     applyGeneratedAgentsToRegistry(stage.id, configs);
     // Selection mirror honors provenance (same semantics as
     // restoreAgentSelection): a stage-derived selection tracks the roster

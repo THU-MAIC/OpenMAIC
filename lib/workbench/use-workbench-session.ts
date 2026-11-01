@@ -22,7 +22,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
 import { HOST_AGENT_LIFECYCLE as LIFECYCLE } from '@/lib/agent-runtime/lifecycle';
 import { getDocumentStore } from '@/lib/document-store/store';
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
-import { useStageStore } from '@/lib/store/stage';
+import { hasUnsavedStageEdit, useStageStore } from '@/lib/store/stage';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Scene, Stage } from '@/lib/types/stage';
 import {
@@ -36,6 +36,8 @@ import {
   diffStageManifest,
   fetchScenesByIds,
   fetchStageManifest,
+  fetchStageRoster,
+  stageRosterChanged,
   mergeFetchedScenes,
   type StageManifest,
 } from '@/lib/workbench/stage-freshness';
@@ -511,6 +513,30 @@ export function useStageFreshnessSync(
           recordWriteBaseline(manifest);
         }
         return;
+      }
+
+      // The stage itself moved: a roster write (`set_roster`, or an edit in
+      // another tab) lands only there, and the classroom on screen must follow
+      // it -- names, avatars, voices -- without a reload. Read before the
+      // baseline advances, so a failed read is tried again, never skipped.
+      if (manifest.rev !== renderedManifest.current.rev) {
+        const roster = await fetchStageRoster(requestedStage);
+        if (!isCurrent()) return;
+        if (!roster) throw new Error(`stage roster unavailable for ${requestedStage}`);
+        const store = useStageStore.getState();
+        if (
+          store.stage?.id === requestedStage &&
+          roster.generatedAgentConfigs &&
+          stageRosterChanged(store.stage, roster) &&
+          // A roster edit of this browser's own, not yet saved, wins: its
+          // save is judged against the server by the write-side veto.
+          !hasUnsavedStageEdit(requestedStage)
+        ) {
+          store.setStageAgents([...roster.generatedAgentConfigs], {
+            fromServer: true,
+            ...(roster.agentIds ? { agentIds: [...roster.agentIds] } : {}),
+          });
+        }
       }
 
       const diff = diffStageManifest(renderedManifest.current, manifest);
