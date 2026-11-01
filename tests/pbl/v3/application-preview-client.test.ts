@@ -376,6 +376,133 @@ it('expires access even while collapsed and renews only through an explicit open
   }
 });
 
+it.each(['before-work', 'during-work'])(
+  'requires explicit reopen when an open preview expires %s',
+  async (timing) => {
+    vi.useFakeTimers();
+    mocks.request.mockResolvedValueOnce({
+      ...running,
+      preview: { ...running.preview, expiresAt: Date.now() + 1000 },
+    });
+    const f = await fixture();
+    try {
+      await f.click();
+      if (timing === 'before-work') await act(async () => vi.advanceTimersByTimeAsync(1001));
+      await act(async () =>
+        f.root.render(createElement(Harness, { current: { ...view, busy: true } })),
+      );
+      if (timing === 'during-work') await act(async () => vi.advanceTimersByTimeAsync(1001));
+      await act(async () =>
+        f.root.render(createElement(Harness, { current: { ...view, revision: 1 } })),
+      );
+      expect(mocks.request).toHaveBeenCalledTimes(1);
+      expect(f.host.querySelector('iframe')?.hidden).toBe(true);
+      expect(f.host.textContent).toContain('pblV3.application.expired');
+      if (timing === 'before-work') {
+        await f.click();
+        mocks.request.mockResolvedValueOnce({ state: 'running', observedAt: '' });
+      }
+      mocks.request.mockResolvedValueOnce({
+        ...running,
+        preview: { ...running.preview, expiresAt: Date.now() + 60_000 },
+      });
+      const reopen = [...f.host.querySelectorAll('button')].find(
+        (button) => button.textContent === 'pblV3.application.reopen',
+      )!;
+      if (timing === 'before-work') await f.click();
+      else await act(async () => reopen.click());
+      expect(mocks.request.mock.calls.map((call) => call[1].action)).toEqual(
+        timing === 'before-work' ? ['open', 'status', 'open'] : ['open', 'open'],
+      );
+      expect(f.host.querySelector('iframe')?.hidden).toBe(false);
+    } finally {
+      await f.cleanup();
+    }
+  },
+);
+
+it.each(['running', 'stopped', 'source-changed'])(
+  'does not mint a ticket if the grant expires while checking a %s application',
+  async (state) => {
+    vi.useFakeTimers();
+    let finish!: (observation: ApplicationObservation) => void;
+    mocks.request
+      .mockResolvedValueOnce({
+        ...running,
+        preview: { ...running.preview, expiresAt: Date.now() + 1000 },
+      })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+    const f = await fixture();
+    try {
+      await f.click();
+      await act(async () =>
+        f.root.render(createElement(Harness, { current: { ...view, revision: 1 } })),
+      );
+      await act(async () => vi.advanceTimersByTimeAsync(1001));
+      await act(async () =>
+        finish({
+          observedAt: '',
+          state: state === 'stopped' ? 'stopped' : 'running',
+          sourceChanged: state === 'source-changed',
+        }),
+      );
+      expect(mocks.request.mock.calls.map((call) => call[1].action)).toEqual(['open', 'status']);
+      expect(f.host.querySelector('iframe')?.hidden).toBe(true);
+      expect(f.host.textContent).toContain('pblV3.application.expired');
+    } finally {
+      await f.cleanup();
+    }
+  },
+);
+
+it('retains a late accepted renewal while automatic status inspection is pending', async () => {
+  vi.useFakeTimers();
+  let finish!: (observation: ApplicationObservation) => void;
+  mocks.request
+    .mockResolvedValueOnce({
+      ...running,
+      preview: { ...running.preview, expiresAt: Date.now() + 1000 },
+    })
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+  const f = await fixture();
+  try {
+    await f.click();
+    const frame = f.host.querySelector('iframe')!;
+    await act(async () =>
+      f.root.render(createElement(Harness, { current: { ...view, revision: 1 } })),
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(1001));
+    await act(async () =>
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          source: frame.contentWindow,
+          origin: 'https://isolated.example',
+          data: { type: 'openmaic-preview-activity', expiresAt: Date.now() + 300_000 },
+        }),
+      ),
+    );
+    await act(async () => finish({ state: 'running', observedAt: '', sourceChanged: false }));
+    expect(mocks.request.mock.calls.map((call) => call[1].action)).toEqual(['open', 'status']);
+    expect(f.host.querySelector('iframe')).toBe(frame);
+    expect(frame.hidden).toBe(false);
+    expect(frame.hasAttribute('inert')).toBe(false);
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    expect(frame.hidden).toBe(false);
+  } finally {
+    await f.cleanup();
+  }
+});
+
 it('hides the old application as soon as the study changes environment, before workbench refresh arrives', async () => {
   mocks.request.mockResolvedValue(running);
   const f = await fixture();

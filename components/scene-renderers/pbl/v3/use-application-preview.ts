@@ -32,6 +32,9 @@ export function useApplicationPreview(
   const [refreshNeeded, setRefreshNeeded] = useState(false);
   const [frameVersion, setFrameVersion] = useState(0);
   const observedRevision = useRef<number | null>(null);
+  const previewDeadline = useRef<number | undefined>(undefined);
+  previewDeadline.current = observation?.preview?.expiresAt;
+  const hasPreview = !!observation?.preview;
   // A timeout from an older grant cannot expire a later accepted renewal.
   const expired = !!observation?.preview && expiredAt === observation.preview.expiresAt;
   const trigger = useRef<HTMLButtonElement | null>(null);
@@ -83,13 +86,13 @@ export function useApplicationPreview(
     } else setRefreshNeeded(true);
   }, [disabled, unavailable]);
   useEffect(() => {
-    if (!observation?.preview || view?.revision === observedRevision.current) return;
+    if (!hasPreview || view?.revision === observedRevision.current) return;
     ++attempt.current;
     controller.current?.abort();
     setPending(false);
     setError('');
     setRefreshNeeded(true);
-  }, [view?.revision, observation?.preview]);
+  }, [view?.revision, hasPreview]);
   useEffect(() => {
     if (!observation?.preview) return;
     const deadline = observation.preview.expiresAt;
@@ -98,8 +101,13 @@ export function useApplicationPreview(
   }, [observation]);
 
   const load = useCallback(
-    async (action: 'open' | 'restart', refresh = false) => {
+    async (action: 'open' | 'restart', recovery?: 'automatic' | 'explicit') => {
       if (disabled || !view || !workbench) return;
+      const expiredRecovery = () =>
+        recovery === 'automatic' &&
+        previewDeadline.current !== undefined &&
+        previewDeadline.current <= Date.now();
+      if (expiredRecovery()) return;
       const serial = ++attempt.current;
       controller.current?.abort();
       const abort = new AbortController();
@@ -117,20 +125,27 @@ export function useApplicationPreview(
         action,
       };
       try {
-        if (refresh && observation?.preview) {
+        if (recovery && observation?.preview) {
           const status = await pblRequest<ApplicationObservation>(
             '/api/pbl/v3/application',
             { ...request, action: 'status' },
             abort.signal,
           );
           if (serial !== attempt.current) return;
+          // Status may outlive the grant. Only explicit learner input can mint
+          // another ticket after expiry; a late accepted renewal remains valid.
+          if (expiredRecovery()) {
+            setExpiredAt(previewDeadline.current!);
+            setRefreshNeeded(true);
+            return;
+          }
           if (
             status.state === 'running' &&
             !status.sourceChanged &&
-            observation.preview.expiresAt > Date.now()
+            previewDeadline.current! > Date.now()
           ) {
             observedRevision.current = view.revision;
-            setObservation({ ...status, preview: observation.preview });
+            setObservation((current) => ({ ...status, preview: current?.preview }));
             return;
           }
           if (status.state === 'running' && status.sourceChanged) request.action = 'restart';
@@ -164,8 +179,16 @@ export function useApplicationPreview(
     [disabled, view, workbench, observation, t],
   );
   useEffect(() => {
-    if (open && refreshNeeded && !disabled && !pending) void load('open', true);
-  }, [open, refreshNeeded, disabled, pending, load]);
+    if (
+      open &&
+      refreshNeeded &&
+      !disabled &&
+      !pending &&
+      !expired &&
+      (!observation?.preview || observation.preview.expiresAt > Date.now())
+    )
+      void load('open', 'automatic');
+  }, [open, refreshNeeded, disabled, pending, expired, observation, load]);
   const renew = useCallback((expiresAt: number) => {
     if (!Number.isFinite(expiresAt) || expiresAt <= Date.now() || expiresAt > Date.now() + 300_000)
       return;
@@ -236,7 +259,7 @@ export function useApplicationPreview(
         observation.preview.expiresAt <= Date.now() ||
         refreshNeeded
       )
-        void load('open', refreshNeeded);
+        void load('open', refreshNeeded ? 'explicit' : undefined);
     }
   }
   return {
