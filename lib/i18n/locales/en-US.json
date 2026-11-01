@@ -2957,6 +2957,31 @@
       "collapse": "Collapse application",
       "help": "Application help",
       "ready": "Run the application to try your saved code."
+    },
+    "share": {
+      "open": "Create sharing image",
+      "title": "Share your achievement",
+      "description": "Your learning highlights, ready to save as an image.",
+      "orientation": "Image layout",
+      "landscape": "Landscape",
+      "portrait": "Portrait",
+      "theme": "Image appearance",
+      "light": "Light",
+      "dark": "Dark",
+      "preview": "Your OpenMAIC achievement image",
+      "save": "Save image",
+      "saveHint": "On mobile, you can also press and hold the image to see available saving options.",
+      "imageFailed": "The image could not be prepared. Please retry.",
+      "rendering": "Preparing image…",
+      "eyebrow": "MY VIBE CODING JOURNEY",
+      "achievement": "My project achievement",
+      "waiting": "Putting your learning highlights together…",
+      "factSummary": "From an idea to something you can use.",
+      "invite": "Your turn. Try Vibe Coding!",
+      "tagline": "No coding experience needed to get started.",
+      "highlights": "What your project records show",
+      "testsPassed": "Tests",
+      "linkPlaceholder": "Intro course · placeholder link, replace before launch"
     }
   }
 }

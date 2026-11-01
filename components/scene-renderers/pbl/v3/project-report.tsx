@@ -14,6 +14,7 @@ import {
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { reportConversationMessages, type LearningReport } from '@/lib/pbl/v3/report';
 import { TextBlock } from '@/components/workbench/chat/text-block';
+import { ReportShareDialog } from './report-share-dialog';
 import { readReportResponse, ReportResponseError } from '@/lib/pbl/v3/report-client';
 
 /** Report reads never prepare an environment; the same surface opens from hero or workbench. */
@@ -31,6 +32,7 @@ export function ProjectReport({
   onWorkbench: () => void;
 }) {
   const { t } = useI18n();
+  const [shareOpen, setShareOpen] = useState(false);
   const [report, setReport] = useState<LearningReport | null>(null);
   const [pending, setPending] = useState(false),
     [error, setError] = useState('');
@@ -74,6 +76,7 @@ export function ProjectReport({
     const abort = new AbortController();
     controller.current = abort;
     setReport(null);
+    setShareOpen(false);
     // Show facts immediately; a deliberate report opening may generate its saved analysis.
     void load('GET', abort.signal).then((data) => {
       if (!abort.signal.aborted && data?.analysis?.status === 'not_generated')
@@ -133,6 +136,7 @@ export function ProjectReport({
       data-testid="pbl-project-report"
       className="absolute inset-0 z-40 overflow-auto bg-background text-foreground outline-none"
       onKeyDown={(event) => {
+        if (shareOpen) return;
         if (event.key === 'Escape') {
           event.stopPropagation();
           close.current();
@@ -158,22 +162,30 @@ export function ProjectReport({
         }
       }}
     >
-      <nav className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b bg-background/95 py-3 pl-4 pr-16 backdrop-blur sm:pl-8 sm:pr-20">
-        <button className={button} onClick={onWorkbench}>
+      <nav className="sticky top-0 z-10 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b bg-background/95 py-3 pl-4 pr-16 backdrop-blur sm:pl-8 sm:pr-20">
+        <button className={`${button} min-w-0 justify-self-start`} onClick={onWorkbench}>
           <ArrowLeft size={15} />
           {t('pblV3.reportCopy.viewWorkbench')}
         </button>
-        <span className="hidden text-xs font-medium text-muted-foreground sm:block">
-          {t('pblV3.report')}
-        </span>
+        {report && (
+          <button
+            className="inline-flex items-center justify-center gap-2 justify-self-center rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm hover:opacity-90"
+            onClick={() => setShareOpen(true)}
+          >
+            {t('pblV3.share.open')}
+          </button>
+        )}
         <button
-          className="rounded-lg p-2 hover:bg-muted"
+          className="col-start-3 justify-self-end rounded-lg p-2 hover:bg-muted"
           aria-label={t('pblV3.reportCopy.close')}
           onClick={onClose}
         >
           <X size={18} />
         </button>
       </nav>
+      {shareOpen && report && (
+        <ReportShareDialog key={studyId} report={report} onClose={() => setShareOpen(false)} />
+      )}
       <div className="mx-auto max-w-6xl space-y-9 px-4 py-6 pb-12 sm:px-8 sm:py-9">
         <header className="relative isolate overflow-hidden rounded-3xl border border-violet-400/20 bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 px-6 py-8 text-white sm:px-9 sm:py-10">
           <div

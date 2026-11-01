@@ -2957,6 +2957,31 @@
       "collapse": "收起应用",
       "help": "应用说明",
       "ready": "点击重新运行，试试已保存的代码。"
+    },
+    "share": {
+      "open": "生成分享图片",
+      "title": "分享我的学习成果",
+      "description": "把这次实践的成果与亮点，保存成一张图片。",
+      "orientation": "图片版式",
+      "landscape": "横版",
+      "portrait": "竖版",
+      "theme": "图片配色",
+      "light": "浅色",
+      "dark": "深色",
+      "preview": "我的 OpenMAIC 学习成果图片",
+      "save": "保存图片",
+      "saveHint": "手机上也可长按图片，使用浏览器提供的保存选项。",
+      "imageFailed": "图片暂时未能生成，请重试。",
+      "rendering": "正在准备图片…",
+      "eyebrow": "我的 VIBE CODING 实践",
+      "achievement": "我的项目成果",
+      "waiting": "正在整理你的学习亮点…",
+      "factSummary": "从一个想法，到一件真正能用的作品。",
+      "invite": "你也来试试，一起练习 Vibe Coding！",
+      "tagline": "没有编程基础，也可以跟着开始",
+      "highlights": "从项目记录里读到的",
+      "testsPassed": "行为测试已通过",
+      "linkPlaceholder": "前置课入口 · 示例链接，上线前替换"
     }
   }
 }

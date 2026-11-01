@@ -2957,6 +2957,31 @@
       "collapse": "طي التطبيق",
       "help": "مساعدة التطبيق",
       "ready": "شغّل التطبيق لتجربة الشيفرة المحفوظة."
+    },
+    "share": {
+      "open": "إنشاء صورة للمشاركة",
+      "title": "مشاركة إنجازي",
+      "description": "احفظ أبرز نتائج تعلمك في صورة.",
+      "orientation": "اتجاه الصورة",
+      "landscape": "أفقي",
+      "portrait": "عمودي",
+      "theme": "مظهر الصورة",
+      "light": "فاتح",
+      "dark": "داكن",
+      "preview": "صورة إنجازي في OpenMAIC",
+      "save": "حفظ الصورة",
+      "saveHint": "على الهاتف، يمكنك أيضًا الضغط مطولًا على الصورة لعرض خيارات الحفظ.",
+      "imageFailed": "تعذر تجهيز الصورة. يرجى المحاولة مجددًا.",
+      "rendering": "جارٍ تجهيز الصورة…",
+      "eyebrow": "رحلتي في VIBE CODING",
+      "achievement": "إنجاز مشروعي",
+      "waiting": "جارٍ تلخيص أبرز نتائج تعلمك…",
+      "factSummary": "مشروع أُنشئ واستُكشف بالتعاون مع الذكاء الاصطناعي.",
+      "invite": "حوّل أفكارك إلى واقع مع OpenMAIC",
+      "tagline": "من فكرة إلى مشروع. تعلّم من خلال الإبداع.",
+      "highlights": "What your project records show",
+      "testsPassed": "Tests",
+      "linkPlaceholder": "Intro course · placeholder link, replace before launch"
     }
   }
 }

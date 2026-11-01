@@ -330,7 +330,45 @@ test('completed project reports stay discoverable, show facts before analysis, a
   await expect(failure).toHaveCount(0);
   expect(opens).toBe(0);
   expect(commands).toEqual([]);
+  // Sharing follows the report's existing analysis; it never starts another generation.
+  await report.getByRole('button', { name: 'Create sharing image', exact: true }).click();
+  const share = page.getByRole('dialog', { name: 'Share your achievement', exact: true });
+  const poster = share.getByRole('img', { name: 'Your OpenMAIC achievement image' });
+  await expect(poster).toBeVisible();
+  await expect(share.getByRole('link', { name: 'Save image', exact: true })).toBeVisible();
+  const pendingPoster = await poster.getAttribute('src');
+  expect(generations).toBe(2);
   finish();
+  await expect.poll(() => poster.getAttribute('src')).not.toBe(pendingPoster);
+  await expect(share.getByRole('link', { name: 'Save image', exact: true })).toBeVisible();
+  await share.getByRole('button', { name: 'Portrait', exact: true }).click();
+  await share.getByRole('button', { name: 'Dark', exact: true }).click();
+  const save = share.getByRole('link', { name: 'Save image', exact: true });
+  await expect(save).toBeVisible();
+  // Viewport resizing scales the preview without changing the selected poster or its pixels.
+  await expect
+    .poll(() => poster.evaluate((img) => (img as HTMLImageElement).naturalWidth))
+    .toBe(1200);
+  const shareViewport = page.viewportSize()!;
+  const imageBeforeResize = await poster.getAttribute('src');
+  for (const width of [420, 800, 1600]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await expect(poster).toHaveAttribute('src', imageBeforeResize!);
+    expect(
+      await poster.evaluate((img) => [
+        (img as HTMLImageElement).naturalWidth,
+        (img as HTMLImageElement).naturalHeight,
+      ]),
+    ).toEqual([1200, 1600]);
+  }
+  await page.setViewportSize(shareViewport);
+  const downloading = page.waitForEvent('download');
+  await save.click();
+  expect((await downloading).suggestedFilename()).toBe('OpenMAIC-portrait-dark.png');
+  await page.keyboard.press('Escape');
+  await expect(share).toHaveCount(0);
+  await expect(report).toBeVisible();
+  expect(generations).toBe(2);
   await expect(
     report.getByText('You connected a boundary to behavior', { exact: true }),
   ).toBeVisible();

@@ -2957,6 +2957,31 @@
       "collapse": "Thu gọn ứng dụng",
       "help": "Hướng dẫn ứng dụng",
       "ready": "Chạy ứng dụng để thử mã đã lưu."
+    },
+    "share": {
+      "open": "Tạo ảnh chia sẻ",
+      "title": "Chia sẻ thành quả học tập",
+      "description": "Lưu những điểm nổi bật trong quá trình học thành ảnh.",
+      "orientation": "Bố cục ảnh",
+      "landscape": "Ngang",
+      "portrait": "Dọc",
+      "theme": "Màu sắc",
+      "light": "Sáng",
+      "dark": "Tối",
+      "preview": "Ảnh thành quả học tập OpenMAIC",
+      "save": "Lưu ảnh",
+      "saveHint": "Trên điện thoại, bạn cũng có thể nhấn giữ ảnh để xem các tùy chọn lưu.",
+      "imageFailed": "Không thể tạo ảnh. Vui lòng thử lại.",
+      "rendering": "Đang chuẩn bị ảnh…",
+      "eyebrow": "HÀNH TRÌNH VIBE CODING CỦA TÔI",
+      "achievement": "Thành quả dự án",
+      "waiting": "Đang tổng hợp điểm nổi bật…",
+      "factSummary": "Một dự án được tạo và khám phá cùng AI.",
+      "invite": "Biến ý tưởng thành hiện thực với OpenMAIC",
+      "tagline": "Từ ý tưởng đến dự án. Học qua sáng tạo.",
+      "highlights": "What your project records show",
+      "testsPassed": "Tests",
+      "linkPlaceholder": "Intro course · placeholder link, replace before launch"
     }
   }
 }

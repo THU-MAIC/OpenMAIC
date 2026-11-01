@@ -2957,6 +2957,31 @@
       "collapse": "Contraer aplicación",
       "help": "Ayuda de la aplicación",
       "ready": "Ejecuta la aplicación para probar tu código guardado."
+    },
+    "share": {
+      "open": "Crear imagen para compartir",
+      "title": "Compartir mis logros",
+      "description": "Guarda los aspectos destacados de tu aprendizaje como imagen.",
+      "orientation": "Orientación",
+      "landscape": "Horizontal",
+      "portrait": "Vertical",
+      "theme": "Apariencia",
+      "light": "Clara",
+      "dark": "Oscura",
+      "preview": "Imagen de mis logros en OpenMAIC",
+      "save": "Guardar imagen",
+      "saveHint": "En el móvil también puedes mantener presionada la imagen para ver las opciones disponibles.",
+      "imageFailed": "No se pudo preparar la imagen. Inténtalo de nuevo.",
+      "rendering": "Preparando imagen…",
+      "eyebrow": "MI RECORRIDO VIBE CODING",
+      "achievement": "Mis logros del proyecto",
+      "waiting": "Organizando tus aprendizajes destacados…",
+      "factSummary": "Un proyecto creado y explorado con IA.",
+      "invite": "Crea con OpenMAIC",
+      "tagline": "Convierte una idea en un proyecto. Aprende creando.",
+      "highlights": "What your project records show",
+      "testsPassed": "Tests",
+      "linkPlaceholder": "Intro course · placeholder link, replace before launch"
     }
   }
 }

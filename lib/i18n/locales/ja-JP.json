@@ -2957,6 +2957,31 @@
       "collapse": "アプリを折りたたむ",
       "help": "アプリの説明",
       "ready": "アプリを実行して保存済みのコードを試しましょう。"
+    },
+    "share": {
+      "open": "共有画像を作成",
+      "title": "学習成果を共有",
+      "description": "学習の成果を画像として保存できます。",
+      "orientation": "画像の向き",
+      "landscape": "横向き",
+      "portrait": "縦向き",
+      "theme": "画像の配色",
+      "light": "ライト",
+      "dark": "ダーク",
+      "preview": "OpenMAIC の学習成果画像",
+      "save": "画像を保存",
+      "saveHint": "モバイルでは画像を長押しして保存方法を選ぶこともできます。",
+      "imageFailed": "画像を作成できませんでした。再試行してください。",
+      "rendering": "画像を準備中…",
+      "eyebrow": "私の VIBE CODING 体験",
+      "achievement": "プロジェクトの成果",
+      "waiting": "学習のハイライトを整理中…",
+      "factSummary": "AI とともに形にしたプロジェクト。",
+      "invite": "OpenMAIC でアイデアを形に",
+      "tagline": "アイデアからプロジェクトへ。作りながら学ぼう。",
+      "highlights": "What your project records show",
+      "testsPassed": "Tests",
+      "linkPlaceholder": "Intro course · placeholder link, replace before launch"
     }
   }
 }

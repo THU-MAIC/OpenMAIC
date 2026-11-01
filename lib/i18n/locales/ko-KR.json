@@ -2957,6 +2957,31 @@
       "collapse": "앱 접기",
       "help": "앱 도움말",
       "ready": "앱을 실행하여 저장된 코드를 확인하세요."
+    },
+    "share": {
+      "open": "공유 이미지 만들기",
+      "title": "학습 성과 공유",
+      "description": "학습 성과를 이미지로 저장하세요.",
+      "orientation": "이미지 방향",
+      "landscape": "가로",
+      "portrait": "세로",
+      "theme": "이미지 테마",
+      "light": "밝게",
+      "dark": "어둡게",
+      "preview": "OpenMAIC 학습 성과 이미지",
+      "save": "이미지 저장",
+      "saveHint": "모바일에서는 이미지를 길게 눌러 저장 옵션을 확인할 수도 있습니다.",
+      "imageFailed": "이미지를 만들지 못했습니다. 다시 시도하세요.",
+      "rendering": "이미지 준비 중…",
+      "eyebrow": "나의 VIBE CODING 여정",
+      "achievement": "프로젝트 성과",
+      "waiting": "학습 하이라이트를 정리하는 중…",
+      "factSummary": "AI와 함께 만든 프로젝트.",
+      "invite": "OpenMAIC로 아이디어를 실현하세요",
+      "tagline": "아이디어를 프로젝트로. 만들면서 배우세요.",
+      "highlights": "What your project records show",
+      "testsPassed": "Tests",
+      "linkPlaceholder": "Intro course · placeholder link, replace before launch"
     }
   }
 }
