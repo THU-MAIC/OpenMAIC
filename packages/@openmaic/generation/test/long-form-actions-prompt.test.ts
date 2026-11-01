@@ -9,7 +9,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { generateSceneActions } from '@openmaic/generation';
-import type { AICallFn, GeneratedSlideContent, SceneOutline } from '@openmaic/generation';
+import type {
+  AICallFn,
+  GeneratedQuizContent,
+  GeneratedSlideContent,
+  SceneOutline,
+} from '@openmaic/generation';
 
 const ELABORATION = 'Long-Form Elaboration';
 const SEGMENT_GUIDANCE = '9-16';
@@ -82,5 +87,58 @@ describe('slide actions — long-form elaboration', () => {
 
     expect(system()).not.toContain(ELABORATION);
     expect(system()).not.toContain(SEGMENT_GUIDANCE);
+  });
+});
+
+/**
+ * A retrieval page in a long-form course owns a two-to-three minute slot — the
+ * plan puts one at every module end — but the short-lesson rule asked for one or
+ * two sentences. The page then spent a fraction of its budget and the lesson ran
+ * short, while the audit still passed because `estimatedDuration` was right.
+ */
+const QUIZ_CONTENT: GeneratedQuizContent = {
+  questions: [
+    {
+      id: 'q1',
+      type: 'single',
+      question: 'Which patient should not be started on morphine?',
+      options: [
+        { value: 'A', label: 'A patient with severe renal colic' },
+        { value: 'B', label: 'A patient with untreated respiratory depression' },
+      ],
+      answer: ['B'],
+    },
+  ],
+};
+
+function quizOutline(): SceneOutline {
+  return {
+    id: 'scene-quiz',
+    type: 'quiz',
+    title: 'Which patient, and why',
+    description: 'Retrieval at the end of the clinical module.',
+    keyPoints: ['a premise', 'an inference'],
+    order: 11,
+  };
+}
+
+describe('quiz actions — long-form pacing', () => {
+  it('gives a long-form retrieval page a real slot', async () => {
+    const { aiCall, system } = captureSystem();
+
+    await generateSceneActions(quizOutline(), QUIZ_CONTENT, aiCall, {
+      ctx: context('- Page 12 of 29: a two-minute retrieval beat.'),
+    });
+
+    expect(system()).toContain('3-5 segments');
+    expect(system()).not.toContain('1-2 short segments');
+  });
+
+  it('keeps the short-lesson rule when there is no brief', async () => {
+    const { aiCall, system } = captureSystem();
+
+    await generateSceneActions(quizOutline(), QUIZ_CONTENT, aiCall, { ctx: context() });
+
+    expect(system()).toContain('1-2 short segments');
   });
 });

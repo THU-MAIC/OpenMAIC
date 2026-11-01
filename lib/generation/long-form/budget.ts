@@ -210,13 +210,22 @@ function normalizeDurationWords(text: string): string {
 function matchDuration(text: string): DurationMatch | null {
   if (!text) return null;
 
+  /**
+   * Spans of a rejected compound, so its minutes are not read a second time as
+   * a duration of their own. `a 4 hour 30 minute course` is 270 minutes and
+   * unsupported; without this the minute scan then finds the `30 minute` tail
+   * and plans a half-hour course out of a four-and-a-half-hour request.
+   */
+  const rejected: Array<{ start: number; end: number }> = [];
+
   const hoursPattern = new RegExp(String.raw`(\d+(?:\.\d+)?)${UNIT_JOIN}${HOUR_UNITS}`, 'gi');
   for (const hours of text.matchAll(hoursPattern)) {
     const value = Number.parseFloat(hours[1]!);
     if (!Number.isFinite(value) || value <= 0) continue;
 
+    const start = hours.index ?? 0;
     let minutes = Math.round(value * 60);
-    let end = (hours.index ?? 0) + hours[0].length;
+    let end = start + hours[0].length;
     // A fractional hour already names the whole length; a trailing minutes
     // component after `1.5 小时` would be a second, contradictory figure.
     if (Number.isInteger(value)) {
@@ -231,18 +240,24 @@ function matchDuration(text: string): DurationMatch | null {
       }
     }
 
-    if (minutes > LONG_FORM_MAX_MINUTES) continue;
+    if (minutes > LONG_FORM_MAX_MINUTES) {
+      rejected.push({ start, end });
+      continue;
+    }
     return { minutes, end };
   }
 
   const minutePattern = new RegExp(String.raw`(\d+(?:\.\d+)?)${UNIT_JOIN}${MINUTE_UNITS}`, 'gi');
   for (const plain of text.matchAll(minutePattern)) {
+    const start = plain.index ?? 0;
+    if (rejected.some((span) => start >= span.start && start < span.end)) continue;
+
     const value = Number.parseFloat(plain[1]!);
     if (!Number.isFinite(value) || value <= 0) continue;
 
     const minutes = Math.round(value);
     if (minutes > LONG_FORM_MAX_MINUTES) continue;
-    return { minutes, end: (plain.index ?? 0) + plain[0].length };
+    return { minutes, end: start + plain[0].length };
   }
 
   return null;

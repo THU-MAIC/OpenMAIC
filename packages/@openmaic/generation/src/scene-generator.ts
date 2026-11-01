@@ -1788,6 +1788,22 @@ const LONG_FORM_ACTION_VARIABLES = {
 };
 
 /**
+ * The same contract for a retrieval page.
+ *
+ * A quiz page in a long-form course owns a two-to-three minute slot — the plan
+ * puts one at every module end — but the short-lesson rule asks for one or two
+ * sentences, so the page spent a fraction of its budget and the lesson ran short
+ * without the audit noticing (the page's `estimatedDuration` was still right).
+ * Part of the slot is thinking time, so the speech budget is about half of it.
+ */
+const LONG_FORM_QUIZ_VARIABLES = {
+  quizSegmentGuidance: [
+    '1. **Generate 3-5 segments — this page owns a real slot**: the position block above gives it a clock range and a narration budget. Speak roughly half of that budget and leave the rest as thinking time.',
+    '   Spend it on three things: restate the situation these questions test, name the intuitive-but-wrong answer the questions are built to catch (without revealing which option is right), and say what the result tells the learner about their grasp of the module. Do not lecture, and do not give the answer away.',
+  ].join('\n'),
+};
+
+/**
  * Step 3.2: Generate Actions based on content and script
  */
 export async function generateSceneActions(
@@ -1855,6 +1871,7 @@ export async function generateSceneActions(
       courseContext: buildCourseContext(ctx),
       agents: agentsText,
       languageDirective: languageDirective || '',
+      ...(ctx?.longFormBrief ? LONG_FORM_QUIZ_VARIABLES : {}),
     });
 
     if (!prompts) {

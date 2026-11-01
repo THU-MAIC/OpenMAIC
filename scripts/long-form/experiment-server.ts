@@ -124,7 +124,21 @@ async function guardedFetch(url: string, init: RequestInit): Promise<Response> {
 
     const location = result.headers.get('location');
     if (!location) return result;
-    target = new URL(location, target).href;
+
+    // Same host only. The request carries `Authorization: Bearer <key>`, and a
+    // redirect is chosen by the server, not by the person who typed the key: a
+    // provider that answers 302 to another origin would be handed the key. A
+    // scheme upgrade on the same host is allowed, since that is the same
+    // operator; a different host has to be named as the Base URL instead.
+    const current = new URL(target);
+    const next = new URL(location, target);
+    if (next.hostname !== current.hostname) {
+      throw new Error(
+        `端点重定向到另一台主机，已拒绝：${current.hostname} → ${next.hostname}。` +
+          `请直接填写最终的 Base URL —— 密钥不会跨主机转发。`,
+      );
+    }
+    target = next.href;
   }
   throw new Error(`重定向超过 ${MAX_REDIRECTS} 次：${url}`);
 }

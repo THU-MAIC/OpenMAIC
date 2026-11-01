@@ -82,6 +82,15 @@ describe('detectRequestedMinutes', () => {
     expect(detectRequestedMinutes(mixed)).toBe(60);
     expect(detectLongForm(mixed).isLongForm).toBe(true);
   });
+
+  it('does not read the tail of a rejected compound as its own duration', () => {
+    // `a 4 hour 30 minute course` is 270 minutes and unsupported. The minute scan
+    // then found the `30 minute` tail and planned a half-hour course out of a
+    // four-and-a-half-hour request — a shorter course than either reading.
+    expect(detectRequestedMinutes('a 4 hour 30 minute course')).toBeNull();
+    expect(detectLongForm('a 4 hour 30 minute course').isLongForm).toBe(false);
+    expect(detectRequestedMinutes('一节 5 小时 30 分钟的课')).toBeNull();
+  });
 });
 
 describe('detectLongForm', () => {

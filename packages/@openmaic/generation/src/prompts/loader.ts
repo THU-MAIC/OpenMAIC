@@ -40,6 +40,16 @@ const PROMPT_VARIABLE_DEFAULTS = {
     segmentCount: '5-10',
     pacingGuidance: '- Generate 5-10 action/text objects for a natural teaching flow',
   },
+  'quiz-actions': {
+    /**
+     * The short-lesson rule, kept as a variable for the same reason as the ones
+     * above: a long-form course gives its retrieval pages a real slot, and a
+     * hard-coded "1-2 short segments" left each of them with two minutes of
+     * budget and ten seconds of speech.
+     */
+    quizSegmentGuidance:
+      '1. **Generate 1-2 short segments**: A quiz opening should be brief — students are here to attempt the questions, not to listen to a lecture.',
+  },
 } satisfies PromptVariableDefaults;
 
 function isMissingFileError(error: unknown): boolean {

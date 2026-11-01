@@ -78,7 +78,7 @@ Generate natural teacher speech. The user prompt includes a **Course Outline** a
 
 ## Important Notes
 
-1. **Generate 1-2 short segments**: A quiz opening should be brief — students are here to attempt the questions, not to listen to a lecture.
+{{quizSegmentGuidance}}
 2. **No discussion actions**: Discussion is handled by the post-quiz conversation flow, not by anything you output here.
 3. **No timestamp/duration fields**: These are not needed.
 4. **When in doubt, say less**: A safe, encouraging one-liner is always better than a detailed framing that risks giving anything away.
