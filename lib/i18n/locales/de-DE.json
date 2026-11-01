@@ -2848,7 +2848,11 @@
         "codeReview": "Implementierung prüfen",
         "verification": "Verhalten mit Tests prüfen",
         "reflection": "Anhand von Belegen reflektieren"
-      }
+      },
+      "congratulations": "Geschafft — dein Projekt ist fertig!",
+      "celebrationSubtitle": "Aus deiner Idee ist etwas geworden, das funktioniert. Schau dir an, was du erreicht hast.",
+      "shareTitle": "Ein Moment zum Teilen",
+      "shareHint": "Halte Erfolge und Highlights auf einer Karte fest und teile deine Fortschritte."
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {

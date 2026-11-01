@@ -2848,7 +2848,11 @@
         "codeReview": "核對程式實作",
         "verification": "用測試驗證行為",
         "reflection": "根據證據回顧"
-      }
+      },
+      "congratulations": "恭喜，專案完成啦！",
+      "celebrationSubtitle": "你把想法變成了能用的作品。來看看這一路累積的成果吧。",
+      "shareTitle": "這一刻，值得分享",
+      "shareHint": "把成果和亮點放進一張卡片，分享你的進步。"
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {
@@ -2959,7 +2963,7 @@
       "ready": "點擊重新執行，試試已儲存的程式碼。"
     },
     "share": {
-      "open": "產生分享圖片",
+      "open": "製作分享卡片",
       "title": "分享我的學習成果",
       "description": "將這次實踐的成果與亮點儲存為圖片。",
       "orientation": "圖片版式",

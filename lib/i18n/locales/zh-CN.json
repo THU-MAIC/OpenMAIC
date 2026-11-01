@@ -2848,7 +2848,11 @@
         "codeReview": "核对代码实现",
         "verification": "用测试验证行为",
         "reflection": "基于证据复盘"
-      }
+      },
+      "congratulations": "恭喜，项目完成啦！",
+      "celebrationSubtitle": "你把想法变成了能用的作品。来看看这一路积累的成果吧。",
+      "shareTitle": "这一刻，值得分享",
+      "shareHint": "把成果和亮点装进一张卡片，分享你的进步。"
     },
     "draftStorageUnavailable": "浏览器暂时无法保存本地草稿。当前页面仍保留内容，请将文件保存到工作区，并在离开页面前复制未发送的文字。",
     "pendingActions": {
@@ -2959,7 +2963,7 @@
       "ready": "点击重新运行，试试已保存的代码。"
     },
     "share": {
-      "open": "生成分享图片",
+      "open": "制作分享卡片",
       "title": "分享我的学习成果",
       "description": "把这次实践的成果与亮点，保存成一张图片。",
       "orientation": "图片版式",

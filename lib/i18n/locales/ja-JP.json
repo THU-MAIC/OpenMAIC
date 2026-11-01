@@ -2848,7 +2848,11 @@
         "codeReview": "実装のレビュー",
         "verification": "テストによる検証",
         "reflection": "記録に基づく振り返り"
-      }
+      },
+      "congratulations": "おめでとう！プロジェクト完成！",
+      "celebrationSubtitle": "アイデアが動く作品になりました。ここまでの成果を振り返りましょう。",
+      "shareTitle": "この達成をシェアしよう",
+      "shareHint": "成果と学びのハイライトをカードにして、成長を伝えましょう。"
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {

@@ -2848,7 +2848,11 @@
         "codeReview": "구현 검토",
         "verification": "테스트로 동작 검증",
         "reflection": "근거를 통한 회고"
-      }
+      },
+      "congratulations": "축하해요! 프로젝트를 완성했어요!",
+      "celebrationSubtitle": "아이디어를 실제로 작동하는 작품으로 만들었어요. 지금까지의 성과를 살펴보세요.",
+      "shareTitle": "함께 나누고 싶은 순간",
+      "shareHint": "성과와 배움의 핵심을 카드에 담아 성장을 공유하세요."
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {

@@ -2848,7 +2848,11 @@
         "codeReview": "Reviewing implementation",
         "verification": "Verifying behavior with tests",
         "reflection": "Reflecting from evidence"
-      }
+      },
+      "congratulations": "You did it — project complete!",
+      "celebrationSubtitle": "You turned an idea into something that works. Take a moment to see how far you have come.",
+      "shareTitle": "A moment worth sharing",
+      "shareHint": "Save your achievements and highlights as a card to share your progress."
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {

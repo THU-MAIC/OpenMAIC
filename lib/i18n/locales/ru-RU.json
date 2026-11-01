@@ -2848,7 +2848,11 @@
         "codeReview": "Проверка реализации",
         "verification": "Проверка тестами",
         "reflection": "Рефлексия по записям"
-      }
+      },
+      "congratulations": "Поздравляем, проект завершён!",
+      "celebrationSubtitle": "Ваша идея стала работающим проектом. Посмотрите, сколько вы уже сделали.",
+      "shareTitle": "Момент, которым стоит поделиться",
+      "shareHint": "Сохраните достижения и главное из обучения на карточке и поделитесь прогрессом."
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {

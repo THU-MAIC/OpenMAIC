@@ -2848,7 +2848,11 @@
         "codeReview": "مراجعة التنفيذ",
         "verification": "التحقق بالاختبارات",
         "reflection": "التأمل بناءً على الأدلة"
-      }
+      },
+      "congratulations": "تهانينا، أكملت المشروع!",
+      "celebrationSubtitle": "حوّلت فكرتك إلى عمل يعمل بالفعل. تأمل ما حققته في هذه الرحلة.",
+      "shareTitle": "لحظة تستحق المشاركة",
+      "shareHint": "احفظ إنجازاتك وأبرز ما تعلمته في بطاقة وشارك تقدمك."
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {

@@ -2848,7 +2848,11 @@
         "codeReview": "Xem xét phần triển khai",
         "verification": "Kiểm chứng bằng kiểm thử",
         "reflection": "Suy ngẫm từ bằng chứng"
-      }
+      },
+      "congratulations": "Chúc mừng, bạn đã hoàn thành dự án!",
+      "celebrationSubtitle": "Bạn đã biến ý tưởng thành sản phẩm hoạt động được. Hãy nhìn lại những gì mình đã đạt được.",
+      "shareTitle": "Khoảnh khắc đáng chia sẻ",
+      "shareHint": "Lưu thành quả và điểm nổi bật vào một tấm thẻ để chia sẻ tiến bộ của bạn."
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {

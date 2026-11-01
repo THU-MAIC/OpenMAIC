@@ -2848,7 +2848,11 @@
         "codeReview": "Vérifier une implémentation",
         "verification": "Vérifier par les tests",
         "reflection": "Réfléchir à partir des traces"
-      }
+      },
+      "congratulations": "Bravo, ton projet est terminé !",
+      "celebrationSubtitle": "Ton idée est devenue une réalisation qui fonctionne. Prends un instant pour voir le chemin parcouru.",
+      "shareTitle": "Un moment à partager",
+      "shareHint": "Rassemble tes réussites et tes apprentissages sur une carte à partager."
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {
