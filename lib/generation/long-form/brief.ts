@@ -173,13 +173,46 @@ export function moduleAtPage(
 }
 
 /**
+ * The page range each module owns in this outline, in its own numbering.
+ *
+ * When the outline kept the planned page count, the plan's own assignment is
+ * exact. When it drifted — 24 pages for a 29-page plan is still inside the page
+ * tolerance — the plan's indices name pages this outline does not have, so the
+ * ranges are projected with the same proportional rule `moduleAtPage` uses.
+ * Everything that talks about "the module's first page" has to agree on this.
+ */
+export function modulePageRanges(
+  plan: LongFormCoursePlan,
+  totalPages: number,
+): Map<number, { first: number; last: number }> {
+  const ranges = new Map<number, { first: number; last: number }>();
+
+  const add = (moduleIndex: number, pageIndex: number) => {
+    const current = ranges.get(moduleIndex);
+    if (!current) ranges.set(moduleIndex, { first: pageIndex, last: pageIndex });
+    else current.last = pageIndex;
+  };
+
+  if (totalPages === plan.scenes.length) {
+    for (const slot of plan.scenes) add(slot.moduleIndex, slot.index);
+    return ranges;
+  }
+
+  for (let pageIndex = 1; pageIndex <= totalPages; pageIndex += 1) {
+    add(moduleAtPage(plan, pageIndex, totalPages).index, pageIndex);
+  }
+  return ranges;
+}
+
+/**
  * What this page owes its module.
  *
  * Same rule as {@link moduleAtPage}: the plan knows that page 4 opens module 2
  * and that page 12 closes it. Falling back to "first page opens, last page
  * closes, everything else develops" tells every later module's opening page to
  * carry the argument forward instead of re-anchoring the module, which is the
- * one thing that page exists to do.
+ * one thing that page exists to do. A drifted outline gets the same answer from
+ * the projected ranges rather than losing every module boundary to the fallback.
  */
 function roleAt(
   plan: LongFormCoursePlan,
@@ -190,6 +223,14 @@ function roleAt(
     const slot = plan.scenes[pageIndex - 1];
     if (slot) return slot.role;
   }
+
+  const modulePlan = moduleAtPage(plan, pageIndex, totalPages);
+  const range = modulePageRanges(plan, totalPages).get(modulePlan.index);
+  if (range) {
+    if (pageIndex === range.first) return 'open';
+    if (pageIndex === range.last) return modulePlan.endsWithCheck ? 'check' : 'close';
+  }
+
   return pageIndex === 1 ? 'open' : pageIndex === totalPages ? 'close' : 'develop';
 }
 

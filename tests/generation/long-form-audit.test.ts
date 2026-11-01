@@ -117,6 +117,24 @@ describe('auditOutline', () => {
     }
   });
 
+  it('checks the pages the plan has no slot for', () => {
+    // 35 pages against 29 is still inside the tolerance. The six extra pages had
+    // no slot, so their duration check was skipped: they could claim one second
+    // each while the narration stage budgeted them at a hundred, and the total
+    // still read clean.
+    const extra = Array.from({ length: 35 }, (_, index) => ({
+      ...goodOutline()[0]!,
+      id: `scene_${index + 1}`,
+      estimatedDuration: 1,
+      order: index + 1,
+    }));
+    const audit = auditOutline(plan, extra);
+
+    expect(audit.pages).toBe(35);
+    expect(audit.defects.some((defect) => defect.pageIndex === 30)).toBe(true);
+    expect(audit.defects.some((defect) => defect.code === 'page-duration')).toBe(true);
+  });
+
   it('does not count an interactive page the pipeline would turn into a slide', () => {
     // `applyOutlineFallbacks` converts an interactive page with no widget config
     // into a slide before content generation, and the patch protocol lets a

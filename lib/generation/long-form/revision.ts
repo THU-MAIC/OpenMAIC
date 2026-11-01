@@ -207,14 +207,15 @@ export function critiquePasses(critique: Critique): boolean {
 /**
  * Whether to spend another round.
  *
- * `round` is the number of revisions already applied. A critic that says pass,
- * or that found nothing to fix, ends the loop even if its scores are low: there
- * is no instruction to give the rewriter, and a rewriter with no instruction
- * rewrites the course.
+ * `round` is the number of revisions already applied. What ends the loop is
+ * having nothing to hand the rewriter: a rewriter with no instruction rewrites
+ * the course. A `pass` verdict is therefore not on its own a reason to stop —
+ * the prompt lets a critic pass the draft and still list a localized fix, and
+ * `critiquePasses` already requires an empty defect list, so any remaining
+ * defect is an instruction worth spending a round on.
  */
 export function shouldRevise(critique: Critique, round: number): boolean {
   if (round >= MAX_REVISION_ROUNDS) return false;
-  if (critique.verdict === 'pass') return false;
   if (critique.defects.length === 0) return false;
   return true;
 }
@@ -565,7 +566,11 @@ const AUDIT_FIX: Readonly<Record<AuditCode, string>> = {
   'missing-objective':
     'Write a teachingObjective in one sentence starting with a testable verb (derive / predict / distinguish / apply).',
   'missing-check':
-    "Make this module's last page a retrieval scene: a quiz, or an interactive that requires an action.",
+    // A quiz, not an interactive: the patch schema carries no widget fields, so
+    // a rewriter told to switch the page to `interactive` produces one that
+    // `applyOutlineFallbacks` converts straight back to a slide. The check would
+    // then be missing again, having spent a round.
+    "Make this module's last page a retrieval scene: change it to a quiz that makes the learner produce the answer, not recognise it.",
   'missing-decision':
     'Add a decision question to this module — or convert its existing quiz into one: a situation, two or three plausible options, and the consequence of each wrong choice.',
 };

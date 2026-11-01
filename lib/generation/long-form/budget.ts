@@ -126,6 +126,71 @@ interface DurationMatch {
   end: number;
 }
 
+const CN_DIGITS: Readonly<Record<string, number>> = {
+  一: 1,
+  二: 2,
+  两: 2,
+  三: 3,
+  四: 4,
+  五: 5,
+  六: 6,
+  七: 7,
+  八: 8,
+  九: 9,
+};
+
+const EN_NUMERALS: Readonly<Record<string, number>> = {
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+};
+
+/** 一 to 九, 十, 十五, 二十, 二十三 — the counts a lesson length is written with. */
+function chineseNumeral(token: string): number | null {
+  if (token === '十') return 10;
+  if (token.startsWith('十')) return 10 + (CN_DIGITS[token[1] ?? ''] ?? 0);
+  if (token.endsWith('十')) return (CN_DIGITS[token[0] ?? ''] ?? 0) * 10;
+  return CN_DIGITS[token] ?? null;
+}
+
+/**
+ * Rewrite written-out durations as figures.
+ *
+ * `一小时的课程`, `半小时的课` and `a one-hour lecture` are the ordinary way to
+ * write a length, and the figure matcher reads digits only. Without this all
+ * three fall through to the short path — which is the failure this feature exists
+ * to prevent, and it looks exactly like the feature working.
+ */
+function normalizeDurationWords(text: string): string {
+  return text
+    .replace(
+      /(一\s*个\s*)?半\s*个?\s*(小时|钟头)/g,
+      (_match, one: string | undefined, unit: string) => `${one ? '1.5' : '0.5'} ${unit}`,
+    )
+    .replace(
+      /([一二两三四五六七八九十]{1,2})\s*个?\s*(小时|钟头)/g,
+      (match, token: string, unit: string) => {
+        const value = chineseNumeral(token);
+        return value === null ? match : `${value} ${unit}`;
+      },
+    )
+    .replace(/half\s*(?:an?\s*)?[- ]?hours?/gi, '0.5 hour')
+    .replace(/\ban?\s+hours?\b/gi, '1 hour')
+    .replace(
+      /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)[- ]hours?\b/gi,
+      (_match, word: string) => `${EN_NUMERALS[word.toLowerCase()] ?? 1} hours`,
+    );
+}
+
 /**
  * The duration phrase in a requirement, with where it ends.
  *
@@ -133,51 +198,51 @@ interface DurationMatch {
  * minutes, not 1 and not 5. Compound phrases are summed, because `1 小时 30 分钟`
  * read as hours alone is 60 — a course half an hour shorter than requested.
  *
- * A figure above the longest supported sitting is treated as absent rather than
- * clamped. "为什么睡 12 小时还是累" is a lesson about sleep, not a twelve-hour
- * course, and clamping it would plan a four-hour one. A genuine six-hour request
- * falls back to the flat path, which is the lesser error. The minute branch gets
- * the same guard: clamping a `300-minute` request to 240 ships a course an hour
- * short with nothing to say it did.
+ * A figure above the longest supported sitting is skipped, not clamped and not
+ * fatal to the search. "为什么睡 12 小时还是累" is a lesson about sleep, not a
+ * twelve-hour course, and clamping it would plan a four-hour one; but a
+ * requirement can name both — `Create a 60-minute lesson about why 12 hours of
+ * sleep can leave you tired` — and stopping at the first out-of-range candidate
+ * threw away the hour that was actually asked for. The minute branch gets the
+ * same guard: clamping a `300-minute` request to 240 ships a course an hour short
+ * with nothing to say it did.
  */
-function matchDuration(requirement: string): DurationMatch | null {
-  if (!requirement) return null;
+function matchDuration(text: string): DurationMatch | null {
+  if (!text) return null;
 
-  const hours = new RegExp(String.raw`(\d+(?:\.\d+)?)${UNIT_JOIN}${HOUR_UNITS}`, 'i').exec(
-    requirement,
-  );
-  if (hours) {
+  const hoursPattern = new RegExp(String.raw`(\d+(?:\.\d+)?)${UNIT_JOIN}${HOUR_UNITS}`, 'gi');
+  for (const hours of text.matchAll(hoursPattern)) {
     const value = Number.parseFloat(hours[1]!);
-    if (Number.isFinite(value) && value > 0) {
-      let minutes = Math.round(value * 60);
-      let end = hours.index + hours[0].length;
-      // A fractional hour already names the whole length; a trailing minutes
-      // component after `1.5 小时` would be a second, contradictory figure.
-      if (Number.isInteger(value)) {
-        const tail = new RegExp(
-          String.raw`^\s*(?:又|and|零)?\s*(\d+(?:\.\d+)?)${UNIT_JOIN}${MINUTE_UNITS}`,
-          'i',
-        ).exec(requirement.slice(end));
-        const extra = tail ? Number.parseFloat(tail[1]!) : 0;
-        if (tail && Number.isFinite(extra) && extra > 0) {
-          minutes += Math.round(extra);
-          end += tail[0].length;
-        }
+    if (!Number.isFinite(value) || value <= 0) continue;
+
+    let minutes = Math.round(value * 60);
+    let end = (hours.index ?? 0) + hours[0].length;
+    // A fractional hour already names the whole length; a trailing minutes
+    // component after `1.5 小时` would be a second, contradictory figure.
+    if (Number.isInteger(value)) {
+      const tail = new RegExp(
+        String.raw`^\s*(?:又|and|零)?\s*(\d+(?:\.\d+)?)${UNIT_JOIN}${MINUTE_UNITS}`,
+        'i',
+      ).exec(text.slice(end));
+      const extra = tail ? Number.parseFloat(tail[1]!) : 0;
+      if (tail && Number.isFinite(extra) && extra > 0) {
+        minutes += Math.round(extra);
+        end += tail[0].length;
       }
-      return minutes > LONG_FORM_MAX_MINUTES ? null : { minutes, end };
     }
+
+    if (minutes > LONG_FORM_MAX_MINUTES) continue;
+    return { minutes, end };
   }
 
-  const plain = new RegExp(String.raw`(\d+(?:\.\d+)?)${UNIT_JOIN}${MINUTE_UNITS}`, 'i').exec(
-    requirement,
-  );
-  if (plain) {
+  const minutePattern = new RegExp(String.raw`(\d+(?:\.\d+)?)${UNIT_JOIN}${MINUTE_UNITS}`, 'gi');
+  for (const plain of text.matchAll(minutePattern)) {
     const value = Number.parseFloat(plain[1]!);
-    if (Number.isFinite(value) && value > 0) {
-      const minutes = Math.round(value);
-      if (minutes > LONG_FORM_MAX_MINUTES) return null;
-      return { minutes, end: plain.index + plain[0].length };
-    }
+    if (!Number.isFinite(value) || value <= 0) continue;
+
+    const minutes = Math.round(value);
+    if (minutes > LONG_FORM_MAX_MINUTES) continue;
+    return { minutes, end: (plain.index ?? 0) + plain[0].length };
   }
 
   return null;
@@ -192,7 +257,7 @@ function matchDuration(requirement: string): DurationMatch | null {
  * duration in a real requirement that is not a three-minute course.
  */
 export function detectRequestedMinutes(requirement: string): number | null {
-  return matchDuration(requirement)?.minutes ?? null;
+  return matchDuration(normalizeDurationWords(requirement))?.minutes ?? null;
 }
 
 /**
@@ -206,10 +271,10 @@ export function detectRequestedMinutes(requirement: string): number | null {
  * a duration word before it, or nothing but a preposition or a teaching verb
  * after it.
  */
-function describesCourseLength(requirement: string, match: DurationMatch): boolean {
-  if (COURSE_NOUN.test(requirement)) return true;
-  if (DURATION_INTENT.test(requirement.slice(Math.max(0, match.end - 24), match.end))) return true;
-  return LENGTH_FOLLOWER.test(requirement.slice(match.end));
+function describesCourseLength(text: string, match: DurationMatch): boolean {
+  if (COURSE_NOUN.test(text)) return true;
+  if (DURATION_INTENT.test(text.slice(Math.max(0, match.end - 24), match.end))) return true;
+  return LENGTH_FOLLOWER.test(text.slice(match.end));
 }
 
 /**
@@ -222,11 +287,14 @@ export function detectLongForm(requirement: string): {
   isLongForm: boolean;
   requestedMinutes: number | null;
 } {
-  const match = matchDuration(requirement);
+  // Normalized once, so the context checks read the same string the match was
+  // taken from and its indices still line up.
+  const text = normalizeDurationWords(requirement);
+  const match = matchDuration(text);
   if (!match) return { isLongForm: false, requestedMinutes: null };
   const requestedMinutes = match.minutes;
   if (requestedMinutes < LONG_FORM_MIN_MINUTES) return { isLongForm: false, requestedMinutes };
-  return { isLongForm: describesCourseLength(requirement, match), requestedMinutes };
+  return { isLongForm: describesCourseLength(text, match), requestedMinutes };
 }
 
 export function clampMinutes(minutes: number): number {

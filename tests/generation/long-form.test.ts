@@ -63,6 +63,25 @@ describe('detectRequestedMinutes', () => {
     expect(detectRequestedMinutes('a 300-minute course')).toBeNull();
     expect(detectLongForm('a 300-minute course').isLongForm).toBe(false);
   });
+
+  it('reads a duration written in words', () => {
+    // `一小时的课程` is the ordinary way to write a length. Reading digits only
+    // sent it to the short path, which is the failure this feature prevents.
+    expect(detectRequestedMinutes('一小时的课程')).toBe(60);
+    expect(detectRequestedMinutes('一个半小时的课')).toBe(90);
+    expect(detectRequestedMinutes('半小时的课')).toBe(30);
+    expect(detectRequestedMinutes('a one-hour lecture')).toBe(60);
+    expect(detectRequestedMinutes('an hour on entropy')).toBe(60);
+    expect(detectRequestedMinutes('half an hour on recursion')).toBe(30);
+  });
+
+  it('keeps looking when a topical figure is out of range', () => {
+    // The hours branch runs first over the whole string; stopping at the first
+    // candidate threw away the hour that was actually asked for.
+    const mixed = 'Create a 60-minute lesson about why 12 hours of sleep can leave you tired';
+    expect(detectRequestedMinutes(mixed)).toBe(60);
+    expect(detectLongForm(mixed).isLongForm).toBe(true);
+  });
 });
 
 describe('detectLongForm', () => {
@@ -391,6 +410,15 @@ describe('buildSceneBrief', () => {
 
     const slot = plan.scenes[7]!;
     expect(brief).toContain(`about ${slot.speechBudget} characters`);
+  });
+
+  it('keeps module roles when the outline drifted', () => {
+    // The drift is accepted, so the projected module structure is what the audit
+    // checks against. Falling back to "first page opens, last page closes" told
+    // page 4 — the opening of module 2 in a 24-page outline — to carry the
+    // argument forward instead of re-anchoring.
+    const brief = buildSceneBrief({ plan, pageIndex: 4, totalPages: 24 });
+    expect(brief).toContain('Page role: open');
   });
 });
 

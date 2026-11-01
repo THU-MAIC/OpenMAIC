@@ -15,8 +15,8 @@
 
 import type { SceneOutline } from '@/lib/types/generation';
 
-import { moduleAtPage } from './brief';
-import type { LongFormCoursePlan } from './types';
+import { modulePageRanges } from './brief';
+import type { LongFormCoursePlan, LongFormSceneSlot } from './types';
 
 export type AuditCode =
   /** The page count is far from the budget. */
@@ -107,38 +107,27 @@ function durationOf(scene: SceneOutline): number | null {
 }
 
 /**
- * Page indices each module owns, in this outline's numbering.
+ * The plan slot this page is measured against.
  *
- * When the outline kept the planned page count, the plan's own assignment is
- * exact. When it drifted — 24 pages for a 29-page plan is still inside the page
- * tolerance — the plan's indices name pages this outline does not have: module 6
- * would slice pages 21-24 but report a missing check at page 25, and module 7
- * would have no pages at all and be skipped. A defect pointing at page 25 sends
- * the rewriter to a page it cannot patch, and the patch protocol rejects the
- * whole repair over it. So the ranges are projected onto the actual count with
- * the same proportional rule the narration stage uses.
+ * When the counts agree it is the page's own slot. When they do not, the extra
+ * pages have no slot at all and the per-page duration check used to be skipped
+ * for exactly those: 35 pages against a 29-page plan left pages 30-35 unchecked,
+ * so six pages could claim one second each and the total still read clean while
+ * the narration stage budgeted them at a hundred. Projecting the slot by the same
+ * proportional rule as the module ranges keeps both stages measuring the same
+ * page against the same expectation.
  */
-function modulePageRanges(
+function effectiveSlot(
   plan: LongFormCoursePlan,
+  pageIndex: number,
   totalPages: number,
-): Map<number, { first: number; last: number }> {
-  const ranges = new Map<number, { first: number; last: number }>();
-
-  const add = (moduleIndex: number, pageIndex: number) => {
-    const current = ranges.get(moduleIndex);
-    if (!current) ranges.set(moduleIndex, { first: pageIndex, last: pageIndex });
-    else current.last = pageIndex;
-  };
-
-  if (totalPages === plan.scenes.length) {
-    for (const slot of plan.scenes) add(slot.moduleIndex, slot.index);
-    return ranges;
-  }
-
-  for (let pageIndex = 1; pageIndex <= totalPages; pageIndex += 1) {
-    add(moduleAtPage(plan, pageIndex, totalPages).index, pageIndex);
-  }
-  return ranges;
+): LongFormSceneSlot | undefined {
+  if (totalPages === plan.scenes.length) return plan.scenes[pageIndex - 1];
+  const projected = Math.min(
+    plan.scenes.length,
+    Math.max(1, Math.round(((pageIndex - 0.5) / totalPages) * plan.scenes.length)),
+  );
+  return plan.scenes[projected - 1];
 }
 
 function pct(value: number): string {
@@ -200,7 +189,7 @@ export function auditOutline(
 
   outlines.forEach((scene, position) => {
     const pageIndex = position + 1;
-    const slot = plan.scenes[position];
+    const slot = effectiveSlot(plan, pageIndex, outlines.length);
     const duration = durationOf(scene);
 
     if (duration === null) {

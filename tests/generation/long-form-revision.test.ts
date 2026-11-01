@@ -198,6 +198,20 @@ describe('shouldRevise', () => {
     expect(shouldRevise(passed, 0)).toBe(false);
   });
 
+  it('revises a passing verdict that still lists a fix', () => {
+    // The critique prompt lets a critic pass the draft and still name a localized
+    // defect. Treating the verdict as the whole answer shipped the draft and
+    // dropped the fix it had just asked for.
+    const passWithDefect = parseCritique(
+      critiqueJson({
+        verdict: 'pass',
+        defects: [{ pageIndex: 3, dimension: 'derivation', problem: 'asserts', fix: 'derive it' }],
+      }),
+    )!;
+    expect(critiquePasses(passWithDefect)).toBe(false);
+    expect(shouldRevise(passWithDefect, 0)).toBe(true);
+  });
+
   it('stops when there is nothing to fix, however low the scores', () => {
     // A rewriter with no instruction rewrites the course.
     const vague = parseCritique(critiqueJson({ scores: { ...ALL_FOURS, derivation: 1 } }))!;
@@ -302,6 +316,22 @@ describe('mergeAuditIntoCritique', () => {
     expect(merged.defects.length).toBeGreaterThan(0);
     expect(merged.defects[0].dimension).toBe('structure');
     expect(merged.defects[0].problem).toContain('planned');
+  });
+
+  it('asks for a quiz, not an interactive the patch cannot build', () => {
+    // The patch schema carries no widget fields, so a page switched to
+    // `interactive` comes back without config and `applyOutlineFallbacks`
+    // converts it straight to a slide — the check is missing again, one round
+    // poorer.
+    const allSlides = plan.scenes.map((slot, index) => ({
+      ...scenePage(index + 1),
+      estimatedDuration: slot.durationSeconds,
+    }));
+    const merged = mergeAuditIntoCritique(passing, auditOutline(plan, allSlides));
+    const check = merged.defects.find((defect) => defect.fix.includes('retrieval'));
+
+    expect(check).toBeDefined();
+    expect(check!.fix).not.toContain('interactive');
   });
 
   it('gives each arithmetic defect an instruction the rewriter can execute', () => {
