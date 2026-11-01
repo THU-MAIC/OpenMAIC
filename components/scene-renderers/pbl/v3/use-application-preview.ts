@@ -53,6 +53,7 @@ export function useApplicationPreview(
   const disabled = unavailable || dirty || !!view?.busy || !!view?.evaluation;
   const binding = `${view?.id}:${view?.environmentId}:${workbench?.environmentId}:${workbench?.epoch}`;
   const [observedBinding, setObservedBinding] = useState(binding);
+  const currentBinding = observedBinding === binding;
   useEffect(() => {
     ++attempt.current;
     controller.current?.abort();
@@ -86,13 +87,13 @@ export function useApplicationPreview(
     } else setRefreshNeeded(true);
   }, [disabled, unavailable]);
   useEffect(() => {
-    if (!hasPreview || view?.revision === observedRevision.current) return;
+    if (!currentBinding || !hasPreview || view?.revision === observedRevision.current) return;
     ++attempt.current;
     controller.current?.abort();
     setPending(false);
     setError('');
     setRefreshNeeded(true);
-  }, [view?.revision, hasPreview]);
+  }, [view?.revision, hasPreview, currentBinding]);
   useEffect(() => {
     if (!observation?.preview) return;
     const deadline = observation.preview.expiresAt;
@@ -102,7 +103,7 @@ export function useApplicationPreview(
 
   const load = useCallback(
     async (action: 'open' | 'restart', recovery?: 'automatic' | 'explicit') => {
-      if (disabled || !view || !workbench) return;
+      if (!currentBinding || disabled || !view || !workbench) return;
       const expiredRecovery = () =>
         recovery === 'automatic' &&
         previewDeadline.current !== undefined &&
@@ -176,10 +177,11 @@ export function useApplicationPreview(
         if (serial === attempt.current) setPending(false);
       }
     },
-    [disabled, view, workbench, observation, t],
+    [currentBinding, disabled, view, workbench, observation, t],
   );
   useEffect(() => {
     if (
+      currentBinding &&
       open &&
       refreshNeeded &&
       !disabled &&
@@ -188,7 +190,7 @@ export function useApplicationPreview(
       (!observation?.preview || observation.preview.expiresAt > Date.now())
     )
       void load('open', 'automatic');
-  }, [open, refreshNeeded, disabled, pending, expired, observation, load]);
+  }, [currentBinding, open, refreshNeeded, disabled, pending, expired, observation, load]);
   const renew = useCallback((expiresAt: number) => {
     if (!Number.isFinite(expiresAt) || expiresAt <= Date.now() || expiresAt > Date.now() + 300_000)
       return;
@@ -199,7 +201,7 @@ export function useApplicationPreview(
     );
   }, []);
   async function openNewTab() {
-    if (disabled || pending || !view || !workbench) return;
+    if (!currentBinding || disabled || pending || !view || !workbench) return;
     // A renewed iframe cookie belongs to its embedding partition. Obtain a fresh
     // owner-authorized ticket for the separate tab without reloading this iframe.
     const tab = window.open('about:blank', '_blank');
@@ -264,9 +266,9 @@ export function useApplicationPreview(
   }
   return {
     panelId,
-    open: open && observedBinding === binding,
+    open: open && currentBinding,
     pending,
-    observation: observedBinding === binding && !unavailable ? observation : null,
+    observation: currentBinding && !unavailable ? observation : null,
     error,
     expired,
     disabled,

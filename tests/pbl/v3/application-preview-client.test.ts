@@ -64,12 +64,18 @@ function Harness({
   current = view,
   epoch = 0,
   dirty = false,
+  workbenchEnvironmentId = workbench.environmentId,
 }: {
   current?: LearningView;
   epoch?: number;
   dirty?: boolean;
+  workbenchEnvironmentId?: string;
 }) {
-  const preview = useApplicationPreview(current, { ...workbench, epoch }, dirty);
+  const preview = useApplicationPreview(
+    current,
+    { ...workbench, environmentId: workbenchEnvironmentId, epoch },
+    dirty,
+  );
   return createElement(
     Fragment,
     null,
@@ -335,6 +341,122 @@ it.each(['epoch', 'environment', 'unavailable'])(
     }
   },
 );
+
+it.each(['study', 'environment', 'epoch'])(
+  'does not transfer queued recovery to a replacement %s that is already ready',
+  async (kind) => {
+    mocks.request.mockResolvedValue(running);
+    const f = await fixture();
+    try {
+      await f.click();
+      await act(async () =>
+        f.root.render(createElement(Harness, { current: { ...view, busy: true } })),
+      );
+      const replacement = {
+        ...view,
+        id: kind === 'study' ? 'replacement-study' : view.id,
+        environmentId: kind === 'environment' ? 'replacement-environment' : view.environmentId,
+        revision: 1,
+      };
+      await act(async () =>
+        f.root.render(
+          createElement(Harness, {
+            current: replacement,
+            epoch: kind === 'epoch' ? 1 : 0,
+            workbenchEnvironmentId: replacement.environmentId!,
+          }),
+        ),
+      );
+      expect(mocks.request).toHaveBeenCalledTimes(1);
+      expect(f.host.querySelector('iframe')).toBeNull();
+      expect(f.host.querySelector('[aria-controls]')?.getAttribute('aria-expanded')).toBe('false');
+      await f.click();
+      expect(mocks.request).toHaveBeenCalledTimes(2);
+      expect(mocks.request.mock.calls[1][1]).toMatchObject({
+        action: 'open',
+        studyId: replacement.id,
+        environmentId: replacement.environmentId,
+        epoch: kind === 'epoch' ? 1 : 0,
+      });
+      expect(f.host.querySelector('iframe')).not.toBeNull();
+    } finally {
+      await f.cleanup();
+    }
+  },
+);
+
+it.each(['running', 'stopped', 'source-changed'])(
+  'ignores a pending %s status response after moving to a ready replacement epoch',
+  async (state) => {
+    let finish!: (observation: ApplicationObservation) => void;
+    let signal!: AbortSignal;
+    mocks.request.mockResolvedValueOnce(running).mockImplementationOnce((_url, _body, abort) => {
+      signal = abort;
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    });
+    const f = await fixture();
+    try {
+      await f.click();
+      await act(async () =>
+        f.root.render(createElement(Harness, { current: { ...view, revision: 1 } })),
+      );
+      await act(async () =>
+        f.root.render(createElement(Harness, { current: { ...view, revision: 2 }, epoch: 1 })),
+      );
+      expect(signal.aborted).toBe(true);
+      await act(async () =>
+        finish({
+          state: state === 'stopped' ? 'stopped' : 'running',
+          observedAt: '',
+          sourceChanged: state === 'source-changed',
+        }),
+      );
+      expect(mocks.request).toHaveBeenCalledTimes(2);
+      expect(f.host.querySelector('iframe')).toBeNull();
+      expect(f.host.querySelector('[aria-controls]')?.getAttribute('aria-expanded')).toBe('false');
+    } finally {
+      await f.cleanup();
+    }
+  },
+);
+
+it('closes an old pending new-tab ticket after the epoch changes without navigating it', async () => {
+  const replace = vi.fn(),
+    close = vi.fn();
+  const popup = {
+    location: { replace },
+    close,
+    opener: window,
+    document: document.implementation.createHTMLDocument(),
+  };
+  vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window);
+  let finish!: (observation: ApplicationObservation) => void;
+  mocks.request.mockResolvedValueOnce(running).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const f = await fixture();
+  try {
+    await f.click();
+    await act(async () =>
+      (
+        f.host.querySelector('[aria-label="pblV3.application.newTab"]') as HTMLButtonElement
+      ).click(),
+    );
+    await act(async () => f.root.render(createElement(Harness, { epoch: 1 })));
+    await act(async () => finish(running));
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(replace).not.toHaveBeenCalled();
+    expect(mocks.request).toHaveBeenCalledTimes(2);
+    expect(f.host.querySelector('iframe')).toBeNull();
+  } finally {
+    await f.cleanup();
+  }
+});
 
 it('checks the latest saved revision even when a short write finishes between busy snapshots', async () => {
   mocks.request.mockResolvedValue(running);
