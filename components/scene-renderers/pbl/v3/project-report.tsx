@@ -196,21 +196,21 @@ export function ProjectReport({
           {report?.requiredComplete && (
             <div
               aria-hidden="true"
-              className="pointer-events-none absolute right-5 top-7 sm:right-9 sm:top-9"
+              className="pointer-events-none absolute right-5 top-5 sm:right-9 sm:top-9"
             >
-              <div className="flex size-14 -rotate-12 items-center justify-center rounded-2xl border border-violet-200/20 bg-violet-300/10 text-violet-200 sm:size-16">
+              <div className="flex size-12 -rotate-12 items-center justify-center rounded-2xl border border-violet-200/20 bg-violet-300/10 text-violet-200 sm:size-16">
                 <PartyPopper className="size-7 sm:size-8" strokeWidth={1.5} />
               </div>
               <span className="absolute -left-4 top-1 h-2 w-1 -rotate-12 rounded-full bg-amber-200/80" />
               <span className="absolute -right-1 -top-3 h-1 w-2 rotate-45 rounded-full bg-violet-200/80" />
-              <Sparkles className="absolute -bottom-3 -left-3 size-4 text-violet-300" />
+              <Sparkles className="absolute -right-3 -top-2 size-4 text-violet-300 sm:-bottom-3 sm:-left-3 sm:right-auto sm:top-auto" />
             </div>
           )}
           <p className="inline-flex items-center gap-2 rounded-full border border-violet-300/30 bg-white/5 px-3 py-1 text-xs font-medium text-violet-200">
             <CheckCircle2 size={14} />
             {t(report?.requiredComplete ? 'pblV3.reportCopy.completedTitle' : 'pblV3.report')}
           </p>
-          <h2 className="mt-5 max-w-3xl pr-12 text-[1.75rem] font-semibold leading-tight tracking-tight sm:pr-20 sm:text-4xl">
+          <h2 className="mt-5 max-w-3xl text-balance text-[1.625rem] font-semibold leading-tight tracking-tight sm:pr-20 sm:text-4xl">
             {t(report?.requiredComplete ? 'pblV3.reportCopy.congratulations' : 'pblV3.report')}
           </h2>
           <p className="mt-3 max-w-3xl text-sm font-medium text-indigo-200">{title}</p>
