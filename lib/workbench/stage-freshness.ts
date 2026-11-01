@@ -256,6 +256,17 @@ export function stageRosterChanged(
   return fresh.agentIds !== undefined && !sameJsonValue(shown.agentIds ?? [], fresh.agentIds);
 }
 
+/**
+ * Whether two rosters are the same, both sides read in full: an absent field
+ * is an empty one. Same JSON-value comparison as {@link stageRosterChanged}.
+ */
+export function sameStageRoster(left: StageRoster, right: StageRoster): boolean {
+  return (
+    sameJsonValue(left.generatedAgentConfigs ?? [], right.generatedAgentConfigs ?? []) &&
+    sameJsonValue(left.agentIds ?? [], right.agentIds ?? [])
+  );
+}
+
 /** Deep equality of two JSON values, regardless of object member order. */
 function sameJsonValue(left: unknown, right: unknown): boolean {
   if (left === right) return true;

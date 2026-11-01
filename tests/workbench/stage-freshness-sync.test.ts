@@ -61,6 +61,7 @@ const mocks = vi.hoisted(() => ({
   rosterUnavailable: false,
   rosterFetchCount: 0,
   unsavedStageEdit: false,
+  rosterBase: new Map<string, unknown>(),
   setStageAgents: vi.fn(),
 }));
 
@@ -79,6 +80,11 @@ vi.mock('@/lib/workbench/session-store', () => ({
 
 vi.mock('@/lib/store/stage', () => ({
   hasUnsavedStageEdit: () => mocks.unsavedStageEdit,
+  isStageWriteInFlight: () => false,
+  recordServerRosterBase: (stageId: string, roster: unknown) =>
+    mocks.rosterBase.set(stageId, roster),
+  forgetServerRosterBase: (stageId: string) => mocks.rosterBase.delete(stageId),
+  serverRosterBaseOf: (stageId: string) => mocks.rosterBase.get(stageId),
   useStageStore: {
     getState: () => ({ ...mocks.stageState, setStageAgents: mocks.setStageAgents }),
     // zustand semantics: `prev` is the PRE-STATE snapshot (a distinct object),
@@ -352,6 +358,7 @@ beforeEach(() => {
   mocks.rosterFetchCount = 0;
   mocks.rosterUnavailable = false;
   mocks.unsavedStageEdit = false;
+  mocks.rosterBase.clear();
   mocks.setStageAgents.mockReset();
   // The real action's effect on what the classroom shows: the stage carries
   // the new roster (the registry/selection mirrors are covered by the store's
@@ -960,29 +967,6 @@ describe('a roster written while the classroom is open', () => {
 
   const shownConfigs = () =>
     (mocks.stageState.stage as { generatedAgentConfigs?: unknown } | null)?.generatedAgentConfigs;
-
-  it('does not overwrite a roster edit this browser has not saved yet, and reads it again once saved', async () => {
-    await mount();
-    const source = MockEventSource.instances[0]!;
-    mocks.roster = roster;
-    mocks.unsavedStageEdit = true;
-    manifestWith({ rev: mocks.manifest.rev + 1 });
-    await act(async () => source.emitFreshness());
-    expect(mocks.setStageAgents).not.toHaveBeenCalled();
-    expect(shownConfigs()).toBeUndefined();
-
-    // The local save lands. The stage rev did not move again, yet the pass
-    // after it still reads the roster: the skipped one was never recorded
-    // as seen.
-    mocks.unsavedStageEdit = false;
-    await act(async () => source.emitFreshness());
-    expect(mocks.rosterFetchCount).toBe(1);
-    expect(shownConfigs()).toEqual(roster.generatedAgentConfigs);
-
-    // Settled: the next quiet pass reads nothing.
-    await act(async () => source.emitFreshness());
-    expect(mocks.rosterFetchCount).toBe(1);
-  });
 
   it('a roster read failure does not stop the scenes, and is read again on the next pass', async () => {
     await mount();

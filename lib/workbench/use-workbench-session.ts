@@ -22,7 +22,14 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
 import { HOST_AGENT_LIFECYCLE as LIFECYCLE } from '@/lib/agent-runtime/lifecycle';
 import { getDocumentStore } from '@/lib/document-store/store';
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
-import { hasUnsavedStageEdit, useStageStore } from '@/lib/store/stage';
+import {
+  forgetServerRosterBase,
+  hasUnsavedStageEdit,
+  isStageWriteInFlight,
+  recordServerRosterBase,
+  serverRosterBaseOf,
+  useStageStore,
+} from '@/lib/store/stage';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Scene, Stage } from '@/lib/types/stage';
 import {
@@ -37,7 +44,9 @@ import {
   fetchScenesByIds,
   fetchStageManifest,
   fetchStageRoster,
+  sameStageRoster,
   stageRosterChanged,
+  type StageRoster,
   mergeFetchedScenes,
   type StageManifest,
 } from '@/lib/workbench/stage-freshness';
@@ -339,6 +348,14 @@ const STAGE_SYNC_FALLBACK_MS = 30_000;
 const STAGE_SYNC_FALLBACK_JITTER = 0.2;
 const STAGE_SYNC_RETRY_DELAY_MS = 3_000;
 const STAGE_SYNC_MAX_RETRIES = 5;
+/** The roster fields of a stage, as the roster route answers them. */
+function rosterOf(stage: Stage): StageRoster {
+  return {
+    ...(stage.agentIds ? { agentIds: stage.agentIds } : {}),
+    ...(stage.generatedAgentConfigs ? { generatedAgentConfigs: stage.generatedAgentConfigs } : {}),
+  };
+}
+
 /** A stage rev no manifest carries: the next pass treats the stage as moved. */
 const UNVERIFIED_STAGE_REV = -1;
 
@@ -487,6 +504,10 @@ export function useStageFreshnessSync(
             generationComplete: record?.generationComplete ?? false,
             outlineProducer: record?.producer ?? state.outlineProducer,
           }));
+          const loadedStage = useStageStore.getState().stage;
+          if (loadedStage?.id === requestedStage) {
+            recordServerRosterBase(requestedStage, rosterOf(loadedStage));
+          }
           renderedManifest.current = manifest;
           recordWriteBaseline(manifest);
           return;
@@ -498,6 +519,9 @@ export function useStageFreshnessSync(
         const store = useStageStore.getState();
         const warm = store.stage?.id === requestedStage && store.scenes.length > 0;
         if (warm) {
+          // The roster the load brought is the server's, as far as this
+          // browser knows: the merge base (see `syncRoster`).
+          recordServerRosterBase(requestedStage, rosterOf(store.stage!));
           // Content revs are unknown (the load does not carry them). Record a
           // ZEROED baseline so the next pass treats every scene as changed and
           // verifies the true revs exactly once — this closes the window where
@@ -510,6 +534,9 @@ export function useStageFreshnessSync(
             scenes: manifest.scenes.map((scene) => ({ ...scene, rev: 0 })),
           };
         } else {
+          // Store still cold: no roster known yet (a base from an earlier
+          // visit may be stale); the first roster read records one.
+          forgetServerRosterBase(requestedStage);
           // Store still cold: record the real manifest. The classroom load's
           // content lands after, so any write between here and there shows up
           // as a change on the next diff (never hidden).
@@ -611,35 +638,63 @@ export function useStageFreshnessSync(
     };
 
     /**
-     * Read the course's roster and show it. Answers whether the roster on
-     * screen now reflects the server's; never throws, so a roster that cannot
-     * be read does not hold up the scenes.
+     * Read the course's roster and merge it into the one on screen, three-way
+     * against the roster this browser last knew the server to hold (the
+     * base, kept by the stage store). Answers whether the shown roster is now
+     * reconciled with the server's; never throws, so a roster that cannot be
+     * read does not hold up the scenes.
+     *
+     * - server equals shown: nothing to do; the base becomes it.
+     * - shown equals base: the server's is a remote change (`set_roster`, an
+     *   edit in another tab). It is applied even with other stage edits
+     *   pending: the apply queues no write of its own, and the pending flush,
+     *   which captures the stage when it starts, then writes the new roster
+     *   rather than putting the old one back.
+     * - shown differs from base: a roster edit of this browser's own. It is
+     *   kept and not settled; once its save lands (which moves the base),
+     *   the next pass reconciles again. Concurrent edits: the last save wins.
      */
     const syncRoster = async (): Promise<boolean> => {
-      // A stage edit of this browser's own that is not saved yet (the roster
-      // or any other stage field) is not overwritten. Nothing here judges
-      // that save against the server: its flush writes the whole stage,
-      // roster included, so until stage saves merge per field it can replace
-      // a roster the agent wrote meanwhile. Not settled: once the save lands,
-      // the next pass reads the roster again.
-      if (hasUnsavedStageEdit(requestedStage)) return false;
+      // A stage write already on the wire carries the roster it captured;
+      // applying under it would be overwritten. Try again once it lands.
+      if (isStageWriteInFlight(requestedStage)) return false;
       const roster = await fetchStageRoster(requestedStage);
       if (!isCurrent()) return false;
       if (!roster) {
         console.warn(`[workbench] stage roster unavailable for ${requestedStage}; will retry`);
         return false;
       }
-      if (hasUnsavedStageEdit(requestedStage)) return false;
       const store = useStageStore.getState();
       // The classroom has not loaded this course yet: its load brings the
       // roster; read again on the next pass rather than assume it is current.
       if (store.stage?.id !== requestedStage) return false;
-      if (roster.generatedAgentConfigs && stageRosterChanged(store.stage, roster)) {
-        store.setStageAgents([...roster.generatedAgentConfigs], {
-          fromServer: true,
-          ...(roster.agentIds ? { agentIds: [...roster.agentIds] } : {}),
-        });
+      // A course that never stored a roster: nothing to take from it.
+      if (!roster.generatedAgentConfigs) return true;
+      if (isStageWriteInFlight(requestedStage)) return false;
+      const shown = rosterOf(store.stage);
+      // The server's roster in full: one without agentIds keeps the shown ones.
+      const agentIds = roster.agentIds ?? shown.agentIds;
+      const server: StageRoster = {
+        ...(agentIds ? { agentIds } : {}),
+        generatedAgentConfigs: roster.generatedAgentConfigs,
+      };
+      if (!stageRosterChanged(shown, roster)) {
+        recordServerRosterBase(requestedStage, server);
+        return true;
       }
+      let base = serverRosterBaseOf(requestedStage);
+      if (!base) {
+        // No base yet (the store was cold at the first pass). With no stage
+        // edit pending, the shown roster is the one the load brought.
+        if (hasUnsavedStageEdit(requestedStage)) return false;
+        base = shown;
+      }
+      if (!sameStageRoster(shown, base)) return false;
+      store.setStageAgents([...roster.generatedAgentConfigs], {
+        fromServer: true,
+        ...(roster.agentIds ? { agentIds: [...roster.agentIds] } : {}),
+      });
+      recordServerRosterBase(requestedStage, server);
       return true;
     };
 
