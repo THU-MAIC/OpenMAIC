@@ -49,13 +49,15 @@ const CONTENT: GeneratedSlideContent = {
   remark: '',
 };
 
-function captureSystem(): { aiCall: AICallFn; system: () => string } {
+function captureSystem(): { aiCall: AICallFn; system: () => string; user: () => string } {
   let system = '';
-  const aiCall: AICallFn = async (promptSystem) => {
+  let user = '';
+  const aiCall: AICallFn = async (promptSystem, promptUser) => {
     system = promptSystem;
+    user = promptUser;
     return '[]';
   };
-  return { aiCall, system: () => system };
+  return { aiCall, system: () => system, user: () => user };
 }
 
 function context(longFormBrief?: string) {
@@ -123,8 +125,8 @@ function quizOutline(): SceneOutline {
 }
 
 describe('quiz actions — long-form pacing', () => {
-  it('gives a long-form retrieval page a real slot', async () => {
-    const { aiCall, system } = captureSystem();
+  it('gives a long-form retrieval page a real slot in both halves of the prompt', async () => {
+    const { aiCall, system, user } = captureSystem();
 
     await generateSceneActions(quizOutline(), QUIZ_CONTENT, aiCall, {
       ctx: context('- Page 12 of 29: a two-minute retrieval beat.'),
@@ -132,13 +134,19 @@ describe('quiz actions — long-form pacing', () => {
 
     expect(system()).toContain('3-5 segments');
     expect(system()).not.toContain('1-2 short segments');
+    // The output shape lives in user.md. Overriding only the system rule left the
+    // model two conflicting lengths in one call, and the output format is the one
+    // it follows.
+    expect(user()).toContain('3-5 text segments');
+    expect(user()).not.toContain('1-2 short text segments');
   });
 
-  it('keeps the short-lesson rule when there is no brief', async () => {
-    const { aiCall, system } = captureSystem();
+  it('keeps the short-lesson rule in both halves when there is no brief', async () => {
+    const { aiCall, system, user } = captureSystem();
 
     await generateSceneActions(quizOutline(), QUIZ_CONTENT, aiCall, { ctx: context() });
 
     expect(system()).toContain('1-2 short segments');
+    expect(user()).toContain('1-2 short text segments');
   });
 });

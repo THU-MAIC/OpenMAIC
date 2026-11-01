@@ -77,6 +77,17 @@ describe('detectRequestedMinutes', () => {
     expect(detectRequestedMinutes('half an hour on recursion')).toBe(30);
   });
 
+  it('reads a number-and-a-half, not the bare half inside it', () => {
+    // `两个半小时` contains `半小时`, so rewriting the bare half first left the
+    // leading numeral stranded and planned 30 minutes for a two-and-a-half hour
+    // request. `两小时半` puts the half after the unit instead.
+    expect(detectRequestedMinutes('两个半小时的课')).toBe(150);
+    expect(detectRequestedMinutes('两小时半的课')).toBe(150);
+    expect(detectRequestedMinutes('a two-and-a-half-hour course')).toBe(150);
+    expect(detectRequestedMinutes('a two and a half hour course')).toBe(150);
+    expect(detectLongForm('两个半小时的课').isLongForm).toBe(true);
+  });
+
   it('reads a minute count written in English words', () => {
     // The hour rule covered `a one-hour lecture` but the same request in minutes —
     // `a thirty-minute course` — still found nothing.

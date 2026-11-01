@@ -265,8 +265,35 @@ describe('pageCeilingFor', () => {
     // downstream can shrink it.
     const fourHours = planLongFormCourse({ minutes: 240, language: 'zh' });
     expect(fourHours.scenes.length).toBeLessThan(120);
-    expect(pageCeilingFor(fourHours)).toBe(Math.ceil(fourHours.scenes.length * 1.25));
-    expect(pageCeilingFor(plan)).toBe(Math.ceil(plan.scenes.length * 1.25));
+    expect(pageCeilingFor(fourHours)).toBe(Math.floor(fourHours.scenes.length * 1.25));
+    expect(pageCeilingFor(plan)).toBe(Math.floor(plan.scenes.length * 1.25));
+  });
+
+  it('sits inside the tolerance the audit applies', () => {
+    // `Math.ceil` gave 37 pages for a 29-page plan, which is 27.6% over — a
+    // `page-count` defect by the audit's own rule. A bound that admits an outline
+    // the audit rejects is not a bound, and this one is what the engine uses for
+    // final normalization, so a skipped repair could ship it.
+    const ceiling = pageCeilingFor(plan);
+    expect(ceiling).toBe(36);
+
+    const atCeiling: SceneOutline[] = Array.from({ length: ceiling }, (_, index) => ({
+      id: `scene_${index + 1}`,
+      type: 'slide',
+      title: `P${index + 1}`,
+      description: '',
+      keyPoints: ['a'],
+      teachingObjective: 'predict',
+      estimatedDuration: 124,
+      order: index + 1,
+    }));
+    const overCeiling: SceneOutline[] = [
+      ...atCeiling,
+      { ...atCeiling[0]!, id: 'scene_37', order: 37 },
+    ];
+
+    expect(auditOutline(plan, atCeiling).defects.some((d) => d.code === 'page-count')).toBe(false);
+    expect(auditOutline(plan, overCeiling).defects.some((d) => d.code === 'page-count')).toBe(true);
   });
 
   it('refuses an outline the plan cannot account for', () => {

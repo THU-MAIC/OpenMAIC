@@ -91,7 +91,10 @@ const DEFAULTS = {
  * cheap.
  */
 export function pageCeilingFor(plan: LongFormCoursePlan): number {
-  return Math.ceil(plan.scenes.length * (1 + DEFAULTS.pageTolerance));
+  // Rounded down, like the floor is rounded up: ceil(29 * 1.25) is 37, and 37
+  // pages is 27.6% over a 29-page plan — a page-count defect by the audit. Both
+  // bounds have to sit inside the tolerance they are drawn from.
+  return Math.max(1, Math.floor(plan.scenes.length * (1 + DEFAULTS.pageTolerance)));
 }
 
 /**

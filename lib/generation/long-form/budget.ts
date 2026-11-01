@@ -214,6 +214,23 @@ function chineseNumeral(token: string): number | null {
 function normalizeDurationWords(text: string): string {
   return (
     text
+      // Number-and-a-half comes first. `两个半小时` contains `半小时`, and rewriting
+      // that first left the leading numeral stranded: `两个0.5 小时` reads as thirty
+      // minutes instead of two and a half hours.
+      .replace(
+        /([一二两三四五六七八九十]{1,3})\s*个\s*半\s*个?\s*(小时|钟头)/g,
+        (match, token: string, unit: string) => {
+          const value = chineseNumeral(token);
+          return value === null ? match : `${value + 0.5} ${unit}`;
+        },
+      )
+      .replace(
+        /([一二两三四五六七八九十]{1,3})\s*个?\s*(小时|钟头)\s*半/g,
+        (match, token: string, unit: string) => {
+          const value = chineseNumeral(token);
+          return value === null ? match : `${value + 0.5} ${unit}`;
+        },
+      )
       .replace(
         /(一\s*个\s*)?半\s*个?\s*(小时|钟头)/g,
         (_match, one: string | undefined, unit: string) => `${one ? '1.5' : '0.5'} ${unit}`,
@@ -233,6 +250,10 @@ function normalizeDurationWords(text: string): string {
           const value = chineseNumeral(token);
           return value === null ? match : `${value} ${unit}`;
         },
+      )
+      .replace(
+        /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)[- ]and[- ]an?[- ]half[- ]hours?\b/gi,
+        (_match, word: string) => `${(EN_NUMERALS[word.toLowerCase()] ?? 1) + 0.5} hours`,
       )
       .replace(/half\s*(?:an?\s*)?[- ]?hours?/gi, '0.5 hour')
       .replace(/\ban?\s+hours?\b/gi, '1 hour')

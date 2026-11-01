@@ -1797,6 +1797,10 @@ const LONG_FORM_ACTION_VARIABLES = {
  * Part of the slot is thinking time, so the speech budget is about half of it.
  */
 const LONG_FORM_QUIZ_VARIABLES = {
+  // The count appears twice — the system rule and the user output shape — and
+  // both have to move together, or the prompt asks for two different lengths and
+  // the model can follow either.
+  quizSegmentCount: '3-5 text segments',
   quizSegmentGuidance: [
     '1. **Generate 3-5 segments — this page owns a real slot**: the position block above gives it a clock range and a narration budget. Speak roughly half of that budget and leave the rest as thinking time.',
     '   Spend it on three things: restate the situation these questions test, name the intuitive-but-wrong answer the questions are built to catch (without revealing which option is right), and say what the result tells the learner about their grasp of the module. Do not lecture, and do not give the answer away.',

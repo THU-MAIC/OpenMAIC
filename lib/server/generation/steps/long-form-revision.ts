@@ -27,6 +27,8 @@ import {
   hasTimeFor,
   isSafeRevision,
   mergeAuditIntoCritique,
+  pageCeilingFor,
+  pageFloorFor,
   parseCritique,
   parseRevisionPatch,
   auditSeverity,
@@ -221,6 +223,21 @@ export async function reviseLongFormOutline(input: LongFormRevisionInput): Promi
     const safety = isSafeRevision(current.outlines, revised.outlines);
     if (!safety.ok) {
       log.warn(`long-form revision: rejected the repair — ${safety.reason}`);
+      return current;
+    }
+
+    // The plan's own bounds come before the severity comparison. A repair that
+    // fixes three objectives by inserting two fully populated pages lowers the
+    // weighted severity while leaving the page count outside the plan — and the
+    // engine rejects that against the ceiling afterwards, failing the whole
+    // outline step instead of keeping the draft that was fine.
+    const pages = revised.outlines.length;
+    const floor = pageFloorFor(input.plan);
+    const ceiling = pageCeilingFor(input.plan);
+    if (pages < floor || pages > ceiling) {
+      log.warn(
+        `long-form revision: rejected the repair — ${pages} pages is outside the plan's ${floor}-${ceiling}`,
+      );
       return current;
     }
 

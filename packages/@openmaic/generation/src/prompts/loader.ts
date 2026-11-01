@@ -49,6 +49,9 @@ const PROMPT_VARIABLE_DEFAULTS = {
      */
     quizSegmentGuidance:
       '1. **Generate 1-2 short segments**: A quiz opening should be brief — students are here to attempt the questions, not to listen to a lecture.',
+    // The same rule appears in user.md as the output shape; both have to move
+    // together or the prompt asks for two different lengths.
+    quizSegmentCount: '1-2 short text segments',
   },
 } satisfies PromptVariableDefaults;
 

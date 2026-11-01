@@ -57,6 +57,7 @@ import {
   resetGenerationRunSchemaForTests,
   retryGenerationRun,
   RunCommandConflictError,
+  RunCommandInvalidError,
   type ClaimedRun,
 } from '@/lib/server/generation/run/store';
 import type { GenerationRunInput } from '@/lib/server/generation/run/types';
@@ -607,6 +608,27 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     const after = (await readGenerationRun(edited.id, OWNER))!;
     expect(after.outline).toMatchObject({ revision: 2, outlines: [OUTLINES[2]] });
     expect(after.progress).toEqual({ scenesTotal: 1, scenesCompleted: 1 });
+
+    // A long-form run's edits have to keep the shape its plan owns. The outline
+    // step bounds what it generates, but confirmation is the other way an
+    // outline gets here — and one page would generate a one-page hour. The flag
+    // is set here rather than by driving, because the fake outline step returns
+    // three pages; the guard, not the step, is what this asserts.
+    const longForm = await start(runInput({ requirement: '60 分钟的镇痛药课程' }));
+    expect(await drive(longForm.id, services)).toBe('waiting');
+    await pool.query(
+      `UPDATE generation_runs SET outline = jsonb_set(outline, '{longForm}', 'true'::jsonb)
+        WHERE id = $1`,
+      [longForm.id],
+    );
+    await expect(
+      confirm(longForm.id, OWNER, {
+        commandId: 'too-short',
+        outlineRevision: 1,
+        outlines: [OUTLINES[0]!],
+      }),
+    ).rejects.toThrow(RunCommandInvalidError);
+    await discardGenerationRun(longForm.id, OWNER);
   });
 
   describe('a countdown outline', () => {

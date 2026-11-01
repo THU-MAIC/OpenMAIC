@@ -1442,7 +1442,7 @@ export async function confirmGenerationRunOutline(
       // way an outline gets here: one page would generate a one-page course, and
       // 240 would schedule three model calls for each of them.
       if (edited && run.outline.longForm) {
-        const requirement = typeof run.requirement === 'string' ? run.requirement : '';
+        const requirement = run.input?.requirement ?? '';
         const plan = requirement ? planForRequirement(requirement) : null;
         if (plan) {
           const count = command.outlines!.length;
