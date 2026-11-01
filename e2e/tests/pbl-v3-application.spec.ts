@@ -117,6 +117,10 @@ for (const legacyMove of [false, true]) {
           },
         });
       if (url.pathname.endsWith('/application')) {
+        if (body?.action === 'status')
+          return route.fulfill({
+            json: { state: 'running', observedAt: new Date().toISOString(), sourceChanged: false },
+          });
         launches++;
         return route.fulfill({
           json: {
@@ -259,25 +263,27 @@ for (const legacyMove of [false, true]) {
       await page.clock.setSystemTime(new Date());
     }
     // The dock does not trap focus or block learner input. A busy server state does
-    // suspend application interaction, then requires a deliberate reopen.
+    // suspend input while keeping the application document, then resumes automatically.
     const composer = page.locator('textarea[placeholder]').last();
     await composer.fill('Keep this draft while looking at the application');
     await expect(composer).toHaveValue('Keep this draft while looking at the application');
     view.busy = true;
     view.activitySequence!++;
     await publishLearning();
-    await expect(panel.locator('iframe')).toHaveCount(0);
+    await expect(panel.locator('iframe')).toHaveCount(1);
+    await expect(panel.locator('iframe')).toHaveAttribute('inert', '');
+    await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toBeVisible();
+    await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toHaveValue(
+      'Unsaved form input',
+    );
     view.busy = false;
     view.activitySequence!++;
     await publishLearning();
-    await expect(
-      panel.getByRole('button', { name: 'Reopen application', exact: true }),
-    ).toBeEnabled();
+    await expect(panel.locator('iframe')).not.toHaveAttribute('inert', '');
     expect(launches).toBe(1);
-    await panel.getByRole('button', { name: 'Reopen application', exact: true }).click();
     await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toBeVisible();
     await expect(composer).toHaveValue('Keep this draft while looking at the application');
-    expect(launches).toBe(2);
+    expect(launches).toBe(1);
     await panel.getByRole('button', { name: 'Collapse application', exact: true }).click();
     await expect(panel).not.toBeVisible();
     // A final source snapshot needs no compute to read, but the application does.

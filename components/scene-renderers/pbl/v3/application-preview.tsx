@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AppWindow, ChevronRight, ExternalLink, Info, LoaderCircle, RefreshCw } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { LearningView } from '@/lib/pbl/v3/types';
@@ -41,16 +41,45 @@ export function ApplicationPreview({
   application: NonNullable<LearningView['application']>;
   preview: ApplicationPreviewController;
 }) {
+  return (
+    <ApplicationPreviewContent
+      key={preview.documentScope}
+      application={application}
+      preview={preview}
+    />
+  );
+}
+
+function ApplicationPreviewContent({
+  application,
+  preview,
+}: {
+  application: NonNullable<LearningView['application']>;
+  preview: ApplicationPreviewController;
+}) {
   const { t } = useI18n();
   const { pending, observation, error, expired, disabled } = preview;
-  const available = !disabled && observation?.preview && !expired;
-  const mounted = !disabled && observation?.preview;
+  const mounted = !!observation?.preview;
   const frame = useRef<HTMLIFrameElement | null>(null);
   const url = observation?.preview?.url;
+  const [displayed, setDisplayed] = useState<{ url: string; version: number } | null>(null);
+  const current = url ? { url, version: preview.frameVersion } : null;
+  const previous =
+    displayed && current && (displayed.url !== current.url || displayed.version !== current.version)
+      ? displayed
+      : null;
+  const available =
+    !disabled &&
+    mounted &&
+    !expired &&
+    !preview.updating &&
+    !error &&
+    observation?.state === 'running' &&
+    !previous;
   const renew = preview.renew;
   useEffect(() => {
-    if (!url || disabled) return;
-    const origin = new URL(url).origin;
+    if (!url) return;
+    const origin = new URL(previous?.url ?? url).origin;
     const receive = (event: MessageEvent) => {
       if (
         event.source === frame.current?.contentWindow &&
@@ -61,7 +90,7 @@ export function ApplicationPreview({
     };
     window.addEventListener('message', receive);
     return () => window.removeEventListener('message', receive);
-  }, [url, disabled, renew]);
+  }, [url, previous?.url, renew]);
   return (
     <section
       id={preview.panelId}
@@ -129,59 +158,81 @@ export function ApplicationPreview({
           {error}
         </p>
       )}
-      {mounted && (
-        <iframe
-          ref={frame}
-          key={observation.preview!.url}
-          title={application.title}
-          src={observation.preview!.url}
-          sandbox="allow-scripts allow-forms allow-same-origin"
-          hidden={expired}
-          inert={expired}
-          aria-hidden={expired}
-          referrerPolicy="no-referrer"
-          className="min-h-0 w-full flex-1 border-0 bg-white"
-        />
-      )}
-      {!available && (
-        <div
-          role="status"
-          className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 overflow-auto p-4 text-center text-sm text-muted-foreground"
-        >
-          {pending && <LoaderCircle className="animate-spin" />}
-          <p>
-            {t(
-              disabled
-                ? preview.dirty
-                  ? 'pblV3.application.saveFirst'
-                  : 'pblV3.application.wait'
-                : pending
-                  ? 'pblV3.application.starting'
-                  : expired
-                    ? 'pblV3.application.expired'
-                    : observation?.state === 'failed'
-                      ? 'pblV3.application.failed'
-                      : observation
-                        ? 'pblV3.application.unavailable'
-                        : 'pblV3.application.ready',
+      <div className="relative min-h-0 w-full flex-1">
+        {mounted &&
+          current &&
+          [previous, current]
+            .filter((item) => item !== null)
+            .map((item) => {
+              const visible = !previous || item === previous;
+              return (
+                <iframe
+                  ref={visible ? frame : undefined}
+                  key={`${item.version}:${item.url}`}
+                  title={visible ? application.title : t('pblV3.application.updating')}
+                  src={item.url}
+                  onLoad={() => {
+                    if (item === current) setDisplayed(item);
+                  }}
+                  sandbox="allow-scripts allow-forms allow-same-origin"
+                  hidden={expired}
+                  inert={!available || !visible}
+                  aria-hidden={expired || !visible}
+                  referrerPolicy="no-referrer"
+                  className={`absolute inset-0 h-full w-full border-0 bg-white ${!available || !visible ? 'pointer-events-none' : ''} ${visible ? '' : 'opacity-0'}`}
+                />
+              );
+            })}
+        {!available && (
+          <div
+            role="status"
+            className={
+              mounted && !expired
+                ? 'absolute left-3 right-3 top-3 z-10 flex max-h-full flex-wrap items-center justify-center gap-2 overflow-auto rounded-lg border bg-background/95 p-3 text-center text-sm text-muted-foreground shadow-sm'
+                : 'flex h-full min-h-0 flex-col items-center justify-center gap-3 overflow-auto p-4 text-center text-sm text-muted-foreground'
+            }
+          >
+            {(pending || preview.updating || !!previous) && (
+              <LoaderCircle size={16} className="shrink-0 animate-spin" />
             )}
-          </p>
-          {observation?.output && (
-            <pre className="max-h-40 max-w-full overflow-auto whitespace-pre-wrap text-left text-xs">
-              {observation.output}
-            </pre>
-          )}
-          {!pending && !disabled && (
-            <button
-              type="button"
-              className="rounded border px-3 py-2 text-foreground"
-              onClick={() => void preview.load('open')}
-            >
-              {t('pblV3.application.reopen')}
-            </button>
-          )}
-        </div>
-      )}
+            <p>
+              {t(
+                mounted && !expired && !error && (preview.updating || previous)
+                  ? preview.dirty
+                    ? 'pblV3.application.saveFirst'
+                    : 'pblV3.application.updating'
+                  : disabled
+                    ? preview.dirty
+                      ? 'pblV3.application.saveFirst'
+                      : 'pblV3.application.wait'
+                    : pending
+                      ? 'pblV3.application.starting'
+                      : expired
+                        ? 'pblV3.application.expired'
+                        : observation?.state === 'failed'
+                          ? 'pblV3.application.failed'
+                          : observation
+                            ? 'pblV3.application.unavailable'
+                            : 'pblV3.application.ready',
+              )}
+            </p>
+            {observation?.output && (
+              <pre className="max-h-40 max-w-full overflow-auto whitespace-pre-wrap text-left text-xs">
+                {observation.output}
+              </pre>
+            )}
+            {!pending && !disabled && (
+              <button
+                type="button"
+                className="rounded border px-3 py-2 text-foreground"
+                onClick={() => void preview.load('open')}
+              >
+                {t('pblV3.application.reopen')}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

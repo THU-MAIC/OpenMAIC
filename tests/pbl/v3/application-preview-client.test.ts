@@ -113,26 +113,218 @@ it('collapse preserves the iframe without stopping, relaunching or exposing it t
     await f.cleanup();
   }
 });
-it('invalidates interactive preview during writes or agent work and requires an explicit reopen', async () => {
+it.each(['agent', 'dirty', 'assessment'])(
+  'keeps the document visible during %s work and automatically resumes an unchanged app',
+  async (kind) => {
+    mocks.request.mockResolvedValue(running);
+    const f = await fixture();
+    try {
+      await f.click();
+      const frame = f.host.querySelector('iframe')!;
+      await act(async () =>
+        f.root.render(
+          createElement(Harness, {
+            dirty: kind === 'dirty',
+            current: {
+              ...view,
+              busy: kind === 'agent',
+              evaluation: kind === 'assessment' ? ({} as LearningView['evaluation']) : null,
+            },
+          }),
+        ),
+      );
+      expect(f.host.querySelector('iframe')).toBe(frame);
+      expect(frame.hidden).toBe(false);
+      expect(frame.hasAttribute('inert')).toBe(true);
+      expect(mocks.request).toHaveBeenCalledTimes(1);
+      await act(async () => f.root.render(createElement(Harness)));
+      expect(f.host.querySelector('iframe')).toBe(frame);
+      expect(frame.hasAttribute('inert')).toBe(false);
+      expect(mocks.request).toHaveBeenCalledTimes(2);
+      expect(mocks.request.mock.calls[1][1].action).toBe('status');
+    } finally {
+      await f.cleanup();
+    }
+  },
+);
+
+it.each(['stopped', 'source-changed'])(
+  'refreshes a %s backend automatically, keeping the old document until the new one loads',
+  async (kind) => {
+    mocks.request
+      .mockResolvedValueOnce(running)
+      .mockResolvedValueOnce({
+        ...running,
+        preview: undefined,
+        state: kind === 'stopped' ? 'stopped' : 'running',
+        sourceChanged: kind === 'source-changed',
+      })
+      .mockResolvedValueOnce({
+        ...running,
+        preview: { ...running.preview, url: 'https://isolated.example/preview#new' },
+      });
+    const f = await fixture();
+    try {
+      await f.click();
+      const oldFrame = f.host.querySelector('iframe')!;
+      await act(async () => oldFrame.dispatchEvent(new Event('load')));
+      await act(async () =>
+        f.root.render(createElement(Harness, { current: { ...view, busy: true } })),
+      );
+      expect(f.host.querySelector('iframe')).toBe(oldFrame);
+      await act(async () =>
+        f.root.render(createElement(Harness, { current: { ...view, revision: 1 } })),
+      );
+      expect(mocks.request.mock.calls.map((c) => c[1].action)).toEqual([
+        'open',
+        'status',
+        kind === 'stopped' ? 'open' : 'restart',
+      ]);
+      expect(mocks.request.mock.calls[2][1].revision).toBe(1);
+      const frames = f.host.querySelectorAll('iframe');
+      expect(frames).toHaveLength(2);
+      expect(frames[0]).toBe(oldFrame);
+      expect(oldFrame.hasAttribute('inert')).toBe(true);
+      const next = frames[1]!;
+      expect(next.getAttribute('aria-hidden')).toBe('true');
+      await act(async () => next.dispatchEvent(new Event('load')));
+      expect(f.host.querySelectorAll('iframe')).toHaveLength(1);
+      expect(f.host.querySelector('iframe')).toBe(next);
+      expect(next.hasAttribute('inert')).toBe(false);
+    } finally {
+      await f.cleanup();
+    }
+  },
+);
+
+it('does not launch an unopened or collapsed application when background work finishes', async () => {
   mocks.request.mockResolvedValue(running);
   const f = await fixture();
   try {
+    await act(async () =>
+      f.root.render(createElement(Harness, { current: { ...view, busy: true } })),
+    );
+    await act(async () => f.root.render(createElement(Harness)));
+    expect(mocks.request).not.toHaveBeenCalled();
+    await f.click();
     await f.click();
     await act(async () =>
       f.root.render(createElement(Harness, { current: { ...view, busy: true } })),
     );
-    expect(f.host.querySelector('iframe')).toBeNull();
     await act(async () => f.root.render(createElement(Harness)));
-    expect(f.host.querySelector('iframe')).toBeNull();
     expect(mocks.request).toHaveBeenCalledTimes(1);
+    await f.click();
+    expect(mocks.request).toHaveBeenCalledTimes(2);
+    expect(mocks.request.mock.calls[1][1].action).toBe('status');
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it('aborts an automatic status check on collapse and never dispatches its late restart', async () => {
+  let resolve!: (value: ApplicationObservation) => void;
+  mocks.request.mockResolvedValueOnce(running).mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  const f = await fixture();
+  try {
+    await f.click();
+    const old = f.host.querySelector('iframe');
     await act(async () =>
-      Array.from(f.host.querySelectorAll('button'))
-        .find((b) => b.textContent === 'pblV3.application.reopen')!
-        .click(),
+      f.root.render(createElement(Harness, { current: { ...view, busy: true } })),
     );
-    expect(f.host.querySelector('iframe')).not.toBeNull();
-    await act(async () => f.root.render(createElement(Harness, { dirty: true })));
-    expect(f.host.querySelector('iframe')).toBeNull();
+    await act(async () => f.root.render(createElement(Harness)));
+    expect(mocks.request).toHaveBeenCalledTimes(2);
+    await f.click();
+    await act(async () => resolve({ observedAt: '', state: 'stopped' }));
+    expect(mocks.request).toHaveBeenCalledTimes(2);
+    expect(f.host.querySelector('iframe')).toBe(old);
+    expect(
+      f.host.querySelector('[data-testid="pbl-application-panel"]')?.getAttribute('aria-hidden'),
+    ).toBe('true');
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it('keeps the previous page after failed recovery and retries only on explicit input', async () => {
+  mocks.request.mockResolvedValueOnce(running).mockRejectedValueOnce(new Error('Offline'));
+  const f = await fixture();
+  try {
+    await f.click();
+    const old = f.host.querySelector('iframe')!;
+    await act(async () =>
+      f.root.render(createElement(Harness, { current: { ...view, busy: true } })),
+    );
+    await act(async () => f.root.render(createElement(Harness)));
+    expect(f.host.querySelector('iframe')).toBe(old);
+    expect(old.hidden).toBe(false);
+    expect(old.hasAttribute('inert')).toBe(true);
+    expect(f.host.querySelector('[role="alert"]')?.textContent).toContain('Offline');
+    await act(async () => f.root.render(createElement(Harness)));
+    expect(mocks.request).toHaveBeenCalledTimes(2);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it.each(['epoch', 'environment', 'unavailable'])(
+  'discards retained documents and ignores in-flight refreshes when %s changes',
+  async (kind) => {
+    let resolve!: (value: ApplicationObservation) => void;
+    mocks.request.mockResolvedValueOnce(running).mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const f = await fixture();
+    try {
+      await f.click();
+      await act(async () =>
+        f.root.render(createElement(Harness, { current: { ...view, busy: true } })),
+      );
+      await act(async () => f.root.render(createElement(Harness)));
+      await act(async () =>
+        f.root.render(
+          createElement(Harness, {
+            epoch: kind === 'epoch' ? 1 : 0,
+            current: {
+              ...view,
+              environmentId: kind === 'environment' ? 'new' : view.environmentId,
+              environment:
+                kind === 'unavailable' ? { state: 'destroyed', ready: false } : view.environment,
+            },
+          }),
+        ),
+      );
+      await act(async () => resolve(running));
+      expect(f.host.querySelector('iframe')).toBeNull();
+      expect(mocks.request).toHaveBeenCalledTimes(2);
+    } finally {
+      await f.cleanup();
+    }
+  },
+);
+
+it('checks the latest saved revision even when a short write finishes between busy snapshots', async () => {
+  mocks.request.mockResolvedValue(running);
+  const f = await fixture();
+  try {
+    await f.click();
+    const old = f.host.querySelector('iframe');
+    await act(async () =>
+      f.root.render(createElement(Harness, { current: { ...view, revision: 1 } })),
+    );
+    expect(f.host.querySelector('iframe')).toBe(old);
+    expect(mocks.request.mock.calls[1][1]).toMatchObject({ action: 'status', revision: 1 });
+    await act(async () =>
+      f.root.render(createElement(Harness, { current: { ...view, revision: 1 } })),
+    );
+    expect(mocks.request).toHaveBeenCalledTimes(2);
   } finally {
     await f.cleanup();
   }
