@@ -411,8 +411,8 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     expect(outlineCall!.researchContext).toBe('research context');
     expect(Object.keys(outlineCall!).sort()).toEqual([
       'deadlineAt',
-      'researchContext',
       'requirements',
+      'researchContext',
     ]);
     expect(outlineCall!.deadlineAt).toBeGreaterThan(Date.now());
 
