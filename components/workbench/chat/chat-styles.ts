@@ -104,6 +104,21 @@ export const wbStyles = {
       'mt-2 flex w-full max-w-[440px] gap-2 rounded-[var(--wb-radius-md)] px-2.5 py-2 text-left',
     glyph: 'size-[13px] shrink-0 text-[var(--wb-accent)]',
     /**
+     * A course named mid-sentence: a TEXT TOKEN, the composer's `@` mention
+     * seen in the answer. A tint under the words and nothing else -- no
+     * border, no shadow -- at the paragraph's own size, sitting on its
+     * baseline and shorter than its line, so a sentence that names a course
+     * keeps the rhythm of the sentences around it. One unit when it wraps,
+     * long names cut with an ellipsis. Tinted from `--primary` like the
+     * composer's pill, a step stronger in dark and on hover.
+     */
+    inline:
+      'group/clink inline-flex max-w-[18em] cursor-pointer items-baseline gap-[0.25em] rounded-[5px] border-0 bg-[color-mix(in_srgb,var(--primary)_9%,transparent)] px-[5px] py-px align-baseline [font-family:inherit] text-[length:inherit] font-medium leading-[1.35] text-[var(--wb-text)] transition-colors duration-[var(--wb-duration-base)] hover:bg-[color-mix(in_srgb,var(--primary)_15%,transparent)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus-ring)] motion-reduce:transition-none dark:bg-[color-mix(in_srgb,var(--primary)_17%,transparent)] dark:hover:bg-[color-mix(in_srgb,var(--primary)_26%,transparent)]',
+    /** The inline token's book, sized and set to the words it precedes. */
+    inlineGlyph: 'size-[0.85em] shrink-0 self-center text-[var(--wb-accent)]',
+    inlineName:
+      'min-w-0 truncate underline-offset-2 decoration-[color-mix(in_srgb,var(--primary)_45%,transparent)] group-hover/clink:underline',
+    /**
      * One exchange's cards, stacked. No `gap`: `block` already carries its own
      * top margin, so one spacing rule owns the distance between a card and
      * whatever is above it — the prose, or the card before it.

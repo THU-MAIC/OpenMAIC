@@ -22,9 +22,10 @@
  *            with the page count at the far edge. One exchange's set of these
  *            sits at the tail of that answer (see `SessionCourseLink` below).
  *   inline — the course is named mid-sentence, by the agent's own prose
- *            (`text-block.tsx` upgrades a `/classroom/<id>` anchor). A pill, so a
- *            paragraph that mentions three courses does not become a wall of
- *            cards. It is INDEPENDENT of the per-exchange rule: prose is prose,
+ *            (`text-block.tsx` upgrades a `/classroom/<id>` anchor). A text
+ *            token on the line's baseline, the composer's `@` mention seen in
+ *            the answer, so a paragraph that mentions three courses keeps its
+ *            rhythm and does not become a wall of cards. It is INDEPENDENT of the per-exchange rule: prose is prose,
  *            and a sentence naming a classroom is not a receipt for one. Its
  *            press does exactly what the block form's does.
  *
@@ -95,11 +96,20 @@ export function CourseLink({
       data-variant={variant}
       title={hint}
       aria-label={hint}
-      className={cn(styles.courseLink.base, variant === 'block' && styles.courseLink.block)}
+      className={
+        variant === 'block'
+          ? cn(styles.courseLink.base, styles.courseLink.block)
+          : styles.courseLink.inline
+      }
       onClick={() => navigation.openCourse(courseId)}
     >
-      <BookOpen className={styles.courseLink.glyph} aria-hidden="true" />
-      <span className={styles.courseLink.name}>{name}</span>
+      <BookOpen
+        className={variant === 'block' ? styles.courseLink.glyph : styles.courseLink.inlineGlyph}
+        aria-hidden="true"
+      />
+      <span className={variant === 'block' ? styles.courseLink.name : styles.courseLink.inlineName}>
+        {name}
+      </span>
       {variant === 'block' ? (
         // The page count is a FACT about the course, so it stays where the cue
         // used to end the row — at the far edge, one step quieter.
