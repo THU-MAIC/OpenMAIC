@@ -182,6 +182,13 @@ export function parseCritique(text: string): Critique | null {
 
 /** Every dimension clears the bar. */
 export function critiquePasses(critique: Critique): boolean {
+  // Scores alone are not a pass. `mergeAuditIntoCritique` appends the certain
+  // arithmetic defects and flips the verdict to `revise` without touching the
+  // scores, so a critic that liked the draft would otherwise be read as a pass
+  // and ship it with a missing module, a page with no objective, or a course
+  // that runs eight minutes short.
+  if (critique.verdict !== 'pass') return false;
+  if (critique.defects.length > 0) return false;
   return CRITIQUE_DIMENSIONS.every(
     (dimension) => critique.scores[dimension] >= CRITIQUE_PASS_SCORE,
   );

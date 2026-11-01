@@ -87,48 +87,129 @@ export function speechBudgetFor(seconds: number, language: LongFormLanguage): nu
 }
 
 /**
- * The duration a request asks for, in whole minutes, or `null` when it asks for
- * none.
- *
- * Duration is not a structured field anywhere in the product — it lives inside
- * the free-form requirement — so this reads it the way a person would, from the
- * largest unit mentioned. `1.5小时` is 90 minutes, not 1 and not 5.
- *
- * Two guards, both learned from real requirement text:
- *
- * - Chinese unit words are matched without a trailing `\b`. `\b` only fires
- *   between a word character and a non-word one, and 时 is not a word character
- *   in JavaScript's `\w`, so `1 小时` at the end of a string would never match.
- *   The English units get a `(?![a-z])` instead, which is the boundary they
- *   actually need.
- * - An hour figure above the longest supported sitting is treated as absent
- *   rather than clamped. "为什么睡 12 小时还是累" is a lesson about sleep, not a
- *   twelve-hour course, and clamping it would plan a four-hour one. A genuine
- *   six-hour request falls back to the flat path, which is the lesser error.
+ * Chinese unit words are matched without a trailing `\b`. `\b` only fires
+ * between a word character and a non-word one, and 时 is not a word character in
+ * JavaScript's `\w`, so `1 小时` at the end of a string would never match. The
+ * English units get a `(?![a-z])` instead, which is the boundary they need.
  */
-export function detectRequestedMinutes(requirement: string): number | null {
+const HOUR_UNITS = String.raw`(?:个\s*)?(?:小时|钟头|hours?(?![a-z])|hrs?(?![a-z]))`;
+const MINUTE_UNITS = String.raw`(?:分钟|分半钟|mins?(?![a-z])|minutes?(?![a-z]))`;
+
+/** A hyphen or a space may separate the figure from its unit: `2-hour`, `45-min`. */
+const UNIT_JOIN = String.raw`[\s-]*`;
+
+/**
+ * Nouns that make a duration the length of the lesson rather than the length of
+ * the thing the lesson is about. 课 covers 课程 / 微课 / 大课 / 系统课.
+ */
+const COURSE_NOUN =
+  /(?:课|讲座|讲堂|教程|视频|培训|报告|班|入门|精讲|专题|系列|导论|概论|串讲|lecture|course|lesson|class|session|talk|video|tutorial|seminar|training|webinar)/i;
+
+/** Words that open a lesson length rather than a topical one. */
+const DURATION_INTENT =
+  /(?:时长|全长|总长|总共|一共|整节|整个|全程|持续|课时|duration|length|whole|total|lasts?|runs?)/i;
+
+/**
+ * Words a bare duration may be followed by and still describe a lesson: a
+ * preposition (`60 minutes on entropy`) or a teaching verb (`60 分钟讲透镇痛药`).
+ * A duration followed by a plain noun phrase is attributive — `a 30-minute
+ * insulin response` is a phenomenon, not a sitting.
+ */
+const LENGTH_FOLLOWER = new RegExp(
+  String.raw`^\s*(?:$|[，。、；：,.;:!?！？]|(?:on|about|for|of|in|to|covering|explaining|introducing)\b|(?:讲|说|介绍|覆盖|涵盖|带|学|练))`,
+  'i',
+);
+
+interface DurationMatch {
+  minutes: number;
+  /** Index just past the last character of the whole duration phrase. */
+  end: number;
+}
+
+/**
+ * The duration phrase in a requirement, with where it ends.
+ *
+ * Read as a person would, from the largest unit mentioned: `1.5小时` is 90
+ * minutes, not 1 and not 5. Compound phrases are summed, because `1 小时 30 分钟`
+ * read as hours alone is 60 — a course half an hour shorter than requested.
+ *
+ * A figure above the longest supported sitting is treated as absent rather than
+ * clamped. "为什么睡 12 小时还是累" is a lesson about sleep, not a twelve-hour
+ * course, and clamping it would plan a four-hour one. A genuine six-hour request
+ * falls back to the flat path, which is the lesser error. The minute branch gets
+ * the same guard: clamping a `300-minute` request to 240 ships a course an hour
+ * short with nothing to say it did.
+ */
+function matchDuration(requirement: string): DurationMatch | null {
   if (!requirement) return null;
 
-  const hours = requirement.match(
-    /(\d+(?:\.\d+)?)\s*个?\s*(?:小时|钟头|hours?(?![a-z])|hrs?(?![a-z]))/i,
+  const hours = new RegExp(String.raw`(\d+(?:\.\d+)?)${UNIT_JOIN}${HOUR_UNITS}`, 'i').exec(
+    requirement,
   );
   if (hours) {
-    const value = Number.parseFloat(hours[1]);
+    const value = Number.parseFloat(hours[1]!);
     if (Number.isFinite(value) && value > 0) {
-      const minutes = Math.round(value * 60);
-      return minutes > LONG_FORM_MAX_MINUTES ? null : minutes;
+      let minutes = Math.round(value * 60);
+      let end = hours.index + hours[0].length;
+      // A fractional hour already names the whole length; a trailing minutes
+      // component after `1.5 小时` would be a second, contradictory figure.
+      if (Number.isInteger(value)) {
+        const tail = new RegExp(
+          String.raw`^\s*(?:又|and|零)?\s*(\d+(?:\.\d+)?)${UNIT_JOIN}${MINUTE_UNITS}`,
+          'i',
+        ).exec(requirement.slice(end));
+        const extra = tail ? Number.parseFloat(tail[1]!) : 0;
+        if (tail && Number.isFinite(extra) && extra > 0) {
+          minutes += Math.round(extra);
+          end += tail[0].length;
+        }
+      }
+      return minutes > LONG_FORM_MAX_MINUTES ? null : { minutes, end };
     }
   }
 
-  const minutes = requirement.match(
-    /(\d+(?:\.\d+)?)[\s-]*(?:分钟|分半钟|mins?(?![a-z])|minutes?(?![a-z]))/i,
+  const plain = new RegExp(String.raw`(\d+(?:\.\d+)?)${UNIT_JOIN}${MINUTE_UNITS}`, 'i').exec(
+    requirement,
   );
-  if (minutes) {
-    const value = Number.parseFloat(minutes[1]);
-    if (Number.isFinite(value) && value > 0) return Math.round(value);
+  if (plain) {
+    const value = Number.parseFloat(plain[1]!);
+    if (Number.isFinite(value) && value > 0) {
+      const minutes = Math.round(value);
+      if (minutes > LONG_FORM_MAX_MINUTES) return null;
+      return { minutes, end: plain.index + plain[0].length };
+    }
   }
 
   return null;
+}
+
+/**
+ * The duration a request asks for, in whole minutes, or `null` when it asks for
+ * none.
+ *
+ * This reads the number; whether that number is the length of a lesson is
+ * {@link detectLongForm}'s question, because `第 3 分钟出现的心电图` is a real
+ * duration in a real requirement that is not a three-minute course.
+ */
+export function detectRequestedMinutes(requirement: string): number | null {
+  return matchDuration(requirement)?.minutes ?? null;
+}
+
+/**
+ * Whether a duration phrase describes the length of the lesson.
+ *
+ * A requirement can name a duration without naming a lesson length: `explain the
+ * 30-minute insulin response` is about a phenomenon that lasts half an hour, and
+ * treating it as a 30-minute sitting hands it the long-form budget and the
+ * extended outline it does not want. So a figure inside the long-form range
+ * counts only when the sentence frames it as a lesson — a course noun anywhere,
+ * a duration word before it, or nothing but a preposition or a teaching verb
+ * after it.
+ */
+function describesCourseLength(requirement: string, match: DurationMatch): boolean {
+  if (COURSE_NOUN.test(requirement)) return true;
+  if (DURATION_INTENT.test(requirement.slice(Math.max(0, match.end - 24), match.end))) return true;
+  return LENGTH_FOLLOWER.test(requirement.slice(match.end));
 }
 
 /**
@@ -141,12 +222,11 @@ export function detectLongForm(requirement: string): {
   isLongForm: boolean;
   requestedMinutes: number | null;
 } {
-  const requestedMinutes = detectRequestedMinutes(requirement);
-  if (requestedMinutes === null) return { isLongForm: false, requestedMinutes: null };
-  return {
-    isLongForm: requestedMinutes >= LONG_FORM_MIN_MINUTES,
-    requestedMinutes,
-  };
+  const match = matchDuration(requirement);
+  if (!match) return { isLongForm: false, requestedMinutes: null };
+  const requestedMinutes = match.minutes;
+  if (requestedMinutes < LONG_FORM_MIN_MINUTES) return { isLongForm: false, requestedMinutes };
+  return { isLongForm: describesCourseLength(requirement, match), requestedMinutes };
 }
 
 export function clampMinutes(minutes: number): number {

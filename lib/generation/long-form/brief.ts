@@ -145,18 +145,52 @@ export interface ScenePositionInput {
   ledger?: string;
 }
 
-/** The module a page belongs to, by proportional position in the outline. */
+/**
+ * The module a page belongs to.
+ *
+ * When the outline came back with the planned number of pages, the plan's own
+ * scene-to-module assignment is exact and is used directly. The clock estimate
+ * is only for an outline that drifted: page 8 of a 29-page hour is the planned
+ * opening of module 3, but its proportional midpoint lands at minute 15.5 —
+ * inside module 2, which ends at 16.
+ */
 export function moduleAtPage(
   plan: LongFormCoursePlan,
   pageIndex: number,
   totalPages: number,
 ): LongFormModulePlan {
+  if (totalPages === plan.scenes.length) {
+    const exact = plan.modules.find((module) => module.id === plan.scenes[pageIndex - 1]?.moduleId);
+    if (exact) return exact;
+  }
+
   const fraction = totalPages > 0 ? (pageIndex - 0.5) / totalPages : 0;
   const minuteMark = fraction * plan.minutes;
   const byClock = plan.modules.find(
     (module) => minuteMark >= module.startMinute && minuteMark < module.endMinute,
   );
   return byClock ?? plan.modules[plan.modules.length - 1] ?? plan.modules[0];
+}
+
+/**
+ * What this page owes its module.
+ *
+ * Same rule as {@link moduleAtPage}: the plan knows that page 4 opens module 2
+ * and that page 12 closes it. Falling back to "first page opens, last page
+ * closes, everything else develops" tells every later module's opening page to
+ * carry the argument forward instead of re-anchoring the module, which is the
+ * one thing that page exists to do.
+ */
+function roleAt(
+  plan: LongFormCoursePlan,
+  pageIndex: number,
+  totalPages: number,
+): LongFormSceneSlot['role'] {
+  if (totalPages === plan.scenes.length) {
+    const slot = plan.scenes[pageIndex - 1];
+    if (slot) return slot.role;
+  }
+  return pageIndex === 1 ? 'open' : pageIndex === totalPages ? 'close' : 'develop';
 }
 
 /**
@@ -181,7 +215,7 @@ export function buildSceneBrief(input: ScenePositionInput): string {
   if (previousTitle) neighbours.push(`- Previous page: 「${previousTitle}」`);
   if (nextTitle) neighbours.push(`- Next page: 「${nextTitle}」`);
 
-  const role = pageIndex === 1 ? 'open' : pageIndex === totalPages ? 'close' : 'develop';
+  const role = roleAt(plan, pageIndex, totalPages);
 
   return [
     `## Where this page sits in the lesson`,

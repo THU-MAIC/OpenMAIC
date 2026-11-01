@@ -149,13 +149,34 @@ describe('parseCritique', () => {
 });
 
 describe('critiquePasses', () => {
-  it('needs every dimension at the bar', () => {
-    const strong = parseCritique(critiqueJson({ scores: ALL_FOURS }))!;
+  it('needs a pass verdict and every dimension at the bar', () => {
+    const strong = parseCritique(critiqueJson({ verdict: 'pass' }))!;
     expect(critiquePasses(strong)).toBe(true);
 
-    const weak = parseCritique(critiqueJson({ scores: { ...ALL_FOURS, agency: 3 } }))!;
+    const weak = parseCritique(
+      critiqueJson({ verdict: 'pass', scores: { ...ALL_FOURS, agency: 3 } }),
+    )!;
     expect(critiquePasses(weak)).toBe(false);
     expect(CRITIQUE_PASS_SCORE).toBe(4);
+  });
+
+  it('is not a pass while the verdict still says revise', () => {
+    // Arithmetic findings flip the verdict without touching the scores. A critic
+    // that liked the draft therefore scores it 4/5 everywhere and still says
+    // revise; reading the scores alone shipped it with the certain defects intact.
+    const scored = parseCritique(critiqueJson({ scores: ALL_FOURS }))!;
+    expect(scored.verdict).toBe('revise');
+    expect(critiquePasses(scored)).toBe(false);
+  });
+
+  it('is not a pass while a defect is still listed', () => {
+    const withDefect = parseCritique(
+      critiqueJson({
+        verdict: 'pass',
+        defects: [{ pageIndex: 2, dimension: 'agency', problem: 'no decision', fix: 'add one' }],
+      }),
+    )!;
+    expect(critiquePasses(withDefect)).toBe(false);
   });
 });
 

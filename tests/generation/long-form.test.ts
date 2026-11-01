@@ -44,6 +44,25 @@ describe('detectRequestedMinutes', () => {
     expect(detectRequestedMinutes('teach me photosynthesis')).toBeNull();
     expect(detectRequestedMinutes('')).toBeNull();
   });
+
+  it('sums a compound hour-and-minute phrase', () => {
+    // Reading only the hours returns 60 for a request that asked for 90.
+    expect(detectRequestedMinutes('一节 1 小时 30 分钟的课')).toBe(90);
+    expect(detectRequestedMinutes('a 1 hour 30 minute lecture')).toBe(90);
+    expect(detectRequestedMinutes('2 小时 15 分钟的讲座')).toBe(135);
+  });
+
+  it('accepts a hyphen between the figure and the unit', () => {
+    expect(detectRequestedMinutes('a 2-hour course')).toBe(120);
+    expect(detectRequestedMinutes('a 90-minute course')).toBe(90);
+  });
+
+  it('refuses a minute figure longer than a single sitting', () => {
+    // Clamping to 240 would plan a course an hour shorter than the one asked for
+    // with nothing in the output saying so.
+    expect(detectRequestedMinutes('a 300-minute course')).toBeNull();
+    expect(detectLongForm('a 300-minute course').isLongForm).toBe(false);
+  });
 });
 
 describe('detectLongForm', () => {
@@ -51,6 +70,19 @@ describe('detectLongForm', () => {
     expect(detectLongForm('20 分钟的入门课').isLongForm).toBe(false);
     expect(detectLongForm(`${LONG_FORM_MIN_MINUTES} 分钟的课`).isLongForm).toBe(true);
     expect(detectLongForm('60 minutes on entropy').isLongForm).toBe(true);
+  });
+
+  it('does not read a topical duration as a sitting', () => {
+    // The insulin response lasts thirty minutes; the lesson about it is not
+    // thirty minutes long, and handing it the long-form budget plans a course
+    // nobody asked for.
+    expect(detectLongForm('explain the 30-minute insulin response').isLongForm).toBe(false);
+    expect(detectLongForm('30 分钟的胰岛素反应是怎么回事').isLongForm).toBe(false);
+    expect(detectLongForm('为什么 40 分钟的午睡醒来更累').isLongForm).toBe(false);
+  });
+
+  it('still reads a bare duration that is the whole request', () => {
+    expect(detectLongForm('60 分钟').isLongForm).toBe(true);
   });
 
   it('leaves an unspecified length on the short path', () => {
@@ -336,6 +368,17 @@ describe('buildSceneBrief', () => {
     const brief = buildSceneBrief({ plan, pageIndex: 400, totalPages: 400 });
     expect(brief).toContain('Module **7 of 7**');
   });
+
+  it('gives every module opening its own re-anchor role', () => {
+    // "First page opens, last page closes, everything else develops" told every
+    // later module's opening page to carry the argument forward — the one thing
+    // that page exists not to do.
+    const opening = buildSceneBrief({ plan, pageIndex: 4, totalPages: plan.scenes.length });
+    expect(opening).toContain('Page role: open');
+
+    const check = buildSceneBrief({ plan, pageIndex: 12, totalPages: plan.scenes.length });
+    expect(check).toContain('Page role: check');
+  });
 });
 
 describe('moduleAtPage', () => {
@@ -344,6 +387,15 @@ describe('moduleAtPage', () => {
     expect(moduleAtPage(plan, 1, 27).index).toBe(1);
     expect(moduleAtPage(plan, 14, 27).index).toBe(4);
     expect(moduleAtPage(plan, 27, 27).index).toBe(7);
+  });
+
+  it('uses the plan own assignment when the outline kept its page count', () => {
+    // Page 8 is the planned opening of module 3. Its proportional midpoint lands
+    // at minute 15.5 — inside module 2, which ends at 16 — so the clock estimate
+    // told the page that opens module 3 it belonged to the module before it.
+    const plan = planLongFormCourse({ minutes: 60, language: 'zh' });
+    expect(moduleAtPage(plan, 8, plan.scenes.length).index).toBe(3);
+    expect(moduleAtPage(plan, 4, plan.scenes.length).index).toBe(2);
   });
 });
 

@@ -712,7 +712,7 @@ async function executeClaimedRun(
 
       case 'actions': {
         const index = step.sceneIndex;
-        const { outlines, languageDirective } = outline();
+        const { outlines, languageDirective, longForm } = outline();
         const content = output<SceneContentResult>(sceneStepId(index, 'content'))!;
         const userProfile = learnerProfileText(input);
         // Long-form: the page's place in the course, its module, its
@@ -720,7 +720,13 @@ async function executeClaimedRun(
         // Rendered against the outline that actually exists, so a course that
         // came back with 24 pages still gets correct clock marks instead of the
         // plan's 27.
-        const longFormPlan = planForRequirement(input.requirement);
+        //
+        // Gated on what the outline step recorded, not on the requirement: a
+        // 25-minute request that went through the interactive or Task Engine
+        // template still names a duration, and these outlines never followed a
+        // long-form plan. `undefined` (a run written before the flag existed)
+        // reads as "no plan" — an absent coordinate is better than a wrong one.
+        const longFormPlan = longForm === true ? planForRequirement(input.requirement) : null;
         const longFormBrief = longFormPlan
           ? buildSceneBrief({
               plan: longFormPlan,
@@ -865,6 +871,7 @@ async function executeClaimedRun(
       languageDirective: result.languageDirective,
       ...(result.courseTitle ? { courseTitle: result.courseTitle } : {}),
       taskEngineMode: result.taskEngineMode,
+      ...(result.longForm ? { longForm: true } : {}),
     };
     // The run waits for confirmation holding no worker, unless its caller
     // asked for the outline to be confirmed with it. A `countdown` run (as the

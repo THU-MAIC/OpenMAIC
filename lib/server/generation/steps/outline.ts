@@ -31,6 +31,7 @@ import { DEFAULT_LANGUAGE_DIRECTIVE } from '@openmaic/generation';
 import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import { MAX_OUTLINE_SCENES } from '@/lib/server/generation/outline-schema';
 import { buildLongFormBrief, planForRequirement } from '@/lib/generation/long-form';
+import type { LongFormCoursePlan } from '@/lib/generation/long-form';
 import { reviseLongFormOutline } from './long-form-revision';
 import { nanoid } from 'nanoid';
 import type {
@@ -331,6 +332,15 @@ export interface PreparedOutline {
   requirement: string;
   taskEngineMode: boolean;
   prompts: { system: string; user: string };
+  /**
+   * The long-form plan this outline was written against, when there is one.
+   *
+   * `null` covers both "not a long-form request" and "a long-form request the
+   * two custom-mode templates took over" — those outline 10-14 Task Engine
+   * scenes or an interactive lesson, and attaching a 29-page hour's module and
+   * clock budgets to their pages would describe a course nobody is writing.
+   */
+  longFormPlan: LongFormCoursePlan | null;
   /** The images attached to the prompt, resolved to data URLs or concrete URLs. */
   visionImages?: Array<{ id: string; src: string; width?: number; height?: number }>;
 }
@@ -348,6 +358,19 @@ export interface OutlineResult {
   languageDirective: string;
   courseTitle: string | undefined;
   taskEngineMode: boolean;
+  /**
+   * Whether these outlines were written against a long-form plan.
+   *
+   * Downstream stages must not re-detect this from the requirement alone: a
+   * 25-minute request that went through the interactive or Task Engine template
+   * still names a duration, and the action step would attach module and clock
+   * coordinates from a plan the outline never followed.
+   *
+   * Optional because it is persisted with the run: a run written before the
+   * flag existed has no answer, and "unknown" must read as "no plan" rather than
+   * as a guess.
+   */
+  longForm?: boolean;
 }
 
 export type OutlineRefusal = 'prompt-unavailable';
@@ -488,7 +511,12 @@ async function prepareOutline(
   // Long-form: a request that named a long sitting gets a budget it must spend,
   // instead of the flat "1-2 scenes per minute" default that produces either a
   // 60-page sprint or a 12-page course that claims an hour it cannot fill.
-  const longFormPlan = planForRequirement(requirements.requirement);
+  //
+  // The two app-only modes keep their own templates and their own scene counts,
+  // so they get no plan: attaching an hour's module table to a 12-scene Task
+  // Engine outline would describe a course nobody is writing.
+  const requestedPlan = planForRequirement(requirements.requirement);
+  const longFormPlan = taskEngineMode || interactiveMode ? null : requestedPlan;
   const longFormBrief = longFormPlan ? buildLongFormBrief(longFormPlan) : undefined;
 
   let prompts: { system: string; user: string } | null = buildOutlinePrompt(requirements, {
@@ -533,6 +561,7 @@ async function prepareOutline(
     model,
     requirement: requirements.requirement,
     taskEngineMode,
+    longFormPlan,
     prompts,
     ...(visionImages ? { visionImages } : {}),
   };
@@ -548,7 +577,7 @@ async function streamOutlines(
   prepared: PreparedOutline,
   ctx: StepContext<OutlineEvent>,
 ): Promise<OutlineResult> {
-  const { model, prompts, visionImages, taskEngineMode, requirement } = prepared;
+  const { model, prompts, visionImages, taskEngineMode, longFormPlan, requirement } = prepared;
   const { model: languageModel, modelInfo, thinkingConfig } = model;
   const { log, signal } = ctx;
   const emit = (event: OutlineEvent) => ctx.emit?.(event);
@@ -812,6 +841,7 @@ async function streamOutlines(
     languageDirective: languageDirective || DEFAULT_LANGUAGE_DIRECTIVE,
     courseTitle: courseTitle || undefined,
     taskEngineMode,
+    longForm: longFormPlan !== null,
   };
 }
 
@@ -827,10 +857,8 @@ export async function generateOutlines(
   // in the outline — a claim nobody derives, a module attached to no system, a
   // prerequisite nobody supplies — costs 3 model calls per page to discover
   // later and cannot be fixed there. The two modes with their own templates
-  // keep their own behaviour.
-  if (prepared.taskEngineMode || input.requirements.interactiveMode) return draft;
-
-  const plan = planForRequirement(input.requirements.requirement);
+  // keep their own behaviour, which is what a null plan means here.
+  const plan = prepared.longFormPlan;
   if (!plan) return draft;
 
   return reviseLongFormOutline({

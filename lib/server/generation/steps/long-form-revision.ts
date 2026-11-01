@@ -135,6 +135,9 @@ async function reviseOnce(
     languageDirective: current.languageDirective,
     courseTitle: current.courseTitle,
     taskEngineMode: current.taskEngineMode,
+    // A repair cannot turn a long-form outline into something else, or the
+    // reverse; the flag describes how the draft was planned.
+    ...(current.longForm ? { longForm: true } : {}),
   };
 }
 
@@ -191,7 +194,10 @@ export async function reviseLongFormOutline(input: LongFormRevisionInput): Promi
           : ''),
     );
 
-    if (critiquePasses(critique) || !shouldRevise(critique, round)) {
+    // `round` counts critiques; `shouldRevise` counts repairs already applied.
+    // Passing the loop counter made the second round refuse to repair — the
+    // course got one pass, not the two the budget allows.
+    if (critiquePasses(critique) || !shouldRevise(critique, round - 1)) {
       log.info(`long-form revision: stopping after round ${round} (${critique.verdict})`);
       return current;
     }

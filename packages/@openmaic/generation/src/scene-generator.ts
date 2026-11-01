@@ -1775,6 +1775,10 @@ function buildPBLProjectSummary(outline: SceneOutline, project: PBLProject | und
  * contract without a second template.
  */
 const LONG_FORM_ACTION_VARIABLES = {
+  // The template gates its elaboration section on this flag, and a missing
+  // variable reads as false — so without it the long-form contract was removed
+  // from every slide prompt even though the brief was supplied.
+  longFormMode: true,
   segmentCount: '9-16',
   pacingGuidance: [
     '- This page carries 2-3 minutes of a long lesson: generate **9-16** action/text objects, not 5-10.',

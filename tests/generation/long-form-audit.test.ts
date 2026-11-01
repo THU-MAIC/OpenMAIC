@@ -73,6 +73,35 @@ describe('auditOutline', () => {
     expect(defect.pageIndex).toBe(7);
   });
 
+  it('reports a malformed objective instead of throwing on it', () => {
+    // The streaming parser casts JSON to SceneOutline without validating it, so a
+    // truthy non-string reaches the audit before `normalizeSceneOutlines` runs.
+    // Throwing here would discard an otherwise usable draft.
+    const malformed = goodOutline();
+    (malformed[2] as unknown as { teachingObjective: unknown }).teachingObjective = [];
+    const audit = auditOutline(plan, malformed);
+
+    const defect = audit.defects.find((candidate) => candidate.code === 'missing-objective')!;
+    expect(defect.pageIndex).toBe(3);
+  });
+
+  it('does not count an interactive page the pipeline would turn into a slide', () => {
+    // `applyOutlineFallbacks` converts an interactive page with no widget config
+    // into a slide before content generation, and the patch protocol lets a
+    // repair add exactly that page. Counting it as the module's retrieval beat
+    // reports a check that never gets built.
+    const moduleWithCheck = plan.modules.find((module) => module.endsWithCheck)!;
+    const lastPage = plan.scenes
+      .filter((slot) => slot.moduleIndex === moduleWithCheck.index)
+      .pop()!;
+    const bare = goodOutline().map((scene, index) =>
+      index + 1 === lastPage.index ? { ...scene, type: 'interactive' as const } : scene,
+    );
+
+    const audit = auditOutline(plan, bare);
+    expect(audit.defects.some((defect) => defect.code === 'missing-check')).toBe(true);
+  });
+
   it('catches a module that forgot its retrieval page', () => {
     const noCheck = goodOutline().map((scene, index) =>
       index === 6 ? { ...scene, type: 'slide' as const } : scene,

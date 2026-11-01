@@ -75,8 +75,21 @@ const DEFAULTS = {
   pageDurationTolerance: 0.4,
 };
 
-/** Scene types that make a learner produce something. */
-const RETRIEVAL_TYPES = new Set(['quiz', 'interactive']);
+/**
+ * Whether a page makes the learner produce something, as the pipeline will build
+ * it.
+ *
+ * An `interactive` page with no config is not one: `applyOutlineFallbacks` turns
+ * exactly that page into a slide before content generation runs, so counting it
+ * here would report the module as having a retrieval beat that never gets built —
+ * and a repair is allowed to add an `interactive` page without widget fields,
+ * which is how that false pass arises.
+ */
+function isRetrievalScene(scene: SceneOutline): boolean {
+  if (scene.type === 'quiz') return true;
+  if (scene.type !== 'interactive') return false;
+  return Boolean(scene.interactiveConfig || (scene.widgetType && scene.widgetOutline));
+}
 
 /** Page indices each module owns, in the plan's own numbering. */
 function modulePageRanges(plan: LongFormCoursePlan): Map<number, { first: number; last: number }> {
@@ -168,7 +181,12 @@ export function auditOutline(
       });
     }
 
-    if (!scene.teachingObjective || !scene.teachingObjective.trim()) {
+    // The streaming parser casts JSON to `SceneOutline` without validating it,
+    // and `normalizeSceneOutlines` does not run until the outline step returns.
+    // A truthy non-string here (`"teachingObjective": []`) would throw on
+    // `.trim()` and lose an otherwise usable draft, so the type is checked
+    // rather than assumed.
+    if (typeof scene.teachingObjective !== 'string' || !scene.teachingObjective.trim()) {
       defects.push({ code: 'missing-objective', pageIndex, detail: 'no teachingObjective' });
     }
   });
@@ -184,7 +202,7 @@ export function auditOutline(
 
       if (modulePlan.endsWithCheck) {
         const last = pages[pages.length - 1];
-        if (!RETRIEVAL_TYPES.has(last.type)) {
+        if (!isRetrievalScene(last)) {
           defects.push({
             code: 'missing-check',
             pageIndex: range.last,

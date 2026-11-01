@@ -5,7 +5,7 @@
  * were written, the parser was tested, and no model has ever read either. This
  * server closes that gap without asking anyone to run the whole 90-call
  * pipeline — it drives the real critique and repair prompts over a real outline
- * and reports nine checkpoints, so a failure names which part of the loop is
+ * and reports eleven checkpoints, so a failure names which part of the loop is
  * broken instead of just producing a bad course.
  *
  * It reuses the production prompts and the production parsers. If the
@@ -14,6 +14,10 @@
  * Usage:
  *   npx tsx --conditions=import scripts/long-form/experiment-server.ts
  *   → open http://localhost:8787
+ *
+ * Outbound endpoints go through the server's URL guard, so a mock provider on
+ * loopback needs `ALLOW_LOCAL_NETWORKS=1`. The guard is not optional: the page is
+ * reachable from any tab the developer has open.
  *
  * The API key is typed into the page, held in this process's memory for the
  * duration of one request, and never written anywhere.
@@ -28,16 +32,21 @@ import {
   applyRevisionPatch,
   buildLongFormBrief,
   critiquePasses,
+  extractJsonObject,
   formatCritiqueForRevision,
   isSafeRevision,
+  mergeAuditIntoCritique,
   parseCritique,
   parseRevisionPatch,
   planLongFormCourse,
   serializeOutlineForCritic,
+  shouldRevise,
   type Critique,
   type LongFormCoursePlan,
   type OutlineAudit,
 } from '@/lib/generation/long-form';
+import { normalizeSceneOutlines } from '@/lib/server/generation/outline-schema';
+import { allowLocalNetworksEnabled, validateUrlForSSRFWithPolicy } from '@/lib/server/ssrf-guard';
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
 import {
   PROMPT_IDS as GENERATION_PROMPT_IDS,
@@ -84,6 +93,40 @@ function completionsUrl(baseUrl: string): string {
   const trimmed = baseUrl.trim().replace(/\/+$/, '');
   if (trimmed.endsWith('/chat/completions')) return trimmed;
   return `${trimmed}/chat/completions`;
+}
+
+/** Redirects followed before giving up. Every hop is re-validated. */
+const MAX_REDIRECTS = 3;
+
+/**
+ * `fetch` with the URL guard applied to the target and to every redirect.
+ *
+ * This console listens on loopback, but loopback does not make it private: any
+ * page the developer has open can POST to it as a simple request, with no
+ * preflight to stop it, and an unvalidated `baseUrl` would then turn this machine
+ * into a proxy for whatever address that page named — including the ones the
+ * server's own guard exists to refuse. The guard is the same module the rest of
+ * the server uses, so a local mock endpoint still works under
+ * `ALLOW_LOCAL_NETWORKS=1`.
+ */
+async function guardedFetch(url: string, init: RequestInit): Promise<Response> {
+  let target = url;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
+    const refusal = await validateUrlForSSRFWithPolicy(target, {
+      allowLocalNetworks: allowLocalNetworksEnabled(),
+    });
+    if (refusal) {
+      throw new Error(`端点被拒绝：${refusal}（本地 mock 端点需要 ALLOW_LOCAL_NETWORKS=1）`);
+    }
+
+    const result = await fetch(target, { ...init, redirect: 'manual' });
+    if (result.status < 300 || result.status >= 400) return result;
+
+    const location = result.headers.get('location');
+    if (!location) return result;
+    target = new URL(location, target).href;
+  }
+  throw new Error(`重定向超过 ${MAX_REDIRECTS} 次：${url}`);
 }
 
 interface ChatResult {
@@ -197,7 +240,7 @@ async function chat(
   let lastBody = '';
   for (const extra of attempts) {
     try {
-      response = await fetch(completionsUrl(config.baseUrl), {
+      response = await guardedFetch(completionsUrl(config.baseUrl), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -410,14 +453,22 @@ async function runExperiment(
         : `无法解析：${badRaw.slice(0, 160)}`,
     });
 
+    // `parseCritique` fills a dimension the model left out with a default score,
+    // so counting the parsed keys always returns five and C3 could never fail.
+    // The question it asks is whether the model answered all five, which only
+    // the raw object can answer.
+    const rawScores = (extractJsonObject(badRaw) as { scores?: unknown } | null)?.scores;
+    const suppliedScores =
+      rawScores && typeof rawScores === 'object' ? Object.keys(rawScores).length : 0;
+
     record({
       id: 'C3',
       label: '五个维度都有分数',
-      status: badCritique && Object.keys(badCritique.scores).length === 5 ? 'pass' : 'fail',
+      status: suppliedScores === 5 ? 'pass' : 'fail',
       detail: badCritique
-        ? Object.entries(badCritique.scores)
+        ? `原始返回 ${suppliedScores}/5 个维度 · ${Object.entries(badCritique.scores)
             .map(([key, value]) => `${key}=${value}`)
-            .join(' ')
+            .join(' ')}`
         : '没有分数',
     });
 
@@ -445,9 +496,16 @@ async function runExperiment(
     record({
       id: 'C6a',
       label: '劣质稿被判为需要修改',
-      status: badCritique && !critiquePasses(badCritique) ? 'pass' : 'fail',
+      // The production loop's own stop condition, not just the scores: a critic
+      // that answers `verdict: "pass"` with low scores stops the loop there, so
+      // C6a must fail for it — otherwise the console reports that the repair path
+      // was exercised on a draft production would have shipped as-is.
+      status:
+        badCritique && !critiquePasses(badCritique) && shouldRevise(badCritique, 0)
+          ? 'pass'
+          : 'fail',
       detail: badCritique
-        ? `均分 ${round(meanScore(badCritique))}，判定 ${badCritique.verdict}`
+        ? `均分 ${round(meanScore(badCritique))}，判定 ${badCritique.verdict}，${badCritique.defects.length} 条缺陷`
         : '—',
     });
   } catch (error) {
@@ -495,7 +553,12 @@ async function runExperiment(
         requirement,
         budget: buildLongFormBrief(plan),
         outline: serializeOutlineForCritic(bad),
-        defects: formatCritiqueForRevision(badCritique),
+        // The same merge production runs. The critic is told not to repeat the
+        // arithmetic, so passing its critique alone would withhold exactly the
+        // defects the audit is certain about — and C9 would then report no
+        // arithmetic improvement even when the model followed every instruction
+        // it was given.
+        defects: formatCritiqueForRevision(mergeAuditIntoCritique(badCritique, badAudit)),
       });
       if (!prompts) throw new Error('revise prompt template is missing');
 
@@ -597,11 +660,19 @@ async function runExperiment(
       emit({ type: 'call', label: '真实大纲生成', phase: 'done', ms: generated.ms });
       emit({ type: 'artifact', name: 'generated-outline', content: generated.text });
 
+      // R1 feeds the console's readiness verdict, so a substring is not enough:
+      // "I cannot produce outlines" contains `outlines`, and so does a response
+      // truncated at `"outlines": [`. Parse the wrapper and run the production
+      // normalizer — the same acceptance the outline step applies.
+      const parsedOutline = extractJsonObject(generated.text) as { outlines?: unknown } | null;
+      const normalized = normalizeSceneOutlines(parsedOutline?.outlines);
       record({
         id: 'R1',
         label: '真实大纲生成',
-        status: generated.text.includes('outlines') ? 'pass' : 'fail',
-        detail: `${generated.ms}ms，${generated.outputChars} 字符`,
+        status: normalized.ok && normalized.value.length > 0 ? 'pass' : 'fail',
+        detail: normalized.ok
+          ? `${generated.ms}ms，${generated.outputChars} 字符，${normalized.value.length} 页可用`
+          : `${generated.ms}ms，${generated.outputChars} 字符，不可用：${normalized.message}`,
       });
     } catch (error) {
       record({
@@ -625,7 +696,7 @@ async function runExperiment(
  */
 async function probeEndpoint(config: ChatConfig): Promise<Record<string, unknown>> {
   const started = Date.now();
-  const response = await fetch(completionsUrl(config.baseUrl), {
+  const response = await guardedFetch(completionsUrl(config.baseUrl), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
     body: JSON.stringify({

@@ -109,6 +109,15 @@ export interface GenerationRunOutline {
   courseTitle?: string;
   /** The server-effective task-engine mode the outline was generated in. */
   taskEngineMode: boolean;
+  /**
+   * Whether this outline was written against a long-form plan.
+   *
+   * Persisted so the narration stage reads what happened instead of re-deriving
+   * it: a 25-minute request routed to the interactive or Task Engine template
+   * names a duration but never followed a plan. Absent on runs written before
+   * the flag existed, which must read as "no plan".
+   */
+  longForm?: boolean;
 }
 
 /** A custom preset agent as narration reads it. */
