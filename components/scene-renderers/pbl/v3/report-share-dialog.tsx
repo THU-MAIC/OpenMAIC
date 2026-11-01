@@ -75,7 +75,8 @@ export function ReportShareDialog({
     >
       <DialogContent
         container={document.fullscreenElement as HTMLElement | null}
-        className="flex max-h-[94dvh] max-w-[calc(100vw-1rem)] flex-col gap-4 overflow-y-auto sm:max-w-4xl"
+        overlayClassName="z-[140]"
+        className="z-[150] flex max-h-[94dvh] max-w-[calc(100vw-1rem)] flex-col gap-4 overflow-y-auto sm:max-w-4xl"
         onEscapeKeyDown={(e) => e.stopPropagation()}
       >
         <DialogHeader>
