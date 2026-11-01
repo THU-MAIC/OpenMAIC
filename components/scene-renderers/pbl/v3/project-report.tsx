@@ -163,13 +163,17 @@ export function ProjectReport({
       }}
     >
       <nav className="sticky top-0 z-10 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b bg-background/95 py-3 pl-4 pr-16 backdrop-blur sm:pl-8 sm:pr-20">
-        <button className={`${button} min-w-0 justify-self-start`} onClick={onWorkbench}>
+        <button
+          className={`${button} min-w-0 justify-self-start`}
+          aria-label={t('pblV3.reportCopy.viewWorkbench')}
+          onClick={onWorkbench}
+        >
           <ArrowLeft size={15} />
-          {t('pblV3.reportCopy.viewWorkbench')}
+          <span className="hidden sm:inline">{t('pblV3.reportCopy.viewWorkbench')}</span>
         </button>
         {report && (
           <button
-            className="inline-flex items-center justify-center gap-2 justify-self-center rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm hover:opacity-90"
+            className="absolute left-1/2 top-1/2 inline-flex -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm hover:opacity-90"
             onClick={() => setShareOpen(true)}
           >
             {t('pblV3.share.open')}
