@@ -57,6 +57,8 @@ const mocks = vi.hoisted(() => ({
   fetch: null as ((input: RequestInfo | URL) => Promise<unknown>) | null,
   /** The roster route's answer; `null` answers 404 (a host without it). */
   roster: null as Record<string, unknown> | null,
+  /** The roster route answers 500 while set. */
+  rosterUnavailable: false,
   rosterFetchCount: 0,
   unsavedStageEdit: false,
   setStageAgents: vi.fn(),
@@ -226,6 +228,7 @@ function wireFetch(): void {
     }
     if (url.includes('/roster')) {
       mocks.rosterFetchCount += 1;
+      if (mocks.rosterUnavailable) return { ok: false, status: 500 };
       if (!mocks.roster) return { ok: false, status: 404 };
       return { ok: true, status: 200, json: async () => mocks.roster };
     }
@@ -347,8 +350,23 @@ beforeEach(() => {
   mocks.batchMaxIds = 200;
   mocks.roster = null;
   mocks.rosterFetchCount = 0;
+  mocks.rosterUnavailable = false;
   mocks.unsavedStageEdit = false;
   mocks.setStageAgents.mockReset();
+  // The real action's effect on what the classroom shows: the stage carries
+  // the new roster (the registry/selection mirrors are covered by the store's
+  // own tests).
+  mocks.setStageAgents.mockImplementation(
+    (configs: unknown[], options?: { agentIds?: string[] }) => {
+      const stage = mocks.stageState.stage;
+      if (!stage) return;
+      mocks.stageState.stage = {
+        ...stage,
+        generatedAgentConfigs: configs,
+        ...(options?.agentIds ? { agentIds: options.agentIds } : {}),
+      } as typeof stage;
+    },
+  );
   mocks.stageSubscribers = [];
   MockEventSource.instances = [];
   abandonedRenderObserved = () => undefined;
@@ -940,14 +958,79 @@ describe('a roster written while the classroom is open', () => {
     expect(mocks.setStageAgents).not.toHaveBeenCalled();
   });
 
-  it('does not overwrite a roster edit this browser has not saved yet', async () => {
+  const shownConfigs = () =>
+    (mocks.stageState.stage as { generatedAgentConfigs?: unknown } | null)?.generatedAgentConfigs;
+
+  it('does not overwrite a roster edit this browser has not saved yet, and reads it again once saved', async () => {
     await mount();
     const source = MockEventSource.instances[0]!;
     mocks.roster = roster;
     mocks.unsavedStageEdit = true;
     manifestWith({ rev: mocks.manifest.rev + 1 });
     await act(async () => source.emitFreshness());
-    expect(mocks.rosterFetchCount).toBe(1);
     expect(mocks.setStageAgents).not.toHaveBeenCalled();
+    expect(shownConfigs()).toBeUndefined();
+
+    // The local save lands. The stage rev did not move again, yet the pass
+    // after it still reads the roster: the skipped one was never recorded
+    // as seen.
+    mocks.unsavedStageEdit = false;
+    await act(async () => source.emitFreshness());
+    expect(mocks.rosterFetchCount).toBe(1);
+    expect(shownConfigs()).toEqual(roster.generatedAgentConfigs);
+
+    // Settled: the next quiet pass reads nothing.
+    await act(async () => source.emitFreshness());
+    expect(mocks.rosterFetchCount).toBe(1);
+  });
+
+  it('a roster read failure does not stop the scenes, and is read again on the next pass', async () => {
+    await mount();
+    const source = MockEventSource.instances[0]!;
+    mocks.roster = roster;
+    mocks.rosterUnavailable = true;
+    bumpSceneRev('scene-2');
+    await act(async () => source.emitFreshness());
+
+    // The scene write reached the canvas despite the roster 500.
+    expect(mocks.rosterFetchCount).toBe(1);
+    expect(mocks.stageState.scenes.find((s) => s.id === 'scene-2')).toMatchObject({
+      title: 'scene-2 v2',
+    });
+    expect(shownConfigs()).toBeUndefined();
+    // The write-side baseline took the scene's new rev, not the stage's.
+    const baseline = mocks.stageState.serverManifestByStage['stage-a'] as {
+      rev: number;
+      scenes: { id: string; rev: number }[];
+    };
+    expect(baseline.scenes.find((s) => s.id === 'scene-2')?.rev).toBe(2);
+    expect(baseline.rev).toBe(1);
+
+    // The route recovers: the next pass reads the roster again, with no new
+    // write and without re-fetching the scene.
+    mocks.rosterUnavailable = false;
+    const batches = mocks.batchCalls.length;
+    await act(async () => source.emitFreshness());
+    expect(mocks.rosterFetchCount).toBe(2);
+    expect(shownConfigs()).toEqual(roster.generatedAgentConfigs);
+    expect(mocks.batchCalls).toHaveLength(batches);
+    expect((mocks.stageState.serverManifestByStage['stage-a'] as { rev: number }).rev).toBe(2);
+  });
+
+  it('a classroom the load already filled reads the roster on its first sync pass', async () => {
+    // The classroom load filled the store; a set_roster landed after that
+    // load read the course but before the sync took its first manifest.
+    mocks.stageState.stage = { id: 'stage-a' };
+    mocks.stageState.scenes = SCENE_IDS.map((id) => mocks.sceneContent[id]);
+    mocks.roster = roster;
+    await mount({ bootstrapDocument: false });
+    const source = MockEventSource.instances[0]!;
+    expect(mocks.rosterFetchCount).toBe(0);
+
+    // No further write: the stage rev the first pass saw is the one after
+    // the roster write, and the roster is read anyway.
+    await act(async () => source.emitFreshness());
+    expect(mocks.rosterFetchCount).toBe(1);
+    expect(shownConfigs()).toEqual(roster.generatedAgentConfigs);
   });
 });

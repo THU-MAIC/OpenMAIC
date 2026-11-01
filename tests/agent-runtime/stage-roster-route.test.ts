@@ -61,6 +61,9 @@ describe('GET /api/stages/[id]/roster', () => {
       agentIds: ['gen-t'],
       generatedAgentConfigs,
     });
+    // The stage row alone: the course's scenes are never loaded.
+    expect(mocks.fakeStore!.loadStageCalls).toEqual([STAGE_ID]);
+    expect(mocks.fakeStore!.loadDocumentCalls).toEqual([]);
   });
 
   it('answers an empty roster for a course that never stored one', async () => {
@@ -69,7 +72,11 @@ describe('GET /api/stages/[id]/roster', () => {
   });
 
   it('answers 404 for a missing or foreign stage', async () => {
+    // The fake store is one owner's partition: another owner's course is as
+    // absent from it as a course that does not exist.
     expect((await call('stage-absent')).status).toBe(404);
+    expect(mocks.fakeStore!.loadStageCalls).toEqual(['stage-absent']);
+    expect(mocks.fakeStore!.loadDocumentCalls).toEqual([]);
   });
 
   it('answers 404 when server persistence is not configured', async () => {

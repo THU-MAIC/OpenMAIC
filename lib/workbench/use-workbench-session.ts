@@ -339,6 +339,8 @@ const STAGE_SYNC_FALLBACK_MS = 30_000;
 const STAGE_SYNC_FALLBACK_JITTER = 0.2;
 const STAGE_SYNC_RETRY_DELAY_MS = 3_000;
 const STAGE_SYNC_MAX_RETRIES = 5;
+/** A stage rev no manifest carries: the next pass treats the stage as moved. */
+const UNVERIFIED_STAGE_REV = -1;
 
 export function useStageFreshnessSync(
   stageId: string | null,
@@ -500,9 +502,11 @@ export function useStageFreshnessSync(
           // ZEROED baseline so the next pass treats every scene as changed and
           // verifies the true revs exactly once — this closes the window where
           // a manifest recorded after the load could hide a write that landed
-          // in between.
+          // in between. The stage rev is a sentinel no manifest carries, for
+          // the same reason: a roster written between the load and here is
+          // read on the next pass, not hidden behind the rev recorded now.
           renderedManifest.current = {
-            rev: manifest.rev,
+            rev: UNVERIFIED_STAGE_REV,
             scenes: manifest.scenes.map((scene) => ({ ...scene, rev: 0 })),
           };
         } else {
@@ -515,36 +519,12 @@ export function useStageFreshnessSync(
         return;
       }
 
-      // The stage itself moved: a roster write (`set_roster`, or an edit in
-      // another tab) lands only there, and the classroom on screen must follow
-      // it -- names, avatars, voices -- without a reload. Read before the
-      // baseline advances, so a failed read is tried again, never skipped.
-      if (manifest.rev !== renderedManifest.current.rev) {
-        const roster = await fetchStageRoster(requestedStage);
-        if (!isCurrent()) return;
-        if (!roster) throw new Error(`stage roster unavailable for ${requestedStage}`);
-        const store = useStageStore.getState();
-        if (
-          store.stage?.id === requestedStage &&
-          roster.generatedAgentConfigs &&
-          stageRosterChanged(store.stage, roster) &&
-          // A roster edit of this browser's own, not yet saved, wins: its
-          // save is judged against the server by the write-side veto.
-          !hasUnsavedStageEdit(requestedStage)
-        ) {
-          store.setStageAgents([...roster.generatedAgentConfigs], {
-            fromServer: true,
-            ...(roster.agentIds ? { agentIds: [...roster.agentIds] } : {}),
-          });
-        }
-      }
-
+      const previousStageRev = renderedManifest.current.rev;
       const diff = diffStageManifest(renderedManifest.current, manifest);
       if (diff.changed.length === 0 && diff.added.length === 0 && diff.removed.length === 0) {
-        // Only the stage rev moved (an outline/stage-name write): record it,
-        // nothing else to do — scene content is unchanged.
-        renderedManifest.current = manifest;
-        recordWriteBaseline(manifest);
+        // Only the stage rev moved (an outline/stage-name/roster write): scene
+        // content is unchanged, the roster may not be.
+        await settleStage(manifest, previousStageRev);
         return;
       }
 
@@ -602,14 +582,65 @@ export function useStageFreshnessSync(
         const fresh = freshById.get(sceneId);
         if (fresh) renderedById.set(sceneId, fresh);
       }
-      renderedManifest.current = {
-        rev: manifest.rev,
-        scenes: [...renderedById.values()].sort((a, b) => a.order - b.order),
-      };
       // The write-side baseline mirrors the rendered manifest: every applied
       // scene carries its fresh rev (no edit-state protection anymore, so no
       // scene keeps an old rev here — #1961 decision change).
+      await settleStage(
+        {
+          rev: manifest.rev,
+          scenes: [...renderedById.values()].sort((a, b) => a.order - b.order),
+        },
+        previousStageRev,
+      );
+    };
+
+    /**
+     * Last step of a pass, after the scenes: follow the stage's own fields
+     * when its rev moved, then record the baseline. A roster write
+     * (`set_roster`, an edit in another tab) lands only on the stage, and the
+     * classroom on screen must follow it -- names, avatars, voices -- without
+     * a reload. When the roster could not be settled, the stage rev keeps its
+     * previous value (the scenes still advance), so the next pass reads the
+     * roster again instead of taking the moved rev as already seen.
+     */
+    const settleStage = async (next: StageManifest, previousStageRev: number) => {
+      const settled = next.rev === previousStageRev || (await syncRoster());
+      if (!isCurrent()) return;
+      renderedManifest.current = settled ? next : { ...next, rev: previousStageRev };
       recordWriteBaseline(renderedManifest.current);
+    };
+
+    /**
+     * Read the course's roster and show it. Answers whether the roster on
+     * screen now reflects the server's; never throws, so a roster that cannot
+     * be read does not hold up the scenes.
+     */
+    const syncRoster = async (): Promise<boolean> => {
+      // A stage edit of this browser's own that is not saved yet (the roster
+      // or any other stage field) is not overwritten. Nothing here judges
+      // that save against the server: its flush writes the whole stage,
+      // roster included, so until stage saves merge per field it can replace
+      // a roster the agent wrote meanwhile. Not settled: once the save lands,
+      // the next pass reads the roster again.
+      if (hasUnsavedStageEdit(requestedStage)) return false;
+      const roster = await fetchStageRoster(requestedStage);
+      if (!isCurrent()) return false;
+      if (!roster) {
+        console.warn(`[workbench] stage roster unavailable for ${requestedStage}; will retry`);
+        return false;
+      }
+      if (hasUnsavedStageEdit(requestedStage)) return false;
+      const store = useStageStore.getState();
+      // The classroom has not loaded this course yet: its load brings the
+      // roster; read again on the next pass rather than assume it is current.
+      if (store.stage?.id !== requestedStage) return false;
+      if (roster.generatedAgentConfigs && stageRosterChanged(store.stage, roster)) {
+        store.setStageAgents([...roster.generatedAgentConfigs], {
+          fromServer: true,
+          ...(roster.agentIds ? { agentIds: [...roster.agentIds] } : {}),
+        });
+      }
+      return true;
     };
 
     const runPass = async (_reason: string) => {

@@ -153,6 +153,85 @@ describe('reference-fidelity stage access', () => {
     await expect(visitorList.json()).resolves.toEqual({ stages: [] });
   });
 
+  it('loadStage reads the stage row alone, behind the same gate as loadDocument', async () => {
+    const connectionString = process.env.DATABASE_URL!;
+    const { getServerPersistenceProvider } = await import('@/lib/persistence/server-provider');
+    await getServerPersistenceProvider(connectionString, () => pool as never);
+    const stageId = 'stage-row-read';
+    const owner = ownerStore(pool, `anon:${ownerCookie}`);
+    const visitor = ownerStore(pool, `anon:${visitorCookie}`);
+    const course = courseDocument(stageId);
+    const now = course.stage.createdAt;
+    await owner.saveDocument({
+      ...course,
+      stage: {
+        ...course.stage,
+        agentIds: ['gen-t'],
+        generatedAgentConfigs: [
+          {
+            id: 'gen-t',
+            name: 'Teacher Chen',
+            role: 'teacher',
+            persona: '',
+            avatar: '/avatars/teacher.png',
+            color: '#000000',
+            priority: 10,
+          },
+        ],
+      },
+      scenes: [
+        {
+          id: 'scene-1',
+          stageId,
+          type: 'slide',
+          title: 'One',
+          order: 0,
+          content: {
+            type: 'slide',
+            canvas: {
+              id: 'c',
+              viewportSize: 1000,
+              viewportRatio: 0.5625,
+              theme: { backgroundColor: '#fff', themeColors: [], fontColor: '#000', fontName: '' },
+              elements: [],
+            },
+          },
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    } as never);
+
+    const full = await owner.loadDocument(stageId);
+    const queries: string[] = [];
+    const connect = pool.connect.bind(pool);
+    pool.connect = async () => {
+      const client = await connect();
+      return {
+        ...client,
+        query: (text: string, params?: unknown[]) => {
+          queries.push(text);
+          return client.query(text, params);
+        },
+      };
+    };
+    const stage = await owner.loadStage(stageId);
+    expect(stage).toEqual(full!.stage);
+    expect(stage).toMatchObject({ agentIds: ['gen-t'] });
+    expect(queries.some((text) => /FROM document_stages/.test(text))).toBe(true);
+    expect(queries.some((text) => /document_scenes|document_outlines/.test(text))).toBe(false);
+
+    // Same answers as loadDocument: capability reads by id, null when absent
+    // or retired.
+    await expect(visitor.loadStage(stageId)).resolves.toEqual(
+      (await visitor.loadDocument(stageId))!.stage,
+    );
+    await expect(owner.loadStage('stage-absent')).resolves.toBeNull();
+    await expect(owner.loadStage('bad\u0000id')).resolves.toBeNull();
+    await owner.deleteDocument(stageId);
+    await expect(owner.loadStage(stageId)).resolves.toBeNull();
+  });
+
   it('tombstones deletions and permanently retires the stage id', async () => {
     const connectionString = process.env.DATABASE_URL!;
     const { getServerPersistenceProvider } = await import('@/lib/persistence/server-provider');

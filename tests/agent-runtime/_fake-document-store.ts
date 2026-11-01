@@ -20,6 +20,7 @@ import type {
 } from '@openmaic/storage';
 
 import type { AppStage } from '@/lib/document-store/persistence-types';
+import type { StageRowStore } from '@/lib/persistence/owner-bound-document-store';
 import type { AppScene } from '@/lib/types/stage';
 
 export interface FakeDocumentStore {
@@ -30,6 +31,9 @@ export interface FakeDocumentStore {
   /** Per-(stage, scene) revisions, mirroring the `document_scene_revision` rows. */
   sceneRevs: Map<string, Map<string, number>>;
   saveCalls: MaicDocument<AppScene, AppStage>[];
+  /** Every `loadDocument` / `loadStage` call, by stage id. */
+  loadDocumentCalls: string[];
+  loadStageCalls: string[];
   /** Make the next saveDocument call throw (e.g. a validation failure). */
   failNextSaveWith(error: unknown): void;
 }
@@ -37,13 +41,16 @@ export interface FakeDocumentStore {
 /** The fake store is already one owner's partition, so scoping is identity. */
 export type OwnerScopedFakeStore = DocumentStore<AppScene, AppStage> &
   StageFreshnessManifestStore &
-  DocumentFolderStore & { forOwner(ownerId: string): OwnerScopedFakeStore };
+  DocumentFolderStore &
+  StageRowStore<AppStage> & { forOwner(ownerId: string): OwnerScopedFakeStore };
 
 export function createFakeDocumentStore(): FakeDocumentStore {
   const docs = new Map<string, MaicDocument<AppScene, AppStage>>();
   const stageRevs = new Map<string, number>();
   const sceneRevs = new Map<string, Map<string, number>>();
   const saveCalls: MaicDocument<AppScene, AppStage>[] = [];
+  const loadDocumentCalls: string[] = [];
+  const loadStageCalls: string[] = [];
   let saveError: unknown = null;
 
   const bumpStage = (stageId: string) => {
@@ -82,8 +89,14 @@ export function createFakeDocumentStore(): FakeDocumentStore {
       }
     },
     async loadDocument(stageId: string) {
+      loadDocumentCalls.push(stageId);
       const doc = docs.get(stageId);
       return doc ? structuredClone(doc) : null;
+    },
+    async loadStage(stageId: string) {
+      loadStageCalls.push(stageId);
+      const doc = docs.get(stageId);
+      return doc ? structuredClone(doc.stage) : null;
     },
     async readFreshnessManifest(stageId: string) {
       const doc = docs.get(stageId);
@@ -213,6 +226,8 @@ export function createFakeDocumentStore(): FakeDocumentStore {
     stageRevs,
     sceneRevs,
     saveCalls,
+    loadDocumentCalls,
+    loadStageCalls,
     failNextSaveWith(error) {
       saveError = error;
     },
