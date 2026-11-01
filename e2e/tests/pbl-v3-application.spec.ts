@@ -89,9 +89,16 @@ for (const legacyMove of [false, true]) {
     };
     let launches = 0,
       documents = 0;
+    let stopped = false;
+    let delayedDocument: Promise<void> | undefined;
     const commands: string[] = [];
     await page.route('**/pbl-preview-fixture', async (route) => {
       documents++;
+      if (delayedDocument) {
+        const wait = delayedDocument;
+        delayedDocument = undefined;
+        await wait;
+      }
       await route.fulfill({
         contentType: 'text/html',
         body: `<!doctype html>
@@ -119,9 +126,14 @@ for (const legacyMove of [false, true]) {
       if (url.pathname.endsWith('/application')) {
         if (body?.action === 'status')
           return route.fulfill({
-            json: { state: 'running', observedAt: new Date().toISOString(), sourceChanged: false },
+            json: {
+              state: stopped ? 'stopped' : 'running',
+              observedAt: new Date().toISOString(),
+              sourceChanged: false,
+            },
           });
         launches++;
+        stopped = false;
         return route.fulfill({
           json: {
             state: 'running',
@@ -284,6 +296,36 @@ for (const legacyMove of [false, true]) {
     await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toBeVisible();
     await expect(composer).toHaveValue('Keep this draft while looking at the application');
     expect(launches).toBe(1);
+    // Actual writes/tests may stop the backend. Keep the previous page until
+    // the replacement loads, without requiring a manual reopen.
+    stopped = true;
+    view.busy = true;
+    view.activitySequence!++;
+    await publishLearning();
+    await expect(panel.locator('iframe')).toHaveAttribute('inert', '');
+    let releaseDocument!: () => void;
+    delayedDocument = new Promise<void>((resolve) => {
+      releaseDocument = resolve;
+    });
+    view.busy = false;
+    view.revision++;
+    view.activitySequence!++;
+    await publishLearning();
+    try {
+      await expect(panel.locator('iframe')).toHaveCount(2);
+      await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toHaveValue(
+        'Unsaved form input',
+      );
+      await expect(panel.getByText('Updating preview…', { exact: true })).toBeVisible();
+      if (!legacyMove)
+        await page.screenshot({ path: testInfo.outputPath('preview-updating-keeps-page.png') });
+    } finally {
+      releaseDocument();
+    }
+    await expect(panel.locator('iframe')).toHaveCount(1);
+    await expect(panel.locator('iframe')).not.toHaveAttribute('inert', '');
+    expect(launches).toBe(2);
+    expect(documents).toBe(2);
     await panel.getByRole('button', { name: 'Collapse application', exact: true }).click();
     await expect(panel).not.toBeVisible();
     // A final source snapshot needs no compute to read, but the application does.
