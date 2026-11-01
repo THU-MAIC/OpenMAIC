@@ -2983,9 +2983,9 @@
       "factSummary": "مشروع أُنشئ واستُكشف بالتعاون مع الذكاء الاصطناعي.",
       "invite": "حوّل أفكارك إلى واقع مع OpenMAIC",
       "tagline": "من فكرة إلى مشروع. تعلّم من خلال الإبداع.",
-      "highlights": "What your project records show",
-      "testsPassed": "Tests",
-      "linkPlaceholder": "Intro course · placeholder link, replace before launch"
+      "highlights": "ما تُظهره سجلات المشروع",
+      "testsPassed": "تم اجتياز اختبارات السلوك",
+      "linkPlaceholder": "مدخل الدورة التمهيدية · رابط تجريبي، يُستبدل قبل الإطلاق"
     }
   }
 }

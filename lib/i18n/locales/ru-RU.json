@@ -2983,9 +2983,9 @@
       "factSummary": "Проект, созданный и изученный вместе с ИИ.",
       "invite": "Создавайте с OpenMAIC",
       "tagline": "Превратите идею в проект. Учитесь, создавая.",
-      "highlights": "What your project records show",
-      "testsPassed": "Tests",
-      "linkPlaceholder": "Intro course · placeholder link, replace before launch"
+      "highlights": "Что показывают записи проекта",
+      "testsPassed": "Проверки поведения пройдены",
+      "linkPlaceholder": "Вводный курс · Пример ссылки, заменить перед публикацией"
     }
   }
 }

@@ -2983,9 +2983,9 @@
       "factSummary": "AI와 함께 만든 프로젝트.",
       "invite": "OpenMAIC로 아이디어를 실현하세요",
       "tagline": "아이디어를 프로젝트로. 만들면서 배우세요.",
-      "highlights": "What your project records show",
-      "testsPassed": "Tests",
-      "linkPlaceholder": "Intro course · placeholder link, replace before launch"
+      "highlights": "프로젝트 기록에서 확인한 점",
+      "testsPassed": "동작 테스트 통과",
+      "linkPlaceholder": "입문 과정 · 예시 링크, 공개 전에 교체"
     }
   }
 }

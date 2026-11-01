@@ -2983,9 +2983,9 @@
       "factSummary": "Một dự án được tạo và khám phá cùng AI.",
       "invite": "Biến ý tưởng thành hiện thực với OpenMAIC",
       "tagline": "Từ ý tưởng đến dự án. Học qua sáng tạo.",
-      "highlights": "What your project records show",
-      "testsPassed": "Tests",
-      "linkPlaceholder": "Intro course · placeholder link, replace before launch"
+      "highlights": "Những gì ghi chép dự án cho thấy",
+      "testsPassed": "Đã vượt qua kiểm thử hành vi",
+      "linkPlaceholder": "Khóa học nhập môn · Liên kết mẫu, thay trước khi ra mắt"
     }
   }
 }

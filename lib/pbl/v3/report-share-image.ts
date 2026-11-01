@@ -218,7 +218,7 @@ export async function renderReportShareImage(
       paragraph(
         value,
         64,
-        narrativeY + i * (portrait ? 60 : 37),
+        narrativeY + i * (portrait ? 80 : 37),
         narrativeWidth,
         portrait ? 26 : 23,
         portrait ? 2 : 1,
@@ -244,7 +244,7 @@ export async function renderReportShareImage(
   paragraph(
     receipts.join('   ·   '),
     64,
-    portrait ? 1380 : 770,
+    portrait ? 1420 : 770,
     narrativeWidth,
     20,
     1,

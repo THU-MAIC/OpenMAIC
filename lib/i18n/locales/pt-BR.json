@@ -2983,9 +2983,9 @@
       "factSummary": "Um projeto criado e explorado com IA.",
       "invite": "Crie com OpenMAIC",
       "tagline": "Transforme uma ideia em projeto. Aprenda criando.",
-      "highlights": "What your project records show",
-      "testsPassed": "Tests",
-      "linkPlaceholder": "Intro course · placeholder link, replace before launch"
+      "highlights": "O que os registros do projeto mostram",
+      "testsPassed": "Testes de comportamento aprovados",
+      "linkPlaceholder": "Curso introdutório · Link de exemplo, substituir antes da publicação"
     }
   }
 }

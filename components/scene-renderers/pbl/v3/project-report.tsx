@@ -40,10 +40,18 @@ export function ProjectReport({
     [error, setError] = useState('');
   const controller = useRef<AbortController | null>(null);
   const surface = useRef<HTMLElement>(null);
+  const shareTrigger = useRef<HTMLButtonElement>(null);
+  const focusStudy = useRef<string | null>(null);
   const close = useRef(onClose);
   useLayoutEffect(() => {
     close.current = onClose;
   }, [onClose]);
+  useLayoutEffect(() => {
+    focusStudy.current = open ? studyId : null;
+    return () => {
+      focusStudy.current = null;
+    };
+  }, [open, studyId]);
   const load = useCallback(
     async (method: 'GET' | 'POST', signal: AbortSignal) => {
       setPending(true);
@@ -184,8 +192,17 @@ export function ProjectReport({
           <X size={18} />
         </button>
       </nav>
-      {shareOpen && report && (
-        <ReportShareDialog key={studyId} report={report} onClose={() => setShareOpen(false)} />
+      {shareOpen && report?.studyId === studyId && (
+        <ReportShareDialog
+          key={studyId}
+          report={report}
+          onClose={() => setShareOpen(false)}
+          onRestoreFocus={() => {
+            // A closing dialog must not focus a button reused by another study or hidden report.
+            if (focusStudy.current === studyId && shareTrigger.current?.isConnected)
+              shareTrigger.current.focus();
+          }}
+        />
       )}
       <div className="mx-auto max-w-6xl space-y-9 px-4 py-6 pb-12 sm:px-8 sm:py-9">
         <header className="relative isolate overflow-hidden rounded-3xl border border-violet-300/25 bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 px-6 py-7 text-white sm:px-9 sm:py-9">
@@ -240,6 +257,7 @@ export function ProjectReport({
                 </div>
               </div>
               <button
+                ref={shareTrigger}
                 className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-white/40 bg-violet-100 px-5 py-3 text-sm font-semibold text-violet-950 shadow-[0_4px_20px_rgba(167,139,250,0.15)] transition-colors hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-violet-200"
                 onClick={() => setShareOpen(true)}
               >

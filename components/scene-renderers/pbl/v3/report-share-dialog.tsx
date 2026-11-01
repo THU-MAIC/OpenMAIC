@@ -18,9 +18,11 @@ import {
 export function ReportShareDialog({
   report,
   onClose,
+  onRestoreFocus,
 }: {
   report: LearningReport;
   onClose: () => void;
+  onRestoreFocus: () => void;
 }) {
   const { t, locale } = useI18n();
   const { resolvedTheme } = useTheme();
@@ -78,6 +80,10 @@ export function ReportShareDialog({
         overlayClassName="z-[140]"
         className="z-[150] flex max-h-[94dvh] max-w-[calc(100vw-1rem)] flex-col gap-4 overflow-y-auto sm:max-w-4xl"
         onEscapeKeyDown={(e) => e.stopPropagation()}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          onRestoreFocus();
+        }}
       >
         <DialogHeader>
           <DialogTitle>{t('pblV3.share.title')}</DialogTitle>

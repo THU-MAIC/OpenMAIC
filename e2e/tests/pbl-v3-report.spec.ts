@@ -331,7 +331,8 @@ test('completed project reports stay discoverable, show facts before analysis, a
   expect(opens).toBe(0);
   expect(commands).toEqual([]);
   // Sharing follows the report's existing analysis; it never starts another generation.
-  await report.getByRole('button', { name: 'Create sharing image', exact: true }).click();
+  const shareTrigger = report.getByRole('button', { name: 'Create sharing image', exact: true });
+  await shareTrigger.click();
   const share = page.getByRole('dialog', { name: 'Share your achievement', exact: true });
   const poster = share.getByRole('img', { name: 'Your OpenMAIC achievement image' });
   await expect(poster).toBeVisible();
@@ -368,6 +369,11 @@ test('completed project reports stay discoverable, show facts before analysis, a
   await page.keyboard.press('Escape');
   await expect(share).toHaveCount(0);
   await expect(report).toBeVisible();
+  await expect(shareTrigger).toBeFocused();
+  await shareTrigger.click();
+  await share.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(share).toHaveCount(0);
+  await expect(shareTrigger).toBeFocused();
   expect(generations).toBe(2);
   await expect(
     report.getByText('You connected a boundary to behavior', { exact: true }),
@@ -394,7 +400,12 @@ test('completed project reports stay discoverable, show facts before analysis, a
     .getByRole('button', { name: 'Learning report', exact: true })
     .click();
   await expect(report).toBeVisible();
-  await report.getByRole('button', { name: 'Close report', exact: true }).click();
+  // Closing a sharing preview returns keyboard ownership to the report.
+  await shareTrigger.click();
+  await page.keyboard.press('Escape');
+  await expect(shareTrigger).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(report).toHaveCount(0);
   await expect(page.locator('.monaco-editor .view-lines')).toContainText('Saved plan');
   await expect(page.locator('.monaco-editor textarea').first()).not.toBeEditable();
   const historyTrigger = workspace.getByRole('button', {

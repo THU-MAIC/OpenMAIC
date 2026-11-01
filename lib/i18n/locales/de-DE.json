@@ -2983,9 +2983,9 @@
       "factSummary": "Ein mit KI erstelltes und erkundetes Projekt.",
       "invite": "Mit OpenMAIC Ideen umsetzen",
       "tagline": "Von der Idee zum Projekt. Lernen durch Gestalten.",
-      "highlights": "What your project records show",
-      "testsPassed": "Tests",
-      "linkPlaceholder": "Intro course · placeholder link, replace before launch"
+      "highlights": "Was deine Projektaufzeichnungen zeigen",
+      "testsPassed": "Verhaltenstests bestanden",
+      "linkPlaceholder": "Einstiegskurs · Beispiellink, vor Veröffentlichung ersetzen"
     }
   }
 }
