@@ -76,6 +76,7 @@ function ApplicationPreviewContent({
     !error &&
     observation?.state === 'running' &&
     !previous;
+  const updating = mounted && !expired && !error && (preview.updating || !!previous);
   const renew = preview.renew;
   useEffect(() => {
     if (!url) return;
@@ -158,6 +159,15 @@ function ApplicationPreviewContent({
           {error}
         </p>
       )}
+      {updating && (
+        <p
+          role="status"
+          className="flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs text-muted-foreground"
+        >
+          <LoaderCircle size={14} className="shrink-0 animate-spin" />
+          {t(preview.dirty ? 'pblV3.application.saveFirst' : 'pblV3.application.updating')}
+        </p>
+      )}
       <div className="relative min-h-0 w-full flex-1">
         {mounted &&
           current &&
@@ -183,7 +193,7 @@ function ApplicationPreviewContent({
                 />
               );
             })}
-        {!available && (
+        {!available && !updating && (
           <div
             role="status"
             className={
