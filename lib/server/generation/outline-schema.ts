@@ -212,23 +212,31 @@ function sceneOutline(value: unknown, index: number): SceneOutline {
  * {@link MAX_OUTLINE_SCENES} scenes, over {@link MAX_OUTLINE_JSON_BYTES},
  * or a scene without a usable id, type or order (ids and orders unique).
  *
- * `maxScenes` narrows the ceiling for a caller that knows how many pages this
- * particular course should have. A long-form plan produces at most ~110 pages, so
- * an outline of 240 is not a long course — it is a model that ignored the budget,
- * and nothing downstream can shrink it far enough to matter.
+ * `maxScenes` and `minScenes` narrow the bounds for a caller that knows how many
+ * pages this particular course should have. A long-form plan produces at most
+ * ~110 pages and at least a fifth fewer than it planned, so an outline of 240 is
+ * not a long course — it is a model that ignored the budget — and an outline of
+ * one page is not an hour.
  */
 export function normalizeSceneOutlines(
   value: unknown,
-  options: { maxScenes?: number } = {},
+  options: { minScenes?: number; maxScenes?: number } = {},
 ): NormalizedOutlines {
   const limit = Math.min(
     options.maxScenes !== undefined ? Math.max(1, options.maxScenes) : MAX_OUTLINE_SCENES,
     MAX_OUTLINE_SCENES,
   );
-  if (!Array.isArray(value) || value.length === 0 || value.length > limit) {
+  const floor = Math.min(
+    options.minScenes !== undefined ? Math.max(1, options.minScenes) : 1,
+    limit,
+  );
+  if (!Array.isArray(value) || value.length < floor || value.length > limit) {
     return {
       ok: false,
-      message: `outlines must be an array of 1 to ${limit} scene outlines`,
+      message:
+        floor > 1
+          ? `outlines must be an array of ${floor} to ${limit} scene outlines`
+          : `outlines must be an array of 1 to ${limit} scene outlines`,
     };
   }
   const tooLarge = {

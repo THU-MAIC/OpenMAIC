@@ -70,6 +70,8 @@ describe('detectRequestedMinutes', () => {
     expect(detectRequestedMinutes('一小时的课程')).toBe(60);
     expect(detectRequestedMinutes('一个半小时的课')).toBe(90);
     expect(detectRequestedMinutes('半小时的课')).toBe(30);
+    expect(detectRequestedMinutes('三十分钟的课')).toBe(30);
+    expect(detectRequestedMinutes('四十五分钟的讲座')).toBe(45);
     expect(detectRequestedMinutes('a one-hour lecture')).toBe(60);
     expect(detectRequestedMinutes('an hour on entropy')).toBe(60);
     expect(detectRequestedMinutes('half an hour on recursion')).toBe(30);

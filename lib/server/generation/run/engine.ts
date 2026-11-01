@@ -79,6 +79,7 @@ import {
   buildLedgerText,
   buildSceneBrief,
   pageCeilingFor,
+  pageFloorFor,
   planForRequirement,
 } from '@/lib/generation/long-form';
 
@@ -877,7 +878,9 @@ async function executeClaimedRun(
     const longFormPlan = result.longForm ? planForRequirement(input.requirement) : null;
     const normalized = normalizeSceneOutlines(
       result.outlines,
-      longFormPlan ? { maxScenes: pageCeilingFor(longFormPlan) } : {},
+      longFormPlan
+        ? { minScenes: pageFloorFor(longFormPlan), maxScenes: pageCeilingFor(longFormPlan) }
+        : {},
     );
     if (!normalized.ok) throw new Error(`The generated outline is unusable: ${normalized.message}`);
     result = { ...result, outlines: normalized.value };

@@ -159,11 +159,19 @@ const EN_NUMERALS: Readonly<Record<string, number>> = {
   twelve: 12,
 };
 
-/** 一 to 九, 十, 十五, 二十, 二十三 — the counts a lesson length is written with. */
+/**
+ * 一 to 九, 十, 十五, 二十, 四十五 — the counts a lesson length is written with.
+ *
+ * Three characters at most: `四十五分钟` is forty-five, and a two-character capture
+ * read it as `十五` — fifteen — because the leading digit fell outside the match.
+ */
 function chineseNumeral(token: string): number | null {
-  if (token === '十') return 10;
-  if (token.startsWith('十')) return 10 + (CN_DIGITS[token[1] ?? ''] ?? 0);
-  if (token.endsWith('十')) return (CN_DIGITS[token[0] ?? ''] ?? 0) * 10;
+  const tens = /^([一二两三四五六七八九])?十([一二三四五六七八九])?$/.exec(token);
+  if (tens) {
+    const high = tens[1] ? (CN_DIGITS[tens[1]] ?? 0) : 1;
+    const low = tens[2] ? (CN_DIGITS[tens[2]] ?? 0) : 0;
+    return high * 10 + low;
+  }
   return CN_DIGITS[token] ?? null;
 }
 
@@ -176,24 +184,35 @@ function chineseNumeral(token: string): number | null {
  * to prevent, and it looks exactly like the feature working.
  */
 function normalizeDurationWords(text: string): string {
-  return text
-    .replace(
-      /(一\s*个\s*)?半\s*个?\s*(小时|钟头)/g,
-      (_match, one: string | undefined, unit: string) => `${one ? '1.5' : '0.5'} ${unit}`,
-    )
-    .replace(
-      /([一二两三四五六七八九十]{1,2})\s*个?\s*(小时|钟头)/g,
-      (match, token: string, unit: string) => {
-        const value = chineseNumeral(token);
-        return value === null ? match : `${value} ${unit}`;
-      },
-    )
-    .replace(/half\s*(?:an?\s*)?[- ]?hours?/gi, '0.5 hour')
-    .replace(/\ban?\s+hours?\b/gi, '1 hour')
-    .replace(
-      /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)[- ]hours?\b/gi,
-      (_match, word: string) => `${EN_NUMERALS[word.toLowerCase()] ?? 1} hours`,
-    );
+  return (
+    text
+      .replace(
+        /(一\s*个\s*)?半\s*个?\s*(小时|钟头)/g,
+        (_match, one: string | undefined, unit: string) => `${one ? '1.5' : '0.5'} ${unit}`,
+      )
+      .replace(
+        /([一二两三四五六七八九十]{1,3})\s*个?\s*(小时|钟头)/g,
+        (match, token: string, unit: string) => {
+          const value = chineseNumeral(token);
+          return value === null ? match : `${value} ${unit}`;
+        },
+      )
+      // Minutes are written the same way: `三十分钟的课` is an ordinary request and
+      // the digit matcher found nothing in it.
+      .replace(
+        /([一二两三四五六七八九十]{1,3})\s*个?\s*(分钟|分半钟)/g,
+        (match, token: string, unit: string) => {
+          const value = chineseNumeral(token);
+          return value === null ? match : `${value} ${unit}`;
+        },
+      )
+      .replace(/half\s*(?:an?\s*)?[- ]?hours?/gi, '0.5 hour')
+      .replace(/\ban?\s+hours?\b/gi, '1 hour')
+      .replace(
+        /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)[- ]hours?\b/gi,
+        (_match, word: string) => `${EN_NUMERALS[word.toLowerCase()] ?? 1} hours`,
+      )
+  );
 }
 
 /**

@@ -3,6 +3,7 @@ import {
   auditIsClean,
   auditOutline,
   pageCeilingFor,
+  pageFloorFor,
   planLongFormCourse,
 } from '@/lib/generation/long-form';
 import { normalizeSceneOutlines } from '@/lib/server/generation/outline-schema';
@@ -284,5 +285,28 @@ describe('pageCeilingFor', () => {
     expect(
       normalizeSceneOutlines(onePagePerMinute, { maxScenes: pageCeilingFor(fourHours) }).ok,
     ).toBe(false);
+  });
+});
+
+describe('pageFloorFor', () => {
+  it('refuses an hour-long outline that came back as one page', () => {
+    // The stream treats a single parsed scene as success, and the repair loop
+    // cannot rescue it: turning one page into two exceeds MAX_REVISION_DRIFT, so
+    // the repair is rejected as unsafe. The engine would then schedule a one-page
+    // course for an explicit hour.
+    const onePage = [
+      {
+        id: 'scene_1',
+        type: 'slide',
+        title: 'P1',
+        description: '',
+        keyPoints: ['a'],
+        order: 1,
+      },
+    ];
+
+    expect(pageFloorFor(plan)).toBe(Math.floor(plan.scenes.length * 0.75));
+    expect(normalizeSceneOutlines(onePage).ok).toBe(true);
+    expect(normalizeSceneOutlines(onePage, { minScenes: pageFloorFor(plan) }).ok).toBe(false);
   });
 });

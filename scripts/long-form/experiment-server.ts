@@ -46,7 +46,9 @@ import {
   type OutlineAudit,
 } from '@/lib/generation/long-form';
 import { normalizeSceneOutlines } from '@/lib/server/generation/outline-schema';
+import { createValidatedDispatcher } from '@/lib/server/pinned-dispatcher';
 import { allowLocalNetworksEnabled, validateUrlForSSRFWithPolicy } from '@/lib/server/ssrf-guard';
+import type { Dispatcher } from 'undici';
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
 import {
   PROMPT_IDS as GENERATION_PROMPT_IDS,
@@ -99,7 +101,26 @@ function completionsUrl(baseUrl: string): string {
 const MAX_REDIRECTS = 3;
 
 /**
- * `fetch` with the URL guard applied to the target and to every redirect.
+ * The connect-time half of the guard.
+ *
+ * `validateUrlForSSRFWithPolicy` resolves the hostname once; `fetch` resolves it
+ * again, so a rebindable name can answer with a public address to the check and a
+ * private or metadata one to the socket. `createValidatedDispatcher` installs a
+ * `connect.lookup` that classifies the addresses it actually hands to undici, so
+ * the socket can only reach an address that was checked in the same lookup.
+ *
+ * Created once, lazily: it owns a connection pool, and the policy it reads is the
+ * process's `ALLOW_LOCAL_NETWORKS`, fixed at start-up.
+ */
+let dispatcher: Dispatcher | undefined;
+function guardedDispatcher(): Dispatcher {
+  dispatcher ??= createValidatedDispatcher({ allowLocalNetworks: allowLocalNetworksEnabled() });
+  return dispatcher;
+}
+
+/**
+ * `fetch` with the URL guard applied to the target, to every redirect, and to
+ * the address the socket actually connects to.
  *
  * This console listens on loopback, but loopback does not make it private: any
  * page the developer has open can POST to it as a simple request, with no
@@ -119,23 +140,30 @@ async function guardedFetch(url: string, init: RequestInit): Promise<Response> {
       throw new Error(`端点被拒绝：${refusal}（本地 mock 端点需要 ALLOW_LOCAL_NETWORKS=1）`);
     }
 
-    const result = await fetch(target, { ...init, redirect: 'manual' });
+    const result = await fetch(target, {
+      ...init,
+      redirect: 'manual',
+      // Node's fetch accepts an undici dispatcher; `RequestInit` does not type it.
+      dispatcher: guardedDispatcher(),
+    } as RequestInit & { dispatcher: Dispatcher });
     if (result.status < 300 || result.status >= 400) return result;
 
     const location = result.headers.get('location');
     if (!location) return result;
 
-    // Same host only. The request carries `Authorization: Bearer <key>`, and a
-    // redirect is chosen by the server, not by the person who typed the key: a
-    // provider that answers 302 to another origin would be handed the key. A
-    // scheme upgrade on the same host is allowed, since that is the same
-    // operator; a different host has to be named as the Base URL instead.
+    // Same origin only — scheme, host and port. The request carries
+    // `Authorization: Bearer <key>`, and a redirect is chosen by the server, not
+    // by the person who typed the key. Comparing hostnames alone let
+    // `https://api.example` be redirected to `http://api.example` (the key in
+    // cleartext) or to `https://api.example:8443` (a different service on the same
+    // machine). A provider that redirects elsewhere has to be named as the Base
+    // URL instead.
     const current = new URL(target);
     const next = new URL(location, target);
-    if (next.hostname !== current.hostname) {
+    if (next.origin !== current.origin) {
       throw new Error(
-        `端点重定向到另一台主机，已拒绝：${current.hostname} → ${next.hostname}。` +
-          `请直接填写最终的 Base URL —— 密钥不会跨主机转发。`,
+        `端点重定向到另一个源，已拒绝：${current.origin} → ${next.origin}。` +
+          `请直接填写最终的 Base URL —— 密钥不会跨源转发。`,
       );
     }
     target = next.href;

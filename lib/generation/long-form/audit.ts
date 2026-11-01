@@ -93,6 +93,20 @@ export function pageCeilingFor(plan: LongFormCoursePlan): number {
 }
 
 /**
+ * The fewest pages this plan can be built from without being a different course.
+ *
+ * The same tolerance at the other end. An hour-long outline that comes back with
+ * one page is treated as a success by the stream — it parsed, it has an id — and
+ * the repair loop cannot save it either: turning one page into two exceeds
+ * `MAX_REVISION_DRIFT`, so the repair is rejected as unsafe. The engine then
+ * schedules a one-page course for an explicit hour. Refusing it at normalization
+ * is the only place left that can.
+ */
+export function pageFloorFor(plan: LongFormCoursePlan): number {
+  return Math.max(1, Math.floor(plan.scenes.length * (1 - DEFAULTS.pageTolerance)));
+}
+
+/**
  * Whether a page makes the learner produce something, as the pipeline will build
  * it.
  *
