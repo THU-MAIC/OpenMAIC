@@ -1583,7 +1583,13 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const lookupCourse = useCallback(
     (courseId: string): WorkbenchCourseSummary | null => {
       const known = courses.classrooms.find((course) => course.id === courseId);
-      if (known) return { id: courseId, name: known.name, pageCount: known.sceneCount };
+      if (known)
+        return {
+          id: courseId,
+          name: known.name,
+          pageCount: known.sceneCount,
+          updatedAt: known.updatedAt,
+        };
       if (courseId === sessionStageId && courseTitle)
         return { id: courseId, name: courseTitle, pageCount: null };
       return null;

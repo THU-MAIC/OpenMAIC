@@ -2349,6 +2349,7 @@
     "sceneCount_one": "{{count}} 页",
     "sceneCount_other": "{{count}} 页",
     "courseLinkHint": "在右侧打开《{{name}}》",
+    "courseLinkOpen": "打開",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
       "search": "搜尋課堂和資料",

@@ -70,6 +70,8 @@ export interface WorkbenchCourseSummary {
   readonly id: string;
   readonly name: string;
   readonly pageCount: number | null;
+  /** Its last change (epoch ms), the version its cover is cached under; `null` when unknown. */
+  readonly updatedAt?: number | null;
 }
 
 /**

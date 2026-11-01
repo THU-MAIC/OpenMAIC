@@ -2364,6 +2364,7 @@
     "sceneCount_one": "{{count}} page",
     "sceneCount_other": "{{count}} pages",
     "courseLinkHint": "Open {{name}} in the right pane",
+    "courseLinkOpen": "Open",
     "courseLinkMore": "{{count}} more classroom(s)",
     "courseMention": {
       "search": "Search classrooms and materials",

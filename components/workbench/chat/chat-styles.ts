@@ -93,51 +93,45 @@ export const wbStyles = {
    */
   courseLink: {
     /**
-     * One resting look and one hover look, for every card. There is no
-     * `data-[state=…]` ramp any more: the accent border / wash / text that a
-     * background or active tab used to take was a second thing to read on a row
-     * whose subject is a course name, and it described the right pane rather
-     * than the card.
+     * The course card: one resting look and one hover look, for every card --
+     * the cards under an answer and the card under a paragraph that named a
+     * course are the same object. Hover lifts it a pixel and draws the accent
+     * border, so it reads as something that opens.
      */
-    base: 'group/clink inline-flex max-w-full items-center gap-1.5 rounded-[var(--wb-radius-sm)] border border-[var(--wb-line)] bg-[var(--wb-surface)] px-2 py-[2px] align-[-4px] text-[length:var(--wb-text-sm)] font-medium text-[var(--wb-text)] transition-colors duration-[var(--wb-duration-base)] hover:border-[var(--wb-accent)] hover:bg-[var(--wb-accent-soft)] hover:text-[var(--wb-accent)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus-ring)] motion-reduce:transition-none',
-    block:
-      'mt-2 flex w-full max-w-[440px] gap-2 rounded-[var(--wb-radius-md)] px-2.5 py-2 text-left',
+    base: 'group/clink flex min-w-0 items-center rounded-[var(--wb-radius-md)] border border-[var(--wb-line)] bg-[var(--wb-surface)] text-left text-[length:var(--wb-text-sm)] font-medium text-[var(--wb-text)] transition-[border-color,background-color,box-shadow,transform] duration-[var(--wb-duration-base)] hover:-translate-y-px hover:border-[var(--wb-accent)] hover:shadow-[0_2px_8px_-2px_color-mix(in_srgb,var(--wb-text)_18%,transparent)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus-ring)] motion-reduce:transition-none motion-reduce:hover:translate-y-0',
+    block: 'mt-2 w-full max-w-[440px] gap-2.5 px-2 py-1.5',
+    /** The cover: the course's first page, as the course library shows it. */
+    thumb:
+      'relative grid h-9 w-16 shrink-0 place-items-center overflow-hidden rounded-[5px] bg-[var(--wb-surface-sunken)] ring-1 ring-[var(--wb-line)]',
     glyph: 'size-[13px] shrink-0 text-[var(--wb-accent)]',
-    /**
-     * A course named mid-sentence: a TEXT TOKEN, the composer's `@` mention
-     * seen in the answer. A tint under the words and nothing else -- no
-     * border, no shadow -- at the paragraph's own size, sitting on its
-     * baseline and shorter than its line, so a sentence that names a course
-     * keeps the rhythm of the sentences around it. One unit when it wraps,
-     * long names cut with an ellipsis. Tinted from `--primary` like the
-     * composer's pill, a step stronger in dark and on hover.
-     */
-    inline:
-      'group/clink inline-flex max-w-[18em] cursor-pointer items-baseline gap-[0.25em] rounded-[5px] border-0 bg-[color-mix(in_srgb,var(--primary)_9%,transparent)] px-[5px] py-px align-baseline [font-family:inherit] text-[length:inherit] font-medium leading-[1.35] text-[var(--wb-text)] transition-colors duration-[var(--wb-duration-base)] hover:bg-[color-mix(in_srgb,var(--primary)_15%,transparent)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus-ring)] motion-reduce:transition-none dark:bg-[color-mix(in_srgb,var(--primary)_17%,transparent)] dark:hover:bg-[color-mix(in_srgb,var(--primary)_26%,transparent)]',
-    /** The inline token's book, sized and set to the words it precedes. */
-    inlineGlyph: 'size-[0.85em] shrink-0 self-center text-[var(--wb-accent)]',
-    inlineName:
-      'min-w-0 truncate underline-offset-2 decoration-[color-mix(in_srgb,var(--primary)_45%,transparent)] group-hover/clink:underline',
+    body: 'flex min-w-0 flex-1 flex-col gap-px',
+    name: 'min-w-0 truncate',
+    /** The page count under the name: the quietest type on the card. */
+    pages: 'truncate text-[length:var(--wb-text-xs)] font-normal text-[var(--wb-text-muted)]',
+    /** "Open →": what a press does, said at the far edge. */
+    open: 'ml-auto inline-flex shrink-0 items-center gap-0.5 pl-1 text-[length:var(--wb-text-xs)] font-medium text-[var(--wb-accent)] [&>svg]:transition-transform group-hover/clink:[&>svg]:translate-x-0.5',
     /**
      * One exchange's cards, stacked. No `gap`: `block` already carries its own
      * top margin, so one spacing rule owns the distance between a card and
-     * whatever is above it — the prose, or the card before it.
+     * whatever is above it -- the prose, or the card before it.
      */
     set: 'flex flex-col',
+    /** The cards under a paragraph that named them: the prose's own gap below. */
+    mentionSet: 'mb-3 flex flex-col last:mb-0',
     /**
      * The `+N` disclosure. The SAME card box, deliberately quieter: it is not a
      * classroom, it is the rest of the list, so nothing about it is accent until
      * hover (which `base` already provides).
      */
     more: 'text-[var(--wb-text-muted)] [&>svg]:text-[var(--wb-text-faint)]',
-    name: 'min-w-0 truncate',
     /**
-     * The page count, at the far edge — `ml-auto` because it is now the only
-     * thing after the name, and the row still has to put it against the right
-     * rule rather than beside the title. The quietest type on the card.
+     * A course named mid-sentence: a link in the sentence and nothing more --
+     * the card that opens it stands under the paragraph. Same size and line
+     * as the words around it; the accent and a hover underline say it is
+     * pressable.
      */
-    pages:
-      'ml-auto shrink-0 text-[length:var(--wb-text-xs)] font-normal text-[var(--wb-text-muted)] group-hover/clink:text-[var(--wb-accent)]',
+    inline:
+      'inline cursor-pointer border-0 bg-transparent p-0 align-baseline [font-family:inherit] text-[length:inherit] font-medium leading-[inherit] text-[var(--wb-accent)] underline-offset-2 decoration-[color-mix(in_srgb,var(--wb-accent)_50%,transparent)] hover:underline focus-visible:rounded-[3px] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus-ring)]',
   },
   thinking: {
     box: 'group/thinking m-0 overflow-hidden rounded-[var(--wb-radius-md)] border border-[var(--wb-line)] bg-[var(--wb-surface)] transition-colors duration-[var(--wb-duration-base)] data-[stack=first]:rounded-none data-[stack=first]:border-0 data-[stack=middle]:rounded-none data-[stack=middle]:border-0 data-[stack=middle]:border-t data-[stack=middle]:border-[var(--wb-line)] data-[stack=last]:rounded-none data-[stack=last]:border-0 data-[stack=last]:border-t data-[stack=last]:border-[var(--wb-line)]',

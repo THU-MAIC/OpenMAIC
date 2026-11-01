@@ -23,7 +23,9 @@
  * question card: it is a hand-over, so it gets its own line and the host's send
  * path (`onAnswer`).
  */
+import { useMemo } from 'react';
 import { CircleSlash2 } from 'lucide-react';
+import { courseCardExclusions } from '@/lib/workbench/course-link';
 import type { ChatNode, PlannedPage } from '@/lib/workbench/session-store';
 import { defaultWorkbenchTranslator, type WorkbenchTranslator } from '@/lib/i18n/workbench';
 import { wbStyles as styles } from './chat-styles';
@@ -218,9 +220,12 @@ function ChatNodeView({
   collapsedQuestion = false,
   questionPointer = 'below',
   repeat = 1,
+  excludeCourseCards,
   t,
 }: {
   node: ChatNode;
+  /** Courses that get no card under this text (`courseCardExclusions`). */
+  excludeCourseCards?: ReadonlySet<string>;
   plan: PlannedPage[];
   onAnswer?: ChatAnswerHandler;
   onRevive?: (freeText?: boolean) => void;
@@ -286,7 +291,11 @@ function ChatNodeView({
       // Streaming is quiet: no caret anywhere (PR walkthrough).
       return (
         <div className="text-[var(--wb-text)]">
-          <TextBlock text={node.text} streaming={node.streaming} />
+          <TextBlock
+            text={node.text}
+            streaming={node.streaming}
+            excludeCourseCards={excludeCourseCards}
+          />
         </div>
       );
   }
@@ -329,6 +338,7 @@ export function ChatTimeline({
   t?: WorkbenchTranslator;
 }) {
   const rows = rowsForRender(chat);
+  const exclusions = useMemo(() => courseCardExclusions(chat), [chat]);
   return (
     <div className={styles.timeline.root}>
       {rows.map((row) =>
@@ -340,6 +350,7 @@ export function ChatTimeline({
             node={row.node!}
             plan={plan}
             repeat={row.repeat}
+            excludeCourseCards={exclusions.get(row.node!.key)}
             t={t}
             onAnswer={onAnswer}
             collapsedQuestion={

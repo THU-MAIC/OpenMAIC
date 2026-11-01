@@ -2364,6 +2364,7 @@
     "sceneCount_one": "{{count}} 页",
     "sceneCount_other": "{{count}} 页",
     "courseLinkHint": "在右侧打开《{{name}}》",
+    "courseLinkOpen": "Öffnen",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
       "search": "Klassenzimmer und Materialien suchen",
