@@ -5,14 +5,20 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import type { LearningView } from '@/lib/pbl/v3/types';
 import { learningProgress } from '@/lib/pbl/v3/presentation';
 
-export function LearningPanels({ view }: { view: LearningView }) {
+export function LearningPanels({
+  view,
+  modalActive = false,
+}: {
+  view: LearningView;
+  modalActive?: boolean;
+}) {
   const { t } = useI18n();
   const progress = learningProgress(view);
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (!open) return;
+    if (!open || modalActive) return;
     const outside = (event: PointerEvent) => {
       if (!wrap.current?.contains(event.target as Node)) setOpen(false);
     };
@@ -28,7 +34,7 @@ export function LearningPanels({ view }: { view: LearningView }) {
       document.removeEventListener('pointerdown', outside);
       document.removeEventListener('keydown', escape, true);
     };
-  }, [open]);
+  }, [open, modalActive]);
   return (
     <div className="contents">
       <div ref={wrap} className="relative flex min-w-0 items-center text-xs">

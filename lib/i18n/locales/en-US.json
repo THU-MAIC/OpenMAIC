@@ -2960,6 +2960,86 @@
       "collapse": "Collapse application",
       "help": "Application help",
       "ready": "Run the application to try your saved code."
+    },
+    "onboarding": {
+      "replay": "Workbench guide",
+      "counter": "Workbench tour {{current}}/{{total}}",
+      "close": "Close tour",
+      "more": "More detail",
+      "less": "Less detail",
+      "skip": "Skip for now",
+      "previous": "Previous",
+      "next": "Got it, next",
+      "finish": "Finish and return",
+      "chatAvailable": "You can chat with the current assistant here. After the tour, read its question before replying. Next only turns a tour page.",
+      "taskOnly": "This step uses task controls and has no chat input. During discussion steps, the composer appears below the task bar.",
+      "steps": {
+        "welcome": {
+          "title": "Turn an idea into a project",
+          "body": "This is your workspace for building with AI. You judge what to make and what counts as a good result; assistants help explain, plan and implement. Let’s follow the project journey to find the tools you will use.",
+          "detail": "The code workspace (IDE) holds plans and source files; the learning assistant is for discussion and review. Some projects also offer an application preview. Ask about unfamiliar files or approaches, then judge them against the actual result."
+        },
+        "progress": {
+          "title": "Read milestones and steps",
+          "body": "You are at {{current}}. M identifies the project milestone; the following numbers show your current step and the number of steps in that milestone. The route below comes from this project. Tour pages and learning progress are counted separately.",
+          "detail": "Discussion helps you understand and decide, Planner organizes the plan, Coder implements and repairs, and Mentor supports reflection. The platform checks tests and quizzes. The progress number lists this milestone’s steps; the top M button lists milestones. Follow task bar actions to advance."
+        },
+        "discussion": {
+          "title": "Understand the goal, then make a judgment",
+          "body": "The right side shows the current assistant and conversation. Teaching usually starts with Discussion explaining the goal and concepts. On first entry, it introduces the project and asks whether you are ready. Return to its current question after the tour.",
+          "detail": "Describe where you are stuck, or explain your reasoning. Text, waiting states and tool activity appear here; expand details when useful. Enter sends, Shift+Enter adds a line, and choosing characters with an input method does not send a message."
+        },
+        "decisions": {
+          "title": "Submit decisions in Current task",
+          "body": "Discussion helps compare approaches and consequences. At the decision step, open Current task in this bar to submit a choice or your own rule, with a reason when requested. The plan builds on this formal record.",
+          "detail": "Saying “I prefer this” in chat continues the discussion; submitting in the task drawer records the decision. Questions may offer options or ask you to write a rule. Teaching and reflection only show the current step when there is no form to fill in."
+        },
+        "plan": {
+          "title": "Read how decisions become a plan",
+          "body": "Planner writes the goal and submitted decisions into PLAN.md. Read the actual steps on the left and discuss changes on the right. Approve the current version when it matches your intent, then follow the task bar into implementation.",
+          "detail": "Point out a step and explain the change you want, or edit the plan when allowed. The plan keeps earlier completed work. Files save automatically: check Saving, Saved or Save failed. Clarify questions before approving the latest version."
+        },
+        "code": {
+          "title": "Review real code with Coder",
+          "body": "Coder implements the approved plan and explains the changes. File links take you to the relevant code. Follow a path through input, processing and output; request corrections when needed, then review the current implementation.",
+          "detail": "Use the file tree and tabs to switch files; links can locate lines. Change markers identify AI edits. Editing depends on the current step and may pause while the assistant, build or tests work. Projects that require a build check it before formal tests."
+        },
+        "tests": {
+          "title": "Run formal tests, then repair failures",
+          "body": "At the test step, run formal tests from the task bar and open Current task for feedback. Work with Coder to repair failures, then test again. Continue when the current version passes and the result is saved.",
+          "detail": "A build checks whether code can run; tests check its behavior. Determine whether implementation drifted from the plan or the plan missed a case. Explain and confirm rule changes first. Use the shown retry controls for environment or result-collection failures."
+        },
+        "quiz": {
+          "title": "Check understanding in the quiz",
+          "body": "At the quiz step, questions appear in Current task. Choose answers, submit them and read the feedback. Revise and resubmit when needed. This checks your understanding alongside the earlier code tests.",
+          "detail": "Answer all questions before submitting. Choices remain a draft until submission creates a formal attempt. Ordinary quizzes have no chat input. Follow the feedback and task bar into reflection. The tour gives no answers and submits nothing."
+        },
+        "recap": {
+          "title": "Reflect, then revisit your learning report",
+          "body": "Mentor uses your decisions, implementation, tests and quiz to revisit a tradeoff or correction. After the final project reflection, open the learning report from the top bar or completion message to review your work and results.",
+          "detail": "Projects with several milestones continue to the next goal after each reflection. The project report appears after the final reflection and contains saved outcomes, process records and evidence-based suggestions. Completed source stays read-only. This tour does not open or generate a report."
+        },
+        "application": {
+          "title": "Preview what your application does",
+          "body": "Open application reveals a preview running your saved code. Try its features and bring observations back to the discussion. Incomplete implementations may report that a feature is not ready; follow this project’s instructions and actual feedback.",
+          "detail": "The preview header offers help, restart, a temporary new tab and collapse. Input pauses during assistant work, saving or tests, then updates safely. Unchanged pages are preserved when possible. Data after restart depends on the application’s design. Preview links expire."
+        },
+        "status": {
+          "title": "Check status and find the right control",
+          "body": "The top bar shows the environment connection and a refresh control; file save status is in the code area. Refresh to resynchronize when needed. Read any recovery or retry message before continuing your task.",
+          "detail": "The assistant may still be working after a browser disconnect. Refresh and stop do different things. Files save automatically and the platform keeps recovery snapshots; browser drafts are a temporary safeguard. If a draft conflicts with restored files, copy and compare it before reloading."
+        },
+        "layout": {
+          "title": "Arrange the workspace to suit you",
+          "body": "Top bar icons collapse or show code and the assistant; application preview can also collapse separately. Drag the dividers to resize areas and collapse the file tree independently. Narrow screens stack areas vertically so you can scroll between them.",
+          "detail": "Give code more room while reading, or hide an unused area while discussing. Return to the project overview or expand/collapse the workspace to change the view. Progress continues as before. The top right also switches light/dark themes. Collapsing a panel does not submit or complete learning."
+        },
+        "return": {
+          "title": "Return to the current step",
+          "body": "After the tour, you will return to {{step}}. Read the assistant’s question or use the actual controls in Current task, then follow the task bar. This introduction has not submitted, approved or advanced anything for you.",
+          "detail": "On first entry, return to the project introduction and reply when ready, or ask questions. Replay this guide from the top bar whenever needed, or leave it early. Formal submissions, reviews and execution results record your real progress."
+        }
+      }
     }
   }
 }

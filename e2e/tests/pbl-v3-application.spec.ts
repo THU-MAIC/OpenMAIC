@@ -289,6 +289,37 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
     const boot = await app
       .locator('body')
       .evaluate(() => (window as unknown as { boot: string }).boot);
+    if (nested && !legacyMove) {
+      const launchCount = launches;
+      await page.getByRole('button', { name: 'Workbench guide', exact: true }).click();
+      const guide = page.locator('[data-pbl-onboarding="card"]');
+      await expect(guide).toBeVisible();
+      await expect(app.locator('html')).toHaveJSProperty('inert', true);
+      await expect(panel.locator('iframe')).toHaveAttribute('inert', '');
+      // Simulate an application autofocus attempt while the guide owns input.
+      await app
+        .getByRole('textbox', { name: 'Draft', exact: true })
+        .evaluate((element) => element.focus());
+      await page.keyboard.type('Must not enter the application');
+      await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toHaveValue(
+        'Unsaved form input',
+      );
+      await page.evaluate(() =>
+        document.querySelector<HTMLElement>('[data-playback-stage]')!.requestFullscreen(),
+      );
+      expect(await guide.evaluate((element) => document.fullscreenElement!.contains(element))).toBe(
+        true,
+      );
+      await page.evaluate(() => document.exitFullscreen());
+      await guide.getByRole('button', { name: 'Close tour', exact: true }).click();
+      await expect(app.locator('html')).toHaveJSProperty('inert', false);
+      await expect(panel.locator('iframe')).not.toHaveAttribute('inert', '');
+      expect(
+        await app.locator('body').evaluate(() => (window as unknown as { boot: string }).boot),
+      ).toBe(boot);
+      expect(launches).toBe(launchCount);
+      expect(commands).toEqual([]);
+    }
     for (let cycle = 0; cycle < 2; cycle++) {
       await page.evaluate(() =>
         document.querySelector<HTMLElement>('[data-playback-stage]')!.requestFullscreen(),

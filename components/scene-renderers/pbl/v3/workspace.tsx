@@ -17,6 +17,7 @@ import {
   PanelLeft,
   PanelRight,
   LoaderCircle,
+  BookOpen,
 } from 'lucide-react';
 import { useLearningStream } from './use-learning-stream';
 import { DecisionResponseForm } from './decision-response';
@@ -40,23 +41,34 @@ import { TestEvaluation } from './test-evaluation';
 import { PendingAction } from './pending-action';
 import { TaskDock } from './task-dock';
 import { ProductionContext } from './production-context';
+import { useWorkbenchOnboarding } from './use-workbench-onboarding';
+import { WorkbenchOnboarding } from './workbench-onboarding';
 import { pblRequest } from './request';
 export { pblRequest } from './request';
 import { SandboxRequestError } from '@/components/sandbox/client';
 
+interface WorkspaceProps {
+  sceneId: string;
+  onReturnToHero?: () => void;
+  autoOnboarding?: boolean;
+  layoutReady?: boolean;
+  onOnboardingChange?: (open: boolean) => void;
+}
+
 function PBLV3WorkspaceContent({
   sceneId,
   onReturnToHero,
-}: {
-  sceneId: string;
-  onReturnToHero?: () => void;
-}) {
+  autoOnboarding = false,
+  layoutReady = true,
+  onOnboardingChange,
+}: WorkspaceProps) {
   const activityGeneration = usePblActivityGeneration(sceneId);
   const { resolvedTheme, setTheme } = useTheme();
   const { t, locale } = useI18n(),
     stageId = useStageStore((state) => state.stage?.id);
   const { view, workbench, latestView, updateView, receive, openView } = useLearningObservation();
   const [reportOpen, setReportOpen] = useState(false);
+  const workspaceRoot = useRef<HTMLElement>(null);
   const [fileTarget, setFileTarget] = useState<
     (FileReference & { studyId: string; requestId: number }) | null
   >(null);
@@ -309,11 +321,24 @@ function PBLV3WorkspaceContent({
               ? 'opening'
               : null;
   const disabled = blockedReason !== null;
+  const onboardingBlocked = !!error || preparationFailed || !!view?.lifecycleError || reportOpen;
+  const onboarding = useWorkbenchOnboarding({
+    root: workspaceRoot,
+    studyId: view?.id,
+    autoStart: autoOnboarding,
+    ready: layoutReady && !!view && !view.recovery?.progressReset && !view.archiveDiscard,
+    blocked: onboardingBlocked,
+  });
+  useEffect(() => {
+    onOnboardingChange?.(onboarding.active);
+    return () => onOnboardingChange?.(false);
+  }, [onboarding.active, onOnboardingChange]);
   const blockedId = `pbl-input-blocked-${sceneId}`;
   const button =
     'rounded-md border px-2 py-1 text-xs disabled:opacity-40 hover:bg-muted aria-pressed:bg-primary aria-pressed:text-primary-foreground';
   return (
     <section
+      ref={workspaceRoot}
       tabIndex={-1}
       data-pbl-focus-owner
       className="relative flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground"
@@ -353,10 +378,23 @@ function PBLV3WorkspaceContent({
         )}
         {view && (
           <>
+            <button
+              type="button"
+              data-pbl-tour="replay"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded border px-2 py-1.5 text-xs hover:bg-muted disabled:opacity-40"
+              aria-label={t('pblV3.onboarding.replay')}
+              title={t('pblV3.onboarding.replay')}
+              disabled={onboardingBlocked}
+              onClick={onboarding.replay}
+            >
+              <BookOpen size={14} />
+              <span className="hidden xl:inline">{t('pblV3.onboarding.replay')}</span>
+            </button>
             {view.application && <ApplicationPreviewToggle preview={applicationPreview} />}
-            <LearningPanels key={view.id} view={view} />
+            <LearningPanels key={view.id} view={view} modalActive={onboarding.active} />
             {view.reportAvailable && (
               <button
+                data-pbl-tour="report"
                 className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-500"
                 onClick={() => setReportOpen(true)}
                 disabled={view.busy}
@@ -368,6 +406,7 @@ function PBLV3WorkspaceContent({
             )}
             <details className="relative text-xs">
               <summary
+                data-pbl-tour="environment"
                 aria-label={t('pblV3.ide.environmentDetails')}
                 className="flex cursor-pointer list-none items-center gap-2 rounded bg-muted px-2 py-1"
               >
@@ -414,6 +453,7 @@ function PBLV3WorkspaceContent({
           <RefreshCw size={14} className={refreshing ? 'animate-spin' : undefined} />
         </button>
         <button
+          data-pbl-tour="workspace-toggle"
           className="rounded border p-1.5 aria-pressed:bg-primary aria-pressed:text-primary-foreground"
           aria-label={t('pblV3.ide.toggleWorkspace')}
           aria-pressed={showWorkspace}
@@ -571,7 +611,11 @@ function PBLV3WorkspaceContent({
           <WorkbenchSplit
             application={
               view.application ? (
-                <ApplicationPreview application={view.application} preview={applicationPreview} />
+                <ApplicationPreview
+                  application={view.application}
+                  preview={applicationPreview}
+                  inputPaused={onboarding.active}
+                />
               ) : undefined
             }
             showApplication={applicationPreview.open}
@@ -650,7 +694,10 @@ function PBLV3WorkspaceContent({
                 data-testid="pbl-assistant"
                 className="flex h-full min-h-0 flex-col bg-muted/10"
               >
-                <header className="pbl-chrome flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs">
+                <header
+                  data-pbl-tour="conversation"
+                  className="pbl-chrome flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs"
+                >
                   <MessageSquareText size={15} />
                   <h3 className="font-semibold">{t('pblV3.learning')}</h3>
                   <span className="ml-auto text-muted-foreground">
@@ -696,6 +743,7 @@ function PBLV3WorkspaceContent({
                     requesting={['chat', 'begin', 'retry'].includes(pendingAction ?? '')}
                   />
                   <TaskDock
+                    modalActive={onboarding.active}
                     key={`${view.id}:${view.state.position.milestoneIndex}:${view.state.position.stageIndex}`}
                     view={view}
                     ref={taskDock}
@@ -974,6 +1022,7 @@ function PBLV3WorkspaceContent({
                 </div>
                 {view.actions.includes('chat') && (
                   <form
+                    data-pbl-tour="composer"
                     className="shrink-0 border-t bg-background p-3"
                     onSubmit={(event) => {
                       event.preventDefault();
@@ -1067,20 +1116,23 @@ function PBLV3WorkspaceContent({
           />
         </>
       )}
+      {view && onboarding.active && (
+        <WorkbenchOnboarding
+          key={view.id}
+          view={view}
+          root={workspaceRoot}
+          returnFocus={onboarding.returnFocus}
+          onClose={onboarding.close}
+        />
+      )}
     </section>
   );
 }
 
-export function PBLV3Workspace({
-  sceneId,
-  onReturnToHero,
-}: {
-  sceneId: string;
-  onReturnToHero?: () => void;
-}) {
+export function PBLV3Workspace({ sceneId, ...props }: WorkspaceProps) {
   return (
     <WorkspaceFrame sceneId={sceneId}>
-      <PBLV3WorkspaceContent sceneId={sceneId} onReturnToHero={onReturnToHero} />
+      <PBLV3WorkspaceContent sceneId={sceneId} {...props} />
     </WorkspaceFrame>
   );
 }
