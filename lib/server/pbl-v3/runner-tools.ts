@@ -954,7 +954,11 @@ export async function teachingRunnerConfig(input: {
         })(),
         input.signal,
       ),
-    historyWindow: { stageKey: bound.stage_key, studentTurns: bound.feedback_seq },
+    historyWindow: {
+      stageKey: bound.stage_key,
+      studentTurns: bound.feedback_seq,
+      automaticEntry: latest?.pblOpening === true,
+    },
   };
 }
 

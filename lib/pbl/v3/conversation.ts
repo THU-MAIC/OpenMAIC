@@ -6,6 +6,7 @@ export type LearningRunFailure =
   | 'incomplete'
   | 'unavailable'
   | 'contextCapacity'
+  | 'contextTurnCapacity'
   | 'contextPreparation';
 
 /** Learner-owned conversation with OpenPBL thinking and full tool activity. */

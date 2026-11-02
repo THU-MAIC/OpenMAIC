@@ -2226,6 +2226,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           signal: new AbortController().signal,
         });
         expect(config.systemPrompt.match(/"uiLocale":"([^"]+)"/)?.[1]).toBe(locale);
+        expect(config.historyWindow.automaticEntry).toBe(true);
         expect(
           config.systemPrompt.includes(
             `"visibleLabels":${JSON.stringify(visibleProductLabels(locale))}`,
@@ -3457,8 +3458,33 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       const position = structuredClone(
         (await store.get(study.id, principal.ownerId)).state.position,
       );
+      if (stageIndex === 2) {
+        const capacityError = 'PBL_CONTEXT_ACTIVE_TURN_CAPACITY: private tool diagnostics';
+        await send('Please explain the edge case in the pending plan review.');
+        const failed = await claim('capacity-worker');
+        expect(failed.config.historyWindow.automaticEntry).toBe(false);
+        const inputs = await listAgentUserMessages(agents, sessionId);
+        await agents.finishSession(sessionId, 'capacity-worker', {
+          status: 'failed',
+          error: capacityError,
+          expectedAttempt: failed.claimed.attempt,
+        });
+        const failedView = await learningView(principal, study.id, { passive: true });
+        expect(failedView.roleRun?.failure).toBe('contextTurnCapacity');
+        expect(JSON.stringify(failedView)).not.toContain('private tool diagnostics');
+        await study.send('retry');
+        const retried = await claim('capacity-retry');
+        expect(await listAgentUserMessages(agents, sessionId)).toEqual(inputs);
+        expect((await store.binding(sessionId))!.guided!.pending).toEqual(pending);
+        await agents.finishSession(sessionId, 'capacity-retry', {
+          status: 'failed',
+          error: capacityError,
+          expectedAttempt: retried.claimed.attempt,
+        });
+      }
       await send('Where is the file? I cannot find the control.');
       const help = await claim('support-worker');
+      expect(help.config.historyWindow.automaticEntry).toBe(false);
       const response =
         'Use the Project files tree in the IDE. If the IDE is hidden, use its workspace toggle. The task bar is not a contract editor.';
       if (stageIndex === 2) {
@@ -3527,7 +3553,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       expect(recovered.config.isTurnComplete()).toBe(true);
       expect(
         JSON.parse(await recovered.config.liveContext()).currentReview.studentResponseCount,
-      ).toBe(0);
+      ).toBe(stageIndex === 2 ? 1 : 0); // The failed help request remains a real input, not approval.
       const calls = mocked.modelCalls;
       await runSession({ running: new Map(), shuttingDown: false }, recovered.claimed);
       expect(mocked.modelCalls).toBe(calls);
@@ -3543,7 +3569,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       );
       const next = await claim('after-support');
       expect(JSON.parse(await next.config.liveContext()).currentReview.studentResponseCount).toBe(
-        1,
+        stageIndex === 2 ? 2 : 1,
       );
       await invoke(next.config, 'read_next_skill', {
         studentFeedback:

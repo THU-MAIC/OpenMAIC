@@ -2621,6 +2621,7 @@
     "retryResponse": "Retry response",
     "run": {
       "contextCapacity": "The current course material or message exceeds the selected model’s context capacity. Your records are saved. Ask the course maintainer to check the model configuration or material before retrying.",
+      "contextTurnCapacity": "Содержимое, накопленное за этот ход, превышает объём, который модель может обработать за один раз. Отправьте новое короткое сообщение, заново изложив текущий вопрос или нужную помощь. Повтор того же ответа не освободит место. Прогресс и записи сохранены.",
       "contextPreparation": "Conversation preparation failed temporarily. Your records are saved; you can retry this reply.",
       "incomplete": "This reply did not finish recording the current review. Retry this reply to continue; your progress is unchanged.",
       "authentication": "The teaching model could not authenticate. Check the model configuration before retrying.",

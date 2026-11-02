@@ -4,6 +4,8 @@ export interface TeachingHistoryWindow {
   stageKey: string;
   /** Current-stage input count, including a marked opening wakeup. Only slices model history; never establishes student feedback. */
   studentTurns: number;
+  /** The latest user frame is a host opening, not a real learner message. */
+  automaticEntry?: boolean;
   /** Request-only recovery context; already displayed assistant prose is never learner evidence. */
   deliveredReply?: string;
 }

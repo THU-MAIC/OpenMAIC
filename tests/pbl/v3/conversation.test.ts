@@ -1,4 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { createInstance } from 'i18next';
+import { supportedLocales } from '@/lib/i18n/locales';
+import { defaultLocale } from '@/lib/i18n/types';
 vi.mock('server-only', () => ({}));
 import {
   projectConversation,
@@ -31,6 +35,28 @@ const message = (text: string) => ({
   },
 });
 describe('student conversation projection', () => {
+  it('resolves separate active-turn and generic capacity guidance in every locale and fallback', async () => {
+    const resources = Object.fromEntries(
+      supportedLocales.map(({ code }) => [
+        code,
+        {
+          translation: JSON.parse(readFileSync(`lib/i18n/locales/${code}.json`, 'utf8')),
+        },
+      ]),
+    );
+    const i18n = createInstance();
+    await i18n.init({ lng: defaultLocale, fallbackLng: defaultLocale, resources });
+    for (const { code } of supportedLocales) {
+      const active = i18n.getFixedT(code)('pblV3.run.contextTurnCapacity');
+      const generic = i18n.getFixedT(code)('pblV3.run.contextCapacity');
+      expect(active.trim()).not.toBe('');
+      expect(active).not.toBe('pblV3.run.contextTurnCapacity');
+      expect(active).not.toBe(generic);
+    }
+    expect(i18n.getFixedT('unsupported')('pblV3.run.contextTurnCapacity')).toBe(
+      resources[defaultLocale].translation.pblV3.run.contextTurnCapacity,
+    );
+  });
   it.each([false, true])(
     'keeps original reply identity across crash recovery (SDK receipt: %s)',
     (sdk) => {
@@ -434,6 +460,9 @@ describe('student conversation projection', () => {
     expect(learningRunFailure('401 unauthorized')).toBe('authentication');
     expect(learningRunFailure('PBL_CONTEXT_CAPACITY: oversized current policy')).toBe(
       'contextCapacity',
+    );
+    expect(learningRunFailure('Error: PBL_CONTEXT_ACTIVE_TURN_CAPACITY: private tool output')).toBe(
+      'contextTurnCapacity',
     );
     expect(learningRunFailure('PBL_CONTEXT_COMPACTION_FAILED: upstream failed')).toBe(
       'contextPreparation',
