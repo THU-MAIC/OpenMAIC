@@ -1265,6 +1265,7 @@
     "activeRunLimit": "同时生成的课程已达上限，请等待其中一门完成后再试。",
     "outlineConfirmedElsewhere": "该大纲已在其他地方确认，此处的修改未生效。",
     "outlineAlreadyContinued": "课程已继续生成，大纲无法再修改。",
+    "outlineOutsidePlan": "这门课的长度由计划固定。请把页数恢复到计划的数量，或新建一门课。",
     "runChangedElsewhere": "生成已在其他地方继续。",
     "runLoadFailed": "无法加载此次生成",
     "runLoadRetrying": "正在重试…",

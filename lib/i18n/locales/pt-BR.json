@@ -1265,6 +1265,7 @@
     "activeRunLimit": "Você já tem o número máximo de cursos sendo gerados. Aguarde um terminar e tente novamente.",
     "outlineConfirmedElsewhere": "Este roteiro já foi confirmado em outro lugar; suas edições aqui não foram aplicadas.",
     "outlineAlreadyContinued": "O curso já continuou sendo gerado, então o roteiro não pode mais ser alterado.",
+    "outlineOutsidePlan": "A duração deste curso é definida pelo planejamento. Restaure o número de páginas previsto ou crie um novo curso.",
     "runChangedElsewhere": "A geração já avançou em outro lugar.",
     "runLoadFailed": "Não foi possível carregar esta geração",
     "runLoadRetrying": "Tentando novamente…",

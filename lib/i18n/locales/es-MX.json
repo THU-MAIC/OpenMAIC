@@ -1265,6 +1265,7 @@
     "activeRunLimit": "Ya tienes el número máximo de cursos generándose. Espera a que termine uno e inténtalo de nuevo.",
     "outlineConfirmedElsewhere": "Este esquema ya se confirmó en otro lugar; tus cambios aquí no se aplicaron.",
     "outlineAlreadyContinued": "El curso ya siguió generándose, así que el esquema ya no se puede cambiar.",
+    "outlineOutsidePlan": "La duración de este curso está fijada por su plan. Restaura el número de páginas previsto o crea un curso nuevo.",
     "runChangedElsewhere": "La generación ya avanzó en otro lugar.",
     "runLoadFailed": "No se pudo cargar esta generación",
     "runLoadRetrying": "Reintentando…",

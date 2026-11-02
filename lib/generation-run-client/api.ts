@@ -33,6 +33,9 @@ export function runApiErrorText(
   t: (key: string, values?: Record<string, string | number>) => string,
 ): string {
   if (error.errorCode === 'ACTIVE_RUN_LIMIT') return t('generation.activeRunLimit');
+  // The server's message names the plan's page range, which the learner cannot act
+  // on in this language; the rule itself is what the toast should say.
+  if (error.errorCode === 'OUTLINE_OUTSIDE_PLAN') return t('generation.outlineOutsidePlan');
   return error.serverMessage ?? t(error.fallbackKey, error.fallbackValues);
 }
 

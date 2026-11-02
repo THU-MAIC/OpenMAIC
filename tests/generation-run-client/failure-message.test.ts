@@ -67,6 +67,24 @@ describe('what a paused run says', () => {
     ).toBe('translated:generation.activeRunLimit');
   });
 
+  it('answers a refused outline edit with the rule, not the server’s page numbers', () => {
+    // The server's message names the plan's range ("outside the 22-36 the plan
+    // allows"), which is not in the learner's language and not something they can
+    // act on. The rule is what the toast says.
+    const translate = (key: string) => `translated:${key}`;
+    expect(
+      runApiErrorText(
+        new RunApiError(
+          400,
+          'OUTLINE_OUTSIDE_PLAN',
+          'This course is planned for 29 pages. An edit of 1 is outside the 22-36 the plan allows.',
+          'generation.outlineEditFailed',
+        ),
+        translate,
+      ),
+    ).toBe('translated:generation.outlineOutsidePlan');
+  });
+
   it('says a scene failure the way the classic preview did', () => {
     expect(at('scene:0:content', { errorCode: 'UPSTREAM_ERROR', statusCode: 503 })).toEqual({
       key: 'generation.sceneGenerateProviderUnavailable',

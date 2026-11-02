@@ -59,7 +59,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         return ownerApiError('ACTIVE_RUN_LIMIT', 429, error.message, responseHeaders);
       }
       if (error instanceof RunCommandInvalidError) {
-        return ownerApiError('INVALID_REQUEST', 400, error.message, responseHeaders);
+        // Its own code, not INVALID_REQUEST: the message names a page range the
+        // learner cannot act on in their language, so the client answers this one
+        // with a translated rule instead of the server's sentence.
+        return ownerApiError('OUTLINE_OUTSIDE_PLAN', 400, error.message, responseHeaders);
       }
       if (error instanceof RunCommandConflictError) {
         return ownerApiError('RUN_STATE_CONFLICT', 409, error.message, responseHeaders);

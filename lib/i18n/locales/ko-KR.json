@@ -1265,6 +1265,7 @@
     "activeRunLimit": "동시에 생성할 수 있는 강의 수에 도달했습니다. 하나가 끝난 후 다시 시도하세요.",
     "outlineConfirmedElsewhere": "이 개요는 이미 다른 곳에서 확인되었습니다. 여기서 수정한 내용은 적용되지 않았습니다.",
     "outlineAlreadyContinued": "코스 생성이 이미 계속되어 개요를 더 이상 변경할 수 없습니다.",
+    "outlineOutsidePlan": "이 강의의 길이는 계획에 따라 고정되어 있습니다. 계획된 페이지 수로 되돌리거나 새 강의를 만드세요.",
     "runChangedElsewhere": "생성이 이미 다른 곳에서 진행되었습니다.",
     "runLoadFailed": "이 생성을 불러올 수 없습니다",
     "runLoadRetrying": "다시 시도하는 중…",

@@ -1265,6 +1265,7 @@
     "activeRunLimit": "同時に生成できるコースの上限に達しています。いずれかが完了してから再度お試しください。",
     "outlineConfirmedElsewhere": "このアウトラインは別の場所で確認済みです。ここでの編集は反映されていません。",
     "outlineAlreadyContinued": "コースの生成はすでに続行されているため、アウトラインは変更できません。",
+    "outlineOutsidePlan": "このコースの長さは計画で固定されています。計画されたページ数に戻すか、新しいコースを作成してください。",
     "runChangedElsewhere": "生成は別の場所で既に進んでいます。",
     "runLoadFailed": "この生成を読み込めませんでした",
     "runLoadRetrying": "再試行しています…",

@@ -1265,6 +1265,7 @@
     "activeRunLimit": "Le nombre maximal de cours en cours de génération est atteint. Attendez qu'un cours se termine, puis réessayez.",
     "outlineConfirmedElsewhere": "Ce plan a déjà été confirmé ailleurs ; vos modifications ici n'ont pas été appliquées.",
     "outlineAlreadyContinued": "La génération du cours a déjà repris : le plan ne peut plus être modifié.",
+    "outlineOutsidePlan": "La durée de ce cours est fixée par son plan. Rétablissez le nombre de pages prévu ou créez un nouveau cours.",
     "runChangedElsewhere": "La génération a déjà avancé ailleurs.",
     "runLoadFailed": "Impossible de charger cette génération",
     "runLoadRetrying": "Nouvelle tentative…",

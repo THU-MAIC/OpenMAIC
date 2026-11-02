@@ -1265,6 +1265,7 @@
     "activeRunLimit": "Es werden bereits so viele Kurse wie möglich generiert. Warte, bis einer fertig ist, und versuche es erneut.",
     "outlineConfirmedElsewhere": "Diese Gliederung wurde bereits anderswo bestätigt; deine Änderungen hier wurden nicht übernommen.",
     "outlineAlreadyContinued": "Der Kurs wird bereits weiter generiert, die Gliederung kann nicht mehr geändert werden.",
+    "outlineOutsidePlan": "Die Länge dieses Kurses ist im Plan festgelegt. Stelle die geplante Seitenzahl wieder her oder starte einen neuen Kurs.",
     "runChangedElsewhere": "Die Generierung ist anderswo bereits weitergegangen.",
     "runLoadFailed": "Diese Generierung konnte nicht geladen werden",
     "runLoadRetrying": "Neuer Versuch…",
