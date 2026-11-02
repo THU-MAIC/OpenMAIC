@@ -71,6 +71,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
     },
   });
   const view = {
+    onboardingCompleted: true,
     id: 'ui-study',
     revision: 8,
     activitySequence: 10,

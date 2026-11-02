@@ -1242,6 +1242,7 @@ export async function learningView(
   return {
     id,
     revision: row.revision,
+    onboardingCompleted: !!row.onboarding_completed_at,
     title: project.definition.title,
     ...(project.application
       ? {

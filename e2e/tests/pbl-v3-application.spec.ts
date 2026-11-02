@@ -38,6 +38,7 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
       ],
     });
     const view = {
+      onboardingCompleted: true,
       id: 'preview-study',
       revision: 0,
       activitySequence: 0,

@@ -1,14 +1,14 @@
 'use client';
 
 import { Dialog } from 'radix-ui';
-import { BookOpen, ChevronLeft, ChevronRight } from 'lucide-react';
+import { BookOpen, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { useId, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { stepsForWorkbench, type OnboardingStep } from '@/lib/pbl/v3/onboarding';
 import type { LearningView } from '@/lib/pbl/v3/types';
 
 const targets: Record<OnboardingStep, string> = {
-  progress: '[data-pbl-tour="progress"]',
+  progress: '[data-pbl-tour="task"]',
   discussion: '[data-pbl-tour="conversation"]',
   code: '[data-testid="pbl-ide"], [data-pbl-tour="workspace-toggle"]',
   application: '[data-testid="pbl-application-panel"], [data-testid="pbl-application-open"]',
@@ -23,12 +23,12 @@ export function WorkbenchOnboarding({
   view,
   root,
   returnFocus,
-  onClose,
+  onFinish,
 }: {
   view: LearningView;
   root: RefObject<HTMLElement | null>;
   returnFocus: RefObject<HTMLElement | null>;
-  onClose: () => void;
+  onFinish: () => Promise<void>;
 }) {
   const { t, locale } = useI18n();
   const steps = stepsForWorkbench(view);
@@ -39,6 +39,23 @@ export function WorkbenchOnboarding({
   const focusedStep = useRef<OnboardingStep | null>(null);
   const nextButton = useRef<HTMLButtonElement>(null);
   const body = useRef<HTMLDivElement>(null);
+  const [finishing, setFinishing] = useState(false);
+  const [finishError, setFinishError] = useState(false);
+  const finishingRef = useRef(false);
+  const finish = async () => {
+    if (finishingRef.current) return;
+    finishingRef.current = true;
+    setFinishing(true);
+    setFinishError(false);
+    try {
+      await onFinish();
+    } catch {
+      setFinishError(true);
+    } finally {
+      finishingRef.current = false;
+      setFinishing(false);
+    }
+  };
   const maskId = useId();
   const [layout, setLayout] = useState<Layout | null>(null);
   const copy = (key: string) => t(`pblV3.onboarding.${key}`);
@@ -232,6 +249,7 @@ export function WorkbenchOnboarding({
           onEscapeKeyDown={(event) => {
             event.preventDefault();
             event.stopPropagation();
+            void finish();
           }}
           onKeyDown={(event) => event.stopPropagation()}
         >
@@ -240,6 +258,15 @@ export function WorkbenchOnboarding({
             <span className="flex-1 text-xs font-medium text-muted-foreground">
               {t('pblV3.onboarding.counter', { current: stepIndex + 1, total: steps.length })}
             </span>
+            <button
+              type="button"
+              aria-label={copy('close')}
+              disabled={finishing}
+              className="rounded-md p-1 hover:bg-muted disabled:opacity-40"
+              onClick={() => void finish()}
+            >
+              <X size={16} />
+            </button>
           </header>
           <div ref={body} className="min-h-0 space-y-4 overflow-y-auto px-5 py-4">
             <Dialog.Title
@@ -252,6 +279,11 @@ export function WorkbenchOnboarding({
             <Dialog.Description className="whitespace-pre-line text-sm leading-relaxed">
               {copy(`steps.${step}.body`)}
             </Dialog.Description>
+            {finishError && (
+              <p role="alert" className="text-sm text-destructive">
+                {copy('finishError')}
+              </p>
+            )}
           </div>
           <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t px-4 py-3">
             <div className="flex flex-wrap gap-1">
@@ -259,6 +291,7 @@ export function WorkbenchOnboarding({
                 <button
                   type="button"
                   className={`${button} hover:bg-muted`}
+                  disabled={finishing}
                   onClick={() => move(stepIndex - 1)}
                 >
                   <ChevronLeft size={14} />
@@ -269,7 +302,12 @@ export function WorkbenchOnboarding({
                 ref={nextButton}
                 type="button"
                 className={`${button} bg-primary text-primary-foreground hover:opacity-90`}
-                onClick={() => (stepIndex === steps.length - 1 ? onClose() : move(stepIndex + 1))}
+                disabled={finishing}
+                aria-busy={finishing}
+                onClick={() => {
+                  if (stepIndex === steps.length - 1) void finish();
+                  else move(stepIndex + 1);
+                }}
               >
                 {copy(stepIndex === steps.length - 1 ? 'finish' : 'next')}
                 <ChevronRight size={14} />

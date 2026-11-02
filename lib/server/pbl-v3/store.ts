@@ -33,6 +33,7 @@ export interface Study extends Record<string, unknown> {
   /** Hydrated from durable template bytes on every read, never persisted with learner state. */
   project?: InstalledProject;
   revision: number;
+  onboarding_completed_at?: Date | null;
   state: PblSessionState;
   environment_id: string | null;
   environment_checked_at: Date | null;
@@ -130,6 +131,21 @@ export class LearningStore {
   async roles(id: string, db: Pool | PoolClient = this.pool) {
     return (await db.query<RoleBinding>('SELECT * FROM pbl_v3_roles WHERE study_id=$1', [id])).rows;
   }
+  /** UI completion belongs to this owner's V3 study, never to browser or V2 history. */
+  async completeOnboarding(id: string, ownerId: string) {
+    return this.transaction(async (db) => {
+      await fenceOwnerWrite(db, ownerId);
+      const result = await db.query(
+        `UPDATE pbl_v3_studies
+         SET onboarding_completed_at=COALESCE(onboarding_completed_at,clock_timestamp())
+         WHERE id=$1 AND owner_id=$2 RETURNING id`,
+        [id, ownerId],
+      );
+      if (!result.rows.length)
+        throw new SandboxError('SANDBOX_NOT_FOUND', 404, 'This learning session is unavailable.');
+    });
+  }
+
   /** Activity is separate from teaching revisions; all tabs share the server clock. */
   async recordActivity(id: string, ownerId: string) {
     return this.transaction(async (db) => {

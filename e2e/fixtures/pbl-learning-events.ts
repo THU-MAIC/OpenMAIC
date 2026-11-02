@@ -2,34 +2,18 @@ import { createServer, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { test as base } from '@playwright/test';
 import type { LearningSnapshot } from '@/lib/pbl/v3/event-stream';
-import { ONBOARDING_STORAGE_KEY } from '@/lib/pbl/v3/onboarding';
 
 /** Keep the real browser stream/parser while commands use each spec's mutable fixtures. */
 export const test = base.extend<{
-  onboarding: boolean;
-  onboardingPreference: void;
   learningEvents: (snapshot: () => LearningSnapshot) => Promise<() => void>;
 }>({
-  onboarding: [false, { option: true }],
-  // Existing learning specs represent a learner who already knows the UI.
-  // Tour specs explicitly opt into the real first-entry preference.
-  onboardingPreference: [
-    async ({ page, onboarding }, use) => {
-      if (!onboarding)
-        await page.addInitScript(
-          (key) => localStorage.setItem(key, 'seen'),
-          ONBOARDING_STORAGE_KEY,
-        );
-      await use();
-    },
-    { auto: true },
-  ],
   learningEvents: async ({ page }, use) => {
     const clients = new Set<ServerResponse>();
     let snapshot: (() => LearningSnapshot) | undefined;
     const send = (response: ServerResponse) => {
-      if (snapshot && !response.destroyed)
+      if (snapshot && !response.destroyed) {
         response.write(`event: learning\ndata: ${JSON.stringify(snapshot())}\n\n`);
+      }
     };
     const publish = () => clients.forEach(send);
     const server = createServer((request, response) => {

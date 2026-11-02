@@ -2991,7 +2991,9 @@
           "title": "Reveja o guia aqui",
           "body": "Use Guia do espaço de trabalho na barra superior para rever os controles. Escolha Entendi, começar para ler a mensagem do assistente e usar o espaço de trabalho."
         }
-      }
+      },
+      "finishError": "Não foi possível registrar que você viu o guia. Tente novamente. Seu progresso e rascunhos foram preservados.",
+      "close": "Fechar guia"
     }
   }
 }

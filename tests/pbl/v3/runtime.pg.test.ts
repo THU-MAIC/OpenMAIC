@@ -733,6 +733,27 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     }
     if (mocked.root) await rm(mocked.root, { recursive: true, force: true });
   });
+  it('persists V3 guide completion per owner and project without changing learning progress', async () => {
+    const study = await freshStudy();
+    const other = await freshStudy();
+    const read = async () =>
+      (await pool.query('SELECT * FROM pbl_v3_studies WHERE id=$1', [study.id])).rows[0];
+    const before = await read();
+    expect((await learningView(principal, study.id)).onboardingCompleted).toBe(false);
+    await expect(store.completeOnboarding(study.id, 'another-owner')).rejects.toMatchObject({
+      code: 'SANDBOX_NOT_FOUND',
+    });
+    expect((await read()).onboarding_completed_at).toBeNull();
+    await store.completeOnboarding(study.id, principal.ownerId);
+    const after = await read();
+    expect(after.onboarding_completed_at).toBeInstanceOf(Date);
+    expect({ ...after, onboarding_completed_at: null }).toEqual(before);
+    expect((await learningView(principal, study.id)).onboardingCompleted).toBe(true);
+    await store.completeOnboarding(study.id, principal.ownerId);
+    expect((await read()).onboarding_completed_at).toEqual(after.onboarding_completed_at);
+    expect((await store.get(other.id, principal.ownerId)).onboarding_completed_at).toBeNull();
+  });
+
   it('completes plan review from spontaneous current-version acceptance without another approval question', async () => {
     const original = studyId;
     const study = await freshStudy();

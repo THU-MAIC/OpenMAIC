@@ -26,7 +26,7 @@ export function PBLV3Container({ sceneId }: { sceneId: string }) {
   const [entered, setEntered] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [autoExpand, setAutoExpand] = useState(false);
-  const [autoOnboarding, setAutoOnboarding] = useState(false);
+  const [initialEntry, setInitialEntry] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [fullscreenRoot, setFullscreenRoot] = useState<Element | null>(null);
   const [portalHost] = useState(() => {
@@ -79,7 +79,7 @@ export function PBLV3Container({ sceneId }: { sceneId: string }) {
   // Only unmount detaches the host; fullscreen changes must never run this cleanup.
   useLayoutEffect(() => () => portalHost?.remove(), [portalHost]);
   const launch = () => {
-    setAutoOnboarding(entrance?.started === false && !entrance.reportAvailable);
+    setInitialEntry(entrance?.started === false);
     setAutoExpand(true);
     setReportOpen(false);
     setEntered(true);
@@ -158,7 +158,8 @@ export function PBLV3Container({ sceneId }: { sceneId: string }) {
               <PBLV3Workspace
                 sceneId={sceneId}
                 onReturnToHero={returnToHero}
-                autoOnboarding={autoOnboarding && expanded}
+                autoOnboarding={expanded}
+                initialEntry={initialEntry}
                 layoutReady={!autoExpand}
                 onOnboardingChange={setOnboardingOpen}
               />

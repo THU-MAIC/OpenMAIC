@@ -244,13 +244,17 @@ export function LearningConversation({
   const { targetScrollTop, follow } = useConversationScrollTarget(turnId, sent);
   return (
     <Conversation
-      className="min-h-0 flex-1 bg-background"
+      className="flex min-h-0 flex-1 flex-col bg-background"
       aria-label={t('pblV3.learning')}
       targetScrollTop={targetScrollTop}
       initial="instant"
       resize="instant"
     >
-      <ConversationContent className="gap-5 p-4" onClick={(event) => openReference(event)}>
+      <ConversationContent
+        scrollClassName="min-h-0 flex-1"
+        className="gap-5 p-4"
+        onClick={(event) => openReference(event)}
+      >
         <ConversationHistory
           id={view.id}
           sources={view.conversationHistory ?? []}

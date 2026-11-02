@@ -80,34 +80,42 @@ export function ConversationScroll({
     };
   }, [contentRef, scrollRef]);
 
-  if (!below) return null;
   const label = generating
     ? `${t('pblV3.journey.latest')} · ${t('workbench.chat.waiting')}`
     : t('pblV3.journey.latest');
   return (
-    <Button
-      className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full"
-      size="icon"
-      type="button"
-      variant="outline"
-      aria-label={label}
-      title={label}
-      data-testid="pbl-conversation-scroll-button"
-      data-generating={generating}
-      onClick={() => {
-        onFollow();
-        void scrollToBottom();
-      }}
+    // Reserve a stable lane outside the text viewport, so the jump control
+    // never covers questions and appearing/disappearing cannot shift reading.
+    <div
+      data-testid="pbl-conversation-scroll-lane"
+      className="flex h-10 shrink-0 items-center justify-end px-3"
     >
-      {generating ? (
-        <span className={wbStyles.waiting.dots} aria-hidden="true">
-          <i className={wbStyles.waiting.dot} />
-          <i className={wbStyles.waiting.dotDelayOne} />
-          <i className={wbStyles.waiting.dotDelayTwo} />
-        </span>
-      ) : (
-        <ArrowDown className="size-4" />
+      {below && (
+        <Button
+          className="rounded-full"
+          size="icon"
+          type="button"
+          variant="outline"
+          aria-label={label}
+          title={label}
+          data-testid="pbl-conversation-scroll-button"
+          data-generating={generating}
+          onClick={() => {
+            onFollow();
+            void scrollToBottom();
+          }}
+        >
+          {generating ? (
+            <span className={wbStyles.waiting.dots} aria-hidden="true">
+              <i className={wbStyles.waiting.dot} />
+              <i className={wbStyles.waiting.dotDelayOne} />
+              <i className={wbStyles.waiting.dotDelayTwo} />
+            </span>
+          ) : (
+            <ArrowDown className="size-4" />
+          )}
+        </Button>
       )}
-    </Button>
+    </div>
   );
 }

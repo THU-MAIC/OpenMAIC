@@ -38,6 +38,7 @@ test('installed sample opens in the normal classroom and preserves progress afte
     lastSequence: 1,
   };
   const view = {
+    onboardingCompleted: true,
     id: 'learning-browser',
     revision: 0,
     title: 'A friendly greeting',

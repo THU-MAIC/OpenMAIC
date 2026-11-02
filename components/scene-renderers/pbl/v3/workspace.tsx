@@ -52,6 +52,7 @@ interface WorkspaceProps {
   sceneId: string;
   onReturnToHero?: () => void;
   autoOnboarding?: boolean;
+  initialEntry?: boolean;
   layoutReady?: boolean;
   onOnboardingChange?: (open: boolean) => void;
 }
@@ -60,6 +61,7 @@ function PBLV3WorkspaceContent({
   sceneId,
   onReturnToHero,
   autoOnboarding = false,
+  initialEntry = false,
   layoutReady = true,
   onOnboardingChange,
 }: WorkspaceProps) {
@@ -345,28 +347,38 @@ function PBLV3WorkspaceContent({
       (!['open', 'prepare'].includes(pendingAction ?? '') &&
         !!workbench &&
         workbench.revision >= view!.revision));
-  // Only initial entry blocks the whole workbench. Later recovery keeps its
-  // actionable error/retry UI; transient stream reconnects do not mask a tour.
+  // Only a brand-new project's actual open/prepare request blocks input.
+  // Continue/recovery and passive unavailable views remain usable, independently
+  // of whether this study still needs its guide.
   const [entrySettled, setEntrySettled] = useState(false);
   const entryLoading =
-    !entrySettled && !onboardingReady && !onboardingBlocked && stream.status !== 'unavailable';
+    initialEntry &&
+    !entrySettled &&
+    pending &&
+    ['open', 'prepare'].includes(pendingAction ?? '') &&
+    !view?.busy &&
+    view?.state.status !== 'completed' &&
+    !onboardingBlocked &&
+    !['unavailable', 'retrying'].includes(stream.status);
   useEffect(() => {
     if (onboardingReady || onboardingBlocked || ['unavailable', 'retrying'].includes(stream.status))
       setEntrySettled(true);
   }, [onboardingReady, onboardingBlocked, stream.status]);
+  useEffect(() => {
+    if (!entryLoading) return;
+    // Do not trap a learner behind an unconfirmed remote operation. Releasing
+    // the modal does not cancel or retry it; the normal pending UI stays visible.
+    const timer = window.setTimeout(() => setEntrySettled(true), 30_000);
+    return () => window.clearTimeout(timer);
+  }, [entryLoading]);
   const onboarding = useWorkbenchOnboarding({
     root: workspaceRoot,
     studyId: view?.id,
-    autoStart: autoOnboarding && !view?.recovery?.progressReset && !view?.archiveDiscard,
+    autoStart: autoOnboarding,
+    completed: view?.onboardingCompleted === true,
     ready: !!onboardingReady,
     available: !!onboardingAvailable,
     blocked: onboardingBlocked,
-    hasDraft:
-      !!text ||
-      !!pendingMessage ||
-      dirtyFiles ||
-      quizAnswers.values.some((answer) => answer !== null) ||
-      Object.values(decisionDrafts).some((draft) => !!draft.chosen || !!draft.rationale),
   });
   useEffect(() => {
     onOnboardingChange?.(onboarding.active || entryLoading);
@@ -1164,7 +1176,18 @@ function PBLV3WorkspaceContent({
           view={view}
           root={workspaceRoot}
           returnFocus={onboarding.returnFocus}
-          onClose={onboarding.close}
+          onFinish={async () => {
+            if (view.onboardingCompleted !== true) {
+              const receipt = await pblRequest<{ onboardingCompleted: boolean }>(
+                '/api/pbl/v3/onboarding',
+                { studyId: view.id },
+                AbortSignal.timeout(10_000),
+              );
+              if (receipt.onboardingCompleted !== true)
+                throw new Error('Guide completion was not confirmed.');
+            }
+            onboarding.close();
+          }}
         />
       )}
     </section>

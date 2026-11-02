@@ -2991,7 +2991,9 @@
           "title": "Anleitung hier erneut öffnen",
           "body": "Über Arbeitsbereich-Anleitung in der Werkzeugleiste kannst du die Bedienung erneut ansehen. Wähle Verstanden, loslegen, lies die Nachricht des Assistenten und beginne mit der Arbeit."
         }
-      }
+      },
+      "finishError": "Die Bestätigung konnte nicht gespeichert werden. Bitte erneut versuchen. Lernfortschritt und Entwürfe bleiben erhalten.",
+      "close": "Anleitung schließen"
     }
   }
 }

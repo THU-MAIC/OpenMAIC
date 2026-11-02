@@ -2991,7 +2991,9 @@
           "title": "Xem lại hướng dẫn tại đây",
           "body": "Dùng Hướng dẫn không gian làm việc trên thanh công cụ để xem lại các thao tác. Chọn Đã hiểu, bắt đầu để đọc tin nhắn của trợ lý và sử dụng không gian làm việc."
         }
-      }
+      },
+      "finishError": "Không lưu được việc đã xem hướng dẫn. Vui lòng thử lại. Tiến độ học tập và bản nháp được giữ nguyên.",
+      "close": "Đóng hướng dẫn"
     }
   }
 }

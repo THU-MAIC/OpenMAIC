@@ -19,6 +19,8 @@ export interface ArchiveDiscard {
   reason: ArchiveFailure['reason'];
 }
 export interface LearningView {
+  /** Server-owned V3 guide completion for this learner/project. Absent on older servers is treated as unfinished. */
+  onboardingCompleted?: boolean;
   id: string;
   revision: number;
   title: string;
