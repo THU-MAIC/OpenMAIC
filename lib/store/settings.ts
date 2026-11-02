@@ -29,7 +29,7 @@ import {
 import { keepUnimported } from '@/lib/legacy-browser-import/model-settings-unimported';
 
 /** Persisted-blob version for zustand's `persist` `migrate` ladder. */
-const SETTINGS_PERSIST_VERSION = 5;
+const SETTINGS_PERSIST_VERSION = 6;
 
 /**
  * Bound after the store exists; see `onWriteRefused` for why it is not inlined.
@@ -275,7 +275,7 @@ export const useSettingsStore = create<SettingsState>()(
       sidebarCollapsed: true,
       chatAreaCollapsed: true,
       chatAreaWidth: 320,
-      editRailCollapsed: false,
+      editRailCollapsed: true,
       editRailWidth: 220,
 
       setTTSVoice: (voice, providerId) => set({ ttsVoice: voice, ttsVoiceProviderId: providerId }),
@@ -325,7 +325,12 @@ export const useSettingsStore = create<SettingsState>()(
       migrate: (persistedState: unknown, version: number) => {
         const state = { ...((persistedState as Record<string, unknown> | null) ?? {}) };
         // v4 → v5: model settings move to the server (RFC #1701).
-        return version < 5 ? migrateSettingsToV5(state, version) : pickPersisted(state);
+        const next = version < 5 ? migrateSettingsToV5(state, version) : pickPersisted(state);
+        // v5 → v6: the edit page rail starts collapsed, as playback's does. A
+        // stored `false` was the old default as often as a choice and cannot be
+        // told apart; a stored `true` can only have been chosen, and stays.
+        if (version < 6 && next.editRailCollapsed !== true) delete next.editRailCollapsed;
+        return next;
       },
       // Only known preference fields reach the state; anything else a blob
       // carries (fields of earlier builds) is ignored. Model settings kept

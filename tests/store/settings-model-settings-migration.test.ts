@@ -47,8 +47,23 @@ async function hydrate(state: Record<string, unknown>, version: number) {
   return useSettingsStore;
 }
 
+describe('settings store v5 → v6', () => {
+  it('starts the edit rail collapsed, keeping only a collapse that was chosen', async () => {
+    expect((await hydrate({ editRailCollapsed: false }, 5)).getState().editRailCollapsed).toBe(
+      true,
+    );
+    vi.resetModules();
+    expect((await hydrate({ editRailCollapsed: true }, 5)).getState().editRailCollapsed).toBe(true);
+    vi.resetModules();
+    // Chosen since: a v6 blob says what the person set.
+    expect((await hydrate({ editRailCollapsed: false }, 6)).getState().editRailCollapsed).toBe(
+      false,
+    );
+  });
+});
+
 describe('settings store v4 → v5', () => {
-  it('leaves a fresh speech preference unset without bumping the persisted version', async () => {
+  it('leaves a fresh speech preference unset at the persisted version', async () => {
     const { useSettingsStore: store } = await import('@/lib/store/settings');
     await store.persist.rehydrate();
     expect(store.getState().asrLanguage).toBe('');
@@ -58,7 +73,7 @@ describe('settings store v4 → v5', () => {
         'settings-storage',
         'account',
       );
-      expect(blob?.version).toBe(5);
+      expect(blob?.version).toBe(6);
       expect(blob?.state.asrLanguage).toBe('');
     });
   });
@@ -137,7 +152,7 @@ describe('settings store v4 → v5', () => {
         'account',
       );
       expect(blob?.state.playbackSpeed).toBe(1.25);
-      expect(blob?.version).toBe(5);
+      expect(blob?.version).toBe(6);
       expect(JSON.stringify(blob)).not.toContain('sk-');
     });
   });
@@ -185,7 +200,7 @@ describe('settings store v4 → v5', () => {
         'settings-storage',
         'account',
       );
-      expect(blob?.version).toBe(5);
+      expect(blob?.version).toBe(6);
       expect(JSON.stringify(blob?.state)).toContain('sk-kept');
     });
     expect(JSON.stringify(warn.mock.calls)).not.toContain('sk-kept');

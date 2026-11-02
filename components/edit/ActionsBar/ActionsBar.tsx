@@ -131,7 +131,7 @@ function useClearCuePreviewOnUnmount() {
  */
 const INCOMPLETE_CLIP = 'border-dashed border-amber-400/70';
 
-const AXIS_FROM_TOP = 20; // px from track top to the axis center (nodes hang below it)
+const AXIS_FROM_TOP = 12; // px from track top to the axis center (nodes hang below it)
 
 // Radix Select forbids an empty-string item value, so the discussion's
 // "unspecified agent" choice rides a sentinel that maps back to '' on change.
@@ -604,7 +604,7 @@ function SpeechClip({
       )}
     >
       <span className="absolute inset-x-0 top-0 h-[3px] bg-primary/35" />
-      <div className="flex items-center gap-1.5 border-b border-border/60 bg-muted/40 px-2 py-1">
+      <div className="flex items-center gap-1.5 border-b border-border/60 bg-muted/40 px-2 py-0.5">
         <span
           draggable
           onDragStart={onDragStart}
@@ -638,7 +638,12 @@ function SpeechClip({
         }}
         onBlur={commit}
         placeholder={t('edit.timeline.speechPlaceholder')}
-        className="flex-1 resize-none bg-transparent px-3 py-2 text-[12.5px] leading-[1.7] text-foreground/90 outline-none placeholder:text-muted-foreground/40 [scrollbar-width:thin]"
+        // A whole number of lines with the bar under it, so a third line does not
+        // show cut in half; it scrolls.
+        className={cn(
+          'resize-none bg-transparent px-3 pt-1 text-[12.5px] leading-[1.5] text-foreground/90 outline-none placeholder:text-muted-foreground/40 [scrollbar-width:thin]',
+          ttsActive ? 'h-[42px] shrink-0' : 'min-h-0 flex-1 pb-1',
+        )}
       />
       {ttsActive && (
         <SpeechTtsBar
@@ -712,7 +717,7 @@ function DiscussionClip({
       {/* The empty state reads from the amber dashed frame + the "topic
           (required)" placeholder; the discussion keeps its Flag glyph identity. */}
       <span className={cn('absolute inset-x-0 top-0 h-[3px]', m.accent)} />
-      <div className="flex items-center gap-1.5 border-b border-yellow-300/50 bg-yellow-400/15 px-2 py-1 dark:border-yellow-500/25 dark:bg-yellow-500/10">
+      <div className="flex items-center gap-1.5 border-b border-yellow-300/50 bg-yellow-400/15 px-2 py-0.5 dark:border-yellow-500/25 dark:bg-yellow-500/10">
         <span className="flex size-4 items-center justify-center rounded-md bg-yellow-400 text-yellow-950 dark:bg-yellow-500 dark:text-slate-900">
           <Flag className="size-2.5" />
         </span>
@@ -738,7 +743,7 @@ function DiscussionClip({
           topicDirty.current = false;
         }}
         placeholder={t('edit.timeline.discussionTopicPlaceholder')}
-        className="h-[46px] shrink-0 resize-none bg-transparent px-3 pt-2 text-[12.5px] font-medium leading-[1.55] text-foreground/85 outline-none placeholder:font-normal placeholder:text-amber-500/60 [scrollbar-width:thin]"
+        className="h-[24px] shrink-0 resize-none bg-transparent px-3 pt-1 text-[12px] font-medium leading-[1.4] text-foreground/85 outline-none placeholder:font-normal placeholder:text-amber-500/60 [scrollbar-width:thin]"
       />
       <textarea
         value={promptVal}
@@ -753,7 +758,7 @@ function DiscussionClip({
         placeholder={t('edit.timeline.discussionPromptPlaceholder')}
         className="min-h-0 flex-1 resize-none bg-transparent px-3 text-[11px] leading-[1.6] text-muted-foreground outline-none placeholder:text-muted-foreground/35 [scrollbar-width:thin]"
       />
-      <div className="flex items-center gap-1 border-t border-gray-100 px-2 py-1 dark:border-gray-700/50">
+      <div className="flex items-center gap-1 border-t border-gray-100 px-2 py-0.5 dark:border-gray-700/50">
         <span className="shrink-0 text-[9px] text-muted-foreground/50">
           {t('edit.timeline.discussionAgent')}
         </span>
@@ -763,7 +768,7 @@ function DiscussionClip({
         >
           <SelectTrigger
             size="sm"
-            className="ml-auto h-6 max-w-[150px] gap-1 rounded border-border px-1.5 py-0 text-[10px] shadow-none focus-visible:ring-yellow-400/40 [&_svg]:size-3"
+            className="ml-auto h-5 max-w-[150px] gap-1 rounded border-border px-1.5 py-0 text-[10px] shadow-none focus-visible:ring-yellow-400/40 [&_svg]:size-3"
           >
             <SelectValue placeholder={t('edit.timeline.discussionAgentUnset')} />
           </SelectTrigger>
@@ -887,15 +892,15 @@ function CueMarker({
           <DeleteButton onDelete={onDelete} />
         </span>
       </div>
-      <div className="flex flex-1 flex-col items-center justify-center gap-1.5 px-1 pb-1">
-        <span className={cn('flex size-8 items-center justify-center rounded-full', m.glyph)}>
-          <Icon className="size-4" />
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 pb-0.5">
+        <span className={cn('flex size-6 items-center justify-center rounded-full', m.glyph)}>
+          <Icon className="size-3.5" />
         </span>
         <span className="text-[10px] font-medium text-foreground/70">{label}</span>
         {bound && (
           <span
             className={cn(
-              'text-[9px]',
+              'max-w-full truncate text-[9px]',
               needsTarget
                 ? 'font-medium text-amber-600 dark:text-amber-400'
                 : 'text-muted-foreground/45',
@@ -960,7 +965,7 @@ function NodeDot({
         if (bound) onPick();
       }}
       className={cn(
-        'grid size-6 place-items-center ring-2 ring-white transition-transform hover:scale-110 dark:ring-slate-900',
+        'grid size-5 place-items-center ring-2 ring-white transition-transform hover:scale-110 dark:ring-slate-900',
         isDiscussion ? 'rounded-[7px]' : 'rounded-full',
         needsTarget
           ? 'text-amber-600 bg-amber-100 ring-amber-200 animate-pulse dark:bg-amber-500/20 dark:text-amber-400'
@@ -975,7 +980,7 @@ function NodeDot({
       )}
       aria-label={label}
     >
-      <Icon className="size-3.5" />
+      <Icon className="size-3" />
     </span>
   );
 }
@@ -1009,7 +1014,7 @@ function DropZone({
         onDrop();
       }}
       className={cn(
-        'group/ins relative flex h-full shrink-0 items-start justify-center pt-2 transition-all',
+        'group/ins relative flex h-full shrink-0 items-start justify-center pt-px transition-all',
         flex ? 'flex-1' : active ? 'w-10' : 'w-4',
       )}
     >
@@ -1295,7 +1300,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
     <>
       {/* The timeline's own header row: what it is, what it can insert, how much
           it holds, and its fold. Geometry unchanged from the standalone bar. */}
-      <div className="flex h-10 shrink-0 items-center gap-2 px-6">{header}</div>
+      <div className="flex h-7 shrink-0 items-center gap-2 px-3">{header}</div>
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
         <div className="relative h-full min-w-max">
           {/* the timeline axis (top) — nodes hang below it; hidden when empty
@@ -1367,14 +1372,14 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                       ease: 'easeOut',
                     }}
                     className="flex h-full flex-col items-center"
-                    style={{ paddingTop: AXIS_FROM_TOP - 12 }}
+                    style={{ paddingTop: AXIS_FROM_TOP - 10 }}
                   >
                     {lineMode ? (
                       <div className="w-9">{dot}</div>
                     ) : (
                       <>
                         {dot}
-                        <div className="my-1 h-2.5 w-px bg-border" />
+                        <div className="my-0.5 h-1 w-px bg-border" />
                         <div className="min-h-0 w-full flex-1">
                           {action.type === 'speech' ? (
                             <SpeechClip

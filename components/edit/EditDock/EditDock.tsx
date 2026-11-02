@@ -33,10 +33,12 @@ import { DockEditBar, DOCK_EDIT_BAR_HEIGHT } from './DockEditBar';
 
 /**
  * The timeline's height, in px — the body only; the edit bar is added on top of
- * it, so folding never takes the bar away. The timeline height is fixed: the
- * height-drag handle was removed (owner decision), so only the fold moves it.
+ * it, so folding never takes the bar away. With the bar it comes to playback's
+ * 192 (`Roundtable`), so the canvas above does not move with the mode. The
+ * timeline height is fixed: the height-drag handle was removed (owner decision),
+ * so only the fold moves it.
  */
-const TIMELINE_DEFAULT_HEIGHT = 224;
+const TIMELINE_DEFAULT_HEIGHT = 160;
 /** The axis of node icons, with room for the chips that hang off it. */
 const TIMELINE_COLLAPSED_HEIGHT = 86;
 
@@ -99,7 +101,7 @@ export function EditDock({
         height:
           (collapsed ? TIMELINE_COLLAPSED_HEIGHT : TIMELINE_DEFAULT_HEIGHT) + DOCK_EDIT_BAR_HEIGHT,
       }}
-      className="relative flex flex-col border-t border-gray-100 bg-white/80 backdrop-blur-xl dark:border-gray-800 dark:bg-slate-900/80"
+      className="relative flex flex-col border-t border-gray-100 bg-white/60 backdrop-blur-md dark:border-gray-800 dark:bg-gray-800/60"
     >
       <DockEditBar sceneId={sceneId} canPickElements={canPickElements} pager={pager} />
 

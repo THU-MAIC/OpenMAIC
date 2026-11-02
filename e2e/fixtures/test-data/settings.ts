@@ -10,7 +10,7 @@
 export const SETTINGS_KV_KEY = 'maic:account:settings-storage';
 
 /**
- * Default settings-storage value for e2e tests (Zustand persist v5 format):
+ * Default settings-storage value for e2e tests (Zustand persist v6 format):
  * the user's own preferences. Models and providers are the workspace's,
  * answered by `/api/model-config` (see ./model-settings.ts).
  */
@@ -22,6 +22,6 @@ export function createSettingsStorage(overrides: Record<string, unknown> = {}) {
       reviewOutlineEnabled: false,
       ...overrides,
     },
-    version: 5,
+    version: 6,
   });
 }

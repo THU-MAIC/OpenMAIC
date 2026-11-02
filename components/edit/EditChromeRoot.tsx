@@ -133,7 +133,7 @@ export function EditChromeRoot({
   return (
     <EditShell
       scene={scene}
-      leftRail={<SlideNavRail />}
+      leftRail={<SlideNavRail keepHandle={!timelineEnabled} />}
       bottomRail={
         timelineEnabled ? (
           <EditDock sceneId={scene.id} sceneType={scene.type} pager={pager} />

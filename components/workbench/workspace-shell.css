@@ -1157,14 +1157,10 @@
    workaround (975032d594) whose real culprit — a redundant header — is gone:
    with the slide top-aligned and the pager frame-anchored, a tall pane put
    the slide at the top and the pager at the bottom, scattering one page's
-   chrome across the pane. The 12px frame padding stays the only gap between
-   pane chrome and content. */
+   chrome across the pane. The frame's own padding, the same as playback's, is
+   the only gap between pane chrome and content. */
 .ws-classroom-head {
   gap: 6px;
-}
-
-.ws-classroom-body [data-maic-studio-frame='true'] {
-  padding-top: 12px;
 }
 
 /* SlideNavRail inside the workbench panel drops its standalone-classroom

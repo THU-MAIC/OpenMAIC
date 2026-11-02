@@ -48,7 +48,15 @@ const RAIL_MAX_PX = 360;
  * explicit grip handle on the thumb so the whole tile remains
  * click-to-switch.
  */
-export function SlideNavRail() {
+export function SlideNavRail({
+  keepHandle = false,
+}: {
+  /**
+   * Collapsed, the rail is opened from the dock's control bar and takes no width,
+   * like playback's. A scene with no dock has no bar: there it keeps its handle.
+   */
+  readonly keepHandle?: boolean;
+} = {}) {
   const { t } = useI18n();
   const router = useRouter();
   const brand = useBrand();
@@ -325,7 +333,7 @@ export function SlideNavRail() {
         'shadow-[2px_0_24px_rgba(0,0,0,0.02)]',
       )}
       style={{
-        width: collapsed ? RAIL_HANDLE_PX : persistedWidth,
+        width: collapsed ? (keepHandle ? RAIL_HANDLE_PX : 0) : persistedWidth,
         transition: widthTransitionCss,
       }}
     >
@@ -352,7 +360,7 @@ export function SlideNavRail() {
           - COLLAPSED: the whole slim handle IS the control — a full-height edge
             strip with a centred chevron — so the rail that gave its width back to
             the canvas is still easy to find and bring back. */}
-      {collapsed ? (
+      {collapsed && !keepHandle ? null : collapsed ? (
         <button
           type="button"
           onClick={() => setCollapsed(false)}

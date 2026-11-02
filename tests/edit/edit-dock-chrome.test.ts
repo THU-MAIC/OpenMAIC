@@ -34,7 +34,8 @@ describe('global edit control bar', () => {
     expect(html).toContain('data-testid="edit-dock-bar"');
     expect(html).toContain('data-testid="edit-dock-roster"');
     expect(html).toContain('data-testid="element-lasso"');
-    expect(html).toContain('2 / 3');
+    expect(html).toContain('data-testid="edit-rail-toggle"');
+    expect(html.replace(/<[^>]+>/g, '')).toContain('2/3');
   });
 
   it('omits the lasso when the current surface cannot perform that action', () => {

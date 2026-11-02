@@ -288,14 +288,14 @@ describe('EditDock fold', () => {
   it('keeps the global edit bar while the timeline is folded, at the fixed height', async () => {
     const host = await renderDock();
     const section = host.querySelector('[data-testid="edit-dock"]') as HTMLElement;
-    // 224 timeline + 36 bar. The height is FIXED: the height-drag handle above
+    // 160 timeline + 32 bar: playback's 192. The height is FIXED: the height-drag handle above
     // the bar was removed (owner decision), so only the fold moves it.
-    expect(section.style.height).toBe('260px');
+    expect(section.style.height).toBe('192px');
     expect(section.querySelector('.cursor-row-resize')).toBeNull();
 
     await click(host.querySelector('[data-testid="timeline-fold"]'));
-    // 86 collapsed timeline + 36 bar: folding never folds the bar away.
-    expect(section.style.height).toBe('122px');
+    // 86 collapsed timeline + 32 bar: folding never folds the bar away.
+    expect(section.style.height).toBe('118px');
     expect(host.querySelector('[data-testid="edit-dock-bar"]')).not.toBeNull();
     expect(host.querySelector('[data-testid="edit-dock-roster"]')).not.toBeNull();
     expect(host.querySelector('[data-testid="element-ref-arm"]')).not.toBeNull();
@@ -304,7 +304,7 @@ describe('EditDock fold', () => {
     ).toBe('true');
 
     await click(host.querySelector('[data-testid="timeline-fold"]'));
-    expect(section.style.height).toBe('260px');
+    expect(section.style.height).toBe('192px');
   });
 
   it('never remounts the timeline for a global control, batch in flight included', async () => {
