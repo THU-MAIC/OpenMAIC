@@ -1,5 +1,5 @@
 'use client';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { AppWindow, ChevronRight, ExternalLink, Info, LoaderCircle, RefreshCw } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { LearningView } from '@/lib/pbl/v3/types';
@@ -89,6 +89,25 @@ function ApplicationPreviewContent({
     currentReady;
   const updating =
     mounted && !expired && !error && (preview.updating || !!previous || !currentReady);
+  const sendInput = useCallback(
+    (element: HTMLIFrameElement | null) => {
+      if (!element) return;
+      const target = new URL(element.src);
+      if (target.pathname !== '/__openmaic_preview') return;
+      element.contentWindow?.postMessage(
+        {
+          type: 'openmaic-preview-input',
+          enabled: !!available && preview.open && element === frame.current,
+        },
+        target.origin,
+      );
+    },
+    [available, preview.open],
+  );
+  useLayoutEffect(() => {
+    sendInput(frame.current);
+    if (candidate.current !== frame.current) sendInput(candidate.current);
+  }, [sendInput, url, previous?.url, preview.frameVersion]);
   useLayoutEffect(() => {
     // Inert/pointer rules do not evacuate an already focused nested document.
     // Move only preview-owned focus; never steal focus from the learner's editor/chat.
@@ -110,6 +129,15 @@ function ApplicationPreviewContent({
     const origin = new URL(previous?.url ?? url).origin;
     const candidateOrigin = new URL(url).origin;
     const receive = (event: MessageEvent) => {
+      if (event.data?.type === 'openmaic-preview-input-request') {
+        for (const element of [frame.current, candidate.current])
+          if (
+            element &&
+            event.source === element.contentWindow &&
+            event.origin === new URL(element.src).origin
+          )
+            sendInput(element);
+      }
       if (event.source === candidate.current?.contentWindow && event.origin === candidateOrigin) {
         if (event.data?.type === 'openmaic-preview-ready') {
           setReadinessFailure(null);
@@ -127,7 +155,7 @@ function ApplicationPreviewContent({
     };
     window.addEventListener('message', receive);
     return () => window.removeEventListener('message', receive);
-  }, [url, previous?.url, preview.frameVersion, renew, documentReady]);
+  }, [url, previous?.url, preview.frameVersion, renew, documentReady, sendInput]);
   return (
     <section
       ref={panel}
@@ -234,8 +262,14 @@ function ApplicationPreviewContent({
                   }}
                   key={`${item.version}:${item.url}`}
                   title={visible ? application.title : t('pblV3.application.updating')}
-                  src={item.url}
-                  onLoad={() => {
+                  src={(() => {
+                    const target = new URL(item.url);
+                    if (target.pathname === '/__openmaic_preview')
+                      target.searchParams.set('openmaic-input', '1');
+                    return target.href;
+                  })()}
+                  onLoad={(event) => {
+                    sendInput(event.currentTarget);
                     // Real previews load an authorization shell first. Only its
                     // fenced readiness message can promote the nested app.
                     if (item === current && new URL(item.url).pathname !== '/__openmaic_preview') {
@@ -248,7 +282,7 @@ function ApplicationPreviewContent({
                   inert={!available || !visible}
                   aria-hidden={expired || !visible}
                   referrerPolicy="no-referrer"
-                  className={`absolute inset-0 h-full w-full border-0 bg-white ${!available || !visible ? 'pointer-events-none' : ''} ${visible ? '' : 'opacity-0'}`}
+                  className={`absolute inset-0 h-full w-full border-0 bg-white ${!available || !visible ? 'pointer-events-none' : ''} ${visible && (item === previous || currentReady) ? '' : 'invisible'}`}
                 />
               );
             })}

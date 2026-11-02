@@ -95,6 +95,7 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
     let stopped = false;
     let delayedDocument: Promise<void> | undefined;
     let delayedAuthorization: Promise<void> | undefined;
+    let authorizationWaiting = false;
     let authorizationFailure = false;
     const gatewayOrigin = 'http://preview-fixture.localhost';
     const commands: string[] = [];
@@ -117,11 +118,15 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
       await page.route(`${gatewayOrigin}/**`, async (route) => {
         const path = new URL(route.request().url()).pathname;
         if (path === '/__openmaic_preview')
-          return route.fulfill({ contentType: 'text/html', body: previewShell('fixture-nonce') });
+          return route.fulfill({
+            contentType: 'text/html; charset=utf-8',
+            body: previewShell('fixture-nonce'),
+          });
         if (path === '/__openmaic_authorize') {
           if (delayedAuthorization) {
             const wait = delayedAuthorization;
             delayedAuthorization = undefined;
+            authorizationWaiting = true;
             await wait;
           }
           if (authorizationFailure) return route.fulfill({ status: 403, body: 'Access expired' });
@@ -321,6 +326,7 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
     view.activitySequence!++;
     await publishLearning();
     await expect(panel.locator('iframe')).toHaveCount(1);
+    await expect(panel.locator('iframe')).toHaveAttribute('inert', '');
     await page.keyboard.type('BLOCKED');
     await page.keyboard.press('Enter');
     await expect(app.locator('output')).toHaveText('1');
@@ -337,6 +343,17 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
     await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toBeVisible();
     await expect(composer).toHaveValue('Keep this draft while looking at the application');
     expect(launches).toBe(1);
+    await composer.focus();
+    view.busy = true;
+    view.activitySequence!++;
+    await publishLearning();
+    await expect(panel.locator('iframe')).toHaveAttribute('inert', '');
+    await expect(composer).toBeFocused();
+    view.busy = false;
+    view.activitySequence!++;
+    await publishLearning();
+    await expect(panel.locator('iframe')).not.toHaveAttribute('inert', '');
+    await expect(composer).toBeFocused();
     // Actual writes/tests may stop the backend. Keep the previous page until
     // the replacement loads, without requiring a manual reopen.
     stopped = true;
@@ -361,7 +378,8 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
       await expect(panel.locator('iframe')).toHaveCount(2);
       if (nested) {
         const candidate = panel.locator('iframe').nth(1).contentFrame();
-        await expect(candidate.getByText('Opening preview…', { exact: true })).toBeVisible();
+        await expect.poll(() => authorizationWaiting).toBe(true);
+        await expect(candidate.locator('#status')).toHaveText('Opening preview…');
         releaseAuthorization!();
         await expect(candidate.locator('iframe')).toHaveCount(1);
       }

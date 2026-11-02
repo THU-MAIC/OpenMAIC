@@ -14,7 +14,17 @@ The optional application panel sits between the IDE and learning assistant. Narr
 
 Pausing evacuates focus only when it belongs to the embedded preview, including
 its nested application frame. It never restores stale focus or moves focus away
-from an editor/chat control. An unchanged `starting` process receives bounded,
+from an editor/chat control. Production iframe URLs opt into owned-shell input
+control with `openmaic-input=1`. The shell starts paused and accepts enable/disable
+only from a trusted message with the exact parent window and configured app origin.
+It makes the actual application document root inert, preserving its prior inert
+value on resume; ordinary autofocus cannot re-enter a paused or collapsed input.
+Initial nested documents stay hidden until readiness applies that input state.
+Control messages never count as activity. A valid renewal response already in
+flight remains accepted during pause; unsent debounced activity is dropped.
+Old hosts omit the flag and retain their existing gateway behavior. Direct-HTML
+fixtures exercise legacy parent-frame handling, not this production input bridge.
+An unchanged `starting` process receives bounded,
 read-only status retries; exhaustion keeps its document with a nonfatal starting
 message and an explicit reopen control. Changed sources restart even while the
 process is `starting`. Automatic recovery checks the latest accepted grant deadline

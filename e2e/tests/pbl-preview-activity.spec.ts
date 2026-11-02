@@ -1,3 +1,4 @@
+import { previewShell } from '../../scripts/sandbox-preview-activity.mjs';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import { connect, type Socket } from 'node:net';
 import { once } from 'node:events';
@@ -212,5 +213,76 @@ Promise.all([
       new Promise<void>((r) => backend.close(() => r())),
       new Promise<void>((r) => app.close(() => r())),
     ]);
+  }
+});
+
+test('reports actual nested document readiness and rejects child claims or failed documents', async ({
+  page,
+}) => {
+  const host = 'http://preview-host.test',
+    gateway = 'http://preview-gateway.test';
+  let mode = 'ready';
+  let release!: () => void;
+  const image = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(`${host}/**`, (route) =>
+    route.fulfill({
+      contentType: 'text/html; charset=utf-8',
+      body: `<!doctype html><script>
+    window.accepted=[];window.rejected=0;addEventListener('message',event=>{
+      if(event.origin!==${JSON.stringify(gateway)})return;
+      if(event.source===document.querySelector('iframe').contentWindow)window.accepted.push(event.data.type);
+      else window.rejected++;
+    });</script><iframe src="${gateway}/__openmaic_preview#fixture"></iframe>`,
+    }),
+  );
+  await page.route(`${gateway}/**`, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/__openmaic_preview')
+      return route.fulfill({
+        contentType: 'text/html; charset=utf-8',
+        body: previewShell('fixture-nonce'),
+      });
+    if (path === '/__openmaic_authorize')
+      return mode === 'auth-error'
+        ? route.fulfill({ status: 403 })
+        : route.fulfill({ json: { activityKey: 'fixture-private-key', appOrigin: host } });
+    if (path === '/pending-image') {
+      await image;
+      return route.fulfill({ status: 204 });
+    }
+    if (mode === 'nested-error')
+      return route.fulfill({ status: 403, contentType: 'text/plain', body: 'Access denied' });
+    return route.fulfill({
+      contentType: 'text/html; charset=utf-8',
+      body: `<!doctype html><p>Application document</p><img src="/pending-image"><script>
+      parent.parent.postMessage({type:'openmaic-preview-ready'},${JSON.stringify(host)});
+    </script>`,
+    });
+  });
+  try {
+    await page.goto(host, { waitUntil: 'domcontentloaded' });
+    await expect(
+      page.frameLocator('iframe').frameLocator('iframe').getByText('Application document'),
+    ).toBeVisible();
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { rejected: number }).rejected))
+      .toBe(1);
+    expect(
+      await page.evaluate(() => (window as unknown as { accepted: string[] }).accepted),
+    ).toEqual([]);
+    release();
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { accepted: string[] }).accepted))
+      .toEqual(['openmaic-preview-ready']);
+    for (mode of ['auth-error', 'nested-error']) {
+      await page.goto(host, { waitUntil: 'domcontentloaded' });
+      await expect
+        .poll(() => page.evaluate(() => (window as unknown as { accepted: string[] }).accepted))
+        .toEqual(['openmaic-preview-error']);
+    }
+  } finally {
+    release();
   }
 });

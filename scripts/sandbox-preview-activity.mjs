@@ -1,5 +1,5 @@
-/** Keep the gateway shell separate from course HTML: no response rewriting or app instrumentation. */
-export function installPreviewActivity(frame, activityKey, appOrigin) {
+/** Keep the gateway shell separate from course HTML: no response rewriting or learner source edits. */
+export function installPreviewActivity(frame, activityKey, appOrigin, controlled) {
   'use strict';
   // Capture these before untrusted same-origin app code can replace its parent's
   // fetch/listener methods. Keep the capability in a private Request, not DOM,
@@ -15,7 +15,8 @@ export function installPreviewActivity(frame, activityKey, appOrigin) {
     Object.getOwnPropertyDescriptor(Response.prototype, 'headers').get,
   );
   const header = Function.prototype.call.bind(Headers.prototype.get);
-  const notify = typeof appOrigin === 'string' ? parent.postMessage.bind(parent) : null;
+  const owner = parent;
+  const notify = typeof appOrigin === 'string' ? owner.postMessage.bind(owner) : null;
   const visibility = Function.prototype.call.bind(
     Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState').get,
   );
@@ -30,13 +31,33 @@ export function installPreviewActivity(frame, activityKey, appOrigin) {
     method: 'POST',
     headers: { 'x-openmaic-preview-activity': activityKey },
   });
+  let enabled = !controlled;
+  const inertRoots = new WeakMap();
+  const inertDescriptor = controlled
+    ? Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'inert')
+    : null;
+  const getInert = inertDescriptor && Function.prototype.call.bind(inertDescriptor.get);
+  const setInert = inertDescriptor && Function.prototype.call.bind(inertDescriptor.set);
+  const nativeGet = (prototype, name) =>
+    Function.prototype.call.bind(Object.getOwnPropertyDescriptor(prototype, name).get);
+  const message = controlled
+    ? {
+        source: nativeGet(MessageEvent.prototype, 'source'),
+        origin: nativeGet(MessageEvent.prototype, 'origin'),
+        data: nativeGet(MessageEvent.prototype, 'data'),
+        document: nativeGet(HTMLIFrameElement.prototype, 'contentDocument'),
+        root: nativeGet(Document.prototype, 'documentElement'),
+      }
+    : null;
+  const prevent = Function.prototype.call.bind(Event.prototype.preventDefault);
+  const stop = Function.prototype.call.bind(Event.prototype.stopImmediatePropagation);
   let changed = false;
   let pending = false;
   let next = 0;
   let timer;
   const flush = async () => {
     cancel(timer);
-    if (!changed || pending || visibility(document) !== 'visible') return;
+    if (!enabled || !changed || pending || visibility(document) !== 'visible') return;
     if (now() < next) {
       timer = wait(flush, next - now());
       return;
@@ -63,9 +84,9 @@ export function installPreviewActivity(frame, activityKey, appOrigin) {
         if (Number.isFinite(expiresAt) && expiresAt > now() && expiresAt <= now() + 300_000)
           notify({ type: 'openmaic-preview-activity', expiresAt }, appOrigin);
       }
-      if ((code < 200 || code >= 300) && code !== 403) changed = true;
+      if ((code < 200 || code >= 300) && code !== 403) changed = enabled;
     } catch {
-      changed = true;
+      changed = enabled;
     } finally {
       pending = false;
       if (changed) void flush();
@@ -73,6 +94,11 @@ export function installPreviewActivity(frame, activityKey, appOrigin) {
   };
   const input = (event) => {
     if (!event.isTrusted || visibility(document) !== 'visible') return;
+    if (!enabled) {
+      prevent(event);
+      stop(event);
+      return;
+    }
     changed = true;
     void flush();
   };
@@ -81,13 +107,43 @@ export function installPreviewActivity(frame, activityKey, appOrigin) {
     // The protected app and this shell share only the isolated preview origin.
     // Cross-origin navigation is not an activity signal.
     try {
-      const app = frame.contentDocument;
-      if (!app || tracked.has(app)) return;
+      const app = controlled ? message.document(frame) : frame.contentDocument;
+      if (!app) return;
+      const root = controlled ? message.root(app) : null;
+      if (controlled && root) {
+        if (!enabled) {
+          if (!inertRoots.has(root)) inertRoots.set(root, getInert(root));
+          setInert(root, true);
+        } else if (inertRoots.has(root)) {
+          setInert(root, inertRoots.get(root));
+          inertRoots.delete(root);
+        }
+      }
+      if (tracked.has(app)) return;
       tracked.add(app);
       for (const name of ['pointerdown', 'keydown', 'wheel'])
-        listen(app, name, input, { capture: true, passive: true });
+        listen(app, name, input, { capture: true, passive: !controlled });
     } catch {}
   };
+  if (controlled && notify) {
+    listen(globalThis, 'message', (event) => {
+      if (
+        !event.isTrusted ||
+        message.source(event) !== owner ||
+        message.origin(event) !== appOrigin
+      )
+        return;
+      const data = message.data(event);
+      if (data?.type !== 'openmaic-preview-input' || typeof data.enabled !== 'boolean') return;
+      enabled = data.enabled;
+      if (!enabled) {
+        changed = false;
+        cancel(timer);
+      }
+      trackDocument();
+    });
+    notify({ type: 'openmaic-preview-input-request' }, appOrigin);
+  }
   // A usable document can precede iframe load by minutes (e.g. a pending image).
   // Also observe document replacement on navigation; observing is never activity.
   trackDocument();
@@ -97,10 +153,11 @@ export function installPreviewActivity(frame, activityKey, appOrigin) {
     if (visibility(document) === 'visible') void flush();
     else cancel(timer);
   });
+  return trackDocument;
 }
 
 /** Only the owned shell reports the nested document's browser-observed readiness. */
-export function installPreviewReadiness(frame, appOrigin) {
+export function installPreviewReadiness(frame, appOrigin, prepareDocument) {
   'use strict';
   if (typeof appOrigin !== 'string') return;
   const notify = parent.postMessage.bind(parent);
@@ -120,6 +177,8 @@ export function installPreviewReadiness(frame, appOrigin) {
       const doc = contentDocument(frame);
       if (doc && documentURL(doc) !== 'about:blank' && readyState(doc) === 'complete') {
         const html = ['text/html', 'application/xhtml+xml'].includes(contentType(doc));
+        if (prepareDocument) prepareDocument();
+        if (html) frame.style.visibility = '';
         done = true;
         cancel(timer);
         notify({ type: html ? 'openmaic-preview-ready' : 'openmaic-preview-error' }, appOrigin);
@@ -148,11 +207,13 @@ export function previewShell(nonce) {
 <p id="status">Opening preview…</p><script nonce="${nonce}">
 (()=>{'use strict';
 const notifyFailure=parent.postMessage.bind(parent);
+const controlled=new URL(location.href).searchParams.get('openmaic-input')==='1';
 let ticket=location.hash.slice(1);history.replaceState(null,'','/__openmaic_preview');
 fetch('/__openmaic_authorize',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({ticket})})
 .then(async r=>{ticket='';if(!r.ok)throw Error();if(window.top===window){location.replace('/');return;}const {activityKey,appOrigin}=await r.json();if(typeof activityKey!=='string')throw Error();const frame=document.createElement('iframe');frame.title='Application';
-(${installPreviewActivity.toString()})(frame,activityKey,appOrigin);
-(${installPreviewReadiness.toString()})(frame,appOrigin);frame.src='/';document.getElementById('status').remove();document.body.append(frame);})
+const prepareDocument=(${installPreviewActivity.toString()})(frame,activityKey,appOrigin,controlled);
+if(controlled)frame.style.visibility='hidden';
+(${installPreviewReadiness.toString()})(frame,appOrigin,prepareDocument);frame.src='/';document.getElementById('status').remove();document.body.append(frame);})
 .catch(()=>{document.getElementById('status').textContent='Access expired. Reopen from OpenMAIC.';
 // Before authorization there is no configured appOrigin. This static failure
 // contains no credential or application data and cannot grant readiness/activity.
