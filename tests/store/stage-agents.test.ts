@@ -4,19 +4,27 @@ const {
   settingsState,
   setSelectedAgentIds,
   setAgentSelectionIsUserSet,
+  setPresetAgentChoice,
+  setAgentMode,
   applyGeneratedAgentsToRegistry,
 } = vi.hoisted(() => {
   const setSelectedAgentIds = vi.fn();
   const setAgentSelectionIsUserSet = vi.fn();
+  const setPresetAgentChoice = vi.fn();
+  const setAgentMode = vi.fn();
   return {
     setSelectedAgentIds,
     setAgentSelectionIsUserSet,
+    setPresetAgentChoice,
+    setAgentMode,
     settingsState: {
       agentMode: 'auto' as 'preset' | 'auto',
       selectedAgentIds: [] as string[],
       agentSelectionIsUserSet: false,
       setSelectedAgentIds,
       setAgentSelectionIsUserSet,
+      setPresetAgentChoice,
+      setAgentMode,
     },
     applyGeneratedAgentsToRegistry: vi.fn(
       (_stageId: string, configs: ReadonlyArray<{ id: string }>) => configs.map((c) => c.id),
@@ -83,6 +91,8 @@ beforeEach(() => {
   applyGeneratedAgentsToRegistry.mockClear();
   setSelectedAgentIds.mockClear();
   setAgentSelectionIsUserSet.mockClear();
+  setPresetAgentChoice.mockClear();
+  setAgentMode.mockClear();
   settingsState.agentMode = 'auto';
   settingsState.selectedAgentIds = [];
   settingsState.agentSelectionIsUserSet = false;
@@ -196,14 +206,28 @@ describe('setStageAgents selection provenance', () => {
     expect(setSelectedAgentIds).not.toHaveBeenCalled();
   });
 
-  it('never touches a user-set preset selection (roster edits do not concern preset agents)', () => {
+  it('moves a user-set preset selection aside for the roster and keeps it', () => {
     settingsState.agentSelectionIsUserSet = true;
     settingsState.agentMode = 'preset';
     settingsState.selectedAgentIds = ['default-1', 'default-2'];
 
     useStageStore.getState().setStageAgents([makeAgentConfig('a1')]);
 
+    expect(setPresetAgentChoice).toHaveBeenCalledExactlyOnceWith(['default-1', 'default-2']);
+    expect(setAgentMode).toHaveBeenCalledExactlyOnceWith('auto');
+    expect(setSelectedAgentIds).toHaveBeenCalledExactlyOnceWith(['a1']);
+    expect(setAgentSelectionIsUserSet).toHaveBeenCalledExactlyOnceWith(false);
+  });
+
+  it('leaves a user-set preset selection alone when the roster is empty', () => {
+    settingsState.agentSelectionIsUserSet = true;
+    settingsState.agentMode = 'preset';
+    settingsState.selectedAgentIds = ['default-1'];
+
+    useStageStore.getState().setStageAgents([]);
+
     expect(setSelectedAgentIds).not.toHaveBeenCalled();
+    expect(setPresetAgentChoice).not.toHaveBeenCalled();
   });
 
   it('falls back to the full roster and clears the user-set flag when the intersection is empty', () => {

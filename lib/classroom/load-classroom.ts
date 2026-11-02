@@ -51,6 +51,8 @@ interface ClassroomLoadSettings {
   agentMode: 'preset' | 'auto';
   selectedAgentIds: string[];
   agentSelectionIsUserSet: boolean;
+  presetAgentChoice: string[];
+  setPresetAgentChoice: (ids: string[]) => void;
   setAgentMode: (mode: 'preset' | 'auto') => void;
   setSelectedAgentIds: (ids: string[]) => void;
   setAgentSelectionIsUserSet: (isUserSet: boolean) => void;
@@ -206,9 +208,14 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
     const agentsKnown = agentsReady ? await agentsReady() : true;
     if (!isCurrent()) return { outcome: 'cancelled' };
     const settings = getSettings();
-    const { selection: next, isUserSet } = restoreSelection({
+    const {
+      selection: next,
+      isUserSet,
+      presetChoice = [],
+    } = restoreSelection({
       persisted: { mode: settings.agentMode, selectedAgentIds: settings.selectedAgentIds },
       persistedIsUserSet: settings.agentSelectionIsUserSet,
+      persistedPresetChoice: settings.presetAgentChoice,
       generatedAgentIds,
       stageAgentIds: getCurrentStage()?.agentIds,
       isPresetAgent: (id) => {
@@ -226,6 +233,9 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
     }
     if (isUserSet !== settings.agentSelectionIsUserSet) {
       settings.setAgentSelectionIsUserSet(isUserSet);
+    }
+    if (presetChoice.join() !== settings.presetAgentChoice.join()) {
+      settings.setPresetAgentChoice(presetChoice);
     }
     return { outcome: 'ready' };
   } catch (error) {
