@@ -32,6 +32,9 @@ export function useApplicationPreview(
   const [refreshNeeded, setRefreshNeeded] = useState(false);
   const [frameVersion, setFrameVersion] = useState(0);
   const observedRevision = useRef<number | null>(null);
+  // A dispatched launch may finish after its fetch is cancelled or fails.
+  // Keep the old page visible, but do not reuse it as the restarted app's page.
+  const replacementNeeded = useRef(false);
   const previewDeadline = useRef<number | undefined>(undefined);
   previewDeadline.current = observation?.preview?.expiresAt;
   const hasPreview = !!observation?.preview;
@@ -65,6 +68,7 @@ export function useApplicationPreview(
     setExpiredAt(null);
     setRefreshNeeded(false);
     observedRevision.current = null;
+    replacementNeeded.current = false;
   }, [binding]);
   useEffect(
     () => () => {
@@ -84,6 +88,7 @@ export function useApplicationPreview(
     if (unavailable) {
       setObservation(null);
       setRefreshNeeded(false);
+      replacementNeeded.current = false;
     } else setRefreshNeeded(true);
   }, [disabled, unavailable]);
   useEffect(() => {
@@ -143,6 +148,7 @@ export function useApplicationPreview(
           if (
             status.state === 'running' &&
             !status.sourceChanged &&
+            !replacementNeeded.current &&
             previewDeadline.current! > Date.now()
           ) {
             observedRevision.current = view.revision;
@@ -151,10 +157,12 @@ export function useApplicationPreview(
           }
           if (status.state === 'running' && status.sourceChanged) request.action = 'restart';
         }
+        if (observation?.preview) replacementNeeded.current = true;
         const result = await waitForApplication(request, abort.signal);
         if (serial === attempt.current) {
           observedRevision.current = view.revision;
           if (result.preview) {
+            replacementNeeded.current = false;
             setExpiredAt(null);
             setObservation(result);
             setFrameVersion((value) => value + 1);
@@ -259,7 +267,8 @@ export function useApplicationPreview(
         !observation?.preview ||
         expired ||
         observation.preview.expiresAt <= Date.now() ||
-        refreshNeeded
+        refreshNeeded ||
+        replacementNeeded.current
       )
         void load('open', refreshNeeded ? 'explicit' : undefined);
     }
