@@ -13,6 +13,7 @@
  */
 
 import { act, createElement, type ReactNode } from 'react';
+import { COMPOSER_INPUT, composerText, setComposerText } from './_composer-driver';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -413,13 +414,9 @@ function serve(post?: Fetch) {
     }),
   );
 }
-const type = async (textarea: HTMLTextAreaElement, text: string) => {
+const type = async (textarea: HTMLElement, text: string) => {
   await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(
-      textarea,
-      text,
-    );
-    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    setComposerText(textarea, text);
   });
 };
 const openLibrary = () =>
@@ -441,14 +438,14 @@ describe('chat with this material, twice beside a classroom', () => {
     await render();
     await chatWith('A');
     expect(container!.textContent).toContain('A.pdf');
-    await type(container!.querySelector('textarea')!, 'Old draft A');
+    await type(container!.querySelector<HTMLElement>(COMPOSER_INPUT)!, 'Old draft A');
 
     await chatWith('B');
-    expect(container!.querySelector('textarea')!.value).toBe('');
+    expect(composerText(container!.querySelector<HTMLElement>(COMPOSER_INPUT)!)).toBe('');
     expect(container!.textContent).toContain('B.pdf');
     expect(container!.textContent).not.toContain('A.pdf');
 
-    await type(container!.querySelector('textarea')!, 'About B');
+    await type(container!.querySelector<HTMLElement>(COMPOSER_INPUT)!, 'About B');
     await act(async () =>
       container!.querySelector<HTMLButtonElement>('[data-testid="workbench-send"]')!.click(),
     );
@@ -488,7 +485,7 @@ describe('an upload still in flight when the next hand-over arrives', () => {
         }),
       ),
     );
-    await type(container!.querySelector('textarea')!, 'Send now');
+    await type(container!.querySelector<HTMLElement>(COMPOSER_INPUT)!, 'Send now');
     await act(async () =>
       container!.querySelector<HTMLButtonElement>('[data-testid="workbench-send"]')!.click(),
     );
@@ -514,7 +511,7 @@ describe('a home conversation created while the knowledge base was opened', () =
     const created = deferred<Response>();
     serve(() => created.promise);
     await render();
-    await type(container!.querySelector('textarea')!, 'Teach A');
+    await type(container!.querySelector<HTMLElement>(COMPOSER_INPUT)!, 'Teach A');
     await act(async () =>
       container!.querySelector<HTMLButtonElement>('[data-testid="pro-launch-start"]')!.click(),
     );
@@ -549,7 +546,7 @@ describe('a home conversation created while the knowledge base was opened', () =
     await openLibrary();
     await act(async () => (mocks.railProps!.onGoHome as () => void)());
     expect(container!.querySelector('[data-testid="pro-launch-panel"]')).not.toBeNull();
-    await type(container!.querySelector('textarea')!, 'A new draft');
+    await type(container!.querySelector<HTMLElement>(COMPOSER_INPUT)!, 'A new draft');
     await openLibrary();
     mocks.routerPush.mockClear();
     mocks.routerReplace.mockClear();
@@ -608,7 +605,7 @@ describe('a draft message still on its way when the next hand-over arrives', () 
     elementRefsAccepted: true,
     courseRefsAccepted: true,
   });
-  const textarea = () => container!.querySelector('textarea')!;
+  const textarea = () => container!.querySelector<HTMLElement>(COMPOSER_INPUT)!;
   const sendButton = () =>
     container!.querySelector<HTMLButtonElement>('[data-testid="workbench-send"]');
   const send = () => act(async () => sendButton()!.click());
@@ -641,7 +638,7 @@ describe('a draft message still on its way when the next hand-over arrives', () 
   it('control: nobody superseded it, so its failure puts the text back', async () => {
     const sendingA = await sendAboutA();
     await act(async () => sendingA.reject(new Error('send A failed')));
-    expect(textarea().value).toBe('About A');
+    expect(composerText(textarea())).toBe('About A');
     expect(mocks.toastError).toHaveBeenCalledWith('send A failed');
   });
 
@@ -650,7 +647,7 @@ describe('a draft message still on its way when the next hand-over arrives', () 
     await chatWith('B');
     // The new draft is free at once: no STOP left over from A, and it can send.
     expect(container!.querySelector('[data-testid="workbench-stop"]')).toBeNull();
-    expect(textarea().value).toBe('');
+    expect(composerText(textarea())).toBe('');
     expect(container!.textContent).toContain('B.pdf');
     await type(textarea(), 'Typing about B');
     mocks.requestFullFetch.mockClear();
@@ -659,7 +656,7 @@ describe('a draft message still on its way when the next hand-over arrives', () 
     // Created, so the rail reloads; not attached, and the draft is untouched.
     expect(mocks.requestFullFetch).toHaveBeenCalled();
     expect(attachedTo('session-A')).toBe(false);
-    expect(textarea().value).toBe('Typing about B');
+    expect(composerText(textarea())).toBe('Typing about B');
     expect(container!.textContent).toContain('B.pdf');
 
     // B's message starts its own conversation, with B's source alone.
@@ -683,7 +680,7 @@ describe('a draft message still on its way when the next hand-over arrives', () 
 
     await act(async () => sendingA.reject(new Error('send A failed')));
     expect(mocks.toastError).toHaveBeenCalledWith('send A failed');
-    expect(textarea().value).toBe('Typing about B');
+    expect(composerText(textarea())).toBe('Typing about B');
     expect(container!.textContent).toContain('B.pdf');
     expect(container!.textContent).not.toContain('A.pdf');
     expect(container!.querySelector('[data-testid="workbench-stop"]')).toBeNull();
@@ -740,7 +737,7 @@ describe('a draft message still on its way when the next hand-over arrives', () 
     );
     expect([...mocks.routerPush.mock.calls, ...mocks.routerReplace.mock.calls]).toEqual([]);
     expect(container!.textContent).toContain('B.pdf');
-    expect(textarea().value).toBe('');
+    expect(composerText(textarea())).toBe('');
   });
 });
 
@@ -756,7 +753,7 @@ describe('a request still on its way when the teacher switches conversation', ()
     elementRefsAccepted: true,
     courseRefsAccepted: true,
   });
-  const textarea = () => container!.querySelector('textarea')!;
+  const textarea = () => container!.querySelector<HTMLElement>(COMPOSER_INPUT)!;
   const sendButton = () =>
     container!.querySelector<HTMLButtonElement>('[data-testid="workbench-send"]');
   const stopButton = () => container!.querySelector('[data-testid="workbench-stop"]');
@@ -917,7 +914,7 @@ describe('a request still on its way when the teacher switches conversation', ()
     expect(mocks.requestFullFetch).toHaveBeenCalled();
     expect(attachedTo('session-A')).toBe(false);
     expect(mocks.store.sessionId).toBe('session-B');
-    expect(textarea().value).toBe(B_DRAFT);
+    expect(composerText(textarea())).toBe(B_DRAFT);
     expect(container!.textContent).toContain('b-notes.pdf');
     await sendInB();
   });
@@ -934,7 +931,7 @@ describe('a request still on its way when the teacher switches conversation', ()
     await act(async () => sendingA.resolve(started('session-A')));
     await followPanes();
     expect(attachedTo('session-A')).toBe(false);
-    expect(textarea().value).toBe(B_DRAFT);
+    expect(composerText(textarea())).toBe(B_DRAFT);
     expect(container!.textContent).toContain('b-notes.pdf');
     await sendInB();
   });
@@ -949,7 +946,7 @@ describe('a request still on its way when the teacher switches conversation', ()
     await followPanes();
     expect(mocks.toastError).toHaveBeenCalledWith('send A failed');
     expect(attachedTo('session-A')).toBe(false);
-    expect(textarea().value).toBe(B_DRAFT);
+    expect(composerText(textarea())).toBe(B_DRAFT);
     expect(container!.textContent).toContain('b-notes.pdf');
     expect(container!.textContent).not.toContain('a-notes.pdf');
     await sendInB();
@@ -991,7 +988,7 @@ describe('a request still on its way when the teacher switches conversation', ()
       messageAnswers[0].resolve(Response.json({ error: 'send S failed' }, { status: 500 })),
     );
     expect(mocks.toastError).toHaveBeenCalledWith('send S failed');
-    expect(textarea().value).toBe('Typing in B');
+    expect(composerText(textarea())).toBe('Typing in B');
   });
 
   it('a message that fails before the store has attached B never refills B', async () => {
@@ -1013,12 +1010,12 @@ describe('a request still on its way when the teacher switches conversation', ()
       messageAnswers[0].resolve(Response.json({ error: 'send S failed' }, { status: 500 })),
     );
     expect(mocks.toastError).toHaveBeenCalledWith('send S failed');
-    expect(textarea().value).toBe('');
+    expect(composerText(textarea())).toBe('');
 
     // Now the store attaches B: still nothing of S's in its composer.
     mocks.store.sessionId = 'session-B';
     await render();
-    expect(textarea().value).toBe('');
+    expect(composerText(textarea())).toBe('');
   });
 
   it('a released composer does not send until the store has attached B', async () => {
@@ -1043,7 +1040,7 @@ describe('a request still on its way when the teacher switches conversation', ()
     expect(messageBodies.map((call) => call.url)).toEqual([
       '/api/agent/sessions/session-S/messages',
     ]);
-    expect(textarea().value).toBe('For B');
+    expect(composerText(textarea())).toBe('For B');
 
     // B attaches: the same draft now goes to B.
     mocks.store.sessionId = 'session-B';
@@ -1070,7 +1067,7 @@ describe('a request still on its way when the teacher switches conversation', ()
     await act(async () => uploads.get('a-upload.pdf')!.resolve(material('A-up', 'a-upload.pdf')));
     expect(container!.textContent).not.toContain('a-upload.pdf');
     expect(container!.textContent).toContain('b-notes.pdf');
-    expect(textarea().value).toBe(B_DRAFT);
+    expect(composerText(textarea())).toBe(B_DRAFT);
     await sendInB();
   });
   describe('a new chat asked for on the draft whose first message is on its way', () => {
@@ -1089,7 +1086,7 @@ describe('a request still on its way when the teacher switches conversation', ()
       await act(async () => sendingA.resolve(started('session-A')));
       await followPanes();
       expect(attachedTo('session-A')).toBe(false);
-      expect(textarea().value).toBe('A new chat');
+      expect(composerText(textarea())).toBe('A new chat');
       expect(stopButton()).toBeNull();
     });
 
@@ -1101,7 +1098,7 @@ describe('a request still on its way when the teacher switches conversation', ()
 
       await act(async () => sendingA.reject(new Error('send A failed')));
       expect(mocks.toastError).toHaveBeenCalledWith('send A failed');
-      expect(textarea().value).toBe('A new chat');
+      expect(composerText(textarea())).toBe('A new chat');
       expect(container!.textContent).not.toContain('a-notes.pdf');
     });
   });

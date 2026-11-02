@@ -7,6 +7,12 @@
  * extraction state reads differently in the menu.
  */
 import { act, createElement } from 'react';
+import {
+  COMPOSER_INPUT,
+  composerText,
+  moveComposerCaret,
+  setComposerText,
+} from './_composer-driver';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -177,15 +183,10 @@ async function mount(mode: Mode, hasCourses = true): Promise<HTMLElement> {
 
 /** Type at the end of what the box holds (a picked `@mention` stays in it). */
 async function type(container: HTMLElement, text: string) {
-  const textarea = container.querySelector('textarea')!;
+  const textarea = container.querySelector<HTMLElement>(COMPOSER_INPUT)!;
   await act(async () => {
-    const next = textarea.value + text;
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(
-      textarea,
-      next,
-    );
-    textarea.setSelectionRange(next.length, next.length);
-    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    const next = composerText(textarea) + text;
+    setComposerText(textarea, next);
   });
 }
 
@@ -230,12 +231,14 @@ describe.each(['launch', 'new', 'follow'] as const)('the %s composer', (mode) =>
     expect(container.querySelector('[data-testid="workbench-course-menu"]')).toBeNull();
     // The pick is written into the sentence at the caret, as an inline mention;
     // the literal `@` the teacher typed is left alone.
-    expect(container.querySelector('textarea')!.value).toBe('Keep @literal @document.pdf ');
-    expect(document.activeElement).toBe(container.querySelector('textarea'));
+    expect(composerText(container.querySelector<HTMLElement>(COMPOSER_INPUT)!)).toBe(
+      'Keep @literal @document.pdf ',
+    );
+    expect(document.activeElement).toBe(container.querySelector(COMPOSER_INPUT));
     expect(
-      container.querySelector('[data-pill="mention"]')?.textContent,
-      'drawn as a mention',
-    ).toBe('@document.pdf');
+      container.querySelector('.composer-chip[data-chip="material"]')?.textContent,
+      'drawn as a chip',
+    ).toBe('document.pdf');
   });
 
   it('closes toolbar search with Escape and resets it when reopened', async () => {
@@ -249,7 +252,9 @@ describe.each(['launch', 'new', 'follow'] as const)('the %s composer', (mode) =>
       search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
     );
     expect(container.querySelector('[data-testid="workbench-course-menu"]')).toBeNull();
-    expect(container.querySelector('textarea')!.value).toBe('Keep @literal');
+    expect(composerText(container.querySelector<HTMLElement>(COMPOSER_INPUT)!)).toBe(
+      'Keep @literal',
+    );
     await act(async () => mentionButton(container, mode)!.click());
     expect(
       container.querySelector<HTMLInputElement>('[data-testid="workbench-reference-search"]')!
@@ -294,17 +299,17 @@ describe.each(['launch', 'follow'] as const)('an inline mention in the %s compos
         .querySelector<HTMLButtonElement>('[data-testid="workbench-material-option-src-doc"]')!
         .click(),
     );
-    const textarea = container.querySelector('textarea')!;
-    expect(textarea.value).toBe('Teach @document.pdf ');
+    const textarea = container.querySelector<HTMLElement>(COMPOSER_INPUT)!;
+    expect(composerText(textarea)).toBe('Teach @document.pdf ');
     // Written in the text, so not a pill above it as well.
     expect(container.querySelector('[data-testid="workbench-materials"]')).toBeNull();
-    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    moveComposerCaret(textarea, composerText(textarea).length);
     await act(async () => {
       textarea.dispatchEvent(
         new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }),
       );
     });
-    expect(textarea.value).toBe('Teach ');
+    expect(composerText(textarea)).toBe('Teach ');
     await type(container, 'this');
     const send = container.querySelector<HTMLButtonElement>(
       `[data-testid="${mode === 'launch' ? 'pro-launch-start' : 'workbench-send'}"]`,
@@ -549,8 +554,8 @@ describe('a message that names a course with @', () => {
     const container = await mount('new');
     await mentionCourse(container, 'Explain @Class');
     await type(container, 'gently');
-    const textarea = container.querySelector('textarea')!;
-    expect(textarea.value).toBe('Explain @Classroom gently');
+    const textarea = container.querySelector<HTMLElement>(COMPOSER_INPUT)!;
+    expect(composerText(textarea)).toBe('Explain @Classroom gently');
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[data-testid="workbench-send"]')!.click(),
     );
@@ -560,7 +565,7 @@ describe('a message that names a course with @', () => {
     const mention = container.querySelector('[data-testid="user-bubble-mention"]');
     expect(mention?.textContent).toBe('@Classroom');
     expect(container.textContent).toContain('Explain');
-    expect(textarea.value).toBe('');
+    expect(composerText(textarea)).toBe('');
     expect(container.querySelector('[data-testid="course-ref-pill"]')).toBeNull();
     expect(container.querySelector('[data-testid="user-bubble-course-ref"]')).toBeNull();
 
@@ -586,7 +591,9 @@ describe('a message that names a course with @', () => {
       useWorkbenchStore.setState({ replaying: false, status: 'succeeded' });
     });
     await wait(10);
-    expect(container.querySelector('[data-pill="mention"]')?.textContent).toBe('@Classroom');
+    expect(container.querySelector('.composer-chip[data-chip="course"]')?.textContent).toBe(
+      'Classroom',
+    );
     await type(container, 'please');
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[data-testid="workbench-send"]')!.click(),
@@ -609,8 +616,10 @@ describe('a message that names a course with @', () => {
         useWorkbenchStore.setState({ replaying: false, status: 'succeeded' });
       });
       await wait(10);
-      expect(container.querySelector('textarea')!.value).toBe('Look at @Classroom ');
-      expect(container.querySelector('[data-pill="mention"]')).toBeNull();
+      expect(composerText(container.querySelector<HTMLElement>(COMPOSER_INPUT)!)).toBe(
+        'Look at @Classroom ',
+      );
+      expect(container.querySelector('.composer-chip')).toBeNull();
     } finally {
       courseOptions.push({ id: 'stage-1', name: 'Classroom' });
     }

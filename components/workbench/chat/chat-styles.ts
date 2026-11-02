@@ -333,7 +333,7 @@ export const wbStyles = {
      */
     context: 'max-h-[92px] overflow-y-auto px-2 pb-1 pt-2',
     input:
-      'box-border block min-h-[62px] w-full resize-none rounded-lg border-0 bg-transparent px-3 pb-10 pt-2.5 font-inherit text-[length:var(--wb-text-sm)] leading-relaxed text-[var(--wb-text)] outline-none placeholder:text-[var(--wb-text-faint)] disabled:opacity-60',
+      'box-border block max-h-[200px] min-h-[62px] w-full rounded-lg border-0 bg-transparent px-3 pb-10 pt-2.5 text-[length:var(--wb-text-sm)] leading-relaxed text-[var(--wb-text)] [--composer-placeholder:var(--wb-text-faint)]',
     actionsLeft: 'absolute bottom-2 left-2 z-10 flex items-center',
     actionsRow: 'absolute bottom-2 right-2 z-10 flex items-center',
     sendAction:

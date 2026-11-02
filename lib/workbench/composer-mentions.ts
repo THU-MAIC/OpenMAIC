@@ -3,16 +3,16 @@
  *
  * A course or a knowledge-base material picked from the `@` menu used to sit
  * as a pill above the box. It now goes where the caret was, as an `@label`
- * run of the draft that the composer's mirror draws with the skill handle's
- * own highlight, so the sentence reads as written ("compare @Fractions with
+ * run of the draft that the composer's input draws as a chip, as it does a
+ * skill handle, so the sentence reads as written ("compare @Fractions with
  * @worksheet.pdf"). The reference itself is unchanged: it still rides with the
  * message as a course ref or a staged material, and the `@label` runs are
  * taken out of the text that is sent, so the server sees exactly what it saw
  * before.
  *
- * The label is the item's name, shortened inside the token when it is long
- * (the textarea holds real text, so truncation has to happen in the text), and
- * numbered when two picks would otherwise read the same. Everything here is
+ * The label is the item's name, shortened in the string when it is long (the
+ * chip shows the whole name and truncates it itself), and numbered when two
+ * picks would otherwise read the same. Everything here is
  * pure; the composers keep the list of mentions and call these.
  */
 
@@ -60,26 +60,6 @@ export function insertMention(
   const trail = /^\s/.test(after) ? '' : ' ';
   const inserted = `${lead}${label}${trail}`;
   return { draft: `${before}${inserted}${after}`, caret: start + inserted.length };
-}
-
-/**
- * Backspace at the end of a mention takes the whole mention (and the space the
- * insertion left after it, when the caret sits past that space). Anywhere else
- * it is the browser's one character.
- */
-export function deleteMentionBefore(
-  draft: string,
-  caret: number,
-  mentions: readonly InlineMention[],
-): { readonly draft: string; readonly caret: number; readonly mention: InlineMention } | null {
-  if (caret <= 0 || caret > draft.length) return null;
-  const probe = draft[caret - 1] === ' ' ? caret - 1 : caret;
-  for (const mention of mentions) {
-    const start = probe - mention.label.length;
-    if (start < 0 || draft.slice(start, probe) !== mention.label) continue;
-    return { draft: draft.slice(0, start) + draft.slice(caret), caret: start, mention };
-  }
-  return null;
 }
 
 /** The mentions whose label the draft still holds; the rest were edited away. */

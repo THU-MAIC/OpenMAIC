@@ -2,19 +2,19 @@
 
 /**
  * The composer's `@` mentions, kept beside its draft: picking writes an
- * `@label` into the text at the caret, Backspace at its end takes it whole,
- * and an edit that removes it (a cut, a selection typed over) drops the
- * reference it stood for. See `lib/workbench/composer-mentions`.
+ * `@label` into the text at the caret (the input draws it as a chip), and an
+ * edit that removes it (Backspace, a cut, a selection typed over) drops the
+ * reference it stood for; an undo that brings it back restores both. See
+ * `lib/workbench/composer-mentions`.
  *
  * The references themselves stay where each composer keeps them (course
  * refs, staged materials); `onDropped` is how a mention removed from the text
  * takes its reference with it. A reset (a send, a new draft) forgets the
  * mentions without touching the references, which their own paths settle.
  */
-import { useCallback, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 import {
-  deleteMentionBefore,
   insertMention,
   mentionLabel,
   mentionsInDraft,
@@ -40,17 +40,16 @@ export interface InlineMentions {
   ) => { readonly draft: string; readonly caret: number } | null;
   /** After the draft was edited: forget, and drop, the mentions it no longer holds. */
   readonly afterEdit: (draft: string) => void;
-  /** Backspace at a mention's end; true when it took the mention. */
-  readonly backspace: (
-    event: KeyboardEvent<HTMLTextAreaElement>,
-    setDraft: (next: string) => void,
-    onCaret: (caret: number) => void,
-  ) => boolean;
+  /** An undo or redo brought this mention's chip back: it and its reference return. */
+  readonly revive: (mention: InlineMention) => void;
   readonly reset: () => void;
   readonly restore: (mentions: readonly InlineMention[]) => void;
 }
 
-export function useInlineMentions(onDropped: (mention: InlineMention) => void): InlineMentions {
+export function useInlineMentions(
+  onDropped: (mention: InlineMention) => void,
+  onRevived: (mention: InlineMention) => void,
+): InlineMentions {
   const [mentions, setMentions] = useState<readonly InlineMention[]>(NONE);
   // The latest list for handlers called twice in one event (pick, then edit).
   const current = useRef(mentions);
@@ -93,30 +92,17 @@ export function useInlineMentions(onDropped: (mention: InlineMention) => void): 
     [commit, onDropped],
   );
 
-  const backspace: InlineMentions['backspace'] = useCallback(
-    (event, setDraft, onCaret) => {
-      if (event.key !== 'Backspace') return false;
-      if (event.nativeEvent.isComposing || event.keyCode === 229) return false;
-      const textarea = event.currentTarget;
-      if (textarea.selectionStart !== textarea.selectionEnd) return false;
-      const deletion = deleteMentionBefore(
-        textarea.value,
-        textarea.selectionStart ?? 0,
-        current.current,
-      );
-      if (!deletion) return false;
-      event.preventDefault();
-      commit(current.current.filter((mention) => mention !== deletion.mention));
-      onDropped(deletion.mention);
-      onCaret(deletion.caret);
-      setDraft(deletion.draft);
-      return true;
+  const revive: InlineMentions['revive'] = useCallback(
+    (mention) => {
+      if (current.current.some((item) => item.label === mention.label)) return;
+      commit([...current.current, mention]);
+      onRevived(mention);
     },
-    [commit, onDropped],
+    [commit, onRevived],
   );
 
   const reset = useCallback(() => commit(NONE), [commit]);
   const restore = useCallback((list: readonly InlineMention[]) => commit(list), [commit]);
 
-  return { mentions, labels, has, add, afterEdit, backspace, reset, restore };
+  return { mentions, labels, has, add, afterEdit, revive, reset, restore };
 }

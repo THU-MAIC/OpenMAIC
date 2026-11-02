@@ -118,7 +118,9 @@ export function SkillSlashMenu({
     // error branch's retry button can hold focus, and the keyboard must still
     // work afterwards. Navigation and picking stay matches-gated.
     const onKeyDown = (event: KeyboardEvent) => {
-      const textarea = menuRef.current?.parentElement?.querySelector('textarea');
+      const textarea = menuRef.current?.parentElement?.querySelector(
+        'textarea, [data-composer-input]',
+      );
       const onTextarea = event.target === textarea;
       if (event.isComposing) return;
 

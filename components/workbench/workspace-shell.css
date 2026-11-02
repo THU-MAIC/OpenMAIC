@@ -493,9 +493,8 @@
   transform: translateY(-1px);
 }
 
-.ws-composer textarea::placeholder {
-  color: var(--ws-ink-mute);
-  opacity: 0.75;
+.ws-composer .composer-input {
+  --composer-placeholder: color-mix(in srgb, var(--ws-ink-mute) 75%, transparent);
 }
 
 /* ── Entrance ────────────────────────────────────────────────────────────

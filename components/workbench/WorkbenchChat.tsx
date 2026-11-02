@@ -51,7 +51,7 @@ import {
   useWorkbenchCourseNavigation,
   useWorkbenchDraftConversation,
 } from '@/lib/workbench/panel-context';
-import { ComposerTextarea } from './composer-input';
+import { ComposerInput, type ComposerInputHandle } from './composer-input';
 import { ComposerPillRow } from './composer-pill';
 import { ElementRefPills } from './element-ref-pills';
 import { CourseMentionMenu } from './course-mention-menu';
@@ -84,7 +84,6 @@ import {
   type MaterialSeed,
 } from './compose-extras';
 import { insertSkillHandle, seedSlashQuery } from '@/lib/workbench/composer-skills';
-import { useSkillHandleBackspace } from './use-skill-handle-backspace';
 import { useInlineMentions } from './use-inline-mentions';
 import {
   expandMentions,
@@ -100,6 +99,7 @@ import {
 } from './chat/composer-send-state';
 import {
   COMPOSER_SEND_ARIA_KEYSHORTCUTS,
+  composerKeyEventOf,
   shouldSendComposerKey,
 } from '@/lib/workbench/composer-keys';
 import { useDoubleEscapeStop } from './chat/composer-escape';
@@ -112,7 +112,7 @@ import { useQuestionHost } from '@/lib/workbench/question-host';
 import { sessionScopedKey } from '@/lib/workbench/request-scope';
 import { composerTakeover } from './chat/question-form-state';
 import { shouldShowWorkbenchEmptyState, WorkbenchChatEmptyState } from './chat/empty-state';
-import { invalidateAgentSkills, useAgentSkills } from '@/lib/workbench/agent-skills';
+import { invalidateAgentSkills } from '@/lib/workbench/agent-skills';
 import { settleSentElementRefs } from '@/lib/workbench/element-ref-send-result';
 import { settleSentCourseRefs } from '@/lib/workbench/course-ref-send-result';
 
@@ -256,11 +256,16 @@ export function WorkbenchChat({
    *
    * Both triggers read the token AROUND it (`lib/workbench/composer-tokens`), so
    * this is half of what decides whether a menu is open — which is why it is state
-   * and not a ref: it has to re-render the menu. `ComposerTextarea` reports it on
+   * and not a ref: it has to re-render the menu. `ComposerInput` reports it on
    * every way it can move, and the two paths that move it programmatically (a
    * skill insertion, an `@` token spliced out) set it themselves.
    */
   const [caret, setCaret] = useState(0);
+  const [caretBesideChip, setCaretBesideChip] = useState(false);
+  const reportCaret = useCallback((next: number, besideChip: boolean) => {
+    setCaret(next);
+    setCaretBesideChip(besideChip);
+  }, []);
   /**
    * Put text in the box, caret at its end — the ONE door for a write that replaces
    * the whole draft (cleared on send, restored when the send is refused).
@@ -295,7 +300,7 @@ export function WorkbenchChat({
   const [busy, setBusy] = useState(false);
   /**
    * Where the caret goes after a skill handle is written into the draft, applied
-   * once the controlled textarea has rendered the new value. A ref, not state:
+   * once the input has taken the new value. A ref, not state:
    * it is a one-shot instruction to the DOM, not something anything renders.
    */
   const pendingCaret = useRef<number | null>(null);
@@ -362,7 +367,7 @@ export function WorkbenchChat({
   const waiting = pendingQuestion(chat);
   const dismissedQuestionKey =
     waiting && dismissedQuestion === questionMark(waiting.key) ? waiting.key : null;
-  const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const composerRef = useRef<ComposerInputHandle | null>(null);
   // The mirror flag for stop: `POST /cancel` answers 202 ("asked"), and the run
   // only actually ends when the loop notices between steps — after the tool in
   // flight returns, which can be tens of seconds. Without this the button just
@@ -469,6 +474,8 @@ export function WorkbenchChat({
   // mention is that the agent is told, not that it infers from what is open.
   useCourseRefsOwnerLifecycle(composerOwnerId);
   const courseRefs = useCourseRefsForSession(composerOwnerId);
+  /** What an `@` pick staged, for the undo that brings its chip back. */
+  const pickedMaterials = useRef(new Map<string, WorkbenchMaterial>());
   /**
    * The `@` picks, written into the draft as inline mentions (see
    * `use-inline-mentions`); taking one out of the text takes its reference too.
@@ -483,6 +490,15 @@ export function WorkbenchChat({
       // eslint-disable-next-line react-hooks/exhaustive-deps
       [],
     ),
+    (revived: InlineMention) => {
+      if (revived.kind === 'course') {
+        const ref = makeCourseRef(revived.id, revived.name);
+        if (ref) useCourseRefsStore.getState().add(ref);
+      } else {
+        const material = pickedMaterials.current.get(revived.id);
+        if (material) materials.addExisting(material);
+      }
+    },
   );
   /**
    * Another conversation in this composer: a course mention the draft still
@@ -583,6 +599,7 @@ export function WorkbenchChat({
   } = resolveComposerMenu({
     draft,
     caret,
+    caretBesideChip,
     slashDismissedOn: slashDismissed,
     mentionDismissedOn: mentionDismissed,
     courseMenuRequested: mentionOpen,
@@ -691,6 +708,7 @@ export function WorkbenchChat({
     (candidate: MaterialMentionCandidate) => {
       const staged = stagedMaterialOf(candidate);
       const outcome = materials.addExisting(staged);
+      pickedMaterials.current.set(staged.materialId, staged);
       finishMentionPick(
         outcome === 'staged' || outcome === 'already'
           ? { kind: 'material', id: staged.materialId, name: staged.name }
@@ -767,10 +785,10 @@ export function WorkbenchChat({
     const caret = pendingCaret.current;
     if (caret === null) return;
     pendingCaret.current = null;
-    const textarea = composerRef.current;
-    if (!textarea) return;
-    textarea.focus();
-    textarea.setSelectionRange(caret, caret);
+    const input = composerRef.current;
+    if (!input) return;
+    input.focus();
+    input.setSelectionRange(caret, caret);
   }, [draft]);
 
   /**
@@ -780,14 +798,6 @@ export function WorkbenchChat({
    * it). Both dismissals are recorded against the resulting draft, so nothing
    * reopens until the user types something new.
    */
-  const { skills } = useAgentSkills();
-  const installedSkillNames = useMemo(() => skills.map((skill) => skill.name), [skills]);
-  /** Backspace deletes a resolving `/handle`; see the hook for the IME guard. */
-  const moveCaret = useCallback((next: number) => {
-    pendingCaret.current = next;
-    setCaret(next);
-  }, []);
-  const onSkillHandleBackspace = useSkillHandleBackspace(setDraft, moveCaret, installedSkillNames);
   const loadSkill = useCallback((skill: AgentSkillInfo) => {
     // The live selection, not the tracked state: the element is the freshest
     // answer either way.
@@ -808,7 +818,7 @@ export function WorkbenchChat({
    * the full list — the same flow typing `/` has, minus the typing. An
    * Esc-dismissed query reopens; an active one is already open, so the click is
    * spent. Focus first: the menu's keyboard contract (↑/↓/Enter) lives on the
-   * textarea.
+   * input.
    */
   const openSkillMenu = useCallback(() => {
     composerRef.current?.focus();
@@ -1349,41 +1359,34 @@ export function WorkbenchChat({
                     onPickMaterial={pickMaterialMention}
                   />
                 ) : null}
-                {/* Two layers, one metric class: the mirror behind it draws the
-                    draft's `/handle` runs as inline pills without the value ever
-                    stopping being plain text (see `composer-input`). */}
-                <ComposerTextarea
-                  textareaRef={composerRef}
-                  data-testid="workbench-chat-composer"
-                  mirrorTestId="workbench-chat-composer-mirror"
-                  // Moving the caret while typing a query is not a press
-                  // "somewhere else" — see `CourseMentionMenu`'s outside press.
-                  data-mention-keep-open=""
+                <ComposerInput
+                  inputRef={composerRef}
+                  testId="workbench-chat-composer"
+                  rows={2}
                   value={draft}
-                  onCaretChange={setCaret}
-                  mentionLabels={inlineMentions.labels}
-                  onChange={(e) => {
-                    setDraft(e.target.value);
-                    inlineMentions.afterEdit(e.target.value);
+                  onCaretChange={reportCaret}
+                  mentions={inlineMentions.mentions}
+                  onMentionRestored={inlineMentions.revive}
+                  onValueChange={(text) => {
+                    setDraft(text);
+                    inlineMentions.afterEdit(text);
                   }}
                   onPaste={(event) => {
-                    if (!materials.enabled) return;
+                    if (!materials.enabled || !event.clipboardData) return;
                     const images = composerImagesFromClipboard(event.clipboardData);
                     if (images.length === 0) return;
                     event.preventDefault();
                     materials.addFiles(images);
                   }}
                   onKeyDown={(e) => {
-                    if (onSkillHandleBackspace(e)) return;
-                    if (inlineMentions.backspace(e, setDraft, moveCaret)) return;
                     if (openMenu === 'skill') return; // the slash menu owns Enter while open
                     if (mentionMenuOpen) return; // …and so does the `@` course menu
-                    if (!shouldSendComposerKey(e)) return;
+                    if (!shouldSendComposerKey(composerKeyEventOf(e))) return;
                     e.preventDefault();
                     void send();
                   }}
                   disabled={!canSend}
-                  aria-keyshortcuts={COMPOSER_SEND_ARIA_KEYSHORTCUTS}
+                  ariaKeyShortcuts={COMPOSER_SEND_ARIA_KEYSHORTCUTS}
                   placeholder={t(
                     shouldPromptForRefInstruction({
                       hasElementRefs: elementRefs.length > 0,

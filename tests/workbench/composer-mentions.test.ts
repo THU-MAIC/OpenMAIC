@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  deleteMentionBefore,
   expandMentions,
   insertMention,
   mentionLabel,
@@ -49,19 +48,6 @@ describe('writing and deleting a mention', () => {
     });
   });
 
-  it('is taken whole by Backspace at its end, and only there', () => {
-    const draft = 'Teach @Fractions now';
-    expect(deleteMentionBefore(draft, 17, [course])).toEqual({
-      draft: 'Teach now',
-      caret: 6,
-      mention: course,
-    });
-    expect(deleteMentionBefore(draft, 16, [course])?.draft).toBe('Teach  now');
-    // Inside the token, or in plain words: the browser's one character.
-    expect(deleteMentionBefore(draft, 12, [course])).toBeNull();
-    expect(deleteMentionBefore(draft, 20, [course])).toBeNull();
-  });
-
   it('is forgotten once an edit takes its label out of the draft', () => {
     const both = [course, doc];
     expect(mentionsInDraft('@Fractions and @worksheet.pdf', both)).toBe(both);
@@ -93,7 +79,7 @@ describe('the text that is sent', () => {
   });
 });
 
-describe('the mirror', () => {
+describe('finding the mentions to draw as chips', () => {
   it('splits the text where a mention stands', () => {
     expect(segmentMentions('Teach @Fractions now', ['@Fractions'])).toEqual([
       { text: 'Teach ', mention: false },
