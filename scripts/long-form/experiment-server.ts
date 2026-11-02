@@ -29,6 +29,7 @@ import { join } from 'node:path';
 
 import {
   auditOutline,
+  auditSeverity,
   applyRevisionPatch,
   buildLongFormBrief,
   CRITIQUE_DIMENSIONS,
@@ -41,6 +42,7 @@ import {
   pageFloorFor,
   parseCritique,
   parseRevisionPatch,
+  repairWorsens,
   planLongFormCourse,
   serializeOutlineForCritic,
   shouldRevise,
@@ -645,14 +647,25 @@ async function runExperiment(
 
         if (applied.ok) {
           const safe = isSafeRevision(bad, applied.outlines);
-          const before = badAudit.defects.length;
           const after = auditOutline(plan, applied.outlines);
-          const improved = after.defects.length < before;
+          const pages = applied.outlines.length;
+          const inPlan = pages >= pageFloorFor(plan) && pages <= pageCeilingFor(plan);
+          // The question is not "are there fewer findings" but "would production
+          // adopt this". Removing seven pages clears a page's worth of findings and
+          // still fails the plan's floor, and a repair that trades a structural
+          // defect for page-level ones lowers the count while losing a beat — both
+          // are rejected by the loop, so passing here would mean this console is
+          // easier to satisfy than the thing it is checking.
+          const adopted = safe.ok && inPlan && !repairWorsens(badAudit, after);
           record({
             id: 'C9',
-            label: '修复让算术缺陷变少',
-            status: improved ? 'pass' : 'fail',
-            detail: `缺陷 ${before} → ${after.defects.length}（安全校验 ${safe.ok ? '通过' : '未通过'}）`,
+            label: '修复会被生产采纳',
+            status: adopted ? 'pass' : 'fail',
+            detail:
+              `缺陷 ${badAudit.defects.length} → ${after.defects.length}，` +
+              `严重度 ${auditSeverity(badAudit)} → ${auditSeverity(after)}，${pages} 页` +
+              (inPlan ? '' : `（超出计划的 ${pageFloorFor(plan)}-${pageCeilingFor(plan)}）`) +
+              (safe.ok ? '' : `（安全校验：${safe.reason}）`),
           });
           emit({
             type: 'after',

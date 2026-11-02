@@ -4,7 +4,7 @@
  * caller-facing.
  */
 import { capBodyStream } from '@/lib/server/capped-stream';
-import { normalizeSceneOutlines } from '@/lib/server/generation/outline-schema';
+import { MAX_OUTLINE_SCENES, normalizeSceneOutlines } from '@/lib/server/generation/outline-schema';
 import { MAX_CLASSROOM_MATERIALS } from '@/lib/server/classroom-materials';
 import { isMaterialId } from '@/lib/server/materials/material-id';
 import type { SceneOutline } from '@/lib/types/generation';
@@ -233,9 +233,17 @@ export interface ConfirmOutlineCommand {
   outlines?: SceneOutline[];
 }
 
-/** An edited outline, in the outline normalizer's normal form (the one the outline step's output takes). */
+/**
+ * An edited outline, in the outline normalizer's normal form (the one the outline
+ * step's output takes).
+ *
+ * The absolute ceiling, not the short-lesson default: a 240-minute plan is 108
+ * pages, and a title-only edit of one would be refused here before the store ever
+ * saw it. What the course should have is the store's question — it knows the plan
+ * — and this only rejects a body no course could be.
+ */
 export function parseOutlines(value: unknown): Parsed<SceneOutline[]> {
-  return normalizeSceneOutlines(value);
+  return normalizeSceneOutlines(value, { maxScenes: MAX_OUTLINE_SCENES });
 }
 
 export function parseConfirmOutline(raw: unknown): Parsed<ConfirmOutlineCommand> {

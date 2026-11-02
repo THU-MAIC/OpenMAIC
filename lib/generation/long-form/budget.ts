@@ -92,22 +92,24 @@ export function speechBudgetFor(seconds: number, language: LongFormLanguage): nu
  * JavaScript's `\w`, so `1 小时` at the end of a string would never match. The
  * English units get a `(?![a-z])` instead, which is the boundary they need.
  */
-const HOUR_UNITS = String.raw`(?:个\s*)?(?:小时|钟头|hours?(?![a-z])|hrs?(?![a-z]))`;
-const MINUTE_UNITS = String.raw`(?:分钟|分半钟|mins?(?![a-z])|minutes?(?![a-z]))`;
+const HOUR_UNITS = String.raw`(?:个|個)?\s*(?:小时|小時|钟头|鐘頭|hours?(?![a-z])|hrs?(?![a-z]))`;
+const MINUTE_UNITS = String.raw`(?:分钟|分鐘|分半钟|分半鐘|mins?(?![a-z])|minutes?(?![a-z]))`;
 
 /** A hyphen or a space may separate the figure from its unit: `2-hour`, `45-min`. */
 const UNIT_JOIN = String.raw`[\s-]*`;
 
 /**
  * Nouns that make a duration the length of the lesson rather than the length of
- * the thing the lesson is about. 课 covers 课程 / 微课 / 大课 / 系统课.
+ * the thing the lesson is about. 课 covers 课程 / 微课 / 大课 / 系统课, and the
+ * traditional forms are listed because zh-TW is a supported locale — `做一個 60
+ * 分鐘的課程` planned nothing while its simplified twin planned an hour.
  */
 const COURSE_NOUN =
-  /(?:课|讲座|讲堂|教程|视频|培训|报告|班|入门|精讲|专题|系列|导论|概论|串讲|lecture|course|lesson|class|session|talk|video|tutorial|seminar|training|webinar)/i;
+  /(?:课|課|讲座|講座|讲堂|講堂|教程|视频|視頻|培训|培訓|报告|報告|班|入门|入門|精讲|精講|专题|專題|系列|导论|導論|概论|概論|串讲|串講|lecture|course|lesson|class|session|talk|video|tutorial|seminar|training|webinar)/i;
 
 /** Words that open a lesson length rather than a topical one. */
 const DURATION_INTENT =
-  /(?:时长|全长|总长|总共|一共|整节|整个|全程|持续|课时|duration|length|whole|total|lasts?|runs?)/i;
+  /(?:时长|時長|全长|全長|总长|總長|总共|總共|一共|整节|整節|整个|整個|全程|持续|持續|课时|課時|duration|length|whole|total|lasts?|runs?)/i;
 
 /**
  * Words a bare duration may be followed by and still describe a lesson: a
@@ -116,7 +118,7 @@ const DURATION_INTENT =
  * insulin response` is a phenomenon, not a sitting.
  */
 const LENGTH_FOLLOWER = new RegExp(
-  String.raw`^\s*(?:$|[，。、；：,.;:!?！？]|(?:on|about|for|of|in|to|covering|explaining|introducing)\b|(?:讲|说|介绍|覆盖|涵盖|带|学|练))`,
+  String.raw`^\s*(?:$|[，。、；：,.;:!?！？]|(?:on|about|for|of|in|to|covering|explaining|introducing)\b|(?:讲|講|说|說|介绍|介紹|覆盖|覆蓋|涵盖|涵蓋|带|帶|学|學|练|練))`,
   'i',
 );
 
@@ -135,6 +137,7 @@ const CN_DIGITS: Readonly<Record<string, number>> = {
   一: 1,
   二: 2,
   两: 2,
+  兩: 2,
   三: 3,
   四: 4,
   五: 5,
@@ -218,25 +221,25 @@ function normalizeDurationWords(text: string): string {
       // that first left the leading numeral stranded: `两个0.5 小时` reads as thirty
       // minutes instead of two and a half hours.
       .replace(
-        /([一二两三四五六七八九十]{1,3})\s*个\s*半\s*个?\s*(小时|钟头)/g,
+        /([一二两兩三四五六七八九十]{1,3})\s*(?:个|個)?\s*半\s*(?:个|個)?\s*(小时|小時|钟头|鐘頭)/g,
         (match, token: string, unit: string) => {
           const value = chineseNumeral(token);
           return value === null ? match : `${value + 0.5} ${unit}`;
         },
       )
       .replace(
-        /([一二两三四五六七八九十]{1,3})\s*个?\s*(小时|钟头)\s*半/g,
+        /([一二两兩三四五六七八九十]{1,3})\s*(?:个|個)?\s*(小时|小時|钟头|鐘頭)\s*半/g,
         (match, token: string, unit: string) => {
           const value = chineseNumeral(token);
           return value === null ? match : `${value + 0.5} ${unit}`;
         },
       )
       .replace(
-        /(一\s*个\s*)?半\s*个?\s*(小时|钟头)/g,
+        /(一\s*(?:个|個)?\s*)?半\s*(?:个|個)?\s*(小时|小時|钟头|鐘頭)/g,
         (_match, one: string | undefined, unit: string) => `${one ? '1.5' : '0.5'} ${unit}`,
       )
       .replace(
-        /([一二两三四五六七八九十]{1,3})\s*个?\s*(小时|钟头)/g,
+        /([一二两兩三四五六七八九十]{1,3})\s*(?:个|個)?\s*(小时|小時|钟头|鐘頭)/g,
         (match, token: string, unit: string) => {
           const value = chineseNumeral(token);
           return value === null ? match : `${value} ${unit}`;
@@ -245,7 +248,7 @@ function normalizeDurationWords(text: string): string {
       // Minutes are written the same way: `三十分钟的课` is an ordinary request and
       // the digit matcher found nothing in it.
       .replace(
-        /([一二两三四五六七八九十]{1,3})\s*个?\s*(分钟|分半钟)/g,
+        /([一二两兩三四五六七八九十]{1,3})\s*(?:个|個)?\s*(分钟|分鐘|分半钟|分半鐘)/g,
         (match, token: string, unit: string) => {
           const value = chineseNumeral(token);
           return value === null ? match : `${value} ${unit}`;
@@ -254,6 +257,16 @@ function normalizeDurationWords(text: string): string {
       .replace(
         /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)[- ]and[- ]an?[- ]half[- ]hours?\b/gi,
         (_match, word: string) => `${(EN_NUMERALS[word.toLowerCase()] ?? 1) + 0.5} hours`,
+      )
+      // The suffix form puts the half after the unit: `an hour and a half`. Without
+      // this the next rule rewrote the `an hour` inside it to `1 hour` and left
+      // `and a half` stranded, so a ninety-minute request planned sixty.
+      .replace(
+        /\b(an?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+hours?\s+and\s+a\s+half\b/gi,
+        (_match, word: string) => {
+          const value = EN_NUMERALS[word.toLowerCase()] ?? 1;
+          return `${value + 0.5} hours`;
+        },
       )
       .replace(/half\s*(?:an?\s*)?[- ]?hours?/gi, '0.5 hour')
       .replace(/\ban?\s+hours?\b/gi, '1 hour')

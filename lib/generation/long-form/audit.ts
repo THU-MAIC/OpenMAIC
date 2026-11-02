@@ -375,21 +375,33 @@ const STRUCTURAL_CODES: ReadonlySet<AuditCode> = new Set<AuditCode>([
 ]);
 
 /**
- * Structural codes the second draft has and the first did not.
+ * Structural codes the second draft has more of than the first.
  *
  * Severity is a sum, so a repair can pay for a lost retrieval page with two
  * written objectives — 5 against 3 + 3 — and still look like progress. A
  * structural finding is not a quantity to trade: it names a beat the course no
  * longer has.
+ *
+ * Counted per code, not per presence. A draft that already has one module without
+ * a check can lose a second one while fixing page-level findings, and "the code
+ * was already there" is not an argument for shipping it twice.
  */
 export function newStructuralDefects(before: OutlineAudit, after: OutlineAudit): AuditCode[] {
-  const had = new Set(
-    before.defects.filter((defect) => STRUCTURAL_CODES.has(defect.code)).map((defect) => defect.code),
-  );
-  const added = after.defects.filter(
-    (defect) => STRUCTURAL_CODES.has(defect.code) && !had.has(defect.code),
-  );
-  return [...new Set(added.map((defect) => defect.code))];
+  const counts = new Map<AuditCode, number>();
+  for (const defect of before.defects) {
+    if (!STRUCTURAL_CODES.has(defect.code)) continue;
+    counts.set(defect.code, (counts.get(defect.code) ?? 0) + 1);
+  }
+
+  const seen = new Map<AuditCode, number>();
+  const added: AuditCode[] = [];
+  for (const defect of after.defects) {
+    if (!STRUCTURAL_CODES.has(defect.code)) continue;
+    const ordinal = (seen.get(defect.code) ?? 0) + 1;
+    seen.set(defect.code, ordinal);
+    if (ordinal > (counts.get(defect.code) ?? 0)) added.push(defect.code);
+  }
+  return [...new Set(added)];
 }
 
 /**

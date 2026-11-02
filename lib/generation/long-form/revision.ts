@@ -22,12 +22,7 @@
 import type { SceneOutline } from '@/lib/types/generation';
 
 import type { AuditCode, OutlineAudit } from './audit';
-import {
-  auditIsClean,
-  auditSeverity,
-  newStructuralDefects,
-  prioritizeDefects,
-} from './audit';
+import { auditIsClean, auditSeverity, newStructuralDefects, prioritizeDefects } from './audit';
 
 /** The five things a long-form outline is reviewed on. */
 export const CRITIQUE_DIMENSIONS = [

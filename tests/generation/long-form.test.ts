@@ -85,6 +85,9 @@ describe('detectRequestedMinutes', () => {
     expect(detectRequestedMinutes('两小时半的课')).toBe(150);
     expect(detectRequestedMinutes('a two-and-a-half-hour course')).toBe(150);
     expect(detectRequestedMinutes('a two and a half hour course')).toBe(150);
+    // The suffix form puts the half after the unit.
+    expect(detectRequestedMinutes('an hour and a half course')).toBe(90);
+    expect(detectRequestedMinutes('a two hours and a half course')).toBe(150);
     expect(detectLongForm('两个半小时的课').isLongForm).toBe(true);
   });
 
@@ -531,5 +534,22 @@ describe('inferPlanLanguage', () => {
     expect(inferPlanLanguage('讲解光合作用')).toBe('zh');
     expect(inferPlanLanguage('explain photosynthesis')).toBe('en');
     expect(inferPlanLanguage('用中文讲 Docker 网络')).toBe('zh');
+  });
+});
+
+describe('a course written in Traditional Chinese', () => {
+  it('reads the duration and the noun', () => {
+    // zh-TW is a supported locale, and every unit and noun here was simplified
+    // only: `做一個 60 分鐘的課程` planned nothing at all.
+    expect(detectLongForm('做一個 60 分鐘的課程')).toEqual({
+      isLongForm: true,
+      requestedMinutes: 60,
+    });
+    expect(detectRequestedMinutes('一個半小時的課程')).toBe(90);
+    expect(detectRequestedMinutes('兩小時半的講座')).toBe(150);
+    expect(detectLongForm('60 分鐘講透鎮痛藥')).toEqual({
+      isLongForm: true,
+      requestedMinutes: 60,
+    });
   });
 });

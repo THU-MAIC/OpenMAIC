@@ -116,6 +116,23 @@ describe('run input', () => {
     ]);
   });
 
+  it('accepts an edit as long as a long-form plan can be', () => {
+    // A 240-minute plan is 108 pages, so a title-only edit of one sends 108
+    // scenes. The short-lesson default refused it here, before the store — which
+    // is the layer that knows the plan — ever saw the command.
+    const parsed = parseConfirmOutline({
+      commandId: 'c',
+      outlineRevision: 1,
+      outlines: Array.from({ length: 108 }, (_, index) => ({
+        id: `scene_${index + 1}`,
+        type: 'slide',
+        title: `P${index + 1}`,
+        order: index + 1,
+      })),
+    });
+    expect(parsed.ok).toBe(true);
+  });
+
   it('checks commands', () => {
     expect(parseCommandId('a1:b-2.c_3')).toEqual({ ok: true, value: 'a1:b-2.c_3' });
     expect(parseCommandId('has space').ok).toBe(false);

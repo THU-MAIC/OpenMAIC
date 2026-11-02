@@ -748,3 +748,31 @@ describe('the repair prompt', () => {
     expect(prompt.user).toContain('return the changes as one patch');
   });
 });
+
+describe('a structural defect the draft already had one of', () => {
+  it('still refuses the repair when it adds a second', () => {
+    // Presence is not the test. A draft with one module missing its check can lose
+    // a second one while fixing page-level findings; "the code was already there"
+    // would let the second lost beat through.
+    const base = { totalSeconds: 3600, targetSeconds: 3600, driftPct: 0, pages: 29, summary: '' };
+    const draft = {
+      ...base,
+      defects: [
+        { code: 'missing-check' as const, pageIndex: 12, detail: 'no retrieval' },
+        { code: 'missing-objective' as const, pageIndex: 4, detail: 'no objective' },
+        { code: 'missing-objective' as const, pageIndex: 9, detail: 'no objective' },
+      ],
+    };
+    const repaired = {
+      ...base,
+      defects: [
+        { code: 'missing-check' as const, pageIndex: 12, detail: 'no retrieval' },
+        { code: 'missing-check' as const, pageIndex: 26, detail: 'no retrieval' },
+      ],
+    };
+
+    expect(auditSeverity(repaired)).toBeLessThan(auditSeverity(draft));
+    expect(newStructuralDefects(draft, repaired)).toEqual(['missing-check']);
+    expect(repairWorsens(draft, repaired)).toBe(true);
+  });
+});
