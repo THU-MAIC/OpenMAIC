@@ -15,7 +15,8 @@ browsing, existing studies and interrupted first visits.
 An unfinished guide opens once Hero expansion, environment preparation and a
 current connected workspace snapshot are ready. Missing completion metadata also
 counts as unfinished. A layout effect transfers loading/modal ownership before
-paint. The assistant's opening reply can continue in the background. Restored
+paint. Eligibility follows the Hero visit even if the learner docks the workbench
+before restoration finishes; the initial expansion still must settle. The assistant's opening reply can continue in the background. Restored
 drafts remain intact and no longer suppress this required guide.
 
 The card has Previous, Next, Finish and Close controls. Escape also closes it;
@@ -35,7 +36,8 @@ cancelling or repeating an unconfirmed request; error/recovery controls and retu
 remain accessible. Tutorial eligibility is independent of this loading policy:
 an unseen V3 project still shows its guide once ready, including after recovery.
 Transient visibility/online reconnection and HTTP/SSE revision gaps keep the current
-page. Real unavailability or actionable errors interrupt it. Completed read-only
+page. Real unavailability or actionable errors interrupt it, including completed
+projects with saved files: those files bypass environment requirements only. Completed read-only
 workspaces need no execution environment to replay the guide.
 
 ## Interaction boundary

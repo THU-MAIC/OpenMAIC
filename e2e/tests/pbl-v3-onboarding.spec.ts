@@ -761,3 +761,73 @@ for (const [width, height, locale, docked] of [
     await expect(tour(page)).toHaveCount(0);
   });
 }
+
+for (const guideCompleted of [false, true]) {
+  test(`docking during Continue restoration preserves guide eligibility (seen=${guideCompleted})`, async ({
+    page,
+    learningEvents,
+  }) => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fixture = await project(page, learningEvents, {
+      started: true,
+      guideCompleted,
+      environmentReady: false,
+      prepareGate: gate,
+    });
+    await expect.poll(() => fixture.commands).toEqual(['prepare']);
+    await expect(page.getByTestId('pbl-workbench-loading')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Exit fullscreen workspace', exact: true }).click();
+    await expect(page.getByTestId('pbl-workspace-frame')).toHaveAttribute('data-expanded', 'false');
+    release();
+    await expect(page.locator('[data-pbl-tour="replay"]')).toBeEnabled();
+    if (!guideCompleted) {
+      await expect(tour(page)).toHaveAttribute('data-step', 'progress');
+      await finish(page);
+    } else {
+      await expect(tour(page)).toHaveCount(0);
+    }
+    await expect(page.getByTestId('pbl-workspace-frame')).toHaveAttribute('data-expanded', 'false');
+    expect(fixture.commands).toEqual(['prepare']);
+  });
+}
+
+test('completed-file replay survives transient reconnect but yields to terminal stream unavailability', async ({
+  page,
+  learningEvents,
+}) => {
+  const fixture = await project(page, learningEvents, {
+    started: true,
+    completed: true,
+    application: false,
+    environmentReady: false,
+  });
+  await expect(page.locator('[data-pbl-tour="replay"]')).toBeEnabled();
+  await page.locator('[data-pbl-tour="replay"]').click();
+  await next(page).click();
+  await expect(tour(page)).toHaveAttribute('data-step', 'discussion');
+  let release!: () => void;
+  let requested!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const reconnect = new Promise<void>((resolve) => {
+    requested = resolve;
+  });
+  await page.route('**/api/pbl/v3/events?**', async (route) => {
+    requested();
+    await gate;
+    await route.fulfill({ status: 401, json: { error: 'Unavailable' } });
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await reconnect;
+  await expect(tour(page)).toHaveAttribute('data-step', 'discussion');
+  release();
+  await expect(tour(page)).toHaveCount(0);
+  await expect(page.locator('[data-pbl-tour="replay"]')).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Refresh progress', exact: true })).toBeEnabled();
+  await expect(page.getByTestId('pbl-workbench-loading')).toHaveCount(0);
+  expect(fixture.commands).toEqual([]);
+});

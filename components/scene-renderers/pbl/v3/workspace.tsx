@@ -333,10 +333,9 @@ function PBLV3WorkspaceContent({
   const onboardingAvailable =
     layoutReady &&
     !!view &&
+    stream.status !== 'unavailable' &&
     (view.completedFilesAvailable ||
-      (view.environment?.ready &&
-        stream.status !== 'unavailable' &&
-        workbench?.environmentId === view.environmentId));
+      (view.environment?.ready && workbench?.environmentId === view.environmentId));
   // A current snapshot is required to enter, but ordinary HTTP replies can
   // advance view.revision before SSE delivers its workspace. Keep an already
   // open guide through that metadata gap; only real unavailability interrupts.

@@ -158,7 +158,9 @@ export function PBLV3Container({ sceneId }: { sceneId: string }) {
               <PBLV3Workspace
                 sceneId={sceneId}
                 onReturnToHero={returnToHero}
-                autoOnboarding={expanded}
+                // Eligibility belongs to this Hero entry, not the current layout.
+                // layoutReady still waits for the initial expansion to settle.
+                autoOnboarding={entered}
                 initialEntry={initialEntry}
                 layoutReady={!autoExpand}
                 onOnboardingChange={setOnboardingOpen}
