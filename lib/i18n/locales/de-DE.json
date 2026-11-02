@@ -3039,7 +3039,8 @@
           "body": "Nach der Einführung geht es zurück zu „{{step}}“. Lesen Sie die aktuelle Frage oder verwenden Sie die Aufgabenfelder. Die Einführung hat nichts eingereicht, freigegeben oder vorangebracht.",
           "detail": "Antworten Sie beim ersten Einstieg auf die Projekteinführung, sobald Sie bereit sind. Sie können die Einführung jederzeit oben erneut öffnen. Der tatsächliche Fortschritt folgt Einreichungen, Prüfungen und Ausführungsergebnissen."
         }
-      }
+      },
+      "waiting": "Die Einführung ist verfügbar, sobald die Lernumgebung bereit ist. Sie können sich während des Verbindens umsehen; Entwürfe bleiben erhalten."
     }
   }
 }

@@ -3039,7 +3039,8 @@
           "body": "Depois do tour você voltará a {{step}}. Leia a pergunta do assistente ou use os controles da tarefa. Nada foi enviado, aprovado ou avançado em seu lugar.",
           "detail": "No primeiro acesso, volte à apresentação e responda quando estiver pronto ou tire dúvidas. O guia pode ser repetido pelo topo. Envios, revisões e resultados registram o progresso real."
         }
-      }
+      },
+      "waiting": "O guia estará disponível quando o ambiente estiver pronto. Você pode explorar durante a conexão; os rascunhos são mantidos."
     }
   }
 }

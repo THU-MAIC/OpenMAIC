@@ -3039,7 +3039,8 @@
           "body": "After the tour, you will return to {{step}}. Read the assistant’s question or use the actual controls in Current task, then follow the task bar. This introduction has not submitted, approved or advanced anything for you.",
           "detail": "On first entry, return to the project introduction and reply when ready, or ask questions. Replay this guide from the top bar whenever needed, or leave it early. Formal submissions, reviews and execution results record your real progress."
         }
-      }
+      },
+      "waiting": "The guide will be available when the learning environment is ready. You can browse while it connects; drafts are retained."
     }
   }
 }

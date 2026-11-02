@@ -16,27 +16,37 @@ export function useWorkbenchOnboarding({
   studyId,
   autoStart,
   ready,
+  available = ready,
   blocked,
+  hasDraft = false,
 }: {
   root: RefObject<HTMLElement | null>;
   studyId?: string;
   autoStart: boolean;
   ready: boolean;
+  available?: boolean;
   blocked: boolean;
+  hasDraft?: boolean;
 }) {
   const [openStudy, setOpenStudy] = useState<string | null>(null);
-  const [previousBlocked, setPreviousBlocked] = useState(blocked);
-  if (blocked !== previousBlocked) {
-    setPreviousBlocked(blocked);
-    if (blocked) setOpenStudy(null);
+  const unavailable = blocked || !available;
+  const [previousUnavailable, setPreviousUnavailable] = useState(unavailable);
+  if (unavailable !== previousUnavailable) {
+    setPreviousUnavailable(unavailable);
+    if (unavailable) setOpenStudy(null);
   }
   const attempted = useRef(false);
   const returnFocus = useRef<HTMLElement | null>(null);
-  const active = !!studyId && openStudy === studyId && !blocked;
+  const active = !!studyId && openStudy === studyId && !unavailable;
   useEffect(() => {
     const element = root.current;
-    const interacted = () => {
-      attempted.current = true;
+    const interacted = (event: Event) => {
+      // Layout browsing and clicks on disabled controls while connecting do
+      // not mean the learner has started work. Actual drafting always does.
+      const editing =
+        event.target instanceof Element &&
+        !!event.target.closest('input, textarea, [contenteditable="true"]');
+      if (ready || event.type === 'input' || editing) attempted.current = true;
     };
     element?.addEventListener('pointerdown', interacted, true);
     element?.addEventListener('keydown', interacted, true);
@@ -46,9 +56,9 @@ export function useWorkbenchOnboarding({
       element?.removeEventListener('keydown', interacted, true);
       element?.removeEventListener('input', interacted, true);
     };
-  }, [root]);
+  }, [root, ready]);
   useEffect(() => {
-    if (!autoStart || !ready || !studyId || blocked || attempted.current) return;
+    if (!autoStart || !ready || !studyId || blocked || hasDraft || attempted.current) return;
     if (hasSeenOnboarding(browserStorage())) return;
     let second = 0;
     const first = requestAnimationFrame(() => {
@@ -65,9 +75,9 @@ export function useWorkbenchOnboarding({
       cancelAnimationFrame(first);
       cancelAnimationFrame(second);
     };
-  }, [autoStart, ready, studyId, blocked, root]);
+  }, [autoStart, ready, studyId, blocked, hasDraft, root]);
   const replay = () => {
-    if (!studyId || blocked) return;
+    if (!studyId || !ready || blocked) return;
     attempted.current = true;
     returnFocus.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : root.current;
@@ -81,9 +91,9 @@ export function useWorkbenchOnboarding({
   // An actionable failure takes precedence. It must not reopen the tour once
   // recovery finishes, or be recorded as the learner dismissing it.
   useEffect(() => {
-    if (blocked) {
+    if (blocked || hasDraft) {
       attempted.current = true;
     }
-  }, [blocked]);
+  }, [blocked, hasDraft]);
   return { active, replay, close, returnFocus };
 }

@@ -3039,7 +3039,8 @@
           "body": "Après la visite, vous retrouverez « {{step}} ». Lisez la question de l’assistant ou utilisez les commandes de la tâche. Cette visite n’a rien soumis, approuvé ou fait avancer.",
           "detail": "Au premier accès, revenez à l’introduction du projet et répondez quand vous êtes prêt. Le guide reste accessible en haut. Seuls les soumissions, relectures et résultats réels enregistrent votre progression."
         }
-      }
+      },
+      "waiting": "Le guide sera disponible quand l’environnement sera prêt. Vous pouvez parcourir l’atelier pendant la connexion ; les brouillons sont conservés."
     }
   }
 }

@@ -321,13 +321,41 @@ function PBLV3WorkspaceContent({
               ? 'opening'
               : null;
   const disabled = blockedReason !== null;
-  const onboardingBlocked = !!error || preparationFailed || !!view?.lifecycleError || reportOpen;
+  const onboardingBlocked =
+    !!error ||
+    preparationFailed ||
+    !!view?.lifecycleError ||
+    reportOpen ||
+    !!(view?.roleRun && ['failed', 'missing', 'cancelled'].includes(view.roleRun.status));
+  const onboardingAvailable =
+    layoutReady &&
+    !!view &&
+    (view.completedFilesAvailable ||
+      (view.environment?.ready &&
+        stream.status === 'connected' &&
+        workbench?.environmentId === view.environmentId));
+  // A current snapshot is required to enter, but ordinary HTTP replies can
+  // advance view.revision before SSE delivers its workspace. Keep an already
+  // open guide through that metadata gap; only real unavailability interrupts.
+  const onboardingReady =
+    onboardingAvailable &&
+    (view?.completedFilesAvailable ||
+      (!['open', 'prepare'].includes(pendingAction ?? '') &&
+        !!workbench &&
+        workbench.revision >= view!.revision));
   const onboarding = useWorkbenchOnboarding({
     root: workspaceRoot,
     studyId: view?.id,
-    autoStart: autoOnboarding,
-    ready: layoutReady && !!view && !view.recovery?.progressReset && !view.archiveDiscard,
+    autoStart: autoOnboarding && !view?.recovery?.progressReset && !view?.archiveDiscard,
+    ready: !!onboardingReady,
+    available: !!onboardingAvailable,
     blocked: onboardingBlocked,
+    hasDraft:
+      !!text ||
+      !!pendingMessage ||
+      dirtyFiles ||
+      quizAnswers.values.some((answer) => answer !== null) ||
+      Object.values(decisionDrafts).some((draft) => !!draft.chosen || !!draft.rationale),
   });
   useEffect(() => {
     onOnboardingChange?.(onboarding.active);
@@ -383,8 +411,8 @@ function PBLV3WorkspaceContent({
               data-pbl-tour="replay"
               className="inline-flex shrink-0 items-center gap-1.5 rounded border px-2 py-1.5 text-xs hover:bg-muted disabled:opacity-40"
               aria-label={t('pblV3.onboarding.replay')}
-              title={t('pblV3.onboarding.replay')}
-              disabled={onboardingBlocked}
+              title={t(onboardingReady ? 'pblV3.onboarding.replay' : 'pblV3.onboarding.waiting')}
+              disabled={onboardingBlocked || !onboardingReady}
               onClick={onboarding.replay}
             >
               <BookOpen size={14} />

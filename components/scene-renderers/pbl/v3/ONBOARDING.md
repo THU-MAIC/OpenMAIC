@@ -8,16 +8,24 @@ milestone and installed steps; it never changes progress or opens future tasks.
 
 ## Entry and persistence
 
-A new project starts the guide after the Hero expansion has settled and a
-learning view exists. Interaction with the workspace before that point cancels
-automatic entry. Existing studies use the **Workbench guide** toolbar button.
+A new project starts the guide after the Hero expansion has settled, the learning
+environment is ready, and the connected stream supplies a matching current
+workbench snapshot. It does not wait for the assistant's opening response to finish.
+Browsing the layout while connecting does not cancel automatic entry. Actual
+input or retained drafts defer it; interaction after readiness also takes precedence.
+Existing studies use the **Workbench guide** toolbar button once the workspace is ready.
 The button also replays the guide after skipping or finishing it.
 
 Skipping, closing and finishing share the device-local preference
 `openmaic:pbl-v3:onboarding:v1=seen`. It applies across projects in this browser,
 not across devices or accounts. A denied browser store falls back to the current
 tab's memory. This optional preference is separate from study and editor drafts.
-Actionable workspace errors and the report take precedence over the guide.
+Actionable workspace/assistant errors and the report take precedence over the guide.
+Connection or environment loss closes an open guide; reconnecting does not reopen it
+automatically during the same visit. A completed read-only workspace can replay it
+without preparing an execution environment.
+An ordinary HTTP reply can advance the learning revision before its SSE workspace
+snapshot arrives; this temporarily defers entry without closing an already open guide.
 
 ## Interaction boundary
 

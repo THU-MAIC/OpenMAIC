@@ -11,7 +11,31 @@ test.setTimeout(120000);
 async function project(
   page: Page,
   learningEvents: (read: () => LearningSnapshot) => Promise<() => void>,
-  { started = false, application = true, quiz = false, locale = 'en-US' } = {},
+  {
+    started = false,
+    application = true,
+    quiz = false,
+    locale = 'en-US',
+    environmentReady = true,
+    prepareGate,
+    beginGate,
+    lagOpeningWorkbench = false,
+    opening = false,
+    initialDraft = '',
+    staleWorkbench = false,
+  }: {
+    started?: boolean;
+    application?: boolean;
+    quiz?: boolean;
+    locale?: string;
+    environmentReady?: boolean;
+    prepareGate?: Promise<void>;
+    beginGate?: Promise<void>;
+    lagOpeningWorkbench?: boolean;
+    opening?: boolean;
+    initialDraft?: string;
+    staleWorkbench?: boolean;
+  } = {},
 ) {
   await page.addInitScript((language) => localStorage.setItem('locale', language), locale);
   const stageId = uniqueStageId('onboarding');
@@ -36,7 +60,7 @@ async function project(
     title: 'Workspace guide',
     reportAvailable: false,
     environmentId: 'fixture-environment',
-    environment: { state: 'running', ready: true },
+    environment: { state: environmentReady ? 'running' : 'creating', ready: environmentReady },
     recovery: null,
     state: {
       status: 'running',
@@ -64,7 +88,7 @@ async function project(
     ],
     role: quiz ? null : 'discussion',
     actions: quiz ? ['quiz'] : ['chat'],
-    needsOpening: false,
+    needsOpening: opening,
     files: ['PLAN.md'],
     busy: false,
     messages: [],
@@ -79,7 +103,7 @@ async function project(
       : {}),
   } as unknown as LearningView;
   const workbench = {
-    environmentId: view.environmentId!,
+    environmentId: staleWorkbench ? 'stale-environment' : view.environmentId!,
     revision: 0,
     epoch: 0,
     canEdit: false,
@@ -91,7 +115,23 @@ async function project(
   };
   const commands: string[] = [];
   const calls: string[] = [];
-  await page.route('**/api/pbl/v3**', (route) => {
+  if (initialDraft)
+    await page.addInitScript(
+      ({ id, text }) => {
+        sessionStorage.setItem(
+          `maic:pbl-draft:v1:${id}:ui`,
+          JSON.stringify({
+            text,
+            quizAnswers: { key: '', values: [] },
+            decisionDrafts: {},
+            showWorkspace: true,
+            showAssistant: true,
+          }),
+        );
+      },
+      { id: view.id, text: initialDraft },
+    );
+  await page.route('**/api/pbl/v3**', async (route) => {
     const url = new URL(route.request().url());
     const body = route.request().method() === 'POST' ? route.request().postDataJSON() : null;
     if (url.pathname.endsWith('/activity')) return route.fulfill({ json: { recorded: true } });
@@ -115,18 +155,207 @@ async function project(
     if (url.pathname.endsWith('/workspace')) return route.fulfill({ json: workbench });
     if (url.searchParams.has('file'))
       return route.fulfill({ json: { text: 'A saved plan.', hash: 'a'.repeat(64) } });
-    if (body?.command) commands.push(body.command.type);
+    if (body?.command) {
+      commands.push(body.command.type);
+      if (body.command.type === 'prepare') {
+        await prepareGate;
+        view.environment = { state: 'running', ready: true };
+        view.revision++;
+        workbench.revision = view.revision;
+      }
+      if (body.command.type === 'begin') {
+        await beginGate;
+        view.needsOpening = false;
+        view.busy = true;
+        view.roleRun = { status: 'running', failure: null, canRetry: false };
+        view.revision++;
+        if (!lagOpeningWorkbench) workbench.revision = view.revision;
+      }
+    }
     return route.fulfill({ json: body?.command ? { view } : view });
   });
-  const publish = await learningEvents(() => ({ view, workbench }));
+  const publishRaw = await learningEvents(() => ({
+    view,
+    workbench: view.environment?.ready ? workbench : null,
+  }));
+  const publish = async () => {
+    workbench.revision = view.revision;
+    await publishRaw();
+  };
   await page.goto(`/classroom/${stageId}`);
   await page.locator('[data-testid="pbl-v3-entry"] button').first().click();
   await expect(page.getByTestId('pbl-workspace-frame')).toHaveAttribute('data-expanded', 'true');
-  return { view, workbench, commands, calls, publish, stageId };
+  return { view, workbench, commands, calls, publish, publishRaw, stageId };
 }
 
 const tour = (page: Page) => page.locator('[data-pbl-onboarding="card"]');
 const next = (page: Page) => tour(page).getByRole('button', { name: 'Got it, next', exact: true });
+
+test('keeps the current guide page when an opening reply arrives before its workspace snapshot', async ({
+  page,
+  learningEvents,
+}) => {
+  let release!: () => void;
+  const beginGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const fixture = await project(page, learningEvents, {
+    opening: true,
+    beginGate,
+    lagOpeningWorkbench: true,
+  });
+  await expect.poll(() => fixture.commands).toEqual(['begin']);
+  await expect(tour(page)).toBeVisible();
+  await next(page).click();
+  await expect(tour(page)).toHaveAttribute('data-step', 'progress');
+  const response = page.waitForResponse((response) => {
+    const request = response.request();
+    return (
+      request.method() === 'POST' &&
+      request.url().endsWith('/api/pbl/v3') &&
+      request.postDataJSON()?.command?.type === 'begin'
+    );
+  });
+  release();
+  await (await response).finished();
+  await expect(page.locator('[data-pbl-tour="replay"]')).toBeDisabled();
+  await expect(tour(page)).toHaveAttribute('data-step', 'progress');
+  await fixture.publish();
+  await expect(page.locator('[data-pbl-tour="replay"]')).toBeEnabled();
+  await expect(tour(page)).toHaveAttribute('data-step', 'progress');
+  expect(fixture.commands).toEqual(['begin']);
+});
+
+test('waits through slow preparation and harmless loading clicks, without waiting for the opening reply', async ({
+  page,
+  learningEvents,
+}) => {
+  await page.clock.install();
+  let release!: () => void;
+  const prepareGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const fixture = await project(page, learningEvents, {
+    environmentReady: false,
+    prepareGate,
+    opening: true,
+  });
+  await expect.poll(() => fixture.commands).toContain('prepare');
+  await page.clock.runFor(2000);
+  await expect(page.getByTestId('pbl-environment-setup')).toBeVisible();
+  await expect(page.locator('[data-pbl-tour="replay"]')).toBeDisabled();
+  await expect(tour(page)).toHaveCount(0);
+  await page
+    .getByTestId('pbl-v3-workspace')
+    .getByRole('heading', { name: 'Workspace guide', exact: true })
+    .click();
+  release();
+  await expect.poll(() => fixture.commands).toEqual(['prepare', 'begin']);
+  await expect(tour(page)).toHaveAttribute('data-step', 'welcome');
+  expect(fixture.view.busy).toBe(true);
+  expect(fixture.view.roleRun?.status).toBe('running');
+});
+
+for (const draft of ['typed', 'retained']) {
+  test(`does not interrupt a ${draft} draft after the learning environment connects`, async ({
+    page,
+    learningEvents,
+  }) => {
+    await page.clock.install();
+    let release!: () => void;
+    const prepareGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const text = 'A draft kept while the environment connects';
+    const fixture = await project(page, learningEvents, {
+      environmentReady: false,
+      prepareGate,
+      initialDraft: draft === 'retained' ? text : '',
+    });
+    const composer = page.locator('[data-pbl-tour="composer"] textarea');
+    if (draft === 'typed') await composer.fill(text);
+    await expect(composer).toHaveValue(text);
+    await page.clock.runFor(2000);
+    await expect(tour(page)).toHaveCount(0);
+    release();
+    await expect(page.locator('[data-pbl-tour="replay"]')).toBeEnabled();
+    await expect(tour(page)).toHaveCount(0);
+    await page.locator('[data-pbl-tour="replay"]').click();
+    await expect(tour(page)).toBeVisible();
+    await tour(page).getByRole('button', { name: 'Skip for now', exact: true }).click();
+    await expect(composer).toHaveValue(text);
+    expect(fixture.commands).toEqual(['prepare']);
+  });
+}
+
+test('requires a current matching workspace snapshot before introducing the workbench', async ({
+  page,
+  learningEvents,
+}) => {
+  await page.clock.install();
+  const fixture = await project(page, learningEvents, { staleWorkbench: true });
+  await page.clock.runFor(2000);
+  await expect(tour(page)).toHaveCount(0);
+  await expect(page.locator('[data-pbl-tour="replay"]')).toBeDisabled();
+  fixture.workbench.environmentId = fixture.view.environmentId!;
+  fixture.view.revision += 2;
+  await fixture.publishRaw();
+  await page.clock.runFor(100);
+  await expect(tour(page)).toHaveCount(0);
+  await expect(page.locator('[data-pbl-tour="replay"]')).toBeDisabled();
+  fixture.workbench.revision = fixture.view.revision;
+  await fixture.publishRaw();
+  await expect(tour(page)).toBeVisible();
+  expect(fixture.commands).toEqual([]);
+});
+
+test('gives asynchronous assistant failure and retry feedback priority over the guide', async ({
+  page,
+  learningEvents,
+}) => {
+  const fixture = await project(page, learningEvents);
+  await expect(tour(page)).toBeVisible();
+  for (const status of ['failed', 'missing', 'cancelled'] as const) {
+    fixture.view.busy = false;
+    fixture.view.roleRun = { status, failure: null, canRetry: true };
+    fixture.view.revision++;
+    await fixture.publish();
+    await expect(tour(page)).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Retry response', exact: true })).toBeVisible();
+    await expect(page.locator('[data-pbl-tour="replay"]')).toBeDisabled();
+    fixture.view.roleRun = { status: 'succeeded', failure: null, canRetry: false };
+    fixture.view.revision++;
+    await fixture.publish();
+    await expect(page.locator('[data-pbl-tour="replay"]')).toBeEnabled();
+    await expect(tour(page)).toHaveCount(0);
+    await page.locator('[data-pbl-tour="replay"]').click();
+    await expect(tour(page)).toBeVisible();
+  }
+  expect(fixture.commands).toEqual([]);
+});
+
+test('closes for environment loss and leaves reconnect recovery in the learner’s control', async ({
+  page,
+  learningEvents,
+}) => {
+  const fixture = await project(page, learningEvents);
+  await expect(tour(page)).toBeVisible();
+  fixture.view.environment = { state: 'stopped', ready: false };
+  fixture.view.busy = true;
+  fixture.view.revision++;
+  await fixture.publish();
+  await expect(tour(page)).toHaveCount(0);
+  await expect(page.getByTestId('pbl-environment-setup')).toBeVisible();
+  fixture.view.environment = { state: 'running', ready: true };
+  fixture.view.busy = false;
+  fixture.view.revision++;
+  await fixture.publish();
+  await expect(page.locator('[data-pbl-tour="replay"]')).toBeEnabled();
+  await expect(tour(page)).toHaveCount(0);
+  await page.locator('[data-pbl-tour="replay"]').click();
+  await expect(tour(page)).toBeVisible();
+  expect(fixture.commands).toEqual([]);
+});
 
 test('fresh entry follows all 13 real regions without submitting, then remembers completion', async ({
   page,
@@ -170,6 +399,20 @@ test('fresh entry follows all 13 real regions without submitting, then remembers
   await page.locator('[data-pbl-tour="replay"]').click();
   await expect(tour(page)).toHaveAttribute('data-step', 'welcome');
   await page.keyboard.press('Escape');
+  await expect(tour(page)).toHaveCount(0);
+  await expect(page.locator('[data-pbl-tour="replay"]')).toBeFocused();
+  expect(fixture.commands).toEqual([]);
+});
+
+test('can replay the guide in a ready docked workspace', async ({ page, learningEvents }) => {
+  const fixture = await project(page, learningEvents);
+  await expect(tour(page)).toBeVisible();
+  await tour(page).getByRole('button', { name: 'Skip for now', exact: true }).click();
+  await page.getByRole('button', { name: 'Exit fullscreen workspace', exact: true }).click();
+  await expect(page.getByTestId('pbl-workspace-frame')).toHaveAttribute('data-expanded', 'false');
+  await page.locator('[data-pbl-tour="replay"]').click();
+  await expect(tour(page)).toBeVisible();
+  await tour(page).getByRole('button', { name: 'Close tour', exact: true }).click();
   await expect(tour(page)).toHaveCount(0);
   await expect(page.locator('[data-pbl-tour="replay"]')).toBeFocused();
   expect(fixture.commands).toEqual([]);

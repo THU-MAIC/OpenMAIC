@@ -3039,7 +3039,8 @@
           "body": "Sau hướng dẫn, bạn quay lại {{step}}. Đọc câu hỏi của trợ lý hoặc dùng các nút nhiệm vụ. Hướng dẫn chưa nộp, duyệt hay đẩy tiến độ thay bạn.",
           "detail": "Lần đầu hãy quay về phần giới thiệu và trả lời khi sẵn sàng, hoặc đặt câu hỏi. Có thể mở lại hướng dẫn từ thanh trên. Việc nộp, duyệt và kết quả chạy thực tế ghi nhận tiến độ."
         }
-      }
+      },
+      "waiting": "Hướng dẫn sẽ có khi môi trường học sẵn sàng. Bạn có thể xem giao diện trong lúc kết nối; bản nháp được giữ lại."
     }
   }
 }

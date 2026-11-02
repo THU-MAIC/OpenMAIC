@@ -158,8 +158,8 @@ export function PBLV3Container({ sceneId }: { sceneId: string }) {
               <PBLV3Workspace
                 sceneId={sceneId}
                 onReturnToHero={returnToHero}
-                autoOnboarding={autoOnboarding}
-                layoutReady={expanded && !autoExpand}
+                autoOnboarding={autoOnboarding && expanded}
+                layoutReady={!autoExpand}
                 onOnboardingChange={setOnboardingOpen}
               />
             )}

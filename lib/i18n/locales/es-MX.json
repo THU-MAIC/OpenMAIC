@@ -3039,7 +3039,8 @@
           "body": "Al terminar volverás a {{step}}. Lee la pregunta del asistente o usa los controles de la tarea. El recorrido no ha entregado, aprobado ni avanzado nada por ti.",
           "detail": "En el primer ingreso, vuelve a la presentación y responde cuando estés listo o pregunta tus dudas. Puedes repetir la guía desde arriba. Tu avance real se registra mediante entregas, revisiones y resultados."
         }
-      }
+      },
+      "waiting": "La guía estará disponible cuando el entorno esté listo. Puedes explorar mientras se conecta; los borradores se conservan."
     }
   }
 }
