@@ -1,5 +1,6 @@
 import type { Api, Model } from '@earendil-works/pi-ai';
 
+import { getProvider } from '@/lib/ai/providers';
 import { slotLanguageModel } from '@/lib/server/model-config/llm';
 import {
   lookupSlot,
@@ -7,6 +8,7 @@ import {
   SlotUnassignedError,
 } from '@/lib/server/model-config/runtime';
 import type { ResolvedModel } from '@/lib/server/resolve-model';
+import type { ProviderId } from '@/lib/types/provider';
 
 export const AGENT_DRIVER_STAGE = 'maic-agent-driver' as const;
 export const UNKNOWN_MODEL_RESERVED_OUTPUT_TOKENS = 8_192;
@@ -51,6 +53,35 @@ export function buildPiDriverModel(
 }
 
 /**
+ * Whether tool results may carry image parts for this driver connection.
+ *
+ * A catalog-declared vision capability always wins, including an explicit
+ * false. For models the catalog does not know — every model served through a
+ * custom openai-compatible provider has no catalog entry — images are trusted
+ * only when the *actual HTTP transport* speaks an OpenAI wire dialect: the
+ * registry entry `languageModelFor` selected from `connection.providerId`,
+ * which is what `openai` and `azure` (and the openai-compatible presets riding
+ * on them) resolve to. Those APIs accept image parts in tool results, and
+ * silently swapping the observations for a placeholder hides the real failure
+ * when a model truly cannot take images (the provider's own error surfaces
+ * instead). The pi adapter dialect alone cannot make this decision: `api`
+ * defaults to `openai-completions` for every provider, so gating on it trusts a
+ * non-OpenAI transport with images and the run fails at the provider. Every
+ * other transport stays unknown (undefined), which keeps the upstream default
+ * of omitting images.
+ */
+export function toolImageSupport(
+  connection: ResolvedModel,
+  api: Api,
+): boolean | undefined {
+  const declared = connection.modelInfo?.capabilities?.vision;
+  if (declared !== undefined) return declared;
+  const registry = getProvider(connection.providerId as ProviderId);
+  const openAiWire = registry?.type === 'openai' || registry?.type === 'azure';
+  return openAiWire && OPENAI_PI_APIS.has(api) ? true : undefined;
+}
+
+/**
  * Resolve the driver through the `agent` slot for `workspaceId` (where an
  * older deployment's translated defaults leave the agent off). The slot requires tool calling; a model the catalogue says lacks it is
  * refused. The transport dialect defaults to openai-completions.
@@ -62,6 +93,8 @@ export async function resolveAgentDriverModel(workspaceId: string | null = null)
   wireMaxOutputTokens?: number;
   /** Internal compaction output-space estimate; never used as a conversation API limit. */
   reservedOutputTokens: number;
+  /** Tool-result image forwarding; undefined keeps the upstream default of omitting images. */
+  supportsToolImages?: boolean;
 }> {
   const resolution = await lookupSlot('agent', workspaceId);
   if (resolution.status === 'disabled') throw new SlotDisabledError('agent');
@@ -82,14 +115,12 @@ export async function resolveAgentDriverModel(workspaceId: string | null = null)
     );
   }
   const connection = await slotLanguageModel(resolution);
+  const api = resolution.api ?? DEFAULT_DRIVER_API;
   const wireMaxOutputTokens = connection.modelInfo?.outputWindow;
   return {
     connection,
-    piModel: buildPiDriverModel(
-      connection,
-      resolution.api ?? DEFAULT_DRIVER_API,
-      resolution.contextWindow,
-    ),
+    piModel: buildPiDriverModel(connection, api, resolution.contextWindow),
+    supportsToolImages: toolImageSupport(connection, api),
     wireMaxOutputTokens,
     reservedOutputTokens: wireMaxOutputTokens ?? UNKNOWN_MODEL_RESERVED_OUTPUT_TOKENS,
   };

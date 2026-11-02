@@ -239,3 +239,38 @@ describe('agent driver model', () => {
     expect(resolved.piModel.contextWindow).toBe(32_000);
   });
 });
+
+describe('toolImageSupport', () => {
+  const load = async () =>
+    (await import('@/lib/server/agent-runtime/agent-driver-model')).toolImageSupport;
+
+  it('prefers the catalog-declared vision capability, including an explicit false', async () => {
+    const toolImageSupport = await load();
+    expect(
+      toolImageSupport(
+        { modelInfo: { capabilities: { vision: true } } } as never,
+        'openai-completions',
+      ),
+    ).toBe(true);
+    expect(
+      toolImageSupport(
+        { modelInfo: { capabilities: { vision: false } } } as never,
+        'openai-completions',
+      ),
+    ).toBe(false);
+  });
+
+  it('assumes tool-image support for catalog-less models on the OpenAI dialects', async () => {
+    const toolImageSupport = await load();
+    for (const api of ['openai-completions', 'openai-responses'] as const) {
+      expect(toolImageSupport({ modelInfo: undefined } as never, api)).toBe(true);
+    }
+  });
+
+  it('leaves catalog-less models on other dialects at the upstream default', async () => {
+    const toolImageSupport = await load();
+    expect(toolImageSupport({ modelInfo: undefined } as never, 'anthropic-messages' as never)).toBe(
+      undefined,
+    );
+  });
+});
