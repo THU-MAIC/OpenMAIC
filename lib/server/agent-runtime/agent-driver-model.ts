@@ -1,5 +1,6 @@
 import type { Api, Model } from '@earendil-works/pi-ai';
 
+import { getProvider } from '@/lib/ai/providers';
 import { slotLanguageModel } from '@/lib/server/model-config/llm';
 import {
   lookupSlot,
@@ -7,6 +8,7 @@ import {
   SlotUnassignedError,
 } from '@/lib/server/model-config/runtime';
 import type { ResolvedModel } from '@/lib/server/resolve-model';
+import type { ProviderId } from '@/lib/types/provider';
 
 export const AGENT_DRIVER_STAGE = 'maic-agent-driver' as const;
 export const UNKNOWN_MODEL_RESERVED_OUTPUT_TOKENS = 8_192;
@@ -55,12 +57,18 @@ export function buildPiDriverModel(
  *
  * A catalog-declared vision capability always wins, including an explicit
  * false. For models the catalog does not know — every model served through a
- * custom openai-compatible provider has no catalog entry — the OpenAI wire
- * dialects are trusted with images: their APIs accept image parts in tool
- * results, and silently swapping the observations for a placeholder hides the
- * real failure when a model truly cannot take images (the provider's own
- * error surfaces instead). Non-OpenAI dialects stay unknown (undefined),
- * which keeps the upstream default of omitting images.
+ * custom openai-compatible provider has no catalog entry — images are trusted
+ * only when the *actual HTTP transport* speaks an OpenAI wire dialect: the
+ * registry entry `languageModelFor` selected from `connection.providerId`,
+ * which is what `openai` and `azure` (and the openai-compatible presets riding
+ * on them) resolve to. Those APIs accept image parts in tool results, and
+ * silently swapping the observations for a placeholder hides the real failure
+ * when a model truly cannot take images (the provider's own error surfaces
+ * instead). The pi adapter dialect alone cannot make this decision: `api`
+ * defaults to `openai-completions` for every provider, so gating on it trusts a
+ * non-OpenAI transport with images and the run fails at the provider. Every
+ * other transport stays unknown (undefined), which keeps the upstream default
+ * of omitting images.
  */
 export function toolImageSupport(
   connection: ResolvedModel,
@@ -68,7 +76,9 @@ export function toolImageSupport(
 ): boolean | undefined {
   const declared = connection.modelInfo?.capabilities?.vision;
   if (declared !== undefined) return declared;
-  return OPENAI_PI_APIS.has(api) ? true : undefined;
+  const registry = getProvider(connection.providerId as ProviderId);
+  const openAiWire = registry?.type === 'openai' || registry?.type === 'azure';
+  return openAiWire && OPENAI_PI_APIS.has(api) ? true : undefined;
 }
 
 /**
