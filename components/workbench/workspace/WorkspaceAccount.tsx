@@ -334,17 +334,19 @@ function AccountMenu({
                     ref={editorRef}
                     data-testid="workspace-profile-editor"
                     data-profile-editor=""
-                    className="relative px-1 pb-1.5 pt-1"
+                    className="relative pb-1.5 pt-1"
                     // The menu's typeahead and arrows would otherwise take the keys typed here.
                     onKeyDown={(event) => {
                       if (event.key !== 'Escape') event.stopPropagation();
                     }}
                   >
                     <UserProfileCard
-                      className="!border-0 !bg-transparent !p-2.5 !shadow-none !backdrop-blur-none"
+                      className="!border-0 !bg-transparent !p-2.5 !shadow-none !ring-0 !backdrop-blur-none"
                       onSaved={markSaved}
                     />
-                    <div className="absolute right-2 top-2.5 flex items-center gap-1.5">
+                    {/* The chevron's glyph ends on the card's right edge: the 24px
+                        button holds a 14px glyph, so it sits 5px past the 10px inset. */}
+                    <div className="absolute right-[5px] top-3.5 flex items-center gap-1.5">
                       <span
                         data-testid="workspace-profile-saved"
                         aria-live="polite"

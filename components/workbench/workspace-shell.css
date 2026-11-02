@@ -1971,7 +1971,15 @@
   color: var(--ws-ink-mute);
 }
 
+/* A square exactly the avatar's size, so the ring its box-shadow draws is a
+   circle concentric with the avatar. */
 .ws-account-mini {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
   border-radius: 9999px;
 }
 
@@ -2131,7 +2139,7 @@
 
 /* The profile editor in the account menu, on the menu's type scale: the bio
    reads at a menu row's 13.5px, the name one step up, the hint and the
-   secondary labels at 12px. Scoped here, so the classic editor keeps its own. */
+   secondary labels at 12px. Scoped here: the editor sets none of this itself. */
 [data-profile-editor] [data-profile-avatar] {
   width: 40px;
   height: 40px;

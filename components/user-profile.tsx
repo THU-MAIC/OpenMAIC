@@ -20,6 +20,10 @@ const MAX_AVATAR_SIZE = 5 * 1024 * 1024; // 5 MB
 
 const FILE_INPUT_ID = 'user-avatar-upload';
 
+/** The selected avatar: a box-shadow ring outside the tile, so nothing in the row moves. */
+const AVATAR_SELECTED_RING =
+  'ring-2 ring-violet-400 dark:ring-violet-500 ring-offset-1 ring-offset-popover';
+
 /**
  * Turn a picked image file into the stored avatar: a 128px, centre-cropped
  * JPEG data-URL. Resolves null (after saying why) for a file that is too large
@@ -228,15 +232,23 @@ export function UserProfileCard({
           ) : (
             <button
               onClick={startEditName}
-              className="group/name flex items-center gap-1.5 cursor-pointer"
+              // Room on the right for the host's "Saved" tick and collapse button.
+              className="group/name flex max-w-[calc(100%-4.5rem)] items-center gap-1.5 cursor-pointer"
             >
-              <span data-profile-name="" className="text-sm font-semibold text-foreground truncate">
+              <span
+                data-profile-name=""
+                className="min-w-0 text-sm font-semibold text-foreground truncate"
+              >
                 {displayName}
               </span>
-              <Pencil className="size-3 text-muted-foreground/40 opacity-0 group-hover/name:opacity-100 transition-opacity" />
+              <Pencil className="size-3 shrink-0 text-muted-foreground/40 opacity-0 group-hover/name:opacity-100 transition-opacity" />
             </button>
           )}
-          <p data-profile-hint="" className="text-[10px] text-muted-foreground/50 mt-0.5">
+          <p
+            data-profile-hint=""
+            title={t('profile.avatarHint')}
+            className="truncate text-[10px] text-muted-foreground/50 mt-0.5"
+          >
             {t('profile.avatarHint')}
           </p>
         </div>
@@ -250,19 +262,20 @@ export function UserProfileCard({
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2, ease: 'easeInOut' }}
-            className="overflow-hidden"
+            // The clip stands 4px past the content so a selected ring and a hover
+            // scale are not cut; the grid itself keeps the bio's left and right.
+            className="-mx-1 overflow-hidden px-1"
           >
-            {/* p-1 gives breathing room so ring-offset / hover-scale aren't clipped */}
-            <div className="pt-3 pb-1 px-1 flex items-center gap-1.5 flex-wrap">
+            <div data-profile-avatars="" className="grid grid-cols-8 gap-1 pb-1 pt-3">
               {AVATAR_OPTIONS.map((url) => (
                 <button
                   key={url}
                   onClick={() => pickAvatar(url)}
                   className={cn(
-                    'size-8 rounded-full overflow-hidden bg-gray-50 dark:bg-gray-800 cursor-pointer transition-all duration-150',
+                    'aspect-square w-full overflow-hidden rounded-full bg-gray-50 dark:bg-gray-800 cursor-pointer transition-all duration-150',
                     'hover:scale-110 active:scale-95',
                     avatar === url
-                      ? 'ring-2 ring-violet-400 dark:ring-violet-500 ring-offset-1 ring-offset-white dark:ring-offset-slate-900'
+                      ? AVATAR_SELECTED_RING
                       : 'hover:ring-1 hover:ring-muted-foreground/30',
                   )}
                 >
@@ -274,10 +287,13 @@ export function UserProfileCard({
               <label
                 htmlFor={FILE_INPUT_ID}
                 className={cn(
-                  'size-8 rounded-full flex items-center justify-center cursor-pointer transition-all duration-150 border border-dashed',
+                  'flex aspect-square w-full items-center justify-center rounded-full cursor-pointer transition-all duration-150 border border-dashed',
                   'hover:scale-110 active:scale-95',
                   isCustomAvatar(avatar)
-                    ? 'ring-2 ring-violet-400 dark:ring-violet-500 ring-offset-1 ring-offset-white dark:ring-offset-slate-900 border-violet-300 dark:border-violet-600 bg-violet-50 dark:bg-violet-900/30'
+                    ? cn(
+                        AVATAR_SELECTED_RING,
+                        'border-violet-300 dark:border-violet-600 bg-violet-50 dark:bg-violet-900/30',
+                      )
                     : 'border-muted-foreground/30 text-muted-foreground/50 hover:border-muted-foreground/50',
                 )}
                 title={t('profile.uploadAvatar')}
