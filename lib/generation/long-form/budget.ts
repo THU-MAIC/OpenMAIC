@@ -380,10 +380,27 @@ export function detectRequestedMinutes(requirement: string): number | null {
 function durationContext(text: string, match: DurationMatch): DurationContext {
   if (DURATION_INTENT.test(text.slice(Math.max(0, match.start - 24), match.end))) return 'course';
 
-  const after = text.slice(match.end, match.end + 12);
+  const after = followingClause(text, match.end);
   if (COURSE_NOUN.test(after)) return 'course';
   if (LENGTH_FOLLOWER.test(after)) return 'bare';
   return 'attributive';
+}
+
+/**
+ * The clause a duration opens, capped.
+ *
+ * Twelve characters were not enough for the ordinary way to write a lesson:
+ * `Create a 60-minute online course` leaves `" online cour"`, so the noun was
+ * cut in half and an explicit hour went down the short path. The window now
+ * stops at the first clause boundary and is long enough for a modifier or two —
+ * `a 60-minute hands-on course` — without reaching into the next clause, which
+ * is where a topical figure keeps its own noun (`the 30-minute insulin response,
+ * as this course explains`).
+ */
+function followingClause(text: string, from: number): string {
+  const rest = text.slice(from, from + 40);
+  const boundary = rest.search(/[，。、；：,.;:!?！？\n]/);
+  return (boundary === -1 ? rest : rest.slice(0, boundary)).slice(0, 20);
 }
 
 /**

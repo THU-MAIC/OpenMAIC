@@ -361,6 +361,38 @@ const CODE_WEIGHT: Readonly<Record<AuditCode, number>> = {
 };
 
 /**
+ * Codes that describe the course's shape, not one page's content.
+ *
+ * These are the findings nothing downstream can repair: a module with no
+ * retrieval page stays without one, and an outline eight minutes short of its
+ * budget is still short after every page has been written.
+ */
+const STRUCTURAL_CODES: ReadonlySet<AuditCode> = new Set<AuditCode>([
+  'page-count',
+  'duration-drift',
+  'missing-check',
+  'missing-decision',
+]);
+
+/**
+ * Structural codes the second draft has and the first did not.
+ *
+ * Severity is a sum, so a repair can pay for a lost retrieval page with two
+ * written objectives — 5 against 3 + 3 — and still look like progress. A
+ * structural finding is not a quantity to trade: it names a beat the course no
+ * longer has.
+ */
+export function newStructuralDefects(before: OutlineAudit, after: OutlineAudit): AuditCode[] {
+  const had = new Set(
+    before.defects.filter((defect) => STRUCTURAL_CODES.has(defect.code)).map((defect) => defect.code),
+  );
+  const added = after.defects.filter(
+    (defect) => STRUCTURAL_CODES.has(defect.code) && !had.has(defect.code),
+  );
+  return [...new Set(added.map((defect) => defect.code))];
+}
+
+/**
  * One number for how bad an outline's arithmetic is.
  *
  * Counting defects is not enough to compare two drafts. A repair that writes a

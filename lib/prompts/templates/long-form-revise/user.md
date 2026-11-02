@@ -1,4 +1,4 @@
-Repair the outline below against the defects listed. Change only what the defects require, keep every surviving scene id, and return the corrected outline as one JSON object.
+Repair the outline below against the defects listed. Change only what the defects require, keep every surviving scene id, and return the changes as one patch — `edits`, `inserts`, `removals` — naming only the pages you touch.
 
 ---
 

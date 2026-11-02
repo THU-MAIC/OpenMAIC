@@ -24,7 +24,7 @@ When two defects touch the same page, apply both in one pass over that page rath
 - Do not "improve" wording, titles or examples you were not asked about.
 - Do not add a summary page, an agenda page, or a "thank you" page.
 - Do not drop pages to make the fixes fit.
-- Do not explain what you changed. Return the outline only.
+- Do not explain what you changed. Return the patch only.
 
 ## Output
 

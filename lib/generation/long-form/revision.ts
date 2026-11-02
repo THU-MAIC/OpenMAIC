@@ -22,7 +22,12 @@
 import type { SceneOutline } from '@/lib/types/generation';
 
 import type { AuditCode, OutlineAudit } from './audit';
-import { auditIsClean, auditSeverity, prioritizeDefects } from './audit';
+import {
+  auditIsClean,
+  auditSeverity,
+  newStructuralDefects,
+  prioritizeDefects,
+} from './audit';
 
 /** The five things a long-form outline is reviewed on. */
 export const CRITIQUE_DIMENSIONS = [
@@ -226,10 +231,16 @@ export function shouldRevise(critique: Critique, round: number): boolean {
  * `isSafeRevision` is structural — page count, ids, types — and a new page may
  * arrive without a duration or an objective, because both are optional in the
  * patch. The last round has no next critique to catch that, so the repair is
- * measured against the arithmetic before it is adopted: a repair that raises the
- * defect count is not an improvement, whatever the critic asked for.
+ * measured against the arithmetic before it is adopted.
+ *
+ * Two tests, because either alone can be gamed. Severity is a sum, so a repair
+ * that fixes two objectives and loses a module's retrieval page nets out as
+ * progress (5 against 3 + 3) — a structural finding is not a quantity to trade,
+ * so a newly introduced one refuses the repair outright. And a repair that only
+ * piles up page-level defects raises the sum without introducing any.
  */
 export function repairWorsens(before: OutlineAudit, after: OutlineAudit): boolean {
+  if (newStructuralDefects(before, after).length > 0) return true;
   return auditSeverity(after) > auditSeverity(before);
 }
 

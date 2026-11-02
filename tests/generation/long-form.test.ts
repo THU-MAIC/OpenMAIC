@@ -123,6 +123,33 @@ describe('detectRequestedMinutes', () => {
     const courseFirst = 'Create a 60-minute course about the 2-hour insulin response';
     expect(detectLongForm(courseFirst)).toEqual({ isLongForm: true, requestedMinutes: 60 });
   });
+
+  it('sees the course noun past a modifier', () => {
+    // A twelve-character window ended at `" online cour"`, so an explicit hour
+    // went down the short path — the failure this feature exists to prevent.
+    expect(detectLongForm('Create a 60-minute online course')).toEqual({
+      isLongForm: true,
+      requestedMinutes: 60,
+    });
+    expect(detectLongForm('a 90-minute hands-on tutorial')).toEqual({
+      isLongForm: true,
+      requestedMinutes: 90,
+    });
+    expect(detectLongForm('60 分钟的在线课程')).toEqual({ isLongForm: true, requestedMinutes: 60 });
+  });
+
+  it('does not reach past the clause for a course noun', () => {
+    // The wider window must not turn a topical figure into a sitting: the noun
+    // in the next clause belongs to a different claim.
+    expect(detectLongForm('explain the 30-minute insulin response, as this course does')).toEqual({
+      isLongForm: false,
+      requestedMinutes: 30,
+    });
+    expect(detectLongForm('30 分钟的胰岛素反应是怎么回事，这门课会讲')).toEqual({
+      isLongForm: false,
+      requestedMinutes: 30,
+    });
+  });
 });
 
 describe('detectLongForm', () => {

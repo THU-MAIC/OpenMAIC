@@ -8,6 +8,7 @@ import {
   applyRevisionPatch,
   auditOutline,
   auditSeverity,
+  newStructuralDefects,
   critiquePasses,
   defectPages,
   extractJsonObject,
@@ -22,6 +23,7 @@ import {
   repairWorsens,
   shouldRevise,
 } from '@/lib/generation/long-form';
+import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
 import type { AuditDefect } from '@/lib/generation/long-form';
 import type { SceneOutline } from '@/lib/types/generation';
 
@@ -693,5 +695,56 @@ describe('auditSeverity', () => {
     expect(auditSeverity(structural)).toBeGreaterThan(auditSeverity(pageLevel));
     expect(repairWorsens(pageLevel, structural)).toBe(true);
     expect(repairWorsens(structural, pageLevel)).toBe(false);
+  });
+
+  it('does not let page-level fixes pay for a structural one', () => {
+    // Two missing objectives are 3 + 3; a lost module-end quiz is 5. The sum says
+    // the repair improved the outline, and the course lost a retrieval beat that
+    // nothing later in the pipeline puts back — so a structural code the draft did
+    // not have refuses the repair whatever else it fixed.
+    const base = {
+      totalSeconds: 3600,
+      targetSeconds: 3600,
+      driftPct: 0,
+      pages: 29,
+      summary: '',
+    };
+    const draft = {
+      ...base,
+      defects: [
+        { code: 'missing-objective' as const, pageIndex: 4, detail: 'no objective' },
+        { code: 'missing-objective' as const, pageIndex: 9, detail: 'no objective' },
+      ],
+    };
+    const repaired = {
+      ...base,
+      defects: [{ code: 'missing-check' as const, pageIndex: 12, detail: 'no retrieval' }],
+    };
+
+    expect(auditSeverity(repaired)).toBeLessThan(auditSeverity(draft));
+    expect(newStructuralDefects(draft, repaired)).toEqual(['missing-check']);
+    expect(repairWorsens(draft, repaired)).toBe(true);
+  });
+});
+
+describe('the repair prompt', () => {
+  it('asks for a patch in every instruction, not only in the output schema', () => {
+    const prompt = buildPrompt(PROMPT_IDS.LONG_FORM_REVISE, {
+      requirement: 'a 60-minute course',
+      budget: 'the budget',
+      outline: '[]',
+      defects: '- page 7: no derivation',
+    })!;
+
+    // `reviseOnce` parses `{edits, inserts, removals}`. Two sentences still asked
+    // for "the corrected outline", and a model following either returned a whole
+    // course — which `parseRevisionPatch` reads as no sections at all, so the
+    // repair was dropped and the defective draft shipped unmodified.
+    for (const text of [prompt.system, prompt.user]) {
+      expect(text).not.toMatch(/corrected outline/i);
+      expect(text).not.toMatch(/Return the outline only/i);
+    }
+    expect(prompt.system).toContain('Return the patch only');
+    expect(prompt.user).toContain('return the changes as one patch');
   });
 });

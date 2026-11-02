@@ -24,8 +24,22 @@ import type { SceneOutline } from '@/lib/types/generation';
  * the long-form density, but a two-hour one plans ~110, and the cap has to clear
  * the longest course the planner will produce rather than the typical one. The
  * byte cap below still bounds the actual payload.
+ *
+ * This is the hard ceiling, not the default: a caller that knows the course is
+ * not long-form gets {@link DEFAULT_OUTLINE_SCENES}, because a runaway short
+ * outline of 240 scenes is 720 model calls for a shape none of those prompts
+ * permits.
  */
 export const MAX_OUTLINE_SCENES = 240;
+/**
+ * The most scenes an outline may plan when the caller names no bound.
+ *
+ * The cap every non-long-form path had before long-form existed. A short lesson
+ * is one to two scenes per minute, so even an hour is under this; anything past
+ * it is a model that ran away, and the long-form path is the only one whose plan
+ * can legitimately exceed it.
+ */
+export const DEFAULT_OUTLINE_SCENES = 100;
 /**
  * The most an outline may be, in UTF-8 bytes of JSON: the outline step's own
  * read cap on the model's output, in the same unit.
@@ -209,21 +223,24 @@ function sceneOutline(value: unknown, index: number): SceneOutline {
 
 /**
  * The outline in its normal form, or why it cannot be one: not 1 to
- * {@link MAX_OUTLINE_SCENES} scenes, over {@link MAX_OUTLINE_JSON_BYTES},
- * or a scene without a usable id, type or order (ids and orders unique).
+ * {@link DEFAULT_OUTLINE_SCENES} scenes ({@link MAX_OUTLINE_SCENES} at the
+ * absolute most), over {@link MAX_OUTLINE_JSON_BYTES}, or a scene without a
+ * usable id, type or order (ids and orders unique).
  *
  * `maxScenes` and `minScenes` narrow the bounds for a caller that knows how many
  * pages this particular course should have. A long-form plan produces at most
  * ~110 pages and at least a fifth fewer than it planned, so an outline of 240 is
  * not a long course — it is a model that ignored the budget — and an outline of
- * one page is not an hour.
+ * one page is not an hour. A caller that passes no bound gets the short-lesson
+ * cap: the long-form allowance has to be asked for, or every other path silently
+ * inherits it.
  */
 export function normalizeSceneOutlines(
   value: unknown,
   options: { minScenes?: number; maxScenes?: number } = {},
 ): NormalizedOutlines {
   const limit = Math.min(
-    options.maxScenes !== undefined ? Math.max(1, options.maxScenes) : MAX_OUTLINE_SCENES,
+    options.maxScenes !== undefined ? Math.max(1, options.maxScenes) : DEFAULT_OUTLINE_SCENES,
     MAX_OUTLINE_SCENES,
   );
   const floor = Math.min(

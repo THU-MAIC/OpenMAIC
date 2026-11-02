@@ -6,7 +6,11 @@ import {
   pageFloorFor,
   planLongFormCourse,
 } from '@/lib/generation/long-form';
-import { normalizeSceneOutlines } from '@/lib/server/generation/outline-schema';
+import {
+  DEFAULT_OUTLINE_SCENES,
+  MAX_OUTLINE_SCENES,
+  normalizeSceneOutlines,
+} from '@/lib/server/generation/outline-schema';
 import type { SceneOutline } from '@/lib/types/generation';
 
 const plan = planLongFormCourse({ minutes: 60, language: 'zh' });
@@ -307,8 +311,11 @@ describe('pageCeilingFor', () => {
       order: index + 1,
     }));
 
-    // The shared cap still accepts it, which is why the caller has to narrow it.
-    expect(normalizeSceneOutlines(onePagePerMinute).ok).toBe(true);
+    // Even the absolute ceiling accepts it — it is 240 — which is why the caller
+    // has to narrow it to what the plan can account for.
+    expect(normalizeSceneOutlines(onePagePerMinute, { maxScenes: MAX_OUTLINE_SCENES }).ok).toBe(
+      true,
+    );
     expect(
       normalizeSceneOutlines(onePagePerMinute, { maxScenes: pageCeilingFor(fourHours) }).ok,
     ).toBe(false);
@@ -389,5 +396,27 @@ describe('retrieval config validity', () => {
     );
     const audit = auditOutline(plan, outline);
     expect(audit.defects.some((defect) => defect.code === 'missing-check')).toBe(false);
+  });
+});
+
+describe('the outline cap', () => {
+  it('keeps the short-lesson bound unless a plan asks for more', () => {
+    // The ceiling was raised to 240 so a two-hour long-form plan fits, and a
+    // default is a default: every short, interactive and Task Engine path then
+    // inherited it, so a runaway outline of 120 scenes scheduled 360 model calls
+    // for a shape none of those prompts permits. The larger allowance has to be
+    // asked for.
+    const runaway: SceneOutline[] = Array.from({ length: 120 }, (_, index) => ({
+      id: `scene_${index + 1}`,
+      type: 'slide',
+      title: `P${index + 1}`,
+      description: '',
+      keyPoints: ['a'],
+      order: index + 1,
+    }));
+
+    expect(DEFAULT_OUTLINE_SCENES).toBe(100);
+    expect(normalizeSceneOutlines(runaway).ok).toBe(false);
+    expect(normalizeSceneOutlines(runaway, { maxScenes: 135 }).ok).toBe(true);
   });
 });

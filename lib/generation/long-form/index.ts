@@ -48,6 +48,7 @@ export {
   auditIsClean,
   auditOutline,
   auditSeverity,
+  newStructuralDefects,
   pageCeilingFor,
   pageFloorFor,
   prioritizeDefects,
