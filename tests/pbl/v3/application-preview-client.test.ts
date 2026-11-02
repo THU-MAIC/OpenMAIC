@@ -1562,3 +1562,87 @@ it.each(['ready', 'still-starting', 'rotated', 'failed'])(
     }
   },
 );
+
+it.each(['auth', 'timeout'])(
+  'reopens an initial document after %s readiness failure, then retains the ready document',
+  async (mode) => {
+    vi.useFakeTimers();
+    const first = {
+      ...running,
+      preview: {
+        ...running.preview,
+        url: 'https://isolated.example/__openmaic_preview#first',
+        expiresAt: Date.now() + 300_000,
+      },
+    };
+    const second = {
+      ...first,
+      preview: { ...first.preview, url: 'https://isolated.example/__openmaic_preview#second' },
+    };
+    const status = { state: 'running', observedAt: '', sourceChanged: false };
+    mocks.request
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(status)
+      .mockResolvedValueOnce(second);
+    const f = await fixture();
+    const signal = async (frame: HTMLIFrameElement, type: string) =>
+      act(async () =>
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            source: frame.contentWindow,
+            origin: 'https://isolated.example',
+            data: { type },
+          }),
+        ),
+      );
+    try {
+      await f.click();
+      const old = f.host.querySelector('iframe')!;
+      if (mode === 'auth') await signal(old, 'openmaic-preview-error');
+      else await act(async () => vi.advanceTimersByTimeAsync(60_001));
+      await act(async () =>
+        [...f.host.querySelectorAll('button')]
+          .find((button) => button.textContent === 'pblV3.application.reopen')!
+          .click(),
+      );
+      expect(mocks.request.mock.calls.map((call) => call[1].action)).toEqual([
+        'open',
+        'status',
+        'open',
+      ]);
+      const fresh = f.host.querySelector('iframe')!;
+      expect(fresh.src).toContain('#second');
+      await signal(old, 'openmaic-preview-ready');
+      expect(fresh.classList.contains('invisible')).toBe(true);
+      await signal(fresh, 'openmaic-preview-ready');
+      expect(fresh.classList.contains('invisible')).toBe(false);
+      // Bounded startup observation can expose explicit Reopen for a document
+      // that already succeeded. Returning to running must retain that document.
+      mocks.request.mockResolvedValue({ ...status, state: 'starting' });
+      await act(async () =>
+        f.root.render(createElement(Harness, { current: { ...view, busy: true } })),
+      );
+      await act(async () => f.root.render(createElement(Harness)));
+      await act(async () => vi.advanceTimersByTimeAsync(1500));
+      mocks.request.mockResolvedValueOnce(status);
+      await act(async () =>
+        [...f.host.querySelectorAll('button')]
+          .find((button) => button.textContent === 'pblV3.application.reopen')!
+          .click(),
+      );
+      expect(mocks.request.mock.calls.map((call) => call[1].action)).toEqual([
+        'open',
+        'status',
+        'open',
+        'status',
+        'status',
+        'status',
+        'status',
+        'status',
+      ]);
+      expect(f.host.querySelector('iframe')).toBe(fresh);
+    } finally {
+      await f.cleanup();
+    }
+  },
+);

@@ -40,7 +40,10 @@ and teaching stage; it never changes an old ID's inputs. Any successful response
 that exact launch acknowledges it, including a late response whose document is no
 longer accepted. A newer version discards the obsolete request and inspects current
 state instead. Document replacement intent remains independent until the current
-candidate is ready. Explicit reopen rechecks pending source recovery, including
+candidate is ready, including the initial launch. After initial authorization or
+readiness failure, explicit reopen obtains a fresh ticket instead of retaining a
+never-ready document. A successfully ready document still keeps its client state
+when the process is unchanged. Explicit reopen rechecks pending source recovery, including
 when its preceding automatic status response crossed the grant-expiry boundary.
 
 The owned gateway shell reports readiness only after its nested same-origin HTML
@@ -49,6 +52,13 @@ and isolated origin; an application frame's own messages cannot promote it. Shel
 load and authorization alone are insufficient. Auth/load failures retain the old
 document, and missing readiness becomes an explicit error/reopen state after 60 seconds.
 Static bootstrap failure messages contain no credentials and cannot renew access.
+After its static bootstrap starts, the shell applies an additional `script-src 'none'`
+CSP policy before authorization or app loading. Existing callbacks continue, while
+new shell scripts are blocked even with a copied nonce or a nonce learned from CSP
+violation reports. Removing or changing the policy element cannot relax the applied
+policy. The nested app is a separate document and retains its own script policy.
+This hardens shell script-injection readiness claims; it does not introduce a new
+isolation boundary between the same-origin app and its shell.
 Deploy the main app and preview gateway from the same revision. An old workbench
 ignores new readiness messages; a new workbench with an old gateway reaches that
 bounded failure rather than silently discarding the previous page or waiting forever.

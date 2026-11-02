@@ -210,7 +210,8 @@ export function useApplicationPreview(
           if (['running', 'starting'].includes(status.state) && status.sourceChanged)
             request.action = 'restart';
         }
-        if (observation?.preview) replacementNeeded.current = true;
+        // A ticket is not a usable document, including on the first launch.
+        replacementNeeded.current = true;
         const launch = resumable ?? { binding, stage, request: { ...request } };
         unresolvedLaunch.current = launch;
         const result = await waitForApplication(request, abort.signal, assertCurrent, () => {

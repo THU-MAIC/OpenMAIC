@@ -138,6 +138,10 @@ it('keeps new tabs top-level and clears the ticket before redirecting or mountin
   expect(html.indexOf("ticket=''")).toBeLessThan(html.indexOf("document.createElement('iframe')"));
   expect(html).toContain("if(window.top===window){location.replace('/');return;}");
   expect(html).toContain('openmaic-preview-activity');
+  expect(html).toContain('scriptSeal.content="script-src \'none\'"');
+  expect(html.indexOf('document.head.append(scriptSeal)')).toBeLessThan(
+    html.indexOf("fetch('/__openmaic_authorize'"),
+  );
 });
 
 it('notifies only the app origin of a confirmed renewal, without forwarding credentials', async () => {

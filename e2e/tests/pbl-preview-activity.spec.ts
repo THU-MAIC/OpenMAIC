@@ -286,3 +286,144 @@ test('reports actual nested document readiness and rejects child claims or faile
     release();
   }
 });
+
+test('seals shell script execution while preserving nested readiness, input and activity', async ({
+  page,
+}) => {
+  const host = 'http://sealed-preview-host.test',
+    gateway = 'http://sealed-preview-gateway.test';
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let signals = 0;
+  await page.route(`${host}/**`, (route) =>
+    route.fulfill({
+      contentType: 'text/html; charset=utf-8',
+      body: `<!doctype html><script>
+      window.accepted=[];addEventListener('message',event=>{
+        const frame=document.querySelector('iframe');
+        if(event.origin===${JSON.stringify(gateway)}&&event.source===frame.contentWindow)window.accepted.push(event.data);
+      });
+      window.enable=value=>document.querySelector('iframe').contentWindow.postMessage({type:'openmaic-preview-input',enabled:value},${JSON.stringify(gateway)});
+    </script><iframe src="${gateway}/__openmaic_preview?openmaic-input=1#fixture"></iframe>`,
+    }),
+  );
+  await page.route(`${gateway}/**`, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/__openmaic_preview')
+      return route.fulfill({
+        contentType: 'text/html; charset=utf-8',
+        headers: {
+          'content-security-policy':
+            "default-src 'none'; script-src 'nonce-fixture-nonce'; connect-src 'self'; frame-src 'self'; style-src 'nonce-fixture-nonce'; base-uri 'none'; frame-ancestors *",
+        },
+        body: previewShell('fixture-nonce'),
+      });
+    if (path === '/__openmaic_authorize')
+      return route.fulfill({ json: { activityKey: 'fixture-private-key', appOrigin: host } });
+    if (path === '/__openmaic_activity') {
+      signals++;
+      return route.fulfill({
+        status: 204,
+        headers: { 'x-openmaic-preview-expires-at': String(Date.now() + 300000) },
+      });
+    }
+    if (path === '/pending-image') {
+      await pending;
+      return route.fulfill({ status: 204 });
+    }
+    return route.fulfill({
+      contentType: 'text/html; charset=utf-8',
+      body: `<!doctype html><input aria-label="Application input"><output id="child-script">running</output><img src="/pending-image"><script>
+      window.attacks=[];window.leakedNonce=null;
+      const outer=parent.document;
+      const inject=(nonce,label)=>{const script=outer.createElement('script');if(nonce)script.nonce=nonce;
+        script.textContent='parent.postMessage({type:"openmaic-preview-ready",spoof:'+JSON.stringify(label)+'},'+JSON.stringify(${JSON.stringify(host)})+');';
+        outer.body.append(script);window.attacks.push(label);};
+      outer.addEventListener('securitypolicyviolation',event=>{
+        const match=event.originalPolicy.match(/nonce-([^' ;]+)/);
+        if(match&&!window.leakedNonce){window.leakedNonce=match[1];inject(match[1],'leaked-policy');}
+      });
+      inject(outer.querySelector('script[nonce]').nonce,'copied-script');
+      inject(outer.querySelector('style[nonce]').nonce,'copied-style');
+      inject(null,'nonce-less');
+      const seal=outer.querySelector('meta[http-equiv="Content-Security-Policy"]');
+      seal.content="script-src * 'unsafe-inline'";seal.remove();
+      inject(outer.querySelector('script[nonce]').nonce,'removed-policy');
+      setTimeout(()=>document.querySelector('#child-script').textContent='child callbacks work',10);
+    </script>`,
+    });
+  });
+  try {
+    await page.goto(host, { waitUntil: 'domcontentloaded' });
+    const outer = page.frameLocator('iframe'),
+      app = outer.frameLocator('iframe');
+    await expect(app.locator('#child-script')).toHaveText('child callbacks work');
+    await expect
+      .poll(() =>
+        app
+          .locator('body')
+          .evaluate(() => (window as unknown as { leakedNonce: string }).leakedNonce),
+      )
+      .toBe('fixture-nonce');
+    expect(
+      await app
+        .locator('body')
+        .evaluate(() => (window as unknown as { attacks: string[] }).attacks),
+    ).toEqual(
+      expect.arrayContaining([
+        'copied-script',
+        'copied-style',
+        'nonce-less',
+        'removed-policy',
+        'leaked-policy',
+      ]),
+    );
+    expect(
+      await page.evaluate(() =>
+        (window as unknown as { accepted: { type: string }[] }).accepted.filter(
+          (x) => x.type === 'openmaic-preview-ready',
+        ),
+      ),
+    ).toEqual([]);
+    expect(
+      await outer.locator('body').evaluate((element) => getComputedStyle(element).margin),
+    ).toBe('0px');
+    await expect(app.locator('html')).toHaveAttribute('inert', '');
+    expect(signals).toBe(0);
+    release();
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          (window as unknown as { accepted: { type: string }[] }).accepted.filter(
+            (x) => x.type === 'openmaic-preview-ready',
+          ),
+        ),
+      )
+      .toEqual([{ type: 'openmaic-preview-ready' }]);
+    await page.evaluate(() =>
+      (window as unknown as { enable: (value: boolean) => void }).enable(true),
+    );
+    await expect(app.locator('html')).not.toHaveAttribute('inert', '');
+    await app.getByRole('textbox').fill('usable child document');
+    await app.getByRole('textbox').press('Enter');
+    await expect.poll(() => signals).toBe(1);
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          (window as unknown as { accepted: { type: string }[] }).accepted.some(
+            (x) => x.type === 'openmaic-preview-activity',
+          ),
+        ),
+      )
+      .toBe(true);
+    await page.evaluate(() =>
+      (window as unknown as { enable: (value: boolean) => void }).enable(false),
+    );
+    await expect(app.locator('html')).toHaveAttribute('inert', '');
+    await expect(app.getByRole('textbox')).toHaveValue('usable child document');
+  } finally {
+    release();
+  }
+});

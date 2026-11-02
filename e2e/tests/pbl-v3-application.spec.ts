@@ -542,9 +542,35 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
     await restore.click();
     await expect(page.getByTestId('pbl-application-open')).toBeEnabled();
     await expect(page.locator('.monaco-editor textarea').first()).not.toBeEditable();
+    // A restored binding starts without a usable document. Both initial auth
+    // failure and readiness timeout must obtain another ticket on explicit Reopen.
+    let releaseInitial: (() => void) | undefined;
+    if (nested) {
+      if (legacyMove) authorizationFailure = true;
+      else {
+        authorizationWaiting = false;
+        delayedAuthorization = new Promise<void>((resolve) => {
+          releaseInitial = resolve;
+        });
+      }
+    }
     await page.getByTestId('pbl-application-open').click();
+    if (nested) {
+      if (!legacyMove) {
+        await expect.poll(() => authorizationWaiting).toBe(true);
+        await page.clock.fastForward(60_001);
+      }
+      await expect(panel.locator('[role="alert"]')).toBeVisible();
+      const beforeReopen = launches;
+      authorizationFailure = false;
+      await panel.getByRole('button', { name: 'Reopen application', exact: true }).click();
+      releaseInitial?.();
+      await expect.poll(() => launches).toBe(beforeReopen + 1);
+      await expect(panel.locator('iframe')).toHaveCount(1);
+      await expect(panel.locator('iframe')).not.toHaveAttribute('inert', '');
+    }
     await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toBeVisible();
-    expect(launches).toBe(nested ? 5 : 3);
+    expect(launches).toBe(nested ? 6 : 3);
     expect(commands).toEqual(['prepare']);
     await panel.getByRole('button', { name: 'Collapse application', exact: true }).click();
     await expect(panel).not.toBeVisible();
