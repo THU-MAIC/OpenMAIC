@@ -9,6 +9,7 @@ vi.mock('@/lib/web-search', async (original) => ({
   ...(await original<typeof import('@/lib/web-search')>()),
   searchWeb: mocks.searchWeb,
 }));
+import { runChildFailureEval } from '@/eval/orchestration/child-failure';
 import { runPiDirectorLoop } from '@/lib/chat/pi/director-loop';
 import {
   buildChildActionTools,
@@ -202,6 +203,130 @@ describe('Pi Director completion and request cancellation', () => {
         .map((e) => e.data.content)
         .join(''),
     ).toContain('All steps explained');
+  });
+  it.each(['legacy', 'native'] as const)(
+    'reports %s provider errors without exposing diagnostics and still emits done',
+    async (mode) => {
+      let turn = 0;
+      mocks.streamLLM.mockImplementation((_p, source) => {
+        if (source !== 'pi-chat-director') throw new Error('private gateway credential');
+        return ++turn === 1 ? result([invoke('d1'), finish('tool-calls')]) : speech('done');
+      });
+      const events: StatelessEvent[] = [];
+      await run(events, new AbortController(), mode);
+      const trace = done(events).directorToolTrace?.find(
+        (entry) => entry.toolName === 'call_agent',
+      );
+      expect(trace?.isError).toBe(true);
+      expect(trace?.resultPreview).toContain('provider or child execution error');
+      expect(trace?.resultPreview).not.toContain('private gateway');
+      expect(done(events).directorState).toBeDefined();
+    },
+  );
+  it.each(['error', 'empty', 'timeout', 'partial'] as const)(
+    'injects Native %s in the eval without using the child provider',
+    async (scenario) => {
+      let turn = 0;
+      mocks.streamLLM.mockImplementation((_p, source) => {
+        expect(source).toBe('pi-chat-director');
+        return ++turn === 1 ? result([invoke('d1'), finish('tool-calls')]) : speech('done');
+      });
+      const report = await runChildFailureEval(
+        body(),
+        { model: model as never, modelInfo: null },
+        scenario,
+        'native',
+        { providerCalls: 30, childCalls: 10, timeoutMs: 2000, toolTimeoutMs: 25 },
+      );
+      expect(report.capped).toBe(false);
+      expect(report.error).toBeUndefined();
+      expect(report.done).toBeDefined();
+      expect(report.childCalls).toBe(1);
+      expect(report.providerCalls).toBe(2);
+      expect(report.injectedTransports).toBe(1);
+      expect(report.childResults[0]?.isError).toBe(scenario !== 'empty');
+      const reasons = {
+        error: 'execution error',
+        empty: 'stayed silent',
+        timeout: 'execution budget',
+        partial: 'output token limit reached',
+      };
+      expect(report.childResults[0]?.text).toContain(reasons[scenario]);
+      if (scenario === 'partial') expect(report.childResults[0]?.text).toContain('first part');
+    },
+  );
+  it.each(['error', 'empty', 'timeout', 'partial'] as const)(
+    'injects Legacy %s',
+    async (scenario) => {
+      let turn = 0;
+      mocks.streamLLM.mockImplementation((_p, source) => {
+        expect(source).toBe('pi-chat-director');
+        return ++turn === 1 ? result([invoke('d1'), finish('tool-calls')]) : speech('done');
+      });
+      const report = await runChildFailureEval(
+        body(),
+        { model: model as never, modelInfo: null },
+        scenario,
+        'legacy',
+        { providerCalls: 30, childCalls: 10, timeoutMs: 2000, toolTimeoutMs: 25 },
+      );
+      expect(report.error).toBeUndefined();
+      expect(report.done).toBeDefined();
+      expect(report.childResults[0]?.isError).toBe(scenario !== 'empty');
+    },
+  );
+  it.each(['legacy', 'native'] as const)(
+    'lets another %s child answer after teacher failure',
+    async (mode) => {
+      const request = body();
+      const assistant = { ...teacher, id: 'assistant-1', name: 'Assistant', role: 'assistant' };
+      request.config.agentConfigs = [teacher, assistant];
+      request.config.agentIds = [teacher.id, assistant.id];
+      let turn = 0;
+      mocks.streamLLM.mockImplementation((_p, source) => {
+        if (source !== 'pi-chat-director') return speech('Useful assistant answer');
+        turn++;
+        if (turn === 1) return result([invoke('d1'), finish('tool-calls')]);
+        if (turn === 2)
+          return result([
+            call('call_agent', 'd2', { agentId: assistant.id, instruction: 'Please answer' }),
+            finish('tool-calls'),
+          ]);
+        return speech('done');
+      });
+      const report = await runChildFailureEval(
+        request,
+        { model: model as never, modelInfo: null },
+        'teacher-error',
+        mode,
+      );
+      expect(report.error).toBeUndefined();
+      expect(report.ending).toBe('cue');
+      expect(report.childCalls).toBe(2);
+      expect(report.injectedTransports).toBe(1);
+      expect(report.providerCalls).toBe(4);
+    },
+  );
+  it('reports an eval cap as no_done, retaining repeated child-call counts', async () => {
+    let turn = 0;
+    mocks.streamLLM.mockImplementation(() => result([invoke('d' + ++turn), finish('tool-calls')]));
+    const report = await runChildFailureEval(
+      body(),
+      { model: model as never, modelInfo: null },
+      'empty',
+      'legacy',
+      {
+        providerCalls: 10,
+        childCalls: 2,
+        timeoutMs: 2000,
+        toolTimeoutMs: 1000,
+      },
+    );
+    expect(report.capped).toBe(true);
+    expect(report.ending).toBe('no_done');
+    expect(report.childCalls).toBe(2);
+    expect(report.repeatedCalls).toBe(1);
+    expect(report.done).toBeUndefined();
   });
   it('allows a third delegation after two empty Legacy results', async () => {
     let n = 0;
