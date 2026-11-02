@@ -25,6 +25,7 @@ import { createLogger } from '@/lib/logger';
 import {
   isRejectedRedirectError,
   providerFetch,
+  resolveAllowLocalNetworks,
   type ProviderFetchPolicy,
 } from '@/lib/server/provider-fetch';
 
@@ -116,10 +117,12 @@ export async function parseWithPaddleOCR(
   }
 
   if (!response.ok) {
-    const errorText = await response.text().catch(() => '');
-    log.error(
-      `[PaddleOCR] layout-parsing failed [status=${response.status}]: ${errorText.slice(0, 500)}`,
-    );
+    // Bound the error body too: the 16 MiB reader below only covers success
+    // responses, and a fast error stream must not be buffered whole.
+    const errorBytes = await readBodyWithBudget(response, [64 * 1024]);
+    const errorText =
+      typeof errorBytes === 'number' ? '' : new TextDecoder().decode(errorBytes.slice(0, 500));
+    log.error(`[PaddleOCR] layout-parsing failed [status=${response.status}]: ${errorText}`);
     throw Object.assign(
       new Error(`PaddleOCR parsing failed (HTTP ${response.status}): ${errorText.slice(0, 300)}`),
       { status: response.status },
@@ -173,7 +176,12 @@ export async function parseWithPaddleOCR(
   // redirects are still refused. textOnly callers skip figures by design.
   if (config.textOnly !== true) {
     const policy: ImageLinkPolicy = {
-      ssrf: { allowLocalNetworks: config.managed === true },
+      ssrf: {
+        // Same resolution as the layout request itself: an unmanaged root
+        // honors ALLOW_LOCAL_NETWORKS via resolveAllowLocalNetworks(), so a
+        // private PaddleX under the opt-in keeps its figure links too.
+        allowLocalNetworks: config.managed === true || resolveAllowLocalNetworks() === true,
+      },
       fetch: selfHostedPaddlePolicy(config.managed),
       requireHttps: false,
     };

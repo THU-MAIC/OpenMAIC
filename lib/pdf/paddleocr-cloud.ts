@@ -104,6 +104,13 @@ async function readJsonBody<T>(response: Response): Promise<T | null> {
     return (await response.json()) as T;
   } catch (error) {
     if (error instanceof SyntaxError) return null;
+    // Undici surfaces a mid-body socket reset as a top-level TypeError
+    // ("terminated") with the transport code only on `cause`; the retry
+    // classifier reads the top level, so copy any cause code up.
+    const cause = (error as { cause?: unknown }).cause as { code?: unknown } | undefined;
+    if (typeof cause?.code === 'string') {
+      (error as { code?: unknown }).code = cause.code;
+    }
     throw error;
   }
 }
@@ -544,6 +551,7 @@ export async function parseWithPaddleCloud(
     file_name: fileName,
   }).toString();
   let submitJson: SubmitResponse | null = null;
+  let lastThrottle: { status: number; code?: number } | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     if (attempt > 0) {
       await sleep(2_000);
@@ -571,6 +579,7 @@ export async function parseWithPaddleCloud(
     submitJson = await readJsonBody<SubmitResponse>(submitResponse);
     const code = submitJson?.error_code;
     if (submitResponse.status === 429 || code === 18) {
+      lastThrottle = { status: submitResponse.status, code };
       continue; // QPS refusal: backoff and retry
     }
     if (!submitResponse.ok) {
@@ -587,8 +596,12 @@ export async function parseWithPaddleCloud(
     break;
   }
   if (!submitJson || (submitJson.error_code ?? 0) !== 0 || !submitJson.result?.task_id) {
-    throw new Error(
-      `PaddleOCR Cloud submit failed: ${submitJson?.error_msg || 'no task_id returned'}`,
+    // The attempt budget ran out on QPS refusals: preserve the throttle
+    // signal (HTTP status / Baidu code) so the retry classifier keeps this
+    // transient instead of recording a permanent failure.
+    throw Object.assign(
+      new Error(`PaddleOCR Cloud submit failed: ${submitJson?.error_msg || 'no task_id returned'}`),
+      { ...(lastThrottle ? { status: lastThrottle.status, retryable: true } : {}) },
     );
   }
   const taskId = submitJson.result.task_id;
