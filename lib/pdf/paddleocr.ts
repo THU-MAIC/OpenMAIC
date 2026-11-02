@@ -14,6 +14,11 @@
  */
 
 import { extractPaddleLayoutParsing } from './paddleocr-parser';
+import {
+  consumePaddleImageLinks,
+  readBodyWithBudget,
+  type ImageLinkPolicy,
+} from './paddleocr-cloud';
 import type { ParsedPdfContent } from '@/lib/types/pdf';
 import type { PDFParserConfig } from './types';
 import { createLogger } from '@/lib/logger';
@@ -37,6 +42,12 @@ function selfHostedPaddlePolicy(managed: boolean | undefined): ProviderFetchPoli
 }
 
 const PADDLE_REQUEST_TIMEOUT_MS = 120_000;
+/**
+ * Cap on one layout-parsing response. `visualize: false` keeps well-behaved
+ * responses small; the cap bounds the memory a misbehaving endpoint can
+ * cost before the JSON is parsed (aligned with the cloud JSON budget).
+ */
+const PADDLE_MAX_RESULT_BYTES = 16 * 1024 * 1024;
 
 class PADDLE_NO_MARKDOWN extends Error {
   constructor() {
@@ -95,6 +106,12 @@ export async function parseWithPaddleOCR(
     const source = error as { code?: unknown; name?: unknown };
     if (typeof source.code === 'string') (wrapped as { code?: unknown }).code = source.code;
     if (source.name === 'AbortError') wrapped.name = 'AbortError';
+    // AbortSignal.timeout() rejects with a TimeoutError whose code is numeric,
+    // so neither branch above preserves a signal the classifier recognizes;
+    // mark the wrapper retryable so the timeout stays a temporary outage.
+    if (source.name === 'TimeoutError') {
+      (wrapped as { retryable?: boolean }).retryable = true;
+    }
     throw wrapped;
   }
 
@@ -106,13 +123,23 @@ export async function parseWithPaddleOCR(
     throw new Error(`PaddleOCR parsing failed (${response.status}): ${errorText.slice(0, 300)}`);
   }
 
+  // Bound the body before parsing: the timeout signal limits duration but
+  // not bytes, and a hostile or misbehaving endpoint (especially one
+  // reached through the legacy unmanaged path) could stream an unbounded
+  // "JSON" response into memory. Cancel mid-stream at the cap.
+  const body = await readBodyWithBudget(response, [PADDLE_MAX_RESULT_BYTES]);
+  if (typeof body === 'number') {
+    throw new Error(
+      `PaddleOCR layout-parsing response exceeds the ${PADDLE_MAX_RESULT_BYTES}-byte read limit`,
+    );
+  }
   let json: {
     errorCode?: number;
     errorMsg?: string;
     result?: { layoutParsingResults?: unknown };
   };
   try {
-    json = await response.json();
+    json = JSON.parse(new TextDecoder().decode(body));
   } catch (error) {
     log.error('[PaddleOCR] layout-parsing returned a non-JSON body:', error);
     throw new Error(PADDLEOCR_INVALID_RESPONSE, { cause: error });
@@ -132,5 +159,23 @@ export async function parseWithPaddleOCR(
     throw new PADDLE_NO_MARKDOWN();
   }
 
-  return extractPaddleLayoutParsing(results);
+  const parsed = extractPaddleLayoutParsing(results);
+
+  // A PaddleX deployment can answer markdown image references with HTTP(S)
+  // links (its own serving address, most often). Consume them under the same
+  // bounded guard as the cloud links — same caps, same aggregate deadline —
+  // so the published artifact carries its figures instead of a reference to
+  // a link the reader may never reach. The route policy matches the layout
+  // request itself: the operator chose this server (and its address space),
+  // redirects are still refused. textOnly callers skip figures by design.
+  if (config.textOnly !== true) {
+    const policy: ImageLinkPolicy = {
+      ssrf: { allowLocalNetworks: config.managed === true },
+      fetch: selfHostedPaddlePolicy(config.managed),
+      requireHttps: false,
+    };
+    await consumePaddleImageLinks(parsed, config, policy, 'PaddleOCR');
+  }
+
+  return parsed;
 }

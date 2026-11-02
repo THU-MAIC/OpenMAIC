@@ -115,3 +115,83 @@ describe('PaddleOCR self-hosted (PaddleX serving)', () => {
     expect(transport.providerFetch).not.toHaveBeenCalled();
   });
 });
+
+describe('PaddleOCR self-hosted — Codex review follow-ups', () => {
+  // Appended at top level: this suite does not inherit the outer
+  // beforeEach, so the transport is reset here.
+  beforeEach(() => {
+    transport.providerFetch.mockReset();
+  });
+
+  const IMG_URL = 'https://93.184.216.34/figures/fig1.png';
+
+  function linkResponse() {
+    return jsonBody({
+      errorCode: 0,
+      errorMsg: 'Success',
+      result: {
+        layoutParsingResults: [{ markdown: { text: '带图', images: { fig1: IMG_URL } } }],
+      },
+    });
+  }
+
+  it('consumes linked figures before returning', async () => {
+    transport.providerFetch.mockImplementation(async (url: string) => {
+      if (String(url).includes('/layout-parsing')) return linkResponse();
+      if (url === IMG_URL) return new Response(new Uint8Array([7, 7]), { status: 200 });
+      throw new Error(`Unexpected transport URL: ${url}`);
+    });
+
+    const result = await parseWithPaddleOCR(
+      { providerId: 'paddleocr', baseUrl: 'http://paddle.example:8080' },
+      pdfBuffer(),
+    );
+
+    expect(result.images).toEqual(['data:image/png;base64,Bwc=']);
+    expect(transport.providerFetch.mock.calls.some(([u]) => u === IMG_URL)).toBe(true);
+  });
+
+  it('skips figure consumption for textOnly callers', async () => {
+    transport.providerFetch.mockImplementation(async (url: string) => {
+      if (String(url).includes('/layout-parsing')) return linkResponse();
+      throw new Error(`Unexpected transport URL: ${url}`);
+    });
+
+    const result = await parseWithPaddleOCR(
+      { providerId: 'paddleocr', baseUrl: 'http://paddle.example:8080', textOnly: true },
+      pdfBuffer(),
+    );
+
+    expect(result.images).toEqual([]);
+    expect(transport.providerFetch.mock.calls.some(([u]) => u === IMG_URL)).toBe(false);
+  });
+
+  it('classifies a request timeout as retryable through the fixed-message wrapper', async () => {
+    const timeoutLike = new DOMException('signal timed out', 'TimeoutError');
+    // Node gives TimeoutError a numeric code; the classifier only accepts
+    // retryable=true / AbortError / string transport codes on the wrapper.
+    Object.defineProperty(timeoutLike, 'code', { value: 23 });
+    transport.providerFetch.mockRejectedValueOnce(timeoutLike);
+
+    const error = await parseWithPaddleOCR(
+      { providerId: 'paddleocr', baseUrl: 'http://paddle.example:8080' },
+      pdfBuffer(),
+    ).catch((e) => e);
+
+    expect(error.message).toBe(PADDLEOCR_CONNECTION_FAILED);
+    const { isTransientExtractionError } = await import('@/lib/server/material-extraction/errors');
+    expect(isTransientExtractionError(error)).toBe(true);
+  });
+
+  it('refuses an unbounded layout-parsing response before parsing it as JSON', async () => {
+    const big = new Uint8Array(17 * 1024 * 1024);
+    transport.providerFetch.mockResolvedValueOnce(new Response(big, { status: 200 }));
+
+    await expect(
+      parseWithPaddleOCR(
+        { providerId: 'paddleocr', baseUrl: 'http://paddle.example:8080' },
+        pdfBuffer(),
+      ),
+    ).rejects.toThrow('byte read limit');
+  });
+});

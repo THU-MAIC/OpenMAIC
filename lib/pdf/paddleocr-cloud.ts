@@ -201,6 +201,9 @@ async function downloadResponseUrl(
     RESPONSE_URL_POLICY,
   );
   if (!response.ok) {
+    // Cancel the body before throwing: an undisposed failure body (e.g. during
+    // an object-store outage) keeps its Undici connection occupied.
+    await response.body?.cancel().catch(() => {});
     throw new Error(`PaddleOCR Cloud ${label} download failed (${response.status})`);
   }
   if (!response.body) {
@@ -248,9 +251,10 @@ async function downloadResponseUrl(
 /**
  * Read a response body with an ordered budget: [perBodyMax, aggregateRemaining].
  * Returns the bytes, or the first budget number that was exceeded (the stream
- * is cancelled at that point, never buffered past it).
+ * is cancelled at that point, never buffered past it). Shared with the
+ * self-hosted adapter's bounded JSON read.
  */
-async function readBodyWithBudget(
+export async function readBodyWithBudget(
   response: Response,
   budgets: readonly number[],
 ): Promise<Uint8Array | number> {
@@ -334,6 +338,24 @@ function resolveImageMime(contentType: string | null, bytes: Uint8Array): string
   return 'image/png';
 }
 
+/** How a linked-image fetch validates and routes: SSRF check + fetch policy. */
+export interface ImageLinkPolicy {
+  /** SSRF validation options for the response-supplied link URL. */
+  ssrf: { allowLocalNetworks: boolean };
+  /** The providerFetch policy the image download runs under. */
+  fetch: ProviderFetchPolicy;
+  /** Whether the link must be HTTPS (cloud storage links: yes; a self-hosted
+   * server the operator pointed at HTTP: no). */
+  requireHttps: boolean;
+}
+
+/** The strict public policy for cloud storage links. */
+const CLOUD_IMAGE_LINK_POLICY: ImageLinkPolicy = {
+  ssrf: { allowLocalNetworks: false },
+  fetch: RESPONSE_URL_POLICY,
+  requireHttps: true,
+};
+
 async function downloadLinkImage(
   parsed: ParsedPdfContent,
   link: { path: string; url: string; pageNumber: number },
@@ -342,11 +364,13 @@ async function downloadLinkImage(
     signal?: AbortSignal;
     linkBytesTotal: () => number;
     addBytes: (n: number) => void;
+    policy: ImageLinkPolicy;
+    logTag: string;
   },
 ): Promise<string | null> {
-  const ssrfError = await validateUrlForSSRFWithPolicy(link.url, { allowLocalNetworks: false });
-  if (ssrfError || !link.url.startsWith('https://')) {
-    log.warn(`[PaddleCloud] image link for "${link.path}" refused by policy, skipped`);
+  const ssrfError = await validateUrlForSSRFWithPolicy(link.url, ctx.policy.ssrf);
+  if (ssrfError || (ctx.policy.requireHttps && !link.url.startsWith('https://'))) {
+    log.warn(`[${ctx.logTag}] image link for "${link.path}" refused by policy, skipped`);
     return null;
   }
   let response: Response;
@@ -354,19 +378,19 @@ async function downloadLinkImage(
     response = await providerFetch(
       link.url,
       { signal: requestSignal(DOWNLOAD_TIMEOUT_MS, ctx.signal) },
-      RESPONSE_URL_POLICY,
+      ctx.policy.fetch,
     );
   } catch (error) {
     // Only the caller's abort is ours to propagate; the phase deadline is an
     // internal budget that just stops optional enrichment.
     if (ctx.config.signal?.aborted || isRejectedRedirectError(error)) throw error;
-    log.warn(`[PaddleCloud] image download for "${link.path}" failed, skipped:`, error);
+    log.warn(`[${ctx.logTag}] image download for "${link.path}" failed, skipped:`, error);
     return null;
   }
   if (!response.ok) {
     await response.body?.cancel().catch(() => {});
     log.warn(
-      `[PaddleCloud] image download for "${link.path}" failed (${response.status}), skipped`,
+      `[${ctx.logTag}] image download for "${link.path}" failed (${response.status}), skipped`,
     );
     return null;
   }
@@ -376,13 +400,82 @@ async function downloadLinkImage(
   ]);
   if (typeof streamed === 'number') {
     log.warn(
-      `[PaddleCloud] image for "${link.path}" exceeds the image byte budget (${streamed} bytes), skipped`,
+      `[${ctx.logTag}] image for "${link.path}" exceeds the image byte budget (${streamed} bytes), skipped`,
     );
     return null;
   }
   ctx.addBytes(streamed.byteLength);
   const mime = resolveImageMime(response.headers.get('content-type'), streamed);
   return `data:${mime};base64,${Buffer.from(streamed).toString('base64')}`;
+}
+
+/**
+ * Consume the parser-recorded image links in place: download each under the
+ * caller's policy with the shared count/byte/aggregate-deadline bounds and
+ * inline the figures as data URLs, so published markdown references do not
+ * point at links that can expire or break. Caller aborts and policy
+ * rejections propagate; an ordinary failure only skips that figure.
+ */
+export async function consumePaddleImageLinks(
+  parsed: ParsedPdfContent,
+  config: PDFParserConfig,
+  policy: ImageLinkPolicy,
+  logTag: string,
+): Promise<void> {
+  const imageLinks = parsed.metadata?.imageLinks as
+    | Array<{ path: string; url: string; pageNumber: number }>
+    | undefined;
+  if (!imageLinks || imageLinks.length === 0) return;
+  // A figure-heavy result or a custom gateway can list many links: cap the
+  // count and the aggregate retained bytes so even individually capped
+  // bodies cannot grow the process without bound.
+  let linkBytesTotal = 0;
+  // The whole image phase gets one aggregate deadline: serial awaits with
+  // per-request timeouts are additive, and /api/parse-pdf builds this
+  // config without a caller signal to bound them.
+  const phaseSignal = AbortSignal.any([
+    ...(config.signal ? [config.signal] : []),
+    AbortSignal.timeout(IMAGE_PHASE_MAX_MS),
+  ]);
+  for (const link of imageLinks.slice(0, MAX_IMAGE_LINKS)) {
+    // A caller abort still fails the parse; the internal phase deadline only
+    // stops enrichment, leaving the already-parsed markdown intact.
+    if (config.signal?.aborted) {
+      throw config.signal.reason ?? new DOMException('Aborted', 'AbortError');
+    }
+    if (phaseSignal.aborted) {
+      log.warn(`[${logTag}] image enrichment deadline reached, serving the parsed result`);
+      break;
+    }
+    let dataUrl: string | null;
+    try {
+      dataUrl = await downloadLinkImage(parsed, link, {
+        config,
+        signal: phaseSignal,
+        linkBytesTotal: () => linkBytesTotal,
+        addBytes: (n) => (linkBytesTotal += n),
+        policy,
+        logTag,
+      });
+    } catch (error) {
+      // Aborts or policy rejections are the caller's; anything else is a
+      // per-figure enrichment failure and must not discard the markdown.
+      if (config.signal?.aborted || isRejectedRedirectError(error)) throw error;
+      log.warn(`[${logTag}] image enrichment for "${link.path}" failed, skipped:`, error);
+      continue;
+    }
+    if (dataUrl) {
+      parsed.images.push(dataUrl);
+      const id = `img_${parsed.images.length}`;
+      parsed.metadata?.pdfImages?.push({
+        id,
+        src: dataUrl,
+        pageNumber: link.pageNumber,
+        path: link.path,
+      });
+      if (parsed.metadata?.imageMapping) parsed.metadata.imageMapping[id] = dataUrl;
+    }
+  }
 }
 
 export async function parseWithPaddleCloud(
@@ -576,7 +669,14 @@ export async function parseWithPaddleCloud(
     config.signal,
   );
   let parseResult: unknown = null;
-  if (typeof result.parse_result_url === 'string' && result.parse_result_url) {
+  // textOnly callers (e.g. fetch_url) discard figures and structured layout
+  // by design: skip the optional parse-result download and the whole image
+  // phase rather than spending downloads and bounded budgets on them.
+  if (
+    config.textOnly !== true &&
+    typeof result.parse_result_url === 'string' &&
+    result.parse_result_url
+  ) {
     try {
       parseResult = JSON.parse(
         await downloadResponseUrl(
@@ -598,61 +698,7 @@ export async function parseWithPaddleCloud(
 
   const parsed = extractPaddleCloudParseResult(parseResult, markdown);
 
-  // Cloud images can be storage links: download each under the same strict,
-  // bounded policy as the result URLs before the result is published, so
-  // signed links cannot expire into broken markdown references.
-  const imageLinks = parsed.metadata?.imageLinks as
-    | Array<{ path: string; url: string; pageNumber: number }>
-    | undefined;
-  // A figure-heavy result or a custom gateway can list many links: cap the
-  // count and the aggregate retained bytes so even individually capped
-  // bodies cannot grow the process without bound. Caller aborts and policy
-  // rejections propagate; an ordinary failure only skips that figure.
-  let linkBytesTotal = 0;
-  // The whole image phase gets one aggregate deadline: serial awaits with
-  // per-request timeouts are additive, and /api/parse-pdf builds this config
-  // without a caller signal to bound them.
-  const phaseSignal = AbortSignal.any([
-    ...(config.signal ? [config.signal] : []),
-    AbortSignal.timeout(IMAGE_PHASE_MAX_MS),
-  ]);
-  for (const link of (imageLinks ?? []).slice(0, MAX_IMAGE_LINKS)) {
-    // A caller abort still fails the parse; the internal phase deadline only
-    // stops enrichment, leaving the already-parsed markdown intact.
-    if (config.signal?.aborted) {
-      throw config.signal.reason ?? new DOMException('Aborted', 'AbortError');
-    }
-    if (phaseSignal.aborted) {
-      log.warn('[PaddleCloud] image enrichment deadline reached, serving the parsed result');
-      break;
-    }
-    let dataUrl: string | null;
-    try {
-      dataUrl = await downloadLinkImage(parsed, link, {
-        config,
-        signal: phaseSignal,
-        linkBytesTotal: () => linkBytesTotal,
-        addBytes: (n) => (linkBytesTotal += n),
-      });
-    } catch (error) {
-      // Aborts or policy refusals are the caller's; anything else is a
-      // per-figure enrichment failure and must not discard the markdown.
-      if (config.signal?.aborted || isRejectedRedirectError(error)) throw error;
-      log.warn(`[PaddleCloud] image enrichment for "${link.path}" failed, skipped:`, error);
-      continue;
-    }
-    if (dataUrl) {
-      parsed.images.push(dataUrl);
-      const id = `img_${parsed.images.length}`;
-      parsed.metadata?.pdfImages?.push({
-        id,
-        src: dataUrl,
-        pageNumber: link.pageNumber,
-        path: link.path,
-      });
-      if (parsed.metadata?.imageMapping) parsed.metadata.imageMapping[id] = dataUrl;
-    }
-  }
+  await consumePaddleImageLinks(parsed, config, CLOUD_IMAGE_LINK_POLICY, 'PaddleCloud');
 
   return parsed;
 }

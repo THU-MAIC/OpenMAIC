@@ -785,3 +785,46 @@ describe('PaddleOCR Cloud (Baidu document parsing)', () => {
     expect(transport.providerFetch).not.toHaveBeenCalled();
   });
 });
+
+describe('PaddleOCR Cloud — textOnly callers', () => {
+  beforeEach(() => {
+    transport.providerFetch.mockReset();
+    clearPaddleCloudTokenCache();
+  });
+
+  it('skips the parse-result download and image phase when textOnly', async () => {
+    vi.useFakeTimers();
+    const IMG_URL = 'https://93.184.216.34/images/fig-textonly.png';
+    transport.providerFetch.mockImplementation(async (url: string) => {
+      if (url.includes('/oauth/2.0/token')) {
+        return okJson({ access_token: 'tok-1', expires_in: 2592000 });
+      }
+      if (url.includes('/paddle-vl-parser/task?')) {
+        return okJson({ error_code: 0, result: { task_id: 'task-tx' } });
+      }
+      if (url.includes('/task/query')) {
+        return okJson({
+          error_code: 0,
+          result: {
+            task_id: 'task-tx',
+            status: 'success',
+            markdown_url: MARKDOWN_URL,
+            parse_result_url: PARSE_URL,
+          },
+        });
+      }
+      if (url === MARKDOWN_URL) return new Response('正文', { status: 200 });
+      // parse-result and image fetches must never happen; fail loudly if asked.
+      throw new Error(`Unexpected enrichment URL: ${url}`);
+    });
+    void IMG_URL;
+
+    const promise = parseWithPaddleCloud({ ...CONFIG, textOnly: true }, Buffer.from('a'), 'a.pdf');
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    expect(result.text).toBe('正文');
+    const urls = transport.providerFetch.mock.calls.map(([u]) => String(u));
+    expect(urls.some((u) => u === PARSE_URL)).toBe(false);
+  });
+});
