@@ -2,7 +2,7 @@
 
 import { Dialog } from 'radix-ui';
 import { BookOpen, ChevronLeft, ChevronRight, X } from 'lucide-react';
-import { useId, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { stepsForWorkbench, type OnboardingStep } from '@/lib/pbl/v3/onboarding';
 import type { LearningView } from '@/lib/pbl/v3/types';
@@ -31,6 +31,14 @@ export function WorkbenchOnboarding({
   onFinish: () => Promise<void>;
 }) {
   const { t, locale } = useI18n();
+  const [nativeFullscreen, setNativeFullscreen] = useState(
+    () => typeof document !== 'undefined' && !!document.fullscreenElement,
+  );
+  useEffect(() => {
+    const sync = () => setNativeFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', sync);
+    return () => document.removeEventListener('fullscreenchange', sync);
+  }, []);
   const steps = stepsForWorkbench(view);
   const [index, setIndex] = useState(0);
   const stepIndex = Math.min(index, steps.length - 1);
@@ -45,6 +53,8 @@ export function WorkbenchOnboarding({
   const finish = async () => {
     if (finishingRef.current) return;
     finishingRef.current = true;
+    // Keep keyboard ownership when disabling the clicked/focused button.
+    card?.focus({ preventScroll: true });
     setFinishing(true);
     setFinishError(false);
     try {
@@ -95,22 +105,41 @@ export function WorkbenchOnboarding({
       );
       const height = Math.min(owner.clientHeight, (window.innerHeight - bounds.top) / scaleY);
       if (width <= 0 || height <= 0) return;
-      const rect = findAnchor()?.getBoundingClientRect();
-      const left = rect ? Math.max(0, (rect.left - bounds.left) / scaleX - 5) : 0;
-      const top = rect ? Math.max(0, (rect.top - bounds.top) / scaleY - 5) : 0;
-      const target =
-        rect &&
-        rect.right > bounds.left &&
-        rect.left < bounds.left + width * scaleX &&
-        rect.bottom > bounds.top &&
-        rect.top < bounds.top + height * scaleY
-          ? {
-              x: left,
-              y: top,
-              width: Math.max(0, Math.min(width, (rect.right - bounds.left) / scaleX + 5) - left),
-              height: Math.max(0, Math.min(height, (rect.bottom - bounds.top) / scaleY + 5) - top),
-            }
-          : null;
+      const anchor = findAnchor();
+      let target: Box | null = null;
+      if (anchor) {
+        const rect = anchor.getBoundingClientRect();
+        let left = Math.max(bounds.left, rect.left - 5 * scaleX);
+        let right = Math.min(bounds.left + width * scaleX, rect.right + 5 * scaleX);
+        let top = Math.max(bounds.top, rect.top - 5 * scaleY);
+        let bottom = Math.min(bounds.top + height * scaleY, rect.bottom + 5 * scaleY);
+        // A stacked panel may be larger than its scroll viewport. The spotlight
+        // must obey the same clipping ancestors as the actual region.
+        for (let parent = anchor.parentElement; parent; parent = parent.parentElement) {
+          const style = getComputedStyle(parent);
+          const clip = parent.getBoundingClientRect();
+          const sx = parent.offsetWidth ? clip.width / parent.offsetWidth : 1;
+          const sy = parent.offsetHeight ? clip.height / parent.offsetHeight : 1;
+          if (/^(auto|scroll|hidden|clip)$/.test(style.overflowX)) {
+            const edge = clip.left + parent.clientLeft * sx;
+            left = Math.max(left, edge);
+            right = Math.min(right, edge + parent.clientWidth * sx);
+          }
+          if (/^(auto|scroll|hidden|clip)$/.test(style.overflowY)) {
+            const edge = clip.top + parent.clientTop * sy;
+            top = Math.max(top, edge);
+            bottom = Math.min(bottom, edge + parent.clientHeight * sy);
+          }
+          if (parent === owner) break;
+        }
+        if (right > left && bottom > top)
+          target = {
+            x: (left - bounds.left) / scaleX,
+            y: (top - bounds.top) / scaleY,
+            width: (right - left) / scaleX,
+            height: (bottom - top) / scaleY,
+          };
+      }
       const cw = content.offsetWidth,
         ch = content.offsetHeight,
         gap = 16,
@@ -217,7 +246,11 @@ export function WorkbenchOnboarding({
           </svg>
         </Dialog.Overlay>
         <Dialog.Content
+          // Recreate Radix's focus/aria boundary after the host reparents for native fullscreen.
+          // Step state stays in this component; the workbench and preview stay mounted.
+          key={nativeFullscreen ? 'native' : 'page'}
           ref={setCard}
+          tabIndex={-1}
           data-pbl-onboarding="card"
           data-step={step}
           dir={locale === 'ar-SA' ? 'rtl' : 'ltr'}
@@ -231,7 +264,9 @@ export function WorkbenchOnboarding({
           }}
           onOpenAutoFocus={(event) => {
             event.preventDefault();
-            nextButton.current?.focus({ preventScroll: true });
+            if (finishing && event.target instanceof HTMLElement)
+              event.target.focus({ preventScroll: true });
+            else nextButton.current?.focus({ preventScroll: true });
           }}
           onCloseAutoFocus={(event) => {
             event.preventDefault();

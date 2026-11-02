@@ -1197,10 +1197,11 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       expect(started.size).toBe(1);
       release();
       await maintaining;
-      // With no recent-use competitor, successive scans reclaim the two remaining idle
-      // candidates regardless of the database's UPDATE ... RETURNING order.
-      await ageStudy(interactive.id);
-      for (let pass = 0; pass < 2 && started.size < 2; pass++) await maintainLearningEnvironments();
+      // Scans are best-effort: two workers compete for one maintenance slot, and
+      // UPDATE ... RETURNING does not guarantee which candidate wins. Once the
+      // held archive has released admission, retry the deferred study directly
+      // instead of assuming it must win one of a fixed number of global scans.
+      await maintainStudy(store, second.id, principal.ownerId);
       expect(started.size).toBe(2);
     } finally {
       release();

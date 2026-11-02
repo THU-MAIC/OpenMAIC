@@ -12,6 +12,7 @@ async function project(
   learningEvents: (read: () => LearningSnapshot) => Promise<() => void>,
   {
     started = false,
+    secondScene = false,
     streamFailure = false,
     completed = false,
     guideCompleted = started,
@@ -31,6 +32,7 @@ async function project(
     staleWorkbench = false,
   }: {
     started?: boolean;
+    secondScene?: boolean;
     streamFailure?: boolean;
     completed?: boolean;
     guideCompleted?: boolean | null;
@@ -64,6 +66,22 @@ async function project(
         content: { type: 'pbl', projectV3: { id: 'greeting-python-lab', version: '1.1.0' } },
         actions: [],
       },
+      ...(secondScene
+        ? [
+            {
+              id: 'second',
+              stageId,
+              type: 'pbl' as const,
+              title: 'Second project',
+              order: 1,
+              content: {
+                type: 'pbl' as const,
+                projectV3: { id: 'greeting-python-lab', version: '1.1.0' },
+              },
+              actions: [],
+            },
+          ]
+        : []),
     ],
   });
   const view = {
@@ -830,4 +848,82 @@ test('completed-file replay survives transient reconnect but yields to terminal 
   await expect(page.getByRole('button', { name: 'Refresh progress', exact: true })).toBeEnabled();
   await expect(page.getByTestId('pbl-workbench-loading')).toHaveCount(0);
   expect(fixture.commands).toEqual([]);
+});
+
+for (const success of [true, false]) {
+  test(`native fullscreen keeps modal keyboard ownership while Close acknowledgement waits (success=${success})`, async ({
+    page,
+    learningEvents,
+  }) => {
+    await project(page, learningEvents, { secondScene: true });
+    await expect(tour(page)).toBeVisible();
+    await page.getByTestId('pbl-v3-entry').evaluate((element) => element.requestFullscreen());
+    await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(true);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route('**/api/pbl/v3/onboarding', async (route) => {
+      await gate;
+      await route.fulfill({
+        status: success ? 200 : 503,
+        json: success ? { onboardingCompleted: true } : { error: 'Retry' },
+      });
+    });
+    await tour(page).getByRole('button', { name: 'Close guide', exact: true }).click();
+    await expect(tour(page)).toBeFocused();
+    await page.keyboard.press('ArrowRight');
+    await expect(tour(page)).toBeVisible();
+    await expect(page.locator('h1')).toHaveText('Workspace guide');
+    const acknowledgement = page.waitForResponse((response) =>
+      response.url().endsWith('/api/pbl/v3/onboarding'),
+    );
+    release();
+    await (await acknowledgement).finished();
+    if (success) {
+      await expect(tour(page)).toHaveCount(0);
+      await expect(page.getByTestId('pbl-v3-workspace')).toBeFocused();
+    } else {
+      await expect(tour(page).locator('[role=alert]')).toHaveCount(1);
+      await expect(tour(page).getByRole('alert')).toBeVisible();
+      await expect(
+        tour(page).getByRole('button', { name: 'Close guide', exact: true }),
+      ).toBeEnabled();
+      await expect(tour(page)).toBeFocused();
+    }
+    await page.evaluate(() => document.exitFullscreen());
+  });
+}
+
+test('320x480 docked assistant spotlight stays within its scroll viewport while scrolling', async ({
+  page,
+  learningEvents,
+}) => {
+  await page.setViewportSize({ width: 320, height: 480 });
+  await project(page, learningEvents);
+  await expect(tour(page)).toBeVisible();
+  await finish(page);
+  await page.getByRole('button', { name: 'Exit fullscreen workspace', exact: true }).click();
+  await page.locator('[data-pbl-tour="replay"]').click();
+  await next(page).click();
+  await expect(tour(page)).toHaveAttribute('data-step', 'discussion');
+  const split = page.getByTestId('pbl-workbench-split');
+  const check = async () => {
+    const viewport = (await split.boundingBox())!;
+    const spotlight = page.locator('[data-pbl-onboarding="spotlight"]');
+    const lit = (await spotlight.count()) ? await spotlight.boundingBox() : null;
+    if (lit) {
+      expect(lit.x).toBeGreaterThanOrEqual(viewport.x - 1);
+      expect(lit.y).toBeGreaterThanOrEqual(viewport.y - 1);
+      expect(lit.x + lit.width).toBeLessThanOrEqual(viewport.x + viewport.width + 1);
+      expect(lit.y + lit.height).toBeLessThanOrEqual(viewport.y + viewport.height + 1);
+    }
+  };
+  await expect(page.locator('[data-pbl-onboarding="spotlight"]')).toBeVisible();
+  await check();
+  await split.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await expect(page.locator('[data-pbl-onboarding="spotlight"]')).toHaveCount(0);
+  await check();
 });

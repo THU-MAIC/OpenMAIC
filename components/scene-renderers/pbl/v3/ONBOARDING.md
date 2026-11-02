@@ -43,8 +43,11 @@ workspaces need no execution environment to replay the guide.
 ## Interaction boundary
 
 Radix modals portal inside the workspace, preserving native fullscreen and focus
-isolation. The background is dimmed except for the introduced region, which remains
-blocked for interaction. The assistant page lights the whole panel; the progress page lights the whole task bar. Targets scroll
+isolation. Closing focuses the modal before its controls are disabled, keeping
+keyboard input out of classroom navigation while acknowledgement is pending.
+Native fullscreen changes rebuild only the modal focus/aria boundary; the guide
+step, workbench and preview stay mounted. The background is dimmed except for the introduced region, which remains
+blocked for interaction. The assistant page lights the whole panel; the progress page lights the whole task bar. Targets are clipped to each overflow ancestor’s visible viewport and scroll
 into view before measurement and are resolved again when DOM nodes change.
 Collapsed code/preview areas use their own toolbar controls; unavailable/off-screen
 targets use a centered card without an unrelated spotlight. Copy names regions
