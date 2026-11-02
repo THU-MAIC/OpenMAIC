@@ -242,6 +242,7 @@ function ChatNodeView({
           materials={node.materials}
           elementRefs={node.elementRefs}
           courseRefs={node.courseRefs}
+          t={t}
         />
       );
     case 'system':

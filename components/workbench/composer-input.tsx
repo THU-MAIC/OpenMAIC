@@ -42,7 +42,7 @@ import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils/cn';
-import { skillTitle, useAgentSkills } from '@/lib/workbench/agent-skills';
+import { useSkillChipNames } from '@/lib/workbench/use-skill-chip-names';
 import {
   composerClipboardSerializer,
   composerSchema,
@@ -57,8 +57,7 @@ import {
   type ComposerChipSource,
 } from '@/lib/workbench/composer-doc';
 import type { InlineMention } from '@/lib/workbench/composer-mentions';
-import type { ComposerChipIcon } from '@/lib/workbench/composer-chip-icons';
-import { materialKind } from './material-kind';
+import { composerMentionIcon } from './composer-chip';
 
 /** A textarea's vocabulary, in offsets into the composer's string. */
 export interface ComposerInputHandle {
@@ -80,24 +79,6 @@ export function composerInputHandleOf(element: Element): ComposerInputHandle | u
 
 /** A composer's input element, whichever the surface. */
 export const COMPOSER_INPUT_SELECTOR = '[data-composer-input]';
-
-const MENTION_ICONS: Record<ReturnType<typeof materialKind>, ComposerChipIcon> = {
-  pdf: 'file-text',
-  document: 'file-text',
-  text: 'file-text',
-  slides: 'slides',
-  sheet: 'sheet',
-  image: 'image',
-  audio: 'audio',
-  video: 'video',
-  other: 'file',
-};
-
-function mentionIcon(mention: InlineMention): ComposerChipIcon {
-  return mention.kind === 'course'
-    ? 'course'
-    : MENTION_ICONS[materialKind(undefined, mention.name)];
-}
 
 const NO_MENTIONS: readonly InlineMention[] = [];
 /** A transaction whose text came from outside: it must not be reported back as an edit. */
@@ -229,14 +210,14 @@ export function ComposerInput({
   readonly ariaKeyShortcuts?: string;
 }) {
   const { t } = useI18n();
-  const { skills } = useAgentSkills();
+  const skillNames = useSkillChipNames(t);
   const source = useMemo<ComposerChipSource>(
     () => ({
-      skills: new Map(skills.map((skill) => [skill.name, skillTitle(skill, t) ?? skill.name])),
+      skills: skillNames,
       mentions: new Map(mentions.map((mention) => [mention.label, mention])),
-      mentionIcon,
+      mentionIcon: composerMentionIcon,
     }),
-    [skills, mentions, t],
+    [skillNames, mentions],
   );
 
   const mountRef = useRef<HTMLDivElement | null>(null);

@@ -5,10 +5,15 @@
  * corner. Right alignment is the whole authorship signal; there is no avatar
  * and no name.
  */
+import { useMemo, type ClipboardEvent } from 'react';
 import { BookOpen, Paperclip } from 'lucide-react';
+import type { WorkbenchTranslator } from '@/lib/i18n/workbench';
+import { useSkillChipNames } from '@/lib/workbench/use-skill-chip-names';
+import { composerTextRuns, type ComposerChipSource } from '@/lib/workbench/composer-doc';
 import type { ElementRef } from '@/lib/workbench/element-refs';
 import type { CourseRef } from '@/lib/workbench/course-refs';
-import { segmentMentions } from '@/lib/workbench/composer-mentions';
+import type { InlineMention } from '@/lib/workbench/composer-mentions';
+import { ComposerChip, composerMentionIcon } from '../composer-chip';
 import { wbStyles as styles } from './chat-styles';
 
 /**
@@ -46,41 +51,81 @@ function SentElementRefs({ refs }: { refs: readonly ElementRef[] }) {
   );
 }
 
+/**
+ * A chip shows a name, but what was written is the handle: a copy from the bubble
+ * gives the text as sent. A selection reaching outside it is left to the browser.
+ */
+function copyAsWritten(event: ClipboardEvent<HTMLDivElement>) {
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+  const range = selection.getRangeAt(0);
+  if (!event.currentTarget.contains(range.commonAncestorContainer)) return;
+  const fragment = range.cloneContents();
+  for (const chip of fragment.querySelectorAll<HTMLElement>('[data-plain]')) {
+    chip.replaceWith(chip.dataset.plain ?? '');
+  }
+  event.clipboardData.setData('text/plain', fragment.textContent ?? '');
+  event.preventDefault();
+}
+
 export function UserBubble({
   text,
   materials = [],
   elementRefs = [],
   courseRefs = [],
+  t,
 }: {
   text: string;
   materials?: string[];
   elementRefs?: readonly ElementRef[];
   courseRefs?: readonly CourseRef[];
+  t?: WorkbenchTranslator;
 }) {
-  // A course or material named in the sentence (`@name`, as the composer
-  // writes a mention out) is shown there, highlighted; only one the text does
-  // not name keeps its chip below.
+  const skills = useSkillChipNames(t);
+  // A course or material named in the sentence (`@name`, as the composer writes
+  // a mention out) is a chip there, as in the composer; only one the text does
+  // not name keeps its receipt below.
   const named = (name: string) => !!name && text.includes(`@${name}`);
-  const inlineNames = [
-    ...courseRefs.filter((ref) => named(ref.title)).map((ref) => `@${ref.title}`),
-    ...materials.filter(named).map((name) => `@${name}`),
-  ];
+  const courseKey = courseRefs.map((ref) => `${ref.stageId}:${ref.title}`).join('|');
+  const materialKey = materials.join('|');
+  const runs = useMemo(() => {
+    const mentions: [string, InlineMention][] = [
+      ...courseRefs
+        .filter((ref) => named(ref.title))
+        .map((ref): [string, InlineMention] => [
+          `@${ref.title}`,
+          { label: `@${ref.title}`, kind: 'course', id: ref.stageId, name: ref.title },
+        ]),
+      ...materials
+        .filter(named)
+        .map((name): [string, InlineMention] => [
+          `@${name}`,
+          { label: `@${name}`, kind: 'material', id: name, name },
+        ]),
+    ];
+    const source: ComposerChipSource = {
+      skills,
+      mentions: new Map(mentions),
+      mentionIcon: composerMentionIcon,
+    };
+    return composerTextRuns(text, source);
+    // The refs arrive as fresh arrays on every fold; their contents are the keys.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text, skills, courseKey, materialKey]);
   const chipCourses = courseRefs.filter((ref) => !named(ref.title));
   const chipMaterials = materials.filter((name) => !named(name));
   return (
     <div className={styles.userBubble.row}>
       <div className={styles.userBubble.bubble}>
         {text ? (
-          <div>
-            {segmentMentions(text, inlineNames).map((run, index) =>
-              run.mention ? (
-                <span
+          <div onCopy={copyAsWritten}>
+            {runs.map((run, index) =>
+              run.chip ? (
+                <ComposerChip
                   key={index}
-                  data-testid="user-bubble-mention"
-                  className={styles.userBubble.mention}
-                >
-                  {run.text}
-                </span>
+                  chip={run.chip}
+                  testId={run.chip.kind === 'skill' ? 'user-bubble-skill' : 'user-bubble-mention'}
+                />
               ) : (
                 <span key={index}>{run.text}</span>
               ),

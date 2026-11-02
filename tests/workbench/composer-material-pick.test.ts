@@ -563,7 +563,7 @@ describe('a message that names a course with @', () => {
     // Before the conversation even exists: the bubble, with the course where it
     // stood, an empty composer, and no course left behind as a pill.
     const mention = container.querySelector('[data-testid="user-bubble-mention"]');
-    expect(mention?.textContent).toBe('@Classroom');
+    expect(mention?.textContent).toBe('Classroom');
     expect(container.textContent).toContain('Explain');
     expect(composerText(textarea)).toBe('');
     expect(container.querySelector('[data-testid="course-ref-pill"]')).toBeNull();

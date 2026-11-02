@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   composerSchema,
+  composerTextRuns,
   docFromPlain,
   normalizeComposerDoc,
   offsetOfPos,
@@ -104,6 +105,18 @@ describe('the string and the document', () => {
   it('takes pasted text as lines, nothing more', () => {
     expect(plainOfSlice(sliceOfPlainText('one\r\ntwo\n'))).toBe('one\ntwo\n');
     expect(sliceOfPlainText('').size).toBe(0);
+  });
+});
+
+describe('a text that is only shown', () => {
+  it('cuts into the same chips the input draws, and joins back to itself', () => {
+    const text = '/deep-interactive a\n@Fractions /deep-interactive2';
+    const runs = composerTextRuns(text, source);
+    expect(runs.map((run) => run.text).join('')).toBe(text);
+    expect(runs.flatMap((run) => (run.chip ? [run.chip.label] : []))).toEqual([
+      '深度交互',
+      'Fractions, the whole unit',
+    ]);
   });
 });
 

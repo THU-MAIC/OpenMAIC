@@ -1,11 +1,11 @@
 /**
- * The composer chip's glyphs, as data: a chip is drawn by ProseMirror's `toDOM`
- * rather than React, so it cannot render a lucide component. The paths are
+ * The composer chip's glyphs, as data: in the input a chip is drawn by ProseMirror's
+ * `toDOM` rather than React, so it cannot render a lucide component. The paths are
  * lucide's (ISC), the same icons the rest of the workbench shows.
  */
 import type { DOMOutputSpec } from 'prosemirror-model';
 
-type IconNode = readonly (readonly [string, Readonly<Record<string, string>>])[];
+export type IconNode = readonly (readonly [string, Readonly<Record<string, string>>])[];
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -113,6 +113,11 @@ const ICONS = {
 } as const satisfies Record<string, IconNode>;
 
 export type ComposerChipIcon = keyof typeof ICONS;
+
+/** The icon's shapes, for a chip React draws (a sent message's). */
+export function composerChipIconNodes(icon: ComposerChipIcon): IconNode {
+  return ICONS[icon] as IconNode;
+}
 
 /** The icon as a ProseMirror DOM spec, drawn in the chip's text colour. */
 export function composerChipIconSpec(icon: ComposerChipIcon): DOMOutputSpec {

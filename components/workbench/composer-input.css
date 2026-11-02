@@ -1,4 +1,4 @@
-/* The composer's rich-text input and its chips. Global: both workbench composers
+/* The composer's rich-text input, and its chips (a sent message draws them too). Global: both workbench composers
    use it, on routes that do not all load the workspace's stylesheet. */
 
 .composer-input {
@@ -51,6 +51,18 @@
 .dark .composer-chip {
   background: rgba(139, 92, 246, 0.2);
   color: #c4b5fd;
+}
+
+/* In a sent message: the bubble is itself a violet tint, so the chip stands on it
+   in white, and in a lighter translucent violet on the dark one. */
+.composer-chip[data-surface='bubble'] {
+  background: #fff;
+  color: #6d28d9;
+}
+
+.dark .composer-chip[data-surface='bubble'] {
+  background: rgba(196, 181, 253, 0.18);
+  color: #ddd6fe;
 }
 
 .composer-chip-label {

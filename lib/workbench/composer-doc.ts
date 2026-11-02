@@ -74,22 +74,42 @@ export interface ComposerChipSource {
   readonly mentionIcon: (mention: InlineMention) => ComposerChipIcon;
 }
 
-function chipFor(text: string, source: ComposerChipSource): Node | null {
+/** What a chip shows and stands for. */
+export interface ComposerChipAttrs {
+  readonly kind: ComposerChipKind;
+  /** What the string holds for it: `/handle` or `@label`. */
+  readonly text: string;
+  readonly label: string;
+  readonly icon: ComposerChipIcon;
+  readonly id: string | null;
+  readonly name: string | null;
+}
+
+/** The chip a run of text is, or null when it does not resolve. */
+export function composerChipAttrs(
+  text: string,
+  source: ComposerChipSource,
+): ComposerChipAttrs | null {
   const mention = source.mentions.get(text);
   if (mention) {
-    return chipType.create({
+    return {
       kind: mention.kind,
       text,
       label: mention.name,
       icon: source.mentionIcon(mention),
       id: mention.id,
       name: mention.name,
-    });
+    };
   }
   const shown = text.startsWith('/') ? source.skills.get(text.slice(1)) : undefined;
   return shown === undefined
     ? null
-    : chipType.create({ kind: 'skill', text, label: shown, icon: 'sparkles' });
+    : { kind: 'skill', text, label: shown, icon: 'sparkles', id: null, name: null };
+}
+
+function chipFor(text: string, source: ComposerChipSource): Node | null {
+  const attrs = composerChipAttrs(text, source);
+  return attrs ? chipType.create(attrs) : null;
 }
 
 function plainOfParagraph(paragraph: Node): string {
@@ -200,6 +220,25 @@ function runsOfLine(line: string, names: readonly string[], labels: readonly str
           chip: run.mention,
         })),
   );
+}
+
+/**
+ * A whole text cut into plain runs and chips: the same rule the input draws by,
+ * for a surface that only shows the text. Joining every run's text gives it back.
+ */
+export function composerTextRuns(
+  text: string,
+  source: ComposerChipSource,
+): readonly { readonly text: string; readonly chip: ComposerChipAttrs | null }[] {
+  const names = namesOf(source);
+  const labels = labelsOf(source);
+  return text.split('\n').flatMap((line, index) => [
+    ...(index > 0 ? [{ text: '\n', chip: null }] : []),
+    ...runsOfLine(line, names, labels).map((run) => ({
+      text: run.text,
+      chip: run.chip ? composerChipAttrs(run.text, source) : null,
+    })),
+  ]);
 }
 
 function namesOf(source: ComposerChipSource): string[] {
