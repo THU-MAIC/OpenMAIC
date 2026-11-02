@@ -101,6 +101,26 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
     let authorizationFailure = false;
     const gatewayOrigin = 'http://preview-fixture.localhost';
     const commands: string[] = [];
+    const readinessDuringPause = nested && !legacyMove;
+    const openingStage = view.stage;
+    let releaseFirstDocument: (() => void) | undefined;
+    if (readinessDuringPause) {
+      view.role = 'planner';
+      view.actions = ['chat', 'edit'];
+      view.stage = {
+        kind: 'produce',
+        agent: 'planner',
+        writes: 'plan',
+        reviewRequired: true,
+        reads: [],
+        studentActions: ['chat', 'edit'],
+      } as LearningView['stage'];
+      workbench.canEdit = true;
+      workbench.planning = true;
+      delayedImage = new Promise<void>((resolve) => {
+        releaseFirstDocument = resolve;
+      });
+    }
     const serveApplication = async (route: import('@playwright/test').Route) => {
       documents++;
       if (delayedDocument) {
@@ -218,6 +238,50 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
     await expect(page.getByText('Try this interface.', { exact: true })).toBeHidden();
     const outerApp = page.frameLocator('iframe[title="Preview form"]');
     const app = nested ? outerApp.frameLocator('iframe[title="Application"]') : outerApp;
+    if (readinessDuringPause) {
+      // Hold the first real application document open, edit then undo before
+      // autosave. Readiness while dirty must still establish this candidate.
+      await expect.poll(() => imageWaiting).toBe(true);
+      const firstBoot = await app
+        .locator('body')
+        .evaluate(() => (window as unknown as { boot: string }).boot);
+      await app.getByRole('textbox', { name: 'Draft', exact: true }).evaluate((input) => {
+        (input as HTMLInputElement).value = 'Candidate client state';
+      });
+      await expect(page.locator('.monaco-editor textarea').first()).toBeEditable();
+      await page.locator('.monaco-editor .view-lines .view-line').first().click();
+      await page.keyboard.press('End');
+      await page.keyboard.insertText('draft');
+      await expect(page.locator('.monaco-editor .view-lines')).toHaveText('Saved plandraft');
+      await expect(
+        panel.getByText('Wait for your edits to save before opening the application.', {
+          exact: true,
+        }),
+      ).toBeVisible();
+      releaseFirstDocument!();
+      await expect(panel.locator('iframe')).not.toHaveClass(/invisible/);
+      await expect(app.locator('html')).toHaveJSProperty('inert', true);
+      await expect(panel.locator('iframe')).toHaveAttribute('inert', '');
+      await page.keyboard.press('ControlOrMeta+Z');
+      await expect(page.locator('.monaco-editor .view-lines')).toHaveText('Saved plan');
+      await expect(panel.locator('iframe')).not.toHaveAttribute('inert', '');
+      await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toHaveValue(
+        'Candidate client state',
+      );
+      expect(
+        await app.locator('body').evaluate(() => (window as unknown as { boot: string }).boot),
+      ).toBe(firstBoot);
+      expect(launches).toBe(1);
+      expect(documents).toBe(1);
+      expect(commands).toEqual([]);
+      view.role = 'discussion';
+      view.actions = ['chat'];
+      view.stage = openingStage;
+      workbench.canEdit = false;
+      workbench.planning = false;
+      view.activitySequence!++;
+      await publishLearning();
+    }
     await expect(panel.locator('iframe')).not.toHaveAttribute('inert', '');
     await app.getByRole('textbox', { name: 'Draft', exact: true }).fill('Unsaved form input');
     await app.getByRole('button', { name: 'Increment', exact: true }).click();

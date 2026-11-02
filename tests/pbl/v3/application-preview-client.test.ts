@@ -1646,3 +1646,60 @@ it.each(['auth', 'timeout'])(
     }
   },
 );
+
+it.each(['dirty', 'agent', 'assessment'])(
+  'retains an initial candidate that becomes ready during %s pause',
+  async (pause) => {
+    const first = {
+      ...running,
+      preview: { ...running.preview, url: 'https://isolated.example/__openmaic_preview#first' },
+    };
+    mocks.request
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce({ state: 'running', observedAt: '', sourceChanged: false })
+      .mockResolvedValue({
+        ...first,
+        preview: { ...first.preview, url: 'https://isolated.example/__openmaic_preview#duplicate' },
+      });
+    const f = await fixture();
+    try {
+      await f.click();
+      const frame = f.host.querySelector('iframe')!;
+      frame.contentDocument!.write('<!doctype html><body></body>');
+      frame.contentDocument!.close();
+      const draft = frame.contentDocument!.createElement('input');
+      draft.value = 'unsaved draft';
+      frame.contentDocument!.body.append(draft);
+      await act(async () =>
+        f.root.render(
+          createElement(Harness, {
+            dirty: pause === 'dirty',
+            current: {
+              ...view,
+              busy: pause === 'agent',
+              evaluation: pause === 'assessment' ? ({} as LearningView['evaluation']) : null,
+            },
+          }),
+        ),
+      );
+      await act(async () =>
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            source: frame.contentWindow,
+            origin: 'https://isolated.example',
+            data: { type: 'openmaic-preview-ready' },
+          }),
+        ),
+      );
+      expect(frame.hasAttribute('inert')).toBe(true);
+      await act(async () => f.root.render(createElement(Harness)));
+      expect(mocks.request.mock.calls.map((call) => call[1].action)).toEqual(['open', 'status']);
+      expect(f.host.querySelector('iframe')).toBe(frame);
+      expect(frame.contentDocument!.querySelector('input')).toBe(draft);
+      expect(draft.value).toBe('unsaved draft');
+      expect(frame.hasAttribute('inert')).toBe(false);
+    } finally {
+      await f.cleanup();
+    }
+  },
+);

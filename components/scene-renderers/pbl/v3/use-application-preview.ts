@@ -60,7 +60,10 @@ export function useApplicationPreview(
   // A dispatched launch may finish after its fetch is cancelled or fails.
   // Keep the old page visible, but do not reuse it as the restarted app's page.
   const replacementNeeded = useRef(false);
-  const documentAttempt = useRef<number | null>(null);
+  // Request cancellation also happens on pause/status checks. Only another
+  // embedded launch can supersede a candidate's process continuity evidence.
+  const embeddedLaunch = useRef<number | null>(null);
+  const documentLaunch = useRef<number | null>(null);
   const unresolvedLaunch = useRef<{
     binding: string;
     stage: string;
@@ -101,7 +104,8 @@ export function useApplicationPreview(
     setRefreshNeeded(false);
     observedRevision.current = null;
     replacementNeeded.current = false;
-    documentAttempt.current = null;
+    embeddedLaunch.current = null;
+    documentLaunch.current = null;
     unresolvedLaunch.current = null;
   }, [binding]);
   useEffect(
@@ -123,7 +127,8 @@ export function useApplicationPreview(
       setObservation(null);
       setRefreshNeeded(false);
       replacementNeeded.current = false;
-      documentAttempt.current = null;
+      embeddedLaunch.current = null;
+      documentLaunch.current = null;
       unresolvedLaunch.current = null;
     } else setRefreshNeeded(true);
   }, [disabled, unavailable]);
@@ -212,6 +217,7 @@ export function useApplicationPreview(
         }
         // A ticket is not a usable document, including on the first launch.
         replacementNeeded.current = true;
+        embeddedLaunch.current = serial;
         const launch = resumable ?? { binding, stage, request: { ...request } };
         unresolvedLaunch.current = launch;
         const result = await waitForApplication(request, abort.signal, assertCurrent, () => {
@@ -221,7 +227,7 @@ export function useApplicationPreview(
         if (serial === attempt.current) {
           observedRevision.current = view.revision;
           if (result.preview) {
-            documentAttempt.current = serial;
+            documentLaunch.current = serial;
             setExpiredAt(null);
             setObservation(result);
             setFrameVersion((value) => value + 1);
@@ -269,7 +275,11 @@ export function useApplicationPreview(
   }, []);
   const documentReady = useCallback(
     (version: number) => {
-      if (version === frameVersion && documentAttempt.current === attempt.current)
+      if (
+        version === frameVersion &&
+        documentLaunch.current !== null &&
+        documentLaunch.current === embeddedLaunch.current
+      )
         replacementNeeded.current = false;
     },
     [frameVersion],
