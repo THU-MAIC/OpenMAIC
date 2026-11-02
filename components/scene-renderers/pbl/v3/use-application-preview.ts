@@ -6,14 +6,25 @@ import type { ApplicationObservation } from '@/lib/pbl/v3/application';
 import { pblRequest } from './request';
 import { useI18n } from '@/lib/hooks/use-i18n';
 
+interface ApplicationLaunch {
+  studyId: string;
+  environmentId: string;
+  revision: number;
+  epoch: number;
+  id: string;
+  action: 'open' | 'restart';
+}
+
 /** Readiness retries retain one launch receipt in both embedded and new-tab opens. */
 async function waitForApplication(
-  request: Record<string, unknown>,
+  request: Omit<ApplicationLaunch, 'action'> & { action: ApplicationLaunch['action'] | 'status' },
   signal: AbortSignal,
   assertCurrent: () => void = () => signal.throwIfAborted(),
+  acknowledge?: () => void,
 ) {
   assertCurrent();
   let result = await pblRequest<ApplicationObservation>('/api/pbl/v3/application', request, signal);
+  acknowledge?.();
   assertCurrent();
   for (
     let retry = 0;
@@ -25,6 +36,7 @@ async function waitForApplication(
     await new Promise((resolve) => setTimeout(resolve, 500));
     assertCurrent();
     result = await pblRequest<ApplicationObservation>('/api/pbl/v3/application', request, signal);
+    acknowledge?.();
     assertCurrent();
   }
   return result;
@@ -49,6 +61,11 @@ export function useApplicationPreview(
   // Keep the old page visible, but do not reuse it as the restarted app's page.
   const replacementNeeded = useRef(false);
   const documentAttempt = useRef<number | null>(null);
+  const unresolvedLaunch = useRef<{
+    binding: string;
+    stage: string;
+    request: ApplicationLaunch;
+  } | null>(null);
   const previewDeadline = useRef<number | undefined>(undefined);
   previewDeadline.current = observation?.preview?.expiresAt;
   const hasPreview = !!observation?.preview;
@@ -69,6 +86,7 @@ export function useApplicationPreview(
     workbench.environmentId !== view.environmentId;
   const disabled = unavailable || dirty || !!view?.busy || !!view?.evaluation;
   const binding = `${view?.id}:${view?.environmentId}:${workbench?.environmentId}:${workbench?.epoch}`;
+  const stage = `${view?.state?.position?.milestoneId}:${view?.state?.position?.stageIndex}`;
   const [observedBinding, setObservedBinding] = useState(binding);
   const currentBinding = observedBinding === binding;
   useEffect(() => {
@@ -84,6 +102,7 @@ export function useApplicationPreview(
     observedRevision.current = null;
     replacementNeeded.current = false;
     documentAttempt.current = null;
+    unresolvedLaunch.current = null;
   }, [binding]);
   useEffect(
     () => () => {
@@ -105,6 +124,7 @@ export function useApplicationPreview(
       setRefreshNeeded(false);
       replacementNeeded.current = false;
       documentAttempt.current = null;
+      unresolvedLaunch.current = null;
     } else setRefreshNeeded(true);
   }, [disabled, unavailable]);
   useEffect(() => {
@@ -138,14 +158,28 @@ export function useApplicationPreview(
       setPending(true);
       setError('');
       setRefreshNeeded(false);
-      const request = {
-        studyId: view.id,
-        environmentId: workbench.environmentId,
-        revision: view.revision,
-        epoch: workbench.epoch,
-        id: crypto.randomUUID(),
-        action,
-      };
+      const original = unresolvedLaunch.current;
+      const resumable =
+        original &&
+        original.binding === binding &&
+        original.stage === stage &&
+        original.request.revision === view.revision &&
+        (action === 'open' || original.request.action === action)
+          ? original
+          : null;
+      // A newer workspace version supersedes the old request. The backend checks
+      // revision before receipt lookup; never mutate an ID's inputs or replay stale work.
+      if (original && !resumable) unresolvedLaunch.current = null;
+      const request: ApplicationLaunch = resumable
+        ? { ...resumable.request }
+        : {
+            studyId: view.id,
+            environmentId: workbench.environmentId,
+            revision: view.revision,
+            epoch: workbench.epoch,
+            id: crypto.randomUUID(),
+            action,
+          };
       const assertCurrent = () => {
         if (serial !== attempt.current) abort.abort();
         if (serial === attempt.current && expiredRecovery()) {
@@ -156,7 +190,7 @@ export function useApplicationPreview(
         abort.signal.throwIfAborted();
       };
       try {
-        if (recovery && observation?.preview) {
+        if (!resumable && recovery && observation?.preview) {
           const status = await waitForApplication(
             { ...request, action: 'status' },
             abort.signal,
@@ -177,7 +211,12 @@ export function useApplicationPreview(
             request.action = 'restart';
         }
         if (observation?.preview) replacementNeeded.current = true;
-        const result = await waitForApplication(request, abort.signal, assertCurrent);
+        const launch = resumable ?? { binding, stage, request: { ...request } };
+        unresolvedLaunch.current = launch;
+        const result = await waitForApplication(request, abort.signal, assertCurrent, () => {
+          // Even a late response acknowledges this exact launch, not a newer one.
+          if (unresolvedLaunch.current === launch) unresolvedLaunch.current = null;
+        });
         if (serial === attempt.current) {
           observedRevision.current = view.revision;
           if (result.preview) {
@@ -204,7 +243,7 @@ export function useApplicationPreview(
         if (serial === attempt.current) setPending(false);
       }
     },
-    [currentBinding, disabled, view, workbench, observation, t],
+    [currentBinding, disabled, view, workbench, observation, t, binding, stage],
   );
   useEffect(() => {
     if (

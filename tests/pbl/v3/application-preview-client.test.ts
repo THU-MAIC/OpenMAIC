@@ -244,8 +244,6 @@ it.each([
   ['restart', 'collapse', 'running'],
   ['source-change', 'collapse', 'running'],
   ['stopped', 'collapse', 'running'],
-  ['restart', 'collapse', 'stopped'],
-  ['restart', 'collapse', 'failed'],
   ['restart', 'expiry', 'running'],
   ['restart', 'dirty', 'running'],
   ['restart', 'revision', 'running'],
@@ -273,7 +271,7 @@ it.each([
         reject = fail;
       });
     });
-    if (!interruption.startsWith('error') && interruption !== 'failed-result')
+    if (interruption === 'revision' || interruption === 'failed-result')
       mocks.request.mockResolvedValueOnce({ state: backend, observedAt: '', sourceChanged: false });
     const replacement = {
       ...running,
@@ -331,15 +329,20 @@ it.each([
               .click(),
           );
       }
+      if (interruption !== 'revision' && interruption !== 'failed-result') {
+        const dispatched = launch === 'restart' ? 1 : 2;
+        expect(mocks.request.mock.calls.at(-1)![1]).toEqual(
+          mocks.request.mock.calls[dispatched][1],
+        );
+      }
       const actions = mocks.request.mock.calls.map((call) => call[1].action);
       expect(actions).toEqual([
         'open',
         ...(launch === 'restart' ? [] : ['status']),
         launch === 'stopped' ? 'open' : 'restart',
-        ...(!interruption.startsWith('error') && interruption !== 'failed-result'
-          ? ['status']
-          : []),
-        'open',
+        ...(interruption === 'revision' || interruption === 'failed-result'
+          ? ['status', 'open']
+          : [launch === 'stopped' ? 'open' : 'restart']),
       ]);
       const frames = f.host.querySelectorAll('iframe');
       expect(frames).toHaveLength(2);
@@ -595,12 +598,6 @@ it.each(['gateway-error', 'direct-error', 'gateway-collapse', 'direct-collapse']
             reject = fail;
           }),
       );
-    if (kind.endsWith('collapse'))
-      mocks.request.mockResolvedValueOnce({
-        state: 'running',
-        observedAt: '',
-        sourceChanged: false,
-      });
     mocks.request.mockResolvedValueOnce(running);
     const f = await fixture();
     try {
@@ -633,14 +630,240 @@ it.each(['gateway-error', 'direct-error', 'gateway-collapse', 'direct-collapse']
         'open',
         'restart',
         'restart',
-        ...(kind.endsWith('collapse') ? ['status'] : []),
-        'open',
+        'restart',
       ]);
     } finally {
       await f.cleanup();
     }
   },
 );
+
+it.each([false, true])(
+  'retries one exact restart receipt once (already durable: %s)',
+  async (durable) => {
+    let finish!: (result: ApplicationObservation) => void;
+    let launched = 0;
+    const receipts = new Set<string>();
+    let firstRestart = true;
+    mocks.request.mockImplementation((_url, body) => {
+      if (body.action === 'restart') {
+        if (firstRestart) {
+          firstRestart = false;
+          if (durable) {
+            receipts.add(body.id);
+            launched++;
+          }
+          return new Promise((resolve) => {
+            finish = resolve;
+          });
+        }
+        if (!receipts.has(body.id)) {
+          receipts.add(body.id);
+          launched++;
+        }
+      }
+      return Promise.resolve(running);
+    });
+    const f = await fixture();
+    try {
+      await f.click();
+      const old = f.host.querySelector('iframe')!;
+      await act(async () =>
+        (
+          f.host.querySelector('[aria-label="pblV3.application.restart"]') as HTMLButtonElement
+        ).click(),
+      );
+      const original = mocks.request.mock.calls[1][1];
+      await f.click();
+      await f.click();
+      expect(mocks.request.mock.calls.map((c) => c[1].action)).toEqual([
+        'open',
+        'restart',
+        'restart',
+      ]);
+      expect(mocks.request.mock.calls[2][1]).toEqual(original);
+      expect(launched).toBe(1);
+      expect(f.host.querySelectorAll('iframe')).toHaveLength(2);
+      await act(async () => finish(running));
+      expect(f.host.querySelectorAll('iframe')).toHaveLength(2);
+      expect(f.host.querySelector('iframe')).toBe(old);
+      await act(async () => f.host.querySelectorAll('iframe')[1].dispatchEvent(new Event('load')));
+      expect(f.host.querySelectorAll('iframe')).toHaveLength(1);
+    } finally {
+      await f.cleanup();
+    }
+  },
+);
+
+it.each(['revision', 'stage', 'epoch', 'environment'])(
+  'drops an obsolete unresolved restart when %s changes instead of replaying stale input',
+  async (change) => {
+    mocks.request
+      .mockResolvedValueOnce(running)
+      .mockImplementationOnce(() => new Promise(() => {}))
+      .mockResolvedValue(running);
+    const f = await fixture();
+    try {
+      await f.click();
+      await act(async () =>
+        (
+          f.host.querySelector('[aria-label="pblV3.application.restart"]') as HTMLButtonElement
+        ).click(),
+      );
+      const original = mocks.request.mock.calls[1][1];
+      await f.click();
+      const replacement = {
+        ...view,
+        revision: change === 'revision' ? 1 : 0,
+        environmentId: change === 'environment' ? 'new-environment' : view.environmentId,
+        ...(change === 'stage'
+          ? {
+              state: {
+                position: { milestoneId: 'greeting', stageIndex: 1 },
+              } as LearningView['state'],
+            }
+          : {}),
+      };
+      await act(async () =>
+        f.root.render(
+          createElement(Harness, {
+            current: replacement,
+            epoch: change === 'epoch' ? 1 : 0,
+            workbenchEnvironmentId: replacement.environmentId!,
+          }),
+        ),
+      );
+      await f.click();
+      const later = mocks.request.mock.calls.slice(2).map((c) => c[1]);
+      expect(later.every((r) => r.id !== original.id)).toBe(true);
+      expect(later.at(-1)).toMatchObject({
+        action: 'open',
+        revision: replacement.revision,
+        epoch: change === 'epoch' ? 1 : 0,
+        environmentId: replacement.environmentId,
+      });
+      expect(later.some((r) => r.action === 'restart')).toBe(false);
+    } finally {
+      await f.cleanup();
+    }
+  },
+);
+
+it('a late ACK for an old request cannot acknowledge a newer unresolved launch', async () => {
+  let finishOld!: (r: ApplicationObservation) => void,
+    finishNew!: (r: ApplicationObservation) => void;
+  mocks.request
+    .mockResolvedValueOnce(running)
+    .mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          finishOld = r;
+        }),
+    )
+    .mockResolvedValueOnce({ state: 'running', observedAt: '', sourceChanged: false })
+    .mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          finishNew = r;
+        }),
+    )
+    .mockResolvedValue(running);
+  const f = await fixture();
+  try {
+    await f.click();
+    await act(async () =>
+      (
+        f.host.querySelector('[aria-label="pblV3.application.restart"]') as HTMLButtonElement
+      ).click(),
+    );
+    await act(async () =>
+      f.root.render(createElement(Harness, { current: { ...view, revision: 1 } })),
+    );
+    const newer = mocks.request.mock.calls[3][1];
+    await act(async () => finishOld(running));
+    await f.click();
+    await f.click();
+    expect(mocks.request.mock.calls.at(-1)![1]).toEqual(newer);
+    await act(async () => finishNew(running));
+    expect(f.host.querySelectorAll('iframe')).toHaveLength(2);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it('does not repeat a restart already acknowledged before a cancelled readiness retry', async () => {
+  vi.useFakeTimers();
+  mocks.request
+    .mockResolvedValueOnce(running)
+    .mockResolvedValueOnce({ state: 'starting', observedAt: '' })
+    .mockResolvedValueOnce({ state: 'running', observedAt: '', sourceChanged: false })
+    .mockResolvedValueOnce(running);
+  const f = await fixture();
+  try {
+    await f.click();
+    await act(async () =>
+      (
+        f.host.querySelector('[aria-label="pblV3.application.restart"]') as HTMLButtonElement
+      ).click(),
+    );
+    await f.click();
+    await f.click();
+    expect(mocks.request.mock.calls.map((c) => c[1].action)).toEqual([
+      'open',
+      'restart',
+      'status',
+      'open',
+    ]);
+    await act(async () => vi.advanceTimersByTimeAsync(501));
+    expect(mocks.request).toHaveBeenCalledTimes(4);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it('the visible reopen control reinspects changed source after an expired status response', async () => {
+  vi.useFakeTimers();
+  let finish!: (r: ApplicationObservation) => void;
+  mocks.request
+    .mockResolvedValueOnce({
+      ...running,
+      preview: { ...running.preview, expiresAt: Date.now() + 1000 },
+    })
+    .mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          finish = r;
+        }),
+    );
+  const f = await fixture();
+  try {
+    await f.click();
+    await act(async () =>
+      f.root.render(createElement(Harness, { current: { ...view, revision: 1 } })),
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(1001));
+    await act(async () => finish({ state: 'running', observedAt: '', sourceChanged: true }));
+    mocks.request
+      .mockResolvedValueOnce({ state: 'running', observedAt: '', sourceChanged: true })
+      .mockResolvedValueOnce({
+        ...running,
+        preview: { ...running.preview, expiresAt: Date.now() + 300000 },
+      });
+    await act(async () =>
+      [...f.host.querySelectorAll('button')]
+        .find((b) => b.textContent === 'pblV3.application.reopen')!
+        .click(),
+    );
+    expect(mocks.request.mock.calls.map((c) => c[1].action)).toEqual([
+      'open',
+      'status',
+      'status',
+      'restart',
+    ]);
+  } finally {
+    await f.cleanup();
+  }
+});
 
 it('does not launch an unopened or collapsed application when background work finishes', async () => {
   mocks.request.mockResolvedValue(running);
@@ -933,10 +1156,8 @@ it.each(['before-work', 'during-work'])(
       expect(mocks.request).toHaveBeenCalledTimes(1);
       expect(f.host.querySelector('iframe')?.hidden).toBe(true);
       expect(f.host.textContent).toContain('pblV3.application.expired');
-      if (timing === 'before-work') {
-        await f.click();
-        mocks.request.mockResolvedValueOnce({ state: 'running', observedAt: '' });
-      }
+      if (timing === 'before-work') await f.click();
+      mocks.request.mockResolvedValueOnce({ state: 'running', observedAt: '' });
       mocks.request.mockResolvedValueOnce({
         ...running,
         preview: { ...running.preview, expiresAt: Date.now() + 60_000 },
@@ -946,9 +1167,11 @@ it.each(['before-work', 'during-work'])(
       )!;
       if (timing === 'before-work') await f.click();
       else await act(async () => reopen.click());
-      expect(mocks.request.mock.calls.map((call) => call[1].action)).toEqual(
-        timing === 'before-work' ? ['open', 'status', 'open'] : ['open', 'open'],
-      );
+      expect(mocks.request.mock.calls.map((call) => call[1].action)).toEqual([
+        'open',
+        'status',
+        'open',
+      ]);
       expect(f.host.querySelector('iframe')?.hidden).toBe(false);
     } finally {
       await f.cleanup();

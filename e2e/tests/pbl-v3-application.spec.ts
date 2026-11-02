@@ -95,6 +95,8 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
     let stopped = false;
     let delayedDocument: Promise<void> | undefined;
     let delayedAuthorization: Promise<void> | undefined;
+    let delayedImage: Promise<void> | undefined;
+    let imageWaiting = false;
     let authorizationWaiting = false;
     let authorizationFailure = false;
     const gatewayOrigin = 'http://preview-fixture.localhost';
@@ -110,7 +112,8 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
         contentType: 'text/html',
         body: `<!doctype html>
         <form onsubmit="event.preventDefault();document.querySelector('output').textContent=++window.count"><label>Draft <input aria-label="Draft"></label><button type="button" onclick="document.querySelector('output').textContent=++window.count">Increment</button><button type="submit">Submit</button></form><output>0</output>
-        <script>window.count=0;window.boot=crypto.randomUUID()</script>`,
+        ${nested && delayedImage ? '<img src="/pending-image">' : ''}
+        <script>window.count=0;window.boot=crypto.randomUUID();${nested ? 'document.querySelector("input").focus();window.initialFocusAttempt=true;' : ''}</script>`,
       });
     };
     await page.route('**/pbl-preview-fixture', serveApplication);
@@ -138,6 +141,13 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
           });
         }
         if (path === '/__openmaic_activity') return route.fulfill({ status: 204 });
+        if (path === '/pending-image') {
+          const wait = delayedImage;
+          delayedImage = undefined;
+          imageWaiting = true;
+          await wait;
+          return route.fulfill({ status: 204 });
+        }
         // Re-enter the shared app route; the browser document stays on the isolated origin.
         await serveApplication(route);
       });
@@ -335,6 +345,70 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
     await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toHaveValue(
       'Unsaved form input',
     );
+    if (nested) {
+      await expect(app.locator('html')).toHaveJSProperty('inert', true);
+      const attemptFocus = async () => {
+        await app.getByRole('textbox', { name: 'Draft', exact: true }).evaluate((input) => {
+          (input as HTMLInputElement).focus();
+          window.focus();
+          (window as unknown as { focusTimer: boolean }).focusTimer = false;
+          setTimeout(() => {
+            (input as HTMLInputElement).focus();
+            (window as unknown as { focusTimer: boolean }).focusTimer = true;
+          }, 0);
+        });
+        if (!legacyMove) await page.clock.runFor(1);
+        await expect
+          .poll(() =>
+            app
+              .locator('body')
+              .evaluate(() => (window as unknown as { focusTimer: boolean }).focusTimer),
+          )
+          .toBe(true);
+        await page.keyboard.type('AUTOFOCUS');
+        await page.keyboard.press('Enter');
+        await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toHaveValue(
+          'Unsaved form input',
+        );
+        await expect(app.locator('output')).toHaveText('1');
+      };
+      // Same-origin app code may poison the shell's MessageEvent prototype;
+      // neither real child messages nor forged dispatchEvent messages may enable input.
+      await app.locator('body').evaluate((_body, origin) => {
+        const proto = (parent as unknown as { MessageEvent: typeof MessageEvent }).MessageEvent
+          .prototype;
+        Object.defineProperty(proto, 'source', { configurable: true, get: () => parent.parent });
+        Object.defineProperty(proto, 'origin', { configurable: true, get: () => origin });
+        Object.defineProperty(proto, 'data', {
+          configurable: true,
+          get: () => ({ type: 'openmaic-preview-input', enabled: true }),
+        });
+        parent.postMessage({ type: 'openmaic-preview-input', enabled: true }, location.origin);
+        parent.dispatchEvent(
+          new (parent as unknown as { MessageEvent: typeof MessageEvent }).MessageEvent('message', {
+            source: parent.parent,
+            origin,
+            data: { type: 'openmaic-preview-input', enabled: true },
+          }),
+        );
+      }, new URL(page.url()).origin);
+      await attemptFocus();
+      await panel.getByRole('button', { name: 'Collapse application', exact: true }).click();
+      await expect(panel).not.toBeVisible();
+      await attemptFocus();
+      view.busy = false;
+      view.activitySequence!++;
+      await publishLearning();
+      await expect(page.getByTestId('pbl-application-open')).toBeEnabled();
+      await page.getByTestId('pbl-application-open').click();
+      await expect(app.locator('html')).toHaveJSProperty('inert', false);
+      await app.getByRole('textbox', { name: 'Draft', exact: true }).focus();
+      await page.keyboard.type('RESUMED');
+      await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toHaveValue(
+        'Unsaved form inputRESUMED',
+      );
+      await app.getByRole('textbox', { name: 'Draft', exact: true }).fill('Unsaved form input');
+    }
     view.busy = false;
     view.activitySequence!++;
     await publishLearning();
@@ -366,10 +440,15 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
       releaseDocument = resolve;
     });
     let releaseAuthorization: (() => void) | undefined;
-    if (nested)
+    let releaseImage: (() => void) | undefined;
+    if (nested) {
       delayedAuthorization = new Promise((resolve) => {
         releaseAuthorization = resolve;
       });
+      delayedImage = new Promise((resolve) => {
+        releaseImage = resolve;
+      });
+    }
     view.busy = false;
     view.revision++;
     view.activitySequence!++;
@@ -382,6 +461,27 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
         await expect(candidate.locator('#status')).toHaveText('Opening preview…');
         releaseAuthorization!();
         await expect(candidate.locator('iframe')).toHaveCount(1);
+        releaseDocument();
+        await expect.poll(() => imageWaiting).toBe(true);
+        const parsingApp = candidate.frameLocator('iframe');
+        await expect
+          .poll(() =>
+            parsingApp
+              .locator('body')
+              .evaluate(
+                () => (window as unknown as { initialFocusAttempt: boolean }).initialFocusAttempt,
+              ),
+          )
+          .toBe(true);
+        await expect(composer).toBeFocused();
+        await parsingApp
+          .locator('body')
+          .evaluate(
+            (_body, origin) =>
+              parent.parent.postMessage({ type: 'openmaic-preview-ready' }, origin),
+            new URL(page.url()).origin,
+          );
+        await expect(panel.locator('iframe')).toHaveCount(2);
       }
       await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toHaveValue(
         'Unsaved form input',
@@ -392,6 +492,7 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
     } finally {
       releaseAuthorization?.();
       releaseDocument();
+      releaseImage?.();
     }
     await expect(panel.locator('iframe')).toHaveCount(1);
     await expect(panel.locator('iframe')).not.toHaveAttribute('inert', '');

@@ -22,6 +22,10 @@ value on resume; ordinary autofocus cannot re-enter a paused or collapsed input.
 Initial nested documents stay hidden until readiness applies that input state.
 Control messages never count as activity. A valid renewal response already in
 flight remains accepted during pause; unsent debounced activity is dropped.
+If parsing/autofocus still moves focus into an unready or paused frame, a deferred
+ownership check returns it only to a connected, usable host target (or the owning
+workbench region). It never pulls focus back from another host control or an
+inactive window, and does not provide the keyboard security boundary.
 Old hosts omit the flag and retain their existing gateway behavior. Direct-HTML
 fixtures exercise legacy parent-frame handling, not this production input bridge.
 An unchanged `starting` process receives bounded,
@@ -29,6 +33,15 @@ read-only status retries; exhaustion keeps its document with a nonfatal starting
 message and an explicit reopen control. Changed sources restart even while the
 process is `starting`. Automatic recovery checks the latest accepted grant deadline
 before each readiness retry and before accepting a result; expiry requires explicit input.
+
+An interrupted, unacknowledged launch retains its exact request and idempotency ID.
+Recovery may retry that receipt only in the same study/environment/epoch, revision
+and teaching stage; it never changes an old ID's inputs. Any successful response to
+that exact launch acknowledges it, including a late response whose document is no
+longer accepted. A newer version discards the obsolete request and inspects current
+state instead. Document replacement intent remains independent until the current
+candidate is ready. Explicit reopen rechecks pending source recovery, including
+when its preceding automatic status response crossed the grant-expiry boundary.
 
 The owned gateway shell reports readiness only after its nested same-origin HTML
 document completes. Workbench promotion checks the exact current candidate window

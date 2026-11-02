@@ -63,6 +63,7 @@ function ApplicationPreviewContent({
   const frame = useRef<HTMLIFrameElement | null>(null);
   const candidate = useRef<HTMLIFrameElement | null>(null);
   const panel = useRef<HTMLElement | null>(null);
+  const lastHostFocus = useRef<HTMLElement | null>(null);
   const url = observation?.preview?.url;
   const [displayed, setDisplayed] = useState<{ url: string; version: number } | null>(null);
   const current = url ? { url, version: preview.frameVersion } : null;
@@ -113,6 +114,49 @@ function ApplicationPreviewContent({
     // Move only preview-owned focus; never steal focus from the learner's editor/chat.
     if ((!available || !preview.open) && document.activeElement === frame.current)
       panel.current?.focus({ preventScroll: true });
+  }, [available, preview.open]);
+  useLayoutEffect(() => {
+    let deferred: ReturnType<typeof setTimeout> | undefined;
+    const remember = () => {
+      const active = document.activeElement;
+      if (
+        active instanceof HTMLElement &&
+        active !== document.body &&
+        active !== frame.current &&
+        active !== candidate.current
+      )
+        lastHostFocus.current = active;
+    };
+    const reclaim = () => {
+      if (available && preview.open) return;
+      clearTimeout(deferred);
+      // Nested focus() finishes after the parent blur handler/microtask. This
+      // restores host focus only; the shell's document inertness blocks input.
+      deferred = setTimeout(() => {
+        if (!document.hasFocus() || document.visibilityState !== 'visible') return;
+        const active = document.activeElement;
+        if (active !== frame.current && active !== candidate.current) return;
+        const prior = lastHostFocus.current;
+        const target =
+          prior?.isConnected &&
+          !prior.closest('[inert]') &&
+          !prior.matches(':disabled') &&
+          prior.getClientRects().length
+            ? prior
+            : preview.open
+              ? panel.current
+              : panel.current?.closest<HTMLElement>('[data-pbl-focus-owner]');
+        target?.focus({ preventScroll: true });
+      }, 0);
+    };
+    remember();
+    document.addEventListener('focusin', remember, true);
+    window.addEventListener('blur', reclaim, true);
+    return () => {
+      clearTimeout(deferred);
+      document.removeEventListener('focusin', remember, true);
+      window.removeEventListener('blur', reclaim, true);
+    };
   }, [available, preview.open]);
   useLayoutEffect(() => {
     if (!url || currentReady) return;
@@ -330,7 +374,7 @@ function ApplicationPreviewContent({
               <button
                 type="button"
                 className="rounded border px-3 py-2 text-foreground"
-                onClick={() => void preview.load('open')}
+                onClick={() => void preview.load('open', 'explicit')}
               >
                 {t('pblV3.application.reopen')}
               </button>
