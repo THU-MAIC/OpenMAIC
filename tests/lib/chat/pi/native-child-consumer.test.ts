@@ -83,6 +83,16 @@ function resultFrom(parts: Array<Record<string, unknown>>) {
   };
 }
 
+function resultFromThenHang(parts: Array<Record<string, unknown>>) {
+  return {
+    fullStream: (async function* () {
+      for (const part of parts) yield part;
+      await new Promise(() => {});
+    })(),
+    usage: new Promise(() => {}),
+  };
+}
+
 function useResponses(responses: Array<Array<Record<string, unknown>>>) {
   mocks.streamLLM.mockImplementation(() =>
     resultFrom(responses.shift() ?? [{ type: 'text-delta', text: 'unexpected' }, finish('stop')]),
@@ -937,17 +947,14 @@ describe('Native Child production consumer', () => {
     });
   });
 
-  it('rejects a timed-out native child without recording a completed agent turn or emitting late lifecycle events', async () => {
+  it('finalizes a timed-out native child before propagating the timeout', async () => {
     vi.useFakeTimers();
     const previousTimeout = process.env[AGENT_TOOL_TIMEOUT_ENV];
     process.env[AGENT_TOOL_TIMEOUT_ENV] = '5000';
     try {
-      mocks.streamLLM.mockImplementation(() => ({
-        fullStream: (async function* () {
-          await new Promise(() => {});
-        })(),
-        usage: new Promise(() => {}),
-      }));
+      mocks.streamLLM.mockImplementation(() =>
+        resultFromThenHang([{ type: 'text-delta', text: 'Partial explanation' }]),
+      );
       const harness = makeHarness();
       const tool = withAgentToolTimeout(harness.tool);
       const promise = tool.execute('delegate-timeout', {
@@ -960,15 +967,51 @@ describe('Native Child production consumer', () => {
       await settled;
 
       expect(harness.events.filter((event) => event.type === 'agent_start')).toHaveLength(1);
-      expect(harness.events.filter((event) => event.type === 'agent_end')).toHaveLength(0);
-      expect(harness.summaries).toEqual([]);
+      expect(harness.events.filter((event) => event.type === 'agent_end')).toHaveLength(1);
+      expect(
+        harness.events
+          .filter((event) => event.type === 'text_delta')
+          .map((event) => event.data.content)
+          .join(''),
+      ).toBe('Partial explanation');
+      expect(harness.summaries).toEqual([
+        expect.objectContaining({
+          agentId: teacher.id,
+          contentPreview: 'Partial explanation',
+          actionCount: 0,
+        }),
+      ]);
       expect(harness.onActionDone).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(harness.events.filter((event) => event.type === 'agent_end')).toHaveLength(1);
       expect(vi.getTimerCount()).toBe(0);
     } finally {
       if (previousTimeout === undefined) delete process.env[AGENT_TOOL_TIMEOUT_ENV];
       else process.env[AGENT_TOOL_TIMEOUT_ENV] = previousTimeout;
       vi.useRealTimers();
     }
+  });
+
+  it('does not finalize a partially streamed native child on caller cancellation', async () => {
+    const abortController = new AbortController();
+    mocks.streamLLM.mockImplementation(() =>
+      resultFromThenHang([{ type: 'text-delta', text: 'Partial before cancellation' }]),
+    );
+    const harness = makeHarness({ abortController });
+    const pending = execute(harness);
+    await vi.waitFor(() =>
+      expect(harness.events.some((event) => event.type === 'text_delta')).toBe(true),
+    );
+
+    abortController.abort(new DOMException('request cancelled', 'AbortError'));
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(harness.events.filter((event) => event.type === 'agent_start')).toHaveLength(1);
+    expect(harness.events.filter((event) => event.type === 'agent_end')).toHaveLength(0);
+    expect(harness.summaries).toEqual([]);
+    expect(harness.onActionDone).not.toHaveBeenCalled();
   });
 
   it('performs zero Child transport and zero search request when already aborted', async () => {
