@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'motion/react';
 import { useStageStore, useCanvasStore } from '@/lib/store';
+import { settlePendingStageSave } from '@/lib/store/stage';
 import {
   isCurrentSceneEditable,
   isHostedSceneEditable,
@@ -282,7 +283,11 @@ export function Stage({
   // before it unmounts.
   const handleToggleEditMode = useCallback(async () => {
     if (mode === 'edit') {
-      setMode('playback');
+      // Done editing: the edits reach the server before the editor goes away.
+      await settlePendingStageSave();
+      // The wait can take a moment; act on the mode as it is now, not as it
+      // was when the switch was flipped.
+      if (useStageStore.getState().mode === 'edit') setMode('playback');
       return;
     }
     // Load the editor chunk (slide + quiz surfaces) BEFORE flipping mode,
