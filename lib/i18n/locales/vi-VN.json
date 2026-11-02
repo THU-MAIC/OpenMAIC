@@ -2983,15 +2983,17 @@
       "factSummary": "Một dự án được tạo và khám phá cùng AI.",
       "invite": "Biến ý tưởng thành hiện thực với OpenMAIC",
       "tagline": "Từ ý tưởng đến dự án. Học qua sáng tạo.",
-      "highlights": "Những gì ghi chép dự án cho thấy",
+      "highlights": "Một bước tiến đáng chúc mừng",
       "testsPassed": "Đã vượt qua kiểm thử hành vi",
       "linkPlaceholder": "Khóa học nhập môn · Liên kết mẫu, thay trước khi ra mắt",
+      "decisionsLabel": "Lựa chọn đã đưa ra",
+      "quizLabel": "Bài kiểm tra",
       "conclusions": {
-        "reviewed": "Ghi chép dự án bao gồm việc xem xét kế hoạch hoặc phần triển khai.",
-        "decided": "Ghi chép dự án bao gồm những lựa chọn triển khai của bạn.",
-        "verified": "Các kiểm thử hành vi đã lưu đều đạt và kiểm chứng hoạt động của dự án.",
-        "reflected": "Bạn đã hoàn thành phần nhìn lại và ghi nhận quá trình thực hiện.",
-        "completed": "Bạn đã hoàn thành các bước thực hành dự án và để lại ghi chép công việc."
+        "reviewed": "Bạn đã xem xét kế hoạch hoặc mã và đưa ý tưởng tiến thêm một bước.",
+        "decided": "Dự án này có những lựa chọn do chính bạn đưa ra.",
+        "verified": "Sản phẩm đã vượt qua kiểm thử hành vi. Một bước tiến đáng chúc mừng!",
+        "reflected": "Bạn đã nhìn lại phần thực hành và để lại ghi chép cho lần thử tiếp theo.",
+        "completed": "Bạn đã hoàn thành các bước thực hành dự án. Hãy chúc mừng bước tiến này!"
       }
     }
   }

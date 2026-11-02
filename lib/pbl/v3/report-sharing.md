@@ -19,6 +19,13 @@ URL/quote blacklists cannot guarantee that boundary. Summary skill counts repres
 not mastery. The private report and its analysis generation remain unchanged. Images have
 no public URL or server-side storage.
 
+Celebratory conclusions still require the same structured evidence; wording does not claim
+mastery or independently verified understanding. Share-specific decision/quiz labels are
+localized without changing the private report's existing copy. The current UI locale is
+passed explicitly to the canvas. Arabic text is RTL and aligned within each fixed text slot;
+numeric runs, scores, URLs and branding retain their LTR order. QR and layout coordinates
+are not mirrored, and export dimensions do not depend on document direction or viewport.
+
 The image waits only for its required font faces. If the preferred font fails, a system
 font keeps rendering and saving available; logo, QR and artwork failures still use the
 independent image retry. Text wraps at word boundaries and preserves grapheme clusters.

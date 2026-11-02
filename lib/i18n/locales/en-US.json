@@ -2983,15 +2983,17 @@
       "factSummary": "From an idea to something you can use.",
       "invite": "Your turn. Try Vibe Coding!",
       "tagline": "No coding experience needed to get started.",
-      "highlights": "What your project records show",
+      "highlights": "Progress worth celebrating",
       "testsPassed": "Behavior tests passed",
       "linkPlaceholder": "Intro course · placeholder link, replace before launch",
+      "decisionsLabel": "Decisions made",
+      "quizLabel": "Quiz",
       "conclusions": {
-        "reviewed": "The project records include a review of the plan or implementation.",
-        "decided": "The project records include implementation choices you made.",
-        "verified": "Saved behavior tests passed, providing evidence of how the project behaves.",
-        "reflected": "You completed a reflection and recorded a review of the process.",
-        "completed": "You completed project practice steps and left a record of the work."
+        "reviewed": "You reviewed the plan or code and moved your idea one step forward.",
+        "decided": "Your own choices are part of this project.",
+        "verified": "Your project passed its behavior tests. That step is worth celebrating!",
+        "reflected": "You reflected on your practice and left something to revisit next time.",
+        "completed": "You completed hands-on project steps. This progress is worth celebrating!"
       }
     }
   }

@@ -2983,15 +2983,17 @@
       "factSummary": "從一個想法，到一件真正能用的作品。",
       "invite": "你也來試試，一起練習 Vibe Coding！",
       "tagline": "沒有程式基礎，也可以跟著開始",
-      "highlights": "從專案記錄裡讀到的",
+      "highlights": "這次實踐，值得慶祝",
       "testsPassed": "行為測試已通過",
       "linkPlaceholder": "前置課入口 · 範例連結，上線前替換",
+      "decisionsLabel": "實作選擇",
+      "quizLabel": "測驗",
       "conclusions": {
-        "reviewed": "專案記錄保留了對方案或程式碼的核對過程。",
-        "decided": "專案記錄包含你作出的實作選擇。",
-        "verified": "已儲存的行為測試通過，為作品表現提供驗證。",
-        "reflected": "完成了實踐回顧，留下對過程的反思記錄。",
-        "completed": "完成了專案中的實踐環節，留下實際操作記錄。"
+        "reviewed": "你參與了方案或程式碼核對，把想法往前推進了一步。",
+        "decided": "這次實作裡，有你親自作出的選擇。",
+        "verified": "作品通過了行為測試，值得為這一步喝采！",
+        "reflected": "你完成了實踐回顧，為下一次嘗試留下了參考。",
+        "completed": "你完成了專案裡的實踐環節，這一步值得慶祝！"
       }
     }
   }

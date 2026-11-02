@@ -2983,15 +2983,17 @@
       "factSummary": "Um projeto criado e explorado com IA.",
       "invite": "Crie com OpenMAIC",
       "tagline": "Transforme uma ideia em projeto. Aprenda criando.",
-      "highlights": "O que os registros do projeto mostram",
+      "highlights": "Um progresso para celebrar",
       "testsPassed": "Testes de comportamento aprovados",
       "linkPlaceholder": "Curso introdutório · Link de exemplo, substituir antes da publicação",
+      "decisionsLabel": "Decisões tomadas",
+      "quizLabel": "Questionário",
       "conclusions": {
-        "reviewed": "Os registros do projeto incluem uma revisão do plano ou da implementação.",
-        "decided": "Os registros do projeto incluem suas escolhas de implementação.",
-        "verified": "Os testes de comportamento salvos foram aprovados e verificaram o funcionamento do projeto.",
-        "reflected": "Você concluiu uma reflexão e registrou uma revisão do processo.",
-        "completed": "Você concluiu etapas práticas do projeto e deixou um registro do trabalho."
+        "reviewed": "Você revisou o plano ou o código e fez sua ideia avançar.",
+        "decided": "Suas próprias escolhas fazem parte deste projeto.",
+        "verified": "Seu projeto passou nos testes de comportamento. Esse passo merece ser celebrado!",
+        "reflected": "Você refletiu sobre sua prática e deixou referências para a próxima tentativa.",
+        "completed": "Você concluiu etapas práticas do projeto. Esse progresso merece ser celebrado!"
       }
     }
   }

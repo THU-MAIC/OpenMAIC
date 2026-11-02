@@ -23,10 +23,12 @@ export async function renderReportShareImage(
   orientation: ShareOrientation,
   theme: ShareTheme,
   t: (key: string) => string,
+  locale = 'en-US',
 ): Promise<Blob> {
   const [width, height] = shareImageSizes[orientation];
   const dark = theme === 'dark';
   const portrait = orientation === 'portrait';
+  const direction = locale.startsWith('ar') ? 'rtl' : 'ltr';
   const destination = reportShareCampaign.url || 'https://example.com/vibe-intro';
   const placeholder = !reportShareCampaign.url;
   const background = reportShareCampaign.backgrounds[orientation][theme];
@@ -89,9 +91,20 @@ export async function renderReportShareImage(
     }
     ctx!.fill();
   }
-  function text(value: string, x: number, y: number, size: number, color = ink, weight = 400) {
+  function text(
+    value: string,
+    x: number,
+    y: number,
+    size: number,
+    color = ink,
+    weight = 400,
+    flow: CanvasDirection = 'ltr',
+    align: CanvasTextAlign = 'left',
+  ) {
     ctx!.font = `${weight} ${size}px ${font}`;
     ctx!.fillStyle = color;
+    ctx!.direction = flow;
+    ctx!.textAlign = align;
     ctx!.fillText(value, x, y);
   }
   // Fixed text slots fit built-in copy; authored long titles remain bounded with an ellipsis.
@@ -105,7 +118,9 @@ export async function renderReportShareImage(
     color = ink,
     weight = 400,
     fit = false,
+    flow: CanvasDirection = direction,
   ) {
+    ctx!.direction = flow;
     const measure = (value: string) => ctx!.measureText(value).width;
     let lines: string[];
     do {
@@ -117,18 +132,42 @@ export async function renderReportShareImage(
     const visible = lines.slice(0, maxLines);
     if (lines.length > maxLines)
       visible[maxLines - 1] = ellipsizeShareText(visible[maxLines - 1] ?? '', w, measure);
-    visible.forEach((s, i) => text(s, x, y + i * size * 1.45, size, color, weight));
+    visible.forEach((s, i) =>
+      text(
+        s,
+        flow === 'rtl' ? x + w : x,
+        y + i * size * 1.45,
+        size,
+        color,
+        weight,
+        flow,
+        flow === 'rtl' ? 'right' : 'left',
+      ),
+    );
   }
   ctx.drawImage(logo, 64, 56, 68, 68);
   text('OpenMAIC', 148, 108, 46, ink, 700);
-  text(t('pblV3.share.eyebrow'), 64, 184, 22, accent, 600);
-  text(
+  paragraph(
+    t('pblV3.share.eyebrow'),
+    64,
+    184,
+    portrait ? width - 128 : 840,
+    22,
+    1,
+    accent,
+    600,
+    true,
+  );
+  paragraph(
     t(content.completed ? 'pblV3.reportCopy.completedTitle' : 'pblV3.share.achievement'),
     64,
     250,
+    portrait ? width - 128 : 840,
     48,
+    1,
     ink,
     700,
+    true,
   );
   paragraph(content.title, 64, 310, portrait ? width - 128 : 840, 32, 2, muted, 500);
   // Small vector confetti celebrates the receipt without relying on emoji fonts.
@@ -182,6 +221,8 @@ export async function renderReportShareImage(
     1,
     accent,
     600,
+    false,
+    'ltr',
   );
   if (placeholder)
     paragraph(
@@ -201,7 +242,16 @@ export async function renderReportShareImage(
     const x = 64 + (i % columns) * (cardWidth + 8);
     const y = metricsY + (portrait ? Math.floor(i / 2) * 136 : 0);
     box(x, y, cardWidth, portrait ? 120 : 144, dark ? '#ffffff12' : '#ffffffb8');
-    text(value, x + 24, y + (portrait ? 55 : 65), 46, accent, 700);
+    text(
+      value,
+      direction === 'rtl' ? x + cardWidth - 24 : x + 24,
+      y + (portrait ? 55 : 65),
+      46,
+      accent,
+      700,
+      'ltr',
+      direction === 'rtl' ? 'right' : 'left',
+    );
     paragraph(
       t(`pblV3.reportCopy.${key}`),
       x + 24,
@@ -216,19 +266,29 @@ export async function renderReportShareImage(
   // Portrait has its own information hierarchy, rather than stretching the landscape layout.
   if (portrait) {
     box(64, 830, width - 128, 170, panel);
-    text(t('pblV3.reportCopy.skills'), 88, 871, 22, muted, 600);
+    paragraph(t('pblV3.reportCopy.skills'), 88, 871, width - 176, 22, 1, muted, 600, true);
     content.skills.forEach((id, i) => {
       const x = 88 + (i % 3) * 340;
       const y = 902 + Math.floor(i / 3) * 60;
-      text('✓', x, y, 22, accent, 700);
-      paragraph(t(`pblV3.reportCopy.skillLabels.${id}`), x + 32, y, 292, 20, 2, ink, 500, true);
+      text('✓', direction === 'rtl' ? x + 304 : x, y, 22, accent, 700);
+      paragraph(
+        t(`pblV3.reportCopy.skillLabels.${id}`),
+        direction === 'rtl' ? x : x + 32,
+        y,
+        292,
+        20,
+        2,
+        ink,
+        500,
+        true,
+      );
     });
     box(64, 1020, width - 128, 146, panel);
-    text(t('pblV3.reportCopy.concepts'), 88, 1055, 22, muted, 600);
+    paragraph(t('pblV3.reportCopy.concepts'), 88, 1055, width - 176, 22, 1, muted, 600, true);
     paragraph(content.concepts.join('  ·  '), 88, 1094, width - 176, 25, 2, ink, 500);
-    text(t('pblV3.share.highlights'), 64, 1208, 22, muted, 600);
+    paragraph(t('pblV3.share.highlights'), 64, 1208, width - 128, 22, 1, muted, 600, true);
   } else {
-    text(t('pblV3.reportCopy.skills'), 64, 602, 21, muted, 600);
+    paragraph(t('pblV3.reportCopy.skills'), 64, 602, width - 128, 21, 1, muted, 600, true);
     paragraph(
       content.skills.map((id) => t(`pblV3.reportCopy.skillLabels.${id}`)).join(' · '),
       64,
@@ -271,10 +331,15 @@ export async function renderReportShareImage(
     );
   }
   const { passed, tested, quizScore, quizTotal, decisions } = content.verification;
+  // Keep numeric runs stable inside an RTL sentence without reversing URLs or branding.
+  const number = (value: string | number) =>
+    direction === 'rtl' ? `\u2066${value}\u2069` : String(value);
   const receipts = [
     ...(tested > 0 && passed === tested ? [t('pblV3.share.testsPassed')] : []),
-    ...(quizTotal > 0 ? [`${t('pblV3.stageNames.quiz')} ${quizScore}/${quizTotal}`] : []),
-    ...(decisions !== undefined ? [`${t('pblV3.reportCopy.decisions')} ${decisions}`] : []),
+    ...(quizTotal > 0
+      ? [`${t('pblV3.share.quizLabel')} ${number(`${quizScore}/${quizTotal}`)}`]
+      : []),
+    ...(decisions !== undefined ? [`${t('pblV3.share.decisionsLabel')} ${number(decisions)}`] : []),
   ];
   paragraph(
     receipts.join('   ·   '),

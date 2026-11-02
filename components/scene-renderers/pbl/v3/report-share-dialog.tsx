@@ -52,7 +52,9 @@ export function ReportShareDialog({
     let active = true;
     let url: string | undefined;
     void import('@/lib/pbl/v3/report-share-image')
-      .then(({ renderReportShareImage }) => renderReportShareImage(content, orientation, theme, t))
+      .then(({ renderReportShareImage }) =>
+        renderReportShareImage(content, orientation, theme, t, locale),
+      )
       .then((blob) => {
         if (!active) return;
         url = URL.createObjectURL(blob);
@@ -65,7 +67,7 @@ export function ReportShareDialog({
       active = false;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [key, content, orientation, theme, t]);
+  }, [key, content, orientation, theme, t, locale]);
   const optionClass =
     'rounded-lg border px-3 py-2 text-sm aria-pressed:bg-primary aria-pressed:text-primary-foreground';
   return (
