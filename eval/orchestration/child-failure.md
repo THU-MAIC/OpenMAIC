@@ -32,4 +32,6 @@ Results currently describe unchanged prompts and cue/close validation. A plain
 finish with no visible child content still provides no learner-facing explanation;
 receiving `done` alone does not establish a satisfactory outcome. No pass-rate
 threshold is implied. Compare individual traces across models after the pending
-prompt and exit-policy decisions are implemented.
+prompt changes and the proposed cue_user prerequisite removal are implemented.
+The close_session check stays unchanged; token-limited partial output keeps
+isError and its available text.
