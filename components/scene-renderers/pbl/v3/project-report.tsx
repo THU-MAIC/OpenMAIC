@@ -146,6 +146,7 @@ export function ProjectReport({
       data-testid="pbl-project-report"
       className="absolute inset-0 z-40 overflow-auto bg-background text-foreground outline-none"
       onKeyDown={(event) => {
+        event.stopPropagation();
         if (shareOpen) return;
         if (event.key === 'Escape') {
           event.stopPropagation();

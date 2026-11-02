@@ -2985,7 +2985,14 @@
       "tagline": "没有编程基础，也可以跟着开始",
       "highlights": "从项目记录里读到的",
       "testsPassed": "行为测试已通过",
-      "linkPlaceholder": "前置课入口 · 示例链接，上线前替换"
+      "linkPlaceholder": "前置课入口 · 示例链接，上线前替换",
+      "conclusions": {
+        "reviewed": "项目记录保留了对方案或代码的核对过程。",
+        "decided": "项目记录包含你作出的实现选择。",
+        "verified": "保存的行为测试已通过，为作品表现提供了验证。",
+        "reflected": "完成了实践回顾，留下对过程的反思记录。",
+        "completed": "完成了项目中的实践环节，留下实际操作记录。"
+      }
     }
   }
 }

@@ -2985,7 +2985,14 @@
       "tagline": "Từ ý tưởng đến dự án. Học qua sáng tạo.",
       "highlights": "Những gì ghi chép dự án cho thấy",
       "testsPassed": "Đã vượt qua kiểm thử hành vi",
-      "linkPlaceholder": "Khóa học nhập môn · Liên kết mẫu, thay trước khi ra mắt"
+      "linkPlaceholder": "Khóa học nhập môn · Liên kết mẫu, thay trước khi ra mắt",
+      "conclusions": {
+        "reviewed": "Ghi chép dự án bao gồm việc xem xét kế hoạch hoặc phần triển khai.",
+        "decided": "Ghi chép dự án bao gồm những lựa chọn triển khai của bạn.",
+        "verified": "Các kiểm thử hành vi đã lưu đều đạt và kiểm chứng hoạt động của dự án.",
+        "reflected": "Bạn đã hoàn thành phần nhìn lại và ghi nhận quá trình thực hiện.",
+        "completed": "Bạn đã hoàn thành các bước thực hành dự án và để lại ghi chép công việc."
+      }
     }
   }
 }

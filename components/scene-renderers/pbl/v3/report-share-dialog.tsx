@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
-import { useTheme } from 'next-themes';
+import { useTheme } from '@/lib/hooks/use-theme';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
   Dialog,
@@ -80,6 +80,7 @@ export function ReportShareDialog({
         overlayClassName="z-[140]"
         className="z-[150] flex max-h-[94dvh] max-w-[calc(100vw-1rem)] flex-col gap-4 overflow-y-auto sm:max-w-4xl"
         onEscapeKeyDown={(e) => e.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
         onCloseAutoFocus={(event) => {
           event.preventDefault();
           onRestoreFocus();

@@ -2985,7 +2985,14 @@
       "tagline": "Transforme uma ideia em projeto. Aprenda criando.",
       "highlights": "O que os registros do projeto mostram",
       "testsPassed": "Testes de comportamento aprovados",
-      "linkPlaceholder": "Curso introdutório · Link de exemplo, substituir antes da publicação"
+      "linkPlaceholder": "Curso introdutório · Link de exemplo, substituir antes da publicação",
+      "conclusions": {
+        "reviewed": "Os registros do projeto incluem uma revisão do plano ou da implementação.",
+        "decided": "Os registros do projeto incluem suas escolhas de implementação.",
+        "verified": "Os testes de comportamento salvos foram aprovados e verificaram o funcionamento do projeto.",
+        "reflected": "Você concluiu uma reflexão e registrou uma revisão do processo.",
+        "completed": "Você concluiu etapas práticas do projeto e deixou um registro do trabalho."
+      }
     }
   }
 }

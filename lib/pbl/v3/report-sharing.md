@@ -5,13 +5,23 @@ The completed-project report opens an in-page image preview. Two fixed canvas la
 locally; opening, switching, and saving do not call the report API or a model.
 
 The preview uses the existing report state: facts appear immediately, a short placeholder
-occupies the narrative area while analysis is pending, and saved conclusions replace it
-when available. Failed analysis falls back to facts without error text in the poster.
+occupies the narrative area while analysis is pending, and public factual conclusions
+replace it when analysis finishes. They use saved structured facts rather than private AI prose.
+Failed analysis shows the same factual conclusions without error text in the poster.
 Rendering errors are shown outside the poster and can be retried independently.
 
-`reportShareContent` is the public projection: no conversations, detail paragraphs,
-quotes, source IDs, or private report links. Summary skill counts represent practice,
-not mastery. Images have no public URL or server-side storage.
+`reportShareContent` is the public projection: course-authored project titles and concepts,
+structured counts, skill receipts, and saved test/quiz outcomes. At most two localized
+conclusions describe only recorded review, decisions, verification, reflection or completed
+practice. No AI finding title, detail, quote, conversation, source ID, or learner-provided URL
+is read into that projection. Valid private report findings are not assumed safe for export;
+URL/quote blacklists cannot guarantee that boundary. Summary skill counts represent practice,
+not mastery. The private report and its analysis generation remain unchanged. Images have
+no public URL or server-side storage.
+
+The image waits only for its required font faces. If the preferred font fails, a system
+font keeps rendering and saving available; logo, QR and artwork failures still use the
+independent image retry. Text wraps at word boundaries and preserves grapheme clusters.
 
 ## Campaign artwork and destination
 

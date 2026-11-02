@@ -1,4 +1,5 @@
 import { qrPngDataUrl } from '@/lib/export/qr-png';
+import { ellipsizeShareText, wrapShareText } from './report-share-text';
 import {
   reportShareCampaign,
   type ReportShareContent,
@@ -7,7 +8,8 @@ import {
 } from './report-share';
 
 export const shareImageSizes = { landscape: [1600, 900], portrait: [1200, 1600] } as const;
-const font = '"Inter Variable", "Noto Sans SC", system-ui, sans-serif';
+const primaryFont = '"Inter Variable", "Noto Sans SC", system-ui, sans-serif';
+const fallbackFont = 'system-ui, sans-serif';
 async function loadImage(src: string) {
   const img = new Image();
   img.src = src;
@@ -29,13 +31,30 @@ export async function renderReportShareImage(
   const placeholder = !reportShareCampaign.url;
   const background = reportShareCampaign.backgrounds[orientation][theme];
   const [logo, qr, artwork] = await Promise.all([
-    loadImage('/logo-horizontal.png'),
+    loadImage('/openmaic-mark.png'),
     qrPngDataUrl(destination).then(loadImage),
     background ? loadImage(background) : null,
   ]);
+  const highlights = content.highlights.map((key) => t(`pblV3.share.conclusions.${key}`));
+  let font = primaryFont;
   if (document.fonts) {
-    await document.fonts.load(`600 42px ${font}`, content.title + content.highlights.join(''));
-    await document.fonts.ready;
+    try {
+      // Wait only for faces needed by this image; unrelated page fonts cannot block saving.
+      await document.fonts.load(
+        `600 42px ${primaryFont}`,
+        [
+          content.title,
+          ...content.concepts,
+          ...highlights,
+          ...content.skills.map((id) => t(`pblV3.reportCopy.skillLabels.${id}`)),
+          t('pblV3.share.invite'),
+          t('pblV3.share.tagline'),
+        ].join(' '),
+      );
+    } catch {
+      // An errored FontFace can reject every later load. A system font keeps retries usable.
+      font = fallbackFont;
+    }
   }
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -54,7 +73,20 @@ export async function renderReportShareImage(
   function box(x: number, y: number, w: number, h: number, fill: string, radius = 24) {
     ctx!.fillStyle = fill;
     ctx!.beginPath();
-    ctx!.roundRect(x, y, w, h, radius);
+    if (typeof ctx!.roundRect === 'function') ctx!.roundRect(x, y, w, h, radius);
+    else {
+      const r = Math.min(radius, w / 2, h / 2);
+      ctx!.moveTo(x + r, y);
+      ctx!.lineTo(x + w - r, y);
+      ctx!.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx!.lineTo(x + w, y + h - r);
+      ctx!.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx!.lineTo(x + r, y + h);
+      ctx!.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx!.lineTo(x, y + r);
+      ctx!.quadraticCurveTo(x, y, x + r, y);
+      ctx!.closePath();
+    }
     ctx!.fill();
   }
   function text(value: string, x: number, y: number, size: number, color = ink, weight = 400) {
@@ -62,7 +94,7 @@ export async function renderReportShareImage(
     ctx!.fillStyle = color;
     ctx!.fillText(value, x, y);
   }
-  // Wrap CJK, long tokens and emoji without depending on browser viewport size.
+  // Fixed text slots fit built-in copy; authored long titles remain bounded with an ellipsis.
   function paragraph(
     value: string,
     x: number,
@@ -72,27 +104,23 @@ export async function renderReportShareImage(
     maxLines: number,
     color = ink,
     weight = 400,
+    fit = false,
   ) {
-    ctx!.font = `${weight} ${size}px ${font}`;
-    const lines: string[] = [];
-    let line = '';
-    for (const char of Array.from(value.replace(/\s+/g, ' '))) {
-      if (line && ctx!.measureText(line + char).width > w) {
-        lines.push(line);
-        line = char;
-      } else line += char;
-    }
-    if (line) lines.push(line);
+    const measure = (value: string) => ctx!.measureText(value).width;
+    let lines: string[];
+    do {
+      ctx!.font = `${weight} ${size}px ${font}`;
+      lines = wrapShareText(value, w, measure);
+      if (!fit || lines.length <= maxLines || size <= 16) break;
+      size--;
+    } while (true);
     const visible = lines.slice(0, maxLines);
-    if (lines.length > maxLines) {
-      const last = Array.from(visible[maxLines - 1] ?? '');
-      while (last.length && ctx!.measureText(last.join('') + '…').width > w) last.pop();
-      visible[maxLines - 1] = last.join('') + '…';
-    }
+    if (lines.length > maxLines)
+      visible[maxLines - 1] = ellipsizeShareText(visible[maxLines - 1] ?? '', w, measure);
     visible.forEach((s, i) => text(s, x, y + i * size * 1.45, size, color, weight));
   }
-  box(64, 56, 294, 78, '#ffffff', 16);
-  ctx.drawImage(logo, 82, 66, 258, 58);
+  ctx.drawImage(logo, 64, 56, 68, 68);
+  text('OpenMAIC', 148, 108, 46, ink, 700);
   text(t('pblV3.share.eyebrow'), 64, 184, 22, accent, 600);
   text(
     t(content.completed ? 'pblV3.reportCopy.completedTitle' : 'pblV3.share.achievement'),
@@ -119,7 +147,7 @@ export async function renderReportShareImage(
   const inviteX = portrait ? 64 : 970;
   const inviteY = portrait ? 380 : 156;
   const inviteWidth = portrait ? width - 128 : width - inviteX - 64;
-  box(inviteX, inviteY, inviteWidth, portrait ? 140 : 196, dark ? '#62409c' : '#dfc9ff');
+  box(inviteX, inviteY, inviteWidth, portrait ? 140 : 216, dark ? '#62409c' : '#dfc9ff');
   const qrSize = portrait ? 120 : 140;
   if (qr) ctx.drawImage(qr, inviteX + inviteWidth - qrSize - 20, inviteY + 16, qrSize, qrSize);
   const copyWidth = inviteWidth - qrSize - 64;
@@ -128,27 +156,29 @@ export async function renderReportShareImage(
     inviteX + 24,
     inviteY + 40,
     copyWidth,
-    26,
+    portrait ? 26 : 24,
     portrait ? 1 : 2,
     ink,
     700,
+    true,
   );
   paragraph(
     t('pblV3.share.tagline'),
     inviteX + 24,
-    inviteY + (portrait ? 72 : 113),
+    inviteY + (portrait ? 72 : 106),
     copyWidth,
-    20,
-    1,
+    portrait ? 20 : 18,
+    portrait ? 1 : 2,
     muted,
     500,
+    true,
   );
   paragraph(
     destination,
     inviteX + 24,
-    inviteY + (portrait ? 104 : 146),
+    inviteY + (portrait ? 104 : 158),
     copyWidth,
-    20,
+    portrait ? 20 : 18,
     1,
     accent,
     600,
@@ -157,17 +187,18 @@ export async function renderReportShareImage(
     paragraph(
       t('pblV3.share.linkPlaceholder'),
       inviteX + 24,
-      inviteY + (portrait ? 126 : 176),
+      inviteY + (portrait ? 126 : 180),
       copyWidth,
-      14,
-      1,
+      portrait ? 14 : 12,
+      portrait ? 1 : 2,
       muted,
     );
 
   const metricsY = portrait ? 540 : 406;
-  const cardWidth = (width - 152) / (portrait ? 2 : 4);
+  const columns = portrait ? 2 : 4;
+  const cardWidth = (width - 128 - (columns - 1) * 8) / columns;
   content.metrics.forEach(([key, value], i) => {
-    const x = 64 + (i % (portrait ? 2 : 4)) * (cardWidth + 8);
+    const x = 64 + (i % columns) * (cardWidth + 8);
     const y = metricsY + (portrait ? Math.floor(i / 2) * 136 : 0);
     box(x, y, cardWidth, portrait ? 120 : 144, dark ? '#ffffff12' : '#ffffffb8');
     text(value, x + 24, y + (portrait ? 55 : 65), 46, accent, 700);
@@ -188,9 +219,9 @@ export async function renderReportShareImage(
     text(t('pblV3.reportCopy.skills'), 88, 871, 22, muted, 600);
     content.skills.forEach((id, i) => {
       const x = 88 + (i % 3) * 340;
-      const y = 916 + Math.floor(i / 3) * 48;
-      text('✓', x, y, 24, accent, 700);
-      paragraph(t(`pblV3.reportCopy.skillLabels.${id}`), x + 32, y, 292, 23, 1, ink, 500);
+      const y = 902 + Math.floor(i / 3) * 60;
+      text('✓', x, y, 22, accent, 700);
+      paragraph(t(`pblV3.reportCopy.skillLabels.${id}`), x + 32, y, 292, 20, 2, ink, 500, true);
     });
     box(64, 1020, width - 128, 146, panel);
     text(t('pblV3.reportCopy.concepts'), 88, 1055, 22, muted, 600);
@@ -203,18 +234,19 @@ export async function renderReportShareImage(
       64,
       642,
       width - 128,
-      23,
-      1,
+      21,
+      2,
       ink,
       500,
+      true,
     );
   }
-  const narrativeY = portrait ? 1254 : 690;
+  const narrativeY = portrait ? 1254 : 710;
   const narrativeWidth = portrait ? width - 128 : width - 390;
   if (content.waiting) {
     paragraph(t('pblV3.share.waiting'), 64, narrativeY, narrativeWidth, 25, 2, muted);
-  } else if (content.highlights.length) {
-    content.highlights.forEach((value, i) =>
+  } else if (highlights.length) {
+    highlights.forEach((value, i) =>
       paragraph(
         value,
         64,
@@ -222,6 +254,9 @@ export async function renderReportShareImage(
         narrativeWidth,
         portrait ? 26 : 23,
         portrait ? 2 : 1,
+        ink,
+        400,
+        true,
       ),
     );
   } else {
@@ -244,7 +279,7 @@ export async function renderReportShareImage(
   paragraph(
     receipts.join('   ·   '),
     64,
-    portrait ? 1420 : 770,
+    portrait ? 1420 : 790,
     narrativeWidth,
     20,
     1,
@@ -257,9 +292,10 @@ export async function renderReportShareImage(
     portrait ? 1480 : 828,
     width - 128,
     portrait ? 30 : 26,
-    2,
+    1,
     accent,
     600,
+    true,
   );
   text('OpenMAIC · Vibe Coding', 64, height - 44, 18, muted);
   return new Promise((resolve, reject) =>

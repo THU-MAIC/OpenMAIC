@@ -332,10 +332,19 @@ test('completed project reports stay discoverable, show facts before analysis, a
   expect(commands).toEqual([]);
   // Sharing follows the report's existing analysis; it never starts another generation.
   const shareTrigger = report.getByRole('button', { name: 'Create sharing image', exact: true });
-  await shareTrigger.click();
+  await shareTrigger.focus();
+  await page.keyboard.press('Space');
   const share = page.getByRole('dialog', { name: 'Share your achievement', exact: true });
   const poster = share.getByRole('img', { name: 'Your OpenMAIC achievement image' });
   await expect(poster).toBeVisible();
+  await expect(share.getByRole('link', { name: 'Save image', exact: true })).toBeVisible();
+  const portraitOption = share.getByRole('button', { name: 'Portrait', exact: true });
+  await portraitOption.focus();
+  await page.keyboard.press('Space');
+  await expect(portraitOption).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('ArrowRight');
+  await expect(share).toBeVisible();
+  await share.getByRole('button', { name: 'Landscape', exact: true }).click();
   await expect(share.getByRole('link', { name: 'Save image', exact: true })).toBeVisible();
   const pendingPoster = await poster.getAttribute('src');
   expect(generations).toBe(2);

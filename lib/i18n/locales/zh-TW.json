@@ -2985,7 +2985,14 @@
       "tagline": "沒有程式基礎，也可以跟著開始",
       "highlights": "從專案記錄裡讀到的",
       "testsPassed": "行為測試已通過",
-      "linkPlaceholder": "前置課入口 · 範例連結，上線前替換"
+      "linkPlaceholder": "前置課入口 · 範例連結，上線前替換",
+      "conclusions": {
+        "reviewed": "專案記錄保留了對方案或程式碼的核對過程。",
+        "decided": "專案記錄包含你作出的實作選擇。",
+        "verified": "已儲存的行為測試通過，為作品表現提供驗證。",
+        "reflected": "完成了實踐回顧，留下對過程的反思記錄。",
+        "completed": "完成了專案中的實踐環節，留下實際操作記錄。"
+      }
     }
   }
 }

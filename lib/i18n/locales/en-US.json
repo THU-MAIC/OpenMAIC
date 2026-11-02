@@ -2984,8 +2984,15 @@
       "invite": "Your turn. Try Vibe Coding!",
       "tagline": "No coding experience needed to get started.",
       "highlights": "What your project records show",
-      "testsPassed": "Tests",
-      "linkPlaceholder": "Intro course · placeholder link, replace before launch"
+      "testsPassed": "Behavior tests passed",
+      "linkPlaceholder": "Intro course · placeholder link, replace before launch",
+      "conclusions": {
+        "reviewed": "The project records include a review of the plan or implementation.",
+        "decided": "The project records include implementation choices you made.",
+        "verified": "Saved behavior tests passed, providing evidence of how the project behaves.",
+        "reflected": "You completed a reflection and recorded a review of the process.",
+        "completed": "You completed project practice steps and left a record of the work."
+      }
     }
   }
 }

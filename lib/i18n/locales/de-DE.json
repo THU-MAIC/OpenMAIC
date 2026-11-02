@@ -2985,7 +2985,14 @@
       "tagline": "Von der Idee zum Projekt. Lernen durch Gestalten.",
       "highlights": "Was deine Projektaufzeichnungen zeigen",
       "testsPassed": "Verhaltenstests bestanden",
-      "linkPlaceholder": "Einstiegskurs · Beispiellink, vor Veröffentlichung ersetzen"
+      "linkPlaceholder": "Einstiegskurs · Beispiellink, vor Veröffentlichung ersetzen",
+      "conclusions": {
+        "reviewed": "Die Projektaufzeichnungen enthalten eine Prüfung des Plans oder der Implementierung.",
+        "decided": "Die Projektaufzeichnungen enthalten deine Entscheidungen zur Umsetzung.",
+        "verified": "Die gespeicherten Verhaltenstests wurden bestanden und haben das Projektverhalten geprüft.",
+        "reflected": "Du hast eine Reflexion abgeschlossen und den Ablauf rückblickend festgehalten.",
+        "completed": "Du hast praktische Projektschritte abgeschlossen und deine Arbeit dokumentiert."
+      }
     }
   }
 }

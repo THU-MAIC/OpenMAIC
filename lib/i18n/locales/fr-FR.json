@@ -2985,7 +2985,14 @@
       "tagline": "Transformez une idée en projet. Apprenez en créant.",
       "highlights": "Ce que montrent les traces du projet",
       "testsPassed": "Tests de comportement réussis",
-      "linkPlaceholder": "Cours d’initiation · Lien d’exemple à remplacer avant publication"
+      "linkPlaceholder": "Cours d’initiation · Lien d’exemple à remplacer avant publication",
+      "conclusions": {
+        "reviewed": "Les traces du projet comprennent une revue du plan ou du code.",
+        "decided": "Les traces du projet comprennent vos choix de réalisation.",
+        "verified": "Les tests de comportement enregistrés ont réussi et ont vérifié le fonctionnement du projet.",
+        "reflected": "Vous avez terminé une réflexion et consigné un retour sur le processus.",
+        "completed": "Vous avez terminé des étapes pratiques du projet et conservé une trace du travail."
+      }
     }
   }
 }
