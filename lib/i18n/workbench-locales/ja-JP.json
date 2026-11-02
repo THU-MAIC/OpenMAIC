@@ -35,6 +35,7 @@
     "submit": "送信",
     "dismiss": "閉じる",
     "inFormBelow": "下のフォームで回答してください",
+    "inPreview": "プレビューで回答してください",
     "multiAnswerSeparator": "、"
   },
   "material": {
@@ -98,6 +99,21 @@
       "vocational": "職業訓練",
       "workshop-style": "ワークショップ"
     }
+  },
+  "preview": {
+    "eyebrow": "作業中",
+    "understanding": "リクエストを理解しています",
+    "understandingDesc": "ご依頼の内容と必要な資料を読んでいます…",
+    "asking": "確認させてください",
+    "askingDesc": "回答すると続行します。",
+    "assembling": "教室を準備しています",
+    "assemblingDesc": "コースを作成し、先生とクラスメートを配役しています…",
+    "opening": "教室を開いています",
+    "page": "{{order}} ページ",
+    "pageCaption": "{{order}} ページ · {{title}}",
+    "skills": "装備中のスキル",
+    "resting": "コースはここに表示されます",
+    "restingDesc": "会話を続けてください。コースが作成されると、このタブで開きます。"
   },
   "thinking": {
     "active": "思考中…",
@@ -239,7 +255,8 @@
       "parseFailed": "解析失敗",
       "folderExisted": "フォルダはすでにありました",
       "unchanged": "変更なし",
-      "movedOutOfFolder": "フォルダーの外へ移動しました"
+      "movedOutOfFolder": "フォルダーの外へ移動しました",
+      "material": "{{count}} 件の素材"
     },
     "error": {
       "materialExtraction": "素材の解析に失敗しました",

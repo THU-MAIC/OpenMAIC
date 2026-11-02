@@ -35,6 +35,7 @@
     "submit": "送出",
     "dismiss": "放棄",
     "inFormBelow": "在下方表單裡回答",
+    "inPreview": "在右側預覽中回答",
     "multiAnswerSeparator": "、"
   },
   "material": {
@@ -98,6 +99,21 @@
       "vocational": "職業實訓",
       "workshop-style": "互動工作坊"
     }
+  },
+  "preview": {
+    "eyebrow": "正在進行",
+    "understanding": "理解你的需求",
+    "understandingDesc": "正在閱讀你的要求和相關資料…",
+    "asking": "需要你確認一下",
+    "askingDesc": "回答後繼續。",
+    "assembling": "搭建課堂",
+    "assemblingDesc": "正在建立課程，安排老師和同學…",
+    "opening": "正在開啟課堂",
+    "page": "第 {{order}} 頁",
+    "pageCaption": "第 {{order}} 頁 · {{title}}",
+    "skills": "已裝備的技能",
+    "resting": "課程會出現在這裡",
+    "restingDesc": "在對話裡繼續；生成課程後會在這個分頁開啟。"
   },
   "thinking": {
     "active": "思考中…",
@@ -239,7 +255,8 @@
       "parseFailed": "解析失敗",
       "folderExisted": "資料夾已存在",
       "unchanged": "沒有變化",
-      "movedOutOfFolder": "已移出資料夾"
+      "movedOutOfFolder": "已移出資料夾",
+      "material": "{{count}} 份材料"
     },
     "error": {
       "materialExtraction": "材料解析失敗",

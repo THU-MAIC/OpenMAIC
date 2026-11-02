@@ -42,6 +42,7 @@ import { ActionEngine } from '@/lib/action/engine';
 import { createAudioPlayer } from '@/lib/utils/audio-player';
 import { useDiscussionTTS } from '@/lib/hooks/use-discussion-tts';
 import { useWidgetIframeStore } from '@/lib/store/widget-iframe';
+import { MEDIA_CONTROL } from '@/lib/interactive/media-bridge';
 import type { AudioIndicatorState } from '@/components/roundtable/audio-indicator';
 import type { Action, DiscussionAction, SpeechAction } from '@/lib/types/action';
 import { cn } from '@/lib/utils';
@@ -94,6 +95,7 @@ type ElementReferenceSendSnapshot = Pick<DraftElementReference, 'reference' | 's
  * chat to be quiescent — fire-and-forget on unmount loses that guarantee.
  */
 export interface PlaybackChromeRootHandle {
+  pauseForInteractiveMedia: () => void;
   /** Ends any active SSE session, stops the engine, cleans up TTS audio. */
   teardown: () => Promise<void>;
   /** Receives one identity-only pick from the sibling Interactive iframe host. */
@@ -307,6 +309,10 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const lectureActionCounterRef = useRef(0);
     const currentPlaybackActionIndexRef = useRef<number | null>(currentPlaybackActionIndex);
     const activeSceneIdRef = useRef<string | null>(currentSceneId);
+    const pauseInteractiveMedia = useCallback(() => {
+      const sceneId = activeSceneIdRef.current;
+      if (sceneId) useWidgetIframeStore.getState().sendMessageByScene[sceneId]?.(MEDIA_CONTROL, {});
+    }, []);
     const discussionAbortRef = useRef<AbortController | null>(null);
     const presentationIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const cursorSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -585,6 +591,13 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           discussionTTS.cleanup();
           resetSceneState();
         },
+        pauseForInteractiveMedia: () => {
+          const engine = engineRef.current;
+          if (engine?.getMode() !== 'playing') return;
+          engine.pause();
+          if (lectureSessionIdRef.current)
+            chatAreaRef.current?.pauseBuffer(lectureSessionIdRef.current);
+        },
         acceptInteractivePick: (pick) => interactivePickHandlerRef.current(pick),
         cancelElementPick: () => setElementPickActive(false),
       }),
@@ -791,6 +804,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
 
         // Create new PlaybackEngine
         const engine = new PlaybackEngine([currentScene], actionEngine, audioPlayerRef.current, {
+          beforeSpeech: pauseInteractiveMedia,
           onModeChange: (mode) => {
             setEngineMode(mode);
           },

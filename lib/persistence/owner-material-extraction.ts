@@ -58,7 +58,9 @@
  */
 import {
   extractionReasonCodeOf,
+  extractionReasonValuesOf,
   type MaterialExtractionReasonCode,
+  type MaterialExtractionReasonValues,
 } from '@/lib/types/material-extraction-failure';
 import type { Queryable, WithTransaction } from '@openmaic/storage/document/pg';
 import { encodeJson } from '@openmaic/storage/pg-json';
@@ -176,9 +178,15 @@ interface ClaimRow extends Record<string, unknown> {
 export function statusJson(
   status: OwnerExtractionStatus,
   code?: MaterialExtractionReasonCode,
+  values?: MaterialExtractionReasonValues,
 ): string {
   const reasonCode = status === 'failed' ? extractionReasonCodeOf(code) : undefined;
-  return JSON.stringify({ status, ...(reasonCode ? { reasonCode } : {}) });
+  const reasonValues = extractionReasonValuesOf(reasonCode, values);
+  return JSON.stringify({
+    status,
+    ...(reasonCode ? { reasonCode } : {}),
+    ...(reasonValues ? { reasonValues } : {}),
+  });
 }
 
 /**
@@ -340,6 +348,7 @@ export async function settleOwnerMaterialExtractionFailure(
     retryable: boolean;
     maxClaims?: number;
     reasonCode?: MaterialExtractionReasonCode;
+    reasonValues?: MaterialExtractionReasonValues;
   },
 ): Promise<OwnerExtractionStatus | null> {
   const maxClaims = failure.maxClaims ?? MAX_OWNER_EXTRACTION_CLAIMS;
@@ -357,7 +366,7 @@ export async function settleOwnerMaterialExtractionFailure(
       failure.retryable,
       maxClaims,
       statusJson('pending'),
-      statusJson('failed', failure.reasonCode),
+      statusJson('failed', failure.reasonCode, failure.reasonValues),
     ],
   );
   const status = result.rows[0]?.status;

@@ -1,4 +1,5 @@
 import type { ComposeOption } from 'echarts/core';
+import type { GridComponentOption } from 'echarts/components';
 import type {
   BarSeriesOption,
   LineSeriesOption,
@@ -9,7 +10,12 @@ import type {
 import type { ChartData, ChartType } from '@openmaic/dsl';
 
 type EChartOption = ComposeOption<
-  BarSeriesOption | LineSeriesOption | PieSeriesOption | ScatterSeriesOption | RadarSeriesOption
+  | BarSeriesOption
+  | LineSeriesOption
+  | PieSeriesOption
+  | ScatterSeriesOption
+  | RadarSeriesOption
+  | GridComponentOption
 >;
 
 export interface ChartOptionPayload {
@@ -50,6 +56,12 @@ export const getChartOption = ({
     color: textColor ?? '#333333',
   };
 
+  // Legacy containLabel does not include horizontal endpoint overhang.
+  const horizontalEndpointAlignment = {
+    alignMinLabel: 'left' as const,
+    alignMaxLabel: 'right' as const,
+  };
+
   const splitLine = lineColor
     ? {
         lineStyle: {
@@ -75,11 +87,25 @@ export const getChartOption = ({
         }
       : undefined;
 
+  const cartesianLegend = legend
+    ? { type: 'scroll' as const, bottom: 0, left: '4%', right: '4%', textStyle }
+    : undefined;
+  // Text headroom and a single legend row need fixed pixels, not a share of
+  // the chart height. Other margins reflow on resize; containLabel fits axes.
+  const grid: GridComponentOption = {
+    left: '4%',
+    right: '4%',
+    top: type === 'line' || type === 'area' ? 22 : '8%',
+    bottom: cartesianLegend && type !== 'scatter' ? 26 : '12%',
+    containLabel: true,
+  };
+
   if (type === 'bar') {
     return {
       color: themeColors,
       textStyle,
-      legend,
+      legend: cartesianLegend,
+      grid,
       xAxis: {
         type: 'category',
         data: data.labels,
@@ -113,7 +139,8 @@ export const getChartOption = ({
     return {
       color: themeColors,
       textStyle,
-      legend,
+      legend: cartesianLegend,
+      grid,
       yAxis: {
         type: 'category',
         data: data.labels,
@@ -123,7 +150,7 @@ export const getChartOption = ({
       xAxis: {
         type: 'value',
         axisLine,
-        axisLabel,
+        axisLabel: { ...axisLabel, ...horizontalEndpointAlignment },
         splitLine,
       },
       series: data.series.map((item, index) => {
@@ -147,7 +174,8 @@ export const getChartOption = ({
     return {
       color: themeColors,
       textStyle,
-      legend,
+      legend: cartesianLegend,
+      grid,
       xAxis: {
         type: 'category',
         data: data.labels,
@@ -257,13 +285,14 @@ export const getChartOption = ({
     return {
       color: themeColors,
       textStyle,
-      legend,
+      legend: cartesianLegend,
+      grid,
       xAxis: {
         type: 'category',
         boundaryGap: false,
         data: data.labels,
         axisLine,
-        axisLabel: categoryAxisLabel,
+        axisLabel: { ...categoryAxisLabel, ...horizontalEndpointAlignment },
       },
       yAxis: {
         type: 'value',
@@ -273,7 +302,13 @@ export const getChartOption = ({
       },
       series: data.series.map((item, index) => {
         const seriesItem: LineSeriesOption = {
-          data: item,
+          // Area points sit on the plot edges; turn endpoint values inward.
+          data: item.map((value, dataIndex) => ({
+            value,
+            label: {
+              align: dataIndex === 0 ? 'left' : dataIndex === item.length - 1 ? 'right' : 'center',
+            },
+          })),
           name: data.legends[index],
           type: 'line',
           areaStyle: {},
@@ -333,9 +368,10 @@ export const getChartOption = ({
     return {
       color: themeColors,
       textStyle,
+      grid,
       xAxis: {
         axisLine,
-        axisLabel,
+        axisLabel: { ...axisLabel, ...horizontalEndpointAlignment },
         splitLine,
       },
       yAxis: {

@@ -256,11 +256,10 @@ describe('Pi chat cue_user tool', () => {
       onActionDone: () => {},
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 1,
+
       enableWhiteboardTools: false,
       isUserCued: () => true,
     });
@@ -293,11 +292,10 @@ describe('Pi chat cue_user tool', () => {
       onActionDone: () => {},
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 1,
+
       enableWhiteboardTools: false,
       isSessionClosed: () => true,
     });
@@ -310,7 +308,7 @@ describe('Pi chat cue_user tool', () => {
     expect(result.details).toEqual({ skipped: true, reason: 'session_closed' });
   });
 
-  it('counts rejected call_agent requests toward the hard attempt cap', async () => {
+  it('keeps reporting invalid agents without imposing an attempt cap', async () => {
     const tool = buildCallAgentTool({
       body: {
         messages: [],
@@ -330,15 +328,14 @@ describe('Pi chat cue_user tool', () => {
       onActionDone: () => {},
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 1,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 1,
+
       enableWhiteboardTools: false,
     });
 
-    for (let i = 0; i < 4; i += 1) {
+    for (let i = 0; i < 20; i += 1) {
       await expect(
         tool.execute(`invalid-${i}`, {
           agentId: 'missing-agent',
@@ -355,65 +352,7 @@ describe('Pi chat cue_user tool', () => {
         instruction: 'Please answer.',
       }),
     ).resolves.toMatchObject({
-      details: { skipped: true, reason: 'agent_attempt_cap', totalAgentAttempts: 4 },
-    });
-  });
-
-  it('does not allow any call_agent after the agent turn budget is reached', async () => {
-    const tool = buildCallAgentTool({
-      body: {
-        messages: [],
-        storeState: {
-          stage: { id: 'stage-1', name: 'Stage' },
-          scenes: [],
-          currentSceneId: null,
-          whiteboardOpen: false,
-        },
-        config: { agentIds: ['teacher-1'] },
-        apiKey: '',
-      } as never,
-      agentConfigs: [
-        {
-          id: 'teacher-1',
-          name: 'Teacher',
-          role: 'teacher',
-          persona: 'Summarize clearly.',
-          avatar: '',
-          color: '#3366ff',
-          allowedActions: [],
-          priority: 10,
-          createdAt: new Date('2026-01-01T00:00:00Z'),
-          updatedAt: new Date('2026-01-01T00:00:00Z'),
-          isDefault: true,
-        },
-      ],
-      send: async () => {},
-      languageModel: {} as never,
-      onAgentDone: () => {},
-      onActionDone: () => {},
-      thinkingConfig: { mode: 'disabled', enabled: false },
-      abortSignal: new AbortController().signal,
-      maxAgentTurns: 1,
-      getAgentTurnCount: () => 1,
-      getAgentResponses: () => [],
-      getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 1,
-      enableWhiteboardTools: false,
-    });
-
-    expect(
-      (tool.parameters as { properties?: Record<string, unknown> }).properties,
-    ).not.toHaveProperty('turnKind');
-
-    const result = await tool.execute('call-1', {
-      agentId: 'teacher-1',
-      instruction: 'Give a final summary.',
-    });
-
-    expect(result.details).toEqual({
-      skipped: true,
-      reason: 'agent_turn_limit',
-      maxAgentTurns: 1,
+      details: { skipped: true, reason: 'invalid_agent_id' },
     });
   });
 });

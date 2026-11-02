@@ -96,6 +96,36 @@ function toolOutputType(index: number): unknown {
 describe('buildAgent shared transport lifecycle', () => {
   beforeEach(() => mocks.streamLLM.mockReset());
 
+  it('blocks a call whose arguments were not valid JSON even when all params are optional', async () => {
+    const execute = vi.fn(async () => ({
+      content: [{ type: 'text' as const, text: 'must not run' }],
+      details: {},
+    }));
+    const optionalTool = {
+      ...makeTool(execute),
+      parameters: Type.Object({ value: Type.Optional(Type.Number()) }),
+    } as unknown as AgentTool<typeof DemoParams>;
+    useResponses([
+      [toolCall('{"value": 1, "note": "unescaped "quote""}'), finish('tool-calls')],
+      [{ type: 'text-delta', text: 'complete' }, finish('stop')],
+    ]);
+    const agent = makeAgent({ tool: optionalTool });
+
+    await agent.prompt('start');
+
+    expect(execute).not.toHaveBeenCalled();
+    const toolMessage = transportMessages(1).find(
+      (message) => (message as { role?: string }).role === 'tool',
+    ) as { content: Array<{ output: { type: string; value: string } }> };
+    expect(toolMessage.content[0]!.output.type).toBe('error-text');
+    expect(toolMessage.content[0]!.output.value).toContain('Tool arguments were not valid JSON');
+    // The replayed call is a plain object without the diagnosis key.
+    const assistant = transportMessages(1).find(
+      (message) => (message as { role?: string }).role === 'assistant',
+    ) as { content: Array<{ type: string; input?: unknown }> };
+    expect(assistant.content.find((part) => part.type === 'tool-call')?.input).toEqual({});
+  });
+
   it('executes an ordinary toolUse once and continues through the same Agent loop', async () => {
     const execute = vi.fn(async () => ({
       content: [{ type: 'text' as const, text: 'tool success' }],

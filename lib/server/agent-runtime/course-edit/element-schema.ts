@@ -407,6 +407,9 @@ const LineElementPatch = Type.Object(
     lock: optionalBoolean(),
     groupId: optionalString(),
     width: optionalNumber(),
+    // Not part of the DSL line type, but renderers and imports commonly store
+    // it on lines; rejecting it would block every unrelated edit on the slide.
+    rotate: optionalNumber(),
     link: Type.Optional(Link),
     name: optionalString(),
     start: Type.Optional(Point),
@@ -597,25 +600,24 @@ const CodeElementInput = fullElementSchema(ElementTypes.CODE, CodeElementPatch, 
   'lines',
 ]);
 
+const ELEMENT_INPUT_SCHEMAS: Record<string, TSchema> = {
+  [ElementTypes.TEXT]: TextElementInput,
+  [ElementTypes.IMAGE]: ImageElementInput,
+  [ElementTypes.SHAPE]: ShapeElementInput,
+  [ElementTypes.LINE]: LineElementInput,
+  [ElementTypes.CHART]: ChartElementInput,
+  [ElementTypes.TABLE]: TableElementInput,
+  [ElementTypes.LATEX]: LatexElementInput,
+  [ElementTypes.VIDEO]: VideoElementInput,
+  [ElementTypes.AUDIO]: AudioElementInput,
+  [ElementTypes.CODE]: CodeElementInput,
+};
+
 /** Complete element JSON accepted by `add_element`; `id` is server-assigned. */
-export const SlideElementInputSchema = Type.Union(
-  [
-    TextElementInput,
-    ImageElementInput,
-    ShapeElementInput,
-    LineElementInput,
-    ChartElementInput,
-    TableElementInput,
-    LatexElementInput,
-    VideoElementInput,
-    AudioElementInput,
-    CodeElementInput,
-  ],
-  {
-    description:
-      'One COMPLETE slide element JSON without id. The server validates it and assigns id.',
-  },
-);
+export const SlideElementInputSchema = Type.Union(Object.values(ELEMENT_INPUT_SCHEMAS), {
+  description:
+    'One COMPLETE slide element JSON without id. The server validates it and assigns id.',
+});
 
 function persistedElementSchema(schema: TSchema): TSchema {
   const object = schema as TSchema & {
@@ -632,19 +634,13 @@ function persistedElementSchema(schema: TSchema): TSchema {
   return { ...persisted, required: ['id', ...(object.required ?? [])] };
 }
 
-/** Complete persisted element JSON, including the server-owned id. */
-const PersistedSlideElementSchema = Type.Union([
-  persistedElementSchema(TextElementInput),
-  persistedElementSchema(ImageElementInput),
-  persistedElementSchema(ShapeElementInput),
-  persistedElementSchema(LineElementInput),
-  persistedElementSchema(ChartElementInput),
-  persistedElementSchema(TableElementInput),
-  persistedElementSchema(LatexElementInput),
-  persistedElementSchema(VideoElementInput),
-  persistedElementSchema(AudioElementInput),
-  persistedElementSchema(CodeElementInput),
-]);
+/** Complete persisted element JSON per type, including the server-owned id. */
+const PERSISTED_ELEMENT_SCHEMAS: Record<string, TSchema> = Object.fromEntries(
+  Object.entries(ELEMENT_INPUT_SCHEMAS).map(([type, schema]) => [
+    type,
+    persistedElementSchema(schema),
+  ]),
+);
 
 const SlideThemeSchema = Type.Object(
   {
@@ -695,7 +691,10 @@ const SlideCanvasSchema = Type.Object(
     viewportSize: Type.Number(),
     viewportRatio: Type.Number(),
     theme: SlideThemeSchema,
-    elements: Type.Array(PersistedSlideElementSchema),
+    // Elements are validated one by one against their own declared type (see
+    // `elementIssues`), so errors name the offending property instead of the
+    // union of every element variant's requirements.
+    elements: Type.Array(Type.Unknown()),
     background: Type.Optional(SlideBackgroundSchema),
     animations: Type.Optional(Type.Array(SlideAnimationSchema)),
     turningMode: Type.Optional(
@@ -743,35 +742,159 @@ export function validateElementPatch(type: string, patch: Record<string, unknown
   return Errors(schema, patch).map((error) => `patch${error.instancePath || ''}: ${error.message}`);
 }
 
-/** Validate a complete, id-less element before the server assigns identity. */
-export function validateElementInput(element: unknown): string[] {
-  if (Check(SlideElementInputSchema, element)) {
-    const input = element as PPTShapeElement;
-    return input.type === 'shape' ? shapeGeometryIssues(input, 'element') : [];
-  }
-  return Errors(SlideElementInputSchema, element).map(
-    (error) => `element${error.instancePath || ''}: ${error.message}`,
-  );
+interface SchemaIssue {
+  /** Path inside the validated value ("" for the value itself). */
+  at: string;
+  /** Pointer of the offending value: `at`, or `at/<name>` for a property issue. */
+  location: string;
+  message: string;
 }
 
-/** Validate the entire patched canvas, rejecting unknown fields at every level. */
+function encodeToken(token: string): string {
+  return token.replace(/~/g, '~0').replace(/\//g, '~1');
+}
+
+/** Flatten TypeBox errors into one issue per offending property. */
+function schemaIssues(schema: TSchema, value: unknown): SchemaIssue[] {
+  const issues = Errors(schema, value).flatMap((error): SchemaIssue[] => {
+    const at = error.instancePath || '';
+    const params = error.params as {
+      additionalProperties?: string[];
+      requiredProperties?: string[];
+    };
+    if (error.keyword === 'additionalProperties' && params.additionalProperties?.length) {
+      return params.additionalProperties.map((name) => ({
+        at,
+        location: `${at}/${encodeToken(name)}`,
+        message: `unexpected property ${JSON.stringify(name)}`,
+      }));
+    }
+    if (error.keyword === 'required' && params.requiredProperties?.length) {
+      return params.requiredProperties.map((name) => ({
+        at,
+        location: `${at}/${encodeToken(name)}`,
+        message: `missing required property ${JSON.stringify(name)}`,
+      }));
+    }
+    return [{ at, location: at, message: error.message }];
+  });
+  const seen = new Set<string>();
+  return issues.filter((issue) => {
+    const key = `${issue.at}: ${issue.message}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+const KNOWN_ELEMENT_TYPES = Object.keys(ELEMENT_INPUT_SCHEMAS).join(', ');
+
+/**
+ * Validate one element against the schema of its OWN declared `type`, so
+ * errors name the offending property instead of the whole element union.
+ * Issue paths are relative to the element.
+ */
+function elementIssues(
+  element: unknown,
+  schemas: Record<string, TSchema>,
+): { type: string; issues: SchemaIssue[] } {
+  if (!element || typeof element !== 'object' || Array.isArray(element)) {
+    return {
+      type: 'unknown',
+      issues: [{ at: '', location: '', message: 'expected an element object' }],
+    };
+  }
+  const type = (element as { type?: unknown }).type;
+  const schema = typeof type === 'string' ? schemas[type] : undefined;
+  if (!schema) {
+    return {
+      type: 'unknown',
+      issues: [
+        {
+          at: '/type',
+          location: '/type',
+          message: `unknown element type ${JSON.stringify(type)}; expected one of ${KNOWN_ELEMENT_TYPES}`,
+        },
+      ],
+    };
+  }
+  return { type: type as string, issues: schemaIssues(schema, element) };
+}
+
+function formatElementIssue(prefix: string, type: string, issue: SchemaIssue): string {
+  return `${prefix}${issue.at} (${type}): ${issue.message}`;
+}
+
+/** Validate a complete, id-less element before the server assigns identity. */
+export function validateElementInput(element: unknown): string[] {
+  const { type, issues } = elementIssues(element, ELEMENT_INPUT_SCHEMAS);
+  if (issues.length > 0) {
+    return issues.map((issue) => formatElementIssue('element', type, issue));
+  }
+  const input = element as PPTShapeElement;
+  return input.type === 'shape' ? shapeGeometryIssues(input, 'element') : [];
+}
+
+function sameJson(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** First token of an issue location: the top-level field it belongs to. */
+function topLevelField(issue: SchemaIssue): string {
+  const token = issue.location.split('/')[1] ?? '';
+  return token.replace(/~1/g, '/').replace(/~0/g, '~');
+}
+
+/**
+ * Validate the patched canvas, rejecting unknown fields at every level.
+ *
+ * With `previous`, data the patch did not touch is not revalidated, so
+ * historical data that predates a schema rule never makes the whole slide
+ * read-only: an element deep-equal to its `previous` version (matched by id)
+ * is skipped, and so is a top-level canvas field deep-equal to its previous
+ * value. Every new or changed element / field is validated in full.
+ */
 export function validateSlideCanvas(canvas: unknown, previous?: Slide): string[] {
   // Historical geometry can have schema-invalid types, missing fields, or
   // malformed tuples. Project unchanged geometry solely for the schema check;
   // new and changed geometry still receives full validation below.
   const schemaCanvas = projectUnchangedHistoricalGeometry(canvas, previous);
-  if (Check(SlideCanvasSchema, schemaCanvas)) {
-    const old = new Map(previous?.elements.map((element) => [element.id, element]));
-    return (canvas as Slide).elements.flatMap((element, index) => {
-      if (element.type !== 'shape') return [];
-      const before = old.get(element.id);
-      if (before?.type === 'shape' && !shapeGeometryChanged(before, element)) return [];
-      return shapeGeometryIssues(element, `canvas/elements/${index}`);
+  const before = previous as unknown as Record<string, unknown> | undefined;
+  const after = (schemaCanvas ?? {}) as Record<string, unknown>;
+  const issues = schemaIssues(SlideCanvasSchema, schemaCanvas)
+    .filter((issue) => {
+      const field = topLevelField(issue);
+      return !before || field === '' || !sameJson(after[field], before[field]);
+    })
+    .map((issue) => `canvas${issue.at}: ${issue.message}`);
+  const elements = (schemaCanvas as { elements?: unknown }).elements;
+  const originals = (canvas as { elements?: unknown }).elements;
+  if (Array.isArray(elements) && Array.isArray(originals)) {
+    const old = new Map(
+      (Array.isArray(previous?.elements) ? previous.elements : []).map((element) => [
+        element?.id,
+        element,
+      ]),
+    );
+    elements.forEach((element, index) => {
+      const id = (originals[index] as { id?: unknown } | null)?.id;
+      if (typeof id === 'string' && old.has(id) && sameJson(originals[index], old.get(id))) {
+        return;
+      }
+      const { type, issues: current } = elementIssues(element, PERSISTED_ELEMENT_SCHEMAS);
+      for (const issue of current) {
+        issues.push(formatElementIssue(`canvas/elements/${index}`, type, issue));
+      }
     });
   }
-  return Errors(SlideCanvasSchema, schemaCanvas).map(
-    (error) => `canvas${error.instancePath || ''}: ${error.message}`,
-  );
+  if (issues.length > 0) return issues;
+  const old = new Map(previous?.elements.map((element) => [element.id, element]));
+  return (canvas as Slide).elements.flatMap((element, index) => {
+    if (element.type !== 'shape') return [];
+    const before = old.get(element.id);
+    if (before?.type === 'shape' && !shapeGeometryChanged(before, element)) return [];
+    return shapeGeometryIssues(element, `canvas/elements/${index}`);
+  });
 }
 
 function projectUnchangedHistoricalGeometry(canvas: unknown, previous?: Slide): unknown {

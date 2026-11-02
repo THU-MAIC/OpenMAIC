@@ -4,6 +4,8 @@ export interface InlineReport {
 }
 
 export interface InlineOptions {
+  /** Deployment origin for resolving self-hosted interactive libraries outside a browser. */
+  baseUrl?: string;
   fetchImpl?: typeof fetch;
   maxAssetBytes?: number;
   fetcher?: FetchAsset;

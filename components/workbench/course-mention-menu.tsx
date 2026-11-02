@@ -1,5 +1,9 @@
 'use client';
 
+import {
+  extractionFailureDescription,
+  type MaterialExtractionReasonCode,
+} from '@/lib/types/material-extraction-failure';
 import { extractionLabelKey } from '@/lib/workbench/material-library-client';
 
 /**
@@ -107,6 +111,14 @@ export function CourseMentionMenu({
   readonly onPickMaterial?: (candidate: MaterialMentionCandidate) => void;
 }) {
   const { t } = useI18n();
+  // The page's explanation of a failure, with the numbers it states.
+  const failureGuidance = (
+    reasonCode: MaterialExtractionReasonCode,
+    candidate: MaterialMentionCandidate,
+  ) => {
+    const { key, values } = extractionFailureDescription(reasonCode, candidate.reasonValues);
+    return t(`workspace.knowledgeBase.failure.${reasonCode}.${key}`, values);
+  };
   const titleId = useId();
   const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -386,14 +398,19 @@ export function CourseMentionMenu({
                 // The folder only when it is in one; nothing, and no separator, at the top level.
                 const where = [candidate.folderName, status].filter(Boolean).join(' · ');
                 // Why it cannot be picked, in the page's words, and where it can
-                // be parsed again: the knowledge base page, not this menu (#1880).
+                // be handled: the knowledge base page, not this menu (#1880).
                 // Not `disabled`: a disabled button takes no hover or focus, so
                 // it could show no tooltip.
                 const label = unavailable
-                  ? t('workspace.courseMention.materialUnavailable', {
-                      name: candidate.name,
-                      reason: status,
-                    })
+                  ? candidate.reasonCode
+                    ? t('workspace.courseMention.materialUnavailableGuidance', {
+                        name: candidate.name,
+                        guidance: failureGuidance(candidate.reasonCode, candidate),
+                      })
+                    : t('workspace.courseMention.materialUnavailable', {
+                        name: candidate.name,
+                        reason: status,
+                      })
                   : t('workspace.courseMention.attachMaterial', { name: candidate.name });
                 const option = (
                   <button

@@ -160,6 +160,40 @@ const paragraph: NodeSpec = {
   },
 };
 
+// Legacy canvas shows the LaTeX source. Typesetting stays in the renderer editor.
+// The atom keeps `data-inline-math` when nearby text is edited and saved.
+const inlineMath: NodeSpec = {
+  inline: true,
+  group: 'inline',
+  atom: true,
+  leafText: (node) => (typeof node.attrs.latex === 'string' ? node.attrs.latex : ''),
+  attrs: { latex: { default: '' } },
+  parseDOM: [
+    {
+      tag: 'span[data-inline-math]',
+      priority: 100,
+      getAttrs: (dom) => {
+        const latex = (dom as HTMLElement).getAttribute('data-inline-math');
+        return latex !== null ? { latex } : false;
+      },
+    },
+    {
+      tag: 'span.katex',
+      priority: 100,
+      getAttrs: (dom) => {
+        const latex = (dom as HTMLElement).querySelector(
+          'annotation[encoding="application/x-tex"]',
+        )?.textContent;
+        return latex ? { latex } : false;
+      },
+    },
+  ],
+  toDOM: (node) => {
+    const latex = typeof node.attrs.latex === 'string' ? node.attrs.latex : '';
+    return ['span', { 'data-inline-math': latex }, latex];
+  },
+};
+
 const { doc, blockquote, text } = nodes;
 
 const schemaNodes = {
@@ -167,6 +201,7 @@ const schemaNodes = {
   paragraph,
   blockquote,
   text,
+  inline_math: inlineMath,
   ordered_list: orderedList,
   bullet_list: bulletList,
   list_item: listItem,

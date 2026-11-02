@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { useI18n } from '@/lib/hooks/use-i18n';
 import {
   ensureVoicesLoaded,
   isBrowserTTSAbortError,
@@ -34,6 +35,7 @@ export interface TTSPreviewOptions {
  * - `stopPreview()`: cancel any active preview and reset state
  */
 export function useTTSPreview() {
+  const { locale } = useI18n();
   const [previewing, setPreviewing] = useState(false);
   const cancelRef = useRef<(() => void) | null>(null);
   const requestIdRef = useRef(0);
@@ -90,6 +92,7 @@ export function useTTSPreview() {
             voice: options.voice,
             rate: options.speed,
             voices,
+            locale,
           });
           cancelRef.current = controller.cancel;
           await controller.promise;
@@ -162,7 +165,7 @@ export function useTTSPreview() {
         }
       }
     },
-    [cleanup],
+    [cleanup, locale],
   );
 
   return { previewing, startPreview, stopPreview };

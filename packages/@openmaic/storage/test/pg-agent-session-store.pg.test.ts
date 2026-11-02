@@ -114,6 +114,41 @@ describe.skipIf(!contractUrl)('PgAgentSessionStore with PostgreSQL 16', () => {
   });
   runAgentSessionUrlContract('PostgreSQL 16 (node-postgres)', () => store);
 
+  test('concurrent recovery detaches a Skill and records its notice exactly once', async () => {
+    await store.createSession(makeAgentSessionInput({ skillId: 'usk_deleted' }));
+    const claim = await store.claimNextSession('worker-a', 101, {
+      leaseTtlMs: 10_000,
+      maxAttempts: 3,
+    });
+    const input = {
+      ownerId: 'owner-a',
+      workerId: 'worker-a',
+      attempt: claim!.attempt,
+      skillId: 'usk_deleted',
+      notice: {
+        ts: 102,
+        type: 'skill_detached',
+        data: { skillName: 'my-method', throughMessageSeq: 0 },
+      },
+    };
+    expect(
+      await store.detachSessionSkill('session-1', { ...input, ownerId: 'foreign-owner' }),
+    ).toBe(false);
+    const results = await Promise.all([
+      store.detachSessionSkill('session-1', input),
+      store.detachSessionSkill('session-1', input),
+    ]);
+    expect(results.sort()).toEqual([false, true]);
+    const recovered = await store.getSession('session-1');
+    expect(recovered).toMatchObject({ stageId: 'stage-1' });
+    expect(recovered?.skillId).toBeUndefined();
+    expect(
+      (await store.readEventsAfter('session-1', 0)).filter(
+        (event) => event.type === 'skill_detached',
+      ),
+    ).toHaveLength(1);
+  });
+
   test('orders title projection timestamps by the actual locked update', async () => {
     await store.createSession(makeAgentSessionInput());
     const transactionStarted = deferred<number>();

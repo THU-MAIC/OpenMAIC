@@ -41,7 +41,13 @@ import { InvalidProjectError, unzipProject as defaultUnzipProject } from './unzi
 import { hardenProjectDirectory } from './project-html-hardening.js';
 import { capBodyStream } from './capped-stream.js';
 import { Semaphore } from './semaphore.js';
-import { emitRenderEvent, type RenderEventSink } from './events.js';
+import {
+  EMPTY_PREVIEW_IMAGE_MESSAGE,
+  classifyPreviewFailure,
+  emitRenderEvent,
+  type PreviewErrorCode,
+  type RenderEventSink,
+} from './events.js';
 import { PreviewGate, PreviewRejectedError } from './preview-gate.js';
 import {
   ChromiumPreviewRenderer,
@@ -394,14 +400,20 @@ export function createApp(deps: AppDeps): Hono {
   // Times every response the preview route produces — 200, 413, 429, 504, 500
   // alike. A synchronous preview reports failure in its status, so this is the
   // one place a deployment can see the route's real success rate and latency.
+  // A 5xx also carries why it failed, as a fixed code the handler records
+  // against its request (never the error message).
+  const previewFailures = new WeakMap<Request, PreviewErrorCode>();
   app.use('/preview', async (c, next) => {
     const startedAt = Date.now();
     await next();
+    const errorCode =
+      c.res.status >= 500 ? (previewFailures.get(c.req.raw) ?? 'internal') : undefined;
     onEvent({
       event: 'preview_request',
       route: '/preview',
       status: c.res.status,
       durationMs: Date.now() - startedAt,
+      ...(errorCode ? { errorCode } : {}),
     });
   });
 
@@ -409,6 +421,7 @@ export function createApp(deps: AppDeps): Hono {
     // Resource mode cannot run Chromium here: this HTTP process is outside the
     // per-task cgroup. Reject before inspecting or buffering the request body.
     if (deps.resourceMode) {
+      previewFailures.set(c.req.raw, 'resource_mode_unsupported');
       return c.json(
         {
           error: 'Preview is unavailable while per-task resource budgets are enabled',
@@ -481,7 +494,7 @@ export function createApp(deps: AppDeps): Hono {
       } finally {
         releaseExecution();
       }
-      if (png.byteLength === 0) throw new Error('Preview renderer returned an empty image');
+      if (png.byteLength === 0) throw new Error(EMPTY_PREVIEW_IMAGE_MESSAGE);
 
       const body = new Uint8Array(png.byteLength);
       body.set(png);
@@ -508,8 +521,10 @@ export function createApp(deps: AppDeps): Hono {
         return c.json(rejectionBody(error), 429);
       }
       if (error instanceof PreviewTimeoutError || deadlineAbort.signal.aborted) {
+        previewFailures.set(c.req.raw, 'deadline_exceeded');
         return c.json({ error: 'Preview exceeded the deadline' }, 504);
       }
+      previewFailures.set(c.req.raw, classifyPreviewFailure(error));
       return c.json(
         { error: error instanceof Error ? error.message : 'Preview rendering failed' },
         500,

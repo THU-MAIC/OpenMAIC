@@ -39,7 +39,9 @@ function ThumbItemComponent({
   onDelete,
 }: ThumbItemProps) {
   const { t } = useI18n();
-  const issues = useSceneIssues(scene);
+  const issues = useSceneIssues(scene).filter(
+    (issue) => issue.evidence !== 'local-audio-unchecked',
+  );
   const hasError = issues.some((issue) => issue.severity === 'error');
   const issueLabel = t(hasError ? 'edit.nav.sceneHasErrors' : 'edit.nav.sceneIncomplete');
   const viewportSize = useCanvasStore.use.viewportSize();

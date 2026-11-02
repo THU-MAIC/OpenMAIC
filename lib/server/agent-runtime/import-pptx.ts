@@ -336,6 +336,17 @@ export async function parsePptxBuffer(
   return parsePptxIsolated(buffer, options);
 }
 
+/** A .pptx is an OOXML package: a ZIP archive, whose local file header starts `PK\x03\x04`. */
+function isZipArchive(bytes: Uint8Array): boolean {
+  return (
+    bytes.length >= 4 &&
+    bytes[0] === 0x50 &&
+    bytes[1] === 0x4b &&
+    bytes[2] === 0x03 &&
+    bytes[3] === 0x04
+  );
+}
+
 function toolResult(text: string, details: Record<string, unknown>, isError = false) {
   return {
     content: [{ type: 'text' as const, text }],
@@ -515,6 +526,16 @@ export function buildImportPptxTool(
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (message === 'aborted') throw error;
+        // A parser fault on a file that is not even a ZIP archive says nothing
+        // useful by itself; the likely cause is a legacy binary .ppt under a
+        // .pptx name, which only the user can convert.
+        if (!isZipArchive(raw.bytes)) {
+          return toolResult(
+            `Failed to parse the PowerPoint: ${message}. The file is not a .pptx package (a .pptx is a ZIP archive and this is not one); it may be a legacy .ppt (PowerPoint 97-2003) file or another format renamed. Ask the user to open it in PowerPoint or a compatible editor, save it as .pptx, and upload that file.`,
+            { status: 'parse_failed', reason: 'not_zip_package', materialId: record.id },
+            true,
+          );
+        }
         return toolResult(
           `Failed to parse the PowerPoint: ${message}`,
           { status: 'parse_failed', materialId: record.id },

@@ -361,6 +361,20 @@ export interface AgentSessionTitleStore {
   ): Promise<AgentSessionMeta | null>;
 }
 
+/** Optional recovery capability; detachment and its recovery event commit together. */
+export interface AgentSessionSkillStore {
+  detachSessionSkill(
+    sessionId: string,
+    input: {
+      ownerId: string;
+      workerId: string;
+      attempt: number;
+      skillId: string;
+      notice: Omit<NewAgentSessionEvent, 'attempt'>;
+    },
+  ): Promise<boolean>;
+}
+
 /** One-shot automatic-title state transitions, separate from lifecycle authority. */
 export interface AgentSessionAutomaticTitleStore {
   claimAutomaticSessionTitle(sessionId: string, ownerId: string): Promise<string | null>;

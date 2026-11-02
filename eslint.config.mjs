@@ -161,19 +161,19 @@ const eslintConfig = defineConfig([
         },
         {
           selector:
-            'ImportDeclaration > Literal.source[value=/^(?!@openmaic\\/(dsl|geometry)(\\/|$)|(jsonrepair|katex|nanoid|parse5|partial-json)(\\/|$)|node:|\\.\\.?\\/).+/]',
+            'ImportDeclaration > Literal.source[value=/^(?!@openmaic\\/(dsl|geometry)(\\/|$)|(jsonrepair|katex|nanoid|parse5|partial-json|es-module-lexer|postcss|postcss-value-parser)(\\/|$)|node:|\\.\\.?\\/).+/]',
           message:
             '@openmaic/generation may import only from @openmaic/dsl, @openmaic/geometry, approved leaf runtime dependencies, Node built-ins, or relative modules (./… or ../…).',
         },
         {
           selector:
-            'ExportNamedDeclaration > Literal.source[value=/^(?!@openmaic\\/(dsl|geometry)(\\/|$)|(jsonrepair|katex|nanoid|parse5|partial-json)(\\/|$)|node:|\\.\\.?\\/).+/]',
+            'ExportNamedDeclaration > Literal.source[value=/^(?!@openmaic\\/(dsl|geometry)(\\/|$)|(jsonrepair|katex|nanoid|parse5|partial-json|es-module-lexer|postcss|postcss-value-parser)(\\/|$)|node:|\\.\\.?\\/).+/]',
           message:
             '@openmaic/generation may re-export only from @openmaic/dsl, @openmaic/geometry, approved leaf runtime dependencies, Node built-ins, or relative modules (./… or ../…).',
         },
         {
           selector:
-            'ExportAllDeclaration > Literal.source[value=/^(?!@openmaic\\/(dsl|geometry)(\\/|$)|(jsonrepair|katex|nanoid|parse5|partial-json)(\\/|$)|node:|\\.\\.?\\/).+/]',
+            'ExportAllDeclaration > Literal.source[value=/^(?!@openmaic\\/(dsl|geometry)(\\/|$)|(jsonrepair|katex|nanoid|parse5|partial-json|es-module-lexer|postcss|postcss-value-parser)(\\/|$)|node:|\\.\\.?\\/).+/]',
           message:
             '@openmaic/generation may re-export only from @openmaic/dsl, @openmaic/geometry, approved leaf runtime dependencies, Node built-ins, or relative modules (./… or ../…).',
         },

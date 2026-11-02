@@ -183,11 +183,10 @@ function baseToolOpts(events: StatelessEvent[]) {
     onActionDone: vi.fn(),
     thinkingConfig: { mode: 'disabled' as const, enabled: false },
     abortSignal: new AbortController().signal,
-    maxAgentTurns: 6,
-    getAgentTurnCount: () => 0,
+
     getAgentResponses: () => [],
     getWhiteboardLedger: () => [],
-    maxActionsPerAgent: 8,
+
     enableWhiteboardTools: true,
   };
 }
@@ -316,11 +315,10 @@ describe('Pi call_agent JSON action output', () => {
       onActionDone: vi.fn(),
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 8,
+
       enableWhiteboardTools: true,
     });
 
@@ -369,11 +367,10 @@ describe('Pi call_agent JSON action output', () => {
       onActionDone: vi.fn(),
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 8,
+
       enableWhiteboardTools: true,
     });
 
@@ -506,7 +503,7 @@ describe('Pi call_agent JSON action output', () => {
     });
   });
 
-  it('routes suppressed/weak child turns to the empty-turn guard', async () => {
+  it('allows the Director to retry suppressed child turns', async () => {
     const onAgentDone = vi.fn();
     const { buildCallAgentTool } = await import('@/lib/chat/pi/tools/call-agent');
     const events: StatelessEvent[] = [];
@@ -530,12 +527,12 @@ describe('Pi call_agent JSON action output', () => {
     mockChildWithJsonOutput(residue);
     await tool.execute('c2', { agentId: teacher.id, instruction: 'go' });
 
-    // Two consecutive weak turns trip the empty-turn guard: a third call is
-    // refused, so the director stops instead of treating scraps as teaching.
+    // Suppression still applies, but the Director can request another response.
     mocks.buildAgent.mockReset();
     mockChildWithJsonOutput(residue);
     const third = await tool.execute('c3', { agentId: teacher.id, instruction: 'go' });
-    expect(third.details).toMatchObject({ reason: 'consecutive_empty_turns' });
+    expect(third.details).toMatchObject({ text: '' });
+    expect(third.details).not.toHaveProperty('skipped');
   });
 
   it('counts real speech that merely discusses JSON/brackets as a substantive turn', async () => {
@@ -619,7 +616,7 @@ describe('Pi call_agent JSON action output', () => {
 
     const result = await tool.execute('call-1', { agentId: teacher.id, instruction: 'go' });
     expect(result.details).toMatchObject({ agentId: teacher.id, text: speech });
-    // Substantive turn: non-empty preview so the empty-turn guard is not tripped.
+    // Substantive turn: keep the visible response in its summary.
     expect(onAgentDone).toHaveBeenLastCalledWith(
       expect.objectContaining({ contentPreview: speech, actionCount: 0 }),
     );
@@ -659,11 +656,10 @@ describe('Pi call_agent JSON action output', () => {
       onActionDone: vi.fn(),
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 8,
+
       enableWhiteboardTools: true,
     });
 
@@ -725,11 +721,10 @@ describe('Pi call_agent JSON action output', () => {
       onActionDone: vi.fn(),
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 8,
+
       enableWhiteboardTools: true,
     });
 
@@ -796,11 +791,10 @@ describe('Pi call_agent JSON action output', () => {
       onActionDone: vi.fn(),
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 8,
+
       enableWhiteboardTools: true,
     });
 
@@ -843,11 +837,10 @@ describe('Pi call_agent JSON action output', () => {
       onActionDone: vi.fn(),
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 8,
+
       enableWhiteboardTools: true,
     });
 
@@ -896,11 +889,10 @@ describe('Pi call_agent JSON action output', () => {
       onActionDone: vi.fn(),
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 8,
+
       enableWhiteboardTools: true,
     });
 
@@ -953,11 +945,10 @@ describe('Pi call_agent JSON action output', () => {
       onActionDone: vi.fn(),
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 8,
+
       enableWhiteboardTools: true,
     });
 
@@ -1009,11 +1000,10 @@ describe('Pi call_agent JSON action output', () => {
       onActionDone: vi.fn(),
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 8,
+
       enableWhiteboardTools: true,
     });
 
@@ -1071,11 +1061,10 @@ describe('Pi call_agent JSON action output', () => {
       onActionDone,
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 8,
+
       enableWhiteboardTools: true,
     });
 
@@ -1127,11 +1116,10 @@ describe('Pi call_agent JSON action output', () => {
       onActionDone,
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 8,
+
       enableWhiteboardTools: true,
     });
 
@@ -1181,11 +1169,10 @@ describe('Pi call_agent JSON action output', () => {
       onActionDone,
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 8,
+
       enableWhiteboardTools: true,
     });
 
@@ -1243,11 +1230,10 @@ describe('Pi call_agent JSON action output', () => {
       onActionDone,
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 8,
+
       enableWhiteboardTools: true,
     });
 
@@ -1295,11 +1281,10 @@ describe('Pi call_agent JSON action output', () => {
       onActionDone: vi.fn(),
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 8,
+
       enableWhiteboardTools: true,
     });
 
@@ -1360,11 +1345,10 @@ describe('Pi call_agent JSON action output', () => {
       onActionDone,
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 1,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 8,
+
       enableWhiteboardTools: true,
     });
 
@@ -1420,11 +1404,10 @@ describe('Pi call_agent JSON action output', () => {
       onActionDone,
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 8,
+
       enableWhiteboardTools: true,
     });
 
@@ -1488,11 +1471,10 @@ describe('Pi call_agent JSON action output', () => {
       onActionDone: vi.fn(),
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 8,
+
       enableWhiteboardTools: true,
     });
 
@@ -1510,7 +1492,7 @@ describe('Pi call_agent JSON action output', () => {
     ).toEqual(['wb_open', 'wb_draw_text', 'wb_clear']);
   });
 
-  it('preserves the action budget for emitted actions while skipped lifecycle actions do not count', async () => {
+  it('skips redundant lifecycle actions without dropping subsequent valid actions', async () => {
     mockChildWithJsonOutput(
       JSON.stringify([
         { type: 'action', name: 'wb_open', params: {} },
@@ -1525,7 +1507,7 @@ describe('Pi call_agent JSON action output', () => {
           name: 'wb_draw_text',
           params: { content: '第二步', x: 80, y: 180 },
         },
-        { type: 'text', content: '动作预算仍然只允许简洁序列。' },
+        { type: 'text', content: '重复打开白板会跳过，两个绘制动作均保留。' },
       ]),
     );
 
@@ -1543,11 +1525,10 @@ describe('Pi call_agent JSON action output', () => {
       onActionDone: vi.fn(),
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 2,
+
       enableWhiteboardTools: true,
     });
 
@@ -1558,12 +1539,12 @@ describe('Pi call_agent JSON action output', () => {
 
     expect(
       events.filter((event) => event.type === 'action').map((event) => event.data.actionName),
-    ).toEqual(['wb_open', 'wb_draw_text']);
+    ).toEqual(['wb_open', 'wb_draw_text', 'wb_draw_text']);
     expect(result.details).toMatchObject({
-      text: '动作预算仍然只允许简洁序列。',
+      text: '重复打开白板会跳过，两个绘制动作均保留。',
       actionWarnings: [],
     });
-    expect(onAgentDone).toHaveBeenCalledWith(expect.objectContaining({ actionCount: 2 }));
+    expect(onAgentDone).toHaveBeenCalledWith(expect.objectContaining({ actionCount: 3 }));
   });
 
   it('validates wb_delete required params', async () => {
@@ -1588,11 +1569,10 @@ describe('Pi call_agent JSON action output', () => {
       onActionDone: vi.fn(),
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 8,
+
       enableWhiteboardTools: true,
     });
 
@@ -1673,11 +1653,10 @@ describe('Pi call_agent JSON action output', () => {
       onActionDone,
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 8,
+
       enableWhiteboardTools: true,
     });
 
@@ -1695,6 +1674,71 @@ describe('Pi call_agent JSON action output', () => {
         }),
       ],
     });
+  });
+
+  it('rejects Native shape extensions through both Legacy tool and JSON entry points', async () => {
+    const { buildChildActionTools } = await import('@/lib/chat/pi/tools/classroom-actions');
+    const events: StatelessEvent[] = [];
+    const send = async (event: StatelessEvent) => {
+      events.push(event);
+    };
+    const onActionDone = vi.fn();
+    const params = [
+      { shape: 'rectangle', rotate: -30 },
+      { shape: 'custom', path: 'M0 0 L4 0 L0 3 Z', viewBox: [4, 3] },
+      { shape: 'circle', stroke: { color: '#111', width: 2 } },
+      { shape: 'triangle', expectedLastSeq: null },
+    ].map((extra) => ({ x: 10, y: 20, width: 100, height: 80, ...extra }));
+    const draw = buildChildActionTools({
+      body: makeBody(),
+      agent: slideTeacher,
+      messageId: 'legacy',
+      send,
+      onActionDone,
+
+      enableWhiteboardTools: true,
+    }).find((t) => t.name === 'wb_draw_shape')!;
+    expect(draw.parameters).toMatchObject({ additionalProperties: false });
+    for (const input of params)
+      await expect(draw.execute('legacy-shape', input)).resolves.toMatchObject({
+        isError: true,
+        details: { reason: 'unsupported_legacy_shape' },
+      });
+    mockChildWithJsonOutput(
+      JSON.stringify(params.map((params) => ({ type: 'action', name: 'wb_draw_shape', params }))),
+    );
+    const { buildCallAgentTool } = await import('@/lib/chat/pi/tools/call-agent');
+    const tool = buildCallAgentTool({
+      body: makeBody(),
+      agentConfigs: [slideTeacher],
+      send,
+      languageModel: {} as never,
+      onAgentDone: vi.fn(),
+      onActionDone,
+      thinkingConfig: { mode: 'disabled', enabled: false },
+      abortSignal: new AbortController().signal,
+
+      getAgentResponses: () => [],
+      getWhiteboardLedger: () => [],
+
+      enableWhiteboardTools: true,
+    });
+    const result = await tool.execute('call', {
+      agentId: slideTeacher.id,
+      instruction: 'Draw these shapes.',
+    });
+    expect(result.details).toMatchObject({
+      // The JSON dispatcher deduplicates equal warnings across the four rejected calls.
+      actionWarnings: [
+        expect.objectContaining({
+          actionName: 'wb_draw_shape',
+          reason: 'invalid_params',
+          message: expect.stringContaining('Legacy wb_draw_shape does not support'),
+        }),
+      ],
+    });
+    expect(events.filter((e) => e.type === 'action')).toEqual([]);
+    expect(onActionDone).not.toHaveBeenCalled();
   });
 
   it('supports the full in-scope whiteboard action surface', async () => {
@@ -1782,11 +1826,10 @@ describe('Pi call_agent JSON action output', () => {
       onActionDone,
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 8,
+
       enableWhiteboardTools: true,
     });
 
@@ -1879,11 +1922,10 @@ describe('Pi call_agent JSON action output', () => {
       onActionDone: vi.fn(),
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 8,
+
       enableWhiteboardTools: true,
     });
 
@@ -1962,11 +2004,10 @@ describe('Pi call_agent JSON action output', () => {
       onActionDone: vi.fn(),
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 8,
+
       enableWhiteboardTools: true,
     });
 
@@ -2044,11 +2085,10 @@ describe('Pi call_agent JSON action output', () => {
       onActionDone,
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 8,
+
       enableWhiteboardTools: true,
     });
 
@@ -2072,7 +2112,7 @@ describe('Pi call_agent JSON action output', () => {
     });
   });
 
-  it('records empty child turns and stops after consecutive empties (loop-guard)', async () => {
+  it('records empty child turns without preventing the next delegation', async () => {
     // Child that produces no output — simulates a model returning an empty completion.
     mocks.buildAgent.mockReturnValue({
       subscribe: () => () => {},
@@ -2091,11 +2131,10 @@ describe('Pi call_agent JSON action output', () => {
       onActionDone: vi.fn(),
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 8,
+
       enableWhiteboardTools: true,
     });
 
@@ -2104,12 +2143,11 @@ describe('Pi call_agent JSON action output', () => {
     const r2 = (await call()) as { details: Record<string, unknown> };
     const r3 = (await call()) as { details: Record<string, unknown> };
 
-    // Empty turns still record via onAgentDone (count toward the turn/retry budget)
-    expect(onAgentDone).toHaveBeenCalledTimes(2);
+    // Empty turns remain observable without imposing a retry count.
+    expect(onAgentDone).toHaveBeenCalledTimes(3);
     expect(r1.details.skipped).toBeFalsy();
     expect(r2.details.skipped).toBeFalsy();
-    // Third consecutive empty attempt is refused deterministically instead of looping forever
-    expect(r3.details).toMatchObject({ skipped: true, reason: 'consecutive_empty_turns' });
+    expect(r3.details.skipped).toBeFalsy();
   });
 
   it('treats a thrown child run as an empty turn without escaping execute', async () => {
@@ -2132,11 +2170,10 @@ describe('Pi call_agent JSON action output', () => {
       onActionDone: vi.fn(),
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 6,
-      getAgentTurnCount: () => 0,
+
       getAgentResponses: () => [],
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 8,
+
       enableWhiteboardTools: true,
     });
 

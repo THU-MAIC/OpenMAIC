@@ -392,7 +392,12 @@ export function presentTool(
           chips.push({ label: t('workbench.tool.chip.unchanged'), tone: 'neutral' });
         } else {
           if (moved !== undefined) {
-            chips.push({ label: t('workbench.tool.chip.materials', { count: moved }) });
+            chips.push({
+              label: t(
+                moved === 1 ? 'workbench.tool.chip.material' : 'workbench.tool.chip.materials',
+                { count: moved },
+              ),
+            });
           }
           // The action, not a state; the result names no source folder.
           if (d.folderId === null) {
@@ -803,29 +808,46 @@ export function presentTool(
       };
     }
 
-    case 'render_scene_preview':
-      // `args.sceneId` is a persisted scene id, and the plan is keyed by order,
-      // so there is no title to resolve here — the verb stands alone.
+    case 'render_scene_preview': {
+      // The result names the page's order; the argument may be an id the plan
+      // cannot resolve, so a running row shows the verb alone.
+      const order = num(d.order);
+      if (order !== undefined) {
+        chips.push({ label: t('workbench.tool.chip.pageOrder', { order }) });
+      }
       return {
         icon: ImageIcon,
         label: t('workbench.tool.label.previewScene'),
+        subject: order !== undefined ? plan.find((p) => p.order === order)?.title : undefined,
         chips,
         ...(failed
           ? { errorText: errorLine(t('workbench.tool.error.previewScene'), node.toolResultText) }
           : {}),
       };
+    }
 
     // ── Stage-document tools ──────────────────────────────────────────────────
     // The subject is what the agent actually
     // aimed at: the document path it read, the intent it wrote for, the query it
     // searched — never the wire stageId.
     case 'read_stage': {
+      // A JSON path is the wire address, not something a reader names: a page
+      // order reads as "Page N" (with its planned title), the outline as the
+      // outline, and any other selector — the whole stage, a scene id — as the
+      // verb alone.
       const path = str(d.path) ?? str(args.path);
+      const order = path ? /^\/scenes\/([1-9]\d*)(?:\/|$)/.exec(path)?.[1] : undefined;
+      let subject: string | undefined;
+      if (order !== undefined) {
+        chips.push({ label: t('workbench.tool.chip.pageOrder', { order: Number(order) }) });
+        subject = plan.find((p) => p.order === Number(order))?.title;
+      } else if (path === '/outline') {
+        subject = t('workbench.tool.section.outline');
+      }
       return {
         icon: BookOpen,
         label: t('workbench.tool.label.readCourse'),
-        // path "" is the whole stage — the verb alone is the honest row.
-        subject: path && path !== '' ? path : undefined,
+        subject,
         chips,
         ...(failed
           ? { errorText: errorLine(t('workbench.tool.error.readCourse'), node.toolResultText) }

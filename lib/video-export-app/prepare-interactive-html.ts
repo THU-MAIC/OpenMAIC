@@ -23,6 +23,8 @@ export interface PreparedInteractiveHtmlSet extends InteractiveHtmlSource {
 }
 
 export interface PrepareInteractiveHtmlOptions {
+  /** Deployment origin when packaging outside a browser. */
+  baseUrl?: string;
   fetcher?: FetchAsset;
   maxHtmlBytes?: number;
 }
@@ -236,6 +238,7 @@ export async function prepareInteractiveHtmlScenes(
         unresolved,
       } = await inlineHtmlAssets(authored, {
         fetcher: options.fetcher,
+        baseUrl: options.baseUrl,
         keepImportmapFallbacks: false,
       });
       const sanitized = stripInvalidFontFallbacks(inlined);
@@ -258,7 +261,7 @@ export async function prepareInteractiveHtmlScenes(
       }
 
       const packaged = injectIntoDocumentHead(
-        patchHtmlForIframe(sanitized),
+        patchHtmlForIframe(sanitized, undefined, { processed: true }),
         staticCaptureInjection(),
       );
       const size = new TextEncoder().encode(packaged).byteLength;

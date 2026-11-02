@@ -35,6 +35,7 @@
     "submit": "Gửi",
     "dismiss": "Bỏ qua",
     "inFormBelow": "Hãy trả lời trong biểu mẫu bên dưới",
+    "inPreview": "Trả lời trong bản xem trước",
     "multiAnswerSeparator": ", "
   },
   "material": {
@@ -98,6 +99,21 @@
       "vocational": "Đào tạo nghề",
       "workshop-style": "Workshop tương tác"
     }
+  },
+  "preview": {
+    "eyebrow": "Đang thực hiện",
+    "understanding": "Đang hiểu yêu cầu của bạn",
+    "understandingDesc": "Đang đọc yêu cầu và những gì cần cho nó…",
+    "asking": "Một câu hỏi nhanh",
+    "askingDesc": "Tác tử tiếp tục khi bạn trả lời.",
+    "assembling": "Đang dựng lớp học",
+    "assemblingDesc": "Tạo khóa học, chọn giáo viên và bạn học…",
+    "opening": "Đang mở lớp học",
+    "page": "Trang {{order}}",
+    "pageCaption": "Trang {{order}} · {{title}}",
+    "skills": "Kỹ năng đã trang bị",
+    "resting": "Khóa học của bạn sẽ xuất hiện ở đây",
+    "restingDesc": "Tiếp tục trò chuyện; khi khóa học được tạo, nó sẽ mở trong thẻ này."
   },
   "thinking": {
     "active": "Đang suy nghĩ…",
@@ -239,7 +255,8 @@
       "parseFailed": "Phân tích thất bại",
       "folderExisted": "Thư mục đã có sẵn",
       "unchanged": "Không thay đổi",
-      "movedOutOfFolder": "Đã chuyển ra khỏi thư mục"
+      "movedOutOfFolder": "Đã chuyển ra khỏi thư mục",
+      "material": "{{count}} tài liệu"
     },
     "error": {
       "materialExtraction": "Bóc tách tài liệu thất bại",

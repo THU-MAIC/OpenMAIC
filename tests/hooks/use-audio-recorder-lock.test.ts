@@ -12,6 +12,10 @@ import { modelSettingsClient } from '@/lib/model-settings/client';
 
 import { modelSettingsViewFor } from '../helpers/model-settings-view';
 
+vi.mock('@/lib/hooks/use-i18n', () => ({
+  useI18n: () => ({ locale: 'en-US' }),
+}));
+
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 afterEach(() => {

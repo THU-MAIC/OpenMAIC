@@ -154,6 +154,13 @@ export interface TTSGenerationResult {
 export class TTSRateLimitError extends Error {
   /** Milliseconds from a `Retry-After` header, when the provider sent one. */
   readonly retryAfterMs?: number;
+  /**
+   * Classifier sentinel, not the provider's HTTP status. Business-level rate
+   * limits (MiniMax HTTP 200 + code 1002, Doubao business codes) still carry
+   * 429 so `runFailureCode` and route retry map this class to `RATE_LIMITED`
+   * and a retryable status. A quota error attached as `cause` still wins.
+   */
+  readonly statusCode = 429;
 
   constructor(
     public readonly provider: string,
@@ -1198,7 +1205,7 @@ async function generateMiniMaxTTS(
 
 /**
  * Google Gemini TTS via the Interactions API.
- * Response audio is raw 24 kHz mono s16le PCM; wrap as WAV for classroom playback.
+ * Gemini 3.8 returns WAV; earlier preview models return raw mono s16le PCM.
  */
 async function generateGoogleTTS(
   config: TTSModelConfig,
@@ -1242,13 +1249,21 @@ async function generateGoogleTTS(
     throw new Error('Google Gemini TTS API error: response missing audio data');
   }
 
-  const pcm = new Uint8Array(Buffer.from(audio.data, 'base64'));
-  if (pcm.byteLength === 0) {
+  const bytes = new Uint8Array(Buffer.from(audio.data, 'base64'));
+  if (bytes.byteLength === 0) {
     throw new Error('Google Gemini TTS API error: empty audio payload');
   }
 
+  const mimeType = audio.mimeType?.split(';')[0].trim().toLowerCase();
+  if (mimeType === 'audio/wav') {
+    return { audio: bytes, format: 'wav' };
+  }
+  // Preserve the legacy PCM fallback for responses without a MIME type.
+  if (mimeType && mimeType !== 'audio/l16') {
+    throw new Error('Google Gemini TTS API error: unsupported audio format');
+  }
   return {
-    audio: pcmS16leMonoToWav(pcm, audio.sampleRate),
+    audio: pcmS16leMonoToWav(bytes, sampleRateFromL16Mime(audio.mimeType)),
     format: 'wav',
   };
 }
@@ -1259,7 +1274,7 @@ async function generateGoogleTTS(
  */
 function extractGoogleInteractionsAudio(
   payload: Record<string, unknown> | null,
-): { data: string; sampleRate: number } | null {
+): { data: string; mimeType?: string } | null {
   if (!payload || !Array.isArray(payload.steps)) return null;
 
   for (const step of payload.steps) {
@@ -1272,7 +1287,10 @@ function extractGoogleInteractionsAudio(
       if (block.type !== 'audio' || typeof block.data !== 'string' || block.data.length === 0) {
         continue;
       }
-      return { data: block.data, sampleRate: sampleRateFromL16Mime(block.mime_type) };
+      return {
+        data: block.data,
+        mimeType: typeof block.mime_type === 'string' ? block.mime_type : undefined,
+      };
     }
   }
 

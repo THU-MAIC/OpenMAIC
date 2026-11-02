@@ -35,6 +35,7 @@
     "submit": "Отправить",
     "dismiss": "Отклонить",
     "inFormBelow": "Ответьте в форме ниже",
+    "inPreview": "Ответьте в превью",
     "multiAnswerSeparator": ", "
   },
   "material": {
@@ -98,6 +99,21 @@
       "vocational": "Профессиональная подготовка",
       "workshop-style": "Интерактивный воркшоп"
     }
+  },
+  "preview": {
+    "eyebrow": "В работе",
+    "understanding": "Разбираем ваш запрос",
+    "understandingDesc": "Читаем, что вы попросили и что для этого нужно…",
+    "asking": "Короткий вопрос",
+    "askingDesc": "Агент продолжит после вашего ответа.",
+    "assembling": "Готовим класс",
+    "assemblingDesc": "Создаём курс и подбираем преподавателя и одноклассников…",
+    "opening": "Открываем класс",
+    "page": "Страница {{order}}",
+    "pageCaption": "Страница {{order}} · {{title}}",
+    "skills": "Подключённые навыки",
+    "resting": "Здесь появится ваш курс",
+    "restingDesc": "Продолжайте разговор; когда курс будет создан, он откроется в этой вкладке."
   },
   "thinking": {
     "active": "Думает…",
@@ -239,7 +255,8 @@
       "parseFailed": "Ошибка обработки",
       "folderExisted": "Папка уже была",
       "unchanged": "Без изменений",
-      "movedOutOfFolder": "Перемещено из папки"
+      "movedOutOfFolder": "Перемещено из папки",
+      "material": "{{count}} материал"
     },
     "error": {
       "materialExtraction": "Не удалось разобрать материал",

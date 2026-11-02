@@ -34,7 +34,7 @@ Required peers:
 
 Optional peers (install only if your slides use the corresponding element type):
 
-- `echarts >= 5` — for chart elements
+- `echarts >= 5.5` — for chart elements (uses endpoint label alignment for compact charts)
 - `shiki >= 1` — for code elements
 
 ## Quickstart

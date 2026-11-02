@@ -32,14 +32,10 @@ const scene = (audioId?: string): Scene =>
     },
     actions: [{ id: 'a', type: 'speech', text: 'Hello', audioId }],
   }) as Scene;
-function Probe({ scene }: { scene: Scene }) {
-  return createElement(
-    'div',
-    null,
-    useSceneIssues(scene)
-      .map((i) => i.kind)
-      .join(','),
-  );
+function Probe({ scene, onRender }: { scene: Scene; onRender?: (kinds: string[]) => void }) {
+  const kinds = useSceneIssues(scene).map((i) => i.kind);
+  onRender?.(kinds);
+  return createElement('div', null, kinds.join(','));
 }
 beforeEach(() => setModelSettingsViewForTests({ tts: { registryId: 'openai-tts' } }));
 afterEach(async () => {
@@ -155,3 +151,90 @@ it.each(['disabled', 'unassigned', 'browser-native-tts'])(
     expect(host.textContent).toBe('empty-speech');
   },
 );
+
+it('keeps cached narration clear on every render during unrelated edits and action reordering', async () => {
+  const s = scene();
+  s.actions!.push({ id: 'b', type: 'speech', text: 'Second line' });
+  await db.audioFiles.bulkPut(
+    ['a', 'b'].map((id) => ({
+      id: `tts_s1_${id}`,
+      stageId: 'c',
+      blob: new Blob(['audio']),
+      format: 'mp3',
+      createdAt: Date.now(),
+    })),
+  );
+  const renders: string[][] = [];
+  const onRender = (kinds: string[]) => renders.push(kinds);
+  await act(async () => root.render(createElement(Probe, { scene: s, onRender })));
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+  expect(host.textContent).toBe('');
+  const edits = [
+    { ...s, title: 'Renamed' },
+    structuredClone(s),
+    { ...s, actions: [...s.actions!].reverse() },
+  ];
+  for (const edited of edits) {
+    renders.length = 0;
+    await act(async () => root.render(createElement(Probe, { scene: edited, onRender })));
+    expect(renders.length).toBeGreaterThan(0);
+    expect(renders.flat()).not.toContain('speech-without-audio');
+  }
+  await act(async () => {
+    await db.audioFiles.clear();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+  expect(host.textContent).toContain('speech-without-audio');
+});
+
+it.each([
+  { name: 'course', edit: (s: Scene): Scene => ({ ...s, stageId: 'other' }) },
+  { name: 'scene', edit: (s: Scene): Scene => ({ ...s, id: 'other' }) },
+  { name: 'scene order', edit: (s: Scene): Scene => ({ ...s, order: 2 }) },
+  {
+    name: 'action',
+    edit: (s: Scene): Scene => ({
+      ...s,
+      actions: [{ id: 'other', type: 'speech', text: 'Hello' }],
+    }),
+  },
+  {
+    name: 'text',
+    unscoped: true,
+    edit: (s: Scene): Scene => ({ ...s, actions: [{ id: 'a', type: 'speech', text: 'Changed' }] }),
+  },
+  {
+    name: 'invalidation',
+    edit: (s: Scene): Scene => ({
+      ...s,
+      actions: [{ id: 'a', type: 'speech', text: 'Hello', audioInvalidated: true }],
+    }),
+  },
+])('does not reuse cached evidence when the $name changes', async ({ edit, unscoped }) => {
+  const s = scene();
+  await db.audioFiles.put({
+    id: 'tts_s1_a',
+    stageId: unscoped ? undefined : 'c',
+    text: 'Hello',
+    blob: new Blob(['audio']),
+    format: 'mp3',
+    createdAt: Date.now(),
+  });
+  await act(async () => root.render(createElement(Probe, { scene: s })));
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+  expect(host.textContent).toBe('');
+  const renders: string[][] = [];
+  await act(async () =>
+    root.render(
+      createElement(Probe, {
+        scene: edit(s),
+        onRender: (kinds) => renders.push(kinds),
+      }),
+    ),
+  );
+  expect(renders[0]).toContain('speech-without-audio');
+});

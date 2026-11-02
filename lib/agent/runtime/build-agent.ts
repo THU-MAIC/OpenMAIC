@@ -4,7 +4,8 @@
  * Stands up a pi `Agent` with:
  * - injected StreamFn (-> OpenMAIC connector),
  * - request-scoped tools supplied by the route,
- * - a caller-supplied `beforeToolCall` allowlist gate,
+ * - a caller-supplied `beforeToolCall` allowlist gate (which also blocks calls
+ *   whose arguments were not valid JSON),
  * - a `afterToolCall` quota hook (v0 stub: unlimited).
  */
 import {
@@ -20,6 +21,7 @@ import type { Api, Model } from '@earendil-works/pi-ai';
 import { makeAllowlistGate } from './allowlist';
 import { makeQuotaHook } from './quota';
 import { hasLengthToolCallProvenance } from './stream-fn';
+import { toolArgumentsError } from './tool-call-arguments';
 import { withAgentToolTimeout } from './tool-timeout';
 
 // pi needs *a* model object on state; the injected StreamFn ignores it and uses
@@ -64,6 +66,7 @@ export interface BuildAgentOptions {
 
 export function buildAgent(opts: BuildAgentOptions): Agent {
   const quotaHook = makeQuotaHook({ remaining: () => Number.MAX_SAFE_INTEGER });
+  const allowlistGate = makeAllowlistGate(opts.allowedToolNames);
   const agent = new Agent({
     streamFn: opts.streamFn,
     transformContext: opts.transformContext,
@@ -79,7 +82,15 @@ export function buildAgent(opts: BuildAgentOptions): Agent {
       // conversation in context — without this the agent is stateless per turn.
       ...(opts.history && opts.history.length > 0 ? { messages: opts.history } : {}),
     },
-    beforeToolCall: makeAllowlistGate(opts.allowedToolNames),
+    beforeToolCall: async (context) => {
+      const blocked = await allowlistGate(context);
+      if (blocked) return blocked;
+      // Arguments that were not valid JSON never reach a tool: when schema
+      // validation passed anyway (all-optional parameters), fail with the
+      // parse diagnosis instead of running with defaults.
+      const argumentsError = toolArgumentsError(context.toolCall.arguments);
+      return argumentsError ? { block: true, reason: argumentsError } : undefined;
+    },
     afterToolCall: async (context, signal) => {
       const markerIsError =
         typeof context.result === 'object' &&

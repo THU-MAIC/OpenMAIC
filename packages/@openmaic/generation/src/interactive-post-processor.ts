@@ -10,67 +10,107 @@
  */
 
 import { parse, type DefaultTreeAdapterTypes } from 'parse5';
+import {
+  htmlNodes,
+  patchHtml,
+  rewriteInteractiveLibraries,
+  type HtmlPatch,
+} from './interactive-library-mapper.js';
+import { interactiveLibraryUrl } from './interactive-libraries.js';
 
-/** Marks the KaTeX markup this module injects, so a second pass adds nothing. */
+/** Marks the KaTeX markup this module owns; a later pass replaces it instead of adding more. */
 const KATEX_INJECTION_MARKER = 'data-openmaic-katex';
 
 /**
- * Main entry point: post-process generated interactive HTML
- * Converts LaTeX delimiters and injects KaTeX rendering resources.
- *
- * The platform's KaTeX is injected even when the page references KaTeX itself.
- * The page's own copy may not be there when the page needs it (an unreachable
- * CDN, a wrong `integrity` hash, an `async` tag), and a page that then calls
- * `renderMathInElement` or `katex.render` aborts with a ReferenceError.
- * The page's markup is left as authored.
+ * Re-process stored HTML as well as newly generated pages. Platform-owned
+ * KaTeX markup (marked with {@link KATEX_INJECTION_MARKER}, including the
+ * #1966 CDN injection) is removed and injected again for the current asset
+ * base, so a page re-processed with the same base comes out byte-identical.
  */
 export function postProcessInteractiveHtml(html: string): string {
-  // Convert LaTeX delimiters while protecting script tags
-  let processed = convertLatexDelimiters(html);
-
-  if (!processed.includes(KATEX_INJECTION_MARKER)) {
-    processed = injectKatex(processed);
+  let processed = rewriteInteractiveLibraries(stripKatexInjection(html)).html;
+  const patches: HtmlPatch[] = [];
+  let hasMath = false;
+  for (const node of htmlNodes(processed)) {
+    if (node.nodeName !== '#text' || !('value' in node)) continue;
+    // Script/style/code examples and attributes are never LaTeX input.
+    let parent = node.parentNode;
+    let excluded = false;
+    while (parent) {
+      if (
+        'tagName' in parent &&
+        ['script', 'style', 'pre', 'code', 'textarea', 'noscript', 'title'].includes(parent.tagName)
+      )
+        excluded = true;
+      parent = 'parentNode' in parent ? parent.parentNode : null;
+    }
+    if (excluded) {
+      // Scripts that call KaTeX, or hold TeX strings written into the page later, need it too.
+      if (
+        node.parentNode &&
+        'tagName' in node.parentNode &&
+        node.parentNode.tagName === 'script' &&
+        (scriptHasTex(node.value) || KATEX_CALL.test(node.value))
+      )
+        hasMath = true;
+      continue;
+    }
+    const range = node.sourceCodeLocation;
+    if (!range) continue;
+    const source = processed.slice(range.startOffset, range.endOffset);
+    if (/\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\]/.test(source)) hasMath = true;
+    const converted = source
+      .replace(/(?<!\\)\$\$([^$]+)\$\$/g, (_, tex: string) => {
+        hasMath = true;
+        return `\\[${tex}\\]`;
+      })
+      // Avoid common currency ($5, $10), interpolation, and escaped dollar signs.
+      .replace(/(?<![\\\w$])\$(?![\s{])([^$\n]+?)(?<!\s)\$(?![\w${])/g, (_, tex: string) => {
+        hasMath = true;
+        return `\\(${tex}\\)`;
+      });
+    if (converted !== source)
+      patches.push({ start: range.startOffset, end: range.endOffset, text: converted });
   }
-
-  return processed;
+  processed = patchHtml(processed, patches);
+  return hasMath ? injectKatex(processed) : processed;
 }
 
-/**
- * Convert LaTeX delimiters while protecting <script> tags.
- *
- * - Protects script blocks from modification
- * - Converts $$...$$ to \[...\] (display math)
- * - Converts $...$ to \(...\) (inline math)
- * - Restores script blocks after conversion
- */
-function convertLatexDelimiters(html: string): string {
-  const scriptBlocks: string[] = [];
-
-  // Protect script tags by replacing them with placeholders
-  let processed = html.replace(/<script\b[^>]*>[\s\S]*?(?:<\/script>|$)/gi, (match) => {
-    scriptBlocks.push(match);
-    return `__SCRIPT_BLOCK_${scriptBlocks.length - 1}__`;
-  });
-
-  // Convert display math: $$...$$ -> \[...\]
-  processed = processed.replace(/\$\$([^$]+)\$\$/g, '\\[$1\\]');
-
-  // Convert inline math: $...$ -> \(...\)
-  // Use non-greedy match and exclude newlines to avoid false positives
-  processed = processed.replace(/\$(?!\{)([^$\n]+?)\$(?!\{)/g, '\\($1\\)');
-
-  // Restore script blocks in a single pass. A replacer FUNCTION (not a string)
-  // is safe even when script content contains `$` — a function's return value
-  // is inserted literally, with no `$&`/`$1` substitution. The previous
-  // indexOf+substring loop rebuilt the entire string once per block, i.e.
-  // O(blocks × length), which balloons memory and blocks the event loop when
-  // the generated widget HTML contains many <script> tags.
-  processed = processed.replace(
-    /__SCRIPT_BLOCK_(\d+)__/g,
-    (whole, index) => scriptBlocks[Number(index)] ?? whole,
+/** Remove marked nodes together with the newline the injection puts before each, and after the last. */
+function stripKatexInjection(html: string): string {
+  const ranges = htmlNodes(html).flatMap((node) =>
+    'attrs' in node &&
+    node.attrs.some((attr) => attr.name === KATEX_INJECTION_MARKER) &&
+    node.sourceCodeLocation
+      ? [node.sourceCodeLocation]
+      : [],
   );
+  if (!ranges.length) return html;
+  const patches = ranges.map(({ startOffset, endOffset }) => ({
+    start: html[startOffset - 1] === '\n' ? startOffset - 1 : startOffset,
+    end: endOffset,
+    text: '',
+  }));
+  const last = patches.reduce((a, b) => (b.end > a.end ? b : a));
+  if (html[last.end] === '\n') last.end += 1;
+  return patchHtml(html, patches);
+}
 
-  return processed;
+/** A page script that calls KaTeX needs the #1966 guards and the library. */
+const KATEX_CALL = /\b(?:katex\s*\.\s*render(?:ToString)?|renderMathInElement)\s*\(/;
+
+/** TeX delimiters and common commands after a single backslash. */
+const TEX =
+  /\\(?:[([]|begin\{|(?:frac|sqrt|sum|int|lim|cdot|times|div|pm|infty|alpha|beta|gamma|delta|theta|lambda|sigma|omega|Delta|vec|mathrm|mathbf)(?![A-Za-z]))/;
+/** The same, JS-escaped (two backslashes) inside an ordinary string literal. */
+const SCRIPT_TEX = new RegExp(`\\\\${TEX.source}`);
+/** String.raw template literals keep TeX backslashes single. */
+const RAW_TEMPLATE = /\bString\s*\.\s*raw\s*`((?:[^`\\]|\\[\s\S])*)`/g;
+
+function scriptHasTex(source: string): boolean {
+  if (SCRIPT_TEX.test(source)) return true;
+  for (const match of source.matchAll(RAW_TEMPLATE)) if (TEX.test(match[1]!)) return true;
+  return false;
 }
 
 /**
@@ -81,17 +121,17 @@ function convertLatexDelimiters(html: string): string {
  *   `katex` and `renderMathInElement` exist when those scripts and their
  *   DOMContentLoaded handlers run. A page that loads its own KaTeX later
  *   replaces these globals with the same library.
- * - When the CDN is unreachable, no-op stand-ins keep the page's own math
+ * - When the hosted asset fails to load, no-op stand-ins keep the page's own math
  *   calls from throwing; the math then stays as written.
  * - The render handler is registered before the page's handlers, so the
  *   observer is already watching when the page fills its labels.
  */
 function injectKatex(html: string): string {
   const katexInjection = `
-<link ${KATEX_INJECTION_MARKER} rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-<script ${KATEX_INJECTION_MARKER} src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-<script ${KATEX_INJECTION_MARKER} src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
-<script ${KATEX_INJECTION_MARKER}>
+<link ${KATEX_INJECTION_MARKER}="2" rel="stylesheet" href="${interactiveLibraryUrl('katex', 'dist/katex.min.css')}">
+<script ${KATEX_INJECTION_MARKER}="2" src="${interactiveLibraryUrl('katex')}"></script>
+<script ${KATEX_INJECTION_MARKER}="2" src="${interactiveLibraryUrl('katex', 'dist/contrib/auto-render.min.js')}"></script>
+<script ${KATEX_INJECTION_MARKER}="2">
 (function () {
     if (!window.katex) {
         window.katex = {

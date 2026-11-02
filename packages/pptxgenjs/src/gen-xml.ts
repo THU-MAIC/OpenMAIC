@@ -705,7 +705,10 @@ function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 				strSlideXml += '  <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
 				strSlideXml += ' </p:spPr>'
 				strSlideXml += ' <p:txBody>'
-				strSlideXml += '  <a:bodyPr wrap="square" rtlCol="0"><a:spAutoFit/></a:bodyPr>'
+				// Zero insets: omitted lIns/rIns default to 0.1in and make the text frame
+				// narrower than the element. wrap="none" plus spAutoFit keeps a long
+				// OMML equation on one line (PowerPoint and WPS wrap "square").
+				strSlideXml += '  <a:bodyPr wrap="none" lIns="0" tIns="0" rIns="0" bIns="0" rtlCol="0"><a:spAutoFit/></a:bodyPr>'
 				strSlideXml += '  <a:lstStyle/>'
 				strSlideXml += '  <a:p>'
 				strSlideXml += `   <a:pPr><a:defRPr${fmtFontSz}/></a:pPr>`
@@ -731,7 +734,7 @@ function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 				strSlideXml += '  <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
 				strSlideXml += ' </p:spPr>'
 				strSlideXml += ' <p:txBody>'
-				strSlideXml += '  <a:bodyPr wrap="square" rtlCol="0"><a:spAutoFit/></a:bodyPr>'
+				strSlideXml += '  <a:bodyPr wrap="none" lIns="0" tIns="0" rIns="0" bIns="0" rtlCol="0"><a:spAutoFit/></a:bodyPr>'
 				strSlideXml += '  <a:lstStyle/>'
 				strSlideXml += '  <a:p><a:r><a:rPr lang="en-US" dirty="0"/><a:t>[Formula]</a:t></a:r></a:p>'
 				strSlideXml += ' </p:txBody>'

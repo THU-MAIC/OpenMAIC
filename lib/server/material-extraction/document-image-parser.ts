@@ -87,7 +87,7 @@ function inputBudget(job: PlanJob | RewriteJob): number {
       charge(block.type);
       charge(block.text ?? '', block.type === 'markdown');
     }
-    for (const entries of [job.index.exact, job.index.byBasename]) {
+    for (const entries of [job.index.exact, job.index.byBasename, job.index.remote ?? []]) {
       for (const [path, key] of entries) {
         bytes += 128;
         retainedBytes += 128;

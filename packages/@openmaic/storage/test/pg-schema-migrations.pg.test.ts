@@ -148,7 +148,7 @@ describe.skipIf(!contractUrl)('schema migrations (PostgreSQL)', () => {
       expect(recorded.rows).toEqual([
         { store: 'agent-session', versions: [1, 2, 3] },
         { store: 'agent-session-material', versions: [1, 2] },
-        { store: 'asset', versions: [1, 2] },
+        { store: 'asset', versions: [1, 2, 3] },
         { store: 'document', versions: [1, 2] },
         { store: 'runtime', versions: [1] },
         { store: 'user-skill', versions: [1] },
@@ -260,7 +260,7 @@ describe.skipIf(!contractUrl)('schema migrations (PostgreSQL)', () => {
       await ensureAll(pool);
       await pool.query(
         `INSERT INTO openmaic_schema_migrations (store, version, name, checksum)
-         VALUES ('asset', 3, 'from_a_newer_release', 'x')`,
+         VALUES ('asset', 4, 'from_a_newer_release', 'x')`,
       );
     } finally {
       await pool.end();

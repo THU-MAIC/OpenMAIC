@@ -37,6 +37,8 @@ export interface MediaReadyLifecycleData {
 export const HOST_AGENT_LIFECYCLE = {
   sessionStart: 'session_start',
   sessionResumed: 'session_resumed',
+  /** A deleted personal Skill was unbound; the current message continues normally. */
+  skillDetached: 'skill_detached',
   checkpoint: 'checkpoint',
   sessionEnd: 'session_end',
   /**

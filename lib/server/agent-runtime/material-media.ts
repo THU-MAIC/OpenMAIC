@@ -1,10 +1,13 @@
 import { Type, type Static } from 'typebox';
+import { defaultLocale, type Locale } from '@/lib/i18n/types';
+import { materialModelCopy } from './material-model-copy';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 
 import {
   storeGeneratedAsset,
   type StoreGeneratedAssetInput,
 } from '@/lib/server/store-generated-asset';
+import { mayNameAPoolAsset } from '@/lib/media/media-placeholder';
 import { COURSE_STAGE_ID_DESCRIPTION } from './course-stage';
 import {
   resolveRawMaterial,
@@ -16,7 +19,9 @@ import { getSessionMaterial, resolveSessionMaterialRawAsset } from './session-ma
 
 const Params = Type.Object({
   materialId: Type.String({
-    description: 'The id of an image, video or audio material, from list_materials.',
+    description:
+      'The mat_ id of an image, video or audio material, from list_materials. An ast_ id ' +
+      'returned by a successful media tool result is already a usable src and needs no copy.',
   }),
   stageId: Type.String({ description: COURSE_STAGE_ID_DESCRIPTION }),
   scope: Type.Optional(
@@ -30,6 +35,7 @@ const Params = Type.Object({
 
 export interface MaterialMediaDeps {
   sessionId: string;
+  locale?: () => Locale;
   /**
    * The run's owner: the owner of every stage the course toolset lets the
    * run write. The copy is allocated in that owner's partition (after a claim,
@@ -61,6 +67,7 @@ export function buildMaterialMediaTool(deps: MaterialMediaDeps): AgentTool<never
       'uses a knowledge-base material this conversation has not attached, without attaching it.',
     parameters: Params,
     async execute(_callId: string, params: Static<typeof Params>, signal?: AbortSignal) {
+      const copy = await materialModelCopy(deps.locale?.() ?? defaultLocale);
       // A linked library source or derivative, or a session row (RFC #1716 §4).
       const resolve =
         deps.resolveMaterial ??
@@ -75,9 +82,29 @@ export function buildMaterialMediaTool(deps: MaterialMediaDeps): AgentTool<never
             )
           : resolveRawMaterial);
       const material = await resolve(deps.sessionId, params.materialId, params.scope ?? 'session');
+      if (!material && mayNameAPoolAsset(params.materialId.trim())) {
+        // A stored asset id is not a material. Nothing is looked up, copied or
+        // vouched for here: the reply only says where such an id belongs, so
+        // it grants no access the caller did not already have.
+        return {
+          content: [
+            {
+              type: 'text',
+              text:
+                `"${params.materialId}" is not a material id; use_material_media takes a mat_ id ` +
+                'from list_materials. If this ast_ id was returned by a successful generate_image, ' +
+                'generate_video or use_material_media result, it is already a usable src: put it on ' +
+                'the media element directly with patch_stage, or pass it in generate_scene media. ' +
+                'Otherwise it is not a known asset; do not use it.',
+            },
+          ],
+          details: { materialId: params.materialId, error: 'asset-id-not-material' },
+          isError: true,
+        };
+      }
       if (!material?.hasBytes) {
         return {
-          content: [{ type: 'text', text: 'Media material not found or has no media bytes.' }],
+          content: [{ type: 'text', text: copy.error('mediaNotFound') }],
           details: { materialId: params.materialId },
           isError: true,
         };
@@ -85,7 +112,7 @@ export function buildMaterialMediaTool(deps: MaterialMediaDeps): AgentTool<never
       const source = await material.read();
       if (!source) {
         return {
-          content: [{ type: 'text', text: 'Media bytes are unavailable.' }],
+          content: [{ type: 'text', text: copy.failure('source_unavailable').guidance! }],
           details: { materialId: material.id },
           isError: true,
         };
@@ -93,9 +120,7 @@ export function buildMaterialMediaTool(deps: MaterialMediaDeps): AgentTool<never
       if (signal?.aborted) throw new Error('aborted');
       if (!/^(image|video|audio)\//.test(source.mime)) {
         return {
-          content: [
-            { type: 'text', text: 'Only image, video, or audio materials can be promoted.' },
-          ],
+          content: [{ type: 'text', text: copy.error('mediaUnsupported') }],
           details: { materialId: material.id, mimeType: source.mime },
           isError: true,
         };
@@ -122,7 +147,7 @@ export function buildMaterialMediaTool(deps: MaterialMediaDeps): AgentTool<never
           content: [
             {
               type: 'text',
-              text: 'The asset store has no room for this media. Ask the user to free space, then try again.',
+              text: copy.error('mediaStorageFull'),
             },
           ],
           details: { materialId: material.id, status: 'storage-full' },

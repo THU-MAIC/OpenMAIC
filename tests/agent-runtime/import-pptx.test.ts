@@ -575,10 +575,52 @@ describe('import_pptx tool', () => {
     expect(text).toMatch(/too large/i);
     expect(text).toMatch(/compress or split/i);
   });
+
+  it('points a parse failure on a non-ZIP file at a legacy .ppt and asks for a .pptx save', async () => {
+    // An OLE2 compound file header: what a PowerPoint 97-2003 .ppt starts with.
+    const legacy = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0, 0, 0]);
+    const parsePptx = vi.fn(async () => {
+      throw new Error('End of data reached (data length = 12, asked index = 30)');
+    });
+    const { result } = await runImport(stageStore(), {
+      params: { materialId: 'mat_ppt' },
+      record: sourceRecord(),
+      bytes: legacy,
+      parsePptx,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.details).toMatchObject({
+      status: 'parse_failed',
+      reason: 'not_zip_package',
+      materialId: 'mat_ppt',
+    });
+    const text = String(
+      result.content[0] && 'text' in result.content[0] ? result.content[0].text : '',
+    );
+    expect(text).toContain('legacy .ppt');
+    expect(text).toMatch(/save it as \.pptx/);
+  });
+
+  it('keeps the plain parse failure for a ZIP package that fails to parse', async () => {
+    const zipLike = Buffer.from([0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4]);
+    const { result } = await runImport(stageStore(), {
+      params: { materialId: 'mat_ppt' },
+      record: sourceRecord(),
+      bytes: zipLike,
+      parsePptx: async () => {
+        throw new Error('corrupt slide xml');
+      },
+    });
+    expect(result.isError).toBe(true);
+    expect(result.details).toEqual({ status: 'parse_failed', materialId: 'mat_ppt' });
+    expect(result.content[0]).toMatchObject({
+      text: 'Failed to parse the PowerPoint: corrupt slide xml',
+    });
+  });
 });
 
 describe('session material prompt', () => {
-  it('mentions import_pptx only when a pptx is attached', () => {
+  it('keeps import_pptx guidance whether or not a pptx is attached', () => {
     const pdf = materialsPromptBlock([
       {
         origin: 'session',
@@ -597,8 +639,6 @@ describe('session material prompt', () => {
         },
       },
     ]);
-    expect(pdf).not.toContain('import_pptx');
-
     const pptx = materialsPromptBlock([
       {
         origin: 'session',
@@ -617,8 +657,14 @@ describe('session material prompt', () => {
         },
       },
     ]);
-    expect(pptx).toContain('import_pptx');
-    expect(pptx).toContain('layout-preserving');
+    const none = materialsPromptBlock([]);
+    expect(pdf).toBe(none);
+    expect(pptx).toBe(none);
+    expect(none).toContain('import_pptx');
+    expect(none).toContain('layout-preserving');
+    expect(none).not.toContain('lecture.pdf');
+    expect(none).not.toContain('deck.pptx');
+    expect(none).not.toContain('mat_ppt');
   });
 });
 

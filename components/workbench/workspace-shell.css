@@ -1993,6 +1993,19 @@
   color: var(--ws-ink-mute);
 }
 
+/* The knowledge base's list is a card sized to its rows: at rest its ground
+   takes no room (it is inert then anyway), and it opens only while armed. */
+.ws-kb-ground-drop:not(.ws-ground-drop-armed) {
+  min-height: 0;
+  height: 0;
+  margin: 0;
+  border-width: 0;
+}
+
+.ws-kb-ground-drop.ws-ground-drop-armed {
+  margin: 6px 6px 6px;
+}
+
 /* Cursor and selection are locked on the document while a drag is in flight,
    because the pointer travels far outside the row it started on. */
 [data-ws-dragging] {

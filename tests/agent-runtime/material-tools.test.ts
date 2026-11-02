@@ -40,6 +40,7 @@ function ownerSource(
     revision?: string;
     error?: string | null;
     reasonCode?: string;
+    reasonValues?: Record<string, unknown>;
   } = {},
 ): OwnerMaterialEntry {
   const status = options.status ?? (options.revision ? 'done' : 'idle');
@@ -59,6 +60,7 @@ function ownerSource(
     extraction: {
       status,
       ...(options.reasonCode ? { reasonCode: options.reasonCode } : {}),
+      ...(options.reasonValues ? { reasonValues: options.reasonValues } : {}),
     } as OwnerMaterialEntry['extraction'],
     createdAt: 0,
     deletedAt: null,
@@ -397,7 +399,7 @@ describe('material agent tools', () => {
     const result = await read.execute('call_1', { materialId: 'mat_foreign' } as never);
     expect(getMaterial).toHaveBeenCalledWith('ses_1', 'mat_foreign');
     expect(result).toMatchObject({
-      content: [{ type: 'text', text: 'Material not found.' }],
+      content: [{ type: 'text', text: '资料不存在或不可访问。' }],
       details: { status: 'not_found' },
     });
     // A referenced material that does not exist is an ERROR: the event log's
@@ -504,6 +506,9 @@ describe('material agent tools', () => {
       status: 'revision_required',
       revision: 'session:mat_visible',
     });
+    expect(result.content).toMatchObject([
+      { text: expect.stringContaining('The current revision is \"session:mat_visible\"') },
+    ]);
     expect(isErrorOf(result)).toBe(true);
   });
 
@@ -672,6 +677,38 @@ describe('material agent tools', () => {
     },
   );
 
+  it('tells the model the stored page counts of a library PDF refused for too many pages', async () => {
+    const tools = buildMaterialTools({
+      sessionId: 'ses_1',
+      listLibrary: async () => [
+        {
+          ...ownerSource({
+            status: 'failed',
+            reasonCode: 'too_many_pages',
+            reasonValues: { pages: 461, maxPages: 200 },
+          }),
+          id: 'src_long',
+        },
+      ],
+      attachedIds: async () => new Set<string>(),
+      locale: () => 'en-US',
+    });
+    const { details } = await tool(tools, 'list_materials').execute('c1', {
+      scope: 'library',
+    } as never);
+    expect(
+      (details as { materials: { extraction: Record<string, unknown> }[] }).materials[0]!
+        .extraction,
+    ).toEqual({
+      status: 'failed',
+      statusLabel: 'Parse failed',
+      reasonCode: 'too_many_pages',
+      reason: 'Too many pages',
+      guidance:
+        'This PDF has 461 pages, more than the 200-page parsing limit. Split it and upload the parts, or upload only the chapters you need.',
+    });
+  });
+
   it('reads an unknown or missing stored code as the generic failure', async () => {
     const tools = buildMaterialTools({
       sessionId: 'ses_1',
@@ -727,8 +764,30 @@ describe('material agent tools', () => {
     expect(wire).not.toContain('bad key');
     // The stored code survives, with the page's configuration guidance.
     expect(wire).toContain('"reasonCode":"service_unavailable"');
-    expect(wire).toContain('Ask your administrator to configure one');
+    expect(wire).toContain('Ask an administrator to configure one');
+    expect(wire).not.toContain('Parse again');
     expect(wire).toContain('"pages":1');
+  });
+
+  it('uses the locale at each failed call rather than caching the first language', async () => {
+    let locale: 'zh-CN' | 'en-US' = 'zh-CN';
+    const read = tool(
+      buildMaterialTools({
+        sessionId: 'ses_1',
+        getMaterial: vi.fn().mockResolvedValue(null),
+        locale: () => locale,
+      }),
+      'read_material',
+    );
+    expect(await read.execute('zh', { materialId: 'missing' } as never)).toMatchObject({
+      isError: true,
+      content: [{ type: 'text', text: '资料不存在或不可访问。' }],
+    });
+    locale = 'en-US';
+    expect(await read.execute('en', { materialId: 'missing' } as never)).toMatchObject({
+      isError: true,
+      content: [{ type: 'text', text: 'Material not found.' }],
+    });
   });
 
   it('tells the model to use the returned words and never show tool names or raw fields', () => {
@@ -877,7 +936,7 @@ describe('material agent tools', () => {
     );
     const result = await read.execute('call_1', { materialId: 'mat_visible' } as never);
     expect(result).toMatchObject({
-      content: [{ type: 'text', text: 'Material text is unavailable.' }],
+      content: [{ type: 'text', text: '资料的文字内容不可用。' }],
       details: { status: 'text_unavailable', materialId: 'mat_visible' },
     });
     expect(isErrorOf(result)).toBe(true);

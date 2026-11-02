@@ -104,12 +104,12 @@ describe('answer-content: the judged reply', () => {
     expect(
       firstTeacherReply(
         doneWith(
-          call(teacher, '', { details: { skipped: true, reason: 'agent_turn_limit' } }),
+          call(teacher, '', { details: { skipped: true, reason: 'user_already_cued' } }),
           call(teacher, 'Later.'),
         ),
         teacher,
       ),
-    ).toEqual({ noReply: 'first teacher call skipped: agent_turn_limit' });
+    ).toEqual({ noReply: 'first teacher call skipped: user_already_cued' });
     expect(
       firstTeacherReply(doneWith(call(teacher, 'Partial', { isError: true })), teacher),
     ).toEqual({

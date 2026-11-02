@@ -24,7 +24,9 @@ export function MoveToFolderMenu({
   currentFolderId,
   onMove,
   onCreateAndMove,
+  variant = 'icon',
 }: {
+  variant?: 'icon' | 'items';
   folders: FolderRecord[];
   currentFolderId: string | undefined;
   onMove: (folderId: string | undefined) => void;
@@ -32,6 +34,44 @@ export function MoveToFolderMenu({
   onCreateAndMove: () => void;
 }) {
   const { t } = useI18n();
+
+  const items = (
+    <>
+      <DropdownMenuLabel>{t('classroom.moveToFolderLabel')}</DropdownMenuLabel>
+      <DropdownMenuSeparator />
+
+      {/* Ungrouped */}
+      <DropdownMenuItem
+        onClick={() => onMove(undefined)}
+        className="flex items-center justify-between"
+      >
+        <span>{t('classroom.ungrouped')}</span>
+        {currentFolderId === undefined && <Check className="size-3.5 text-violet-500" />}
+      </DropdownMenuItem>
+
+      {/* All folders */}
+      {folders.map((f) => (
+        <DropdownMenuItem
+          key={f.id}
+          onClick={() => onMove(f.id)}
+          className="flex items-center justify-between"
+        >
+          <span className="truncate">{f.name}</span>
+          {currentFolderId === f.id && <Check className="size-3.5 text-violet-500 shrink-0" />}
+        </DropdownMenuItem>
+      ))}
+
+      <DropdownMenuSeparator />
+
+      {/* New folder — opens the folder dialog (focus-safe). */}
+      <DropdownMenuItem onClick={onCreateAndMove}>
+        <Plus className="size-3.5 mr-1.5" />
+        {t('classroom.newFolderInline')}
+      </DropdownMenuItem>
+    </>
+  );
+
+  if (variant === 'items') return items;
 
   return (
     <DropdownMenu>
@@ -53,37 +93,7 @@ export function MoveToFolderMenu({
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
       >
-        <DropdownMenuLabel>{t('classroom.moveToFolderLabel')}</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-
-        {/* Ungrouped */}
-        <DropdownMenuItem
-          onClick={() => onMove(undefined)}
-          className="flex items-center justify-between"
-        >
-          <span>{t('classroom.ungrouped')}</span>
-          {currentFolderId === undefined && <Check className="size-3.5 text-violet-500" />}
-        </DropdownMenuItem>
-
-        {/* All folders */}
-        {folders.map((f) => (
-          <DropdownMenuItem
-            key={f.id}
-            onClick={() => onMove(f.id)}
-            className="flex items-center justify-between"
-          >
-            <span className="truncate">{f.name}</span>
-            {currentFolderId === f.id && <Check className="size-3.5 text-violet-500 shrink-0" />}
-          </DropdownMenuItem>
-        ))}
-
-        <DropdownMenuSeparator />
-
-        {/* New folder — opens the folder dialog (focus-safe). */}
-        <DropdownMenuItem onClick={onCreateAndMove}>
-          <Plus className="size-3.5 mr-1.5" />
-          {t('classroom.newFolderInline')}
-        </DropdownMenuItem>
+        {items}
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -369,12 +369,46 @@ describe('DSL stage tools', () => {
         toolDetails: { path: '/outline', detail: 'source', totalChars: 1024 },
       }),
     );
-    expect(presentation).toMatchObject({ label: '读取课堂', subject: '/outline' });
+    expect(presentation).toMatchObject({ label: '读取课堂', subject: '大纲' });
     // The whole stage (path "") reads as the verb alone, never the wire id.
     expect(
       presentTool(toolNode({ toolName: 'read_stage', toolArgs: { stageId: 'stage-x', path: '' } }))
         .subject,
     ).toBeUndefined();
+  });
+
+  it('shows a page read as its page number and planned title, never the JSON path', () => {
+    const plan = [{ order: 3, title: '光的折射', type: 'slide' }];
+    const page = presentTool(
+      toolNode({
+        toolName: 'read_stage',
+        toolArgs: { stageId: 'stage-x', path: '/scenes/3/actions', detail: 'source' },
+      }),
+      plan,
+    );
+    expect(page).toMatchObject({ subject: '光的折射', chips: [{ label: '第 3 页' }] });
+    // A scene-id selector has no human name to show: the verb stands alone.
+    const byId = presentTool(
+      toolNode({
+        toolName: 'read_stage',
+        toolArgs: { stageId: 'stage-x', path: '/scenes/scene-a' },
+      }),
+      plan,
+    );
+    expect(byId.subject).toBeUndefined();
+    expect(byId.chips).toEqual([]);
+  });
+
+  it('labels a page preview with the page order the result reports', () => {
+    const presentation = presentTool(
+      toolNode({
+        toolName: 'render_scene_preview',
+        toolArgs: { stageId: 'stage-x', sceneId: '2' },
+        toolDetails: { sceneId: 'scene-b', order: 2 },
+      }),
+      [{ order: 2, title: '折射定律', type: 'slide' }],
+    );
+    expect(presentation).toMatchObject({ subject: '折射定律', chips: [{ label: '第 2 页' }] });
   });
 
   it('summarises a patch by its intent and the page it landed on', () => {
@@ -516,10 +550,10 @@ describe('material library rows', () => {
         folderId: 'f',
         movedCount: 1,
       }),
-    ).toEqual(['1 materials']);
+    ).toEqual(['1 material']);
     expect(
       chipsOf('move_materials', { status: 'moved', materialIds: ['a'], folderId: null }),
-    ).toEqual(['1 materials', 'Moved out of folder']);
+    ).toEqual(['1 material', 'Moved out of folder']);
     // Nothing moved: no "moved out" (the result names no source folder either way).
     expect(
       chipsOf('move_materials', { status: 'unchanged', materialIds: ['a'], folderId: null }),

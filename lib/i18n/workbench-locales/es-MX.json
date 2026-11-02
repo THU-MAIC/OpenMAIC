@@ -35,6 +35,7 @@
     "submit": "Enviar",
     "dismiss": "Descartar",
     "inFormBelow": "Responde en el formulario de abajo",
+    "inPreview": "Responde en la vista previa",
     "multiAnswerSeparator": ", "
   },
   "material": {
@@ -98,6 +99,21 @@
       "vocational": "Formación profesional",
       "workshop-style": "Taller interactivo"
     }
+  },
+  "preview": {
+    "eyebrow": "En curso",
+    "understanding": "Entendiendo tu solicitud",
+    "understandingDesc": "Leyendo lo que pediste y lo que necesita…",
+    "asking": "Una pregunta rápida",
+    "askingDesc": "El agente continúa cuando respondas.",
+    "assembling": "Preparando el aula",
+    "assemblingDesc": "Creando el curso y eligiendo a su docente y compañeros…",
+    "opening": "Abriendo el aula",
+    "page": "Página {{order}}",
+    "pageCaption": "Página {{order}} · {{title}}",
+    "skills": "Habilidades equipadas",
+    "resting": "Tu curso aparecerá aquí",
+    "restingDesc": "Sigue en la conversación; cuando se cree un curso, se abrirá en esta pestaña."
   },
   "thinking": {
     "active": "Pensando…",
@@ -239,7 +255,8 @@
       "parseFailed": "Error al analizar",
       "folderExisted": "La carpeta ya existía",
       "unchanged": "Sin cambios",
-      "movedOutOfFolder": "Sacado de la carpeta"
+      "movedOutOfFolder": "Sacado de la carpeta",
+      "material": "{{count}} material"
     },
     "error": {
       "materialExtraction": "Falló el procesamiento del material",

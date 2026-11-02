@@ -209,6 +209,12 @@ export interface ChatNode {
    * see `answerOpenQuestions`.
    */
   questionAnswered?: boolean;
+  /**
+   * User, assistant and question nodes: the timestamp of the event that drew them. The
+   * request preview places the conversation's own moments (the request, the
+   * plan question, its answer) on the same clock as the tool cards.
+   */
+  at?: number;
 }
 
 export interface PlannedPage {
@@ -1010,6 +1016,7 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
             key: `${key}-u`,
             kind: 'user',
             text: startPrompt,
+            at: event.ts,
             ...(startCourseRefs.length ? { courseRefs: startCourseRefs } : {}),
           },
         ];
@@ -1074,6 +1081,12 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
       openWaiting(next, `${key}-w`, event.ts);
       break;
     }
+    case 'skill_detached': {
+      // Recovery is an internal state repair, not a new chat message. Keep the
+      // historical Skill loads intact without exposing the frozen binding.
+      next.skillId = null;
+      break;
+    }
     case 'session_interrupted': {
       // PR1: the runner parked the job WITHOUT a terminal status (deploy
       // handoff / lease lost). The row stays `running`; another instance will
@@ -1136,6 +1149,7 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
           key,
           kind: 'user',
           text: messageText,
+          at: event.ts,
           ...(attachments.length ? { materials: attachments } : {}),
           ...(elementRefs.length ? { elementRefs } : {}),
           ...(courseRefs.length ? { courseRefs } : {}),
@@ -1183,6 +1197,7 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
         key,
         kind: 'question',
         text: question,
+        at: event.ts,
         ...(options.length > 0 ? { questionOptions: options } : {}),
         // Multi-select only means something when there is a set to pick from.
         ...(data.multiSelect && options.length > 0 ? { questionMultiSelect: true } : {}),
@@ -1312,7 +1327,7 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
           // `message_start`, `session_end` — are the fallback for a run that
           // ends before its own marker lands. All of them replay, so the
           // duration converges (OpenPBL: a part's completion is durable).
-          chat = [...chat, { key, kind: 'assistant', text, streaming: true }];
+          chat = [...chat, { key, kind: 'assistant', text, streaming: true, at: event.ts }];
           next.assistantKey = key;
         }
       }
@@ -1439,7 +1454,7 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
           ? chat.map((n, i) => (i === streamIdx ? { ...n, text, streaming: false } : n))
           : chat.filter((_, i) => i !== streamIdx);
       } else if (text && canCreate) {
-        chat = [...chat, { key, kind: 'assistant', text }];
+        chat = [...chat, { key, kind: 'assistant', text, at: event.ts }];
       }
       next.chat = chat;
       next.thinkingKey = null;

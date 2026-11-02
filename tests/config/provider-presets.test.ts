@@ -174,3 +174,36 @@ it('shares one DeepSeek account across chat, search and fetch without recommendi
   });
   expect(getProviderPreset('deepseek')?.recommended).toBeUndefined();
 });
+
+it('turns the DeepSeek plan into its own preset beside the personal DeepSeek account', () => {
+  expect(getProviderPreset('deepseek')?.kind).toBe('single');
+  const preset = getProviderPreset('deepseek-token-plan')!;
+  expect(preset.kind).toBe('token-plan');
+  expect(preset.capabilities).toEqual({
+    chat: {
+      registryId: 'deepseek',
+      baseUrl: 'https://api.deepseek.com/v1',
+      models: ['deepseek-flash', 'deepseek-v4-pro'],
+      defaultModel: 'deepseek-flash',
+    },
+    webSearch: { registryId: 'deepseek', baseUrl: 'https://api.deepseek.com/v1' },
+    webFetch: { registryId: 'deepseek', baseUrl: 'https://api.deepseek.com/v1' },
+  });
+  expect(preset.recommended).toEqual({
+    llm: 'deepseek-flash',
+    webSearch: 'deepseek',
+    webFetch: 'deepseek',
+  });
+  expect(TOKEN_PLAN_PRESETS.at(-1)?.id).toBe('deepseek');
+});
+
+it('seeds the DeepSeek plan models with the registry metadata', () => {
+  const models = presetModels(getProviderPreset('deepseek-token-plan')!, 'chat');
+  expect(models.map((model) => model.id)).toEqual(['deepseek-flash', 'deepseek-v4-pro']);
+  const flash = models[0];
+  expect(flash.name).toBe('DeepSeek Flash');
+  expect(flash.contextWindow).toBe(1048576);
+  expect(flash.capabilities).toMatchObject({ tools: true, vision: true });
+  expect(flash.capabilities?.thinking?.toggleable).toBe(true);
+  expect(models[1].capabilities).toMatchObject({ tools: true, vision: false });
+});

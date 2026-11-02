@@ -1,0 +1,54 @@
+name: Stuck PR Reminders
+
+# Once a day, remind open non-draft pull requests whose CI cannot run:
+# merge conflicts (GitHub starts no pull_request workflows) and workflow runs
+# waiting more than a day for maintainer approval. Logic and tests live in
+# .github/scripts/pr-reminders.mjs.
+#
+# Scheduled runs only comment when the repository variable PR_REMINDERS_MODE
+# is `apply`; otherwise they report to the job summary. Manual runs are dry
+# runs unless dry_run is unchecked.
+
+on:
+  schedule:
+    - cron: '17 1 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Only report to the job summary; do not comment'
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: pr-reminders
+  cancel-in-progress: false
+
+jobs:
+  remind:
+    if: github.repository == 'THU-MAIC/OpenMAIC'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Find stuck pull requests and post reminders
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          DRY_RUN_INPUT: ${{ inputs.dry_run }}
+          REMINDERS_MODE: ${{ vars.PR_REMINDERS_MODE }}
+        with:
+          script: |
+            const { pathToFileURL } = require('node:url');
+            const reminders = await import(pathToFileURL(`${process.cwd()}/.github/scripts/pr-reminders.mjs`));
+            const dryRun = reminders.isDryRun(context.eventName, process.env.DRY_RUN_INPUT, process.env.REMINDERS_MODE);
+            const result = await reminders.run({ client: github, repo: context.repo, dryRun, log: core.info });
+            await core.summary.addRaw(reminders.summaryMarkdown(result)).write();

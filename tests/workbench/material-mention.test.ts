@@ -10,15 +10,27 @@ import { createElement, StrictMode } from 'react';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 
-vi.mock('@/lib/hooks/use-i18n', () => ({
-  useI18n: () => ({
-    locale: 'en-US',
-    t: (key: string, values?: Record<string, unknown>) =>
-      values ? `${key}${JSON.stringify(values)}` : key,
-  }),
-}));
+const pickerCopy = vi.hoisted(() => ({ locale: null as 'zh-CN' | 'en-US' | null }));
+vi.mock('@/lib/hooks/use-i18n', async () => {
+  const en = (await import('@/lib/i18n/locales/en-US.json')).default;
+  const zh = (await import('@/lib/i18n/locales/zh-CN.json')).default;
+  return {
+    useI18n: () => ({
+      locale: pickerCopy.locale ?? 'en-US',
+      t: (key: string, values?: Record<string, unknown>) => {
+        if (!pickerCopy.locale) return values ? `${key}${JSON.stringify(values)}` : key;
+        let value: unknown = pickerCopy.locale === 'en-US' ? en : zh;
+        for (const part of key.split('.')) value = (value as Record<string, unknown>)[part];
+        return typeof value === 'string'
+          ? value.replace(/{{(\w+)}}/g, (_, name: string) => String(values?.[name] ?? ''))
+          : key;
+      },
+    }),
+  };
+});
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 
+import { MEDIA_MAX_DURATION_SEC } from '@/lib/types/media-limits';
 import { CourseMentionMenu } from '@/components/workbench/course-mention-menu';
 import {
   useComposerMaterials,
@@ -80,6 +92,7 @@ function mount() {
 }
 
 afterEach(() => {
+  pickerCopy.locale = null;
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
@@ -118,6 +131,34 @@ describe('material mention candidates', () => {
     });
     const many = Array.from({ length: MATERIAL_MENTION_LIMIT + 5 }, (_, i) => listing(`m${i}`));
     expect(materialMentionCandidates(many, new Set())).toHaveLength(MATERIAL_MENTION_LIMIT);
+  });
+
+  it('keeps the counts of a page-limit refusal, and only those', () => {
+    const [long, other] = materialMentionCandidates(
+      [
+        listing('long', {
+          extraction: {
+            status: 'failed',
+            reasonCode: 'too_many_pages',
+            reasonValues: { pages: 461, maxPages: 200, note: 'x' },
+          },
+        }),
+        listing('other', {
+          extraction: {
+            status: 'failed',
+            reasonCode: 'storage_full',
+            reasonValues: { pages: 461 },
+          },
+        }),
+      ],
+      new Set(),
+    );
+    expect(long).toMatchObject({
+      reasonCode: 'too_many_pages',
+      reasonValues: { pages: 461, maxPages: 200 },
+    });
+    expect(long!.reasonValues).toEqual({ pages: 461, maxPages: 200 });
+    expect(other).not.toHaveProperty('reasonValues');
   });
 });
 
@@ -616,9 +657,9 @@ describe('the @ menu with the knowledge base', () => {
       'workspace.knowledgeBase.failure.service_unavailable.label',
     );
     const reason = failed.getAttribute('aria-label') ?? '';
-    expect(reason).toContain('workspace.courseMention.materialUnavailable');
+    expect(reason).toContain('workspace.courseMention.materialUnavailableGuidance');
     // The page's reason, and the page to parse it again from -- not this menu.
-    expect(reason).toContain('workspace.knowledgeBase.failure.service_unavailable.label');
+    expect(reason).toContain('workspace.knowledgeBase.failure.service_unavailable.description');
     await act(async () => failed.click());
     expect(onPickMaterial).not.toHaveBeenCalled();
     const textarea = mounted.container.querySelector('textarea')!;
@@ -629,6 +670,105 @@ describe('the @ menu with the knowledge base', () => {
     expect(failed.getAttribute('aria-selected')).toBe('false');
     await mounted.dispose();
   });
+
+  it.each([false, true])(
+    'keeps reason-specific guidance and duration in the %s searchable picker',
+    async (searchable) => {
+      const mounted = await renderMenu({
+        candidates: [],
+        ...(searchable ? { search: { query: '', onChange: () => undefined } } : {}),
+        materials: [
+          material('long', { extractionStatus: 'failed', reasonCode: 'media_too_long' }),
+          material('unknown', { extractionStatus: 'failed' }),
+        ],
+        onPickMaterial: vi.fn(),
+      });
+      const long = mounted.container.querySelector(
+        '[data-testid="workbench-material-option-long"]',
+      )!;
+      const label = long.getAttribute('aria-label')!;
+      expect(label).toContain('workspace.knowledgeBase.failure.media_too_long.description');
+      expect(label).toContain(String(MEDIA_MAX_DURATION_SEC / 60));
+      expect(long.textContent).toContain('workspace.knowledgeBase.failure.media_too_long.label');
+      expect(
+        mounted.container
+          .querySelector('[data-testid="workbench-material-option-unknown"]')!
+          .getAttribute('aria-label'),
+      ).toContain('workspace.knowledgeBase.status.failed');
+      await mounted.dispose();
+    },
+  );
+
+  it.each([
+    ['zh-CN', false],
+    ['zh-CN', true],
+    ['en-US', false],
+    ['en-US', true],
+  ] as const)(
+    'keeps the real %s tooltip guidance coherent (searchable: %s)',
+    async (locale, searchable) => {
+      pickerCopy.locale = locale;
+      const reasons = [
+        'service_unavailable',
+        'storage_full',
+        'processing_interrupted',
+        'media_too_long',
+        'source_unavailable',
+        'no_text_extracted',
+        'too_many_pages',
+      ] as const;
+      const mounted = await renderMenu({
+        candidates: [],
+        ...(searchable ? { search: { query: '', onChange: () => undefined } } : {}),
+        materials: [
+          ...reasons.map((reasonCode) =>
+            material(reasonCode, {
+              extractionStatus: 'failed',
+              reasonCode,
+              ...(reasonCode === 'too_many_pages'
+                ? { reasonValues: { pages: 461, maxPages: 200 } }
+                : {}),
+            }),
+          ),
+          material('unknown', { extractionStatus: 'failed' }),
+        ],
+        onPickMaterial: vi.fn(),
+      });
+      for (const reason of reasons) {
+        const label = mounted.container
+          .querySelector(`[data-testid="workbench-material-option-${reason}"]`)!
+          .getAttribute('aria-label')!;
+        expect(label).toContain(
+          locale === 'zh-CN'
+            ? '可在知识库页面处理。'
+            : 'You can manage it on the knowledge base page.',
+        );
+        expect(label).not.toContain('。）。');
+        expect(label).not.toContain('.).');
+        if (reason !== 'service_unavailable') expect(label).not.toMatch(/重新解析|parse again/i);
+        if (reason === 'media_too_long') {
+          expect(label).toContain(String(MEDIA_MAX_DURATION_SEC / 60));
+          expect(label).toMatch(locale === 'zh-CN' ? /重新上传/ : /upload/i);
+        }
+        if (reason === 'service_unavailable')
+          expect(label).toMatch(locale === 'zh-CN' ? /管理员/ : /administrator/i);
+        if (reason === 'no_text_extracted')
+          expect(label).toMatch(locale === 'zh-CN' ? /其他文件/ : /another file/i);
+        if (reason === 'too_many_pages') {
+          expect(label).toContain('461');
+          expect(label).toContain('200');
+          expect(label).toMatch(locale === 'zh-CN' ? /拆分/ : /split/i);
+        }
+      }
+      const unknown = mounted.container
+        .querySelector('[data-testid="workbench-material-option-unknown"]')!
+        .getAttribute('aria-label')!;
+      expect(unknown).toMatch(
+        locale === 'zh-CN' ? /查看原因并重新解析/ : /see why and parse it again/i,
+      );
+      await mounted.dispose();
+    },
+  );
 
   it('names what the search and the menu offer: classrooms and materials, materials alone, or classrooms alone', async () => {
     const search = { query: '', onChange: () => undefined };

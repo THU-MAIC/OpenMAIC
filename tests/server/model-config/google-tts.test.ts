@@ -77,6 +77,8 @@ describe('google-tts preset', () => {
     );
     expect(registryRequiresApiKey('tts', 'google-tts')).toBe(true);
     expect(presetModels(preset!, 'tts').map((model) => model.id)).toEqual([
+      'gemini-3.8-flash-lite-tts',
+      'gemini-3.8-flash-tts',
       'gemini-3.1-flash-tts-preview',
       'gemini-2.5-flash-preview-tts',
       'gemini-2.5-pro-preview-tts',
@@ -94,7 +96,7 @@ describe('a workspace adding Gemini TTS', () => {
     const preset = modelSettingsView(null).presets.find((entry) => entry.id === 'google-tts');
     expect(preset).toMatchObject({ requiresBaseUrl: false, customEndpoint: false });
     expect(preset?.capabilities.tts?.models.map((model) => model.id)).toContain(
-      'gemini-3.1-flash-tts-preview',
+      'gemini-3.8-flash-lite-tts',
     );
   });
 
@@ -126,6 +128,36 @@ describe('a workspace adding Gemini TTS', () => {
 });
 
 describe('tts slot resolution', () => {
+  it('uses Flash-Lite when a workspace chooses the provider without a model', async () => {
+    workspaces.set('user:alice', {
+      providers: { gv: { preset: 'google-tts', apiKey: 'test-gemini-key' } },
+      slots: { tts: 'gv' },
+    });
+    expect(await resolveMediaSlot('tts', { workspaceId: 'user:alice' })).toMatchObject({
+      providerId: 'google-tts',
+      modelId: 'gemini-3.8-flash-lite-tts',
+      managed: false,
+    });
+  });
+
+  it('does not authorize a new model with a deployment key pinned to a preview model', async () => {
+    runtime.setDeploymentConfigForTests({
+      layer: {
+        source: 'deployment',
+        config: {
+          providers: { gv: { preset: 'google-tts', apiKey: 'operator-key' } },
+          slots: { tts: 'gv:gemini-3.1-flash-tts-preview' },
+        },
+      },
+      legacy: false,
+      notices: [],
+    });
+    workspaces.set('user:alice', { slots: { tts: 'gv:gemini-3.8-flash-lite-tts' } });
+    await expect(resolveMediaSlot('tts', { workspaceId: 'user:alice' })).rejects.toThrow(
+      'This model is not authorized for server-managed credentials',
+    );
+  });
+
   it("resolves a workspace's Gemini TTS provider at the preset's own endpoint", async () => {
     workspaces.set('user:alice', {
       providers: { gv: { preset: 'google-tts', apiKey: 'test-gemini-key' } },
@@ -177,6 +209,7 @@ describe('tts slot resolution', () => {
     expect(connection).toMatchObject({
       providerId: 'google-tts',
       apiKey: 'operator-key',
+      modelId: 'gemini-3.8-flash-lite-tts',
       baseUrl: 'https://gemini-proxy.example/v1beta',
       managed: true,
     });

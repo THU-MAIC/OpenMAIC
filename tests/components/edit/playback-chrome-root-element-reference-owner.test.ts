@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   engineMode: 'idle' as 'idle' | 'playing' | 'paused',
   engineOptions: undefined as
     | {
+        beforeSpeech?: () => void;
         onModeChange?: (mode: 'idle' | 'playing' | 'paused') => void;
         onProgress?: (snapshot: { actionIndex: number; sceneId: string }) => void;
         onUserInterrupt?: (text: string) => void;
@@ -28,6 +29,9 @@ const mocks = vi.hoisted(() => ({
   startLecture: vi.fn(),
   endSession: vi.fn(),
   engineStop: vi.fn(),
+  enginePause: vi.fn(),
+  sendFrameMessage: vi.fn(),
+  hiddenFrameMessage: vi.fn(),
   engineStart: vi.fn(),
   engineContinuePlayback: vi.fn(),
   handleUserInterrupt: vi.fn(),
@@ -283,6 +287,7 @@ vi.mock('@/lib/playback', () => ({
       _actionEngine: unknown,
       _audioPlayer: unknown,
       options: {
+        beforeSpeech?: () => void;
         onModeChange?: (mode: 'idle' | 'playing' | 'paused') => void;
         onUserInterrupt?: (text: string) => void;
         onComplete?: () => void;
@@ -316,7 +321,9 @@ vi.mock('@/lib/playback', () => ({
     continuePlayback() {
       mocks.engineContinuePlayback();
     }
-    pause() {}
+    pause() {
+      mocks.enginePause();
+    }
     confirmDiscussion() {}
     skipDiscussion() {}
   },
@@ -358,7 +365,15 @@ vi.mock('@/lib/hooks/use-discussion-tts', () => ({
   }),
 }));
 vi.mock('@/lib/store/widget-iframe', () => ({
-  useWidgetIframeStore: { getState: () => ({ getSendMessage: () => undefined }) },
+  useWidgetIframeStore: {
+    getState: () => ({
+      getSendMessage: () => undefined,
+      sendMessageByScene: {
+        'scene-1': mocks.sendFrameMessage,
+        'scene-2': mocks.hiddenFrameMessage,
+      },
+    }),
+  },
 }));
 vi.mock('@/lib/orchestration/registry/store', () => ({
   agentsToParticipants: () => [],
@@ -398,6 +413,9 @@ describe('PlaybackChromeRoot element-reference ownership', () => {
     mocks.endSession.mockReset();
     mocks.endSession.mockResolvedValue(undefined);
     mocks.engineStop.mockReset();
+    mocks.enginePause.mockReset();
+    mocks.sendFrameMessage.mockReset();
+    mocks.hiddenFrameMessage.mockReset();
     mocks.engineStart.mockReset();
     mocks.engineContinuePlayback.mockReset();
     mocks.handleUserInterrupt.mockReset();
@@ -439,6 +457,25 @@ describe('PlaybackChromeRoot element-reference ownership', () => {
       await Promise.resolve();
     });
   }
+
+  it('pauses playing narration when frame HTML media starts', async () => {
+    mocks.engineMode = 'playing';
+    const ownerRef = createRef<PlaybackChromeRootHandle>();
+    await renderOwner({ ref: ownerRef });
+    act(() => ownerRef.current?.pauseForInteractiveMedia());
+    expect(mocks.enginePause).toHaveBeenCalledOnce();
+    mocks.engineMode = 'paused';
+    act(() => ownerRef.current?.pauseForInteractiveMedia());
+    expect(mocks.enginePause).toHaveBeenCalledOnce();
+  });
+
+  it('notifies only the current frame before speech without awaiting a reply', async () => {
+    mocks.sendFrameMessage.mockReturnValue(new Promise(() => {}));
+    await renderOwner();
+    expect(mocks.engineOptions!.beforeSpeech!()).toBeUndefined();
+    expect(mocks.sendFrameMessage).toHaveBeenCalledWith('maic:media:control:v1', {});
+    expect(mocks.hiddenFrameMessage).not.toHaveBeenCalled();
+  });
 
   it('selects the stage snapshot whiteboard and sends an identity-only reference', async () => {
     const board = {

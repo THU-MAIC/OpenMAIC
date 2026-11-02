@@ -269,7 +269,7 @@ describe('workbench hardcoded-copy contract', () => {
   });
 });
 
-it('defines all six knowledge-base failure explanations in all twelve locale files', () => {
+it('defines all seven knowledge-base failure explanations in all twelve locale files', () => {
   const codes = [
     'storage_full',
     'source_unavailable',
@@ -277,7 +277,12 @@ it('defines all six knowledge-base failure explanations in all twelve locale fil
     'media_too_long',
     'no_text_extracted',
     'processing_interrupted',
+    'too_many_pages',
   ];
+  // A page refusal states only the counts the service gave: one wording per case.
+  const descriptions: Record<string, string[]> = {
+    too_many_pages: ['description', 'descriptionWithoutCount', 'descriptionWithoutLimit'],
+  };
   for (const { code } of supportedLocales) {
     const resource = JSON.parse(
       fs.readFileSync(path.join(process.cwd(), 'lib/i18n/locales', `${code}.json`), 'utf8'),
@@ -286,9 +291,10 @@ it('defines all six knowledge-base failure explanations in all twelve locale fil
     expect(Object.keys(failure).sort()).toEqual([...codes, 'more'].sort());
     expect(interpolations(failure.more)).toEqual(['reason']);
     for (const reason of codes) {
-      expect(Object.keys(failure[reason]).sort()).toEqual(['description', 'label']);
+      const keys = descriptions[reason] ?? ['description'];
+      expect(Object.keys(failure[reason]).sort()).toEqual([...keys, 'label'].sort());
       expect(failure[reason].label.trim()).not.toBe('');
-      expect(failure[reason].description.trim()).not.toBe('');
+      for (const key of keys) expect(failure[reason][key].trim()).not.toBe('');
     }
   }
 });
@@ -318,4 +324,29 @@ it('R8.5 states the media duration limit by interpolation in all twelve locales'
       expect(resource.workspace.knowledgeBase.actions[key].trim(), code).not.toBe('');
     }
   }
+});
+
+it('states the page counts of a too-many-pages refusal by interpolation in all twelve locales', () => {
+  for (const { code } of supportedLocales) {
+    const resource = JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), 'lib/i18n/locales', `${code}.json`), 'utf8'),
+    );
+    const copy = resource.workspace.knowledgeBase.failure.too_many_pages;
+    expect(interpolations(copy.description), code).toEqual(['maxPages', 'pages']);
+    expect(interpolations(copy.descriptionWithoutCount), code).toEqual(['maxPages']);
+    expect(interpolations(copy.descriptionWithoutLimit), code).toEqual([]);
+    for (const key of ['description', 'descriptionWithoutCount', 'descriptionWithoutLimit']) {
+      // The numbers come from the refusal, never from the copy.
+      expect(copy[key], code).not.toMatch(/\d/);
+    }
+  }
+});
+
+it('uses Arabic singular wording for one moved material', () => {
+  expect(createWorkbenchTranslator('ar-SA')('workbench.tool.chip.material', { count: 1 })).toBe(
+    '1 مادة',
+  );
+  expect(createWorkbenchTranslator('ar-SA')('workbench.tool.chip.materials', { count: 2 })).toBe(
+    '2 مواد',
+  );
 });

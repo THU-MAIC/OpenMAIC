@@ -863,3 +863,11 @@ Unlike `kimi`, `firecrawl` has its own key: declare a provider with `preset: fir
 The same `firecrawl` provider also serves web search (`POST /v2/search`): one key and base URL cover both, so a single provider can be assigned to `slots.webSearch` and `slots.webFetch`. The legacy `FIRECRAWL_API_KEY` and `FIRECRAWL_BASE_URL` variables configure that provider; web fetch stays on `builtin` until `webFetch` is assigned to it.
 
 The session URL gate, strict URL normalization and all local DNS address checks run before forwarding a URL to a hosted reader. The same checks run against a reported final URL before accepting its content. Hosted readers control their own DNS and intermediate redirects; local checks cannot pin their networks. Their text remains untrusted, with challenge-page detection, byte limits, a truncation notice and the existing web material persistence and `{trusted, untrusted}` result.
+
+## Interactive scene libraries
+
+Interactive scenes load KaTeX, Three.js (with its addons), Chart.js and the Tailwind v4 browser runtime from the deployment instead of a public CDN. `pnpm install`, `pnpm dev` and `pnpm build` copy the pinned versions from the installed packages into `public/vendor/interactive`, which is served at `/vendor/interactive`. KaTeX loads only on pages that contain math.
+
+`INTERACTIVE_ASSET_BASE_URL` is a public, build-time setting. To serve these files from your own CDN or object storage, copy `public/vendor/interactive` with its package/version paths intact, set the variable to the new base URL (for example `https://assets.example.com/interactive`) and rebuild; for Docker, pass it with `--build-arg`. Because interactive scenes run in sandboxed iframes, the host must serve JavaScript, CSS and fonts with their correct MIME types and send `Access-Control-Allow-Origin: *`.
+
+Stored interactive HTML is reprocessed when it opens in the classroom and before standalone HTML or video export, so compatible public CDN references to these libraries are rewritten without regenerating the course. References to other libraries, incompatible versions, the legacy Tailwind v3 Play CDN (`cdn.tailwindcss.com`) and Google Fonts are left unchanged and still need network access to those hosts.

@@ -224,7 +224,7 @@ it('forwards an operator proxy while retaining transport deadlines', async () =>
   });
   expect(proxyFetch).toHaveBeenLastCalledWith(expect.any(String), expect.anything(), {
     proxy: 'http://proxy.example:8080',
-    timeouts: { connectTimeout: 5000, headersTimeout: 10000, bodyTimeout: 30000 },
+    timeouts: { connectTimeout: 5000, headersTimeout: 30000, bodyTimeout: 30000 },
   });
 });
 
@@ -252,7 +252,12 @@ it('shares the original header deadline across transport attempts', async () => 
       .mockImplementationOnce(() => new Promise(() => {}));
     vi.stubGlobal('fetch', fetch);
     const result = deepseek.extract(url, { credentials: { apiKey: 'key' } });
+    let settled = false;
+    result.catch(() => undefined).finally(() => (settled = true));
     const assertion = expect(result).rejects.toThrow('Web fetch headers timed out');
+    // DeepSeek answers only after fetching the page, so 20s must not hit the header deadline.
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(settled).toBe(false);
     await vi.advanceTimersByTimeAsync(10_000);
     await assertion;
     expect(fetch).toHaveBeenCalledTimes(2);

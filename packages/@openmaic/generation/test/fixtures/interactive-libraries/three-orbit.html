@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+  <head>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+    <script type="module">
+      import * as THREE from 'three';
+      import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+      import { Vector3 } from 'https://cdn.jsdelivr.net/npm/three@~0.160.0/build/three.module.js';
+      const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('scene') });
+      const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 100);
+      const controls = new OrbitControls(camera, renderer.domElement);
+      const helpers = import('https://unpkg.com/three@0.160/build/three.module.js');
+    </script>
+  </body>
+</html>

@@ -1,0 +1,389 @@
+[
+  [0, "session_start", { "prompt": "Tell me about the product" }],
+  [30, "message_start", { "message": { "role": "assistant", "content": [] } }],
+  [
+    11018,
+    "message_end",
+    { "message": { "role": "assistant", "content": [{ "type": "text", "text": "(agent reply)" }] } }
+  ],
+  [
+    11018,
+    "tool_execution_start",
+    {
+      "toolCallId": "call_00_hUlam3wEJNWxnijlShMj2484",
+      "toolName": "ask_user",
+      "args": { "question": "?" }
+    }
+  ],
+  [
+    11019,
+    "user_question",
+    {
+      "question": "Which way should I go: answer here, or build a short lesson?",
+      "options": [
+        { "id": "a", "label": "A" },
+        { "id": "b", "label": "B" }
+      ]
+    }
+  ],
+  [
+    11019,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_00_hUlam3wEJNWxnijlShMj2484",
+      "toolName": "ask_user",
+      "isError": false,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [11019, "agent_end", {}],
+  [11455, "session_end", { "status": "succeeded" }],
+  [46505, "user_message", { "text": "Option B", "delivery": "queued" }],
+  [47143, "session_resumed", { "reason": "follow_up" }],
+  [47148, "message_start", { "message": { "role": "assistant", "content": [] } }],
+  [
+    51512,
+    "message_end",
+    { "message": { "role": "assistant", "content": [{ "type": "text", "text": "(agent reply)" }] } }
+  ],
+  [
+    51512,
+    "tool_execution_start",
+    {
+      "toolCallId": "call_00_TbSr1qu6ar6g76auOYjZ8191",
+      "toolName": "read",
+      "args": { "path": "/skills/agent-runtime/stage-design/SKILL.md" }
+    }
+  ],
+  [
+    51516,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_00_TbSr1qu6ar6g76auOYjZ8191",
+      "toolName": "read",
+      "isError": false,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [
+    51516,
+    "tool_execution_start",
+    { "toolCallId": "call_01_89c2zdG7to7EA8r6dBqK6966", "toolName": "list_materials", "args": {} }
+  ],
+  [
+    51518,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_01_89c2zdG7to7EA8r6dBqK6966",
+      "toolName": "list_materials",
+      "isError": false,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [51519, "message_start", { "message": { "role": "assistant", "content": [] } }],
+  [
+    63358,
+    "message_end",
+    { "message": { "role": "assistant", "content": [{ "type": "text", "text": "(agent reply)" }] } }
+  ],
+  [
+    63358,
+    "tool_execution_start",
+    {
+      "toolCallId": "call_00_8yFF6RnpU0zmyutzN7E97558",
+      "toolName": "ask_user",
+      "args": { "question": "?" }
+    }
+  ],
+  [
+    63358,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_00_8yFF6RnpU0zmyutzN7E97558",
+      "toolName": "ask_user",
+      "isError": true,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [63359, "message_start", { "message": { "role": "assistant", "content": [] } }],
+  [
+    67433,
+    "message_end",
+    { "message": { "role": "assistant", "content": [{ "type": "text", "text": "(agent reply)" }] } }
+  ],
+  [
+    67433,
+    "tool_execution_start",
+    {
+      "toolCallId": "call_00_ET_m5Eb5V2GMFe3bktir1U74319",
+      "toolName": "ask_user",
+      "args": { "question": "?" }
+    }
+  ],
+  [
+    67433,
+    "user_question",
+    {
+      "question": "Shall I build this 8-page plan?",
+      "options": [
+        { "id": "a", "label": "A" },
+        { "id": "b", "label": "B" }
+      ]
+    }
+  ],
+  [
+    67433,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_00_ET_m5Eb5V2GMFe3bktir1U74319",
+      "toolName": "ask_user",
+      "isError": false,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [67433, "agent_end", {}],
+  [67493, "session_end", { "status": "succeeded" }],
+  [76881, "user_message", { "text": "Go ahead", "delivery": "queued" }],
+  [77203, "session_resumed", { "reason": "follow_up" }],
+  [77213, "message_start", { "message": { "role": "assistant", "content": [] } }],
+  [
+    81581,
+    "message_end",
+    { "message": { "role": "assistant", "content": [{ "type": "text", "text": "(agent reply)" }] } }
+  ],
+  [
+    81581,
+    "tool_execution_start",
+    {
+      "toolCallId": "call_00_4fEPE66wQ104bXMEiAmq5244",
+      "toolName": "create_stage",
+      "args": { "title": "Product tour" }
+    }
+  ],
+  [81588, "stage_link", { "stageId": "stage-1" }],
+  [
+    81588,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_00_4fEPE66wQ104bXMEiAmq5244",
+      "toolName": "create_stage",
+      "isError": false,
+      "result": { "content": [], "details": { "stageId": "stage-1" } }
+    }
+  ],
+  [
+    81588,
+    "tool_execution_start",
+    { "toolCallId": "call_01_TcgFxONVAmJZOmI1NdlD5033", "toolName": "list_voices", "args": {} }
+  ],
+  [
+    81589,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_01_TcgFxONVAmJZOmI1NdlD5033",
+      "toolName": "list_voices",
+      "isError": false,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [81590, "message_start", { "message": { "role": "assistant", "content": [] } }],
+  [
+    87143,
+    "message_end",
+    { "message": { "role": "assistant", "content": [{ "type": "text", "text": "(agent reply)" }] } }
+  ],
+  [
+    87143,
+    "tool_execution_start",
+    { "toolCallId": "call_00_rWaiZoAwxAK4iw8aamZw0789", "toolName": "set_roster", "args": {} }
+  ],
+  [87164, "checkpoint", { "tool": "set_roster" }],
+  [
+    87164,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_00_rWaiZoAwxAK4iw8aamZw0789",
+      "toolName": "set_roster",
+      "isError": false,
+      "result": {
+        "content": [],
+        "details": {
+          "roster": [
+            {
+              "id": "gen-VLwrrvC-",
+              "name": "Teacher Lin",
+              "role": "teacher",
+              "color": "#2563eb",
+              "avatar": "/avatars/teacher.png"
+            },
+            {
+              "id": "gen--5SBdLzy",
+              "name": "Student A",
+              "role": "student",
+              "color": "#f59e0b",
+              "avatar": "/avatars/assist.png"
+            },
+            {
+              "id": "gen-g3IlDvQh",
+              "name": "Student B",
+              "role": "student",
+              "color": "#10b981",
+              "avatar": "/avatars/curious.png"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  [87166, "message_start", { "message": { "role": "assistant", "content": [] } }],
+  [
+    92891,
+    "message_end",
+    { "message": { "role": "assistant", "content": [{ "type": "text", "text": "(agent reply)" }] } }
+  ],
+  [
+    92892,
+    "tool_execution_start",
+    {
+      "toolCallId": "call_00_6d7L3DWTDDx1skDGKCH53384",
+      "toolName": "generate_scene",
+      "args": { "order": 1, "title": "Page 1", "type": "slide" }
+    }
+  ],
+  [
+    148452,
+    "checkpoint",
+    { "order": 1, "tool": "generate_scene", "sceneId": "scene-p1", "stageId": "stage-1" }
+  ],
+  [
+    148452,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_00_6d7L3DWTDDx1skDGKCH53384",
+      "toolName": "generate_scene",
+      "isError": false,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [148462, "message_start", { "message": { "role": "assistant", "content": [] } }],
+  [
+    150324,
+    "message_end",
+    { "message": { "role": "assistant", "content": [{ "type": "text", "text": "(agent reply)" }] } }
+  ],
+  [
+    150324,
+    "tool_execution_start",
+    { "toolCallId": "call_00_ET_82t3p0PrkllY8gj8ipMn7428", "toolName": "generate_tts", "args": {} }
+  ],
+  [
+    150332,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_00_ET_82t3p0PrkllY8gj8ipMn7428",
+      "toolName": "generate_tts",
+      "isError": true,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [150333, "message_start", { "message": { "role": "assistant", "content": [] } }],
+  [
+    155399,
+    "message_end",
+    { "message": { "role": "assistant", "content": [{ "type": "text", "text": "(agent reply)" }] } }
+  ],
+  [
+    155400,
+    "tool_execution_start",
+    {
+      "toolCallId": "call_00_IHNrYZQvha0EPwPUvNd41445",
+      "toolName": "generate_scene",
+      "args": { "order": 2, "title": "Page 2", "type": "slide" }
+    }
+  ],
+  [
+    203547,
+    "checkpoint",
+    { "order": 2, "tool": "generate_scene", "sceneId": "scene-p2", "stageId": "stage-1" }
+  ],
+  [
+    203547,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_00_IHNrYZQvha0EPwPUvNd41445",
+      "toolName": "generate_scene",
+      "isError": false,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [203551, "message_start", { "message": { "role": "assistant", "content": [] } }],
+  [
+    211837,
+    "message_end",
+    { "message": { "role": "assistant", "content": [{ "type": "text", "text": "(agent reply)" }] } }
+  ],
+  [
+    211837,
+    "tool_execution_start",
+    {
+      "toolCallId": "call_00_ET_J1sj7hR6k5Zw12nRwGPq1074",
+      "toolName": "generate_scene",
+      "args": { "order": 3, "title": "Page 3", "type": "interactive" }
+    }
+  ],
+  [
+    315672,
+    "checkpoint",
+    { "order": 3, "tool": "generate_scene", "sceneId": "scene-p3", "stageId": "stage-1" }
+  ],
+  [
+    315672,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_00_ET_J1sj7hR6k5Zw12nRwGPq1074",
+      "toolName": "generate_scene",
+      "isError": false,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [315684, "message_start", { "message": { "role": "assistant", "content": [] } }],
+  [
+    319843,
+    "message_end",
+    { "message": { "role": "assistant", "content": [{ "type": "text", "text": "(agent reply)" }] } }
+  ],
+  [
+    319844,
+    "tool_execution_start",
+    {
+      "toolCallId": "call_00_ET_rZEky5pEheUMrL5bv46C0306",
+      "toolName": "generate_scene",
+      "args": { "order": 4, "title": "Page 4", "type": "slide" }
+    }
+  ],
+  [
+    356013,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_00_ET_rZEky5pEheUMrL5bv46C0306",
+      "toolName": "generate_scene",
+      "isError": true,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [356016, "message_start", { "message": { "role": "assistant", "content": [] } }],
+  [
+    360014,
+    "message_end",
+    { "message": { "role": "assistant", "content": [{ "type": "text", "text": "(agent reply)" }] } }
+  ],
+  [
+    360014,
+    "tool_execution_start",
+    {
+      "toolCallId": "call_00_sMInG4pCBsashKePTb850357",
+      "toolName": "generate_scene",
+      "args": { "order": 4, "title": "Page 4", "type": "slide" }
+    }
+  ]
+]

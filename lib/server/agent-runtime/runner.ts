@@ -98,7 +98,8 @@ import {
   type PendingToolCall,
 } from './tool-call-integrity';
 import { getAgentSessionStore } from './store';
-import { listAgentUserMessages } from './user-messages';
+import { findDeletedUserSkill } from './user-skills';
+import { listAgentUserMessages, readAgentMessageLog } from './user-messages';
 import { subscribeAgentEventWakeup } from './event-notify-bus';
 import { getBackgroundDocumentStore } from './owner-scoped-documents';
 import { canonicalizeStoredOwner } from '@/lib/persistence/owner-merges';
@@ -132,7 +133,7 @@ export const MINIMAL_AGENT_TOOL_NAMES = new Set(['ask_user']);
  * when a web-search backend is configured, the curriculum block always, the
  * skill discovery block when skills are installed, the fetch_url guidance
  * when fetching is enabled, and untrusted-content policy always, and
- * the session-materials block only when the session has materials.
+ * the materials block always — static guidance, independent of the material set.
  */
 function isLeaseLostError(error: unknown): boolean {
   let current = error;
@@ -884,14 +885,17 @@ export function planRunStart(input: {
   if (input.plan.kind === 'start') {
     // A session created with opening context requeues its opening message as a
     // durable `user_message` before the runner claims; `pending[0]` is that
-    // message. Its classrooms must reach the model, or the run would not know
-    // which classroom the user named. Nothing else changes: the raw prompt is
-    // still the base, and materials are already listed in the system block.
-    // Messages that are not the opening one are delivered as follow-ups.
-    if (opening?.courseRefs?.length || opening?.elementRefs?.length) {
+    // message. Classrooms, element refs, and attachments on it must reach the
+    // model. The raw prompt stays the base text. The attachment note is the
+    // same one follow-up messages carry, and it stays out of the system prompt.
+    // Messages that are not the opening one are follow-ups.
+    if (
+      opening &&
+      (opening.courseRefs?.length || opening.elementRefs?.length || opening.materials?.length)
+    ) {
       return {
         kind: 'prompt',
-        text: composeFollowUpText({ ...opening, text: input.prompt, materials: undefined }),
+        text: composeFollowUpText({ ...opening, text: input.prompt }),
         ...(opening.durableMessageSeq ? { durableMessageSeq: opening.durableMessageSeq } : {}),
       };
     }
@@ -1244,6 +1248,11 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     const historyMessages = recovery.messages;
     const plan = planResume(historyMessages);
     const plannedMessages = plan.kind === 'start' ? [] : plan.messages;
+    // The transcript append can survive a crash before the delivery cursor does.
+    const consumedInTranscript = plannedMessages.reduce(
+      (latest, message) => Math.max(latest, durableUserMessageSeq(message) ?? 0),
+      0,
+    );
     // planResume now contains durable messages only; synthetic receipts are a
     // read-time provider view owned by repairOrphanedToolCalls.
     const retainedCount = plannedMessages.length;
@@ -1273,36 +1282,32 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     // ── Skills ─────────────────────────────────────────────────────────────────
     // The installed set (builtins + this owner's user-authored skills) is loaded
     // once per run. An explicit API selection (the session's frozen `skillId`)
-    // is validated here rather than at claim time; an unavailable skill is a
-    // hard error. Automatic activation lives in the transcript: a successful pi
+    // is validated here rather than at claim time. Only a confirmed deleted
+    // personal Skill may be detached; missing/foreign skills remain errors.
+    // Automatic activation lives in the transcript: a successful pi
     // `read` of SKILL.md. An explicit selection stays authoritative for this
     // session rather than being silently replaced by a later model read.
-    const installedSkills = await listSkills(meta.ownerId);
+    let installedSkills = await listSkills(meta.ownerId);
     const requestedSkill = await findSkill(meta.skillId, meta.ownerId);
+    const deletedSkill =
+      meta.skillId?.startsWith('usk_') && !requestedSkill
+        ? await findDeletedUserSkill(meta.skillId, meta.ownerId)
+        : null;
     if (meta.skillId && !requestedSkill) {
-      throw new Error(`session skill "${meta.skillId}" is unavailable for its owner`);
+      if (!deletedSkill) {
+        throw new Error(`session skill "${meta.skillId}" is unavailable for its owner`);
+      }
     }
-    let activeSkill = requestedSkill ?? skillReadFromTranscript(historyMessages, installedSkills);
-    let userFramesSeen = 0;
-    let turnPinnedSkill: LoadedSkill | null = null;
-    let pinValidThrough = -1;
-    const pinnedForCurrentTurn = (): LoadedSkill | null =>
-      turnPinnedSkill && userFramesSeen <= pinValidThrough ? turnPinnedSkill : null;
-    const skillReadTool = installedSkills.length
-      ? createNativeSkillReadTool(installedSkills, (selected) => {
-          if (!requestedSkill && !pinnedForCurrentTurn()) activeSkill = selected;
-        })
-      : null;
+    // Deletion may land between listSkills and findSkill's fresh lookup. Never
+    // keep the confirmed tombstone's body in this run's earlier snapshot.
+    if (deletedSkill)
+      installedSkills = installedSkills.filter((skill) => skill.id !== deletedSkill.id);
 
-    const adoptPreload = (preload: SkillPreload, deliversUserFrame: boolean): void => {
-      if (requestedSkill) return;
-      const target = preloadConstraintTarget(preload.requested);
-      turnPinnedSkill = target && target.constraints !== null ? target : null;
-      pinValidThrough = userFramesSeen + (deliversUserFrame ? 1 : 0);
-      if (target) activeSkill = target;
-    };
-
-    const loggedMessages = await listAgentUserMessages(store, id);
+    const {
+      messages: loggedMessages,
+      detachedSkills,
+      openingMessageSeq,
+    } = await readAgentMessageLog(store, id);
     let deliveredThrough = meta.deliveredUserMessageSeq ?? 0;
     // Each durable message's interface language (#1880), filled as the run
     // reads messages; `localeThrough` decides which one is in effect.
@@ -1366,6 +1371,37 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         repairedToolCalls: repairedToolCallIds,
       });
     }
+
+    if (deletedSkill) {
+      // Preserve the first-lifecycle-frame contract. Then commit the recovery
+      // and its recovery receipt atomically, before this message reaches the model.
+      await flushAll();
+      // Already consumed turns and the original opening message must not be
+      // reinterpreted as selecting a newly created Skill with the same handle.
+      // Fresh follow-ups after this boundary retain normal explicit selection.
+      const receipt = {
+        skillName: deletedSkill.name,
+        throughMessageSeq: Math.max(deliveredThrough, consumedInTranscript, openingMessageSeq ?? 0),
+      };
+      const detached = await store.detachSessionSkill(id, {
+        ownerId: meta.ownerId,
+        workerId: WORKER_ID,
+        attempt,
+        skillId: deletedSkill.id,
+        notice: { ts: Date.now(), type: LIFECYCLE.skillDetached, data: receipt },
+      });
+      if (!detached) throw new AgentSessionLeaseLostError(id, WORKER_ID, attempt);
+      delete meta.skillId;
+      detachedSkills.push(receipt);
+    }
+
+    const skillAvailableForMessage = (skill: { id: string; name: string }, seq = 0) =>
+      skill.id !== deletedSkill?.id &&
+      !detachedSkills.some(
+        (receipt) => receipt.skillName === skill.name && seq <= receipt.throughMessageSeq,
+      );
+    const skillsForMessage = (seq = 0) =>
+      installedSkills.filter((skill) => skillAvailableForMessage(skill, seq));
 
     const driver = await resolveAgentDriverModel(await backgroundWorkspaceId(meta.ownerId));
     const streamFn = createCallLlmStreamFn({
@@ -1460,16 +1496,32 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       idleAttach,
       firstRunSeq: recovery.firstRunSeq,
     });
-    // The language of the message this run answers first: the one it starts
-    // from (not the newest queued), or -- a first prompt, or a resume -- what
-    // was in effect at the last consumed message. A user frame in the retained
-    // transcript was consumed even when the delivered cursor, a separate
-    // write, did not land before the worker stopped. It moves only when a
-    // steered message is actually consumed (below).
-    const consumedInTranscript = plannedMessages.reduce(
-      (latest, message) => Math.max(latest, durableUserMessageSeq(message) ?? 0),
-      0,
-    );
+    // Discovery, preload and both readers share the consumed turn's boundary.
+    // Queuing a steer must not change what the preceding turn may read.
+    let skillMessageSeq =
+      plannedStart.kind === 'prompt'
+        ? (plannedStart.durableMessageSeq ?? 0)
+        : Math.max(deliveredThrough, consumedInTranscript);
+    const currentSkills = () => skillsForMessage(skillMessageSeq);
+    let activeSkill = requestedSkill ?? skillReadFromTranscript(historyMessages, currentSkills());
+    let userFramesSeen = 0;
+    let turnPinnedSkill: LoadedSkill | null = null;
+    let pinValidThrough = -1;
+    const pinnedForCurrentTurn = (): LoadedSkill | null =>
+      turnPinnedSkill && userFramesSeen <= pinValidThrough ? turnPinnedSkill : null;
+    const skillReadTool = installedSkills.length
+      ? createNativeSkillReadTool(currentSkills, (selected) => {
+          if (!requestedSkill && !pinnedForCurrentTurn()) activeSkill = selected;
+        })
+      : null;
+    const adoptPreload = (preload: SkillPreload, deliversUserFrame: boolean): void => {
+      if (requestedSkill) return;
+      const target = preloadConstraintTarget(preload.requested);
+      turnPinnedSkill = target && target.constraints !== null ? target : null;
+      pinValidThrough = userFramesSeen + (deliversUserFrame ? 1 : 0);
+      if (target) activeSkill = target;
+    };
+    // Use the language of the message being answered, not the newest queued.
     let runLocale = localeThrough(
       messageLocales,
       plannedStart.kind === 'prompt' && plannedStart.durableMessageSeq !== undefined
@@ -1496,6 +1548,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     // voice registration all use its provider.
     const ttsConnection = await serverMediaConnection('tts', meta.ownerId);
     const dslTools = buildDslCourseToolset({
+      locale: () => runLocale,
       store: ownerScopedStore,
       backgroundStore: mediaJobStore,
       // The video slot for this run's owner; generate_video exists only when
@@ -1528,11 +1581,12 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       stageAccess,
       ownerId: meta.ownerId,
     });
-    // Session-scoped material tools and the materials prompt block are wired
-    // from durable session identity on every start and resume (reference
-    // semantics: the material tools are always registered alongside the
-    // capability-gated web_search). The listing only feeds the prompt block;
-    // the tools read through the same session-scoped store on each call.
+    // Session-scoped material tools are wired from durable session identity
+    // on every start and resume (the tools are always registered alongside
+    // the capability-gated web_search). The resolved set is passed into the
+    // materials block, which must not render it: names, ids and extraction
+    // status would change the system prompt and drop the prefix cache.
+    // The tools read the store on each call.
     const materials = await listSessionScopeMaterials(id);
     // Material-library changes reach the client as the durable
     // `library_changed` with `library: 'materials'`; its material lists
@@ -1613,7 +1667,9 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         // Skill created earlier IN THIS RUN is not in `installedSkills` (loaded
         // once at start), and a tool that appears only on the next run would be a
         // capability the model cannot discover when it needs it.
-        buildSkillEditTools(meta.ownerId, currentOwner),
+        buildSkillEditTools(meta.ownerId, currentOwner, (skill) =>
+          skillAvailableForMessage(skill, skillMessageSeq),
+        ),
         // The native `read` tool is restricted to installed skill resources; it is
         // present exactly when skills exist. Discovery and invocation stay pi-native.
         skillReadTool ? [skillReadTool] : [],
@@ -1641,10 +1697,9 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     );
     const askUserLatch = createAskUserTerminateLatch();
     let toolCalls = 0;
-    const agent = buildAgent({
-      streamFn,
-      systemPrompt: buildRunnerCoursePrompt({
-        availableSkills: availableSkillsPromptBlock(installedSkills),
+    const systemPromptForTurn = () =>
+      buildRunnerCoursePrompt({
+        availableSkills: availableSkillsPromptBlock(currentSkills()),
         curriculum: CURRICULUM_TOOLS_PROMPT,
         ...(search ? { search: searchPromptBlock() } : {}),
         ...(fetchConnection ? { fetch: fetchPromptBlock() } : {}),
@@ -1654,7 +1709,13 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         materials: materialsPromptBlock(materials),
         roster: ROSTER_TOOLS_PROMPT,
         voice: voiceCloneToolsPrompt(voiceRegistrationEnabled),
-      }),
+      });
+    const agent = buildAgent({
+      // Pi snapshots the system prompt at run start. Rebuild discovery at the
+      // provider boundary too, after a fresh steered user frame is consumed.
+      streamFn: (model, context, options) =>
+        streamFn(model, { ...context, systemPrompt: systemPromptForTurn() }, options),
+      systemPrompt: systemPromptForTurn(),
       model: driver.piModel,
       tools,
       allowedToolNames: new Set([
@@ -1707,7 +1768,10 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
           // or a steered follow-up -- and from now on the run answers it, in
           // its language.
           const consumed = durableUserMessageSeq(event.message);
-          if (consumed !== null) runLocale = localeThrough(messageLocales, consumed, meta.locale);
+          if (consumed !== null) {
+            runLocale = localeThrough(messageLocales, consumed, meta.locale);
+            skillMessageSeq = consumed;
+          }
         }
         enqueue(async () => {
           await entrySession!.appendMessage(event.message);
@@ -1841,7 +1905,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         // transcript dedupe (not a special case) keeps it to one load.
         const preload = await buildSkillPreload({
           text: plannedStart.text,
-          skills: installedSkills,
+          skills: skillsForMessage(plannedStart.durableMessageSeq),
           transcript: modelMessages,
           ...(plan.kind === 'start' && requestedSkill ? { forced: [requestedSkill] } : {}),
           model: {
@@ -1892,12 +1956,13 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         // Delivery carries NO user message — the follow-up cursor is the count
         // of `user` messages in the transcript, and moving it would mark a
         // real user message delivered and drop it.
-        const resumedTurnText =
-          loggedMessages.findLast((message) => message.seq <= deliveredThrough)?.text ??
-          meta.prompt;
+        const resumedMessage = loggedMessages.findLast(
+          (message) => message.seq <= Math.max(deliveredThrough, consumedInTranscript),
+        );
+        const resumedTurnText = resumedMessage?.text ?? meta.prompt;
         const repair = await buildSkillPreload({
           text: resumedTurnText,
-          skills: installedSkills,
+          skills: skillsForMessage(resumedMessage?.seq),
           transcript: modelMessages,
           model: {
             api: driver.piModel.api,

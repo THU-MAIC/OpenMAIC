@@ -66,6 +66,31 @@ function makeBody(overrides: Partial<StatelessChatRequest> = {}): StatelessChatR
 }
 
 describe('Pi director prompt closure routing', () => {
+  it('describes Native shape geometry only when its tool is available', () => {
+    const withShapes = buildNativeChildPrompt(makeBody(), agents[0], [], ['wb_draw_shape']);
+    expect(withShapes).toContain('viewBox:[w,h]');
+    expect(withShapes).toContain('viewBox:[4,3]');
+    expect(withShapes).toContain('M0 1 C1 0 2 0 3 1');
+    expect(withShapes).toContain('fillColor:"transparent"');
+    expect(withShapes).toContain('origin (0,0) is the unrotated element upper-left');
+    expect(withShapes).toContain('M1 0 A1 1 0 1 1 1 2 A1 1 0 1 1 1 0 Z');
+    expect(withShapes).toContain('M0 0 A1 1 0 0 1 1 1');
+    expect(withShapes).toContain('keep the viewBox ratio equal to width:height');
+    expect(withShapes).toContain('x=centerX-width/2 and y=centerY-height/2');
+    expect(withShapes).toContain('Arc radii are in viewBox units');
+    expect(withShapes).toContain('Close filled shapes with Z');
+    expect(withShapes).not.toContain('hypotenuse');
+    expect(withShapes).not.toContain('-36.86989765');
+    expect(withShapes).not.toContain('shape:"');
+    expect(withShapes).not.toContain('Presets:');
+    expect(buildNativeChildPrompt(makeBody(), agents[0], [], ['wb_read'])).not.toContain(
+      '# Native whiteboard shapes',
+    );
+    expect(buildChildPrompt(makeBody(), agents[0], [], [], ['wb_draw_shape'])).not.toContain(
+      'Rotated square on the hypotenuse',
+    );
+  });
+
   it('keeps a navigable outline and requires scene evidence before delegation', () => {
     const body = makeBody({
       storeState: {
@@ -100,7 +125,7 @@ describe('Pi director prompt closure routing', () => {
       } as never,
     });
 
-    const prompt = buildDirectorPrompt(body, agents, 4);
+    const prompt = buildDirectorPrompt(body, agents);
 
     expect(prompt).toContain('# Course Outline');
     expect(prompt).toContain('sceneId="scene-2"');
@@ -159,7 +184,7 @@ describe('Pi director prompt closure routing', () => {
       } as never,
     });
 
-    const prompt = buildDirectorPrompt(body, agents, 4);
+    const prompt = buildDirectorPrompt(body, agents);
     const sceneALine = prompt.split('\n').find((line) => line.includes('sceneId="scene-a"'));
     const sceneBLine = prompt.split('\n').find((line) => line.includes('sceneId="scene-b"'));
 
@@ -270,7 +295,7 @@ describe('Pi director prompt closure routing', () => {
   });
 
   it('teaches close_session as the terminal alternative to cue_user', () => {
-    const prompt = buildDirectorPrompt(makeBody(), agents, 4);
+    const prompt = buildDirectorPrompt(makeBody(), agents);
 
     expect(prompt).toContain('Terminal Tool Policy');
     expect(prompt).toContain('2-4 clear, mutually exclusive choices');
@@ -284,7 +309,7 @@ describe('Pi director prompt closure routing', () => {
   });
 
   it('requires a visible teacher closing line before close_session', () => {
-    const prompt = buildDirectorPrompt(makeBody(), agents, 4);
+    const prompt = buildDirectorPrompt(makeBody(), agents);
 
     expect(prompt).toContain('Before you call `close_session`');
     expect(prompt).toContain('short, visible closing line');
@@ -293,7 +318,7 @@ describe('Pi director prompt closure routing', () => {
   });
 
   it('routes satisfied acknowledgments and back-to-lesson intent to close_session', () => {
-    const prompt = buildDirectorPrompt(makeBody(), agents, 4);
+    const prompt = buildDirectorPrompt(makeBody(), agents);
 
     expect(prompt).toContain('low-intent finishers as closure');
     expect(prompt).toContain('我知道了');
@@ -304,7 +329,7 @@ describe('Pi director prompt closure routing', () => {
   });
 
   it('keeps concept and mechanism questions teacher-led before student reactions', () => {
-    const prompt = buildDirectorPrompt(makeBody(), agents, 4);
+    const prompt = buildDirectorPrompt(makeBody(), agents);
 
     expect(prompt).toContain('call the teacher first when available');
     expect(prompt).toContain('Use the assistant fallback only under rule 6');
@@ -317,12 +342,13 @@ describe('Pi director prompt closure routing', () => {
     expect(prompt).toContain('do not let a student take the first substantive explanation');
   });
 
-  it('keeps every classroom agent turn inside one hard budget', () => {
-    const prompt = buildDirectorPrompt(makeBody(), agents, 4);
+  it('lets the Director choose when useful classroom turns are complete', () => {
+    const prompt = buildDirectorPrompt(makeBody(), agents);
 
-    expect(prompt).toContain('at most 4 classroom agent turns');
-    expect(prompt).toContain('Once the classroom agent turn limit is reached');
-    expect(prompt).toContain('Finish the director loop with exactly one terminal tool');
+    expect(prompt).not.toMatch(/at most \d+ classroom agent turns/);
+    expect(prompt).toContain('Prefer 1-2 classroom agents');
+    expect(prompt).not.toContain('classroom agent turn limit');
+    expect(prompt).toContain('finish the turn with exactly one terminal tool');
     expect(prompt).not.toContain('turnKind');
     expect(prompt).not.toContain('wrap_up');
   });

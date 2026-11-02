@@ -34,14 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: pnpm/action-setup@v5
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-workspace
 
       # Baseline, then the run, then the audit against that baseline. The
       # in-module STORAGE_PG_CONTRACT_REQUIRED guard only covers a missing
@@ -63,19 +56,24 @@ jobs:
           node scripts/assert-pg-contract-suites.mjs "$STORAGE_VITEST_RESULTS" \
             --baseline "$STORAGE_PG_BASELINE"
 
-      # App-domain PostgreSQL contracts, in the same database as the package
-      # suite above. Each of these files is responsible for not colliding with
-      # it: the asset ones provision `stage_meta`, whose foreign key to
+      # App-domain PostgreSQL contracts, on the same server as the package
+      # suite above. Each vitest worker runs them in a database of its own,
+      # derived from PG_CONTRACT_URL (tests/pg-contract-database.ts): advisory
+      # locks are database-wide, so files running side by side in one database
+      # waited on each other's owner and bootstrap locks. Each file still works
+      # inside a schema or database of its own, or truncates only tables of its
+      # own, since files share their worker's database one after another; the
+      # asset ones provision `stage_meta`, whose foreign key to
       # `document_stages` would break the package suite's non-cascading
-      # TRUNCATE, so each works inside a schema of its own and drops it again.
-      # Both orders were checked, because nothing here guarantees one. The
-      # others work in a schema or database of their own, or truncate only
-      # tables of their own. This list is every app `*.pg.test.ts`: a suite
-      # left off it skips everywhere, since no other job runs the app suites
-      # against a database.
+      # TRUNCATE in a shared database. This list is every app `*.pg.test.ts`:
+      # a suite left off it skips everywhere, since no other job runs the app
+      # suites against a database.
       - name: App-domain PostgreSQL contracts
+        # These suites create schemas and run races against a shared database
+        # service, so a test can take several seconds on a busy runner. The
+        # default 5 s test/hook timeout made unrelated PRs fail intermittently.
         run: |
-          pnpm exec vitest run \
+          pnpm exec vitest run --testTimeout=30000 --hookTimeout=30000 \
             tests/lib/whiteboard/runtime-store.pg.test.ts \
             tests/persistence/document-asset-references.pg.test.ts \
             tests/persistence/asset-reference-backfill.pg.test.ts \

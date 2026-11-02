@@ -30,6 +30,8 @@ export interface TriggerEvent {
 
 /** Playback engine callbacks */
 export interface PlaybackEngineCallbacks {
+  /** Notify frame media before narration, without waiting for a reply. */
+  beforeSpeech?: () => void;
   onModeChange?: (mode: EngineMode) => void;
   onSceneChange?: (sceneId: string) => void;
   onSpeechStart?: (text: string) => void;

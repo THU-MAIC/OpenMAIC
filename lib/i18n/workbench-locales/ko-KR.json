@@ -35,6 +35,7 @@
     "submit": "제출",
     "dismiss": "취소",
     "inFormBelow": "아래 양식에서 답해 주세요",
+    "inPreview": "미리보기에서 답하세요",
     "multiAnswerSeparator": ", "
   },
   "material": {
@@ -98,6 +99,21 @@
       "vocational": "직업 실습",
       "workshop-style": "인터랙티브 워크숍"
     }
+  },
+  "preview": {
+    "eyebrow": "진행 중",
+    "understanding": "요청을 이해하는 중",
+    "understandingDesc": "요청 내용과 필요한 자료를 읽고 있습니다…",
+    "asking": "확인이 필요합니다",
+    "askingDesc": "답하면 계속합니다.",
+    "assembling": "교실 준비 중",
+    "assemblingDesc": "코스를 만들고 선생님과 반 친구를 배치하고 있습니다…",
+    "opening": "교실을 여는 중",
+    "page": "{{order}}페이지",
+    "pageCaption": "{{order}}페이지 · {{title}}",
+    "skills": "장착한 스킬",
+    "resting": "코스가 여기에 표시됩니다",
+    "restingDesc": "대화를 이어가세요. 코스가 만들어지면 이 탭에서 열립니다."
   },
   "thinking": {
     "active": "생각 중…",
@@ -239,7 +255,8 @@
       "parseFailed": "분석 실패",
       "folderExisted": "폴더가 이미 있습니다",
       "unchanged": "변경 없음",
-      "movedOutOfFolder": "폴더 밖으로 옮겼습니다"
+      "movedOutOfFolder": "폴더 밖으로 옮겼습니다",
+      "material": "자료 {{count}}개"
     },
     "error": {
       "materialExtraction": "자료 분석에 실패했습니다",

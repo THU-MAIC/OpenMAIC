@@ -15,3 +15,15 @@ export * from './pbl/operations/kernel/proficiency.js';
 export * from './pbl/operations/kernel/progress.js';
 export * from './pbl/operations/kernel/runtime-events.js';
 export * from './pbl/operations/kernel/task-completion.js';
+
+export { postProcessInteractiveHtml } from './interactive-post-processor.js';
+export {
+  rewriteInteractiveLibraries,
+  mapInteractiveLibraryUrl,
+} from './interactive-library-mapper.js';
+export {
+  INTERACTIVE_LIBRARIES,
+  INTERACTIVE_ASSET_PATH,
+  interactiveAssetBaseUrl,
+  interactiveLibraryUrl,
+} from './interactive-libraries.js';

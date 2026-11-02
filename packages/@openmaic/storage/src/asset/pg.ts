@@ -17,6 +17,20 @@
  * transaction must declare `writesOutsideRegistryDatabase`, or the registry
  * refuses the configuration (see `assertByteWriteIsCoordinatable`).
  *
+ * A byte layer outside the registry's database (an object store) is the
+ * exception to "claim, write, insert in one transaction": its write is network
+ * I/O of arbitrary size, and holding a pooled connection, the blob-row lock and
+ * the principal's quota lock across it lets one slow upload stall every other
+ * writer. For such a layer a write is staged instead (see {@link
+ * PgAssetStore.stageBytes}): a short transaction claims the blob row and
+ * records a stage pin in `asset_blob_stages`, the bytes are uploaded with no
+ * transaction open, and a second short transaction claims the row again,
+ * consumes the pin and inserts the entry. The pin is what keeps the collector
+ * away while no lock is held: the collector skips a blob any live pin names,
+ * and a pin row cascades away with its blob, so a pin that still exists when
+ * it is consumed proves the bytes uploaded after it was recorded were never
+ * reclaimed.
+ *
  * Request paths never delete bytes; the offline collector is the only reclaimer.
  * `withTransaction` must pin all queries in its body to one freshly checked-out
  * transaction.
@@ -82,10 +96,23 @@ export interface PgAssetStoreOptions {
    * written and never read.
    */
   pendingTtlMs?: number;
+  /**
+   * How long a stage pin (see {@link PgAssetStore.stageBytes}) protects its
+   * bytes: the bound on an object-store upload plus, for `putStaged`, the gap
+   * before the allocating transaction. The collector does not reclaim a blob
+   * while a live pin names it; a pin past this deadline is dead, so an upload
+   * or allocation that outlives it fails rather than trusting bytes the
+   * collector may already have removed. It also bounds how long an abandoned
+   * stage holds its bytes back from reclamation.
+   */
+  stageTtlMs?: number;
 }
 
 /** One day. A deployment may choose a longer window. */
 export const DEFAULT_ASSET_PENDING_TTL_MS = 24 * 60 * 60 * 1000;
+
+/** One day: far beyond any upload, short enough to drain abandoned stages. */
+export const DEFAULT_ASSET_STAGE_TTL_MS = 24 * 60 * 60 * 1000;
 
 /**
  * One PGlite-compatible statement per entry, in dependency order.
@@ -229,7 +256,32 @@ const ASSET_PG_ROOTS: readonly string[] = [
      ADD COLUMN IF NOT EXISTS rule_version INTEGER NOT NULL DEFAULT 1`,
 ];
 
-export const ASSET_PG_SCHEMA: readonly string[] = [...ASSET_PG_BASELINE, ...ASSET_PG_ROOTS];
+/**
+ * `asset_blob_stages` holds one pin per staged byte write (see
+ * {@link PgAssetStore.stageBytes}): a blob whose bytes are being uploaded, or
+ * have been uploaded and not yet claimed by an entry, with no transaction held
+ * across the upload. The collector skips a blob any unexpired pin names, and
+ * the foreign key cascades, so reclaiming a blob takes its pins with it and a
+ * pin's mere existence proves its blob was not reclaimed since the pin was
+ * written. `expires_at` bounds how long an abandoned stage keeps its blob.
+ */
+const ASSET_PG_STAGES: readonly string[] = [
+  `CREATE TABLE IF NOT EXISTS asset_blob_stages (
+     id TEXT PRIMARY KEY,
+     content_hash TEXT NOT NULL REFERENCES asset_blobs(content_hash) ON DELETE CASCADE,
+     expires_at TIMESTAMPTZ NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS asset_blob_stages_content_hash_idx
+     ON asset_blob_stages (content_hash)`,
+  `CREATE INDEX IF NOT EXISTS asset_blob_stages_expires_idx
+     ON asset_blob_stages (expires_at)`,
+];
+
+export const ASSET_PG_SCHEMA: readonly string[] = [
+  ...ASSET_PG_BASELINE,
+  ...ASSET_PG_ROOTS,
+  ...ASSET_PG_STAGES,
+];
 
 /** The asset backend's migrations, recorded under the store `asset`. */
 export const ASSET_PG_MIGRATIONS: SchemaMigrationSet = {
@@ -237,6 +289,7 @@ export const ASSET_PG_MIGRATIONS: SchemaMigrationSet = {
   migrations: [
     { version: 1, name: 'baseline', up: ASSET_PG_BASELINE.join(';\n'), transaction: false },
     { version: 2, name: 'material_roots', up: ASSET_PG_ROOTS.join(';\n'), transaction: true },
+    { version: 3, name: 'blob_stages', up: ASSET_PG_STAGES.join(';\n'), transaction: true },
   ],
 };
 
@@ -292,6 +345,64 @@ function hasTransactionalReader(store: AssetByteStore): store is TransactionalBy
 }
 
 /**
+ * Bytes uploaded by {@link PgAssetStore.stageBytes} and not yet claimed by an
+ * entry. Opaque: the content hash and the stage pin it stands for stay inside
+ * this module, so a handle can only be spent by {@link PgAssetStore.putStaged}.
+ */
+export interface StagedAssetBytes {
+  /** Length of the staged bytes. */
+  readonly byteLength: number;
+  /** The staged blob's own media type, used when no `contentType` is given. */
+  readonly type: string;
+}
+
+interface StagedRecord {
+  stageId: string;
+  contentHash: ContentHash;
+  byteLength: number;
+  type: string;
+}
+
+const stagedRecords = new WeakMap<StagedAssetBytes, StagedRecord>();
+
+/**
+ * When a stage pin is alive: strictly before its deadline, read on the wall
+ * clock at the moment of the check.
+ *
+ * An expired pin is dead even while its row still exists, and must never be
+ * revived. The collector treats it as dead -- it deletes the bytes, which no
+ * rollback restores, before deleting the blob row the pin cascades with -- so
+ * a collector transaction that fails between those two steps leaves the row
+ * and the expired pin behind with the bytes gone. `clock_timestamp()` rather
+ * than `now()`: `now()` is the transaction's start, and an allocating
+ * transaction that waited on a lock would otherwise judge the pin by a time
+ * before a collector that ran meanwhile. The collector judges by its own
+ * `now()`, which is never later than when it acts, so any check made after a
+ * collector deleted bytes sees the pin as dead too.
+ */
+const STAGE_PIN_LIVE_SQL = 'expires_at > clock_timestamp()';
+
+/**
+ * Renew a live stage pin's deadline, or find it dead or gone.
+ *
+ * Preceded, in the same transaction, by a shared lock on the pin's blob row
+ * ({@link LOCK_STAGED_BLOB_SQL}), so every pin write is ordered against the
+ * collector by that row, as the stage's insert and the allocation's claim
+ * are. Without it a renewal could decide the pin is live, and the collector
+ * -- holding the row but reading the pin before the renewal commits -- could
+ * judge the old, now-expired deadline and delete the bytes, leaving a renewed
+ * pin over bytes that are gone if its transaction then failed before deleting
+ * the row.
+ */
+const RENEW_STAGE_SQL = `UPDATE asset_blob_stages
+    SET expires_at = clock_timestamp() + ($2::double precision * interval '1 millisecond')
+  WHERE id = $1 AND ${STAGE_PIN_LIVE_SQL}
+  RETURNING id`;
+
+/** The blob-row lock a renewal takes before its pin: row before pin, always. */
+const LOCK_STAGED_BLOB_SQL = `SELECT 1 FROM asset_blobs WHERE content_hash = $1 FOR SHARE`;
+
+/**
  * Bound on how long one registry write transaction may wait on a lock.
  *
  * Every registry lock wait in a healthy deployment is short: the blob-row
@@ -304,6 +415,9 @@ function hasTransactionalReader(store: AssetByteStore): store is TransactionalBy
  */
 const REGISTRY_WRITE_LOCK_TIMEOUT_SQL = `SET LOCAL lock_timeout = '30s'`;
 
+/** The savepoint every registry write body runs under (see `writeTransaction`). */
+const REGISTRY_WRITE_SAVEPOINT = 'openmaic_asset_registry_write';
+
 function registryConfigurationFailure(problem: string): Error {
   return new Error(`@openmaic/storage: ${problem}`);
 }
@@ -315,6 +429,9 @@ function registryFailure(operation: string): Error {
 class RegistryAssetNotFound extends Error {}
 
 class RegistryAssetQuotaExceeded extends Error {}
+
+/** A stage pin was reclaimed (it expired) before its entry could claim it. */
+class RegistryStageLost extends Error {}
 
 /**
  * Whether a reference root holds `id`, read in a statement of its own.
@@ -336,6 +453,13 @@ async function entryIsRooted(queryable: Queryable, id: string): Promise<boolean>
   return rooted.rows[0]?.rooted === true;
 }
 
+function replaceFailure(error: unknown): Error {
+  if (error instanceof RegistryAssetNotFound) return new AssetNotFoundError();
+  if (error instanceof RegistryAssetQuotaExceeded) return new AssetQuotaExceededError();
+  if (error instanceof AssetRootedError) return error;
+  return registryFailure('replace');
+}
+
 function encodeMeta(meta: AssetMeta): string {
   assertJsonValue(meta, 'asset metadata');
   return encodeJson(meta, 'asset metadata');
@@ -350,6 +474,7 @@ export class PgAssetStore implements AssetStore {
   private readonly byteStore: AssetByteStore;
   private readonly quotaBytes?: number;
   private readonly pendingTtlMs: number;
+  private readonly stageTtlMs: number;
 
   constructor(
     private readonly queryable: Queryable,
@@ -375,10 +500,17 @@ export class PgAssetStore implements AssetStore {
     ) {
       throw new Error('@openmaic/storage: pendingTtlMs must be a positive safe integer');
     }
+    if (
+      options.stageTtlMs !== undefined &&
+      (!Number.isSafeInteger(options.stageTtlMs) || options.stageTtlMs < 1)
+    ) {
+      throw new Error('@openmaic/storage: stageTtlMs must be a positive safe integer');
+    }
     this.transactionHook = options.withTransaction;
     this.byteStore = options.byteStore;
     this.quotaBytes = options.quotaBytes;
     this.pendingTtlMs = options.pendingTtlMs ?? DEFAULT_ASSET_PENDING_TTL_MS;
+    this.stageTtlMs = options.stageTtlMs ?? DEFAULT_ASSET_STAGE_TTL_MS;
   }
 
   private transaction<T>(body: (queryable: Queryable) => Promise<T>): Promise<T> {
@@ -389,11 +521,36 @@ export class PgAssetStore implements AssetStore {
    * A write transaction: the same fresh pinned connection as
    * {@link transaction}, plus a lock-wait budget, so a future lock-contention
    * variant of a registry write fails loudly instead of hanging.
+   *
+   * The body also runs under a savepoint, so a write that fails leaves
+   * nothing behind whatever the transaction it ran in does next. On a store
+   * bound to fresh transactions that changes nothing: a failing body rolls the
+   * whole transaction back anyway. On a store bound to a caller's open
+   * transaction there is no inner transaction to roll back, and a caller that
+   * catches the error and commits its own work would otherwise commit
+   * whatever statements of the failed write had already run -- a blob row
+   * claimed, a stamp cleared, an entry locked -- with nothing to undo them.
+   * Rolling back to the savepoint also leaves the caller's transaction usable
+   * after a statement error, and releases the locks the write took.
    */
   private writeTransaction<T>(body: (queryable: Queryable) => Promise<T>): Promise<T> {
     return this.transactionHook(async (queryable) => {
       await queryable.query(REGISTRY_WRITE_LOCK_TIMEOUT_SQL);
-      return body(queryable);
+      await queryable.query(`SAVEPOINT ${REGISTRY_WRITE_SAVEPOINT}`);
+      let result: T;
+      try {
+        result = await body(queryable);
+      } catch (error) {
+        try {
+          await queryable.query(`ROLLBACK TO SAVEPOINT ${REGISTRY_WRITE_SAVEPOINT}`);
+        } catch {
+          // The connection is gone or the transaction is beyond saving; the
+          // caller's own rollback (or the failed commit) then discards it.
+        }
+        throw error;
+      }
+      await queryable.query(`RELEASE SAVEPOINT ${REGISTRY_WRITE_SAVEPOINT}`);
+      return result;
     });
   }
 
@@ -441,10 +598,354 @@ export class PgAssetStore implements AssetStore {
     this.assertByteWriteIsCoordinatable();
   }
 
-  private readBytes(queryable: Queryable, hash: ContentHash): Promise<Uint8Array | null> {
-    return hasTransactionalReader(this.byteStore)
-      ? this.byteStore.readWith(queryable, hash)
-      : this.byteStore.read(hash);
+  /**
+   * Whether byte writes are staged (see {@link stageBytes}) rather than issued
+   * inside the write transaction. Exactly the layers that cannot join the
+   * transaction and have declared their bytes live elsewhere: an in-database
+   * layer writes through the transaction it is coordinated with, which is
+   * correct and cheap, so it keeps the single-transaction path.
+   *
+   * A host that allocates inside its own transaction uses this to decide
+   * whether {@link stageBytes} buys anything: with an in-database layer it
+   * would only add a transaction, so such a host keeps calling `put`.
+   */
+  stagesByteWrites(): boolean {
+    return (
+      !hasTransactionalWriter(this.byteStore) &&
+      this.byteStore.writesOutsideRegistryDatabase === true
+    );
+  }
+
+  /**
+   * Claim the blob row for an entry about to name it: insert it, or clear its
+   * unreferenced stamp, taking the row lock that serializes this write against
+   * the collector and against a concurrent writer of the same content.
+   */
+  private async claimBlobRow(
+    queryable: Queryable,
+    hash: ContentHash,
+    byteLength: number,
+  ): Promise<void> {
+    await queryable.query(
+      `INSERT INTO asset_blobs (content_hash, byte_size, unreferenced_at)
+       VALUES ($1, $2, NULL)
+       ON CONFLICT (content_hash) DO UPDATE
+         SET unreferenced_at = NULL,
+             byte_size = EXCLUDED.byte_size`,
+      [hash, byteLength],
+    );
+  }
+
+  /**
+   * Claim the blob row of a staged write and spend its pin, in that order.
+   *
+   * The row lock comes first, so a collector already holding it finishes
+   * before the pin is looked at: if it reclaimed the blob, the pin cascaded
+   * away with the row and is not found here. A pin that is found AND still
+   * live was never reclaimed with its blob -- the collector skips a blob any
+   * live pin names -- and the blob row cannot have been deleted and re-created
+   * underneath it either (deleting the row deletes the pin), so the bytes the
+   * stage uploaded after writing the pin are still stored. An expired pin is
+   * refused even when its row survives: a collector may have deleted its bytes
+   * and then failed before deleting the row (see {@link STAGE_PIN_LIVE_SQL}).
+   * With the row lock held from here to commit, the collector cannot start on
+   * it.
+   */
+  private async claimStagedBlob(queryable: Queryable, staged: StagedRecord): Promise<void> {
+    // Lock, verify, then mutate: the blob row is locked without being
+    // changed, the pin is spent only if it is live, and only then is the
+    // row's reclamation stamp cleared. A dead or reclaimed stage therefore
+    // fails before anything about the blob changes -- no row created for
+    // bytes that may be gone, no stamp cleared on a blob nothing will name --
+    // and the lock order (blob row, then pin) is the one every pin writer
+    // and the collector use. The pin's foreign key means a live pin implies
+    // the row, so there is nothing to insert.
+    const locked = await queryable.query(
+      'SELECT 1 FROM asset_blobs WHERE content_hash = $1 FOR UPDATE',
+      [staged.contentHash],
+    );
+    if (!locked.rows[0]) throw new RegistryStageLost();
+    const consumed = await queryable.query(
+      `DELETE FROM asset_blob_stages
+        WHERE id = $1 AND content_hash = $2 AND ${STAGE_PIN_LIVE_SQL}
+        RETURNING id`,
+      [staged.stageId, staged.contentHash],
+    );
+    if (!consumed.rows[0]) throw new RegistryStageLost();
+    await queryable.query('UPDATE asset_blobs SET unreferenced_at = NULL WHERE content_hash = $1', [
+      staged.contentHash,
+    ]);
+  }
+
+  /**
+   * Store bytes with a stage pin, holding no transaction across the byte
+   * write itself.
+   *
+   * 1. A short transaction claims the blob row -- a new row is stamped
+   *    unreferenced now, so an abandoned stage leaves bytes the collector
+   *    reclaims rather than a row nothing will ever stamp -- and records a pin
+   *    that expires after `stageTtlMs`. Claiming the row first makes this
+   *    wait out a collector that already holds it, so the pin is written
+   *    either before the collector can lock the row (and the collector, which
+   *    re-reads pins under that lock, skips the blob) or after it has deleted
+   *    the row and its bytes (and the bytes below are written after that).
+   * 2. The bytes are written with no transaction or connection held.
+   *    Content-addressed and idempotent, so concurrent stages of the same
+   *    content may both write.
+   * 3. A short transaction takes a shared lock on the blob row and renews the
+   *    pin, which both restarts its deadline from the end of the upload and
+   *    proves it was not reclaimed during it (see {@link RENEW_STAGE_SQL}).
+   *
+   * An in-database layer writes its bytes inside step 1 instead, through the
+   * transaction it is coordinated with. Every path runs the same statements
+   * whether or not the content was already stored.
+   *
+   * `lockAhead` runs first in step 1 and takes, in their usual order, the
+   * locks the allocating transaction will take before it reaches the blob
+   * row: the principal's quota lock, and for `replace` the entry's row lock.
+   * On a store bound to fresh transactions they are released at once and cost
+   * a few statements. On a store bound to a caller's open transaction, step 1
+   * and the allocation share that transaction, so the blob-row lock taken
+   * here is held until the caller commits; without the locks ahead of it that
+   * transaction would hold the blob row and then wait for the principal's
+   * lock -- the reverse of every other writer, which takes the principal's
+   * lock and then waits for the blob row, and a deadlock between the two.
+   */
+  private async stage(
+    contentHash: ContentHash,
+    bytes: Uint8Array,
+    type: string,
+    lockAhead?: (queryable: Queryable) => Promise<void>,
+  ): Promise<StagedRecord> {
+    const stageId = crypto.randomUUID();
+    const store = this.byteStore;
+    const ttl = this.stageTtlMs;
+    await this.writeTransaction(async (queryable) => {
+      await lockAhead?.(queryable);
+      await queryable.query(
+        `INSERT INTO asset_blobs (content_hash, byte_size, unreferenced_at)
+         VALUES ($1, $2, now())
+         ON CONFLICT (content_hash) DO UPDATE
+           SET byte_size = EXCLUDED.byte_size`,
+        [contentHash, bytes.byteLength],
+      );
+      await queryable.query(
+        `INSERT INTO asset_blob_stages (id, content_hash, expires_at)
+         VALUES ($1, $2, clock_timestamp() + ($3::double precision * interval '1 millisecond'))`,
+        [stageId, contentHash, ttl],
+      );
+      if (hasTransactionalWriter(store)) await store.writeWith(queryable, contentHash, bytes);
+    });
+    if (!hasTransactionalWriter(store)) {
+      try {
+        await store.write(contentHash, bytes);
+        const renewed = await this.writeTransaction(async (queryable) => {
+          await queryable.query(LOCK_STAGED_BLOB_SQL, [contentHash]);
+          return queryable.query(RENEW_STAGE_SQL, [stageId, ttl]);
+        });
+        if (!renewed.rows[0]) {
+          await this.reregisterOutlivedUpload(contentHash, bytes.byteLength);
+          throw new RegistryStageLost();
+        }
+      } catch (error) {
+        await this.releaseStage(stageId);
+        throw error;
+      }
+    }
+    return { stageId, contentHash, byteLength: bytes.byteLength, type };
+  }
+
+  /**
+   * Make the bytes of an upload that outlived its pin reclaimable again.
+   *
+   * Once the pin is dead the collector may have deleted the blob row (and the
+   * object) while the upload was still in flight, and an upload that finishes
+   * after that delete leaves an object no row names -- invisible to the
+   * collector, which only reclaims bytes it has a row for. Inserting a row
+   * stamped unreferenced now puts such an object back under collection after
+   * the ordinary grace period. `DO NOTHING` on a row that exists: then the
+   * blob is still tracked (the collector has not taken it, or a concurrent
+   * writer has re-created it), and its state is that writer's to keep. The
+   * insert takes only the blob row, so it fits every lock order. Best effort:
+   * a failure here leaves an orphan object, which costs storage and names
+   * nothing.
+   */
+  private async reregisterOutlivedUpload(
+    contentHash: ContentHash,
+    byteLength: number,
+  ): Promise<void> {
+    try {
+      await this.writeTransaction((queryable) =>
+        queryable.query(
+          `INSERT INTO asset_blobs (content_hash, byte_size, unreferenced_at)
+           VALUES ($1, $2, now())
+           ON CONFLICT (content_hash) DO NOTHING`,
+          [contentHash, byteLength],
+        ),
+      );
+    } catch {
+      // An untracked object is a storage leak, never a dangling entry.
+    }
+  }
+
+  /**
+   * Drop a stage pin nothing will claim, so its blob drains on the ordinary
+   * grace period instead of waiting out the pin. Best effort: a pin left
+   * behind only delays reclamation until it expires.
+   */
+  private async releaseStage(stageId: string): Promise<void> {
+    try {
+      await this.transaction((queryable) =>
+        queryable.query('DELETE FROM asset_blob_stages WHERE id = $1', [stageId]),
+      );
+    } catch {
+      // The pin expires on its own.
+    }
+  }
+
+  /**
+   * Give up a stage {@link stageBytes} answered and nothing will spend, so its
+   * bytes drain on the collector's ordinary grace period instead of waiting
+   * out `stageTtlMs`. Idempotent: releasing a spent, released, expired or
+   * foreign handle does nothing. Best effort -- a failure leaves the pin to
+   * expire on its own -- and never throws. Call it on a store bound to fresh
+   * transactions, after the transaction that would have spent the handle has
+   * ended: inside that transaction it would be rolled back with it.
+   */
+  async releaseStaged(staged: StagedAssetBytes): Promise<void> {
+    const record = stagedRecords.get(staged);
+    if (!record) return;
+    await this.releaseStage(record.stageId);
+  }
+
+  /**
+   * Upload bytes ahead of the transaction that will allocate an entry for
+   * them, and answer a handle {@link putStaged} spends.
+   *
+   * For a host that allocates inside a transaction of its own (a store bound
+   * to an open transaction, so `put` cannot commit anything by itself):
+   * calling `put` there would keep that transaction, its connection and every
+   * lock it holds open across the byte upload. Instead, call `stageBytes` on a
+   * store bound to fresh transactions BEFORE opening that transaction, then
+   * `putStaged` on the transaction-bound store inside it. The upload then runs
+   * with no transaction open; the allocation keeps every guarantee of `put`
+   * (the principal's quota is checked under its lock, in the host's
+   * transaction).
+   *
+   * Nothing names the staged bytes until `putStaged` commits. A stage that is
+   * never spent should be given back with {@link releaseStaged}; otherwise it
+   * expires after `stageTtlMs`, and the collector then reclaims its bytes on
+   * the ordinary grace period. `putStaged` on an expired stage fails like any
+   * other registry failure, and the caller stages again.
+   * Called on a store bound to an open transaction, the stage runs inside it
+   * and is no better than `put`.
+   *
+   * The handle is a process-local capability: it is valid only in the process
+   * and the copy of this package that answered it (it is not serializable,
+   * and a second copy of the package does not recognize it), and it is not
+   * bound to a principal -- whoever holds it decides which principal
+   * `putStaged` allocates for, with that principal's quota.
+   */
+  async stageBytes(data: BinaryBlob): Promise<StagedAssetBytes> {
+    this.assertByteWriteIsCoordinatable();
+    const { contentHash, bytes: buffer } = await contentHashOf(data);
+    let record: StagedRecord;
+    try {
+      record = await this.stage(contentHash, byteView(buffer), data.type);
+    } catch {
+      throw registryFailure('stage');
+    }
+    const handle: StagedAssetBytes = Object.freeze({
+      byteLength: record.byteLength,
+      type: record.type,
+    });
+    stagedRecords.set(handle, record);
+    return handle;
+  }
+
+  /**
+   * Allocate an entry for bytes {@link stageBytes} uploaded: `put`, without
+   * the byte write. A handle is spent by the first allocation that commits;
+   * one whose transaction rolled back may be spent again.
+   */
+  async putStaged(
+    principal: AssetPrincipal,
+    staged: StagedAssetBytes,
+    meta?: AssetMeta,
+  ): Promise<AssetId> {
+    const record = stagedRecords.get(staged);
+    if (!record) {
+      throw new Error('@openmaic/storage: putStaged takes a handle returned by stageBytes');
+    }
+    const storedMeta = meta ?? {};
+    const encodedMeta = encodeMeta(storedMeta);
+    const mime = storedMeta.contentType ?? record.type;
+    let id: AssetId;
+    try {
+      id = newAssetId();
+    } catch {
+      throw registryFailure('put');
+    }
+    await this.allocateStaged(principal, id, record, mime, encodedMeta);
+    return id;
+  }
+
+  private async insertPendingEntry(
+    queryable: Queryable,
+    id: AssetId,
+    principal: AssetPrincipal,
+    contentHash: ContentHash,
+    mime: string,
+    encodedMeta: string,
+  ): Promise<void> {
+    // The entry is allocated PENDING: `committed_at` stays NULL until the
+    // first document write names this id, and `expires_at` is the deadline
+    // for that write to arrive. The columns are written unconditionally on
+    // every put, and no READ path reads them -- see `resolve` / `identify`
+    // / `resolveIndirect`, none of which mention them -- so the pending and
+    // committed states are indistinguishable to a caller. The one
+    // deliberate exception is `unreferenced_at`, which the quota checks on
+    // `put` and `replace` read: quota is accounted on live logical bytes,
+    // and the asset contract states that branch explicitly.
+    await queryable.query(
+      `INSERT INTO asset_entries
+         (id, principal, content_hash, mime, meta, revision, created_at,
+          committed_at, expires_at, unreferenced_at)
+       VALUES ($1, $2, $3, $4, $5::jsonb, 1, $6,
+               NULL, now() + ($7::double precision * interval '1 millisecond'), NULL)`,
+      [id, principal.key, contentHash, mime, encodedMeta, Date.now(), this.pendingTtlMs],
+    );
+  }
+
+  /**
+   * The allocating transaction of a staged write: quota under the principal's
+   * lock, the blob row and the pin, then the entry. No byte I/O, so every lock
+   * here is held for a few statements.
+   */
+  private async allocateStaged(
+    principal: AssetPrincipal,
+    id: AssetId,
+    record: StagedRecord,
+    mime: string,
+    encodedMeta: string,
+  ): Promise<void> {
+    try {
+      await this.writeTransaction(async (queryable) => {
+        await this.assertPutQuota(queryable, principal, record.byteLength);
+        await this.claimStagedBlob(queryable, record);
+        await this.insertPendingEntry(
+          queryable,
+          id,
+          principal,
+          record.contentHash,
+          mime,
+          encodedMeta,
+        );
+      });
+    } catch (error) {
+      if (error instanceof RegistryAssetQuotaExceeded) throw new AssetQuotaExceededError();
+      throw registryFailure('put');
+    }
   }
 
   /**
@@ -459,8 +960,8 @@ export class PgAssetStore implements AssetStore {
    */
   private async lockPrincipal(queryable: Queryable, principal: AssetPrincipal): Promise<void> {
     // hashtextextended is 64-bit: hashtext is 32-bit, and colliding principals
-    // would block each other for the whole transaction -- which spans a byte
-    // write that may be a network upload.
+    // would block each other for the whole transaction -- which, for a layer
+    // that joins the transaction, spans the byte write.
     await queryable.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [principal.key]);
   }
 
@@ -468,9 +969,10 @@ export class PgAssetStore implements AssetStore {
     queryable: Queryable,
     principal: AssetPrincipal,
     addedBytes: number,
+    lock = true,
   ): Promise<void> {
     if (this.quotaBytes === undefined) return;
-    await this.lockPrincipal(queryable, principal);
+    if (lock) await this.lockPrincipal(queryable, principal);
     let result;
     try {
       result = await queryable.query<UsageRow>(
@@ -500,9 +1002,10 @@ export class PgAssetStore implements AssetStore {
     principal: AssetPrincipal,
     ref: AssetId,
     replacementBytes: number,
+    lock = true,
   ): Promise<void> {
     if (this.quotaBytes === undefined) return;
-    await this.lockPrincipal(queryable, principal);
+    if (lock) await this.lockPrincipal(queryable, principal);
     let result;
     try {
       result = await queryable.query<ReplaceUsageRow>(
@@ -558,20 +1061,45 @@ export class PgAssetStore implements AssetStore {
       throw registryFailure('put');
     }
 
+    if (this.stagesByteWrites()) {
+      // Refuse an over-quota write before uploading anything. Not
+      // authoritative -- the allocating transaction checks again under the
+      // principal's lock -- only a way not to spend an upload on a write that
+      // is going to be refused.
+      try {
+        await this.assertPutQuota(this.queryable, principal, bytes.byteLength, false);
+      } catch (error) {
+        if (error instanceof RegistryAssetQuotaExceeded) throw new AssetQuotaExceededError();
+        throw registryFailure('put');
+      }
+      let record: StagedRecord;
+      try {
+        // The principal's lock ahead of the blob row, in the order the
+        // allocation takes them (see `stage`).
+        record = await this.stage(contentHash, bytes, data.type, (queryable) =>
+          this.quotaBytes === undefined
+            ? Promise.resolve()
+            : this.lockPrincipal(queryable, principal),
+        );
+      } catch {
+        throw registryFailure('put');
+      }
+      try {
+        await this.allocateStaged(principal, id, record, mime, encodedMeta);
+      } catch (error) {
+        await this.releaseStage(record.stageId);
+        throw error;
+      }
+      return id;
+    }
+
     try {
       await this.writeTransaction(async (queryable) => {
         // Inside the transaction, and before anything is written: a check on
         // the pool is already stale when it is acted on.
         await this.assertPutQuota(queryable, principal, bytes.byteLength);
-        await queryable.query(
-          `INSERT INTO asset_blobs (content_hash, byte_size, unreferenced_at)
-           VALUES ($1, $2, NULL)
-           ON CONFLICT (content_hash) DO UPDATE
-             SET unreferenced_at = NULL,
-                 byte_size = EXCLUDED.byte_size`,
-          [contentHash, bytes.byteLength],
-        );
-        // Bytes are written only after the upsert above has taken the blob
+        await this.claimBlobRow(queryable, contentHash, bytes.byteLength);
+        // Bytes are written only after the claim above has taken the blob
         // row's lock. Writing before it instead would not be safe: the
         // collector can hold that lock, delete those bytes, and commit while
         // this upsert waits, leaving a fresh entry pointing at nothing. The
@@ -579,23 +1107,7 @@ export class PgAssetStore implements AssetStore {
         // sequence. The entry is inserted after it, so no row ever references
         // bytes that were not stored first.
         await this.coordinatedWrite(queryable, contentHash, bytes);
-        // The entry is allocated PENDING: `committed_at` stays NULL until the
-        // first document write names this id, and `expires_at` is the deadline
-        // for that write to arrive. The columns are written unconditionally on
-        // every put, and no READ path reads them -- see `resolve` / `identify`
-        // / `resolveIndirect`, none of which mention them -- so the pending and
-        // committed states are indistinguishable to a caller. The one
-        // deliberate exception is `unreferenced_at`, which the quota checks on
-        // `put` and `replace` read: quota is accounted on live logical bytes,
-        // and the asset contract states that branch explicitly.
-        await queryable.query(
-          `INSERT INTO asset_entries
-             (id, principal, content_hash, mime, meta, revision, created_at,
-              committed_at, expires_at, unreferenced_at)
-           VALUES ($1, $2, $3, $4, $5::jsonb, 1, $6,
-                   NULL, now() + ($7::double precision * interval '1 millisecond'), NULL)`,
-          [id, principal.key, contentHash, mime, encodedMeta, Date.now(), this.pendingTtlMs],
-        );
+        await this.insertPendingEntry(queryable, id, principal, contentHash, mime, encodedMeta);
       });
     } catch (error) {
       if (error instanceof RegistryAssetQuotaExceeded) throw new AssetQuotaExceededError();
@@ -604,30 +1116,70 @@ export class PgAssetStore implements AssetStore {
     return id;
   }
 
+  /**
+   * Read which bytes an entry names, under the shared blob-row lock so the
+   * hash, label and revision come from one snapshot.
+   */
+  private async readEntryHash(
+    queryable: Queryable,
+    principal: AssetPrincipal,
+    ref: AssetRef,
+  ): Promise<{ hash: ContentHash; mime: string; revision: number } | null> {
+    const result = await queryable.query<EntryRow>(
+      `SELECT content_hash, mime, revision
+         FROM asset_entries
+        WHERE id = $1 AND principal = $2`,
+      [ref, principal.key],
+    );
+    const entry = result.rows[0];
+    if (!entry) return null;
+    const locked = await queryable.query(
+      `SELECT 1
+         FROM asset_blobs
+        WHERE content_hash = $1
+        FOR SHARE`,
+      [entry.content_hash],
+    );
+    if (!locked.rows[0]) return null;
+    return { hash: entry.content_hash, mime: entry.mime, revision: Number(entry.revision) };
+  }
+
+  /**
+   * Read an entry's bytes.
+   *
+   * A byte layer that joins the transaction (`readWith`) reads inside it, under
+   * the shared blob-row lock. Any other layer -- an object store, where the
+   * read is a network fetch of the whole object -- is read after the registry
+   * transaction has committed, so no connection or lock is held across it. The
+   * hash is content-addressed, so what it names cannot change in between; if
+   * the bytes were reclaimed meanwhile (the entry was removed and its blob
+   * collected), the layer reports a miss and this answers `null`, as it would
+   * for a read that started after the removal.
+   */
   async resolve(principal: AssetPrincipal, ref: AssetRef): Promise<AssetBytes | null> {
     if (!isLosslessJsonString(ref) || !isLosslessJsonString(principal.key)) return null;
+    const store = this.byteStore;
+    if (hasTransactionalReader(store)) {
+      try {
+        return await this.transaction(async (queryable) => {
+          const read = await this.readEntryHash(queryable, principal, ref);
+          if (read === null) return null;
+          const bytes = await store.readWith(queryable, read.hash);
+          if (bytes === null) return null;
+          return { bytes, mime: read.mime, revision: read.revision };
+        });
+      } catch {
+        throw registryFailure('resolve');
+      }
+    }
     try {
-      return await this.transaction(async (queryable) => {
-        const result = await queryable.query<EntryRow>(
-          `SELECT content_hash, mime, revision
-             FROM asset_entries
-            WHERE id = $1 AND principal = $2`,
-          [ref, principal.key],
-        );
-        const entry = result.rows[0];
-        if (!entry) return null;
-        const locked = await queryable.query(
-          `SELECT 1
-             FROM asset_blobs
-            WHERE content_hash = $1
-            FOR SHARE`,
-          [entry.content_hash],
-        );
-        if (!locked.rows[0]) return null;
-        const bytes = await this.readBytes(queryable, entry.content_hash);
-        if (bytes === null) return null;
-        return { bytes, mime: entry.mime, revision: Number(entry.revision) };
-      });
+      const read = await this.transaction((queryable) =>
+        this.readEntryHash(queryable, principal, ref),
+      );
+      if (read === null) return null;
+      const bytes = await store.read(read.hash);
+      if (bytes === null) return null;
+      return { bytes, mime: read.mime, revision: read.revision };
     } catch {
       throw registryFailure('resolve');
     }
@@ -663,29 +1215,7 @@ export class PgAssetStore implements AssetStore {
     // anything the read did not.
     let read: { hash: ContentHash; mime: string; revision: number } | null;
     try {
-      read = await this.transaction(async (queryable) => {
-        const result = await queryable.query<EntryRow>(
-          `SELECT content_hash, mime, revision
-             FROM asset_entries
-            WHERE id = $1 AND principal = $2`,
-          [ref, principal.key],
-        );
-        const entry = result.rows[0];
-        if (!entry) return null;
-        const locked = await queryable.query(
-          `SELECT 1
-             FROM asset_blobs
-            WHERE content_hash = $1
-            FOR SHARE`,
-          [entry.content_hash],
-        );
-        if (!locked.rows[0]) return null;
-        return {
-          hash: entry.content_hash,
-          mime: entry.mime,
-          revision: Number(entry.revision),
-        };
-      });
+      read = await this.transaction((queryable) => this.readEntryHash(queryable, principal, ref));
     } catch {
       throw registryFailure('resolve');
     }
@@ -853,6 +1383,40 @@ export class PgAssetStore implements AssetStore {
     const { contentHash, bytes: buffer } = await contentHashOf(data);
     const bytes = byteView(buffer);
     this.assertByteWriteIsCoordinatable();
+
+    let staged: StagedRecord | undefined;
+    if (this.stagesByteWrites()) {
+      // The refusals `replace` can answer without writing, checked before the
+      // upload so a refused replace does not spend one. Not authoritative: the
+      // replacing transaction below checks all of them again under its locks.
+      try {
+        await this.assertReplaceQuota(this.queryable, principal, ref, bytes.byteLength, false);
+        const exists = await this.queryable.query(
+          'SELECT 1 FROM asset_entries WHERE id = $1 AND principal = $2',
+          [ref, principal.key],
+        );
+        if (!exists.rows[0]) throw new RegistryAssetNotFound();
+        if (await entryIsRooted(this.queryable, ref)) throw new AssetRootedError();
+        // The principal's lock, then the entry's, ahead of the blob row: the
+        // order the replacing transaction below takes them (see `stage`).
+        staged = await this.stage(contentHash, bytes, data.type, async (queryable) => {
+          if (this.quotaBytes !== undefined) await this.lockPrincipal(queryable, principal);
+          await queryable.query(
+            'SELECT id FROM asset_entries WHERE id = $1 AND principal = $2 FOR UPDATE',
+            [ref, principal.key],
+          );
+        });
+      } catch (error) {
+        throw replaceFailure(error);
+      }
+    }
+    const claim = (queryable: Queryable): Promise<void> =>
+      staged === undefined
+        ? this.claimBlobRow(queryable, contentHash, bytes.byteLength).then(() =>
+            this.coordinatedWrite(queryable, contentHash, bytes),
+          )
+        : this.claimStagedBlob(queryable, staged);
+
     try {
       return await this.writeTransaction(async (queryable) => {
         await this.assertReplaceQuota(queryable, principal, ref, bytes.byteLength);
@@ -872,15 +1436,10 @@ export class PgAssetStore implements AssetStore {
         // the quota; either way nothing is written.
         if (await entryIsRooted(queryable, ref)) throw new AssetRootedError();
 
-        await queryable.query(
-          `INSERT INTO asset_blobs (content_hash, byte_size, unreferenced_at)
-           VALUES ($1, $2, NULL)
-           ON CONFLICT (content_hash) DO UPDATE
-             SET unreferenced_at = NULL,
-                 byte_size = EXCLUDED.byte_size`,
-          [contentHash, bytes.byteLength],
-        );
-        await this.coordinatedWrite(queryable, contentHash, bytes);
+        // Claim the new blob row, then write its bytes through the
+        // transaction -- or, for a staged write, spend the pin of the bytes
+        // already uploaded (see `claimStagedBlob`).
+        await claim(queryable);
 
         // The lifecycle columns are deliberately absent from both branches
         // below: replacing bytes under an existing id changes neither what
@@ -922,10 +1481,8 @@ export class PgAssetStore implements AssetStore {
         return Number(updated.rows[0]!.revision);
       });
     } catch (error) {
-      if (error instanceof RegistryAssetNotFound) throw new AssetNotFoundError();
-      if (error instanceof RegistryAssetQuotaExceeded) throw new AssetQuotaExceededError();
-      if (error instanceof AssetRootedError) throw error;
-      throw registryFailure('replace');
+      if (staged !== undefined) await this.releaseStage(staged.stageId);
+      throw replaceFailure(error);
     }
   }
 
