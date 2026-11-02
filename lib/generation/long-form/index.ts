@@ -41,6 +41,8 @@ export {
   planLongFormCourse,
 } from './plan';
 
+export { auditNarration, narrationIsClean } from './narration-audit';
+export type { NarrationAudit, NarrationCode, NarrationDefect } from './narration-audit';
 export { buildLongFormBrief, buildSceneBrief, moduleAtPage, speechUnit } from './brief';
 export type { ScenePositionInput } from './brief';
 
