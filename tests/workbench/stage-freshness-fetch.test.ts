@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   fetchScenesByIds,
   fetchStageManifest,
+  stageRosterChanged,
   type StageManifest,
 } from '@/lib/workbench/stage-freshness';
 
@@ -139,5 +140,77 @@ describe('fetchScenesByIds — 分块不超过服务端批量上限', () => {
     stubFetch(async () => ({ ok: false, status: 500 }));
     const scenes = await fetchScenesByIds('stage-a', ids);
     expect(scenes).toEqual([]);
+  });
+});
+
+describe('stageRosterChanged', () => {
+  const teacher = {
+    id: 'gen-t',
+    name: 'Teacher Chen',
+    role: 'teacher',
+    persona: '',
+    avatar: '/avatars/teacher.png',
+    color: '#000000',
+    priority: 10,
+  };
+
+  it('ignores member order: the same roster serialized in another key order is no change', () => {
+    const reordered = {
+      priority: 10,
+      color: '#000000',
+      avatar: '/avatars/teacher.png',
+      persona: '',
+      role: 'teacher',
+      name: 'Teacher Chen',
+      id: 'gen-t',
+    };
+    expect(
+      stageRosterChanged(
+        { agentIds: ['gen-t'], generatedAgentConfigs: [teacher] },
+        { agentIds: ['gen-t'], generatedAgentConfigs: [reordered] },
+      ),
+    ).toBe(false);
+  });
+
+  it('ignores undefined-valued members, which JSON does not carry', () => {
+    expect(
+      stageRosterChanged(
+        { generatedAgentConfigs: [{ ...teacher, voiceConfig: undefined }] },
+        { generatedAgentConfigs: [teacher] },
+      ),
+    ).toBe(false);
+  });
+
+  it('sees a changed field, a changed agent order and changed agentIds', () => {
+    const student = { ...teacher, id: 'gen-s', role: 'student', name: 'Lin' };
+    const shown = { agentIds: ['gen-t', 'gen-s'], generatedAgentConfigs: [teacher, student] };
+    expect(
+      stageRosterChanged(shown, {
+        agentIds: ['gen-t', 'gen-s'],
+        generatedAgentConfigs: [{ ...teacher, name: 'Teacher Wang' }, student],
+      }),
+    ).toBe(true);
+    expect(
+      stageRosterChanged(shown, {
+        agentIds: ['gen-t', 'gen-s'],
+        generatedAgentConfigs: [student, teacher],
+      }),
+    ).toBe(true);
+    expect(
+      stageRosterChanged(shown, { agentIds: ['gen-t'], generatedAgentConfigs: [teacher, student] }),
+    ).toBe(true);
+  });
+
+  it('a server roster without agentIds leaves the shown agentIds alone (no perpetual change)', () => {
+    expect(
+      stageRosterChanged(
+        { agentIds: ['gen-t'], generatedAgentConfigs: [teacher] },
+        { generatedAgentConfigs: [teacher] },
+      ),
+    ).toBe(false);
+  });
+
+  it('a server without a stored roster is never a change', () => {
+    expect(stageRosterChanged({ generatedAgentConfigs: [teacher] }, {})).toBe(false);
   });
 });
