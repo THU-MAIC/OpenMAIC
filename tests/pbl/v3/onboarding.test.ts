@@ -8,10 +8,10 @@ import {
 
 it('uses the installed application capability without adding a learning step', () => {
   const without = stepsForWorkbench({});
-  expect(without).toHaveLength(12);
+  expect(without).toHaveLength(4);
   expect(without).not.toContain('application');
   const withApp = stepsForWorkbench({ application: { title: 'App', description: 'Try it' } });
-  expect(withApp).toHaveLength(13);
+  expect(withApp).toHaveLength(5);
   expect(withApp.filter((step) => step !== 'application')).toEqual(without);
 });
 

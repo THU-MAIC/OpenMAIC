@@ -291,7 +291,7 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
       .evaluate(() => (window as unknown as { boot: string }).boot);
     if (nested && !legacyMove) {
       const launchCount = launches;
-      await page.getByRole('button', { name: 'Workbench guide', exact: true }).click();
+      await page.getByRole('button', { name: 'Workspace guide', exact: true }).click();
       const guide = page.locator('[data-pbl-onboarding="card"]');
       await expect(guide).toBeVisible();
       await expect(app.locator('html')).toHaveJSProperty('inert', true);
@@ -300,7 +300,9 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
       await app
         .getByRole('textbox', { name: 'Draft', exact: true })
         .evaluate((element) => element.focus());
-      await page.keyboard.type('Must not enter the application');
+      // Spaces activate the focused Next button; use ordinary text to probe iframe isolation.
+      await page.keyboard.type('BlockedInput');
+      await expect(guide).toHaveAttribute('data-step', 'progress');
       await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toHaveValue(
         'Unsaved form input',
       );
@@ -311,7 +313,8 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
         true,
       );
       await page.evaluate(() => document.exitFullscreen());
-      await guide.getByRole('button', { name: 'Close tour', exact: true }).click();
+      for (let step = 0; step < 5; step++) await guide.locator('footer button').last().click();
+      await expect(guide).toHaveCount(0);
       await expect(app.locator('html')).toHaveJSProperty('inert', false);
       await expect(panel.locator('iframe')).not.toHaveAttribute('inert', '');
       expect(

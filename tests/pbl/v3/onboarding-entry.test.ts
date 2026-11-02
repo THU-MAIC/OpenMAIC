@@ -143,3 +143,11 @@ it('lets an actionable failure take precedence before and after automatic entry'
   await settle();
   expect(guide.active).toBe(false);
 });
+
+it('hands entry loading directly to the guide without an animation-frame input gap', async () => {
+  await render();
+  await render({ ready: true });
+  // No animation frame runs between readiness and taking modal ownership.
+  expect(guide.active).toBe(true);
+  expect(frames.size).toBe(0);
+});

@@ -2962,85 +2962,36 @@
       "ready": "Chạy ứng dụng để thử mã đã lưu."
     },
     "onboarding": {
-      "replay": "Hướng dẫn",
-      "counter": "Tham quan {{current}}/{{total}}",
-      "close": "Đóng hướng dẫn",
-      "more": "Xem chi tiết",
-      "less": "Thu gọn chi tiết",
-      "skip": "Tạm bỏ qua",
+      "replay": "Hướng dẫn không gian làm việc",
+      "counter": "Hướng dẫn không gian làm việc {{current}}/{{total}}",
       "previous": "Trước",
-      "next": "Đã hiểu, tiếp",
-      "finish": "Kết thúc và quay lại",
-      "chatAvailable": "Bạn có thể trò chuyện với trợ lý hiện tại ở đây. Sau hướng dẫn, hãy đọc câu hỏi trước khi trả lời. Tiếp chỉ chuyển trang hướng dẫn.",
-      "taskOnly": "Bước này dùng các nút nhiệm vụ và không có ô trò chuyện. Ở bước thảo luận, ô nhập xuất hiện dưới thanh nhiệm vụ.",
+      "next": "Đã hiểu, tiếp theo",
+      "finish": "Đã hiểu, bắt đầu",
+      "waiting": "Hướng dẫn sẽ có khi môi trường học tập sẵn sàng.",
+      "loading": "Đang tải không gian làm việc",
+      "loadingDetail": "Đang kết nối môi trường học tập và chuẩn bị tệp dự án. Vui lòng chờ.",
       "steps": {
-        "welcome": {
-          "title": "Biến ý tưởng thành dự án",
-          "body": "Bạn xác định mục tiêu và đánh giá kết quả; trợ lý AI hỗ trợ giải thích, lập kế hoạch và triển khai. Hãy tìm hiểu công cụ theo hành trình dự án.",
-          "detail": "Kế hoạch và mã ở bên trái; thảo luận và duyệt ở bên phải. Một số dự án có bản xem trước ứng dụng. Hãy hỏi điều chưa hiểu và kiểm tra kết quả thực tế."
-        },
         "progress": {
-          "title": "Đọc mốc và bước học",
-          "body": "Bạn đang ở {{current}}. M là mốc dự án; các số sau là bước hiện tại và tổng số bước của mốc. Lộ trình dưới đây lấy từ dự án của bạn.",
-          "detail": "Thảo luận hỗ trợ hiểu và quyết định; Lập kế hoạch viết kế hoạch; Lập trình triển khai và sửa lỗi; Cố vấn hỗ trợ nhìn lại. Nền tảng chấm kiểm thử và trắc nghiệm. Chỉ báo để xem tiến độ; hãy dùng thanh nhiệm vụ để đi tiếp."
+          "title": "Xem tiến độ và nhiệm vụ hiện tại",
+          "body": "Nhấn các số tiến độ ở đây để xem các bước trong giai đoạn hiện tại. Nút M trên thanh công cụ hiển thị tất cả giai đoạn của dự án. Thanh nhiệm vụ bên dưới trợ lý cho biết cần làm gì lúc này. Khi cần chọn hoặc trả lời, nút nhiệm vụ hiện tại sẽ xuất hiện."
         },
         "discussion": {
-          "title": "Hiểu mục tiêu rồi đưa ra nhận định",
-          "body": "Bên phải hiển thị trợ lý hiện tại và hội thoại. Lần đầu, trợ lý thảo luận giới thiệu dự án và hỏi bạn đã sẵn sàng chưa. Sau hướng dẫn, hãy quay lại câu hỏi đó.",
-          "detail": "Nêu rõ chỗ vướng và lý do nhận định. Có thể mở chi tiết công cụ. Enter gửi, Shift+Enter xuống dòng. Chọn ký tự bằng bộ gõ không gửi tin nhắn."
-        },
-        "decisions": {
-          "title": "Nộp quyết định trong nhiệm vụ hiện tại",
-          "body": "Ở bước quyết định, so sánh phương án với trợ lý. Mở Nhiệm vụ hiện tại để nộp lựa chọn hoặc quy tắc, kèm lý do nếu được yêu cầu. Kế hoạch dùng bản ghi chính thức này.",
-          "detail": "Nói ý thích trong hội thoại chưa phải nộp quyết định. Biểu mẫu nhiệm vụ mới ghi nhận chính thức. Khi không có biểu mẫu, thanh chỉ hiển thị bước hiện tại."
-        },
-        "plan": {
-          "title": "Đọc cách quyết định thành kế hoạch",
-          "body": "Trợ lý lập kế hoạch ghi mục tiêu và quyết định đã nộp vào PLAN.md. Đọc bên trái, thảo luận chỉnh sửa bên phải. Duyệt phiên bản hiện tại rồi theo thanh nhiệm vụ sang triển khai.",
-          "detail": "Yêu cầu sửa một bước cụ thể hoặc tự sửa khi được phép. Tệp tự lưu; chú ý trạng thái lưu. Làm rõ thắc mắc trước khi duyệt phiên bản mới nhất."
+          "title": "Đọc và trao đổi với trợ lý",
+          "body": "Khu vực trợ lý hiển thị giải thích, câu hỏi và phản hồi của trợ lý hiện tại. Hãy đọc tin nhắn trước. Khi có ô nhập, bạn có thể hỏi hoặc chia sẻ suy nghĩ. Enter gửi; Shift+Enter xuống dòng."
         },
         "code": {
-          "title": "Duyệt mã thật với trợ lý lập trình",
-          "body": "Trợ lý triển khai kế hoạch đã duyệt và giải thích thay đổi. Liên kết tệp mở đúng đoạn mã. Theo dõi đầu vào, xử lý và đầu ra; yêu cầu sửa khi cần rồi duyệt bản hiện tại.",
-          "detail": "Cây tệp và thẻ dùng để đổi tệp; dấu thay đổi nhận diện sửa đổi của AI. Quyền sửa tùy bước và có thể tạm dừng khi xử lý hoặc kiểm thử. Dự án cần biên dịch sẽ kiểm tra trước kiểm thử chính thức."
-        },
-        "tests": {
-          "title": "Kiểm thử, sửa lỗi rồi thử lại",
-          "body": "Ở bước kiểm thử, chạy kiểm thử chính thức từ thanh nhiệm vụ và mở nhiệm vụ để xem phản hồi. Sửa lỗi cùng trợ lý rồi chạy lại. Đi tiếp khi bản hiện tại đạt và kết quả đã lưu.",
-          "detail": "Biên dịch kiểm tra khả năng chạy; kiểm thử kiểm tra hành vi. Phân biệt lỗi triển khai và thiếu sót kế hoạch. Bạn xác nhận thay đổi quy tắc. Dùng nút thử lại khi môi trường hoặc việc thu kết quả gặp lỗi."
-        },
-        "quiz": {
-          "title": "Kiểm tra mức độ hiểu",
-          "body": "Câu hỏi xuất hiện trong Nhiệm vụ hiện tại. Chọn đáp án, nộp và đọc phản hồi. Sửa rồi nộp lại khi cần.",
-          "detail": "Trả lời đủ trước khi nộp. Lựa chọn chỉ là bản nháp cho tới lúc nộp. Trắc nghiệm thông thường không có trò chuyện. Đạt rồi chuyển sang nhìn lại. Hướng dẫn không cung cấp hay nộp đáp án."
-        },
-        "recap": {
-          "title": "Nhìn lại và xem báo cáo",
-          "body": "Cố vấn cùng bạn xem lại quyết định, triển khai, kiểm thử và trắc nghiệm. Sau phần nhìn lại cuối dự án, mở báo cáo từ thanh trên hoặc tin nhắn hoàn thành.",
-          "detail": "Các mốc trước chuyển sang mục tiêu tiếp theo. Báo cáo cuối có kết quả đã lưu và gợi ý có căn cứ. Mã hoàn thành chỉ đọc. Hướng dẫn không mở hoặc tạo báo cáo."
+          "title": "Xem kế hoạch và mã nguồn",
+          "body": "Mở tệp từ cây tệp, các thẻ hoặc liên kết của trợ lý. Khi được phép chỉnh sửa, thay đổi sẽ tự lưu; hãy theo dõi trạng thái lưu. Biểu tượng trên thanh công cụ bật hoặc ẩn các vùng; kéo đường phân cách để đổi kích thước."
         },
         "application": {
-          "title": "Dùng thử ứng dụng",
-          "body": "Mở ứng dụng hiển thị bản xem trước chạy mã đã lưu. Thử tính năng và đem quan sát trở lại thảo luận. Một số tính năng có thể chưa được triển khai.",
-          "detail": "Phần đầu có trợ giúp, khởi động lại, thẻ tạm và thu gọn. Nhập liệu tạm dừng khi lưu, kiểm thử hoặc trợ lý làm việc. Trang không đổi được giữ khi có thể. Dữ liệu sau khởi động tùy thiết kế ứng dụng; liên kết sẽ hết hạn."
+          "title": "Nhấn Mở ứng dụng để trải nghiệm",
+          "body": "Nút này mở bản xem trước sản phẩm. Thử các chức năng đã có và trao đổi về kết quả quan sát. Chức năng còn thiếu sẽ được hoàn thiện trong quá trình làm dự án."
         },
-        "status": {
-          "title": "Xem trạng thái và chọn đúng thao tác",
-          "body": "Thanh trên hiển thị kết nối môi trường và nút làm mới; trạng thái lưu nằm gần mã. Đọc thông báo khôi phục hoặc thử lại trước khi tiếp tục.",
-          "detail": "Trợ lý có thể vẫn làm việc sau khi mất kết nối trình duyệt. Làm mới khác với dừng. Tự lưu và ảnh khôi phục bổ sung cho bản nháp trình duyệt. Khi xung đột, sao chép và so sánh bản nháp trước khi tải lại."
-        },
-        "layout": {
-          "title": "Sắp xếp không gian cho thuận tiện",
-          "body": "Biểu tượng trên cùng ẩn hoặc hiện mã và trợ lý. Có thể thu riêng bản xem trước và cây tệp. Kéo vạch chia để đổi kích thước; màn hình hẹp xếp các vùng dọc.",
-          "detail": "Quay về tổng quan hoặc phóng rộng chỉ đổi cách xem, giữ nguyên tiến độ. Góc trên phải đổi sáng/tối. Thu vùng không nộp đáp án hay kết thúc học."
-        },
-        "return": {
-          "title": "Quay lại bước hiện tại",
-          "body": "Sau hướng dẫn, bạn quay lại {{step}}. Đọc câu hỏi của trợ lý hoặc dùng các nút nhiệm vụ. Hướng dẫn chưa nộp, duyệt hay đẩy tiến độ thay bạn.",
-          "detail": "Lần đầu hãy quay về phần giới thiệu và trả lời khi sẵn sàng, hoặc đặt câu hỏi. Có thể mở lại hướng dẫn từ thanh trên. Việc nộp, duyệt và kết quả chạy thực tế ghi nhận tiến độ."
+        "replay": {
+          "title": "Xem lại hướng dẫn tại đây",
+          "body": "Dùng Hướng dẫn không gian làm việc trên thanh công cụ để xem lại các thao tác. Chọn Đã hiểu, bắt đầu để đọc tin nhắn của trợ lý và sử dụng không gian làm việc."
         }
-      },
-      "waiting": "Hướng dẫn sẽ có khi môi trường học sẵn sàng. Bạn có thể xem giao diện trong lúc kết nối; bản nháp được giữ lại."
+      }
     }
   }
 }

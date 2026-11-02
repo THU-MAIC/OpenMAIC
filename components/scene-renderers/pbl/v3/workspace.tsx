@@ -43,6 +43,7 @@ import { TaskDock } from './task-dock';
 import { ProductionContext } from './production-context';
 import { useWorkbenchOnboarding } from './use-workbench-onboarding';
 import { WorkbenchOnboarding } from './workbench-onboarding';
+import { WorkbenchLoading } from './workbench-loading';
 import { pblRequest } from './request';
 export { pblRequest } from './request';
 import { SandboxRequestError } from '@/components/sandbox/client';
@@ -332,17 +333,27 @@ function PBLV3WorkspaceContent({
     !!view &&
     (view.completedFilesAvailable ||
       (view.environment?.ready &&
-        stream.status === 'connected' &&
+        stream.status !== 'unavailable' &&
         workbench?.environmentId === view.environmentId));
   // A current snapshot is required to enter, but ordinary HTTP replies can
   // advance view.revision before SSE delivers its workspace. Keep an already
   // open guide through that metadata gap; only real unavailability interrupts.
   const onboardingReady =
     onboardingAvailable &&
+    stream.status === 'connected' &&
     (view?.completedFilesAvailable ||
       (!['open', 'prepare'].includes(pendingAction ?? '') &&
         !!workbench &&
         workbench.revision >= view!.revision));
+  // Only initial entry blocks the whole workbench. Later recovery keeps its
+  // actionable error/retry UI; transient stream reconnects do not mask a tour.
+  const [entrySettled, setEntrySettled] = useState(false);
+  const entryLoading =
+    !entrySettled && !onboardingReady && !onboardingBlocked && stream.status !== 'unavailable';
+  useEffect(() => {
+    if (onboardingReady || onboardingBlocked || ['unavailable', 'retrying'].includes(stream.status))
+      setEntrySettled(true);
+  }, [onboardingReady, onboardingBlocked, stream.status]);
   const onboarding = useWorkbenchOnboarding({
     root: workspaceRoot,
     studyId: view?.id,
@@ -358,9 +369,9 @@ function PBLV3WorkspaceContent({
       Object.values(decisionDrafts).some((draft) => !!draft.chosen || !!draft.rationale),
   });
   useEffect(() => {
-    onOnboardingChange?.(onboarding.active);
+    onOnboardingChange?.(onboarding.active || entryLoading);
     return () => onOnboardingChange?.(false);
-  }, [onboarding.active, onOnboardingChange]);
+  }, [onboarding.active, entryLoading, onOnboardingChange]);
   const blockedId = `pbl-input-blocked-${sceneId}`;
   const button =
     'rounded-md border px-2 py-1 text-xs disabled:opacity-40 hover:bg-muted aria-pressed:bg-primary aria-pressed:text-primary-foreground';
@@ -419,7 +430,11 @@ function PBLV3WorkspaceContent({
               <span className="hidden xl:inline">{t('pblV3.onboarding.replay')}</span>
             </button>
             {view.application && <ApplicationPreviewToggle preview={applicationPreview} />}
-            <LearningPanels key={view.id} view={view} modalActive={onboarding.active} />
+            <LearningPanels
+              key={view.id}
+              view={view}
+              modalActive={onboarding.active || entryLoading}
+            />
             {view.reportAvailable && (
               <button
                 data-pbl-tour="report"
@@ -642,7 +657,7 @@ function PBLV3WorkspaceContent({
                 <ApplicationPreview
                   application={view.application}
                   preview={applicationPreview}
-                  inputPaused={onboarding.active}
+                  inputPaused={onboarding.active || entryLoading}
                 />
               ) : undefined
             }
@@ -720,12 +735,10 @@ function PBLV3WorkspaceContent({
               <section
                 aria-label={t('pblV3.learning')}
                 data-testid="pbl-assistant"
+                data-pbl-tour="conversation"
                 className="flex h-full min-h-0 flex-col bg-muted/10"
               >
-                <header
-                  data-pbl-tour="conversation"
-                  className="pbl-chrome flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs"
-                >
+                <header className="pbl-chrome flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs">
                   <MessageSquareText size={15} />
                   <h3 className="font-semibold">{t('pblV3.learning')}</h3>
                   <span className="ml-auto text-muted-foreground">
@@ -771,7 +784,7 @@ function PBLV3WorkspaceContent({
                     requesting={['chat', 'begin', 'retry'].includes(pendingAction ?? '')}
                   />
                   <TaskDock
-                    modalActive={onboarding.active}
+                    modalActive={onboarding.active || entryLoading}
                     key={`${view.id}:${view.state.position.milestoneIndex}:${view.state.position.stageIndex}`}
                     view={view}
                     ref={taskDock}
@@ -1144,6 +1157,7 @@ function PBLV3WorkspaceContent({
           />
         </>
       )}
+      {entryLoading && <WorkbenchLoading root={workspaceRoot} />}
       {view && onboarding.active && (
         <WorkbenchOnboarding
           key={view.id}

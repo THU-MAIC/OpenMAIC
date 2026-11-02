@@ -2962,85 +2962,36 @@
       "ready": "Execute o aplicativo para testar seu código salvo."
     },
     "onboarding": {
-      "replay": "Guia do ambiente",
-      "counter": "Tour do ambiente {{current}}/{{total}}",
-      "close": "Fechar tour",
-      "more": "Mais detalhes",
-      "less": "Menos detalhes",
-      "skip": "Pular por enquanto",
+      "replay": "Guia do espaço de trabalho",
+      "counter": "Guia do espaço de trabalho {{current}}/{{total}}",
       "previous": "Anterior",
       "next": "Entendi, próximo",
-      "finish": "Concluir e voltar",
-      "chatAvailable": "Converse aqui com o assistente atual. Depois do tour, leia a pergunta antes de responder. Próximo apenas muda a página do tour.",
-      "taskOnly": "Esta etapa usa controles de tarefa e não possui campo de conversa. Nas etapas de discussão, ele aparece abaixo da barra de tarefas.",
+      "finish": "Entendi, começar",
+      "waiting": "O guia estará disponível quando o ambiente estiver pronto.",
+      "loading": "Carregando o espaço de trabalho",
+      "loadingDetail": "Conectando o ambiente de aprendizagem e preparando os arquivos. Aguarde um momento.",
       "steps": {
-        "welcome": {
-          "title": "Transforme uma ideia em projeto",
-          "body": "Você define o objetivo e avalia o resultado; os assistentes de IA ajudam a entender, planejar e implementar. Conheça as ferramentas ao longo do projeto.",
-          "detail": "À esquerda ficam plano e código; à direita, conversa e revisão. Alguns projetos oferecem uma prévia do aplicativo. Peça explicações e confira o resultado real."
-        },
         "progress": {
-          "title": "Leia marcos e etapas",
-          "body": "Você está em {{current}}. M indica o marco; os números seguintes mostram a etapa atual e o total dentro dele. A rota abaixo vem do seu projeto.",
-          "detail": "Discussão ajuda a entender e decidir; Planejamento organiza o plano; Código implementa e corrige; Mentor apoia a reflexão. A plataforma verifica testes e questionários. Os indicadores orientam; avance pelas ações da barra de tarefas."
+          "title": "Confira o progresso e a tarefa atual",
+          "body": "Clique nestes números para ver as etapas da fase atual. O botão M na barra superior mostra todas as fases do projeto. A barra de tarefas abaixo do assistente mostra o que fazer agora. Quando for preciso escolher ou responder, aparece o botão da tarefa atual."
         },
         "discussion": {
-          "title": "Entenda o objetivo antes de decidir",
-          "body": "À direita aparecem o assistente atual e a conversa. No início, Discussão apresenta o projeto e pergunta se você está pronto. Volte à pergunta depois do tour.",
-          "detail": "Explique dúvidas e raciocínios. Expanda detalhes das ferramentas quando precisar. Enter envia; Shift+Enter insere uma linha. Selecionar caracteres por um método de entrada não envia a mensagem."
-        },
-        "decisions": {
-          "title": "Envie decisões na tarefa atual",
-          "body": "Na etapa de decisões, compare alternativas com o assistente. Abra Tarefa atual e envie sua escolha ou regra, com a justificativa solicitada. O plano usa esse registro formal.",
-          "detail": "Dizer uma preferência na conversa não é enviá-la formalmente. O formulário registra a decisão. Sem formulário, a barra apenas mostra a etapa atual."
-        },
-        "plan": {
-          "title": "Leia como as decisões viram plano",
-          "body": "Planejamento escreve objetivo e decisões enviadas em PLAN.md. Leia os passos à esquerda e discuta ajustes à direita. Aprove a versão atual e siga a barra até a implementação.",
-          "detail": "Solicite mudanças específicas ou edite quando permitido. Os arquivos são salvos automaticamente; confira o estado de salvamento. Esclareça dúvidas antes de aprovar a versão mais recente."
+          "title": "Leia e converse com o assistente",
+          "body": "O painel apresenta explicações, perguntas e comentários do assistente atual. Leia primeiro a mensagem. Quando houver um campo de texto, faça perguntas ou compartilhe suas ideias. Enter envia; Shift+Enter adiciona uma linha."
         },
         "code": {
-          "title": "Revise código real com o assistente",
-          "body": "Código implementa o plano aprovado e explica as mudanças. Links levam ao arquivo relevante. Acompanhe entrada, processamento e saída, peça correções e revise a implementação atual.",
-          "detail": "Árvore e abas alternam arquivos; marcas mostram alterações da IA. A edição depende da etapa e pode pausar durante processamento ou testes. Projetos com compilação verificam-na antes dos testes formais."
-        },
-        "tests": {
-          "title": "Teste, corrija e teste novamente",
-          "body": "Na etapa de testes, execute-os pela barra e abra Tarefa atual para os detalhes. Corrija falhas com Código e repita. Continue quando a versão atual passar e o resultado for salvo.",
-          "detail": "A compilação verifica se o código pode executar; testes verificam comportamento. Diferencie falhas de implementação de lacunas do plano. Confirme mudanças de regras. Use as ações de nova tentativa em problemas de ambiente ou coleta de resultados."
-        },
-        "quiz": {
-          "title": "Confira seu entendimento",
-          "body": "O questionário aparece em Tarefa atual. Escolha respostas, envie e leia o retorno. Revise e envie novamente se necessário.",
-          "detail": "Responda tudo antes de enviar. Escolhas são rascunhos até o envio. Questionários comuns não têm conversa. Após passar, siga à reflexão. O tour não dá nem envia respostas."
-        },
-        "recap": {
-          "title": "Reflita e reveja o relatório",
-          "body": "Mentor retoma decisões, implementação, testes e questionário. Depois da última reflexão do projeto, abra o relatório pela barra superior ou mensagem de conclusão.",
-          "detail": "Marcos anteriores seguem para o próximo objetivo. O relatório final traz resultados salvos e sugestões fundamentadas. Código concluído fica somente leitura. O tour não abre nem gera relatórios."
+          "title": "Explore planos e código",
+          "body": "Abra arquivos pela árvore, pelas abas ou pelos links do assistente. Quando a edição é permitida, as alterações são salvas automaticamente; confira o estado de salvamento. Os ícones superiores mostram ou ocultam painéis; arraste as divisórias para ajustar o tamanho."
         },
         "application": {
-          "title": "Experimente seu aplicativo",
-          "body": "Abrir aplicativo mostra uma prévia executando o código salvo. Teste funções e leve observações à conversa. Algumas funções ainda podem não estar implementadas.",
-          "detail": "O cabeçalho oferece ajuda, reinício, aba temporária e recolhimento. A entrada pausa durante salvamento, testes ou trabalho do assistente. Páginas inalteradas são preservadas quando possível. Dados após reinício dependem do aplicativo; links expiram."
+          "title": "Clique em Abrir aplicativo para experimentar",
+          "body": "Este botão abre a prévia do trabalho. Experimente as funções já implementadas e converse sobre suas observações. As funções pendentes serão desenvolvidas ao longo do projeto."
         },
-        "status": {
-          "title": "Confira o estado e encontre a ação",
-          "body": "A barra superior mostra conexão e atualização; o estado de salvamento fica junto ao código. Leia as mensagens de recuperação ou nova tentativa antes de continuar.",
-          "detail": "O assistente pode continuar após uma desconexão. Atualizar e parar são diferentes. Salvamento e cópias de recuperação complementam rascunhos do navegador. Em conflitos, copie e compare o rascunho antes de recarregar."
-        },
-        "layout": {
-          "title": "Organize o ambiente como preferir",
-          "body": "Os ícones superiores mostram ou recolhem código e assistente. Prévia e árvore podem ser recolhidas separadamente. Arraste divisórias para redimensionar; telas estreitas empilham as áreas.",
-          "detail": "Voltar à visão geral ou expandir o ambiente muda a visualização, mantendo o progresso. No alto à direita você alterna o tema claro ou escuro. Recolher não envia respostas nem conclui a aprendizagem."
-        },
-        "return": {
-          "title": "Volte à etapa atual",
-          "body": "Depois do tour você voltará a {{step}}. Leia a pergunta do assistente ou use os controles da tarefa. Nada foi enviado, aprovado ou avançado em seu lugar.",
-          "detail": "No primeiro acesso, volte à apresentação e responda quando estiver pronto ou tire dúvidas. O guia pode ser repetido pelo topo. Envios, revisões e resultados registram o progresso real."
+        "replay": {
+          "title": "Reveja o guia aqui",
+          "body": "Use Guia do espaço de trabalho na barra superior para rever os controles. Escolha Entendi, começar para ler a mensagem do assistente e usar o espaço de trabalho."
         }
-      },
-      "waiting": "O guia estará disponível quando o ambiente estiver pronto. Você pode explorar durante a conexão; os rascunhos são mantidos."
+      }
     }
   }
 }

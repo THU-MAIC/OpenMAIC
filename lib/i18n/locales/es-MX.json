@@ -2962,85 +2962,36 @@
       "ready": "Ejecuta la aplicación para probar tu código guardado."
     },
     "onboarding": {
-      "replay": "Guía del espacio",
-      "counter": "Recorrido {{current}}/{{total}}",
-      "close": "Cerrar recorrido",
-      "more": "Más detalles",
-      "less": "Menos detalles",
-      "skip": "Omitir por ahora",
+      "replay": "Guía del espacio de trabajo",
+      "counter": "Guía del espacio de trabajo {{current}}/{{total}}",
       "previous": "Anterior",
       "next": "Entendido, siguiente",
-      "finish": "Terminar y volver",
-      "chatAvailable": "Aquí puedes conversar con el asistente actual. Al terminar, lee su pregunta antes de responder. Siguiente solo cambia la página del recorrido.",
-      "taskOnly": "Este paso utiliza controles de tarea y no muestra un campo de chat. En los pasos de conversación aparece debajo de la barra de tareas.",
+      "finish": "Entendido, comenzar",
+      "waiting": "La guía estará disponible cuando el entorno esté listo.",
+      "loading": "Cargando el espacio de trabajo",
+      "loadingDetail": "Conectando el entorno de aprendizaje y preparando los archivos. Espera un momento.",
       "steps": {
-        "welcome": {
-          "title": "De una idea a un proyecto",
-          "body": "Tú decides qué crear y evalúas el resultado; los asistentes de IA ayudan a comprender, planear e implementar. Conoce las herramientas siguiendo el recorrido del proyecto.",
-          "detail": "El plan y el código están a la izquierda; la conversación y revisión, a la derecha. Algunos proyectos incluyen una vista previa de la aplicación. Pide explicaciones y comprueba el resultado real."
-        },
         "progress": {
-          "title": "Lee los hitos y los pasos",
-          "body": "Estás en {{current}}. M identifica el hito del proyecto; los números indican el paso actual y el total dentro del hito. La ruta de abajo corresponde a tu proyecto.",
-          "detail": "Discusión ayuda a comprender y decidir; Planificación organiza el plan; Código implementa y repara; Mentor guía la reflexión. La plataforma verifica pruebas y cuestionarios. Los indicadores muestran el avance; usa las acciones de la barra para continuar."
+          "title": "Consulta el progreso y la tarea actual",
+          "body": "Haz clic en estos números para ver los pasos de la fase actual. El botón M de la barra superior muestra todas las fases del proyecto. La barra de tareas debajo del asistente indica qué hacer ahora. Cuando debas elegir o responder, aparecerá el botón de la tarea actual."
         },
         "discussion": {
-          "title": "Comprende el objetivo antes de decidir",
-          "body": "A la derecha aparecen el asistente actual y la conversación. Al comenzar, Discusión presenta el proyecto y pregunta si estás listo. Regresa a su pregunta después del recorrido.",
-          "detail": "Explica tus dudas y razones. Puedes expandir los detalles de herramientas. Enter envía y Mayús+Enter agrega una línea. Elegir caracteres con un método de entrada no envía mensajes."
-        },
-        "decisions": {
-          "title": "Entrega decisiones en Tarea actual",
-          "body": "En el paso de decisiones, compara alternativas con el asistente. Abre Tarea actual y entrega tu elección o regla, con la razón solicitada. El plan retoma este registro formal.",
-          "detail": "Expresar una preferencia en el chat no equivale a entregarla. El formulario de tarea registra la decisión. Cuando no hay formulario, la barra solo muestra el paso actual."
-        },
-        "plan": {
-          "title": "Lee cómo las decisiones forman el plan",
-          "body": "Planificación escribe el objetivo y las decisiones entregadas en PLAN.md. Lee los pasos a la izquierda y conversa sobre cambios a la derecha. Aprueba la versión actual y sigue la barra hacia la implementación.",
-          "detail": "Solicita cambios concretos o edita cuando esté permitido. Los archivos se guardan automáticamente: revisa su estado. Aclara tus dudas antes de aprobar la versión más reciente."
+          "title": "Lee y conversa con el asistente",
+          "body": "El panel muestra las explicaciones, preguntas y comentarios del asistente actual. Lee primero su mensaje. Cuando aparezca un campo de texto, puedes preguntar o compartir tus ideas. Enter envía; Shift+Enter agrega una línea."
         },
         "code": {
-          "title": "Revisa código real con el asistente",
-          "body": "Código implementa el plan aprobado y explica sus cambios. Los enlaces abren el archivo correspondiente. Sigue entradas, procesamiento y salidas; pide correcciones y revisa la implementación actual.",
-          "detail": "El árbol y las pestañas cambian de archivo; las marcas identifican cambios de IA. La edición depende del paso y puede pausarse durante el trabajo o las pruebas. Los proyectos que requieren compilación la comprueban antes de las pruebas formales."
-        },
-        "tests": {
-          "title": "Ejecuta pruebas, corrige y repite",
-          "body": "En el paso de pruebas, ejecútalas desde la barra y abre Tarea actual para ver detalles. Repara fallas con Código y vuelve a probar. Continúa cuando la versión actual pase y el resultado quede guardado.",
-          "detail": "La compilación comprueba que el código pueda ejecutarse; las pruebas verifican su comportamiento. Distingue entre errores de implementación y omisiones del plan. Confirma los cambios de reglas. Usa los controles de reintento ante fallas del entorno o de recopilación."
-        },
-        "quiz": {
-          "title": "Comprueba tu comprensión",
-          "body": "El cuestionario aparece en Tarea actual. Elige respuestas, entrégalas y lee los comentarios. Modifica y vuelve a entregar si hace falta.",
-          "detail": "Responde todas las preguntas. Las elecciones son un borrador hasta entregarlas. Los cuestionarios normales no incluyen chat. Al aprobar, sigue hacia la reflexión. El recorrido no da ni entrega respuestas."
-        },
-        "recap": {
-          "title": "Reflexiona y consulta el informe",
-          "body": "Mentor revisa tus decisiones, implementación, pruebas y cuestionario. Después de la última reflexión del proyecto, abre el informe desde la barra superior o el mensaje de finalización.",
-          "detail": "Los hitos anteriores continúan hacia el siguiente objetivo. El informe final reúne resultados guardados y sugerencias con evidencia. El código terminado queda en modo de lectura. El recorrido no abre ni genera informes."
+          "title": "Revisa planes y código",
+          "body": "Abre archivos desde el árbol, las pestañas o los enlaces del asistente. Cuando se permite editar, los cambios se guardan automáticamente; revisa el estado de guardado. Los iconos superiores muestran u ocultan paneles y puedes arrastrar los separadores para ajustar su tamaño."
         },
         "application": {
-          "title": "Prueba tu aplicación",
-          "body": "Abrir aplicación muestra una vista previa que ejecuta el código guardado. Prueba sus funciones y comenta lo observado. Algunas funciones pueden estar pendientes de implementación.",
-          "detail": "La vista previa ofrece ayuda, reinicio, una pestaña temporal y contraer. La entrada se pausa al guardar, probar o trabajar el asistente. Se conservan páginas sin cambios cuando es posible. La persistencia tras reiniciar depende de la aplicación; los enlaces vencen."
+          "title": "Haz clic en Abrir aplicación para probar",
+          "body": "Este botón abre la vista previa del trabajo. Prueba las funciones ya implementadas y comenta lo que observas. Las funciones pendientes se desarrollarán a medida que avances en el proyecto."
         },
-        "status": {
-          "title": "Revisa el estado y la acción adecuada",
-          "body": "Arriba se muestra la conexión del entorno y actualizar; el estado de guardado aparece junto al código. Lee los mensajes de recuperación o reintento antes de continuar.",
-          "detail": "El asistente puede seguir trabajando tras una desconexión. Actualizar y detener son acciones distintas. El guardado y las copias de recuperación complementan los borradores del navegador. Ante conflictos, copia y compara el borrador antes de recargar."
-        },
-        "layout": {
-          "title": "Acomoda el espacio a tu gusto",
-          "body": "Los iconos superiores muestran o contraen código y asistente. La vista previa y el árbol se contraen por separado. Arrastra divisores para cambiar tamaños; en pantallas angostas las áreas se apilan.",
-          "detail": "Volver al resumen o ampliar el espacio cambia la vista, con el mismo avance. Arriba a la derecha puedes cambiar el tema claro u oscuro. Contraer no entrega respuestas ni termina el aprendizaje."
-        },
-        "return": {
-          "title": "Vuelve al paso actual",
-          "body": "Al terminar volverás a {{step}}. Lee la pregunta del asistente o usa los controles de la tarea. El recorrido no ha entregado, aprobado ni avanzado nada por ti.",
-          "detail": "En el primer ingreso, vuelve a la presentación y responde cuando estés listo o pregunta tus dudas. Puedes repetir la guía desde arriba. Tu avance real se registra mediante entregas, revisiones y resultados."
+        "replay": {
+          "title": "Vuelve a consultar la guía aquí",
+          "body": "Usa Guía del espacio de trabajo en la barra superior para repasar los controles. Elige Entendido, comenzar para leer el mensaje del asistente y usar el espacio de trabajo."
         }
-      },
-      "waiting": "La guía estará disponible cuando el entorno esté listo. Puedes explorar mientras se conecta; los borradores se conservan."
+      }
     }
   }
 }

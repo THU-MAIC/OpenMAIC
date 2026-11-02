@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { hasSeenOnboarding, rememberOnboarding } from '@/lib/pbl/v3/onboarding';
 
 function browserStorage() {
@@ -57,24 +57,15 @@ export function useWorkbenchOnboarding({
       element?.removeEventListener('input', interacted, true);
     };
   }, [root, ready]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!autoStart || !ready || !studyId || blocked || hasDraft || attempted.current) return;
     if (hasSeenOnboarding(browserStorage())) return;
-    let second = 0;
-    const first = requestAnimationFrame(() => {
-      second = requestAnimationFrame(() => {
-        if (attempted.current || hasSeenOnboarding(browserStorage())) return;
-        attempted.current = true;
-        // Automatic entry returns to the current workspace, never an input
-        // that could turn the tour's final keystroke into a learner message.
-        returnFocus.current = root.current;
-        setOpenStudy(studyId);
-      });
-    });
-    return () => {
-      cancelAnimationFrame(first);
-      cancelAnimationFrame(second);
-    };
+    // layoutReady already guarantees Hero expansion has settled. Open before
+    // paint so the entry barrier hands focus directly to the mandatory guide.
+    attempted.current = true;
+    returnFocus.current = root.current;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Atomic modal/focus handoff must finish before paint.
+    setOpenStudy(studyId);
   }, [autoStart, ready, studyId, blocked, hasDraft, root]);
   const replay = () => {
     if (!studyId || !ready || blocked) return;

@@ -2962,85 +2962,36 @@
       "ready": "Lancez l’application pour essayer votre code enregistré."
     },
     "onboarding": {
-      "replay": "Guide de l’atelier",
-      "counter": "Visite de l’atelier {{current}}/{{total}}",
-      "close": "Fermer la visite",
-      "more": "En savoir plus",
-      "less": "Réduire les explications",
-      "skip": "Passer pour le moment",
+      "replay": "Guide de l’espace de travail",
+      "counter": "Guide de l’espace de travail {{current}}/{{total}}",
       "previous": "Précédent",
       "next": "Compris, suivant",
-      "finish": "Terminer et revenir",
-      "chatAvailable": "Vous pouvez discuter ici avec l’assistant actuel. Après la visite, lisez sa question avant de répondre. « Suivant » change uniquement de page.",
-      "taskOnly": "Cette étape utilise les commandes de tâche, sans saisie de discussion. Celle-ci apparaît sous la barre de tâche pendant les étapes de dialogue.",
+      "finish": "Compris, commencer",
+      "waiting": "Le guide sera disponible lorsque l’environnement sera prêt.",
+      "loading": "Chargement de l’espace de travail",
+      "loadingDetail": "Connexion à l’environnement et préparation des fichiers du projet. Veuillez patienter.",
       "steps": {
-        "welcome": {
-          "title": "Transformer une idée en projet",
-          "body": "Vous choisissez le but et jugez le résultat ; les assistants IA aident à comprendre, planifier et réaliser. Découvrons les outils au fil du projet.",
-          "detail": "Le plan et le code sont à gauche, la discussion et la relecture à droite. Certains projets proposent aussi un aperçu de l’application. Demandez des explications, puis vérifiez le résultat réel."
-        },
         "progress": {
-          "title": "Lire les jalons et les étapes",
-          "body": "Position actuelle : {{current}}. M désigne le jalon ; les nombres suivants indiquent l’étape actuelle et leur total dans ce jalon. Le parcours ci-dessous vient de votre projet.",
-          "detail": "Discussion aide à comprendre et décider, Planification organise le plan, Code réalise et corrige, le Mentor accompagne le bilan. La plateforme vérifie tests et quiz. Les indicateurs servent à se repérer ; avancez avec les commandes de la barre de tâche."
+          "title": "Consulter la progression et la tâche actuelle",
+          "body": "Cliquez sur ces chiffres pour voir les étapes de la phase actuelle. Le bouton M en haut affiche toutes les phases du projet. La barre des tâches sous l’assistant indique quoi faire maintenant. Un bouton de tâche apparaît lorsqu’un choix ou une réponse est demandé."
         },
         "discussion": {
-          "title": "Comprendre avant de choisir",
-          "body": "À droite figurent l’assistant actuel et la conversation. Au départ, l’assistant de discussion présente le projet et demande si vous êtes prêt. Revenez à sa question après la visite.",
-          "detail": "Décrivez vos difficultés et votre raisonnement. Dépliez les détails des outils si nécessaire. Entrée envoie ; Maj+Entrée ajoute une ligne. La sélection de caractères via une méthode de saisie n’envoie pas de message."
-        },
-        "decisions": {
-          "title": "Soumettre les décisions dans la tâche",
-          "body": "À l’étape des décisions, comparez les approches avec l’assistant. Ouvrez « Tâche actuelle », soumettez un choix ou votre règle et la justification demandée. Le plan reprend cet enregistrement officiel.",
-          "detail": "Exprimer une préférence dans la discussion ne suffit pas : le formulaire de tâche enregistre la décision. En l’absence de formulaire, la barre affiche simplement l’étape actuelle."
-        },
-        "plan": {
-          "title": "Lire le passage des décisions au plan",
-          "body": "L’assistant de planification écrit l’objectif et les décisions soumises dans PLAN.md. Lisez à gauche, discutez des changements à droite, puis approuvez la version actuelle et suivez la barre de tâche.",
-          "detail": "Demandez une modification précise ou éditez le plan si cela est autorisé. Les fichiers sont enregistrés automatiquement : vérifiez leur état. Clarifiez vos questions avant d’approuver la dernière version."
+          "title": "Lire et échanger avec l’assistant",
+          "body": "Cet espace présente les explications, questions et retours de l’assistant actuel. Lisez d’abord son message. Lorsqu’un champ de saisie apparaît, posez une question ou partagez vos idées. Entrée envoie ; Maj+Entrée ajoute une ligne."
         },
         "code": {
-          "title": "Relire le vrai code avec l’assistant",
-          "body": "L’assistant de code réalise le plan approuvé. Les liens de fichiers mènent au code concerné. Suivez les entrées, le traitement et les sorties ; demandez des corrections avant de valider l’implémentation.",
-          "detail": "Arborescence et onglets changent de fichier ; les marques montrent les modifications de l’IA. L’édition dépend de l’étape et peut être suspendue pendant les traitements. Les projets concernés vérifient la compilation avant les tests formels."
-        },
-        "tests": {
-          "title": "Tester, corriger, puis retester",
-          "body": "À l’étape des tests, lancez les tests formels depuis la barre et ouvrez la tâche pour les détails. Corrigez les échecs avec l’assistant, puis relancez. Continuez après réussite de la version actuelle et enregistrement du résultat.",
-          "detail": "La compilation vérifie que le code peut fonctionner ; les tests vérifient son comportement. Distinguez un écart d’implémentation d’un oubli du plan. Confirmez les changements de règle. Pour un problème d’environnement, suivez les commandes de nouvelle tentative."
-        },
-        "quiz": {
-          "title": "Vérifier la compréhension avec le quiz",
-          "body": "Les questions apparaissent dans la tâche actuelle. Choisissez les réponses, soumettez-les et lisez les retours. Modifiez et soumettez de nouveau si nécessaire.",
-          "detail": "Répondez à toutes les questions. Les choix restent un brouillon jusqu’à la soumission. Les quiz ordinaires n’ont pas de discussion. Une fois réussi, passez au bilan. La visite ne donne ni ne soumet de réponses."
-        },
-        "recap": {
-          "title": "Faire le bilan et revoir le rapport",
-          "body": "Le Mentor revient sur vos décisions, votre réalisation, les tests et le quiz. Après le dernier bilan du projet, ouvrez le rapport depuis la barre supérieure ou le message de fin.",
-          "detail": "Les autres jalons mènent à l’objectif suivant. Le rapport final contient résultats enregistrés et suggestions étayées. Le code terminé reste en lecture seule. La visite n’ouvre ni ne génère de rapport."
+          "title": "Consulter les plans et le code",
+          "body": "Ouvrez les fichiers via l’arborescence, les onglets ou les liens de l’assistant. Lorsque la modification est autorisée, les changements sont enregistrés automatiquement : vérifiez l’état de sauvegarde. Les icônes en haut affichent ou masquent les zones ; faites glisser les séparateurs pour les redimensionner."
         },
         "application": {
-          "title": "Essayer l’application",
-          "body": "« Ouvrir l’application » affiche un aperçu exécutant le code enregistré. Essayez ses fonctions et rapportez vos observations dans la discussion. Certaines fonctions peuvent être encore inachevées.",
-          "detail": "L’en-tête propose aide, redémarrage, onglet temporaire et réduction. La saisie est suspendue pendant l’enregistrement, les tests ou le travail des assistants. Les pages inchangées sont conservées si possible. La persistance après redémarrage dépend de l’application ; les liens expirent."
+          "title": "Cliquer sur Ouvrir l’application pour essayer",
+          "body": "Ce bouton ouvre l’aperçu de votre réalisation. Testez les fonctions déjà créées et discutez de vos observations. Les fonctions manquantes seront développées au fil du projet."
         },
-        "status": {
-          "title": "Vérifier l’état et trouver la bonne action",
-          "body": "La barre supérieure affiche la connexion à l’environnement et l’actualisation ; l’état d’enregistrement est près du code. Lisez les messages de récupération avant de continuer.",
-          "detail": "L’assistant peut poursuivre après une déconnexion. Actualiser et arrêter sont distincts. L’enregistrement et les instantanés complètent les brouillons du navigateur. En cas de conflit, copiez et comparez le brouillon avant de recharger."
-        },
-        "layout": {
-          "title": "Adapter l’atelier à votre travail",
-          "body": "Les icônes du haut affichent ou réduisent code et assistant. L’aperçu et l’arborescence se réduisent séparément. Déplacez les séparateurs pour redimensionner ; les petits écrans empilent les zones.",
-          "detail": "Revenir à la présentation ou agrandir l’atelier change la vue, pas la progression. Le thème clair ou sombre se choisit en haut à droite. Réduire un panneau ne soumet aucune réponse et ne termine pas l’apprentissage."
-        },
-        "return": {
-          "title": "Revenir à l’étape actuelle",
-          "body": "Après la visite, vous retrouverez « {{step}} ». Lisez la question de l’assistant ou utilisez les commandes de la tâche. Cette visite n’a rien soumis, approuvé ou fait avancer.",
-          "detail": "Au premier accès, revenez à l’introduction du projet et répondez quand vous êtes prêt. Le guide reste accessible en haut. Seuls les soumissions, relectures et résultats réels enregistrent votre progression."
+        "replay": {
+          "title": "Revoir le guide ici",
+          "body": "Le bouton Guide de l’espace de travail permet de revoir ces commandes. Choisissez Compris, commencer pour lire le message de l’assistant et utiliser l’espace de travail."
         }
-      },
-      "waiting": "Le guide sera disponible quand l’environnement sera prêt. Vous pouvez parcourir l’atelier pendant la connexion ; les brouillons sont conservés."
+      }
     }
   }
 }

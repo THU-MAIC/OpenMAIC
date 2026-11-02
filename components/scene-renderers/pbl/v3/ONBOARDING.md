@@ -1,61 +1,61 @@
-# Workbench onboarding
+# Workspace guide
 
-The v3 workbench guide connects the live interface to the installed learning
-journey: teaching, decisions, plan, implementation, tests, quiz and reflection.
-It has 13 pages, or 12 when the project has no application capability. Tour
-pages do not count as learning steps. The progress explanation reads the real
-milestone and installed steps; it never changes progress or opens future tasks.
+A short introduction to basic workbench controls: progress/task bar, assistant,
+code area, application preview when present, and the replay button. There are
+five pages (four without an application). The guide does not explain future
+learning stages; the task bar provides the current stage's instructions.
 
 ## Entry and persistence
 
-A new project starts the guide after the Hero expansion has settled, the learning
-environment is ready, and the connected stream supplies a matching current
-workbench snapshot. It does not wait for the assistant's opening response to finish.
-Browsing the layout while connecting does not cancel automatic entry. Actual
-input or retained drafts defer it; interaction after readiness also takes precedence.
-Existing studies use the **Workbench guide** toolbar button once the workspace is ready.
-The button also replays the guide after skipping or finishing it.
+Hero entry shows a modal loading barrier while the environment and project files
+connect. It blocks pointer and keyboard interaction, including fullscreen controls.
+The barrier releases for errors or repeated stream failures so recovery controls
+remain usable. It does not return during ordinary reconnection after initial entry.
 
-Skipping, closing and finishing share the device-local preference
-`openmaic:pbl-v3:onboarding:v1=seen`. It applies across projects in this browser,
-not across devices or accounts. A denied browser store falls back to the current
-tab's memory. This optional preference is separate from study and editor drafts.
-Actionable workspace/assistant errors and the report take precedence over the guide.
-Connection or environment loss closes an open guide; reconnecting does not reopen it
-automatically during the same visit. A completed read-only workspace can replay it
+A new project opens the guide after Hero expansion settles, the environment is
+ready and a connected stream supplies a matching current workbench snapshot.
+Entry uses a layout effect to hand off from loading to the guide before paint.
+It does not wait for the assistant's opening response to finish. Retained drafts
+and actual prior input defer automatic entry. Existing studies use the
+**Workspace guide** toolbar button once the workspace is ready.
+
+The card must be completed: it has Previous, Next and Finish controls, with no
+skip, close, outside-click or Escape dismissal. Completion records the device-local
+preference `openmaic:pbl-v3:onboarding:v1=seen`. This preference applies across
+projects in this browser, independently of study/editor drafts. A denied browser
+store falls back to the current tab's memory. Replay is always available when ready.
+
+Actionable workspace/assistant errors and reports take precedence. Stream
+`connecting`/`retrying` states keep the current guide page through tab switches
+and online events; only terminal unavailability or real environment loss closes it.
+A current revision is required for entry, but an ordinary HTTP/SSE revision gap
+does not interrupt an open guide. Completed read-only workspaces can replay it
 without preparing an execution environment.
-An ordinary HTTP reply can advance the learning revision before its SSE workspace
-snapshot arrives; this temporarily defers entry without closing an already open guide.
 
 ## Interaction boundary
 
-The guide uses the existing Radix modal primitives, portalled inside the
-workspace so it remains in the native fullscreen subtree. The spotlight marks
-real visible regions; unavailable or collapsed targets fall back to an existing
-toolbar control. The highlighted region remains blocked for interaction.
-The card traps focus, supports Escape, and returns focus to a connected, usable
-entry point. The task drawer and milestone menu retain their own state while
-deferring Escape to the modal.
+The existing Radix modal primitives portal inside the workspace, preserving native
+fullscreen and focus isolation. The background is dimmed except for the actual
+region being introduced, which still cannot be operated during the guide. The
+assistant page lights the whole panel. Targets scroll into view before measurement
+and are resolved again when the DOM changes. A collapsed code/preview area uses
+its own toolbar control; an unavailable or off-screen target uses a centered card
+without highlighting an unrelated control. Copy names regions rather than screen
+directions. Page changes focus Next, and completion restores a usable entry point.
 
-Opening, moving through and closing the guide sends no learning commands,
-preview launches, report generation requests or file edits. Existing background
-learning work continues. An open application receives `inputPaused` only:
-its authorization shell blocks nested input while readiness, candidate promotion
-and document identity continue independently. Closing the guide restores input
-only when the ordinary environment, save, update and readiness gates permit it.
+Guide navigation performs no learning commands, preview launches, report requests
+or file edits. Background work continues. An open application receives inputPaused:
+readiness, candidate promotion and document identity continue independently. On
+completion input returns only when ordinary environment/save/update gates permit it.
 
 ## Verification
 
-- `tests/pbl/v3/onboarding.test.ts`: capability routing and optional storage.
-- `tests/pbl/v3/application-preview-client.test.ts`: readiness during a modal,
-  document identity, no relaunch and continued enforcement of dirty-file gates.
-- `e2e/tests/pbl-v3-onboarding.spec.ts`: first entry, replay, completion,
-  keyboard/focus, current quiz and drafts, missing application and narrow layouts.
-- `e2e/tests/pbl-v3-application.spec.ts`: the actual gateway shell, nested input
-  isolation, autofocus attempts and native fullscreen with a running application.
+Unit tests cover capability routing, preference failures and entry prerequisites.
+Browser tests cover loading input isolation and recovery, completion/focus, retained
+drafts, existing/completed projects, HTTP/SSE gaps, online/visibility reconnects,
+live anchors, collapsed panels and narrow expanded/docked layouts. Application
+specs cover nested input isolation and native fullscreen without reloading preview.
 
-The browser fixtures use synthetic course data and mocked learning/preview
-endpoints. They exercise the real classroom, UI and stream parser, and make no
-claim about real model, runner, cloud or production execution. Existing learning
-specs mark this optional guide as seen; guide specs opt into first-entry behavior.
-Copy is under `pblV3.onboarding` in all twelve locale resources.
+Fixtures use synthetic courses and mocked learning/preview endpoints with the real
+classroom UI and stream parser. They do not establish real model, cloud or production
+execution. All twelve locales use the same short guide structure and terminology.

@@ -3,21 +3,7 @@ import type { LearningView } from './types';
 /** Device-local UI preference, deliberately independent of learning/draft storage. */
 export const ONBOARDING_STORAGE_KEY = 'openmaic:pbl-v3:onboarding:v1';
 
-export const onboardingSteps = [
-  'welcome',
-  'progress',
-  'discussion',
-  'decisions',
-  'plan',
-  'code',
-  'tests',
-  'quiz',
-  'recap',
-  'application',
-  'status',
-  'layout',
-  'return',
-] as const;
+export const onboardingSteps = ['progress', 'discussion', 'code', 'application', 'replay'] as const;
 export type OnboardingStep = (typeof onboardingSteps)[number];
 
 export function stepsForWorkbench(view: Pick<LearningView, 'application'>) {

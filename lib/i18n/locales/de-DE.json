@@ -2962,85 +2962,36 @@
       "ready": "Starte die Anwendung, um deinen gespeicherten Code auszuprobieren."
     },
     "onboarding": {
-      "replay": "Einführung",
-      "counter": "Arbeitsbereich: {{current}}/{{total}}",
-      "close": "Einführung schließen",
-      "more": "Mehr erfahren",
-      "less": "Weniger anzeigen",
-      "skip": "Vorerst überspringen",
+      "replay": "Arbeitsbereich-Anleitung",
+      "counter": "Arbeitsbereich-Anleitung {{current}}/{{total}}",
       "previous": "Zurück",
       "next": "Verstanden, weiter",
-      "finish": "Beenden und zurück",
-      "chatAvailable": "Hier können Sie mit dem aktuellen Assistenten sprechen. Lesen Sie nach der Einführung zuerst seine Frage. „Weiter“ blättert nur die Einführung um.",
-      "taskOnly": "Dieser Schritt verwendet Aufgabenfelder und hat kein Chatfeld. In Gesprächsschritten erscheint die Eingabe unter der Aufgabenleiste.",
+      "finish": "Verstanden, loslegen",
+      "waiting": "Die Anleitung ist verfügbar, sobald die Lernumgebung bereit ist.",
+      "loading": "Arbeitsbereich wird geladen",
+      "loadingDetail": "Die Lernumgebung wird verbunden und Projektdateien werden vorbereitet. Bitte warten.",
       "steps": {
-        "welcome": {
-          "title": "Aus einer Idee wird ein Projekt",
-          "body": "Sie bestimmen Ziel und Qualität; KI-Assistenten helfen beim Verstehen, Planen und Umsetzen. Lernen Sie die Werkzeuge entlang des Projektablaufs kennen.",
-          "detail": "Links liegen Plan und Code, rechts Gespräch und Prüfung. Manche Projekte bieten eine Anwendungsvorschau. Fragen Sie nach Erklärungen und beurteilen Sie das tatsächliche Ergebnis."
-        },
         "progress": {
-          "title": "Meilensteine und Schritte lesen",
-          "body": "Aktuell: {{current}}. M bezeichnet den Meilenstein. Die Zahlen danach zeigen den aktuellen Schritt und die Gesamtzahl in diesem Meilenstein. Die Route unten stammt aus Ihrem Projekt.",
-          "detail": "Diskussion hilft beim Verstehen und Entscheiden, Planung erstellt den Plan, Programmierung setzt ihn um, der Mentor unterstützt die Reflexion. Tests und Quiz prüft die Plattform. Fortschrittsanzeigen sind Übersichten; weiter geht es über die Aufgabenleiste."
+          "title": "Fortschritt und aktuelle Aufgabe ansehen",
+          "body": "Klicke auf diese Fortschrittszahlen, um die Schritte der aktuellen Phase zu sehen. Die M-Schaltfläche oben zeigt alle Projektphasen. Die Aufgabenleiste unter dem Assistenten zeigt, was jetzt zu tun ist. Wenn eine Auswahl oder Antwort nötig ist, erscheint die Schaltfläche für die aktuelle Aufgabe."
         },
         "discussion": {
-          "title": "Zuerst das Ziel verstehen",
-          "body": "Rechts sehen Sie den zuständigen Assistenten und das Gespräch. Zu Beginn erklärt der Diskussionsassistent das Projekt und fragt nach Ihrer Bereitschaft. Kehren Sie nach der Einführung zu seiner aktuellen Frage zurück.",
-          "detail": "Beschreiben Sie Unklarheiten und begründen Sie Ihre Einschätzung. Werkzeugdetails lassen sich aufklappen. Enter sendet, Umschalt+Enter fügt eine Zeile ein. Die Zeichenauswahl einer Eingabemethode sendet keine Nachricht."
-        },
-        "decisions": {
-          "title": "Entscheidungen offiziell einreichen",
-          "body": "Im Entscheidungsschritt vergleichen Sie Möglichkeiten mit dem Assistenten. Öffnen Sie „Aktuelle Aufgabe“ und reichen Sie Auswahl oder eigene Regel samt verlangter Begründung ein. Darauf baut der Plan auf.",
-          "detail": "Eine Präferenz im Chat ist noch keine Einreichung. Erst das Aufgabenformular zeichnet die Entscheidung auf. Ohne auszufüllende Aufgabe zeigt die Leiste nur den aktuellen Schritt."
-        },
-        "plan": {
-          "title": "Vom Entschluss zum Plan",
-          "body": "Der Planungsassistent schreibt Ziel und eingereichte Entscheidungen in PLAN.md. Lesen Sie links die Schritte und besprechen Sie rechts Änderungen. Bestätigen Sie die aktuelle Version und folgen Sie der Aufgabenleiste.",
-          "detail": "Bitten Sie um konkrete Anpassungen oder bearbeiten Sie den Plan, wenn erlaubt. Dateien speichern automatisch; beachten Sie den Speicherstatus. Klären Sie Fragen vor der Freigabe der neuesten Version."
+          "title": "Im Assistentenbereich lesen und sprechen",
+          "body": "Hier findest du Erklärungen, Fragen und Rückmeldungen des aktuellen Assistenten. Lies zuerst seine Nachricht. Wenn ein Eingabefeld erscheint, kannst du Fragen stellen oder Gedanken teilen. Enter sendet, Umschalt+Enter fügt eine Zeile ein."
         },
         "code": {
-          "title": "Echten Code gemeinsam prüfen",
-          "body": "Der Programmierassistent setzt den freigegebenen Plan um. Dateilinks führen zur passenden Stelle. Verfolgen Sie Eingabe, Verarbeitung und Ausgabe und bitten Sie bei Abweichungen um Korrekturen.",
-          "detail": "Dateibaum und Register wechseln Dateien; Markierungen zeigen KI-Änderungen. Bearbeitung hängt vom Schritt ab und kann während Verarbeitung oder Tests gesperrt sein. Erforderliche Builds laufen vor den formalen Tests."
-        },
-        "tests": {
-          "title": "Testen, Fehler beheben, erneut testen",
-          "body": "Im Testschritt starten Sie formale Tests in der Aufgabenleiste. Details stehen in „Aktuelle Aufgabe“. Beheben Sie Fehler mit dem Assistenten und testen Sie erneut. Die aktuelle Version muss bestehen und das Ergebnis gespeichert sein.",
-          "detail": "Ein Build prüft die Ausführbarkeit, Tests das Verhalten. Klären Sie, ob Umsetzung oder Plan angepasst werden muss; Regeländerungen bestätigen Sie selbst. Bei Umgebungsproblemen helfen die angezeigten Wiederholungsaktionen."
-        },
-        "quiz": {
-          "title": "Verständnis im Quiz prüfen",
-          "body": "Im Quizschritt stehen Fragen in „Aktuelle Aufgabe“. Antworten auswählen, einreichen und Rückmeldung lesen; bei Bedarf überarbeiten und erneut einreichen.",
-          "detail": "Beantworten Sie alle Fragen. Eine Auswahl bleibt bis zum Einreichen ein Entwurf. Normale Quizschritte haben kein Chatfeld. Nach dem Bestehen geht es zur Reflexion. Diese Einführung beantwortet und übermittelt nichts."
-        },
-        "recap": {
-          "title": "Reflektieren und den Bericht ansehen",
-          "body": "Der Mentor bespricht Entscheidungen, Umsetzung, Tests und Quiz mit Ihnen. Nach der letzten Projektreflexion öffnen Sie den Lernbericht über die obere Leiste oder die Abschlussnachricht.",
-          "detail": "Nach anderen Meilensteinen geht es zum nächsten Ziel. Der Abschlussbericht enthält gespeicherte Ergebnisse und belegte Hinweise. Abgeschlossener Code bleibt schreibgeschützt. Die Einführung öffnet oder erzeugt keinen Bericht."
+          "title": "Pläne und Code ansehen",
+          "body": "Öffne Dateien über den Dateibaum, die Tabs oder Dateilinks des Assistenten. Wenn Bearbeitung erlaubt ist, werden Änderungen automatisch gespeichert; beachte den Speicherstatus. Die Symbole oben blenden Bereiche ein und aus. Ziehe Trennlinien, um ihre Größe zu ändern."
         },
         "application": {
-          "title": "Die Anwendung ausprobieren",
-          "body": "„Anwendung öffnen“ zeigt Ihr gespeichertes Programm in einer Vorschau. Probieren Sie Funktionen und besprechen Sie Beobachtungen. Noch nicht umgesetzte Funktionen können entsprechende Hinweise zeigen.",
-          "detail": "Die Vorschau bietet Hilfe, Neustart, einen temporären Tab und Einklappen. Bei Speichern, Tests oder Assistentenarbeit pausiert die Eingabe. Unveränderte Seiten bleiben nach Möglichkeit erhalten. Daten nach Neustart hängen von der Anwendung ab; Links laufen ab."
+          "title": "Anwendung öffnen und das Ergebnis ausprobieren",
+          "body": "Diese Schaltfläche öffnet die Anwendungsvorschau. Probiere fertige Funktionen aus und besprich deine Beobachtungen. Noch fehlende Funktionen entstehen im Projektverlauf."
         },
-        "status": {
-          "title": "Status und passende Aktionen finden",
-          "body": "Oben sehen Sie die Umgebungsverbindung und Aktualisieren; der Speicherstatus steht beim Code. Lesen Sie Wiederherstellungs- und Wiederholungshinweise, bevor Sie fortfahren.",
-          "detail": "Nach einem Verbindungsabbruch kann der Assistent weiterarbeiten. Aktualisieren ist nicht Stoppen. Automatisches Speichern und Wiederherstellungssicherungen ergänzen Browserentwürfe. Bei Konflikten den Entwurf zuerst kopieren und vergleichen."
-        },
-        "layout": {
-          "title": "Den Arbeitsbereich anpassen",
-          "body": "Oben können Sie Code und Assistent ein- oder ausklappen. Vorschau und Dateibaum lassen sich separat einklappen. Ziehen Sie Trennlinien zum Vergrößern; schmale Bildschirme ordnen Bereiche untereinander an.",
-          "detail": "Projektübersicht und vergrößerter Arbeitsbereich ändern die Ansicht, nicht den Fortschritt. Oben rechts wechseln Sie helles und dunkles Design. Einklappen reicht keine Antwort ein und beendet das Lernen nicht."
-        },
-        "return": {
-          "title": "Zum aktuellen Schritt zurückkehren",
-          "body": "Nach der Einführung geht es zurück zu „{{step}}“. Lesen Sie die aktuelle Frage oder verwenden Sie die Aufgabenfelder. Die Einführung hat nichts eingereicht, freigegeben oder vorangebracht.",
-          "detail": "Antworten Sie beim ersten Einstieg auf die Projekteinführung, sobald Sie bereit sind. Sie können die Einführung jederzeit oben erneut öffnen. Der tatsächliche Fortschritt folgt Einreichungen, Prüfungen und Ausführungsergebnissen."
+        "replay": {
+          "title": "Anleitung hier erneut öffnen",
+          "body": "Über Arbeitsbereich-Anleitung in der Werkzeugleiste kannst du die Bedienung erneut ansehen. Wähle Verstanden, loslegen, lies die Nachricht des Assistenten und beginne mit der Arbeit."
         }
-      },
-      "waiting": "Die Einführung ist verfügbar, sobald die Lernumgebung bereit ist. Sie können sich während des Verbindens umsehen; Entwürfe bleiben erhalten."
+      }
     }
   }
 }
