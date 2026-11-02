@@ -22,9 +22,12 @@ without sharing the roles' full chats.
 3. Compose current instructions/material, a quoted historical summary, and recent
    complete interactions. Always retain the latest actual learner message and
    every subsequent assistant/tool group verbatim. They are the active execution,
-   not historical memory. If that group cannot fit, fail with
-   `PBL_CONTEXT_CAPACITY` before making summary calls; never erase a just-read
-   result and ask the model to read it again. Ignore legacy checkpoints that
+   not historical memory. If that group cannot fit, fail before making summary
+   calls; never erase a just-read result and ask the model to read it again.
+   Use `PBL_CONTEXT_ACTIVE_TURN_CAPACITY` only when fixed material leaves a
+   positive history allowance, the latest real learner input itself fits, and
+   subsequent tool activity overflows it. Automatic entry without real learner
+   input retains generic `PBL_CONTEXT_CAPACITY` guidance. Ignore legacy checkpoints that
    covered any part of the still-active turn. Once the learner sends a new input,
    earlier completed groups can become historical context.
 4. Reserve output space and ten percent headroom when preparing input. When the
@@ -65,6 +68,16 @@ model/gateway. Capacity errors identify oversized current material or input;
 transient summary failures have separate learner guidance. Neither sends an
 oversized original request as a fallback. Provider token truncation retains the
 existing incomplete-output/tool-call recovery behavior; it never proves success.
+
+For `PBL_CONTEXT_ACTIVE_TURN_CAPACITY`, ask the learner to send a short new message
+restating their current question or the help they need. A new real input makes
+the preceding tool activity eligible for historical compaction. Retrying the
+same response reuses its actual input and cannot free that active-turn space.
+This is continuation in the current step, not approval or permission to advance;
+pending reviews, formal decisions and all original records remain intact. Do not
+suggest an approval phrase as recovery input. Fixed material, an oversized latest
+input, insufficient summary space and other capacity failures retain generic
+`PBL_CONTEXT_CAPACITY`; old persisted errors continue to use that guidance.
 
 ## Incremental derived checkpoints
 

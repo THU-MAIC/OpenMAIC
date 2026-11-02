@@ -11,8 +11,74 @@ import {
   evaluationCommand,
   evaluationPassed,
   evaluationOutcome,
+  evaluationFor,
 } from '@/lib/server/pbl-v3/evaluation';
 const spec = installedProject({ id: 'greeting-python', version: '1.0.0' }).evaluations.greeting!;
+
+it('preserves the pre-decision runner encoding at the legacy 32 KiB boundary', async () => {
+  const legacy = {
+    cases: [{ id: 'one', argv: ['python3', '-c', 'pass'], stdin: 'x'.repeat(21292), stdout: '' }],
+  };
+  const command = evaluationCommand(legacy, '00000000-0000-0000-0000-000000000000');
+  expect(Buffer.byteLength(command)).toBe(32767);
+  // Captured from a6a9ac95 (before optional decision context). Also catches
+  // growth hidden by tests that search for a new admission boundary each run.
+  expect(createHash('sha256').update(command).digest('hex')).toBe(
+    '94756aea6e3ae2afd5228518b61f6862197b8677c7e7f430f5229724a2571df6',
+  );
+  const inherited = {
+    cases: [
+      {
+        id: 'env',
+        argv: ['python3', '-c', 'import os; print(os.environ["OPENMAIC_PBL_DECISIONS"])'],
+        stdout: 'legacy\n',
+      },
+    ],
+  };
+  const { stdout } = await promisify(execFile)(
+    '/bin/sh',
+    ['-c', evaluationCommand(inherited, 'legacy')],
+    {
+      env: { ...process.env, OPENMAIC_PBL_DECISIONS: 'legacy' },
+    },
+  );
+  expect(evaluationPassed(inherited, 'legacy', stdout)).toBe(true);
+});
+
+it('binds only declared formal choices without changing the installed assessment', async () => {
+  const original = installedProject({ id: 'greeting-python', version: '1.0.0' });
+  const project = structuredClone(original);
+  project.evaluations.greeting!.decisionInputs = ['format'];
+  project.evaluations.greeting!.cases = [
+    {
+      id: 'choice',
+      argv: ['python3', '-c', 'import os; print(os.environ["OPENMAIC_PBL_DECISIONS"])'],
+      stdout: '{"format": "concat"}\n',
+    },
+  ];
+  expect(() => evaluationFor(project, 'greeting')).toThrow('Submit');
+  expect(() =>
+    evaluationFor(project, 'greeting', [], [{ id: 'format', chosen: 'unknown', revision: 0 }]),
+  ).toThrow('Submit');
+  const bound = evaluationFor(
+    project,
+    'greeting',
+    [],
+    [
+      { id: 'format', chosen: 'concat', rationale: 'Do not send my prose', revision: 0 },
+      { id: 'unrelated', chosen: 'private-text', revision: 0 },
+    ],
+  );
+  expect(bound.decisionContext).toEqual({ format: 'concat' });
+  expect(project.evaluations.greeting!.decisionContext).toBeUndefined();
+  expect(() => evaluationCommand(project.evaluations.greeting!, 'missing')).toThrow('formal');
+  const command = evaluationCommand(bound, 'bound');
+  const { stdout } = await promisify(execFile)('/bin/sh', ['-c', command], {
+    env: { ...process.env, OPENMAIC_PBL_DECISIONS: '{"format":"format"}' },
+  });
+  expect(evaluationPassed(bound, 'bound', stdout)).toBe(true);
+  expect(command).not.toContain('private-text');
+});
 
 it.each(['\n', '\r\n', '\r'])(
   'normalizes expected and actual line endings equally without relaxing output checks (%j)',

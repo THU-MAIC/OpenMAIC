@@ -314,6 +314,8 @@ function PBLV3WorkspaceContent({
     'rounded-md border px-2 py-1 text-xs disabled:opacity-40 hover:bg-muted aria-pressed:bg-primary aria-pressed:text-primary-foreground';
   return (
     <section
+      tabIndex={-1}
+      data-pbl-focus-owner
       className="relative flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground"
       data-testid="pbl-v3-workspace"
       // Editor, terminal and teaching inputs own their keys, not the host's slide/chat shortcuts.

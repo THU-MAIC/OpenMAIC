@@ -2621,6 +2621,7 @@
     "retryResponse": "Retry response",
     "run": {
       "contextCapacity": "目前課程材料或這則訊息超過所選模型的上下文容量。學習紀錄已儲存，請聯絡課程維護者檢查模型設定或材料後再試。",
+      "contextTurnCapacity": "這輪對話累積的內容超過了模型本次能處理的範圍。請傳送一則簡短的新訊息，重新說明目前問題或需要的協助。反覆點選「重試本輪回覆」不會騰出空間。學習進度和記錄已儲存。",
       "contextPreparation": "準備對話上下文暫時失敗。學習紀錄已儲存，可以重試本輪回覆。",
       "incomplete": "本輪回覆尚未完成目前審閱的記錄，請點擊「重試本輪回覆」繼續。學習進度未被跳過。",
       "authentication": "The teaching model could not authenticate. Check the model configuration before retrying.",
@@ -2940,12 +2941,14 @@
     "decisionTooLong": "回答和理由各最多 {max} 個字元，合計還需符合編碼後的大小限制。請縮短後再提交。",
     "decisionInvalidText": "回答或理由中含有無法儲存的字元，請替換這些字元後再提交。",
     "application": {
+      "yourChoice": "你的選擇",
+      "updating": "作品更新中…",
       "open": "Open application",
       "restart": "Restart application",
       "newTab": "在新分頁開啟暫時預覽",
       "saveFirst": "Wait for your edits to save before opening the application.",
       "wait": "Wait for the environment, Agent or assessment to finish.",
-      "notice": "執行已儲存的程式碼。編輯或測試後，可重新開啟應用。",
+      "notice": "執行已儲存的程式碼，工作結束後會自動更新已開啟的作品。",
       "changed": "Saved sources changed after this application started. Restart to try the current version.",
       "expired": "Application access expired. Reopen to renew it.",
       "reopen": "Reopen application",

@@ -470,7 +470,7 @@ describe('model-aware teaching context projection', () => {
       };
       const original = structuredClone(context);
       await expect(runtime.prepare(context, window, target)).rejects.toThrow(
-        'PBL_CONTEXT_CAPACITY',
+        kind === 'no-learner' ? 'PBL_CONTEXT_CAPACITY:' : 'PBL_CONTEXT_ACTIVE_TURN_CAPACITY:',
       );
       expect(stream).not.toHaveBeenCalled();
       expect(saved).not.toHaveBeenCalled();
@@ -478,6 +478,92 @@ describe('model-aware teaching context projection', () => {
       runtime.dispose();
     },
   );
+  it('requires a new learner message to compact a failed active tool turn, preserving raw records', async () => {
+    const stream = summarizer();
+    const saved = vi.fn();
+    const runtime = createTeachingContextProjection(stream, { saveCheckpoint: saved });
+    const context: Context = {
+      systemPrompt: 'Policy and pending review remain authoritative. '.repeat(40),
+      messages: [
+        { role: 'user', content: 'Help me understand the pending plan review.', timestamp: 0 },
+        {
+          ...assistant(''),
+          stopReason: 'toolUse',
+          content: [
+            { type: 'toolCall', id: 'read', name: 'read_file', arguments: { path: 'PLAN.md' } },
+          ],
+        },
+        {
+          role: 'toolResult',
+          toolCallId: 'read',
+          toolName: 'read_file',
+          isError: false,
+          content: [{ type: 'text', text: 'Exact tool evidence '.repeat(2000) }],
+          timestamp: 1,
+        },
+      ],
+    };
+    const original = structuredClone(context);
+    for (let retry = 0; retry < 2; retry++)
+      await expect(runtime.prepare(context, window, model)).rejects.toThrow(
+        'PBL_CONTEXT_ACTIVE_TURN_CAPACITY:',
+      );
+    expect(stream).not.toHaveBeenCalled();
+    expect(saved).not.toHaveBeenCalled();
+    expect(context).toEqual(original);
+    const question = {
+      role: 'user' as const,
+      content: 'Please explain the edge case I asked about in PLAN.md.',
+      timestamp: 2,
+    };
+    const next = { ...context, messages: [...context.messages, question] };
+    const result = await runtime.prepare(next, { ...window, studentTurns: 2 }, model);
+    expect(stream).toHaveBeenCalled();
+    expect(saved).toHaveBeenCalledOnce();
+    expect(saved.mock.calls[0][0].coveredMessages).toBe(context.messages.length);
+    expect(result.messages).toEqual([question]);
+    expect(estimatedRequestTokens(result)).toBeLessThanOrEqual(
+      teachingModelBudget(model).inputTokens,
+    );
+    expect(next.messages.slice(0, -1)).toEqual(original.messages);
+    runtime.dispose();
+  });
+
+  it.each(['automatic-entry', 'static-policy', 'oversized-input', 'no-tool-results'])(
+    'keeps generic capacity guidance when new-message recovery is not established: %s',
+    async (kind) => {
+      const stream = summarizer();
+      const runtime = createTeachingContextProjection(stream);
+      const context: Context = {
+        systemPrompt: kind === 'static-policy' ? 'p'.repeat(30_000) : 'Policy',
+        messages: [
+          {
+            role: 'user',
+            content: kind === 'oversized-input' ? 'u'.repeat(30_000) : 'Opening or input',
+            timestamp: 0,
+          },
+          ...(kind === 'no-tool-results'
+            ? [assistant('a'.repeat(40_000))]
+            : [
+                {
+                  role: 'toolResult' as const,
+                  toolCallId: 'read',
+                  toolName: 'read_file',
+                  isError: false,
+                  content: [{ type: 'text' as const, text: 't'.repeat(40_000) }],
+                  timestamp: 1,
+                },
+              ]),
+        ],
+      };
+      await expect(
+        runtime.prepare(context, { ...window, automaticEntry: kind === 'automatic-entry' }, model),
+      ).rejects.toThrow('PBL_CONTEXT_CAPACITY:');
+      expect(stream).not.toHaveBeenCalled();
+      runtime.dispose();
+    },
+  );
+
   it('invalidates legacy checkpoints that cover tools in the still-active learner turn', async () => {
     const context: Context = {
       systemPrompt: 'Current authoritative policy',

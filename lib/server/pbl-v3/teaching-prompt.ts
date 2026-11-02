@@ -21,6 +21,7 @@ import {
 } from './product-context';
 import {
   teachingRules,
+  learnerExpressionRules,
   interactionRules,
   assessmentRules,
   decisionRules,
@@ -284,6 +285,8 @@ function buildTeachingPrompt({
     communicationRules +
     '\n' +
     teachingRules +
+    '\n' +
+    learnerExpressionRules +
     (guided ? interactionRules : stage.kind === 'check' ? assessmentRules : '') +
     (welcome === 'pending' ? '\n' + projectWelcomeRules : '') +
     (welcome !== 'pending' && stage.kind === 'mentor_say' && stage.agent === 'discussion'

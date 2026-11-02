@@ -22,7 +22,11 @@ export interface LearningView {
   id: string;
   revision: number;
   title: string;
-  application?: { title: string; description: string };
+  application?: {
+    title: string;
+    description: string;
+    choices?: { id: string; label: string; choice: string }[];
+  };
   reportAvailable: boolean;
   completedFilesAvailable?: boolean;
   lifecycleError?: string | null;
