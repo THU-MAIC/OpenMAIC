@@ -120,7 +120,10 @@ export async function parseWithPaddleOCR(
     log.error(
       `[PaddleOCR] layout-parsing failed [status=${response.status}]: ${errorText.slice(0, 500)}`,
     );
-    throw new Error(`PaddleOCR parsing failed (${response.status}): ${errorText.slice(0, 300)}`);
+    throw Object.assign(
+      new Error(`PaddleOCR parsing failed (HTTP ${response.status}): ${errorText.slice(0, 300)}`),
+      { status: response.status },
+    );
   }
 
   // Bound the body before parsing: the timeout signal limits duration but

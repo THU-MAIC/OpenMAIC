@@ -204,7 +204,15 @@ async function downloadResponseUrl(
     // Cancel the body before throwing: an undisposed failure body (e.g. during
     // an object-store outage) keeps its Undici connection occupied.
     await response.body?.cancel().catch(() => {});
-    throw new Error(`PaddleOCR Cloud ${label} download failed (${response.status})`);
+    // Keep the numeric status: the retry classifier reads it (or an
+    // "HTTP 5xx" phrase) off the error, so a transient store outage under a
+    // completed task stays retryable.
+    throw Object.assign(
+      new Error(`PaddleOCR Cloud ${label} download failed (HTTP ${response.status})`),
+      {
+        status: response.status,
+      },
+    );
   }
   if (!response.body) {
     const buf = await response.arrayBuffer();
