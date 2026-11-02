@@ -1507,13 +1507,19 @@ export function writePendingChangesForUnload(): boolean {
   const storage = stageStorageModule;
   if (!storage) return pendingDocumentEntries.length > 0;
 
-  // Entries whose revision a keepalive write in flight already carries.
-  const entries = new Map(
-    [...pendingChanges].filter(
-      ([key, entry]) => keepaliveSentRevisions.get(key) !== entry.revision,
-    ),
-  );
-  if (entries.size === 0) return overtakesInFlightSave;
+  // A keepalive write of a unit is still in flight and the unit has changed since
+  // (the user stayed at the prompt and kept editing). These row writes have no
+  // ordering guard, so a second one could land first and lose to the older copy:
+  // the newer edit stays queued until the first settles, and leaving now loses it.
+  const heldBehindKeepalive = pendingDocumentEntries.some(([key, entry]) => {
+    const inFlight = keepaliveSentRevisions.get(key);
+    return inFlight !== undefined && inFlight !== entry.revision;
+  });
+  const wouldLoseChanges = overtakesInFlightSave || heldBehindKeepalive;
+
+  // Everything except units a keepalive write in flight already covers.
+  const entries = new Map([...pendingChanges].filter(([key]) => !keepaliveSentRevisions.has(key)));
+  if (entries.size === 0) return wouldLoseChanges;
   const snapshot = persistenceSnapshot(state);
   if (!snapshot.stage) return false;
   const result = storage.writeStageChangesForUnload(
@@ -1552,7 +1558,7 @@ export function writePendingChangesForUnload(): boolean {
       schedulePendingSave();
     });
   }
-  return result.deferred.length > 0 || overtakesInFlightSave;
+  return result.deferred.length > 0 || wouldLoseChanges;
 }
 
 function kickPendingSave(): void {

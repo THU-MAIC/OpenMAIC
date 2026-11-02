@@ -326,6 +326,30 @@ describe('beforeunload', () => {
     expect(incrementalSave.mock.calls.at(-1)![1]).toEqual([{ kind: 'scene', sceneId: 'scene-2' }]);
   });
 
+  it('holds a newer edit behind the keepalive write of the same scene still in flight', async () => {
+    let finishKeepalive!: (ok: boolean) => void;
+    unloadWrite.mockImplementation(
+      sendsSceneAndStage(
+        new Promise<boolean>((resolve) => {
+          finishKeepalive = resolve;
+        }),
+      ),
+    );
+    useStageStore.getState().updateScene('scene-2', { title: 'first' });
+    expect(writePendingChangesForUnload()).toBe(false);
+    expect(unloadWrite).toHaveBeenCalledOnce();
+
+    // The user stayed and edited the same scene while that request is on its way.
+    useStageStore.getState().updateScene('scene-2', { title: 'second' });
+    expect(writePendingChangesForUnload()).toBe(true);
+    expect(unloadWrite).toHaveBeenCalledOnce();
+
+    finishKeepalive(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(writePendingChangesForUnload()).toBe(false);
+    expect(unloadWrite).toHaveBeenCalledTimes(2);
+  });
+
   it('does not write the same change twice when pagehide follows beforeunload', () => {
     useStageStore.getState().updateScene('scene-2', { title: 'once' });
     handleBeforeUnload(unloadEvent());
