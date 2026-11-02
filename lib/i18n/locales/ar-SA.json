@@ -581,7 +581,19 @@
       "whiteboardLatex": "صيغة",
       "whiteboardTable": "جدول",
       "action": "إجراء",
-      "discussion": "مناقشة"
+      "discussion": "مناقشة",
+      "playVideo": "تشغيل الفيديو",
+      "whiteboardChart": "مخطط",
+      "whiteboardLine": "رسم خط",
+      "whiteboardClear": "مسح اللوحة",
+      "whiteboardDelete": "إزالة عنصر",
+      "whiteboardClose": "إغلاق اللوحة",
+      "whiteboardCode": "كتلة شيفرة",
+      "whiteboardEditCode": "تعديل الشيفرة",
+      "widgetHighlight": "تمييز في النشاط",
+      "widgetSetState": "ضبط حالة النشاط",
+      "widgetAnnotation": "إضافة تعليق في النشاط",
+      "widgetReveal": "إظهار في النشاط"
     },
     "element": {
       "toolbar": "شريط أدوات العنصر",
@@ -669,7 +681,8 @@
       "discussionPromptPlaceholder": "توجيه (اختياري)",
       "discussionAgent": "المُبادر",
       "discussionAgentUnset": "غير محدد",
-      "addAction": "إضافة إجراء"
+      "addAction": "إضافة إجراء",
+      "fieldState": "الحالة"
     },
     "picker": {
       "title": "إدراج إجراء",

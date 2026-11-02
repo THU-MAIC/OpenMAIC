@@ -581,7 +581,19 @@
       "whiteboardLatex": "Formula",
       "whiteboardTable": "Table",
       "action": "Action",
-      "discussion": "Discussion"
+      "discussion": "Discussion",
+      "playVideo": "Play video",
+      "whiteboardChart": "Whiteboard chart",
+      "whiteboardLine": "Whiteboard line",
+      "whiteboardClear": "Clear whiteboard",
+      "whiteboardDelete": "Remove from whiteboard",
+      "whiteboardClose": "Close whiteboard",
+      "whiteboardCode": "Code block",
+      "whiteboardEditCode": "Edit code",
+      "widgetHighlight": "Highlight in activity",
+      "widgetSetState": "Set activity state",
+      "widgetAnnotation": "Annotate activity",
+      "widgetReveal": "Reveal in activity"
     },
     "element": {
       "toolbar": "Element toolbar",
@@ -669,7 +681,8 @@
       "discussionPromptPlaceholder": "Guidance prompt (optional)",
       "discussionAgent": "Initiator",
       "discussionAgentUnset": "Unspecified",
-      "addAction": "Add action"
+      "addAction": "Add action",
+      "fieldState": "State"
     },
     "picker": {
       "title": "Insert action",

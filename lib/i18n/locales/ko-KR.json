@@ -508,7 +508,19 @@
       "whiteboardLatex": "수식",
       "whiteboardTable": "표",
       "action": "동작",
-      "discussion": "토론"
+      "discussion": "토론",
+      "playVideo": "동영상 재생",
+      "whiteboardChart": "차트",
+      "whiteboardLine": "선 그리기",
+      "whiteboardClear": "칠판 지우기",
+      "whiteboardDelete": "요소 지우기",
+      "whiteboardClose": "칠판 닫기",
+      "whiteboardCode": "코드 블록",
+      "whiteboardEditCode": "코드 수정",
+      "widgetHighlight": "인터랙티브 요소 강조",
+      "widgetSetState": "인터랙티브 상태 설정",
+      "widgetAnnotation": "인터랙티브 요소 주석",
+      "widgetReveal": "인터랙티브 요소 표시"
     },
     "element": {
       "toolbar": "요소 도구 모음",
@@ -596,7 +608,8 @@
       "discussionPromptPlaceholder": "안내 프롬프트(선택)",
       "discussionAgent": "시작자",
       "discussionAgentUnset": "지정 안 함",
-      "addAction": "동작 추가"
+      "addAction": "동작 추가",
+      "fieldState": "상태"
     },
     "picker": {
       "title": "동작 삽입",

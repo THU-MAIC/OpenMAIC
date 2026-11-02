@@ -581,7 +581,19 @@
       "whiteboardLatex": "公式",
       "whiteboardTable": "表格",
       "action": "动作",
-      "discussion": "讨论"
+      "discussion": "讨论",
+      "playVideo": "播放视频",
+      "whiteboardChart": "图表",
+      "whiteboardLine": "画线",
+      "whiteboardClear": "清空画板",
+      "whiteboardDelete": "擦除元素",
+      "whiteboardClose": "关闭画板",
+      "whiteboardCode": "代码块",
+      "whiteboardEditCode": "修改代码",
+      "widgetHighlight": "高亮互动元素",
+      "widgetSetState": "设置互动状态",
+      "widgetAnnotation": "标注互动元素",
+      "widgetReveal": "显示互动元素"
     },
     "element": {
       "toolbar": "元素工具栏",
@@ -669,7 +681,8 @@
       "discussionPromptPlaceholder": "引导语（可选）",
       "discussionAgent": "发起",
       "discussionAgentUnset": "不指定",
-      "addAction": "添加动作"
+      "addAction": "添加动作",
+      "fieldState": "状态"
     },
     "picker": {
       "title": "插入动作",

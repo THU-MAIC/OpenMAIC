@@ -581,7 +581,19 @@
       "whiteboardLatex": "Fórmula",
       "whiteboardTable": "Tabla",
       "action": "Acción",
-      "discussion": "Discusión"
+      "discussion": "Discusión",
+      "playVideo": "Reproducir video",
+      "whiteboardChart": "Gráfico",
+      "whiteboardLine": "Dibujar línea",
+      "whiteboardClear": "Borrar pizarra",
+      "whiteboardDelete": "Quitar elemento",
+      "whiteboardClose": "Cerrar pizarra",
+      "whiteboardCode": "Bloque de código",
+      "whiteboardEditCode": "Editar código",
+      "widgetHighlight": "Resaltar en la actividad",
+      "widgetSetState": "Definir estado de la actividad",
+      "widgetAnnotation": "Anotar la actividad",
+      "widgetReveal": "Mostrar en la actividad"
     },
     "element": {
       "toolbar": "Barra de elementos",
@@ -669,7 +681,8 @@
       "discussionPromptPlaceholder": "Prompt de guía (opcional)",
       "discussionAgent": "Iniciador",
       "discussionAgentUnset": "Sin especificar",
-      "addAction": "Agregar acción"
+      "addAction": "Agregar acción",
+      "fieldState": "Estado"
     },
     "picker": {
       "title": "Insertar acción",

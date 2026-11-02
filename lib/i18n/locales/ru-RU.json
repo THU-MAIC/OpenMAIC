@@ -581,7 +581,19 @@
       "whiteboardLatex": "Формула",
       "whiteboardTable": "Таблица",
       "action": "Действие",
-      "discussion": "Обсуждение"
+      "discussion": "Обсуждение",
+      "playVideo": "Воспроизвести видео",
+      "whiteboardChart": "Диаграмма",
+      "whiteboardLine": "Линия",
+      "whiteboardClear": "Очистить доску",
+      "whiteboardDelete": "Убрать элемент",
+      "whiteboardClose": "Закрыть доску",
+      "whiteboardCode": "Блок кода",
+      "whiteboardEditCode": "Изменить код",
+      "widgetHighlight": "Выделить в активности",
+      "widgetSetState": "Задать состояние активности",
+      "widgetAnnotation": "Подписать в активности",
+      "widgetReveal": "Показать в активности"
     },
     "element": {
       "toolbar": "Панель элемента",
@@ -669,7 +681,8 @@
       "discussionPromptPlaceholder": "Подсказка (необязательно)",
       "discussionAgent": "Инициатор",
       "discussionAgentUnset": "Не указан",
-      "addAction": "Добавить действие"
+      "addAction": "Добавить действие",
+      "fieldState": "Состояние"
     },
     "picker": {
       "title": "Вставить действие",

@@ -581,7 +581,19 @@
       "whiteboardLatex": "Công thức",
       "whiteboardTable": "Bảng biểu",
       "action": "Hành động",
-      "discussion": "Thảo luận"
+      "discussion": "Thảo luận",
+      "playVideo": "Phát video",
+      "whiteboardChart": "Biểu đồ",
+      "whiteboardLine": "Vẽ đường",
+      "whiteboardClear": "Xóa bảng",
+      "whiteboardDelete": "Xóa phần tử",
+      "whiteboardClose": "Đóng bảng",
+      "whiteboardCode": "Khối mã",
+      "whiteboardEditCode": "Sửa mã",
+      "widgetHighlight": "Làm nổi bật trong hoạt động",
+      "widgetSetState": "Đặt trạng thái hoạt động",
+      "widgetAnnotation": "Chú thích hoạt động",
+      "widgetReveal": "Hiện trong hoạt động"
     },
     "element": {
       "toolbar": "Thanh công cụ đối tượng",
@@ -669,7 +681,8 @@
       "discussionPromptPlaceholder": "Câu dẫn hướng (không bắt buộc)",
       "discussionAgent": "Người mở lời",
       "discussionAgentUnset": "Chưa chỉ định",
-      "addAction": "Thêm hành động"
+      "addAction": "Thêm hành động",
+      "fieldState": "Trạng thái"
     },
     "picker": {
       "title": "Chèn hành động",

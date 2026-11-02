@@ -509,7 +509,19 @@
       "whiteboardLatex": "公式",
       "whiteboardTable": "表格",
       "action": "動作",
-      "discussion": "討論"
+      "discussion": "討論",
+      "playVideo": "播放影片",
+      "whiteboardChart": "圖表",
+      "whiteboardLine": "畫線",
+      "whiteboardClear": "清空畫板",
+      "whiteboardDelete": "擦除元素",
+      "whiteboardClose": "關閉畫板",
+      "whiteboardCode": "程式碼區塊",
+      "whiteboardEditCode": "修改程式碼",
+      "widgetHighlight": "醒目顯示互動元素",
+      "widgetSetState": "設定互動狀態",
+      "widgetAnnotation": "標註互動元素",
+      "widgetReveal": "顯示互動元素"
     },
     "element": {
       "text": "文字",
@@ -597,7 +609,8 @@
       "discussionPromptPlaceholder": "引導語（可選）",
       "discussionAgent": "發起人",
       "discussionAgentUnset": "不指定",
-      "addAction": "新增動作"
+      "addAction": "新增動作",
+      "fieldState": "狀態"
     },
     "picker": {
       "title": "插入動作",

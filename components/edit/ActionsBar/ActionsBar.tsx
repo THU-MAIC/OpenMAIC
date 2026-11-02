@@ -65,7 +65,7 @@ import {
 } from '@/components/ui/select';
 import type { Action, DiscussionAction } from '@/lib/types/action';
 import type { SceneType } from '@/lib/types/stage';
-import { ELEMENT_BOUND, cueLabel, cueMeta, elementLabel } from './cue-meta';
+import { ELEMENT_BOUND, cueLabel, cueMeta, cueSummary, elementLabel } from './cue-meta';
 import { applyCuePreview, clearCuePreview, cuePreviewFor } from './cue-preview';
 import {
   appendDiscussion,
@@ -151,6 +151,9 @@ function propsOf(a: Action, t: TFn): Array<[string, string]> {
   const el = (a as { elementId?: string }).elementId;
   if (el) rows.push([t('edit.timeline.fieldElement'), el]);
   const content = (a as { content?: string }).content;
+  const target = (a as { target?: string }).target;
+  if (target) rows.push([t('edit.timeline.fieldElement'), target]);
+  if (a.type === 'widget_setState') rows.push([t('edit.timeline.fieldState'), cueSummary(a)]);
   if (content)
     rows.push([
       t('edit.timeline.fieldContent'),
@@ -844,6 +847,7 @@ function CueMarker({
   // Bound cue → show what it's actually pointing at, not a generic "bound";
   // the element may have been deleted since binding, so fall back gracefully.
   const boundEl = elementId ? elements.find((e) => e.id === elementId) : undefined;
+  const summary = cueSummary(action);
 
   return (
     <div
@@ -896,7 +900,18 @@ function CueMarker({
         <span className={cn('flex size-6 items-center justify-center rounded-full', m.glyph)}>
           <Icon className="size-3.5" />
         </span>
-        <span className="text-[10px] font-medium text-foreground/70">{label}</span>
+        <span className="max-w-full truncate text-[10px] font-medium text-foreground/70">
+          {label}
+        </span>
+        {!bound && summary ? (
+          <span
+            data-testid="cue-summary"
+            title={summary}
+            className="max-w-full truncate text-[9px] text-muted-foreground/60"
+          >
+            {summary}
+          </span>
+        ) : null}
         {bound && (
           <span
             className={cn(
