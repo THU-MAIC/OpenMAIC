@@ -565,9 +565,19 @@ export function WorkspaceRail({
 
       <div className="ws-seam-rail mx-4 my-2 shrink-0" aria-hidden="true" />
 
+      {/* Outside the scroller so the list keeps its name while it scrolls. The
+          section below already carries this name for assistive tech. */}
+      <p
+        data-testid="pro-nav-list-heading"
+        aria-hidden="true"
+        className="shrink-0 px-4 pb-0.5 pt-0.5 text-[12px] font-medium text-[color:var(--ws-ink-mute)]"
+      >
+        {t('workspace.sections.sessions')}
+      </p>
+
       <div
         data-testid="pro-nav-list"
-        className="ws-scroll flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2 pt-1.5"
+        className="ws-scroll flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2 pt-0.5"
       >
         <RailList
           id="sessions"
