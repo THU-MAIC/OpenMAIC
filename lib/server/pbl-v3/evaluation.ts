@@ -129,6 +129,8 @@ export function evaluationCommand(spec: ProjectEvaluation, requestId: string) {
     })),
   };
   const payload = Buffer.from(JSON.stringify({ spec: execution, requestId })).toString('base64');
+  // Keep the legacy runner byte-for-byte unchanged unless host choices are bound.
+  const boundEnvironment = spec.decisionContext !== undefined;
   const script = `import base64,json,subprocess,tempfile,os,hashlib,resource,re
 cfg=json.loads(base64.b64decode(${JSON.stringify(payload)}))
 spec=cfg['spec']; results=[]; build=True; buildReason=None; locations=[]
@@ -152,11 +154,9 @@ with tempfile.TemporaryDirectory(prefix='pbl-check-') as out:
   target=os.path.join(resources,path); os.makedirs(os.path.dirname(target),exist_ok=True)
   with open(target,'w',encoding='utf-8') as f: f.write(text)
  def run(argv,stdin='',literal=()):
-  literal=set(literal)
-  env=os.environ.copy(); env.pop('OPENMAIC_PBL_DECISIONS',None)
-  if 'decisionContext' in spec: env['OPENMAIC_PBL_DECISIONS']=json.dumps(spec['decisionContext'])
+  literal=set(literal)${boundEnvironment ? "\n  env=os.environ.copy(); env.pop('OPENMAIC_PBL_DECISIONS',None)\n  env['OPENMAIC_PBL_DECISIONS']=json.dumps(spec['decisionContext'])" : ''}
   with tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as errors:
-   proc=subprocess.Popen([a if i in literal else a.replace('{build}',out).replace('{resources}',resources) for i,a in enumerate(argv)],stdin=subprocess.PIPE,stdout=output,stderr=errors,env=env,preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_FSIZE,(1048576,1048576)))
+   proc=subprocess.Popen([a if i in literal else a.replace('{build}',out).replace('{resources}',resources) for i,a in enumerate(argv)],stdin=subprocess.PIPE,stdout=output,stderr=errors${boundEnvironment ? ',env=env' : ''},preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_FSIZE,(1048576,1048576)))
    try: proc.communicate(input=stdin.encode('utf-8'),timeout=15)
    except subprocess.TimeoutExpired:
     proc.kill(); proc.communicate(); raise

@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { AppWindow, ChevronRight, ExternalLink, Info, LoaderCircle, RefreshCw } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { LearningView } from '@/lib/pbl/v3/types';
@@ -58,12 +58,22 @@ function ApplicationPreviewContent({
   preview: ApplicationPreviewController;
 }) {
   const { t } = useI18n();
-  const { pending, observation, error, expired, disabled } = preview;
+  const { pending, observation, expired, disabled } = preview;
   const mounted = !!observation?.preview;
   const frame = useRef<HTMLIFrameElement | null>(null);
+  const candidate = useRef<HTMLIFrameElement | null>(null);
+  const panel = useRef<HTMLElement | null>(null);
   const url = observation?.preview?.url;
   const [displayed, setDisplayed] = useState<{ url: string; version: number } | null>(null);
   const current = url ? { url, version: preview.frameVersion } : null;
+  const currentReady =
+    !!current && displayed?.url === current.url && displayed.version === current.version;
+  const [readinessFailure, setReadinessFailure] = useState<{ url: string; version: number } | null>(
+    null,
+  );
+  const readinessError =
+    readinessFailure?.url === url && readinessFailure?.version === preview.frameVersion;
+  const error = preview.error || (readinessError ? t('pblV3.application.unavailable') : '');
   const previous =
     displayed && current && (displayed.url !== current.url || displayed.version !== current.version)
       ? displayed
@@ -75,13 +85,39 @@ function ApplicationPreviewContent({
     !preview.updating &&
     !error &&
     observation?.state === 'running' &&
-    !previous;
-  const updating = mounted && !expired && !error && (preview.updating || !!previous);
+    !previous &&
+    currentReady;
+  const updating =
+    mounted && !expired && !error && (preview.updating || !!previous || !currentReady);
+  useLayoutEffect(() => {
+    // Inert/pointer rules do not evacuate an already focused nested document.
+    // Move only preview-owned focus; never steal focus from the learner's editor/chat.
+    if ((!available || !preview.open) && document.activeElement === frame.current)
+      panel.current?.focus({ preventScroll: true });
+  }, [available, preview.open]);
+  useLayoutEffect(() => {
+    if (!url || currentReady) return;
+    const timer = setTimeout(
+      () => setReadinessFailure({ url, version: preview.frameVersion }),
+      60_000,
+    );
+    return () => clearTimeout(timer);
+  }, [url, preview.frameVersion, currentReady]);
   const renew = preview.renew;
-  useEffect(() => {
+  const documentReady = preview.documentReady;
+  useLayoutEffect(() => {
     if (!url) return;
     const origin = new URL(previous?.url ?? url).origin;
+    const candidateOrigin = new URL(url).origin;
     const receive = (event: MessageEvent) => {
+      if (event.source === candidate.current?.contentWindow && event.origin === candidateOrigin) {
+        if (event.data?.type === 'openmaic-preview-ready') {
+          setReadinessFailure(null);
+          setDisplayed({ url, version: preview.frameVersion });
+          documentReady(preview.frameVersion);
+        } else if (event.data?.type === 'openmaic-preview-error')
+          setReadinessFailure({ url, version: preview.frameVersion });
+      }
       if (
         event.source === frame.current?.contentWindow &&
         event.origin === origin &&
@@ -91,9 +127,11 @@ function ApplicationPreviewContent({
     };
     window.addEventListener('message', receive);
     return () => window.removeEventListener('message', receive);
-  }, [url, previous?.url, renew]);
+  }, [url, previous?.url, preview.frameVersion, renew, documentReady]);
   return (
     <section
+      ref={panel}
+      tabIndex={-1}
       id={preview.panelId}
       aria-label={application.title}
       aria-hidden={!preview.open}
@@ -190,12 +228,20 @@ function ApplicationPreviewContent({
               const visible = !previous || item === previous;
               return (
                 <iframe
-                  ref={visible ? frame : undefined}
+                  ref={(element) => {
+                    if (visible) frame.current = element;
+                    if (item === current) candidate.current = element;
+                  }}
                   key={`${item.version}:${item.url}`}
                   title={visible ? application.title : t('pblV3.application.updating')}
                   src={item.url}
                   onLoad={() => {
-                    if (item === current) setDisplayed(item);
+                    // Real previews load an authorization shell first. Only its
+                    // fenced readiness message can promote the nested app.
+                    if (item === current && new URL(item.url).pathname !== '/__openmaic_preview') {
+                      setDisplayed(item);
+                      documentReady(item.version);
+                    }
                   }}
                   sandbox="allow-scripts allow-forms allow-same-origin"
                   hidden={expired}
@@ -232,11 +278,13 @@ function ApplicationPreviewContent({
                       ? 'pblV3.application.starting'
                       : expired
                         ? 'pblV3.application.expired'
-                        : observation?.state === 'failed'
-                          ? 'pblV3.application.failed'
-                          : observation
-                            ? 'pblV3.application.unavailable'
-                            : 'pblV3.application.ready',
+                        : observation?.state === 'starting'
+                          ? 'pblV3.application.starting'
+                          : observation?.state === 'failed'
+                            ? 'pblV3.application.failed'
+                            : observation
+                              ? 'pblV3.application.unavailable'
+                              : 'pblV3.application.ready',
               )}
             </p>
             {observation?.output && (

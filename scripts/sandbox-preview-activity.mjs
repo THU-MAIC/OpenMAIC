@@ -99,14 +99,62 @@ export function installPreviewActivity(frame, activityKey, appOrigin) {
   });
 }
 
+/** Only the owned shell reports the nested document's browser-observed readiness. */
+export function installPreviewReadiness(frame, appOrigin) {
+  'use strict';
+  if (typeof appOrigin !== 'string') return;
+  const notify = parent.postMessage.bind(parent);
+  const getter = (prototype, name) =>
+    Function.prototype.call.bind(Object.getOwnPropertyDescriptor(prototype, name).get);
+  const contentDocument = getter(HTMLIFrameElement.prototype, 'contentDocument');
+  const readyState = getter(Document.prototype, 'readyState');
+  const contentType = getter(Document.prototype, 'contentType');
+  const documentURL = getter(Document.prototype, 'URL');
+  const listen = Function.prototype.call.bind(EventTarget.prototype.addEventListener);
+  const cancel = clearInterval;
+  let done = false;
+  let timer;
+  const inspect = (loaded = false) => {
+    if (done) return;
+    try {
+      const doc = contentDocument(frame);
+      if (doc && documentURL(doc) !== 'about:blank' && readyState(doc) === 'complete') {
+        const html = ['text/html', 'application/xhtml+xml'].includes(contentType(doc));
+        done = true;
+        cancel(timer);
+        notify({ type: html ? 'openmaic-preview-ready' : 'openmaic-preview-error' }, appOrigin);
+      } else if (loaded && !doc) throw new Error('Preview left its isolated origin');
+    } catch {
+      if (!loaded) return;
+      done = true;
+      cancel(timer);
+      notify({ type: 'openmaic-preview-error' }, appOrigin);
+    }
+  };
+  listen(frame, 'load', (event) => {
+    if (event.isTrusted) inspect(true);
+  });
+  timer = setInterval(inspect, 100);
+  // The workbench bounds readiness too; passive observation never renews access.
+  setTimeout(() => {
+    done = true;
+    cancel(timer);
+  }, 60_000);
+}
+
 export function previewShell(nonce) {
   return `<!doctype html><title>Application preview</title>
 <style nonce="${nonce}">html,body{margin:0;width:100%;height:100%}iframe{width:100%;height:100%;border:0}#status{padding:1rem;font:14px sans-serif}</style>
 <p id="status">Opening preview…</p><script nonce="${nonce}">
 (()=>{'use strict';
+const notifyFailure=parent.postMessage.bind(parent);
 let ticket=location.hash.slice(1);history.replaceState(null,'','/__openmaic_preview');
 fetch('/__openmaic_authorize',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({ticket})})
 .then(async r=>{ticket='';if(!r.ok)throw Error();if(window.top===window){location.replace('/');return;}const {activityKey,appOrigin}=await r.json();if(typeof activityKey!=='string')throw Error();const frame=document.createElement('iframe');frame.title='Application';
-(${installPreviewActivity.toString()})(frame,activityKey,appOrigin);frame.src='/';document.getElementById('status').remove();document.body.append(frame);})
-.catch(()=>{document.getElementById('status').textContent='Access expired. Reopen from OpenMAIC.'});})();</script>`;
+(${installPreviewActivity.toString()})(frame,activityKey,appOrigin);
+(${installPreviewReadiness.toString()})(frame,appOrigin);frame.src='/';document.getElementById('status').remove();document.body.append(frame);})
+.catch(()=>{document.getElementById('status').textContent='Access expired. Reopen from OpenMAIC.';
+// Before authorization there is no configured appOrigin. This static failure
+// contains no credential or application data and cannot grant readiness/activity.
+notifyFailure({type:'openmaic-preview-error'},'*');});})();</script>`;
 }

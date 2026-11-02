@@ -12,6 +12,24 @@ The optional application panel sits between the IDE and learning assistant. Narr
 - Periodic dirty-file backup waits for running applications without clearing the dirty marker. Explicit evidence, file writes, checkpoints and idle release still quiesce applications. The application process uses the existing one-hour supervisor envelope independently of the renewable environment lease; ordinary command timeout limits are unchanged.
 - Completed applications retain explicit environment restoration and read-only source. Reading source/reports or folding the panel does not allocate an environment or advance teaching.
 
+Pausing evacuates focus only when it belongs to the embedded preview, including
+its nested application frame. It never restores stale focus or moves focus away
+from an editor/chat control. An unchanged `starting` process receives bounded,
+read-only status retries; exhaustion keeps its document with a nonfatal starting
+message and an explicit reopen control. Changed sources restart even while the
+process is `starting`. Automatic recovery checks the latest accepted grant deadline
+before each readiness retry and before accepting a result; expiry requires explicit input.
+
+The owned gateway shell reports readiness only after its nested same-origin HTML
+document completes. Workbench promotion checks the exact current candidate window
+and isolated origin; an application frame's own messages cannot promote it. Shell
+load and authorization alone are insufficient. Auth/load failures retain the old
+document, and missing readiness becomes an explicit error/reopen state after 60 seconds.
+Static bootstrap failure messages contain no credentials and cannot renew access.
+Deploy the main app and preview gateway from the same revision. An old workbench
+ignores new readiness messages; a new workbench with an old gateway reaches that
+bounded failure rather than silently discarding the previous page or waiting forever.
+
 ## Course guidance
 
 Keep the application description short. Put ordinary actions in the application itself and explain unfinished functions or operation errors when they occur. Application-specific state persistence belongs in the course guide, not a universal platform notice. The optional help control contains secondary instructions. Agents must describe the dock and current controls from product context; no course should continue directing learners to an application dialog.

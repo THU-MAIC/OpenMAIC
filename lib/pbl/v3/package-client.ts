@@ -26,9 +26,9 @@ function needsDecisionContext(projects: readonly PBLProjectPackage[]) {
   return projects.some((project) => {
     const descriptor = JSON.parse(project.files['project.json']);
     return (
-      descriptor.runtime?.application?.decisionIds?.length ||
-      Object.values(descriptor.runtime?.evaluations ?? {}).some(
-        (path) => JSON.parse(project.files[path as string])?.decisionInputs?.length,
+      Object.hasOwn(descriptor.runtime?.application ?? {}, 'decisionIds') ||
+      Object.values(descriptor.runtime?.evaluations ?? {}).some((path) =>
+        Object.hasOwn(JSON.parse(project.files[path as string]) ?? {}, 'decisionInputs'),
       )
     );
   });

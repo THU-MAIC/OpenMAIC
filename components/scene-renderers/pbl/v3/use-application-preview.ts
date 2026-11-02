@@ -7,12 +7,25 @@ import { pblRequest } from './request';
 import { useI18n } from '@/lib/hooks/use-i18n';
 
 /** Readiness retries retain one launch receipt in both embedded and new-tab opens. */
-async function waitForApplication(request: Record<string, unknown>, signal: AbortSignal) {
+async function waitForApplication(
+  request: Record<string, unknown>,
+  signal: AbortSignal,
+  assertCurrent: () => void = () => signal.throwIfAborted(),
+) {
+  assertCurrent();
   let result = await pblRequest<ApplicationObservation>('/api/pbl/v3/application', request, signal);
-  for (let retry = 0; result.state === 'starting' && retry < 3; retry++) {
+  assertCurrent();
+  for (
+    let retry = 0;
+    result.state === 'starting' &&
+    retry < 3 &&
+    !(request.action === 'status' && result.sourceChanged);
+    retry++
+  ) {
     await new Promise((resolve) => setTimeout(resolve, 500));
-    signal.throwIfAborted();
+    assertCurrent();
     result = await pblRequest<ApplicationObservation>('/api/pbl/v3/application', request, signal);
+    assertCurrent();
   }
   return result;
 }
@@ -35,6 +48,7 @@ export function useApplicationPreview(
   // A dispatched launch may finish after its fetch is cancelled or fails.
   // Keep the old page visible, but do not reuse it as the restarted app's page.
   const replacementNeeded = useRef(false);
+  const documentAttempt = useRef<number | null>(null);
   const previewDeadline = useRef<number | undefined>(undefined);
   previewDeadline.current = observation?.preview?.expiresAt;
   const hasPreview = !!observation?.preview;
@@ -69,6 +83,7 @@ export function useApplicationPreview(
     setRefreshNeeded(false);
     observedRevision.current = null;
     replacementNeeded.current = false;
+    documentAttempt.current = null;
   }, [binding]);
   useEffect(
     () => () => {
@@ -89,6 +104,7 @@ export function useApplicationPreview(
       setObservation(null);
       setRefreshNeeded(false);
       replacementNeeded.current = false;
+      documentAttempt.current = null;
     } else setRefreshNeeded(true);
   }, [disabled, unavailable]);
   useEffect(() => {
@@ -130,23 +146,25 @@ export function useApplicationPreview(
         id: crypto.randomUUID(),
         action,
       };
+      const assertCurrent = () => {
+        if (serial !== attempt.current) abort.abort();
+        if (serial === attempt.current && expiredRecovery()) {
+          setExpiredAt(previewDeadline.current!);
+          setRefreshNeeded(true);
+          abort.abort();
+        }
+        abort.signal.throwIfAborted();
+      };
       try {
         if (recovery && observation?.preview) {
-          const status = await pblRequest<ApplicationObservation>(
-            '/api/pbl/v3/application',
+          const status = await waitForApplication(
             { ...request, action: 'status' },
             abort.signal,
+            assertCurrent,
           );
           if (serial !== attempt.current) return;
-          // Status may outlive the grant. Only explicit learner input can mint
-          // another ticket after expiry; a late accepted renewal remains valid.
-          if (expiredRecovery()) {
-            setExpiredAt(previewDeadline.current!);
-            setRefreshNeeded(true);
-            return;
-          }
           if (
-            status.state === 'running' &&
+            (status.state === 'running' || status.state === 'starting') &&
             !status.sourceChanged &&
             !replacementNeeded.current &&
             previewDeadline.current! > Date.now()
@@ -155,14 +173,15 @@ export function useApplicationPreview(
             setObservation((current) => ({ ...status, preview: current?.preview }));
             return;
           }
-          if (status.state === 'running' && status.sourceChanged) request.action = 'restart';
+          if (['running', 'starting'].includes(status.state) && status.sourceChanged)
+            request.action = 'restart';
         }
         if (observation?.preview) replacementNeeded.current = true;
-        const result = await waitForApplication(request, abort.signal);
+        const result = await waitForApplication(request, abort.signal, assertCurrent);
         if (serial === attempt.current) {
           observedRevision.current = view.revision;
           if (result.preview) {
-            replacementNeeded.current = false;
+            documentAttempt.current = serial;
             setExpiredAt(null);
             setObservation(result);
             setFrameVersion((value) => value + 1);
@@ -208,6 +227,13 @@ export function useApplicationPreview(
         : current,
     );
   }, []);
+  const documentReady = useCallback(
+    (version: number) => {
+      if (version === frameVersion && documentAttempt.current === attempt.current)
+        replacementNeeded.current = false;
+    },
+    [frameVersion],
+  );
   async function openNewTab() {
     if (!currentBinding || disabled || pending || !view || !workbench) return;
     // A renewed iframe cookie belongs to its embedding partition. Obtain a fresh
@@ -288,6 +314,7 @@ export function useApplicationPreview(
       refreshNeeded ||
       (!!observation?.preview && view?.revision !== observedRevision.current),
     frameVersion,
+    documentReady,
     documentScope: `${binding}:${unavailable}`,
     setTrigger,
     close,

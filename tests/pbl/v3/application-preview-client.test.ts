@@ -87,14 +87,25 @@ async function fixture() {
   const host = document.createElement('div');
   document.body.append(host);
   const root = createRoot(host);
+  let initialDocumentLoaded = false;
   await act(async () => root.render(createElement(Harness)));
   return {
     host,
     root,
-    click: async () =>
-      act(async () =>
+    click: async () => {
+      await act(async () =>
         (host.querySelector('[data-testid="pbl-application-open"]') as HTMLButtonElement).click(),
-      ),
+      );
+      const frame = host.querySelector('iframe');
+      if (
+        !initialDocumentLoaded &&
+        frame &&
+        new URL(frame.src).pathname !== '/__openmaic_preview'
+      ) {
+        initialDocumentLoaded = true;
+        await act(async () => frame.dispatchEvent(new Event('load')));
+      }
+    },
     cleanup: async () => {
       await act(async () => root.unmount());
       host.remove();
@@ -347,6 +358,284 @@ it.each([
       expect(f.host.querySelectorAll('iframe')).toHaveLength(1);
       expect(f.host.querySelector('iframe')).toBe(frames[1]);
       expect(frames[1].hasAttribute('inert')).toBe(false);
+    } finally {
+      await f.cleanup();
+    }
+  },
+);
+
+it.each(['running', 'starting', 'changed'])(
+  'checks a starting process without losing continuity (%s)',
+  async (outcome) => {
+    vi.useFakeTimers();
+    const starting = { state: 'starting', observedAt: '', sourceChanged: outcome === 'changed' };
+    mocks.request.mockResolvedValueOnce(running).mockResolvedValueOnce(starting);
+    if (outcome === 'starting') mocks.request.mockResolvedValue(starting);
+    else mocks.request.mockResolvedValue(running);
+    const f = await fixture();
+    try {
+      await f.click();
+      const old = f.host.querySelector('iframe');
+      await act(async () =>
+        f.root.render(createElement(Harness, { current: { ...view, revision: 1 } })),
+      );
+      await act(async () => vi.advanceTimersByTimeAsync(1501));
+      const actions = mocks.request.mock.calls.map((call) => call[1].action);
+      if (outcome === 'changed') expect(actions).toEqual(['open', 'status', 'restart']);
+      else {
+        expect(actions).toEqual(
+          outcome === 'starting'
+            ? ['open', 'status', 'status', 'status', 'status']
+            : ['open', 'status', 'status'],
+        );
+        expect(f.host.querySelector('iframe')).toBe(old);
+        expect(f.host.querySelectorAll('iframe')).toHaveLength(1);
+        expect(f.host.querySelector('[role="alert"]')).toBeNull();
+        if (outcome === 'starting') {
+          expect(f.host.textContent).toContain('pblV3.application.starting');
+          expect(
+            [...f.host.querySelectorAll('button')].find(
+              (b) => b.textContent === 'pblV3.application.reopen',
+            )?.disabled,
+          ).toBe(false);
+        } else expect(old?.hasAttribute('inert')).toBe(false);
+      }
+    } finally {
+      await f.cleanup();
+    }
+  },
+);
+
+it('stops automatic launch readiness retries at the retained grant deadline', async () => {
+  vi.useFakeTimers();
+  mocks.request
+    .mockResolvedValueOnce({
+      ...running,
+      preview: { ...running.preview, expiresAt: Date.now() + 750 },
+    })
+    .mockResolvedValueOnce({ state: 'stopped', observedAt: '' })
+    .mockResolvedValue({ state: 'starting', observedAt: '' });
+  const f = await fixture();
+  try {
+    await f.click();
+    await act(async () =>
+      f.root.render(createElement(Harness, { current: { ...view, revision: 1 } })),
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(2000));
+    expect(mocks.request.mock.calls.map((c) => c[1].action)).toEqual([
+      'open',
+      'status',
+      'open',
+      'open',
+    ]);
+    expect(f.host.querySelector('iframe')?.hidden).toBe(true);
+    expect(f.host.querySelector('[role="alert"]')).toBeNull();
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it.each([false, true])(
+  'checks the latest accepted deadline before accepting a launch result (renewed: %s)',
+  async (renewed) => {
+    vi.useFakeTimers();
+    let finish!: (v: ApplicationObservation) => void;
+    mocks.request
+      .mockResolvedValueOnce({
+        ...running,
+        preview: { ...running.preview, expiresAt: Date.now() + 1000 },
+      })
+      .mockResolvedValueOnce({ state: 'stopped', observedAt: '' })
+      .mockImplementationOnce(
+        () =>
+          new Promise((r) => {
+            finish = r;
+          }),
+      );
+    const f = await fixture();
+    try {
+      await f.click();
+      const old = f.host.querySelector('iframe')!;
+      await act(async () =>
+        f.root.render(createElement(Harness, { current: { ...view, revision: 1 } })),
+      );
+      await act(async () => vi.advanceTimersByTimeAsync(1001));
+      if (renewed)
+        await act(async () =>
+          window.dispatchEvent(
+            new MessageEvent('message', {
+              source: old.contentWindow,
+              origin: 'https://isolated.example',
+              data: { type: 'openmaic-preview-activity', expiresAt: Date.now() + 300000 },
+            }),
+          ),
+        );
+      await act(async () =>
+        finish({
+          ...running,
+          preview: {
+            ...running.preview,
+            url: 'https://isolated.example/replacement',
+            expiresAt: Date.now() + 300000,
+          },
+        }),
+      );
+      expect(old.hidden).toBe(!renewed);
+      expect(f.host.querySelectorAll('iframe')).toHaveLength(renewed ? 2 : 1);
+      expect(mocks.request).toHaveBeenCalledTimes(3);
+    } finally {
+      await f.cleanup();
+    }
+  },
+);
+
+it.each(['ready', 'error', 'timeout'])(
+  'retains the old document until authenticated shell readiness (%s)',
+  async (outcome) => {
+    vi.useFakeTimers();
+    const gateway = (suffix: string) => ({
+      ...running,
+      preview: {
+        ...running.preview,
+        url: 'https://isolated.example/__openmaic_preview#' + suffix,
+        expiresAt: Date.now() + 300000,
+      },
+    });
+    mocks.request
+      .mockResolvedValueOnce(gateway('old'))
+      .mockResolvedValueOnce({ state: 'stopped', observedAt: '' })
+      .mockResolvedValueOnce(gateway('new'));
+    const f = await fixture();
+    try {
+      await f.click();
+      const old = f.host.querySelector('iframe')!;
+      const post = async (source: Window | null, origin: string, type: string) =>
+        act(async () =>
+          window.dispatchEvent(new MessageEvent('message', { source, origin, data: { type } })),
+        );
+      await act(async () => old.dispatchEvent(new Event('load')));
+      expect(f.host.querySelector('[aria-label="pblV3.application.newTab"]')).toBeNull();
+      await post(old.contentWindow, 'https://isolated.example', 'openmaic-preview-ready');
+      await act(async () =>
+        f.root.render(createElement(Harness, { current: { ...view, revision: 1 } })),
+      );
+      const next = f.host.querySelectorAll('iframe')[1];
+      await act(async () => next.dispatchEvent(new Event('load')));
+      await post(old.contentWindow, 'https://isolated.example', 'openmaic-preview-ready');
+      await post(next.contentWindow, 'https://foreign.example', 'openmaic-preview-ready');
+      await post(null, 'https://isolated.example', 'openmaic-preview-ready');
+      expect(f.host.querySelectorAll('iframe')).toHaveLength(2);
+      if (outcome === 'timeout') await act(async () => vi.advanceTimersByTimeAsync(60001));
+      else
+        await post(
+          next.contentWindow,
+          'https://isolated.example',
+          outcome === 'ready' ? 'openmaic-preview-ready' : 'openmaic-preview-error',
+        );
+      expect(f.host.querySelectorAll('iframe')).toHaveLength(outcome === 'ready' ? 1 : 2);
+      if (outcome !== 'ready') {
+        expect(f.host.querySelector('iframe')).toBe(old);
+        expect(f.host.querySelector('[role="alert"]')).not.toBeNull();
+        expect(
+          [...f.host.querySelectorAll('button')].find(
+            (b) => b.textContent === 'pblV3.application.reopen',
+          )?.disabled,
+        ).toBe(false);
+      }
+    } finally {
+      await f.cleanup();
+    }
+  },
+);
+
+it('moves paused preview focus out without stealing editor focus or restoring stale focus', async () => {
+  mocks.request.mockResolvedValue(running);
+  const f = await fixture();
+  try {
+    await f.click();
+    const frame = f.host.querySelector('iframe')!;
+    frame.focus();
+    await act(async () =>
+      f.root.render(createElement(Harness, { current: { ...view, busy: true } })),
+    );
+    expect(document.activeElement).toBe(
+      f.host.querySelector('[data-testid="pbl-application-panel"]'),
+    );
+    await act(async () => f.root.render(createElement(Harness)));
+    expect(document.activeElement).not.toBe(frame);
+    const editor = document.createElement('textarea');
+    f.host.append(editor);
+    editor.focus();
+    await act(async () => f.root.render(createElement(Harness, { dirty: true })));
+    expect(document.activeElement).toBe(editor);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it.each(['gateway-error', 'direct-error', 'gateway-collapse', 'direct-collapse'])(
+  'does not let older candidate readiness erase a newer dispatch intent: %s',
+  async (kind) => {
+    let reject!: (e: Error) => void;
+    const vResult = {
+      ...running,
+      preview: {
+        ...running.preview,
+        url: kind.startsWith('gateway')
+          ? 'https://isolated.example/__openmaic_preview#V'
+          : 'https://isolated.example/V',
+      },
+    };
+    mocks.request
+      .mockResolvedValueOnce(running)
+      .mockResolvedValueOnce(vResult)
+      .mockImplementationOnce(
+        () =>
+          new Promise((_r, fail) => {
+            reject = fail;
+          }),
+      );
+    if (kind.endsWith('collapse'))
+      mocks.request.mockResolvedValueOnce({
+        state: 'running',
+        observedAt: '',
+        sourceChanged: false,
+      });
+    mocks.request.mockResolvedValueOnce(running);
+    const f = await fixture();
+    try {
+      await f.click();
+      const restart = () =>
+        act(async () =>
+          (
+            f.host.querySelector('[aria-label="pblV3.application.restart"]') as HTMLButtonElement
+          ).click(),
+        );
+      await restart();
+      const v = f.host.querySelectorAll('iframe')[1];
+      await restart();
+      if (kind.startsWith('gateway'))
+        await act(async () =>
+          window.dispatchEvent(
+            new MessageEvent('message', {
+              source: v.contentWindow,
+              origin: 'https://isolated.example',
+              data: { type: 'openmaic-preview-ready' },
+            }),
+          ),
+        );
+      else await act(async () => v.dispatchEvent(new Event('load')));
+      if (kind.endsWith('error'))
+        await act(async () => reject(new Error('new dispatch response lost')));
+      await f.click();
+      await f.click();
+      expect(mocks.request.mock.calls.map((c) => c[1].action)).toEqual([
+        'open',
+        'restart',
+        'restart',
+        ...(kind.endsWith('collapse') ? ['status'] : []),
+        'open',
+      ]);
     } finally {
       await f.cleanup();
     }

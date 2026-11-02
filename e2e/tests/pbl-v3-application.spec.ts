@@ -1,10 +1,13 @@
+import { previewShell } from '../../scripts/sandbox-preview-activity.mjs';
 import { expect } from '@playwright/test';
 import { test } from '../fixtures/pbl-learning-events';
 import { seedServerDocument, uniqueStageId } from '../fixtures/server-seed';
 import type { LearningView } from '@/lib/pbl/v3/types';
 
-for (const legacyMove of [false, true]) {
-  test(`application input and client state survive native fullscreen (legacy DOM: ${legacyMove})`, async ({
+for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
+  [false, true].map((legacyMove) => ({ legacyMove, nested })),
+)) {
+  test(`application input and client state survive native fullscreen (legacy DOM: ${legacyMove}, gateway: ${nested})`, async ({
     page,
     learningEvents,
   }, testInfo) => {
@@ -91,8 +94,11 @@ for (const legacyMove of [false, true]) {
       documents = 0;
     let stopped = false;
     let delayedDocument: Promise<void> | undefined;
+    let delayedAuthorization: Promise<void> | undefined;
+    let authorizationFailure = false;
+    const gatewayOrigin = 'http://preview-fixture.localhost';
     const commands: string[] = [];
-    await page.route('**/pbl-preview-fixture', async (route) => {
+    const serveApplication = async (route: import('@playwright/test').Route) => {
       documents++;
       if (delayedDocument) {
         const wait = delayedDocument;
@@ -102,10 +108,34 @@ for (const legacyMove of [false, true]) {
       await route.fulfill({
         contentType: 'text/html',
         body: `<!doctype html>
-        <label>Draft <input aria-label="Draft"></label><button onclick="document.querySelector('output').textContent=++window.count">Increment</button><output>0</output>
+        <form onsubmit="event.preventDefault();document.querySelector('output').textContent=++window.count"><label>Draft <input aria-label="Draft"></label><button type="button" onclick="document.querySelector('output').textContent=++window.count">Increment</button><button type="submit">Submit</button></form><output>0</output>
         <script>window.count=0;window.boot=crypto.randomUUID()</script>`,
       });
-    });
+    };
+    await page.route('**/pbl-preview-fixture', serveApplication);
+    if (nested)
+      await page.route(`${gatewayOrigin}/**`, async (route) => {
+        const path = new URL(route.request().url()).pathname;
+        if (path === '/__openmaic_preview')
+          return route.fulfill({ contentType: 'text/html', body: previewShell('fixture-nonce') });
+        if (path === '/__openmaic_authorize') {
+          if (delayedAuthorization) {
+            const wait = delayedAuthorization;
+            delayedAuthorization = undefined;
+            await wait;
+          }
+          if (authorizationFailure) return route.fulfill({ status: 403, body: 'Access expired' });
+          return route.fulfill({
+            json: {
+              activityKey: 'fixture-private-capability',
+              appOrigin: new URL(page.url()).origin,
+            },
+          });
+        }
+        if (path === '/__openmaic_activity') return route.fulfill({ status: 204 });
+        // Re-enter the shared app route; the browser document stays on the isolated origin.
+        await serveApplication(route);
+      });
     await page.route('**/api/pbl/v3**', async (route) => {
       const url = new URL(route.request().url());
       const body = route.request().method() === 'POST' ? route.request().postDataJSON() : null;
@@ -139,7 +169,9 @@ for (const legacyMove of [false, true]) {
             state: 'running',
             observedAt: new Date().toISOString(),
             preview: {
-              url: new URL('/pbl-preview-fixture', page.url()).href,
+              url: nested
+                ? `${gatewayOrigin}/__openmaic_preview#fixture-${launches}`
+                : new URL('/pbl-preview-fixture', page.url()).href,
               expiresAt: Date.now() + 300000,
             },
           },
@@ -169,7 +201,9 @@ for (const legacyMove of [false, true]) {
     const panel = page.getByTestId('pbl-application-panel');
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page.getByText('Try this interface.', { exact: true })).toBeHidden();
-    const app = page.frameLocator('iframe[title="Preview form"]');
+    const outerApp = page.frameLocator('iframe[title="Preview form"]');
+    const app = nested ? outerApp.frameLocator('iframe[title="Application"]') : outerApp;
+    await expect(panel.locator('iframe')).not.toHaveAttribute('inert', '');
     await app.getByRole('textbox', { name: 'Draft', exact: true }).fill('Unsaved form input');
     await app.getByRole('button', { name: 'Increment', exact: true }).click();
     await expect(app.locator('output')).toHaveText('1');
@@ -260,9 +294,12 @@ for (const legacyMove of [false, true]) {
       await expect(panel.locator('iframe')).toBeHidden();
       await expect(panel.locator('iframe')).toHaveAttribute('inert', '');
       const renewedDeadline = await page.evaluate(() => Date.now() + 300_000);
-      await app.locator('body').evaluate((_body, expiresAt) => {
-        parent.postMessage({ type: 'openmaic-preview-activity', expiresAt }, location.origin);
-      }, renewedDeadline);
+      await outerApp.locator('body').evaluate(
+        (_body, { expiresAt, origin }) => {
+          parent.postMessage({ type: 'openmaic-preview-activity', expiresAt }, origin);
+        },
+        { expiresAt: renewedDeadline, origin: new URL(page.url()).origin },
+      );
       await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toBeVisible();
       await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toHaveValue(
         'Unsaved form input',
@@ -279,10 +316,14 @@ for (const legacyMove of [false, true]) {
     const composer = page.locator('textarea[placeholder]').last();
     await composer.fill('Keep this draft while looking at the application');
     await expect(composer).toHaveValue('Keep this draft while looking at the application');
+    await app.getByRole('textbox', { name: 'Draft', exact: true }).focus();
     view.busy = true;
     view.activitySequence!++;
     await publishLearning();
     await expect(panel.locator('iframe')).toHaveCount(1);
+    await page.keyboard.type('BLOCKED');
+    await page.keyboard.press('Enter');
+    await expect(app.locator('output')).toHaveText('1');
     await expect(panel.locator('iframe')).toHaveAttribute('inert', '');
     await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toBeVisible();
     await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toHaveValue(
@@ -307,12 +348,23 @@ for (const legacyMove of [false, true]) {
     delayedDocument = new Promise<void>((resolve) => {
       releaseDocument = resolve;
     });
+    let releaseAuthorization: (() => void) | undefined;
+    if (nested)
+      delayedAuthorization = new Promise((resolve) => {
+        releaseAuthorization = resolve;
+      });
     view.busy = false;
     view.revision++;
     view.activitySequence!++;
     await publishLearning();
     try {
       await expect(panel.locator('iframe')).toHaveCount(2);
+      if (nested) {
+        const candidate = panel.locator('iframe').nth(1).contentFrame();
+        await expect(candidate.getByText('Opening preview…', { exact: true })).toBeVisible();
+        releaseAuthorization!();
+        await expect(candidate.locator('iframe')).toHaveCount(1);
+      }
       await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toHaveValue(
         'Unsaved form input',
       );
@@ -320,12 +372,29 @@ for (const legacyMove of [false, true]) {
       if (!legacyMove)
         await page.screenshot({ path: testInfo.outputPath('preview-updating-keeps-page.png') });
     } finally {
+      releaseAuthorization?.();
       releaseDocument();
     }
     await expect(panel.locator('iframe')).toHaveCount(1);
     await expect(panel.locator('iframe')).not.toHaveAttribute('inert', '');
     expect(launches).toBe(2);
     expect(documents).toBe(2);
+    if (nested) {
+      const stableBoot = await app
+        .locator('body')
+        .evaluate(() => (window as unknown as { boot: string }).boot);
+      authorizationFailure = true;
+      await panel.getByRole('button', { name: 'Restart application', exact: true }).click();
+      await expect(panel.locator('[role="alert"]')).toBeVisible();
+      await expect(panel.locator('iframe')).toHaveCount(2);
+      expect(
+        await app.locator('body').evaluate(() => (window as unknown as { boot: string }).boot),
+      ).toBe(stableBoot);
+      authorizationFailure = false;
+      await panel.getByRole('button', { name: 'Reopen application', exact: true }).click();
+      await expect(panel.locator('iframe')).toHaveCount(1);
+      await expect(panel.locator('iframe')).not.toHaveAttribute('inert', '');
+    }
     await panel.getByRole('button', { name: 'Collapse application', exact: true }).click();
     await expect(panel).not.toBeVisible();
     // A final source snapshot needs no compute to read, but the application does.
@@ -356,7 +425,7 @@ for (const legacyMove of [false, true]) {
     await expect(page.locator('.monaco-editor textarea').first()).not.toBeEditable();
     await page.getByTestId('pbl-application-open').click();
     await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toBeVisible();
-    expect(launches).toBe(3);
+    expect(launches).toBe(nested ? 5 : 3);
     expect(commands).toEqual(['prepare']);
     await panel.getByRole('button', { name: 'Collapse application', exact: true }).click();
     await expect(panel).not.toBeVisible();

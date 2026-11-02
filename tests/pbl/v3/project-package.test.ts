@@ -79,35 +79,51 @@ describe('self-contained PBL project packages', () => {
       expect(() => validateProjectPackage(bundle)).toThrow();
     },
   );
-  it('exports and requires the decision-context capability while retaining old packages', async () => {
-    const bundle = revised((files) => {
-      const descriptor = JSON.parse(files['project.json']);
-      const resource = Object.values(descriptor.runtime.evaluations)[0] as string;
-      const spec = JSON.parse(files[resource]);
-      spec.decisionInputs = [descriptor.definition.decisions[0].id];
-      files[resource] = JSON.stringify(spec);
-    });
-    expect(() => validateProjectPackage(bundle)).not.toThrow();
-    const m = manifest();
-    const fetcher = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(Response.json({ projects: [bundle] }));
-    try {
-      await attachClassroomProjects('choice-course', m, new Map());
-      expect(m.requiredCapabilities).toContain(DECISION_CONTEXT_CAPABILITY);
-      m.requiredCapabilities = m.requiredCapabilities!.filter(
-        (id) => id !== DECISION_CONTEXT_CAPABILITY,
-      );
-      fetcher.mockClear();
-      await expect(installClassroomProjects(await archive(bundle), m)).rejects.toThrow(
-        'decision-context',
-      );
-      expect(fetcher).not.toHaveBeenCalled();
-    } finally {
-      fetcher.mockRestore();
-    }
-    expect(() => validateProjectPackage(packageBuiltin(source()))).not.toThrow();
-  });
+  it.each(['selected', 'empty-evaluation', 'empty-application'])(
+    'exports and requires decision-context capability while retaining old packages: %s',
+    async (kind) => {
+      const bundle = revised((files) => {
+        const descriptor = JSON.parse(files['project.json']);
+        const resource = Object.values(descriptor.runtime.evaluations)[0] as string;
+        const spec = JSON.parse(files[resource]);
+        if (kind === 'empty-application') {
+          files['skeleton/src/app.py'] = 'print("Application")\n';
+          descriptor.runtime.application = {
+            title: 'Preview',
+            description: 'Course application',
+            argv: ['python3', 'src/app.py'],
+            port: 8000,
+            healthPath: '/',
+            decisionIds: [],
+          };
+          files['project.json'] = JSON.stringify(descriptor);
+        } else
+          spec.decisionInputs =
+            kind === 'empty-evaluation' ? [] : [descriptor.definition.decisions[0].id];
+        files[resource] = JSON.stringify(spec);
+      });
+      expect(() => validateProjectPackage(bundle)).not.toThrow();
+      const m = manifest();
+      const fetcher = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(Response.json({ projects: [bundle] }));
+      try {
+        await attachClassroomProjects('choice-course', m, new Map());
+        expect(m.requiredCapabilities).toContain(DECISION_CONTEXT_CAPABILITY);
+        m.requiredCapabilities = m.requiredCapabilities!.filter(
+          (id) => id !== DECISION_CONTEXT_CAPABILITY,
+        );
+        fetcher.mockClear();
+        await expect(installClassroomProjects(await archive(bundle), m)).rejects.toThrow(
+          'decision-context',
+        );
+        expect(fetcher).not.toHaveBeenCalled();
+      } finally {
+        fetcher.mockRestore();
+      }
+      expect(() => validateProjectPackage(packageBuiltin(source()))).not.toThrow();
+    },
+  );
   it.each(['prepare', 'case'])(
     'rejects package-supplied literal-argument metadata in %s',
     (location) => {
