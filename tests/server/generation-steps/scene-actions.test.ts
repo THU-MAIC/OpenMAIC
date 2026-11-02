@@ -69,6 +69,36 @@ describe('scene actions step', () => {
     expect(result.previousSpeeches).toEqual(['Now the second part.', 'Let us look closer.']);
   });
 
+  it('drops an action type the model invented and keeps the rest of the scene', async () => {
+    mocks.generateSceneActions.mockResolvedValue([
+      { id: 'a1', type: 'speech', text: 'Now the second part.' },
+      { id: 'a2', type: 'text', text: 'Not an action.' },
+      { id: 'a3', type: 'speech', text: 'Let us look closer.' },
+    ]);
+    const log = testLogger();
+
+    const result = await generateSceneActions({ ...body, model }, { log });
+
+    expect(result.scene.actions?.map((action) => action.id)).toEqual(['a1', 'a3']);
+    expect(result.previousSpeeches).toEqual(['Now the second part.', 'Let us look closer.']);
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('"text"'));
+    expect(mocks.generateSceneActions).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to the default actions when every action was invented', async () => {
+    mocks.generateSceneActions
+      .mockResolvedValueOnce([{ id: 'a1', type: 'text', text: 'Not an action.' }])
+      .mockResolvedValueOnce([{ id: 'd1', type: 'speech', text: 'Default narration.' }]);
+
+    const result = await generateSceneActions({ ...body, model }, { log: testLogger() });
+
+    expect(mocks.generateSceneActions).toHaveBeenCalledTimes(2);
+    const [, , fallbackCall, fallbackOptions] = mocks.generateSceneActions.mock.calls[1]!;
+    await expect(fallbackCall('system', 'user')).resolves.toBe('[]');
+    expect(fallbackOptions).toEqual(mocks.generateSceneActions.mock.calls[0]![3]);
+    expect(result.scene.actions?.map((action) => action.id)).toEqual(['d1']);
+  });
+
   it('includes attachment labels only for images that survive preparation', async () => {
     const png = await sharp({ create: { width: 32, height: 24, channels: 3, background: 'white' } })
       .png()
