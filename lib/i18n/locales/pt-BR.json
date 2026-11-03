@@ -2620,6 +2620,9 @@
     },
     "retryResponse": "Retry response",
     "run": {
+      "recoveryTitle": "This reply needs to resume",
+      "recoveryHint": "Your message and learning record have been kept.",
+      "retrying": "Retrying…",
       "contextCapacity": "The current course material or message exceeds the selected model’s context capacity. Your records are saved. Ask the course maintainer to check the model configuration or material before retrying.",
       "contextTurnCapacity": "O conteúdo acumulado nesta rodada excede o que o modelo pode processar de uma vez. Envie uma nova mensagem curta reformulando sua pergunta atual ou a ajuda de que precisa. Tentar novamente a mesma resposta não libera espaço. Seu progresso e seus registros estão salvos.",
       "contextPreparation": "Conversation preparation failed temporarily. Your records are saved; you can retry this reply.",

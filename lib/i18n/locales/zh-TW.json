@@ -2620,6 +2620,9 @@
     },
     "retryResponse": "Retry response",
     "run": {
+      "recoveryTitle": "這輪回覆暫未完成",
+      "recoveryHint": "你的訊息和學習記錄已保留。",
+      "retrying": "正在重試…",
       "contextCapacity": "目前課程材料或這則訊息超過所選模型的上下文容量。學習紀錄已儲存，請聯絡課程維護者檢查模型設定或材料後再試。",
       "contextTurnCapacity": "這輪對話累積的內容超過了模型本次能處理的範圍。請傳送一則簡短的新訊息，重新說明目前問題或需要的協助。反覆點選「重試本輪回覆」不會騰出空間。學習進度和記錄已儲存。",
       "contextPreparation": "準備對話上下文暫時失敗。學習紀錄已儲存，可以重試本輪回覆。",

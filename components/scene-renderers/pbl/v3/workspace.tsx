@@ -38,6 +38,7 @@ import { LearningPanels } from './learning-panels';
 import { LearningConversation } from './conversation';
 import { WorkspaceFrame } from './workspace-frame';
 import { TestEvaluation } from './test-evaluation';
+import { TeachingRunNotice } from './teaching-run-notice';
 import { PendingAction } from './pending-action';
 import { TaskDock } from './task-dock';
 import { ProductionContext } from './production-context';
@@ -780,24 +781,13 @@ function PBLV3WorkspaceContent({
                     {view.role ? t(`pblV3.roles.${view.role}`) : t('pblV3.checks')}
                   </span>
                 </header>
-                {view.roleRun &&
-                  ['failed', 'cancelled', 'missing'].includes(view.roleRun.status) && (
-                    <div role="alert" className="rounded border p-3">
-                      <p>{t(`pblV3.run.${view.roleRun.failure ?? view.roleRun.status}`)}</p>
-                      {view.roleRun.canRetry && (
-                        <button
-                          className={button}
-                          disabled={disabled}
-                          title={
-                            blockedReason ? t(`pblV3.inputBlocked.${blockedReason}`) : undefined
-                          }
-                          onClick={() => void command('retry')}
-                        >
-                          {t('pblV3.retryResponse')}
-                        </button>
-                      )}
-                    </div>
-                  )}
+                <TeachingRunNotice
+                  run={view.roleRun}
+                  disabled={disabled}
+                  retrying={pendingAction === 'retry'}
+                  blockedReason={blockedReason}
+                  onRetry={() => void command('retry')}
+                />
 
                 <div className="pbl-task-area flex min-h-0 flex-1 flex-col">
                   <LearningConversation

@@ -38,6 +38,21 @@ const renderWorkspaceText = (
 };
 
 describe('Workbench assistant Markdown', () => {
+  it('adds presentation-only leads for standalone emphasis only in lessons, keeping inline emphasis and content intact', () => {
+    const text =
+      '**清单的工作方式**\n\n输入**事项**，再添加到清单。\n\n### 实现顺序\n\n1. 添加事项\n2. 删除事项';
+    const lesson = parseHTML(
+      renderToStaticMarkup(createElement(TextBlock, { text, variant: 'lesson' })),
+    ).document;
+    expect(lesson.querySelectorAll('[data-pbl-lead="true"]')).toHaveLength(1);
+    expect(lesson.querySelector('[data-pbl-lead="true"]')!.textContent).toBe('清单的工作方式');
+    expect(lesson.querySelectorAll('h3')).toHaveLength(1);
+    expect(lesson.querySelectorAll('ol li')).toHaveLength(2);
+    expect(lesson.querySelectorAll('[data-streamdown="strong"]')).toHaveLength(2);
+    const original = parseHTML(renderText(text)).document;
+    expect(original.querySelector('[data-pbl-lead]')).toBeNull();
+    expect(lesson.body.textContent).toBe(original.body.textContent);
+  });
   it.each([
     ['settled', false],
     ['streaming', true],

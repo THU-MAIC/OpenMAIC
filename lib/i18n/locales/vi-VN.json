@@ -2620,6 +2620,9 @@
     },
     "retryResponse": "Retry response",
     "run": {
+      "recoveryTitle": "This reply needs to resume",
+      "recoveryHint": "Your message and learning record have been kept.",
+      "retrying": "Retrying…",
       "contextCapacity": "The current course material or message exceeds the selected model’s context capacity. Your records are saved. Ask the course maintainer to check the model configuration or material before retrying.",
       "contextTurnCapacity": "Nội dung tích lũy trong lượt này vượt quá phạm vi mô hình có thể xử lý trong một lần. Hãy gửi một tin nhắn mới ngắn gọn nêu lại câu hỏi hiện tại hoặc sự trợ giúp bạn cần. Thử lại cùng phản hồi sẽ không giải phóng dung lượng. Tiến độ và bản ghi của bạn đã được lưu.",
       "contextPreparation": "Conversation preparation failed temporarily. Your records are saved; you can retry this reply.",

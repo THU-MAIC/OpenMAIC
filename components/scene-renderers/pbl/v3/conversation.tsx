@@ -68,7 +68,7 @@ function AgentTurn({
   const copyText = entry.parts.flatMap((p) => (p.kind === 'text' ? [p.text] : [])).join('\n\n');
   return (
     <article
-      className="group/turn min-w-0 space-y-1.5"
+      className="pbl-agent-turn group/turn min-w-0 space-y-1.5"
       data-testid="pbl-agent-turn"
       data-status={entry.status}
       data-turn-id={entry.id}
@@ -120,8 +120,8 @@ function AgentTurn({
               t={t}
             />
           ) : part.kind === 'text' ? (
-            <div className="text-foreground" key={part.id}>
-              <TextBlock text={part.text} streaming={part.streaming} />
+            <div className="pbl-teaching-prose text-foreground" key={part.id}>
+              <TextBlock text={part.text} streaming={part.streaming} variant="lesson" />
             </div>
           ) : null,
         )}
