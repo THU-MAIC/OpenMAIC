@@ -2980,9 +2980,7 @@
       "testsPassed": "Tests de comportement réussis",
       "linkPlaceholder": "Cours d’initiation · Lien d’exemple à remplacer avant publication",
       "decisionsLabel": "Décisions prises",
-      "quizLabel": "Questionnaire",
-      "checkIn": "Aujourd’hui, j’ai donné vie à une nouvelle idée.",
-      "checkInProgress": "Donner vie à une idée, étape par étape."
+      "quizLabel": "Questionnaire"
     }
   }
 }

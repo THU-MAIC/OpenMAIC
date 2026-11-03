@@ -2980,9 +2980,7 @@
       "testsPassed": "동작 테스트 통과",
       "linkPlaceholder": "입문 과정 · 예시 링크, 공개 전에 교체",
       "decisionsLabel": "구현 선택",
-      "quizLabel": "퀴즈",
-      "checkIn": "오늘도 아이디어 하나를 작품으로 만들었어요.",
-      "checkInProgress": "아이디어를 한 걸음씩 만들어 가요."
+      "quizLabel": "퀴즈"
     }
   }
 }

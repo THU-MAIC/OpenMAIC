@@ -2980,9 +2980,7 @@
       "testsPassed": "Pruebas de comportamiento superadas",
       "linkPlaceholder": "Curso introductorio · Enlace de ejemplo, reemplazar antes de publicar",
       "decisionsLabel": "Decisiones tomadas",
-      "quizLabel": "Cuestionario",
-      "checkIn": "Hoy hice realidad otra idea.",
-      "checkInProgress": "Dar vida a una idea, paso a paso."
+      "quizLabel": "Cuestionario"
     }
   }
 }

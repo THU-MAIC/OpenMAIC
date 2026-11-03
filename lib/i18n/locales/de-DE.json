@@ -2980,9 +2980,7 @@
       "testsPassed": "Verhaltenstests bestanden",
       "linkPlaceholder": "Einstiegskurs · Beispiellink, vor Veröffentlichung ersetzen",
       "decisionsLabel": "Entscheidungen",
-      "quizLabel": "Wissenscheck",
-      "checkIn": "Heute habe ich wieder eine Idee verwirklicht.",
-      "checkInProgress": "Eine Idee Schritt für Schritt verwirklichen."
+      "quizLabel": "Wissenscheck"
     }
   }
 }

@@ -2980,9 +2980,7 @@
       "testsPassed": "Behavior tests passed",
       "linkPlaceholder": "Intro course · placeholder link, replace before launch",
       "decisionsLabel": "Decisions made",
-      "quizLabel": "Quiz",
-      "checkIn": "Today, I brought another idea to life.",
-      "checkInProgress": "Bringing an idea to life, one step at a time."
+      "quizLabel": "Quiz"
     }
   }
 }

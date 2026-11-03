@@ -2980,9 +2980,7 @@
       "testsPassed": "行为测试已通过",
       "linkPlaceholder": "前置课入口 · 示例链接，上线前替换",
       "decisionsLabel": "实现选择",
-      "quizLabel": "测验",
-      "checkIn": "今天，又把一个想法做成了。",
-      "checkInProgress": "把想法一步步做出来。"
+      "quizLabel": "测验"
     }
   }
 }

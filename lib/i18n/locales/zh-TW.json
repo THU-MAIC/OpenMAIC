@@ -2980,9 +2980,7 @@
       "testsPassed": "行為測試已通過",
       "linkPlaceholder": "前置課入口 · 範例連結，上線前替換",
       "decisionsLabel": "實作選擇",
-      "quizLabel": "測驗",
-      "checkIn": "今天，又把一個想法做成了。",
-      "checkInProgress": "把想法一步步做出來。"
+      "quizLabel": "測驗"
     }
   }
 }

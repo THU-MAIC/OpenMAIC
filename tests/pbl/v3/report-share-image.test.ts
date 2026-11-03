@@ -29,6 +29,7 @@ function syntheticCanvas() {
     lineTo() {},
     quadraticCurveTo() {},
     closePath() {},
+    stroke() {},
     measureText: (value: string) => ({ width: value.length * 10 }),
     fillText(value: string, x: number) {
       drawn.push({ value, x, direction: this.direction, align: this.textAlign, font: this.font });
@@ -100,13 +101,13 @@ it.each(['light', 'dark'] as const)(
     expect(receipt?.value).toContain(ar.pblV3.share.decisionsLabel);
     expect(receipt?.value).toContain('\u206612\u2069');
     expect(drawn.map((item) => item.value).join(' ')).not.toMatch(
-      /PRIVATE|private\.example|Decisions made|Quiz/,
+      /PRIVATE|private\.example|Decisions made|Quiz|✓/,
     );
   },
 );
 
 it.each([true, false])(
-  'uses completion check-in copy only when completed=%s',
+  'uses the congratulatory heading only when completed=%s',
   async (completed) => {
     const { drawn } = syntheticCanvas();
     const t = (key: string) => {
@@ -116,8 +117,12 @@ it.each([true, false])(
     };
     await renderReportShareImage({ ...content, completed }, 'light', t, 'zh-CN');
     const text = drawn.map((item) => item.value).join(' ');
-    expect(text).toContain(completed ? zh.pblV3.share.checkIn : zh.pblV3.share.checkInProgress);
-    expect(text).not.toContain(completed ? zh.pblV3.share.checkInProgress : zh.pblV3.share.checkIn);
+    expect(text).toContain(
+      completed ? zh.pblV3.reportCopy.congratulations : zh.pblV3.share.achievement,
+    );
+    expect(text).not.toContain(
+      completed ? zh.pblV3.share.achievement : zh.pblV3.reportCopy.congratulations,
+    );
   },
 );
 

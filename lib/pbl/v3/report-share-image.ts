@@ -30,7 +30,9 @@ export async function renderReportShareImage(
     qrPngDataUrl(destination).then(loadImage),
     background ? loadImage(background) : null,
   ]);
-  const checkIn = t(content.completed ? 'pblV3.share.checkIn' : 'pblV3.share.checkInProgress');
+  const heading = t(
+    content.completed ? 'pblV3.reportCopy.congratulations' : 'pblV3.share.achievement',
+  );
   let font = primaryFont;
   if (document.fonts) {
     try {
@@ -40,7 +42,7 @@ export async function renderReportShareImage(
         [
           content.title,
           ...content.concepts,
-          checkIn,
+          heading,
           ...content.skills.map((id) => t(`pblV3.reportCopy.skillLabels.${id}`)),
           t('pblV3.share.invite'),
           t('pblV3.share.tagline'),
@@ -137,39 +139,62 @@ export async function renderReportShareImage(
         flow === 'rtl' ? 'right' : 'left',
       ),
     );
+    return y + Math.max(0, visible.length - 1) * size * 1.45;
   }
   ctx.drawImage(logo, 64, 56, 68, 68);
   text('OpenMAIC', 148, 108, 46, ink, 700);
-  // Small vector accents celebrate the project without emoji font dependencies.
+  // A compact party-popper illustration uses vectors instead of emoji fonts.
+  ctx.save();
+  ctx.translate(1030, 92);
+  ctx.rotate(-0.2);
+  const cone = ctx.createLinearGradient(-40, 40, 28, -18);
+  cone.addColorStop(0, dark ? '#8e60da' : '#722ed1');
+  cone.addColorStop(1, dark ? '#d3b7ff' : '#c6a0f0');
+  ctx.fillStyle = cone;
+  ctx.beginPath();
+  ctx.moveTo(-43, 43);
+  ctx.lineTo(-26, -15);
+  ctx.lineTo(29, 24);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 4;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-4, -18);
+  ctx.quadraticCurveTo(0, -47, 22, -43);
+  ctx.moveTo(26, -2);
+  ctx.quadraticCurveTo(53, -26, 54, -2);
+  ctx.stroke();
   for (const [x, y, color] of [
-    [948, 72, '#b78bff'],
-    [1000, 104, '#ffbe55'],
-    [1054, 64, '#8bcaad'],
+    [-40, -42, '#b78bff'],
+    [33, -35, '#ffbe55'],
+    [52, 27, '#8bcaad'],
   ] as const) {
     ctx.fillStyle = color;
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(-0.4);
-    ctx.fillRect(-4, -10, 8, 20);
-    ctx.restore();
+    ctx.fillRect(x, y, 7, 13);
   }
-  paragraph(
-    t(content.completed ? 'pblV3.reportCopy.completedTitle' : 'pblV3.share.achievement'),
-    64,
-    176,
-    width - 128,
-    22,
-    1,
-    accent,
-    600,
-    true,
-  );
-  paragraph(content.title, 64, 238, width - 128, 36, 2, ink, 600);
-  paragraph(checkIn, 64, 350, width - 128, 44, 2, accent, 700, true);
+  ctx.restore();
+  text('VIBE CODING', 64, 166, 18, accent, 600);
+  const headingEnd = paragraph(heading, 64, 230, width - 128, 50, 2, ink, 700, true);
+  const titleEnd = paragraph(content.title, 64, headingEnd + 70, width - 128, 34, 2, muted, 500);
 
-  // Compact factual sections flow only when their data exists; the campaign stays in one slot.
+  // The full invitation sits directly after the title, before the learner's factual results.
+  const inviteY = titleEnd + 44,
+    inviteWidth = width - 128,
+    qrSize = 156;
+  box(64, inviteY, inviteWidth, 214, dark ? '#62409c' : '#dfc9ff');
+  if (qr) ctx.drawImage(qr, width - 64 - qrSize - 24, inviteY + 28, qrSize, qrSize);
+  const copyWidth = inviteWidth - qrSize - 72;
+  paragraph(t('pblV3.share.invite'), 88, inviteY + 46, copyWidth, 30, 1, ink, 700, true);
+  paragraph(t('pblV3.share.tagline'), 88, inviteY + 92, copyWidth, 22, 2, muted, 500, true);
+  paragraph(destination, 88, inviteY + 150, copyWidth, 22, 1, accent, 600, false, 'ltr');
+  if (placeholder)
+    paragraph(t('pblV3.share.linkPlaceholder'), 88, inviteY + 182, copyWidth, 14, 1, muted);
+
+  // Existing factual sections retain their content and flow only when data exists.
   const panel = dark ? '#ffffff0c' : '#ffffffa8';
-  let y = 452;
+  let y = inviteY + 242;
   if (content.metrics.length) {
     const cardWidth = (width - 136) / 2;
     content.metrics.forEach(([key, value], i) => {
@@ -206,18 +231,7 @@ export async function renderReportShareImage(
     content.skills.forEach((id, i) => {
       const x = 88 + (i % 3) * 340;
       const baseline = y + 76 + Math.floor(i / 3) * 58;
-      text('✓', direction === 'rtl' ? x + 304 : x, baseline, 22, accent, 700);
-      paragraph(
-        t(`pblV3.reportCopy.skillLabels.${id}`),
-        direction === 'rtl' ? x : x + 32,
-        baseline,
-        292,
-        20,
-        2,
-        ink,
-        500,
-        true,
-      );
+      paragraph(t(`pblV3.reportCopy.skillLabels.${id}`), x, baseline, 324, 20, 2, ink, 500, true);
     });
     y += 200;
   }
@@ -242,17 +256,6 @@ export async function renderReportShareImage(
   if (receipts.length)
     paragraph(receipts.join('   ·   '), 64, y + 32, width - 128, 22, 2, accent, 600, true);
 
-  const inviteY = 1210,
-    inviteWidth = width - 128,
-    qrSize = 156;
-  box(64, inviteY, inviteWidth, 214, dark ? '#62409c' : '#dfc9ff');
-  if (qr) ctx.drawImage(qr, width - 64 - qrSize - 24, inviteY + 28, qrSize, qrSize);
-  const copyWidth = inviteWidth - qrSize - 72;
-  paragraph(t('pblV3.share.invite'), 88, inviteY + 46, copyWidth, 30, 1, ink, 700, true);
-  paragraph(t('pblV3.share.tagline'), 88, inviteY + 92, copyWidth, 22, 2, muted, 500, true);
-  paragraph(destination, 88, inviteY + 150, copyWidth, 22, 1, accent, 600, false, 'ltr');
-  if (placeholder)
-    paragraph(t('pblV3.share.linkPlaceholder'), 88, inviteY + 182, copyWidth, 14, 1, muted);
   text('OpenMAIC · Vibe Coding', 64, height - 32, 18, muted);
   return new Promise((resolve, reject) =>
     canvas.toBlob(

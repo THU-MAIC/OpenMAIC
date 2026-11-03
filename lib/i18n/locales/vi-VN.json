@@ -2980,9 +2980,7 @@
       "testsPassed": "Đã vượt qua kiểm thử hành vi",
       "linkPlaceholder": "Khóa học nhập môn · Liên kết mẫu, thay trước khi ra mắt",
       "decisionsLabel": "Lựa chọn đã đưa ra",
-      "quizLabel": "Bài kiểm tra",
-      "checkIn": "Hôm nay, tôi lại biến một ý tưởng thành sản phẩm.",
-      "checkInProgress": "Từng bước biến ý tưởng thành sản phẩm."
+      "quizLabel": "Bài kiểm tra"
     }
   }
 }

@@ -2980,9 +2980,7 @@
       "testsPassed": "動作テストに合格",
       "linkPlaceholder": "入門講座の入口 · サンプルリンク、公開前に差し替え",
       "decisionsLabel": "実装の選択",
-      "quizLabel": "クイズ",
-      "checkIn": "今日も、ひとつのアイデアを形にしました。",
-      "checkInProgress": "アイデアを、一歩ずつ形に。"
+      "quizLabel": "クイズ"
     }
   }
 }

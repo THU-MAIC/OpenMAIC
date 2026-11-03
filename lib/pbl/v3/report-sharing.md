@@ -7,8 +7,9 @@ the browser determines the destination, with no promise of automatic photo-libra
 
 `reportShareContent` includes only course-authored title/concepts, recorded completion,
 summary counts, practiced skill receipts and saved test/quiz results. Empty sections are
-omitted. Completion check-in copy is used only when `requiredComplete` is true; unfinished
-projects use progress copy. Counts represent recorded practice, not mastery or rankings.
+omitted. The congratulatory heading is used only when `requiredComplete` is true; unfinished
+projects use a neutral achievement heading. The invitation and campaign link/QR sit between
+the project title and factual results. Counts represent recorded practice, not mastery or rankings.
 
 The projection does not read analysis, findings, quotes, conversations or evidence. There
 is no analysis placeholder or derived narrative. Generating/ready/failed analysis and
