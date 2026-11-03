@@ -51,6 +51,12 @@
   font-size: var(--wb-text-base);
 }
 
+/* Activity cards stay compact; prose retains extra breathing room on either side. */
+:is(.pbl-workbench, .pbl-history) .pbl-assistant-bubble > .pbl-teaching-prose:not(:first-child),
+:is(.pbl-workbench, .pbl-history) .pbl-assistant-bubble > .pbl-teaching-prose + * {
+  margin-block-start: 6px;
+}
+
 :is(.pbl-workbench, .pbl-history) .pbl-teaching-prose .wb-prose {
   --wb-h1: 20px;
   --wb-h2: 20px;

@@ -787,7 +787,7 @@ test('1440px first page highlights the whole task bar without covering its hint'
   ).toBe(0);
 });
 
-test('narrow conversation jump control floats in a gutter outside question text', async ({
+test('narrow conversation jump control stays centered without widening either message gutter', async ({
   page,
   learningEvents,
 }) => {
@@ -797,6 +797,12 @@ test('narrow conversation jump control floats in a gutter outside question text'
   await tour(page).getByRole('button', { name: 'Close guide', exact: true }).click();
   await expect(tour(page)).toHaveCount(0);
   fixture.view.conversation = [
+    {
+      id: 'learner-question',
+      speaker: 'user',
+      status: 'succeeded',
+      parts: [{ kind: 'text', id: 'learner-text', text: 'Learner question' }],
+    },
     {
       id: 'question',
       speaker: 'discussion',
@@ -816,7 +822,14 @@ test('narrow conversation jump control floats in a gutter outside question text'
     .first()
     .boundingBox())!;
   const bubble = (await assistant.locator('.pbl-assistant-bubble').boundingBox())!;
-  expect(control.x).toBeGreaterThanOrEqual(bubble.x + bubble.width);
+  expect(control.x + control.width / 2).toBeCloseTo(viewport.x + viewport.width / 2, 0);
+  expect(bubble.x - viewport.x).toBeCloseTo(16, 0);
+  expect(viewport.x + viewport.width - bubble.x - bubble.width).toBeCloseTo(16, 0);
+  const learner = (await assistant
+    .getByText('Learner question', { exact: true })
+    .locator('..')
+    .boundingBox())!;
+  expect(viewport.x + viewport.width - learner.x - learner.width).toBeCloseTo(16, 0);
   expect(control.y + control.height).toBeLessThanOrEqual(viewport.y + viewport.height);
 });
 
@@ -1493,15 +1506,15 @@ test('live and historical turns share regular spacing and body-size handoffs in 
     expect(live.heading).toBe('20px');
     expect(live.subtitle).toBe('16px');
     expect(live.tool).toBe('13px');
-    for (const gap of live.gaps) expect(gap).toBeCloseTo(12, 0);
+    expect(live.gaps.map(Math.round)).toEqual([6, 12, 12, 6]);
     await page.getByRole('button', { name: 'Conversation history', exact: true }).click();
     await expect(page.locator('.pbl-history [data-testid="pbl-agent-turn"]')).toBeVisible();
     await expect
       .poll(async () => (await measure(page.locator('.pbl-history'))).gaps[0])
-      .toBeCloseTo(12, 1);
+      .toBeCloseTo(6, 1);
     const history = await measure(page.locator('.pbl-history'));
     expect({ ...history, gaps: [] }).toEqual({ ...live, gaps: [] });
-    for (const gap of history.gaps) expect(gap).toBeCloseTo(12, 0);
+    expect(history.gaps.map(Math.round)).toEqual([6, 12, 12, 6]);
     await page.screenshot({
       path: testInfo.outputPath(dark ? 'history-dark.png' : 'history-light.png'),
     });

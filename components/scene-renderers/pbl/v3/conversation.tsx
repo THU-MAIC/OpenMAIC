@@ -83,7 +83,7 @@ function AgentTurn({
         {t(`pblV3.roles.${role}`)}
       </div>
       <div
-        className={`pbl-assistant-bubble flex min-w-0 flex-col gap-3 rounded-xl rounded-tl-md border-l-2 px-3 py-2.5 ${accents[role]}`}
+        className={`pbl-assistant-bubble flex min-w-0 flex-col gap-1.5 rounded-xl rounded-tl-md border-l-2 px-3 py-2.5 ${accents[role]}`}
       >
         {groupParts(entry.parts).map((part) =>
           Array.isArray(part) ? (
@@ -257,7 +257,7 @@ export function LearningConversation({
     >
       <ConversationContent
         scrollClassName="pbl-conversation-scroll min-h-0 flex-1"
-        className="gap-5 p-4 pr-12"
+        className="gap-5 p-4"
         onClick={(event) => openReference(event)}
       >
         <ConversationHistory
