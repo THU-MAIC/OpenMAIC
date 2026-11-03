@@ -575,6 +575,34 @@ describe('evaluator prompt text cuts', () => {
     expect(user).toContain(`answer="${'b'.repeat(139)}…"`);
   });
 
+  it('does not cut an emoji in half when shortening milestone feedback for the final card', () => {
+    const t = mkMicrotask('t1', 't');
+    const ms = mkMilestone('ms1', 'M1', [t]);
+    const project = mkProject({ milestones: [ms] });
+    addEvaluation(project, {
+      kind: 'milestone',
+      milestoneId: 'ms1',
+      // 279 code units, then an emoji whose surrogate pair straddles the 280 limit.
+      feedback: 'c'.repeat(279) + '😀' + ' tail',
+      strengths: [],
+      improvements: [],
+    });
+    const { user } = buildFinalEvalPrompt(project);
+    expect(hasLoneSurrogate(user)).toBe(false);
+    expect(user).toContain(`prose: ${'c'.repeat(279)}…`);
+  });
+
+  it('does not keep half an emoji when trimming the start of a long role-play transcript', () => {
+    const project = mkScenarioProject();
+    // "Learner: " is 9 code units, so the 6000-unit tail starts on the emoji's low surrogate.
+    project.threads[0].messages = [
+      { id: 'm1', roleType: 'user', content: '😀' + 'd'.repeat(5999), ts: 't' },
+    ];
+    const { user } = buildFinalEvalPrompt(project);
+    expect(hasLoneSurrogate(user)).toBe(false);
+    expect(user).toContain(`…(earlier exchanges trimmed)…\n${'d'.repeat(5999)}`);
+  });
+
   it('still cuts plain text at the limit', () => {
     const t = mkMicrotask('t1', 'x');
     const ms = mkMilestone('ms1', 'M', [t], { synthesisCheck: { coreConcept: 'c' } });

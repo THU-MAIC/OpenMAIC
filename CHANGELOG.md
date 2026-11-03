@@ -14,6 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Qwen voice cloning: migrate enrollment and synthesis to CosyVoice (`cosyvoice-v3.5-plus` by default, Beijing DashScope). Saved voices stay visible; incompatible voices require re-uploading a suitable reference recording and re-cloning, with no automatic sample migration. Managed deployments must authorize the new target alongside `qwen3-tts-flash` in `TTS_QWEN_MODELS` or `openmaic.yml`. An empty or exact retired `TTS_QWEN_VOICE_CLONE_MODEL=qwen3-tts-vc-2026-01-22` value selects the default; other overrides remain unchanged. [#1941](https://github.com/THU-MAIC/OpenMAIC/issues/1941)
 
+- Classroom playback resumes the remaining reading time after a narration clip fails to play, instead of getting stuck on the failed audio element. Failed clips release their playback state without interrupting a newer narration line. Pausing while a clip is still loading does not discard that narration; resume plays it. [#2109](https://github.com/THU-MAIC/OpenMAIC/issues/2109)
+
 ## [1.3.1] - 2026-11-02
 
 1.3.1 is a regular patch release. DeepSeek joins the Token Plan one-key setup, and most of the rest is reliability: asset uploads no longer hold database connections across slow object stores, requests stop waiting forever for a connection, and edits made just before leaving a page are kept. It has one upgrade condition and one new known issue; read **Breaking Changes** and **Known issues** before upgrading.

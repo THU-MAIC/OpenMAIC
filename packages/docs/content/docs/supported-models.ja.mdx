@@ -117,6 +117,8 @@ description: オープンソース版 OpenMAIC の組み込みモデルと provi
 
 Google TTS の既定モデルは `gemini-3.8-flash-lite-tts` です。明示的に選択済みのモデルは変更されません。Google が公表する上記 3 つのプレビューモデルの[最も早い提供終了日](https://ai.google.dev/gemini-api/docs/deprecations)は **2026 年 11 月 17 日**です。終了前に 3.8 モデルに切り替えてください。デプロイ側で管理する認証情報を使う場合は、`openmaic.yml` の `tts` スロットまたはプロバイダーの `models` 許可リストも更新します。Gemini 3.8 の WAV 応答はそのまま保持し、旧モデルの PCM 応答は引き続き再生用の WAV に変換します。
 
+管理されたデプロイでは、音声クローンの対象モデルに加えて `qwen3-tts-flash` も許可してください。例：`TTS_QWEN_MODELS=qwen3-tts-flash,cosyvoice-v3.5-plus`。または、`openmaic.yml` のプロバイダーの `models` 許可リストに両方を指定します。クローン対象だけを指定すると、カタログ音声モデルへの暗黙の許可が置き換わり、カタログ音声のリクエストが HTTP 403 になります。使用中の他のモデルの許可も残してください。
+
 ## ASR モデル
 
 | 提供元         | Provider ID      | 組み込みモデル                                                                                                                                                                                                                                       |
