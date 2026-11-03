@@ -17,6 +17,7 @@
 import type { AgentEvent, AgentMessage } from '@earendil-works/pi-agent-core';
 import { InMemorySessionRepo, Session } from '@earendil-works/pi-agent-core';
 import type { ClaimedAgentSession } from '@openmaic/storage';
+import type { PgAgentSessionStore } from '@openmaic/storage/agent-session/pg';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -42,6 +43,8 @@ vi.mock('node:crypto', async (importActual) => {
 
 vi.mock('@/lib/server/agent-runtime/store', () => ({
   getAgentSessionStore: mocks.getAgentSessionStore,
+  withAgentSessionClaim: async <T>(operation: (store: PgAgentSessionStore) => Promise<T>) =>
+    operation(await mocks.getAgentSessionStore()),
 }));
 
 vi.mock('@/lib/persistence/server-provider', () => ({

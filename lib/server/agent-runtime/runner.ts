@@ -96,7 +96,7 @@ import {
   trackToolCallMessage,
   type PendingToolCall,
 } from './tool-call-integrity';
-import { getAgentSessionStore } from './store';
+import { getAgentSessionStore, withAgentSessionClaim } from './store';
 import { listAgentUserMessages } from './user-messages';
 import { subscribeAgentEventWakeup } from './event-notify-bus';
 import { getBackgroundDocumentStore } from './owner-scoped-documents';
@@ -2261,28 +2261,32 @@ export function startAgentRunner(
         await assertRuntimeSchemaCompatibility();
         nextSchemaCheckAt = Date.now() + 30_000;
       }
-      const store = await getAgentSessionStore();
       while (ctx.running.size < config.maxConcurrent && !ctx.shuttingDown) {
-        const claimWorkerId = `${PROCESS_WORKER_ID}:${randomUUID()}`;
-        const meta = await store.claimNextSession(claimWorkerId, process.pid, {
-          leaseTtlMs: config.leaseTtlMs,
-          maxAttempts: config.maxAttempts,
-          excludeSessionIds: [...ctx.running.keys()],
+        const claimed = await withAgentSessionClaim(async (store) => {
+          if (ctx.shuttingDown) return false;
+          const claimWorkerId = `${PROCESS_WORKER_ID}:${randomUUID()}`;
+          const meta = await store.claimNextSession(claimWorkerId, process.pid, {
+            leaseTtlMs: config.leaseTtlMs,
+            maxAttempts: config.maxAttempts,
+            excludeSessionIds: [...ctx.running.keys()],
+          });
+          if (!meta) return false;
+          // Keep the claim connection until this decision and cleanup finish,
+          // even if stop() timed out and pool.end() has already started.
+          if (ctx.shuttingDown) {
+            await store.releaseLease(meta.id, claimWorkerId);
+            return false;
+          }
+          // Process-local fence in addition to the store's lease exclusion.
+          if (ctx.running.has(meta.id)) return true;
+          log.info(`claiming ${meta.id} (attempt ${meta.attempt})`);
+          void runSession(ctx, meta).catch((error) => {
+            log.error(`runSession ${meta.id} crashed`, error);
+            ctx.running.delete(meta.id);
+          });
+          return true;
         });
-        if (!meta) break;
-        // Shutdown can start while the database is still granting this claim.
-        // Release it before the scan settles; never start another turn during drain.
-        if (ctx.shuttingDown) {
-          await store.releaseLease(meta.id, claimWorkerId);
-          break;
-        }
-        // Process-local fence in addition to the store's lease exclusion.
-        if (ctx.running.has(meta.id)) continue;
-        log.info(`claiming ${meta.id} (attempt ${meta.attempt})`);
-        void runSession(ctx, meta).catch((error) => {
-          log.error(`runSession ${meta.id} crashed`, error);
-          ctx.running.delete(meta.id);
-        });
+        if (!claimed) break;
       }
     } catch (error) {
       if (!retireIncompatibleRunner(ctx, error)) log.error('claim scan failed', error);

@@ -102,6 +102,8 @@ vi.mock('@/lib/server/pbl-v3/report-analysis', () => ({
 }));
 vi.mock('@/lib/server/agent-runtime/store', () => ({
   getAgentSessionStore: async () => mocked.agents,
+  withAgentSessionClaim: async <T>(operation: (store: PgAgentSessionStore) => Promise<T>) =>
+    operation(mocked.agents as PgAgentSessionStore),
 }));
 vi.mock('@/lib/server/model-config/runtime', () => ({
   assertWorkspaceModelsAuthorized: async () => {},
