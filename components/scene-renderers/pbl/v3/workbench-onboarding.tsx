@@ -144,7 +144,7 @@ export function WorkbenchOnboarding({
         ch = content.offsetHeight,
         gap = 16,
         edge = 12;
-      const compactDiscussion = step === 'discussion' && width < 640 && height >= 500;
+      const compactDiscussion = step === 'discussion' && width < 640;
       const reading = compactDiscussion
         ? anchor?.querySelector('.pbl-conversation-scroll')?.getBoundingClientRect()
         : undefined;

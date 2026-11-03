@@ -298,6 +298,49 @@ test('blocks pointer and keyboard interaction during preparation, then opens the
   expect(fixture.view.busy).toBe(true);
 });
 
+test('loading keeps its accessible modal and focus through native fullscreen changes', async ({
+  page,
+  learningEvents,
+}) => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  try {
+    const fixture = await project(page, learningEvents, {
+      secondScene: true,
+      environmentReady: false,
+      prepareGate: gate,
+    });
+    const loading = page.getByTestId('pbl-workbench-loading');
+    const dialog = page.getByRole('dialog', { name: 'Loading your workspace' });
+    await expect(loading).toBeVisible();
+    for (const fullscreen of [true, false]) {
+      if (fullscreen)
+        await page.getByTestId('pbl-v3-entry').evaluate((element) => element.requestFullscreen());
+      else await page.evaluate(() => document.exitFullscreen());
+      await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(fullscreen);
+      await expect(dialog).toBeVisible();
+      await expect(dialog).toBeFocused();
+      await page.keyboard.press('Tab');
+      await page.keyboard.press('ArrowRight');
+      await page.keyboard.press('Escape');
+      await page.keyboard.type('Must not become a draft');
+      await expect(dialog).toBeFocused();
+      await expect(page.locator('h1')).toHaveText('Workspace guide');
+      await expect(page.locator('[data-pbl-tour="composer"] textarea')).toHaveValue('');
+      expect(fixture.commands).toEqual(['prepare']);
+    }
+    release();
+    await expect(loading).toHaveCount(0);
+    await expect(tour(page)).toHaveAttribute('data-step', 'progress');
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('pbl-v3-workspace')).toBeFocused();
+  } finally {
+    release();
+  }
+});
+
 test('releases the entry barrier for preparation errors so retry remains usable', async ({
   page,
   learningEvents,
@@ -1105,6 +1148,8 @@ for (const [width, height] of [
 }
 
 for (const [width, height, gesture] of [
+  [320, 480, 'touch'],
+  [320, 480, 'wheel'],
   [320, 568, 'touch'],
   [390, 844, 'wheel'],
 ] as const) {
@@ -1197,6 +1242,22 @@ for (const [width, height, gesture] of [
         })
         .toBe(true);
       await expect(tour(page)).toHaveAttribute('data-step', 'discussion');
+    }
+    if (height === 480) {
+      // A smaller card must still let the learner read its full instructions.
+      const instructions = tour(page).locator(':scope > div');
+      expect(await instructions.evaluate((element) => element.scrollHeight)).toBeGreaterThan(
+        await instructions.evaluate((element) => element.clientHeight),
+      );
+      await instructions.hover();
+      await page.mouse.wheel(0, 6000);
+      await expect
+        .poll(() =>
+          instructions.evaluate(
+            (element) => element.scrollHeight - element.clientHeight - element.scrollTop,
+          ),
+        )
+        .toBeLessThanOrEqual(1);
     }
     // Reading gestures must not release modal focus or submit learning commands.
     await page.keyboard.press('ArrowRight');

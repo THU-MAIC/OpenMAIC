@@ -310,9 +310,10 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
       await page.evaluate(() =>
         document.querySelector<HTMLElement>('[data-playback-stage]')!.requestFullscreen(),
       );
-      expect(await guide.evaluate((element) => document.fullscreenElement!.contains(element))).toBe(
-        true,
-      );
+      // The fullscreen promise can resolve before React reparents the portal.
+      await expect
+        .poll(() => guide.evaluate((element) => !!document.fullscreenElement?.contains(element)))
+        .toBe(true);
       await page.evaluate(() => document.exitFullscreen());
       for (let step = 0; step < 5; step++) await guide.locator('footer button').last().click();
       await expect(guide).toHaveCount(0);
