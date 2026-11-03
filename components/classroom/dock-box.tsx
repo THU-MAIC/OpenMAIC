@@ -13,6 +13,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
   clampDockHeight,
+  dockBubbleVars,
   DOCK_FOLDED_HEIGHT,
   DOCK_KEYBOARD_STEP,
   DOCK_MAX_HEIGHT,
@@ -97,6 +98,10 @@ export function DockResizeHandle({ dockRef }: { dockRef: RefObject<HTMLElement |
         current.height = height;
         dock.style.height = `${height}px`;
         dock.style.marginTop = `${current.startHeight - height}px`;
+        // What is inside the dock follows the drag; only the canvas waits for the end.
+        for (const [name, value] of Object.entries(dockBubbleVars(height))) {
+          dock.style.setProperty(name, value);
+        }
       }}
       onPointerUp={() => {
         const dock = dockRef.current;

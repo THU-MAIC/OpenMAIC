@@ -1,6 +1,7 @@
 'use client';
 
 import { DockResizeHandle, useDockBox } from '@/components/classroom/dock-box';
+import { dockBubbleVars } from '@/lib/edit/dock-height';
 import { useState, useRef, useCallback, useEffect, type CSSProperties } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -120,8 +121,6 @@ interface RoundtableProps {
   readonly onClearElementReference?: () => void;
 }
 
-/** What the dock keeps around the speech bubble: its toolbar and padding. */
-const DOCK_BUBBLE_INSET_PX = 82;
 // This must stay in sync with the non-presentation textarea's max-h-[100px] class.
 const NON_PRESENTATION_INPUT_MAX_HEIGHT_PX = 100;
 
@@ -1261,12 +1260,7 @@ export function Roundtable({
       ref={dockRef}
       data-testid="roundtable-region"
       data-collapsed={dock.collapsed ? 'true' : 'false'}
-      style={
-        {
-          height: dock.height,
-          '--dock-bubble-max': `${Math.max(dock.height - DOCK_BUBBLE_INSET_PX, 40)}px`,
-        } as CSSProperties
-      }
+      style={{ height: dock.height, ...dockBubbleVars(dock.height) } as CSSProperties}
       className={cn(
         // Its height moves with the fold, not with the drag that sizes it.
         'w-full flex flex-col relative z-10 transition-[height,background-color,border-color] duration-[400ms] ease-[cubic-bezier(0.22,1,0.36,1)] data-[dragging=true]:transition-none',
@@ -1826,7 +1820,7 @@ export function Roundtable({
                         onPlayPause?.();
                       }}
                       className={cn(
-                        'relative px-4 pt-2 pb-3 rounded-2xl text-[15px] leading-relaxed transition-all border w-[min(420px,calc(100%-3rem))] group/bubble flex flex-col max-h-[var(--dock-bubble-max,110px)]',
+                        'relative px-4 pt-2 pb-3 rounded-2xl text-[15px] leading-relaxed transition-all [[data-dragging=true]_&]:transition-none border w-[min(var(--dock-bubble-width,420px),calc(100%-3rem))] group/bubble flex flex-col min-h-[var(--dock-bubble-min,0px)] max-h-[var(--dock-bubble-max,110px)]',
                         bubbleRole === 'teacher' ? 'pl-4 pr-10' : 'pl-4 pr-10',
                         bubbleRole === 'user'
                           ? 'bg-purple-600/95 dark:bg-purple-500/95 backdrop-blur-sm border-purple-400/40 dark:border-purple-300/40 text-white rounded-br-sm shadow-md shadow-purple-300/30 dark:shadow-purple-800/30'
