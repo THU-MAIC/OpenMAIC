@@ -10,7 +10,12 @@ import {
 } from 'react';
 import { ChevronUp, Settings, X } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { hasTaskDrawer, learningProgress, learningStep } from '@/lib/pbl/v3/presentation';
+import {
+  continueActionLabel,
+  hasTaskDrawer,
+  learningProgress,
+  learningStep,
+} from '@/lib/pbl/v3/presentation';
 import type { LearningView } from '@/lib/pbl/v3/types';
 
 export interface TaskDockHandle {
@@ -69,6 +74,7 @@ export function TaskDock({
         : view.actions.includes('next')
           ? 'pblV3.journey.ready'
           : `pblV3.journey.hints.${step}`,
+    { action: continueActionLabel(view, t) },
   );
   const close = () => {
     setOpenKey(null);

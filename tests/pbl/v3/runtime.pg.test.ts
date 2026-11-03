@@ -2397,7 +2397,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         expect(config.historyWindow.automaticEntry).toBe(true);
         expect(
           config.systemPrompt.includes(
-            `"visibleLabels":${JSON.stringify(visibleProductLabels(locale))}`,
+            `"visibleLabels":${JSON.stringify(visibleProductLabels(locale, 'dialogue'))}`,
           ),
         ).toBe(true);
       };

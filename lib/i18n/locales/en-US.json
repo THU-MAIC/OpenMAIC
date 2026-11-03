@@ -2593,7 +2593,7 @@
         "idle": "Run tests using the green button on the task bar. Detailed results appear here.",
         "running": "The test runner is working. Results will be saved automatically; you do not need to send a message.",
         "collecting": "Execution finished. The server is checking the file version and saving the result.",
-        "passed": "The result is saved. Use Continue on the task bar to enter the next step.",
+        "passed": "The result is saved. Choose “{{action}}” on the task bar to enter the next step.",
         "failed": "Review the failed checks and ask the coding assistant for help, then rerun tests. Hidden tests and expected answers are not shown.",
         "error": "No reliable verdict is available; this is not confirmed code failure. While the workspace is available, you can edit, ask the coding assistant for help or retry. Contact course or platform support if the problem persists.",
         "unavailable": "The result is not confirmed. Retry getting results on the task bar; an earlier pass cannot authorize progression."
@@ -2668,7 +2668,7 @@
       "workspace-run": "Workspace run"
     },
     "journey": {
-      "completionHandoff": "This step is complete. Use the Continue button on the task bar above the message box to move on.",
+      "completionHandoff": "This step is complete. See the task bar above the message box for the next action.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",
       "expand": "Expand project workspace",
@@ -2676,7 +2676,7 @@
       "fullscreenUnavailable": "Fullscreen is unavailable. You can continue in the classroom layout.",
       "currentTask": "Current learning step",
       "collectResult": "Collect the execution result before continuing.",
-      "ready": "This step is ready. Choose Continue when you are ready to move on.",
+      "ready": "This step is ready. Choose “{{action}}” when you are ready to move on.",
       "followStep": "Follow the current step below. The assistant may need your answer or confirmation.",
       "steps": {
         "intro": "Project introduction",

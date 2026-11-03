@@ -45,6 +45,7 @@ import { useWorkbenchOnboarding } from './use-workbench-onboarding';
 import { WorkbenchOnboarding } from './workbench-onboarding';
 import { WorkbenchLoading } from './workbench-loading';
 import { pblRequest } from './request';
+import { continueActionLabel } from '@/lib/pbl/v3/presentation';
 export { pblRequest } from './request';
 import { SandboxRequestError } from '@/components/sandbox/client';
 
@@ -688,6 +689,15 @@ function PBLV3WorkspaceContent({
             }
             showApplication={applicationPreview.open}
             onCollapseApplication={applicationPreview.close}
+            onCollapseWorkspace={() => {
+              // Keep the persisted draft valid before hiding its other pane.
+              setShowAssistant(true);
+              setShowWorkspace(false);
+            }}
+            onCollapseAssistant={() => {
+              setShowWorkspace(true);
+              setShowAssistant(false);
+            }}
             showWorkspace={showWorkspace}
             showAssistant={showAssistant}
             workspace={
@@ -893,15 +903,7 @@ function PBLV3WorkspaceContent({
                             {pendingAction === 'next' && (
                               <LoaderCircle size={13} className="mr-1 animate-spin" />
                             )}
-                            {view.milestones?.[view.state.position.milestoneIndex]?.stages[
-                              view.state.position.stageIndex + 1
-                            ]
-                              ? t('pblV3.journey.enterStep', {
-                                  step: t(
-                                    `pblV3.journey.steps.${view.milestones[view.state.position.milestoneIndex]!.stages[view.state.position.stageIndex + 1]}`,
-                                  ),
-                                })
-                              : t('pblV3.next')}
+                            {continueActionLabel(view, t)}
                           </button>
                         )
                       )
