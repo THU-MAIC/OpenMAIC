@@ -3,17 +3,15 @@ import type { Queryable } from '@openmaic/storage/agent-session/pg';
 
 export const LEARNER_HANDOFF_EVENT = 'pbl_learner_handoff';
 
-/** Join a review handoff without appending an already delivered closing paragraph. */
-export function reviewResponse(
-  explanation: string | undefined,
-  question: string,
-): string | undefined {
-  const body = explanation?.trim();
-  if (!body) return undefined;
-  const closing = question.trim();
-  const prefix = closing && body.endsWith(closing) ? body.slice(0, -closing.length) : null;
-  if (prefix !== null && (!prefix || /\r?\n[ \t]*\r?\n[ \t]*$/.test(prefix))) return body;
-  return [body, question].filter(Boolean).join('\n\n');
+/** One authored message supplies both display text and the question recorded for feedback. */
+export function reviewResponse(response: string): { response: string; question: string } {
+  const text = response.trim();
+  if (!text) throw new Error('A complete review response is required.');
+  const question = text
+    .split(/\r?\n[ \t]*\r?\n/)
+    .at(-1)!
+    .trim();
+  return { response: text, question };
 }
 
 /** Support-only inputs stay in history but cannot become later understanding/approval evidence. */

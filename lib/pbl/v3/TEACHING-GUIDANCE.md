@@ -214,8 +214,9 @@ package changes likewise require a new package version and a fresh learner copy
 when the author wants a clean acceptance run.
 
 Guided review delivery uses one committed full response: `request_skill_review`
-receives `explanation` plus one `question`. The pending review retains the concise
-question for assessment and a display text for crash recovery. Once its canonical
+receives a complete `response` including one closing question in its final paragraph.
+The pending review records that final paragraph for assessment and the complete
+response for crash recovery. The host does not append a separate question. Once its canonical
 receipt commits, presentation replaces any preceding ordinary prose for the same
 session/input with that response; it does not compare paraphrases or alter the
 persisted model record. Expandable thinking and tool parts remain. Legacy receipts,

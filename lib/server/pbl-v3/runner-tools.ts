@@ -680,31 +680,31 @@ export async function teachingRunnerConfig(input: {
         'request_skill_review',
         'Record a concrete student review question for this section. End your turn and wait for a new student reply. Set approval only when explicitly asking the learner to approve the current plan/code version. Understanding alone is not approval. The final artifact section always records an approval request.',
         Type.Object({
-          explanation: Type.String({
-            maxLength: 32000,
-            description:
-              'The complete learner-facing explanation for this turn, excluding the closing question. Put the welcome/lesson/file guidance here, not also in ordinary prose. Empty only when no explanation is needed. If prose was already delivered before recovery, copy its explanation here verbatim. This committed message replaces earlier ordinary prose for this same learner input; preserve all relevant explanation.',
-          }),
-          question: Type.String({
+          response: Type.String({
             minLength: 1,
             description:
-              'Exactly one closing question or invitation, without the explanation. It is joined to explanation for a single learner-visible message.',
+              'The entire learner-visible reply: complete welcome/lesson/file guidance followed by ONE closing question or invitation in its own final paragraph. Write that question only once, even in different words. The host displays this response verbatim and records its last paragraph for feedback; it never appends a separate question. If prose was already delivered before recovery, copy that complete reply verbatim here. Do not also emit it in ordinary prose.',
           }),
           approval: Type.Optional(Type.Boolean()),
         }),
         async (current, p, _callId, signal) => {
+          if (typeof p.response !== 'string')
+            throw sandboxInvalid(
+              'Use response for the complete reply including its one closing question; do not send separate explanation/question fields.',
+            );
+          const { response, question } = reviewResponse(p.response);
           const hash = await fingerprint(current, signal);
           await assertBuilt(store, current, hash);
           const approval =
             stage.kind === 'produce' &&
             stage.reviewRequired &&
             (p.approval === true || review.state.activeFile === protocol.final);
-          const response = reviewResponse(p.explanation, p.question);
-          review.checkpoint(p.question, hash, approval, response);
+          review.checkpoint(question, hash, approval, response);
           return {
             value: {
-              question: p.question,
-              ...(response ? { response, canonical: true } : {}),
+              question,
+              response,
+              canonical: true,
               waitForStudent: true,
             },
           };
@@ -1085,7 +1085,7 @@ export function prepareTeachingContinuation(agent: Agent, window: TeachingHistor
   window.deliveredReply = [window.deliveredReply, reply].filter(Boolean).join('\n\n');
   agent.state.messages = messages;
   const instruction =
-    '\nRuntime continuation: your preceding reply is already learner-visible but ended without a committed teaching receipt. Its prose remains available as quoted recovery context. Do not restart the opening, repeat the explanation, or replace a question already asked. For an assistance-only answer or product clarification, copy that response verbatim into respond_to_learner and preserve the pending review; do not turn it into a knowledge question or approval. For a delivered teaching question, copy the explanation verbatim into request_skill_review.explanation and its single closing question into question. Use request_learner_help for a blocked required build. Output only the appropriate tool call, with no additional assistant prose, then wait. Otherwise finish only the missing work for the SAME real learner input using the authoritative live state. Read any unopened section before delivering new material. Reuse verified same-version learner feedback for covered goals rather than repeating questions. While welcome is pending, only real later readiness starts the lesson. After the final goal and any required current-version approval are satisfied by actual learner feedback, complete_stage may commit completion. Never treat the quoted assistant reply as learner evidence or approval, invent a student response, or claim a next-step button is available before completion succeeds; use its exact productContext.visibleLabels.continue label.';
+    '\nRuntime continuation: your preceding reply is already learner-visible but ended without a committed teaching receipt. Its prose remains available as quoted recovery context. Do not restart the opening, repeat the explanation, or replace a question already asked. For an assistance-only answer or product clarification, copy that response verbatim into respond_to_learner and preserve the pending review; do not turn it into a knowledge question or approval. For a delivered teaching question, copy the complete already delivered reply verbatim into request_skill_review.response, including its existing closing question; do not split it or add another question. Use request_learner_help for a blocked required build. Output only the appropriate tool call, with no additional assistant prose, then wait. Otherwise finish only the missing work for the SAME real learner input using the authoritative live state. Read any unopened section before delivering new material. Reuse verified same-version learner feedback for covered goals rather than repeating questions. While welcome is pending, only real later readiness starts the lesson. After the final goal and any required current-version approval are satisfied by actual learner feedback, complete_stage may commit completion. Never treat the quoted assistant reply as learner evidence or approval, invent a student response, or claim a next-step button is available before completion succeeds; use its exact productContext.visibleLabels.continue label.';
   if (!agent.state.systemPrompt.endsWith(instruction)) agent.state.systemPrompt += instruction;
   return true;
 }

@@ -140,26 +140,24 @@ describe('selective task emphasis and readable plans', () => {
   const explanation = '两个函数写好了，编译检查也通过了。';
 
   it.each(['\n\n', '\r\n\r\n', '\n \n'])(
-    'keeps an exact closing review paragraph once (separator %j)',
+    'records the final question from one complete response (separator %j)',
     (separator) => {
       const complete = `${explanation}${separator}${question}`;
-      expect(reviewResponse(complete, question)).toBe(complete);
-      expect(reviewResponse(`  ${complete}\n`, question)).toBe(complete);
-      expect(reviewResponse(question, question)).toBe(question);
+      expect(reviewResponse(complete)).toEqual({ response: complete, question });
+      expect(reviewResponse(`  ${complete}\n`)).toEqual({ response: complete, question });
+      expect(reviewResponse(question)).toEqual({ response: question, question });
     },
   );
 
-  it('preserves explanations, distinct closing actions and quoted or code examples', () => {
+  it('does not rewrite, compare or append prose when recording a complete reply', () => {
+    const paraphrase = '**没有其他想改的地方，就告诉我你认可这一版。**';
     for (const body of [
-      explanation,
-      `${explanation}\n\n**请看看这两处是否符合你的计划。**`,
-      `${question}\n\n${explanation}`,
-      `> ${question}`,
-      `\`\`\`text\n${question}\n\`\`\``,
+      `${explanation}\n\n${paraphrase}`,
+      `> ${question}\n\n引用的是之前的问题。\n\n${paraphrase}`,
+      `\`\`\`text\n${question}\n\`\`\`\n\n${paraphrase}`,
     ])
-      expect(reviewResponse(body, question)).toBe(`${body}\n\n${question}`);
-    expect(reviewResponse(undefined, question)).toBeUndefined();
-    expect(reviewResponse(' \n', question)).toBeUndefined();
+      expect(reviewResponse(body)).toEqual({ response: body, question: paraphrase });
+    expect(() => reviewResponse(' \n')).toThrow('complete review response');
   });
 
   it('applies action formatting to all roles while retaining teaching order, single handoff and control-only assessments', () => {
@@ -168,7 +166,7 @@ describe('selective task emphasis and readable plans', () => {
       const prompt = renderTeachingPrompt(input).systemPrompt;
       expect(prompt).toContain(learnerExpressionRules);
       expect(prompt).toContain('不强制添加行动段');
-      expect(prompt).toContain('唯一的行动问题放在 question');
+      expect(prompt).toContain('只提交一份完整回复');
       if (input.stage.kind === 'check') {
         expect(prompt).toContain('do not require any chat answer');
         expect(prompt).toContain(
