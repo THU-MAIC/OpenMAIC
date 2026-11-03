@@ -203,10 +203,16 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
     }
 
     if (!isCurrent()) return { outcome: 'cancelled' };
-    const generatedAgentIds = applyGeneratedAgents(classroomId, effectiveConfigs);
+    applyGeneratedAgents(classroomId, effectiveConfigs);
 
     const agentsKnown = agentsReady ? await agentsReady() : true;
     if (!isCurrent()) return { outcome: 'cancelled' };
+    // A freshness sync can replace the roster during that wait: the selection
+    // follows the roster the stage has now, not the one applied above.
+    const stageNow = getCurrentStage();
+    const rosterNow =
+      (stageNow?.id === classroomId ? stageNow.generatedAgentConfigs : undefined) ??
+      effectiveConfigs;
     const settings = getSettings();
     const {
       selection: next,
@@ -216,8 +222,8 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
       persisted: { mode: settings.agentMode, selectedAgentIds: settings.selectedAgentIds },
       persistedIsUserSet: settings.agentSelectionIsUserSet,
       persistedPresetChoice: settings.presetAgentChoice,
-      generatedAgentIds,
-      stageAgentIds: getCurrentStage()?.agentIds,
+      generatedAgentIds: rosterNow.map((config) => config.id),
+      stageAgentIds: stageNow?.agentIds,
       isPresetAgent: (id) => {
         const agent = getAgent(id);
         // Unknown before the custom agents arrived: possibly one of them.

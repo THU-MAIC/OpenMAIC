@@ -934,7 +934,7 @@ describe("runClassroomLoad with the course's own roster", () => {
       (ids: string[]) => (state.presetAgentChoice = ids),
     );
     setStage(stage);
-    return { deps, state, applied };
+    return { deps, state, applied, setStage };
   }
 
   it('shows it even when the AgentBar last chose a preset teacher', async () => {
@@ -951,6 +951,47 @@ describe("runClassroomLoad with the course's own roster", () => {
       selectedAgentIds: ['gen-teacher', 'gen-student'],
       agentSelectionIsUserSet: false,
       presetAgentChoice: ['default-1'],
+    });
+  });
+
+  it('follows a roster that a sync replaced while waiting for the custom agents', async () => {
+    const replaced = [makeAgentConfig('gen-new', { name: 'Dr. Lin' })];
+    const { deps, state, setStage } = loadWith(makeStage('stage-a', roster), {
+      mode: 'auto',
+      ids: [],
+      userSet: false,
+    });
+    deps.agentsReady = async () => {
+      setStage(makeStage('stage-a', replaced));
+      return true;
+    };
+    await runClassroomLoad(deps);
+
+    expect(state).toMatchObject({
+      agentMode: 'auto',
+      selectedAgentIds: ['gen-new'],
+      agentSelectionIsUserSet: false,
+    });
+  });
+
+  it('gives the kept choice back when a sync emptied the roster during that wait', async () => {
+    const { deps, state, setStage } = loadWith(makeStage('stage-a', roster), {
+      mode: 'auto',
+      ids: ['gen-teacher', 'gen-student'],
+      userSet: false,
+      kept: ['default-1'],
+    });
+    deps.agentsReady = async () => {
+      setStage(makeStage('stage-a', []));
+      return true;
+    };
+    await runClassroomLoad(deps);
+
+    expect(state).toMatchObject({
+      agentMode: 'preset',
+      selectedAgentIds: ['default-1'],
+      agentSelectionIsUserSet: true,
+      presetAgentChoice: [],
     });
   });
 

@@ -610,8 +610,6 @@ export function AgentBar() {
   const agentMode = useSettingsStore((s) => s.agentMode);
   const setAgentMode = useSettingsStore((s) => s.setAgentMode);
   const setAgentSelectionIsUserSet = useSettingsStore((s) => s.setAgentSelectionIsUserSet);
-  const presetAgentChoice = useSettingsStore((s) => s.presetAgentChoice);
-  const setPresetAgentChoice = useSettingsStore((s) => s.setPresetAgentChoice);
   const ttsProvidersConfig = useSlotTTSProvidersConfig();
   // Narration is on when the workspace's tts slot resolves to a provider.
   const ttsEnabled = !!useTTSSelection();
@@ -656,22 +654,6 @@ export function AgentBar() {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
-
-  // Back on the page that chooses agents for the next course: a preset choice
-  // a course's own roster stood in for is the selection again.
-  useEffect(() => {
-    if (presetAgentChoice.length === 0) return;
-    setAgentMode('preset');
-    setSelectedAgentIds(presetAgentChoice);
-    setAgentSelectionIsUserSet(true);
-    setPresetAgentChoice([]);
-  }, [
-    presetAgentChoice,
-    setAgentMode,
-    setAgentSelectionIsUserSet,
-    setPresetAgentChoice,
-    setSelectedAgentIds,
-  ]);
 
   const handleModeChange = (mode: 'preset' | 'auto') => {
     // Clicking the already-active tab is a visual no-op; it must not convert

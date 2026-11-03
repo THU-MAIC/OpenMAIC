@@ -129,7 +129,7 @@ export interface SettingsState {
   /**
    * The user's preset selection while a course's own roster stands in for it
    * (`restoreAgentSelection`). Empty when nothing is being kept. It returns for
-   * a course without a roster, and on the home page's AgentBar.
+   * a course without a roster, and on the home page.
    */
   presetAgentChoice: string[];
 
