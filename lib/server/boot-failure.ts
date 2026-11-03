@@ -52,20 +52,29 @@ export async function exitOnBootFailure(error: unknown): Promise<void> {
   await writeFailureAndExit(`${formatBootFailure(error)}\n`);
 }
 
-/** Called after drain or its deadline when a newer release has made the server incompatible. */
+/** After drain or its deadline, allow at most one second for the final runtime diagnostic. */
 export async function exitOnRuntimeSchemaRefusal(error: unknown): Promise<void> {
   await writeFailureAndExit(
     `[persistence] Server schema compatibility changed; retiring this instance and refusing further work:\n${describeError(error)}\n`,
+    1000,
   );
 }
 
-async function writeFailureAndExit(text: string): Promise<void> {
-  await new Promise<void>((resolve) => {
-    try {
-      process.stderr.write(text, () => resolve());
-    } catch {
-      resolve();
-    }
-  });
+async function writeFailureAndExit(text: string, flushTimeoutMs?: number): Promise<void> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await new Promise<void>((resolve) => {
+      // Runtime retirement must terminate even when a logging pipe stops
+      // consuming data. Ordinary boot failures retain their existing flush policy.
+      if (flushTimeoutMs !== undefined) timeout = setTimeout(resolve, flushTimeoutMs);
+      try {
+        process.stderr.write(text, () => resolve());
+      } catch {
+        resolve();
+      }
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
   process.exit(BOOT_FAILURE_EXIT_CODE);
 }

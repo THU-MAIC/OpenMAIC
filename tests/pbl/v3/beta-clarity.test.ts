@@ -155,8 +155,14 @@ describe('selective task emphasis and readable plans', () => {
       `${explanation}\n\n${paraphrase}`,
       `> ${question}\n\n引用的是之前的问题。\n\n${paraphrase}`,
       `\`\`\`text\n${question}\n\`\`\`\n\n${paraphrase}`,
+      `Example:\n\n    ${question}\n\n${paraphrase}`,
+      `Example:\n\n\t${question}\n\n${paraphrase}`,
+      `Example:\n\n    ${question}\n\n${question}`,
     ])
-      expect(reviewResponse(body)).toEqual({ response: body, question: paraphrase });
+      expect(reviewResponse(body)).toEqual({
+        response: body,
+        question: body.endsWith(paraphrase) ? paraphrase : question,
+      });
     expect(() => reviewResponse(' \n')).toThrow('complete review response');
   });
 
