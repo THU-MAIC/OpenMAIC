@@ -671,7 +671,6 @@
       "fieldElement": "要素",
       "fieldContent": "内容",
       "addDiscussionExists": "各シーンにディスカッションは1つまで",
-      "discussionTerminal": "末尾",
       "discussionTerminalHint": "ディスカッションはシーンの末尾に固定され、各シーンに1つだけです",
       "discussionTopicPlaceholder": "ディスカッションの主題（必須）",
       "discussionPromptPlaceholder": "ガイドプロンプト（任意）",

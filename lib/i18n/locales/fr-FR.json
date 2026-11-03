@@ -671,7 +671,6 @@
       "fieldElement": "Élément",
       "fieldContent": "Contenu",
       "addDiscussionExists": "Une seule discussion par scène",
-      "discussionTerminal": "FIN",
       "discussionTerminalHint": "Une discussion reste à la fin de la scène (une seule par scène)",
       "discussionTopicPlaceholder": "Sujet de la discussion (obligatoire)",
       "discussionPromptPlaceholder": "Consigne d’orientation (facultative)",

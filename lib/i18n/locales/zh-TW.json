@@ -599,7 +599,6 @@
       "fieldElement": "元素",
       "fieldContent": "內容",
       "addDiscussionExists": "每個場景只能有一個討論",
-      "discussionTerminal": "結束",
       "discussionTerminalHint": "討論會停留在場景結尾（每個場景一個）",
       "discussionTopicPlaceholder": "討論主題（必填）",
       "discussionPromptPlaceholder": "引導語（可選）",

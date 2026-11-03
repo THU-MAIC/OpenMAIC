@@ -671,7 +671,6 @@
       "fieldElement": "Đối tượng",
       "fieldContent": "Nội dung",
       "addDiscussionExists": "Mỗi cảnh chỉ có một phần thảo luận",
-      "discussionTerminal": "KẾT",
       "discussionTerminalHint": "Phần thảo luận luôn nằm ở cuối cảnh (mỗi cảnh một phần)",
       "discussionTopicPlaceholder": "Chủ đề thảo luận (bắt buộc)",
       "discussionPromptPlaceholder": "Câu dẫn hướng (không bắt buộc)",

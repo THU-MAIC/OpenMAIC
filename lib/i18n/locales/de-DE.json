@@ -671,7 +671,6 @@
       "fieldElement": "Element",
       "fieldContent": "Inhalt",
       "addDiscussionExists": "Pro Szene ist nur eine Diskussionsrunde möglich",
-      "discussionTerminal": "ENDE",
       "discussionTerminalHint": "Eine Diskussionsrunde bleibt am Ende der Szene (eine pro Szene)",
       "discussionTopicPlaceholder": "Diskussionsthema (erforderlich)",
       "discussionPromptPlaceholder": "Anweisung (optional)",

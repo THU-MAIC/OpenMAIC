@@ -671,7 +671,6 @@
       "fieldElement": "عنصر",
       "fieldContent": "المحتوى",
       "addDiscussionExists": "مناقشة واحدة فقط لكل مشهد",
-      "discussionTerminal": "النهاية",
       "discussionTerminalHint": "تبقى المناقشة في نهاية المشهد (واحدة لكل مشهد)",
       "discussionTopicPlaceholder": "موضوع المناقشة (مطلوب)",
       "discussionPromptPlaceholder": "توجيه (اختياري)",

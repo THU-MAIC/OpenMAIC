@@ -53,7 +53,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { flushStageSave, useStageStore } from '@/lib/store/stage';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
-import { useAgentRegistry } from '@/lib/orchestration/registry/store';
+import { agentsToParticipants, useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { AvatarDisplay } from '@/components/ui/avatar-display';
 import {
   Select,
@@ -84,6 +84,7 @@ import {
 import { DOCK_BAR_ACTION, DockBarTip, useEditDock } from '@/components/edit/EditDock/dock-context';
 import { ActionPicker } from './ActionPicker';
 import { QuietTextarea } from './QuietTextarea';
+import { revealScrollLeft } from './reveal-card';
 import type { PickerType } from './picker-options';
 import {
   audioExists,
@@ -579,7 +580,6 @@ function SpeechClip({
   audioInvalidated,
   sceneOrder,
   language,
-  autoFocus,
   ttsActive,
   ttsRefresh,
   regenerating,
@@ -592,7 +592,6 @@ function SpeechClip({
   canMoveRight,
   onDragStart,
   onDragEnd,
-  onFocused,
 }: {
   text: string;
   actionId: string;
@@ -601,7 +600,6 @@ function SpeechClip({
   audioInvalidated?: boolean;
   sceneOrder: number;
   language?: string;
-  autoFocus: boolean;
   ttsActive: boolean;
   ttsRefresh?: number;
   regenerating?: boolean;
@@ -614,7 +612,6 @@ function SpeechClip({
   canMoveRight: boolean;
   onDragStart: (e: React.DragEvent) => void;
   onDragEnd: () => void;
-  onFocused: () => void;
 }) {
   const { t } = useI18n();
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -631,13 +628,6 @@ function SpeechClip({
       dirtyRef.current = false;
     }
   }, [text]);
-
-  useEffect(() => {
-    if (autoFocus) {
-      ref.current?.focus();
-      onFocused();
-    }
-  }, [autoFocus, onFocused]);
 
   const commit = () => {
     if (dirtyRef.current && val !== text) onCommit(val);
@@ -707,6 +697,58 @@ function SpeechClip({
   );
 }
 
+/** Who opens the discussion: an avatar and a name, quiet until it is pointed at. */
+function DiscussionAgentSelect({
+  agentId,
+  agents,
+  onChange,
+}: {
+  agentId: string;
+  agents: { id: string; name: string; avatar?: string }[];
+  onChange: (agentId: string) => void;
+}) {
+  const { t } = useI18n();
+  const avatar = (a: { avatar?: string; name: string }) => (
+    <span className="size-5 shrink-0 overflow-hidden rounded-full bg-muted">
+      {a.avatar ? <AvatarDisplay src={a.avatar} alt={a.name} /> : null}
+    </span>
+  );
+  return (
+    <Select
+      value={agentId || DISCUSSION_AGENT_NONE}
+      onValueChange={(v) => onChange(v === DISCUSSION_AGENT_NONE ? '' : v)}
+    >
+      <SelectTrigger
+        size="sm"
+        data-testid="discussion-agent"
+        aria-label={t('edit.timeline.discussionAgent')}
+        className="h-[22px] min-w-0 max-w-[112px] gap-0.5 rounded-md border-0 bg-transparent px-1 py-0 text-[11px] text-foreground/80 shadow-none transition-colors hover:bg-gray-500/[0.08] focus-visible:ring-1 focus-visible:ring-primary/50 dark:bg-transparent dark:hover:bg-gray-400/[0.08] [&_svg]:size-3 [&_svg]:opacity-60 [&>span]:flex [&>span]:min-w-0 [&>span]:items-center [&>span]:gap-1"
+      >
+        <SelectValue placeholder={t('edit.timeline.discussionAgentUnset')} />
+      </SelectTrigger>
+      <SelectContent className="max-h-56">
+        <SelectItem value={DISCUSSION_AGENT_NONE} className="text-[12px]">
+          <span className="text-muted-foreground">{t('edit.timeline.discussionAgentUnset')}</span>
+        </SelectItem>
+        {agents.map((a) => (
+          <SelectItem key={a.id} value={a.id} className="text-[12px]">
+            <span className="flex min-w-0 items-center gap-1.5">
+              {avatar(a)}
+              <span className="truncate">{a.name}</span>
+            </span>
+          </SelectItem>
+        ))}
+        {/* keep a set agent visible even if it's no longer in the scene roster */}
+        {agentId && !agents.some((a) => a.id === agentId) && (
+          <SelectItem value={agentId} className="text-[12px]">
+            <span className="truncate font-mono">{agentId}</span>
+          </SelectItem>
+        )}
+      </SelectContent>
+    </Select>
+  );
+}
+
 /**
  * A discussion node — the scene's terminal roundtable trigger. Unlike the other
  * cues it isn't drag-addable or movable: a discussion must be the LAST action and
@@ -758,17 +800,20 @@ function DiscussionClip({
         needsTopic && INCOMPLETE_CLIP,
       )}
     >
-      {/* The empty state reads from the amber dashed frame + the "topic
-          (required)" placeholder; its node above is the Flag. */}
+      {/* The empty state reads from the amber dashed frame and the topic's "required"
+          placeholder; the node above it is the Flag. */}
       <div className={CARD_HEADER}>
-        <span className="truncate text-[10px] font-medium leading-none text-foreground/70">
+        <span
+          title={t('edit.timeline.discussionTerminalHint')}
+          className="-translate-y-[0.5px] truncate text-[10px] font-medium leading-[14px] text-foreground/70"
+        >
           {t('edit.cue.discussion')}
         </span>
-        <span
-          className="ml-auto shrink-0 text-[10px] leading-none text-muted-foreground/60"
-          title={t('edit.timeline.discussionTerminalHint')}
-        >
-          {t('edit.timeline.discussionTerminal')}
+        <span className="ml-auto flex min-w-0 items-center gap-1">
+          <span className="-translate-y-[0.5px] shrink-0 text-[10px] leading-[14px] text-muted-foreground/70">
+            {t('edit.timeline.discussionAgent')}
+          </span>
+          <DiscussionAgentSelect agentId={agentId} agents={agents} onChange={onAgentChange} />
         </span>
         <span className={CARD_SECONDARY}>
           <DeleteButton onDelete={onDelete} />
@@ -803,47 +848,6 @@ function DiscussionClip({
         placeholder={t('edit.timeline.discussionPromptPlaceholder')}
         className="px-3 text-[11px] leading-[17px] text-muted-foreground placeholder:text-muted-foreground/35"
       />
-      <div className="flex items-center gap-1 border-t border-gray-100 px-2 py-0.5 dark:border-gray-700/50">
-        <span className="shrink-0 text-[9px] text-muted-foreground/50">
-          {t('edit.timeline.discussionAgent')}
-        </span>
-        <Select
-          value={agentId || DISCUSSION_AGENT_NONE}
-          onValueChange={(v) => onAgentChange(v === DISCUSSION_AGENT_NONE ? '' : v)}
-        >
-          <SelectTrigger
-            size="sm"
-            className="ml-auto h-5 max-w-[150px] gap-1 rounded border-border px-1.5 py-0 text-[10px] shadow-none focus-visible:ring-yellow-400/40 [&_svg]:size-3"
-          >
-            <SelectValue placeholder={t('edit.timeline.discussionAgentUnset')} />
-          </SelectTrigger>
-          <SelectContent className="max-h-56">
-            <SelectItem value={DISCUSSION_AGENT_NONE} className="text-[11px]">
-              <span className="text-muted-foreground">
-                {t('edit.timeline.discussionAgentUnset')}
-              </span>
-            </SelectItem>
-            {agents.map((a) => (
-              <SelectItem key={a.id} value={a.id} className="text-[11px]">
-                <span className="flex items-center gap-1.5">
-                  {a.avatar && (
-                    <span className="size-4 shrink-0 overflow-hidden rounded-full bg-muted">
-                      <AvatarDisplay src={a.avatar} alt={a.name} />
-                    </span>
-                  )}
-                  {a.name}
-                </span>
-              </SelectItem>
-            ))}
-            {/* keep a set agent visible even if it's no longer in the scene roster */}
-            {agentId && !agents.some((a) => a.id === agentId) && (
-              <SelectItem value={agentId} className="text-[11px]">
-                {agentId}
-              </SelectItem>
-            )}
-          </SelectContent>
-        </Select>
-      </div>
     </div>
   );
 }
@@ -1134,13 +1138,14 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
   // which is correct since an unset `agentId` is never skipped.
   const agentsRecord = useAgentRegistry((s) => s.agents);
   const selectedAgentIds = useSettingsStore((s) => s.selectedAgentIds);
+  // Who the room sees, by the names it sees them by: the course's roster, or the
+  // default roster's localized names.
   const discussionAgents = useMemo(
     () =>
-      selectedAgentIds
-        .map((id) => agentsRecord[id])
-        .filter(Boolean)
-        .map((a) => ({ id: a.id, name: a.name, avatar: a.avatar })),
-    [selectedAgentIds, agentsRecord],
+      selectedAgentIds.some((id) => agentsRecord[id])
+        ? agentsToParticipants(selectedAgentIds, t).filter((p) => p.role !== 'user')
+        : [],
+    [selectedAgentIds, agentsRecord, t],
   );
 
   // Collapsed = the dock's own fold. The timeline's collapsed form is its axis of
@@ -1148,7 +1153,8 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
   const { collapsed: lineMode, barActions: dockBarSlot } = useEditDock();
   const [tip, setTip] = useState<TooltipState | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
-  const [focusId, setFocusId] = useState<string | null>(null);
+  const [revealId, setRevealId] = useState<string | null>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
   const [regenAll, setRegenAll] = useState(false);
   const [pickerAt, setPickerAt] = useState<{ slot: number; rect: DOMRect } | null>(null);
   // Ids of speech lines currently being (re)generated by "Voice all", so each
@@ -1230,13 +1236,13 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
   const insertActionAt = useCallback(
     (type: PickerType, slot: number) => {
       const id = newId();
+      setRevealId(id);
       if (type === 'discussion') {
         commit((cur) => appendDiscussion(cur, id));
         return;
       }
       const action = makeAction(type, id);
       commit((cur) => insertAt(cur, clampInsertSlot(cur, slot), action));
-      if (type === 'speech') setFocusId(id);
     },
     [commit],
   );
@@ -1300,6 +1306,38 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
     </>
   );
 
+  // What was just added: bring it into view, ready to type in, and say which it is.
+  useEffect(() => {
+    if (!revealId) return;
+    setRevealId(null);
+    const track = trackRef.current;
+    const card = track?.querySelector<HTMLElement>(
+      `[data-action-key="${CSS.escape(revealId)}"] [data-cue-card]`,
+    );
+    if (!track || !card) return;
+    const box = track.getBoundingClientRect();
+    const rect = card.getBoundingClientRect();
+    const left = revealScrollLeft({
+      scrollLeft: track.scrollLeft,
+      trackLeft: box.left,
+      trackWidth: box.width,
+      cardLeft: rect.left,
+      cardWidth: rect.width,
+    });
+    const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (left !== track.scrollLeft) {
+      track.scrollTo({ left, behavior: smooth ? 'smooth' : 'auto' });
+    }
+    card.querySelector<HTMLElement>('textarea')?.focus({ preventScroll: true });
+    card.animate?.(
+      [
+        { boxShadow: '0 0 0 2px rgb(139 92 246 / 0.6)' },
+        { boxShadow: '0 0 0 2px rgb(139 92 246 / 0)' },
+      ],
+      { duration: 1400, easing: 'ease-out' },
+    );
+  }, [revealId, actions]);
+
   /** A mouse wheel has no sideways: over the track it scrolls the track. */
   const onTrackWheel = (event: React.WheelEvent<HTMLDivElement>) => {
     if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
@@ -1312,6 +1350,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
     <>
       {dockBarSlot ? createPortal(barActions, dockBarSlot) : barActions}
       <div
+        ref={trackRef}
         onWheel={onTrackWheel}
         className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden [scrollbar-width:thin]"
       >
@@ -1375,7 +1414,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                 />
               );
               return (
-                <div key={key} className="relative flex h-full items-stretch">
+                <div key={key} data-action-key={key} className="relative flex h-full items-stretch">
                   <motion.div
                     initial={reduce ? false : { opacity: 0, y: -6 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -1419,8 +1458,6 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                               ttsActive={ttsActive}
                               ttsRefresh={ttsRefresh}
                               regenerating={regeneratingIds.has(key)}
-                              autoFocus={key === focusId}
-                              onFocused={() => setFocusId(null)}
                               onCommit={(text) => {
                                 // Editing the text invalidates any cached audio
                                 // (the blob is keyed by order+id and the stamped

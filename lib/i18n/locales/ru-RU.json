@@ -671,7 +671,6 @@
       "fieldElement": "Элемент",
       "fieldContent": "Содержимое",
       "addDiscussionExists": "Только одно обсуждение на сцену",
-      "discussionTerminal": "КОНЕЦ",
       "discussionTerminalHint": "Обсуждение закрепляется в конце сцены (одно на сцену)",
       "discussionTopicPlaceholder": "Тема обсуждения (обязательно)",
       "discussionPromptPlaceholder": "Подсказка (необязательно)",
