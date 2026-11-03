@@ -154,7 +154,7 @@ function makeStore(meta: ClaimedAgentSession) {
     getCancelRequestedAt: vi.fn(async () => null),
     isCancelRequested: vi.fn(async () => false),
     listUserMessages: vi.fn(async () => []),
-    releaseLease: vi.fn(async () => undefined),
+    releaseLease: vi.fn(async (): Promise<void> => undefined),
     requeueForRetry: vi.fn(async () => false),
     requeueSession: vi.fn(async () => false),
   };
@@ -263,6 +263,163 @@ beforeEach(() => {
 });
 
 afterEach(() => vi.useRealTimers());
+
+describe('runner claim drain', () => {
+  it('still executes and settles a normal claim before shutdown', async () => {
+    vi.useFakeTimers();
+    const meta = makeMeta();
+    const store = {
+      ...makeStore(meta),
+      claimNextSession: vi
+        .fn(async (): Promise<ClaimedAgentSession | null> => null)
+        .mockResolvedValueOnce(meta),
+    };
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    mocks.openEntryStorage.mockResolvedValue((await makeEntryTree()).getStorage());
+    mocks.buildAgent.mockReturnValue(makeFakeAgent({ onPrompt: emitToolCallTurn }));
+    const runner = startAgentRunner();
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mocks.buildAgent).toHaveBeenCalledOnce();
+      expect(store.finishSession).toHaveBeenCalledWith(
+        meta.id,
+        WORKER_ID,
+        expect.objectContaining({ status: 'succeeded' }),
+      );
+      expect(store.releaseLease).not.toHaveBeenCalled();
+    } finally {
+      await runner.stop();
+    }
+  });
+
+  it('waits for an in-flight claim and its lease release without starting the late turn', async () => {
+    vi.useFakeTimers();
+    const claim = Promise.withResolvers<ClaimedAgentSession | null>();
+    const release = Promise.withResolvers<void>();
+    const meta = makeMeta();
+    const store = {
+      ...makeStore(meta),
+      claimNextSession: vi.fn((_workerId: string) => claim.promise),
+    };
+    store.releaseLease.mockImplementation(() => release.promise);
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    mocks.openEntryStorage.mockResolvedValue((await makeEntryTree()).getStorage());
+    mocks.buildAgent.mockReturnValue(makeFakeAgent({}));
+    const runner = startAgentRunner();
+    const drained = vi.fn();
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store.claimNextSession).toHaveBeenCalledOnce();
+      const stopping = runner.stop().then(drained);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(drained).not.toHaveBeenCalled();
+      claim.resolve(meta);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store.releaseLease).toHaveBeenCalledWith(
+        meta.id,
+        store.claimNextSession.mock.calls[0]![0],
+      );
+      await vi.advanceTimersByTimeAsync(200);
+      expect(drained).not.toHaveBeenCalled();
+      release.resolve();
+      await vi.advanceTimersByTimeAsync(200);
+      await stopping;
+      expect(drained).toHaveBeenCalledOnce();
+      expect(mocks.buildAgent).not.toHaveBeenCalled();
+      expect(store.finishSession).not.toHaveBeenCalled();
+      expect(store.claimNextSession).toHaveBeenCalledOnce();
+    } finally {
+      claim.resolve(null);
+      release.resolve();
+      await vi.advanceTimersByTimeAsync(200);
+      await runner.stop({ timeoutMs: 0 });
+    }
+  });
+
+  it('keeps shutdown bounded and still releases a claim that returns after the drain timeout', async () => {
+    vi.useFakeTimers();
+    const claim = Promise.withResolvers<ClaimedAgentSession | null>();
+    const meta = makeMeta();
+    const store = {
+      ...makeStore(meta),
+      claimNextSession: vi.fn((_workerId: string) => claim.promise),
+    };
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    mocks.openEntryStorage.mockResolvedValue((await makeEntryTree()).getStorage());
+    mocks.buildAgent.mockReturnValue(makeFakeAgent({}));
+    const runner = startAgentRunner();
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      const drained = vi.fn();
+      const stopping = runner.stop({ timeoutMs: 200 }).then(drained);
+      await vi.advanceTimersByTimeAsync(200);
+      await stopping;
+      expect(drained).toHaveBeenCalledOnce();
+      claim.resolve(meta);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store.releaseLease).toHaveBeenCalledWith(
+        meta.id,
+        store.claimNextSession.mock.calls[0]![0],
+      );
+      expect(mocks.buildAgent).not.toHaveBeenCalled();
+      expect(store.finishSession).not.toHaveBeenCalled();
+    } finally {
+      claim.resolve(null);
+      await vi.advanceTimersByTimeAsync(200);
+      await runner.stop({ timeoutMs: 0 });
+    }
+  });
+
+  it('drains a concurrent late claim before schema-refusal retirement completes', async () => {
+    vi.useFakeTimers();
+    const setup = Promise.withResolvers<never>();
+    const lateClaim = Promise.withResolvers<ClaimedAgentSession | null>();
+    const meta = makeMeta({
+      lease: { workerId: `${WORKER_ID}:runner-test-uuid`, workerPid: process.pid, heartbeatAt: 0 },
+    });
+    const late = makeMeta({ id: 'late-session' });
+    const store = {
+      ...makeStore(meta),
+      claimNextSession: vi
+        .fn(async (_workerId: string): Promise<ClaimedAgentSession | null> => null)
+        .mockResolvedValueOnce(meta)
+        .mockImplementationOnce(() => lateClaim.promise),
+    };
+    store.getSession.mockResolvedValue({ ...meta, lease: meta.lease! });
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    mocks.openEntryStorage.mockReturnValueOnce(setup.promise);
+    const drained = vi.fn();
+    const onSchemaRefusal = vi.fn(async () => {
+      await runner.stop();
+      drained();
+    });
+    const runner: ReturnType<typeof startAgentRunner> = startAgentRunner({ onSchemaRefusal });
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store.claimNextSession).toHaveBeenCalledTimes(2);
+      const error = Object.assign(new Error('newer schema'), { name: 'SchemaVersionAheadError' });
+      setup.reject(error);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(onSchemaRefusal).toHaveBeenCalledWith(error);
+      expect(drained).not.toHaveBeenCalled();
+      lateClaim.resolve(late);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(store.releaseLease).toHaveBeenCalledWith(
+        late.id,
+        store.claimNextSession.mock.calls[1]![0],
+      );
+      expect(drained).toHaveBeenCalledOnce();
+      expect(mocks.buildAgent).not.toHaveBeenCalled();
+      expect(store.finishSession).not.toHaveBeenCalled();
+      expect(store.claimNextSession).toHaveBeenCalledTimes(2);
+    } finally {
+      setup.reject(new Error('test cleanup'));
+      lateClaim.resolve(null);
+      await vi.advanceTimersByTimeAsync(200);
+      await runner.stop({ timeoutMs: 0 });
+    }
+  });
+});
 
 describe('runtime schema incompatibility', () => {
   const refusal = () =>

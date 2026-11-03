@@ -2263,16 +2263,19 @@ export function startAgentRunner(
       }
       const store = await getAgentSessionStore();
       while (ctx.running.size < config.maxConcurrent && !ctx.shuttingDown) {
-        const meta = await store.claimNextSession(
-          `${PROCESS_WORKER_ID}:${randomUUID()}`,
-          process.pid,
-          {
-            leaseTtlMs: config.leaseTtlMs,
-            maxAttempts: config.maxAttempts,
-            excludeSessionIds: [...ctx.running.keys()],
-          },
-        );
+        const claimWorkerId = `${PROCESS_WORKER_ID}:${randomUUID()}`;
+        const meta = await store.claimNextSession(claimWorkerId, process.pid, {
+          leaseTtlMs: config.leaseTtlMs,
+          maxAttempts: config.maxAttempts,
+          excludeSessionIds: [...ctx.running.keys()],
+        });
         if (!meta) break;
+        // Shutdown can start while the database is still granting this claim.
+        // Release it before the scan settles; never start another turn during drain.
+        if (ctx.shuttingDown) {
+          await store.releaseLease(meta.id, claimWorkerId);
+          break;
+        }
         // Process-local fence in addition to the store's lease exclusion.
         if (ctx.running.has(meta.id)) continue;
         log.info(`claiming ${meta.id} (attempt ${meta.attempt})`);
@@ -2310,11 +2313,13 @@ export function startAgentRunner(
       if (scanTimer) clearInterval(scanTimer);
       const deadlineAt = Date.now() + (options?.timeoutMs ?? 15_000);
       for (const session of ctx.running.values()) session.abort.abort();
-      while (ctx.running.size > 0 && Date.now() < deadlineAt) {
+      while ((scanning || ctx.running.size > 0) && Date.now() < deadlineAt) {
         await new Promise((resolve) => setTimeout(resolve, 200));
       }
-      if (ctx.running.size > 0) {
-        log.warn(`stop() timed out with ${ctx.running.size} session(s) still settling`);
+      if (scanning || ctx.running.size > 0) {
+        log.warn(
+          `stop() timed out with ${ctx.running.size} session(s)${scanning ? ' and an active scan' : ''} still settling`,
+        );
       }
       log.info(`runner ${PROCESS_WORKER_ID} stopped`);
     },
