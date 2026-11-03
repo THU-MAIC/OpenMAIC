@@ -26,7 +26,10 @@ export { applicationProbeCommand } from './application-command';
 const active = (state: string) => ['starting', 'running', 'unknown'].includes(state);
 export function applicationFingerprint(files: Record<string, string>) {
   const hash = createHash('sha256');
-  for (const path of Object.keys(files).sort()) hash.update(path + '\0' + files[path] + '\0');
+  for (const path of Object.keys(files)
+    .filter((path) => path !== 'PLAN.md')
+    .sort())
+    hash.update(path + '\0' + files[path] + '\0');
   return hash.digest('hex');
 }
 
@@ -187,7 +190,10 @@ export async function applicationRequest(principal: OwnerPrincipal, input: unkno
         'The learning workspace changed. Refresh before continuing.',
         'PROGRESS_CHANGED',
       );
-    if (row.evaluation || (await busy(store, row)))
+    if (
+      row.evaluation ||
+      (['restart', 'stop'].includes(request.action) && (await busy(store, row)))
+    )
       throw sandboxConflict('Wait for the current Agent or assessment.', 'STUDY_BUSY');
     const service = await SandboxService.forOwner(principal),
       environmentId = requireEnvironment(row);

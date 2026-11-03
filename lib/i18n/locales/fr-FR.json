@@ -3207,8 +3207,8 @@
           "body": "Ouvrez les fichiers via l’arborescence, les onglets ou les liens de l’assistant. Lorsque la modification est autorisée, les changements sont enregistrés automatiquement : vérifiez l’état de sauvegarde. Les icônes en haut affichent ou masquent les zones ; faites glisser les séparateurs pour les redimensionner."
         },
         "application": {
-          "title": "Cliquer sur Ouvrir l’application pour essayer",
-          "body": "Ce bouton ouvre l’aperçu de votre réalisation. Testez les fonctions déjà créées et discutez de vos observations. Les fonctions manquantes seront développées au fil du projet."
+          "title": "Essayer ton application",
+          "body": "L’aperçu s’ouvre automatiquement. Essaie les fonctionnalités réalisées et discute de tes observations. Le bouton Ouvrir l’application dans la barre d’outils permet de masquer ou de rouvrir l’aperçu."
         },
         "replay": {
           "title": "Revoir le guide ici",

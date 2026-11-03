@@ -3207,8 +3207,8 @@
           "body": "Öffne Dateien über den Dateibaum, die Tabs oder Dateilinks des Assistenten. Wenn Bearbeitung erlaubt ist, werden Änderungen automatisch gespeichert; beachte den Speicherstatus. Die Symbole oben blenden Bereiche ein und aus. Ziehe Trennlinien, um ihre Größe zu ändern."
         },
         "application": {
-          "title": "Anwendung öffnen und das Ergebnis ausprobieren",
-          "body": "Diese Schaltfläche öffnet die Anwendungsvorschau. Probiere fertige Funktionen aus und besprich deine Beobachtungen. Noch fehlende Funktionen entstehen im Projektverlauf."
+          "title": "Deine Anwendung ausprobieren",
+          "body": "Die Vorschau öffnet sich automatisch. Probiere die umgesetzten Funktionen aus und besprich deine Beobachtungen. Mit Anwendung öffnen in der Werkzeugleiste kannst du die Vorschau ein- und ausblenden."
         },
         "replay": {
           "title": "Anleitung hier erneut öffnen",

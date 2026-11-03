@@ -56,6 +56,7 @@ export function PBLWorkspaceLayer({
   onExpandedChange,
   onAutoExpandConsumed,
   modalOpen = false,
+  hideControls = false,
 }: {
   readonly children: ReactNode;
   readonly showExpandControl?: boolean;
@@ -66,6 +67,7 @@ export function PBLWorkspaceLayer({
   readonly onExpandedChange: (next: boolean) => void;
   readonly onAutoExpandConsumed: () => void;
   readonly modalOpen?: boolean;
+  readonly hideControls?: boolean;
 }) {
   const { t } = useI18n();
   const [hostRect, setHostRect] = useState<LayoutRect>(() => measureHostRect(hostRef));
@@ -230,47 +232,48 @@ export function PBLWorkspaceLayer({
             cleanup (keyboard unlock etc.) — we never touch OpenMAIC code. The
             violet, borderless-ish treatment mirrors OpenMAIC's native control
             so it reads differently from the neutral web-fullscreen buttons. */}
-        {nativeFullscreen ? (
-          <button
-            type="button"
-            onClick={() => {
-              document.exitFullscreen?.().catch(() => {});
-            }}
-            className="absolute right-4 top-4 z-40 flex h-8 w-8 items-center justify-center rounded-md border border-violet-300/35 bg-violet-500/20 text-violet-100 shadow-sm backdrop-blur transition-colors hover:bg-violet-500/30"
-            aria-label={t('pbl.v2.workspace.exitNativeFullscreen')}
-            title={t('pbl.v2.workspace.exitNativeFullscreen')}
-          >
-            <Minimize2 className="h-4 w-4" />
-          </button>
-        ) : (
-          <>
-            {expanded && (
-              <button
-                type="button"
-                onClick={() => onExpandedChange(false)}
-                className="absolute right-4 top-4 z-40 flex h-8 w-8 items-center justify-center rounded-md border border-white/15 bg-background/75 text-foreground shadow-sm backdrop-blur transition-colors hover:bg-muted"
-                aria-label={t('pbl.v2.workspace.exitFullscreen')}
-                title={t('pbl.v2.workspace.exitFullscreen')}
-              >
-                <Minimize2 className="h-4 w-4" />
-              </button>
-            )}
-            {/* The Workspace carries its own in-topbar expand control, so the
+        {!hideControls &&
+          (nativeFullscreen ? (
+            <button
+              type="button"
+              onClick={() => {
+                document.exitFullscreen?.().catch(() => {});
+              }}
+              className="absolute right-4 top-4 z-40 flex h-8 w-8 items-center justify-center rounded-md border border-violet-300/35 bg-violet-500/20 text-violet-100 shadow-sm backdrop-blur transition-colors hover:bg-violet-500/30"
+              aria-label={t('pbl.v2.workspace.exitNativeFullscreen')}
+              title={t('pbl.v2.workspace.exitNativeFullscreen')}
+            >
+              <Minimize2 className="h-4 w-4" />
+            </button>
+          ) : (
+            <>
+              {expanded && (
+                <button
+                  type="button"
+                  onClick={() => onExpandedChange(false)}
+                  className="absolute right-4 top-4 z-40 flex h-8 w-8 items-center justify-center rounded-md border border-white/15 bg-background/75 text-foreground shadow-sm backdrop-blur transition-colors hover:bg-muted"
+                  aria-label={t('pbl.v2.workspace.exitFullscreen')}
+                  title={t('pbl.v2.workspace.exitFullscreen')}
+                >
+                  <Minimize2 className="h-4 w-4" />
+                </button>
+              )}
+              {/* The Workspace carries its own in-topbar expand control, so the
                 layer only needs to supply the docked → fullscreen affordance
                 for Completion (which has no topbar of its own). */}
-            {!expanded && showExpandControl && (
-              <button
-                type="button"
-                onClick={() => onExpandedChange(true)}
-                className="absolute right-4 top-4 z-40 flex h-8 w-8 items-center justify-center rounded-md border border-white/15 bg-background/75 text-foreground shadow-sm backdrop-blur transition-colors hover:bg-muted"
-                aria-label={t('pbl.v2.workspace.enterFullscreen')}
-                title={t('pbl.v2.workspace.enterFullscreen')}
-              >
-                <Maximize2 className="h-4 w-4" />
-              </button>
-            )}
-          </>
-        )}
+              {!expanded && showExpandControl && (
+                <button
+                  type="button"
+                  onClick={() => onExpandedChange(true)}
+                  className="absolute right-4 top-4 z-40 flex h-8 w-8 items-center justify-center rounded-md border border-white/15 bg-background/75 text-foreground shadow-sm backdrop-blur transition-colors hover:bg-muted"
+                  aria-label={t('pbl.v2.workspace.enterFullscreen')}
+                  title={t('pbl.v2.workspace.enterFullscreen')}
+                >
+                  <Maximize2 className="h-4 w-4" />
+                </button>
+              )}
+            </>
+          ))}
         {/* A content modal must also cover the layer's fullscreen controls. */}
         <div className={cn('relative h-full w-full', modalOpen ? 'z-50' : 'z-10')}>{children}</div>
       </motion.div>

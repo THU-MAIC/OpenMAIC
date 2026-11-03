@@ -28,6 +28,16 @@ const view = {
   environment: { ready: true },
   application: { title: 'Preview', description: 'Course-specific help.' },
 } as LearningView;
+const sourceWrite = [
+  {
+    id: 'source-write-turn',
+    speaker: 'coder',
+    status: 'running',
+    parts: [
+      { id: 'write', kind: 'tool', action: 'write', status: 'running', args: { path: 'app.py' } },
+    ],
+  },
+] as LearningView['conversation'];
 const workbench = { environmentId: 'environment', epoch: 0 } as LearningWorkbench;
 it('shows only submitted choice labels as read-only context, without claiming implementation success', async () => {
   const f = await fixture();
@@ -66,17 +76,20 @@ function Harness({
   dirty = false,
   inputPaused = false,
   workbenchEnvironmentId = workbench.environmentId,
+  automatic = false,
 }: {
   current?: LearningView;
   epoch?: number;
   dirty?: boolean;
   inputPaused?: boolean;
   workbenchEnvironmentId?: string;
+  automatic?: boolean;
 }) {
   const preview = useApplicationPreview(
     current,
     { ...workbench, environmentId: workbenchEnvironmentId, epoch },
     dirty,
+    automatic,
   );
   return createElement(
     Fragment,
@@ -217,7 +230,7 @@ it('collapse preserves the iframe without stopping, relaunching or exposing it t
     await f.cleanup();
   }
 });
-it.each(['agent', 'dirty', 'assessment'])(
+it.each(['source', 'dirty', 'assessment'])(
   'keeps the document visible during %s work and automatically resumes an unchanged app',
   async (kind) => {
     mocks.request.mockResolvedValue(running);
@@ -231,7 +244,8 @@ it.each(['agent', 'dirty', 'assessment'])(
             dirty: kind === 'dirty',
             current: {
               ...view,
-              busy: kind === 'agent',
+              busy: kind === 'source',
+              conversation: kind === 'source' ? sourceWrite : undefined,
               evaluation: kind === 'assessment' ? ({} as LearningView['evaluation']) : null,
             },
           }),
@@ -273,7 +287,9 @@ it.each(['stopped', 'source-changed'])(
       const oldFrame = f.host.querySelector('iframe')!;
       await act(async () => oldFrame.dispatchEvent(new Event('load')));
       await act(async () =>
-        f.root.render(createElement(Harness, { current: { ...view, busy: true } })),
+        f.root.render(
+          createElement(Harness, { current: { ...view, busy: true, conversation: sourceWrite } }),
+        ),
       );
       expect(f.host.querySelector('iframe')).toBe(oldFrame);
       await act(async () =>
@@ -620,7 +636,9 @@ it('moves paused preview focus out without stealing editor focus or restoring st
     const frame = f.host.querySelector('iframe')!;
     frame.focus();
     await act(async () =>
-      f.root.render(createElement(Harness, { current: { ...view, busy: true } })),
+      f.root.render(
+        createElement(Harness, { current: { ...view, busy: true, conversation: sourceWrite } }),
+      ),
     );
     expect(document.activeElement).toBe(
       f.host.querySelector('[data-testid="pbl-application-panel"]'),
@@ -931,14 +949,18 @@ it('does not launch an unopened or collapsed application when background work fi
   const f = await fixture();
   try {
     await act(async () =>
-      f.root.render(createElement(Harness, { current: { ...view, busy: true } })),
+      f.root.render(
+        createElement(Harness, { current: { ...view, busy: true, conversation: sourceWrite } }),
+      ),
     );
     await act(async () => f.root.render(createElement(Harness)));
     expect(mocks.request).not.toHaveBeenCalled();
     await f.click();
     await f.click();
     await act(async () =>
-      f.root.render(createElement(Harness, { current: { ...view, busy: true } })),
+      f.root.render(
+        createElement(Harness, { current: { ...view, busy: true, conversation: sourceWrite } }),
+      ),
     );
     await act(async () => f.root.render(createElement(Harness)));
     expect(mocks.request).toHaveBeenCalledTimes(1);
@@ -963,7 +985,9 @@ it('aborts an automatic status check on collapse and never dispatches its late r
     await f.click();
     const old = f.host.querySelector('iframe');
     await act(async () =>
-      f.root.render(createElement(Harness, { current: { ...view, busy: true } })),
+      f.root.render(
+        createElement(Harness, { current: { ...view, busy: true, conversation: sourceWrite } }),
+      ),
     );
     await act(async () => f.root.render(createElement(Harness)));
     expect(mocks.request).toHaveBeenCalledTimes(2);
@@ -986,7 +1010,9 @@ it('keeps the previous page after failed recovery and retries only on explicit i
     await f.click();
     const old = f.host.querySelector('iframe')!;
     await act(async () =>
-      f.root.render(createElement(Harness, { current: { ...view, busy: true } })),
+      f.root.render(
+        createElement(Harness, { current: { ...view, busy: true, conversation: sourceWrite } }),
+      ),
     );
     await act(async () => f.root.render(createElement(Harness)));
     expect(f.host.querySelector('iframe')).toBe(old);
@@ -1014,7 +1040,9 @@ it.each(['epoch', 'environment', 'unavailable'])(
     try {
       await f.click();
       await act(async () =>
-        f.root.render(createElement(Harness, { current: { ...view, busy: true } })),
+        f.root.render(
+          createElement(Harness, { current: { ...view, busy: true, conversation: sourceWrite } }),
+        ),
       );
       await act(async () => f.root.render(createElement(Harness)));
       await act(async () =>
@@ -1047,7 +1075,9 @@ it.each(['study', 'environment', 'epoch'])(
     try {
       await f.click();
       await act(async () =>
-        f.root.render(createElement(Harness, { current: { ...view, busy: true } })),
+        f.root.render(
+          createElement(Harness, { current: { ...view, busy: true, conversation: sourceWrite } }),
+        ),
       );
       const replacement = {
         ...view,
@@ -1208,7 +1238,9 @@ it.each(['before-work', 'during-work'])(
       await f.click();
       if (timing === 'before-work') await act(async () => vi.advanceTimersByTimeAsync(1001));
       await act(async () =>
-        f.root.render(createElement(Harness, { current: { ...view, busy: true } })),
+        f.root.render(
+          createElement(Harness, { current: { ...view, busy: true, conversation: sourceWrite } }),
+        ),
       );
       if (timing === 'during-work') await act(async () => vi.advanceTimersByTimeAsync(1001));
       await act(async () =>
@@ -1681,7 +1713,9 @@ it.each(['auth', 'timeout'])(
       // that already succeeded. Returning to running must retain that document.
       mocks.request.mockResolvedValue({ ...status, state: 'starting' });
       await act(async () =>
-        f.root.render(createElement(Harness, { current: { ...view, busy: true } })),
+        f.root.render(
+          createElement(Harness, { current: { ...view, busy: true, conversation: sourceWrite } }),
+        ),
       );
       await act(async () => f.root.render(createElement(Harness)));
       await act(async () => vi.advanceTimersByTimeAsync(1500));
@@ -1708,7 +1742,7 @@ it.each(['auth', 'timeout'])(
   },
 );
 
-it.each(['dirty', 'agent', 'assessment'])(
+it.each(['dirty', 'source', 'assessment'])(
   'retains an initial candidate that becomes ready during %s pause',
   async (pause) => {
     const first = {
@@ -1737,7 +1771,8 @@ it.each(['dirty', 'agent', 'assessment'])(
             dirty: pause === 'dirty',
             current: {
               ...view,
-              busy: pause === 'agent',
+              busy: pause === 'source',
+              conversation: pause === 'source' ? sourceWrite : undefined,
               evaluation: pause === 'assessment' ? ({} as LearningView['evaluation']) : null,
             },
           }),
@@ -1764,3 +1799,74 @@ it.each(['dirty', 'agent', 'assessment'])(
     }
   },
 );
+
+it('opens the application once on entry, including a read-only Agent opening, and respects collapse', async () => {
+  mocks.request.mockResolvedValue(running);
+  const f = await fixture();
+  try {
+    await act(async () =>
+      f.root.render(createElement(Harness, { automatic: true, current: { ...view, busy: true } })),
+    );
+    expect(mocks.request.mock.calls.map((call) => call[1].action)).toEqual(['open']);
+    expect(
+      f.host.querySelector('[data-testid="pbl-application-open"]')?.getAttribute('aria-expanded'),
+    ).toBe('true');
+    await f.click();
+    await act(async () =>
+      f.root.render(createElement(Harness, { automatic: true, current: { ...view, revision: 1 } })),
+    );
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+    expect(
+      f.host.querySelector('[data-testid="pbl-application-open"]')?.getAttribute('aria-expanded'),
+    ).toBe('false');
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it('keeps preview input active through a read-only reply and its background unchanged-source check', async () => {
+  let finish!: (value: ApplicationObservation) => void;
+  mocks.request.mockResolvedValueOnce(running).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const f = await fixture();
+  try {
+    await f.click();
+    const frame = f.host.querySelector('iframe')!;
+    await act(async () =>
+      f.root.render(createElement(Harness, { current: { ...view, busy: true, revision: 1 } })),
+    );
+    expect(frame.hasAttribute('inert')).toBe(false);
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      f.root.render(createElement(Harness, { current: { ...view, revision: 1 } })),
+    );
+    expect(mocks.request.mock.calls[1][1].action).toBe('status');
+    expect(frame.hasAttribute('inert')).toBe(false);
+    await act(async () => finish({ observedAt: '', state: 'running', sourceChanged: false }));
+    expect(f.host.querySelector('iframe')).toBe(frame);
+    expect(frame.hasAttribute('inert')).toBe(false);
+    expect(mocks.request).toHaveBeenCalledTimes(2);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it('does not automatically replay a failed default launch', async () => {
+  mocks.request.mockRejectedValue(new Error('Unknown remote outcome'));
+  const f = await fixture();
+  try {
+    await act(async () => f.root.render(createElement(Harness, { automatic: true })));
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      f.root.render(createElement(Harness, { automatic: true, current: { ...view, revision: 1 } })),
+    );
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+    expect(f.host.textContent).toContain('Unknown remote outcome');
+  } finally {
+    await f.cleanup();
+  }
+});

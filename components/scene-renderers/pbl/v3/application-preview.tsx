@@ -118,6 +118,25 @@ function ApplicationPreviewContent({
     if (candidate.current !== frame.current) sendInput(candidate.current);
   }, [sendInput, url, previous?.url, preview.frameVersion]);
   useLayoutEffect(() => {
+    const owner = panel.current?.closest('.pbl-workbench');
+    if (!owner || !preview.open || !inputAvailable) return;
+    const activity = (event: Event) => {
+      const element = frame.current;
+      if (!event.isTrusted || !element) return;
+      const target = new URL(element.src);
+      if (target.pathname !== '/__openmaic_preview') return;
+      // Genuine workbench use also keeps this visible preview authorized.
+      // The isolated shell validates parent+origin and coalesces renewals.
+      element.contentWindow?.postMessage({ type: 'openmaic-preview-host-activity' }, target.origin);
+    };
+    for (const name of ['pointerdown', 'keydown', 'wheel'])
+      owner.addEventListener(name, activity, { capture: true, passive: true });
+    return () => {
+      for (const name of ['pointerdown', 'keydown', 'wheel'])
+        owner.removeEventListener(name, activity, true);
+    };
+  }, [preview.open, inputAvailable, url, preview.frameVersion]);
+  useLayoutEffect(() => {
     // Inert/pointer rules do not evacuate an already focused nested document.
     // Move only preview-owned focus; never steal focus from the learner's editor/chat.
     if ((!inputAvailable || !preview.open) && document.activeElement === frame.current)

@@ -17,6 +17,7 @@ import {
   assertWorkspaceMutation,
   isLearningWorkspace,
   dispatchWorkspaceMutation,
+  preservesLearningApplications,
   type WorkspaceMutation,
 } from './managed-workspace';
 import { issuePreviewGrant, previewConfig, verifyPreviewGrant } from './preview';
@@ -418,7 +419,11 @@ export class SandboxService {
     await this.mutation(id, 'write');
     return this.store.exclusive(id, async () => {
       const row = await this.running(id);
-      if (isLearningWorkspace(row.workspace_id)) await this.stopApplicationsUnlocked(row);
+      if (
+        isLearningWorkspace(row.workspace_id) &&
+        !preservesLearningApplications(this.ownerId, row.workspace_id, row.id)
+      )
+        await this.stopApplicationsUnlocked(row);
       const current = await this.readText(id, path);
       if (createHash('sha256').update(current).digest('hex') !== expectedHash)
         throw sandboxConflict(
@@ -441,7 +446,11 @@ export class SandboxService {
       throw new SandboxError('SANDBOX_FILE_TOO_LARGE', 413, 'Text files are limited to 1 MiB.');
     }
     const row = await this.running(id);
-    if (isLearningWorkspace(row.workspace_id)) await this.stopApplicationsUnlocked(row);
+    if (
+      isLearningWorkspace(row.workspace_id) &&
+      !preservesLearningApplications(this.ownerId, row.workspace_id, row.id)
+    )
+      await this.stopApplicationsUnlocked(row);
     await dispatchWorkspaceMutation(this.ownerId, row.workspace_id, row.id, 'write', () =>
       this.provider.writeText(row.resource_id, row.id, path, text),
     );
@@ -871,11 +880,15 @@ export class SandboxService {
   }
 
   /** Reads/evidence must not race background commands or a terminal started before teaching took ownership. */
-  async assertWorkspaceIdle(id: string, signal?: AbortSignal) {
+  async assertWorkspaceIdle(
+    id: string,
+    signal?: AbortSignal,
+    options: { allowApplications?: boolean } = {},
+  ) {
     signal?.throwIfAborted();
     await this.binding(id);
     return this.store.exclusive(id, async () =>
-      this.assertWorkspaceIdleUnlocked(await this.running(id), signal),
+      this.assertWorkspaceIdleUnlocked(await this.running(id), signal, options),
     );
   }
 
@@ -905,11 +918,16 @@ export class SandboxService {
     }
   }
 
-  private async assertWorkspaceIdleUnlocked(row: SandboxRow, signal?: AbortSignal) {
+  private async assertWorkspaceIdleUnlocked(
+    row: SandboxRow,
+    signal?: AbortSignal,
+    options: { allowApplications?: boolean } = {},
+  ) {
     signal?.throwIfAborted();
     // A file checkpoint is not a process or database snapshot. Quiesce managed writers first.
-    await this.stopApplicationsUnlocked(row, signal);
+    if (!options.allowApplications) await this.stopApplicationsUnlocked(row, signal);
     for (const cmd of await this.store.listCommands(row)) {
+      if (options.allowApplications && cmd.purpose === 'application') continue;
       const result = await this.command(row.id, cmd.id, signal);
       if (['starting', 'running', 'unknown'].includes(result.state))
         throw sandboxConflict(

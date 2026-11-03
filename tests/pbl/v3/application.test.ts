@@ -244,7 +244,9 @@ describe('declared project applications', () => {
     });
     mock.epoch = 0;
     mock.busy = true;
-    await expect(applicationRequest(owner, request())).rejects.toMatchObject({
+    await expect(
+      applicationRequest(owner, { ...request(), action: 'restart' }),
+    ).rejects.toMatchObject({
       reason: 'STUDY_BUSY',
     });
     mock.busy = false;
@@ -402,4 +404,33 @@ describe('declared project applications', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+});
+
+it('keeps planning text out of the application source fingerprint', () => {
+  const source = { 'PLAN.md': 'old plan', 'src/app.py': 'print(1)', 'data.txt': 'runtime data' };
+  expect(applicationFingerprint(source)).toBe(
+    applicationFingerprint({ ...source, 'PLAN.md': 'new plan' }),
+  );
+  expect(applicationFingerprint(source)).not.toBe(
+    applicationFingerprint({ ...source, 'src/app.py': 'print(2)' }),
+  );
+  expect(applicationFingerprint(source)).not.toBe(
+    applicationFingerprint({ ...source, 'data.txt': 'changed runtime data' }),
+  );
+});
+
+it('permits opening and inspection during read-only Agent work while keeping destructive controls fenced', async () => {
+  mock.busy = true;
+  await expect(applicationRequest(owner, request())).resolves.toMatchObject({
+    state: 'running',
+    preview: expect.any(Object),
+  });
+  await expect(
+    applicationRequest(owner, { ...request(), action: 'status' }),
+  ).resolves.toMatchObject({ state: 'running' });
+  for (const action of ['restart', 'stop'])
+    await expect(applicationRequest(owner, { ...request(), action })).rejects.toMatchObject({
+      reason: 'STUDY_BUSY',
+    });
+  expect(mock.starts).toHaveLength(1);
 });

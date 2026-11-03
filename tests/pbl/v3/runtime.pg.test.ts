@@ -369,6 +369,7 @@ import {
   stageFor,
   stageKey,
   saveStudyCheckpoint,
+  readFiles,
 } from '@/lib/server/pbl-v3/runtime';
 import { teachingRunnerConfig } from '@/lib/server/pbl-v3/runner-tools';
 import { touchEnvironment } from '@/lib/server/pbl-v3/environment';
@@ -10625,6 +10626,34 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           state: 'running',
           preview: expect.any(Object),
         });
+        const sandbox = await SandboxService.forOwner(principal);
+        cancel.mockClear();
+        await readFiles(sandbox, row, project, undefined, { allowApplications: true });
+        const plan = await sandbox.readText(row.environment_id!, 'PLAN.md');
+        await withLearningWorkspaceAccess(
+          {
+            ownerId: principal.ownerId,
+            workspaceId: learningWorkspaceId(row.id),
+            environmentIds: () => [row.environment_id],
+            operations: ['write'],
+            preserveApplications: true,
+          },
+          () =>
+            sandbox.compareAndWriteText(
+              row.environment_id!,
+              'PLAN.md',
+              plan + '\n# revised plan',
+              digest(plan),
+            ),
+        );
+        expect(cancel).not.toHaveBeenCalled();
+        expect(await applicationRequest(principal, { ...initial, action: 'status' })).toMatchObject(
+          { state: 'running', sourceChanged: false },
+        );
+        // Formal evidence still stops the application and captures the current plan.
+        const captured = await readFiles(sandbox, row, project);
+        expect(captured['PLAN.md']).toContain('# revised plan');
+        expect(cancel).toHaveBeenCalledOnce();
         // Reproduce a previous host being ahead of the next host by 60 seconds.
         // Legacy imports/upgrades have no sequence and must not outrank a new launch.
         await pool.query(

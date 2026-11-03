@@ -16,7 +16,9 @@ export function applicationLaunchCommand(argv: string[]) {
 
 /** A fixed read-only GET plus hashes of permitted sources; no browser-provided URL or shell. */
 export function applicationProbeCommand(paths: string[], port: number, healthPath: string) {
-  const config = Buffer.from(JSON.stringify({ paths, port, healthPath })).toString('base64');
+  const config = Buffer.from(
+    JSON.stringify({ paths: paths.filter((path) => path !== 'PLAN.md'), port, healthPath }),
+  ).toString('base64');
   const script = `import base64,hashlib,json,pathlib,urllib.request,urllib.error
 c=json.loads(base64.b64decode('${config}'))
 h=hashlib.sha256(); root=pathlib.Path.cwd().resolve(); total=0

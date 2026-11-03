@@ -3207,8 +3207,8 @@
           "body": "Use the file tree and tabs to read project files, or follow file links from the assistant. When editing is allowed, changes save automatically; check the save status. Toolbar panel icons change which regions are shown; drag dividers to resize them."
         },
         "application": {
-          "title": "Click Open application to try your work",
-          "body": "This button opens the application preview. Try the features already implemented and discuss what you observe. Unfinished features will take shape as you work through the project."
+          "title": "Try your application",
+          "body": "The preview opens automatically. Try the implemented features and discuss what you observe. Use Open application in the toolbar to collapse or reopen the preview."
         },
         "replay": {
           "title": "Replay the guide here",

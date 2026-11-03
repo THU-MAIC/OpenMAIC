@@ -1,5 +1,9 @@
-/* OpenPBL workspace palette, scoped to the scene so the surrounding classroom is unchanged. */
+/* The transcript portal shares the workspace palette without size containment. */
 .pbl-workbench {
+  container-type: size;
+}
+.pbl-workbench,
+.pbl-history {
   --background: #ffffff;
   --foreground: #243248;
   --card: #ffffff;
@@ -17,9 +21,9 @@
   --ring: #0b7a52;
   --pbl-assistant-bubble: #f0f4f8;
   --pbl-chrome: #f8fafc;
-  container-type: size;
 }
-.dark .pbl-workbench {
+.dark .pbl-workbench,
+.dark .pbl-history {
   color-scheme: dark;
   --background: #111827;
   --foreground: #dce4ef;
@@ -42,56 +46,64 @@
 .pbl-workbench .pbl-chrome {
   background: var(--pbl-chrome);
 }
-.pbl-workbench .pbl-assistant-bubble {
+:is(.pbl-workbench, .pbl-history) .pbl-assistant-bubble {
   background: var(--pbl-assistant-bubble);
+  font-size: var(--wb-text-base);
 }
 
-.pbl-workbench .pbl-teaching-prose .wb-prose {
-  --wb-h1: 1.6em;
-  --wb-h2: 1.4em;
-  --wb-h3: 1.22em;
+:is(.pbl-workbench, .pbl-history) .pbl-teaching-prose .wb-prose {
+  --wb-h1: 20px;
+  --wb-h2: 20px;
+  --wb-h3: 16px;
   line-height: 1.8;
 }
-.pbl-workbench .pbl-teaching-prose .wb-prose p {
+:is(.pbl-workbench, .pbl-history) .pbl-teaching-prose .wb-prose p {
   margin-block: 0 0.85em;
 }
-.pbl-workbench .pbl-teaching-prose .wb-prose :is(h1, h2, h3, h4) {
+:is(.pbl-workbench, .pbl-history) .pbl-teaching-prose .wb-prose :is(h1, h2, h3, h4) {
   margin-block: 1.5em 0.55em;
   line-height: 1.45;
   color: var(--foreground);
   font-weight: 650;
 }
-/* Older replies used standalone bold paragraphs as section leads. Keep their
-   contents/semantics intact; ordinary inline bold must not enlarge a paragraph. */
-.pbl-workbench .pbl-teaching-prose .wb-prose > div > p[data-pbl-lead='true'] {
-  margin-block: 1.25em 0.55em;
-  font-size: 1.22em;
-  line-height: 1.5;
-}
-.pbl-workbench
+/* Emphasis changes weight, never the body font size. */
+:is(.pbl-workbench, .pbl-history)
   .pbl-teaching-prose
   .wb-prose
   :is(h1, h2, h3, h4, p[data-pbl-lead='true']):first-child {
   margin-block-start: 0;
 }
-.pbl-workbench .pbl-teaching-prose .wb-prose :is(ul, ol) {
+:is(.pbl-workbench, .pbl-history) .pbl-teaching-prose .wb-prose :is(ul, ol) {
   margin-block: 0.6em 1em;
   padding-inline-start: 1.45em;
 }
-.pbl-workbench .pbl-teaching-prose .wb-prose li {
+:is(.pbl-workbench, .pbl-history) .pbl-teaching-prose .wb-prose li {
   margin-block: 0.4em;
   padding-inline-start: 0.15em;
 }
-.pbl-workbench .pbl-teaching-prose .wb-prose li > p {
+:is(.pbl-workbench, .pbl-history) .pbl-teaching-prose .wb-prose li > p {
   margin-block: 0;
 }
-.pbl-workbench .pbl-teaching-prose .wb-prose blockquote {
+:is(.pbl-workbench, .pbl-history) .pbl-teaching-prose .wb-prose blockquote {
   margin-block: 1em;
   padding: 0.75em 1em;
   border-inline-start: 3px solid color-mix(in srgb, var(--primary) 60%, transparent);
   border-radius: 0 8px 8px 0;
   background: color-mix(in srgb, var(--primary) 7%, var(--background));
   color: var(--foreground);
+}
+
+:is(.pbl-workbench, .pbl-history) .pbl-teaching-prose .wb-prose :is(h1, h2) {
+  font-size: var(--wb-h2);
+}
+:is(.pbl-workbench, .pbl-history) .pbl-teaching-prose .wb-prose :is(h3, h4) {
+  font-size: var(--wb-h3);
+}
+:is(.pbl-workbench, .pbl-history) .pbl-teaching-prose .wb-prose :is(h5, h6) {
+  font-size: var(--wb-text-base);
+}
+:is(.pbl-workbench, .pbl-history) .pbl-teaching-prose .wb-prose > div > :last-child {
+  margin-block-end: 0;
 }
 
 .pbl-workbench .pbl-recovery-notice {

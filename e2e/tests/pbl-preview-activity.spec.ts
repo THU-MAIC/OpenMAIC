@@ -406,6 +406,30 @@ test('seals shell script execution while preserving nested readiness, input and 
       (window as unknown as { enable: (value: boolean) => void }).enable(true),
     );
     await expect(app.locator('html')).not.toHaveAttribute('inert', '');
+    // Nested app code cannot impersonate activity from the trusted workbench.
+    await app
+      .locator('body')
+      .evaluate(() =>
+        parent.postMessage({ type: 'openmaic-preview-host-activity' }, location.origin),
+      );
+    await outer.locator('body').evaluate(() =>
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          source: parent,
+          origin: 'http://sealed-preview-host.test',
+          data: { type: 'openmaic-preview-host-activity' },
+        }),
+      ),
+    );
+    expect(signals).toBe(0);
+    await page.evaluate(
+      (gateway) =>
+        document
+          .querySelector('iframe')!
+          .contentWindow!.postMessage({ type: 'openmaic-preview-host-activity' }, gateway),
+      gateway,
+    );
+    await expect.poll(() => signals).toBe(1);
     await app.getByRole('textbox').fill('usable child document');
     await app.getByRole('textbox').press('Enter');
     await expect.poll(() => signals).toBe(1);
@@ -423,6 +447,14 @@ test('seals shell script execution while preserving nested readiness, input and 
     );
     await expect(app.locator('html')).toHaveAttribute('inert', '');
     await expect(app.getByRole('textbox')).toHaveValue('usable child document');
+    await page.evaluate(
+      (gateway) =>
+        document
+          .querySelector('iframe')!
+          .contentWindow!.postMessage({ type: 'openmaic-preview-host-activity' }, gateway),
+      gateway,
+    );
+    expect(signals).toBe(1); // Paused/hidden documents cannot renew from host signals.
   } finally {
     release();
   }

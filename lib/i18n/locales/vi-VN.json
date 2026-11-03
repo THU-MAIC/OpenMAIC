@@ -3207,8 +3207,8 @@
           "body": "Mở tệp từ cây tệp, các thẻ hoặc liên kết của trợ lý. Khi được phép chỉnh sửa, thay đổi sẽ tự lưu; hãy theo dõi trạng thái lưu. Biểu tượng trên thanh công cụ bật hoặc ẩn các vùng; kéo đường phân cách để đổi kích thước."
         },
         "application": {
-          "title": "Nhấn Mở ứng dụng để trải nghiệm",
-          "body": "Nút này mở bản xem trước sản phẩm. Thử các chức năng đã có và trao đổi về kết quả quan sát. Chức năng còn thiếu sẽ được hoàn thiện trong quá trình làm dự án."
+          "title": "Dùng thử ứng dụng",
+          "body": "Bản xem trước tự động mở. Hãy thử các chức năng đã làm và trao đổi về kết quả quan sát. Dùng nút mở ứng dụng trên thanh công cụ để thu gọn hoặc mở lại bản xem trước."
         },
         "replay": {
           "title": "Xem lại hướng dẫn tại đây",

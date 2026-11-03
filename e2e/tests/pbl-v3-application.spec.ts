@@ -233,7 +233,7 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
     const publishLearning = await learningEvents(() => ({ view, workbench }));
     await page.goto(`/classroom/${stageId}`);
     await page.getByRole('button', { name: 'Continue Project', exact: true }).click();
-    await page.getByTestId('pbl-application-open').click();
+    await expect(page.getByTestId('pbl-application-open')).toHaveAttribute('aria-expanded', 'true');
     const panel = page.getByTestId('pbl-application-panel');
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page.getByText('Try this interface.', { exact: true })).toBeHidden();
@@ -467,6 +467,22 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
     await expect(composer).toHaveValue('Keep this draft while looking at the application');
     await app.getByRole('textbox', { name: 'Draft', exact: true }).focus();
     view.busy = true;
+    view.conversation = [
+      {
+        id: 'source-change',
+        speaker: 'coder',
+        status: 'running',
+        parts: [
+          {
+            id: 'write',
+            kind: 'tool',
+            action: 'write',
+            status: 'running',
+            args: { path: 'app.py' },
+          },
+        ],
+      },
+    ];
     view.activitySequence!++;
     await publishLearning();
     await expect(panel.locator('iframe')).toHaveCount(1);
@@ -531,6 +547,7 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
       await expect(panel).not.toBeVisible();
       await attemptFocus();
       view.busy = false;
+      view.conversation = [];
       view.activitySequence!++;
       await publishLearning();
       await expect(page.getByTestId('pbl-application-open')).toBeEnabled();
@@ -544,6 +561,7 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
       await app.getByRole('textbox', { name: 'Draft', exact: true }).fill('Unsaved form input');
     }
     view.busy = false;
+    view.conversation = [];
     view.activitySequence!++;
     await publishLearning();
     await expect(panel.locator('iframe')).not.toHaveAttribute('inert', '');
@@ -553,11 +571,28 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
     expect(launches).toBe(1);
     await composer.focus();
     view.busy = true;
+    view.conversation = [
+      {
+        id: 'source-change',
+        speaker: 'coder',
+        status: 'running',
+        parts: [
+          {
+            id: 'write',
+            kind: 'tool',
+            action: 'write',
+            status: 'running',
+            args: { path: 'app.py' },
+          },
+        ],
+      },
+    ];
     view.activitySequence!++;
     await publishLearning();
     await expect(panel.locator('iframe')).toHaveAttribute('inert', '');
     await expect(composer).toBeFocused();
     view.busy = false;
+    view.conversation = [];
     view.activitySequence!++;
     await publishLearning();
     await expect(panel.locator('iframe')).not.toHaveAttribute('inert', '');
@@ -566,6 +601,22 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
     // the replacement loads, without requiring a manual reopen.
     stopped = true;
     view.busy = true;
+    view.conversation = [
+      {
+        id: 'source-change',
+        speaker: 'coder',
+        status: 'running',
+        parts: [
+          {
+            id: 'write',
+            kind: 'tool',
+            action: 'write',
+            status: 'running',
+            args: { path: 'app.py' },
+          },
+        ],
+      },
+    ];
     view.activitySequence!++;
     await publishLearning();
     await expect(panel.locator('iframe')).toHaveAttribute('inert', '');
@@ -584,6 +635,7 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
       });
     }
     view.busy = false;
+    view.conversation = [];
     view.revision++;
     view.activitySequence!++;
     await publishLearning();

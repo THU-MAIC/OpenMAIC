@@ -134,6 +134,13 @@ export function installPreviewActivity(frame, activityKey, appOrigin, controlled
       )
         return;
       const data = message.data(event);
+      if (data?.type === 'openmaic-preview-host-activity') {
+        if (enabled && visibility(document) === 'visible') {
+          changed = true;
+          void flush();
+        }
+        return;
+      }
       if (data?.type !== 'openmaic-preview-input' || typeof data.enabled !== 'boolean') return;
       enabled = data.enabled;
       if (!enabled) {

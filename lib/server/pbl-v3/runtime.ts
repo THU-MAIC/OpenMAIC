@@ -117,12 +117,15 @@ export async function readFiles(
   row: Study,
   project = projectFor(row),
   signal?: AbortSignal,
+  options: { allowApplications?: boolean } = {},
 ) {
   signal?.throwIfAborted();
   const result: Record<string, string> = {};
   const environmentId = requireEnvironment(row);
-  // A process can modify files without using our file API. Refuse evidence until managed writers stop.
-  await service.assertWorkspaceIdle(environmentId, signal);
+  // Durable evidence uses a quiesced snapshot by default. Read-only teaching
+  // version observations may leave applications running; final approval,
+  // assessments and archive publication retain the strict default.
+  await service.assertWorkspaceIdle(environmentId, signal, options);
   let bytes = 0;
   const paths = await checkpointIO(
     () => projectFiles(service, environmentId, project, signal),
@@ -934,6 +937,7 @@ export async function commandStudy(
         workspaceId: learningWorkspaceId(id),
         environmentIds: () => [row.environment_id, row.environment_recovery?.requestId],
         operations,
+        preserveApplications: command.type === 'save' && command.path === 'PLAN.md',
       },
       execute,
     ),

@@ -157,6 +157,13 @@ async function project(
   };
   const commands: string[] = [];
   const calls: string[] = [];
+  const applicationCalls: string[] = [];
+  await page.route('https://onboarding-preview.test/**', (route) =>
+    route.fulfill({
+      contentType: 'text/html',
+      body: '<!doctype html><label>Preview task<input aria-label="Preview task"></label>',
+    }),
+  );
   if (initialDraft)
     await page.addInitScript(
       ({ id, text }) => {
@@ -177,6 +184,25 @@ async function project(
     const url = new URL(route.request().url());
     const body = route.request().method() === 'POST' ? route.request().postDataJSON() : null;
     if (url.pathname.endsWith('/activity')) return route.fulfill({ json: { recorded: true } });
+    if (url.pathname.endsWith('/application')) {
+      applicationCalls.push(body?.action);
+      return route.fulfill({
+        json: {
+          state: 'running',
+          observedAt: '',
+          sourceChanged: false,
+          ...(body?.action !== 'status'
+            ? {
+                preview: {
+                  url: 'https://onboarding-preview.test/app',
+                  expiresAt: Date.now() + 300000,
+                },
+              }
+            : {}),
+        },
+      });
+    }
+
     calls.push(
       `${route.request().method()} ${url.pathname}${body?.action ? ` ${body.action}` : ''}`,
     );
@@ -239,7 +265,7 @@ async function project(
   await page.goto(`/classroom/${stageId}`);
   await page.locator('[data-testid="pbl-v3-entry"] button').first().click();
   await expect(page.getByTestId('pbl-workspace-frame')).toHaveAttribute('data-expanded', 'true');
-  return { view, workbench, commands, calls, publish, publishRaw, stageId };
+  return { view, workbench, commands, calls, applicationCalls, publish, publishRaw, stageId };
 }
 
 const tour = (page: Page) => page.locator('[data-pbl-onboarding="card"]');
@@ -255,7 +281,7 @@ async function finish(page: Page) {
   }
 }
 async function correctSpotlight(page: Page, selector: string) {
-  const spotlight = page.locator('[data-pbl-onboarding="spotlight"]');
+  const spotlight = page.locator('[data-pbl-onboarding="spotlight"]').first();
   // A hidden/off-screen region may have no spotlight, but never an unrelated one.
   if (!(await spotlight.count())) return;
   const anchor = (await page.locator(selector).boundingBox())!;
@@ -808,7 +834,7 @@ for (const [width, height, locale, docked] of [
     await project(page, learningEvents, { locale });
     await expect(tour(page)).toBeVisible();
     await finish(page);
-    if (docked) await page.getByTestId('pbl-workspace-frame').locator(':scope > button').click();
+    if (docked) await page.getByTestId('pbl-workspace-size').click();
     await page.locator('[data-pbl-tour="replay"]').click();
     const selectors = [
       '[data-pbl-tour="progress"]',
@@ -959,7 +985,7 @@ test('320x480 docked assistant spotlight stays within its scroll viewport while 
   const split = page.getByTestId('pbl-workbench-split');
   const check = async () => {
     const viewport = (await split.boundingBox())!;
-    const spotlight = page.locator('[data-pbl-onboarding="spotlight"]');
+    const spotlight = page.locator('[data-pbl-onboarding="spotlight"]').first();
     const lit = (await spotlight.count()) ? await spotlight.boundingBox() : null;
     if (lit) {
       expect(lit.x).toBeGreaterThanOrEqual(viewport.x - 1);
@@ -1345,3 +1371,140 @@ for (const [width, height, gesture] of [
     await expect(page.getByTestId('pbl-v3-workspace')).toBeFocused();
   });
 }
+
+test('opens the preview by default and highlights its panel and toggle together', async ({
+  page,
+  learningEvents,
+}) => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  const fixture = await project(page, learningEvents);
+  await expect(tour(page)).toHaveAttribute('data-step', 'progress');
+  await expect(page.getByTestId('pbl-application-open')).toHaveAttribute('aria-expanded', 'true');
+  await expect.poll(() => fixture.applicationCalls).toEqual(['open']);
+  const controls = await page.getByTestId('pbl-workspace-size').evaluate((button) => {
+    const theme = button.previousElementSibling!.getBoundingClientRect(),
+      size = button.getBoundingClientRect();
+    return { topDifference: Math.abs(theme.top - size.top), gap: size.left - theme.right };
+  });
+  expect(controls.topDifference).toBeLessThan(1);
+  expect(controls.gap).toBeGreaterThanOrEqual(6);
+
+  for (let i = 0; i < 3; i++) await next(page).click();
+  await expect(tour(page)).toHaveAttribute('data-step', 'application');
+  await expect(page.locator('[data-pbl-onboarding="spotlight"]')).toHaveCount(2);
+  const boxes = await page.locator('[data-pbl-onboarding="spotlight"]').evaluateAll((nodes) =>
+    nodes.map((node) => {
+      const r = node.getBoundingClientRect();
+      return { x: r.x, y: r.y, right: r.right, bottom: r.bottom };
+    }),
+  );
+  for (const target of [
+    page.getByTestId('pbl-application-panel'),
+    page.getByTestId('pbl-application-open'),
+  ]) {
+    const r = (await target.boundingBox())!;
+    expect(
+      boxes.some(
+        (box) =>
+          box.x <= r.x + 1 &&
+          box.y <= r.y + 1 &&
+          box.right >= r.x + r.width - 1 &&
+          box.bottom >= r.y + r.height - 1,
+      ),
+    ).toBe(true);
+  }
+  await finish(page);
+  await page.getByTestId('pbl-application-open').click();
+  fixture.view.revision++;
+  await fixture.publish();
+  await expect(page.getByTestId('pbl-application-open')).toHaveAttribute('aria-expanded', 'false');
+  expect(fixture.applicationCalls).toEqual(['open']);
+});
+
+test('live and historical turns share regular spacing and body-size handoffs in both themes', async ({
+  page,
+  learningEvents,
+}, testInfo) => {
+  const fixture = await project(page, learningEvents, {
+    started: true,
+    guideCompleted: true,
+    application: false,
+  });
+  const entries: NonNullable<LearningView['conversation']> = [
+    {
+      id: 'presentation-turn',
+      speaker: 'coder',
+      status: 'succeeded',
+      parts: [
+        { id: 'thinking-a', kind: 'thinking', text: 'Inspect the project.', streaming: false },
+        { id: 'empty-prose', kind: 'text', text: '  \n' },
+        {
+          id: 'tool-a',
+          kind: 'tool',
+          action: 'read',
+          status: 'succeeded',
+          args: { path: 'PLAN.md' },
+          result: 'Saved plan.',
+        },
+        {
+          id: 'prose',
+          kind: 'text',
+          text: '## Project outline\n\nA regular body paragraph.\n\n### Review\n\n**Confirm the current plan.**',
+        },
+        { id: 'thinking-b', kind: 'thinking', text: 'Record the result.', streaming: false },
+        { id: 'complete-a', kind: 'tool', action: 'complete', status: 'succeeded' },
+      ],
+    },
+  ];
+  fixture.view.conversation = entries;
+  fixture.view.conversationHistory = [
+    { sessionId: 'historical-coder', through: 10, role: 'coder' },
+  ];
+  await page.route('**/api/pbl/v3/history?**', (route) =>
+    route.fulfill({ json: { through: 10, nextBefore: null, conversation: entries } }),
+  );
+  fixture.view.revision++;
+  await fixture.publish();
+  const measure = async (scope: ReturnType<Page['locator']>) =>
+    scope.locator('.pbl-assistant-bubble').evaluate((bubble) => {
+      const children = Array.from(bubble.children),
+        rects = children.map((node) => node.getBoundingClientRect());
+      const body = bubble.querySelector('.wb-prose p')!,
+        bold = bubble.querySelector('p[data-pbl-lead="true"]')!;
+      return {
+        gaps: rects.slice(1).map((r, i) => r.top - rects[i].bottom),
+        body: getComputedStyle(body).fontSize,
+        bold: getComputedStyle(bold).fontSize,
+        handoff: getComputedStyle(bubble.querySelector('[data-testid="pbl-completion-handoff"]')!)
+          .fontSize,
+        heading: getComputedStyle(bubble.querySelector('h2')!).fontSize,
+        subtitle: getComputedStyle(bubble.querySelector('h3')!).fontSize,
+        tool: getComputedStyle(bubble.querySelector('[data-testid="workbench-tool-card"] button')!)
+          .fontSize,
+        background: getComputedStyle(bubble).backgroundColor,
+      };
+    });
+  for (const dark of [false, true]) {
+    await page.evaluate((dark) => document.documentElement.classList.toggle('dark', dark), dark);
+    const live = await measure(page.getByTestId('pbl-v3-frame'));
+    expect(live.body).toBe('14px');
+    expect(live.bold).toBe(live.body);
+    expect(live.handoff).toBe(live.body);
+    expect(live.heading).toBe('20px');
+    expect(live.subtitle).toBe('16px');
+    expect(live.tool).toBe('13px');
+    for (const gap of live.gaps) expect(gap).toBeCloseTo(12, 0);
+    await page.getByRole('button', { name: 'Conversation history', exact: true }).click();
+    await expect(page.locator('.pbl-history [data-testid="pbl-agent-turn"]')).toBeVisible();
+    await expect
+      .poll(async () => (await measure(page.locator('.pbl-history'))).gaps[0])
+      .toBeCloseTo(12, 1);
+    const history = await measure(page.locator('.pbl-history'));
+    expect({ ...history, gaps: [] }).toEqual({ ...live, gaps: [] });
+    for (const gap of history.gaps) expect(gap).toBeCloseTo(12, 0);
+    await page.screenshot({
+      path: testInfo.outputPath(dark ? 'history-dark.png' : 'history-light.png'),
+    });
+    await page.keyboard.press('Escape');
+  }
+});

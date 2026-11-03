@@ -249,6 +249,7 @@ export async function workbenchCommand(
         workspaceId: learningWorkspaceId(id),
         environmentIds: () => [row.environment_id],
         operations: [operation],
+        preserveApplications: command.action === 'save' && command.path === 'PLAN.md',
       },
       async () => {
         if (fileAction)

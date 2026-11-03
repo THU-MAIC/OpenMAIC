@@ -46,10 +46,13 @@ export function useApplicationPreview(
   view: LearningView | null,
   workbench: LearningWorkbench | null,
   dirty: boolean,
+  autoOpen = true,
 ) {
   const { t } = useI18n();
   const panelId = useId();
   const [open, setOpen] = useState(false);
+  const autoLaunched = useRef<string | null>(null);
+  const closedStudy = useRef<string | null>(null);
   const [pending, setPending] = useState(false);
   const [observation, setObservation] = useState<ApplicationObservation | null>(null);
   const [error, setError] = useState('');
@@ -72,6 +75,7 @@ export function useApplicationPreview(
   const previewDeadline = useRef<number | undefined>(undefined);
   previewDeadline.current = observation?.preview?.expiresAt;
   const hasPreview = !!observation?.preview;
+  const applicationDeclared = !!view?.application;
   // A timeout from an older grant cannot expire a later accepted renewal.
   const expired = !!observation?.preview && expiredAt === observation.preview.expiresAt;
   const trigger = useRef<HTMLButtonElement | null>(null);
@@ -87,7 +91,19 @@ export function useApplicationPreview(
     !workbench ||
     !view.environmentId ||
     workbench.environmentId !== view.environmentId;
-  const disabled = unavailable || dirty || !!view?.busy || !!view?.evaluation;
+  // A read-only teaching turn does not own the application's input. Pause only
+  // after a real source-write attempt, until that turn reaches its checkpoint.
+  const sourceWriting = view?.conversation?.some(
+    (entry) =>
+      entry.status === 'running' &&
+      entry.parts.some(
+        (part) =>
+          part.kind === 'tool' &&
+          (part.action === 'write' || part.action === 'manage') &&
+          (part.args as { path?: string } | undefined)?.path !== 'PLAN.md',
+      ),
+  );
+  const disabled = unavailable || dirty || !!view?.evaluation || !!sourceWriting;
   const binding = `${view?.id}:${view?.environmentId}:${workbench?.environmentId}:${workbench?.epoch}`;
   const stage = `${view?.state?.position?.milestoneId}:${view?.state?.position?.stageIndex}`;
   const [observedBinding, setObservedBinding] = useState(binding);
@@ -96,7 +112,7 @@ export function useApplicationPreview(
     ++attempt.current;
     controller.current?.abort();
     setObservedBinding(binding);
-    setOpen(false);
+    setOpen(autoOpen && applicationDeclared && closedStudy.current !== view?.id);
     setPending(false);
     setObservation(null);
     setError('');
@@ -107,7 +123,7 @@ export function useApplicationPreview(
     embeddedLaunch.current = null;
     documentLaunch.current = null;
     unresolvedLaunch.current = null;
-  }, [binding]);
+  }, [binding, autoOpen, applicationDeclared, view?.id]);
   useEffect(
     () => () => {
       ++attempt.current;
@@ -160,7 +176,9 @@ export function useApplicationPreview(
       const abort = new AbortController();
       controller.current = abort;
       setOpen(true);
-      setPending(true);
+      const checking = !!recovery && !!observation?.preview && !expired;
+      // Status probes never take input away from a currently displayed page.
+      setPending(!checking);
       setError('');
       setRefreshNeeded(false);
       const original = unresolvedLaunch.current;
@@ -216,6 +234,7 @@ export function useApplicationPreview(
             request.action = 'restart';
         }
         // A ticket is not a usable document, including on the first launch.
+        setPending(true);
         replacementNeeded.current = true;
         embeddedLaunch.current = serial;
         const launch = resumable ?? { binding, stage, request: { ...request } };
@@ -247,23 +266,53 @@ export function useApplicationPreview(
       } catch (e) {
         if (serial === attempt.current && !abort.signal.aborted) setError((e as Error).message);
       } finally {
-        if (serial === attempt.current) setPending(false);
+        if (serial === attempt.current) {
+          controller.current = null;
+          setPending(false);
+        }
       }
     },
-    [currentBinding, disabled, view, workbench, observation, t, binding, stage],
+    [currentBinding, disabled, view, workbench, observation, t, binding, stage, expired],
   );
+  useEffect(() => {
+    if (
+      !autoOpen ||
+      !currentBinding ||
+      disabled ||
+      !view?.application ||
+      closedStudy.current === view.id ||
+      autoLaunched.current === binding ||
+      pending ||
+      observation ||
+      error
+    )
+      return;
+    autoLaunched.current = binding;
+    void load('open');
+  }, [autoOpen, currentBinding, disabled, view, binding, pending, observation, error, load]);
   useEffect(() => {
     if (
       currentBinding &&
       open &&
       refreshNeeded &&
       !disabled &&
+      !view?.busy &&
       !pending &&
       !expired &&
       (!observation?.preview || observation.preview.expiresAt > Date.now())
     )
       void load('open', 'automatic');
-  }, [currentBinding, open, refreshNeeded, disabled, pending, expired, observation, load]);
+  }, [
+    currentBinding,
+    open,
+    refreshNeeded,
+    disabled,
+    pending,
+    expired,
+    observation,
+    load,
+    view?.busy,
+  ]);
   const renew = useCallback((expiresAt: number) => {
     if (!Number.isFinite(expiresAt) || expiresAt <= Date.now() || expiresAt > Date.now() + 300_000)
       return;
@@ -322,11 +371,15 @@ export function useApplicationPreview(
       tab.close();
       if (serial === attempt.current && !abort.signal.aborted) setError((e as Error).message);
     } finally {
-      if (serial === attempt.current) setPending(false);
+      if (serial === attempt.current) {
+        controller.current = null;
+        setPending(false);
+      }
     }
   }
   function close() {
-    if (pending) {
+    closedStudy.current = view?.id ?? null;
+    if (pending || (controller.current && !controller.current.signal.aborted)) {
       ++attempt.current;
       controller.current?.abort();
       setPending(false);
@@ -358,11 +411,7 @@ export function useApplicationPreview(
     expired,
     disabled,
     dirty,
-    updating:
-      disabled ||
-      pending ||
-      refreshNeeded ||
-      (!!observation?.preview && view?.revision !== observedRevision.current),
+    updating: disabled || pending,
     frameVersion,
     documentReady,
     documentScope: `${binding}:${unavailable}`,
