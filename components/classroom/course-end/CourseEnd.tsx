@@ -9,7 +9,7 @@
  * click or Esc during the sequence skips to its end.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { BookCheck, ListChecks, ListX, RotateCcw, X, type LucideIcon } from 'lucide-react';
+import { ListChecks, ListX, RotateCcw, X, type LucideIcon } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { CompleteSummary } from '@/lib/classroom/complete-summary';
 import { courseEndActions, tiltAllowed, type CourseEndAction } from '@/lib/classroom/course-end';
@@ -173,27 +173,22 @@ export function CourseEnd({
             </div>
           </div>
         </div>
-        <div className="ce-eyebrow ce-up" style={{ '--ce-d': '.5s' } as React.CSSProperties}>
-          <BookCheck size={14} aria-hidden />
-          <span>{t('classroomEnd.learned', { count: pageCount })}</span>
-        </div>
         <div className="ce-title-wrap">
           <div id={titleId} className="ce-title">
             {courseName}
           </div>
         </div>
-        {scored ? (
-          <div
-            className="ce-result ce-up"
-            data-testid="course-end-result"
-            style={{ '--ce-d': '.72s' } as React.CSSProperties}
-          >
-            {t('classroomEnd.result', {
-              correct: summary.quiz!.correct,
-              total: summary.quiz!.total,
-            })}
-          </div>
-        ) : null}
+        <div className="ce-meta ce-up" style={{ '--ce-d': '.5s' } as React.CSSProperties}>
+          <span>{t('classroomEnd.learned', { count: pageCount })}</span>
+          {scored ? (
+            <>
+              <i aria-hidden>·</i>
+              <b data-testid="course-end-result">
+                {t('classroomEnd.result', { correct: scored.correct, total: scored.total })}
+              </b>
+            </>
+          ) : null}
+        </div>
         <div className="ce-actions ce-up" style={{ '--ce-d': '.34s' } as React.CSSProperties}>
           {actions.map((action, index) => {
             const Icon = ACTION_ICON[action];
@@ -206,7 +201,7 @@ export function CourseEnd({
                 className={cn('ce-btn', index === 0 && action !== 'restart' && 'ce-btn-primary')}
                 onClick={() => onAction(action)}
               >
-                <Icon size={14} aria-hidden />
+                <Icon size={16} aria-hidden />
                 <span>{t(`classroomEnd.actions.${action}`)}</span>
               </button>
             );

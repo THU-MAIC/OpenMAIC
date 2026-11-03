@@ -1,19 +1,16 @@
 /* The course-end state. Its own tokens, since it also shows outside the workspace. */
 .ce-root {
   --ce-ink: #0f172a;
-  --ce-soft: #334155;
   --ce-mute: #64748b;
   --ce-line: rgba(15, 23, 42, 0.1);
   --ce-tint: rgba(124, 58, 237, 0.06);
   --ce-raised: #fff;
   --ce-accent: #7c3aed;
-  --ce-sec: #fff;
-  --ce-secline: rgba(15, 23, 42, 0.12);
   --ce-pri: linear-gradient(180deg, #8143ef, #6d28d9);
-  --ce-pri-sh: 0 1px 2px rgba(76, 29, 149, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.18);
   --ce-scrim: rgba(30, 20, 60, 0.26);
   --ce-card-sh: 0 1px 2px rgba(15, 23, 42, 0.05), 0 24px 56px -16px rgba(76, 29, 149, 0.34);
   --ce-medal-shadow: rgba(49, 16, 102, 0.34);
+  container-type: inline-size;
   position: absolute;
   inset: 0;
   z-index: 130;
@@ -28,16 +25,12 @@
 }
 .dark .ce-root {
   --ce-ink: #f8fafc;
-  --ce-soft: #cbd5e1;
   --ce-mute: #94a3b8;
   --ce-line: rgba(255, 255, 255, 0.12);
   --ce-tint: rgba(167, 139, 250, 0.09);
   --ce-raised: #1b2336;
   --ce-accent: #a78bfa;
-  --ce-sec: rgba(255, 255, 255, 0.04);
-  --ce-secline: rgba(255, 255, 255, 0.14);
   --ce-pri: linear-gradient(180deg, #8b5cf6, #7c3aed);
-  --ce-pri-sh: 0 1px 2px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.16);
   --ce-scrim: rgba(5, 6, 20, 0.7);
   --ce-card-sh:
     0 1px 2px rgba(0, 0, 0, 0.3), 0 28px 64px -16px rgba(0, 0, 0, 0.72),
@@ -55,7 +48,7 @@
   margin: auto;
   width: 100%;
   max-width: 420px;
-  padding: 60px 24px 24px;
+  padding: 66px 24px 24px;
   border-radius: 18px;
   background: var(--ce-raised);
   border: 1px solid var(--ce-line);
@@ -210,25 +203,18 @@
     transform: translateY(9px);
   }
 }
-.ce-eyebrow {
-  position: relative;
-  display: flex;
-  height: 20px;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  font-size: 12px;
-  line-height: 20px;
-  color: var(--ce-mute);
-}
 .ce-title-wrap {
   position: relative;
   overflow: hidden;
 }
 .ce-title {
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 26px;
+  padding: 0 8px;
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 30px;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
   color: var(--ce-ink);
   animation: ce-reveal 0.5s 0.62s cubic-bezier(0.2, 0.8, 0.3, 1) both;
 }
@@ -238,63 +224,93 @@
     opacity: 0;
   }
 }
-.ce-result {
+.ce-meta {
   position: relative;
-  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0 8px;
+  margin-top: 8px;
   font-size: 13px;
-  font-weight: 500;
   line-height: 20px;
-  color: var(--ce-soft);
+  color: var(--ce-mute);
 }
+.ce-meta i {
+  font-style: normal;
+}
+.ce-meta b {
+  font-weight: 600;
+  color: var(--ce-accent);
+}
+
+/* The buttons are the card's bottom edge. */
 .ce-actions {
   position: relative;
   display: flex;
-  gap: 8px;
-  margin-top: 18px;
+  margin: 26px -24px -24px;
+  overflow: hidden;
+  border-top: 1px solid var(--ce-line);
+  border-radius: 0 0 17px 17px;
 }
 .ce-btn {
   display: flex;
   flex: 1;
   min-width: 0;
-  height: 36px;
+  height: 52px;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border-radius: 10px;
-  border: 1px solid var(--ce-secline);
-  background: var(--ce-sec);
-  color: var(--ce-ink);
-  font-size: 13px;
-  font-weight: 500;
+  background: transparent;
+  color: var(--ce-accent);
+  font-size: 14px;
+  font-weight: 600;
   line-height: 20px;
   white-space: nowrap;
   cursor: pointer;
-  transition:
-    background 0.15s,
-    border-color 0.15s;
+  transition: background 0.15s;
 }
-.ce-btn > span {
-  /* CJK ink sits below its line box's middle. */
-  transform: translateY(-0.5px);
+/* Rounded with the card, so that a focus ring follows its corner instead of being cut. */
+.ce-btn:first-child {
+  border-end-start-radius: 17px;
+}
+.ce-btn:last-child {
+  border-end-end-radius: 17px;
 }
 .ce-btn:hover {
   background: var(--ce-tint);
-  border-color: var(--ce-accent);
 }
 .ce-btn-primary {
-  color: #fff;
   background: var(--ce-pri);
-  border-color: transparent;
-  box-shadow: var(--ce-pri-sh);
+  color: #fff;
 }
 .ce-btn-primary:hover {
   background: var(--ce-pri);
   filter: brightness(1.07);
 }
-.ce-btn:focus-visible,
+.ce-btn:focus-visible {
+  outline: 2px solid var(--ce-accent);
+  outline-offset: -3px;
+}
+.ce-btn-primary:focus-visible {
+  outline-color: #fff;
+}
 .ce-x:focus-visible {
   outline: 2px solid var(--ce-accent);
   outline-offset: 2px;
+}
+
+/* Too narrow for an icon beside the longer labels, or a line that keeps its separator. */
+@container (max-width: 300px) {
+  .ce-btn svg {
+    display: none;
+  }
+  .ce-meta {
+    flex-direction: column;
+  }
+  .ce-meta i {
+    display: none;
+  }
 }
 
 /* Skipped, and settled: everything at its end. */

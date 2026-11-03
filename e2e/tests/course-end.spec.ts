@@ -60,7 +60,8 @@ const CLASSROOM_PAYLOAD = {
 
 test.describe('Course end', () => {
   test('opens over the last page, counts real pages, and closes back onto it', async ({ page }) => {
-    await page.goto('/', { waitUntil: 'networkidle' });
+    // Not networkidle: with the workbench enabled the home page holds an event stream open.
+    await page.goto('/', { waitUntil: 'load' });
     await seedServerDocument(page, {
       ...CLASSROOM_PAYLOAD,
       outline: {
