@@ -1949,6 +1949,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 foldDock={
                   Boolean(courseEnd) && !lectureSpeech && (playbackCompleted || !firstSpeechText)
                 }
+                courseEndOpen={Boolean(courseEnd) && !isPendingScene}
                 mode={mode}
                 initialParticipants={participants}
                 playbackView={playbackView}
