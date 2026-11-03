@@ -2248,14 +2248,19 @@ export function startAgentRunner(
   const ctx: RunContext = { running: new Map(), shuttingDown: false, ...options };
   let scanTimer: ReturnType<typeof setInterval> | null = null;
   let scanning = false;
+  let nextSchemaCheckAt = 0;
 
   const scan = async (): Promise<void> => {
     if (scanning || ctx.shuttingDown) return;
     scanning = true;
     try {
-      // Before claiming any input, check stores that this worker initializes lazily.
-      // Startup-only checks cannot protect an already-running old replica.
-      await assertRuntimeSchemaCompatibility();
+      // Check before the first claim, then reuse success for 30 seconds instead
+      // of re-reading every schema and hashing every migration on each scan.
+      // Failed checks never extend this window or allow this scan to claim work.
+      if (Date.now() >= nextSchemaCheckAt) {
+        await assertRuntimeSchemaCompatibility();
+        nextSchemaCheckAt = Date.now() + 30_000;
+      }
       const store = await getAgentSessionStore();
       while (ctx.running.size < config.maxConcurrent && !ctx.shuttingDown) {
         const meta = await store.claimNextSession(

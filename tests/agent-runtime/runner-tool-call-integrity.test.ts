@@ -268,6 +268,65 @@ describe('runtime schema incompatibility', () => {
   const refusal = () =>
     Object.assign(new Error('newer schema'), { name: 'SchemaVersionAheadError' });
 
+  it('reuses a successful schema check between scans and refreshes it after 30 seconds', async () => {
+    vi.useFakeTimers();
+    const claimNextSession = vi.fn(async () => null);
+    mocks.getAgentSessionStore.mockResolvedValue({ claimNextSession });
+    const runner = startAgentRunner();
+    try {
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(mocks.checkSchema).toHaveBeenCalledOnce();
+      expect(claimNextSession.mock.calls.length).toBeGreaterThan(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(mocks.checkSchema).toHaveBeenCalledTimes(2);
+    } finally {
+      await runner.stop();
+    }
+  });
+
+  it('stops before another claim when a previously compatible schema becomes incompatible', async () => {
+    vi.useFakeTimers();
+    const claimNextSession = vi.fn(async () => null);
+    mocks.getAgentSessionStore.mockResolvedValue({ claimNextSession });
+    const onSchemaRefusal = vi.fn(async () => {});
+    const runner = startAgentRunner({ onSchemaRefusal });
+    try {
+      await vi.advanceTimersByTimeAsync(29_999);
+      const claims = claimNextSession.mock.calls.length;
+      const error = refusal();
+      mocks.checkSchema.mockRejectedValueOnce(error);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(onSchemaRefusal).toHaveBeenCalledWith(error);
+      expect(claimNextSession).toHaveBeenCalledTimes(claims);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(mocks.checkSchema).toHaveBeenCalledTimes(2);
+      expect(claimNextSession).toHaveBeenCalledTimes(claims);
+    } finally {
+      await runner.stop();
+    }
+  });
+
+  it('does not cache a failed refresh or claim input until that check succeeds', async () => {
+    vi.useFakeTimers();
+    const claimNextSession = vi.fn(async () => null);
+    mocks.getAgentSessionStore.mockResolvedValue({ claimNextSession });
+    const onSchemaRefusal = vi.fn(async () => {});
+    const runner = startAgentRunner({ onSchemaRefusal });
+    try {
+      await vi.advanceTimersByTimeAsync(29_999);
+      const claims = claimNextSession.mock.calls.length;
+      mocks.checkSchema.mockRejectedValueOnce(new Error('ECONNRESET'));
+      await vi.advanceTimersByTimeAsync(1);
+      expect(claimNextSession).toHaveBeenCalledTimes(claims);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.checkSchema).toHaveBeenCalledTimes(3);
+      expect(claimNextSession).toHaveBeenCalledTimes(claims + 1);
+      expect(onSchemaRefusal).not.toHaveBeenCalled();
+    } finally {
+      await runner.stop();
+    }
+  });
+
   it('does not claim a learner input when another release has upgraded a lazy store', async () => {
     vi.useFakeTimers();
     const claimNextSession = vi.fn(async () => null);
