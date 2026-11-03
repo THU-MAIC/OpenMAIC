@@ -2980,7 +2980,17 @@
       "testsPassed": "Tests de comportement réussis",
       "linkPlaceholder": "Cours d’initiation · Lien d’exemple à remplacer avant publication",
       "decisionsLabel": "Décisions prises",
-      "quizLabel": "Questionnaire"
+      "quizLabel": "Questionnaire",
+      "skillsMetric": "Compétences pratiquées",
+      "skillsSection": "Votre pratique",
+      "conceptsLabel": "Notions clés",
+      "skillLabels": {
+        "decisions": "Prendre des décisions techniques",
+        "planReview": "Relire un plan",
+        "codeReview": "Vérifier une implémentation",
+        "verification": "Vérifier par les tests",
+        "reflection": "Réfléchir à partir des traces"
+      }
     }
   }
 }

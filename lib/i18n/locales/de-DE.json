@@ -2980,7 +2980,17 @@
       "testsPassed": "Verhaltenstests bestanden",
       "linkPlaceholder": "Einstiegskurs · Beispiellink, vor Veröffentlichung ersetzen",
       "decisionsLabel": "Entscheidungen",
-      "quizLabel": "Wissenscheck"
+      "quizLabel": "Wissenscheck",
+      "skillsMetric": "Geübte Fähigkeiten",
+      "skillsSection": "Deine Praxis",
+      "conceptsLabel": "Kernkonzepte",
+      "skillLabels": {
+        "decisions": "Technische Entscheidungen treffen",
+        "planReview": "Einen Plan prüfen",
+        "codeReview": "Implementierung prüfen",
+        "verification": "Verhalten mit Tests prüfen",
+        "reflection": "Anhand von Belegen reflektieren"
+      }
     }
   }
 }

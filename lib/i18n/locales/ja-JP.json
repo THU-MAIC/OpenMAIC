@@ -2980,7 +2980,17 @@
       "testsPassed": "動作テストに合格",
       "linkPlaceholder": "入門講座の入口 · サンプルリンク、公開前に差し替え",
       "decisionsLabel": "実装の選択",
-      "quizLabel": "クイズ"
+      "quizLabel": "クイズ",
+      "skillsMetric": "実践したスキル",
+      "skillsSection": "今回の実践",
+      "conceptsLabel": "学習ポイント",
+      "skillLabels": {
+        "decisions": "設計の判断",
+        "planReview": "計画のレビュー",
+        "codeReview": "実装のレビュー",
+        "verification": "テストによる検証",
+        "reflection": "記録に基づく振り返り"
+      }
     }
   }
 }

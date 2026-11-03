@@ -2976,11 +2976,21 @@
       "rendering": "正在准备图片…",
       "achievement": "我的项目成果",
       "invite": "你也来试试，一起练习 Vibe Coding！",
-      "tagline": "从一个小项目开始，练习和 AI 一起编程。",
+      "tagline": "从一个小项目开始，和 AI 一起动手编程。",
       "testsPassed": "行为测试已通过",
       "linkPlaceholder": "前置课入口 · 示例链接，上线前替换",
       "decisionsLabel": "实现选择",
-      "quizLabel": "测验"
+      "quizLabel": "测验",
+      "skillsMetric": "实践技能",
+      "skillsSection": "本次练习",
+      "conceptsLabel": "知识点",
+      "skillLabels": {
+        "decisions": "选择实现方式",
+        "planReview": "审阅实施计划",
+        "codeReview": "核对代码实现",
+        "verification": "验证实际效果",
+        "reflection": "回顾实践过程"
+      }
     }
   }
 }

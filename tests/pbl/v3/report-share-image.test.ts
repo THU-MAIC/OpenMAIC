@@ -30,6 +30,7 @@ function syntheticCanvas() {
     quadraticCurveTo() {},
     closePath() {},
     stroke() {},
+    arc() {},
     measureText: (value: string) => ({ width: value.length * 10 }),
     fillText(value: string, x: number) {
       drawn.push({ value, x, direction: this.direction, align: this.textAlign, font: this.font });
@@ -98,8 +99,8 @@ it.each(['light', 'dark'] as const)(
     });
     const receipt = drawn.find((item) => item.value.includes('\u20662/10\u2069'));
     expect(receipt?.value).toContain(ar.pblV3.share.quizLabel);
-    expect(receipt?.value).toContain(ar.pblV3.share.decisionsLabel);
-    expect(receipt?.value).toContain('\u206612\u2069');
+    const decisions = drawn.find((item) => item.value.includes(ar.pblV3.share.decisionsLabel));
+    expect(decisions?.value).toContain('\u206612\u2069');
     expect(drawn.map((item) => item.value).join(' ')).not.toMatch(
       /PRIVATE|private\.example|Decisions made|Quiz|✓/,
     );
@@ -123,6 +124,8 @@ it.each([true, false])(
     expect(text).not.toContain(
       completed ? zh.pblV3.share.achievement : zh.pblV3.reportCopy.congratulations,
     );
+    expect(text).toContain(zh.pblV3.share.skillsSection);
+    expect(text).not.toContain(zh.pblV3.reportCopy.skills);
   },
 );
 
@@ -138,8 +141,8 @@ it('omits empty factual sections instead of drawing empty headings or inventing 
     'ar-SA',
   );
   const values = drawn.map((item) => item.value);
-  expect(values).not.toContain(ar.pblV3.reportCopy.skills);
-  expect(values).not.toContain(ar.pblV3.reportCopy.concepts);
+  expect(values).not.toContain(ar.pblV3.share.skillsSection);
+  expect(values).not.toContain(ar.pblV3.share.conceptsLabel);
   expect(values.join(' ')).not.toContain('0/0');
 });
 

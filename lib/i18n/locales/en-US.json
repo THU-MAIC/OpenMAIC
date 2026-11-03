@@ -2980,7 +2980,17 @@
       "testsPassed": "Behavior tests passed",
       "linkPlaceholder": "Intro course · placeholder link, replace before launch",
       "decisionsLabel": "Decisions made",
-      "quizLabel": "Quiz"
+      "quizLabel": "Quiz",
+      "skillsMetric": "Skills practiced",
+      "skillsSection": "Your practice",
+      "conceptsLabel": "Key concepts",
+      "skillLabels": {
+        "decisions": "Making engineering decisions",
+        "planReview": "Reviewing a plan",
+        "codeReview": "Reviewing implementation",
+        "verification": "Verifying behavior with tests",
+        "reflection": "Reflecting from evidence"
+      }
     }
   }
 }

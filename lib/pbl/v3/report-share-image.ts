@@ -43,7 +43,10 @@ export async function renderReportShareImage(
           content.title,
           ...content.concepts,
           heading,
-          ...content.skills.map((id) => t(`pblV3.reportCopy.skillLabels.${id}`)),
+          ...content.skills.map((id) => t(`pblV3.share.skillLabels.${id}`)),
+          t('pblV3.share.skillsMetric'),
+          t('pblV3.share.skillsSection'),
+          t('pblV3.share.conceptsLabel'),
           t('pblV3.share.invite'),
           t('pblV3.share.tagline'),
         ].join(' '),
@@ -212,7 +215,13 @@ export async function renderReportShareImage(
         direction === 'rtl' ? 'right' : 'left',
       );
       paragraph(
-        t(`pblV3.reportCopy.${key}`),
+        t(
+          key === 'skills'
+            ? 'pblV3.share.skillsMetric'
+            : key === 'concepts'
+              ? 'pblV3.share.conceptsLabel'
+              : `pblV3.reportCopy.${key}`,
+        ),
         x + 24,
         top + 84,
         cardWidth - 48,
@@ -225,21 +234,106 @@ export async function renderReportShareImage(
     });
     y += Math.ceil(content.metrics.length / 2) * 128;
   }
+  // Complementary practice/concept panels share a baseline and use the remaining canvas.
+  const lowerTop = y + 24,
+    lowerBottom = 1320;
+  const both = content.skills.length > 0 && content.concepts.length > 0;
+  const rule = dark ? '#ffffff16' : '#211c3812';
   if (content.skills.length) {
-    box(64, y, width - 128, 180, panel);
-    paragraph(t('pblV3.reportCopy.skills'), 88, y + 36, width - 176, 22, 1, muted, 600, true);
+    const panelWidth = both ? 628 : width - 128;
+    box(64, lowerTop, panelWidth, lowerBottom - lowerTop, panel);
+    paragraph(
+      t('pblV3.share.skillsSection'),
+      92,
+      lowerTop + 40,
+      panelWidth - 56,
+      22,
+      1,
+      muted,
+      600,
+      true,
+    );
+    const bodyTop = lowerTop + 76,
+      rowHeight = (lowerBottom - 18 - bodyTop) / content.skills.length;
     content.skills.forEach((id, i) => {
-      const x = 88 + (i % 3) * 340;
-      const baseline = y + 76 + Math.floor(i / 3) * 58;
-      paragraph(t(`pblV3.reportCopy.skillLabels.${id}`), x, baseline, 324, 20, 2, ink, 500, true);
+      const center = bodyTop + (i + 0.5) * rowHeight;
+      const markerX = direction === 'rtl' ? 64 + panelWidth - 40 : 104;
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.arc(markerX, center, 11, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(markerX - 5, center);
+      ctx.lineTo(markerX - 1, center + 4);
+      ctx.lineTo(markerX + 6, center - 5);
+      ctx.stroke();
+      paragraph(
+        t(`pblV3.share.skillLabels.${id}`),
+        direction === 'rtl' ? 92 : 136,
+        center + 9,
+        panelWidth - 100,
+        26,
+        1,
+        ink,
+        500,
+        true,
+      );
+      if (i < content.skills.length - 1) {
+        ctx.strokeStyle = rule;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(92, bodyTop + (i + 1) * rowHeight);
+        ctx.lineTo(64 + panelWidth - 28, bodyTop + (i + 1) * rowHeight);
+        ctx.stroke();
+      }
     });
-    y += 200;
   }
   if (content.concepts.length) {
-    box(64, y, width - 128, 132, panel);
-    paragraph(t('pblV3.reportCopy.concepts'), 88, y + 36, width - 176, 22, 1, muted, 600, true);
-    paragraph(content.concepts.join(' · '), 88, y + 72, width - 176, 25, 2, ink, 500);
-    y += 152;
+    const x = both ? 716 : 64,
+      panelWidth = both ? 420 : width - 128;
+    box(x, lowerTop, panelWidth, lowerBottom - lowerTop, panel);
+    paragraph(
+      t('pblV3.share.conceptsLabel'),
+      x + 28,
+      lowerTop + 40,
+      panelWidth - 56,
+      22,
+      1,
+      muted,
+      600,
+      true,
+    );
+    const bodyTop = lowerTop + 76,
+      rowHeight = (lowerBottom - 18 - bodyTop) / content.concepts.length;
+    content.concepts.forEach((concept, i) => {
+      const center = bodyTop + (i + 0.5) * rowHeight;
+      box(
+        x + 20,
+        bodyTop + i * rowHeight + 4,
+        panelWidth - 40,
+        rowHeight - 8,
+        dark ? '#ffffff06' : '#ffffff90',
+        12,
+      );
+      const maxLines = rowHeight >= 58 ? 2 : 1;
+      ctx.font = `500 24px ${font}`;
+      const lines = Math.min(
+        maxLines,
+        wrapShareText(concept, panelWidth - 64, (value) => ctx.measureText(value).width).length,
+      );
+      paragraph(
+        concept,
+        x + 32,
+        center + 8 - Math.max(0, lines - 1) * 17.4,
+        panelWidth - 64,
+        24,
+        maxLines,
+        ink,
+        500,
+        true,
+      );
+    });
   }
   const { passed, tested, quizScore, quizTotal, decisions } = content.verification;
   const number = (value: string | number) =>
@@ -253,8 +347,21 @@ export async function renderReportShareImage(
       ? [`${t('pblV3.share.decisionsLabel')} ${number(decisions)}`]
       : []),
   ];
-  if (receipts.length)
-    paragraph(receipts.join('   ·   '), 64, y + 32, width - 128, 22, 2, accent, 600, true);
+  if (receipts.length) {
+    box(64, 1348, width - 128, 76, dark ? '#c3a5ff12' : '#722ed10a', 20);
+    const cellWidth = (width - 128) / receipts.length;
+    receipts.forEach((receipt, i) => {
+      paragraph(receipt, 88 + i * cellWidth, 1394, cellWidth - 48, 22, 1, accent, 600, true);
+      if (i > 0) {
+        ctx.strokeStyle = rule;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(64 + i * cellWidth, 1368);
+        ctx.lineTo(64 + i * cellWidth, 1404);
+        ctx.stroke();
+      }
+    });
+  }
 
   text('OpenMAIC · Vibe Coding', 64, height - 32, 18, muted);
   return new Promise((resolve, reject) =>

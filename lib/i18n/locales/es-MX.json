@@ -2980,7 +2980,17 @@
       "testsPassed": "Pruebas de comportamiento superadas",
       "linkPlaceholder": "Curso introductorio · Enlace de ejemplo, reemplazar antes de publicar",
       "decisionsLabel": "Decisiones tomadas",
-      "quizLabel": "Cuestionario"
+      "quizLabel": "Cuestionario",
+      "skillsMetric": "Habilidades practicadas",
+      "skillsSection": "Tu práctica",
+      "conceptsLabel": "Conceptos clave",
+      "skillLabels": {
+        "decisions": "Tomar decisiones de ingeniería",
+        "planReview": "Revisar un plan",
+        "codeReview": "Revisar la implementación",
+        "verification": "Verificar con pruebas",
+        "reflection": "Reflexionar con evidencias"
+      }
     }
   }
 }

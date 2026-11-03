@@ -2980,7 +2980,17 @@
       "testsPassed": "تم اجتياز اختبارات السلوك",
       "linkPlaceholder": "مدخل الدورة التمهيدية · رابط تجريبي، يُستبدل قبل الإطلاق",
       "decisionsLabel": "القرارات",
-      "quizLabel": "الاختبار"
+      "quizLabel": "الاختبار",
+      "skillsMetric": "مهارات تمّت ممارستها",
+      "skillsSection": "ما مارسته",
+      "conceptsLabel": "المفاهيم الأساسية",
+      "skillLabels": {
+        "decisions": "اتخاذ قرارات هندسية",
+        "planReview": "مراجعة خطة",
+        "codeReview": "مراجعة التنفيذ",
+        "verification": "التحقق بالاختبارات",
+        "reflection": "التأمل بناءً على الأدلة"
+      }
     }
   }
 }

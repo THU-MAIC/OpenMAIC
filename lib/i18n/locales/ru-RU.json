@@ -2980,7 +2980,17 @@
       "testsPassed": "Проверки поведения пройдены",
       "linkPlaceholder": "Вводный курс · Пример ссылки, заменить перед публикацией",
       "decisionsLabel": "Принятые решения",
-      "quizLabel": "Викторина"
+      "quizLabel": "Викторина",
+      "skillsMetric": "Навыки на практике",
+      "skillsSection": "Ваша практика",
+      "conceptsLabel": "Ключевые понятия",
+      "skillLabels": {
+        "decisions": "Инженерные решения",
+        "planReview": "Проверка плана",
+        "codeReview": "Проверка реализации",
+        "verification": "Проверка тестами",
+        "reflection": "Рефлексия по записям"
+      }
     }
   }
 }
