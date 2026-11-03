@@ -4,9 +4,12 @@ import {
   ArrowLeft,
   ArrowUpRight,
   CheckCircle2,
+  ChevronDown,
   FileText,
+  ImageDown,
   Layers,
   MessageSquare,
+  PartyPopper,
   Sparkles,
   Target,
   X,
@@ -14,6 +17,7 @@ import {
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { reportConversationMessages, type LearningReport } from '@/lib/pbl/v3/report';
 import { TextBlock } from '@/components/workbench/chat/text-block';
+import { ReportShareDialog } from './report-share-dialog';
 import { readReportResponse, ReportResponseError } from '@/lib/pbl/v3/report-client';
 
 /** Report reads never prepare an environment; the same surface opens from hero or workbench. */
@@ -31,15 +35,24 @@ export function ProjectReport({
   onWorkbench: () => void;
 }) {
   const { t } = useI18n();
+  const [shareOpen, setShareOpen] = useState(false);
   const [report, setReport] = useState<LearningReport | null>(null);
   const [pending, setPending] = useState(false),
     [error, setError] = useState('');
   const controller = useRef<AbortController | null>(null);
   const surface = useRef<HTMLElement>(null);
+  const shareTrigger = useRef<HTMLButtonElement>(null);
+  const focusStudy = useRef<string | null>(null);
   const close = useRef(onClose);
   useLayoutEffect(() => {
     close.current = onClose;
   }, [onClose]);
+  useLayoutEffect(() => {
+    focusStudy.current = open ? studyId : null;
+    return () => {
+      focusStudy.current = null;
+    };
+  }, [open, studyId]);
   const load = useCallback(
     async (method: 'GET' | 'POST', signal: AbortSignal) => {
       setPending(true);
@@ -74,6 +87,7 @@ export function ProjectReport({
     const abort = new AbortController();
     controller.current = abort;
     setReport(null);
+    setShareOpen(false);
     // Show facts immediately; a deliberate report opening may generate its saved analysis.
     void load('GET', abort.signal).then((data) => {
       if (!abort.signal.aborted && data?.analysis?.status === 'not_generated')
@@ -100,8 +114,14 @@ export function ProjectReport({
   const sourceId = (id: string) => `report-source-${studyId}-${id.replaceAll(':', '-')}`;
   const cite = (id: string) => {
     const target = document.getElementById(sourceId(id));
-    if (target instanceof HTMLDetailsElement) target.open = true;
-    target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (!target || !surface.current?.contains(target)) return;
+    // Reveal both the source and its collapsed records panel before locating it.
+    for (let parent: HTMLElement | null = target; parent; parent = parent.parentElement) {
+      if (parent instanceof HTMLDetailsElement) parent.open = true;
+      if (parent === surface.current) break;
+    }
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    target.querySelector('summary')?.focus({ preventScroll: true });
   };
   const summary = report?.summary;
   const metrics = summary
@@ -133,6 +153,8 @@ export function ProjectReport({
       data-testid="pbl-project-report"
       className="absolute inset-0 z-40 overflow-auto bg-background text-foreground outline-none"
       onKeyDown={(event) => {
+        event.stopPropagation();
+        if (shareOpen) return;
         if (event.key === 'Escape') {
           event.stopPropagation();
           close.current();
@@ -158,41 +180,102 @@ export function ProjectReport({
         }
       }}
     >
-      <nav className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b bg-background/95 py-3 pl-4 pr-16 backdrop-blur sm:pl-8 sm:pr-20">
-        <button className={button} onClick={onWorkbench}>
+      <nav className="sticky top-0 z-10 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b bg-background/95 py-3 pl-4 pr-16 backdrop-blur sm:pl-8 sm:pr-20">
+        <button
+          className={`${button} min-w-0 justify-self-start`}
+          aria-label={t('pblV3.reportCopy.viewWorkbench')}
+          onClick={onWorkbench}
+        >
           <ArrowLeft size={15} />
-          {t('pblV3.reportCopy.viewWorkbench')}
+          <span className="hidden sm:inline">{t('pblV3.reportCopy.viewWorkbench')}</span>
         </button>
-        <span className="hidden text-xs font-medium text-muted-foreground sm:block">
+        <span className="absolute left-1/2 -translate-x-1/2 text-xs font-medium text-muted-foreground">
           {t('pblV3.report')}
         </span>
         <button
-          className="rounded-lg p-2 hover:bg-muted"
+          className="col-start-3 justify-self-end rounded-lg p-2 hover:bg-muted"
           aria-label={t('pblV3.reportCopy.close')}
           onClick={onClose}
         >
           <X size={18} />
         </button>
       </nav>
+      {shareOpen && report?.studyId === studyId && (
+        <ReportShareDialog
+          key={studyId}
+          report={report}
+          onClose={() => setShareOpen(false)}
+          onRestoreFocus={() => {
+            // A closing dialog must not focus a button reused by another study or hidden report.
+            if (focusStudy.current === studyId && shareTrigger.current?.isConnected)
+              shareTrigger.current.focus();
+          }}
+        />
+      )}
       <div className="mx-auto max-w-6xl space-y-9 px-4 py-6 pb-12 sm:px-8 sm:py-9">
-        <header className="relative isolate overflow-hidden rounded-3xl border border-violet-400/20 bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 px-6 py-8 text-white sm:px-9 sm:py-10">
+        <header className="relative isolate overflow-hidden rounded-3xl border border-violet-300/25 bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 px-6 py-7 text-white sm:px-9 sm:py-9">
           <div
             aria-hidden="true"
             className="pointer-events-none absolute -right-16 -top-24 -z-10 size-80 rounded-full bg-violet-400/20 blur-3xl"
           />
-          <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-violet-300/30 bg-white/5 px-3 py-1 text-xs font-medium text-violet-200">
+          {report?.requiredComplete && (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute right-5 top-5 sm:right-9 sm:top-9"
+            >
+              <div className="flex size-12 -rotate-12 items-center justify-center rounded-2xl border border-violet-200/20 bg-violet-300/10 text-violet-200 sm:size-16">
+                <PartyPopper className="size-7 sm:size-8" strokeWidth={1.5} />
+              </div>
+              <span className="absolute -left-4 top-1 h-2 w-1 -rotate-12 rounded-full bg-amber-200/80" />
+              <span className="absolute -right-1 -top-3 h-1 w-2 rotate-45 rounded-full bg-violet-200/80" />
+              <Sparkles className="absolute -right-3 -top-2 size-4 text-violet-300 sm:-bottom-3 sm:-left-3 sm:right-auto sm:top-auto" />
+            </div>
+          )}
+          <p className="inline-flex items-center gap-2 rounded-full border border-violet-300/30 bg-white/5 px-3 py-1 text-xs font-medium text-violet-200">
             <CheckCircle2 size={14} />
-            {t('pblV3.reportCopy.completedTitle')}
+            {t(report?.requiredComplete ? 'pblV3.reportCopy.completedTitle' : 'pblV3.report')}
           </p>
-          <p className="max-w-3xl text-sm text-indigo-200">{title}</p>
-          <h2 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
-            {t('pblV3.report')}
+          <h2 className="mt-5 max-w-3xl text-balance text-[1.625rem] font-semibold leading-tight tracking-tight sm:pr-20 sm:text-4xl">
+            {t(report?.requiredComplete ? 'pblV3.reportCopy.congratulations' : 'pblV3.report')}
           </h2>
-          <p className="mt-4 max-w-2xl text-sm leading-relaxed text-indigo-100/80">
-            {t('pblV3.reportCopy.subtitle')}
+          <p className="mt-3 max-w-3xl text-sm font-medium text-indigo-200">{title}</p>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-indigo-100/80">
+            {t(
+              report?.requiredComplete
+                ? 'pblV3.reportCopy.celebrationSubtitle'
+                : 'pblV3.reportCopy.subtitle',
+            )}
           </p>
+          {report && (
+            <div className="mt-6 flex flex-col gap-4 rounded-2xl border border-violet-200/20 bg-white/[0.07] p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+              <div className="flex items-start gap-3">
+                <span
+                  aria-hidden="true"
+                  className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-violet-200/10 text-violet-200"
+                >
+                  <ImageDown size={20} strokeWidth={1.5} />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-violet-50">
+                    {t('pblV3.reportCopy.shareTitle')}
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-indigo-200/90">
+                    {t('pblV3.reportCopy.shareHint')}
+                  </p>
+                </div>
+              </div>
+              <button
+                ref={shareTrigger}
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-white/40 bg-violet-100 px-5 py-3 text-sm font-semibold text-violet-950 shadow-[0_4px_20px_rgba(167,139,250,0.15)] transition-colors hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-violet-200"
+                onClick={() => setShareOpen(true)}
+              >
+                {t('pblV3.share.open')}
+                <ArrowUpRight size={16} />
+              </button>
+            </div>
+          )}
           {!!metrics.length && (
-            <dl className="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <dl className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
               {metrics.map(({ label, value, icon: Icon }) => (
                 <div
                   key={label}
@@ -399,56 +482,79 @@ export function ProjectReport({
                 ))}
               </ol>
             </section>
-            <div className="border-t pt-7">
-              <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
-                {t('pblV3.evidenceReportNotice')}
-              </p>
-              {report.truncated && (
-                <p role="status" className="mb-4 text-xs text-muted-foreground">
-                  {t('pblV3.truncatedEvidence')}
+            <details
+              data-testid="pbl-report-records"
+              className="group/records rounded-2xl border bg-muted/10"
+            >
+              <summary className="flex cursor-pointer list-none items-center gap-3 rounded-2xl p-5 [&::-webkit-details-marker]:hidden">
+                <FileText size={18} className="shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold">
+                    {t('pblV3.reportCopy.recordsTitle')}
+                  </span>
+                  <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
+                    {t('pblV3.reportCopy.recordsHint')}
+                  </span>
+                </span>
+                <ChevronDown
+                  size={18}
+                  aria-hidden="true"
+                  className="shrink-0 text-muted-foreground transition-transform group-open/records:rotate-180"
+                />
+              </summary>
+              <div className="border-t p-5">
+                <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
+                  {t('pblV3.evidenceReportNotice')}
                 </p>
-              )}
-              <section className="space-y-2">
-                <h3 className="mb-3 flex items-center gap-2 text-lg font-semibold">
-                  <FileText size={17} />
-                  {t('pblV3.reportEvidence')}
-                </h3>
-                {report.evidence.map((e) => (
-                  <details
-                    id={sourceId(`event:${e.sequence}`)}
-                    key={e.sequence}
-                    className="rounded-xl border p-3"
-                  >
-                    <summary className="cursor-pointer text-sm">
-                      {report.milestones.find((m) => m.id === e.milestoneId)?.title} ·{' '}
-                      {t(`pblV3.evidenceKinds.${e.kind.replaceAll('.', '_')}`)}
-                      {e.version ? ` · ${e.version}` : ''}
-                    </summary>
-                    {e.truncated && <p className="mt-2 text-xs">{t('pblV3.truncatedEvidence')}</p>}
-                    <div className="mt-3 max-h-80 overflow-auto text-sm">
-                      <TextBlock text={e.detail} />
-                    </div>
-                  </details>
-                ))}
-              </section>
-              <section className="mt-7 space-y-2">
-                <h3 className="mb-3 text-lg font-semibold">{t('pblV3.reportConversations')}</h3>
-                {reportConversationMessages(report).map((m) => (
-                  <details
-                    id={sourceId(m.id)}
-                    key={m.id}
-                    className="min-w-0 rounded-xl border p-3 [overflow-wrap:anywhere]"
-                  >
-                    <summary className="cursor-pointer text-sm">
-                      {m.role === 'learner' ? t('pblV3.learner') : t(`pblV3.roles.${m.role}`)} ·{' '}
-                      {report.milestones.find((x) => x.id === m.milestone)?.title ??
-                        report.project.title}
-                    </summary>
-                    <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed">{m.text}</p>
-                  </details>
-                ))}
-              </section>
-            </div>
+                {report.truncated && (
+                  <p role="status" className="mb-4 text-xs text-muted-foreground">
+                    {t('pblV3.truncatedEvidence')}
+                  </p>
+                )}
+                <section className="space-y-2">
+                  <h3 className="mb-3 flex items-center gap-2 text-lg font-semibold">
+                    <FileText size={17} />
+                    {t('pblV3.reportEvidence')}
+                  </h3>
+                  {report.evidence.map((e) => (
+                    <details
+                      id={sourceId(`event:${e.sequence}`)}
+                      key={e.sequence}
+                      className="rounded-xl border p-3"
+                    >
+                      <summary className="cursor-pointer text-sm">
+                        {report.milestones.find((m) => m.id === e.milestoneId)?.title} ·{' '}
+                        {t(`pblV3.evidenceKinds.${e.kind.replaceAll('.', '_')}`)}
+                        {e.version ? ` · ${e.version}` : ''}
+                      </summary>
+                      {e.truncated && (
+                        <p className="mt-2 text-xs">{t('pblV3.truncatedEvidence')}</p>
+                      )}
+                      <div className="mt-3 max-h-80 overflow-auto text-sm">
+                        <TextBlock text={e.detail} />
+                      </div>
+                    </details>
+                  ))}
+                </section>
+                <section className="mt-7 space-y-2">
+                  <h3 className="mb-3 text-lg font-semibold">{t('pblV3.reportConversations')}</h3>
+                  {reportConversationMessages(report).map((m) => (
+                    <details
+                      id={sourceId(m.id)}
+                      key={m.id}
+                      className="min-w-0 rounded-xl border p-3 [overflow-wrap:anywhere]"
+                    >
+                      <summary className="cursor-pointer text-sm">
+                        {m.role === 'learner' ? t('pblV3.learner') : t(`pblV3.roles.${m.role}`)} ·{' '}
+                        {report.milestones.find((x) => x.id === m.milestone)?.title ??
+                          report.project.title}
+                      </summary>
+                      <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed">{m.text}</p>
+                    </details>
+                  ))}
+                </section>
+              </div>
+            </details>
           </>
         )}
         {(error || report?.analysis?.canRetry) && !pending && (

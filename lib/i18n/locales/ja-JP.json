@@ -2849,7 +2849,13 @@
         "codeReview": "実装のレビュー",
         "verification": "テストによる検証",
         "reflection": "記録に基づく振り返り"
-      }
+      },
+      "congratulations": "おめでとう！プロジェクト完成！",
+      "celebrationSubtitle": "アイデアが動く作品になりました。ここまでの成果を振り返りましょう。",
+      "shareTitle": "この達成をシェアしよう",
+      "shareHint": "成果と学びのハイライトをカードにして、成長を伝えましょう。",
+      "recordsTitle": "学習記録を見る",
+      "recordsHint": "保存された決定・成果物・会話を確認できます。分析の参照から直接開くこともできます。"
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {
@@ -2960,6 +2966,37 @@
       "collapse": "アプリを折りたたむ",
       "help": "アプリの説明",
       "ready": "アプリを実行して保存済みのコードを試しましょう。"
+    },
+    "share": {
+      "open": "共有画像を作成",
+      "title": "学習成果を共有",
+      "description": "学習の成果を画像として保存できます。",
+      "theme": "画像の配色",
+      "light": "ライト",
+      "dark": "ダーク",
+      "preview": "OpenMAIC の学習成果画像",
+      "save": "画像を保存",
+      "saveHint": "モバイルでは画像を長押しして保存方法を選ぶこともできます。",
+      "imageFailed": "画像を作成できませんでした。再試行してください。",
+      "rendering": "画像を準備中…",
+      "achievement": "プロジェクトの成果",
+      "invite": "OpenMAIC でアイデアを形に",
+      "tagline": "小さなプロジェクトから、AI と一緒にコードを書く練習を。",
+      "testsPassed": "動作テストに合格",
+      "decisionsLabel": "実装の選択",
+      "quizLabel": "クイズ",
+      "skillsMetric": "実践したスキル",
+      "skillsSection": "クリアした課題",
+      "conceptsLabel": "出会った知識",
+      "skillLabels": {
+        "decisions": "設計の判断",
+        "planReview": "計画のレビュー",
+        "codeReview": "実装のレビュー",
+        "verification": "テストによる検証",
+        "reflection": "記録に基づく振り返り"
+      },
+      "workshop": "Vibe Coding ワークショップ",
+      "entryLabel": "Vibe Coding ワークショップ入門コース"
     },
     "onboarding": {
       "replay": "ワークスペースガイド",

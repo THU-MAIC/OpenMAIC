@@ -14,6 +14,7 @@ test('completed project reports stay discoverable, show facts before analysis, a
   await page.addInitScript(
     (settings) => {
       localStorage.setItem('locale', 'en-US');
+      localStorage.setItem('theme', 'dark');
       localStorage.setItem('maic:account:settings-storage', settings);
     },
     createSettingsStorage({ sidebarCollapsed: false }),
@@ -331,13 +332,65 @@ test('completed project reports stay discoverable, show facts before analysis, a
   await expect(failure).toHaveCount(0);
   expect(opens).toBe(0);
   expect(commands).toEqual([]);
+  // Sharing uses facts independently of the report analysis and never starts another generation.
+  const shareTrigger = report.getByRole('button', { name: 'Create sharing image', exact: true });
+  await shareTrigger.focus();
+  await page.keyboard.press('Space');
+  const share = page.getByRole('dialog', { name: 'Share your achievement', exact: true });
+  const poster = share.getByRole('img', { name: 'Your OpenMAIC achievement image' });
+  await expect(share.getByRole('group')).toHaveCount(0);
+  await expect(share.getByRole('button', { name: /^(Light|Dark)$/ })).toHaveCount(0);
+  await expect(poster).toBeVisible();
+  await expect(share.getByRole('link', { name: 'Save image', exact: true })).toBeVisible();
+  const factsPoster = await poster.getAttribute('src');
+  expect(generations).toBe(2);
   finish();
   await expect(
     report.getByText('You connected a boundary to behavior', { exact: true }),
   ).toBeVisible();
+  await expect(poster).toHaveAttribute('src', factsPoster!);
+  await page.keyboard.press('ArrowRight');
+  await expect(share).toBeVisible();
+  const save = share.getByRole('link', { name: 'Save image', exact: true });
+  await expect(save).toBeVisible();
+  // Viewport resizing scales the preview without changing the theme-following poster or its pixels.
+  await expect
+    .poll(() => poster.evaluate((img) => (img as HTMLImageElement).naturalWidth))
+    .toBe(1200);
+  const shareViewport = page.viewportSize()!;
+  const imageBeforeResize = await poster.getAttribute('src');
+  for (const width of [420, 800, 1600]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await expect(poster).toHaveAttribute('src', imageBeforeResize!);
+    expect(
+      await poster.evaluate((img) => [
+        (img as HTMLImageElement).naturalWidth,
+        (img as HTMLImageElement).naturalHeight,
+      ]),
+    ).toEqual([1200, 1500]);
+  }
+  await page.setViewportSize(shareViewport);
+  const downloading = page.waitForEvent('download');
+  await save.click();
+  expect((await downloading).suggestedFilename()).toBe('OpenMAIC-dark.png');
+  await page.keyboard.press('Escape');
+  await expect(share).toHaveCount(0);
+  await expect(report).toBeVisible();
+  await expect(shareTrigger).toBeFocused();
+  await shareTrigger.click();
+  await share.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(share).toHaveCount(0);
+  await expect(shareTrigger).toBeFocused();
+  expect(generations).toBe(2);
+  await expect(
+    report.getByText('You connected a boundary to behavior', { exact: true }),
+  ).toBeVisible();
   await report.screenshot({ path: 'test-results/pbl-v3-report-desktop.png' });
+  const records = report.getByTestId('pbl-report-records');
+  await expect(records).not.toHaveAttribute('open', '');
   await report.getByRole('button', { name: 'Evidence 1', exact: true }).click();
-  await expect(report.locator('details[open]')).toContainText(
+  await expect(records).toHaveAttribute('open', '');
+  await expect(records.locator('details[open]')).toContainText(
     'I checked the number before deleting.',
   );
   // An expanded citation must stay inside the report, even with an unbroken token.
@@ -357,7 +410,12 @@ test('completed project reports stay discoverable, show facts before analysis, a
     .getByRole('button', { name: 'Learning report', exact: true })
     .click();
   await expect(report).toBeVisible();
-  await report.getByRole('button', { name: 'Close report', exact: true }).click();
+  // Closing a sharing preview returns keyboard ownership to the report.
+  await shareTrigger.click();
+  await page.keyboard.press('Escape');
+  await expect(shareTrigger).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(report).toHaveCount(0);
   await expect(page.locator('.monaco-editor .view-lines')).toContainText('Saved plan');
   await expect(page.locator('.monaco-editor textarea').first()).not.toBeEditable();
   const historyTrigger = workspace.getByRole('button', {

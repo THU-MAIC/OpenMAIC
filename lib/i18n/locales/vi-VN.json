@@ -2849,7 +2849,13 @@
         "codeReview": "Xem xét phần triển khai",
         "verification": "Kiểm chứng bằng kiểm thử",
         "reflection": "Suy ngẫm từ bằng chứng"
-      }
+      },
+      "congratulations": "Chúc mừng, bạn đã hoàn thành dự án!",
+      "celebrationSubtitle": "Bạn đã biến ý tưởng thành sản phẩm hoạt động được. Hãy nhìn lại những gì mình đã đạt được.",
+      "shareTitle": "Khoảnh khắc đáng chia sẻ",
+      "shareHint": "Lưu thành quả và điểm nổi bật vào một tấm thẻ để chia sẻ tiến bộ của bạn.",
+      "recordsTitle": "Xem hồ sơ học tập",
+      "recordsHint": "Xem các quyết định, sản phẩm và hội thoại đã lưu hoặc mở trực tiếp từ tham chiếu trong phần phân tích."
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {
@@ -2960,6 +2966,37 @@
       "collapse": "Thu gọn ứng dụng",
       "help": "Hướng dẫn ứng dụng",
       "ready": "Chạy ứng dụng để thử mã đã lưu."
+    },
+    "share": {
+      "open": "Tạo ảnh chia sẻ",
+      "title": "Chia sẻ thành quả học tập",
+      "description": "Lưu những điểm nổi bật trong quá trình học thành ảnh.",
+      "theme": "Màu sắc",
+      "light": "Sáng",
+      "dark": "Tối",
+      "preview": "Ảnh thành quả học tập OpenMAIC",
+      "save": "Lưu ảnh",
+      "saveHint": "Trên điện thoại, bạn cũng có thể nhấn giữ ảnh để xem các tùy chọn lưu.",
+      "imageFailed": "Không thể tạo ảnh. Vui lòng thử lại.",
+      "rendering": "Đang chuẩn bị ảnh…",
+      "achievement": "Thành quả dự án",
+      "invite": "Biến ý tưởng thành hiện thực với OpenMAIC",
+      "tagline": "Bắt đầu với dự án nhỏ. Luyện lập trình cùng AI.",
+      "testsPassed": "Đã vượt qua kiểm thử hành vi",
+      "decisionsLabel": "Lựa chọn đã đưa ra",
+      "quizLabel": "Bài kiểm tra",
+      "skillsMetric": "Kỹ năng đã thực hành",
+      "skillsSection": "Thử thách đã hoàn thành",
+      "conceptsLabel": "Kiến thức đã mở khóa",
+      "skillLabels": {
+        "decisions": "Đưa ra quyết định kỹ thuật",
+        "planReview": "Xem xét kế hoạch",
+        "codeReview": "Xem xét phần triển khai",
+        "verification": "Kiểm chứng bằng kiểm thử",
+        "reflection": "Suy ngẫm từ bằng chứng"
+      },
+      "workshop": "Hội thảo Vibe Coding",
+      "entryLabel": "Khóa nhập môn hội thảo Vibe Coding"
     },
     "onboarding": {
       "replay": "Hướng dẫn không gian làm việc",

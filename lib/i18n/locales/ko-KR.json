@@ -2849,7 +2849,13 @@
         "codeReview": "구현 검토",
         "verification": "테스트로 동작 검증",
         "reflection": "근거를 통한 회고"
-      }
+      },
+      "congratulations": "축하해요! 프로젝트를 완성했어요!",
+      "celebrationSubtitle": "아이디어를 실제로 작동하는 작품으로 만들었어요. 지금까지의 성과를 살펴보세요.",
+      "shareTitle": "함께 나누고 싶은 순간",
+      "shareHint": "성과와 배움의 핵심을 카드에 담아 성장을 공유하세요.",
+      "recordsTitle": "학습 기록 보기",
+      "recordsHint": "저장된 결정, 작업과 대화를 확인하거나 분석의 참조를 통해 바로 이동할 수 있습니다."
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {
@@ -2960,6 +2966,37 @@
       "collapse": "앱 접기",
       "help": "앱 도움말",
       "ready": "앱을 실행하여 저장된 코드를 확인하세요."
+    },
+    "share": {
+      "open": "공유 이미지 만들기",
+      "title": "학습 성과 공유",
+      "description": "학습 성과를 이미지로 저장하세요.",
+      "theme": "이미지 테마",
+      "light": "밝게",
+      "dark": "어둡게",
+      "preview": "OpenMAIC 학습 성과 이미지",
+      "save": "이미지 저장",
+      "saveHint": "모바일에서는 이미지를 길게 눌러 저장 옵션을 확인할 수도 있습니다.",
+      "imageFailed": "이미지를 만들지 못했습니다. 다시 시도하세요.",
+      "rendering": "이미지 준비 중…",
+      "achievement": "프로젝트 성과",
+      "invite": "OpenMAIC로 아이디어를 실현하세요",
+      "tagline": "작은 프로젝트로 시작해 AI와 함께 코딩을 연습해 보세요.",
+      "testsPassed": "동작 테스트 통과",
+      "decisionsLabel": "구현 선택",
+      "quizLabel": "퀴즈",
+      "skillsMetric": "실습한 기술",
+      "skillsSection": "완료한 도전",
+      "conceptsLabel": "살펴본 지식",
+      "skillLabels": {
+        "decisions": "엔지니어링 의사 결정",
+        "planReview": "계획 검토",
+        "codeReview": "구현 검토",
+        "verification": "테스트로 동작 검증",
+        "reflection": "근거를 통한 회고"
+      },
+      "workshop": "Vibe Coding 워크숍",
+      "entryLabel": "Vibe Coding 워크숍 입문 과정"
     },
     "onboarding": {
       "replay": "작업 공간 안내",

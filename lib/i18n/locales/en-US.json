@@ -2849,7 +2849,13 @@
         "codeReview": "Reviewing implementation",
         "verification": "Verifying behavior with tests",
         "reflection": "Reflecting from evidence"
-      }
+      },
+      "congratulations": "You did it — project complete!",
+      "celebrationSubtitle": "You turned an idea into something that works. Take a moment to see how far you have come.",
+      "shareTitle": "A moment worth sharing",
+      "shareHint": "Save your achievements and highlights as a card to share your progress.",
+      "recordsTitle": "View learning records",
+      "recordsHint": "Explore saved decisions, work and conversations, or follow an analysis reference directly."
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {
@@ -2960,6 +2966,37 @@
       "collapse": "Collapse application",
       "help": "Application help",
       "ready": "Run the application to try your saved code."
+    },
+    "share": {
+      "open": "Create sharing image",
+      "title": "Share your achievement",
+      "description": "Your learning highlights, ready to save as an image.",
+      "theme": "Image appearance",
+      "light": "Light",
+      "dark": "Dark",
+      "preview": "Your OpenMAIC achievement image",
+      "save": "Save image",
+      "saveHint": "On mobile, you can also press and hold the image to see available saving options.",
+      "imageFailed": "The image could not be prepared. Please retry.",
+      "rendering": "Preparing image…",
+      "achievement": "My project achievement",
+      "invite": "Your turn. Try Vibe Coding!",
+      "tagline": "Start with a small project. Practice coding with AI.",
+      "testsPassed": "Behavior tests passed",
+      "decisionsLabel": "Decisions made",
+      "quizLabel": "Quiz",
+      "skillsMetric": "Skills practiced",
+      "skillsSection": "Challenges completed",
+      "conceptsLabel": "Unlocked concepts",
+      "skillLabels": {
+        "decisions": "Making engineering decisions",
+        "planReview": "Reviewing a plan",
+        "codeReview": "Reviewing implementation",
+        "verification": "Verifying behavior with tests",
+        "reflection": "Reflecting from evidence"
+      },
+      "workshop": "Vibe Coding Workshop",
+      "entryLabel": "Vibe Coding Workshop introductory course"
     },
     "onboarding": {
       "replay": "Workspace guide",
