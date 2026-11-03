@@ -2566,22 +2566,8 @@
   },
   "classroomEnd": {
     "close": "Quay lại trang cuối",
-    "fullScore": "100",
     "learned": "Đã học xong {{count}} trang",
     "result": "Đúng {{correct}} / {{total}} câu",
-    "badges": {
-      "amethyst": "Điểm tuyệt đối",
-      "silver": "Đang tiến bộ",
-      "seedling": "Bước đầu",
-      "seal": "Hoàn thành khóa học"
-    },
-    "comment": {
-      "amethyst": "Đúng hết. Bạn đã nắm được ý chính của khóa học này.",
-      "silver": "Đúng phần lớn. Còn {{wrong}} câu nữa là trọn vẹn.",
-      "seedling": "Còn {{wrong}} câu chưa đúng. Xem lại chỗ sai, lần sau sẽ khác.",
-      "seal": "Đã học xong cả {{count}} trang.",
-      "unattempted": "Vẫn còn bài kiểm tra. Làm xong để xem kết quả."
-    },
     "actions": {
       "reviewWrong": "Xem câu sai",
       "doQuiz": "Làm bài kiểm tra",

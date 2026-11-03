@@ -2,8 +2,8 @@
 
 /**
  * The end of a course: a state over the last page, never a page of its own, so the deck
- * still counts only its real pages. A medal for what the quizzes came to, what to do
- * next, and everything underneath as it was left.
+ * still counts only its real pages. A medal, what the quizzes came to, what to do next,
+ * and everything underneath as it was left.
  *
  * Under two seconds and never in the way: its buttons work from the first frame, and a
  * click or Esc during the sequence skips to its end.
@@ -12,14 +12,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { BookCheck, ListChecks, ListX, RotateCcw, X, type LucideIcon } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { CompleteSummary } from '@/lib/classroom/complete-summary';
-import {
-  courseEndActions,
-  selectBadgeId,
-  tiltAllowed,
-  type CourseEndAction,
-} from '@/lib/classroom/course-end';
+import { courseEndActions, tiltAllowed, type CourseEndAction } from '@/lib/classroom/course-end';
 import { cn } from '@/lib/utils';
-import { BADGES } from './badges';
+import { BADGE } from './badges';
 import './course-end.css';
 
 /** The sequence, after which a click and Esc mean close rather than skip. */
@@ -134,17 +129,9 @@ export function CourseEnd({
     };
   }, []);
 
-  const badgeId = selectBadgeId(summary);
-  const badge = BADGES[badgeId];
   const actions = courseEndActions(summary);
-  const unattempted = summary.unattemptedQuizIds.length > 0;
-  const scored = !unattempted && summary.quiz;
-  const comment = unattempted
-    ? t('classroomEnd.comment.unattempted')
-    : t(badge.commentKey, {
-        wrong: summary.quiz ? summary.quiz.total - summary.quiz.correct : 0,
-        count: pageCount,
-      });
+  // A score over part of the quizzes would say something untrue about the course.
+  const scored = summary.unattemptedQuizIds.length === 0 && summary.quiz;
   const titleId = 'course-end-title';
 
   return (
@@ -152,8 +139,7 @@ export function CourseEnd({
       ref={rootRef}
       className={cn('ce-root', blurBehind && 'ce-blur')}
       data-testid="course-end"
-      data-badge={badgeId}
-      data-motion={badge.motion}
+      data-badge={BADGE.id}
       data-skip={settled ? 'true' : undefined}
       onClick={(event) => {
         if (!settledRef.current) {
@@ -179,23 +165,17 @@ export function CourseEnd({
         >
           <X size={14} aria-hidden />
         </button>
-        <div className="ce-halo" />
         <div className="ce-medal">
           <div className="ce-drop">
             <div ref={tiltRef} className="ce-tilt">
               <div className="ce-shadow" />
-              <div className="ce-ripple" />
-              <badge.Art pct={summary.quiz?.pct} fullLabel={t('classroomEnd.fullScore')} />
+              <BADGE.Art />
             </div>
           </div>
         </div>
         <div className="ce-eyebrow ce-up" style={{ '--ce-d': '.5s' } as React.CSSProperties}>
           <BookCheck size={14} aria-hidden />
-          <span>
-            {/* A badge is not earned with quizzes left. */}
-            {unattempted ? null : `${t(badge.nameKey)} · `}
-            {t('classroomEnd.learned', { count: pageCount })}
-          </span>
+          <span>{t('classroomEnd.learned', { count: pageCount })}</span>
         </div>
         <div className="ce-title-wrap">
           <div id={titleId} className="ce-title">
@@ -214,13 +194,6 @@ export function CourseEnd({
             })}
           </div>
         ) : null}
-        <div
-          className="ce-comment ce-up"
-          data-testid="course-end-comment"
-          style={{ '--ce-d': '.78s' } as React.CSSProperties}
-        >
-          {comment}
-        </div>
         <div className="ce-actions ce-up" style={{ '--ce-d': '.34s' } as React.CSSProperties}>
           {actions.map((action, index) => {
             const Icon = ACTION_ICON[action];

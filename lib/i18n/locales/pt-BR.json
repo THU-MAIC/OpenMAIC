@@ -2566,22 +2566,8 @@
   },
   "classroomEnd": {
     "close": "Voltar à última página",
-    "fullScore": "100",
     "learned": "{{count}} páginas concluídas",
     "result": "{{correct}} / {{total}} corretas",
-    "badges": {
-      "amethyst": "Nota máxima",
-      "silver": "No caminho certo",
-      "seedling": "Primeiros passos",
-      "seal": "Curso concluído"
-    },
-    "comment": {
-      "amethyst": "Tudo certo. Você entendeu o essencial deste curso.",
-      "silver": "Quase tudo certo. Faltam {{wrong}} para fechar.",
-      "seedling": "{{wrong}} ainda sem acerto. Veja onde errou e a próxima vez será diferente.",
-      "seal": "As {{count}} páginas foram concluídas.",
-      "unattempted": "Ainda há quizzes. Faça-os para ver seu resultado."
-    },
     "actions": {
       "reviewWrong": "Ver erros",
       "doQuiz": "Fazer o quiz",

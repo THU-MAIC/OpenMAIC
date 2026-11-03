@@ -1,23 +1,8 @@
 /**
  * The course-end state's decisions, free of React, so they can be held to.
- *
- * `selectBadgeId` is the seam for a later achievements system: a result goes in and a
- * badge comes out, and the badges themselves are a table (`course-end/badges.tsx`).
  */
 import type { SceneType } from '@/lib/types/stage';
 import type { CompleteSummary } from './complete-summary';
-
-export type BadgeId = 'amethyst' | 'silver' | 'seedling' | 'seal';
-
-/** From here a score reads as most of the way there. */
-const SILVER_FROM_PCT = 50;
-
-export function selectBadgeId(summary: CompleteSummary): BadgeId {
-  // A score over part of the quizzes would say something untrue about the course.
-  if (summary.unattemptedQuizIds.length > 0 || !summary.quiz) return 'seal';
-  if (summary.quiz.pct === 100) return 'amethyst';
-  return summary.quiz.pct >= SILVER_FROM_PCT ? 'silver' : 'seedling';
-}
 
 export type CourseEndAction = 'reviewWrong' | 'doQuiz' | 'restart';
 

@@ -2566,22 +2566,8 @@
   },
   "classroomEnd": {
     "close": "最後のページに戻る",
-    "fullScore": "満点",
     "learned": "{{count}} ページ完了",
     "result": "{{correct}} / {{total}} 問正解",
-    "badges": {
-      "amethyst": "満点メダル",
-      "silver": "ステップアップ",
-      "seedling": "はじめの一歩",
-      "seal": "修了"
-    },
-    "comment": {
-      "amethyst": "全問正解です。このコースの要点をつかめています。",
-      "silver": "ほとんど正解です。あと {{wrong}} 問ですべて正解です。",
-      "seedling": "あと {{wrong}} 問です。どこで間違えたかを見れば、次はきっと変わります。",
-      "seal": "{{count}} ページすべて学びました。",
-      "unattempted": "未回答の小テストがあります。解くと結果が見られます。"
-    },
     "actions": {
       "reviewWrong": "間違いを見る",
       "doQuiz": "小テストへ",

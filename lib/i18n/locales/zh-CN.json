@@ -2566,22 +2566,8 @@
   },
   "classroomEnd": {
     "close": "回到最后一页",
-    "fullScore": "满分",
     "learned": "已学完 {{count}} 页",
     "result": "答对 {{correct}} / {{total}} 题",
-    "badges": {
-      "amethyst": "满分章",
-      "silver": "进阶章",
-      "seedling": "起步章",
-      "seal": "完课印"
-    },
-    "comment": {
-      "amethyst": "全部答对，这节课的要点你都掌握了。",
-      "silver": "答对了大半，还差 {{wrong}} 题就全通了。",
-      "seedling": "还有 {{wrong}} 题没对上，看看错在哪，下一遍会不一样。",
-      "seal": "{{count}} 页都学完了。",
-      "unattempted": "还有小测没做，做完再看成绩。"
-    },
     "actions": {
       "reviewWrong": "查看错题",
       "doQuiz": "去做小测",

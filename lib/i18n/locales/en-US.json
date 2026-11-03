@@ -2566,22 +2566,8 @@
   },
   "classroomEnd": {
     "close": "Back to the last page",
-    "fullScore": "100",
     "learned": "{{count}} pages done",
     "result": "{{correct}} / {{total}} correct",
-    "badges": {
-      "amethyst": "Full marks",
-      "silver": "Well on the way",
-      "seedling": "Getting started",
-      "seal": "Course complete"
-    },
-    "comment": {
-      "amethyst": "All correct. You have the main points of this course.",
-      "silver": "Most of it is right. {{wrong}} more and you have it all.",
-      "seedling": "{{wrong}} not there yet. See where they went wrong, and the next pass will be different.",
-      "seal": "All {{count}} pages done.",
-      "unattempted": "There are quizzes left. Do them to see your score."
-    },
     "actions": {
       "reviewWrong": "Review mistakes",
       "doQuiz": "Take the quiz",

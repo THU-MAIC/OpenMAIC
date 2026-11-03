@@ -90,6 +90,7 @@ test.describe('Course end', () => {
 
     await nextScene.click();
     await expect(end).toBeVisible();
+    await expect(end).toHaveAttribute('data-badge', 'seedling');
     await expect(page.getByText('3/3', { exact: true })).toBeVisible();
 
     // Too short to centre: the whole card, medal included, can still be reached.

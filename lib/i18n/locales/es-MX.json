@@ -2566,22 +2566,8 @@
   },
   "classroomEnd": {
     "close": "Volver a la última página",
-    "fullScore": "100",
     "learned": "{{count}} páginas completadas",
     "result": "{{correct}} / {{total}} correctas",
-    "badges": {
-      "amethyst": "Puntaje perfecto",
-      "silver": "Vas muy bien",
-      "seedling": "Buen comienzo",
-      "seal": "Curso completado"
-    },
-    "comment": {
-      "amethyst": "Todo correcto. Ya dominas lo esencial de este curso.",
-      "silver": "Casi todo está bien. Te faltan {{wrong}} para tenerlo completo.",
-      "seedling": "{{wrong}} aún sin acertar. Mira dónde estuvo el error y la próxima vez será distinta.",
-      "seal": "Completaste las {{count}} páginas.",
-      "unattempted": "Quedan cuestionarios. Respóndelos para ver tu resultado."
-    },
     "actions": {
       "reviewWrong": "Ver errores",
       "doQuiz": "Ir al cuestionario",

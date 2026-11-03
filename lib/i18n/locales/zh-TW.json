@@ -2566,22 +2566,8 @@
   },
   "classroomEnd": {
     "close": "回到最後一頁",
-    "fullScore": "滿分",
     "learned": "已學完 {{count}} 頁",
     "result": "答對 {{correct}} / {{total}} 題",
-    "badges": {
-      "amethyst": "滿分章",
-      "silver": "進階章",
-      "seedling": "起步章",
-      "seal": "完課印"
-    },
-    "comment": {
-      "amethyst": "全部答對，這節課的重點你都掌握了。",
-      "silver": "答對了大半，還差 {{wrong}} 題就全通了。",
-      "seedling": "還有 {{wrong}} 題沒對上，看看錯在哪，下一遍會不一樣。",
-      "seal": "{{count}} 頁都學完了。",
-      "unattempted": "還有小測沒做，做完再看成績。"
-    },
     "actions": {
       "reviewWrong": "查看錯題",
       "doQuiz": "去做小測",

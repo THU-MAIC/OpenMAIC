@@ -55,16 +55,13 @@
   margin: auto;
   width: 100%;
   max-width: 420px;
-  padding: 72px 24px 24px;
+  padding: 60px 24px 24px;
   border-radius: 18px;
   background: var(--ce-raised);
   border: 1px solid var(--ce-line);
   box-shadow: var(--ce-card-sh);
   text-align: center;
   animation: ce-card-in 0.45s 0.12s cubic-bezier(0.2, 0.8, 0.3, 1) both;
-}
-.ce-root[data-badge='seedling'] .ce-card {
-  padding-top: 60px;
 }
 @keyframes ce-card-in {
   from {
@@ -96,44 +93,17 @@
 .ce-medal {
   position: absolute;
   left: 50%;
-  top: -62px;
-  width: 124px;
-  height: 124px;
-  margin-left: -62px;
-  perspective: 520px;
-}
-.ce-root[data-badge='seedling'] .ce-medal {
   top: -50px;
   width: 100px;
   height: 100px;
   margin-left: -50px;
+  perspective: 520px;
 }
 .ce-drop {
   position: absolute;
   inset: 0;
   transform-style: preserve-3d;
-  animation: ce-drop 0.82s cubic-bezier(0.3, 1.1, 0.4, 1) both;
-}
-.ce-root[data-badge='seedling'] .ce-drop {
   animation: ce-soft 0.6s cubic-bezier(0.2, 0.8, 0.3, 1) both;
-}
-@keyframes ce-drop {
-  0% {
-    opacity: 0;
-    transform: translateY(-92px) scale(1.16) rotateX(38deg);
-  }
-  38% {
-    opacity: 1;
-  }
-  62% {
-    transform: translateY(5px) scale(0.985) rotateX(-6deg);
-  }
-  82% {
-    transform: translateY(-2px) scale(1.004) rotateX(2deg);
-  }
-  100% {
-    transform: none;
-  }
 }
 @keyframes ce-soft {
   from {
@@ -168,12 +138,7 @@
     0 -1px 1px rgba(0, 0, 0, 0.2) inset,
     0 6px 16px -6px rgba(49, 16, 102, 0.45);
 }
-.ce-seal {
-  position: absolute;
-  inset: 0;
-}
-.ce-seal .ce-coin,
-.ce-seal .ce-rim {
+.ce-rim {
   border-radius: 0;
   box-shadow: none;
 }
@@ -231,105 +196,10 @@
   align-items: center;
   justify-content: center;
   color: var(--ce-ink);
-  text-shadow:
-    0 1px 0 var(--ce-hi),
-    0 -1px 0 var(--ce-lo);
-  font-size: 32px;
-  font-weight: 700;
-  line-height: 36px;
-  letter-spacing: -0.01em;
-  font-variant-numeric: tabular-nums;
-}
-.ce-cjk {
-  font-size: 27px;
-  letter-spacing: 0.02em;
 }
 .ce-glyph svg {
   filter: drop-shadow(0 1px 0 var(--ce-hi)) drop-shadow(0 -1px 0 var(--ce-lo));
 }
-.ce-shine {
-  position: absolute;
-  top: -20%;
-  bottom: -20%;
-  left: 0;
-  width: 44%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.75), transparent);
-  transform: translateX(-160%) skewX(-18deg);
-  animation: ce-shine 0.75s 0.78s ease-in-out both;
-}
-.ce-root[data-motion='reduced'] .ce-shine {
-  opacity: 0.45;
-}
-.ce-root[data-motion='none'] .ce-shine,
-.ce-root[data-motion='seal'] .ce-shine,
-.ce-root[data-motion='none'] .ce-ripple,
-.ce-root[data-motion='seal'] .ce-ripple {
-  display: none;
-}
-@keyframes ce-shine {
-  from {
-    transform: translateX(-160%) skewX(-18deg);
-  }
-  to {
-    transform: translateX(330%) skewX(-18deg);
-  }
-}
-.ce-ripple {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  border: 1.5px solid var(--ce-accent);
-  opacity: 0;
-  animation: ce-ripple 0.8s 0.52s ease-out;
-}
-.ce-root[data-motion='reduced'] .ce-ripple {
-  animation-name: ce-ripple-soft;
-}
-@keyframes ce-ripple {
-  0% {
-    opacity: 0.5;
-    transform: scale(0.96);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(1.42);
-  }
-}
-@keyframes ce-ripple-soft {
-  0% {
-    opacity: 0.28;
-    transform: scale(0.96);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(1.24);
-  }
-}
-.ce-halo {
-  position: absolute;
-  left: 50%;
-  top: -110px;
-  width: 420px;
-  height: 300px;
-  margin-left: -210px;
-  border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(139, 92, 246, 0.24), transparent);
-  opacity: 0;
-  pointer-events: none;
-}
-.ce-root[data-motion='full'] .ce-halo {
-  opacity: 1;
-  animation: ce-fade 0.8s 0.45s ease-out both;
-}
-.ce-root[data-motion='reduced'] .ce-halo {
-  opacity: 0.45;
-  animation: ce-fade 0.8s 0.45s ease-out both;
-}
-.ce-root[data-motion='seal'] .ce-halo {
-  opacity: 0.35;
-  animation: ce-fade 0.8s 0.45s ease-out both;
-}
-
 .ce-up {
   animation: ce-up 0.42s cubic-bezier(0.2, 0.8, 0.3, 1) both;
   animation-delay: var(--ce-d, 0s);
@@ -375,13 +245,6 @@
   font-weight: 500;
   line-height: 20px;
   color: var(--ce-soft);
-}
-.ce-comment {
-  position: relative;
-  margin-top: 6px;
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--ce-mute);
 }
 .ce-actions {
   position: relative;
@@ -440,12 +303,6 @@
   animation-duration: 0.001s !important;
   animation-delay: 0s !important;
 }
-.ce-root[data-skip] .ce-shine,
-.ce-root[data-skip] .ce-ripple {
-  animation: none !important;
-  opacity: 0;
-}
-
 /* Reduced motion: a crossfade, nothing else. */
 @media (prefers-reduced-motion: reduce) {
   .ce-root {
@@ -454,9 +311,5 @@
   .ce-root * {
     animation: none !important;
     transition: none !important;
-  }
-  .ce-shine,
-  .ce-ripple {
-    display: none;
   }
 }

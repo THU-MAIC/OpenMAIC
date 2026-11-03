@@ -5,10 +5,8 @@ import {
   opensOnNext,
   opensOnPlaybackEnd,
   opensOnQuizSubmit,
-  selectBadgeId,
   tiltAllowed,
 } from '@/lib/classroom/course-end';
-import { BADGES } from '@/components/classroom/course-end/badges';
 import { PENDING_SCENE_ID, resolveLoadedSceneId } from '@/lib/store/stage';
 
 const summary = (over: Partial<CompleteSummary> = {}): CompleteSummary => ({
@@ -24,27 +22,6 @@ const scored = (correct: number, total: number, over: Partial<CompleteSummary> =
     firstWrongQuizId: correct < total ? 'q1' : null,
     ...over,
   });
-
-describe('selectBadgeId', () => {
-  it('goes by the score', () => {
-    expect(selectBadgeId(scored(6, 6))).toBe('amethyst');
-    expect(selectBadgeId(scored(4, 6))).toBe('silver');
-    expect(selectBadgeId(scored(3, 6))).toBe('silver');
-    expect(selectBadgeId(scored(2, 6))).toBe('seedling');
-    expect(selectBadgeId(scored(0, 6))).toBe('seedling');
-  });
-  it('gives the seal with nothing graded', () => {
-    expect(selectBadgeId(summary())).toBe('seal');
-  });
-  it('gives no score while quizzes remain', () => {
-    expect(selectBadgeId(scored(6, 6, { unattemptedQuizIds: ['q2'] }))).toBe('seal');
-  });
-  it('has a badge for every outcome', () => {
-    for (const id of ['amethyst', 'silver', 'seedling', 'seal'] as const) {
-      expect(BADGES[id].id).toBe(id);
-    }
-  });
-});
 
 describe('courseEndActions', () => {
   it('reviews wrong answers first when there are any', () => {
