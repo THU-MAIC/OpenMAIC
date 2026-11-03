@@ -3,6 +3,8 @@ import type { AgentTool } from '@earendil-works/pi-agent-core';
 import {
   assembleCapabilityRuntime,
   createCapabilityMap,
+  NO_TTS_PROMPT_BLOCK,
+  noTtsPromptBlock,
   type CapabilityDependentTool,
   type ResolvedCapabilityMap,
 } from '@/lib/server/agent-runtime/capability-tools';
@@ -107,6 +109,7 @@ describe('capability-dependent tool registration (#2102)', () => {
       expect(prompt).not.toContain('## Image generation prompt');
       expect(prompt).not.toContain('## Video generation prompt');
       expect(prompt).not.toContain('## TTS prompt');
+      expect(prompt).toContain(NO_TTS_PROMPT_BLOCK);
       expect(prompt).not.toContain('## Voice registration prompt');
     });
 
@@ -139,6 +142,8 @@ describe('capability-dependent tool registration (#2102)', () => {
       expect(prompt).toContain('## Image generation prompt');
       expect(prompt).toContain('## Video generation prompt');
       expect(prompt).toContain('## TTS prompt');
+      expect(prompt).not.toContain(NO_TTS_PROMPT_BLOCK);
+      expect(prompt).not.toContain('Audio-generation steps described in skills do not apply');
       expect(prompt).toContain('## Voice registration prompt');
     });
 
@@ -179,7 +184,39 @@ describe('capability-dependent tool registration (#2102)', () => {
       expect(prompt).not.toContain('## Web fetch prompt');
       expect(prompt).not.toContain('## Video generation prompt');
       expect(prompt).not.toContain('## TTS prompt');
+      expect(prompt).toContain(NO_TTS_PROMPT_BLOCK);
       expect(prompt).not.toContain('## Voice registration prompt');
+    });
+
+    it('adds conditional system-prompt instruction when TTS is unavailable', () => {
+      const runtime = assembleCapabilityRuntime({
+        capabilities: createCapabilityMap({ tts: false }),
+        candidateTools: allCandidateTools,
+      });
+
+      expect(runtime.tools.some((t) => t.name === 'generate_tts')).toBe(false);
+      expect(runtime.allowedToolNames.has('generate_tts')).toBe(false);
+      expect(runtime.systemPromptBlocks.tts).toBe(NO_TTS_PROMPT_BLOCK);
+      expect(noTtsPromptBlock()).toBe(NO_TTS_PROMPT_BLOCK);
+      const prompt = runtime.buildSystemPrompt();
+      expect(prompt).toContain(NO_TTS_PROMPT_BLOCK);
+      expect(prompt).toContain('generate_tts must not be called');
+      expect(prompt).toContain('continue without TTS');
+      expect(prompt).toContain('Audio-generation steps described in skills do not apply');
+    });
+
+    it('uses TTS prompt block and omits no-TTS instruction when TTS is enabled', () => {
+      const runtime = assembleCapabilityRuntime({
+        capabilities: createCapabilityMap({ tts: true }),
+        candidateTools: allCandidateTools,
+      });
+
+      expect(runtime.tools.some((t) => t.name === 'generate_tts')).toBe(true);
+      expect(runtime.allowedToolNames.has('generate_tts')).toBe(true);
+      expect(runtime.systemPromptBlocks.tts).toBe('## TTS prompt');
+      const prompt = runtime.buildSystemPrompt();
+      expect(prompt).toContain('## TTS prompt');
+      expect(prompt).not.toContain(NO_TTS_PROMPT_BLOCK);
     });
   });
 

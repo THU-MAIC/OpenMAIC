@@ -57,6 +57,7 @@ import {
 } from './generate-video';
 import type { SceneTtsInput, SceneTtsSummary } from './scene-tts';
 import type { LoadedSkill } from './skills';
+import type { ResolvedCapabilityMap } from './capability-tools';
 
 export type CourseDocument = MaicDocument<Scene, Stage>;
 export type CourseStore = DocumentStore<Scene, Stage> & DocumentFolderStore;
@@ -104,6 +105,8 @@ export interface CourseToolDeps {
   synthesizeTts?: (input: SceneTtsInput) => Promise<SceneTtsSummary>;
   /** Resolve the skill that owns structural diagnostics for the current turn. */
   getActiveSkill?: () => LoadedSkill | null;
+  /** Resolved capability map for the runner session. */
+  capabilities?: ResolvedCapabilityMap;
 }
 
 /**

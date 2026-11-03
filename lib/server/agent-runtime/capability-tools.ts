@@ -10,6 +10,13 @@ import { hasConfiguredTtsCapability } from './scene-tts';
 import { hasConfiguredVoiceRegistrationCapability } from './voice-clone-tools';
 import { courseSystemPrompt, DSL_TOOLS_PROMPT, type CoursePromptBlocks } from './course-tools';
 
+export const NO_TTS_PROMPT_BLOCK =
+  'Audio-generation steps described in skills do not apply, generate_tts must not be called, and the agent should continue without TTS.';
+
+export function noTtsPromptBlock(): string {
+  return NO_TTS_PROMPT_BLOCK;
+}
+
 export type CapabilityRequirement =
   | 'tts'
   | 'image'
@@ -162,7 +169,9 @@ export function assembleCapabilityRuntime(
       fetch: capabilityPromptBlocks.web_fetch,
       image: capabilityPromptBlocks.image,
       video: capabilityPromptBlocks.video,
-      tts: capabilityPromptBlocks.tts,
+      tts: options.capabilities.isAvailable('tts')
+        ? (capabilityPromptBlocks.tts ?? base.tts)
+        : (base.tts ?? NO_TTS_PROMPT_BLOCK),
       voiceRegistration: capabilityPromptBlocks.voice_registration,
     };
     if (blocks.untrustedContent === undefined) {

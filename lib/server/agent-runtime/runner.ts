@@ -1417,14 +1417,11 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       ownerId: meta.ownerId,
       workspaceId,
     });
-    const webSearchTools =
-      typeof buildWebSearchTool === 'function'
-        ? [
-            buildWebSearchTool(capabilities.connections.web_search, (urls) =>
-              registerSessionUrls(id, urls, 'web_search').then(() => undefined),
-            ),
-          ]
-        : [];
+    const webSearchTools = [
+      buildWebSearchTool(capabilities.connections.web_search, (urls) =>
+        registerSessionUrls(id, urls, 'web_search').then(() => undefined),
+      ),
+    ];
     const fetchUrlTools = [
       buildFetchUrlTool({
         sessionId: id,
@@ -1547,6 +1544,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       backgroundStore: mediaJobStore,
       imageConnection: capabilities.connections.image,
       videoConnection: capabilities.connections.video,
+      capabilities,
       stageAccess,
       onCheckpoint: (info) => emit(LIFECYCLE.checkpoint, info),
       sessionId: id,
