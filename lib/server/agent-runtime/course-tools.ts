@@ -309,6 +309,8 @@ export interface CoursePromptBlocks {
   fetch?: string;
   /** Compatibility guidance for installed legacy skills and resumed transcripts. */
   dslTools?: string;
+  /** Conditional instruction for unavailable capabilities (e.g. image, tts). */
+  unavailableCapabilities?: string;
   /**
    * Static materials and knowledge-base guidance. The runner always
    * passes it, including when nothing is attached, so the model can
@@ -340,6 +342,7 @@ export function courseSystemPrompt(blocks: CoursePromptBlocks): string {
   if (blocks.curriculum) parts.push('', blocks.curriculum);
   if (blocks.search) parts.push('', blocks.search);
   if (blocks.dslTools) parts.push('', blocks.dslTools);
+  if (blocks.unavailableCapabilities) parts.push('', blocks.unavailableCapabilities);
   if (blocks.image) parts.push('', blocks.image);
   if (blocks.video) parts.push('', blocks.video);
   if (blocks.tts) parts.push('', blocks.tts);

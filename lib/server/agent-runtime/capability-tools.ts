@@ -1,5 +1,6 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import type { TSchema } from 'typebox';
+import { createLogger } from '@/lib/logger';
 import type { MediaConnection } from '@/lib/server/model-config/media';
 import { serverMediaConnection } from '@/lib/server/model-config/media';
 import { resolveWebSearchCapability, type WebSearchCapability } from './web-search';
@@ -10,12 +11,36 @@ import { hasConfiguredTtsCapability } from './scene-tts';
 import { hasConfiguredVoiceRegistrationCapability } from './voice-clone-tools';
 import { courseSystemPrompt, DSL_TOOLS_PROMPT, type CoursePromptBlocks } from './course-tools';
 
+const log = createLogger('AgentCapabilities');
+
 export const NO_TTS_PROMPT_BLOCK =
   'Audio-generation steps described in skills do not apply, generate_tts must not be called, and the agent should continue without TTS.';
+
+export const NO_IMAGE_PROMPT_BLOCK =
+  'Image-generation steps described in skills (such as page-clone) do not apply, generate_image must not be called, and the agent should continue without image generation.';
 
 export function noTtsPromptBlock(): string {
   return NO_TTS_PROMPT_BLOCK;
 }
+
+export function noImagePromptBlock(): string {
+  return NO_IMAGE_PROMPT_BLOCK;
+}
+
+export function buildUnavailableCapabilitiesInstruction(capabilities: {
+  isAvailable(cap: CapabilityRequirement): boolean;
+}): string | undefined {
+  const parts: string[] = [];
+  if (!capabilities.isAvailable('image')) {
+    parts.push(NO_IMAGE_PROMPT_BLOCK);
+  }
+  if (!capabilities.isAvailable('tts')) {
+    parts.push(NO_TTS_PROMPT_BLOCK);
+  }
+  return parts.length > 0 ? parts.join(' ') : undefined;
+}
+
+export const unavailableCapabilitiesPromptBlock = buildUnavailableCapabilitiesInstruction;
 
 export type CapabilityRequirement =
   | 'tts'
@@ -49,6 +74,18 @@ export interface ResolvedCapabilityMap {
   isAvailable(capability: CapabilityRequirement): boolean;
 }
 
+async function resolveMediaSlotConnection(
+  slot: 'tts' | 'image' | 'video',
+  ownerId?: string,
+): Promise<MediaConnection | 'off' | null> {
+  try {
+    return await serverMediaConnection(slot, ownerId);
+  } catch (error) {
+    log.warn(`Media connection resolution failed for ${slot}:`, error);
+    return null;
+  }
+}
+
 export async function resolveRunnerCapabilities({
   ownerId,
   workspaceId,
@@ -60,9 +97,9 @@ export async function resolveRunnerCapabilities({
     await Promise.all([
       resolveWebSearchCapability(workspaceId),
       resolveWebFetchCapability(workspaceId),
-      serverMediaConnection('tts', ownerId),
-      serverMediaConnection('image', ownerId),
-      serverMediaConnection('video', ownerId),
+      resolveMediaSlotConnection('tts', ownerId),
+      resolveMediaSlotConnection('image', ownerId),
+      resolveMediaSlotConnection('video', ownerId),
     ]);
 
   const available: Record<CapabilityRequirement, boolean> = {
@@ -163,16 +200,23 @@ export function assembleCapabilityRuntime(
         ? options.basePromptBlocks()
         : (options.basePromptBlocks ?? {});
 
+    const unavailableBlock = buildUnavailableCapabilitiesInstruction(options.capabilities);
+
     const blocks: CoursePromptBlocks = {
       ...base,
       search: capabilityPromptBlocks.web_search,
       fetch: capabilityPromptBlocks.web_fetch,
-      image: capabilityPromptBlocks.image,
-      video: capabilityPromptBlocks.video,
-      tts: options.capabilities.isAvailable('tts')
-        ? (capabilityPromptBlocks.tts ?? base.tts)
-        : (base.tts ?? NO_TTS_PROMPT_BLOCK),
+      image:
+        capabilityPromptBlocks.image ??
+        (options.capabilities.isAvailable('image') ? base.image : undefined),
+      video:
+        capabilityPromptBlocks.video ??
+        (options.capabilities.isAvailable('video') ? base.video : undefined),
+      tts:
+        capabilityPromptBlocks.tts ??
+        (options.capabilities.isAvailable('tts') ? base.tts : undefined),
       voiceRegistration: capabilityPromptBlocks.voice_registration,
+      unavailableCapabilities: base.unavailableCapabilities ?? unavailableBlock,
     };
     if (blocks.untrustedContent === undefined) {
       blocks.untrustedContent = untrustedContentPolicyPromptBlock(

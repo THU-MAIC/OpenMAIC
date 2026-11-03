@@ -1,19 +1,25 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, afterEach } from 'vitest';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import {
   assembleCapabilityRuntime,
   createCapabilityMap,
   NO_TTS_PROMPT_BLOCK,
+  NO_IMAGE_PROMPT_BLOCK,
   noTtsPromptBlock,
+  noImagePromptBlock,
+  resolveRunnerCapabilities,
+  unavailableCapabilitiesPromptBlock,
   type CapabilityDependentTool,
   type ResolvedCapabilityMap,
 } from '@/lib/server/agent-runtime/capability-tools';
 import { DSL_TOOLS_PROMPT } from '@/lib/server/agent-runtime/course-tools';
 import {
+  buildGenerateImageTool,
   hasConfiguredImageGeneration,
   generateImagePromptBlock,
 } from '@/lib/server/agent-runtime/generate-image';
 import {
+  buildGenerateVideoTool,
   hasConfiguredVideoGeneration,
   generateVideoPromptBlock,
 } from '@/lib/server/agent-runtime/generate-video';
@@ -28,6 +34,10 @@ import {
 } from '@/lib/server/agent-runtime/fetch-url';
 import { searchPromptBlock } from '@/lib/server/agent-runtime/web-search';
 import { generateTtsPromptBlock } from '@/lib/server/agent-runtime/course-edit/tools';
+import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
+import * as mediaModule from '@/lib/server/model-config/media';
+import { WorkspaceEndpointError } from '@/lib/server/model-config/media';
+import { SlotResolutionError } from '@/lib/server/model-config/resolve-slot';
 
 function makeMockTool(name: string): AgentTool<never, never> {
   return {
@@ -52,6 +62,23 @@ function makeCapabilityTool(
 }
 
 describe('capability-dependent tool registration (#2102)', () => {
+  const baseTools = [
+    makeMockTool('read_stage'),
+    makeMockTool('patch_stage'),
+    makeMockTool('ask_user'),
+  ];
+
+  const capabilityTools: CapabilityDependentTool[] = [
+    makeCapabilityTool('web_search', 'web_search', '## Web search prompt'),
+    makeCapabilityTool('fetch_url', 'web_fetch', '## Web fetch prompt'),
+    makeCapabilityTool('generate_image', 'image', '## Image generation prompt'),
+    makeCapabilityTool('generate_video', 'video', '## Video generation prompt'),
+    makeCapabilityTool('generate_tts', 'tts', '## TTS prompt'),
+    makeCapabilityTool('register_voice', 'voice_registration', '## Voice registration prompt'),
+  ];
+
+  const allCandidateTools = [...baseTools, ...capabilityTools];
+
   describe('DSL_TOOLS_PROMPT cleanup', () => {
     it('contains no unconditional image, video, or TTS descriptions', () => {
       expect(DSL_TOOLS_PROMPT).not.toContain('generate_image');
@@ -61,23 +88,6 @@ describe('capability-dependent tool registration (#2102)', () => {
   });
 
   describe('assembleCapabilityRuntime', () => {
-    const baseTools = [
-      makeMockTool('read_stage'),
-      makeMockTool('patch_stage'),
-      makeMockTool('ask_user'),
-    ];
-
-    const capabilityTools: CapabilityDependentTool[] = [
-      makeCapabilityTool('web_search', 'web_search', '## Web search prompt'),
-      makeCapabilityTool('fetch_url', 'web_fetch', '## Web fetch prompt'),
-      makeCapabilityTool('generate_image', 'image', '## Image generation prompt'),
-      makeCapabilityTool('generate_video', 'video', '## Video generation prompt'),
-      makeCapabilityTool('generate_tts', 'tts', '## TTS prompt'),
-      makeCapabilityTool('register_voice', 'voice_registration', '## Voice registration prompt'),
-    ];
-
-    const allCandidateTools = [...baseTools, ...capabilityTools];
-
     it('when all capabilities are OFF: tools, allowlist, and prompt blocks are all absent', () => {
       const capabilities = createCapabilityMap({
         web_search: false,
@@ -110,6 +120,10 @@ describe('capability-dependent tool registration (#2102)', () => {
       expect(prompt).not.toContain('## Video generation prompt');
       expect(prompt).not.toContain('## TTS prompt');
       expect(prompt).toContain(NO_TTS_PROMPT_BLOCK);
+      expect(prompt).toContain(NO_IMAGE_PROMPT_BLOCK);
+      expect(runtime.systemPromptBlocks.unavailableCapabilities).toBe(
+        `${NO_IMAGE_PROMPT_BLOCK} ${NO_TTS_PROMPT_BLOCK}`,
+      );
       expect(prompt).not.toContain('## Voice registration prompt');
     });
 
@@ -185,24 +199,83 @@ describe('capability-dependent tool registration (#2102)', () => {
       expect(prompt).not.toContain('## Video generation prompt');
       expect(prompt).not.toContain('## TTS prompt');
       expect(prompt).toContain(NO_TTS_PROMPT_BLOCK);
+      expect(prompt).not.toContain(NO_IMAGE_PROMPT_BLOCK);
+      expect(runtime.systemPromptBlocks.unavailableCapabilities).toBe(NO_TTS_PROMPT_BLOCK);
       expect(prompt).not.toContain('## Voice registration prompt');
     });
 
     it('adds conditional system-prompt instruction when TTS is unavailable', () => {
       const runtime = assembleCapabilityRuntime({
-        capabilities: createCapabilityMap({ tts: false }),
+        capabilities: createCapabilityMap({ tts: false, image: true }),
         candidateTools: allCandidateTools,
       });
 
       expect(runtime.tools.some((t) => t.name === 'generate_tts')).toBe(false);
       expect(runtime.allowedToolNames.has('generate_tts')).toBe(false);
-      expect(runtime.systemPromptBlocks.tts).toBe(NO_TTS_PROMPT_BLOCK);
+      expect(runtime.systemPromptBlocks.unavailableCapabilities).toBe(NO_TTS_PROMPT_BLOCK);
       expect(noTtsPromptBlock()).toBe(NO_TTS_PROMPT_BLOCK);
       const prompt = runtime.buildSystemPrompt();
       expect(prompt).toContain(NO_TTS_PROMPT_BLOCK);
       expect(prompt).toContain('generate_tts must not be called');
       expect(prompt).toContain('continue without TTS');
       expect(prompt).toContain('Audio-generation steps described in skills do not apply');
+      expect(prompt).not.toContain(NO_IMAGE_PROMPT_BLOCK);
+    });
+
+    it('adds conditional system-prompt instruction when image generation is unavailable', () => {
+      const runtime = assembleCapabilityRuntime({
+        capabilities: createCapabilityMap({ image: false, tts: true }),
+        candidateTools: allCandidateTools,
+      });
+
+      expect(runtime.tools.some((t) => t.name === 'generate_image')).toBe(false);
+      expect(runtime.allowedToolNames.has('generate_image')).toBe(false);
+      expect(runtime.systemPromptBlocks.unavailableCapabilities).toBe(NO_IMAGE_PROMPT_BLOCK);
+      expect(noImagePromptBlock()).toBe(NO_IMAGE_PROMPT_BLOCK);
+      const prompt = runtime.buildSystemPrompt();
+      expect(prompt).toContain(NO_IMAGE_PROMPT_BLOCK);
+      expect(prompt).toContain('generate_image must not be called');
+      expect(prompt).toContain('continue without image generation');
+      expect(prompt).toContain(
+        'Image-generation steps described in skills (such as page-clone) do not apply',
+      );
+      expect(prompt).not.toContain(NO_TTS_PROMPT_BLOCK);
+    });
+
+    it('uses image prompt block and omits no-image instruction when image generation is enabled', () => {
+      const runtime = assembleCapabilityRuntime({
+        capabilities: createCapabilityMap({ image: true, tts: true }),
+        candidateTools: allCandidateTools,
+      });
+
+      expect(runtime.tools.some((t) => t.name === 'generate_image')).toBe(true);
+      expect(runtime.allowedToolNames.has('generate_image')).toBe(true);
+      expect(runtime.systemPromptBlocks.image).toBe('## Image generation prompt');
+      const prompt = runtime.buildSystemPrompt();
+      expect(prompt).toContain('## Image generation prompt');
+      expect(prompt).not.toContain(NO_IMAGE_PROMPT_BLOCK);
+    });
+
+    it('combines unavailable instructions when both image generation and TTS are unavailable', () => {
+      const caps = createCapabilityMap({ image: false, tts: false });
+      expect(unavailableCapabilitiesPromptBlock(caps)).toBe(
+        `${NO_IMAGE_PROMPT_BLOCK} ${NO_TTS_PROMPT_BLOCK}`,
+      );
+      const runtime = assembleCapabilityRuntime({
+        capabilities: caps,
+        candidateTools: allCandidateTools,
+      });
+
+      expect(runtime.tools.some((t) => t.name === 'generate_image')).toBe(false);
+      expect(runtime.tools.some((t) => t.name === 'generate_tts')).toBe(false);
+      expect(runtime.systemPromptBlocks.unavailableCapabilities).toBe(
+        `${NO_IMAGE_PROMPT_BLOCK} ${NO_TTS_PROMPT_BLOCK}`,
+      );
+      const prompt = runtime.buildSystemPrompt();
+      expect(prompt).toContain(NO_IMAGE_PROMPT_BLOCK);
+      expect(prompt).toContain(NO_TTS_PROMPT_BLOCK);
+      expect(prompt).toContain('generate_image must not be called');
+      expect(prompt).toContain('generate_tts must not be called');
     });
 
     it('uses TTS prompt block and omits no-TTS instruction when TTS is enabled', () => {
@@ -323,6 +396,195 @@ describe('capability-dependent tool registration (#2102)', () => {
       expect(caps.isAvailable('video')).toBe(false);
       expect(caps.isAvailable('tts')).toBe(false);
       expect(caps.isAvailable('voice_registration')).toBe(false);
+    });
+  });
+
+  describe('media connection resolution failures handling', () => {
+    it('catches image resolution failure, treats image as unavailable, and allows other capabilities and agent run to continue', async () => {
+      const spy = vi
+        .spyOn(mediaModule, 'serverMediaConnection')
+        .mockImplementation(async (slot) => {
+          if (slot === 'image') {
+            throw new SlotResolutionError('image: invalid model reference');
+          }
+          if (slot === 'video') {
+            return { providerId: 'seedance', apiKey: 'vid-key' } as never;
+          }
+          if (slot === 'tts') {
+            return { providerId: 'minimax-tts', apiKey: 'tts-key' } as never;
+          }
+          return null;
+        });
+
+      const capabilities = await resolveRunnerCapabilities({ workspaceId: null });
+      expect(capabilities.isAvailable('image')).toBe(false);
+      expect(capabilities.isAvailable('video')).toBe(true);
+      expect(capabilities.isAvailable('tts')).toBe(true);
+
+      const runtime = assembleCapabilityRuntime({
+        capabilities,
+        candidateTools: allCandidateTools,
+      });
+
+      expect(runtime.tools.some((t) => t.name === 'generate_image')).toBe(false);
+      expect(runtime.tools.some((t) => t.name === 'generate_video')).toBe(true);
+      expect(runtime.tools.some((t) => t.name === 'generate_tts')).toBe(true);
+      expect(runtime.allowedToolNames.has('generate_image')).toBe(false);
+      expect(runtime.allowedToolNames.has('generate_video')).toBe(true);
+      expect(runtime.allowedToolNames.has('generate_tts')).toBe(true);
+
+      const prompt = runtime.buildSystemPrompt();
+      expect(prompt).toContain(NO_IMAGE_PROMPT_BLOCK);
+      expect(prompt).not.toContain(NO_TTS_PROMPT_BLOCK);
+      expect(prompt).toContain('## Video generation prompt');
+      expect(prompt).toContain('## TTS prompt');
+
+      spy.mockRestore();
+    });
+
+    it('catches video resolution failure, treats video as unavailable, and allows other capabilities and agent run to continue', async () => {
+      const spy = vi
+        .spyOn(mediaModule, 'serverMediaConnection')
+        .mockImplementation(async (slot) => {
+          if (slot === 'video') {
+            throw new WorkspaceEndpointError('video: invalid url endpoint');
+          }
+          if (slot === 'image') {
+            return { providerId: 'openai-image', apiKey: 'img-key' } as never;
+          }
+          if (slot === 'tts') {
+            return { providerId: 'minimax-tts', apiKey: 'tts-key' } as never;
+          }
+          return null;
+        });
+
+      const capabilities = await resolveRunnerCapabilities({ workspaceId: null });
+      expect(capabilities.isAvailable('video')).toBe(false);
+      expect(capabilities.isAvailable('image')).toBe(true);
+      expect(capabilities.isAvailable('tts')).toBe(true);
+
+      const runtime = assembleCapabilityRuntime({
+        capabilities,
+        candidateTools: allCandidateTools,
+      });
+
+      expect(runtime.tools.some((t) => t.name === 'generate_video')).toBe(false);
+      expect(runtime.tools.some((t) => t.name === 'generate_image')).toBe(true);
+      expect(runtime.tools.some((t) => t.name === 'generate_tts')).toBe(true);
+      expect(runtime.allowedToolNames.has('generate_video')).toBe(false);
+      expect(runtime.allowedToolNames.has('generate_image')).toBe(true);
+      expect(runtime.allowedToolNames.has('generate_tts')).toBe(true);
+
+      const prompt = runtime.buildSystemPrompt();
+      expect(prompt).toContain('## Image generation prompt');
+      expect(prompt).toContain('## TTS prompt');
+      expect(prompt).not.toContain('## Video generation prompt');
+
+      spy.mockRestore();
+    });
+
+    it('catches tts resolution failure, treats tts as unavailable, and allows other capabilities and agent run to continue', async () => {
+      const spy = vi
+        .spyOn(mediaModule, 'serverMediaConnection')
+        .mockImplementation(async (slot) => {
+          if (slot === 'tts') {
+            throw new SlotResolutionError('tts: provider not declared');
+          }
+          if (slot === 'image') {
+            return { providerId: 'openai-image', apiKey: 'img-key' } as never;
+          }
+          if (slot === 'video') {
+            return { providerId: 'seedance', apiKey: 'vid-key' } as never;
+          }
+          return null;
+        });
+
+      const capabilities = await resolveRunnerCapabilities({ workspaceId: null });
+      expect(capabilities.isAvailable('tts')).toBe(false);
+      expect(capabilities.isAvailable('voice_registration')).toBe(false);
+      expect(capabilities.isAvailable('image')).toBe(true);
+      expect(capabilities.isAvailable('video')).toBe(true);
+
+      const runtime = assembleCapabilityRuntime({
+        capabilities,
+        candidateTools: allCandidateTools,
+      });
+
+      expect(runtime.tools.some((t) => t.name === 'generate_tts')).toBe(false);
+      expect(runtime.tools.some((t) => t.name === 'generate_image')).toBe(true);
+      expect(runtime.tools.some((t) => t.name === 'generate_video')).toBe(true);
+      expect(runtime.allowedToolNames.has('generate_tts')).toBe(false);
+      expect(runtime.allowedToolNames.has('generate_image')).toBe(true);
+      expect(runtime.allowedToolNames.has('generate_video')).toBe(true);
+
+      const prompt = runtime.buildSystemPrompt();
+      expect(prompt).toContain(NO_TTS_PROMPT_BLOCK);
+      expect(prompt).not.toContain(NO_IMAGE_PROMPT_BLOCK);
+      expect(prompt).toContain('## Image generation prompt');
+      expect(prompt).toContain('## Video generation prompt');
+
+      spy.mockRestore();
+    });
+  });
+
+  describe('positive coverage using real connections', () => {
+    afterEach(() => {
+      setDeploymentConfigForTests();
+    });
+
+    it('registers tools, allowedToolNames entries, and prompt blocks for real image and video connections', async () => {
+      setDeploymentConfigForTests({
+        layer: {
+          source: 'deployment',
+          config: {
+            providers: {
+              img: { preset: 'openai-image', apiKey: 'test-key' },
+              vid: { preset: 'seedance', apiKey: 'test-key' },
+            },
+            slots: {
+              image: 'img',
+              video: 'vid',
+            },
+          } as never,
+        },
+        legacy: false,
+        notices: [],
+      });
+
+      const capabilities = await resolveRunnerCapabilities({ workspaceId: null });
+      expect(capabilities.isAvailable('image')).toBe(true);
+      expect(capabilities.isAvailable('video')).toBe(true);
+
+      const imageTool = buildGenerateImageTool({
+        ownerId: 'test-owner',
+        imageConnection: capabilities.connections.image,
+      });
+      const videoTool = buildGenerateVideoTool({
+        ownerId: 'test-owner',
+        videoConnection: capabilities.connections.video,
+      });
+
+      const runtime = assembleCapabilityRuntime({
+        capabilities,
+        candidateTools: [imageTool, videoTool],
+      });
+
+      expect(runtime.tools.map((t) => t.name)).toEqual(
+        expect.arrayContaining(['generate_image', 'generate_video']),
+      );
+      expect(runtime.allowedToolNames.has('generate_image')).toBe(true);
+      expect(runtime.allowedToolNames.has('generate_video')).toBe(true);
+
+      expect(runtime.systemPromptBlocks.image).toBeDefined();
+      expect(runtime.systemPromptBlocks.image).toContain('generate_image');
+      expect(runtime.systemPromptBlocks.video).toBeDefined();
+      expect(runtime.systemPromptBlocks.video).toContain('generate_video');
+
+      const prompt = runtime.buildSystemPrompt();
+      expect(prompt).toContain('generate_image');
+      expect(prompt).toContain('generate_video');
+      expect(prompt).not.toContain(NO_IMAGE_PROMPT_BLOCK);
+      expect(prompt).not.toContain('Image-generation steps described in skills');
     });
   });
 });
