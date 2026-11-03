@@ -55,6 +55,14 @@ const mocks = vi.hoisted(() => ({
   batchCalls: [] as string[][],
   batchBytes: 0,
   fetch: null as ((input: RequestInfo | URL) => Promise<unknown>) | null,
+  /** The roster route's answer; `null` answers 404 (a host without it). */
+  roster: null as Record<string, unknown> | null,
+  /** The roster route answers 500 while set. */
+  rosterUnavailable: false,
+  rosterFetchCount: 0,
+  unsavedStageEdit: false,
+  rosterBase: new Map<string, unknown>(),
+  setStageAgents: vi.fn(),
 }));
 
 // The sync runs against the REAL `stage-freshness.ts`, whose manifest fetch
@@ -71,8 +79,14 @@ vi.mock('@/lib/workbench/session-store', () => ({
 }));
 
 vi.mock('@/lib/store/stage', () => ({
+  hasUnsavedStageEdit: () => mocks.unsavedStageEdit,
+  isStageWriteInFlight: () => false,
+  recordServerRosterBase: (stageId: string, roster: unknown) =>
+    mocks.rosterBase.set(stageId, roster),
+  forgetServerRosterBase: (stageId: string) => mocks.rosterBase.delete(stageId),
+  serverRosterBaseOf: (stageId: string) => mocks.rosterBase.get(stageId),
   useStageStore: {
-    getState: () => mocks.stageState,
+    getState: () => ({ ...mocks.stageState, setStageAgents: mocks.setStageAgents }),
     // zustand semantics: `prev` is the PRE-STATE snapshot (a distinct object),
     // so subscribers can tell "the reload array changed" apart from any other
     // write. Mutating the live object in place and passing it as both state
@@ -218,6 +232,12 @@ function wireFetch(): void {
       if (mocks.manifestUnavailable) return { ok: false, status: 404 };
       return { ok: true, json: async () => mocks.manifest };
     }
+    if (url.includes('/roster')) {
+      mocks.rosterFetchCount += 1;
+      if (mocks.rosterUnavailable) return { ok: false, status: 500 };
+      if (!mocks.roster) return { ok: false, status: 404 };
+      return { ok: true, status: 200, json: async () => mocks.roster };
+    }
     if (url.includes('/scenes?')) {
       const ids = new URL(url, 'http://localhost').searchParams.get('ids')!.split(',');
       mocks.batchCalls.push(ids);
@@ -334,6 +354,26 @@ beforeEach(() => {
   mocks.manifestUnavailable = false;
   mocks.batchUnavailable = false;
   mocks.batchMaxIds = 200;
+  mocks.roster = null;
+  mocks.rosterFetchCount = 0;
+  mocks.rosterUnavailable = false;
+  mocks.unsavedStageEdit = false;
+  mocks.rosterBase.clear();
+  mocks.setStageAgents.mockReset();
+  // The real action's effect on what the classroom shows: the stage carries
+  // the new roster (the registry/selection mirrors are covered by the store's
+  // own tests).
+  mocks.setStageAgents.mockImplementation(
+    (configs: unknown[], options?: { agentIds?: string[] }) => {
+      const stage = mocks.stageState.stage;
+      if (!stage) return;
+      mocks.stageState.stage = {
+        ...stage,
+        generatedAgentConfigs: configs,
+        ...(options?.agentIds ? { agentIds: options.agentIds } : {}),
+      } as typeof stage;
+    },
+  );
   mocks.stageSubscribers = [];
   MockEventSource.instances = [];
   abandonedRenderObserved = () => undefined;
@@ -863,5 +903,118 @@ describe('被放弃的并发渲染不得写 store（原 course-sync-race.test.ts
     expect(mocks.stageState.scenes.find((s) => s.id === 'scene-never-commits')).toBeUndefined();
     expect(mocks.stageState.outlineProducer).toBe('server-job');
     expect(mocks.stageState.generationComplete).toBe(true);
+  });
+});
+
+describe('a roster written while the classroom is open', () => {
+  const roster = {
+    agentIds: ['gen-teacher', 'gen-student'],
+    generatedAgentConfigs: [
+      {
+        id: 'gen-teacher',
+        name: '陈老师',
+        role: 'teacher',
+        persona: '',
+        avatar: 'a',
+        color: '#000',
+        priority: 10,
+      },
+      {
+        id: 'gen-student',
+        name: '小林',
+        role: 'student',
+        persona: '',
+        avatar: 'b',
+        color: '#111',
+        priority: 5,
+      },
+    ],
+  };
+
+  it('applies the new roster on the next freshness pass, without a write and without moving the page', async () => {
+    await mount();
+    const source = MockEventSource.instances[0]!;
+    const page = mocks.stageState.currentSceneId;
+    expect(mocks.setStageAgents).not.toHaveBeenCalled();
+
+    // set_roster saves the aggregate: the stage rev moves (scene revs too).
+    mocks.roster = roster;
+    bumpSceneRev('scene-1');
+    await act(async () => source.emitFreshness());
+
+    expect(mocks.setStageAgents).toHaveBeenCalledTimes(1);
+    expect(mocks.setStageAgents).toHaveBeenCalledWith(roster.generatedAgentConfigs, {
+      fromServer: true,
+      agentIds: roster.agentIds,
+    });
+    expect(mocks.stageState.currentSceneId).toBe(page);
+  });
+
+  it('reads the roster only when the stage moved, and leaves an unchanged one alone', async () => {
+    await mount();
+    const source = MockEventSource.instances[0]!;
+    await act(async () => source.emitFreshness());
+    // Nothing moved: no roster read.
+    expect(mocks.rosterFetchCount).toBe(0);
+
+    mocks.roster = roster;
+    Object.assign(mocks.stageState, { stage: { id: 'stage-a', ...roster } });
+    manifestWith({ rev: mocks.manifest.rev + 1 });
+    await act(async () => source.emitFreshness());
+    expect(mocks.rosterFetchCount).toBe(1);
+    expect(mocks.setStageAgents).not.toHaveBeenCalled();
+  });
+
+  const shownConfigs = () =>
+    (mocks.stageState.stage as { generatedAgentConfigs?: unknown } | null)?.generatedAgentConfigs;
+
+  it('a roster read failure does not stop the scenes, and is read again on the next pass', async () => {
+    await mount();
+    const source = MockEventSource.instances[0]!;
+    mocks.roster = roster;
+    mocks.rosterUnavailable = true;
+    bumpSceneRev('scene-2');
+    await act(async () => source.emitFreshness());
+
+    // The scene write reached the canvas despite the roster 500.
+    expect(mocks.rosterFetchCount).toBe(1);
+    expect(mocks.stageState.scenes.find((s) => s.id === 'scene-2')).toMatchObject({
+      title: 'scene-2 v2',
+    });
+    expect(shownConfigs()).toBeUndefined();
+    // The write-side baseline took the scene's new rev, not the stage's.
+    const baseline = mocks.stageState.serverManifestByStage['stage-a'] as {
+      rev: number;
+      scenes: { id: string; rev: number }[];
+    };
+    expect(baseline.scenes.find((s) => s.id === 'scene-2')?.rev).toBe(2);
+    expect(baseline.rev).toBe(1);
+
+    // The route recovers: the next pass reads the roster again, with no new
+    // write and without re-fetching the scene.
+    mocks.rosterUnavailable = false;
+    const batches = mocks.batchCalls.length;
+    await act(async () => source.emitFreshness());
+    expect(mocks.rosterFetchCount).toBe(2);
+    expect(shownConfigs()).toEqual(roster.generatedAgentConfigs);
+    expect(mocks.batchCalls).toHaveLength(batches);
+    expect((mocks.stageState.serverManifestByStage['stage-a'] as { rev: number }).rev).toBe(2);
+  });
+
+  it('a classroom the load already filled reads the roster on its first sync pass', async () => {
+    // The classroom load filled the store; a set_roster landed after that
+    // load read the course but before the sync took its first manifest.
+    mocks.stageState.stage = { id: 'stage-a' };
+    mocks.stageState.scenes = SCENE_IDS.map((id) => mocks.sceneContent[id]);
+    mocks.roster = roster;
+    await mount({ bootstrapDocument: false });
+    const source = MockEventSource.instances[0]!;
+    expect(mocks.rosterFetchCount).toBe(0);
+
+    // No further write: the stage rev the first pass saw is the one after
+    // the roster write, and the roster is read anyway.
+    await act(async () => source.emitFreshness());
+    expect(mocks.rosterFetchCount).toBe(1);
+    expect(shownConfigs()).toEqual(roster.generatedAgentConfigs);
   });
 });

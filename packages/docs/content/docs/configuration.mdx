@@ -568,6 +568,8 @@ Supported TTS prefixes include `TTS_OPENAI_`, `TTS_AZURE_`, `TTS_GLM_`, `TTS_QWE
 
 Administrators can force-disable a TTS provider on the server with `TTS_<PROVIDER>_ENABLED=false`. See the dedicated [VoxCPM2](./voxcpm.mdx) section for self-hosted TTS and voice cloning.
 
+For slow or CPU-only self-hosted TTS services (such as Kokoro or VoxCPM), synthesis operations for longer narration lines may exceed the default per-request timeout of 30 seconds (`30000` ms). Operators can configure `TTS_REQUEST_TIMEOUT_MS` (e.g. `TTS_REQUEST_TIMEOUT_MS=120000` or `300000`) in `.env.local` to allow adequate synthesis time and prevent timeout errors.
+
 To use another OpenAI-compatible TTS endpoint, declare an `openai-tts` provider with that `baseUrl` in `openmaic.yml` and assign the `tts` slot to it. Workspaces cannot add custom TTS endpoints in the model settings.
 
 ### ASR (speech to text)

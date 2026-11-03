@@ -358,7 +358,7 @@ export async function generateTTS(
     if (isTimeoutSignal(signal)) {
       throw new TTSRequestTimeoutError(
         config.providerId,
-        `TTS request timed out after ${ttsRequestTimeoutMs()}ms (provider ${config.providerId}) — the provider did not respond. Retry the tool call.`,
+        `TTS request timed out after ${ttsRequestTimeoutMs()}ms (provider ${config.providerId}) — the provider did not respond. Do not retry with the same input without splitting long narration text or increasing TTS_REQUEST_TIMEOUT_MS.`,
       );
     }
     throw error;

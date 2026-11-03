@@ -148,8 +148,8 @@ export async function runPiDirectorLoop(opts: {
       agentConfigs: opts.agentConfigs,
       send,
       languageModel: opts.languageModel,
-      onAgentDone: (summary) => {
-        totalAgents += 1;
+      onAgentDone: (summary, outcome) => {
+        if (outcome?.completed !== false) totalAgents += 1;
         if (summary.contentPreview || summary.actionCount > 0) agentHadContent = true;
         piAgentResponses.push(summary);
       },
