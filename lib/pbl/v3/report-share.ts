@@ -1,5 +1,12 @@
 import type { LearningReport } from './report';
 
+/** Shared image coordinates keep the preview's clickable invitation aligned with its artwork. */
+export const reportShareLayout = {
+  width: 1200,
+  height: 1500,
+  campaign: { x: 64, y: 1240, width: 1072, height: 196 },
+} as const;
+
 /** Campaign content supplied by the course team; never inferred from IDs or the current URL. */
 export const reportShareCampaign = {
   url: '',

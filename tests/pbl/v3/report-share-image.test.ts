@@ -114,6 +114,7 @@ it.each(['light', 'dark'] as const)(
     expect(prose.every((item) => item.direction === 'rtl' && item.align === 'right')).toBe(true);
     expect(assets).toContain('/openmaic-share-logo.png');
     expect(qr).toHaveBeenCalledWith(reportShareCampaign.url);
+    expect(assets).toContain('qr-image');
     for (const value of [reportShareCampaign.url]) {
       expect(drawn.find((item) => item.value === value)).toMatchObject({
         direction: 'ltr',
@@ -189,14 +190,14 @@ it('can still save with a failed font and no roundRect support', async () => {
 });
 
 it.each(['', 'not a URL', 'javascript:alert(1)', 'https://user:password@course.example/'])(
-  'omits promotion for %j without blocking image export or loading a QR',
+  'omits promotion for %j without blocking image export',
   async (url) => {
     reportShareCampaign.url = url;
     const { drawn, assets } = syntheticCanvas();
     const image = await renderReportShareImage(content, 'light', translate, 'ar-SA');
     expect(image.size).toBeGreaterThan(0);
+    expect(assets).toEqual(['/openmaic-share-logo.png']);
     expect(qr).not.toHaveBeenCalled();
-    expect(assets).not.toContain('qr-image');
     const text = drawn.map((item) => item.value).join(' ');
     expect(text).not.toContain(ar.pblV3.share.invite);
     expect(text).not.toMatch(/example\.com|replace before|上线前替换|OpenMAIC · Vibe Coding/);

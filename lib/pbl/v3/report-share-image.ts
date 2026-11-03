@@ -3,11 +3,12 @@ import { ellipsizeShareText, wrapShareText } from './report-share-text';
 import {
   reportShareCampaign,
   reportShareDestination,
+  reportShareLayout,
   type ReportShareContent,
   type ShareTheme,
 } from './report-share';
 
-export const shareImageSize = [1200, 1500] as const;
+export const shareImageSize = [reportShareLayout.width, reportShareLayout.height] as const;
 const primaryFont = '"Inter Variable", "Noto Sans SC", system-ui, sans-serif';
 const fallbackFont = 'system-ui, sans-serif';
 async function loadImage(src: string) {
@@ -151,9 +152,7 @@ export async function renderReportShareImage(
     return y + Math.max(0, visible.length - 1) * size * 1.45;
   }
   // Use the supplied official wordmark intact; no platform-font imitation.
-  // Its dark letters need a pale brand surface in the dark appearance.
-  if (dark) box(64, 44, 372, 94, '#f6f2ff', 16);
-  ctx.drawImage(logo, dark ? 78 : 64, 56, 344, 344 * (logo.naturalHeight / logo.naturalWidth));
+  ctx.drawImage(logo, 64, 56, 344, 344 * (logo.naturalHeight / logo.naturalWidth));
   // A compact party-popper illustration uses vectors instead of emoji fonts.
   ctx.save();
   ctx.translate(1030, 92);
@@ -347,12 +346,17 @@ export async function renderReportShareImage(
   }
 
   if (destination && qr) {
-    const inviteY = 1240,
-      inviteWidth = width - 128,
-      qrSize = 156;
-    box(64, inviteY, inviteWidth, 196, panel);
-    ctx.drawImage(qr, width - 64 - qrSize - 24, inviteY + 20, qrSize, qrSize);
-    const copyWidth = inviteWidth - qrSize - 72;
+    const {
+      x: inviteX,
+      y: inviteY,
+      width: inviteWidth,
+      height: inviteHeight,
+    } = reportShareLayout.campaign;
+    box(inviteX, inviteY, inviteWidth, inviteHeight, panel);
+    const qrSize = 156;
+    // Leave the image's lower-right corner clear for the preview-only save control.
+    ctx.drawImage(qr, width - 64 - qrSize - 48, inviteY + 20, qrSize, qrSize);
+    const copyWidth = inviteWidth - qrSize - 96;
     paragraph(t('pblV3.share.invite'), 88, inviteY + 46, copyWidth, 30, 1, ink, 700, true);
     paragraph(t('pblV3.share.tagline'), 88, inviteY + 92, copyWidth, 22, 2, muted, 500, true);
     paragraph(destination, 88, inviteY + 150, copyWidth, 22, 1, accent, 600, false, 'ltr');

@@ -14,6 +14,7 @@ test('completed project reports stay discoverable, show facts before analysis, a
   await page.addInitScript(
     (settings) => {
       localStorage.setItem('locale', 'en-US');
+      localStorage.setItem('theme', 'dark');
       localStorage.setItem('maic:account:settings-storage', settings);
     },
     createSettingsStorage({ sidebarCollapsed: false }),
@@ -337,7 +338,8 @@ test('completed project reports stay discoverable, show facts before analysis, a
   await page.keyboard.press('Space');
   const share = page.getByRole('dialog', { name: 'Share your achievement', exact: true });
   const poster = share.getByRole('img', { name: 'Your OpenMAIC achievement image' });
-  await expect(share.getByRole('group')).toHaveCount(1);
+  await expect(share.getByRole('group')).toHaveCount(0);
+  await expect(share.getByRole('button', { name: /^(Light|Dark)$/ })).toHaveCount(0);
   await expect(poster).toBeVisible();
   await expect(share.getByRole('link', { name: 'Save image', exact: true })).toBeVisible();
   const factsPoster = await poster.getAttribute('src');
@@ -347,17 +349,11 @@ test('completed project reports stay discoverable, show facts before analysis, a
     report.getByText('You connected a boundary to behavior', { exact: true }),
   ).toBeVisible();
   await expect(poster).toHaveAttribute('src', factsPoster!);
-  await share.getByRole('button', { name: 'Light', exact: true }).click();
-  await expect(share.getByRole('link', { name: 'Save image', exact: true })).toBeVisible();
-  const darkOption = share.getByRole('button', { name: 'Dark', exact: true });
-  await darkOption.focus();
-  await page.keyboard.press('Space');
-  await expect(darkOption).toHaveAttribute('aria-pressed', 'true');
   await page.keyboard.press('ArrowRight');
   await expect(share).toBeVisible();
   const save = share.getByRole('link', { name: 'Save image', exact: true });
   await expect(save).toBeVisible();
-  // Viewport resizing scales the preview without changing the selected poster or its pixels.
+  // Viewport resizing scales the preview without changing the theme-following poster or its pixels.
   await expect
     .poll(() => poster.evaluate((img) => (img as HTMLImageElement).naturalWidth))
     .toBe(1200);

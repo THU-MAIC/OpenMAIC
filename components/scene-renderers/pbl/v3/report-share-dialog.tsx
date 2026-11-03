@@ -1,16 +1,28 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
+import { Download, X } from 'lucide-react';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
+  DialogClose,
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
 import type { LearningReport } from '@/lib/pbl/v3/report';
-import { reportShareContent, type ShareTheme } from '@/lib/pbl/v3/report-share';
+import {
+  reportShareContent,
+  reportShareDestination,
+  reportShareLayout,
+} from '@/lib/pbl/v3/report-share';
+
+const campaignArea = {
+  left: `${(reportShareLayout.campaign.x / reportShareLayout.width) * 100}%`,
+  top: `${(reportShareLayout.campaign.y / reportShareLayout.height) * 100}%`,
+  width: `${(reportShareLayout.campaign.width / reportShareLayout.width) * 100}%`,
+  height: `${(reportShareLayout.campaign.height / reportShareLayout.height) * 100}%`,
+};
 export function ReportShareDialog({
   report,
   onClose,
@@ -22,7 +34,8 @@ export function ReportShareDialog({
 }) {
   const { t, locale } = useI18n();
   const { resolvedTheme } = useTheme();
-  const [theme, setTheme] = useState<ShareTheme>(resolvedTheme === 'dark' ? 'dark' : 'light');
+  const theme = resolvedTheme;
+  const destination = reportShareDestination();
   const [attempt, setAttempt] = useState(0);
   const [result, setResult] = useState<{ key: string; url: string } | null>(null);
   const [failure, setFailure] = useState('');
@@ -51,8 +64,6 @@ export function ReportShareDialog({
       if (url) URL.revokeObjectURL(url);
     };
   }, [key, content, theme, t, locale]);
-  const optionClass =
-    'rounded-lg border px-3 py-2 text-sm aria-pressed:bg-primary aria-pressed:text-primary-foreground';
   return (
     <Dialog
       open
@@ -63,7 +74,9 @@ export function ReportShareDialog({
       <DialogContent
         container={document.fullscreenElement as HTMLElement | null}
         overlayClassName="z-[140]"
-        className="z-[150] flex max-h-[94dvh] max-w-[calc(100vw-1rem)] flex-col gap-4 overflow-y-auto sm:max-w-xl"
+        showCloseButton={false}
+        className="z-[150] block max-w-none rounded-xl bg-transparent p-0 ring-0"
+        style={{ width: 'min(calc(100vw - 2rem), calc((100dvh - 3rem) * 0.8))' }}
         onEscapeKeyDown={(e) => e.stopPropagation()}
         onKeyDown={(event) => event.stopPropagation()}
         onCloseAutoFocus={(event) => {
@@ -71,59 +84,63 @@ export function ReportShareDialog({
           onRestoreFocus();
         }}
       >
-        <DialogHeader>
+        <div className="sr-only">
           <DialogTitle>{t('pblV3.share.title')}</DialogTitle>
           <DialogDescription>{t('pblV3.share.description')}</DialogDescription>
-        </DialogHeader>
-        <div className="flex flex-wrap gap-3">
-          <div role="group" aria-label={t('pblV3.share.theme')} className="flex gap-1">
-            {(['light', 'dark'] as const).map((value) => (
-              <button
-                key={value}
-                className={optionClass}
-                aria-pressed={theme === value}
-                onClick={() => setTheme(value)}
-              >
-                {t(`pblV3.share.${value}`)}
-              </button>
-            ))}
-          </div>
         </div>
         <div
-          className="flex min-h-32 shrink-0 justify-center rounded-xl bg-muted/40 p-2"
+          className="relative overflow-hidden rounded-xl bg-background shadow-2xl"
           aria-busy={!ready && failure !== key}
         >
           {ready ? (
-            <img
-              src={ready}
-              alt={t('pblV3.share.preview')}
-              className="h-auto max-h-[60dvh] w-auto max-w-full self-start rounded-lg object-contain"
-            />
+            <img src={ready} alt={t('pblV3.share.preview')} className="block h-auto w-full" />
           ) : failure === key ? (
-            <p role="alert" className="p-6 text-sm">
+            <p role="alert" className="min-h-48 p-6 pr-14 text-sm">
               {t('pblV3.share.imageFailed')}
             </p>
           ) : (
-            <p role="status" className="p-6 text-sm">
+            <p role="status" className="min-h-48 p-6 pr-14 text-sm">
               {t('pblV3.share.rendering')}
             </p>
           )}
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
+          {ready && destination && (
+            <a
+              href={destination}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={t('pblV3.share.entryLabel')}
+              title={destination}
+              style={campaignArea}
+              className="absolute rounded-xl transition-colors hover:bg-violet-400/10 focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-primary"
+            />
+          )}
           {ready ? (
             <a
               href={ready}
               download={`OpenMAIC-${theme}.png`}
-              className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+              aria-label={t('pblV3.share.save')}
+              title={t('pblV3.share.save')}
+              className="absolute right-1 bottom-1 z-10 flex size-7 items-center justify-center rounded-full border border-foreground/15 bg-background/90 text-foreground shadow-sm backdrop-blur-sm transition-colors hover:bg-background focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             >
-              {t('pblV3.share.save')}
+              <Download size={18} aria-hidden="true" />
             </a>
           ) : failure === key ? (
-            <button className={optionClass} onClick={() => setAttempt((n) => n + 1)}>
+            <button
+              className="m-6 mt-0 rounded-lg border px-3 py-2 text-sm"
+              onClick={() => setAttempt((n) => n + 1)}
+            >
               {t('pblV3.retry')}
             </button>
           ) : null}
-          <p className="text-xs text-muted-foreground">{t('pblV3.share.saveHint')}</p>
+          <DialogClose asChild>
+            <button
+              type="button"
+              aria-label={t('common.close')}
+              className="absolute top-3 right-3 z-10 flex size-9 items-center justify-center rounded-full bg-background/80 text-foreground shadow-sm backdrop-blur-sm transition-colors hover:bg-background focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            >
+              <X size={18} aria-hidden="true" />
+            </button>
+          </DialogClose>
         </div>
       </DialogContent>
     </Dialog>
