@@ -1208,6 +1208,7 @@ export function WorkbenchChat({
                   <ChatTimeline
                     chat={displayedChat}
                     plan={displayedPlan}
+                    turnActive={live}
                     onAnswer={answerQuestion}
                     dismissedQuestionKey={dismissedQuestionKey}
                     onReviveQuestion={(freeText) => {

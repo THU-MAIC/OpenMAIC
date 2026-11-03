@@ -140,9 +140,7 @@
     "listSeparator": ", ",
     "group": {
       "tools": "{{count}} lần gọi tool",
-      "skills": "{{count}} skill",
-      "running": "Đang chạy",
-      "error": "Có lỗi",
+      "failed": "{{count}} thất bại",
       "done": "Hoàn tất"
     },
     "section": {

@@ -4,12 +4,11 @@
  * Chat timeline — the folded chat as render rows.
  *
  * One grouping rule, computed on render (no grouping state is stored, so a
- * replayed log groups identically to a live one): consecutive action bars
- * (thinking, tools, the pre-token wait) share one stack, then split per
- * kind-run for render — a consecutive tool run keeps its `ToolGroup`
- * aggregate ("N tool calls") even when a thinking bar sits next to it, and
- * thinking bars render as their own rows. Consecutive identical system notices
- * collapse the same way, into one row with a count.
+ * replayed log groups identically to a live one): everything the agent did
+ * between two things that mean something on their own (thinking, tools, the
+ * pre-token wait) is one row. Prose ends the row; so do a question, a notice, a
+ * course card, a stop or the user speaking, none of which is ever folded away.
+ * Consecutive identical system notices collapse too, into one row with a count.
  *
  * Single-agent layout, after the PR5 supervision-layer removal: the
  * assistant's prose floats (no container), actions (tool cards, thinking
@@ -35,11 +34,8 @@ import { QuestionCard, type QuestionPointer } from './question-card';
 import { SystemNode } from './system-node';
 import { isSameNotice, presentSystemNotice, repeatLabel, repeatTitle } from './system-notice';
 import { TextBlock } from './text-block';
-import { ThinkingBlock } from './thinking-block';
-import { ToolGroup } from './tool-group';
 import { UserBubble } from './user-bubble';
-import { WaitingBar } from './waiting-bar';
-import { isHiddenWorkbenchTool, isSkillLoadTool } from './tool-presentation';
+import { isHiddenWorkbenchTool } from './tool-presentation';
 
 interface ChatRow {
   key: string;
@@ -123,52 +119,18 @@ export function collapseAdjacentThinking(nodes: ChatNode[]): ChatNode[] {
   return out;
 }
 
-/**
- * Consecutive action bars share a cluster, then split per run kind: thinking,
- * skill loads (`read` of SKILL.md), and ordinary tools. A tool run still
- * renders as ONE `ToolGroup` ("N tool calls") even when a thinking bar sits
- * next to it; skill loads stay in their own run so they are never folded into
- * that aggregate. Waiting stays glued to the stretch it follows.
- */
-function actionRunKey(node: ChatNode): string {
-  if (node.kind === 'tool' && isSkillLoadTool(node)) return 'skill';
-  return node.kind;
-}
-
 export function rowsForRender(chat: ChatNode[]): ChatRow[] {
   const rows: ChatRow[] = [];
   for (const row of groupChat(chat)) {
-    if (!row.group) {
+    if (row.node && !isActionBar(row.node)) {
       rows.push(row);
       continue;
     }
-    const runs: ChatNode[][] = [];
-    let run: ChatNode[] = [];
-    const flush = () => {
-      if (run.length > 0) runs.push(run);
-      run = [];
-    };
-    for (const node of row.group) {
-      const prev = run.at(-1);
-      // Waiting is the pre-token gap indicator for the stretch that just
-      // played, so it stays attached to that stretch instead of becoming a
-      // row of its own.
-      if (
-        node.kind !== 'waiting' &&
-        prev !== undefined &&
-        actionRunKey(prev) !== actionRunKey(node)
-      ) {
-        flush();
-      }
-      run.push(node);
-    }
-    flush();
-    for (const r of runs) {
-      const group = collapseAdjacentThinking(r);
-      if (group.length === 0) continue;
-      if (group.length === 1) rows.push({ key: group[0].key, node: group[0] });
-      else rows.push({ key: `g-${group[0].key}`, group });
-    }
+    const group = collapseAdjacentThinking(row.group ?? [row.node!]);
+    // One key for the row however many bars it comes to hold, so it stays one row
+    // as a run streams in.
+    const key = `a-${group[0].key}`;
+    rows.push(group.length === 1 ? { key, node: group[0] } : { key, group });
   }
   return rows;
 }
@@ -262,28 +224,12 @@ function ChatNodeView({
       );
     case 'boundary':
       return <RunBoundary node={node} repeat={repeat} t={t} />;
-    case 'thinking':
-      return (
-        <ThinkingBlock
-          text={node.text}
-          streaming={node.streaming}
-          startedAt={node.startedAt}
-          endedAt={node.endedAt}
-          t={t}
-        />
-      );
-    case 'tool':
-      return <ToolGroup nodes={[node]} plan={plan} t={t} />;
     case 'course':
       // The tail of one exchange (question → answer): the classrooms it
       // produced or was pointed at, one card each, the rest behind a `+N`. The
       // row carries that answer's own ordered set; an empty one is the legacy
       // unbound row and SessionCourseLink falls back to the session's own stage.
       return <SessionCourseLink stageIds={node.stageIds} />;
-    case 'waiting':
-      // The LLM-gap indicator: open between "the agent owes an answer" and
-      // the first content; the fold removes it when content arrives.
-      return <WaitingBar t={t} />;
     default:
       // The agent's own words are a text stream, with no container at all.
       // Tool cards keep their frame precisely because they are NOT speech —
@@ -310,6 +256,7 @@ export function ChatTimeline({
   onReviveQuestion,
   takenOverQuestionKey,
   questionPointer = 'below',
+  turnActive = false,
   t = defaultWorkbenchTranslator,
 }: {
   chat: ChatNode[];
@@ -336,15 +283,23 @@ export function ChatTimeline({
   takenOverQuestionKey?: string | null;
   /** Where the form that took the question over sits. */
   questionPointer?: QuestionPointer;
+  /** The agent is still working, between events or not. */
+  turnActive?: boolean;
   t?: WorkbenchTranslator;
 }) {
   const rows = rowsForRender(chat);
   const exclusions = useMemo(() => courseCardExclusions(chat), [chat]);
   return (
     <div className={styles.timeline.root}>
-      {rows.map((row) =>
-        row.group ? (
-          <ActionCluster key={row.key} nodes={row.group} plan={plan} t={t} />
+      {rows.map((row, index) =>
+        row.group || isActionBar(row.node!) ? (
+          <ActionCluster
+            key={row.key}
+            nodes={row.group ?? [row.node!]}
+            plan={plan}
+            ongoing={turnActive && index === rows.length - 1}
+            t={t}
+          />
         ) : (
           <ChatNodeView
             key={row.key}

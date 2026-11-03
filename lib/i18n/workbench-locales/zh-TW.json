@@ -140,9 +140,7 @@
     "listSeparator": "、",
     "group": {
       "tools": "{{count}} 個工具呼叫",
-      "skills": "{{count}} 個 skill",
-      "running": "執行中",
-      "error": "有錯誤",
+      "failed": "{{count}} 個失敗",
       "done": "已完成"
     },
     "section": {

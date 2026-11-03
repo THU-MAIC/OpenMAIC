@@ -140,9 +140,7 @@
     "listSeparator": ", ",
     "group": {
       "tools": "{{count}} llamadas a tools",
-      "skills": "{{count}} skills",
-      "running": "En curso",
-      "error": "Con errores",
+      "failed": "{{count}} con error",
       "done": "Completado"
     },
     "section": {

@@ -205,9 +205,7 @@ export const workbenchEn = {
     listSeparator: ', ',
     group: {
       tools: '{{count}} tool calls',
-      skills: '{{count}} skills',
-      running: 'Running',
-      error: 'Has errors',
+      failed: '{{count}} failed',
       done: 'Completed',
     },
     section: {
@@ -549,9 +547,7 @@ export const workbenchZh = {
     listSeparator: '、',
     group: {
       tools: '{{count}} 个工具调用',
-      skills: '{{count}} 个 skill',
-      running: '执行中',
-      error: '有错误',
+      failed: '{{count}} 个失败',
       done: '已完成',
     },
     section: {

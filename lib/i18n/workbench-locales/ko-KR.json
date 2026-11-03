@@ -140,9 +140,7 @@
     "listSeparator": ", ",
     "group": {
       "tools": "도구 호출 {{count}}건",
-      "skills": "스킬 {{count}}개",
-      "running": "실행 중",
-      "error": "오류 있음",
+      "failed": "{{count}}개 실패",
       "done": "완료"
     },
     "section": {

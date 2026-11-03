@@ -140,9 +140,7 @@
     "listSeparator": "، ",
     "group": {
       "tools": "{{count}} نداء أدوات",
-      "skills": "{{count}} مهارات",
-      "running": "قيد التنفيذ",
-      "error": "به أخطاء",
+      "failed": "فشل {{count}}",
       "done": "تم"
     },
     "section": {

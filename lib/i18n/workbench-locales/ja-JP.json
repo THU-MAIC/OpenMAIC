@@ -140,9 +140,7 @@
     "listSeparator": "、",
     "group": {
       "tools": "{{count}} 件のツール呼び出し",
-      "skills": "{{count}} 件のスキル",
-      "running": "実行中",
-      "error": "エラーあり",
+      "failed": "{{count}} 件失敗",
       "done": "完了"
     },
     "section": {

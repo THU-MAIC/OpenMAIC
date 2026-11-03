@@ -140,9 +140,7 @@
     "listSeparator": ", ",
     "group": {
       "tools": "Вызовов инструментов: {{count}}",
-      "skills": "Скиллов: {{count}}",
-      "running": "Выполняется",
-      "error": "Есть ошибки",
+      "failed": "Ошибок: {{count}}",
       "done": "Завершено"
     },
     "section": {
