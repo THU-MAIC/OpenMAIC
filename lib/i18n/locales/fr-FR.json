@@ -2966,9 +2966,6 @@
       "open": "Créer une image à partager",
       "title": "Partager mes réalisations",
       "description": "Enregistrez les points forts de votre apprentissage en image.",
-      "orientation": "Orientation",
-      "landscape": "Paysage",
-      "portrait": "Portrait",
       "theme": "Apparence",
       "light": "Clair",
       "dark": "Sombre",
@@ -2977,24 +2974,15 @@
       "saveHint": "Sur mobile, un appui long sur l’image permet aussi de voir les options disponibles.",
       "imageFailed": "Impossible de préparer l’image. Réessayez.",
       "rendering": "Préparation de l’image…",
-      "eyebrow": "MON PARCOURS VIBE CODING",
       "achievement": "Mes réalisations",
-      "waiting": "Préparation de vos points forts…",
-      "factSummary": "Un projet créé et exploré avec l’IA.",
       "invite": "Créez avec OpenMAIC",
-      "tagline": "Transformez une idée en projet. Apprenez en créant.",
-      "highlights": "Des progrès à célébrer",
+      "tagline": "Commencez par un petit projet. Entraînez-vous à coder avec l’IA.",
       "testsPassed": "Tests de comportement réussis",
       "linkPlaceholder": "Cours d’initiation · Lien d’exemple à remplacer avant publication",
       "decisionsLabel": "Décisions prises",
       "quizLabel": "Questionnaire",
-      "conclusions": {
-        "reviewed": "Vous avez relu le plan ou le code et fait avancer votre idée.",
-        "decided": "Vos propres choix font partie de ce projet.",
-        "verified": "Votre projet a réussi les tests de comportement. Une étape à célébrer !",
-        "reflected": "Vous avez pris du recul sur votre pratique et gardé des repères pour la suite.",
-        "completed": "Vous avez terminé des étapes pratiques du projet. Ces progrès méritent d’être célébrés !"
-      }
+      "checkIn": "Aujourd’hui, j’ai donné vie à une nouvelle idée.",
+      "checkInProgress": "Donner vie à une idée, étape par étape."
     }
   }
 }

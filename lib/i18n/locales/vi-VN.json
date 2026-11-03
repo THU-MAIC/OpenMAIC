@@ -2966,9 +2966,6 @@
       "open": "Tạo ảnh chia sẻ",
       "title": "Chia sẻ thành quả học tập",
       "description": "Lưu những điểm nổi bật trong quá trình học thành ảnh.",
-      "orientation": "Bố cục ảnh",
-      "landscape": "Ngang",
-      "portrait": "Dọc",
       "theme": "Màu sắc",
       "light": "Sáng",
       "dark": "Tối",
@@ -2977,24 +2974,15 @@
       "saveHint": "Trên điện thoại, bạn cũng có thể nhấn giữ ảnh để xem các tùy chọn lưu.",
       "imageFailed": "Không thể tạo ảnh. Vui lòng thử lại.",
       "rendering": "Đang chuẩn bị ảnh…",
-      "eyebrow": "HÀNH TRÌNH VIBE CODING CỦA TÔI",
       "achievement": "Thành quả dự án",
-      "waiting": "Đang tổng hợp điểm nổi bật…",
-      "factSummary": "Một dự án được tạo và khám phá cùng AI.",
       "invite": "Biến ý tưởng thành hiện thực với OpenMAIC",
-      "tagline": "Từ ý tưởng đến dự án. Học qua sáng tạo.",
-      "highlights": "Một bước tiến đáng chúc mừng",
+      "tagline": "Bắt đầu với dự án nhỏ. Luyện lập trình cùng AI.",
       "testsPassed": "Đã vượt qua kiểm thử hành vi",
       "linkPlaceholder": "Khóa học nhập môn · Liên kết mẫu, thay trước khi ra mắt",
       "decisionsLabel": "Lựa chọn đã đưa ra",
       "quizLabel": "Bài kiểm tra",
-      "conclusions": {
-        "reviewed": "Bạn đã xem xét kế hoạch hoặc mã và đưa ý tưởng tiến thêm một bước.",
-        "decided": "Dự án này có những lựa chọn do chính bạn đưa ra.",
-        "verified": "Sản phẩm đã vượt qua kiểm thử hành vi. Một bước tiến đáng chúc mừng!",
-        "reflected": "Bạn đã nhìn lại phần thực hành và để lại ghi chép cho lần thử tiếp theo.",
-        "completed": "Bạn đã hoàn thành các bước thực hành dự án. Hãy chúc mừng bước tiến này!"
-      }
+      "checkIn": "Hôm nay, tôi lại biến một ý tưởng thành sản phẩm.",
+      "checkInProgress": "Từng bước biến ý tưởng thành sản phẩm."
     }
   }
 }

@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import ar from '@/lib/i18n/locales/ar-SA.json';
+import zh from '@/lib/i18n/locales/zh-CN.json';
 import { reportShareContent } from '@/lib/pbl/v3/report-share';
 import { renderReportShareImage } from '@/lib/pbl/v3/report-share-image';
 import type { LearningReport } from '@/lib/pbl/v3/report';
@@ -8,7 +9,7 @@ vi.mock('@/lib/export/qr-png', () => ({ qrPngDataUrl: async () => 'qr-image' }))
 afterEach(() => vi.unstubAllGlobals());
 
 function syntheticCanvas() {
-  const drawn: { value: string; direction: string; align: string; x: number }[] = [];
+  const drawn: { value: string; direction: string; align: string; x: number; font: string }[] = [];
   const context = {
     direction: 'inherit',
     textAlign: 'start',
@@ -24,9 +25,13 @@ function syntheticCanvas() {
     translate() {},
     rotate() {},
     restore() {},
+    moveTo() {},
+    lineTo() {},
+    quadraticCurveTo() {},
+    closePath() {},
     measureText: (value: string) => ({ width: value.length * 10 }),
     fillText(value: string, x: number) {
-      drawn.push({ value, x, direction: this.direction, align: this.textAlign });
+      drawn.push({ value, x, direction: this.direction, align: this.textAlign, font: this.font });
     },
   };
   vi.stubGlobal(
@@ -36,14 +41,17 @@ function syntheticCanvas() {
       async decode() {}
     },
   );
+  const canvas = {
+    width: 0,
+    height: 0,
+    getContext: () => context,
+    toBlob: (callback: (blob: Blob) => void) => callback(new Blob(['png'])),
+  };
   vi.stubGlobal('document', {
     fonts: { load: async () => [] },
-    createElement: () => ({
-      getContext: () => context,
-      toBlob: (callback: (blob: Blob) => void) => callback(new Blob(['png'])),
-    }),
+    createElement: () => canvas,
   });
-  return drawn;
+  return { drawn, canvas, context };
 }
 
 const content = reportShareContent({
@@ -68,11 +76,12 @@ function translate(key: string) {
   return String(value);
 }
 
-it.each(['landscape', 'portrait'] as const)(
-  'keeps Arabic RTL and mixed numeric/URL/brand runs LTR in %s',
-  async (orientation) => {
-    const drawn = syntheticCanvas();
-    await renderReportShareImage(content, orientation, 'dark', translate, 'ar-SA');
+it.each(['light', 'dark'] as const)(
+  'keeps one 4:5 image with Arabic RTL and numeric/URL/brand LTR in %s',
+  async (theme) => {
+    const { drawn, canvas } = syntheticCanvas();
+    await renderReportShareImage(content, theme, translate, 'ar-SA');
+    expect([canvas.width, canvas.height]).toEqual([1200, 1500]);
     const prose = drawn.filter((item) => /[\u0600-\u06ff]/u.test(item.value));
     expect(prose.length).toBeGreaterThan(5);
     expect(prose.every((item) => item.direction === 'rtl' && item.align === 'right')).toBe(true);
@@ -95,3 +104,46 @@ it.each(['landscape', 'portrait'] as const)(
     );
   },
 );
+
+it.each([true, false])(
+  'uses completion check-in copy only when completed=%s',
+  async (completed) => {
+    const { drawn } = syntheticCanvas();
+    const t = (key: string) => {
+      let value: unknown = zh;
+      for (const part of key.split('.')) value = (value as Record<string, unknown>)[part];
+      return String(value);
+    };
+    await renderReportShareImage({ ...content, completed }, 'light', t, 'zh-CN');
+    const text = drawn.map((item) => item.value).join(' ');
+    expect(text).toContain(completed ? zh.pblV3.share.checkIn : zh.pblV3.share.checkInProgress);
+    expect(text).not.toContain(completed ? zh.pblV3.share.checkInProgress : zh.pblV3.share.checkIn);
+  },
+);
+
+it('omits empty factual sections instead of drawing empty headings or inventing counts', async () => {
+  const { drawn } = syntheticCanvas();
+  await renderReportShareImage(
+    reportShareContent({
+      project: { title: 'Project' },
+      requiredComplete: false,
+    } as LearningReport),
+    'light',
+    translate,
+    'ar-SA',
+  );
+  const values = drawn.map((item) => item.value);
+  expect(values).not.toContain(ar.pblV3.reportCopy.skills);
+  expect(values).not.toContain(ar.pblV3.reportCopy.concepts);
+  expect(values.join(' ')).not.toContain('0/0');
+});
+
+it('can still save with a failed font and no roundRect support', async () => {
+  const { drawn, context } = syntheticCanvas();
+  Object.defineProperty(context, 'roundRect', { value: undefined });
+  vi.spyOn(document.fonts, 'load').mockRejectedValue(new Error('Font resource unavailable'));
+  const image = await renderReportShareImage(content, 'dark', translate, 'ar-SA');
+  expect(image.size).toBeGreaterThan(0);
+  expect(drawn.length).toBeGreaterThan(0);
+  expect(drawn.every((item) => !item.font.includes('Inter Variable'))).toBe(true);
+});

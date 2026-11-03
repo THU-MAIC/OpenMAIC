@@ -1,48 +1,35 @@
 # Report sharing images
 
-The completed-project report opens an in-page image preview. Two fixed canvas layouts
-(1600 × 900 and 1200 × 1600) support light and dark appearances. PNGs are generated
-locally; opening, switching, and saving do not call the report API or a model.
+A report opens an in-page preview of one fixed 1200 × 1500 (4:5) PNG, with light and
+dark themes. The preview scales to available space; exported pixels remain fixed.
+Closing returns focus to the report. Saving and native image long-press are supported;
+the browser determines the destination, with no promise of automatic photo-library access.
 
-The preview uses the existing report state: facts appear immediately, a short placeholder
-occupies the narrative area while analysis is pending, and public factual conclusions
-replace it when analysis finishes. They use saved structured facts rather than private AI prose.
-Failed analysis shows the same factual conclusions without error text in the poster.
-Rendering errors are shown outside the poster and can be retried independently.
+`reportShareContent` includes only course-authored title/concepts, recorded completion,
+summary counts, practiced skill receipts and saved test/quiz results. Empty sections are
+omitted. Completion check-in copy is used only when `requiredComplete` is true; unfinished
+projects use progress copy. Counts represent recorded practice, not mastery or rankings.
 
-`reportShareContent` is the public projection: course-authored project titles and concepts,
-structured counts, skill receipts, and saved test/quiz outcomes. At most two localized
-conclusions describe only recorded review, decisions, verification, reflection or completed
-practice. No AI finding title, detail, quote, conversation, source ID, or learner-provided URL
-is read into that projection. Valid private report findings are not assumed safe for export;
-URL/quote blacklists cannot guarantee that boundary. Summary skill counts represent practice,
-not mastery. The private report and its analysis generation remain unchanged. Images have
-no public URL or server-side storage.
+The projection does not read analysis, findings, quotes, conversations or evidence. There
+is no analysis placeholder or derived narrative. Generating/ready/failed analysis and
+unrelated report revisions produce the same projection and do not redraw an open image.
+The dialog keeps a study identity boundary, but its drawing dependencies are only public
+image data, locale, theme and image retry. The original report GET/POST/polling is unchanged;
+sharing does not generate a report, call a model, store an image or create a public image URL.
 
-Celebratory conclusions still require the same structured evidence; wording does not claim
-mastery or independently verified understanding. Share-specific decision/quiz labels are
-localized without changing the private report's existing copy. The current UI locale is
-passed explicitly to the canvas. Arabic text is RTL and aligned within each fixed text slot;
-numeric runs, scores, URLs and branding retain their LTR order. QR and layout coordinates
-are not mirrored, and export dimensions do not depend on document direction or viewport.
+Arabic text uses RTL within fixed slots; numeric runs, scores, URLs and branding retain
+LTR order. Wrapping preserves words and grapheme clusters. Only needed fonts are awaited;
+font failures use system fonts. Logo/QR/artwork failures can be retried independently.
 
-The image waits only for its required font faces. If the preferred font fails, a system
-font keeps rendering and saving available; logo, QR and artwork failures still use the
-independent image retry. Text wraps at word boundaries and preserves grapheme clusters.
+## Campaign destination and artwork
 
-## Campaign artwork and destination
+Set `reportShareCampaign.url` in `report-share.ts` to the supplied fixed campaign URL.
+Until it is supplied, the authorized example.com destination and QR are visibly marked as
+an example. Replace it before public promotion and regenerate any saved sample images.
+The URL is never inferred from project/study IDs or browser location.
 
-Edit `reportShareCampaign` in `report-share.ts` to supply a fixed destination URL.
-While the URL is empty, the preview displays an explicitly labeled example.com placeholder and its QR code. Replace it with the supplied destination before launch. It is never inferred from course names,
-project IDs, study IDs, or browser location. The QR code and address use the same value.
+`backgrounds.light` and `backgrounds.dark` optionally point to same-origin decorative
+artwork for the single 4:5 layout. Keep dynamic data and QR areas clear. Substantial artwork
+layout changes require updating canvas coordinates, not adding a general editor.
 
-Optional `backgrounds[orientation][theme]` point to same-origin artwork. Keep artwork
-at the layout aspect ratio and reserve the dynamic content areas; do not bake learner
-numbers, narrative, or a placeholder QR code into it. Editable designs and reference
-PNGs make later layout changes straightforward. Substantially different layouts require
-changing canvas coordinates in `report-share-image.ts`, not data or download behavior.
-
-The preview displays the actual PNG with a download link and allows native image
-long-press behavior. Mobile browsers determine the save destination; there is no promise
-of automatic access to the photo library. Final integration testing should cover the
-report's fullscreen container as well as real mobile saving behavior.
+Real mobile saving and native fullscreen remain integration acceptance items.

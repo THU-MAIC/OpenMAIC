@@ -10,11 +10,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import type { LearningReport } from '@/lib/pbl/v3/report';
-import {
-  reportShareContent,
-  type ShareOrientation,
-  type ShareTheme,
-} from '@/lib/pbl/v3/report-share';
+import { reportShareContent, type ShareTheme } from '@/lib/pbl/v3/report-share';
 export function ReportShareDialog({
   report,
   onClose,
@@ -26,9 +22,6 @@ export function ReportShareDialog({
 }) {
   const { t, locale } = useI18n();
   const { resolvedTheme } = useTheme();
-  const [orientation, setOrientation] = useState<ShareOrientation>(() =>
-    window.innerWidth < 640 ? 'portrait' : 'landscape',
-  );
   const [theme, setTheme] = useState<ShareTheme>(resolvedTheme === 'dark' ? 'dark' : 'light');
   const [attempt, setAttempt] = useState(0);
   const [result, setResult] = useState<{ key: string; url: string } | null>(null);
@@ -38,23 +31,13 @@ export function ReportShareDialog({
     () => JSON.parse(serialized) as ReturnType<typeof reportShareContent>,
     [serialized],
   );
-  const key = JSON.stringify([
-    locale,
-    report.studyId,
-    report.revision,
-    serialized,
-    orientation,
-    theme,
-    attempt,
-  ]);
+  const key = JSON.stringify([locale, report.studyId, serialized, theme, attempt]);
   const ready = result?.key === key ? result.url : null;
   useEffect(() => {
     let active = true;
     let url: string | undefined;
     void import('@/lib/pbl/v3/report-share-image')
-      .then(({ renderReportShareImage }) =>
-        renderReportShareImage(content, orientation, theme, t, locale),
-      )
+      .then(({ renderReportShareImage }) => renderReportShareImage(content, theme, t, locale))
       .then((blob) => {
         if (!active) return;
         url = URL.createObjectURL(blob);
@@ -67,7 +50,7 @@ export function ReportShareDialog({
       active = false;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [key, content, orientation, theme, t, locale]);
+  }, [key, content, theme, t, locale]);
   const optionClass =
     'rounded-lg border px-3 py-2 text-sm aria-pressed:bg-primary aria-pressed:text-primary-foreground';
   return (
@@ -80,7 +63,7 @@ export function ReportShareDialog({
       <DialogContent
         container={document.fullscreenElement as HTMLElement | null}
         overlayClassName="z-[140]"
-        className="z-[150] flex max-h-[94dvh] max-w-[calc(100vw-1rem)] flex-col gap-4 overflow-y-auto sm:max-w-4xl"
+        className="z-[150] flex max-h-[94dvh] max-w-[calc(100vw-1rem)] flex-col gap-4 overflow-y-auto sm:max-w-xl"
         onEscapeKeyDown={(e) => e.stopPropagation()}
         onKeyDown={(event) => event.stopPropagation()}
         onCloseAutoFocus={(event) => {
@@ -93,18 +76,6 @@ export function ReportShareDialog({
           <DialogDescription>{t('pblV3.share.description')}</DialogDescription>
         </DialogHeader>
         <div className="flex flex-wrap gap-3">
-          <div role="group" aria-label={t('pblV3.share.orientation')} className="flex gap-1">
-            {(['landscape', 'portrait'] as const).map((value) => (
-              <button
-                key={value}
-                className={optionClass}
-                aria-pressed={orientation === value}
-                onClick={() => setOrientation(value)}
-              >
-                {t(`pblV3.share.${value}`)}
-              </button>
-            ))}
-          </div>
           <div role="group" aria-label={t('pblV3.share.theme')} className="flex gap-1">
             {(['light', 'dark'] as const).map((value) => (
               <button
@@ -126,7 +97,7 @@ export function ReportShareDialog({
             <img
               src={ready}
               alt={t('pblV3.share.preview')}
-              className="h-auto w-full max-w-full self-start rounded-lg"
+              className="h-auto max-h-[60dvh] w-auto max-w-full self-start rounded-lg object-contain"
             />
           ) : failure === key ? (
             <p role="alert" className="p-6 text-sm">
@@ -142,7 +113,7 @@ export function ReportShareDialog({
           {ready ? (
             <a
               href={ready}
-              download={`OpenMAIC-${orientation}-${theme}.png`}
+              download={`OpenMAIC-${theme}.png`}
               className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
             >
               {t('pblV3.share.save')}

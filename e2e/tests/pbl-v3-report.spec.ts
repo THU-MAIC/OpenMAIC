@@ -330,29 +330,30 @@ test('completed project reports stay discoverable, show facts before analysis, a
   await expect(failure).toHaveCount(0);
   expect(opens).toBe(0);
   expect(commands).toEqual([]);
-  // Sharing follows the report's existing analysis; it never starts another generation.
+  // Sharing uses facts independently of the report analysis and never starts another generation.
   const shareTrigger = report.getByRole('button', { name: 'Create sharing image', exact: true });
   await shareTrigger.focus();
   await page.keyboard.press('Space');
   const share = page.getByRole('dialog', { name: 'Share your achievement', exact: true });
   const poster = share.getByRole('img', { name: 'Your OpenMAIC achievement image' });
+  await expect(share.getByRole('group')).toHaveCount(1);
   await expect(poster).toBeVisible();
   await expect(share.getByRole('link', { name: 'Save image', exact: true })).toBeVisible();
-  const portraitOption = share.getByRole('button', { name: 'Portrait', exact: true });
-  await portraitOption.focus();
-  await page.keyboard.press('Space');
-  await expect(portraitOption).toHaveAttribute('aria-pressed', 'true');
-  await page.keyboard.press('ArrowRight');
-  await expect(share).toBeVisible();
-  await share.getByRole('button', { name: 'Landscape', exact: true }).click();
-  await expect(share.getByRole('link', { name: 'Save image', exact: true })).toBeVisible();
-  const pendingPoster = await poster.getAttribute('src');
+  const factsPoster = await poster.getAttribute('src');
   expect(generations).toBe(2);
   finish();
-  await expect.poll(() => poster.getAttribute('src')).not.toBe(pendingPoster);
+  await expect(
+    report.getByText('You connected a boundary to behavior', { exact: true }),
+  ).toBeVisible();
+  await expect(poster).toHaveAttribute('src', factsPoster!);
+  await share.getByRole('button', { name: 'Light', exact: true }).click();
   await expect(share.getByRole('link', { name: 'Save image', exact: true })).toBeVisible();
-  await share.getByRole('button', { name: 'Portrait', exact: true }).click();
-  await share.getByRole('button', { name: 'Dark', exact: true }).click();
+  const darkOption = share.getByRole('button', { name: 'Dark', exact: true });
+  await darkOption.focus();
+  await page.keyboard.press('Space');
+  await expect(darkOption).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('ArrowRight');
+  await expect(share).toBeVisible();
   const save = share.getByRole('link', { name: 'Save image', exact: true });
   await expect(save).toBeVisible();
   // Viewport resizing scales the preview without changing the selected poster or its pixels.
@@ -369,12 +370,12 @@ test('completed project reports stay discoverable, show facts before analysis, a
         (img as HTMLImageElement).naturalWidth,
         (img as HTMLImageElement).naturalHeight,
       ]),
-    ).toEqual([1200, 1600]);
+    ).toEqual([1200, 1500]);
   }
   await page.setViewportSize(shareViewport);
   const downloading = page.waitForEvent('download');
   await save.click();
-  expect((await downloading).suggestedFilename()).toBe('OpenMAIC-portrait-dark.png');
+  expect((await downloading).suggestedFilename()).toBe('OpenMAIC-dark.png');
   await page.keyboard.press('Escape');
   await expect(share).toHaveCount(0);
   await expect(report).toBeVisible();

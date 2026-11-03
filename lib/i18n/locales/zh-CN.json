@@ -2966,9 +2966,6 @@
       "open": "制作分享卡片",
       "title": "分享我的学习成果",
       "description": "把这次实践的成果与亮点，保存成一张图片。",
-      "orientation": "图片版式",
-      "landscape": "横版",
-      "portrait": "竖版",
       "theme": "图片配色",
       "light": "浅色",
       "dark": "深色",
@@ -2977,24 +2974,15 @@
       "saveHint": "手机上也可长按图片，使用浏览器提供的保存选项。",
       "imageFailed": "图片暂时未能生成，请重试。",
       "rendering": "正在准备图片…",
-      "eyebrow": "我的 VIBE CODING 实践",
       "achievement": "我的项目成果",
-      "waiting": "正在整理你的学习亮点…",
-      "factSummary": "从一个想法，到一件真正能用的作品。",
       "invite": "你也来试试，一起练习 Vibe Coding！",
-      "tagline": "没有编程基础，也可以跟着开始",
-      "highlights": "这次实践，值得庆祝",
+      "tagline": "从一个小项目开始，练习和 AI 一起编程。",
       "testsPassed": "行为测试已通过",
       "linkPlaceholder": "前置课入口 · 示例链接，上线前替换",
       "decisionsLabel": "实现选择",
       "quizLabel": "测验",
-      "conclusions": {
-        "reviewed": "你参与了方案或代码核对，把想法往前推进了一步。",
-        "decided": "这次实现里，有你亲自作出的选择。",
-        "verified": "作品通过了行为测试，值得为这一步喝彩！",
-        "reflected": "你完成了实践回顾，为下一次尝试留下了参考。",
-        "completed": "你完成了项目里的实践环节，这一步值得庆祝！"
-      }
+      "checkIn": "今天，又把一个想法做成了。",
+      "checkInProgress": "把想法一步步做出来。"
     }
   }
 }

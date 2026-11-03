@@ -2966,9 +2966,6 @@
       "open": "공유 이미지 만들기",
       "title": "학습 성과 공유",
       "description": "학습 성과를 이미지로 저장하세요.",
-      "orientation": "이미지 방향",
-      "landscape": "가로",
-      "portrait": "세로",
       "theme": "이미지 테마",
       "light": "밝게",
       "dark": "어둡게",
@@ -2977,24 +2974,15 @@
       "saveHint": "모바일에서는 이미지를 길게 눌러 저장 옵션을 확인할 수도 있습니다.",
       "imageFailed": "이미지를 만들지 못했습니다. 다시 시도하세요.",
       "rendering": "이미지 준비 중…",
-      "eyebrow": "나의 VIBE CODING 여정",
       "achievement": "프로젝트 성과",
-      "waiting": "학습 하이라이트를 정리하는 중…",
-      "factSummary": "AI와 함께 만든 프로젝트.",
       "invite": "OpenMAIC로 아이디어를 실현하세요",
-      "tagline": "아이디어를 프로젝트로. 만들면서 배우세요.",
-      "highlights": "축하할 만한 한 걸음",
+      "tagline": "작은 프로젝트로 시작해 AI와 함께 코딩을 연습해 보세요.",
       "testsPassed": "동작 테스트 통과",
       "linkPlaceholder": "입문 과정 · 예시 링크, 공개 전에 교체",
       "decisionsLabel": "구현 선택",
       "quizLabel": "퀴즈",
-      "conclusions": {
-        "reviewed": "계획이나 코드를 검토하며 아이디어를 한 걸음 앞으로 옮겼어요.",
-        "decided": "이 프로젝트에는 직접 내린 선택이 담겨 있어요.",
-        "verified": "작품이 동작 테스트를 통과했어요. 이 한 걸음을 축하해요!",
-        "reflected": "실습을 돌아보고 다음 도전에서 참고할 기록을 남겼어요.",
-        "completed": "프로젝트의 실습 단계를 완료했어요. 이 진전을 함께 축하해요!"
-      }
+      "checkIn": "오늘도 아이디어 하나를 작품으로 만들었어요.",
+      "checkInProgress": "아이디어를 한 걸음씩 만들어 가요."
     }
   }
 }

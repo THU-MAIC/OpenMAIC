@@ -2966,9 +2966,6 @@
       "open": "Create sharing image",
       "title": "Share your achievement",
       "description": "Your learning highlights, ready to save as an image.",
-      "orientation": "Image layout",
-      "landscape": "Landscape",
-      "portrait": "Portrait",
       "theme": "Image appearance",
       "light": "Light",
       "dark": "Dark",
@@ -2977,24 +2974,15 @@
       "saveHint": "On mobile, you can also press and hold the image to see available saving options.",
       "imageFailed": "The image could not be prepared. Please retry.",
       "rendering": "Preparing image…",
-      "eyebrow": "MY VIBE CODING JOURNEY",
       "achievement": "My project achievement",
-      "waiting": "Putting your learning highlights together…",
-      "factSummary": "From an idea to something you can use.",
       "invite": "Your turn. Try Vibe Coding!",
-      "tagline": "No coding experience needed to get started.",
-      "highlights": "Progress worth celebrating",
+      "tagline": "Start with a small project. Practice coding with AI.",
       "testsPassed": "Behavior tests passed",
       "linkPlaceholder": "Intro course · placeholder link, replace before launch",
       "decisionsLabel": "Decisions made",
       "quizLabel": "Quiz",
-      "conclusions": {
-        "reviewed": "You reviewed the plan or code and moved your idea one step forward.",
-        "decided": "Your own choices are part of this project.",
-        "verified": "Your project passed its behavior tests. That step is worth celebrating!",
-        "reflected": "You reflected on your practice and left something to revisit next time.",
-        "completed": "You completed hands-on project steps. This progress is worth celebrating!"
-      }
+      "checkIn": "Today, I brought another idea to life.",
+      "checkInProgress": "Bringing an idea to life, one step at a time."
     }
   }
 }

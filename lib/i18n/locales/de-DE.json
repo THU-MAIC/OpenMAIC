@@ -2966,9 +2966,6 @@
       "open": "Bild zum Teilen erstellen",
       "title": "Lernerfolg teilen",
       "description": "Speichern Sie die Höhepunkte Ihres Lernens als Bild.",
-      "orientation": "Bildformat",
-      "landscape": "Querformat",
-      "portrait": "Hochformat",
       "theme": "Darstellung",
       "light": "Hell",
       "dark": "Dunkel",
@@ -2977,24 +2974,15 @@
       "saveHint": "Auf Mobilgeräten können Sie das Bild auch gedrückt halten, um Speicheroptionen zu sehen.",
       "imageFailed": "Das Bild konnte nicht erstellt werden. Bitte erneut versuchen.",
       "rendering": "Bild wird vorbereitet…",
-      "eyebrow": "MEIN VIBE-CODING-WEG",
       "achievement": "Mein Projekterfolg",
-      "waiting": "Lernhöhepunkte werden zusammengestellt…",
-      "factSummary": "Ein mit KI erstelltes und erkundetes Projekt.",
       "invite": "Mit OpenMAIC Ideen umsetzen",
-      "tagline": "Von der Idee zum Projekt. Lernen durch Gestalten.",
-      "highlights": "Ein Fortschritt zum Feiern",
+      "tagline": "Starte mit einem kleinen Projekt. Übe, mit KI zu programmieren.",
       "testsPassed": "Verhaltenstests bestanden",
       "linkPlaceholder": "Einstiegskurs · Beispiellink, vor Veröffentlichung ersetzen",
       "decisionsLabel": "Entscheidungen",
       "quizLabel": "Wissenscheck",
-      "conclusions": {
-        "reviewed": "Du hast den Plan oder Code geprüft und deine Idee einen Schritt weitergebracht.",
-        "decided": "Deine eigenen Entscheidungen stecken in diesem Projekt.",
-        "verified": "Dein Projekt hat die Verhaltenstests bestanden. Dieser Schritt ist ein Grund zum Feiern!",
-        "reflected": "Du hast auf deine Praxis zurückgeblickt und Anhaltspunkte für den nächsten Versuch festgehalten.",
-        "completed": "Du hast praktische Projektschritte abgeschlossen. Dieser Fortschritt darf gefeiert werden!"
-      }
+      "checkIn": "Heute habe ich wieder eine Idee verwirklicht.",
+      "checkInProgress": "Eine Idee Schritt für Schritt verwirklichen."
     }
   }
 }

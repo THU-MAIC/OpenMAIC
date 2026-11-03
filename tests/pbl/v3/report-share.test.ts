@@ -23,38 +23,41 @@ const report = {
   evidence: [{ detail: 'PRIVATE EVIDENCE' }],
   analysis: { status: 'generating', findings: [], omitted: false, canRetry: false },
 } as unknown as LearningReport;
-it('updates an already-open poster when analysis arrives without projecting evidence or quotes', () => {
-  expect(reportShareContent(report).waiting).toBe(true);
-  const ready = reportShareContent({
-    ...report,
-    analysis: {
-      ...report.analysis!,
-      status: 'ready',
-      findings: [
-        {
-          category: 'strength',
-          title: 'Checked the input boundary',
-          detail: 'PRIVATE DETAIL',
-          evidence: ['private'],
-          quote: 'PRIVATE QUOTE',
-        },
-      ],
+it('projects identical facts regardless of analysis state, private findings or revision', () => {
+  const facts = reportShareContent(report);
+  for (const status of ['not_generated', 'generating', 'ready', 'failed'] as const) {
+    const projected = reportShareContent({
+      ...report,
+      revision: 99,
+      analysis: {
+        ...report.analysis!,
+        status,
+        findings: [
+          {
+            category: 'journey',
+            title: 'PRIVATE TITLE',
+            detail: 'PRIVATE DETAIL',
+            quote: 'PRIVATE QUOTE',
+            evidence: ['private'],
+          },
+        ],
+      },
+    });
+    expect(projected).toEqual(facts);
+    expect(JSON.stringify(projected)).not.toMatch(/PRIVATE|private-study|evidence|quote/);
+  }
+  expect(facts.metrics).toContainEqual(['skills', '1']);
+  expect(facts).not.toHaveProperty('waiting');
+  expect(facts).not.toHaveProperty('highlights');
+});
+it('does not even read analysis while projecting the public card', () => {
+  const privateReport = { ...report };
+  Object.defineProperty(privateReport, 'analysis', {
+    get() {
+      throw new Error('Private analysis read');
     },
   });
-  expect(ready.highlights).toEqual(['completed']);
-  expect(ready.waiting).toBe(false);
-  expect(JSON.stringify(ready)).not.toMatch(/PRIVATE|private-study|evidence|quote/);
-  expect(ready.metrics).toContainEqual(['skills', '1']);
-});
-it('keeps facts but removes waiting and error content on analysis failure', () => {
-  const failed = reportShareContent({
-    ...report,
-    analysis: { ...report.analysis!, status: 'failed' },
-  });
-  expect(failed.waiting).toBe(false);
-  expect(failed.highlights).toEqual(['completed']);
-  expect(failed.metrics).toHaveLength(4);
-  expect(JSON.stringify(failed)).not.toContain('failed');
+  expect(reportShareContent(privateReport)).toEqual(reportShareContent(report));
 });
 it('does not invent missing counts, infer links from IDs or export learner quotations', () => {
   expect(reportShareContent({ ...report, summary: undefined }).metrics).toEqual([]);
@@ -75,7 +78,7 @@ it('does not invent missing counts, infer links from IDs or export learner quota
       ],
     },
   });
-  expect(content.highlights).toEqual(['completed']);
+  expect(content).toEqual(reportShareContent(report));
 });
 
 it('shows verification only from saved report outcomes rather than assumed completion', () => {
@@ -99,6 +102,17 @@ it('shows verification only from saved report outcomes rather than assumed compl
     decisions: 2,
   });
   expect(reportShareContent(report).verification.tested).toBe(0);
+});
+
+it('omits missing summary fields rather than inventing counts or rendering undefined values', () => {
+  const content = reportShareContent({
+    ...report,
+    summary: { completedSteps: 3, totalSteps: 7 } as LearningReport['summary'],
+  });
+  expect(content.metrics).toEqual([['completedSteps', '3/7']]);
+  expect(content.skills).toEqual([]);
+  expect(content.concepts).toEqual([]);
+  expect(JSON.stringify(content)).not.toContain('undefined');
 });
 
 it('never exports private titles accepted by the real report validator, including other chat excerpts', () => {
@@ -146,23 +160,18 @@ it('never exports private titles accepted by the real report validator, includin
   expect(JSON.stringify(exported)).not.toMatch(
     /personal draft|private\.example|token|Private analysis|other learner excerpt/,
   );
-  expect(exported.highlights).toEqual(['completed']);
+  expect(exported).toEqual(reportShareContent(withSources));
 });
 
-it('conditions public conclusions on recorded review and outcomes, never mastery or assumed success', () => {
-  const supported = {
+it('reflects changed public facts without depending on analysis or invented conclusions', () => {
+  const changed = reportShareContent({
     ...report,
-    summary: { ...report.summary!, skills: [{ id: 'planReview' as const, milestoneIds: ['one'] }] },
-    outcomes: [{ milestoneId: 'one', tests: 'passed', quiz: null, reflected: false }],
-  };
-  expect(reportShareContent(supported).highlights).toEqual(['reviewed', 'verified']);
-  expect(
-    reportShareContent({ ...supported, outcomes: [{ ...supported.outcomes[0], tests: 'failed' }] })
-      .highlights,
-  ).toEqual(['reviewed', 'completed']);
-  expect(
-    reportShareContent({ ...report, summary: undefined, outcomes: undefined }).highlights,
-  ).toEqual([]);
+    requiredComplete: false,
+    summary: { ...report.summary!, completedSteps: 3 },
+  });
+  expect(changed.completed).toBe(false);
+  expect(changed.metrics).toContainEqual(['completedSteps', '3/7']);
+  expect(changed).not.toEqual(reportShareContent(report));
 });
 
 it('wraps normal words intact, while allowing long CJK and tokens to wrap', () => {
