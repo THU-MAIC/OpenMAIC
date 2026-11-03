@@ -673,9 +673,9 @@ async function transcribeAzureASR(
  *
  * MiMo ASR reuses the chat/completions protocol rather than OpenAI's
  * /audio/transcriptions: the audio sample rides inside a user message as an
- * `input_audio` data-URL part (wav/mp3/flac/m4a/ogg, base64, <= 10 MB
- * encoded), the language hint goes in `asr_options`, and the transcript comes
- * back as the assistant message's plain text content.
+ * `input_audio` data-URL part (the documented wav/mp3 only, base64,
+ * <= 10 MB encoded), the language hint goes in `asr_options`, and the
+ * transcript comes back as the assistant message's plain text content.
  */
 /** MiMo documents a 10 MB cap on the base64-encoded input_audio payload. */
 const MAX_XIAOMI_ASR_ENCODED_BYTES = 10 * 1024 * 1024;
