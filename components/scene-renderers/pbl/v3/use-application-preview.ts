@@ -5,6 +5,7 @@ import type { LearningWorkbench } from '@/lib/pbl/v3/workbench';
 import type { ApplicationObservation } from '@/lib/pbl/v3/application';
 import { pblRequest } from './request';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { SandboxRequestError } from '@/components/sandbox/client';
 
 interface ApplicationLaunch {
   studyId: string;
@@ -52,6 +53,7 @@ export function useApplicationPreview(
   const panelId = useId();
   const [open, setOpen] = useState(false);
   const autoLaunched = useRef<string | null>(null);
+  const rejectedAutomaticLaunch = useRef<{ binding: string; revision: number } | null>(null);
   const closedStudy = useRef<string | null>(null);
   const [pending, setPending] = useState(false);
   const [observation, setObservation] = useState<ApplicationObservation | null>(null);
@@ -123,6 +125,7 @@ export function useApplicationPreview(
     embeddedLaunch.current = null;
     documentLaunch.current = null;
     unresolvedLaunch.current = null;
+    rejectedAutomaticLaunch.current = null;
   }, [binding, autoOpen, applicationDeclared, view?.id]);
   useEffect(
     () => () => {
@@ -140,12 +143,15 @@ export function useApplicationPreview(
     setPending(false);
     setError('');
     if (unavailable) {
+      autoLaunched.current = null;
       setObservation(null);
       setRefreshNeeded(false);
       replacementNeeded.current = false;
       embeddedLaunch.current = null;
       documentLaunch.current = null;
-      unresolvedLaunch.current = null;
+      // An unavailable observation can be transient within the same binding.
+      // Retain a dispatched receipt for reconciliation after readiness returns;
+      // the binding reset above discards it when the environment really changes.
     } else setRefreshNeeded(true);
   }, [disabled, unavailable]);
   useEffect(() => {
@@ -264,7 +270,24 @@ export function useApplicationPreview(
           }
         }
       } catch (e) {
-        if (serial === attempt.current && !abort.signal.aborted) setError((e as Error).message);
+        if (serial === attempt.current && !abort.signal.aborted) {
+          if (
+            e instanceof SandboxRequestError &&
+            e.reason === 'PROGRESS_CHANGED' &&
+            !resumable &&
+            !recovery &&
+            action === 'open' &&
+            !observation?.preview &&
+            autoLaunched.current === binding
+          ) {
+            // Admission rejected this fresh request before dispatch. A newer
+            // teaching revision may retry; unknown outcomes must not do so.
+            rejectedAutomaticLaunch.current = { binding, revision: request.revision };
+            if (unresolvedLaunch.current?.request.id === request.id)
+              unresolvedLaunch.current = null;
+          }
+          setError((e as Error).message);
+        }
       } finally {
         if (serial === attempt.current) {
           controller.current = null;
@@ -274,6 +297,19 @@ export function useApplicationPreview(
     },
     [currentBinding, disabled, view, workbench, observation, t, binding, stage, expired],
   );
+  useEffect(() => {
+    const rejected = rejectedAutomaticLaunch.current;
+    if (
+      currentBinding &&
+      rejected?.binding === binding &&
+      view &&
+      view.revision > rejected.revision
+    ) {
+      rejectedAutomaticLaunch.current = null;
+      autoLaunched.current = null;
+      setError('');
+    }
+  }, [currentBinding, binding, view?.revision, error, view]);
   useEffect(() => {
     if (
       !autoOpen ||
@@ -287,8 +323,17 @@ export function useApplicationPreview(
       error
     )
       return;
-    autoLaunched.current = binding;
-    void load('open');
+    // Let effect cleanup cancel an undispatched automatic launch (including
+    // StrictMode's setup/cleanup probe), rather than leaving a consumed attempt.
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      autoLaunched.current = binding;
+      void load('open');
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [autoOpen, currentBinding, disabled, view, binding, pending, observation, error, load]);
   useEffect(() => {
     if (
