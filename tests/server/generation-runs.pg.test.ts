@@ -1568,6 +1568,64 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     expect(voices).toEqual([clone, 'Cherry', 'Cherry', 'Cherry']);
   });
 
+  it('resumes a voice-failure paused run with the updated voice without repeating completed stages', async () => {
+    const deadClone = 'qwen-tts-vc-clone-1';
+    const updatedClone = 'qwen-tts-vc-clone-2';
+    const voices: string[] = [];
+    const base = fakeServices({ research: async () => null });
+    const { services } = fakeServices({
+      research: async () => null,
+      narrationTarget: async () => ({
+        connection: {
+          providerId: 'qwen-tts',
+          managed: true,
+          userEndpoint: false,
+          origin: 'configuration',
+        } as MediaConnection,
+        providerId: 'qwen-tts',
+        modelId: 'qwen3-tts-flash',
+      }),
+      narrateClip: async (owner, input, ctx) => {
+        voices.push(input.voice);
+        if (input.voice === deadClone) {
+          throw Object.assign(new Error('voice registration invalid'), { httpStatus: 400 });
+        }
+        return base.services.narrateClip(owner, input, ctx);
+      },
+    });
+
+    const run = await start(
+      runInput({
+        outlineReview: 'auto',
+        voice: { providerId: 'qwen-tts', voiceId: deadClone },
+      }),
+    );
+    expect(await drive(run.id, services)).toBe('paused');
+    expect(await readGenerationRun(run.id, OWNER)).toMatchObject({
+      state: 'paused',
+      step: 'scene:0:narration',
+    });
+    // Earlier stages (outline, agents, scene 0 content & actions) completed and were checkpointed.
+    const stepsBeforeRetry = await readGenerationRunSteps(run.id);
+    expect(stepsBeforeRetry.has('outline')).toBe(true);
+    expect(stepsBeforeRetry.has('agents')).toBe(true);
+    expect(stepsBeforeRetry.has('scene:0:content')).toBe(true);
+    expect(stepsBeforeRetry.has('scene:0:actions')).toBe(true);
+    expect(stepsBeforeRetry.has('scene:0:narration')).toBe(false);
+
+    // Learner re-clones or updates voice and retries the paused run
+    voices.length = 0;
+    await retryGenerationRun(run.id, OWNER, {
+      commandId: 'retry-updated-voice',
+      voice: { providerId: 'qwen-tts', voiceId: updatedClone },
+    });
+
+    // The resumed run proceeds from the paused narration step using the updated voice
+    expect(await drive(run.id, services)).toBe('completed');
+    expect(voices).toContain(updatedClone);
+    expect(voices).not.toContain(deadClone);
+  });
+
   it('releases the clips of a narration attempt that failed', async () => {
     const base = fakeServices({ research: async () => null });
     let clips = 0;

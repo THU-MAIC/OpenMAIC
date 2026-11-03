@@ -48,6 +48,37 @@ describe('run narration voices', () => {
     ).toBe('Cherry');
   });
 
+  it('a voice-failure retry drives narration through the updated preference, not the stale one', () => {
+    // The run paused at narration because the bound voice clone was reported
+    // gone (QWEN_VC_VOICE_NOT_FOUND). On Retry the learner's updated voice
+    // replaces input.voice; the resumed engine calls clipVoice with the new
+    // preference. A fresh execution starts with an empty unavailable set.
+    const stale = { providerId: 'qwen-tts' as const, voiceId: 'qwen-tts-vc-clone-1' };
+    const updated = { providerId: 'qwen-tts' as const, voiceId: 'qwen-tts-vc-clone-2' };
+
+    // Before the retry: the stale preference names the dead clone; the slot
+    // voice (globalVoice) derived from it is the same dead clone, so clipVoice
+    // returns it — narration would fail again.
+    const beforeRetry = clipVoice({
+      target: qwen,
+      preference: stale,
+      bound: stale,
+      unavailable: new Set(),
+    });
+    expect(beforeRetry?.voice.voiceId).toBe(stale.voiceId);
+
+    // After the retry: the voice override updated input.voice to the re-cloned
+    // voice. clipVoice derives the slot voice from the new preference, so
+    // narration uses the updated clone and succeeds.
+    const afterRetry = clipVoice({
+      target: qwen,
+      preference: updated,
+      bound: stale,
+      unavailable: new Set(),
+    });
+    expect(afterRetry?.voice.voiceId).toBe(updated.voiceId);
+  });
+
   it('prefers the bound teacher voice until this run found it unusable', () => {
     const bound = clipVoice({
       target: qwen,

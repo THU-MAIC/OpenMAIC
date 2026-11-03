@@ -188,13 +188,26 @@ export function clipVoice(input: {
     ...(target.connection.modelId ? { modelId: target.connection.modelId } : {}),
     voiceId: slotVoice(target, input.preference).voice,
   };
+  const hasPreference =
+    input.preference?.providerId === target.providerId &&
+    !!input.preference.voiceId &&
+    voiceServesModel(target.providerId, input.preference.voiceId, target.modelId);
   let voice =
     input.override ??
-    resolveNarratorVoiceBinding(
-      bound && input.unavailable.has(voiceBindingKey(bound)) ? undefined : bound,
-      globalVoice,
-      configs,
-    );
+    (hasPreference
+      ? {
+          ...globalVoice,
+          modelId: resolveTTSModelForVoice(
+            globalVoice.providerId,
+            globalVoice.voiceId,
+            globalVoice.modelId,
+          ),
+        }
+      : resolveNarratorVoiceBinding(
+          bound && input.unavailable.has(voiceBindingKey(bound)) ? undefined : bound,
+          globalVoice,
+          configs,
+        ));
   if (
     bound &&
     !narratorBindingDiffers(bound, globalVoice) &&

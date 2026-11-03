@@ -24,6 +24,7 @@ import type { SceneOutline } from '@/lib/types/generation';
 
 import { RunApiError } from './api';
 import { retryPausedRun, retryRunMedia } from './commands';
+import { selectedRunVoice } from './start';
 import { applyRunMedia, registerRunMediaRetry } from './run-media';
 import { courseFenced, mergeServerScenes, RunCourseSceneSync } from './run-course';
 import { isFinishedRunState, type RunView } from './types';
@@ -250,7 +251,7 @@ export function useRunCourse(input: { classroomId: string; ready: boolean }): {
         return;
       }
       try {
-        await retryPausedRun(current);
+        await retryPausedRun(current, selectedRunVoice(capabilities));
         // Queued until the run picks it up (after a media item in flight).
         useStageStore.setState({ failedOutlines: [], generationStatus: 'generating' });
       } catch (error) {
@@ -264,7 +265,7 @@ export function useRunCourse(input: { classroomId: string; ready: boolean }): {
       }
       await refresh();
     },
-    [refresh],
+    [refresh, capabilities],
   );
 
   const runStatus = view && !finished ? courseRunStatus(view) : null;

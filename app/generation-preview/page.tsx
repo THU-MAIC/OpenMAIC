@@ -26,6 +26,7 @@ import { RunApiError, runApiErrorText } from '@/lib/generation-run-client/api';
 import { toast } from 'sonner';
 import { runFailureText, type FailureText } from '@/lib/generation-run-client/failure-message';
 import { confirmOutline, holdOutline, retryPausedRun } from '@/lib/generation-run-client/commands';
+import { selectedRunVoice } from '@/lib/generation-run-client/start';
 import { nextPreviewPhase, type PreviewPhase } from '@/lib/generation-run-client/outline-review';
 import { previewStepIds, previewStepIndex } from '@/lib/generation-run-client/preview-steps';
 import { visibleOutlines } from '@/lib/generation-run-client/reducer';
@@ -191,7 +192,7 @@ function GenerationPreviewContent() {
     setIsRetrying(true);
     setCommandError(null);
     try {
-      setRetrySeq(await retryPausedRun(view));
+      setRetrySeq(await retryPausedRun(view, selectedRunVoice(capabilities)));
       void refresh();
     } catch (error) {
       log.warn('Retrying the run failed:', error);

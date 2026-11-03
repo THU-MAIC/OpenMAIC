@@ -236,6 +236,11 @@ export interface RunPatch {
   /** Release the lease with this commit (the run waits, pauses or ends). */
   releaseLease?: boolean;
   /**
+   * Replace the run's input (a Retry's voice override updates `input.voice`
+   * so the resumed narration uses the new voice instead of the stale one).
+   */
+  input?: GenerationRunInput;
+  /**
    * The outline waits for confirmation: a run that is a `countdown` one at
    * this commit gets its auto-confirm deadline. Any other state change
    * clears the deadline.
@@ -484,6 +489,7 @@ async function applyPatch(
   if (patch.outline !== undefined) set('outline', encodeJson(patch.outline, 'outline'), '::jsonb');
   if (patch.outlineRevision !== undefined) set('outline_revision', patch.outlineRevision);
   if (patch.agents !== undefined) set('agents', encodeJson(patch.agents, 'agents'), '::jsonb');
+  if (patch.input !== undefined) set('input', encodeJson(patch.input, 'input'), '::jsonb');
   if (patch.stageId !== undefined) set('stage_id', patch.stageId);
   if (patch.scenesTotal !== undefined) set('scenes_total', patch.scenesTotal);
   if (patch.scenesCompleted !== undefined) set('scenes_completed', patch.scenesCompleted);
@@ -1546,7 +1552,16 @@ export async function confirmDueGenerationRunOutlines(limit = 10): Promise<numbe
 export async function retryGenerationRun(
   runId: string,
   ownerId: string,
-  command: { commandId: string; media?: { elementId: string } },
+  command: {
+    commandId: string;
+    media?: { elementId: string };
+    /**
+     * The learner's current narrator voice, applied to the run's input before
+     * the failed step resumes so narration uses it instead of the stale
+     * `input.voice` the run paused with. A media Retry ignores it.
+     */
+    voice?: { providerId: string; voiceId: string; speed?: number };
+  },
   /**
    * A step Retry makes a paused run active again: it counts toward the limit
    * from then on. A media Retry does not change the run's state.
@@ -1584,13 +1599,18 @@ export async function retryGenerationRun(
       const state = run.step
         ? stateForRetry(run.step)
         : (run.error?.resumeState ?? (run.outline ? 'generating' : 'preparing'));
+      // A voice override replaces the run's saved narrator voice so the
+      // resumed narration speaks with the learner's new selection (or the
+      // re-cloned voice) instead of the one the run paused with.
+      const input =
+        command.voice !== undefined ? { ...run.input, voice: command.voice } : undefined;
       const updated = await applyPatch(
         tx,
         runId,
         // No lease is taken from a worker that holds the run (one generating a
         // paused run's media): it sees the state when it finishes and goes on
         // with the run itself. A run nobody holds is claimable as it is.
-        { state, error: null },
+        { state, error: null, ...(input ? { input } : {}) },
         { resetTakeovers: true },
       );
       const seq = await insertEvents(tx, runId, [
