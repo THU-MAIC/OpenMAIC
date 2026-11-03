@@ -17,7 +17,7 @@
 import type { AgentEvent, AgentMessage } from '@earendil-works/pi-agent-core';
 import { InMemorySessionRepo, Session } from '@earendil-works/pi-agent-core';
 import type { ClaimedAgentSession } from '@openmaic/storage';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   randomUUID: vi.fn(() => 'runner-test-uuid'),
@@ -27,6 +27,12 @@ const mocks = vi.hoisted(() => ({
   resolveAgentDriverModel: vi.fn(),
   createCallLlmStreamFn: vi.fn(),
   buildAgent: vi.fn(),
+  checkSchema: vi.fn(),
+}));
+
+vi.mock('@/lib/persistence/schema-boot-check', async (importActual) => ({
+  ...(await importActual<typeof import('@/lib/persistence/schema-boot-check')>()),
+  assertRuntimeSchemaCompatibility: mocks.checkSchema,
 }));
 
 vi.mock('node:crypto', async (importActual) => {
@@ -89,7 +95,7 @@ vi.mock('@/lib/server/agent-runtime/user-skills', async (importActual) => {
   return { ...actual, listUserSkills: vi.fn(async () => []) };
 });
 
-import { runSession } from '@/lib/server/agent-runtime/runner';
+import { runSession, startAgentRunner } from '@/lib/server/agent-runtime/runner';
 
 const SESSION_ID = 'session-1';
 const TOOL_CALL_ID = 'call_1';
@@ -241,6 +247,7 @@ function expectInterruptedReceipt(messages: readonly AgentMessage[]): void {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.checkSchema.mockReset().mockResolvedValue(undefined);
   mocks.resolveAgentDriverModel.mockResolvedValue({
     connection: { model: undefined, thinkingConfig: undefined },
     piModel: { api: 'openai-completions', provider: 'openai', id: 'driver-model' },
@@ -252,6 +259,74 @@ beforeEach(() => {
   // (buildAgent is mocked), so a bare forOwner facade is enough.
   mocks.getServerPersistenceProvider.mockResolvedValue({
     documentStore: { forOwner: () => ({}) },
+  });
+});
+
+afterEach(() => vi.useRealTimers());
+
+describe('runtime schema incompatibility', () => {
+  const refusal = () =>
+    Object.assign(new Error('newer schema'), { name: 'SchemaVersionAheadError' });
+
+  it('does not claim a learner input when another release has upgraded a lazy store', async () => {
+    vi.useFakeTimers();
+    const claimNextSession = vi.fn(async () => null);
+    mocks.getAgentSessionStore.mockResolvedValue({ claimNextSession });
+    const onSchemaRefusal = vi.fn(async () => {});
+    mocks.checkSchema.mockRejectedValueOnce(refusal());
+    const runner = startAgentRunner({ onSchemaRefusal });
+    try {
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(onSchemaRefusal).toHaveBeenCalledOnce();
+      expect(claimNextSession).not.toHaveBeenCalled();
+      expect(mocks.checkSchema).toHaveBeenCalledOnce();
+    } finally {
+      await runner.stop();
+    }
+  });
+
+  it('keeps polling on temporary database failure without claiming or retiring the process', async () => {
+    vi.useFakeTimers();
+    const claimNextSession = vi.fn(async () => null);
+    mocks.getAgentSessionStore.mockResolvedValue({ claimNextSession });
+    const onSchemaRefusal = vi.fn(async () => {});
+    mocks.checkSchema.mockRejectedValueOnce(new Error('ECONNRESET'));
+    const runner = startAgentRunner({ onSchemaRefusal });
+    try {
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(onSchemaRefusal).not.toHaveBeenCalled();
+      expect(claimNextSession).toHaveBeenCalled();
+    } finally {
+      await runner.stop();
+    }
+  });
+
+  it('parks a claim if migration races the preflight instead of failing and automatically retrying the input', async () => {
+    const meta = makeMeta();
+    const store = makeStore(meta);
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    const error = refusal();
+    mocks.openEntryStorage.mockRejectedValueOnce(error);
+    const onSchemaRefusal = vi.fn(async () => {});
+    const other = new AbortController();
+    const ctx = {
+      running: new Map([['other', { abort: other }]]),
+      shuttingDown: false,
+      onSchemaRefusal,
+    };
+    await runSession(ctx, meta);
+    expect(ctx.shuttingDown).toBe(true);
+    expect(other.signal.aborted).toBe(true);
+    expect(onSchemaRefusal).toHaveBeenCalledWith(error);
+    expect(store.finishSession).not.toHaveBeenCalled();
+    expect(store.requeueForRetry).not.toHaveBeenCalled();
+    expect(store.releaseLease).toHaveBeenCalledWith(SESSION_ID, WORKER_ID);
+    expect(runEvents(store)).toContainEqual(
+      expect.objectContaining({
+        type: 'session_interrupted',
+        data: expect.objectContaining({ reason: 'schema compatibility changed' }),
+      }),
+    );
   });
 });
 

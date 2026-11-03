@@ -30,6 +30,13 @@ export function isSchemaRefusal(error: unknown): boolean {
 
 export type SchemaCheckPoolFactory = (connectionString: string) => Pool;
 
+/** A running release can become incompatible after another instance migrates the database. */
+export async function assertRuntimeSchemaCompatibility(): Promise<void> {
+  const { getServerPersistenceProvider } = await import('./server-provider');
+  const { pool } = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
+  await verifySchemaMigrations(pool, APP_SCHEMA_STORES);
+}
+
 export async function startSchemaBootCheck(
   connectionString: string,
   poolFactory: SchemaCheckPoolFactory = (value) => new Pool({ connectionString: value, max: 1 }),

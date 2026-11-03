@@ -6,7 +6,12 @@ vi.mock('@openmaic/storage/pg-migrations', () => ({ verifySchemaMigrations }));
 const exitOnBootFailure = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/server/boot-failure', () => ({ exitOnBootFailure }));
 
-import { startSchemaBootCheck } from '@/lib/persistence/schema-boot-check';
+const provider = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/persistence/server-provider', () => ({ getServerPersistenceProvider: provider }));
+import {
+  assertRuntimeSchemaCompatibility,
+  startSchemaBootCheck,
+} from '@/lib/persistence/schema-boot-check';
 import { APP_SCHEMA_STORES } from '@/lib/persistence/schema-stores';
 
 function named(name: string): Error {
@@ -67,5 +72,17 @@ describe('schema check at startup', () => {
       expect.stringMatching(/checks them again when it is first used/),
       expect.any(Error),
     );
+  });
+
+  it('rechecks a running instance before claims, propagating refusals without closing its shared pool', async () => {
+    provider.mockResolvedValue({ pool });
+    verifySchemaMigrations.mockResolvedValueOnce(undefined);
+    await assertRuntimeSchemaCompatibility();
+    const refusal = named('SchemaVersionAheadError');
+    verifySchemaMigrations.mockRejectedValueOnce(refusal);
+    await expect(assertRuntimeSchemaCompatibility()).rejects.toBe(refusal);
+    expect(verifySchemaMigrations).toHaveBeenCalledTimes(2);
+    expect(verifySchemaMigrations).toHaveBeenLastCalledWith(pool, APP_SCHEMA_STORES);
+    expect(end).not.toHaveBeenCalled();
   });
 });

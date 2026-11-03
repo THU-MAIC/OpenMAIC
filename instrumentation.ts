@@ -128,7 +128,13 @@ export async function register(): Promise<void> {
       // startAgentRunner only installs a timer. Store/schema initialization is
       // retained behind the store's lazy promise and never blocks register().
       const runtime = await import('@/lib/server/agent-runtime/runner');
-      runner = runtime.startAgentRunner();
+      runner = runtime.startAgentRunner({
+        onSchemaRefusal: async (error) => {
+          await shutdown();
+          const { exitOnRuntimeSchemaRefusal } = await import('@/lib/server/boot-failure');
+          await exitOnRuntimeSchemaRefusal(error);
+        },
+      });
       const extraction = await import('@/lib/server/material-extraction/runner');
       extractionRunner = extraction.startMaterialExtractionRunner();
     }

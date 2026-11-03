@@ -5,7 +5,11 @@ import {
   isInvalidBootConfigurationError,
   runConfigurationCheck,
 } from '@/lib/server/boot-configuration-error';
-import { exitOnBootFailure, formatBootFailure } from '@/lib/server/boot-failure';
+import {
+  exitOnBootFailure,
+  exitOnRuntimeSchemaRefusal,
+  formatBootFailure,
+} from '@/lib/server/boot-failure';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -110,6 +114,18 @@ describe('exitOnBootFailure', () => {
     expect(order).toHaveLength(2);
     expect(order[0]).toMatch(/^write:\[boot\] Server startup failed; the server will not start:\n/);
     expect(order[0]).toContain("Error: Cannot find module './chunk-42.js'");
+    expect(order[1]).toBe('exit:1');
+  });
+
+  it('reports runtime incompatibility distinctly and flushes diagnostics before exiting', async () => {
+    const { order, exit, flush } = stubProcess();
+    const done = exitOnRuntimeSchemaRefusal(new Error('newer schema'));
+    await Promise.resolve();
+    expect(exit).not.toHaveBeenCalled();
+    flush();
+    await done;
+    expect(order[0]).toContain('drained this instance and refusing further work');
+    expect(order[0]).not.toContain('startup failed');
     expect(order[1]).toBe('exit:1');
   });
 });

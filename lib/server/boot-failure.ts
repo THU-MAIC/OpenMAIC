@@ -49,7 +49,17 @@ export function formatBootFailure(error: unknown): string {
  * `process.exit` itself is stubbed.
  */
 export async function exitOnBootFailure(error: unknown): Promise<void> {
-  const text = `${formatBootFailure(error)}\n`;
+  await writeFailureAndExit(`${formatBootFailure(error)}\n`);
+}
+
+/** Called after the server's normal drain when a newer release has made it incompatible. */
+export async function exitOnRuntimeSchemaRefusal(error: unknown): Promise<void> {
+  await writeFailureAndExit(
+    `[persistence] Server schema compatibility changed; drained this instance and refusing further work:\n${describeError(error)}\n`,
+  );
+}
+
+async function writeFailureAndExit(text: string): Promise<void> {
   await new Promise<void>((resolve) => {
     try {
       process.stderr.write(text, () => resolve());
