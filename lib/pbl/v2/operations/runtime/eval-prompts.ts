@@ -324,6 +324,15 @@ function sliceCodeUnits(text: string, maxLength: number): string {
   return text.slice(0, end);
 }
 
+/** The last `maxLength` UTF-16 code units of `text`, one fewer when the cut
+ *  would split a surrogate pair, so the kept tail never starts with a lone
+ *  low surrogate. */
+function lastCodeUnits(text: string, maxLength: number): string {
+  const start = text.length - maxLength;
+  const code = text.charCodeAt(start);
+  return text.slice(code >= 0xdc00 && code <= 0xdfff ? start + 1 : start);
+}
+
 function promptText(value: unknown, maxLength = 700): string {
   const text = String(value ?? '')
     .replace(/\s+/g, ' ')
@@ -443,7 +452,7 @@ export function formatScenarioTranscript(project: PBLProjectV2): string {
     .filter((l): l is string => !!l);
   let text = lines.join('\n');
   if (text.length > SCENARIO_TRANSCRIPT_BUDGET) {
-    text = '…(earlier exchanges trimmed)…\n' + text.slice(text.length - SCENARIO_TRANSCRIPT_BUDGET);
+    text = '…(earlier exchanges trimmed)…\n' + lastCodeUnits(text, SCENARIO_TRANSCRIPT_BUDGET);
   }
   return text;
 }
@@ -558,7 +567,7 @@ export function buildFinalEvalPrompt(
       const learned = last.strengths.slice(0, 4).join(', ') || '(no bullets)';
       const starsStr = typeof last.stars === 'number' ? `${last.stars}★` : '(unrated)';
       const feedback = trimmedPBLText(last.feedback);
-      const prose = feedback.slice(0, 280) + (feedback.length > 280 ? '…' : '');
+      const prose = feedback.length > 280 ? sliceCodeUnits(feedback, 280) + '…' : feedback;
       msSummaries.push(`- ${ms.title} [${starsStr}]\n  learned: ${learned}\n  prose: ${prose}`);
     } else {
       msSummaries.push(`- ${ms.title}: (no milestone evaluation recorded)`);
