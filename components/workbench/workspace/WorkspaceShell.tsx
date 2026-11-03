@@ -349,6 +349,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   useLayoutEffect(() => {
     courseTabsRef.current = courseTabs;
   }, [courseTabs]);
+  const previewHandedOffCourseIdRef = useRef<string | null>(null);
   const narrow = useMediaQuery(WORKSPACE_NARROW_QUERY);
   // Which of the two content panes has the column, on a window too narrow for
   // both. Not persisted: it is a consequence of the window, not a preference.
@@ -605,6 +606,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
 
   const openCourse = useCallback(
     (courseId: string) => {
+      previewHandedOffCourseIdRef.current = null;
       const next = openCourseTab(courseTabs, courseId);
       setCourseTabs(next);
       persistCourseTabs(next);
@@ -1092,7 +1094,6 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   }
   /** The preview is the tab on screen: it is active, or there is no course tab to show. */
   const previewShowing = previewTabOpen && (previewFocus.active || !panes.courseId);
-  const previewHandedOffCourseIdRef = useRef<string | null>(null);
   useLayoutEffect(() => {
     if (previewShowing) {
       previewHandedOffCourseIdRef.current = null;
@@ -1165,7 +1166,10 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       persistCourseTabs(next);
       if (focus) {
         collapse.expandClassroom();
-        navigateInBackground((panesNow) => withCourse(panesNow, courseId), 'push');
+        navigateInBackground(
+          (panesNow) => withCourse(panesNow, courseId),
+          isEarlierThanHandedOff ? 'replace' : 'push',
+        );
       }
     },
     [collapse, navigateInBackground, persistCourseTabs, previewShowing],
@@ -1571,6 +1575,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   /** A course tab chosen in the strip: the preview, if it was on screen, steps back. */
   const activateCourseFromStrip = useCallback(
     (courseId: string) => {
+      previewHandedOffCourseIdRef.current = null;
       if (courseId === PREVIEW_TAB_ID) {
         setPreviewFocus((current) => ({ ...current, active: true }));
         return;
