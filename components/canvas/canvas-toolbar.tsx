@@ -62,14 +62,14 @@ export interface CanvasToolbarProps {
 }
 
 /* Compact control button */
-const ctrlBtn = cn(
+export const ctrlBtn = cn(
   'relative w-7 h-7 rounded-md flex items-center justify-center',
   'transition-all duration-150 outline-none cursor-pointer',
   'hover:bg-gray-500/[0.08] dark:hover:bg-gray-400/[0.08] active:scale-90',
 );
 
 /* Subtle separator */
-function CtrlDivider() {
+export function CtrlDivider() {
   return <div className="w-px h-3 bg-gray-200/80 dark:bg-gray-700/60 mx-0.5 shrink-0" />;
 }
 

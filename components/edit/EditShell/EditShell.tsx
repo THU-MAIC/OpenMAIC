@@ -357,38 +357,42 @@ function Frame({
         // bottom banner) wherever containment puts the card; a frame-anchored
         // one drops into the letterbox gap below the card in a tall pane and
         // never overlaps the slide.
-        <div
-          data-maic-studio-frame="true"
-          className={cn(
-            'relative h-full min-h-0 w-full overflow-hidden p-2',
-            sceneType === 'interactive'
-              ? 'bg-blue-50/30 dark:bg-blue-900/10'
-              : 'bg-gray-50/30 dark:bg-gray-900/30',
-          )}
-        >
-          {/* `data-maic-edit-canvas`: the workbench's hand-edit signal scope
+        // The ground is playback's stack, an opaque layer in its own group, not just
+        // the same two colours: the translucent one rounds differently over the page.
+        <div className="isolate h-full w-full bg-gray-50 dark:bg-gray-900">
+          <div
+            data-maic-studio-frame="true"
+            className={cn(
+              'relative h-full min-h-0 w-full overflow-hidden p-2',
+              sceneType === 'interactive'
+                ? 'bg-blue-50/30 dark:bg-blue-900/10'
+                : 'bg-gray-50/30 dark:bg-gray-900/30',
+            )}
+          >
+            {/* `data-maic-edit-canvas`: the workbench's hand-edit signal scope
               (typing / pointer gestures on the page itself). See
               lib/workbench/use-workbench-pro-edit.ts. */}
-          {usesClassroomAspect(sceneType) ? (
-            <ContainBox fit="contain" className={STAGE_CARD_CLASS}>
+            {usesClassroomAspect(sceneType) ? (
+              <ContainBox fit="contain" className={STAGE_CARD_CLASS}>
+                <div
+                  data-maic-edit-canvas="true"
+                  data-maic-stage-card="true"
+                  className="relative h-full w-full"
+                >
+                  {children}
+                </div>
+              </ContainBox>
+            ) : (
               <div
                 data-maic-edit-canvas="true"
                 data-maic-stage-card="true"
-                className="relative h-full w-full"
+                className={cn('relative h-full w-full', INTERACTIVE_CARD_CLASS)}
               >
                 {children}
               </div>
-            </ContainBox>
-          ) : (
-            <div
-              data-maic-edit-canvas="true"
-              data-maic-stage-card="true"
-              className={cn('relative h-full w-full', INTERACTIVE_CARD_CLASS)}
-            >
-              {children}
-            </div>
-          )}
-          {pager ? <CanvasPager {...pager} /> : null}
+            )}
+            {pager ? <CanvasPager {...pager} /> : null}
+          </div>
         </div>
       }
       bottomSlot={bottomRail ?? null}

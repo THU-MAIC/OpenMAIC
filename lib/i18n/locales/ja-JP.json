@@ -658,10 +658,6 @@
     "timeline": {
       "title": "ナレーション台本",
       "regenAllTts": "すべての音声を再生成",
-      "voiceAll": "全音声生成",
-      "counts": "{{speech}} ナレーション · {{cue}} アクション",
-      "panLeft": "左にスクロール",
-      "panRight": "右にスクロール",
       "collapseAxis": "軸に折りたたむ",
       "expandTrack": "トラックを展開",
       "emptyHint": "上のアクションを軸にドラッグして開始するか、MAIC Agent にナレーションを生成させましょう。",
@@ -766,8 +762,7 @@
       "moveDown": "下へ移動",
       "removeFromClass": "クラスから削除",
       "aiClassmates": "AIクラスメイト · {{count}}",
-      "addRole": "役割を追加",
-      "shortTitle": "編成"
+      "addRole": "役割を追加"
     },
     "elementRef": {
       "remove": "移除引用 {{label}}",

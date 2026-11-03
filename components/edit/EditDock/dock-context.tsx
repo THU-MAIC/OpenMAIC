@@ -1,17 +1,16 @@
 'use client';
 
 /**
- * Edit dock context — the fold the dock owns and the timeline operates.
+ * Edit dock context — what the dock lends the timeline.
  *
- * The dock owns the surface: the top border, the blur, the drag-resize handle,
- * the global edit bar and the height. The narration timeline owns everything
- * below that bar — including its own header row, because that row's controls and
- * its body share one piece of state (the insert-picker anchor, the TTS batch, the
- * focused clip). So the shell cannot render the row; it lends the timeline the
- * fold instead, and the timeline puts the toggle at the end of its own row where
- * the title has always been able to reach it.
+ * The dock owns the surface: the top border, the blur, the control bar and the
+ * height. The narration timeline owns its own controls, because they and its body
+ * share state (the insert-picker anchor, the TTS batch, the focused clip). They
+ * show in the control bar, though, so the dock lends the timeline a place there
+ * (`barActions`) and the fold.
  */
 import { createContext, useContext, type ReactNode } from 'react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 export interface EditDockContextValue {
   /**
@@ -20,6 +19,26 @@ export interface EditDockContextValue {
    */
   collapsed: boolean;
   toggleCollapsed: () => void;
+  /** Where the timeline's own actions go in the control bar; null outside a dock. */
+  barActions: HTMLElement | null;
+}
+
+/** An action in the control bar's pill: playback's control button, icon only. */
+export const DOCK_BAR_ACTION =
+  'relative inline-flex h-6 shrink-0 items-center justify-center rounded-md text-gray-500 outline-none transition-all duration-150 hover:bg-gray-500/[0.08] active:scale-90 focus-visible:ring-1 focus-visible:ring-primary/50 disabled:cursor-not-allowed disabled:opacity-35 dark:text-gray-400 dark:hover:bg-gray-400/[0.08]';
+
+/** The pill's buttons have no words of their own, so they say it the way playback's do. */
+export function DockBarTip({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <TooltipProvider delayDuration={0}>
+      <Tooltip>
+        <TooltipTrigger asChild>{children}</TooltipTrigger>
+        <TooltipContent side="top" className="text-xs">
+          {label}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
 }
 
 const EditDockContext = createContext<EditDockContextValue | null>(null);
@@ -40,5 +59,11 @@ export function EditDockProvider({
  * coupled to the shell being there.
  */
 export function useEditDock(): EditDockContextValue {
-  return useContext(EditDockContext) ?? { collapsed: false, toggleCollapsed: () => undefined };
+  return (
+    useContext(EditDockContext) ?? {
+      collapsed: false,
+      toggleCollapsed: () => undefined,
+      barActions: null,
+    }
+  );
 }

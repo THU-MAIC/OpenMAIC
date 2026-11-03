@@ -586,10 +586,6 @@
     "timeline": {
       "title": "講解腳本",
       "regenAllTts": "重新生成全部配音",
-      "voiceAll": "全部配音",
-      "counts": "{{speech}} 旁白 · {{cue}} 提示",
-      "panLeft": "向左平移",
-      "panRight": "向右平移",
       "collapseAxis": "收合至時間軸",
       "expandTrack": "展開音軌",
       "emptyHint": "將動作拖曳至時間軸以開始，或讓 MAIC Agent 生成旁白。",
@@ -694,8 +690,7 @@
       "moveDown": "下移",
       "removeFromClass": "移出課堂",
       "aiClassmates": "AI 同學 · {{count}}",
-      "addRole": "新增角色",
-      "shortTitle": "陣容"
+      "addRole": "新增角色"
     },
     "line": {
       "toolbar": "線條工具列",

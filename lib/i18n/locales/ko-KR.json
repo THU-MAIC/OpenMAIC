@@ -585,10 +585,6 @@
     "timeline": {
       "title": "내레이션 스크립트",
       "regenAllTts": "전체 음성 다시 생성",
-      "voiceAll": "전체 음성",
-      "counts": "내레이션 {{speech}}개 · 동작 {{cue}}개",
-      "panLeft": "왼쪽으로 이동",
-      "panRight": "오른쪽으로 이동",
       "collapseAxis": "축으로 접기",
       "expandTrack": "트랙 펼치기",
       "emptyHint": "위의 동작을 축으로 끌어 시작하거나, MAIC Agent가 내레이션을 생성하도록 하세요.",
@@ -766,8 +762,7 @@
       "moveDown": "아래로 이동",
       "removeFromClass": "수업에서 제거",
       "aiClassmates": "AI 반 친구 · {{count}}",
-      "addRole": "역할 추가",
-      "shortTitle": "구성원"
+      "addRole": "역할 추가"
     },
     "elementRef": {
       "remove": "移除引用 {{label}}",

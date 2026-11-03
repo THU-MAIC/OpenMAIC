@@ -12,11 +12,7 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useDeletedSceneRecycle } from '@/lib/edit/deleted-scene-recycle';
 import { duplicateSlideScene } from '@/lib/edit/slide-defaults';
-import {
-  createBlankEditableScene,
-  insertSceneAtIndex,
-  type EditableSceneType,
-} from '@/lib/edit/scene-defaults';
+import { useInsertSceneAt } from '@/lib/edit/use-insert-scene';
 import { SCENE_CREATION_ENABLED } from '@/lib/edit/scene-creation-enabled';
 import { CHROME_DURATION_MS, CHROME_EASE, CHROME_EASE_CSS } from '@/lib/edit/transitions';
 import { useInWorkbenchPanel } from '@/lib/workbench/panel-context';
@@ -209,16 +205,7 @@ export function SlideNavRail({
     [currentSceneId, setCurrentSceneId],
   );
 
-  const handleInsertAt = useCallback(
-    (insertIndex: number, type: EditableSceneType) => {
-      if (!stage) return;
-      const title = type === 'slide' ? t('edit.nav.untitledSlide') : t('edit.sceneType.quiz');
-      const scene = createBlankEditableScene(type, stage.id, title, insertIndex + 1);
-      setScenes(insertSceneAtIndex(scenes, scene, insertIndex));
-      setCurrentSceneId(scene.id);
-    },
-    [scenes, setCurrentSceneId, setScenes, stage, t],
-  );
+  const handleInsertAt = useInsertSceneAt();
 
   const handleDuplicate = useCallback(
     (sceneId: string) => {

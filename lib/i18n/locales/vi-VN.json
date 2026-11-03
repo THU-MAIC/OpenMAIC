@@ -658,10 +658,6 @@
     "timeline": {
       "title": "Kịch bản lời giảng",
       "regenAllTts": "Tạo lại toàn bộ giọng đọc",
-      "voiceAll": "Lồng tiếng tất cả",
-      "counts": "{{speech}} lời giảng · {{cue}} hiệu ứng",
-      "panLeft": "Trượt sang trái",
-      "panRight": "Trượt sang phải",
       "collapseAxis": "Thu về trục",
       "expandTrack": "Mở rộng dải",
       "emptyHint": "Kéo các hành động lên trục để bắt đầu, hoặc để MAIC Agent tự viết lời giảng.",
@@ -766,8 +762,7 @@
       "moveDown": "Chuyển xuống",
       "removeFromClass": "Bỏ khỏi lớp",
       "aiClassmates": "Bạn học AI · {{count}}",
-      "addRole": "Thêm vai",
-      "shortTitle": "Danh sách nhân vật"
+      "addRole": "Thêm vai"
     },
     "elementRef": {
       "remove": "移除引用 {{label}}",

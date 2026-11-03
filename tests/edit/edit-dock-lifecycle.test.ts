@@ -294,8 +294,8 @@ describe('EditDock fold', () => {
     expect(section.querySelector('.cursor-row-resize')).toBeNull();
 
     await click(host.querySelector('[data-testid="timeline-fold"]'));
-    // 86 collapsed timeline + 32 bar: folding never folds the bar away.
-    expect(section.style.height).toBe('118px');
+    // 40 collapsed timeline + 32 bar: folding never folds the bar away.
+    expect(section.style.height).toBe('72px');
     expect(host.querySelector('[data-testid="edit-dock-bar"]')).not.toBeNull();
     expect(host.querySelector('[data-testid="edit-dock-roster"]')).not.toBeNull();
     expect(host.querySelector('[data-testid="element-ref-arm"]')).not.toBeNull();

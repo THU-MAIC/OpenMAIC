@@ -639,10 +639,6 @@
     "timeline": {
       "title": "Roteiro de narração",
       "regenAllTts": "Regenerar toda a narração",
-      "voiceAll": "Narrar tudo",
-      "counts": "{{speech}} narração · {{cue}} ações",
-      "panLeft": "Mover para a esquerda",
-      "panRight": "Mover para a direita",
       "collapseAxis": "Recolher para o eixo",
       "expandTrack": "Expandir trilha",
       "emptyHint": "Arraste as ações para o eixo para começar, ou deixe o MAIC Agent gerar a narração.",
@@ -747,8 +743,7 @@
       "moveDown": "Mover para baixo",
       "removeFromClass": "Remover da sala",
       "aiClassmates": "Colegas de IA · {{count}}",
-      "addRole": "Adicionar papel",
-      "shortTitle": "Elenco"
+      "addRole": "Adicionar papel"
     },
     "elementRef": {
       "remove": "移除引用 {{label}}",

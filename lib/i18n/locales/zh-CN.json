@@ -658,10 +658,6 @@
     "timeline": {
       "title": "讲解脚本",
       "regenAllTts": "重新生成全部配音",
-      "voiceAll": "全部配音",
-      "counts": "{{speech}} 讲解 · {{cue}} 动作",
-      "panLeft": "左移视口",
-      "panRight": "右移视口",
       "collapseAxis": "收起为轴线",
       "expandTrack": "展开轨道",
       "emptyHint": "把上方的动作拖到轴上开始编排，或让 MAIC Agent 生成讲解。",
@@ -766,8 +762,7 @@
       "moveDown": "下移",
       "removeFromClass": "移出课堂",
       "aiClassmates": "AI 同学 · {{count}}",
-      "addRole": "添加角色",
-      "shortTitle": "阵容"
+      "addRole": "添加角色"
     },
     "elementRef": {
       "remove": "移除引用 {{label}}",

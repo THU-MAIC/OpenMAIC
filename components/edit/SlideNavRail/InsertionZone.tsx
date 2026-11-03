@@ -85,7 +85,7 @@ export function InsertionZone({ label, slideLabel, quizLabel, onInsert }: Insert
   );
 }
 
-function SceneTypeChoice({
+export function SceneTypeChoice({
   type,
   label,
   Icon,

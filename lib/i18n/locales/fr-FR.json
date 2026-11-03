@@ -658,10 +658,6 @@
     "timeline": {
       "title": "Texte de narration",
       "regenAllTts": "Régénérer toutes les voix off",
-      "voiceAll": "Tout sonoriser",
-      "counts": "{{speech}} narrations · {{cue}} repères",
-      "panLeft": "Défiler vers la gauche",
-      "panRight": "Défiler vers la droite",
       "collapseAxis": "Réduire à l’axe",
       "expandTrack": "Déplier la piste",
       "emptyHint": "Faites glisser des actions sur l’axe pour commencer, ou laissez l’agent MAIC générer la narration.",
@@ -766,8 +762,7 @@
       "moveDown": "Descendre",
       "removeFromClass": "Retirer de la classe",
       "aiClassmates": "Camarades IA · {{count}}",
-      "addRole": "Ajouter un rôle",
-      "shortTitle": "Distribution"
+      "addRole": "Ajouter un rôle"
     },
     "elementRef": {
       "remove": "移除引用 {{label}}",

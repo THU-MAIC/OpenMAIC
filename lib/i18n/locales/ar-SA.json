@@ -658,10 +658,6 @@
     "timeline": {
       "title": "نص السرد",
       "regenAllTts": "إعادة توليد كل التعليق الصوتي",
-      "voiceAll": "صوّت الكل",
-      "counts": "{{speech}} سرد · {{cue}} إجراءات",
-      "panLeft": "تحريك لليسار",
-      "panRight": "تحريك لليمين",
       "collapseAxis": "طي إلى المحور",
       "expandTrack": "توسيع المسار",
       "emptyHint": "اسحب الإجراءات إلى المحور للبدء، أو دع MAIC Agent يولّد السرد.",
@@ -766,8 +762,7 @@
       "moveDown": "نقل لأسفل",
       "removeFromClass": "إزالة من الفصل",
       "aiClassmates": "زملاء AI · {{count}}",
-      "addRole": "إضافة دور",
-      "shortTitle": "التشكيلة"
+      "addRole": "إضافة دور"
     },
     "elementRef": {
       "remove": "移除引用 {{label}}",

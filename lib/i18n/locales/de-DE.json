@@ -658,10 +658,6 @@
     "timeline": {
       "title": "Sprechertext",
       "regenAllTts": "Alle Vertonungen neu erstellen",
-      "voiceAll": "Alles vertonen",
-      "counts": "Sprechertexte: {{speech}} · Aktionen: {{cue}}",
-      "panLeft": "Nach links verschieben",
-      "panRight": "Nach rechts verschieben",
       "collapseAxis": "Auf Achse einklappen",
       "expandTrack": "Spur ausklappen",
       "emptyHint": "Ziehe Aktionen auf die Achse, um zu beginnen, oder lass den MAIC Agent einen Sprechertext erstellen.",
@@ -766,8 +762,7 @@
       "moveDown": "Nach unten",
       "removeFromClass": "Aus dem Kurs entfernen",
       "aiClassmates": "KI-Mitlernende · {{count}}",
-      "addRole": "Rolle hinzufügen",
-      "shortTitle": "Roster"
+      "addRole": "Rolle hinzufügen"
     },
     "elementRef": {
       "remove": "移除引用 {{label}}",

@@ -658,10 +658,6 @@
     "timeline": {
       "title": "Narration script",
       "regenAllTts": "Regenerate all voiceover",
-      "voiceAll": "Voice all",
-      "counts": "{{speech}} narration · {{cue}} cues",
-      "panLeft": "Pan left",
-      "panRight": "Pan right",
       "collapseAxis": "Collapse to axis",
       "expandTrack": "Expand track",
       "emptyHint": "Drag actions onto the axis to start, or let MAIC Agent generate narration.",
@@ -766,8 +762,7 @@
       "moveDown": "Move down",
       "removeFromClass": "Remove from class",
       "aiClassmates": "AI classmates · {{count}}",
-      "addRole": "Add role",
-      "shortTitle": "Roster"
+      "addRole": "Add role"
     },
     "elementRef": {
       "remove": "Remove reference {{label}}",

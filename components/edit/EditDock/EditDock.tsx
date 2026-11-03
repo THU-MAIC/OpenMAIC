@@ -3,13 +3,12 @@
 /**
  * EditDock — Pro mode's bottom editing bench.
  *
- * Two parts, and only two: a global edit bar (`DockEditBar`) that never changes,
- * and the narration timeline below it. The dock owns the surface — the top
- * border, the blur, the fold — while the timeline owns its own header row and
- * body and reads the fold from `useEditDock`. The dock's height is fixed (the
- * timeline is folded or not, nothing else changes it): the height-drag handle
- * the reference implementation carries above the bar was removed per product
- * decision — this bar must not support height dragging.
+ * Two parts, and only two: a control bar (`DockEditBar`) that never changes, and
+ * the narration timeline below it. The dock owns the surface — the top border,
+ * the blur, the fold — while the timeline owns its body and its controls, which
+ * it shows in the bar through `useEditDock`. The dock's height is fixed (the
+ * timeline is folded or not, nothing else changes it): the height-drag handle the
+ * reference implementation carries above the bar was removed per product decision.
  *
  * It briefly had a tab strip and a second tool (an element-reference panel).
  * That was wrong twice over: an exclusive panel hid the timeline to do something
@@ -22,6 +21,7 @@
  * geometry it had as a standalone bar.
  */
 import { useCallback, useEffect, useState } from 'react';
+import { useI18n } from '@/lib/hooks/use-i18n';
 import { useStageStore } from '@/lib/store/stage';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useWorkbenchStore } from '@/lib/workbench/session-store';
@@ -39,8 +39,8 @@ import { DockEditBar, DOCK_EDIT_BAR_HEIGHT } from './DockEditBar';
  * so only the fold moves it.
  */
 const TIMELINE_DEFAULT_HEIGHT = 160;
-/** The axis of node icons, with room for the chips that hang off it. */
-const TIMELINE_COLLAPSED_HEIGHT = 86;
+/** The axis of node icons alone. */
+const TIMELINE_COLLAPSED_HEIGHT = 40;
 
 export function EditDock({
   sceneId,
@@ -57,6 +57,7 @@ export function EditDock({
    */
   readonly pager?: CanvasPagerProps;
 }) {
+  const { t } = useI18n();
   const sessionId = useWorkbenchStore((state) => state.sessionId);
   const currentStageId = useStageStore((state) => state.stage?.id ?? null);
   // References address slide canvas elements or DOM elements inside interactive scenes. There is
@@ -67,6 +68,7 @@ export function EditDock({
 
   const [collapsed, setCollapsed] = useState(false);
   const toggleCollapsed = useCallback(() => setCollapsed((current) => !current), []);
+  const [barActions, setBarActions] = useState<HTMLElement | null>(null);
 
   /**
    * The dock is an owner boundary for the lasso, because it can outlive a slide
@@ -103,10 +105,22 @@ export function EditDock({
       }}
       className="relative flex flex-col border-t border-gray-100 bg-white/60 backdrop-blur-md dark:border-gray-800 dark:bg-gray-800/60"
     >
-      <DockEditBar sceneId={sceneId} canPickElements={canPickElements} pager={pager} />
+      <DockEditBar
+        sceneId={sceneId}
+        canPickElements={canPickElements}
+        pager={pager}
+        collapsed={collapsed}
+        onToggleCollapsed={toggleCollapsed}
+        barActionsRef={setBarActions}
+      />
 
-      <div data-testid="edit-dock-timeline" className="flex min-h-0 flex-1 flex-col">
-        <EditDockProvider value={{ collapsed, toggleCollapsed }}>
+      <div
+        data-testid="edit-dock-timeline"
+        role="region"
+        aria-label={t('edit.timeline.title')}
+        className="flex min-h-0 flex-1 flex-col"
+      >
+        <EditDockProvider value={{ collapsed, toggleCollapsed, barActions }}>
           <ActionsBar sceneId={sceneId} />
         </EditDockProvider>
       </div>
