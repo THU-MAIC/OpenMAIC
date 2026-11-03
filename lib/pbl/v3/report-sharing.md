@@ -8,10 +8,10 @@ the browser determines the destination, with no promise of automatic photo-libra
 `reportShareContent` includes only course-authored title/concepts, recorded completion,
 summary counts, practiced skill receipts and saved test/quiz results. Empty sections are
 omitted. The congratulatory heading is used only when `requiredComplete` is true; unfinished
-projects use a neutral achievement heading. The invitation and campaign link/QR sit between
-the project title and factual results. Counts represent recorded practice, not mastery or rankings.
+projects use a neutral achievement heading. The official OpenMAIC wordmark and workshop heading lead the image.
+The invitation and campaign link/QR follow the learner’s results at the bottom. Counts represent recorded practice, not mastery or rankings.
 An open two-column checklist sits above naturally wrapping, content-sized concept chips;
-saved results form a separate bottom bar.
+saved results form a separate bar above the invitation. There is no repeated brand footer.
 
 The projection does not read analysis, findings, quotes, conversations or evidence. There
 is no analysis placeholder or derived narrative. Generating/ready/failed analysis and
@@ -26,10 +26,25 @@ font failures use system fonts. Logo/QR/artwork failures can be retried independ
 
 ## Campaign destination and artwork
 
-Set `reportShareCampaign.url` in `report-share.ts` to the supplied fixed campaign URL.
-Until it is supplied, the authorized example.com destination and QR are visibly marked as
-an example. Replace it before public promotion and regenerate any saved sample images.
-The URL is never inferred from project/study IDs or browser location.
+Set `reportShareCampaign.url` in `report-share.ts` to the supplied fixed, public introductory-course URL.
+The empty/invalid case omits the entire promotion block, including link and QR, while keeping
+achievement preview/download available. There is no example.com fallback or placeholder caption.
+The label is “Vibe Coding 工作坊前置课入口” in Chinese. The QR is generated from that same
+configured URL; no separately supplied QR image is required. Updating this source configuration
+requires an application release, not a course-package update. It is intentionally one fixed campaign
+input, without per-course lookup, a routing service or another network request.
+
+The existing course route is `/classroom/<id>`. A production URL can be agreed before deployment
+once the domain and imported course ID are fixed. Importing or knowing the URL does not publish
+the course: the existing owner/role-controlled `POST /api/stages/<id>/publish` operation makes it
+public. Verify the final entry using a different learner account before setting the campaign URL.
+Do not copy a private localhost/classroom address or infer a destination from a learner's study.
+An existing official campaign/landing URL may be used instead, allowing its destination to change
+without replacing the QR on already-saved images. No redirect service is added by this PR.
+
+The official logo is a transparent PNG rendered from the supplied `3.svg`, trimmed to its artwork.
+This keeps the full supplied wordmark, avoids a font imitation and avoids SVG filter/mask decoding
+in mobile canvas exports. Its dark lettering uses a pale logo surface in the dark appearance.
 
 `backgrounds.light` and `backgrounds.dark` optionally point to same-origin decorative
 artwork for the single 4:5 layout. Keep dynamic data and QR areas clear. Substantial artwork

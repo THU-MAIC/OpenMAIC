@@ -4,7 +4,11 @@ vi.mock('@/lib/ai/llm', () => ({ callLLM: vi.fn() }));
 vi.mock('@/lib/server/model-config/runtime', () => ({}));
 vi.mock('@/lib/server/model-config/llm', () => ({}));
 import type { LearningReport } from '@/lib/pbl/v3/report';
-import { reportShareContent, reportShareCampaign } from '@/lib/pbl/v3/report-share';
+import {
+  reportShareContent,
+  reportShareCampaign,
+  reportShareDestination,
+} from '@/lib/pbl/v3/report-share';
 import { validateReportFindings } from '@/lib/server/pbl-v3/report-analysis';
 import { ellipsizeShareText, wrapShareText } from '@/lib/pbl/v3/report-share-text';
 const report = {
@@ -188,4 +192,19 @@ it('never splits combined emoji when wrapping or truncating', () => {
   const measure = (value: string) => Array.from(value).length;
   expect(wrapShareText('AA1️⃣BB❤️CC', 4, measure)).toEqual(['AA', '1️⃣B', 'B❤️C', 'C']);
   expect(ellipsizeShareText('A1️⃣❤️', 5, measure)).toBe('A1️⃣…');
+});
+
+it('uses only an explicitly configured HTTP(S) campaign destination', () => {
+  expect(reportShareDestination()).toBeNull();
+  expect(reportShareDestination('  https://workshop.example/intro?source=share  ')).toBe(
+    'https://workshop.example/intro?source=share',
+  );
+  for (const value of [
+    '',
+    '/classroom/private-study',
+    'not a URL',
+    'data:text/plain,link',
+    'https://token:secret@course.example/',
+  ])
+    expect(reportShareDestination(value)).toBeNull();
 });

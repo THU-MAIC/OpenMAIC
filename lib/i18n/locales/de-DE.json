@@ -2978,7 +2978,6 @@
       "invite": "Mit OpenMAIC Ideen umsetzen",
       "tagline": "Starte mit einem kleinen Projekt. Übe, mit KI zu programmieren.",
       "testsPassed": "Verhaltenstests bestanden",
-      "linkPlaceholder": "Einstiegskurs · Beispiellink, vor Veröffentlichung ersetzen",
       "decisionsLabel": "Entscheidungen",
       "quizLabel": "Wissenscheck",
       "skillsMetric": "Geübte Fähigkeiten",
@@ -2990,7 +2989,9 @@
         "codeReview": "Implementierung prüfen",
         "verification": "Verhalten mit Tests prüfen",
         "reflection": "Anhand von Belegen reflektieren"
-      }
+      },
+      "workshop": "Vibe Coding Workshop",
+      "entryLabel": "Einführungskurs zum Vibe Coding Workshop"
     }
   }
 }

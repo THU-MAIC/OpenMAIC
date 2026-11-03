@@ -2978,7 +2978,6 @@
       "invite": "Créez avec OpenMAIC",
       "tagline": "Commencez par un petit projet. Entraînez-vous à coder avec l’IA.",
       "testsPassed": "Tests de comportement réussis",
-      "linkPlaceholder": "Cours d’initiation · Lien d’exemple à remplacer avant publication",
       "decisionsLabel": "Décisions prises",
       "quizLabel": "Questionnaire",
       "skillsMetric": "Compétences pratiquées",
@@ -2990,7 +2989,9 @@
         "codeReview": "Vérifier une implémentation",
         "verification": "Vérifier par les tests",
         "reflection": "Réfléchir à partir des traces"
-      }
+      },
+      "workshop": "Atelier Vibe Coding",
+      "entryLabel": "Cours d’introduction à l’atelier Vibe Coding"
     }
   }
 }

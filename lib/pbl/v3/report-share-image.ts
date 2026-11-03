@@ -1,6 +1,11 @@
 import { qrPngDataUrl } from '@/lib/export/qr-png';
 import { ellipsizeShareText, wrapShareText } from './report-share-text';
-import { reportShareCampaign, type ReportShareContent, type ShareTheme } from './report-share';
+import {
+  reportShareCampaign,
+  reportShareDestination,
+  type ReportShareContent,
+  type ShareTheme,
+} from './report-share';
 
 export const shareImageSize = [1200, 1500] as const;
 const primaryFont = '"Inter Variable", "Noto Sans SC", system-ui, sans-serif';
@@ -22,12 +27,11 @@ export async function renderReportShareImage(
   const [width, height] = shareImageSize;
   const dark = theme === 'dark';
   const direction = locale.startsWith('ar') ? 'rtl' : 'ltr';
-  const destination = reportShareCampaign.url || 'https://example.com/vibe-intro';
-  const placeholder = !reportShareCampaign.url;
+  const destination = reportShareDestination();
   const background = reportShareCampaign.backgrounds[theme];
   const [logo, qr, artwork] = await Promise.all([
-    loadImage('/openmaic-mark.png'),
-    qrPngDataUrl(destination).then(loadImage),
+    loadImage('/openmaic-share-logo.png'),
+    destination ? qrPngDataUrl(destination).then(loadImage) : null,
     background ? loadImage(background) : null,
   ]);
   const heading = t(
@@ -43,6 +47,8 @@ export async function renderReportShareImage(
           content.title,
           ...content.concepts,
           heading,
+          t('pblV3.share.workshop'),
+          t('pblV3.share.entryLabel'),
           ...content.skills.map((id) => t(`pblV3.share.skillLabels.${id}`)),
           t('pblV3.share.skillsMetric'),
           t('pblV3.share.skillsSection'),
@@ -144,8 +150,10 @@ export async function renderReportShareImage(
     );
     return y + Math.max(0, visible.length - 1) * size * 1.45;
   }
-  ctx.drawImage(logo, 64, 56, 68, 68);
-  text('OpenMAIC', 148, 108, 46, ink, 700);
+  // Use the supplied official wordmark intact; no platform-font imitation.
+  // Its dark letters need a pale brand surface in the dark appearance.
+  if (dark) box(64, 44, 372, 94, '#f6f2ff', 16);
+  ctx.drawImage(logo, dark ? 78 : 64, 56, 344, 344 * (logo.naturalHeight / logo.naturalWidth));
   // A compact party-popper illustration uses vectors instead of emoji fonts.
   ctx.save();
   ctx.translate(1030, 92);
@@ -178,36 +186,27 @@ export async function renderReportShareImage(
     ctx.fillRect(x, y, 7, 13);
   }
   ctx.restore();
-  text('VIBE CODING', 64, 166, 18, accent, 600);
-  const headingEnd = paragraph(heading, 64, 230, width - 128, 50, 2, ink, 700, true);
+  paragraph(t('pblV3.share.workshop'), 64, 178, width - 280, 28, 1, muted, 600, true);
+  const headingEnd = paragraph(heading, 64, 254, width - 128, 54, 1, ink, 700, true);
   const titleEnd = paragraph(content.title, 64, headingEnd + 70, width - 128, 34, 2, muted, 500);
 
-  // The full invitation sits directly after the title, before the learner's factual results.
-  const inviteY = titleEnd + 44,
-    inviteWidth = width - 128,
-    qrSize = 156;
-  box(64, inviteY, inviteWidth, 214, dark ? '#62409c' : '#dfc9ff');
-  if (qr) ctx.drawImage(qr, width - 64 - qrSize - 24, inviteY + 28, qrSize, qrSize);
-  const copyWidth = inviteWidth - qrSize - 72;
-  paragraph(t('pblV3.share.invite'), 88, inviteY + 46, copyWidth, 30, 1, ink, 700, true);
-  paragraph(t('pblV3.share.tagline'), 88, inviteY + 92, copyWidth, 22, 2, muted, 500, true);
-  paragraph(destination, 88, inviteY + 150, copyWidth, 22, 1, accent, 600, false, 'ltr');
-  if (placeholder)
-    paragraph(t('pblV3.share.linkPlaceholder'), 88, inviteY + 182, copyWidth, 14, 1, muted);
-
+  // Results lead the image. A configured invitation always stays at the bottom.
+  const resultsY = destination ? 1108 : 1360;
   // Existing factual sections retain their content and flow only when data exists.
   const panel = dark ? '#ffffff0c' : '#ffffffa8';
-  let y = inviteY + 242;
+  let y = titleEnd + 62;
+  const metricStride = destination ? 128 : 156;
+  const metricHeight = metricStride - 16;
   if (content.metrics.length) {
     const cardWidth = (width - 136) / 2;
     content.metrics.forEach(([key, value], i) => {
       const x = 64 + (i % 2) * (cardWidth + 8);
-      const top = y + Math.floor(i / 2) * 128;
-      box(x, top, cardWidth, 112, panel);
+      const top = y + Math.floor(i / 2) * metricStride;
+      box(x, top, cardWidth, metricHeight, panel);
       text(
         value,
         direction === 'rtl' ? x + cardWidth - 24 : x + 24,
-        top + 48,
+        top + (destination ? 48 : 60),
         42,
         accent,
         700,
@@ -223,7 +222,7 @@ export async function renderReportShareImage(
               : `pblV3.reportCopy.${key}`,
         ),
         x + 24,
-        top + 84,
+        top + (destination ? 84 : 104),
         cardWidth - 48,
         20,
         1,
@@ -232,9 +231,27 @@ export async function renderReportShareImage(
         true,
       );
     });
-    y += Math.ceil(content.metrics.length / 2) * 128;
+    y += Math.ceil(content.metrics.length / 2) * metricStride;
   }
-  // Two open horizontal bands: a compact checklist followed by content-sized concept chips.
+  // Size chips first so longer authored concepts can wrap without covering the checklist.
+  const chipHeight = 50,
+    gap = 14;
+  const chips: { text: string; x: number; row: number; width: number }[] = [];
+  let chipX = direction === 'rtl' ? width - 64 : 64,
+    chipRow = 0;
+  content.concepts.forEach((concept) => {
+    ctx.font = `500 22px ${font}`;
+    const chipWidth = Math.min(348, ctx.measureText(concept).width + 40);
+    if (direction === 'rtl' ? chipX - chipWidth < 64 : chipX + chipWidth > width - 64) {
+      chipX = direction === 'rtl' ? width - 64 : 64;
+      chipRow++;
+    }
+    const left = direction === 'rtl' ? chipX - chipWidth : chipX;
+    chips.push({ text: concept, x: left, row: chipRow, width: chipWidth });
+    chipX = direction === 'rtl' ? left - gap : left + chipWidth + gap;
+  });
+  const conceptHeight = chips.length ? (chipRow + 1) * (chipHeight + gap) - gap : 0;
+  const conceptsY = resultsY - 88 - conceptHeight;
   const lowerTop = y + 24;
   const rule = dark ? '#ffffff16' : '#211c3812';
   if (content.skills.length) {
@@ -250,8 +267,11 @@ export async function renderReportShareImage(
       true,
     );
     const rows = Math.ceil(content.skills.length / 2);
-    const bodyTop = lowerTop + 70,
-      rowHeight = Math.min(66, (1140 - bodyTop) / rows);
+    const bodyTop = lowerTop + 70;
+    const rowHeight = Math.min(
+      destination ? 66 : 104,
+      ((chips.length ? conceptsY - 40 : resultsY - 40) - bodyTop) / rows,
+    );
     const columnWidth = (width - 164) / 2;
     content.skills.forEach((id, i) => {
       const column = direction === 'rtl' ? 1 - (i % 2) : i % 2;
@@ -272,7 +292,7 @@ export async function renderReportShareImage(
         direction === 'rtl' ? x + 12 : x + 52,
         center + 9,
         columnWidth - 64,
-        rowHeight < 40 ? 24 : 26,
+        rowHeight < 40 ? 22 : 26,
         1,
         ink,
         500,
@@ -280,24 +300,12 @@ export async function renderReportShareImage(
       );
     });
   }
-  if (content.concepts.length) {
-    paragraph(t('pblV3.share.conceptsLabel'), 64, 1180, width - 128, 24, 1, muted, 600, true);
-    const chipHeight = 50,
-      gap = 14;
-    let chipX = direction === 'rtl' ? width - 64 : 64,
-      chipY = 1204;
-    content.concepts.forEach((concept) => {
-      ctx.font = `500 22px ${font}`;
-      // At most six concepts; three maximum-width chips fit a row, so two rows stay above results.
-      const chipWidth = Math.min(348, ctx.measureText(concept).width + 40);
-      if (direction === 'rtl' ? chipX - chipWidth < 64 : chipX + chipWidth > width - 64) {
-        chipX = direction === 'rtl' ? width - 64 : 64;
-        chipY += chipHeight + gap;
-      }
-      const left = direction === 'rtl' ? chipX - chipWidth : chipX;
-      box(left, chipY, chipWidth, chipHeight, dark ? '#ffffff0a' : '#ffffff80', 14);
-      paragraph(concept, left + 20, chipY + 33, chipWidth - 40, 22, 1, ink, 500);
-      chipX = direction === 'rtl' ? left - gap : left + chipWidth + gap;
+  if (chips.length) {
+    paragraph(t('pblV3.share.conceptsLabel'), 64, conceptsY, width - 128, 24, 1, muted, 600, true);
+    chips.forEach((chip) => {
+      const top = conceptsY + 24 + chip.row * (chipHeight + gap);
+      box(chip.x, top, chip.width, chipHeight, dark ? '#ffffff0a' : '#ffffff80', 14);
+      paragraph(chip.text, chip.x + 20, top + 33, chip.width - 40, 22, 1, ink, 500);
     });
   }
   const { passed, tested, quizScore, quizTotal, decisions } = content.verification;
@@ -313,22 +321,43 @@ export async function renderReportShareImage(
       : []),
   ];
   if (receipts.length) {
-    box(64, 1348, width - 128, 76, dark ? '#c3a5ff12' : '#722ed10a', 20);
+    box(64, resultsY, width - 128, 76, dark ? '#c3a5ff12' : '#722ed10a', 20);
     const cellWidth = (width - 128) / receipts.length;
     receipts.forEach((receipt, i) => {
-      paragraph(receipt, 88 + i * cellWidth, 1394, cellWidth - 48, 22, 1, accent, 600, true);
+      paragraph(
+        receipt,
+        88 + i * cellWidth,
+        resultsY + 46,
+        cellWidth - 48,
+        22,
+        1,
+        accent,
+        600,
+        true,
+      );
       if (i > 0) {
         ctx.strokeStyle = rule;
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(64 + i * cellWidth, 1368);
-        ctx.lineTo(64 + i * cellWidth, 1404);
+        ctx.moveTo(64 + i * cellWidth, resultsY + 20);
+        ctx.lineTo(64 + i * cellWidth, resultsY + 56);
         ctx.stroke();
       }
     });
   }
 
-  text('OpenMAIC · Vibe Coding', 64, height - 32, 18, muted);
+  if (destination && qr) {
+    const inviteY = 1240,
+      inviteWidth = width - 128,
+      qrSize = 156;
+    box(64, inviteY, inviteWidth, 196, panel);
+    ctx.drawImage(qr, width - 64 - qrSize - 24, inviteY + 20, qrSize, qrSize);
+    const copyWidth = inviteWidth - qrSize - 72;
+    paragraph(t('pblV3.share.invite'), 88, inviteY + 46, copyWidth, 30, 1, ink, 700, true);
+    paragraph(t('pblV3.share.tagline'), 88, inviteY + 92, copyWidth, 22, 2, muted, 500, true);
+    paragraph(destination, 88, inviteY + 150, copyWidth, 22, 1, accent, 600, false, 'ltr');
+    paragraph(t('pblV3.share.entryLabel'), 88, inviteY + 180, copyWidth, 15, 1, muted);
+  }
   return new Promise((resolve, reject) =>
     canvas.toBlob(
       (blob) => (blob ? resolve(blob) : reject(new Error('PNG unavailable'))),

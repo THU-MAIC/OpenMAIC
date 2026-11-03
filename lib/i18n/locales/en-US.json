@@ -2978,7 +2978,6 @@
       "invite": "Your turn. Try Vibe Coding!",
       "tagline": "Start with a small project. Practice coding with AI.",
       "testsPassed": "Behavior tests passed",
-      "linkPlaceholder": "Intro course · placeholder link, replace before launch",
       "decisionsLabel": "Decisions made",
       "quizLabel": "Quiz",
       "skillsMetric": "Skills practiced",
@@ -2990,7 +2989,9 @@
         "codeReview": "Reviewing implementation",
         "verification": "Verifying behavior with tests",
         "reflection": "Reflecting from evidence"
-      }
+      },
+      "workshop": "Vibe Coding Workshop",
+      "entryLabel": "Vibe Coding Workshop introductory course"
     }
   }
 }

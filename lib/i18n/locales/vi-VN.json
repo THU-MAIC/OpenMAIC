@@ -2978,7 +2978,6 @@
       "invite": "Biến ý tưởng thành hiện thực với OpenMAIC",
       "tagline": "Bắt đầu với dự án nhỏ. Luyện lập trình cùng AI.",
       "testsPassed": "Đã vượt qua kiểm thử hành vi",
-      "linkPlaceholder": "Khóa học nhập môn · Liên kết mẫu, thay trước khi ra mắt",
       "decisionsLabel": "Lựa chọn đã đưa ra",
       "quizLabel": "Bài kiểm tra",
       "skillsMetric": "Kỹ năng đã thực hành",
@@ -2990,7 +2989,9 @@
         "codeReview": "Xem xét phần triển khai",
         "verification": "Kiểm chứng bằng kiểm thử",
         "reflection": "Suy ngẫm từ bằng chứng"
-      }
+      },
+      "workshop": "Hội thảo Vibe Coding",
+      "entryLabel": "Khóa nhập môn hội thảo Vibe Coding"
     }
   }
 }

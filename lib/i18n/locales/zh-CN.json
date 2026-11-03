@@ -2978,7 +2978,6 @@
       "invite": "你也来试试，一起练习 Vibe Coding！",
       "tagline": "从一个小项目开始，和 AI 一起动手编程。",
       "testsPassed": "行为测试已通过",
-      "linkPlaceholder": "前置课入口 · 示例链接，上线前替换",
       "decisionsLabel": "实现选择",
       "quizLabel": "测验",
       "skillsMetric": "实践技能",
@@ -2990,7 +2989,9 @@
         "codeReview": "核对代码实现",
         "verification": "验证实际效果",
         "reflection": "回顾实践过程"
-      }
+      },
+      "workshop": "Vibe Coding 工作坊",
+      "entryLabel": "Vibe Coding 工作坊前置课入口"
     }
   }
 }

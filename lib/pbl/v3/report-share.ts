@@ -3,9 +3,22 @@ import type { LearningReport } from './report';
 /** Campaign content supplied by the course team; never inferred from IDs or the current URL. */
 export const reportShareCampaign = {
   url: '',
-  // Replace decorative assets here when the campaign design is delivered.
+  // Set the fixed public introductory-course URL before enabling the promotion block.
+  // No destination is inferred from the current page, course ID or learner record.
   backgrounds: { light: '', dark: '' },
 };
+
+/** Empty or invalid configuration omits promotion without blocking achievement export. */
+export function reportShareDestination(value = reportShareCampaign.url): string | null {
+  try {
+    const url = new URL(value.trim());
+    return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password
+      ? url.href
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 /** A deliberately small public projection. Never pass conversations, citations or quotes to a poster. */
 export function reportShareContent(report: LearningReport) {

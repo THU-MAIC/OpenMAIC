@@ -1,15 +1,28 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import ar from '@/lib/i18n/locales/ar-SA.json';
 import zh from '@/lib/i18n/locales/zh-CN.json';
-import { reportShareContent } from '@/lib/pbl/v3/report-share';
+import { reportShareCampaign, reportShareContent } from '@/lib/pbl/v3/report-share';
 import { renderReportShareImage } from '@/lib/pbl/v3/report-share-image';
 import type { LearningReport } from '@/lib/pbl/v3/report';
 
-vi.mock('@/lib/export/qr-png', () => ({ qrPngDataUrl: async () => 'qr-image' }));
-afterEach(() => vi.unstubAllGlobals());
+const qr = vi.hoisted(() => vi.fn(async (_url: string) => 'qr-image'));
+vi.mock('@/lib/export/qr-png', () => ({ qrPngDataUrl: qr }));
+afterEach(() => {
+  vi.unstubAllGlobals();
+  reportShareCampaign.url = '';
+  qr.mockClear();
+});
 
 function syntheticCanvas() {
-  const drawn: { value: string; direction: string; align: string; x: number; font: string }[] = [];
+  const drawn: {
+    value: string;
+    direction: string;
+    align: string;
+    x: number;
+    y: number;
+    font: string;
+  }[] = [];
+  const assets: string[] = [];
   const context = {
     direction: 'inherit',
     textAlign: 'start',
@@ -32,15 +45,26 @@ function syntheticCanvas() {
     stroke() {},
     arc() {},
     measureText: (value: string) => ({ width: value.length * 10 }),
-    fillText(value: string, x: number) {
-      drawn.push({ value, x, direction: this.direction, align: this.textAlign, font: this.font });
+    fillText(value: string, x: number, y: number) {
+      drawn.push({
+        value,
+        x,
+        y,
+        direction: this.direction,
+        align: this.textAlign,
+        font: this.font,
+      });
     },
   };
   vi.stubGlobal(
     'Image',
     class {
       src = '';
-      async decode() {}
+      naturalWidth = 1080;
+      naturalHeight = 236;
+      async decode() {
+        assets.push(this.src);
+      }
     },
   );
   const canvas = {
@@ -53,7 +77,7 @@ function syntheticCanvas() {
     fonts: { load: async () => [] },
     createElement: () => canvas,
   });
-  return { drawn, canvas, context };
+  return { drawn, canvas, context, assets };
 }
 
 const content = reportShareContent({
@@ -81,13 +105,16 @@ function translate(key: string) {
 it.each(['light', 'dark'] as const)(
   'keeps one 4:5 image with Arabic RTL and numeric/URL/brand LTR in %s',
   async (theme) => {
-    const { drawn, canvas } = syntheticCanvas();
+    reportShareCampaign.url = 'https://workshop.example/intro';
+    const { drawn, canvas, assets } = syntheticCanvas();
     await renderReportShareImage(content, theme, translate, 'ar-SA');
     expect([canvas.width, canvas.height]).toEqual([1200, 1500]);
     const prose = drawn.filter((item) => /[\u0600-\u06ff]/u.test(item.value));
     expect(prose.length).toBeGreaterThan(5);
     expect(prose.every((item) => item.direction === 'rtl' && item.align === 'right')).toBe(true);
-    for (const value of ['OpenMAIC', 'https://example.com/vibe-intro', 'OpenMAIC · Vibe Coding']) {
+    expect(assets).toContain('/openmaic-share-logo.png');
+    expect(qr).toHaveBeenCalledWith(reportShareCampaign.url);
+    for (const value of [reportShareCampaign.url]) {
       expect(drawn.find((item) => item.value === value)).toMatchObject({
         direction: 'ltr',
         align: 'left',
@@ -154,4 +181,38 @@ it('can still save with a failed font and no roundRect support', async () => {
   expect(image.size).toBeGreaterThan(0);
   expect(drawn.length).toBeGreaterThan(0);
   expect(drawn.every((item) => !item.font.includes('Inter Variable'))).toBe(true);
+});
+
+it.each(['', 'not a URL', 'javascript:alert(1)', 'https://user:password@course.example/'])(
+  'omits promotion for %j without blocking image export or loading a QR',
+  async (url) => {
+    reportShareCampaign.url = url;
+    const { drawn, assets } = syntheticCanvas();
+    const image = await renderReportShareImage(content, 'light', translate, 'ar-SA');
+    expect(image.size).toBeGreaterThan(0);
+    expect(qr).not.toHaveBeenCalled();
+    expect(assets).not.toContain('qr-image');
+    const text = drawn.map((item) => item.value).join(' ');
+    expect(text).not.toContain(ar.pblV3.share.invite);
+    expect(text).not.toMatch(/example\.com|replace before|上线前替换|OpenMAIC · Vibe Coding/);
+  },
+);
+
+it('places the approved workshop, factual results and final invitation in order', async () => {
+  reportShareCampaign.url = 'https://workshop.example/intro';
+  const { drawn } = syntheticCanvas();
+  const t = (key: string) => {
+    let value: unknown = zh;
+    for (const part of key.split('.')) value = (value as Record<string, unknown>)[part];
+    return String(value);
+  };
+  await renderReportShareImage(content, 'light', t, 'zh-CN');
+  const at = (value: string) => drawn.find((item) => item.value === value)!;
+  expect(at(zh.pblV3.share.workshop).y).toBeLessThan(at(zh.pblV3.reportCopy.congratulations).y);
+  expect(at(zh.pblV3.share.invite).y).toBeGreaterThan(at(zh.pblV3.share.testsPassed).y);
+  expect(at(zh.pblV3.share.entryLabel).y).toBeGreaterThan(at(reportShareCampaign.url).y);
+  expect(qr).toHaveBeenCalledWith(reportShareCampaign.url);
+  expect(drawn.map((item) => item.value).join(' ')).not.toMatch(
+    /OpenMAIC · Vibe Coding|示例|上线前替换/,
+  );
 });
