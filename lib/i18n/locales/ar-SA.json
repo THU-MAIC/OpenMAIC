@@ -3032,7 +3032,13 @@
         "codeReview": "مراجعة التنفيذ",
         "verification": "التحقق بالاختبارات",
         "reflection": "التأمل بناءً على الأدلة"
-      }
+      },
+      "congratulations": "تهانينا، أكملت المشروع!",
+      "celebrationSubtitle": "حوّلت فكرتك إلى عمل يعمل بالفعل. تأمل ما حققته في هذه الرحلة.",
+      "shareTitle": "لحظة تستحق المشاركة",
+      "shareHint": "احفظ إنجازاتك وأبرز ما تعلمته في بطاقة وشارك تقدمك.",
+      "recordsTitle": "عرض سجلات التعلم",
+      "recordsHint": "راجع القرارات والعمل والمحادثات المحفوظة، أو اتبع مرجعًا في التحليل مباشرةً."
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {
@@ -3143,6 +3149,37 @@
       "collapse": "طي التطبيق",
       "help": "مساعدة التطبيق",
       "ready": "شغّل التطبيق لتجربة الشيفرة المحفوظة."
+    },
+    "share": {
+      "open": "إنشاء صورة للمشاركة",
+      "title": "مشاركة إنجازي",
+      "description": "احفظ أبرز نتائج تعلمك في صورة.",
+      "theme": "مظهر الصورة",
+      "light": "فاتح",
+      "dark": "داكن",
+      "preview": "صورة إنجازي في OpenMAIC",
+      "save": "حفظ الصورة",
+      "saveHint": "على الهاتف، يمكنك أيضًا الضغط مطولًا على الصورة لعرض خيارات الحفظ.",
+      "imageFailed": "تعذر تجهيز الصورة. يرجى المحاولة مجددًا.",
+      "rendering": "جارٍ تجهيز الصورة…",
+      "achievement": "إنجاز مشروعي",
+      "invite": "حوّل أفكارك إلى واقع مع OpenMAIC",
+      "tagline": "ابدأ بمشروع صغير، وتدرّب على البرمجة مع الذكاء الاصطناعي.",
+      "testsPassed": "تم اجتياز اختبارات السلوك",
+      "decisionsLabel": "القرارات",
+      "quizLabel": "الاختبار",
+      "skillsMetric": "مهارات تمّت ممارستها",
+      "skillsSection": "التحديات المكتملة",
+      "conceptsLabel": "معارف اكتشفتها",
+      "skillLabels": {
+        "decisions": "اتخاذ قرارات هندسية",
+        "planReview": "مراجعة خطة",
+        "codeReview": "مراجعة التنفيذ",
+        "verification": "التحقق بالاختبارات",
+        "reflection": "التأمل بناءً على الأدلة"
+      },
+      "workshop": "ورشة Vibe Coding",
+      "entryLabel": "الدورة التمهيدية لورشة Vibe Coding"
     },
     "onboarding": {
       "replay": "دليل مساحة العمل",

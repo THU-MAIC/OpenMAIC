@@ -3032,7 +3032,13 @@
         "codeReview": "Vérifier une implémentation",
         "verification": "Vérifier par les tests",
         "reflection": "Réfléchir à partir des traces"
-      }
+      },
+      "congratulations": "Bravo, ton projet est terminé !",
+      "celebrationSubtitle": "Ton idée est devenue une réalisation qui fonctionne. Prends un instant pour voir le chemin parcouru.",
+      "shareTitle": "Un moment à partager",
+      "shareHint": "Rassemble tes réussites et tes apprentissages sur une carte à partager.",
+      "recordsTitle": "Voir les traces d’apprentissage",
+      "recordsHint": "Consultez les décisions, travaux et échanges enregistrés, ou suivez une référence de l’analyse."
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {
@@ -3143,6 +3149,37 @@
       "collapse": "Replier l’application",
       "help": "Aide de l’application",
       "ready": "Lancez l’application pour essayer votre code enregistré."
+    },
+    "share": {
+      "open": "Créer une image à partager",
+      "title": "Partager mes réalisations",
+      "description": "Enregistrez les points forts de votre apprentissage en image.",
+      "theme": "Apparence",
+      "light": "Clair",
+      "dark": "Sombre",
+      "preview": "Image de mes réalisations OpenMAIC",
+      "save": "Enregistrer l’image",
+      "saveHint": "Sur mobile, un appui long sur l’image permet aussi de voir les options disponibles.",
+      "imageFailed": "Impossible de préparer l’image. Réessayez.",
+      "rendering": "Préparation de l’image…",
+      "achievement": "Mes réalisations",
+      "invite": "Créez avec OpenMAIC",
+      "tagline": "Commencez par un petit projet. Entraînez-vous à coder avec l’IA.",
+      "testsPassed": "Tests de comportement réussis",
+      "decisionsLabel": "Décisions prises",
+      "quizLabel": "Questionnaire",
+      "skillsMetric": "Compétences pratiquées",
+      "skillsSection": "Défis accomplis",
+      "conceptsLabel": "Notions débloquées",
+      "skillLabels": {
+        "decisions": "Prendre des décisions techniques",
+        "planReview": "Relire un plan",
+        "codeReview": "Vérifier une implémentation",
+        "verification": "Vérifier par les tests",
+        "reflection": "Réfléchir à partir des traces"
+      },
+      "workshop": "Atelier Vibe Coding",
+      "entryLabel": "Cours d’introduction à l’atelier Vibe Coding"
     },
     "onboarding": {
       "replay": "Guide de l’espace de travail",

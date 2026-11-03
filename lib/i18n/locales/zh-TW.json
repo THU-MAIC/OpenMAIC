@@ -3032,7 +3032,13 @@
         "codeReview": "核對程式實作",
         "verification": "用測試驗證行為",
         "reflection": "根據證據回顧"
-      }
+      },
+      "congratulations": "恭喜，專案完成啦！",
+      "celebrationSubtitle": "你把想法變成了能用的作品。來看看這一路累積的成果吧。",
+      "shareTitle": "這一刻，值得分享",
+      "shareHint": "把成果和亮點放進一張卡片，分享你的進步。",
+      "recordsTitle": "查看學習記錄",
+      "recordsHint": "按需查看決策、作品和學習對話；點擊分析中的引用也會自動定位。"
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {
@@ -3143,6 +3149,37 @@
       "collapse": "收起應用",
       "help": "應用說明",
       "ready": "點擊重新執行，試試已儲存的程式碼。"
+    },
+    "share": {
+      "open": "製作分享卡片",
+      "title": "分享我的學習成果",
+      "description": "將這次實踐的成果與亮點儲存為圖片。",
+      "theme": "圖片配色",
+      "light": "淺色",
+      "dark": "深色",
+      "preview": "我的 OpenMAIC 學習成果圖片",
+      "save": "儲存圖片",
+      "saveHint": "手機也可長按圖片，使用瀏覽器提供的儲存選項。",
+      "imageFailed": "圖片暫時無法產生，請重試。",
+      "rendering": "正在準備圖片…",
+      "achievement": "我的專案成果",
+      "invite": "你也來試試，一起練習 Vibe Coding！",
+      "tagline": "從一個小專案開始，和 AI 一起動手寫程式。",
+      "testsPassed": "行為測試已通過",
+      "decisionsLabel": "實作選擇",
+      "quizLabel": "測驗",
+      "skillsMetric": "實踐技能",
+      "skillsSection": "完成的挑戰",
+      "conceptsLabel": "解鎖的知識點",
+      "skillLabels": {
+        "decisions": "選擇實作方式",
+        "planReview": "審閱實作計畫",
+        "codeReview": "核對程式碼實作",
+        "verification": "驗證實際效果",
+        "reflection": "回顧實踐過程"
+      },
+      "workshop": "Vibe Coding 工作坊",
+      "entryLabel": "Vibe Coding 工作坊前置課入口"
     },
     "onboarding": {
       "replay": "新手指引",

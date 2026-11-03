@@ -3032,7 +3032,13 @@
         "codeReview": "Revisar a implementação",
         "verification": "Verificar com testes",
         "reflection": "Refletir com evidências"
-      }
+      },
+      "congratulations": "Você conseguiu! Projeto concluído!",
+      "celebrationSubtitle": "Sua ideia virou algo que funciona. Veja o quanto você avançou.",
+      "shareTitle": "Um momento para compartilhar",
+      "shareHint": "Guarde suas conquistas e aprendizados em um cartão e compartilhe seu progresso.",
+      "recordsTitle": "Ver registros de aprendizagem",
+      "recordsHint": "Consulte decisões, trabalhos e conversas salvas ou siga diretamente uma referência da análise."
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {
@@ -3143,6 +3149,37 @@
       "collapse": "Recolher aplicativo",
       "help": "Ajuda do aplicativo",
       "ready": "Execute o aplicativo para testar seu código salvo."
+    },
+    "share": {
+      "open": "Criar imagem para compartilhar",
+      "title": "Compartilhar minhas conquistas",
+      "description": "Salve os destaques do seu aprendizado como imagem.",
+      "theme": "Aparência",
+      "light": "Clara",
+      "dark": "Escura",
+      "preview": "Imagem das minhas conquistas no OpenMAIC",
+      "save": "Salvar imagem",
+      "saveHint": "No celular, você também pode pressionar a imagem para ver as opções disponíveis.",
+      "imageFailed": "Não foi possível preparar a imagem. Tente novamente.",
+      "rendering": "Preparando imagem…",
+      "achievement": "Minhas conquistas no projeto",
+      "invite": "Crie com OpenMAIC",
+      "tagline": "Comece com um projeto pequeno. Pratique programar com IA.",
+      "testsPassed": "Testes de comportamento aprovados",
+      "decisionsLabel": "Decisões tomadas",
+      "quizLabel": "Questionário",
+      "skillsMetric": "Habilidades praticadas",
+      "skillsSection": "Desafios concluídos",
+      "conceptsLabel": "Conceitos desbloqueados",
+      "skillLabels": {
+        "decisions": "Tomar decisões de engenharia",
+        "planReview": "Revisar um plano",
+        "codeReview": "Revisar a implementação",
+        "verification": "Verificar com testes",
+        "reflection": "Refletir com evidências"
+      },
+      "workshop": "Oficina de Vibe Coding",
+      "entryLabel": "Curso introdutório da oficina de Vibe Coding"
     },
     "onboarding": {
       "replay": "Guia do espaço de trabalho",

@@ -3032,7 +3032,13 @@
         "codeReview": "Implementierung prüfen",
         "verification": "Verhalten mit Tests prüfen",
         "reflection": "Anhand von Belegen reflektieren"
-      }
+      },
+      "congratulations": "Geschafft — dein Projekt ist fertig!",
+      "celebrationSubtitle": "Aus deiner Idee ist etwas geworden, das funktioniert. Schau dir an, was du erreicht hast.",
+      "shareTitle": "Ein Moment zum Teilen",
+      "shareHint": "Halte Erfolge und Highlights auf einer Karte fest und teile deine Fortschritte.",
+      "recordsTitle": "Lernaufzeichnungen ansehen",
+      "recordsHint": "Gespeicherte Entscheidungen, Arbeiten und Gespräche ansehen oder einem Analyseverweis direkt folgen."
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {
@@ -3143,6 +3149,37 @@
       "collapse": "Anwendung einklappen",
       "help": "Anwendungshilfe",
       "ready": "Starte die Anwendung, um deinen gespeicherten Code auszuprobieren."
+    },
+    "share": {
+      "open": "Bild zum Teilen erstellen",
+      "title": "Lernerfolg teilen",
+      "description": "Speichern Sie die Höhepunkte Ihres Lernens als Bild.",
+      "theme": "Darstellung",
+      "light": "Hell",
+      "dark": "Dunkel",
+      "preview": "Mein OpenMAIC-Lernerfolg",
+      "save": "Bild speichern",
+      "saveHint": "Auf Mobilgeräten können Sie das Bild auch gedrückt halten, um Speicheroptionen zu sehen.",
+      "imageFailed": "Das Bild konnte nicht erstellt werden. Bitte erneut versuchen.",
+      "rendering": "Bild wird vorbereitet…",
+      "achievement": "Mein Projekterfolg",
+      "invite": "Mit OpenMAIC Ideen umsetzen",
+      "tagline": "Starte mit einem kleinen Projekt. Übe, mit KI zu programmieren.",
+      "testsPassed": "Verhaltenstests bestanden",
+      "decisionsLabel": "Entscheidungen",
+      "quizLabel": "Wissenscheck",
+      "skillsMetric": "Geübte Fähigkeiten",
+      "skillsSection": "Abgeschlossene Aufgaben",
+      "conceptsLabel": "Freigeschaltete Konzepte",
+      "skillLabels": {
+        "decisions": "Technische Entscheidungen treffen",
+        "planReview": "Einen Plan prüfen",
+        "codeReview": "Implementierung prüfen",
+        "verification": "Verhalten mit Tests prüfen",
+        "reflection": "Anhand von Belegen reflektieren"
+      },
+      "workshop": "Vibe Coding Workshop",
+      "entryLabel": "Einführungskurs zum Vibe Coding Workshop"
     },
     "onboarding": {
       "replay": "Arbeitsbereich-Anleitung",
