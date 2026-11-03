@@ -2960,6 +2960,39 @@
       "collapse": "Anwendung einklappen",
       "help": "Anwendungshilfe",
       "ready": "Starte die Anwendung, um deinen gespeicherten Code auszuprobieren."
+    },
+    "onboarding": {
+      "replay": "Arbeitsbereich-Anleitung",
+      "counter": "Arbeitsbereich-Anleitung {{current}}/{{total}}",
+      "previous": "Zurück",
+      "next": "Verstanden, weiter",
+      "finish": "Verstanden, loslegen",
+      "waiting": "Die Anleitung ist verfügbar, sobald die Lernumgebung bereit ist.",
+      "loading": "Arbeitsbereich wird geladen",
+      "loadingDetail": "Die Lernumgebung wird verbunden und Projektdateien werden vorbereitet. Bitte warten.",
+      "steps": {
+        "progress": {
+          "title": "Fortschritt und aktuelle Aufgabe ansehen",
+          "body": "Klicke auf diese Fortschrittszahlen, um die Schritte der aktuellen Phase zu sehen. Die M-Schaltfläche oben zeigt alle Projektphasen. Die Aufgabenleiste unter dem Assistenten zeigt, was jetzt zu tun ist. Wenn eine Auswahl oder Antwort nötig ist, erscheint die Schaltfläche für die aktuelle Aufgabe."
+        },
+        "discussion": {
+          "title": "Im Assistentenbereich lesen und sprechen",
+          "body": "Hier findest du Erklärungen, Fragen und Rückmeldungen des aktuellen Assistenten. Lies zuerst seine Nachricht. Wenn ein Eingabefeld erscheint, kannst du Fragen stellen oder Gedanken teilen. Enter sendet, Umschalt+Enter fügt eine Zeile ein."
+        },
+        "code": {
+          "title": "Pläne und Code ansehen",
+          "body": "Öffne Dateien über den Dateibaum, die Tabs oder Dateilinks des Assistenten. Wenn Bearbeitung erlaubt ist, werden Änderungen automatisch gespeichert; beachte den Speicherstatus. Die Symbole oben blenden Bereiche ein und aus. Ziehe Trennlinien, um ihre Größe zu ändern."
+        },
+        "application": {
+          "title": "Anwendung öffnen und das Ergebnis ausprobieren",
+          "body": "Diese Schaltfläche öffnet die Anwendungsvorschau. Probiere fertige Funktionen aus und besprich deine Beobachtungen. Noch fehlende Funktionen entstehen im Projektverlauf."
+        },
+        "replay": {
+          "title": "Anleitung hier erneut öffnen",
+          "body": "Über Arbeitsbereich-Anleitung in der Werkzeugleiste kannst du die Bedienung erneut ansehen. Wähle Verstanden, loslegen, lies die Nachricht des Assistenten und beginne mit der Arbeit."
+        }
+      },
+      "close": "Anleitung schließen"
     }
   }
 }

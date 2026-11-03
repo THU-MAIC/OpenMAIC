@@ -2960,6 +2960,39 @@
       "collapse": "Thu gọn ứng dụng",
       "help": "Hướng dẫn ứng dụng",
       "ready": "Chạy ứng dụng để thử mã đã lưu."
+    },
+    "onboarding": {
+      "replay": "Hướng dẫn không gian làm việc",
+      "counter": "Hướng dẫn không gian làm việc {{current}}/{{total}}",
+      "previous": "Trước",
+      "next": "Đã hiểu, tiếp theo",
+      "finish": "Đã hiểu, bắt đầu",
+      "waiting": "Hướng dẫn sẽ có khi môi trường học tập sẵn sàng.",
+      "loading": "Đang tải không gian làm việc",
+      "loadingDetail": "Đang kết nối môi trường học tập và chuẩn bị tệp dự án. Vui lòng chờ.",
+      "steps": {
+        "progress": {
+          "title": "Xem tiến độ và nhiệm vụ hiện tại",
+          "body": "Nhấn các số tiến độ ở đây để xem các bước trong giai đoạn hiện tại. Nút M trên thanh công cụ hiển thị tất cả giai đoạn của dự án. Thanh nhiệm vụ bên dưới trợ lý cho biết cần làm gì lúc này. Khi cần chọn hoặc trả lời, nút nhiệm vụ hiện tại sẽ xuất hiện."
+        },
+        "discussion": {
+          "title": "Đọc và trao đổi với trợ lý",
+          "body": "Khu vực trợ lý hiển thị giải thích, câu hỏi và phản hồi của trợ lý hiện tại. Hãy đọc tin nhắn trước. Khi có ô nhập, bạn có thể hỏi hoặc chia sẻ suy nghĩ. Enter gửi; Shift+Enter xuống dòng."
+        },
+        "code": {
+          "title": "Xem kế hoạch và mã nguồn",
+          "body": "Mở tệp từ cây tệp, các thẻ hoặc liên kết của trợ lý. Khi được phép chỉnh sửa, thay đổi sẽ tự lưu; hãy theo dõi trạng thái lưu. Biểu tượng trên thanh công cụ bật hoặc ẩn các vùng; kéo đường phân cách để đổi kích thước."
+        },
+        "application": {
+          "title": "Nhấn Mở ứng dụng để trải nghiệm",
+          "body": "Nút này mở bản xem trước sản phẩm. Thử các chức năng đã có và trao đổi về kết quả quan sát. Chức năng còn thiếu sẽ được hoàn thiện trong quá trình làm dự án."
+        },
+        "replay": {
+          "title": "Xem lại hướng dẫn tại đây",
+          "body": "Dùng Hướng dẫn không gian làm việc trên thanh công cụ để xem lại các thao tác. Chọn Đã hiểu, bắt đầu để đọc tin nhắn của trợ lý và sử dụng không gian làm việc."
+        }
+      },
+      "close": "Đóng hướng dẫn"
     }
   }
 }

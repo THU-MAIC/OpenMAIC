@@ -26,6 +26,8 @@ export function PBLV3Container({ sceneId }: { sceneId: string }) {
   const [entered, setEntered] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [autoExpand, setAutoExpand] = useState(false);
+  const [initialEntry, setInitialEntry] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [fullscreenRoot, setFullscreenRoot] = useState<Element | null>(null);
   const [portalHost] = useState(() => {
     if (typeof document === 'undefined') return null;
@@ -77,6 +79,7 @@ export function PBLV3Container({ sceneId }: { sceneId: string }) {
   // Only unmount detaches the host; fullscreen changes must never run this cleanup.
   useLayoutEffect(() => () => portalHost?.remove(), [portalHost]);
   const launch = () => {
+    setInitialEntry(entrance?.started === false);
     setAutoExpand(true);
     setReportOpen(false);
     setEntered(true);
@@ -139,6 +142,7 @@ export function PBLV3Container({ sceneId }: { sceneId: string }) {
             onExpandedChange={setExpanded}
             onAutoExpandConsumed={() => setAutoExpand(false)}
             showExpandControl
+            modalOpen={onboardingOpen}
           >
             {reportOpen && entrance?.studyId ? (
               <div className="pbl-workbench relative h-full">
@@ -151,7 +155,16 @@ export function PBLV3Container({ sceneId }: { sceneId: string }) {
                 />
               </div>
             ) : (
-              <PBLV3Workspace sceneId={sceneId} onReturnToHero={returnToHero} />
+              <PBLV3Workspace
+                sceneId={sceneId}
+                onReturnToHero={returnToHero}
+                // Eligibility belongs to this Hero entry, not the current layout.
+                // layoutReady still waits for the initial expansion to settle.
+                autoOnboarding={entered}
+                initialEntry={initialEntry}
+                layoutReady={!autoExpand}
+                onOnboardingChange={setOnboardingOpen}
+              />
             )}
           </PBLWorkspaceLayer>,
           portalHost,

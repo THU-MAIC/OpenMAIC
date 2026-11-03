@@ -37,15 +37,18 @@ export function ApplicationPreviewToggle({ preview }: { preview: ApplicationPrev
 export function ApplicationPreview({
   application,
   preview,
+  inputPaused = false,
 }: {
   application: NonNullable<LearningView['application']>;
   preview: ApplicationPreviewController;
+  inputPaused?: boolean;
 }) {
   return (
     <ApplicationPreviewContent
       key={preview.documentScope}
       application={application}
       preview={preview}
+      inputPaused={inputPaused}
     />
   );
 }
@@ -53,9 +56,11 @@ export function ApplicationPreview({
 function ApplicationPreviewContent({
   application,
   preview,
+  inputPaused,
 }: {
   application: NonNullable<LearningView['application']>;
   preview: ApplicationPreviewController;
+  inputPaused: boolean;
 }) {
   const { t } = useI18n();
   const { pending, observation, expired, disabled } = preview;
@@ -90,6 +95,9 @@ function ApplicationPreviewContent({
     currentReady;
   const updating =
     mounted && !expired && !error && (preview.updating || !!previous || !currentReady);
+  // Modal presentation pauses input only. Readiness and candidate promotion
+  // continue independently; closing a tour must never launch a replacement.
+  const inputAvailable = available && !inputPaused;
   const sendInput = useCallback(
     (element: HTMLIFrameElement | null) => {
       if (!element) return;
@@ -98,12 +106,12 @@ function ApplicationPreviewContent({
       element.contentWindow?.postMessage(
         {
           type: 'openmaic-preview-input',
-          enabled: !!available && preview.open && element === frame.current,
+          enabled: !!inputAvailable && preview.open && element === frame.current,
         },
         target.origin,
       );
     },
-    [available, preview.open],
+    [inputAvailable, preview.open],
   );
   useLayoutEffect(() => {
     sendInput(frame.current);
@@ -112,9 +120,9 @@ function ApplicationPreviewContent({
   useLayoutEffect(() => {
     // Inert/pointer rules do not evacuate an already focused nested document.
     // Move only preview-owned focus; never steal focus from the learner's editor/chat.
-    if ((!available || !preview.open) && document.activeElement === frame.current)
+    if ((!inputAvailable || !preview.open) && document.activeElement === frame.current)
       panel.current?.focus({ preventScroll: true });
-  }, [available, preview.open]);
+  }, [inputAvailable, preview.open]);
   useLayoutEffect(() => {
     let deferred: ReturnType<typeof setTimeout> | undefined;
     const remember = () => {
@@ -128,7 +136,7 @@ function ApplicationPreviewContent({
         lastHostFocus.current = active;
     };
     const reclaim = () => {
-      if (available && preview.open) return;
+      if (inputAvailable && preview.open) return;
       clearTimeout(deferred);
       // Nested focus() finishes after the parent blur handler/microtask. This
       // restores host focus only; the shell's document inertness blocks input.
@@ -157,7 +165,7 @@ function ApplicationPreviewContent({
       document.removeEventListener('focusin', remember, true);
       window.removeEventListener('blur', reclaim, true);
     };
-  }, [available, preview.open]);
+  }, [inputAvailable, preview.open]);
   useLayoutEffect(() => {
     if (!url || currentReady) return;
     const timer = setTimeout(
@@ -323,10 +331,10 @@ function ApplicationPreviewContent({
                   }}
                   sandbox="allow-scripts allow-forms allow-same-origin"
                   hidden={expired}
-                  inert={!available || !visible}
+                  inert={!inputAvailable || !visible}
                   aria-hidden={expired || !visible}
                   referrerPolicy="no-referrer"
-                  className={`absolute inset-0 h-full w-full border-0 bg-white ${!available || !visible ? 'pointer-events-none' : ''} ${visible && (item === previous || currentReady) ? '' : 'invisible'}`}
+                  className={`absolute inset-0 h-full w-full border-0 bg-white ${!inputAvailable || !visible ? 'pointer-events-none' : ''} ${visible && (item === previous || currentReady) ? '' : 'invisible'}`}
                 />
               );
             })}

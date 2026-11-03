@@ -24,6 +24,7 @@ export function TaskDock({
   action,
   summary,
   working = false,
+  modalActive = false,
   ref,
 }: {
   view: LearningView;
@@ -31,6 +32,7 @@ export function TaskDock({
   action: ReactNode;
   summary?: ReactNode;
   working?: boolean;
+  modalActive?: boolean;
   ref?: Ref<TaskDockHandle>;
 }) {
   const { t } = useI18n();
@@ -57,8 +59,8 @@ export function TaskDock({
     [hasDrawer, key],
   );
   useEffect(() => {
-    if (open) drawer.current?.focus({ preventScroll: true });
-  }, [open]);
+    if (open && !modalActive) drawer.current?.focus({ preventScroll: true });
+  }, [open, modalActive]);
   const hint = t(
     view.state.status === 'completed'
       ? 'pblV3.completed'
@@ -73,7 +75,7 @@ export function TaskDock({
     toggle.current?.focus();
   };
   useEffect(() => {
-    if (!open) return;
+    if (!open || modalActive) return;
     const escape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setOpenKey(null);
@@ -82,7 +84,7 @@ export function TaskDock({
     };
     window.addEventListener('keydown', escape, true);
     return () => window.removeEventListener('keydown', escape, true);
-  }, [open]);
+  }, [open, modalActive]);
   const copy = (
     <>
       <span
@@ -99,6 +101,7 @@ export function TaskDock({
   );
   return (
     <section
+      data-pbl-tour="task"
       className="pbl-task-dock relative shrink-0 border-t bg-background"
       aria-label={t('pblV3.journey.currentTask')}
       onKeyDown={(event) => {
@@ -160,6 +163,7 @@ export function TaskDock({
           }}
         >
           <summary
+            data-pbl-tour="progress"
             className="cursor-pointer list-none rounded px-1 py-1 text-muted-foreground hover:bg-muted"
             aria-label={t('pblV3.journey.milestoneSteps')}
           >
@@ -188,6 +192,7 @@ export function TaskDock({
         </details>
         {hasDrawer ? (
           <button
+            data-pbl-tour="task-trigger"
             ref={toggle}
             type="button"
             aria-expanded={open}

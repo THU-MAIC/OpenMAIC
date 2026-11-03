@@ -64,11 +64,13 @@ function Harness({
   current = view,
   epoch = 0,
   dirty = false,
+  inputPaused = false,
   workbenchEnvironmentId = workbench.environmentId,
 }: {
   current?: LearningView;
   epoch?: number;
   dirty?: boolean;
+  inputPaused?: boolean;
   workbenchEnvironmentId?: string;
 }) {
   const preview = useApplicationPreview(
@@ -80,7 +82,7 @@ function Harness({
     Fragment,
     null,
     createElement(ApplicationPreviewToggle, { preview }),
-    createElement(ApplicationPreview, { application: current.application!, preview }),
+    createElement(ApplicationPreview, { application: current.application!, preview, inputPaused }),
   );
 }
 async function fixture() {
@@ -112,6 +114,65 @@ async function fixture() {
     },
   };
 }
+it('accepts genuine preview readiness while a modal pauses input without relaunching', async () => {
+  mocks.request.mockResolvedValue({
+    ...running,
+    preview: { ...running.preview, url: 'https://isolated.example/__openmaic_preview' },
+  });
+  const f = await fixture();
+  try {
+    await f.click();
+    const frame = f.host.querySelector('iframe')!;
+    const input = vi.spyOn(frame.contentWindow!, 'postMessage');
+    await act(async () => f.root.render(createElement(Harness, { inputPaused: true })));
+    await act(async () =>
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          source: frame.contentWindow,
+          origin: 'https://isolated.example',
+          data: { type: 'openmaic-preview-ready' },
+        }),
+      ),
+    );
+    expect(f.host.querySelector('iframe')).toBe(frame);
+    expect(frame.hasAttribute('inert')).toBe(true);
+    expect(frame.className).not.toContain('invisible');
+    await act(async () =>
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          source: frame.contentWindow,
+          origin: 'https://isolated.example',
+          data: { type: 'openmaic-preview-input-request' },
+        }),
+      ),
+    );
+    expect(input).toHaveBeenLastCalledWith(
+      { type: 'openmaic-preview-input', enabled: false },
+      'https://isolated.example',
+    );
+    await act(async () => f.root.render(createElement(Harness, { inputPaused: false })));
+    expect(f.host.querySelector('iframe')).toBe(frame);
+    expect(frame.hasAttribute('inert')).toBe(false);
+    expect(input).toHaveBeenLastCalledWith(
+      { type: 'openmaic-preview-input', enabled: true },
+      'https://isolated.example',
+    );
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      f.root.render(createElement(Harness, { inputPaused: true, dirty: true })),
+    );
+    await act(async () =>
+      f.root.render(createElement(Harness, { inputPaused: false, dirty: true })),
+    );
+    expect(frame.hasAttribute('inert')).toBe(true);
+    expect(input).toHaveBeenLastCalledWith(
+      { type: 'openmaic-preview-input', enabled: false },
+      'https://isolated.example',
+    );
+  } finally {
+    await f.cleanup();
+  }
+});
 it('opens a dock immediately and rejects stale results after environment rotation', async () => {
   let resolve!: (value: ApplicationObservation) => void, signal!: AbortSignal;
   mocks.request.mockImplementation((_url, _body, abort: AbortSignal) => {

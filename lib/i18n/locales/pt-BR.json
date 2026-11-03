@@ -2960,6 +2960,39 @@
       "collapse": "Recolher aplicativo",
       "help": "Ajuda do aplicativo",
       "ready": "Execute o aplicativo para testar seu código salvo."
+    },
+    "onboarding": {
+      "replay": "Guia do espaço de trabalho",
+      "counter": "Guia do espaço de trabalho {{current}}/{{total}}",
+      "previous": "Anterior",
+      "next": "Entendi, próximo",
+      "finish": "Entendi, começar",
+      "waiting": "O guia estará disponível quando o ambiente estiver pronto.",
+      "loading": "Carregando o espaço de trabalho",
+      "loadingDetail": "Conectando o ambiente de aprendizagem e preparando os arquivos. Aguarde um momento.",
+      "steps": {
+        "progress": {
+          "title": "Confira o progresso e a tarefa atual",
+          "body": "Clique nestes números para ver as etapas da fase atual. O botão M na barra superior mostra todas as fases do projeto. A barra de tarefas abaixo do assistente mostra o que fazer agora. Quando for preciso escolher ou responder, aparece o botão da tarefa atual."
+        },
+        "discussion": {
+          "title": "Leia e converse com o assistente",
+          "body": "O painel apresenta explicações, perguntas e comentários do assistente atual. Leia primeiro a mensagem. Quando houver um campo de texto, faça perguntas ou compartilhe suas ideias. Enter envia; Shift+Enter adiciona uma linha."
+        },
+        "code": {
+          "title": "Explore planos e código",
+          "body": "Abra arquivos pela árvore, pelas abas ou pelos links do assistente. Quando a edição é permitida, as alterações são salvas automaticamente; confira o estado de salvamento. Os ícones superiores mostram ou ocultam painéis; arraste as divisórias para ajustar o tamanho."
+        },
+        "application": {
+          "title": "Clique em Abrir aplicativo para experimentar",
+          "body": "Este botão abre a prévia do trabalho. Experimente as funções já implementadas e converse sobre suas observações. As funções pendentes serão desenvolvidas ao longo do projeto."
+        },
+        "replay": {
+          "title": "Reveja o guia aqui",
+          "body": "Use Guia do espaço de trabalho na barra superior para rever os controles. Escolha Entendi, começar para ler a mensagem do assistente e usar o espaço de trabalho."
+        }
+      },
+      "close": "Fechar guia"
     }
   }
 }

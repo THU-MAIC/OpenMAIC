@@ -2960,6 +2960,39 @@
       "collapse": "Collapse application",
       "help": "Application help",
       "ready": "Run the application to try your saved code."
+    },
+    "onboarding": {
+      "replay": "Workspace guide",
+      "counter": "Workspace guide {{current}}/{{total}}",
+      "previous": "Previous",
+      "next": "Got it, next",
+      "finish": "Got it, start exploring",
+      "waiting": "The workspace guide is available when the learning environment is ready.",
+      "loading": "Loading your workspace",
+      "loadingDetail": "Connecting the learning environment and preparing project files. Please wait.",
+      "steps": {
+        "progress": {
+          "title": "Check progress and the current task",
+          "body": "Click these progress numbers to see the steps in this milestone; the M button in the toolbar shows all project milestones. The task bar beneath the assistant tells you what to do now. When a choice or answer is needed, a Current task control appears."
+        },
+        "discussion": {
+          "title": "Read and talk in the assistant panel",
+          "body": "The assistant panel shows explanations, questions and feedback from the current assistant. Read its message first. When an input box appears, ask a question or share your thoughts. Enter sends; Shift+Enter adds a line."
+        },
+        "code": {
+          "title": "Browse plans and code",
+          "body": "Use the file tree and tabs to read project files, or follow file links from the assistant. When editing is allowed, changes save automatically; check the save status. Toolbar panel icons change which regions are shown; drag dividers to resize them."
+        },
+        "application": {
+          "title": "Click Open application to try your work",
+          "body": "This button opens the application preview. Try the features already implemented and discuss what you observe. Unfinished features will take shape as you work through the project."
+        },
+        "replay": {
+          "title": "Replay the guide here",
+          "body": "Use Workspace guide in the toolbar to revisit these controls. Choose Got it, start exploring to read the assistant’s message and use the workspace."
+        }
+      },
+      "close": "Close guide"
     }
   }
 }

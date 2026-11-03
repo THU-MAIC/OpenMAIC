@@ -11,8 +11,9 @@ export const test = base.extend<{
     const clients = new Set<ServerResponse>();
     let snapshot: (() => LearningSnapshot) | undefined;
     const send = (response: ServerResponse) => {
-      if (snapshot && !response.destroyed)
+      if (snapshot && !response.destroyed) {
         response.write(`event: learning\ndata: ${JSON.stringify(snapshot())}\n\n`);
+      }
     };
     const publish = () => clients.forEach(send);
     const server = createServer((request, response) => {
