@@ -52,10 +52,10 @@ export async function exitOnBootFailure(error: unknown): Promise<void> {
   await writeFailureAndExit(`${formatBootFailure(error)}\n`);
 }
 
-/** Called after the server's normal drain when a newer release has made it incompatible. */
+/** Called after drain or its deadline when a newer release has made the server incompatible. */
 export async function exitOnRuntimeSchemaRefusal(error: unknown): Promise<void> {
   await writeFailureAndExit(
-    `[persistence] Server schema compatibility changed; drained this instance and refusing further work:\n${describeError(error)}\n`,
+    `[persistence] Server schema compatibility changed; retiring this instance and refusing further work:\n${describeError(error)}\n`,
   );
 }
 

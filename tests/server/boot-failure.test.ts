@@ -124,7 +124,7 @@ describe('exitOnBootFailure', () => {
     expect(exit).not.toHaveBeenCalled();
     flush();
     await done;
-    expect(order[0]).toContain('drained this instance and refusing further work');
+    expect(order[0]).toContain('retiring this instance and refusing further work');
     expect(order[0]).not.toContain('startup failed');
     expect(order[1]).toBe('exit:1');
   });

@@ -5,6 +5,7 @@ const runtime = vi.hoisted(() => ({
   monitorStop: vi.fn(),
   agentStop: vi.fn(async () => {}),
   materialStop: vi.fn(async () => {}),
+  checkpointStop: vi.fn(async () => {}),
   refuse: undefined as unknown as (error: unknown) => Promise<void>,
   agentRefuse: undefined as unknown as (error: unknown) => Promise<void>,
   generationStart: vi.fn(),
@@ -35,7 +36,7 @@ vi.mock('@/lib/persistence/asset-collector-schedule', () => ({
   startAssetCollectorSchedule: () => ({ stop: async () => {} }),
 }));
 vi.mock('@/lib/server/sandbox/checkpoint-collector', () => ({
-  startCheckpointCollector: () => ({ stop: async () => {} }),
+  startCheckpointCollector: () => ({ stop: runtime.checkpointStop }),
 }));
 vi.mock('@/lib/server/pbl-v3/lifecycle-schedule', () => ({
   startLearningLifecycle: () => ({ stop: async () => {} }),
@@ -68,6 +69,7 @@ beforeEach(() => {
   });
   runtime.generationStop.mockReset().mockResolvedValue(undefined);
   runtime.materialStop.mockReset().mockResolvedValue(undefined);
+  runtime.checkpointStop.mockReset().mockResolvedValue(undefined);
   runtime.generationStart.mockReturnValue({ stop: runtime.generationStop });
   runtime.monitorStart.mockImplementation((refuse: typeof runtime.refuse) => {
     runtime.refuse = refuse;
@@ -95,6 +97,7 @@ afterEach(async () => {
   }
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 it.each([undefined, 'false'])(
@@ -182,5 +185,81 @@ it('stops generation from claiming while a busy material worker is still drainin
     expect(runtime.exit).toHaveBeenCalledOnce();
   } finally {
     release.resolve();
+  }
+});
+
+it.each(['SchemaVersionAheadError', 'SchemaMigrationChecksumError'])(
+  'exits within the retirement deadline when pool shutdown never settles (%s)',
+  async (name) => {
+    vi.stubEnv('OPENMAIC_AGENT_RUNTIME_ENABLED', 'true');
+    const closing = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    runtime.poolEnd.mockImplementationOnce(async () => {
+      closing.resolve();
+      await release.promise;
+      shutdownComplete.resolve();
+    });
+    await register();
+    vi.useFakeTimers();
+    const error = Object.assign(new Error('database incompatible'), { name });
+    const retirement = runtime.refuse(error);
+    try {
+      await closing.promise;
+      expect(runtime.agentStop).toHaveBeenCalledOnce();
+      expect(runtime.generationStop).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(15_000);
+      // Another refusal shares the original deadline rather than extending it.
+      const concurrent = runtime.agentRefuse(error);
+      expect(concurrent).toBe(retirement);
+      await vi.advanceTimersByTimeAsync(14_999);
+      expect(runtime.exit).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(runtime.exit).toHaveBeenCalledOnce();
+      expect(runtime.exit).toHaveBeenCalledWith(error);
+      await retirement;
+      expect(console.error).toHaveBeenCalledWith(expect.stringContaining('retirement timed out'));
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      // Simulate the lock releasing only AFTER the exit assertion. The deadline
+      // must not rely on an explicit unlock/cancel to make pool.end() resolve.
+      release.resolve();
+      await retirement;
+      await shutdownComplete.promise;
+    }
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(runtime.exit).toHaveBeenCalledOnce();
+  },
+);
+
+it('clears the retirement deadline when the normal drain completes', async () => {
+  await register();
+  vi.useFakeTimers();
+  await runtime.refuse(
+    Object.assign(new Error('schema refusal'), { name: 'SchemaVersionAheadError' }),
+  );
+  expect(runtime.exit).toHaveBeenCalledOnce();
+  expect(vi.getTimerCount()).toBe(0);
+  await vi.advanceTimersByTimeAsync(30_000);
+  expect(runtime.exit).toHaveBeenCalledOnce();
+  expect(console.error).not.toHaveBeenCalled();
+});
+
+it('still exits for the original schema refusal if a cleanup step fails', async () => {
+  const failure = new Error('checkpoint cleanup failed');
+  runtime.checkpointStop.mockRejectedValueOnce(failure);
+  await register();
+  vi.useFakeTimers();
+  const error = Object.assign(new Error('schema refusal'), { name: 'SchemaVersionAheadError' });
+  try {
+    await runtime.refuse(error);
+    expect(runtime.exit).toHaveBeenCalledWith(error);
+    expect(console.error).toHaveBeenCalledWith(
+      '[instrumentation] Schema retirement drain failed',
+      failure,
+    );
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    // This deliberate failure exits before reaching the mocked pool close.
+    shutdownComplete.resolve();
   }
 });

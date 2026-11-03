@@ -10,6 +10,8 @@
  * `register` must return before the server is ready, so nothing here may block
  * on I/O. Starting a timer does not.
  */
+const SCHEMA_RETIREMENT_TIMEOUT_MS = 30_000;
+
 export async function register(): Promise<void> {
   // Also invoked for the Edge runtime, which has neither `pg` nor timers we
   // want; the persistence stack is Node-only.
@@ -157,7 +159,24 @@ export async function register(): Promise<void> {
   let schemaRetirement: Promise<void> | undefined;
   const retireOnSchemaRefusal = (error: unknown): Promise<void> => {
     schemaRetirement ??= (async () => {
-      await shutdown();
+      let deadline: ReturnType<typeof setTimeout> | undefined;
+      const timedOut = new Promise<void>((resolve) => {
+        deadline = setTimeout(() => {
+          console.error(
+            `[instrumentation] Schema retirement timed out after ${SCHEMA_RETIREMENT_TIMEOUT_MS}ms; exiting with work still settling`,
+          );
+          resolve();
+        }, SCHEMA_RETIREMENT_TIMEOUT_MS);
+      });
+      try {
+        // Preserve normal parks and late-lease cleanup, but an incompatible
+        // process must still exit if a lock keeps pool.end() pending forever.
+        await Promise.race([shutdown(), timedOut]);
+      } catch (failure) {
+        console.error('[instrumentation] Schema retirement drain failed', failure);
+      } finally {
+        clearTimeout(deadline);
+      }
       const { exitOnRuntimeSchemaRefusal } = await import('@/lib/server/boot-failure');
       await exitOnRuntimeSchemaRefusal(error);
     })();
