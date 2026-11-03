@@ -16,11 +16,7 @@ import { UPGRADE_SCENARIOS } from './_owner-material-upgrade-scenarios';
 const contractUrl = process.env.PG_CONTRACT_URL;
 
 /** Wait until this test's waiter backend is blocked by its holder's locks. */
-async function waitForLockWaiter(
-  pool: Pool,
-  waiterPid: number,
-  holderPid: number,
-): Promise<void> {
+async function waitForLockWaiter(pool: Pool, waiterPid: number, holderPid: number): Promise<void> {
   for (let attempt = 0; attempt < 400; attempt += 1) {
     const waiting = await pool.query(
       `SELECT 1 FROM pg_stat_activity
@@ -102,10 +98,12 @@ describe.skipIf(!contractUrl)('owner material quota reservations on PostgreSQL',
     const second = await pool.connect();
     try {
       const holderPid = Number(
-        (await first.query<{ pid: number | string }>('SELECT pg_backend_pid() AS pid')).rows[0]!.pid,
+        (await first.query<{ pid: number | string }>('SELECT pg_backend_pid() AS pid')).rows[0]!
+          .pid,
       );
       const waiterPid = Number(
-        (await second.query<{ pid: number | string }>('SELECT pg_backend_pid() AS pid')).rows[0]!.pid,
+        (await second.query<{ pid: number | string }>('SELECT pg_backend_pid() AS pid')).rows[0]!
+          .pid,
       );
 
       await first.query('BEGIN');
