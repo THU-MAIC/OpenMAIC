@@ -82,7 +82,7 @@ export function DockEditBar({
     ctrlBtn,
     'h-6 w-6 text-gray-500 disabled:pointer-events-none disabled:opacity-20 dark:text-gray-400',
   );
-  const foldLabel = t(collapsed ? 'edit.timeline.expandTrack' : 'edit.timeline.collapseAxis');
+  const foldLabel = t(collapsed ? 'stage.dock.expand' : 'stage.dock.collapse');
 
   return (
     <>
@@ -223,11 +223,12 @@ export function DockEditBar({
 
         <div className="flex shrink-0 items-center justify-end gap-px pr-1">
           <CtrlDivider />
-          {/* Playback's fullscreen; the fold sits where its last control does. */}
+          {/* Playback's fullscreen and chat toggle; the fold is where it is in playback. */}
+          <span className="h-6 w-6 shrink-0" />
           <span className="h-6 w-6 shrink-0" />
           <button
             type="button"
-            data-testid="edit-dock-fold"
+            data-testid="dock-fold"
             aria-expanded={!collapsed}
             onClick={onToggleCollapsed}
             title={foldLabel}

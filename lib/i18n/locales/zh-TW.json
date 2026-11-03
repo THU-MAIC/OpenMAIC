@@ -352,7 +352,12 @@
     "editDisabledHint": "此頁面無法編輯——開啟課程投影片即可編輯。",
     "editToggle": "編輯",
     "openInWorkspace": "在工作台中開啟",
-    "openInWorkspaceHint": "在工作台中開啟，可以繼續對話修改這門課"
+    "openInWorkspaceHint": "在工作台中開啟，可以繼續對話修改這門課",
+    "dock": {
+      "collapse": "收合底欄",
+      "expand": "展開底欄",
+      "resize": "調整底欄高度"
+    }
   },
   "edit": {
     "undo": "復原",
@@ -586,8 +591,6 @@
     "timeline": {
       "title": "講解腳本",
       "regenAllTts": "重新生成全部配音",
-      "collapseAxis": "收合至時間軸",
-      "expandTrack": "展開音軌",
       "emptyHint": "將動作拖曳至時間軸以開始，或讓 MAIC Agent 生成旁白。",
       "speechPlaceholder": "輸入此旁白內容…",
       "reorder": "拖曳以重新排序",

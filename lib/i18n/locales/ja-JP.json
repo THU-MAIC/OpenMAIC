@@ -352,7 +352,12 @@
     "editDisabledHint": "このページでは編集できません。コースのスライドを開くと編集できます。",
     "editToggle": "編集",
     "openInWorkspace": "ワークスペースで開く",
-    "openInWorkspaceHint": "ワークスペースで開き、会話しながらこのコースの作業を続ける"
+    "openInWorkspaceHint": "ワークスペースで開き、会話しながらこのコースの作業を続ける",
+    "dock": {
+      "collapse": "下部バーを折りたたむ",
+      "expand": "下部バーを展開",
+      "resize": "下部バーの高さを変更"
+    }
   },
   "edit": {
     "undo": "元に戻す",
@@ -658,8 +663,6 @@
     "timeline": {
       "title": "ナレーション台本",
       "regenAllTts": "すべての音声を再生成",
-      "collapseAxis": "軸に折りたたむ",
-      "expandTrack": "トラックを展開",
       "emptyHint": "上のアクションを軸にドラッグして開始するか、MAIC Agent にナレーションを生成させましょう。",
       "speechPlaceholder": "このナレーションを入力…",
       "reorder": "ドラッグして並べ替え",

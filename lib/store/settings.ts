@@ -13,6 +13,7 @@
  * (`lib/legacy-browser-import/model-settings.ts`) and drops them.
  */
 
+import { DOCK_DEFAULT_HEIGHT } from '@/lib/edit/dock-height';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { ASRProviderId } from '@/lib/audio/types';
@@ -133,6 +134,9 @@ export interface SettingsState {
   chatAreaWidth: number;
   editRailCollapsed: boolean;
   editRailWidth: number;
+  /** The classroom dock, shared by both modes, so a switch never moves the canvas. */
+  dockHeight: number;
+  dockCollapsed: boolean;
 
   /**
    * The model settings of an earlier build, kept only while they could not be
@@ -169,6 +173,8 @@ export interface SettingsState {
   setChatAreaWidth: (width: number) => void;
   setEditRailCollapsed: (collapsed: boolean) => void;
   setEditRailWidth: (width: number) => void;
+  setDockHeight: (height: number) => void;
+  setDockCollapsed: (collapsed: boolean) => void;
 }
 
 /** The persisted fields: everything but the actions. */
@@ -192,6 +198,8 @@ const PERSISTED_FIELDS = [
   'chatAreaWidth',
   'editRailCollapsed',
   'editRailWidth',
+  'dockHeight',
+  'dockCollapsed',
   'legacyModelSettings',
 ] as const satisfies readonly (keyof SettingsState)[];
 
@@ -277,6 +285,8 @@ export const useSettingsStore = create<SettingsState>()(
       chatAreaWidth: 320,
       editRailCollapsed: true,
       editRailWidth: 220,
+      dockHeight: DOCK_DEFAULT_HEIGHT,
+      dockCollapsed: false,
 
       setTTSVoice: (voice, providerId) => set({ ttsVoice: voice, ttsVoiceProviderId: providerId }),
       setTTSSpeed: (speed) => set({ ttsSpeed: speed }),
@@ -307,6 +317,8 @@ export const useSettingsStore = create<SettingsState>()(
       setChatAreaCollapsed: (collapsed) => set({ chatAreaCollapsed: collapsed }),
       setEditRailCollapsed: (collapsed) => set({ editRailCollapsed: collapsed }),
       setEditRailWidth: (width) => set({ editRailWidth: width }),
+      setDockHeight: (height) => set({ dockHeight: height }),
+      setDockCollapsed: (collapsed) => set({ dockCollapsed: collapsed }),
       setChatAreaWidth: (width) => set({ chatAreaWidth: width }),
     }),
     {

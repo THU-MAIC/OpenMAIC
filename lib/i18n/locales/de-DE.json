@@ -352,7 +352,12 @@
     "editDisabledHint": "Diese Seite kann nicht bearbeitet werden — öffne eine Kursfolie, um sie zu bearbeiten.",
     "editToggle": "Bearbeiten",
     "openInWorkspace": "Im Arbeitsbereich öffnen",
-    "openInWorkspaceHint": "Im Arbeitsbereich öffnen, um im Gespräch an diesem Kurs weiterzuarbeiten"
+    "openInWorkspaceHint": "Im Arbeitsbereich öffnen, um im Gespräch an diesem Kurs weiterzuarbeiten",
+    "dock": {
+      "collapse": "Leiste einklappen",
+      "expand": "Leiste ausklappen",
+      "resize": "Leistenhöhe ändern"
+    }
   },
   "edit": {
     "undo": "Rückgängig",
@@ -658,8 +663,6 @@
     "timeline": {
       "title": "Sprechertext",
       "regenAllTts": "Alle Vertonungen neu erstellen",
-      "collapseAxis": "Auf Achse einklappen",
-      "expandTrack": "Spur ausklappen",
       "emptyHint": "Ziehe Aktionen auf die Achse, um zu beginnen, oder lass den MAIC Agent einen Sprechertext erstellen.",
       "speechPlaceholder": "Sprechertext eingeben…",
       "reorder": "Zum Neuanordnen ziehen",

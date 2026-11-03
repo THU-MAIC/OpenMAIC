@@ -352,7 +352,12 @@
     "editDisabledHint": "Trang này không sửa được — hãy mở một slide bài học để sửa.",
     "editToggle": "Sửa",
     "openInWorkspace": "Mở trong không gian làm việc",
-    "openInWorkspaceHint": "Mở trong không gian làm việc để tiếp tục khóa học này qua trò chuyện"
+    "openInWorkspaceHint": "Mở trong không gian làm việc để tiếp tục khóa học này qua trò chuyện",
+    "dock": {
+      "collapse": "Thu gọn thanh dưới",
+      "expand": "Mở rộng thanh dưới",
+      "resize": "Đổi chiều cao thanh dưới"
+    }
   },
   "edit": {
     "undo": "Hoàn tác",
@@ -658,8 +663,6 @@
     "timeline": {
       "title": "Kịch bản lời giảng",
       "regenAllTts": "Tạo lại toàn bộ giọng đọc",
-      "collapseAxis": "Thu về trục",
-      "expandTrack": "Mở rộng dải",
       "emptyHint": "Kéo các hành động lên trục để bắt đầu, hoặc để MAIC Agent tự viết lời giảng.",
       "speechPlaceholder": "Nhập câu giảng này…",
       "reorder": "Kéo để sắp xếp lại",

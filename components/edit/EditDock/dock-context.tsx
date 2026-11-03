@@ -7,18 +7,14 @@
  * height. The narration timeline owns its own controls, because they and its body
  * share state (the insert-picker anchor, the TTS batch, the focused clip). They
  * show in the control bar, though, so the dock lends the timeline a place there
- * (`barActions`) and the fold.
+ * (`barActions`) and a way to open it.
  */
 import { createContext, useContext, type ReactNode } from 'react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 export interface EditDockContextValue {
-  /**
-   * The dock is folded. The timeline's collapsed form is its axis of node icons
-   * (still a body), so it reads this rather than being hidden by the shell.
-   */
-  collapsed: boolean;
-  toggleCollapsed: () => void;
+  /** Open a folded dock, for what cannot be done without seeing the timeline. */
+  expand: () => void;
   /** Where the timeline's own actions go in the control bar; null outside a dock. */
   barActions: HTMLElement | null;
 }
@@ -54,15 +50,14 @@ export function EditDockProvider({
 }
 
 /**
- * Read the dock's fold. Returns a neutral value when the timeline is rendered
+ * Read what the dock lends. Returns a neutral value when the timeline is rendered
  * outside a dock (an isolated test, a future standalone mount) so it is never
  * coupled to the shell being there.
  */
 export function useEditDock(): EditDockContextValue {
   return (
     useContext(EditDockContext) ?? {
-      collapsed: false,
-      toggleCollapsed: () => undefined,
+      expand: () => undefined,
       barActions: null,
     }
   );

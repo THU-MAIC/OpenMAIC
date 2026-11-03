@@ -352,7 +352,12 @@
     "editDisabledHint": "L’édition n’est pas disponible sur cette page. Ouvrez une diapositive de cours pour la modifier.",
     "editToggle": "Modifier",
     "openInWorkspace": "Ouvrir dans l’espace de travail",
-    "openInWorkspaceHint": "Ouvrir dans l’espace de travail pour continuer ce cours en conversation"
+    "openInWorkspaceHint": "Ouvrir dans l’espace de travail pour continuer ce cours en conversation",
+    "dock": {
+      "collapse": "Replier la barre",
+      "expand": "Déplier la barre",
+      "resize": "Redimensionner la barre"
+    }
   },
   "edit": {
     "undo": "Annuler",
@@ -658,8 +663,6 @@
     "timeline": {
       "title": "Texte de narration",
       "regenAllTts": "Régénérer toutes les voix off",
-      "collapseAxis": "Réduire à l’axe",
-      "expandTrack": "Déplier la piste",
       "emptyHint": "Faites glisser des actions sur l’axe pour commencer, ou laissez l’agent MAIC générer la narration.",
       "speechPlaceholder": "Saisissez cette réplique de narration…",
       "reorder": "Faire glisser pour réordonner",

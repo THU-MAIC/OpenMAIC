@@ -352,7 +352,12 @@
     "editDisabledHint": "La edición no está disponible en esta página — abre una diapositiva del curso para editarla.",
     "editToggle": "Editar",
     "openInWorkspace": "Abrir en el espacio de trabajo",
-    "openInWorkspaceHint": "Abrir en el espacio de trabajo para seguir con este curso en una conversación"
+    "openInWorkspaceHint": "Abrir en el espacio de trabajo para seguir con este curso en una conversación",
+    "dock": {
+      "collapse": "Contraer la barra",
+      "expand": "Expandir la barra",
+      "resize": "Cambiar la altura de la barra"
+    }
   },
   "edit": {
     "undo": "Deshacer",
@@ -658,8 +663,6 @@
     "timeline": {
       "title": "Guion de narración",
       "regenAllTts": "Regenerar toda la voz",
-      "collapseAxis": "Contraer al eje",
-      "expandTrack": "Expandir pista",
       "emptyHint": "Arrastra acciones al eje para empezar, o deja que MAIC Agent genere la narración.",
       "speechPlaceholder": "Escribe esta línea de narración…",
       "reorder": "Arrastra para reordenar",

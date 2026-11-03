@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { DockResizeHandle, useDockBox } from '@/components/classroom/dock-box';
+import { useState, useRef, useCallback, useEffect, type CSSProperties } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Mic,
@@ -116,6 +117,8 @@ interface RoundtableProps {
   readonly onClearElementReference?: () => void;
 }
 
+/** What the dock keeps around the speech bubble: its toolbar and padding. */
+const DOCK_BUBBLE_INSET_PX = 82;
 // This must stay in sync with the non-presentation textarea's max-h-[100px] class.
 const NON_PRESENTATION_INPUT_MAX_HEIGHT_PX = 100;
 
@@ -214,6 +217,9 @@ export function Roundtable({
   onClearElementReference,
 }: RoundtableProps) {
   const { t } = useI18n();
+  const dockRef = useRef<HTMLDivElement>(null);
+  const dock = useDockBox(dockRef);
+  const setDockCollapsed = useSettingsStore((state) => state.setDockCollapsed);
   const ttsMuted = useSettingsStore((s) => s.ttsMuted);
   const setTTSMuted = useSettingsStore((s) => s.setTTSMuted);
   // The workspace's tts and asr slots decide whether narration and speech
@@ -738,6 +744,8 @@ export function Roundtable({
       canPickSlideElement={canPickSlideElement}
       elementPickActive={elementPickActive}
       onToggleElementPick={onToggleElementPick}
+      dockCollapsed={dock.collapsed}
+      onToggleDock={isPresenting ? undefined : () => setDockCollapsed(!dock.collapsed)}
     />
   );
   const referencePill = elementReferencePill ? (
@@ -1244,14 +1252,24 @@ export function Roundtable({
 
   return (
     <div
+      ref={dockRef}
       data-testid="roundtable-region"
+      data-collapsed={dock.collapsed ? 'true' : 'false'}
+      style={
+        {
+          height: dock.height,
+          '--dock-bubble-max': `${Math.max(dock.height - DOCK_BUBBLE_INSET_PX, 40)}px`,
+        } as CSSProperties
+      }
       className={cn(
-        'h-[192px] w-full flex flex-col relative z-10 transition-all duration-300',
+        // Its height moves with the fold, not with the drag that sizes it.
+        'w-full flex flex-col relative z-10 transition-[height,background-color,border-color] duration-[400ms] ease-[cubic-bezier(0.22,1,0.36,1)] data-[dragging=true]:transition-none',
         isPresenting && !controlsVisible
           ? 'border-t border-transparent bg-transparent backdrop-blur-none'
           : 'border-t border-gray-100 dark:border-gray-800 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md',
       )}
     >
+      {dock.collapsed || isPresenting ? null : <DockResizeHandle dockRef={dockRef} />}
       {/* ── Toolbar strip — merged from CanvasArea ── */}
       <div
         className={cn(
@@ -1261,8 +1279,12 @@ export function Roundtable({
       >
         {toolbar}
       </div>
-      {/* ── Interaction area — three-column layout ── */}
-      <div className="flex-1 flex items-stretch min-h-0">
+      {/* ── Interaction area — three-column layout ── Folded, it stays mounted and
+          keeps going, only out of sight and out of reach. */}
+      <div
+        inert={dock.collapsed}
+        className={cn('flex-1 flex items-stretch min-h-0', dock.collapsed && 'overflow-hidden')}
+      >
         {/* Left: Teacher identity */}
         <div
           className={cn(
@@ -1749,7 +1771,7 @@ export function Roundtable({
                   <div
                     className={cn(
                       suggestedReplyBubbleClass,
-                      'w-full @[36rem]:w-[min(420px,calc(50%-3.5rem))] max-h-[110px] shadow-sm @max-[36rem]:pl-2 @max-[36rem]:pr-3',
+                      'w-full @[36rem]:w-[min(420px,calc(50%-3.5rem))] max-h-[var(--dock-bubble-max,110px)] shadow-sm @max-[36rem]:pl-2 @max-[36rem]:pr-3',
                     )}
                   >
                     {suggestedReplyAvatar}
@@ -1798,7 +1820,7 @@ export function Roundtable({
                         onPlayPause?.();
                       }}
                       className={cn(
-                        'relative px-4 pt-2 pb-3 rounded-2xl text-[15px] leading-relaxed transition-all border w-[min(420px,calc(100%-3rem))] group/bubble flex flex-col max-h-[110px]',
+                        'relative px-4 pt-2 pb-3 rounded-2xl text-[15px] leading-relaxed transition-all border w-[min(420px,calc(100%-3rem))] group/bubble flex flex-col max-h-[var(--dock-bubble-max,110px)]',
                         bubbleRole === 'teacher' ? 'pl-4 pr-10' : 'pl-4 pr-10',
                         bubbleRole === 'user'
                           ? 'bg-purple-600/95 dark:bg-purple-500/95 backdrop-blur-sm border-purple-400/40 dark:border-purple-300/40 text-white rounded-br-sm shadow-md shadow-purple-300/30 dark:shadow-purple-800/30'

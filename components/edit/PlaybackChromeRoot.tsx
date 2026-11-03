@@ -1687,16 +1687,6 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         }
       : null;
 
-    // Scene viewer height — header is 80px when visible, roundtable is
-    // 192px in playback mode (autonomous hides it). Mode is guaranteed
-    // non-'edit' here since the parent Stage unmounts this component
-    // when entering Pro mode.
-    const sceneViewerHeight = (() => {
-      const headerHeight = isPresenting || hideHeader ? 0 : 80;
-      const roundtableHeight = mode === 'playback' && !isPresenting ? 192 : 0;
-      return `calc(100% - ${headerHeight + roundtableHeight}px)`;
-    })();
-
     return (
       <div
         ref={stageRef}
@@ -1735,13 +1725,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           {/* Canvas Area — playback-only renderer. The parent Stage swaps
             this whole PlaybackChromeRoot out when entering edit mode, so
             no inline branching is needed here. */}
-          <div
-            className="overflow-hidden relative flex-1 min-h-0 isolate"
-            style={{
-              height: sceneViewerHeight,
-            }}
-            suppressHydrationWarning
-          >
+          <div className="overflow-hidden relative flex-1 min-h-0 isolate" suppressHydrationWarning>
             <CanvasArea
               currentScene={currentScene}
               currentSceneIndex={currentSceneIndex}

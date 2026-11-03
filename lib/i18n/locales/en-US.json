@@ -352,7 +352,12 @@
     "editDisabledHint": "Editing isn't available on this page — open a course slide to edit it.",
     "editToggle": "Edit",
     "openInWorkspace": "Open in workspace",
-    "openInWorkspaceHint": "Open in the workspace, to keep working on this course in a conversation"
+    "openInWorkspaceHint": "Open in the workspace, to keep working on this course in a conversation",
+    "dock": {
+      "collapse": "Collapse the dock",
+      "expand": "Expand the dock",
+      "resize": "Resize the dock"
+    }
   },
   "edit": {
     "undo": "Undo",
@@ -658,8 +663,6 @@
     "timeline": {
       "title": "Narration script",
       "regenAllTts": "Regenerate all voiceover",
-      "collapseAxis": "Collapse to axis",
-      "expandTrack": "Expand track",
       "emptyHint": "Drag actions onto the axis to start, or let MAIC Agent generate narration.",
       "speechPlaceholder": "Enter this narration line…",
       "reorder": "Drag to reorder",

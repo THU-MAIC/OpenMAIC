@@ -639,8 +639,6 @@
     "timeline": {
       "title": "Roteiro de narração",
       "regenAllTts": "Regenerar toda a narração",
-      "collapseAxis": "Recolher para o eixo",
-      "expandTrack": "Expandir trilha",
       "emptyHint": "Arraste as ações para o eixo para começar, ou deixe o MAIC Agent gerar a narração.",
       "speechPlaceholder": "Digite esta linha de narração…",
       "reorder": "Arraste para reordenar",
@@ -772,7 +770,12 @@
     "editDisabledHint": "A edição não está disponível nesta página — abra um slide do curso para editá-lo.",
     "editToggle": "Editar",
     "openInWorkspace": "Abrir no espaço de trabalho",
-    "openInWorkspaceHint": "Abrir no espaço de trabalho para continuar este curso em uma conversa"
+    "openInWorkspaceHint": "Abrir no espaço de trabalho para continuar este curso em uma conversa",
+    "dock": {
+      "collapse": "Recolher a barra",
+      "expand": "Expandir a barra",
+      "resize": "Redimensionar a barra"
+    }
   },
   "classroomComplete": {
     "title": "Curso concluído",

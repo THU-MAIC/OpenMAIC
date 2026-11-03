@@ -352,7 +352,12 @@
     "editDisabledHint": "이 페이지에서는 편집할 수 없습니다 — 코스 슬라이드를 열면 편집할 수 있습니다.",
     "editToggle": "편집",
     "openInWorkspace": "작업 공간에서 열기",
-    "openInWorkspaceHint": "작업 공간에서 열어 대화로 이 코스 작업을 이어가기"
+    "openInWorkspaceHint": "작업 공간에서 열어 대화로 이 코스 작업을 이어가기",
+    "dock": {
+      "collapse": "하단 막대 접기",
+      "expand": "하단 막대 펼치기",
+      "resize": "하단 막대 높이 조절"
+    }
   },
   "edit": {
     "undo": "실행 취소",
@@ -585,8 +590,6 @@
     "timeline": {
       "title": "내레이션 스크립트",
       "regenAllTts": "전체 음성 다시 생성",
-      "collapseAxis": "축으로 접기",
-      "expandTrack": "트랙 펼치기",
       "emptyHint": "위의 동작을 축으로 끌어 시작하거나, MAIC Agent가 내레이션을 생성하도록 하세요.",
       "speechPlaceholder": "이 내레이션을 입력하세요…",
       "reorder": "끌어서 순서 변경",

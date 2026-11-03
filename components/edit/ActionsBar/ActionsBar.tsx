@@ -5,12 +5,9 @@
  * that is also a light editor for the scene's playback `actions`.
  *
  * This WAS the whole bottom bar. It is now the body of `EditDock`, which owns
- * the surface (border, blur, fold) and the global edit bar above it; the
- * timeline still renders its own header row — the row's controls and the body
- * share one piece of state — and drives the dock's fold through `useEditDock`.
- * Nothing about the timeline's own behaviour or geometry changed in the move.
- * (The height-drag handle was removed per product decision: only the fold moves
- * the dock's height, so the timeline no longer sizes itself.)
+ * the surface (border, blur, height, fold) and the global edit bar above it, where
+ * the timeline shows its own controls through `useEditDock`, since they and the body
+ * share one piece of state.
  *
  * The scene's `actions` ARE the timeline: walked left→right, each `speech`
  * becomes an editable clip block (one spoken line, numbered) and every non-speech
@@ -1148,9 +1145,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
     [selectedAgentIds, agentsRecord, t],
   );
 
-  // Collapsed = the dock's own fold. The timeline's collapsed form is its axis of
-  // node icons, so it reads `collapsed` rather than being hidden by the shell.
-  const { collapsed: lineMode, barActions: dockBarSlot } = useEditDock();
+  const { expand: expandDock, barActions: dockBarSlot } = useEditDock();
   const [tip, setTip] = useState<TooltipState | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
   const [revealId, setRevealId] = useState<string | null>(null);
@@ -1237,6 +1232,8 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
     (type: PickerType, slot: number) => {
       const id = newId();
       setRevealId(id);
+      // A new card is no use behind a folded dock.
+      expandDock();
       if (type === 'discussion') {
         commit((cur) => appendDiscussion(cur, id));
         return;
@@ -1244,7 +1241,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
       const action = makeAction(type, id);
       commit((cur) => insertAt(cur, clampInsertSlot(cur, slot), action));
     },
-    [commit],
+    [commit, expandDock],
   );
 
   const handleDrop = useCallback(
@@ -1426,106 +1423,100 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                     className="flex h-full flex-col items-center"
                     style={{ paddingTop: AXIS_FROM_TOP - 10 }}
                   >
-                    {lineMode ? (
-                      <div className="w-9">{dot}</div>
-                    ) : (
-                      <>
-                        <div className="relative">
-                          {dot}
-                          {action.type === 'speech' ? (
-                            <span
-                              data-testid="speech-number"
-                              // The axis runs behind it; the dock's own ground lets the digits read.
-                              className="absolute left-full top-1/2 ml-1 -translate-y-1/2 rounded-sm bg-[#fdfdfd] px-0.5 font-mono text-[10px] font-semibold leading-[14px] tabular-nums text-muted-foreground dark:bg-[#182332]"
-                            >
-                              {String(si).padStart(2, '0')}
-                            </span>
-                          ) : null}
-                        </div>
-                        <div className="my-px h-1 w-px bg-border" />
-                        <div className="min-h-0 w-full flex-1">
-                          {action.type === 'speech' ? (
-                            <SpeechClip
-                              text={(action as { text?: string }).text ?? ''}
-                              actionId={key}
-                              audioId={(action as { audioId?: string }).audioId}
-                              audioUrl={(action as { audioUrl?: string }).audioUrl}
-                              audioInvalidated={
-                                (action as { audioInvalidated?: boolean }).audioInvalidated
-                              }
-                              sceneOrder={sceneOrder}
-                              language={language}
-                              ttsActive={ttsActive}
-                              ttsRefresh={ttsRefresh}
-                              regenerating={regeneratingIds.has(key)}
-                              onCommit={(text) => {
-                                // Editing the text invalidates any cached audio
-                                // (the blob is keyed by order+id and the stamped
-                                // audioId, not the text), so drop the stamped
-                                // fields and delete the blob — the line then
-                                // reads as un-voiced until regen.
-                                const prevAudioId = (action as { audioId?: string }).audioId;
-                                commit((cur) => setSpeechTextClearAudioById(cur, key, text));
-                                // Re-check status only AFTER the blob is gone, so
-                                // the status row can't race the async delete and
-                                // briefly still read "voiced".
-                                void discardSpeechAudio(sceneOrder, {
-                                  id: key,
-                                  audioId: prevAudioId,
-                                }).finally(() => setTtsRefresh((n) => n + 1));
-                              }}
-                              onGenerated={(assetId) => {
-                                commit((cur) => setAudioIdById(cur, key, assetId));
-                                // Stage persistence is debounced; flush so the
-                                // stamped reference is durable once the row
-                                // settles (pool bytes persist first, stamp last).
-                                void flushStageSave().catch(() => undefined);
-                              }}
-                              onDelete={() => {
-                                commit((cur) => removeById(cur, key));
-                              }}
-                              onMoveLeft={() => commit((cur) => moveByIdDir(cur, key, -1))}
-                              onMoveRight={() => commit((cur) => moveByIdDir(cur, key, 1))}
-                              canMoveLeft={index > 0}
-                              canMoveRight={index < lastMovableIndex}
-                              onDragStart={onDragStart}
-                              onDragEnd={onDragEnd}
-                            />
-                          ) : isDiscussion ? (
-                            <DiscussionClip
-                              topic={(action as DiscussionAction).topic ?? ''}
-                              prompt={(action as DiscussionAction).prompt ?? ''}
-                              agentId={(action as DiscussionAction).agentId ?? ''}
-                              agents={discussionAgents}
-                              onTopicChange={(v) =>
-                                commit((cur) => setDiscussionTopicById(cur, key, v))
-                              }
-                              onPromptChange={(v) =>
-                                commit((cur) => setDiscussionPromptById(cur, key, v))
-                              }
-                              onAgentChange={(v) =>
-                                commit((cur) => setDiscussionAgentById(cur, key, v))
-                              }
-                              onDelete={() => commit((cur) => removeById(cur, key))}
-                            />
-                          ) : (
-                            <CueMarker
-                              action={action}
-                              elements={sceneElements}
-                              onTip={setTip}
-                              onDelete={() => commit((cur) => removeById(cur, key))}
-                              onPick={onPick}
-                              onMoveLeft={() => commit((cur) => moveByIdDir(cur, key, -1))}
-                              onMoveRight={() => commit((cur) => moveByIdDir(cur, key, 1))}
-                              canMoveLeft={index > 0}
-                              canMoveRight={index < lastMovableIndex}
-                              onDragStart={onDragStart}
-                              onDragEnd={onDragEnd}
-                            />
-                          )}
-                        </div>
-                      </>
-                    )}
+                    <div className="relative">
+                      {dot}
+                      {action.type === 'speech' ? (
+                        <span
+                          data-testid="speech-number"
+                          // The axis runs behind it; the dock's own ground lets the digits read.
+                          className="absolute left-full top-1/2 ml-1 -translate-y-1/2 rounded-sm bg-[#fdfdfd] px-0.5 font-mono text-[10px] font-semibold leading-[14px] tabular-nums text-muted-foreground dark:bg-[#182332]"
+                        >
+                          {String(si).padStart(2, '0')}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="my-px h-1 w-px bg-border" />
+                    <div className="min-h-0 w-full flex-1">
+                      {action.type === 'speech' ? (
+                        <SpeechClip
+                          text={(action as { text?: string }).text ?? ''}
+                          actionId={key}
+                          audioId={(action as { audioId?: string }).audioId}
+                          audioUrl={(action as { audioUrl?: string }).audioUrl}
+                          audioInvalidated={
+                            (action as { audioInvalidated?: boolean }).audioInvalidated
+                          }
+                          sceneOrder={sceneOrder}
+                          language={language}
+                          ttsActive={ttsActive}
+                          ttsRefresh={ttsRefresh}
+                          regenerating={regeneratingIds.has(key)}
+                          onCommit={(text) => {
+                            // Editing the text invalidates any cached audio
+                            // (the blob is keyed by order+id and the stamped
+                            // audioId, not the text), so drop the stamped
+                            // fields and delete the blob — the line then
+                            // reads as un-voiced until regen.
+                            const prevAudioId = (action as { audioId?: string }).audioId;
+                            commit((cur) => setSpeechTextClearAudioById(cur, key, text));
+                            // Re-check status only AFTER the blob is gone, so
+                            // the status row can't race the async delete and
+                            // briefly still read "voiced".
+                            void discardSpeechAudio(sceneOrder, {
+                              id: key,
+                              audioId: prevAudioId,
+                            }).finally(() => setTtsRefresh((n) => n + 1));
+                          }}
+                          onGenerated={(assetId) => {
+                            commit((cur) => setAudioIdById(cur, key, assetId));
+                            // Stage persistence is debounced; flush so the
+                            // stamped reference is durable once the row
+                            // settles (pool bytes persist first, stamp last).
+                            void flushStageSave().catch(() => undefined);
+                          }}
+                          onDelete={() => {
+                            commit((cur) => removeById(cur, key));
+                          }}
+                          onMoveLeft={() => commit((cur) => moveByIdDir(cur, key, -1))}
+                          onMoveRight={() => commit((cur) => moveByIdDir(cur, key, 1))}
+                          canMoveLeft={index > 0}
+                          canMoveRight={index < lastMovableIndex}
+                          onDragStart={onDragStart}
+                          onDragEnd={onDragEnd}
+                        />
+                      ) : isDiscussion ? (
+                        <DiscussionClip
+                          topic={(action as DiscussionAction).topic ?? ''}
+                          prompt={(action as DiscussionAction).prompt ?? ''}
+                          agentId={(action as DiscussionAction).agentId ?? ''}
+                          agents={discussionAgents}
+                          onTopicChange={(v) =>
+                            commit((cur) => setDiscussionTopicById(cur, key, v))
+                          }
+                          onPromptChange={(v) =>
+                            commit((cur) => setDiscussionPromptById(cur, key, v))
+                          }
+                          onAgentChange={(v) =>
+                            commit((cur) => setDiscussionAgentById(cur, key, v))
+                          }
+                          onDelete={() => commit((cur) => removeById(cur, key))}
+                        />
+                      ) : (
+                        <CueMarker
+                          action={action}
+                          elements={sceneElements}
+                          onTip={setTip}
+                          onDelete={() => commit((cur) => removeById(cur, key))}
+                          onPick={onPick}
+                          onMoveLeft={() => commit((cur) => moveByIdDir(cur, key, -1))}
+                          onMoveRight={() => commit((cur) => moveByIdDir(cur, key, 1))}
+                          canMoveLeft={index > 0}
+                          canMoveRight={index < lastMovableIndex}
+                          onDragStart={onDragStart}
+                          onDragEnd={onDragEnd}
+                        />
+                      )}
+                    </div>
                   </motion.div>
                   <DropZone
                     active={dragOver === index + 1}

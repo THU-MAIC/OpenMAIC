@@ -212,8 +212,8 @@ describe('Roundtable suggested replies', () => {
       expect(container.querySelector('[data-bubble-role]')).toBeNull();
       if (!isPresenting) {
         expect(
-          container.querySelector('[data-testid="roundtable-region"]')?.getAttribute('class'),
-        ).toContain('h-[192px]');
+          container.querySelector<HTMLElement>('[data-testid="roundtable-region"]')?.style.height,
+        ).toBe('192px');
       }
     },
   );

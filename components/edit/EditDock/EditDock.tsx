@@ -6,9 +6,8 @@
  * Two parts, and only two: a control bar (`DockEditBar`) that never changes, and
  * the narration timeline below it. The dock owns the surface — the top border,
  * the blur, the fold — while the timeline owns its body and its controls, which
- * it shows in the bar through `useEditDock`. The dock's height is fixed (the
- * timeline is folded or not, nothing else changes it): the height-drag handle the
- * reference implementation carries above the bar was removed per product decision.
+ * it shows in the bar through `useEditDock`. The height and the fold are the
+ * classroom's, shared with playback (`useDockBox`), so a switch moves nothing.
  *
  * It briefly had a tab strip and a second tool (an element-reference panel).
  * That was wrong twice over: an exclusive panel hid the timeline to do something
@@ -20,7 +19,9 @@
  * type scale and flat icon buttons; the timeline keeps the height, padding and
  * geometry it had as a standalone bar.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { DockResizeHandle, useDockBox } from '@/components/classroom/dock-box';
+import { useSettingsStore } from '@/lib/store/settings';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useStageStore } from '@/lib/store/stage';
 import { useCanvasStore } from '@/lib/store/canvas';
@@ -29,18 +30,7 @@ import { ActionsBar } from '@/components/edit/ActionsBar/ActionsBar';
 import type { CanvasPagerProps } from '@/components/edit/EditShell/CanvasPager';
 import type { SceneType } from '@/lib/types/stage';
 import { EditDockProvider } from './dock-context';
-import { DockEditBar, DOCK_EDIT_BAR_HEIGHT } from './DockEditBar';
-
-/**
- * The timeline's height, in px — the body only; the edit bar is added on top of
- * it, so folding never takes the bar away. With the bar it comes to playback's
- * 192 (`Roundtable`), so the canvas above does not move with the mode. The
- * timeline height is fixed: the height-drag handle was removed (owner decision),
- * so only the fold moves it.
- */
-const TIMELINE_DEFAULT_HEIGHT = 160;
-/** The axis of node icons alone. */
-const TIMELINE_COLLAPSED_HEIGHT = 40;
+import { DockEditBar } from './DockEditBar';
 
 export function EditDock({
   sceneId,
@@ -66,8 +56,10 @@ export function EditDock({
   // a live run has to own.
   const canPickElements = sceneType === 'slide' || sceneType === 'interactive';
 
-  const [collapsed, setCollapsed] = useState(false);
-  const toggleCollapsed = useCallback(() => setCollapsed((current) => !current), []);
+  const dockRef = useRef<HTMLElement>(null);
+  const { height, collapsed } = useDockBox(dockRef);
+  const setDockCollapsed = useSettingsStore((state) => state.setDockCollapsed);
+  const expand = useCallback(() => setDockCollapsed(false), [setDockCollapsed]);
   const [barActions, setBarActions] = useState<HTMLElement | null>(null);
 
   /**
@@ -97,20 +89,19 @@ export function EditDock({
 
   return (
     <section
+      ref={dockRef}
       data-testid="edit-dock"
       data-collapsed={collapsed ? 'true' : 'false'}
-      style={{
-        height:
-          (collapsed ? TIMELINE_COLLAPSED_HEIGHT : TIMELINE_DEFAULT_HEIGHT) + DOCK_EDIT_BAR_HEIGHT,
-      }}
-      className="relative flex flex-col border-t border-gray-100 bg-white/60 backdrop-blur-md dark:border-gray-800 dark:bg-gray-800/60"
+      style={{ height }}
+      className="relative flex flex-col overflow-hidden transition-[height] duration-[400ms] ease-[cubic-bezier(0.22,1,0.36,1)] data-[dragging=true]:transition-none border-t border-gray-100 bg-white/60 backdrop-blur-md dark:border-gray-800 dark:bg-gray-800/60"
     >
+      {collapsed ? null : <DockResizeHandle dockRef={dockRef} />}
       <DockEditBar
         sceneId={sceneId}
         canPickElements={canPickElements}
         pager={pager}
         collapsed={collapsed}
-        onToggleCollapsed={toggleCollapsed}
+        onToggleCollapsed={() => setDockCollapsed(!collapsed)}
         barActionsRef={setBarActions}
       />
 
@@ -118,9 +109,10 @@ export function EditDock({
         data-testid="edit-dock-timeline"
         role="region"
         aria-label={t('edit.timeline.title')}
+        inert={collapsed}
         className="flex min-h-0 flex-1 flex-col"
       >
-        <EditDockProvider value={{ collapsed, toggleCollapsed, barActions }}>
+        <EditDockProvider value={{ expand, barActions }}>
           <ActionsBar sceneId={sceneId} />
         </EditDockProvider>
       </div>

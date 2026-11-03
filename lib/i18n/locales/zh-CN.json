@@ -352,7 +352,12 @@
     "editDisabledHint": "本页不支持编辑——打开任意课程页即可编辑。",
     "editToggle": "编辑",
     "openInWorkspace": "在工作台中打开",
-    "openInWorkspaceHint": "在工作台中打开，可以继续对话修改这门课"
+    "openInWorkspaceHint": "在工作台中打开，可以继续对话修改这门课",
+    "dock": {
+      "collapse": "收起底栏",
+      "expand": "展开底栏",
+      "resize": "调整底栏高度"
+    }
   },
   "edit": {
     "undo": "撤销",
@@ -658,8 +663,6 @@
     "timeline": {
       "title": "讲解脚本",
       "regenAllTts": "重新生成全部配音",
-      "collapseAxis": "收起为轴线",
-      "expandTrack": "展开轨道",
       "emptyHint": "把上方的动作拖到轴上开始编排，或让 MAIC Agent 生成讲解。",
       "speechPlaceholder": "输入这一句讲解…",
       "reorder": "拖动重排",
