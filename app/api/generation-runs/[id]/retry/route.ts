@@ -4,6 +4,10 @@
  *     `RUN_STATE_CONFLICT` for a run that is not paused; 429 `ACTIVE_RUN_LIMIT`
  *     when the owner already has the limit of runs in progress, since a paused
  *     run does not count and a retried one does).
+ *     `{ commandId, voice }`: as above, but the learner's current narrator
+ *     voice replaces the run's saved `input.voice` before the step resumes, so
+ *     narration uses the re-cloned or newly selected voice instead of the stale
+ *     one the run paused with.
  *     `{ commandId, media: { elementId } }`: generate one failed image or
  *     video again, in a run that is generating, paused or completed; nothing
  *     else of the run runs again (409 `RUN_STATE_CONFLICT` for an element

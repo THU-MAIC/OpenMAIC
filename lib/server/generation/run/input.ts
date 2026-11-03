@@ -279,22 +279,73 @@ export interface RetryCommand {
   commandId: string;
   /** Retry this failed media element only. */
   media?: { elementId: string };
+  /**
+   * The learner's current narrator voice, applied to the run's input before
+   * the failed step resumes: a re-cloned or newly selected voice reaches
+   * narration through it instead of the stale `input.voice` the run paused
+   * with. A media Retry ignores it (it generates one element, not narration).
+   */
+  voice?: { providerId: string; voiceId: string; speed?: number };
 }
 
 const MAX_ELEMENT_ID_CHARS = 128;
+
+/**
+ * Parse the `voice` override of a Retry, with the same validation a run's
+ * start input uses (see {@link parseRunInput}): a provider id, a non-empty
+ * voice id, and an optional speed above 0 and at most 4.
+ */
+function parseRetryVoice(value: unknown): Parsed<RetryCommand['voice']> {
+  const record_ = record(value);
+  const speed = record_?.speed;
+  if (
+    !record_ ||
+    typeof record_.providerId !== 'string' ||
+    !PROVIDER_ID_PATTERN.test(record_.providerId) ||
+    typeof record_.voiceId !== 'string' ||
+    !record_.voiceId.trim() ||
+    record_.voiceId.length > MAX_VOICE_ID_CHARS ||
+    (speed !== undefined && (typeof speed !== 'number' || !(speed > 0) || speed > 4))
+  ) {
+    return {
+      ok: false,
+      message: `voice must be { providerId, voiceId (at most ${MAX_VOICE_ID_CHARS} characters), speed? } with a speed above 0 and at most 4`,
+    };
+  }
+  return {
+    ok: true,
+    value: {
+      providerId: record_.providerId,
+      voiceId: record_.voiceId.trim(),
+      ...(speed !== undefined ? { speed: speed as number } : {}),
+    },
+  };
+}
 
 export function parseRetry(raw: unknown): Parsed<RetryCommand> {
   const body = record(raw);
   if (!body) return { ok: false, message: 'The body must be a JSON object' };
   const commandId = parseCommandId(body.commandId);
   if (!commandId.ok) return commandId;
-  if (body.media === undefined) return { ok: true, value: { commandId: commandId.value } };
-  const elementId = record(body.media)?.elementId;
-  if (typeof elementId !== 'string' || !elementId || elementId.length > MAX_ELEMENT_ID_CHARS) {
-    return {
-      ok: false,
-      message: `media must be { elementId } with an element id of 1 to ${MAX_ELEMENT_ID_CHARS} characters`,
-    };
+  let media: RetryCommand['media'];
+  if (body.media !== undefined) {
+    const elementId = record(body.media)?.elementId;
+    if (typeof elementId !== 'string' || !elementId || elementId.length > MAX_ELEMENT_ID_CHARS) {
+      return {
+        ok: false,
+        message: `media must be { elementId } with an element id of 1 to ${MAX_ELEMENT_ID_CHARS} characters`,
+      };
+    }
+    media = { elementId };
   }
-  return { ok: true, value: { commandId: commandId.value, media: { elementId } } };
+  let voice: RetryCommand['voice'];
+  if (body.voice !== undefined) {
+    const parsed = parseRetryVoice(body.voice);
+    if (!parsed.ok) return parsed;
+    voice = parsed.value;
+  }
+  return {
+    ok: true,
+    value: { commandId: commandId.value, ...(media ? { media } : {}), ...(voice ? { voice } : {}) },
+  };
 }

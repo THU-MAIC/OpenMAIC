@@ -8,6 +8,7 @@
  */
 import { confirmRunOutline, holdRunOutline, newCommandId, retryRun } from './api';
 import type { RunView } from './types';
+import type { GenerationRunInput } from '@/lib/server/generation/run/types';
 import type { SceneOutline } from '@/lib/types/generation';
 
 const commandIds = new Map<string, string>();
@@ -50,14 +51,21 @@ export async function holdOutline(view: Pick<RunView, 'runId'>): Promise<void> {
   await holdRunOutline(view.runId, { commandId: commandIdFor(`${view.runId}:hold`, 'hold') });
 }
 
-/** Re-run the step a paused run stopped at. Answers the seq of the command's commit. */
+/**
+ * Re-run the step a paused run stopped at. When `voice` is the learner's
+ * current narrator voice, the resumed narration uses it instead of the
+ * `input.voice` the run paused with (the user re-cloned or switched voices).
+ * Answers the seq of the command's commit.
+ */
 export async function retryPausedRun(
   view: Pick<RunView, 'runId' | 'failedSeq' | 'error'>,
+  voice?: GenerationRunInput['voice'],
 ): Promise<number> {
   const key = `${view.runId}:retry:${view.error?.step ?? ''}:${view.failedSeq}`;
-  const result = (await retryRun(view.runId, { commandId: commandIdFor(key, 'retry') })) as {
-    seq?: unknown;
-  };
+  const result = (await retryRun(view.runId, {
+    commandId: commandIdFor(key, 'retry'),
+    ...(voice ? { voice } : {}),
+  })) as { seq?: unknown };
   return typeof result.seq === 'number' ? result.seq : view.failedSeq;
 }
 

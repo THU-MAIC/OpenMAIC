@@ -80,6 +80,31 @@ describe('run commands', () => {
     expect(c!.body.commandId).not.toBe(a!.body.commandId);
   });
 
+  it('passes the updated voice in a voice-failure retry so resumed narration uses it', async () => {
+    let view = viewFromSnapshot(snapshot({ state: 'generating', seq: 10, outline: ready }));
+    // Narration pauses because the bound voice clone is gone.
+    view = applyRunEvent(
+      view,
+      event(11, 'step_failed', {
+        step: 'scene:0:narration',
+        message: 'The cloned Qwen voice no longer exists.',
+      }),
+    );
+    view = applyRunEvent(view, event(12, 'state', { state: 'paused', step: 'scene:0:narration' }));
+
+    // The user re-clones or selects a new voice, then clicks Retry.
+    const updatedVoice = { providerId: 'qwen-tts', voiceId: 'qwen-tts-vc-clone-2', speed: 1.25 };
+    await retryPausedRun(view, updatedVoice);
+    const [retry] = bodies();
+    expect(retry!.url).toBe('/api/generation-runs/run-AAAAAAAAAAAAAAAA/retry');
+    expect(retry!.body).toEqual({ commandId: retry!.body.commandId, voice: updatedVoice });
+
+    // A Retry without a voice sends no voice field (backward-compatible).
+    await retryPausedRun(view);
+    const [, noVoice] = bodies();
+    expect('voice' in noVoice!.body).toBe(false);
+  });
+
   it('retries one media element by its failure', async () => {
     let view = viewFromSnapshot(snapshot({ state: 'completed', seq: 10, outline: ready }));
     view = applyRunEvent(

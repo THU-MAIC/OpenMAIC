@@ -149,6 +149,56 @@ describe('the media lane', () => {
     }
     expect(parseRetry({ media: { elementId: 'gen_img_1' } })).toMatchObject({ ok: false });
   });
+
+  it('parses a retry voice override, or refuses an invalid one', () => {
+    expect(
+      parseRetry({
+        commandId: 'c1',
+        voice: { providerId: 'qwen-tts', voiceId: 'qwen-tts-vc-clone-2', speed: 1.25 },
+      }),
+    ).toEqual({
+      ok: true,
+      value: {
+        commandId: 'c1',
+        voice: { providerId: 'qwen-tts', voiceId: 'qwen-tts-vc-clone-2', speed: 1.25 },
+      },
+    });
+    // Speed is optional.
+    expect(
+      parseRetry({ commandId: 'c1', voice: { providerId: 'openai-tts', voiceId: 'alloy' } }),
+    ).toMatchObject({
+      ok: true,
+      value: { commandId: 'c1', voice: { providerId: 'openai-tts', voiceId: 'alloy' } },
+    });
+    // A retry can carry both media and voice.
+    expect(
+      parseRetry({
+        commandId: 'c1',
+        media: { elementId: 'gen_img_1' },
+        voice: { providerId: 'openai-tts', voiceId: 'alloy' },
+      }),
+    ).toMatchObject({
+      ok: true,
+      value: {
+        commandId: 'c1',
+        media: { elementId: 'gen_img_1' },
+        voice: { providerId: 'openai-tts', voiceId: 'alloy' },
+      },
+    });
+    for (const voice of [
+      null,
+      {},
+      { providerId: 'qwen-tts' },
+      { providerId: 'qwen-tts', voiceId: '' },
+      { providerId: 'qwen-tts', voiceId: '  ' },
+      { providerId: 'qwen-tts', voiceId: 'ok', speed: 0 },
+      { providerId: 'qwen-tts', voiceId: 'ok', speed: 5 },
+      { providerId: 'qwen-tts', voiceId: 'ok', speed: 'fast' },
+      'alloy',
+    ]) {
+      expect(parseRetry({ commandId: 'c1', voice })).toMatchObject({ ok: false });
+    }
+  });
 });
 
 describe('media step services', () => {
