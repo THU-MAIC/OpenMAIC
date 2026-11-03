@@ -1153,6 +1153,7 @@
     "materialTooLarge": "{{name}} 파일이 너무 큽니다. 자료는 최대 {{size}}까지 가능합니다."
   },
   "generation": {
+    "qwenCloneNewGenerationHint": "저장된 음성을 다시 복제해야 합니다. 음성 설정에서 적절한 참조 오디오를 업로드하고 새 음성을 선택한 다음 새 생성을 시작하세요. 일시 중지된 작업을 재시도하면 기존 음성을 계속 사용합니다.",
     "quotaExhausted": "생성 한도를 모두 사용했습니다. 요금제 한도나 계정 잔액을 확인하거나 관리자에게 문의한 후 다시 시도하세요.",
     "pdfLoadFailed": "PDF 파일 불러오기에 실패했습니다. 다시 시도해주세요",
     "pdfParseFailed": "PDF 파싱에 실패했습니다",

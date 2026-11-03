@@ -1153,6 +1153,7 @@
     "materialTooLarge": "{{name}} 过大：单个素材最大为 {{size}}。"
   },
   "generation": {
+    "qwenCloneNewGenerationHint": "此已保存音色需要重新克隆。请在音色设置中上传合适的参考音频，选择新音色后重新发起生成。重试此暂停任务仍会使用原音色。",
     "quotaExhausted": "生成额度已用尽。请检查套餐额度或账户余额，或联系管理员处理后重试。",
     "pdfLoadFailed": "无法加载 PDF 文件，请重试",
     "pdfParseFailed": "PDF 解析失败",

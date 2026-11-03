@@ -7,14 +7,14 @@ import { RunApiError, runApiErrorText } from '@/lib/generation-run-client/api';
 import { event, snapshot } from './fixtures';
 
 describe('what a paused run says', () => {
-  it('tells a paused narration run how to recreate its saved voice', () => {
+  it('directs a paused narration run to a new generation after re-cloning', () => {
     expect(
       runFailureText({
         step: 'scene:0:narration',
         errorCode: 'QWEN_VC_RECLONE_REQUIRED',
         message: 'QWEN_VC_RECLONE_REQUIRED',
       }),
-    ).toEqual({ key: 'settings.qwenCloneMigrationHint' });
+    ).toEqual({ key: 'generation.qwenCloneNewGenerationHint' });
   });
 
   const at = (step: string, extra: Record<string, unknown> = {}) =>

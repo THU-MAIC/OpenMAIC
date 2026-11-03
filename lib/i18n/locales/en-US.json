@@ -1153,6 +1153,7 @@
     "materialTooLarge": "{{name}} is too large: a material can be at most {{size}}."
   },
   "generation": {
+    "qwenCloneNewGenerationHint": "This saved voice must be cloned again. Upload suitable reference audio in voice settings, select the new voice, then start a new generation. Retrying this paused run keeps its original voice.",
     "quotaExhausted": "Generation quota has been exhausted. Check your plan allowance or account balance, or contact your administrator before retrying.",
     "pdfLoadFailed": "Failed to load PDF file, please try again",
     "pdfParseFailed": "PDF parsing failed",

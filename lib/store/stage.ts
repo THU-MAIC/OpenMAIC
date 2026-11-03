@@ -262,6 +262,62 @@ export function discardPendingStageChanges(stageId: string): void {
 }
 
 /**
+ * Whether this browser holds a stage-level edit (the roster included) not yet
+ * written, queued or in flight: a server read must not overwrite it.
+ */
+export function hasUnsavedStageEdit(stageId: string): boolean {
+  return snapshotPendingStageChangesForDeletion(stageId).some((change) => change.kind === 'stage');
+}
+
+/** Who teaches a course: the two stage fields a roster write sets. */
+export interface StageRosterValue {
+  readonly agentIds?: readonly string[];
+  readonly generatedAgentConfigs?: readonly GeneratedAgentConfig[];
+}
+
+function rosterOfStage(stage: Stage): StageRosterValue {
+  return {
+    ...(stage.agentIds ? { agentIds: stage.agentIds } : {}),
+    ...(stage.generatedAgentConfigs ? { generatedAgentConfigs: stage.generatedAgentConfigs } : {}),
+  };
+}
+
+/**
+ * Per course, the roster this browser last knew the server to hold: the base
+ * of the roster three-way merge in the freshness sync. A server roster that
+ * differs from it while the shown roster still equals it is a remote change
+ * the classroom takes (even with other stage edits pending, so their flush
+ * carries it); a shown roster that differs from it is a local edit, kept.
+ * Recorded by the sync (when it first sees the course and whenever it applies
+ * or confirms a server roster) and here, after a save that wrote the stage.
+ */
+const serverRosterBase = new Map<string, StageRosterValue>();
+
+export function recordServerRosterBase(stageId: string, roster: StageRosterValue): void {
+  serverRosterBase.set(stageId, roster);
+}
+
+export function forgetServerRosterBase(stageId: string): void {
+  serverRosterBase.delete(stageId);
+}
+
+export function serverRosterBaseOf(stageId: string): StageRosterValue | undefined {
+  return serverRosterBase.get(stageId);
+}
+
+/**
+ * Whether a write of the stage document is on the wire now (a flush round
+ * that carries the stage, or a whole-document save). Its payload was captured
+ * when it started, so a roster applied locally now would not be in it.
+ */
+export function isStageWriteInFlight(stageId: string): boolean {
+  return (
+    (flushInFlight?.stageId === stageId && flushInFlight.dirtySnapshot.has('stage')) ||
+    wholeDocumentSavesInFlight.has(stageId)
+  );
+}
+
+/**
  * Snapshot the logical changes a deletion is about to throw away: everything
  * still queued for the stage plus the in-flight flush round's dirt (whose
  * write the deletion fence will drop). Taken by the deletion path BEFORE the
@@ -490,7 +546,15 @@ interface StageState {
   setChats: (chats: ChatSession[]) => void;
   setMode: (mode: StageMode) => void;
   setToolbarState: (state: ToolbarState) => void;
-  setStageAgents: (configs: GeneratedAgentConfig[]) => void;
+  /**
+   * Replace the roster. `fromServer`: the server already holds it (the
+   * freshness sync read it back), so the classroom follows it without the
+   * write a local edit makes; `agentIds` then comes along with it.
+   */
+  setStageAgents: (
+    configs: GeneratedAgentConfig[],
+    options?: { readonly fromServer?: boolean; readonly agentIds?: string[] },
+  ) => void;
   setOutlines: (outlines: SceneOutline[]) => void;
   setGenerationComplete: (complete: boolean) => void;
   /**
@@ -848,14 +912,21 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
 
   setToolbarState: (toolbarState) => set({ toolbarState }),
 
-  setStageAgents: (configs) => {
+  setStageAgents: (configs, options) => {
     const stage = get().stage;
     if (!stage) return;
-    set({ stage: { ...stage, generatedAgentConfigs: configs } });
+    set({
+      stage: {
+        ...stage,
+        generatedAgentConfigs: configs,
+        ...(options?.agentIds ? { agentIds: options.agentIds } : {}),
+      },
+    });
     // The roster is part of the stage document — persistence rides the shared
     // pending-change scheduler like every other stage mutation. The registry
-    // and selection updates below are synchronous in-memory mirrors only.
-    markPendingChanges(stage.id, { kind: 'stage' });
+    // and selection updates below are synchronous in-memory mirrors only. A
+    // roster read back from the server is already stored: no write.
+    if (!options?.fromServer) markPendingChanges(stage.id, { kind: 'stage' });
     applyGeneratedAgentsToRegistry(stage.id, configs);
     // Selection mirror honors provenance (same semantics as
     // restoreAgentSelection): a stage-derived selection tracks the roster
@@ -977,6 +1048,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         }
 
         const failedKeys = new Set((result?.failedChanges ?? []).map(pendingChangeKey));
+        // The server now holds the roster this save wrote.
+        if (!failedKeys.has('stage')) recordServerRosterBase(stage.id, rosterOfStage(stage));
         if (
           failedKeys.has('chats') &&
           pendingStageId === stage.id &&
@@ -1287,6 +1360,15 @@ function startFlushRound(): FlushRound | null {
             restoreMarker: snapshot.chatSnapshot.restoreMarker,
           },
         });
+      }
+      if (
+        !staleDropped &&
+        snapshot.stage &&
+        dirtySnapshot.has('stage') &&
+        !failedKeys.has('stage')
+      ) {
+        // The server now holds the roster this round wrote.
+        recordServerRosterBase(stageId, rosterOfStage(snapshot.stage));
       }
       recordFlushOutcome(failedKeys.size > 0);
       return failedKeys;

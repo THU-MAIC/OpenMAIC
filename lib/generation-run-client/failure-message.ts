@@ -59,7 +59,7 @@ export function runFailureText(
   failure: Pick<GenerationRunFailure, 'step' | 'message' | 'errorCode' | 'statusCode'>,
 ): FailureText {
   if (failure.errorCode === 'QWEN_VC_RECLONE_REQUIRED')
-    return { key: 'settings.qwenCloneMigrationHint' };
+    return { key: 'generation.qwenCloneNewGenerationHint' };
   const quotaKey = providerQuotaKey(failure.errorCode);
   if (quotaKey) return { key: quotaKey };
   const step = failure.step ?? '';

@@ -1153,6 +1153,7 @@
     "materialTooLarge": "{{name}} est trop volumineux : un support peut faire au plus {{size}}."
   },
   "generation": {
+    "qwenCloneNewGenerationHint": "Cette voix enregistrée doit être clonée à nouveau. Importez un enregistrement de référence adapté dans les paramètres vocaux, sélectionnez la nouvelle voix, puis lancez une nouvelle génération. Réessayer cette génération en pause conserve la voix initiale.",
     "quotaExhausted": "Le quota de génération est épuisé. Vérifiez le quota de votre forfait ou le solde de votre compte, ou contactez l’administrateur avant de réessayer.",
     "pdfLoadFailed": "Échec du chargement du fichier PDF, veuillez réessayer",
     "pdfParseFailed": "Échec de l’analyse du PDF",

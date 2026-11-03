@@ -123,6 +123,8 @@ This integration uses CosyVoice's non-real-time HTTP synthesis API. Its document
 
 The default target is `cosyvoice-v3.5-plus`. `TTS_QWEN_VOICE_CLONE_MODEL` applies to both server-managed and BYOK registration and playback; an empty value or the exact retired value `qwen3-tts-vc-2026-01-22` uses that default. Other explicit overrides are preserved and still require model authorization. The API key is not used to infer a region, and an override does not change the synthesis transport.
 
+Managed deployments must retain `qwen3-tts-flash` alongside the clone target, for example `TTS_QWEN_MODELS=qwen3-tts-flash,cosyvoice-v3.5-plus`, or list both in the provider’s `models` allowlist in `openmaic.yml`. Setting only the clone target replaces the implicit catalog-model authorization and causes catalog voices to return HTTP 403. Keep other models you already use authorized as well.
+
 Voice registration uses the audio sample and does not require a transcript.
 
 Saved legacy profiles and their reference samples are retained, but there is no one-click sample migration. To recreate an incompatible voice, upload its original reference audio again through voice settings and create a new clone. Use a clean sample with at least five seconds of speech; older samples shorter than five seconds must be replaced with a longer recording. Keeping a sample in a profile does not automatically re-enroll it.

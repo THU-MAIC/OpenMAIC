@@ -1153,6 +1153,7 @@
     "materialTooLarge": "{{name}} ist zu groß: Ein Material darf höchstens {{size}} groß sein."
   },
   "generation": {
+    "qwenCloneNewGenerationHint": "Diese gespeicherte Stimme muss erneut geklont werden. Laden Sie in den Stimmeinstellungen eine geeignete Referenzaufnahme hoch, wählen Sie die neue Stimme und starten Sie eine neue Generierung. Ein erneuter Versuch dieses pausierten Laufs verwendet weiterhin die ursprüngliche Stimme.",
     "quotaExhausted": "Das Generierungskontingent ist aufgebraucht. Prüfen Sie Ihr Tarifkontingent oder Kontoguthaben, oder wenden Sie sich an den Administrator, bevor Sie es erneut versuchen.",
     "pdfLoadFailed": "PDF-Datei konnte nicht geladen werden. Bitte versuche es erneut.",
     "pdfParseFailed": "PDF konnte nicht verarbeitet werden",

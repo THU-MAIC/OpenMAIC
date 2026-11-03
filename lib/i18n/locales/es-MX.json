@@ -1153,6 +1153,7 @@
     "materialTooLarge": "{{name}} es demasiado grande: un material puede medir como máximo {{size}}."
   },
   "generation": {
+    "qwenCloneNewGenerationHint": "Esta voz guardada debe clonarse de nuevo. Sube un audio de referencia adecuado en la configuración de voz, selecciona la nueva voz e inicia una nueva generación. Reintentar esta generación pausada conserva la voz original.",
     "quotaExhausted": "Se ha agotado la cuota de generación. Revisa la cuota de tu plan o el saldo de tu cuenta, o contacta al administrador antes de volver a intentarlo.",
     "pdfLoadFailed": "Error al cargar el archivo PDF, inténtalo de nuevo",
     "pdfParseFailed": "Error al procesar el PDF",
