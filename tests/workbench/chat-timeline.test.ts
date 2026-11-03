@@ -217,6 +217,38 @@ describe('rowsForRender tool-run aggregation', () => {
     expect(three[0]?.key).toBe(one[0]?.key);
   });
 
+  it('says only the step under way while the stretch runs', () => {
+    const thinkingNow = renderToStaticMarkup(
+      createElement(ChatTimeline, {
+        chat: [
+          tool('read_scene', 'r1'),
+          tool('read_scene', 'r2'),
+          { ...thinking('th1'), streaming: true },
+        ],
+        plan: [],
+      }),
+    );
+    const head = (html: string) => html.slice(0, html.indexOf('</button>'));
+    expect(head(thinkingNow)).toContain('思考中…');
+    expect(head(thinkingNow)).not.toContain('已思考');
+    expect(head(thinkingNow)).not.toContain('个工具调用');
+
+    const toolNow = renderToStaticMarkup(
+      createElement(ChatTimeline, {
+        chat: [
+          thinking('th1'),
+          tool('read_scene', 'r1'),
+          { ...tool('read_scene', 'r2'), toolState: 'running' },
+        ],
+        plan: [],
+      }),
+    );
+    expect(head(toolNow)).toContain('workbench-activity-live');
+    expect(head(toolNow)).not.toContain('思考中…');
+    expect(head(toolNow)).not.toContain('已思考');
+    expect(head(toolNow)).not.toContain('个工具调用');
+  });
+
   it('says what the stretch came to, with its bars clipped rather than unmounted', () => {
     const html = renderToStaticMarkup(
       createElement(ChatTimeline, {

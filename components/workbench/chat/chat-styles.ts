@@ -288,7 +288,7 @@ export const wbStyles = {
     icon: 'inline-flex shrink-0 items-center text-[var(--wb-text-faint)]',
     title: 'min-w-0 truncate font-medium text-[var(--wb-text)]',
     meta: 'shrink-0 text-[var(--wb-text-faint)]',
-    // The step under way: it gives way before the counts do.
+    // The step under way, the only thing the line says while it runs.
     live: 'min-w-0 truncate font-medium text-[var(--wb-text)]',
     failed: 'shrink-0 font-medium text-[var(--wb-danger)]',
     reason:

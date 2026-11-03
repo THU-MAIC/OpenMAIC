@@ -9,8 +9,8 @@
  *
  * It opens and closes only by hand: a run finishing moves nothing under the reader, and
  * one line that keeps its height as steps come and go moves nothing below it. While it
- * runs the line says the step under way; settled, it says what it came to; a failure
- * stays on the line either way.
+ * runs the line says the step under way and nothing else; settled, it says what it came
+ * to; a failure stays on the line either way.
  *
  * The body stays mounted while folded (a `0fr` grid row clips it to zero height), so
  * both directions animate and a disclosure opened inside keeps its state.
@@ -76,16 +76,13 @@ export function ActivityGroup({
           <List size={13} />
         </span>
         {summary.status === 'running' ? (
-          <>
-            <span
-              className={styles.toolGroup.live}
-              title={summary.live}
-              data-testid="workbench-activity-live"
-            >
-              {summary.live}
-            </span>
-            <span className={styles.toolGroup.meta}>· {counts}</span>
-          </>
+          <span
+            className={styles.toolGroup.live}
+            title={summary.live}
+            data-testid="workbench-activity-live"
+          >
+            {summary.live}
+          </span>
         ) : (
           <>
             <span className={styles.toolGroup.title}>{counts}</span>
