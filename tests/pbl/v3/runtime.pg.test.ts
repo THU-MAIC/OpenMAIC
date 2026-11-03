@@ -28,6 +28,8 @@ import type { ModelMessage } from 'ai';
 import { PgAgentSessionStore, ensureAgentSessionSchema } from '@openmaic/storage/agent-session/pg';
 import { listAgentUserMessages } from '@/lib/server/agent-runtime/user-messages';
 import { visibleProductLabels } from '@/lib/server/pbl-v3/ui-labels';
+// This file runs real PostgreSQL and local Python I/O. Explicit race/lock deadlines stay intact.
+vi.setConfig({ testTimeout: 15_000 });
 vi.mock('server-only', () => ({}));
 const mocked = vi.hoisted(() => ({
   pool: undefined as unknown,
@@ -3897,12 +3899,15 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       const command = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'startCommand');
       const original = agents.assertActiveLease.bind(agents);
       let release!: () => void,
-        entered = false,
+        reachPause!: () => void,
         checks = 0;
+      const entered = new Promise<void>((resolve) => {
+        reachPause = resolve;
+      });
       const fence = vi.spyOn(agents, 'assertActiveLease').mockImplementation(async (...args) => {
         // Outer tool admission and evidence/build invalidation have already committed.
         if (++checks === 3) {
-          entered = true;
+          reachPause();
           await new Promise<void>((resolve) => {
             release = resolve;
           });
@@ -3925,7 +3930,12 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             : invoke(config, 'run_build')
       ).catch((error) => error);
       try {
-        await vi.waitFor(() => expect(entered).toBe(true));
+        await Promise.race([
+          entered,
+          pending.then(() => {
+            throw new Error('Tool settled before reaching the dispatch fence.');
+          }),
+        ]);
         await expireExecution(sessionId);
         await (await import('@/lib/server/pbl-v3/execution-watchdog')).expireStalledTeachingTurns();
         expect((await agents.getSession(sessionId))!.status).toBe('failed');
@@ -3978,6 +3988,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         });
       } finally {
         release?.();
+        await pending;
         fence.mockRestore();
         write.mockRestore();
         manage.mockRestore();
