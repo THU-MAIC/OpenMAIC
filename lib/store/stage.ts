@@ -935,7 +935,14 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     // is kept for when no roster applies.
     const settings = useSettingsStore.getState();
     const nextRosterIds = configs.map((a) => a.id);
-    if (!settings.agentSelectionIsUserSet) {
+    if (nextRosterIds.length === 0 && settings.presetAgentChoice.length > 0) {
+      // The roster the kept choice stepped aside for is gone: same as loading
+      // a course without a roster.
+      settings.setAgentMode('preset');
+      settings.setSelectedAgentIds(settings.presetAgentChoice);
+      settings.setAgentSelectionIsUserSet(true);
+      settings.setPresetAgentChoice([]);
+    } else if (!settings.agentSelectionIsUserSet) {
       settings.setSelectedAgentIds(nextRosterIds);
     } else if (settings.agentMode === 'preset') {
       if (nextRosterIds.length > 0) {

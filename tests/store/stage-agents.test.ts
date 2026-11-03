@@ -21,6 +21,7 @@ const {
       agentMode: 'auto' as 'preset' | 'auto',
       selectedAgentIds: [] as string[],
       agentSelectionIsUserSet: false,
+      presetAgentChoice: [] as string[],
       setSelectedAgentIds,
       setAgentSelectionIsUserSet,
       setPresetAgentChoice,
@@ -96,6 +97,7 @@ beforeEach(() => {
   settingsState.agentMode = 'auto';
   settingsState.selectedAgentIds = [];
   settingsState.agentSelectionIsUserSet = false;
+  settingsState.presetAgentChoice = [];
   useStageStore.setState({
     stage: makeStage(),
     scenes: [],
@@ -228,6 +230,20 @@ describe('setStageAgents selection provenance', () => {
 
     expect(setSelectedAgentIds).not.toHaveBeenCalled();
     expect(setPresetAgentChoice).not.toHaveBeenCalled();
+  });
+
+  it('restores the kept preset choice when the roster it stepped aside for empties', () => {
+    settingsState.agentMode = 'auto';
+    settingsState.selectedAgentIds = ['gen-1'];
+    settingsState.agentSelectionIsUserSet = false;
+    settingsState.presetAgentChoice = ['default-1'];
+
+    useStageStore.getState().setStageAgents([]);
+
+    expect(setAgentMode).toHaveBeenCalledWith('preset');
+    expect(setSelectedAgentIds).toHaveBeenCalledWith(['default-1']);
+    expect(setAgentSelectionIsUserSet).toHaveBeenCalledWith(true);
+    expect(setPresetAgentChoice).toHaveBeenCalledWith([]);
   });
 
   it('falls back to the full roster and clears the user-set flag when the intersection is empty', () => {
