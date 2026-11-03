@@ -187,7 +187,8 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['grok', 6],
       ['tencent', 4],
       ['hunyuan', 3],
-      ['xiaomi', 3],
+      // TTS_XIAOMI/ASR_XIAOMI in the provider-config env maps (#1432 follow-up).
+      ['xiaomi', 7],
       ['tokendance', 2],
       ['ollama', 3],
       ['lemonade', 12],
