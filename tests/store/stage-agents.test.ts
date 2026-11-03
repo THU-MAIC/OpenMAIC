@@ -43,6 +43,7 @@ vi.mock('@/lib/store/settings', () => ({
 
 import {
   discardPendingStageChanges,
+  hasUnsavedStageEdit,
   restorePendingStageChanges,
   snapshotPendingStageChangesForDeletion,
   useStageStore,
@@ -143,6 +144,24 @@ describe('setStageAgents', () => {
     // effects, not persistence.
     expect(applyGeneratedAgentsToRegistry).toHaveBeenCalledExactlyOnceWith('stage-1', configs);
     expect(setSelectedAgentIds).toHaveBeenCalledExactlyOnceWith(['a1', 'a2']);
+  });
+
+  it('follows a roster read back from the server without a write of its own', () => {
+    const configs = [makeAgentConfig('a1'), makeAgentConfig('a2')];
+    useStageStore.getState().setStageAgents(configs, { fromServer: true, agentIds: ['a1', 'a2'] });
+
+    const stage = useStageStore.getState().stage;
+    expect(stage?.generatedAgentConfigs).toEqual(configs);
+    expect(stage?.agentIds).toEqual(['a1', 'a2']);
+    expect(applyGeneratedAgentsToRegistry).toHaveBeenCalledExactlyOnceWith('stage-1', configs);
+    expect(setSelectedAgentIds).toHaveBeenCalledExactlyOnceWith(['a1', 'a2']);
+    expect(snapshotPendingStageChangesForDeletion('stage-1')).toEqual([]);
+  });
+
+  it('a local roster edit is an unsaved stage edit until it is written', () => {
+    expect(hasUnsavedStageEdit('stage-1')).toBe(false);
+    useStageStore.getState().setStageAgents([makeAgentConfig('a1')]);
+    expect(hasUnsavedStageEdit('stage-1')).toBe(true);
   });
 });
 

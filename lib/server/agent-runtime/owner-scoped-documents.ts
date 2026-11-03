@@ -10,6 +10,7 @@ import { validateAppScene, validateAppStage } from '@/lib/document-store/validat
 import {
   createOwnerBoundDocumentStore,
   type CreateOnlyDocumentStore,
+  type StageRowStore,
 } from '@/lib/persistence/owner-bound-document-store';
 import { canonicalizeOwner, isOwnerRetiredError } from '@/lib/persistence/owner-merges';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
@@ -24,7 +25,8 @@ import type { Queryable } from '@openmaic/storage/document/pg';
 export type OwnerScopedDocumentStore = DocumentStore<AppScene, AppStage> &
   DocumentFolderStore &
   StageFreshnessManifestStore &
-  CreateOnlyDocumentStore<AppScene, AppStage>;
+  CreateOnlyDocumentStore<AppScene, AppStage> &
+  StageRowStore<AppStage>;
 
 /**
  * The owner-bound document store for one HTTP request.
