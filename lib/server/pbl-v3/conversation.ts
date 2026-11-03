@@ -14,6 +14,7 @@ import {
 /** Never send provider diagnostics, addresses or credentials to a learner. */
 export function learningRunFailure(error: unknown): LearningRunFailure {
   const message = typeof error === 'string' ? error : '';
+  if (message.includes('PBL_CONTEXT_ACTIVE_TURN_CAPACITY:')) return 'contextTurnCapacity';
   if (message.includes('PBL_CONTEXT_CAPACITY:')) return 'contextCapacity';
   if (message.includes('PBL_CONTEXT_COMPACTION_FAILED:')) return 'contextPreparation';
   if (

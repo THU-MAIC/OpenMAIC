@@ -1,3 +1,4 @@
+import { applicationChoices } from '@/lib/pbl/v3/application-choices';
 import { completedProjectFiles } from './completed-files';
 import { recordLearningEvidence } from './evidence';
 import {
@@ -448,7 +449,7 @@ export async function collectStudyExecution(
       {
         id: evaluation.id,
         ...evaluationOutcome(
-          evaluationFor(project, milestone.id),
+          evaluationFor(project, milestone.id, [], collected.decisions),
           evaluation.id,
           snapshot && observed
             ? observed
@@ -857,6 +858,7 @@ export async function commandStudy(
             project,
             row.state.position.milestoneId!,
             row.evaluation ? [] : Object.keys(snapshot.files),
+            row.state.collected[row.state.position.milestoneId!]?.decisions,
           ),
           command.id,
         );
@@ -1240,12 +1242,18 @@ export async function learningView(
   return {
     id,
     revision: row.revision,
+    onboardingCompleted: await store.hasSeenOnboarding(principal.ownerId),
     title: project.definition.title,
     ...(project.application
       ? {
           application: {
             title: project.application.title,
             description: project.application.description,
+            choices: applicationChoices(
+              project.definition,
+              row.state,
+              project.application.decisionIds,
+            ),
           },
         }
       : {}),

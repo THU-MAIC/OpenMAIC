@@ -2,6 +2,7 @@
 import { beforeAll, afterAll, describe, expect, it, vi, onTestFinished } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { DECISION_RESPONSE_MAX_LENGTH } from '@/lib/pbl/v3/domain/orchestration/decisions';
+import { projectSchema } from '@/lib/pbl/v3/domain/project/project-schema';
 import { mkdtemp, readFile, writeFile, mkdir, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -28,6 +29,8 @@ import type { ModelMessage } from 'ai';
 import { PgAgentSessionStore, ensureAgentSessionSchema } from '@openmaic/storage/agent-session/pg';
 import { listAgentUserMessages } from '@/lib/server/agent-runtime/user-messages';
 import { visibleProductLabels } from '@/lib/server/pbl-v3/ui-labels';
+// This file runs real PostgreSQL and local Python I/O. Explicit race/lock deadlines stay intact.
+vi.setConfig({ testTimeout: 15_000 });
 vi.mock('server-only', () => ({}));
 const mocked = vi.hoisted(() => ({
   pool: undefined as unknown,
@@ -733,6 +736,170 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     }
     if (mocked.root) await rm(mocked.root, { recursive: true, force: true });
   });
+  it('persists learner-wide V3 guide viewing without changing any project progress', async () => {
+    const study = await freshStudy();
+    const other = await freshStudy();
+    const read = async () =>
+      (await pool.query('SELECT * FROM pbl_v3_studies WHERE id=$1', [study.id])).rows[0];
+    const before = await read();
+    expect((await learningView(principal, study.id)).onboardingCompleted).toBe(false);
+    await expect(store.completeOnboarding(study.id, 'another-owner')).rejects.toMatchObject({
+      code: 'SANDBOX_NOT_FOUND',
+    });
+    expect((await read()).onboarding_completed_at).toBeNull();
+    await store.completeOnboarding(study.id, principal.ownerId);
+    const after = await read();
+    expect(after.onboarding_completed_at).toBeInstanceOf(Date);
+    expect({ ...after, onboarding_completed_at: null }).toEqual(before);
+    expect((await learningView(principal, study.id)).onboardingCompleted).toBe(true);
+    await store.completeOnboarding(study.id, principal.ownerId);
+    expect((await read()).onboarding_completed_at).toEqual(after.onboarding_completed_at);
+    expect((await store.get(other.id, principal.ownerId)).onboarding_completed_at).toBeNull();
+    expect((await learningView(principal, other.id)).onboardingCompleted).toBe(true);
+    expect(await store.hasSeenOnboarding('another-owner')).toBe(false);
+    const later = await freshStudy();
+    expect((await learningView(principal, later.id)).onboardingCompleted).toBe(true);
+  });
+
+  it.each(['bootstrap', 'stage', 'completed', 'reset', 'discard', 'chat', 'event'] as const)(
+    'derives prior learner-wide V3 progress from %s without counting mere preparation/opening',
+    async (kind) => {
+      const study = await freshStudy();
+      const ownerId = `guide-${randomUUID()}`;
+      try {
+        if (kind === 'bootstrap' || kind === 'chat')
+          await study.send(kind === 'chat' ? 'chat' : 'begin');
+        if (kind === 'stage')
+          await pool.query(
+            "UPDATE pbl_v3_studies SET state=jsonb_set(state,'{position,stageIndex}','1') WHERE id=$1",
+            [study.id],
+          );
+        if (kind === 'completed')
+          await pool.query(
+            "UPDATE pbl_v3_studies SET state=jsonb_set(state,'{status}','\"completed\"') WHERE id=$1",
+            [study.id],
+          );
+        if (kind === 'reset')
+          await pool.query('UPDATE pbl_v3_studies SET environment_recovery=$2 WHERE id=$1', [
+            study.id,
+            { progressReset: true },
+          ]);
+        if (kind === 'discard')
+          await pool.query('UPDATE pbl_v3_studies SET archive_discard=$2 WHERE id=$1', [
+            study.id,
+            { at: new Date().toISOString() },
+          ]);
+        if (kind === 'event') {
+          const row = await store.get(study.id, principal.ownerId);
+          await store.transaction((db) =>
+            store.commit(db, row, {
+              state: { ...row.state, lastSequence: row.state.lastSequence + 1 },
+              events: [{ type: 'teaching.completed', milestoneId: 'greeting' }],
+            }),
+          );
+        }
+        await pool.query('UPDATE pbl_v3_studies SET owner_id=$2 WHERE id=$1', [study.id, ownerId]);
+        expect(await store.hasSeenOnboarding(ownerId)).toBe(kind !== 'bootstrap');
+        expect(await store.hasSeenOnboarding(`unrelated-${ownerId}`)).toBe(false);
+      } finally {
+        await releasePreparationFixtures([study.id]);
+      }
+    },
+  );
+
+  it.each(['save', 'run', 'terminal'] as const)(
+    'counts a learner’s first-stage %s as prior V3 use without requiring a stage advance',
+    async (action) => {
+      const first = project.definition.milestones[0]!.stages[0]!;
+      if (first.kind !== 'mentor_say') throw new Error('Expected the initial teaching stage.');
+      const previous = first.studentActions;
+      onTestFinished(() => {
+        first.studentActions = previous;
+      });
+      first.studentActions = [...previous, 'edit'];
+      // Seven-step order does not forbid an editable teaching stage.
+      projectSchema.parse(project.definition);
+      const owner = { ...principal, ownerId: `guide-workspace-${randomUUID()}` };
+      const study = await store.create(
+        {
+          ownerId: owner.ownerId,
+          stageId: randomUUID(),
+          sceneId: 'scene',
+          projectId: project.ref.id,
+          version: project.ref.version,
+        },
+        startOrchestration(project.definition),
+      );
+      let environmentId: string | null = null;
+      onTestFinished(async () => {
+        if (!environmentId) return;
+        try {
+          await workbenchCommand(owner, study.id, {
+            id: randomUUID(),
+            revision: (await store.get(study.id, owner.ownerId)).revision,
+            environmentId,
+            action: 'stop',
+          });
+        } finally {
+          await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+            environmentId,
+          ]);
+        }
+      });
+      const send = async (type: string, payload: Record<string, unknown> = {}) =>
+        commandStudy(owner, study.id, {
+          id: randomUUID(),
+          revision: (await store.get(study.id, owner.ownerId)).revision,
+          type,
+          ...payload,
+        });
+      await send('prepare');
+      const before = await store.get(study.id, owner.ownerId);
+      environmentId = before.environment_id;
+      expect((await learningView(owner, study.id)).onboardingCompleted).toBe(false);
+      await recordLearningEvidence(pool, before, 'discussion', 'file-edit', {
+        path: 'greeting.py',
+      });
+      expect(await store.hasSeenOnboarding(owner.ownerId)).toBe(false);
+      if (action === 'save') {
+        const text = await (
+          await SandboxService.forOwner(owner)
+        ).readText(environmentId!, 'greeting.py');
+        await send('save', {
+          path: 'greeting.py',
+          text: text + '\n# learner edit',
+          expectedHash: digest(text),
+        });
+      } else {
+        const work = await workbenchView(owner, study.id);
+        expect(work.canRun).toBe(true);
+        await workbenchCommand(owner, study.id, {
+          id: randomUUID(),
+          revision: work.revision,
+          environmentId: work.environmentId,
+          epoch: work.epoch,
+          action,
+          text: 'printf learner-work',
+        });
+      }
+      const after = await store.get(study.id, owner.ownerId);
+      expect(after.state.position).toEqual(before.state.position);
+      expect(after.state.lastSequence).toBe(before.state.lastSequence);
+      expect(after.onboarding_completed_at).toBeNull();
+      expect(
+        (
+          await pool.query(
+            "SELECT kind FROM pbl_v3_evidence WHERE study_id=$1 AND actor='learner'",
+            [study.id],
+          )
+        ).rows,
+      ).toEqual([{ kind: action === 'save' ? 'file-edit' : 'workspace-run' }]);
+      expect(await store.hasSeenOnboarding(owner.ownerId)).toBe(true);
+      expect((await learningView(owner, study.id)).onboardingCompleted).toBe(true);
+      expect(await store.hasSeenOnboarding(`unrelated-${owner.ownerId}`)).toBe(false);
+    },
+  );
+
   it('completes plan review from spontaneous current-version acceptance without another approval question', async () => {
     const original = studyId;
     const study = await freshStudy();
@@ -1176,10 +1343,11 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       expect(started.size).toBe(1);
       release();
       await maintaining;
-      // With no recent-use competitor, successive scans reclaim the two remaining idle
-      // candidates regardless of the database's UPDATE ... RETURNING order.
-      await ageStudy(interactive.id);
-      for (let pass = 0; pass < 2 && started.size < 2; pass++) await maintainLearningEnvironments();
+      // Scans are best-effort: two workers compete for one maintenance slot, and
+      // UPDATE ... RETURNING does not guarantee which candidate wins. Once the
+      // held archive has released admission, retry the deferred study directly
+      // instead of assuming it must win one of a fixed number of global scans.
+      await maintainStudy(store, second.id, principal.ownerId);
       expect(started.size).toBe(2);
     } finally {
       release();
@@ -1644,7 +1812,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         if (readFirst) {
           const welcome = JSON.stringify(await invoke(config, 'read_next_skill'));
           expect(welcome).toContain('Welcome only');
-          expect(welcome).toContain('how learning works');
+          expect(welcome).toContain('seven steps and four collaborating role types');
         }
         expect(config.systemPrompt).not.toContain('"teaching":{');
         await invoke(config, 'request_skill_review', {
@@ -2226,6 +2394,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           signal: new AbortController().signal,
         });
         expect(config.systemPrompt.match(/"uiLocale":"([^"]+)"/)?.[1]).toBe(locale);
+        expect(config.historyWindow.automaticEntry).toBe(true);
         expect(
           config.systemPrompt.includes(
             `"visibleLabels":${JSON.stringify(visibleProductLabels(locale))}`,
@@ -3457,8 +3626,33 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       const position = structuredClone(
         (await store.get(study.id, principal.ownerId)).state.position,
       );
+      if (stageIndex === 2) {
+        const capacityError = 'PBL_CONTEXT_ACTIVE_TURN_CAPACITY: private tool diagnostics';
+        await send('Please explain the edge case in the pending plan review.');
+        const failed = await claim('capacity-worker');
+        expect(failed.config.historyWindow.automaticEntry).toBe(false);
+        const inputs = await listAgentUserMessages(agents, sessionId);
+        await agents.finishSession(sessionId, 'capacity-worker', {
+          status: 'failed',
+          error: capacityError,
+          expectedAttempt: failed.claimed.attempt,
+        });
+        const failedView = await learningView(principal, study.id, { passive: true });
+        expect(failedView.roleRun?.failure).toBe('contextTurnCapacity');
+        expect(JSON.stringify(failedView)).not.toContain('private tool diagnostics');
+        await study.send('retry');
+        const retried = await claim('capacity-retry');
+        expect(await listAgentUserMessages(agents, sessionId)).toEqual(inputs);
+        expect((await store.binding(sessionId))!.guided!.pending).toEqual(pending);
+        await agents.finishSession(sessionId, 'capacity-retry', {
+          status: 'failed',
+          error: capacityError,
+          expectedAttempt: retried.claimed.attempt,
+        });
+      }
       await send('Where is the file? I cannot find the control.');
       const help = await claim('support-worker');
+      expect(help.config.historyWindow.automaticEntry).toBe(false);
       const response =
         'Use the Project files tree in the IDE. If the IDE is hidden, use its workspace toggle. The task bar is not a contract editor.';
       if (stageIndex === 2) {
@@ -3527,7 +3721,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       expect(recovered.config.isTurnComplete()).toBe(true);
       expect(
         JSON.parse(await recovered.config.liveContext()).currentReview.studentResponseCount,
-      ).toBe(0);
+      ).toBe(stageIndex === 2 ? 1 : 0); // The failed help request remains a real input, not approval.
       const calls = mocked.modelCalls;
       await runSession({ running: new Map(), shuttingDown: false }, recovered.claimed);
       expect(mocked.modelCalls).toBe(calls);
@@ -3543,7 +3737,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       );
       const next = await claim('after-support');
       expect(JSON.parse(await next.config.liveContext()).currentReview.studentResponseCount).toBe(
-        1,
+        stageIndex === 2 ? 2 : 1,
       );
       await invoke(next.config, 'read_next_skill', {
         studentFeedback:
@@ -3849,12 +4043,15 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       const command = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'startCommand');
       const original = agents.assertActiveLease.bind(agents);
       let release!: () => void,
-        entered = false,
+        reachPause!: () => void,
         checks = 0;
+      const entered = new Promise<void>((resolve) => {
+        reachPause = resolve;
+      });
       const fence = vi.spyOn(agents, 'assertActiveLease').mockImplementation(async (...args) => {
         // Outer tool admission and evidence/build invalidation have already committed.
         if (++checks === 3) {
-          entered = true;
+          reachPause();
           await new Promise<void>((resolve) => {
             release = resolve;
           });
@@ -3877,7 +4074,12 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             : invoke(config, 'run_build')
       ).catch((error) => error);
       try {
-        await vi.waitFor(() => expect(entered).toBe(true));
+        await Promise.race([
+          entered,
+          pending.then(() => {
+            throw new Error('Tool settled before reaching the dispatch fence.');
+          }),
+        ]);
         await expireExecution(sessionId);
         await (await import('@/lib/server/pbl-v3/execution-watchdog')).expireStalledTeachingTurns();
         expect((await agents.getSession(sessionId))!.status).toBe('failed');
@@ -3930,6 +4132,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         });
       } finally {
         release?.();
+        await pending;
         fence.mockRestore();
         write.mockRestore();
         manage.mockRestore();
@@ -4886,6 +5089,65 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     ).toBe(true);
     expect(mocked.reportAnalysis.mock.calls[0]![1].truncated).toBe(true);
     await agents.softDeleteSession(started.sessionId, principal.ownerId);
+  });
+  it('binds an assessment and preview label to a saved choice through collection and retry', async () => {
+    const originalId = studyId;
+    const originalApplication = project.application;
+    const originalEvaluation = project.evaluations.greeting!;
+    project.application = {
+      title: 'Choice preview',
+      description: 'Read-only intent',
+      argv: ['python3', 'greeting.py'],
+      port: 8000,
+      healthPath: '/',
+      decisionIds: ['format'],
+    };
+    project.evaluations.greeting = {
+      ...originalEvaluation,
+      decisionInputs: ['format'],
+      cases: [
+        {
+          id: 'choice',
+          argv: ['python3', '-c', 'import os; print(os.environ["OPENMAIC_PBL_DECISIONS"])'],
+          stdout: '{"format": "concat"}\n',
+        },
+      ],
+    };
+    const fresh = await freshStudy();
+    studyId = fresh.id;
+    try {
+      expect((await learningView(principal, studyId)).application?.choices).toEqual([]);
+      await guided('teaching');
+      await command('decide', { decisionId: 'format', chosen: 'concat' });
+      const expected = [
+        { id: 'format', label: project.definition.decisions[0].desc, choice: 'Concatenation' },
+      ];
+      expect((await learningView(principal, studyId)).application?.choices).toEqual(expected);
+      await command('next');
+      await guided('plan');
+      await guided('code');
+      const row = await store.get(studyId, principal.ownerId);
+      const request = { type: 'evaluate', id: randomUUID(), revision: row.revision };
+      await commandStudy(principal, studyId, request);
+      const pending = (await store.get(studyId, principal.ownerId)).evaluation!;
+      expect(pending.evaluationCommand).toBeTruthy();
+      await commandStudy(principal, studyId, request);
+      expect((await store.get(studyId, principal.ownerId)).evaluation?.evaluationCommand).toBe(
+        pending.evaluationCommand,
+      );
+      await command('collect');
+      expect(
+        (await store.get(studyId, principal.ownerId)).state.collected.greeting!.tests?.status,
+      ).toBe('passed');
+      expect((await learningView(principal, studyId)).application?.choices).toEqual(expected);
+      await command('next');
+      expect((await learningView(principal, studyId)).application?.choices).toEqual(expected);
+    } finally {
+      studyId = originalId;
+      project.application = originalApplication;
+      project.evaluations.greeting = originalEvaluation;
+      await releasePreparationFixtures([fresh.id]);
+    }
   });
   it('prepares once and runs the complete learning flow with actual Python tests', async () => {
     await command('prepare');

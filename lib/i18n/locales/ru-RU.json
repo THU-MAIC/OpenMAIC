@@ -2621,6 +2621,7 @@
     "retryResponse": "Retry response",
     "run": {
       "contextCapacity": "The current course material or message exceeds the selected model’s context capacity. Your records are saved. Ask the course maintainer to check the model configuration or material before retrying.",
+      "contextTurnCapacity": "Содержимое, накопленное за этот ход, превышает объём, который модель может обработать за один раз. Отправьте новое короткое сообщение, заново изложив текущий вопрос или нужную помощь. Повтор того же ответа не освободит место. Прогресс и записи сохранены.",
       "contextPreparation": "Conversation preparation failed temporarily. Your records are saved; you can retry this reply.",
       "incomplete": "This reply did not finish recording the current review. Retry this reply to continue; your progress is unchanged.",
       "authentication": "The teaching model could not authenticate. Check the model configuration before retrying.",
@@ -2944,12 +2945,14 @@
     "decisionTooLong": "Responses and reasons can contain up to {max} characters each and must fit the combined encoded size limit. Shorten the text to submit.",
     "decisionInvalidText": "The response or reason contains unsupported characters. Replace them before submitting.",
     "application": {
+      "yourChoice": "Ваш выбор",
+      "updating": "Обновление предпросмотра…",
       "open": "Open application",
       "restart": "Restart application",
       "newTab": "Открыть временный предпросмотр в новой вкладке",
       "saveFirst": "Wait for your edits to save before opening the application.",
       "wait": "Wait for the environment, Agent or assessment to finish.",
-      "notice": "Запускается сохранённый код. После правок или тестов откройте приложение снова.",
+      "notice": "Запускает сохранённый код. Открытый предпросмотр обновляется после завершения работы.",
       "changed": "Saved sources changed after this application started. Restart to try the current version.",
       "expired": "Application access expired. Reopen to renew it.",
       "reopen": "Reopen application",
@@ -2992,6 +2995,39 @@
       },
       "workshop": "Мастерская Vibe Coding",
       "entryLabel": "Вводный курс мастерской Vibe Coding"
+    },
+    "onboarding": {
+      "replay": "Руководство по рабочей области",
+      "counter": "Руководство по рабочей области {{current}}/{{total}}",
+      "previous": "Назад",
+      "next": "Понятно, далее",
+      "finish": "Понятно, начать",
+      "waiting": "Руководство будет доступно, когда учебная среда будет готова.",
+      "loading": "Загрузка рабочей области",
+      "loadingDetail": "Подключаем учебную среду и подготавливаем файлы проекта. Пожалуйста, подождите.",
+      "steps": {
+        "progress": {
+          "title": "Просмотр прогресса и текущей задачи",
+          "body": "Нажмите на эти числа, чтобы увидеть шаги текущего этапа. Кнопка M наверху показывает все этапы проекта. Панель задач под помощником показывает, что делать сейчас. Когда нужен выбор или ответ, появляется кнопка текущей задачи."
+        },
+        "discussion": {
+          "title": "Чтение и общение с помощником",
+          "body": "В панели помощника находятся объяснения, вопросы и обратная связь. Сначала прочитайте сообщение. Когда появится поле ввода, задайте вопрос или поделитесь идеей. Enter отправляет, Shift+Enter добавляет строку."
+        },
+        "code": {
+          "title": "Просмотр планов и кода",
+          "body": "Открывайте файлы через дерево, вкладки или ссылки помощника. Если редактирование доступно, изменения сохраняются автоматически; следите за статусом сохранения. Значки наверху показывают и скрывают панели, а разделители позволяют менять их размер."
+        },
+        "application": {
+          "title": "Нажмите «Открыть приложение» для проверки",
+          "body": "Эта кнопка открывает предпросмотр работы. Попробуйте готовые функции и обсудите наблюдения. Остальные функции будут реализованы по мере работы над проектом."
+        },
+        "replay": {
+          "title": "Повторный просмотр руководства",
+          "body": "Кнопка «Руководство по рабочей области» позволяет вернуться к этим пояснениям. Выберите «Понятно, начать», чтобы прочитать сообщение помощника и приступить к работе."
+        }
+      },
+      "close": "Закрыть руководство"
     }
   }
 }

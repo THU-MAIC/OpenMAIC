@@ -10,8 +10,13 @@ import type { SandboxCommandResult } from '@/lib/sandbox/types';
 import type { InstalledProject } from './catalog';
 import { additionalBuildSources } from './build-command';
 import { validSourcePath } from './workspace-files';
+import type { DecisionRecord } from '@/lib/pbl/v3/domain/orchestration/decisions';
 
 export interface ProjectEvaluation {
+  /** Public choice IDs this assessment consumes from the host's formal records. */
+  decisionInputs?: string[];
+  /** Host-bound option IDs, frozen with the existing evaluation command receipt. */
+  decisionContext?: Record<string, string>;
   /** Private course resources, staged only in the evaluation's temporary directory. */
   resources?: Record<string, string>;
   /** Deployment-owned argv, not user-provided shell text. */
@@ -33,10 +38,25 @@ export function evaluationFor(
   project: InstalledProject,
   milestone: string,
   paths: readonly string[] = [],
+  decisions: readonly DecisionRecord[] = [],
 ) {
   const installed = project.evaluations[milestone];
   if (!installed?.cases.length)
     throw sandboxConflict('No evaluation is installed for this milestone.');
+  const decisionContext = installed.decisionInputs?.length
+    ? Object.fromEntries(
+        installed.decisionInputs.map((id) => {
+          const definition = project.definition.decisions.find((choice) => choice.id === id);
+          const record = decisions.find((choice) => choice.id === id);
+          const option = definition?.options.find((item) => item.id === record?.chosen);
+          if (!option || definition?.responseType === 'text')
+            throw sandboxConflict(
+              'Submit the required project choices before running this assessment.',
+            );
+          return [id, option.id];
+        }),
+      )
+    : undefined;
   const added = additionalBuildSources(project, paths, '.java');
   // Normalize only for matching/deduplication; preserve authored argv verbatim.
   // Template arguments are not learner-source references. Additional sources
@@ -65,6 +85,7 @@ export function evaluationFor(
   const prepare = installed.prepare ? compile(installed.prepare) : undefined;
   const spec = {
     ...installed,
+    ...(decisionContext ? { decisionContext } : {}),
     ...(prepare
       ? {
           prepare: prepare.argv,
@@ -91,7 +112,10 @@ export function evaluationFor(
  * This is learning feedback, not a hostile-code grading boundary: parent and child share the sandbox identity.
  */
 export function evaluationCommand(spec: ProjectEvaluation, requestId: string) {
+  if (spec.decisionInputs?.some((id) => !Object.hasOwn(spec.decisionContext ?? {}, id)))
+    throw sandboxConflict('Assessment choices must be bound to formal records before execution.');
   const execution = {
+    ...(spec.decisionContext ? { decisionContext: spec.decisionContext } : {}),
     prepare: spec.prepare,
     ...(spec.prepareLiteralArgIndexes?.length
       ? { prepareLiteralArgIndexes: spec.prepareLiteralArgIndexes }
@@ -105,6 +129,8 @@ export function evaluationCommand(spec: ProjectEvaluation, requestId: string) {
     })),
   };
   const payload = Buffer.from(JSON.stringify({ spec: execution, requestId })).toString('base64');
+  // Keep the legacy runner byte-for-byte unchanged unless host choices are bound.
+  const boundEnvironment = spec.decisionContext !== undefined;
   const script = `import base64,json,subprocess,tempfile,os,hashlib,resource,re
 cfg=json.loads(base64.b64decode(${JSON.stringify(payload)}))
 spec=cfg['spec']; results=[]; build=True; buildReason=None; locations=[]
@@ -128,9 +154,9 @@ with tempfile.TemporaryDirectory(prefix='pbl-check-') as out:
   target=os.path.join(resources,path); os.makedirs(os.path.dirname(target),exist_ok=True)
   with open(target,'w',encoding='utf-8') as f: f.write(text)
  def run(argv,stdin='',literal=()):
-  literal=set(literal)
+  literal=set(literal)${boundEnvironment ? "\n  env=os.environ.copy(); env.pop('OPENMAIC_PBL_DECISIONS',None)\n  env['OPENMAIC_PBL_DECISIONS']=json.dumps(spec['decisionContext'])" : ''}
   with tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as errors:
-   proc=subprocess.Popen([a if i in literal else a.replace('{build}',out).replace('{resources}',resources) for i,a in enumerate(argv)],stdin=subprocess.PIPE,stdout=output,stderr=errors,preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_FSIZE,(1048576,1048576)))
+   proc=subprocess.Popen([a if i in literal else a.replace('{build}',out).replace('{resources}',resources) for i,a in enumerate(argv)],stdin=subprocess.PIPE,stdout=output,stderr=errors${boundEnvironment ? ',env=env' : ''},preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_FSIZE,(1048576,1048576)))
    try: proc.communicate(input=stdin.encode('utf-8'),timeout=15)
    except subprocess.TimeoutExpired:
     proc.kill(); proc.communicate(); raise

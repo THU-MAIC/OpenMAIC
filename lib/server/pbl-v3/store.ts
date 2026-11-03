@@ -33,6 +33,7 @@ export interface Study extends Record<string, unknown> {
   /** Hydrated from durable template bytes on every read, never persisted with learner state. */
   project?: InstalledProject;
   revision: number;
+  onboarding_completed_at?: Date | null;
   state: PblSessionState;
   environment_id: string | null;
   environment_checked_at: Date | null;
@@ -130,6 +131,46 @@ export class LearningStore {
   async roles(id: string, db: Pool | PoolClient = this.pool) {
     return (await db.query<RoleBinding>('SELECT * FROM pbl_v3_roles WHERE study_id=$1', [id])).rows;
   }
+  /** A receipt on any V3 study counts for the learner across all projects. */
+  async hasSeenOnboarding(ownerId: string) {
+    const result = await this.pool.query<{ seen: boolean }>(
+      `SELECT EXISTS (
+        SELECT 1 FROM pbl_v3_studies s WHERE s.owner_id=$1 AND (
+          s.onboarding_completed_at IS NOT NULL
+          OR s.state->>'status'='completed'
+          OR (s.state#>>'{position,milestoneIndex}')::integer>0
+          OR (s.state#>>'{position,stageIndex}')::integer>0
+          OR s.archive_discard IS NOT NULL
+          OR s.environment_recovery->>'progressReset'='true'
+          OR EXISTS (SELECT 1 FROM pbl_v3_evidence e WHERE e.study_id=s.id
+            AND e.actor='learner' AND e.kind IN ('file-edit','workspace-run'))
+          OR EXISTS (SELECT 1 FROM pbl_v3_events e WHERE e.study_id=s.id
+            AND e.event->>'type' NOT IN
+              ('session.started','milestone.entered','stage.entered','agent.activated','state.persisted'))
+          OR EXISTS (SELECT 1 FROM pbl_v3_roles r JOIN agent_session_events e ON e.session_id=r.session_id
+            WHERE r.study_id=s.id AND e.type='user_message'
+              AND e.data->>'pblOpening' IS DISTINCT FROM 'true')
+        )
+      ) AS seen`,
+      [ownerId],
+    );
+    return result.rows[0].seen;
+  }
+  /** Owner-checked, idempotent receipt; never changes teaching state or revisions. */
+  async completeOnboarding(id: string, ownerId: string) {
+    return this.transaction(async (db) => {
+      await fenceOwnerWrite(db, ownerId);
+      const result = await db.query(
+        `UPDATE pbl_v3_studies
+         SET onboarding_completed_at=COALESCE(onboarding_completed_at,clock_timestamp())
+         WHERE id=$1 AND owner_id=$2 RETURNING id`,
+        [id, ownerId],
+      );
+      if (!result.rows.length)
+        throw new SandboxError('SANDBOX_NOT_FOUND', 404, 'This learning session is unavailable.');
+    });
+  }
+
   /** Activity is separate from teaching revisions; all tabs share the server clock. */
   async recordActivity(id: string, ownerId: string) {
     return this.transaction(async (db) => {

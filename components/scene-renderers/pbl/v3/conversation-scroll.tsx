@@ -45,10 +45,12 @@ export function ConversationScroll({
   sent,
   generating,
   onFollow,
+  hidden = false,
 }: {
   sent: number;
   generating: boolean;
   onFollow: () => void;
+  hidden?: boolean;
 }) {
   const { contentRef, scrollRef, scrollToBottom } = useStickToBottomContext();
   const { t } = useI18n();
@@ -80,34 +82,38 @@ export function ConversationScroll({
     };
   }, [contentRef, scrollRef]);
 
-  if (!below) return null;
   const label = generating
     ? `${t('pblV3.journey.latest')} · ${t('workbench.chat.waiting')}`
     : t('pblV3.journey.latest');
+  if (!below || hidden) return null;
   return (
-    <Button
-      className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full"
-      size="icon"
-      type="button"
-      variant="outline"
-      aria-label={label}
-      title={label}
-      data-testid="pbl-conversation-scroll-button"
-      data-generating={generating}
-      onClick={() => {
-        onFollow();
-        void scrollToBottom();
-      }}
-    >
-      {generating ? (
-        <span className={wbStyles.waiting.dots} aria-hidden="true">
-          <i className={wbStyles.waiting.dot} />
-          <i className={wbStyles.waiting.dotDelayOne} />
-          <i className={wbStyles.waiting.dotDelayTwo} />
-        </span>
-      ) : (
-        <ArrowDown className="size-4" />
-      )}
-    </Button>
+    // Float in the content's right gutter. Toggling must not resize the viewport:
+    // that can look like an upward scroll to the follow-tail controller.
+    <div data-testid="pbl-conversation-scroll-lane" className="absolute bottom-2 right-2">
+      <Button
+        className="rounded-full"
+        size="icon"
+        type="button"
+        variant="outline"
+        aria-label={label}
+        title={label}
+        data-testid="pbl-conversation-scroll-button"
+        data-generating={generating}
+        onClick={() => {
+          onFollow();
+          void scrollToBottom();
+        }}
+      >
+        {generating ? (
+          <span className={wbStyles.waiting.dots} aria-hidden="true">
+            <i className={wbStyles.waiting.dot} />
+            <i className={wbStyles.waiting.dotDelayOne} />
+            <i className={wbStyles.waiting.dotDelayTwo} />
+          </span>
+        ) : (
+          <ArrowDown className="size-4" />
+        )}
+      </Button>
+    </div>
   );
 }

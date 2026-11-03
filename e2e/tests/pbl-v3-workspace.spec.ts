@@ -38,6 +38,7 @@ test('installed sample opens in the normal classroom and preserves progress afte
     lastSequence: 1,
   };
   const view = {
+    onboardingCompleted: true,
     id: 'learning-browser',
     revision: 0,
     title: 'A friendly greeting',
@@ -360,8 +361,13 @@ test('installed sample opens in the normal classroom and preserves progress afte
       : null,
   }));
   await page.goto('/pbl-v3');
+  const projectRead = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === '/api/pbl/v3' && url.searchParams.get('project') === '1';
+  });
   await page.getByRole('button', { name: 'Open selected sample' }).click();
   await expect(page).toHaveURL(/\/classroom\/pbl-/, { timeout: 60000 });
+  await projectRead;
   await expect(page.getByRole('heading', { name: view.title, exact: true })).toBeVisible();
   expect(calls).toHaveLength(0);
   await page.getByRole('button', { name: /^(?:Start Project|Continue Project)$/ }).click();
@@ -782,9 +788,29 @@ test('installed sample opens in the normal classroom and preserves progress afte
   await expect(page.locator('.monaco-editor .view-lines')).toHaveText('print("Current code")');
   await expect(page.locator('.monaco-editor textarea').first()).toBeEditable();
   rejectAutosave = true;
+  // Settle the original debounced rejection before counting recovery writes.
+  // Otherwise that old-environment request can arrive after the baseline.
+  const rejectedDraftSave = page.waitForResponse((response) => {
+    const request = response.request();
+    const command =
+      request.method() === 'POST' && new URL(request.url()).pathname === '/api/pbl/v3'
+        ? request.postDataJSON()?.command
+        : null;
+    return (
+      command?.type === 'save' &&
+      command.path === 'src/new.py' &&
+      command.text === 'Unsaved learner work'
+    );
+  });
   await page.locator('.monaco-editor .view-lines .view-line').first().click();
   await page.keyboard.press('ControlOrMeta+A');
   await page.keyboard.type('Unsaved learner work');
+  const rejectedDraftResponse = await rejectedDraftSave;
+  expect(rejectedDraftResponse.status()).toBe(503);
+  await rejectedDraftResponse.finished();
+  await expect(
+    page.getByRole('button', { name: 'Save failed · Retry', exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole('button', { name: 'Run & output', exact: true })).toHaveCount(0);
   await expect(page.getByLabel('Project command', { exact: true })).toHaveCount(0);
   await page.getByRole('tab', { name: 'greeting.py', exact: true }).click();

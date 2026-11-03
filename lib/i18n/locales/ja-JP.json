@@ -2621,6 +2621,7 @@
     "retryResponse": "Retry response",
     "run": {
       "contextCapacity": "The current course material or message exceeds the selected model’s context capacity. Your records are saved. Ask the course maintainer to check the model configuration or material before retrying.",
+      "contextTurnCapacity": "このターンで蓄積した内容が、モデルが今回処理できる範囲を超えました。現在の質問や必要な支援を、短い新しいメッセージで改めて伝えてください。同じ応答を再試行しても空きは増えません。進捗と記録は保存されています。",
       "contextPreparation": "Conversation preparation failed temporarily. Your records are saved; you can retry this reply.",
       "incomplete": "This reply did not finish recording the current review. Retry this reply to continue; your progress is unchanged.",
       "authentication": "The teaching model could not authenticate. Check the model configuration before retrying.",
@@ -2944,12 +2945,14 @@
     "decisionTooLong": "Responses and reasons can contain up to {max} characters each and must fit the combined encoded size limit. Shorten the text to submit.",
     "decisionInvalidText": "The response or reason contains unsupported characters. Replace them before submitting.",
     "application": {
+      "yourChoice": "あなたの選択",
+      "updating": "プレビューを更新中…",
       "open": "Open application",
       "restart": "Restart application",
       "newTab": "一時プレビューを新しいタブで開く",
       "saveFirst": "Wait for your edits to save before opening the application.",
       "wait": "Wait for the environment, Agent or assessment to finish.",
-      "notice": "保存済みのコードを実行します。編集やテスト後はアプリを開き直せます。",
+      "notice": "保存済みのコードを実行します。作業が終わると、開いているプレビューが自動更新されます。",
       "changed": "Saved sources changed after this application started. Restart to try the current version.",
       "expired": "Application access expired. Reopen to renew it.",
       "reopen": "Reopen application",
@@ -2992,6 +2995,39 @@
       },
       "workshop": "Vibe Coding ワークショップ",
       "entryLabel": "Vibe Coding ワークショップ入門コース"
+    },
+    "onboarding": {
+      "replay": "ワークスペースガイド",
+      "counter": "ワークスペースガイド {{current}}/{{total}}",
+      "previous": "前へ",
+      "next": "確認して次へ",
+      "finish": "確認して始める",
+      "waiting": "学習環境の準備ができるとガイドを開けます。",
+      "loading": "ワークスペースを読み込み中",
+      "loadingDetail": "学習環境に接続し、プロジェクトファイルを準備しています。少々お待ちください。",
+      "steps": {
+        "progress": {
+          "title": "進捗と現在のタスクを確認する",
+          "body": "ここの進捗表示をクリックすると、この段階の各ステップを確認できます。上部の M ボタンではプロジェクトの各段階を確認できます。アシスタントの下のタスクバーに、今行うことが表示されます。選択や回答が必要なときは「現在のタスク」が表示されます。"
+        },
+        "discussion": {
+          "title": "アシスタントの説明を読み、対話する",
+          "body": "アシスタント領域には説明、質問、フィードバックが表示されます。まずメッセージを読みましょう。入力欄があるときは質問や考えを送れます。Enter で送信、Shift+Enter で改行します。"
+        },
+        "code": {
+          "title": "計画とコードを見る",
+          "body": "ファイルツリーやタブでファイルを開けます。アシスタントのファイルリンクからも移動できます。編集可能なときは自動保存されるので、保存状態を確認してください。上部のアイコンで領域を表示・非表示にし、区切り線をドラッグしてサイズを調整できます。"
+        },
+        "application": {
+          "title": "「アプリを開く」で作品を試す",
+          "body": "このボタンで作品のプレビューが開きます。実装済みの機能を試し、結果を対話に活かしましょう。未実装の機能はプロジェクトを進めながら作っていきます。"
+        },
+        "replay": {
+          "title": "ここからガイドを見直す",
+          "body": "上部の「ワークスペースガイド」から操作を見直せます。「確認して始める」を選んで、アシスタントのメッセージを読み、作業を始めましょう。"
+        }
+      },
+      "close": "ガイドを閉じる"
     }
   }
 }

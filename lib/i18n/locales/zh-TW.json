@@ -2621,6 +2621,7 @@
     "retryResponse": "Retry response",
     "run": {
       "contextCapacity": "目前課程材料或這則訊息超過所選模型的上下文容量。學習紀錄已儲存，請聯絡課程維護者檢查模型設定或材料後再試。",
+      "contextTurnCapacity": "這輪對話累積的內容超過了模型本次能處理的範圍。請傳送一則簡短的新訊息，重新說明目前問題或需要的協助。反覆點選「重試本輪回覆」不會騰出空間。學習進度和記錄已儲存。",
       "contextPreparation": "準備對話上下文暫時失敗。學習紀錄已儲存，可以重試本輪回覆。",
       "incomplete": "本輪回覆尚未完成目前審閱的記錄，請點擊「重試本輪回覆」繼續。學習進度未被跳過。",
       "authentication": "The teaching model could not authenticate. Check the model configuration before retrying.",
@@ -2944,12 +2945,14 @@
     "decisionTooLong": "回答和理由各最多 {max} 個字元，合計還需符合編碼後的大小限制。請縮短後再提交。",
     "decisionInvalidText": "回答或理由中含有無法儲存的字元，請替換這些字元後再提交。",
     "application": {
+      "yourChoice": "你的選擇",
+      "updating": "作品更新中…",
       "open": "Open application",
       "restart": "Restart application",
       "newTab": "在新分頁開啟暫時預覽",
       "saveFirst": "Wait for your edits to save before opening the application.",
       "wait": "Wait for the environment, Agent or assessment to finish.",
-      "notice": "執行已儲存的程式碼。編輯或測試後，可重新開啟應用。",
+      "notice": "執行已儲存的程式碼，工作結束後會自動更新已開啟的作品。",
       "changed": "Saved sources changed after this application started. Restart to try the current version.",
       "expired": "Application access expired. Reopen to renew it.",
       "reopen": "Reopen application",
@@ -2992,6 +2995,39 @@
       },
       "workshop": "Vibe Coding 工作坊",
       "entryLabel": "Vibe Coding 工作坊前置課入口"
+    },
+    "onboarding": {
+      "replay": "新手指引",
+      "counter": "新手指引 {{current}}/{{total}}",
+      "previous": "上一步",
+      "next": "明白了，下一步",
+      "finish": "我知道了，開始體驗",
+      "waiting": "學習環境就緒後即可查看新手指引。",
+      "loading": "頁面正在載入中",
+      "loadingDetail": "正在連接學習環境、準備專案檔案，請稍候。",
+      "steps": {
+        "progress": {
+          "title": "在這裡查看進度和目前任務",
+          "body": "點擊這裡的進度數字，可查看本階段的各個環節；頂部 M 按鈕可查看專案各階段。學習助手下方的任務列會提示現在要做什麼；需要提交選擇或作答時，會出現「目前任務」入口。"
+        },
+        "discussion": {
+          "title": "在學習助手中閱讀和交流",
+          "body": "學習助手區會顯示目前助手的說明、問題和回饋。先讀它的訊息；出現輸入框時，可以提問或表達想法。Enter 傳送，Shift+Enter 換行。"
+        },
+        "code": {
+          "title": "在程式碼區查看計畫和檔案",
+          "body": "使用檔案樹和分頁查看計畫與程式碼，也能點擊助手提供的檔案連結。允許編輯時，修改會自動儲存，請留意儲存狀態。頂部面板圖示可調整顯示區域，拖曳分隔線可調整大小。"
+        },
+        "application": {
+          "title": "點擊「開啟應用」體驗作品",
+          "body": "此按鈕會展開作品預覽區。試用已完成的功能，再把觀察結果帶回討論；尚未實作的功能會隨著專案推進逐步完成。"
+        },
+        "replay": {
+          "title": "需要時，從這裡重看指引",
+          "body": "頂部「新手指引」可重新查看這些操作。點擊「我知道了，開始體驗」後，就可以閱讀助手訊息、使用工作台了。"
+        }
+      },
+      "close": "關閉指引"
     }
   }
 }

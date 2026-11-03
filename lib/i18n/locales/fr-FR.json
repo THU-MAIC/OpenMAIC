@@ -2621,6 +2621,7 @@
     "retryResponse": "Retry response",
     "run": {
       "contextCapacity": "The current course material or message exceeds the selected model’s context capacity. Your records are saved. Ask the course maintainer to check the model configuration or material before retrying.",
+      "contextTurnCapacity": "Le contenu accumulé dans ce tour dépasse ce que le modèle peut traiter en une fois. Envoyez un nouveau message court reformulant votre question actuelle ou l’aide dont vous avez besoin. Réessayer la même réponse ne libérera pas d’espace. Votre progression et vos échanges sont enregistrés.",
       "contextPreparation": "Conversation preparation failed temporarily. Your records are saved; you can retry this reply.",
       "incomplete": "This reply did not finish recording the current review. Retry this reply to continue; your progress is unchanged.",
       "authentication": "The teaching model could not authenticate. Check the model configuration before retrying.",
@@ -2944,12 +2945,14 @@
     "decisionTooLong": "Responses and reasons can contain up to {max} characters each and must fit the combined encoded size limit. Shorten the text to submit.",
     "decisionInvalidText": "The response or reason contains unsupported characters. Replace them before submitting.",
     "application": {
+      "yourChoice": "Votre choix",
+      "updating": "Mise à jour de l’aperçu…",
       "open": "Open application",
       "restart": "Restart application",
       "newTab": "Ouvrir l’aperçu temporaire dans un nouvel onglet",
       "saveFirst": "Wait for your edits to save before opening the application.",
       "wait": "Wait for the environment, Agent or assessment to finish.",
-      "notice": "Exécute le code enregistré. Après une modification ou un test, rouvrez l’application.",
+      "notice": "Exécute le code enregistré. L’aperçu ouvert s’actualise à la fin du travail.",
       "changed": "Saved sources changed after this application started. Restart to try the current version.",
       "expired": "Application access expired. Reopen to renew it.",
       "reopen": "Reopen application",
@@ -2992,6 +2995,39 @@
       },
       "workshop": "Atelier Vibe Coding",
       "entryLabel": "Cours d’introduction à l’atelier Vibe Coding"
+    },
+    "onboarding": {
+      "replay": "Guide de l’espace de travail",
+      "counter": "Guide de l’espace de travail {{current}}/{{total}}",
+      "previous": "Précédent",
+      "next": "Compris, suivant",
+      "finish": "Compris, commencer",
+      "waiting": "Le guide sera disponible lorsque l’environnement sera prêt.",
+      "loading": "Chargement de l’espace de travail",
+      "loadingDetail": "Connexion à l’environnement et préparation des fichiers du projet. Veuillez patienter.",
+      "steps": {
+        "progress": {
+          "title": "Consulter la progression et la tâche actuelle",
+          "body": "Cliquez sur ces chiffres pour voir les étapes de la phase actuelle. Le bouton M en haut affiche toutes les phases du projet. La barre des tâches sous l’assistant indique quoi faire maintenant. Un bouton de tâche apparaît lorsqu’un choix ou une réponse est demandé."
+        },
+        "discussion": {
+          "title": "Lire et échanger avec l’assistant",
+          "body": "Cet espace présente les explications, questions et retours de l’assistant actuel. Lisez d’abord son message. Lorsqu’un champ de saisie apparaît, posez une question ou partagez vos idées. Entrée envoie ; Maj+Entrée ajoute une ligne."
+        },
+        "code": {
+          "title": "Consulter les plans et le code",
+          "body": "Ouvrez les fichiers via l’arborescence, les onglets ou les liens de l’assistant. Lorsque la modification est autorisée, les changements sont enregistrés automatiquement : vérifiez l’état de sauvegarde. Les icônes en haut affichent ou masquent les zones ; faites glisser les séparateurs pour les redimensionner."
+        },
+        "application": {
+          "title": "Cliquer sur Ouvrir l’application pour essayer",
+          "body": "Ce bouton ouvre l’aperçu de votre réalisation. Testez les fonctions déjà créées et discutez de vos observations. Les fonctions manquantes seront développées au fil du projet."
+        },
+        "replay": {
+          "title": "Revoir le guide ici",
+          "body": "Le bouton Guide de l’espace de travail permet de revoir ces commandes. Choisissez Compris, commencer pour lire le message de l’assistant et utiliser l’espace de travail."
+        }
+      },
+      "close": "Fermer le guide"
     }
   }
 }

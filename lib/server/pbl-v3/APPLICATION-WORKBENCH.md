@@ -6,11 +6,62 @@ The optional application panel sits between the IDE and learning assistant. Narr
 
 - Agent execution stays on the server. Learner applications run in the provider sandbox through the existing command registry and isolated preview gateway.
 - Explicit open/restart keeps current ownership, study revision, environment epoch, saved-file and busy checks, and idempotent startup receipts. The panel never bypasses these checks or starts applications through Agent diagnostics.
-- Editing, Agent work, assessment or loss of environment readiness removes the interactive preview. Once ready, the learner explicitly reopens it; mutations are never replayed. Existing shutdown-before-write/evidence/archive protections remain intact.
+- Editing, Agent work and assessment suspend input while keeping the rendered application visible. An already open panel checks status when work finishes (or saved-source revision changes): an unchanged running application keeps its document and client state; a stopped application opens again and changed running sources restart through the existing authorized endpoint. The old document remains visible and inert until its replacement loads. No application operation or uncertain mutation is replayed. Never auto-launch an unopened/collapsed panel, or auto-restore an unavailable environment. Existing shutdown-before-write/evidence/archive protections remain intact.
 - Environment changes discard stale responses and previews. Signed preview grants still last five minutes. Authenticated real input in the embedded preview renews its HttpOnly cookie and updates only the workbench's display deadline; passive requests never renew it. Idle/expired or revoked access cannot renew itself. New-tab access obtains a fresh owner-authorized ticket without reloading the embedded document; standalone tabs retain fixed expiry.
-- Local expiry hides and makes the mounted iframe inert, so an already authenticated renewal response arriving late can restore the same document. A notification never grants server access; expired/revoked cookies still fail gateway checks. Busy/environment changes still discard the iframe. Embedded and new-tab opens share bounded readiness retries with one launch receipt; failed readiness is visible in the workbench.
+- Local expiry hides and makes the mounted iframe inert, so an already authenticated renewal response arriving late can restore the same document. A notification never grants server access; expired/revoked cookies still fail gateway checks. A busy turn keeps the inert document; environment/epoch changes discard it immediately. Automatic recovery is driven by the completed work/revision transition, never an idle timer or passive polling. Embedded and new-tab opens share bounded readiness retries with one launch receipt; failed readiness is visible in the workbench without removing an existing document or retrying indefinitely.
 - Periodic dirty-file backup waits for running applications without clearing the dirty marker. Explicit evidence, file writes, checkpoints and idle release still quiesce applications. The application process uses the existing one-hour supervisor envelope independently of the renewable environment lease; ordinary command timeout limits are unchanged.
 - Completed applications retain explicit environment restoration and read-only source. Reading source/reports or folding the panel does not allocate an environment or advance teaching.
+
+Pausing evacuates focus only when it belongs to the embedded preview, including
+its nested application frame. It never restores stale focus or moves focus away
+from an editor/chat control. Production iframe URLs opt into owned-shell input
+control with `openmaic-input=1`. The shell starts paused and accepts enable/disable
+only from a trusted message with the exact parent window and configured app origin.
+It makes the actual application document root inert, preserving its prior inert
+value on resume; ordinary autofocus cannot re-enter a paused or collapsed input.
+Initial nested documents stay hidden until readiness applies that input state.
+Control messages never count as activity. A valid renewal response already in
+flight remains accepted during pause; unsent debounced activity is dropped.
+If parsing/autofocus still moves focus into an unready or paused frame, a deferred
+ownership check returns it only to a connected, usable host target (or the owning
+workbench region). It never pulls focus back from another host control or an
+inactive window, and does not provide the keyboard security boundary.
+Old hosts omit the flag and retain their existing gateway behavior. Direct-HTML
+fixtures exercise legacy parent-frame handling, not this production input bridge.
+An unchanged `starting` process receives bounded,
+read-only status retries; exhaustion keeps its document with a nonfatal starting
+message and an explicit reopen control. Changed sources restart even while the
+process is `starting`. Automatic recovery checks the latest accepted grant deadline
+before each readiness retry and before accepting a result; expiry requires explicit input.
+
+An interrupted, unacknowledged launch retains its exact request and idempotency ID.
+Recovery may retry that receipt only in the same study/environment/epoch, revision
+and teaching stage; it never changes an old ID's inputs. Any successful response to
+that exact launch acknowledges it, including a late response whose document is no
+longer accepted. A newer version discards the obsolete request and inspects current
+state instead. Document replacement intent remains independent until the current
+candidate is ready, including the initial launch. After initial authorization or
+readiness failure, explicit reopen obtains a fresh ticket instead of retaining a
+never-ready document. A successfully ready document still keeps its client state
+when the process is unchanged. Explicit reopen rechecks pending source recovery, including
+when its preceding automatic status response crossed the grant-expiry boundary.
+
+The owned gateway shell reports readiness only after its nested same-origin HTML
+document completes. Workbench promotion checks the exact current candidate window
+and isolated origin; an application frame's own messages cannot promote it. Shell
+load and authorization alone are insufficient. Auth/load failures retain the old
+document, and missing readiness becomes an explicit error/reopen state after 60 seconds.
+Static bootstrap failure messages contain no credentials and cannot renew access.
+After its static bootstrap starts, the shell applies an additional `script-src 'none'`
+CSP policy before authorization or app loading. Existing callbacks continue, while
+new shell scripts are blocked even with a copied nonce or a nonce learned from CSP
+violation reports. Removing or changing the policy element cannot relax the applied
+policy. The nested app is a separate document and retains its own script policy.
+This hardens shell script-injection readiness claims; it does not introduce a new
+isolation boundary between the same-origin app and its shell.
+Deploy the main app and preview gateway from the same revision. An old workbench
+ignores new readiness messages; a new workbench with an old gateway reaches that
+bounded failure rather than silently discarding the previous page or waiting forever.
 
 ## Course guidance
 

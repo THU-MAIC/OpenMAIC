@@ -55,6 +55,7 @@ export function PBLWorkspaceLayer({
   nativeFullscreen,
   onExpandedChange,
   onAutoExpandConsumed,
+  modalOpen = false,
 }: {
   readonly children: ReactNode;
   readonly showExpandControl?: boolean;
@@ -64,6 +65,7 @@ export function PBLWorkspaceLayer({
   readonly nativeFullscreen: boolean;
   readonly onExpandedChange: (next: boolean) => void;
   readonly onAutoExpandConsumed: () => void;
+  readonly modalOpen?: boolean;
 }) {
   const { t } = useI18n();
   const [hostRect, setHostRect] = useState<LayoutRect>(() => measureHostRect(hostRef));
@@ -269,7 +271,8 @@ export function PBLWorkspaceLayer({
             )}
           </>
         )}
-        <div className="relative z-10 h-full w-full">{children}</div>
+        {/* A content modal must also cover the layer's fullscreen controls. */}
+        <div className={cn('relative h-full w-full', modalOpen ? 'z-50' : 'z-10')}>{children}</div>
       </motion.div>
     </>
   );

@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { AppWindow, ChevronRight, ExternalLink, Info, LoaderCircle, RefreshCw } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { LearningView } from '@/lib/pbl/v3/types';
@@ -37,21 +37,167 @@ export function ApplicationPreviewToggle({ preview }: { preview: ApplicationPrev
 export function ApplicationPreview({
   application,
   preview,
+  inputPaused = false,
 }: {
   application: NonNullable<LearningView['application']>;
   preview: ApplicationPreviewController;
+  inputPaused?: boolean;
+}) {
+  return (
+    <ApplicationPreviewContent
+      key={preview.documentScope}
+      application={application}
+      preview={preview}
+      inputPaused={inputPaused}
+    />
+  );
+}
+
+function ApplicationPreviewContent({
+  application,
+  preview,
+  inputPaused,
+}: {
+  application: NonNullable<LearningView['application']>;
+  preview: ApplicationPreviewController;
+  inputPaused: boolean;
 }) {
   const { t } = useI18n();
-  const { pending, observation, error, expired, disabled } = preview;
-  const available = !disabled && observation?.preview && !expired;
-  const mounted = !disabled && observation?.preview;
+  const { pending, observation, expired, disabled } = preview;
+  const mounted = !!observation?.preview;
   const frame = useRef<HTMLIFrameElement | null>(null);
+  const candidate = useRef<HTMLIFrameElement | null>(null);
+  const panel = useRef<HTMLElement | null>(null);
+  const lastHostFocus = useRef<HTMLElement | null>(null);
   const url = observation?.preview?.url;
+  const [displayed, setDisplayed] = useState<{ url: string; version: number } | null>(null);
+  const current = url ? { url, version: preview.frameVersion } : null;
+  const currentReady =
+    !!current && displayed?.url === current.url && displayed.version === current.version;
+  const [readinessFailure, setReadinessFailure] = useState<{ url: string; version: number } | null>(
+    null,
+  );
+  const readinessError =
+    readinessFailure?.url === url && readinessFailure?.version === preview.frameVersion;
+  const error = preview.error || (readinessError ? t('pblV3.application.unavailable') : '');
+  const previous =
+    displayed && current && (displayed.url !== current.url || displayed.version !== current.version)
+      ? displayed
+      : null;
+  const available =
+    !disabled &&
+    mounted &&
+    !expired &&
+    !preview.updating &&
+    !error &&
+    observation?.state === 'running' &&
+    !previous &&
+    currentReady;
+  const updating =
+    mounted && !expired && !error && (preview.updating || !!previous || !currentReady);
+  // Modal presentation pauses input only. Readiness and candidate promotion
+  // continue independently; closing a tour must never launch a replacement.
+  const inputAvailable = available && !inputPaused;
+  const sendInput = useCallback(
+    (element: HTMLIFrameElement | null) => {
+      if (!element) return;
+      const target = new URL(element.src);
+      if (target.pathname !== '/__openmaic_preview') return;
+      element.contentWindow?.postMessage(
+        {
+          type: 'openmaic-preview-input',
+          enabled: !!inputAvailable && preview.open && element === frame.current,
+        },
+        target.origin,
+      );
+    },
+    [inputAvailable, preview.open],
+  );
+  useLayoutEffect(() => {
+    sendInput(frame.current);
+    if (candidate.current !== frame.current) sendInput(candidate.current);
+  }, [sendInput, url, previous?.url, preview.frameVersion]);
+  useLayoutEffect(() => {
+    // Inert/pointer rules do not evacuate an already focused nested document.
+    // Move only preview-owned focus; never steal focus from the learner's editor/chat.
+    if ((!inputAvailable || !preview.open) && document.activeElement === frame.current)
+      panel.current?.focus({ preventScroll: true });
+  }, [inputAvailable, preview.open]);
+  useLayoutEffect(() => {
+    let deferred: ReturnType<typeof setTimeout> | undefined;
+    const remember = () => {
+      const active = document.activeElement;
+      if (
+        active instanceof HTMLElement &&
+        active !== document.body &&
+        active !== frame.current &&
+        active !== candidate.current
+      )
+        lastHostFocus.current = active;
+    };
+    const reclaim = () => {
+      if (inputAvailable && preview.open) return;
+      clearTimeout(deferred);
+      // Nested focus() finishes after the parent blur handler/microtask. This
+      // restores host focus only; the shell's document inertness blocks input.
+      deferred = setTimeout(() => {
+        if (!document.hasFocus() || document.visibilityState !== 'visible') return;
+        const active = document.activeElement;
+        if (active !== frame.current && active !== candidate.current) return;
+        const prior = lastHostFocus.current;
+        const target =
+          prior?.isConnected &&
+          !prior.closest('[inert]') &&
+          !prior.matches(':disabled') &&
+          prior.getClientRects().length
+            ? prior
+            : preview.open
+              ? panel.current
+              : panel.current?.closest<HTMLElement>('[data-pbl-focus-owner]');
+        target?.focus({ preventScroll: true });
+      }, 0);
+    };
+    remember();
+    document.addEventListener('focusin', remember, true);
+    window.addEventListener('blur', reclaim, true);
+    return () => {
+      clearTimeout(deferred);
+      document.removeEventListener('focusin', remember, true);
+      window.removeEventListener('blur', reclaim, true);
+    };
+  }, [inputAvailable, preview.open]);
+  useLayoutEffect(() => {
+    if (!url || currentReady) return;
+    const timer = setTimeout(
+      () => setReadinessFailure({ url, version: preview.frameVersion }),
+      60_000,
+    );
+    return () => clearTimeout(timer);
+  }, [url, preview.frameVersion, currentReady]);
   const renew = preview.renew;
-  useEffect(() => {
-    if (!url || disabled) return;
-    const origin = new URL(url).origin;
+  const documentReady = preview.documentReady;
+  useLayoutEffect(() => {
+    if (!url) return;
+    const origin = new URL(previous?.url ?? url).origin;
+    const candidateOrigin = new URL(url).origin;
     const receive = (event: MessageEvent) => {
+      if (event.data?.type === 'openmaic-preview-input-request') {
+        for (const element of [frame.current, candidate.current])
+          if (
+            element &&
+            event.source === element.contentWindow &&
+            event.origin === new URL(element.src).origin
+          )
+            sendInput(element);
+      }
+      if (event.source === candidate.current?.contentWindow && event.origin === candidateOrigin) {
+        if (event.data?.type === 'openmaic-preview-ready') {
+          setReadinessFailure(null);
+          setDisplayed({ url, version: preview.frameVersion });
+          documentReady(preview.frameVersion);
+        } else if (event.data?.type === 'openmaic-preview-error')
+          setReadinessFailure({ url, version: preview.frameVersion });
+      }
       if (
         event.source === frame.current?.contentWindow &&
         event.origin === origin &&
@@ -61,9 +207,11 @@ export function ApplicationPreview({
     };
     window.addEventListener('message', receive);
     return () => window.removeEventListener('message', receive);
-  }, [url, disabled, renew]);
+  }, [url, previous?.url, preview.frameVersion, renew, documentReady, sendInput]);
   return (
     <section
+      ref={panel}
+      tabIndex={-1}
       id={preview.panelId}
       aria-label={application.title}
       aria-hidden={!preview.open}
@@ -119,6 +267,19 @@ export function ApplicationPreview({
           <ChevronRight size={15} />
         </button>
       </header>
+      {!!application.choices?.length && (
+        <div
+          className="flex shrink-0 flex-wrap gap-x-3 gap-y-1 border-b bg-primary/5 px-3 py-2 text-xs"
+          data-testid="pbl-application-choices"
+        >
+          {application.choices.map((choice) => (
+            <p key={choice.id} title={choice.label}>
+              <span className="text-muted-foreground">{t('pblV3.application.yourChoice')}：</span>{' '}
+              <span className="font-medium">{choice.choice}</span>
+            </p>
+          ))}
+        </div>
+      )}
       {observation?.sourceChanged && (
         <p role="status" className="px-3 py-2 text-xs text-amber-600">
           {t('pblV3.application.changed')}
@@ -129,59 +290,106 @@ export function ApplicationPreview({
           {error}
         </p>
       )}
-      {mounted && (
-        <iframe
-          ref={frame}
-          key={observation.preview!.url}
-          title={application.title}
-          src={observation.preview!.url}
-          sandbox="allow-scripts allow-forms allow-same-origin"
-          hidden={expired}
-          inert={expired}
-          aria-hidden={expired}
-          referrerPolicy="no-referrer"
-          className="min-h-0 w-full flex-1 border-0 bg-white"
-        />
-      )}
-      {!available && (
-        <div
+      {updating && (
+        <p
           role="status"
-          className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 overflow-auto p-4 text-center text-sm text-muted-foreground"
+          className="flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs text-muted-foreground"
         >
-          {pending && <LoaderCircle className="animate-spin" />}
-          <p>
-            {t(
-              disabled
-                ? preview.dirty
-                  ? 'pblV3.application.saveFirst'
-                  : 'pblV3.application.wait'
-                : pending
-                  ? 'pblV3.application.starting'
-                  : expired
-                    ? 'pblV3.application.expired'
-                    : observation?.state === 'failed'
-                      ? 'pblV3.application.failed'
-                      : observation
-                        ? 'pblV3.application.unavailable'
-                        : 'pblV3.application.ready',
-            )}
-          </p>
-          {observation?.output && (
-            <pre className="max-h-40 max-w-full overflow-auto whitespace-pre-wrap text-left text-xs">
-              {observation.output}
-            </pre>
-          )}
-          {!pending && !disabled && (
-            <button
-              type="button"
-              className="rounded border px-3 py-2 text-foreground"
-              onClick={() => void preview.load('open')}
-            >
-              {t('pblV3.application.reopen')}
-            </button>
-          )}
-        </div>
+          <LoaderCircle size={14} className="shrink-0 animate-spin" />
+          {t(preview.dirty ? 'pblV3.application.saveFirst' : 'pblV3.application.updating')}
+        </p>
       )}
+      <div className="relative min-h-0 w-full flex-1">
+        {mounted &&
+          current &&
+          [previous, current]
+            .filter((item) => item !== null)
+            .map((item) => {
+              const visible = !previous || item === previous;
+              return (
+                <iframe
+                  ref={(element) => {
+                    if (visible) frame.current = element;
+                    if (item === current) candidate.current = element;
+                  }}
+                  key={`${item.version}:${item.url}`}
+                  title={visible ? application.title : t('pblV3.application.updating')}
+                  src={(() => {
+                    const target = new URL(item.url);
+                    if (target.pathname === '/__openmaic_preview')
+                      target.searchParams.set('openmaic-input', '1');
+                    return target.href;
+                  })()}
+                  onLoad={(event) => {
+                    sendInput(event.currentTarget);
+                    // Real previews load an authorization shell first. Only its
+                    // fenced readiness message can promote the nested app.
+                    if (item === current && new URL(item.url).pathname !== '/__openmaic_preview') {
+                      setDisplayed(item);
+                      documentReady(item.version);
+                    }
+                  }}
+                  sandbox="allow-scripts allow-forms allow-same-origin"
+                  hidden={expired}
+                  inert={!inputAvailable || !visible}
+                  aria-hidden={expired || !visible}
+                  referrerPolicy="no-referrer"
+                  className={`absolute inset-0 h-full w-full border-0 bg-white ${!inputAvailable || !visible ? 'pointer-events-none' : ''} ${visible && (item === previous || currentReady) ? '' : 'invisible'}`}
+                />
+              );
+            })}
+        {!available && !updating && (
+          <div
+            role="status"
+            className={
+              mounted && !expired
+                ? 'absolute left-3 right-3 top-3 z-10 flex max-h-full flex-wrap items-center justify-center gap-2 overflow-auto rounded-lg border bg-background/95 p-3 text-center text-sm text-muted-foreground shadow-sm'
+                : 'flex h-full min-h-0 flex-col items-center justify-center gap-3 overflow-auto p-4 text-center text-sm text-muted-foreground'
+            }
+          >
+            {(pending || preview.updating || !!previous) && (
+              <LoaderCircle size={16} className="shrink-0 animate-spin" />
+            )}
+            <p>
+              {t(
+                mounted && !expired && !error && (preview.updating || previous)
+                  ? preview.dirty
+                    ? 'pblV3.application.saveFirst'
+                    : 'pblV3.application.updating'
+                  : disabled
+                    ? preview.dirty
+                      ? 'pblV3.application.saveFirst'
+                      : 'pblV3.application.wait'
+                    : pending
+                      ? 'pblV3.application.starting'
+                      : expired
+                        ? 'pblV3.application.expired'
+                        : observation?.state === 'starting'
+                          ? 'pblV3.application.starting'
+                          : observation?.state === 'failed'
+                            ? 'pblV3.application.failed'
+                            : observation
+                              ? 'pblV3.application.unavailable'
+                              : 'pblV3.application.ready',
+              )}
+            </p>
+            {observation?.output && (
+              <pre className="max-h-40 max-w-full overflow-auto whitespace-pre-wrap text-left text-xs">
+                {observation.output}
+              </pre>
+            )}
+            {!pending && !disabled && (
+              <button
+                type="button"
+                className="rounded border px-3 py-2 text-foreground"
+                onClick={() => void preview.load('open', 'explicit')}
+              >
+                {t('pblV3.application.reopen')}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

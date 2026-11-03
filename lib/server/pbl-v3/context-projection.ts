@@ -171,10 +171,8 @@ export function createTeachingContextProjection(
       // Everything since the latest real input is the active tool execution.
       // Summarizing it can erase a result just requested and cause reread loops.
       // An opening/recovered turn without a learner frame is entirely active.
-      const activeStart = Math.max(
-        0,
-        context.messages.findLastIndex((message) => message.role === 'user'),
-      );
+      const latestInput = context.messages.findLastIndex((message) => message.role === 'user');
+      const activeStart = Math.max(0, latestInput);
       const previous =
         checkpoint &&
         checkpoint.coveredMessages <= activeStart &&
@@ -205,6 +203,17 @@ export function createTeachingContextProjection(
       const base = currentTeachingContext({ ...context, messages: [] }, window);
       const historyBudget = budget.inputTokens - estimatedRequestTokens(base) - summarySpace - 1024;
       let used = size(context.messages.slice(activeStart));
+      if (
+        historyBudget > 0 &&
+        used > historyBudget &&
+        latestInput >= 0 &&
+        !window.automaticEntry &&
+        size([context.messages[latestInput]!]) <= historyBudget &&
+        context.messages.slice(latestInput + 1).some((message) => message.role === 'toolResult')
+      )
+        throw new Error(
+          'PBL_CONTEXT_ACTIVE_TURN_CAPACITY: Tool activity in this learner turn exceeds the configured model capacity. Send a short new message restating the current question or help needed so earlier tool activity can be compacted; retrying this same response keeps the same active turn. Saved progress and records are unchanged.',
+        );
       if (historyBudget <= 0 || used > historyBudget)
         throw new Error(
           'PBL_CONTEXT_CAPACITY: Current material and the active learner/tool turn exceed the configured model capacity. Use a larger model window or smaller file/tool reads; saved progress is unchanged.',

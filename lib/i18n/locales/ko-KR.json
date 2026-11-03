@@ -2621,6 +2621,7 @@
     "retryResponse": "Retry response",
     "run": {
       "contextCapacity": "The current course material or message exceeds the selected model’s context capacity. Your records are saved. Ask the course maintainer to check the model configuration or material before retrying.",
+      "contextTurnCapacity": "이번 대화에 쌓인 내용이 모델이 한 번에 처리할 수 있는 범위를 넘었습니다. 현재 질문이나 필요한 도움을 짧은 새 메시지로 다시 설명해 주세요. 같은 응답을 재시도해도 공간이 확보되지 않습니다. 진행 상황과 기록은 저장되어 있습니다.",
       "contextPreparation": "Conversation preparation failed temporarily. Your records are saved; you can retry this reply.",
       "incomplete": "This reply did not finish recording the current review. Retry this reply to continue; your progress is unchanged.",
       "authentication": "The teaching model could not authenticate. Check the model configuration before retrying.",
@@ -2944,12 +2945,14 @@
     "decisionTooLong": "Responses and reasons can contain up to {max} characters each and must fit the combined encoded size limit. Shorten the text to submit.",
     "decisionInvalidText": "The response or reason contains unsupported characters. Replace them before submitting.",
     "application": {
+      "yourChoice": "내 선택",
+      "updating": "미리보기 업데이트 중…",
       "open": "Open application",
       "restart": "Restart application",
       "newTab": "새 탭에서 임시 미리보기 열기",
       "saveFirst": "Wait for your edits to save before opening the application.",
       "wait": "Wait for the environment, Agent or assessment to finish.",
-      "notice": "저장된 코드를 실행합니다. 편집이나 테스트 후 앱을 다시 열 수 있습니다.",
+      "notice": "저장된 코드를 실행합니다. 작업이 끝나면 열린 미리보기가 자동으로 갱신됩니다.",
       "changed": "Saved sources changed after this application started. Restart to try the current version.",
       "expired": "Application access expired. Reopen to renew it.",
       "reopen": "Reopen application",
@@ -2992,6 +2995,39 @@
       },
       "workshop": "Vibe Coding 워크숍",
       "entryLabel": "Vibe Coding 워크숍 입문 과정"
+    },
+    "onboarding": {
+      "replay": "작업 공간 안내",
+      "counter": "작업 공간 안내 {{current}}/{{total}}",
+      "previous": "이전",
+      "next": "확인, 다음",
+      "finish": "확인, 시작하기",
+      "waiting": "학습 환경이 준비되면 안내를 열 수 있습니다.",
+      "loading": "작업 공간 로딩 중",
+      "loadingDetail": "학습 환경에 연결하고 프로젝트 파일을 준비하고 있습니다. 잠시 기다려 주세요.",
+      "steps": {
+        "progress": {
+          "title": "진행 상황과 현재 작업 확인하기",
+          "body": "여기의 진행 숫자를 누르면 현재 단계의 세부 단계를 볼 수 있습니다. 상단 M 버튼은 프로젝트의 전체 단계를 보여 줍니다. 도우미 아래의 작업 표시줄이 지금 할 일을 알려 줍니다. 선택이나 답변이 필요하면 현재 작업 버튼이 나타납니다."
+        },
+        "discussion": {
+          "title": "도우미의 설명을 읽고 대화하기",
+          "body": "도우미 영역에는 현재 도우미의 설명, 질문과 피드백이 표시됩니다. 먼저 메시지를 읽으세요. 입력란이 나타나면 질문하거나 생각을 전할 수 있습니다. Enter로 전송하고 Shift+Enter로 줄을 바꿉니다."
+        },
+        "code": {
+          "title": "계획과 코드 살펴보기",
+          "body": "파일 트리와 탭에서 파일을 열거나 도우미가 제공한 파일 링크를 누르세요. 편집이 허용되면 자동 저장되므로 저장 상태를 확인하세요. 상단 아이콘으로 영역을 표시하거나 숨기고 구분선을 끌어 크기를 조절할 수 있습니다."
+        },
+        "application": {
+          "title": "앱 열기를 눌러 작품 체험하기",
+          "body": "이 버튼은 작품 미리보기를 엽니다. 구현된 기능을 시험하고 관찰한 결과를 대화에 활용하세요. 미완성 기능은 프로젝트를 진행하며 완성합니다."
+        },
+        "replay": {
+          "title": "여기에서 안내 다시 보기",
+          "body": "상단의 작업 공간 안내에서 사용법을 다시 볼 수 있습니다. 확인, 시작하기를 선택한 뒤 도우미의 메시지를 읽고 작업 공간을 사용하세요."
+        }
+      },
+      "close": "안내 닫기"
     }
   }
 }

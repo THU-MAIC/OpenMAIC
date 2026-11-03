@@ -127,6 +127,12 @@ UPDATE asset_entries e SET committed_at=COALESCE(e.committed_at,now()),expires_a
       up: `ALTER TABLE pbl_v3_roles ADD COLUMN execution_progress_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp();
       CREATE INDEX pbl_v3_roles_execution_progress ON pbl_v3_roles(execution_progress_at);`,
     },
+    {
+      version: 11,
+      name: 'workbench-guide-completion',
+      transaction: true,
+      up: 'ALTER TABLE pbl_v3_studies ADD COLUMN onboarding_completed_at TIMESTAMPTZ;',
+    },
   ],
 };
 

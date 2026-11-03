@@ -58,6 +58,7 @@ test('completed project reports stay discoverable, show facts before analysis, a
   });
   const steps = ['teaching', 'dialogue', 'plan', 'code', 'tests', 'quiz', 'recap'];
   const view = {
+    onboardingCompleted: true,
     id: 'report-study',
     revision: 19,
     activitySequence: 20,

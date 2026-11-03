@@ -21,6 +21,18 @@ function needsApplication(projects: readonly PBLProjectPackage[]) {
 
 export const DECISION_RESPONSE_CAPABILITY = 'pbl-v3-decision-responses@1';
 export const PRESENTATION_CAPABILITY = 'pbl-v3-presentation@1';
+export const DECISION_CONTEXT_CAPABILITY = 'pbl-v3-decision-context@1';
+function needsDecisionContext(projects: readonly PBLProjectPackage[]) {
+  return projects.some((project) => {
+    const descriptor = JSON.parse(project.files['project.json']);
+    return (
+      Object.hasOwn(descriptor.runtime?.application ?? {}, 'decisionIds') ||
+      Object.values(descriptor.runtime?.evaluations ?? {}).some((path) =>
+        Object.hasOwn(JSON.parse(project.files[path as string]) ?? {}, 'decisionInputs'),
+      )
+    );
+  });
+}
 function needsPresentation(projects: readonly PBLProjectPackage[]) {
   return projects.some(
     (project) => JSON.parse(project.files['project.json'])?.definition?.presentation !== undefined,
@@ -82,6 +94,7 @@ export function validateClassroomPackageCompatibility(manifest: ClassroomManifes
             DECISION_RESPONSE_CAPABILITY,
             APPLICATION_CAPABILITY,
             PRESENTATION_CAPABILITY,
+            DECISION_CONTEXT_CAPABILITY,
           ].includes(c),
       ))
   )
@@ -149,6 +162,8 @@ export async function attachClassroomProjects(
     manifest.requiredCapabilities.push(DECISION_RESPONSE_CAPABILITY);
   if (needsApplication(projects)) manifest.requiredCapabilities.push(APPLICATION_CAPABILITY);
   if (needsPresentation(projects)) manifest.requiredCapabilities.push(PRESENTATION_CAPABILITY);
+  if (needsDecisionContext(projects))
+    manifest.requiredCapabilities.push(DECISION_CONTEXT_CAPABILITY);
   for (const scene of scenes) {
     const content = scene.content as { type: 'pbl'; projectV3: PBLV3Reference };
     const { entry } = byRef.get(JSON.stringify(content.projectV3))!;
@@ -260,6 +275,13 @@ export async function installClassroomProjects(zip: JSZip, manifest: ClassroomMa
     !manifest.requiredCapabilities?.includes(PRESENTATION_CAPABILITY)
   )
     throw new Error('Project presentation requires pbl-v3-presentation@1.');
+  if (
+    needsDecisionContext(projects) &&
+    !manifest.requiredCapabilities?.includes(DECISION_CONTEXT_CAPABILITY)
+  )
+    throw new Error(
+      'Decision-bound assessments and application labels require pbl-v3-decision-context@1.',
+    );
   if (
     needsApplication(projects) &&
     !manifest.requiredCapabilities?.includes(APPLICATION_CAPABILITY)

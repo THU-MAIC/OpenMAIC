@@ -1,3 +1,4 @@
+import { applicationChoices } from '@/lib/pbl/v3/application-choices';
 import { changedLineRanges } from './file-changes';
 import { fileReferenceHref } from '@/lib/pbl/v3/file-reference';
 import 'server-only';
@@ -871,6 +872,11 @@ export async function teachingRunnerConfig(input: {
             application: {
               title: project.application.title,
               description: project.application.description,
+              choices: applicationChoices(
+                project.definition,
+                observedStudy.state,
+                project.application.decisionIds,
+              ),
               observation: observedApplication,
             },
           }
@@ -948,7 +954,11 @@ export async function teachingRunnerConfig(input: {
         })(),
         input.signal,
       ),
-    historyWindow: { stageKey: bound.stage_key, studentTurns: bound.feedback_seq },
+    historyWindow: {
+      stageKey: bound.stage_key,
+      studentTurns: bound.feedback_seq,
+      automaticEntry: latest?.pblOpening === true,
+    },
   };
 }
 

@@ -347,6 +347,13 @@ const SHIPPED: readonly (readonly [
     true,
     'b22190bcbe99cda7b0bf29a1f593233b641a529fffd0756017e2f9d53f6eab91',
   ],
+  [
+    'pbl-v3',
+    11,
+    'workbench-guide-completion',
+    true,
+    'c71e6f11af3f4185aeb490b762d9a2b6ccb88e7cbd5c5251254500aac46e08c9',
+  ],
 ];
 
 /**

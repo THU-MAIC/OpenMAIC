@@ -190,6 +190,7 @@ export function LearningConversation({
   view,
   sent,
   requesting = false,
+  modalActive = false,
   pendingMessage = null,
   onOpenFile,
   onOpenReport,
@@ -201,6 +202,7 @@ export function LearningConversation({
   onOpenTask?: () => void;
   sent: number;
   requesting?: boolean;
+  modalActive?: boolean;
   pendingMessage?: LearningConversationEntry | null;
 }) {
   const { t } = useI18n();
@@ -244,13 +246,17 @@ export function LearningConversation({
   const { targetScrollTop, follow } = useConversationScrollTarget(turnId, sent);
   return (
     <Conversation
-      className="min-h-0 flex-1 bg-background"
+      className="flex min-h-0 flex-1 flex-col bg-background"
       aria-label={t('pblV3.learning')}
       targetScrollTop={targetScrollTop}
       initial="instant"
       resize="instant"
     >
-      <ConversationContent className="gap-5 p-4" onClick={(event) => openReference(event)}>
+      <ConversationContent
+        scrollClassName="pbl-conversation-scroll min-h-0 flex-1"
+        className="gap-5 p-4 pr-12"
+        onClick={(event) => openReference(event)}
+      >
         <ConversationHistory
           id={view.id}
           sources={view.conversationHistory ?? []}
@@ -289,6 +295,7 @@ export function LearningConversation({
         )}
       </ConversationContent>
       <ConversationScroll
+        hidden={modalActive}
         sent={sent}
         onFollow={follow}
         generating={requesting || view.busy || entries.some((entry) => entry.status === 'running')}
