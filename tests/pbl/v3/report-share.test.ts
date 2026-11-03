@@ -8,6 +8,7 @@ import {
   reportShareContent,
   reportShareCampaign,
   reportShareDestination,
+  reportShareDisplayUrl,
 } from '@/lib/pbl/v3/report-share';
 import { validateReportFindings } from '@/lib/server/pbl-v3/report-analysis';
 import { ellipsizeShareText, wrapShareText } from '@/lib/pbl/v3/report-share-text';
@@ -225,6 +226,20 @@ it('uses only an explicitly configured HTTP(S) campaign destination', () => {
     'https://token:secret@course.example/',
   ])
     expect(reportShareDestination(value)).toBeNull();
+});
+
+it('keeps printed URLs readable without decoding escapes into a different destination', () => {
+  const readable = 'https://a.cn/工作坊前置课程';
+  expect(reportShareDisplayUrl(new URL(readable).href)).toBe(readable);
+  for (const url of [
+    'https://a.cn/path%2Fpart?ref=a%26b',
+    'https://a.cn/path%252Fpart',
+    'https://a.cn/path%E0%A4',
+    'https://a.cn/path%00part',
+  ]) {
+    expect(reportShareDisplayUrl(url)).toBe(url);
+    expect(new URL(reportShareDisplayUrl(url)).href).toBe(url);
+  }
 });
 
 it('omits empty skill/concept metrics from a real metadata-free project summary, while retaining recorded zero progress', () => {

@@ -39,6 +39,9 @@ image viewer or social-media post cannot be guaranteed to navigate. Recipients c
 recognize the embedded QR, or enter the printed address; viewer-specific text recognition is
 not a feature promised by this export. The QR encodes the destination directly and does not
 create hosting, permissions or per-course routing.
+The printed URL stays complete, using readable Unicode where re-entering it preserves the
+same destination. Canvas fits long addresses within the existing URL slot without an ellipsis;
+the QR and preview link retain the validated destination. Prefer a short campaign URL for legibility.
 
 ## Campaign destination and artwork
 

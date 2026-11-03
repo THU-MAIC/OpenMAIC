@@ -27,6 +27,18 @@ export function reportShareDestination(value = reportShareCampaign.url): string 
   }
 }
 
+/** Decode for readability only when entering the printed URL preserves the destination. */
+export function reportShareDisplayUrl(destination: string): string {
+  try {
+    const readable = decodeURI(destination);
+    return !/\p{Cc}/u.test(readable) && new URL(readable).href === destination
+      ? readable
+      : destination;
+  } catch {
+    return destination;
+  }
+}
+
 /** A deliberately small public projection. Never pass conversations, citations or quotes to a poster. */
 export function reportShareContent(report: LearningReport) {
   const summary = report.summary;

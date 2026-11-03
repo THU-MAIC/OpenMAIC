@@ -3,6 +3,7 @@ import { ellipsizeShareText, wrapShareText } from './report-share-text';
 import {
   reportShareCampaign,
   reportShareDestination,
+  reportShareDisplayUrl,
   reportShareLayout,
   type ReportShareContent,
   type ShareTheme,
@@ -29,6 +30,7 @@ export async function renderReportShareImage(
   const dark = theme === 'dark';
   const direction = locale.startsWith('ar') ? 'rtl' : 'ltr';
   const destination = reportShareDestination();
+  const printedDestination = destination ? reportShareDisplayUrl(destination) : '';
   const background = reportShareCampaign.backgrounds[theme];
   const [logo, qr, artwork] = await Promise.all([
     loadImage('/openmaic-share-logo.png'),
@@ -46,6 +48,7 @@ export async function renderReportShareImage(
         `600 42px ${primaryFont}`,
         [
           content.title,
+          printedDestination,
           ...content.concepts,
           heading,
           t('pblV3.share.workshop'),
@@ -105,12 +108,14 @@ export async function renderReportShareImage(
     weight = 400,
     flow: CanvasDirection = 'ltr',
     align: CanvasTextAlign = 'left',
+    maxWidth?: number,
   ) {
     ctx!.font = `${weight} ${size}px ${font}`;
     ctx!.fillStyle = color;
     ctx!.direction = flow;
     ctx!.textAlign = align;
-    ctx!.fillText(value, x, y);
+    if (maxWidth === undefined) ctx!.fillText(value, x, y);
+    else ctx!.fillText(value, x, y, maxWidth);
   }
   // Fixed text slots fit built-in copy; authored long titles remain bounded with an ellipsis.
   function paragraph(
@@ -359,7 +364,8 @@ export async function renderReportShareImage(
     const copyWidth = inviteWidth - qrSize - 96;
     paragraph(t('pblV3.share.invite'), 88, inviteY + 46, copyWidth, 30, 1, ink, 700, true);
     paragraph(t('pblV3.share.tagline'), 88, inviteY + 92, copyWidth, 22, 2, muted, 500, true);
-    paragraph(destination, 88, inviteY + 150, copyWidth, 22, 1, accent, 600, false, 'ltr');
+    // Canvas fits the complete address into this slot; URLs must never be ellipsized.
+    text(printedDestination, 88, inviteY + 150, 22, accent, 600, 'ltr', 'left', copyWidth);
     paragraph(t('pblV3.share.entryLabel'), 88, inviteY + 180, copyWidth, 15, 1, muted);
   }
   return new Promise((resolve, reject) =>

@@ -21,6 +21,7 @@ function syntheticCanvas() {
     x: number;
     y: number;
     font: string;
+    maxWidth?: number;
   }[] = [];
   const assets: string[] = [];
   const context = {
@@ -45,7 +46,7 @@ function syntheticCanvas() {
     stroke() {},
     arc() {},
     measureText: (value: string) => ({ width: value.length * 10 }),
-    fillText(value: string, x: number, y: number) {
+    fillText(value: string, x: number, y: number, maxWidth?: number) {
       drawn.push({
         value,
         x,
@@ -53,6 +54,7 @@ function syntheticCanvas() {
         direction: this.direction,
         align: this.textAlign,
         font: this.font,
+        maxWidth,
       });
     },
   };
@@ -204,6 +206,33 @@ it('draws a mixed Chinese/Latin project title in full when it fits in two lines'
   expect(titleLines.map((item) => item.value).join('')).toBe(title);
   expect(titleLines.every((item) => context.measureText(item.value).width <= 1072)).toBe(true);
 });
+
+it.each(['light', 'dark'] as const)(
+  'prints complete Chinese and long campaign URLs without changing their destination in %s',
+  async (theme) => {
+    for (const url of [
+      'https://a.cn/工作坊前置课程',
+      `https://course.example/${'intro'.repeat(35)}`,
+    ]) {
+      reportShareCampaign.url = url;
+      const { drawn, context } = syntheticCanvas();
+      context.measureText = (value: string) => {
+        const size = Number(/(\d+)px/.exec(context.font)?.[1] ?? 22);
+        return {
+          width: Array.from(value).reduce(
+            (width, character) => width + (/\p{Script=Han}/u.test(character) ? size : size / 2),
+            0,
+          ),
+        };
+      };
+      await renderReportShareImage(content, theme, translate, 'zh-CN');
+      const printed = drawn.find((item) => item.value.startsWith('https://'))!;
+      expect(printed.value).toBe(url);
+      expect(printed).toMatchObject({ direction: 'ltr', align: 'left', maxWidth: 820 });
+      expect(qr).toHaveBeenLastCalledWith(new URL(printed.value).href);
+    }
+  },
+);
 
 it.each(['', 'not a URL', 'javascript:alert(1)', 'https://user:password@course.example/'])(
   'omits promotion for %j without blocking image export',
