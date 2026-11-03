@@ -53,9 +53,22 @@ export function WorkbenchOnboarding({
   const focusedStep = useRef<OnboardingStep | null>(null);
   const nextButton = useRef<HTMLButtonElement>(null);
   const body = useRef<HTMLDivElement>(null);
+  const readingTouchY = useRef<number | null>(null);
   const maskId = useId();
   const [layout, setLayout] = useState<Layout | null>(null);
   const copy = (key: string) => t(`pblV3.onboarding.${key}`);
+  // The modal retains focus and blocks actions. Reading the highlighted
+  // conversation is safe, so forward only scroll gestures inside its viewport.
+  const scrollReading = (x: number, y: number, delta: number, mode = 0) => {
+    if (step !== 'discussion') return false;
+    const viewport = root.current?.querySelector<HTMLElement>('.pbl-conversation-scroll');
+    if (!viewport) return false;
+    const bounds = viewport.getBoundingClientRect();
+    if (x < bounds.left || x > bounds.right || y < bounds.top || y > bounds.bottom) return false;
+    const unit = mode === 1 ? 16 : mode === 2 ? viewport.clientHeight : 1;
+    viewport.scrollBy({ top: delta * unit, behavior: 'instant' });
+    return true;
+  };
 
   useLayoutEffect(() => {
     const owner = root.current;
@@ -132,15 +145,15 @@ export function WorkbenchOnboarding({
         gap = 16,
         edge = 12;
       const compactDiscussion = step === 'discussion' && width < 640 && height >= 500;
-      const opening = compactDiscussion
-        ? anchor?.querySelector('.pbl-assistant-bubble p')?.getBoundingClientRect()
+      const reading = compactDiscussion
+        ? anchor?.querySelector('.pbl-conversation-scroll')?.getBoundingClientRect()
         : undefined;
       const cardMaxHeight = compactDiscussion
         ? Math.max(
-            180,
+            160,
             Math.min(
-              height / 2,
-              opening ? height - (opening.bottom - bounds.top) / scaleY - gap - edge : height / 2,
+              height - 24,
+              reading ? (reading.top - bounds.top) / scaleY - 2 * edge : height / 2,
             ),
           )
         : height - 24;
@@ -168,10 +181,10 @@ export function WorkbenchOnboarding({
               Math.min(position.y + ch, target.y + target.height) - Math.max(position.y, target.y),
             )
           : 0;
-      // In a stacked workbench, leave the assistant's opening question above
-      // the card. The card's own body can scroll without obscuring that message.
+      // Leave the whole reading viewport clear, including later paragraphs
+      // and a closing question that arrives while the welcome is streaming.
       const position = compactDiscussion
-        ? { x: Math.max(edge, (width - cw) / 2), y: Math.max(edge, height - ch - edge) }
+        ? { x: Math.max(edge, (width - cw) / 2), y: edge }
         : !target
           ? { x: Math.max(edge, (width - cw) / 2), y: Math.max(edge, (height - ch) / 2) }
           : candidates.sort((a, b) => overlap(a) - overlap(b))[0];
@@ -216,7 +229,31 @@ export function WorkbenchOnboarding({
   return (
     <Dialog.Root open>
       <Dialog.Portal container={root.current}>
-        <Dialog.Overlay className="absolute inset-0 z-[60]" data-pbl-onboarding="overlay">
+        <Dialog.Overlay
+          className="absolute inset-0 z-[60]"
+          data-pbl-onboarding="overlay"
+          onWheel={(event) =>
+            scrollReading(event.clientX, event.clientY, event.deltaY, event.deltaMode)
+          }
+          onTouchStart={(event) => {
+            const point = event.touches.length === 1 ? event.touches[0] : null;
+            readingTouchY.current =
+              point && scrollReading(point.clientX, point.clientY, 0) ? point.clientY : null;
+          }}
+          onTouchMove={(event) => {
+            const point = event.touches.length === 1 ? event.touches[0] : null;
+            if (point && readingTouchY.current !== null) {
+              scrollReading(point.clientX, point.clientY, readingTouchY.current - point.clientY);
+              readingTouchY.current = point.clientY;
+            }
+          }}
+          onTouchEnd={() => {
+            readingTouchY.current = null;
+          }}
+          onTouchCancel={() => {
+            readingTouchY.current = null;
+          }}
+        >
           <svg
             aria-hidden="true"
             className="pointer-events-none"

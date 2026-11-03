@@ -718,7 +718,7 @@ test('1440px first page highlights the whole task bar without covering its hint'
   ).toBe(0);
 });
 
-test('narrow conversation jump control reserves space outside question text', async ({
+test('narrow conversation jump control floats in a gutter outside question text', async ({
   page,
   learningEvents,
 }) => {
@@ -746,7 +746,9 @@ test('narrow conversation jump control reserves space outside question text', as
     .locator(':scope > div')
     .first()
     .boundingBox())!;
-  expect(control.y).toBeGreaterThanOrEqual(viewport.y + viewport.height);
+  const bubble = (await assistant.locator('.pbl-assistant-bubble').boundingBox())!;
+  expect(control.x).toBeGreaterThanOrEqual(bubble.x + bubble.width);
+  expect(control.y + control.height).toBeLessThanOrEqual(viewport.y + viewport.height);
 });
 
 for (const [width, height, locale, docked] of [
@@ -1012,7 +1014,202 @@ for (const [width, height] of [
     expect(text.y).toBeGreaterThanOrEqual(viewport.y);
     expect(text.y + text.height).toBeLessThanOrEqual(viewport.y + viewport.height + 1);
     const card = (await tour(page).boundingBox())!;
-    expect(text.y + text.height).toBeLessThanOrEqual(card.y);
+    expect(card.y + card.height).toBeLessThanOrEqual(viewport.y);
     await page.screenshot({ path: testInfo.outputPath('assistant-visible.png') });
+  });
+}
+
+for (const [width, height] of [
+  [1365, 900],
+  [390, 844],
+] as const) {
+  test(`Latest keeps following the same growing reply without resizing its viewport at ${width}x${height}`, async ({
+    page,
+    learningEvents,
+  }) => {
+    await page.setViewportSize({ width, height });
+    const fixture = await project(page, learningEvents, { started: true });
+    // Replay becomes enabled only after Hero expansion and its current snapshot settle.
+    await expect(page.locator('[data-pbl-tour="replay"]')).toBeEnabled();
+    const reply = {
+      id: 'growing',
+      speaker: 'discussion' as const,
+      status: 'running' as 'running' | 'succeeded',
+      parts: [
+        {
+          kind: 'text' as const,
+          id: 'body',
+          text: 'Streaming paragraph.\n\n'.repeat(50),
+          streaming: true,
+        },
+      ],
+    };
+    fixture.view.conversation = [reply];
+    fixture.view.busy = true;
+    fixture.view.revision++;
+    await fixture.publish();
+    const viewport = page.locator('.pbl-conversation-scroll');
+    const latest = page.getByTestId('pbl-conversation-scroll-button');
+    await expect(latest).toBeVisible();
+    const before = await viewport.evaluate((el) => el.clientHeight);
+    await latest.click();
+    await expect
+      .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
+      .toBeLessThanOrEqual(8);
+    await expect(latest).toHaveCount(0);
+    expect(await viewport.evaluate((el) => el.clientHeight)).toBe(before);
+    for (let chunk = 0; chunk < 3; chunk++) {
+      reply.parts[0].text += `New chunk ${chunk}.\n\n`.repeat(12);
+      fixture.view.revision++;
+      await fixture.publish();
+      await expect(viewport).toContainText(`New chunk ${chunk}.`);
+      await expect
+        .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
+        .toBeLessThanOrEqual(8);
+    }
+    // Deliberate upward reading still escapes follow mode.
+    const following = await viewport.evaluate((el) => el.scrollTop);
+    await viewport.hover();
+    await page.mouse.wheel(0, -180);
+    await expect
+      .poll(() => viewport.evaluate((el) => el.scrollTop))
+      .toBeCloseTo(following - 180, 0);
+    await expect(latest).toBeVisible();
+    const reading = await viewport.evaluate((el) => el.scrollTop);
+    reply.parts[0].text += 'More text while reading earlier content.\n\n'.repeat(12);
+    fixture.view.revision++;
+    await fixture.publish();
+    await expect(viewport).toContainText('More text while reading earlier content.');
+    await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeCloseTo(reading, 0);
+    await latest.click();
+    const question = 'Are you ready to begin?';
+    reply.parts[0].text += '\n\n' + question;
+    reply.parts[0].streaming = false;
+    reply.status = 'succeeded';
+    fixture.view.busy = false;
+    fixture.view.revision++;
+    await fixture.publish();
+    await expect(
+      page.getByTestId('pbl-assistant').getByText(question, { exact: true }),
+    ).toBeVisible();
+    await expect
+      .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
+      .toBeLessThanOrEqual(8);
+    const text = (await page
+      .getByTestId('pbl-assistant')
+      .getByText(question, { exact: true })
+      .boundingBox())!;
+    const box = (await viewport.boundingBox())!;
+    expect(text.y + text.height).toBeLessThanOrEqual(box.y + box.height + 1);
+  });
+}
+
+for (const [width, height, gesture] of [
+  [320, 568, 'touch'],
+  [390, 844, 'wheel'],
+] as const) {
+  test(`the guide allows reading a growing multi-paragraph welcome and its closing question at ${width}x${height} with ${gesture}`, async ({
+    page,
+    learningEvents,
+  }, testInfo) => {
+    const pageErrors: string[] = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+    await page.setViewportSize({ width, height });
+    const intro =
+      'Welcome to your project. We will discuss your choices and build the result together.\n\n'.repeat(
+        8,
+      );
+    const questions = [
+      'What would you like to build?',
+      'Do you have any questions before we start?',
+    ];
+    const fixture = await project(page, learningEvents, { openingText: intro + questions[0] });
+    await expect(tour(page)).toBeVisible();
+    await next(page).click();
+    await expect(tour(page)).toHaveAttribute('data-step', 'discussion');
+    const viewport = page.locator('.pbl-conversation-scroll');
+    for (let revision = 0; revision < 2; revision++) {
+      if (revision) {
+        fixture.view.messages[0].text = intro + intro + questions[revision];
+        fixture.view.revision++;
+        await fixture.publish();
+      }
+      const box = (await viewport.boundingBox())!;
+      const x = box.x + box.width / 2,
+        y = box.y + box.height / 2;
+      if (gesture === 'wheel') {
+        await page.mouse.move(x, y);
+        await page.mouse.wheel(0, 6000);
+      } else {
+        await page.locator('[data-pbl-onboarding="overlay"]').evaluate(
+          (element, { x, y }) => {
+            for (let i = 0; i < 30; i++) {
+              const point = (clientY: number) =>
+                new Touch({ identifier: 1, target: element, clientX: x, clientY });
+              element.dispatchEvent(
+                new TouchEvent('touchstart', {
+                  bubbles: true,
+                  cancelable: true,
+                  touches: [point(y + 30)],
+                  targetTouches: [point(y + 30)],
+                  changedTouches: [point(y + 30)],
+                }),
+              );
+              element.dispatchEvent(
+                new TouchEvent('touchmove', {
+                  bubbles: true,
+                  cancelable: true,
+                  touches: [point(y - 30)],
+                  targetTouches: [point(y - 30)],
+                  changedTouches: [point(y - 30)],
+                }),
+              );
+              element.dispatchEvent(
+                new TouchEvent('touchend', {
+                  bubbles: true,
+                  cancelable: true,
+                  touches: [],
+                  targetTouches: [],
+                  changedTouches: [point(y - 30)],
+                }),
+              );
+            }
+          },
+          { x, y },
+        );
+      }
+      await expect
+        .poll(async () => {
+          const question = await page
+            .getByTestId('pbl-assistant')
+            .getByText(questions[revision], { exact: true })
+            .boundingBox();
+          const reading = await viewport.boundingBox();
+          const card = await tour(page).boundingBox();
+          return (
+            !!question &&
+            !!reading &&
+            !!card &&
+            question.y >= reading.y &&
+            question.y + question.height <= reading.y + reading.height + 1 &&
+            card.y + card.height <= reading.y
+          );
+        })
+        .toBe(true);
+      await expect(tour(page)).toHaveAttribute('data-step', 'discussion');
+    }
+    // Reading gestures must not release modal focus or submit learning commands.
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('Tab');
+    expect(await tour(page).evaluate((element) => element.contains(document.activeElement))).toBe(
+      true,
+    );
+    await expect(tour(page)).toHaveAttribute('data-step', 'discussion');
+    expect(fixture.commands).toEqual([]);
+    expect(pageErrors).toEqual([]);
+    await page.screenshot({ path: testInfo.outputPath('closing-question-readable.png') });
+    await page.keyboard.press('Escape');
+    await expect(tour(page)).toHaveCount(0);
+    await expect(page.getByTestId('pbl-v3-workspace')).toBeFocused();
   });
 }

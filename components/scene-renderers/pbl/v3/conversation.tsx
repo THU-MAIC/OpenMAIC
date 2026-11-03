@@ -251,8 +251,8 @@ export function LearningConversation({
       resize="instant"
     >
       <ConversationContent
-        scrollClassName="min-h-0 flex-1"
-        className="gap-5 p-4"
+        scrollClassName="pbl-conversation-scroll min-h-0 flex-1"
+        className="gap-5 p-4 pr-12"
         onClick={(event) => openReference(event)}
       >
         <ConversationHistory

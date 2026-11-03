@@ -53,9 +53,13 @@ Collapsed code/preview areas use their own toolbar controls; unavailable/off-scr
 targets use a centered card without an unrelated spotlight. Copy names regions
 rather than directions. Page changes focus Next; completion restores a usable entry point.
 
-The conversation jump control reserves a lane outside the text viewport only while visible.
-On narrow assistant pages, the card sits below the opening paragraph with a bounded,
-scrollable body, so the question itself stays visible.
+The conversation jump control floats in a fixed right gutter outside the text,
+so appearing/disappearing never resizes the viewport or interrupts follow-tail.
+On narrow assistant pages, the card sits above the reading viewport with a bounded,
+scrollable body. The modal forwards wheel and single-touch reading gestures only
+inside the highlighted conversation viewport, allowing later paragraphs and a
+streaming welcome's closing question to be read. Clicks remain blocked and focus
+stays in the guide; reading never submits a learning command.
 Page navigation performs no learning commands, preview launches, report requests
 or file edits. Finish only records guide completion. Background work continues.
 An open application receives inputPaused; readiness, candidate promotion and document

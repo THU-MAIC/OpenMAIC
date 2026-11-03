@@ -85,11 +85,9 @@ export function ConversationScroll({
     : t('pblV3.journey.latest');
   if (!below) return null;
   return (
-    // Reserve space only while the jump control is needed; never cover the text.
-    <div
-      data-testid="pbl-conversation-scroll-lane"
-      className="flex h-10 shrink-0 items-center justify-end px-3"
-    >
+    // Float in the content's right gutter. Toggling must not resize the viewport:
+    // that can look like an upward scroll to the follow-tail controller.
+    <div data-testid="pbl-conversation-scroll-lane" className="absolute bottom-2 right-2">
       <Button
         className="rounded-full"
         size="icon"
