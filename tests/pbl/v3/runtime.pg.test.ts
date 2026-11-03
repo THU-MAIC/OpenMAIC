@@ -102,6 +102,8 @@ vi.mock('@/lib/server/pbl-v3/report-analysis', () => ({
 }));
 vi.mock('@/lib/server/agent-runtime/store', () => ({
   getAgentSessionStore: async () => mocked.agents,
+  withAgentSessionClaim: async <T>(operation: (store: PgAgentSessionStore) => Promise<T>) =>
+    operation(mocked.agents as PgAgentSessionStore),
 }));
 vi.mock('@/lib/server/model-config/runtime', () => ({
   assertWorkspaceModelsAuthorized: async () => {},
@@ -478,13 +480,24 @@ function modelFinish(finishReason: string) {
 function textResponse(text: string) {
   return [{ type: 'text-delta', text }, modelFinish('stop')];
 }
+/** Older scenario fixtures describe their question separately; model input uses the current one-response contract. */
+function reviewInput(input: Record<string, unknown>): Record<string, unknown> {
+  if ('response' in input) return input;
+  const { explanation, question, ...rest } = input;
+  return {
+    ...rest,
+    response: [explanation, question]
+      .filter((value) => typeof value === 'string' && value.trim())
+      .join('\n\n'),
+  };
+}
 function toolResponse(calls: { name: string; input: Record<string, unknown> }[]) {
   return [
     ...calls.map((call) => ({
       type: 'tool-call',
       toolCallId: randomUUID(),
       toolName: call.name,
-      input: call.name === 'request_skill_review' ? { explanation: '', ...call.input } : call.input,
+      input: call.name === 'request_skill_review' ? reviewInput(call.input) : call.input,
     })),
     modelFinish('tool-calls'),
   ];
@@ -521,7 +534,7 @@ async function invoke(
 ) {
   const tool = config.tools.find((t) => t.name === name)!;
   expect(tool).toBeDefined();
-  return tool.execute(randomUUID(), args);
+  return tool.execute(randomUUID(), name === 'request_skill_review' ? reviewInput(args) : args);
 }
 async function guided(role: 'teaching' | 'plan' | 'code') {
   const current = await store.get(studyId, principal.ownerId);
@@ -1788,6 +1801,58 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       ).rejects.toThrow();
     });
   });
+  it.each([
+    '看完上面的介绍，你还有关于项目背景或流程的疑问吗？如果没有，可以直接告诉我「准备好了」，我们就进入第一节正式学习。',
+    '看完上面的介绍，你还有关于项目背景或流程的疑问吗？如果没有，直接说一声「准备好了」，我们就开始第一节。',
+  ])('commits one complete welcome and derives its recorded question (%s)', async (closing) => {
+    const study = await freshStudy();
+    const opening = (await study.send('begin')) as { sessionId: string };
+    const claimed = await agents.claimNextSession('single-response-worker', process.pid, {
+      sessionId: opening.sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    const config = await teachingRunnerConfig({
+      sessionId: opening.sessionId,
+      ownerId: principal.ownerId,
+      workerId: 'single-response-worker',
+      attempt: claimed!.attempt,
+      signal: new AbortController().signal,
+    });
+    const tool = config.tools.find((item) => item.name === 'request_skill_review')!;
+    const schema = tool.parameters as { required?: string[]; properties?: Record<string, unknown> };
+    expect(schema.required).toEqual(['response']);
+    expect(schema.properties).not.toHaveProperty('explanation');
+    expect(schema.properties).not.toHaveProperty('question');
+    const response = `## 欢迎来到我的待办清单\n\n你来决定规则，助手帮助实现。\n\n**${closing}**`;
+    // A delayed call using the retired split contract cannot commit another
+    // composite message. It gets an actionable tool error, with state intact.
+    await expect(
+      tool.execute(randomUUID(), {
+        explanation: response,
+        question: '还有背景问题吗？没有的话请说准备好了。',
+      }),
+    ).rejects.toThrow('Use response');
+    expect((await store.binding(opening.sessionId))?.guided?.pending).toBeUndefined();
+    const result = await tool.execute(randomUUID(), { response });
+    expect(JSON.stringify(result)).toContain('canonical');
+    const guided = (await store.binding(opening.sessionId))!.guided!;
+    expect(guided.pending).toMatchObject({ question: `**${closing}**`, displayText: response });
+    expect(guided.welcome).toBe('pending');
+    await agents.finishSession(opening.sessionId, 'single-response-worker', {
+      status: 'succeeded',
+      expectedAttempt: claimed!.attempt,
+    });
+    const view = await learningView(principal, study.id);
+    const text = view
+      .conversation!.flatMap((entry) => entry.parts)
+      .flatMap((part) => (part.kind === 'text' ? [part.text] : []))
+      .join('\n');
+    expect(text.split(closing)).toHaveLength(2);
+    expect(text).not.toContain('还有背景问题吗？');
+    expect(view.actions).not.toContain('next');
+    expect(view.state.position.stageIndex).toBe(0);
+  });
   it.each([true, false])(
     'persists welcome and waits for readiness (read first: %s)',
     async (readFirst) => {
@@ -2397,7 +2462,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         expect(config.historyWindow.automaticEntry).toBe(true);
         expect(
           config.systemPrompt.includes(
-            `"visibleLabels":${JSON.stringify(visibleProductLabels(locale))}`,
+            `"visibleLabels":${JSON.stringify(visibleProductLabels(locale, 'dialogue'))}`,
           ),
         ).toBe(true);
       };
@@ -3689,7 +3754,9 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       ).rejects.toThrow();
       expect((await store.get(study.id, principal.ownerId)).state.position).toEqual(position);
       const event = (await agents.readEventsAfter(sessionId, 0, 1000)).find(
-        (e) => e.type === 'pbl_learner_handoff',
+        (e) =>
+          e.type === 'pbl_learner_handoff' &&
+          (e.data as { kind?: unknown } | null)?.kind === 'support',
       )!;
       expect(event.data).toMatchObject({
         kind: 'support',
@@ -4963,8 +5030,9 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       attempt: claimed!.attempt,
       signal: new AbortController().signal,
     });
-    await invoke(config, 'request_skill_review', { question: 'Ready to continue?' });
     const text = 'Current explanation. '.repeat(140000);
+    const response = `${text}\n\nReady to continue?`;
+    await invoke(config, 'request_skill_review', { response });
     await agents.appendRunEvent(queued.sessionId, 'question-race-worker', {
       type: 'message_update',
       ts: Date.now(),
@@ -4973,7 +5041,9 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     });
     const view = await learningView(principal, study.id, { passive: true });
     expect(
-      view.conversation?.flatMap((e) => e.parts).find((p) => p.kind === 'text' && p.text === text),
+      view.conversation
+        ?.flatMap((e) => e.parts)
+        .find((p) => p.kind === 'text' && p.text === response),
     ).toBeDefined();
     expect(JSON.stringify(view.conversation)).toContain('Ready to continue?');
     await agents.finishSession(queued.sessionId, 'question-race-worker', {
@@ -5461,58 +5531,65 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect((await learningView(principal, study.id)).actions).not.toContain('next');
     studyId = original;
   }, 30000);
-  it('repairs a prose-only lesson by recording its already delivered question without restarting teaching', async () => {
-    const study = await freshTeachingStudy();
-    const handle = startAgentRunner();
-    await handle.stop();
-    const queued = (await study.send('chat')) as { sessionId: string };
-    const meta = await agents.claimNextSession(handle.workerId, process.pid, {
-      sessionId: queued.sessionId,
-      leaseTtlMs: 10000,
-      maxAttempts: 5,
-    });
-    const inputs = await agents.listUserMessages(queued.sessionId);
-    await agents.markUserMessageDelivered(
-      queued.sessionId,
-      handle.workerId,
-      meta!.attempt,
-      inputs.at(-2)!.seq,
-    );
-    const question = 'What does the caller receive after adding a task?';
-    const delivered = `This milestone adds a task. A list keeps order; append modifies it. ${question}`;
-    mocked.responses = [
-      toolResponse([{ name: 'read_next_skill', input: {} }]),
-      textResponse(delivered),
-      toolResponse([
-        {
-          name: 'request_skill_review',
-          input: { explanation: delivered.slice(0, -question.length).trim(), question },
-        },
-      ]),
-    ];
-    const callsBefore = mocked.modelCalls;
-    await runSession(
-      { running: new Map(), shuttingDown: false },
-      { ...meta!, ...(await agents.getSession(queued.sessionId))! },
-    );
-    expect(mocked.modelCalls - callsBefore).toBe(3);
-    expect(mocked.modelSystems.at(-1)).toContain(delivered);
-    expect(mocked.modelSystems.at(-1)).toContain('record that SAME reply');
-    expect(mocked.modelSystems.at(-1)).toContain('verbatim into explanation');
-    expect((await agents.getSession(queued.sessionId))?.status).toBe('succeeded');
-    expect(await agents.listUserMessages(queued.sessionId)).toEqual(inputs);
-    expect((await store.binding(queued.sessionId))?.guided?.pending?.question).toBe(question);
-    const view = await learningView(principal, study.id);
-    const parts = view.conversation!.flatMap((entry) => entry.parts);
-    expect(
-      parts.filter((part) => part.kind === 'text' && part.text.includes(question)),
-    ).toHaveLength(1);
-    expect(
-      parts.filter((part) => part.kind === 'text' && part.text.includes('A list keeps order')),
-    ).toHaveLength(1);
-    expect(view.actions).not.toContain('next');
-    expect(view.state.position.stageIndex).toBe(0);
-  });
+  it.each([false, true])(
+    'records an already delivered lesson verbatim in one response (alternate phrasing: %s)',
+    async (included) => {
+      const study = await freshTeachingStudy();
+      const handle = startAgentRunner();
+      await handle.stop();
+      const queued = (await study.send('chat')) as { sessionId: string };
+      const meta = await agents.claimNextSession(handle.workerId, process.pid, {
+        sessionId: queued.sessionId,
+        leaseTtlMs: 10000,
+        maxAttempts: 5,
+      });
+      const inputs = await agents.listUserMessages(queued.sessionId);
+      await agents.markUserMessageDelivered(
+        queued.sessionId,
+        handle.workerId,
+        meta!.attempt,
+        inputs.at(-2)!.seq,
+      );
+      const question = included
+        ? 'Which value comes back to the caller after adding a task?'
+        : 'What does the caller receive after adding a task?';
+      const delivered = `This milestone adds a task. A list keeps order; append modifies it.\n\n${question}`;
+      mocked.responses = [
+        toolResponse([{ name: 'read_next_skill', input: {} }]),
+        textResponse(delivered),
+        toolResponse([
+          {
+            name: 'request_skill_review',
+            input: { response: delivered },
+          },
+        ]),
+      ];
+      const callsBefore = mocked.modelCalls;
+      await runSession(
+        { running: new Map(), shuttingDown: false },
+        { ...meta!, ...(await agents.getSession(queued.sessionId))! },
+      );
+      expect(mocked.modelCalls - callsBefore).toBe(3);
+      expect(mocked.modelSystems.at(-1)).toContain(JSON.stringify(delivered));
+      expect(mocked.modelSystems.at(-1)).toContain('record that SAME reply');
+      expect(mocked.modelSystems.at(-1)).toContain('verbatim into response');
+      expect((await agents.getSession(queued.sessionId))?.status).toBe('succeeded');
+      expect(await agents.listUserMessages(queued.sessionId)).toEqual(inputs);
+      expect((await store.binding(queued.sessionId))?.guided?.pending?.question).toBe(question);
+      const view = await learningView(principal, study.id);
+      const parts = view.conversation!.flatMap((entry) => entry.parts);
+      expect(
+        parts.filter((part) => part.kind === 'text' && part.text.includes(question)),
+      ).toHaveLength(1);
+      const text = parts.flatMap((part) => (part.kind === 'text' ? [part.text] : [])).join('\n');
+      expect(text.split(question)).toHaveLength(2);
+      expect(
+        parts.filter((part) => part.kind === 'text' && part.text.includes('A list keeps order')),
+      ).toHaveLength(1);
+      expect(view.actions).not.toContain('next');
+      expect(view.state.position.stageIndex).toBe(0);
+    },
+  );
   it.each([false, true])(
     'repairs a prose-only assistance reply without replacing readiness or duplicating its answer (crash: %s)',
     async (crash) => {
@@ -5798,6 +5875,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       // explanation also appears in tool receipts; keep their combined request
       // within the fixture model window. Overflow has dedicated projection tests.
       const largeReply = 'Let us inspect the greeting. '.repeat(3000);
+      const completeReview = `${largeReply}\n\nWhat should greet(name) return?`;
       mocked.responses = [
         [
           { type: 'text-delta', text: largeReply },
@@ -5806,7 +5884,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             type: 'tool-call',
             toolCallId: 'ask-review',
             toolName: 'request_skill_review',
-            input: { explanation: '', question: 'What should greet(name) return?' },
+            input: { response: completeReview },
           },
           finish,
         ],
@@ -5825,7 +5903,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             type: 'tool-call',
             toolCallId: 'early-review',
             toolName: 'request_skill_review',
-            input: { explanation: '', question: '' },
+            input: { response: '' },
           },
           finish,
         ]);
@@ -5839,15 +5917,13 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       expect(
         restored.conversation
           ?.flatMap((entry) => entry.parts)
-          .some((part) => part.kind === 'text' && part.text === largeReply),
+          .some((part) => part.kind === 'text' && part.text === completeReview),
       ).toBe(true);
 
       expect(
         restored.conversation?.filter((entry) => !entry.boundary && entry.speaker !== 'user'),
       ).toMatchObject([{ status: 'succeeded' }]);
-      expect(restored.messages.some((m) => m.text === 'What should greet(name) return?')).toBe(
-        true,
-      );
+      expect(restored.messages.some((m) => m.text === completeReview)).toBe(true);
       expect(restored.actions).not.toContain('next');
       expect((await store.binding(queued.sessionId))?.guided?.pending?.question).toBe(
         'What should greet(name) return?',
@@ -5884,7 +5960,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             type: 'tool-call',
             toolCallId: 'next-review',
             toolName: 'request_skill_review',
-            input: { explanation: '', question: 'How does the caller use that value?' },
+            input: { response: 'How does the caller use that value?' },
           },
           finish,
         ],
@@ -5929,12 +6005,15 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       expect((await agents.readEventsAfter(queued.sessionId, 0, 1000)).some(isEmptyStop)).toBe(
         true,
       );
-      const transcript = (await learningEvidence(principal, studyId)).conversations.flatMap(
-        (c) => c.messages,
-      );
-      expect(transcript.filter((m) => m.text === 'What should greet(name) return?')).toHaveLength(
-        1,
-      );
+      const evidence = await learningEvidence(principal, studyId);
+      const transcript = evidence.conversations.flatMap((c) => c.messages);
+      // Reports keep their existing bounded excerpt; the workbench above keeps
+      // the complete current reply. Its excerpt must still appear only once.
+      const excerpts = transcript.filter((m) => m.text.startsWith('Let us inspect the greeting.'));
+      expect(excerpts).toHaveLength(1);
+      expect(completeReview.startsWith(excerpts[0]!.text)).toBe(true);
+      expect(excerpts[0]!.text.length).toBeLessThan(completeReview.length);
+      expect(evidence.truncated).toBe(true);
       expect(
         transcript.filter((m) => m.text === 'How does the caller use that value?'),
       ).toHaveLength(1);
@@ -6364,7 +6443,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       const tool = config.tools.find((t) => t.name === 'request_skill_review')!;
       const operation = tool.execute(
         randomUUID(),
-        { question: 'Explain the greeting.' },
+        { response: 'Explain the greeting.' },
         abort.signal,
       );
       const rejected = expect(operation).rejects.toThrow();

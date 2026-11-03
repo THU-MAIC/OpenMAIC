@@ -1143,6 +1143,12 @@ export async function learningView(
         },
       ],
     });
+    // A canonical handoff replaces the current prose, including its byte-budget
+    // exemption. It may be too large for the event sample and only available here.
+    if (canonicalPending)
+      currentPartIds.add(
+        `${binding!.session_id}:pending-${pendingReview.runId}:question-pending-${pendingReview.runId}`,
+      );
   }
   conversation = boundConversation(
     deduplicateHandoffs(conversation),

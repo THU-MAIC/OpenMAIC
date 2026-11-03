@@ -24,6 +24,23 @@ export function stageStep(stage: LearningView['stage']): string {
   return stage.kind;
 }
 
+/** Same-milestone destination; milestone boundaries retain the generic next action. */
+export function nextLearningStep(view: Pick<LearningView, 'state' | 'milestones'>) {
+  return view.milestones?.[view.state.position.milestoneIndex]?.stages[
+    view.state.position.stageIndex + 1
+  ];
+}
+
+export function continueActionLabel(
+  view: Pick<LearningView, 'state' | 'milestones'>,
+  t: (key: string, options?: Record<string, unknown>) => string,
+) {
+  const step = nextLearningStep(view);
+  return step
+    ? t('pblV3.journey.enterStep', { step: t(`pblV3.journey.steps.${step}`) })
+    : t('pblV3.next');
+}
+
 /** Introduction is part of the first installed teaching step. */
 export function learningProgress(view: Pick<LearningView, 'state' | 'stage' | 'milestones'>) {
   const milestone = view.milestones?.[view.state.position.milestoneIndex];

@@ -6,6 +6,10 @@
  * recovery. A client connection is never part of the execution lifetime.
  */
 import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
+import {
+  assertRuntimeSchemaCompatibility,
+  isSchemaRefusal,
+} from '@/lib/persistence/schema-boot-check';
 import { serverMediaConnection } from '@/lib/server/model-config/media';
 import { backgroundWorkspaceId } from '@/lib/server/model-config/runtime';
 import { randomUUID } from 'node:crypto';
@@ -101,7 +105,7 @@ import {
   trackToolCallMessage,
   type PendingToolCall,
 } from './tool-call-integrity';
-import { getAgentSessionStore } from './store';
+import { getAgentSessionStore, withAgentSessionClaim } from './store';
 import { findDeletedUserSkill } from './user-skills';
 import { listAgentUserMessages, readAgentMessageLog } from './user-messages';
 import { subscribeAgentEventWakeup } from './event-notify-bus';
@@ -967,6 +971,21 @@ export interface AgentRunnerHandle {
 export interface RunContext {
   running: Map<string, { abort: AbortController }>;
   shuttingDown: boolean;
+  onSchemaRefusal?: (error: unknown) => Promise<void>;
+}
+
+/** Retire this worker, never turn a release incompatibility into a learner failure. */
+function retireIncompatibleRunner(ctx: RunContext, error: unknown): boolean {
+  if (!isSchemaRefusal(error)) return false;
+  if (!ctx.shuttingDown) {
+    ctx.shuttingDown = true;
+    for (const session of ctx.running.values()) session.abort.abort();
+    // Do not await our own drain from inside a running session's catch block.
+    void ctx
+      .onSchemaRefusal?.(error)
+      .catch((failure) => log.error('schema refusal shutdown failed', failure));
+  }
+  return true;
 }
 
 function toFollowUp(message: AgentSessionUserMessage): FollowUpMessage {
@@ -1025,7 +1044,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       retired.signal,
     );
   } catch (error) {
-    if (!retired.signal.aborted) throw error;
+    if (!retired.signal.aborted && !retireIncompatibleRunner(ctx, error)) throw error;
   } finally {
     closed = true;
     for (const release of releases) {
@@ -2311,14 +2330,17 @@ async function executeSession(
     } catch (error) {
       queueInterruptedToolResults();
       if (isLeaseLostError(error)) markLeaseLost();
+      const schemaRefused = retireIncompatibleRunner(ctx, error);
       const message = error instanceof Error ? error.message : String(error);
       if (ctx.shuttingDown || leaseLost || tripwireViolated) {
         emit(LIFECYCLE.sessionInterrupted, {
-          reason: tripwireViolated
-            ? 'runner event-order tripwire'
-            : leaseLost
-              ? 'lease lost'
-              : 'runner shutdown',
+          reason: schemaRefused
+            ? 'schema compatibility changed'
+            : tripwireViolated
+              ? 'runner event-order tripwire'
+              : leaseLost
+                ? 'lease lost'
+                : 'runner shutdown',
           attempt,
         });
         await flushAll(false);
@@ -2349,11 +2371,12 @@ async function executeSession(
     }
   } catch (error) {
     if (isLeaseLostError(error)) markLeaseLost();
+    const schemaRefused = retireIncompatibleRunner(ctx, error);
     const message = error instanceof Error ? error.message : String(error);
     if (ctx.shuttingDown || leaseLost || tripwireViolated) {
-      if (tripwireViolated) {
+      if (schemaRefused || tripwireViolated) {
         emit(LIFECYCLE.sessionInterrupted, {
-          reason: 'runner event-order tripwire',
+          reason: schemaRefused ? 'schema compatibility changed' : 'runner event-order tripwire',
           attempt,
         });
         await flushAll(false).catch(() => {});
@@ -2391,37 +2414,54 @@ async function executeSession(
 }
 
 /** Start scanning. Store/schema construction remains lazy behind each scan. */
-export function startAgentRunner(): AgentRunnerHandle {
-  const ctx: RunContext = { running: new Map(), shuttingDown: false };
+export function startAgentRunner(
+  options: Pick<RunContext, 'onSchemaRefusal'> = {},
+): AgentRunnerHandle {
+  const ctx: RunContext = { running: new Map(), shuttingDown: false, ...options };
   let scanTimer: ReturnType<typeof setInterval> | null = null;
   let scanning = false;
+  let nextSchemaCheckAt = 0;
 
   const scan = async (): Promise<void> => {
     if (scanning || ctx.shuttingDown) return;
     scanning = true;
     try {
-      const store = await getAgentSessionStore();
+      // Check before the first claim, then reuse success for 30 seconds instead
+      // of re-reading every schema and hashing every migration on each scan.
+      // Failed checks never extend this window or allow this scan to claim work.
+      if (Date.now() >= nextSchemaCheckAt) {
+        await assertRuntimeSchemaCompatibility();
+        nextSchemaCheckAt = Date.now() + 30_000;
+      }
       while (ctx.running.size < config.maxConcurrent && !ctx.shuttingDown) {
-        const meta = await store.claimNextSession(
-          `${PROCESS_WORKER_ID}:${randomUUID()}`,
-          process.pid,
-          {
+        const claimed = await withAgentSessionClaim(async (store) => {
+          if (ctx.shuttingDown) return false;
+          const claimWorkerId = `${PROCESS_WORKER_ID}:${randomUUID()}`;
+          const meta = await store.claimNextSession(claimWorkerId, process.pid, {
             leaseTtlMs: config.leaseTtlMs,
             maxAttempts: config.maxAttempts,
             excludeSessionIds: [...ctx.running.keys()],
-          },
-        );
-        if (!meta) break;
-        // Process-local fence in addition to the store's lease exclusion.
-        if (ctx.running.has(meta.id)) continue;
-        log.info(`claiming ${meta.id} (attempt ${meta.attempt})`);
-        void runSession(ctx, meta).catch((error) => {
-          log.error(`runSession ${meta.id} crashed`, error);
-          ctx.running.delete(meta.id);
+          });
+          if (!meta) return false;
+          // Keep the claim connection until this decision and cleanup finish,
+          // even if stop() timed out and pool.end() has already started.
+          if (ctx.shuttingDown) {
+            await store.releaseLease(meta.id, claimWorkerId);
+            return false;
+          }
+          // Process-local fence in addition to the store's lease exclusion.
+          if (ctx.running.has(meta.id)) return true;
+          log.info(`claiming ${meta.id} (attempt ${meta.attempt})`);
+          void runSession(ctx, meta).catch((error) => {
+            log.error(`runSession ${meta.id} crashed`, error);
+            ctx.running.delete(meta.id);
+          });
+          return true;
         });
+        if (!claimed) break;
       }
     } catch (error) {
-      log.error('claim scan failed', error);
+      if (!retireIncompatibleRunner(ctx, error)) log.error('claim scan failed', error);
     } finally {
       scanning = false;
     }
@@ -2449,11 +2489,13 @@ export function startAgentRunner(): AgentRunnerHandle {
       if (scanTimer) clearInterval(scanTimer);
       const deadlineAt = Date.now() + (options?.timeoutMs ?? 15_000);
       for (const session of ctx.running.values()) session.abort.abort();
-      while (ctx.running.size > 0 && Date.now() < deadlineAt) {
+      while ((scanning || ctx.running.size > 0) && Date.now() < deadlineAt) {
         await new Promise((resolve) => setTimeout(resolve, 200));
       }
-      if (ctx.running.size > 0) {
-        log.warn(`stop() timed out with ${ctx.running.size} session(s) still settling`);
+      if (scanning || ctx.running.size > 0) {
+        log.warn(
+          `stop() timed out with ${ctx.running.size} session(s)${scanning ? ' and an active scan' : ''} still settling`,
+        );
       }
       log.info(`runner ${PROCESS_WORKER_ID} stopped`);
     },

@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Group, Panel, Separator, usePanelRef } from 'react-resizable-panels';
 import { useI18n } from '@/lib/hooks/use-i18n';
 
@@ -9,6 +9,8 @@ export function WorkbenchSplit({
   application,
   showApplication = false,
   onCollapseApplication,
+  onCollapseWorkspace,
+  onCollapseAssistant,
   showWorkspace = true,
   showAssistant = true,
 }: {
@@ -17,6 +19,8 @@ export function WorkbenchSplit({
   application?: ReactNode;
   showApplication?: boolean;
   onCollapseApplication?: () => void;
+  onCollapseWorkspace?: () => void;
+  onCollapseAssistant?: () => void;
   showWorkspace?: boolean;
   showAssistant?: boolean;
 }) {
@@ -27,18 +31,25 @@ export function WorkbenchSplit({
     workspacePanel = usePanelRef(),
     assistantPanel = usePanelRef(),
     applicationPanel = usePanelRef();
+  const syncWorkAreaVisibility = useCallback(
+    (inPixels: number) => {
+      // A zero-sized outer panel cannot retain an inner resize. Reapply visibility
+      // when the outer panel regains size without remounting its editor or iframe.
+      if (!inPixels) return;
+      if (showWorkspace) workspacePanel.current?.expand();
+      if (appVisible) applicationPanel.current?.expand();
+      if (!showWorkspace) workspacePanel.current?.collapse();
+      if (!appVisible) applicationPanel.current?.collapse();
+    },
+    [showWorkspace, appVisible, workspacePanel, applicationPanel],
+  );
   useEffect(() => {
-    if (showWorkspace) workspacePanel.current?.expand();
-    else workspacePanel.current?.collapse();
-  }, [showWorkspace, workspacePanel]);
+    syncWorkAreaVisibility(workAreaPanel.current?.getSize().inPixels ?? 0);
+  }, [syncWorkAreaVisibility, workAreaPanel]);
   useEffect(() => {
     if (showAssistant) assistantPanel.current?.expand();
     else assistantPanel.current?.collapse();
   }, [showAssistant, assistantPanel]);
-  useEffect(() => {
-    if (appVisible) applicationPanel.current?.expand();
-    else applicationPanel.current?.collapse();
-  }, [appVisible, applicationPanel]);
   useEffect(() => {
     if (workAreaVisible) workAreaPanel.current?.expand();
     else workAreaPanel.current?.collapse();
@@ -63,12 +74,21 @@ export function WorkbenchSplit({
       <Group
         orientation={compact ? 'vertical' : 'horizontal'}
         style={{ height: stacked ? stackHeight : '100%', minHeight: stacked ? stackHeight : 0 }}
+        onLayoutChanged={(layout, meta) => {
+          if (!meta.isUserInteraction) return;
+          if (layout['work-area'] === 0) {
+            if (showWorkspace) onCollapseWorkspace?.();
+            if (appVisible) onCollapseApplication?.();
+          }
+          if (layout.assistant === 0 && showAssistant) onCollapseAssistant?.();
+        }}
       >
         {/* The outer divider always borders the visible work area and assistant.
             Keeping the application in its own inner group preserves its iframe. */}
         <Panel
           id="work-area"
           panelRef={workAreaPanel}
+          onResize={(size) => syncWorkAreaVisibility(size.inPixels)}
           collapsible
           defaultSize="55%"
           minSize={stacked ? `${workAreaHeight}px` : compact ? 0 : appVisible ? '60%' : '30%'}
@@ -77,8 +97,9 @@ export function WorkbenchSplit({
           <Group
             orientation={compact ? 'vertical' : 'horizontal'}
             onLayoutChanged={(layout, meta) => {
-              if (meta.isUserInteraction && appVisible && layout.application === 0)
-                onCollapseApplication?.();
+              if (!meta.isUserInteraction) return;
+              if (showWorkspace && layout.workspace === 0) onCollapseWorkspace?.();
+              if (appVisible && layout.application === 0) onCollapseApplication?.();
             }}
           >
             <Panel

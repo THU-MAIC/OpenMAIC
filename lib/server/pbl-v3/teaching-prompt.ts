@@ -22,6 +22,7 @@ import {
 import {
   teachingRules,
   learnerExpressionRules,
+  planPresentationRules,
   interactionRules,
   assessmentRules,
   decisionRules,
@@ -99,6 +100,7 @@ export function teachingSection(
       section === skill.progression[1]
         ? stageOpeningRules + '\n'
         : '') +
+      (stage.kind === 'produce' && stage.writes === 'plan' ? planPresentationRules + '\n' : '') +
       'Platform product/assistance policy overrides course UI instructions: reference materials are Agent references, not automatically learner files or controls. Platform pacing policy takes precedence over any course instruction to repeat a covered question. Check earlier learner replies before asking. If this section is already satisfied by verified same-version feedback, use reuseFeedback with a concrete explanation to continue without another question. Otherwise record one necessary question with request_skill_review and wait for a real reply. Explicit confident understanding is sufficient absent unresolved errors; never invent learner feedback.',
     goal: milestone.goal ?? milestone.title,
     stage: stage.kind === 'mentor_say' ? stage.say : stage.kind === 'produce' ? stage.writes : '',
@@ -135,7 +137,7 @@ function buildTeachingPrompt({
       ? 'Project readiness is a chat reply, not a Continue button. After that reply, read_next_skill opens formal teaching inside this same first step; do not send the learner to another step.'
       : finalRecap
         ? 'Only a successful final recap complete_stage receipt completes the project and reveals the report in the top toolbar, final completion message and project overview. The completion banner only shows status. Before that receipt, do not claim completion or say a report is already available. Refer to the actual productContext.visibleLabels.report text when giving directions. The report links back to the read-only workbench and remains discoverable after revisiting the PBL scene. Do not ask for another Continue click or append another milestone.'
-        : 'After the current completion gates succeed and productContext allows Continue, the learner uses the task bar above the chat input to enter the next step.';
+        : 'After the current completion gates succeed and productContext allows Continue, the learner uses the task bar above the chat input to enter the next step. Quote productContext.visibleLabels.continue exactly when naming that button.';
   const guided = stage.kind === 'produce' || stage.kind === 'mentor_say';
   const repairing = stage.kind === 'check' && stage.checker === 'tests' && !!collected.remediation;
   const recapping =
@@ -287,6 +289,7 @@ function buildTeachingPrompt({
     teachingRules +
     '\n' +
     learnerExpressionRules +
+    (stage.kind === 'produce' && stage.writes === 'plan' ? '\n' + planPresentationRules : '') +
     (guided ? interactionRules : stage.kind === 'check' ? assessmentRules : '') +
     (welcome === 'pending' ? '\n' + projectWelcomeRules : '') +
     (welcome !== 'pending' && stage.kind === 'mentor_say' && stage.agent === 'discussion'

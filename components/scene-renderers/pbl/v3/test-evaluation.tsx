@@ -2,6 +2,7 @@
 import { CircleAlert, CheckCircle2, ListChecks, LoaderCircle, XCircle } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { LearningView } from '@/lib/pbl/v3/types';
+import { continueActionLabel } from '@/lib/pbl/v3/presentation';
 
 /** OpenPBL's verdict + public diagnostics card, adapted to the host's tokens and i18n. */
 export function TestEvaluation({
@@ -128,7 +129,9 @@ export function TestEvaluation({
         </pre>
       ) : null}
       <p className="text-xs text-muted-foreground">
-        {t(building ? 'pblV3.editAccess.building' : `pblV3.testResult.hints.${phase}`)}
+        {t(building ? 'pblV3.editAccess.building' : `pblV3.testResult.hints.${phase}`, {
+          action: continueActionLabel(view, t),
+        })}
       </p>
     </section>
   );

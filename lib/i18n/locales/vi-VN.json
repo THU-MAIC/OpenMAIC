@@ -2776,7 +2776,7 @@
         "idle": "Run tests using the green button on the task bar. Detailed results appear here.",
         "running": "The test runner is working. Results will be saved automatically; you do not need to send a message.",
         "collecting": "Execution finished. The server is checking the file version and saving the result.",
-        "passed": "The result is saved. Use Continue on the task bar to enter the next step.",
+        "passed": "The result is saved. Choose “{{action}}” on the task bar to enter the next step.",
         "failed": "Review the failed checks and ask the coding assistant for help, then rerun tests. Hidden tests and expected answers are not shown.",
         "error": "No reliable code verdict is available. Check the environment and rerun; this is not a confirmed code failure.",
         "unavailable": "The result is not confirmed. Retry getting results on the task bar; an earlier pass cannot authorize progression."
@@ -2803,6 +2803,9 @@
     },
     "retryResponse": "Retry response",
     "run": {
+      "recoveryTitle": "This reply needs to resume",
+      "recoveryHint": "Your message and learning record have been kept.",
+      "retrying": "Retrying…",
       "contextCapacity": "The current course material or message exceeds the selected model’s context capacity. Your records are saved. Ask the course maintainer to check the model configuration or material before retrying.",
       "contextTurnCapacity": "Nội dung tích lũy trong lượt này vượt quá phạm vi mô hình có thể xử lý trong một lần. Hãy gửi một tin nhắn mới ngắn gọn nêu lại câu hỏi hiện tại hoặc sự trợ giúp bạn cần. Thử lại cùng phản hồi sẽ không giải phóng dung lượng. Tiến độ và bản ghi của bạn đã được lưu.",
       "contextPreparation": "Conversation preparation failed temporarily. Your records are saved; you can retry this reply.",
@@ -2851,7 +2854,7 @@
       "workspace-run": "Workspace run"
     },
     "journey": {
-      "completionHandoff": "This step is complete. Use the Continue button on the task bar above the message box to move on.",
+      "completionHandoff": "This step is complete. See the task bar above the message box for the next action.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",
       "expand": "Expand project workspace",
@@ -2859,7 +2862,7 @@
       "fullscreenUnavailable": "Fullscreen is unavailable. You can continue in the classroom layout.",
       "currentTask": "Current learning step",
       "collectResult": "Collect the execution result before continuing.",
-      "ready": "This step is ready. Choose Continue when you are ready to move on.",
+      "ready": "This step is ready. Choose “{{action}}” when you are ready to move on.",
       "followStep": "Follow the current step below. The assistant may need your answer or confirmation.",
       "steps": {
         "intro": "Project introduction",

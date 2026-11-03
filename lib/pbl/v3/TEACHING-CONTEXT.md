@@ -12,6 +12,19 @@ project-level session. Summaries stay inside that existing role session. Handoff
 continue through decisions, contracts, PLAN, code and formal assessment evidence,
 without sharing the roles' full chats.
 
+## Learner-facing review handoff
+
+`request_skill_review` accepts one complete `response`, including the explanation
+and one closing question in its final paragraph. The host displays that response
+once and records its final paragraph as the pending question. It does not generate,
+append or compare a second wording of the question. Readiness and artifact approval
+still require later real learner feedback and the current-version checks.
+
+Prose-only recovery copies the complete already delivered reply into `response`
+verbatim. Delayed calls using the retired `explanation`/`question` input receive an
+actionable tool error without committing a receipt or changing progress. Existing
+saved split-field receipts remain readable; historical messages are not rewritten.
+
 ## Request construction
 
 1. Load the existing complete entry tree and run the normal delivery/resume and

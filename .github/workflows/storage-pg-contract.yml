@@ -104,6 +104,7 @@ jobs:
             tests/persistence/owner-material-extraction.pg.test.ts \
             tests/persistence/owner-material-pool.pg.test.ts \
             tests/persistence/material-library.pg.test.ts \
+            tests/persistence/runtime-schema-change.pg.test.ts \
             tests/persistence/workspace-model-config.pg.test.ts \
             tests/server/agents/owner-agents.pg.test.ts \
             tests/persistence/runtime-tombstone-collision.pg.test.ts \

@@ -376,6 +376,40 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
     expect(
       await app.locator('body').evaluate(() => (window as unknown as { boot: string }).boot),
     ).toBe(boot);
+    // Closing the entire work area must not restore a hidden inner panel when
+    // only one pane is reopened. Keep the original preview document and input.
+    const codeToggle = page.getByRole('button', { name: 'Toggle code workspace', exact: true });
+    const appToggle = page.getByTestId('pbl-application-open');
+    const collapseWorkArea = async () => {
+      const outer = page.getByRole('separator', { name: 'Resize workspace and assistant' }).last();
+      const box = (await outer.boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(0, box.y + box.height / 2, { steps: 12 });
+      await page.mouse.up();
+      await expect(codeToggle).toHaveAttribute('aria-pressed', 'false');
+      await expect(appToggle).toHaveAttribute('aria-expanded', 'false');
+    };
+    await collapseWorkArea();
+    await codeToggle.click();
+    await expect.poll(async () => (await workspacePanel.boundingBox())!.width).toBeGreaterThan(100);
+    await expect
+      .poll(async () => (await page.getByTestId('application').boundingBox())!.width)
+      .toBeLessThan(1);
+    await appToggle.click();
+    await expect(panel).toBeVisible();
+    await collapseWorkArea();
+    await appToggle.click();
+    await expect.poll(async () => (await panel.boundingBox())!.width).toBeGreaterThan(100);
+    await expect.poll(async () => (await workspacePanel.boundingBox())!.width).toBeLessThan(1);
+    await codeToggle.click();
+    await expect.poll(async () => (await workspacePanel.boundingBox())!.width).toBeGreaterThan(100);
+    await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toHaveValue(
+      'Unsaved form input',
+    );
+    expect(
+      await app.locator('body').evaluate(() => (window as unknown as { boot: string }).boot),
+    ).toBe(boot);
     // On a phone each panel remains reachable without covering the conversation.
     await page.setViewportSize({ width: 390, height: 844 });
     await expect.poll(() => panel.evaluate((el) => el.clientHeight)).toBeGreaterThan(300);

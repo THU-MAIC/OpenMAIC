@@ -120,8 +120,8 @@ function AgentTurn({
               t={t}
             />
           ) : part.kind === 'text' ? (
-            <div className="text-foreground" key={part.id}>
-              <TextBlock text={part.text} streaming={part.streaming} />
+            <div className="pbl-teaching-prose text-foreground" key={part.id}>
+              <TextBlock text={part.text} streaming={part.streaming} variant="lesson" />
             </div>
           ) : null,
         )}

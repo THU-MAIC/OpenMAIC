@@ -27,6 +27,7 @@ vi.mock('@/lib/persistence/asset-collector-schedule', () => ({
 // These background tasks belong to other boot tests and must not start here.
 vi.mock('@/lib/persistence/schema-boot-check', () => ({
   startSchemaBootCheck: async () => undefined,
+  startRuntimeSchemaMonitor: () => ({ stop: () => undefined }),
 }));
 vi.mock('@/lib/server/instance-secret-check', () => ({
   warnAboutInstanceSecret: async () => undefined,
