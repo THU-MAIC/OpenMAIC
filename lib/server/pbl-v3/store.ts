@@ -142,6 +142,8 @@ export class LearningStore {
           OR (s.state#>>'{position,stageIndex}')::integer>0
           OR s.archive_discard IS NOT NULL
           OR s.environment_recovery->>'progressReset'='true'
+          OR EXISTS (SELECT 1 FROM pbl_v3_evidence e WHERE e.study_id=s.id
+            AND e.actor='learner' AND e.kind IN ('file-edit','workspace-run'))
           OR EXISTS (SELECT 1 FROM pbl_v3_events e WHERE e.study_id=s.id
             AND e.event->>'type' NOT IN
               ('session.started','milestone.entered','stage.entered','agent.activated','state.persisted'))

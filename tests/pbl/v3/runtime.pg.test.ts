@@ -2,6 +2,7 @@
 import { beforeAll, afterAll, describe, expect, it, vi, onTestFinished } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { DECISION_RESPONSE_MAX_LENGTH } from '@/lib/pbl/v3/domain/orchestration/decisions';
+import { projectSchema } from '@/lib/pbl/v3/domain/project/project-schema';
 import { mkdtemp, readFile, writeFile, mkdir, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -803,6 +804,99 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       } finally {
         await releasePreparationFixtures([study.id]);
       }
+    },
+  );
+
+  it.each(['save', 'run', 'terminal'] as const)(
+    'counts a learner’s first-stage %s as prior V3 use without requiring a stage advance',
+    async (action) => {
+      const first = project.definition.milestones[0]!.stages[0]!;
+      if (first.kind !== 'mentor_say') throw new Error('Expected the initial teaching stage.');
+      const previous = first.studentActions;
+      onTestFinished(() => {
+        first.studentActions = previous;
+      });
+      first.studentActions = [...previous, 'edit'];
+      // Seven-step order does not forbid an editable teaching stage.
+      projectSchema.parse(project.definition);
+      const owner = { ...principal, ownerId: `guide-workspace-${randomUUID()}` };
+      const study = await store.create(
+        {
+          ownerId: owner.ownerId,
+          stageId: randomUUID(),
+          sceneId: 'scene',
+          projectId: project.ref.id,
+          version: project.ref.version,
+        },
+        startOrchestration(project.definition),
+      );
+      let environmentId: string | null = null;
+      onTestFinished(async () => {
+        if (!environmentId) return;
+        try {
+          await workbenchCommand(owner, study.id, {
+            id: randomUUID(),
+            revision: (await store.get(study.id, owner.ownerId)).revision,
+            environmentId,
+            action: 'stop',
+          });
+        } finally {
+          await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+            environmentId,
+          ]);
+        }
+      });
+      const send = async (type: string, payload: Record<string, unknown> = {}) =>
+        commandStudy(owner, study.id, {
+          id: randomUUID(),
+          revision: (await store.get(study.id, owner.ownerId)).revision,
+          type,
+          ...payload,
+        });
+      await send('prepare');
+      const before = await store.get(study.id, owner.ownerId);
+      environmentId = before.environment_id;
+      expect((await learningView(owner, study.id)).onboardingCompleted).toBe(false);
+      await recordLearningEvidence(pool, before, 'discussion', 'file-edit', {
+        path: 'greeting.py',
+      });
+      expect(await store.hasSeenOnboarding(owner.ownerId)).toBe(false);
+      if (action === 'save') {
+        const text = await (
+          await SandboxService.forOwner(owner)
+        ).readText(environmentId!, 'greeting.py');
+        await send('save', {
+          path: 'greeting.py',
+          text: text + '\n# learner edit',
+          expectedHash: digest(text),
+        });
+      } else {
+        const work = await workbenchView(owner, study.id);
+        expect(work.canRun).toBe(true);
+        await workbenchCommand(owner, study.id, {
+          id: randomUUID(),
+          revision: work.revision,
+          environmentId: work.environmentId,
+          epoch: work.epoch,
+          action,
+          text: 'printf learner-work',
+        });
+      }
+      const after = await store.get(study.id, owner.ownerId);
+      expect(after.state.position).toEqual(before.state.position);
+      expect(after.state.lastSequence).toBe(before.state.lastSequence);
+      expect(after.onboarding_completed_at).toBeNull();
+      expect(
+        (
+          await pool.query(
+            "SELECT kind FROM pbl_v3_evidence WHERE study_id=$1 AND actor='learner'",
+            [study.id],
+          )
+        ).rows,
+      ).toEqual([{ kind: action === 'save' ? 'file-edit' : 'workspace-run' }]);
+      expect(await store.hasSeenOnboarding(owner.ownerId)).toBe(true);
+      expect((await learningView(owner, study.id)).onboardingCompleted).toBe(true);
+      expect(await store.hasSeenOnboarding(`unrelated-${owner.ownerId}`)).toBe(false);
     },
   );
 

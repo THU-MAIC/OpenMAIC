@@ -9,8 +9,10 @@ The task bar provides the current learning stage's instructions.
 The guide auto-opens once per learner across V3 projects. The server aggregates
 receipts and existing learning progress across that owner's V3 studies; no
 course ID, recruitment flag, referrer, browser preference or PBL V2 history is used.
-Existing V3 stage advancement, completed projects, real learner messages and
-orchestration progress count as seen, including progress reset/archive discard.
+Existing V3 stage advancement, completed projects, real learner messages,
+orchestration progress and durable learner file/command/terminal activity count
+as seen, including progress reset/archive discard. Assistant-generated evidence
+does not exempt a learner.
 Preparation and the automatic assistant opening alone do not count as learning.
 The existing study receipt remains an idempotent storage anchor, but its effect
 is learner-wide; no additional preference table or migration is required.
@@ -69,8 +71,8 @@ identity continue independently. Input resumes only when normal readiness/save g
 
 Unit tests cover learner-wide eligibility, drafting deferral and manual replay,
 entry/recovery and legacy browser records. Real PostgreSQL tests cover cross-project
-receipts, owner isolation, existing V3 progress, automatic openings and unchanged
-learning state. Browser tests cover background receipt failures and hung requests,
+receipts, owner isolation, existing V3 progress, real first-stage workspace
+operations, automatic openings and unchanged learning state. Browser tests cover background receipt failures and hung requests,
 continued typing during restore, completed read-only entry, visible small-screen
 assistant text, reconnects, narrow expanded/docked layouts and native fullscreen.
 
