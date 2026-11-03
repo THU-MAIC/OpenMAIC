@@ -1086,15 +1086,16 @@ test('installed sample opens in the normal classroom and preserves progress afte
       { exact: true },
     ),
   ).toBeVisible();
-  await expect(
-    report.getByText(
-      'Selected learning records are shown here. Complete original records remain saved.',
-      {
-        exact: true,
-      },
-    ),
-  ).toBeVisible();
+  const records = report.getByTestId('pbl-report-records');
+  const recordNotice = report.getByText(
+    'Selected learning records are shown here. Complete original records remain saved.',
+    { exact: true },
+  );
+  await expect(records).not.toHaveAttribute('open', '');
+  await expect(recordNotice).toBeHidden();
   await report.getByRole('button', { name: 'Evidence 1', exact: true }).click();
+  await expect(records).toHaveAttribute('open', '');
+  await expect(recordNotice).toBeVisible();
   await expect(report.locator(`#report-source-${view.id}-event-7`)).toHaveAttribute('open', '');
   await expect(report.getByText('Saved plan evidence')).toBeVisible();
   expect(
