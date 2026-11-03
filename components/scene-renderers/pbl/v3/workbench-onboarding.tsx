@@ -225,7 +225,7 @@ export function WorkbenchOnboarding({
     body.current?.scrollTo({ top: 0 });
   };
   const button =
-    'inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-40';
+    'inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-40 max-[360px]:px-2 max-[360px]:text-xs';
   return (
     <Dialog.Root open>
       <Dialog.Portal container={root.current}>
@@ -327,9 +327,13 @@ export function WorkbenchOnboarding({
           }}
           onKeyDown={(event) => event.stopPropagation()}
         >
-          <header className="flex shrink-0 items-center gap-2 border-b px-5 py-3">
-            <BookOpen size={16} className="shrink-0 text-primary" aria-hidden="true" />
-            <span className="flex-1 text-xs font-medium text-muted-foreground">
+          <header className="flex shrink-0 items-center gap-2 border-b px-5 py-3 max-[360px]:absolute max-[360px]:end-2 max-[360px]:top-2 max-[360px]:z-10 max-[360px]:border-0 max-[360px]:p-0">
+            <BookOpen
+              size={16}
+              className="shrink-0 text-primary max-[360px]:hidden"
+              aria-hidden="true"
+            />
+            <span className="flex-1 text-xs font-medium text-muted-foreground max-[360px]:hidden">
               {t('pblV3.onboarding.counter', { current: stepIndex + 1, total: steps.length })}
             </span>
             <button
@@ -341,11 +345,14 @@ export function WorkbenchOnboarding({
               <X size={16} />
             </button>
           </header>
-          <div ref={body} className="min-h-0 space-y-4 overflow-y-auto px-5 py-4">
+          <div
+            ref={body}
+            className="min-h-0 space-y-4 overflow-y-auto px-5 py-4 max-[360px]:space-y-2 max-[360px]:px-4 max-[360px]:py-3"
+          >
             <Dialog.Title
               aria-live="polite"
               aria-atomic="true"
-              className="text-lg font-semibold leading-snug outline-none"
+              className="text-lg font-semibold leading-snug outline-none max-[360px]:pe-7 max-[360px]:text-base"
             >
               {copy(`steps.${step}.title`)}
             </Dialog.Title>
@@ -353,7 +360,16 @@ export function WorkbenchOnboarding({
               {copy(`steps.${step}.body`)}
             </Dialog.Description>
           </div>
-          <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t px-4 py-3">
+          <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t px-4 py-3 max-[360px]:px-3 max-[360px]:py-2">
+            <span
+              className="me-auto hidden text-xs text-muted-foreground max-[360px]:block"
+              aria-label={t('pblV3.onboarding.counter', {
+                current: stepIndex + 1,
+                total: steps.length,
+              })}
+            >
+              {stepIndex + 1}/{steps.length}
+            </span>
             <div className="flex flex-wrap gap-1">
               {stepIndex > 0 && (
                 <button

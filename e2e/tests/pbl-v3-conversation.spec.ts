@@ -641,6 +641,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
     ),
   ).toBeVisible();
   await expect(enterDecisions).toHaveAttribute('data-state', 'ready');
+  await expect(enterDecisions).toBeEnabled();
   const readyColor = () => enterDecisions.evaluate((el) => getComputedStyle(el).backgroundColor);
   const greens = ['rgb(11, 122, 82)', 'rgb(59, 240, 164)'];
   expect(greens).toContain(await readyColor());

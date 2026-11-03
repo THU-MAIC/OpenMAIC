@@ -791,6 +791,7 @@ function PBLV3WorkspaceContent({
 
                 <div className="pbl-task-area flex min-h-0 flex-1 flex-col">
                   <LearningConversation
+                    modalActive={onboarding.active || entryLoading}
                     view={view}
                     onOpenFile={(reference) => {
                       setShowWorkspace(true);

@@ -361,8 +361,13 @@ test('installed sample opens in the normal classroom and preserves progress afte
       : null,
   }));
   await page.goto('/pbl-v3');
+  const projectRead = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === '/api/pbl/v3' && url.searchParams.get('project') === '1';
+  });
   await page.getByRole('button', { name: 'Open selected sample' }).click();
   await expect(page).toHaveURL(/\/classroom\/pbl-/, { timeout: 60000 });
+  await projectRead;
   await expect(page.getByRole('heading', { name: view.title, exact: true })).toBeVisible();
   expect(calls).toHaveLength(0);
   await page.getByRole('button', { name: /^(?:Start Project|Continue Project)$/ }).click();

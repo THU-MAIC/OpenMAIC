@@ -45,10 +45,12 @@ export function ConversationScroll({
   sent,
   generating,
   onFollow,
+  hidden = false,
 }: {
   sent: number;
   generating: boolean;
   onFollow: () => void;
+  hidden?: boolean;
 }) {
   const { contentRef, scrollRef, scrollToBottom } = useStickToBottomContext();
   const { t } = useI18n();
@@ -83,7 +85,7 @@ export function ConversationScroll({
   const label = generating
     ? `${t('pblV3.journey.latest')} · ${t('workbench.chat.waiting')}`
     : t('pblV3.journey.latest');
-  if (!below) return null;
+  if (!below || hidden) return null;
   return (
     // Float in the content's right gutter. Toggling must not resize the viewport:
     // that can look like an upward scroll to the follow-tail controller.
