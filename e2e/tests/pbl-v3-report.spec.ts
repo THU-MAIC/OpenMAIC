@@ -386,8 +386,11 @@ test('completed project reports stay discoverable, show facts before analysis, a
     report.getByText('You connected a boundary to behavior', { exact: true }),
   ).toBeVisible();
   await report.screenshot({ path: 'test-results/pbl-v3-report-desktop.png' });
+  const records = report.getByTestId('pbl-report-records');
+  await expect(records).not.toHaveAttribute('open', '');
   await report.getByRole('button', { name: 'Evidence 1', exact: true }).click();
-  await expect(report.locator('details[open]')).toContainText(
+  await expect(records).toHaveAttribute('open', '');
+  await expect(records.locator('details[open]')).toContainText(
     'I checked the number before deleting.',
   );
   // An expanded citation must stay inside the report, even with an unbroken token.

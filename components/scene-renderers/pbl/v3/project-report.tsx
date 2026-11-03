@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ArrowUpRight,
   CheckCircle2,
+  ChevronDown,
   FileText,
   ImageDown,
   Layers,
@@ -113,8 +114,14 @@ export function ProjectReport({
   const sourceId = (id: string) => `report-source-${studyId}-${id.replaceAll(':', '-')}`;
   const cite = (id: string) => {
     const target = document.getElementById(sourceId(id));
-    if (target instanceof HTMLDetailsElement) target.open = true;
-    target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (!target || !surface.current?.contains(target)) return;
+    // Reveal both the source and its collapsed records panel before locating it.
+    for (let parent: HTMLElement | null = target; parent; parent = parent.parentElement) {
+      if (parent instanceof HTMLDetailsElement) parent.open = true;
+      if (parent === surface.current) break;
+    }
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    target.querySelector('summary')?.focus({ preventScroll: true });
   };
   const summary = report?.summary;
   const metrics = summary
@@ -475,56 +482,79 @@ export function ProjectReport({
                 ))}
               </ol>
             </section>
-            <div className="border-t pt-7">
-              <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
-                {t('pblV3.evidenceReportNotice')}
-              </p>
-              {report.truncated && (
-                <p role="status" className="mb-4 text-xs text-muted-foreground">
-                  {t('pblV3.truncatedEvidence')}
+            <details
+              data-testid="pbl-report-records"
+              className="group/records rounded-2xl border bg-muted/10"
+            >
+              <summary className="flex cursor-pointer list-none items-center gap-3 rounded-2xl p-5 [&::-webkit-details-marker]:hidden">
+                <FileText size={18} className="shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold">
+                    {t('pblV3.reportCopy.recordsTitle')}
+                  </span>
+                  <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
+                    {t('pblV3.reportCopy.recordsHint')}
+                  </span>
+                </span>
+                <ChevronDown
+                  size={18}
+                  aria-hidden="true"
+                  className="shrink-0 text-muted-foreground transition-transform group-open/records:rotate-180"
+                />
+              </summary>
+              <div className="border-t p-5">
+                <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
+                  {t('pblV3.evidenceReportNotice')}
                 </p>
-              )}
-              <section className="space-y-2">
-                <h3 className="mb-3 flex items-center gap-2 text-lg font-semibold">
-                  <FileText size={17} />
-                  {t('pblV3.reportEvidence')}
-                </h3>
-                {report.evidence.map((e) => (
-                  <details
-                    id={sourceId(`event:${e.sequence}`)}
-                    key={e.sequence}
-                    className="rounded-xl border p-3"
-                  >
-                    <summary className="cursor-pointer text-sm">
-                      {report.milestones.find((m) => m.id === e.milestoneId)?.title} ·{' '}
-                      {t(`pblV3.evidenceKinds.${e.kind.replaceAll('.', '_')}`)}
-                      {e.version ? ` · ${e.version}` : ''}
-                    </summary>
-                    {e.truncated && <p className="mt-2 text-xs">{t('pblV3.truncatedEvidence')}</p>}
-                    <div className="mt-3 max-h-80 overflow-auto text-sm">
-                      <TextBlock text={e.detail} />
-                    </div>
-                  </details>
-                ))}
-              </section>
-              <section className="mt-7 space-y-2">
-                <h3 className="mb-3 text-lg font-semibold">{t('pblV3.reportConversations')}</h3>
-                {reportConversationMessages(report).map((m) => (
-                  <details
-                    id={sourceId(m.id)}
-                    key={m.id}
-                    className="min-w-0 rounded-xl border p-3 [overflow-wrap:anywhere]"
-                  >
-                    <summary className="cursor-pointer text-sm">
-                      {m.role === 'learner' ? t('pblV3.learner') : t(`pblV3.roles.${m.role}`)} ·{' '}
-                      {report.milestones.find((x) => x.id === m.milestone)?.title ??
-                        report.project.title}
-                    </summary>
-                    <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed">{m.text}</p>
-                  </details>
-                ))}
-              </section>
-            </div>
+                {report.truncated && (
+                  <p role="status" className="mb-4 text-xs text-muted-foreground">
+                    {t('pblV3.truncatedEvidence')}
+                  </p>
+                )}
+                <section className="space-y-2">
+                  <h3 className="mb-3 flex items-center gap-2 text-lg font-semibold">
+                    <FileText size={17} />
+                    {t('pblV3.reportEvidence')}
+                  </h3>
+                  {report.evidence.map((e) => (
+                    <details
+                      id={sourceId(`event:${e.sequence}`)}
+                      key={e.sequence}
+                      className="rounded-xl border p-3"
+                    >
+                      <summary className="cursor-pointer text-sm">
+                        {report.milestones.find((m) => m.id === e.milestoneId)?.title} ·{' '}
+                        {t(`pblV3.evidenceKinds.${e.kind.replaceAll('.', '_')}`)}
+                        {e.version ? ` · ${e.version}` : ''}
+                      </summary>
+                      {e.truncated && (
+                        <p className="mt-2 text-xs">{t('pblV3.truncatedEvidence')}</p>
+                      )}
+                      <div className="mt-3 max-h-80 overflow-auto text-sm">
+                        <TextBlock text={e.detail} />
+                      </div>
+                    </details>
+                  ))}
+                </section>
+                <section className="mt-7 space-y-2">
+                  <h3 className="mb-3 text-lg font-semibold">{t('pblV3.reportConversations')}</h3>
+                  {reportConversationMessages(report).map((m) => (
+                    <details
+                      id={sourceId(m.id)}
+                      key={m.id}
+                      className="min-w-0 rounded-xl border p-3 [overflow-wrap:anywhere]"
+                    >
+                      <summary className="cursor-pointer text-sm">
+                        {m.role === 'learner' ? t('pblV3.learner') : t(`pblV3.roles.${m.role}`)} ·{' '}
+                        {report.milestones.find((x) => x.id === m.milestone)?.title ??
+                          report.project.title}
+                      </summary>
+                      <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed">{m.text}</p>
+                    </details>
+                  ))}
+                </section>
+              </div>
+            </details>
           </>
         )}
         {(error || report?.analysis?.canRetry) && !pending && (

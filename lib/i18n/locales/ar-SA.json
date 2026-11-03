@@ -2853,7 +2853,9 @@
       "congratulations": "تهانينا، أكملت المشروع!",
       "celebrationSubtitle": "حوّلت فكرتك إلى عمل يعمل بالفعل. تأمل ما حققته في هذه الرحلة.",
       "shareTitle": "لحظة تستحق المشاركة",
-      "shareHint": "احفظ إنجازاتك وأبرز ما تعلمته في بطاقة وشارك تقدمك."
+      "shareHint": "احفظ إنجازاتك وأبرز ما تعلمته في بطاقة وشارك تقدمك.",
+      "recordsTitle": "عرض سجلات التعلم",
+      "recordsHint": "راجع القرارات والعمل والمحادثات المحفوظة، أو اتبع مرجعًا في التحليل مباشرةً."
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {

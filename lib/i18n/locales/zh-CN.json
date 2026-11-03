@@ -2853,7 +2853,9 @@
       "congratulations": "恭喜，项目完成啦！",
       "celebrationSubtitle": "你把想法变成了能用的作品。来看看这一路积累的成果吧。",
       "shareTitle": "这一刻，值得分享",
-      "shareHint": "把成果和亮点装进一张卡片，分享你的进步。"
+      "shareHint": "把成果和亮点装进一张卡片，分享你的进步。",
+      "recordsTitle": "查看学习记录",
+      "recordsHint": "按需查看决策、作品和学习对话；点击分析中的引用也会自动定位。"
     },
     "draftStorageUnavailable": "浏览器暂时无法保存本地草稿。当前页面仍保留内容，请将文件保存到工作区，并在离开页面前复制未发送的文字。",
     "pendingActions": {

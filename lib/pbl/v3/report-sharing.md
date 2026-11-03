@@ -66,3 +66,10 @@ artwork for the single 4:5 layout. Keep dynamic data and QR areas clear. Substan
 layout changes require updating canvas coordinates, not adding a general editor.
 
 Real mobile saving and native fullscreen remain integration acceptance items.
+
+## Report source records
+
+The report keeps detailed evidence and conversations inside one learning-records disclosure,
+collapsed by default. Analysis reference buttons open both the enclosing disclosure and the
+specific source, scroll it into view and focus its summary. Records, citation IDs, report
+fetching, model input and generation remain unchanged. Reopening a report starts collapsed.

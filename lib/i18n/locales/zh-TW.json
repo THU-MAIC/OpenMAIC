@@ -2853,7 +2853,9 @@
       "congratulations": "恭喜，專案完成啦！",
       "celebrationSubtitle": "你把想法變成了能用的作品。來看看這一路累積的成果吧。",
       "shareTitle": "這一刻，值得分享",
-      "shareHint": "把成果和亮點放進一張卡片，分享你的進步。"
+      "shareHint": "把成果和亮點放進一張卡片，分享你的進步。",
+      "recordsTitle": "查看學習記錄",
+      "recordsHint": "按需查看決策、作品和學習對話；點擊分析中的引用也會自動定位。"
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {

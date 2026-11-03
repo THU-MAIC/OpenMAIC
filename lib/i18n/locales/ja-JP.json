@@ -2853,7 +2853,9 @@
       "congratulations": "おめでとう！プロジェクト完成！",
       "celebrationSubtitle": "アイデアが動く作品になりました。ここまでの成果を振り返りましょう。",
       "shareTitle": "この達成をシェアしよう",
-      "shareHint": "成果と学びのハイライトをカードにして、成長を伝えましょう。"
+      "shareHint": "成果と学びのハイライトをカードにして、成長を伝えましょう。",
+      "recordsTitle": "学習記録を見る",
+      "recordsHint": "保存された決定・成果物・会話を確認できます。分析の参照から直接開くこともできます。"
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {

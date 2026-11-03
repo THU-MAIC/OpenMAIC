@@ -2853,7 +2853,9 @@
       "congratulations": "Geschafft — dein Projekt ist fertig!",
       "celebrationSubtitle": "Aus deiner Idee ist etwas geworden, das funktioniert. Schau dir an, was du erreicht hast.",
       "shareTitle": "Ein Moment zum Teilen",
-      "shareHint": "Halte Erfolge und Highlights auf einer Karte fest und teile deine Fortschritte."
+      "shareHint": "Halte Erfolge und Highlights auf einer Karte fest und teile deine Fortschritte.",
+      "recordsTitle": "Lernaufzeichnungen ansehen",
+      "recordsHint": "Gespeicherte Entscheidungen, Arbeiten und Gespräche ansehen oder einem Analyseverweis direkt folgen."
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {
