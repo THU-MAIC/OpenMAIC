@@ -678,7 +678,7 @@
       "discussionPromptPlaceholder": "可选",
       "discussionTopicLabel": "讨论主题",
       "discussionPromptLabel": "引导语",
-      "discussionAgent": "发起",
+      "discussionAgent": "发起人",
       "discussionAgentUnset": "不指定",
       "addAction": "添加动作",
       "fieldState": "状态"
