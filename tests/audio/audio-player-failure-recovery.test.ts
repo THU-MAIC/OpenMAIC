@@ -136,10 +136,7 @@ describe('failed narration recovery', () => {
     element.pause = () => {
       element.paused = true;
       pendingPlay.reject(
-        new DOMException(
-          'The play() request was interrupted by a call to pause().',
-          'AbortError',
-        ),
+        new DOMException('The play() request was interrupted by a call to pause().', 'AbortError'),
       );
     };
 
