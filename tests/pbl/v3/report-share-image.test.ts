@@ -208,11 +208,14 @@ it('draws a mixed Chinese/Latin project title in full when it fits in two lines'
 });
 
 it.each(['light', 'dark'] as const)(
-  'prints complete Chinese and long campaign URLs without changing their destination in %s',
+  'prints complete campaign URLs while preserving invisible-character escapes in %s',
   async (theme) => {
     for (const url of [
       'https://a.cn/工作坊前置课程',
       `https://course.example/${'intro'.repeat(35)}`,
+      'https://a.cn/a%E2%80%8Bb',
+      'https://a.cn/a%E2%80%AEb',
+      'https://a.cn/a%CD%8Fb',
     ]) {
       reportShareCampaign.url = url;
       const { drawn, context } = syntheticCanvas();

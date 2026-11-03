@@ -40,7 +40,8 @@ recognize the embedded QR, or enter the printed address; viewer-specific text re
 not a feature promised by this export. The QR encodes the destination directly and does not
 create hosting, permissions or per-course routing.
 The printed URL stays complete, using readable Unicode where re-entering it preserves the
-same destination. Canvas fits long addresses within the existing URL slot without an ellipsis;
+same destination. Invisible/formatting characters and whitespace stay escaped so the visible
+address cannot silently omit them. Canvas fits long addresses within the existing URL slot without an ellipsis;
 the QR and preview link retain the validated destination. Prefer a short campaign URL for legibility.
 
 ## Campaign destination and artwork

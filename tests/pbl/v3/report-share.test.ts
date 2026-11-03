@@ -236,6 +236,12 @@ it('keeps printed URLs readable without decoding escapes into a different destin
     'https://a.cn/path%252Fpart',
     'https://a.cn/path%E0%A4',
     'https://a.cn/path%00part',
+    'https://a.cn/a%E2%80%8Bb', // Zero-width space.
+    'https://a.cn/a%E2%80%AEb', // Right-to-left override.
+    'https://a.cn/a%CD%8Fb', // Combining grapheme joiner (not a Cf character).
+    'https://a.cn/a%EF%B8%8Fb', // Variation selector.
+    'https://a.cn/a%C2%A0b', // Non-breaking space.
+    'https://a.cn/a%20b',
   ]) {
     expect(reportShareDisplayUrl(url)).toBe(url);
     expect(new URL(reportShareDisplayUrl(url)).href).toBe(url);

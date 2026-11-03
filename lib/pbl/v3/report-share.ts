@@ -31,9 +31,11 @@ export function reportShareDestination(value = reportShareCampaign.url): string 
 export function reportShareDisplayUrl(destination: string): string {
   try {
     const readable = decodeURI(destination);
-    return !/\p{Cc}/u.test(readable) && new URL(readable).href === destination
-      ? readable
-      : destination;
+    // Invisible/formatting characters cannot be reliably re-entered from an image.
+    const visible = !/[\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}\p{White_Space}]/u.test(
+      readable,
+    );
+    return visible && new URL(readable).href === destination ? readable : destination;
   } catch {
     return destination;
   }
