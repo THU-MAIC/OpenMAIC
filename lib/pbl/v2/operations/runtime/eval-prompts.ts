@@ -177,7 +177,7 @@ export function buildMilestoneEvalPrompt(
     if (summary.closingQuality) {
       const cq = summary.closingQuality;
       let ans = trimmedPBLText(summary.closingAnswer);
-      if (ans.length > 140) ans = ans.slice(0, 140) + '…';
+      if (ans.length > 140) ans = sliceCodeUnits(ans, 140) + '…';
       teleLines.push(`- closing check: quality=${cq}, answer="${ans}"`);
     }
     if (teleLines.length) {
@@ -315,12 +315,21 @@ export function formatProjectEngagementRollup(project: PBLProjectV2): string {
   );
 }
 
+/** The first `maxLength` UTF-16 code units of `text`, one fewer when the cut
+ *  would split a surrogate pair, so an emoji is dropped whole instead of
+ *  leaving a lone surrogate in the prompt. */
+function sliceCodeUnits(text: string, maxLength: number): string {
+  const code = text.charCodeAt(maxLength - 1);
+  const end = code >= 0xd800 && code <= 0xdbff ? maxLength - 1 : maxLength;
+  return text.slice(0, end);
+}
+
 function promptText(value: unknown, maxLength = 700): string {
   const text = String(value ?? '')
     .replace(/\s+/g, ' ')
     .trim();
   if (!text) return '';
-  return text.length > maxLength ? text.slice(0, maxLength) + '…' : text;
+  return text.length > maxLength ? sliceCodeUnits(text, maxLength) + '…' : text;
 }
 
 function lastMicrotaskInMilestone(milestone: PBLMilestone): PBLMicrotask | undefined {

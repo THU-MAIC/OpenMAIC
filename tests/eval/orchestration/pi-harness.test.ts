@@ -1,10 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LanguageModel } from 'ai';
-import {
-  getPiMaxActionsPerAgent,
-  getPiMaxAgentTurns,
-  resolveAgentConfigs,
-} from '@/lib/chat/pi/config';
+import { resolveAgentConfigs } from '@/lib/chat/pi/config';
 import type { StatelessChatRequest, StatelessEvent } from '@/lib/types/chat';
 
 const h = vi.hoisted(() => ({
@@ -85,8 +81,6 @@ describe('runPiClassroomRequest', () => {
       ]),
     ).toEqual(resolveAgentConfigs(body).map((a) => [a.id, a.name, a.persona]));
     expect(opts.agentConfigs.map((a: { id: string }) => a.id)).toEqual(['t1', 'default-2']);
-    expect(opts.maxAgentTurns).toBe(getPiMaxAgentTurns(body));
-    expect(opts.maxActionsPerAgent).toBe(getPiMaxActionsPerAgent(body));
     expect(opts).toMatchObject({
       languageModel: model,
       thinkingConfig: { mode: 'disabled', enabled: false },
@@ -97,18 +91,6 @@ describe('runPiClassroomRequest', () => {
     });
     expect(opts.abortSignal).toBeInstanceOf(AbortSignal);
     expect(run.done).toEqual(done().data);
-  });
-
-  it('applies per-request budgets through the same helpers', async () => {
-    await runPiClassroomRequest(
-      request({ piMaxAgentTurns: 2, piMaxActionsPerAgent: 99 }),
-      evalModel,
-    );
-
-    const opts = h.runPiDirectorLoop.mock.calls[0][0];
-    expect(opts.maxAgentTurns).toBe(2);
-    expect(opts.maxActionsPerAgent).toBe(getPiMaxActionsPerAgent(opts.body));
-    expect(opts.maxActionsPerAgent).toBeLessThan(99);
   });
 
   it('fails a run that throws, ends without done, or is aborted', async () => {

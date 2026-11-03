@@ -195,7 +195,7 @@ function makeHarness(
       elementIds: readonly string[];
     };
     body?: StatelessChatRequest;
-    maxActionsPerAgent?: number;
+
     abortController?: AbortController;
   } = {},
 ) {
@@ -217,11 +217,10 @@ function makeHarness(
     thinkingConfig: { mode: 'disabled', enabled: false },
     maxOutputTokens: 384,
     abortSignal: options.abortController?.signal ?? new AbortController().signal,
-    maxAgentTurns: 3,
-    getAgentTurnCount: () => summaries.length,
+
     getAgentResponses: () => summaries,
     getWhiteboardLedger: () => [],
-    maxActionsPerAgent: options.maxActionsPerAgent ?? 8,
+
     enableWhiteboardTools: true,
     childRuntimeMode: 'native',
     enableNativeChildSpotlight: options.spotlightEnabled ?? true,
@@ -493,32 +492,33 @@ describe('Native Child production consumer', () => {
     });
   });
 
-  it('does not use the Legacy action limit as a Native execution budget', async () => {
+  it('executes nine Native actions in the same Child', async () => {
     useResponses([
-      [spotlightCall('current-element', 'spotlight-1'), finish('tool-calls')],
-      [spotlightCall('current-element', 'spotlight-2'), finish('tool-calls')],
-      [{ type: 'text-delta', text: 'Both pointers were accepted.' }, finish('stop')],
+      [
+        ...Array.from({ length: 9 }, (_, i) => spotlightCall('current-element', `spotlight-${i}`)),
+        finish('tool-calls'),
+      ],
+      [{ type: 'text-delta', text: 'All pointers were accepted.' }, finish('stop')],
     ]);
     const harness = makeHarness({
       evidence: sceneEvidence(),
-      maxActionsPerAgent: 1,
     });
 
     const result = await execute(harness);
 
-    expect(mocks.streamLLM).toHaveBeenCalledTimes(3);
-    expect(harness.events.filter((event) => event.type === 'action')).toHaveLength(2);
-    expect(harness.onActionDone).toHaveBeenCalledTimes(2);
+    expect(mocks.streamLLM).toHaveBeenCalledTimes(2);
+    expect(harness.events.filter((event) => event.type === 'action')).toHaveLength(9);
+    expect(harness.onActionDone).toHaveBeenCalledTimes(9);
     expect(result).not.toHaveProperty('isError');
     expect(result).toMatchObject({
       details: {
-        text: 'Both pointers were accepted.',
+        text: 'All pointers were accepted.',
         nativeChildRun: {
           status: 'completed',
-          attemptCount: 2,
-          executionCount: 2,
-          dispatchedActionCount: 2,
-          providerTransportCount: 3,
+          attemptCount: 9,
+          executionCount: 9,
+          dispatchedActionCount: 9,
+          providerTransportCount: 2,
         },
       },
     });

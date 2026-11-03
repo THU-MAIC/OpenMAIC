@@ -588,9 +588,29 @@ export class AssetCollector {
         // The hash is the tiebreaker within one timestamp only, where the tied
         // set is bounded and every member of it is taken by the same pass or
         // the next one.
+        //
+        // The page holds only blobs the locked recheck below would take: no
+        // entry names them and no live stage pin holds them. A row that fails
+        // either test is skipped by that recheck without being deleted, so a
+        // page that kept such rows would select them again on the next pass;
+        // a backlog of at least `batchSize` of them -- stages over old
+        // unreferenced blobs, say -- would then stall every later blob and
+        // report `capped` forever. Filtering them here keeps the page moving
+        // past them, and the locked recheck still decides races. Both
+        // subqueries are index lookups (`asset_entries_content_hash_idx`,
+        // `asset_blob_stages_content_hash_idx`).
         `SELECT content_hash
            FROM asset_blobs
           WHERE unreferenced_at < $1::timestamptz
+            AND NOT EXISTS (
+              SELECT 1 FROM asset_entries AS entries
+               WHERE entries.content_hash = asset_blobs.content_hash
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM asset_blob_stages AS stages
+               WHERE stages.content_hash = asset_blobs.content_hash
+                 AND stages.expires_at > now()
+            )
           ORDER BY unreferenced_at ASC, content_hash ASC
           LIMIT $2`,
         [cutoff, this.batchSize],
@@ -615,6 +635,23 @@ export class AssetCollector {
             [candidate.content_hash, cutoff],
           );
           if (!locked.rows[0]) return false;
+          // A live stage pin means a write is uploading these bytes, or has
+          // uploaded them and not yet allocated its entry, with no lock held
+          // (see `PgAssetStore.stageBytes`). Read in a statement of its own,
+          // after the row lock: every writer of a pin -- the stage that
+          // inserts it, the renewal that extends it -- holds a lock on this
+          // row while it does, so a pin write either committed before this
+          // lock was granted -- and this fresh READ COMMITTED snapshot sees it
+          // -- or it is waiting behind this transaction and will find the row
+          // gone. An expired pin protects nothing; it cascades away with the
+          // row below.
+          const staged = await queryable.query(
+            `SELECT 1 FROM asset_blob_stages
+              WHERE content_hash = $1 AND expires_at > now()
+              LIMIT 1`,
+            [candidate.content_hash],
+          );
+          if (staged.rows[0]) return false;
           if (hasTransactionalDeleter(this.byteStore)) {
             await this.byteStore.deleteWith(queryable, candidate.content_hash);
           } else {
@@ -631,6 +668,39 @@ export class AssetCollector {
         });
         if (didCollect) collected += 1;
       } catch (error) {
+        throw carryingEntryFailure(collectorFailure(undefined, error), pendingEntryLevelFailure);
+      }
+    }
+    try {
+      // Expired stage pins whose blob is still referenced -- an abandoned
+      // stage of content some entry already names -- would otherwise stay
+      // forever, since only reclaiming the blob cascades them away. Bounded
+      // like the rest of the pass, and harmless to a stage racing it: a stage
+      // that finds its pin gone fails rather than trusting bytes it can no
+      // longer vouch for.
+      //
+      // `SKIP LOCKED`, inside the pass's lock-bounded transaction: a pin row
+      // can be locked by a transaction this pass must never wait for -- a
+      // caller's own transaction that spent the pin (`putStaged`) and stays
+      // open past its deadline, or a renewal in flight. Such a row is left for
+      // a later pass; this housekeeping never parks the pass, and a lock wait
+      // that still exceeds the budget skips the cleanup rather than failing a
+      // pass whose real work is done.
+      await this.lockBoundedTransaction((queryable) =>
+        queryable.query(
+          `DELETE FROM asset_blob_stages
+            WHERE id IN (
+              SELECT id FROM asset_blob_stages
+               WHERE expires_at < now()
+               ORDER BY expires_at ASC
+               LIMIT $1
+               FOR UPDATE SKIP LOCKED
+            )`,
+          [this.batchSize],
+        ),
+      );
+    } catch (error) {
+      if (!asStorageLockUnavailable(error)) {
         throw carryingEntryFailure(collectorFailure(undefined, error), pendingEntryLevelFailure);
       }
     }

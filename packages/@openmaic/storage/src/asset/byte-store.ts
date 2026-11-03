@@ -124,6 +124,11 @@ export interface AssetByteStore {
    * deadlock. Object stores and other layers whose bytes genuinely live
    * outside the registry's database set it; the in-registry PostgreSQL byte
    * column does not.
+   *
+   * A layer that sets it (and has no `writeWith`) is written and read with no
+   * registry transaction open: the registry stages its writes behind a pin
+   * instead (see `PgAssetStore.stageBytes`), so a slow upload or download
+   * holds no pooled connection and no lock.
    */
   readonly writesOutsideRegistryDatabase?: true;
 }

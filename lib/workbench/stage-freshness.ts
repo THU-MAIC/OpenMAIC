@@ -25,7 +25,7 @@
  *   - the batch scene fetch chunks ids below the server's per-request cap, so
  *     a real course of a few hundred scenes never trips the endpoint's 400.
  */
-import type { Scene } from '@/lib/types/stage';
+import type { GeneratedAgentConfig, Scene } from '@/lib/types/stage';
 
 export interface StageManifestScene {
   id: string;
@@ -205,4 +205,85 @@ export function sameIds(a: readonly string[], b: readonly string[]): boolean {
   if (a.length !== b.length) return false;
   const set = new Set(b);
   return a.every((id) => set.has(id));
+}
+
+/** Who teaches a course, as `GET /api/stages/:id/roster` answers it. */
+export interface StageRoster {
+  readonly agentIds?: readonly string[];
+  readonly generatedAgentConfigs?: readonly GeneratedAgentConfig[];
+}
+
+/**
+ * Fetch the course's roster. `null` when it could not be read (a 5xx, a
+ * network error, a malformed body): the caller must not advance its baseline
+ * past a roster it has not seen. A 404 -- a host without the route, or no
+ * such course -- is an empty answer, which changes nothing.
+ */
+export async function fetchStageRoster(stageId: string): Promise<StageRoster | null> {
+  try {
+    const response = await fetch(`/api/stages/${encodeURIComponent(stageId)}/roster`, {
+      credentials: 'include',
+    });
+    if (response.status === 404) return {};
+    if (!response.ok) return null;
+    const body = (await response.json()) as Record<string, unknown> | null;
+    if (!body || typeof body !== 'object') return null;
+    return {
+      ...(Array.isArray(body.agentIds) ? { agentIds: body.agentIds as string[] } : {}),
+      ...(Array.isArray(body.generatedAgentConfigs)
+        ? { generatedAgentConfigs: body.generatedAgentConfigs as GeneratedAgentConfig[] }
+        : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether the fetched roster differs from the one the classroom shows. An
+ * absent roster on the server (a course from before rosters were stored) is
+ * never a change: there is nothing to replace the shown one with. Likewise a
+ * server roster without `agentIds` leaves the shown ones as they are, so they
+ * are compared only when the server has them. Compared as JSON values: member
+ * order and undefined-valued members do not count.
+ */
+export function stageRosterChanged(
+  shown: { readonly agentIds?: readonly string[]; readonly generatedAgentConfigs?: unknown },
+  fresh: StageRoster,
+): boolean {
+  if (!fresh.generatedAgentConfigs) return false;
+  if (!sameJsonValue(shown.generatedAgentConfigs ?? [], fresh.generatedAgentConfigs)) return true;
+  return fresh.agentIds !== undefined && !sameJsonValue(shown.agentIds ?? [], fresh.agentIds);
+}
+
+/**
+ * Whether two rosters are the same, both sides read in full: an absent field
+ * is an empty one. Same JSON-value comparison as {@link stageRosterChanged}.
+ */
+export function sameStageRoster(left: StageRoster, right: StageRoster): boolean {
+  return (
+    sameJsonValue(left.generatedAgentConfigs ?? [], right.generatedAgentConfigs ?? []) &&
+    sameJsonValue(left.agentIds ?? [], right.agentIds ?? [])
+  );
+}
+
+/** Deep equality of two JSON values, regardless of object member order. */
+function sameJsonValue(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+      return false;
+    }
+    return left.every((item, index) => sameJsonValue(item, right[index]));
+  }
+  if (!left || !right || typeof left !== 'object' || typeof right !== 'object') return false;
+  const members = (value: object) =>
+    Object.entries(value).filter(([, member]) => member !== undefined);
+  const leftMembers = members(left);
+  const rightRecord = right as Record<string, unknown>;
+  if (leftMembers.length !== members(right).length) return false;
+  return leftMembers.every(
+    ([key, member]) =>
+      Object.prototype.hasOwnProperty.call(right, key) && sameJsonValue(member, rightRecord[key]),
+  );
 }

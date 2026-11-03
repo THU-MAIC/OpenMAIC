@@ -42,16 +42,53 @@ import {
   type ExtractionScenarioPool,
 } from './_owner-extraction-scenarios';
 
+/**
+ * A pool over PGlite's single session.
+ *
+ * Every "connection" is that one session, so two transactions run at once
+ * would interleave their statements in one transaction block: the first
+ * COMMIT ends it for both, and the other's remaining statements run outside
+ * any transaction (a SAVEPOINT there is an error). A real pool gives each
+ * transaction a session of its own. This pool approximates that by giving a
+ * transaction the session exclusively from its BEGIN to its COMMIT or
+ * ROLLBACK: any other statement waits until the transaction ends.
+ */
 class PGlitePool implements ExtractionScenarioPool {
+  private owner: object | null = null;
+  private released: Promise<void> = Promise.resolve();
+  private release: () => void = () => {};
+
   constructor(readonly db: PGlite) {}
 
+  private async run<TRow>(client: object, text: string, params?: unknown[]) {
+    while (this.owner !== null && this.owner !== client) await this.released;
+    const statement = text.trim().toUpperCase();
+    if (statement.startsWith('BEGIN')) {
+      this.owner = client;
+      this.released = new Promise<void>((resolve) => (this.release = resolve));
+    }
+    try {
+      return (await this.db.query(text, params)) as { rows: TRow[] };
+    } finally {
+      if (
+        this.owner === client &&
+        (statement.startsWith('COMMIT') || statement.startsWith('ROLLBACK')) &&
+        !statement.startsWith('ROLLBACK TO')
+      ) {
+        this.owner = null;
+        this.release();
+      }
+    }
+  }
+
   async query<TRow>(text: string, params?: unknown[]) {
-    return (await this.db.query(text, params)) as { rows: TRow[] };
+    return this.run<TRow>(this, text, params);
   }
 
   async connect() {
+    const client = {};
     return {
-      query: (text: string, params?: unknown[]) => this.db.query(text, params),
+      query: (text: string, params?: unknown[]) => this.run(client, text, params),
       release() {},
     };
   }
