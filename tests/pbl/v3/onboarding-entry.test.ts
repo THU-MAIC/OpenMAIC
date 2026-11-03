@@ -141,3 +141,27 @@ it('layout clicks during restoration do not exempt a new learner', async () => {
   await render({ ready: true });
   expect(guide.active).toBe(true);
 });
+
+it('focus in an editable field defers this visit before typing, while replay remains available', async () => {
+  await render();
+  const textarea = host.querySelector('textarea')!;
+  textarea.focus();
+  textarea.blur();
+  await render({ ready: true });
+  expect(guide.active).toBe(false);
+  await act(async () => guide.replay());
+  expect(guide.active).toBe(true);
+});
+it('recognizes an editable field already focused when a study is restored', async () => {
+  host.querySelector('textarea')!.focus();
+  await render({ ready: true });
+  expect(guide.active).toBe(false);
+});
+it('focus in a read-only field does not exempt an untouched learner', async () => {
+  await render();
+  const textarea = host.querySelector('textarea')!;
+  textarea.readOnly = true;
+  textarea.focus();
+  await render({ ready: true });
+  expect(guide.active).toBe(true);
+});

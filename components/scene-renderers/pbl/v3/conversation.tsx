@@ -190,6 +190,7 @@ export function LearningConversation({
   view,
   sent,
   requesting = false,
+  modalActive = false,
   pendingMessage = null,
   onOpenFile,
   onOpenReport,
@@ -201,6 +202,7 @@ export function LearningConversation({
   onOpenTask?: () => void;
   sent: number;
   requesting?: boolean;
+  modalActive?: boolean;
   pendingMessage?: LearningConversationEntry | null;
 }) {
   const { t } = useI18n();
@@ -293,6 +295,7 @@ export function LearningConversation({
         )}
       </ConversationContent>
       <ConversationScroll
+        hidden={modalActive}
         sent={sent}
         onFollow={follow}
         generating={requesting || view.busy || entries.some((entry) => entry.status === 'running')}

@@ -977,6 +977,60 @@ test('320x480 docked assistant spotlight stays within its scroll viewport while 
   await check();
 });
 
+test('focusing the composer before typing defers automatic entry through recovery', async ({
+  page,
+  learningEvents,
+}) => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  try {
+    await project(page, learningEvents, {
+      started: true,
+      guideCompleted: false,
+      environmentReady: false,
+      prepareGate: gate,
+    });
+    const composer = page.locator('[data-pbl-tour="composer"] textarea');
+    await composer.click();
+    await expect(composer).toBeFocused();
+    release();
+    await expect(page.locator('[data-pbl-tour="replay"]')).toBeEnabled();
+    await page.keyboard.type('Words with spaces after focus');
+    await expect(composer).toBeFocused();
+    await expect(composer).toHaveValue('Words with spaces after focus');
+    await expect(tour(page)).toHaveCount(0);
+    await page.locator('[data-pbl-tour="replay"]').click();
+    await expect(tour(page)).toBeVisible();
+  } finally {
+    release();
+  }
+});
+
+test('hides Latest during the guide and restores the working control after dismissal', async ({
+  page,
+  learningEvents,
+}) => {
+  await project(page, learningEvents, { openingText: 'A long welcome.\n\n'.repeat(80) });
+  await expect(tour(page)).toBeVisible();
+  const viewport = page.locator('.pbl-conversation-scroll');
+  await expect
+    .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
+    .toBeGreaterThan(8);
+  const latest = page.getByTestId('pbl-conversation-scroll-button');
+  await expect(latest).toHaveCount(0);
+  const height = await viewport.evaluate((el) => el.clientHeight);
+  await page.keyboard.press('Escape');
+  await expect(tour(page)).toHaveCount(0);
+  await expect(latest).toBeVisible();
+  await latest.click();
+  await expect
+    .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
+    .toBeLessThanOrEqual(8);
+  expect(await viewport.evaluate((el) => el.clientHeight)).toBe(height);
+});
+
 for (const started of [false, true]) {
   test(`editing during restore defers auto-entry and preserves spaces/focus (Continue=${started})`, async ({
     page,
@@ -1173,6 +1227,23 @@ for (const [width, height, gesture] of [
     await next(page).click();
     await expect(tour(page)).toHaveAttribute('data-step', 'discussion');
     const viewport = page.locator('.pbl-conversation-scroll');
+    if (width === 320) {
+      // The guide's own explanation needs visible space, as well as the welcome.
+      await expect
+        .poll(() =>
+          tour(page).evaluate((element) => {
+            const description = element.querySelector('p')!;
+            const body = description.parentElement!.getBoundingClientRect();
+            const copy = description.getBoundingClientRect();
+            const visible = Math.max(
+              0,
+              Math.min(body.bottom, copy.bottom) - Math.max(body.top, copy.top),
+            );
+            return visible >= 2 * parseFloat(getComputedStyle(description).lineHeight);
+          }),
+        )
+        .toBe(true);
+    }
     for (let revision = 0; revision < 2; revision++) {
       if (revision) {
         fixture.view.messages[0].text = intro + intro + questions[revision];

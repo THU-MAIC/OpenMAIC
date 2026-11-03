@@ -35,18 +35,26 @@ export function useWorkbenchOnboarding({
   const deferredStudy = useRef<string | undefined>(undefined);
   useLayoutEffect(() => {
     const element = root.current;
+    const editable =
+      'input:not(:disabled):not([readonly]), textarea:not(:disabled):not([readonly]), [contenteditable="true"]';
     const defer = (event: Event) => {
       if (
         event.target instanceof Element &&
-        event.target.closest('input, textarea, [contenteditable="true"]')
+        event.target.closest(
+          event.type === 'focusin' ? editable : 'input, textarea, [contenteditable="true"]',
+        )
       )
         deferredStudy.current = studyId;
     };
+    if (element?.contains(document.activeElement) && document.activeElement?.matches(editable))
+      deferredStudy.current = studyId;
+    element?.addEventListener('focusin', defer, true);
     element?.addEventListener('keydown', defer, true);
     element?.addEventListener('beforeinput', defer, true);
     element?.addEventListener('input', defer, true);
     element?.addEventListener('compositionstart', defer, true);
     return () => {
+      element?.removeEventListener('focusin', defer, true);
       element?.removeEventListener('keydown', defer, true);
       element?.removeEventListener('beforeinput', defer, true);
       element?.removeEventListener('input', defer, true);

@@ -19,7 +19,7 @@ is learner-wide; no additional preference table or migration is required.
 
 An unseen learner's guide opens after Hero expansion, environment preparation
 and a current connected workspace snapshot. Docking during restoration does not
-cancel eligibility. Restored drafts or actual editing during restoration defer
+cancel eligibility. Restored drafts, focus in an editable field or actual editing during restoration defer
 automatic entry for this visit, even if that draft is later cleared. They never
 prevent manual replay. A layout effect transfers modal ownership before paint
 when eligible; the assistant's opening reply can continue in the background.
@@ -57,8 +57,11 @@ rather than directions. Page changes focus Next; completion restores a usable en
 
 The conversation jump control floats in a fixed right gutter outside the text,
 so appearing/disappearing never resizes the viewport or interrupts follow-tail.
+Hide this control while a modal blocks its interaction; it resumes after dismissal.
 On narrow assistant pages, the card sits above the reading viewport with a bounded,
-scrollable body. The modal forwards wheel and single-touch reading gestures only
+scrollable body. At 320px, compact header/footer spacing and a footer counter leave
+room for the guide’s own explanation without covering the reading viewport.
+The modal forwards wheel and single-touch reading gestures only
 inside the highlighted conversation viewport, allowing later paragraphs and a
 streaming welcome's closing question to be read. Clicks remain blocked and focus
 stays in the guide; reading never submits a learning command.
