@@ -18,10 +18,7 @@ const MODELS_WITHOUT_CONFIGURABLE_THINKING = new Set<string>([
   'bedrock:us.amazon.nova-lite-v1:0',
   'bedrock:us.amazon.nova-micro-v1:0',
   'bedrock:us.meta.llama3-3-70b-instruct-v1:0',
-  'siliconflow:Pro/moonshotai/Kimi-K2.5',
   'grok:grok-4.20',
-  'grok:grok-4-1-fast-non-reasoning',
-  'grok:grok-code-fast-1',
   'atlascloud:qwen/qwen3.5-flash',
   // TokenDance serves many vendors' models behind one OpenAI-compatible
   // gateway; per-model thinking parameters are left at the model default until

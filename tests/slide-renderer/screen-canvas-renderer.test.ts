@@ -1,5 +1,6 @@
 import { createElement, type ComponentType, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { parseHTML } from 'linkedom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SceneProvider, type SceneDataController } from '@/lib/contexts/scene-context';
 import { MediaStageProvider } from '@/lib/contexts/media-stage-context';
@@ -101,6 +102,59 @@ describe('PlaybackScreenCanvas', () => {
 
     expect(html).toContain('class="slide-element"');
     expect(html).toContain('id="screen-element-title-1"');
+  });
+
+  it('keeps shape-label padding and paragraph spacing in both playback renderers', () => {
+    const shapeController: SceneDataController<SlideContent> = {
+      ...controller,
+      getSnapshot: () => ({
+        ...content,
+        canvas: {
+          ...content.canvas,
+          elements: [
+            {
+              id: 'shape-1',
+              type: 'shape',
+              left: 24,
+              top: 32,
+              width: 160,
+              height: 100,
+              rotate: 0,
+              path: 'M0 0 L160 0 L160 100 Z',
+              viewBox: [160, 100],
+              fixedRatio: false,
+              fill: '#eeeeee',
+              text: {
+                content: '<p>First</p><p>Second</p>',
+                align: 'middle',
+                defaultFontName: 'Arial',
+                defaultColor: '#111111',
+                paragraphSpace: 12,
+              },
+            },
+          ],
+        },
+      }),
+    };
+
+    for (const rendererEnabled of [false, true]) {
+      if (rendererEnabled) process.env[flag] = 'true';
+      else delete process.env[flag];
+      const html = renderToStaticMarkup(
+        createElement(
+          TestSceneProvider,
+          { controller: shapeController as SceneDataController },
+          createElement(PlaybackScreenCanvas),
+        ),
+      );
+      const { document } = parseHTML(html);
+      const label = document.querySelector('.shape-text');
+      const prose = document.querySelector('.shape-text .slide-renderer-prose');
+      expect(label?.getAttribute('style')).toContain('padding:10px');
+      expect(label?.getAttribute('style')).toContain('line-height:1.625');
+      expect(prose?.getAttribute('style')).toContain('--paragraphSpace:12px');
+      expect(document.querySelector('style')?.textContent).toContain('.slide-renderer-prose p');
+    }
   });
 
   it('renders playback videos inline for mobile browsers', () => {

@@ -13,7 +13,8 @@ import {
 import { resolveExtractionServices } from '@/lib/server/material-extraction/services';
 import {
   extractClaimedSessionMaterial,
-  extractMaterialSource,
+  planSourceExtraction,
+  runSourceExtraction,
 } from '@/lib/server/material-extraction/extract';
 import { runNextMaterialExtraction } from '@/lib/server/material-extraction/runner';
 import { runClaimedOwnerMaterialExtraction } from '@/lib/server/materials/extraction';
@@ -90,9 +91,8 @@ it('stale ASR assignment leaves documents, PDF and agent URL fetch usable', asyn
   expect(services.asr).toBeUndefined();
   expect(services.asrError).toBeInstanceOf(ModelAuthorizationError);
   for (const mime of ['application/pdf', 'text/plain']) {
-    const result = await extractMaterialSource(
-      { bytes: Buffer.from('document'), mime },
-      {
+    const result = await runSourceExtraction(
+      await planSourceExtraction({ bytes: Buffer.from('document'), mime }, null, {
         services,
         providers: () => [
           {
@@ -117,7 +117,8 @@ it('stale ASR assignment leaves documents, PDF and agent URL fetch usable', asyn
           },
         ],
         mediaProviders: () => [],
-      },
+      }),
+      null,
     );
     expect(result.text).toBe('Extracted document');
   }
@@ -192,9 +193,12 @@ it('owner worker settles ASR authorization with 403 before host classification',
       },
       services: (owner) => resolveExtractionServices(owner, { forward: false }),
       analyze: async (input) => {
-        await extractMaterialSource(
-          { bytes: Buffer.from('audio'), mime: 'audio/wav' },
-          { services: input.services, mediaProviders: () => [unavailableMedia] },
+        await runSourceExtraction(
+          await planSourceExtraction({ bytes: Buffer.from('audio'), mime: 'audio/wav' }, null, {
+            services: input.services,
+            mediaProviders: () => [unavailableMedia],
+          }),
+          null,
         );
         throw Error('must fail ASR');
       },

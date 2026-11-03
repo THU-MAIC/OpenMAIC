@@ -4,7 +4,7 @@ import { resolveSceneOutline } from '@/lib/agent/client/resolve-scene-outline';
 import { buildPeerContextSection } from '@/lib/orchestration/summarizers/peer-context';
 import { buildStateContext } from '@/lib/orchestration/summarizers/state-context';
 import { buildVirtualWhiteboardContext } from '@/lib/orchestration/summarizers/whiteboard-ledger';
-import { getActionDescriptions } from '@/lib/orchestration/tool-schemas';
+import { getActionDescriptions } from '@/lib/chat/pi/tool-schemas';
 import type { AgentTurnSummary, WhiteboardActionRecord } from '@/lib/orchestration/types';
 import type { StatelessChatRequest } from '@/lib/types/chat';
 
@@ -67,11 +67,7 @@ function buildThinChildContext(body: StatelessChatRequest): string {
   ].join('\n');
 }
 
-export function buildDirectorPrompt(
-  body: StatelessChatRequest,
-  agents: AgentConfig[],
-  maxAgentTurns: number,
-): string {
+export function buildDirectorPrompt(body: StatelessChatRequest, agents: AgentConfig[]): string {
   const agentList = agents
     .map(
       (agent) =>
@@ -98,15 +94,16 @@ export function buildDirectorPrompt(
     'You are the director of an in-class multi-agent classroom.',
     'Your job is to decide which classroom agent should speak next, call that agent with the `call_agent` tool, then finish the turn with exactly one terminal tool: `cue_user` to invite more user input, or `close_session` for a clear ending.',
     'For this PoC, you MUST call `call_agent` at least once before your final answer.',
-    `You may call at most ${maxAgentTurns} classroom agent turns in this server-side loop.`,
-    'Stop earlier if the classroom answer is already clear. Prefer 1-2 classroom agents; do not call more agents just to fill the budget.',
-    'Once the classroom agent turn limit is reached, do not call another classroom agent. Finish the director loop with exactly one terminal tool: `cue_user` or `close_session`.',
+    'Finish when the classroom answer is clear. Prefer 1-2 classroom agents; call another agent only when it would help answer the user.',
     'Do not write the classroom response yourself. The selected agent should produce the visible response.',
     'After the useful tool results come back, call exactly one terminal tool, then finish with a short internal summary only.',
     '',
     '# Terminal Tool Policy',
     'Use exactly one terminal tool per loop.',
     'Use `cue_user` when the classroom should wait for the user to continue, ask something new, or answer a visible follow-up.',
+    'When calling `cue_user`, include a concise learner-facing `prompt`. If the response can be expressed as 2-4 clear, mutually exclusive choices, also include `options`; omit options for open-ended replies.',
+    'Each option is a short string of at most 60 characters. The client sends the selected label as an ordinary user message; use the terminal tool policy to decide whether its next turn continues or closes the session.',
+    'The cue prompt and options must match the last visible classroom-agent turn; do not introduce a new question or teaching content only inside the tool call.',
     'Use `close_session` when the latest user message or immediate history clearly indicates goodbye, no more, thanks-and-done, conclusion, wrap-up, an explicit end, or a request to return to the lesson.',
     '`close_session` closes only the current Q&A/discussion side session. It does NOT mean the whole class is over unless the user explicitly says the lesson/class is over.',
     'When ending a Q&A/discussion, keep the visible agent response brief and avoid saying "class dismissed", "下课", "再见", or equivalent whole-class farewell language unless the user explicitly asks to end the entire class.',
@@ -255,6 +252,22 @@ export function buildNativeChildPrompt(
     '# Available Native tools',
     nativeToolInventory,
     ...nativeWhiteboardGuidance,
+    ...(availableTools.includes('wb_draw_shape')
+      ? [
+          '# Native whiteboard shapes',
+          '- Geometry: every shape requires SVG path d data and viewBox:[w,h] with positive dimensions, never complete SVG markup. Element width/height scale the viewBox independently per axis; keep the viewBox ratio equal to width:height when proportions matter.',
+          '- Path/viewBox coordinates are local: origin (0,0) is the unrotated element upper-left. Never put absolute whiteboard x/y into path data or center a path around zero without offsetting it into the viewBox.',
+          '- x/y is the upper-left BEFORE rotation; rotate is a finite angle in degrees around the box center, positive clockwise (default 0). Work out the intended center first, then x=centerX-width/2 and y=centerY-height/2. Keep the rotated shape inside the canvas too.',
+          '- Arc radii are in viewBox units and scale with element width/height; unequal axis scales turn circular arcs into elliptical arcs.',
+          '- Close filled shapes with Z. Open curves use fillColor:"transparent" and stroke:{color,width,style?}; style defaults to solid (also dashed/dotted).',
+          '- Examples below omit expectedLastSeq only for readability: in EVERY actual call copy it exactly from the latest wb_read; read again between successful mutations. Never copy a placeholder sequence.',
+          '- Right triangle: path:"M0 0 L4 0 L0 3 Z", viewBox:[4,3]; use width:height=4:3 to preserve its proportions.',
+          '- Open cubic curve: path:"M0 1 C1 0 2 0 3 1", viewBox:[3,1], fillColor:"transparent", stroke:{color:"#333333",width:2}.',
+          '- Complete circle/ellipse: path:"M1 0 A1 1 0 1 1 1 2 A1 1 0 1 1 1 0 Z", viewBox:[2,2]. Equal element width/height gives a circle; different dimensions give an ellipse.',
+          '- Clockwise upper-right quarter circle, top-left to bottom-right: path:"M0 0 A1 1 0 0 1 1 1", viewBox:[1,1]; for width=height its radius equals width.',
+          '- On an invalid shape error, correct the reported field/path position or reduce path complexity and retry. Do not claim success until the mutation succeeds. Native shapes persist as PPTShapeElement records, never Legacy JSON actions.',
+        ]
+      : []),
     '',
     '# Length & Style (CRITICAL)',
     buildLengthGuidelines(agent.role),

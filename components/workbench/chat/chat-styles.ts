@@ -221,6 +221,8 @@ export const wbStyles = {
    */
   questionForm: {
     box: 'flex flex-col gap-2.5 rounded-2xl border border-[var(--wb-accent-line)] bg-[var(--wb-surface)] px-3 py-3 shadow-[0_10px_32px_-14px_rgba(15,23,42,0.22)] motion-safe:animate-[wb-form-fade_var(--wb-duration-base)_var(--wb-ease-out)] motion-reduce:animate-none dark:shadow-[0_12px_36px_-12px_rgba(0,0,0,0.55)]',
+    // The same form inside a surface that already draws the frame.
+    embeddedBox: 'flex flex-col gap-3',
     // The question is the form's title, so it carries the weight a title does —
     // the one place in the rail where prose is bold.
     question:

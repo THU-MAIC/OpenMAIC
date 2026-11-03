@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { ESLint } from 'eslint';
 
 /**
@@ -61,6 +61,11 @@ const EXTENSIONS = ['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs'] as const;
 
 const eslint = new ESLint({ cwd: process.cwd() });
 
+beforeAll(async () => {
+  // Load the real config/plugins as setup, not inside the first matrix case.
+  await eslint.calculateConfigForFile('lib/server/probe.ts');
+});
+
 async function errorsFor(filePath: string, code: string): Promise<string[]> {
   // A path ESLint would ignore (build output, vendored trees) returns no result;
   // treat that as "not covered" so an ignored path can never look like a pass.
@@ -120,5 +125,30 @@ describe('LLM entry-point lint guard — coverage matrix', () => {
     const reactImport = "import 'react';\nexport const a = 1;\n";
     const choreographyErrors = await errorsFor('lib/choreography/probe.ts', reactImport);
     expect(choreographyErrors).toContain('no-restricted-imports');
+  });
+
+  it('allows the shared geometry leaf without opening generation to app or browser packages', async () => {
+    for (const filePath of [
+      'packages/@openmaic/generation/src/probe.ts',
+      'packages/@openmaic/generation/test/probe.ts',
+    ]) {
+      for (const code of [
+        "import { validateSvgPath } from '@openmaic/geometry'; export { validateSvgPath };",
+        "export { validateSvgPath } from '@openmaic/geometry';",
+        "export * from '@openmaic/geometry';",
+      ])
+        expect(await errorsFor(filePath, code), filePath).toEqual([]);
+      for (const moduleName of [
+        'react',
+        '@openmaic/renderer',
+        '@openmaic/geometry-other',
+        '@/lib/export/svg-path-parser',
+      ]) {
+        expect(
+          await errorsFor(filePath, `import '${moduleName}'; export const a = 1;`),
+          `${filePath}: ${moduleName}`,
+        ).toContain('no-restricted-syntax');
+      }
+    }
   });
 }, 120_000);

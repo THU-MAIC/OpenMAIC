@@ -123,7 +123,6 @@ describe('Director shared Pi transport consumer', () => {
   it.each(['stream error', 'thrown error'])(
     'logs and streams the provider reason through the real Director and route (%s)',
     async (failureMode) => {
-      vi.stubEnv('NEXT_PUBLIC_PI_CHAT_ENABLED', 'true');
       vi.stubEnv('OPENMAIC_ENABLE_PI_NATIVE_CHILD_RUNTIME', 'false');
       const error = new Error('This model does not support tool calling');
       if (failureMode === 'thrown error') mocks.streamLLM.mockRejectedValueOnce(error);
@@ -177,8 +176,7 @@ describe('Director shared Pi transport consumer', () => {
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: abortController.signal,
       signal: abortController.signal,
-      maxAgentTurns: 2,
-      maxActionsPerAgent: 1,
+
       enableWhiteboardTools: false,
     });
 
@@ -218,8 +216,7 @@ describe('Director shared Pi transport consumer', () => {
       maxOutputTokens: 640,
       abortSignal: abortController.signal,
       signal: abortController.signal,
-      maxAgentTurns: 2,
-      maxActionsPerAgent: 1,
+
       enableWhiteboardTools: false,
     });
 
@@ -284,8 +281,7 @@ describe('Director shared Pi transport consumer', () => {
       maxOutputTokens: 640,
       abortSignal: abortController.signal,
       signal: abortController.signal,
-      maxAgentTurns: 2,
-      maxActionsPerAgent: 1,
+
       enableWhiteboardTools: false,
     });
 

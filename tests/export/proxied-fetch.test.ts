@@ -30,6 +30,28 @@ describe('createProxiedFetch', () => {
     expect(await res.text()).toBe('BYTES');
   });
 
+  it('fetches hosted interactive libraries directly, even from a private-address origin', async () => {
+    vi.stubGlobal('location', new URL('http://127.0.0.1:3000/classroom/1'));
+    const spy = vi.fn(async () => new Response('BYTES'));
+    vi.stubGlobal('fetch', spy);
+    const url = 'http://127.0.0.1:3000/vendor/interactive/katex@0.16.38/dist/katex.min.js';
+
+    await createProxiedFetch()(url);
+
+    expect(spy).toHaveBeenCalledWith(url, undefined);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('still proxies a cross-origin URL with the same path', async () => {
+    vi.stubGlobal('location', new URL('http://127.0.0.1:3000/classroom/1'));
+    const spy = vi.fn(async () => new Response('BYTES'));
+    vi.stubGlobal('fetch', spy);
+
+    await createProxiedFetch()('https://cdn.example/vendor/interactive/x.js');
+
+    expect(spy).toHaveBeenCalledWith('/api/proxy-media', expect.anything());
+  });
+
   it('handles URL objects', async () => {
     const spy = vi.fn(async () => new Response('', { status: 200 }));
     vi.stubGlobal('fetch', spy);

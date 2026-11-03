@@ -58,6 +58,7 @@ describe('settingsShape', () => {
         'tts',
         'asr',
         'document',
+        'webFetch',
         'webSearch',
       ]);
     }
@@ -127,15 +128,25 @@ describe('a mixed deployment (llm locked, user keys allowed)', () => {
     expect(settingsSections(view).modelServices).toContain('image');
   });
 
-  it('keeps a plan that can still fill media slots, and drops one that only serves chat', () => {
+  it('keeps plans that can still fill media or search slots', () => {
     const view = viewFor(config);
     expect(tokenPlanCanChange(view, plan(view, 'tokendance'))).toBe(true);
-    expect(tokenPlanCanChange(view, plan(view, 'kimi-coding-plan'))).toBe(false);
+    expect(tokenPlanCanChange(view, plan(view, 'kimi-coding-plan'))).toBe(true);
+    expect(settingsSections(view).tokenPlan).toBe(true);
+  });
+
+  it('keeps Kimi available when only web fetch can still be set', () => {
+    const view = viewFor({ ...config, lock: ['llm', 'tts', 'image', 'video', 'webSearch'] });
+    expect(tokenPlanCanChange(view, plan(view, 'kimi-coding-plan'))).toBe(true);
+    expect(tokenPlanCanChange(view, plan(view, 'tokendance'))).toBe(false);
     expect(settingsSections(view).tokenPlan).toBe(true);
   });
 
   it('hides Token Plan when no plan can fill an unlocked slot', () => {
-    const view = viewFor({ ...config, lock: ['llm', 'tts', 'image', 'video', 'webSearch'] });
+    const view = viewFor({
+      ...config,
+      lock: ['llm', 'tts', 'image', 'video', 'webSearch', 'webFetch'],
+    });
     for (const preset of view.presets.filter((entry) => entry.kind === 'token-plan')) {
       expect(tokenPlanCanChange(view, preset)).toBe(false);
     }
@@ -156,7 +167,7 @@ describe('canResetToServerDefault', () => {
     const untouched = modelSettingsView(null);
     expect(canResetToServerDefault(slot(untouched, 'llm'))).toBe(false);
     const changed = modelSettingsView({
-      config: { slots: { llm: 'operator:deepseek-v4-flash', 'course.outline': null } },
+      config: { slots: { llm: 'operator:deepseek-flash', 'course.outline': null } },
       revision: 1,
       unreadableSecrets: [],
     });

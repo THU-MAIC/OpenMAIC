@@ -1,4 +1,5 @@
 import type { ComposeOption } from 'echarts/core';
+import type { GridComponentOption } from 'echarts/components';
 import type {
   BarSeriesOption,
   PictorialBarSeriesOption,
@@ -16,6 +17,7 @@ type EChartOption = ComposeOption<
   | PieSeriesOption
   | ScatterSeriesOption
   | RadarSeriesOption
+  | GridComponentOption
 >;
 
 export interface ChartOptionPayload {
@@ -72,6 +74,10 @@ export const getChartOption = ({
 
   const axisLine = textColor ? { lineStyle: { color: textColor } } : undefined;
   const axisLabel = { show: true, color: textColor ?? '#333333' };
+  // Preserve explicit imported layouts; ordinary endpoints face into the plot.
+  const horizontalEndpointAlignment = importedStyle?.plotArea
+    ? {}
+    : { alignMinLabel: 'left' as const, alignMaxLabel: 'right' as const };
   const splitLine = lineColor ? { lineStyle: { color: lineColor } } : {};
 
   const categoryAxisLabel = {
@@ -80,6 +86,30 @@ export const getChartOption = ({
   };
 
   const legend = data.series.length > 1 ? { top: 'bottom' as const, textStyle } : undefined;
+
+  const cartesianLegend = legend
+    ? { type: 'scroll' as const, bottom: 0, left: '4%', right: '4%', textStyle }
+    : undefined;
+  const plot = importedStyle?.plotArea;
+  // Preserve an imported plot rectangle exactly; ordinary charts reflow with
+  // the container and keep axis labels and the legend out of the plot. Text
+  // headroom and a single legend row need fixed pixels, not percent heights.
+  const grid: GridComponentOption = plot
+    ? {
+        left: `${plot.x * 100}%`,
+        top: `${plot.y * 100}%`,
+        width: `${plot.w * 100}%`,
+        height: `${plot.h * 100}%`,
+        containLabel: false,
+        outerBoundsMode: 'none',
+      }
+    : {
+        left: '4%',
+        right: '4%',
+        top: type === 'line' || type === 'area' ? 22 : '8%',
+        bottom: cartesianLegend && type !== 'scatter' ? 26 : '12%',
+        containLabel: true,
+      };
 
   if (type === 'bar' || type === 'column') {
     const importedSeries = importedStyle?.series ?? [];
@@ -97,8 +127,8 @@ export const getChartOption = ({
         ...(category ? categoryAxisLabel : axisLabel),
         ...(!category && /^0(?:\.0+)?%$/.test(style?.numberFormat ?? '')
           ? {
-              formatter: (value: number) =>
-                `${(value * 100).toFixed((style?.numberFormat?.split('.')[1]?.split('%')[0] ?? '').length)}%`,
+              formatter: (value: number | string) =>
+                `${(Number(value) * 100).toFixed((style?.numberFormat?.split('.')[1]?.split('%')[0] ?? '').length)}%`,
             }
           : {}),
         ...(style?.labelVisible !== undefined ? { show: style.labelVisible } : {}),
@@ -153,23 +183,15 @@ export const getChartOption = ({
         return (Math.floor(max / unit + 1e-9) + 1) * unit;
       };
     }
-    const plot = importedStyle?.plotArea;
     return {
       color: themeColors,
       textStyle,
-      legend,
-      ...(plot
-        ? {
-            grid: {
-              left: `${plot.x * 100}%`,
-              top: `${plot.y * 100}%`,
-              width: `${plot.w * 100}%`,
-              height: `${plot.h * 100}%`,
-              containLabel: false,
-            },
-          }
-        : {}),
-      xAxis: type === 'bar' ? category : value,
+      legend: cartesianLegend,
+      grid,
+      xAxis:
+        type === 'bar'
+          ? category
+          : { ...value, axisLabel: { ...value.axisLabel, ...horizontalEndpointAlignment } },
       yAxis: type === 'bar' ? value : category,
       series: plotSeries.map((item, index) => {
         const style = importedSeries[index];
@@ -229,8 +251,14 @@ export const getChartOption = ({
     return {
       color: themeColors,
       textStyle,
-      legend,
-      xAxis: { type: 'category', data: data.labels, axisLine, axisLabel: categoryAxisLabel },
+      legend: cartesianLegend,
+      grid,
+      xAxis: {
+        type: 'category',
+        data: data.labels,
+        axisLine,
+        axisLabel: categoryAxisLabel,
+      },
       yAxis: { type: 'value', axisLine, axisLabel, splitLine },
       series: plotSeries.map((item, index) => {
         const seriesItem: LineSeriesOption = {
@@ -291,18 +319,28 @@ export const getChartOption = ({
     return {
       color: themeColors,
       textStyle,
-      legend,
+      legend: cartesianLegend,
+      grid,
       xAxis: {
         type: 'category',
         boundaryGap: false,
         data: data.labels,
         axisLine,
-        axisLabel: categoryAxisLabel,
+        axisLabel: { ...categoryAxisLabel, ...horizontalEndpointAlignment },
       },
       yAxis: { type: 'value', axisLine, axisLabel, splitLine },
       series: plotSeries.map((item, index) => {
         const seriesItem: LineSeriesOption = {
-          data: item,
+          // Area points sit on the plot edges; turn endpoint values inward.
+          data: plot
+            ? item
+            : item.map((value, dataIndex) => ({
+                value,
+                label: {
+                  align:
+                    dataIndex === 0 ? 'left' : dataIndex === item.length - 1 ? 'right' : 'center',
+                },
+              })),
           name: data.legends[index],
           type: 'line',
           areaStyle: {},
@@ -344,7 +382,8 @@ export const getChartOption = ({
     return {
       color: themeColors,
       textStyle,
-      xAxis: { axisLine, axisLabel, splitLine },
+      grid,
+      xAxis: { axisLine, axisLabel: { ...axisLabel, ...horizontalEndpointAlignment }, splitLine },
       yAxis: { axisLine, axisLabel, splitLine },
       series: [{ symbolSize: 12, data: formatedData, type: 'scatter' }],
     };

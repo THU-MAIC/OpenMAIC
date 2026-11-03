@@ -322,6 +322,19 @@ const objectY = baseY - BOTTOM_MARGIN - (value / maxValue) * playableHeight;
 - [ ] **Animation is OBVIOUS, not subtle - user can tell simulation is running**
 
 
+## Available libraries
+The deployment hosts the libraries below. When a page needs one of them, load it from the URL listed here, exactly as written, instead of a public CDN. Load only libraries the page needs. Initialize classic-script libraries after their load event, or after DOMContentLoaded when using defer.
+- katex 0.16.38: /vendor/interactive/katex@0.16.38/dist/katex.min.js
+- three 0.160.0: /vendor/interactive/three@0.160.0/build/three.module.js
+- chart.js 4.4.8: /vendor/interactive/chart.js@4.4.8/dist/chart.umd.js
+- @tailwindcss/browser 4.1.18: /vendor/interactive/@tailwindcss/browser@4.1.18/dist/index.global.js
+- Three.js addons import-map prefix: /vendor/interactive/three@0.160.0/examples/jsm/
+For Three.js use an import map with "three" and "three/addons/" set to the URLs above. Tailwind uses the v4 browser runtime, not the legacy v3 Play CDN API. The platform handles KaTeX automatically when math delimiters occur in page text; do not load or call KaTeX yourself.
+
+## Math typesetting
+
+The platform loads KaTeX into any interactive page that contains math, whether in the page text or in strings your scripts write into the page, and typesets math wherever it appears, including text your scripts add or change after the page loads. Write math as LaTeX between \`\\(\` and \`\\)\` for inline math or \`\\[\` and \`\\]\` for display math, also inside script strings, and leave typesetting to the platform. Do not load KaTeX, MathJax or any other math library yourself, and do not call their functions: the page can run where such a copy never loads, and a call into a missing library stops the page's script.
+
 ## REQUIRED: declared current state for newly generated interactive content (v1)
 
 This contract applies to every interactive content type. Report what the activity *is* right now, in the lesson's own terms — not a dump of JavaScript variables. The platform reads the same data for every lesson; there are no slider/circuit/game-specific collectors. Do not present protocol names to students.

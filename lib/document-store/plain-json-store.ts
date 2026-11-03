@@ -1,4 +1,4 @@
-import type { DocumentStore } from '@openmaic/storage';
+import type { DocumentStore, HttpDocumentWriteOptions } from '@openmaic/storage';
 
 import type { AppScene } from '@/lib/types/stage';
 import type {
@@ -41,11 +41,18 @@ export function withPlainJsonDocumentWrites<TStore extends DocumentStore<AppScen
     deleteDocument(stageId) {
       return store.deleteDocument(stageId);
     },
-    putStage(stageId, stage) {
-      return store.putStage(stageId, omitUndefinedObjectMembers(stage));
+    putStage(stageId, stage, ...options: [HttpDocumentWriteOptions?]) {
+      // The HTTP store's row writes take request options (keepalive on unload).
+      return (store.putStage as (...args: unknown[]) => Promise<void>).call(
+        store,
+        stageId,
+        omitUndefinedObjectMembers(stage),
+        ...options,
+      );
     },
-    putScene(stageId, scene, ...options: [MutationOptions?]) {
-      // The owner-bound store's scene write takes options (its transaction's own rows).
+    putScene(stageId, scene, ...options: [(MutationOptions | HttpDocumentWriteOptions)?]) {
+      // The owner-bound store's scene write takes options (its transaction's own
+      // rows); the HTTP store's takes request options (keepalive on unload).
       return (store.putScene as (...args: unknown[]) => Promise<void>).call(
         store,
         stageId,

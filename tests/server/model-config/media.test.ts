@@ -326,3 +326,24 @@ describe('what a request names the old way, against defaults and locks', () => {
     });
   });
 });
+
+describe('Kimi shared slot account', () => {
+  it.each(['kimi', 'kimi-coding-plan'])(
+    'resolves webSearch with the chat account key for %s',
+    async (preset) => {
+      workspaces.set('user:alice', {
+        providers: { shared: { preset, apiKey: 'kimi-shared-key' } },
+        slots: { llm: 'shared:kimi-for-coding', webSearch: 'shared' },
+      });
+      const connection = await resolveMediaSlot('webSearch', { workspaceId: 'user:alice' });
+      expect(connection).toMatchObject({
+        providerId: 'kimi',
+        apiKey: 'kimi-shared-key',
+        managed: false,
+      });
+      expect(connection.baseUrl).toBe(
+        preset === 'kimi-coding-plan' ? 'https://api.kimi.com/coding/v1' : undefined,
+      );
+    },
+  );
+});

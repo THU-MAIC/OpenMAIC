@@ -37,7 +37,11 @@ import { buildDslCourseTools, DSL_COURSE_TOOL_NAMES } from './dsl-tools';
 import { CURRICULUM_ALLOWLIST } from './curriculum-tools';
 import { buildGenerationTools, GENERATION_TOOL_NAMES } from './generation-tools';
 import { buildCourseAudioAndDeckTools, COURSE_AUDIO_DECK_TOOL_NAMES } from './course-edit/tools';
-import { buildMaterialMediaTool, MATERIAL_MEDIA_TOOL_NAME } from './material-media';
+import {
+  buildMaterialMediaTool,
+  MATERIAL_MEDIA_TOOL_NAME,
+  type MaterialMediaDeps,
+} from './material-media';
 import { RENDER_SCENE_PREVIEW_TOOL_NAME } from './scene-preview';
 import { buildImportPptxTool, IMPORT_PPTX_TOOL_NAME, type ImportPptxToolDeps } from './import-pptx';
 import {
@@ -208,6 +212,7 @@ export function withOwnerStageAuthorization(
  */
 export function buildDslCourseToolset(
   deps: CourseToolDeps &
+    Pick<MaterialMediaDeps, 'locale'> &
     Partial<ImportPptxToolDeps> &
     Partial<GenerateImageToolDeps> &
     Partial<GenerateVideoToolDeps>,
@@ -218,7 +223,15 @@ export function buildDslCourseToolset(
     buildGenerateImageTool(deps),
     ...(hasConfiguredVideoGeneration(deps) ? [buildGenerateVideoTool(deps)] : []),
     ...buildCourseAudioAndDeckTools(deps),
-    ...(deps.sessionId ? [buildMaterialMediaTool({ sessionId: deps.sessionId })] : []),
+    ...(deps.sessionId
+      ? [
+          buildMaterialMediaTool({
+            sessionId: deps.sessionId,
+            ownerId: deps.ownerId,
+            locale: deps.locale,
+          }),
+        ]
+      : []),
     ...buildDslCourseTools(deps),
   ] as unknown as AgentTool<never, never>[];
   return markDocumentWritersSequential(withOwnerStageAuthorization(tools, deps));
@@ -251,6 +264,7 @@ export const DSL_TOOLS_PROMPT = [
   'For one targeted change inside a large HTML or long text field, use patch_stage op "str_replace" (path, oldText, newText; set replaceAll only when the anchor repeats) instead of rewriting the whole field with set.',
   'Use grep_stage for literal stage-wide text/source search.',
   'Start with detail:"tree" to see structure; read source only for the subtree you will edit; for long content, prefer grep_stage over paging with offset.',
+  'When the user asks for a new course and has not chosen a skill, read the `stage-design` skill before planning; topic skills build on it.',
   'Use generate_scene once per page: each successful call is a durable checkpoint. Use list_scenes to inspect persisted pages and generate_actions to rebuild playback actions for one page.',
   'Use duplicate_scene to copy a layout, edit_deck for retitle/insert/delete/reorder, and generate_tts after narration edits. Page-list writers keep the saved outline numbering aligned with the real pages.',
   'To fill an uploaded .pptx into an existing stage as appended pages with its original slides kept, read the `pptx-import` skill first (it carries the import-and-repair sequence) and use `import_pptx` after `create_stage` — never extract_material + generate_scene for a layout-preserving import. The stage keeps its own title; the PPT is content, not the classroom identity.',
@@ -272,10 +286,14 @@ export const COURSE_SYSTEM_PROMPT = [
   'Offer stable, unique option ids when choices are useful.',
   'After ask_user succeeds, stop and wait for the next user message.',
   'Do not answer your own question or invent the user decision.',
-  'If no clarification is needed, answer directly without calling a tool.',
+  'When the user only asks a question and no clarification is needed, answer it directly without calling a tool; a request for work is carried out with tools.',
   'Follow later user messages as updates to the same conversation.',
   'Be honest about uncertainty and unavailable capabilities.',
   "Reply in the user's language unless the user requests another language.",
+  'The user creates learning content for themselves or others and is not an engineer: describe results in terms of that content, never expose tool names, field names, ids, or file and JSON paths, and link a classroom as a markdown link.',
+  'Claim only what tool results show, and say plainly what you did not verify.',
+  'Carry a request through to the end; stop early only when a decision genuinely needs the user.',
+  "Keep the final report brief: what was done, what is left if anything, and what needs the user's decision.",
 ].join('\n');
 
 interface CoursePromptBlocks {
@@ -287,14 +305,14 @@ interface CoursePromptBlocks {
   search?: string;
   /** Policy boundary for content fetched from session-observed URLs. */
   untrustedContent?: string;
-  /** fetch_url usage guidance (the tool is always registered). */
+  /** fetch_url usage guidance, present only when fetching is enabled. */
   fetch?: string;
   /** Compatibility guidance for installed legacy skills and resumed transcripts. */
   dslTools?: string;
   /**
-   * Session-materials listing. Present only when the session actually has
-   * materials (reference semantics: the block must not appear for a session
-   * with nothing to read).
+   * Static materials and knowledge-base guidance. The runner always
+   * passes it, including when nothing is attached, so the model can
+   * still use the knowledge base. The text does not list the set.
    */
   materials?: string;
   /** Roster guidance (list_voices / set_roster; always registered). */

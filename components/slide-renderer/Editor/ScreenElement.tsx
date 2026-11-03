@@ -20,9 +20,15 @@ interface ScreenElementProps {
   readonly elementInfo: PPTElement;
   readonly elementIndex: number;
   readonly animate?: boolean;
+  readonly selectable?: boolean;
 }
 
-export function ScreenElement({ elementInfo, elementIndex, animate }: ScreenElementProps) {
+export function ScreenElement({
+  elementInfo,
+  elementIndex,
+  animate,
+  selectable,
+}: ScreenElementProps) {
   const CurrentElementComponent = useMemo(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- element components have varying prop signatures
     const elementTypeMap: Record<string, any> = {
@@ -68,7 +74,11 @@ export function ScreenElement({ elementInfo, elementIndex, animate }: ScreenElem
         fontFamily: theme.fontName,
       }}
     >
-      <CurrentElementComponent elementInfo={elementInfo} animate={animate} />
+      <CurrentElementComponent
+        elementInfo={elementInfo}
+        animate={animate}
+        selectable={selectable}
+      />
     </div>
   );
 }

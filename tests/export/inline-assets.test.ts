@@ -629,10 +629,11 @@ describe('inlineHtmlAssets — importmap integration', () => {
   });
 
   it('inlines three + three/addons via importmap and retains the prefix as fallback', async () => {
-    const base = 'https://unpkg.com/three@0.160.0/examples/jsm/';
+    const base = 'https://classroom.test/vendor/interactive/three@0.160.0/examples/jsm/';
     const fetchImpl = (async (url: string) => {
       const map: Record<string, string> = {
-        'https://unpkg.com/three@0.160.0/build/three.module.js': 'export const THREE=1',
+        'https://classroom.test/vendor/interactive/three@0.160.0/build/three.module.js':
+          'export const THREE=1',
         [base + 'controls/OrbitControls.js']:
           "import * as THREE from 'three'; export class OrbitControls{}",
       };
@@ -649,7 +650,10 @@ describe('inlineHtmlAssets — importmap integration', () => {
       "<script type=\"module\">import * as THREE from 'three'; import { OrbitControls } from 'three/addons/controls/OrbitControls.js';</script>",
     ].join('');
 
-    const { html: out } = await inlineHtmlAssets(html, { fetchImpl });
+    const { html: out } = await inlineHtmlAssets(html, {
+      fetchImpl,
+      baseUrl: 'https://classroom.test',
+    });
     expect(out).toContain('"three":"data:text/javascript;base64,');
     expect(out).toContain('"three/addons/controls/OrbitControls.js":"data:text/javascript;base64,');
     // prefix is retained as online fallback for sub-paths not seen during static analysis
@@ -657,11 +661,12 @@ describe('inlineHtmlAssets — importmap integration', () => {
   });
 
   it('keeps the three/addons/ prefix as fallback when an addon fails to fetch', async () => {
-    const base = 'https://unpkg.com/three@0.160.0/examples/jsm/';
+    const base = 'https://classroom.test/vendor/interactive/three@0.160.0/examples/jsm/';
     const fetchImpl = (async (url: string) => {
       // three OK, OrbitControls OK, but a second addon 404s
       const map: Record<string, string> = {
-        'https://unpkg.com/three@0.160.0/build/three.module.js': 'export const THREE=1',
+        'https://classroom.test/vendor/interactive/three@0.160.0/build/three.module.js':
+          'export const THREE=1',
         [base + 'controls/OrbitControls.js']: "import 'three'; export class OrbitControls{}",
       };
       const body = map[String(url)];
@@ -675,11 +680,14 @@ describe('inlineHtmlAssets — importmap integration', () => {
       '}}</script>',
       "<script type=\"module\">import { OrbitControls } from 'three/addons/controls/OrbitControls.js'; import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';</script>",
     ].join('');
-    const { html: out } = await inlineHtmlAssets(html, { fetchImpl });
+    const { html: out } = await inlineHtmlAssets(html, {
+      fetchImpl,
+      baseUrl: 'https://classroom.test',
+    });
     // OrbitControls inlined as explicit data: entry
     expect(out).toContain('"three/addons/controls/OrbitControls.js":"data:');
     // GLTFLoader failed → prefix retained as online fallback
-    expect(out).toContain('"three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"');
+    expect(out).toContain(`"three/addons/":"${base}"`);
   });
 });
 
@@ -893,7 +901,7 @@ describe('inlineHtmlAssets', () => {
 
   it('ships the real KaTeX stylesheet with woff2-only font sources and no placeholder URLs', async () => {
     const dist = path.join(process.cwd(), 'node_modules/katex/dist');
-    const base = 'https://cdn.jsdelivr.net/npm/katex/dist/';
+    const base = 'https://classroom.test/vendor/interactive/katex@0.16.38/dist/';
     const fetched: string[] = [];
     const fetcher = async (url: string) => {
       fetched.push(url);

@@ -1,3 +1,4 @@
+import { MaterialExtractionError } from '@/lib/server/material-extraction/errors';
 import { getMediaExtractorManifestEntry } from './manifest';
 import { mediaBackedExtractorProviders } from './media';
 import { localMediaExtractorProvider } from './local-media';
@@ -78,7 +79,9 @@ export async function selectMediaExtractorProvider(options: {
     supported.some((provider) => getMediaExtractorManifestEntry(provider.id)?.requiresServerASR)
   )
     throw options.input.config.asrError;
-  throw new Error(
+  throw new MaterialExtractionError(
     `Media extraction is unavailable for "${options.mimeType}". Configure AliDocMind credentials for cloud extraction, or install ffmpeg (including ffprobe) and configure a server ASR provider for local extraction.`,
+    false,
+    { reasonCode: supported.length ? 'service_unavailable' : undefined },
   );
 }

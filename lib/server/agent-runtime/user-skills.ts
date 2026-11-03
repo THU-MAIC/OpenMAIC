@@ -53,6 +53,14 @@ export async function findUserSkill(id: string, ownerId: string): Promise<UserSk
   return store.find(id, ownerId);
 }
 
+export async function findDeletedUserSkill(
+  id: string,
+  ownerId: string,
+): Promise<Pick<UserSkillRecord, 'id' | 'name'> | null> {
+  const store = await getUserSkillStore();
+  return store.findDeleted(id, ownerId);
+}
+
 export async function findUserSkillByRef(
   ownerId: string,
   ref: string,

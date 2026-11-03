@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+  <head>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto" rel="stylesheet" />
+    <style>
+      /* @import 'https://unpkg.com/not-a-library'; */
+      @import 'https://unpkg.com/katex@0.16/dist/katex.min.css';
+    </style>
+  </head>
+  <body>
+    <canvas id="chart" class="w-full"></canvas>
+    <script>
+      new Chart(document.getElementById('chart'), {
+        type: 'bar',
+        data: { labels: ['A'], datasets: [{ data: [3] }] },
+      });
+      const example = '<script src="https://cdn.jsdelivr.net/npm/chart.js"><\/script>';
+    </script>
+  </body>
+</html>

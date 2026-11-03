@@ -136,6 +136,37 @@ describe('translateLegacyConfig: media defaults', () => {
     expect(resolveSlot('webSearch', layers)).toMatchObject({ registryId: 'exa', apiKey: 'e' });
   });
 
+  it('keeps the earlier web search providers ahead of Firecrawl', () => {
+    const withClaude = translateLegacyConfig(
+      server({ webSearch: { firecrawl: { apiKey: 'f' }, claude: { apiKey: 'c' } } }),
+    );
+    expect(withClaude.config.slots?.webSearch).toBe('claude');
+    const alone = translateLegacyConfig(server({ webSearch: { firecrawl: { apiKey: 'f' } } }));
+    expect(alone.config.slots?.webSearch).toBe('firecrawl');
+  });
+
+  it('lets the legacy Firecrawl key serve web fetch once that slot is assigned', () => {
+    const { config } = translateLegacyConfig(
+      server({ webSearch: { firecrawl: { apiKey: 'f', baseUrl: 'https://fc.example.com' } } }),
+    );
+    expect(config.providers?.firecrawl).toEqual({
+      preset: 'firecrawl',
+      apiKey: 'f',
+      baseUrl: 'https://fc.example.com',
+    });
+    // Web fetch keeps its builtin default until it is assigned explicitly.
+    expect(config.slots?.webFetch).toBeUndefined();
+    const layers = [
+      { source: 'deployment' as const, config: { ...config, slots: { webFetch: 'firecrawl' } } },
+    ];
+    expect(resolveSlot('webFetch', layers)).toMatchObject({
+      status: 'assigned',
+      registryId: 'firecrawl',
+      apiKey: 'f',
+      baseUrl: 'https://fc.example.com',
+    });
+  });
+
   it('prefers DEFAULT_IMAGE_PROVIDER when it names a usable image provider', () => {
     const images = server({
       image: { seedream: { apiKey: 'sk' }, 'qwen-image': { apiKey: 'sk' } },
@@ -258,17 +289,17 @@ describe('translateLegacyConfig: models', () => {
   it('attaches MODEL_FALLBACK to the llm root', () => {
     const { config } = translateLegacyConfig(withProviders, {
       defaultModel: 'openai:gpt-5.6',
-      globalFallback: 'deepseek:deepseek-v4-flash',
+      globalFallback: 'deepseek:deepseek-flash',
     });
     expect(chatSlots(config.slots)).toEqual({
-      llm: { model: 'openai:gpt-5.6', fallback: 'deepseek:deepseek-v4-flash' },
+      llm: { model: 'openai:gpt-5.6', fallback: 'deepseek:deepseek-flash' },
       agent: null,
     });
   });
 
   it('drops MODEL_FALLBACK without DEFAULT_MODEL', () => {
     const { config, notices } = translateLegacyConfig(withProviders, {
-      globalFallback: 'deepseek:deepseek-v4-flash',
+      globalFallback: 'deepseek:deepseek-flash',
     });
     expect(chatSlots(config.slots)).toBeUndefined();
     expect(notices).toEqual([
@@ -353,7 +384,7 @@ describe('translateLegacyConfig output', () => {
   it('is a valid openmaic.yml that resolves the same models', () => {
     const { config } = translateLegacyConfig(withProviders, {
       defaultModel: 'openai:gpt-5.6',
-      globalFallback: 'deepseek:deepseek-v4-flash',
+      globalFallback: 'deepseek:deepseek-flash',
     });
     const reparsed = parseModelConfig(yaml.dump(config), { env: {} });
     expect(reparsed).toEqual(config);
@@ -361,7 +392,7 @@ describe('translateLegacyConfig output', () => {
     expect(resolveSlot('course.outline', layers)).toMatchObject({
       providerId: 'openai',
       modelId: 'gpt-5.6',
-      fallback: { providerId: 'deepseek', modelId: 'deepseek-v4-flash' },
+      fallback: { providerId: 'deepseek', modelId: 'deepseek-flash' },
     });
     expect(resolveSlot('tts', layers)).toMatchObject({ registryId: 'minimax-tts' });
   });
@@ -428,4 +459,70 @@ it('loads the real legacy Google compatible env through translation, slots and P
     Object.assign(process.env, snapshot);
     vi.resetModules();
   }
+});
+
+describe('shared legacy account collisions', () => {
+  it.each([
+    { apiKey: 'search-key', baseUrl: 'https://api.moonshot.cn/v1' },
+    { apiKey: 'chat-key', baseUrl: 'https://api.kimi.com/coding/v1' },
+  ])('warns and skips a conflicting search account without replacing chat: %j', (search) => {
+    const chat = { apiKey: 'chat-key', baseUrl: 'https://api.moonshot.cn/v1', models: ['kimi-k3'] };
+    const { config, notices } = translateLegacyConfig(
+      server({ providers: { kimi: chat }, webSearch: { kimi: search } }),
+    );
+    expect(config.providers?.kimi).toMatchObject(chat);
+    expect(config.slots?.webSearch).toBeUndefined();
+    expect(notices).toEqual([
+      expect.stringContaining('webSearch.kimi conflicts with the existing provider "kimi"'),
+    ]);
+    expect(notices.join(' ')).not.toContain('chat-key');
+    expect(notices.join(' ')).not.toContain('search-key');
+  });
+
+  it('keeps chat model pins when an opted-in search entry shares the account', () => {
+    const { config, notices } = translateLegacyConfig(
+      server({
+        providers: { kimi: { apiKey: 'shared-key', models: ['kimi-k3'] } },
+        webSearch: { kimi: { apiKey: 'shared-key' } },
+      }),
+    );
+    expect(notices).toEqual([]);
+    expect(config.providers?.kimi.models).toEqual(['kimi-k3']);
+    expect(config.slots?.webSearch).toBe('kimi');
+  });
+});
+
+describe('DeepSeek shared legacy account collisions', () => {
+  it.each([
+    { apiKey: 'search-key', baseUrl: 'https://api.deepseek.com/v1' },
+    { apiKey: 'chat-key', baseUrl: 'https://gateway.example/v1' },
+  ])('warns and skips a conflicting search account without replacing chat: %j', (search) => {
+    const chat = {
+      apiKey: 'chat-key',
+      baseUrl: 'https://api.deepseek.com/v1',
+      models: ['deepseek-chat'],
+    };
+    const { config, notices } = translateLegacyConfig(
+      server({ providers: { deepseek: chat }, webSearch: { deepseek: search } }),
+    );
+    expect(config.providers?.deepseek).toMatchObject(chat);
+    expect(config.slots?.webSearch).toBeUndefined();
+    expect(notices).toEqual([
+      expect.stringContaining('webSearch.deepseek conflicts with the existing provider "deepseek"'),
+    ]);
+    expect(notices.join(' ')).not.toContain('chat-key');
+    expect(notices.join(' ')).not.toContain('search-key');
+  });
+
+  it('keeps chat model pins when an opted-in search entry shares the account', () => {
+    const { config, notices } = translateLegacyConfig(
+      server({
+        providers: { deepseek: { apiKey: 'shared-key', models: ['deepseek-chat'] } },
+        webSearch: { deepseek: { apiKey: 'shared-key' } },
+      }),
+    );
+    expect(notices).toEqual([]);
+    expect(config.providers?.deepseek.models).toEqual(['deepseek-chat']);
+    expect(config.slots?.webSearch).toBe('deepseek');
+  });
 });

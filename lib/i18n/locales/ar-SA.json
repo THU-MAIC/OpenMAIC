@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "رجوع",
     "you": "أنت",
     "confirm": "تأكيد",
     "cancel": "إلغاء",
@@ -10,6 +11,22 @@
     "close": "إغلاق"
   },
   "home": {
+    "resumeGeneration": "متابعة الإنشاء",
+    "emptyLibraryTitle": "تبدأ دروسك هنا",
+    "emptyLibraryBody": "أنشئ درسًا من الصفحة الرئيسية، ثم عُد إلى هنا لمتابعة التعلم.",
+    "mobileTitle": "ماذا تريد أن تتعلم؟",
+    "mobileSubtitle": "أخبرنا بموضوعك ليُنشئ الذكاء الاصطناعي درسًا تفاعليًا.",
+    "mobilePlaceholder": "أدخل موضوعًا أو ارفع مواد تعليمية",
+    "courseOptions": "خيارات الدرس",
+    "courseMaterials": "مواد الدورة",
+    "courseMaterialsCount": "مواد الدورة · {{n}}",
+    "backToCourseOptions": "العودة إلى خيارات الدرس",
+    "materialsDone": "تم",
+    "allSettings": "كل الإعدادات",
+    "examplesLabel": "جرّب موضوعًا",
+    "examplePython": "تعلم Python من الصفر",
+    "exampleFourier": "شرح تحويل فورييه بأمثلة مبسطة",
+    "desktopOnly": "استخدم الكمبيوتر للمحرر ووضع Pro.",
     "slogan": "التعلّم التوليدي في فصل تفاعلي متعدد الوكلاء",
     "greetingWithName": "مرحبًا، {{name}}"
   },
@@ -475,6 +492,7 @@
       "moreActions": "إجراءات إضافية",
       "rename": "إعادة تسمية",
       "sceneIncomplete": "محتوى هذه الصفحة غير مكتمل",
+      "sceneHasErrors": "تحتوي هذه الصفحة على أخطاء",
       "addPage": "إضافة صفحة",
       "nextPage": "الصفحة التالية",
       "prevPage": "الصفحة السابقة"
@@ -1346,11 +1364,13 @@
       "ollama": "Ollama (محلي)",
       "tavily": "Tavily",
       "exa": "Exa",
+      "firecrawl": "Firecrawl",
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
       "claude": "Claude",
-      "searxng": "SearXNG"
+      "searxng": "SearXNG",
+      "builtin": "القارئ المدمج"
     },
     "modelCount": "نماذج",
     "modelSingular": "نموذج",
@@ -1716,7 +1736,6 @@
     "videoModel": "نموذج توليد الفيديو",
     "providerSeedance": "Seedance (ByteDance)",
     "providerKling": "Kling (Kuaishou)",
-    "providerVeo": "Veo (Google)",
     "providerSora": "Sora (OpenAI)",
     "providerMiniMaxVideo": "MiniMax Video",
     "providerGrokVideo": "Grok Video (xAI)",
@@ -1798,7 +1817,7 @@
     "tokenPlan": {
       "nav": "Token Plan",
       "title": "Token Plan Setup",
-      "desc": "Pick your token plan provider and enter the key — it auto-configures every adapted modality (LLM/image/video/speech/web search).",
+      "desc": "Pick your token plan provider and enter the key — it auto-configures every adapted modality (LLM/image/video/speech/web search/web fetch).",
       "selectPlan": "Select Provider",
       "apiKey": "API Key",
       "updateKey": "Update key",
@@ -1824,6 +1843,7 @@
       "capTts": "تحويل النص إلى كلام",
       "capVideo": "توليد الفيديو",
       "capWebSearch": "البحث في الويب",
+      "capWebFetch": "جلب صفحات الويب",
       "saved": "تم حفظ إعدادات الربط",
       "stageInteractive": "تفاعلي",
       "stageSlide": "شرائح الدرس",
@@ -1947,7 +1967,8 @@
         "providers": "هيّئ بيانات الاعتماد والعناوين وكتالوجات النماذج لخدمات النماذج اللغوية",
         "tts": "هيّئ خدمات تحويل النص إلى كلام والأصوات والنماذج",
         "video": "هيّئ بيانات الاعتماد وكتالوجات النماذج لخدمات توليد الفيديو",
-        "webSearch": "هيّئ خدمات البحث في الويب ومصادر الاسترجاع"
+        "webSearch": "هيّئ خدمات البحث في الويب ومصادر الاسترجاع",
+        "webFetch": "إعداد خدمات استخراج محتوى صفحات الويب"
       },
       "nav": "خدمات النماذج",
       "notConfigured": "غير مهيّأ",
@@ -2149,6 +2170,10 @@
         "document": {
           "name": "تحليل المستندات",
           "desc": "يقرأ المستندات المرفوعة."
+        },
+        "webFetch": {
+          "name": "جلب صفحات الويب",
+          "desc": "يتيح للوكيل قراءة صفحات الويب المسموح بها في الجلسة."
         }
       },
       "source": {
@@ -2162,6 +2187,7 @@
         "lines": {
           "rewrite": "الاستعلام",
           "search": "البحث",
+          "fetch": "الجلب",
           "image": "صورة",
           "video": "فيديو"
         }
@@ -2194,9 +2220,144 @@
         "unconfirmed": "لم يؤكد الخادم أنه تم استيراده."
       }
     },
-    "serverConfiguredAddOwn": "لاستخدام بيانات الاعتماد الخاصة بك، أضِف مزوّدًا منفصلاً."
+    "serverConfiguredAddOwn": "لاستخدام بيانات الاعتماد الخاصة بك، أضِف مزوّدًا منفصلاً.",
+    "webFetchSettings": "جلب صفحات الويب",
+    "webFetchHint": "اختر طريقة قراءة صفحات الويب. تتلقى الخدمات المستضافة روابط عامة مسموحًا بها في الجلسة. تظل النتائج غير موثوقة، ولا يؤدي الفشل إلى تبديل القارئ.",
+    "webFetchApiKey": "مفتاح API",
+    "webFetchSharedKeyHint": "يُستخدم هذا المفتاح أيضًا للدردشة مع هذا المزوّد. تغييره أو حذفه يؤثر في الدردشة."
   },
   "workspace": {
+    "knowledgeBase": {
+      "title": "قاعدة المعرفة",
+      "topLevel": "المستوى الأعلى",
+      "back": "رجوع",
+      "search": "ابحث بالاسم أو نوع الملف",
+      "loading": "جارٍ التحميل…",
+      "retry": "إعادة المحاولة",
+      "loadMore": "تحميل المزيد",
+      "failure": {
+        "more": "توضيح الإخفاق: {{reason}}",
+        "storage_full": {
+          "label": "مساحة التخزين غير كافية",
+          "description": "لا توجد مساحة كافية لحفظ نتائج التحليل. حرّر بعض المساحة ثم حاول مجددًا."
+        },
+        "source_unavailable": {
+          "label": "الملف الأصلي غير متاح",
+          "description": "تعذّرت قراءة الملف الأصلي. ارفعه مجددًا ثم أعد المحاولة."
+        },
+        "service_unavailable": {
+          "label": "خدمة التحليل غير متاحة",
+          "description": "لم يتم إعداد خدمة تحليل لهذا النوع من الملفات. اطلب من المسؤول إعدادها، ثم أعد التحليل."
+        },
+        "media_too_long": {
+          "label": "المقطع الصوتي أو المرئي طويل جدًا",
+          "description": "تعالج طريقة التحليل هذه المقاطع الصوتية والمرئية حتى {{minutes}} دقيقة. اختصر الملف أو قسّمه ثم ارفعه مجددًا."
+        },
+        "no_text_extracted": {
+          "label": "لم يُستخرج نص",
+          "description": "لم يُستخرج نص قابل للاستخدام هذه المرة. تحقّق من المحتوى أو جرّب ملفًا آخر."
+        },
+        "processing_interrupted": {
+          "label": "لم يكتمل التحليل",
+          "description": "تعذّر إكمال التحليل. يمكنك المحاولة مجددًا لاحقًا."
+        },
+        "too_many_pages": {
+          "label": "عدد الصفحات كبير جدًا",
+          "description": "يحتوي ملف PDF هذا على {{pages}} صفحة، وهذا يتجاوز حد التحليل البالغ {{maxPages}} صفحة. قسّمه قبل الرفع، أو ارفع الفصول التي تحتاجها فقط.",
+          "descriptionWithoutCount": "يتجاوز ملف PDF هذا حد التحليل البالغ {{maxPages}} صفحة. قسّمه قبل الرفع، أو ارفع الفصول التي تحتاجها فقط.",
+          "descriptionWithoutLimit": "يحتوي ملف PDF هذا على صفحات أكثر مما تقبله خدمة التحليل. قسّمه قبل الرفع، أو ارفع الفصول التي تحتاجها فقط."
+        }
+      },
+      "status": {
+        "uploading": "جارٍ الرفع",
+        "stored": "محفوظ · لم يُحلَّل",
+        "parsing": "جارٍ التحليل",
+        "searchable": "قابل للبحث",
+        "failed": "فشل التحليل"
+      },
+      "column": {
+        "name": "الاسم",
+        "status": "الحالة",
+        "folder": "المجلد",
+        "size": "الحجم",
+        "date": "التاريخ"
+      },
+      "limits": {
+        "perFile": "حتى {{document}} لكل مستند أو صورة، و{{media}} لكل ملف صوتي أو فيديو"
+      },
+      "usage": {
+        "summary": "المستخدم {{used}} من {{max}} · {{count}} من {{maxCount}} ملفات",
+        "fileStorage": "مساحة تخزين ملفات منفصلة: المستخدم {{used}} من {{max}} (تشمل المحتوى المحلَّل ووسائط الدورات)",
+        "fileStorageUnlimited": "مساحة تخزين ملفات منفصلة: المستخدم {{used}} (تشمل المحتوى المحلَّل ووسائط الدورات)"
+      },
+      "empty": {
+        "title": "قاعدة المعرفة فارغة",
+        "body": "ارفع موادك التعليمية، ودع المساعد ينظّمها ويحلّلها، ثم اخترها باستخدام @ أثناء إعداد الدرس.",
+        "folder": "لا توجد مواد في هذا المجلد بعد",
+        "query": "لا توجد مواد تطابق «{{query}}»"
+      },
+      "upload": {
+        "button": "رفع المواد",
+        "dismiss": "إخفاء"
+      },
+      "error": {
+        "load": "تعذّر تحميل قاعدة المعرفة",
+        "busy": "يجري تحديث حسابك. حاول مرة أخرى بعد قليل",
+        "identity": "تغيّرت حالة تسجيل الدخول. أعد تحميل الصفحة",
+        "stale": "قد لا يكون المعروض محدّثًا",
+        "nameTaken": "يوجد مجلد آخر بهذا الاسم",
+        "invalidName": "أدخل اسمًا لا يتجاوز 255 حرفًا",
+        "folderNameEmpty": "أدخل اسم المجلد",
+        "folderNameTooLong": "اسم المجلد طويل جدًا",
+        "folderLimit": "وصلت إلى الحد الأقصى لعدد المجلدات",
+        "notMovable": "لا يمكن نقل هذه المادة",
+        "gone": "لم يعد موجودًا",
+        "save": "لم تنجح العملية. حاول مرة أخرى",
+        "notEmpty": "لا يزال المجلد يحتوي على مواد. انقلها أولًا",
+        "materialNotFound": "المادة غير موجودة أو لا يمكن الوصول إليها.",
+        "folderNotFound": "المجلد غير موجود أو لا يمكن الوصول إليه.",
+        "textUnavailable": "نص المادة غير متاح.",
+        "derivative": "تستخدم المادة المشتقة اسم المصدر؛ أعد تسمية المصدر بدلاً منها.",
+        "moveTooMany": "انقل {{limit}} مادة كحد أقصى في المرة الواحدة.",
+        "moveNotMovable": "لم تُنقل أي مادة. بعض المواد المحددة غير متاحة أو لا يمكن نقلها.",
+        "toolFolderNameTooLong": "اسم المجلد طويل جدًا (40 حرفًا بنصف العرض أو 20 حرفًا بالعرض الكامل كحد أقصى).",
+        "toolFolderLimit": "بلغت قاعدة المعرفة الحد الأقصى وهو {{limit}} مجلدًا.",
+        "mediaUnsupported": "يمكن استخدام الصور أو الفيديو أو الصوت فقط كوسائط للدورة.",
+        "mediaStorageFull": "لا توجد مساحة كافية لحفظ هذه الوسائط. أفرغ مساحة ثم حاول مجددًا.",
+        "mediaNotFound": "لم يُعثر على مادة الوسائط أو لا تحتوي على ملف وسائط متاح."
+      },
+      "actions": {
+        "parse": "تحليل",
+        "reparse": "إعادة التحليل",
+        "more": "إجراءات أخرى لـ {{name}}",
+        "rename": "إعادة التسمية",
+        "delete": "حذف",
+        "open": "فتح",
+        "downloadOriginal": "تنزيل الملف الأصلي",
+        "chat": "المحادثة حول هذه المادة"
+      },
+      "folder": {
+        "new": "مجلد جديد",
+        "items": "العناصر: {{count}}",
+        "items_one": "عنصر واحد",
+        "items_other": "{{count}} عنصر"
+      },
+      "dialog": {
+        "cancel": "إلغاء",
+        "close": "إغلاق"
+      },
+      "delete": {
+        "materialTitle": "حذف «{{name}}»؟",
+        "materialLinks": "لن تتمكن المحادثات التي تستخدمها من قراءتها بعد الآن، ويبقى النص الموجود بالفعل في تلك المحادثات.",
+        "materialCourses": "لا يتأثر المحتوى المحفوظ بالفعل في أي مقرر.",
+        "cannotUndo": "لا يمكن التراجع عن هذا الإجراء.",
+        "folderTitle": "حذف المجلد «{{name}}»؟",
+        "folderContents": "سيتم نقل {{count}} من الملفات إلى المستوى الأعلى. لن يتم حذف أي ملف."
+      },
+      "conversationFailure": {
+        "serviceUnavailable": "لم تُهيأ خدمة تحليل لهذا النوع من الملفات. اطلب من المسؤول تهيئتها."
+      }
+    },
     "untitledCourse": "未命名课堂",
     "sceneCount": "{{count}} 页",
     "sceneCount_one": "{{count}} 页",
@@ -2204,14 +2365,30 @@
     "courseLinkHint": "在右侧打开《{{name}}》",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
+      "search": "البحث عن الفصول والمواد",
+      "searchMaterials": "البحث عن المواد",
+      "searchClassrooms": "البحث عن الفصول",
+      "courseOrder": "الفصل المفتوح أولاً، ثم الأحدث تحديثاً",
+      "materialOrder": "الأحدث رفعاً أولاً",
       "title": "为这条消息引用课堂",
+      "titleBoth": "الإشارة إلى فصل أو إرفاق مادة من قاعدة المعرفة بهذه الرسالة",
+      "titleMaterials": "إرفاق مادة من قاعدة المعرفة بهذه الرسالة",
       "empty": "没有匹配的课堂",
       "alreadyNamed": "已引用",
       "remove": "移除{{name}}",
       "pillHint": "这条消息引用了「{{name}}」",
       "notAccepted": "الخادم غير متاح مؤقتًا. يُرجى إعادة المحاولة بعد قليل.",
       "reference": "引用「{{name}}」",
-      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
+      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围",
+      "classrooms": "الفصول",
+      "knowledgeBase": "قاعدة المعرفة",
+      "emptyWithMaterials": "لا يوجد فصل أو مادة مطابقة",
+      "attachMaterial": "إرفاق {{name}} بهذه الرسالة",
+      "materialUnavailable": "تعذّر إرفاق {{name}} ({{reason}}). افتح قاعدة المعرفة لمعرفة السبب وإعادة التحليل.",
+      "materialAttached": "موجودة بالفعل في هذه المحادثة",
+      "materialStaged": "موجودة بالفعل في هذه الرسالة",
+      "materialsCapped": "تُعرض أول {{count}} مواد — تابع الكتابة لتضييق النتائج",
+      "materialUnavailableGuidance": "لا يمكن إرفاق {{name}}. {{guidance}} يمكنك إدارة المادة من صفحة قاعدة المعرفة."
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
@@ -2232,6 +2409,11 @@
     "homeAria": "Back to home",
     "currentSession": "Current chat",
     "startLearning": "ابدأ التعلم",
+    "classroomMode": "وضع الفصل",
+    "learningMode": "تعلّم",
+    "editingMode": "تحرير",
+    "editingUnavailableGenerating": "التحرير غير متاح أثناء إنشاء الدورة.",
+    "fullscreenLearning": "التعلّم بملء الشاشة",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2345,7 +2527,8 @@
     "badgeEnter": "وضع Pro",
     "badgeExit": "العودة إلى الوضع العادي",
     "launchPlaceholder": "صِف تجربة التعلم التي تريد إنشاءها",
-    "launchSend": "بدء الإنشاء"
+    "launchSend": "بدء الإنشاء",
+    "mentionCourseOrMaterial": "الإشارة إلى فصل أو مادة من قاعدة المعرفة"
   },
   "workbench": {
     "tool": {

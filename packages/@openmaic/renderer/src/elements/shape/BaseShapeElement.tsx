@@ -1,15 +1,23 @@
 'use client';
 
-import { useRef, type ReactNode } from 'react';
+import { useMemo, useRef, type ReactNode } from 'react';
 import type { PPTShapeElement, ShapeText } from '@openmaic/dsl';
+import {
+  validateShapeGeometry,
+  RENDER_PATH_LIMITS,
+  shapeToTextFallback,
+  type PathValidation,
+} from '@openmaic/geometry';
 import { useElementOutline } from '../shared/useElementOutline';
 import { useElementShadow } from '../shared/useElementShadow';
 import { useElementFlip } from '../shared/useElementFlip';
 import { useElementFill } from '../shared/useElementFill';
 import { GradientDefs } from './GradientDefs';
+import { BaseTextElement } from '../text/BaseTextElement';
 import { PatternDefs } from './PatternDefs';
 import { preservesPlainTextLineBreaks } from '../../utils/richText';
 import { useInlineMath, useInnerHtml } from '../../utils/inlineMath';
+import { hasTextInsets } from '../shared/hasTextInsets';
 
 export interface BaseShapeElementProps {
   elementInfo: PPTShapeElement;
@@ -17,84 +25,48 @@ export interface BaseShapeElementProps {
   renderLabel?: (element: PPTShapeElement, defaultContent: ReactNode) => ReactNode;
 }
 
-/**
- * Bounding box of a path's coordinates (path/viewBox space). Uses control
- * points for curves (a safe superset). Handles the commands our shapes emit
- * (M/L/C/Q/S/H/V/A/T/Z, absolute). Returns null if no coordinates.
- */
-function pathCoordBBox(
-  d: string,
-): { minX: number; minY: number; maxX: number; maxY: number } | null {
-  const tokens = d.match(/[a-zA-Z]|-?\d*\.?\d+(?:e[-+]?\d+)?/gi);
-  if (!tokens) return null;
-  let i = 0;
-  let cmd = '';
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  const addX = (x: number) => {
-    if (x < minX) minX = x;
-    if (x > maxX) maxX = x;
-  };
-  const addY = (y: number) => {
-    if (y < minY) minY = y;
-    if (y > maxY) maxY = y;
-  };
-  const num = () => parseFloat(tokens[i++]);
-  while (i < tokens.length) {
-    // Path commands are single letters. Use an anchored test so number tokens
-    // in scientific notation (e.g. "4.74e-16") aren't misread as commands.
-    if (/^[a-zA-Z]$/.test(tokens[i])) {
-      cmd = tokens[i];
-      i++;
-    }
-    const c = cmd.toUpperCase();
-    if (c === 'M' || c === 'L' || c === 'T') {
-      addX(num());
-      addY(num());
-    } else if (c === 'C') {
-      addX(num());
-      addY(num());
-      addX(num());
-      addY(num());
-      addX(num());
-      addY(num());
-    } else if (c === 'Q' || c === 'S') {
-      addX(num());
-      addY(num());
-      addX(num());
-      addY(num());
-    } else if (c === 'H') {
-      addX(num());
-    } else if (c === 'V') {
-      addY(num());
-    } else if (c === 'A') {
-      num();
-      num();
-      num();
-      num();
-      num();
-      addX(num());
-      addY(num());
-    } else if (c === 'Z') {
-      // no coords
-    } else {
-      i++; // unknown token, skip to avoid infinite loop
-    }
+export function BaseShapeElement({ elementInfo, renderLabel }: BaseShapeElementProps) {
+  const geometry = useMemo(
+    () =>
+      validateShapeGeometry(
+        {
+          path: elementInfo.path,
+          viewBox: elementInfo.viewBox,
+          width: elementInfo.width,
+          height: elementInfo.height,
+        },
+        RENDER_PATH_LIMITS,
+      ),
+    [elementInfo.path, elementInfo.viewBox, elementInfo.width, elementInfo.height],
+  );
+  if (!geometry.ok) {
+    const fallback = shapeToTextFallback(elementInfo);
+    return fallback ? (
+      <div data-shape-geometry-error={geometry.error.code}>
+        <BaseTextElement
+          elementInfo={fallback}
+          fillHeight={Boolean(renderLabel)}
+          renderContent={
+            renderLabel ? (_text, content) => renderLabel(elementInfo, content) : undefined
+          }
+        />
+      </div>
+    ) : null;
   }
-  if (
-    !Number.isFinite(minX) ||
-    !Number.isFinite(minY) ||
-    !Number.isFinite(maxX) ||
-    !Number.isFinite(maxY)
-  ) {
-    return null;
-  }
-  return { minX, minY, maxX, maxY };
+  return (
+    <ValidShapeElement elementInfo={elementInfo} renderLabel={renderLabel} geometry={geometry} />
+  );
 }
 
-export function BaseShapeElement({ elementInfo, renderLabel }: BaseShapeElementProps) {
+function ValidShapeElement({
+  elementInfo,
+  renderLabel,
+  geometry,
+}: BaseShapeElementProps & {
+  geometry: Extract<PathValidation, { ok: true }>;
+}) {
+  const width = elementInfo.width;
+  const height = elementInfo.height;
   const { fill } = useElementFill(elementInfo, 'base');
   const { outlineWidth, outlineColor, strokeDashArray } = useElementOutline(elementInfo.outline);
   const { shadowStyle } = useElementShadow(elementInfo.shadow);
@@ -123,7 +95,9 @@ export function BaseShapeElement({ elementInfo, renderLabel }: BaseShapeElementP
         flexDirection: 'column',
         justifyContent,
         overflowWrap: 'break-word',
-        lineHeight: text.lineHeight,
+        boxSizing: 'border-box',
+        padding: hasTextInsets(text.content) ? 0 : 10,
+        lineHeight: text.lineHeight ?? 1.625,
         letterSpacing: `${text.wordSpace || 0}px`,
         // PowerPoint/WPS 在 group flipH/flipV 时只镜像几何与位置，文字字形保持
         // 正向。父层 element-content 已应用 flipStyle 镜像 SVG path；这里给文字
@@ -152,8 +126,8 @@ export function BaseShapeElement({ elementInfo, renderLabel }: BaseShapeElementP
         position: 'absolute',
         top: `${elementInfo.top}px`,
         left: `${elementInfo.left}px`,
-        width: `${elementInfo.width}px`,
-        height: `${elementInfo.height}px`,
+        width: `${width}px`,
+        height: `${height}px`,
       }}
     >
       <div
@@ -186,9 +160,9 @@ export function BaseShapeElement({ elementInfo, renderLabel }: BaseShapeElementP
             // exported PNG. Fix: grow the SVG viewport to contain the full path
             // bbox and offset it back, so the geometry renders in the exact same
             // place but nothing falls outside the captured viewport.
-            const sx = elementInfo.width / (elementInfo.viewBox[0] || elementInfo.width || 1);
-            const sy = elementInfo.height / (elementInfo.viewBox[1] || elementInfo.height || 1);
-            const bbox = pathCoordBBox(elementInfo.path);
+            const sx = elementInfo.width / elementInfo.viewBox[0];
+            const sy = elementInfo.height / elementInfo.viewBox[1];
+            const bbox = geometry.bounds;
             const CAP = 4000; // guard against pathological coords blowing up the SVG
             let padL = 0;
             let padT = 0;
@@ -203,8 +177,8 @@ export function BaseShapeElement({ elementInfo, renderLabel }: BaseShapeElementP
             return (
               <svg
                 overflow="visible"
-                width={elementInfo.width + padL + padR}
-                height={elementInfo.height + padT + padB}
+                width={width + padL + padR}
+                height={height + padT + padB}
                 style={{
                   position: 'absolute',
                   left: -padL,

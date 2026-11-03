@@ -60,6 +60,8 @@ export const STATIONS: readonly StationDef[] = [
     lines: [
       { slot: 'course.research', labelKey: 'rewrite' },
       { slot: 'webSearch', labelKey: 'search', toggle: true },
+      // Read by the agent's page fetch tool; generation itself only searches.
+      { slot: 'webFetch', labelKey: 'fetch', toggle: true },
     ],
   },
   {

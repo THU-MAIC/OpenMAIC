@@ -340,9 +340,11 @@ async function transcribeCustomOpenAICompatibleASR(
       audioBuffer.byteOffset,
       audioBuffer.byteOffset + audioBuffer.byteLength,
     ) as ArrayBuffer;
-    // Preserve existing type when converting from Buffer; fall back to webm
-    // (the default recording format used by the browser MediaRecorder API).
-    audioBlob = new Blob([arrayBuffer], { type: 'audio/webm' });
+    // Local media extraction supplies WAV chunks as Buffers. Match the MIME
+    // type to their RIFF/WAVE header; keep WebM as the recording fallback.
+    audioBlob = new Blob([arrayBuffer], {
+      type: detectWavBuffer(audioBuffer) ? 'audio/wav' : 'audio/webm',
+    });
   }
 
   // Most OpenAI-compatible transcription endpoints treat `model` as a
@@ -358,7 +360,7 @@ async function transcribeCustomOpenAICompatibleASR(
 
   const formData = new FormData();
   // Use 'file' key — required by the OpenAI audio/transcriptions spec.
-  formData.set('file', audioBlob, 'audio.webm');
+  formData.set('file', audioBlob, (await isWavAudio(audioBlob)) ? 'audio.wav' : 'audio.webm');
   formData.set('model', config.modelId);
   formData.set('response_format', 'json');
   if (config.language && config.language !== 'auto') {
@@ -399,9 +401,23 @@ async function transcribeOpenAIWhisper(
   config: ASRModelConfig,
   audioBuffer: Buffer | Blob,
 ): Promise<ASRTranscriptionResult> {
+  const modelId = config.modelId || ASR_PROVIDERS['openai-whisper'].defaultModelId;
+  const baseUrl = config.baseUrl || ASR_PROVIDERS['openai-whisper'].defaultBaseUrl;
+  const isOfficialEndpoint =
+    baseUrl?.replace(/\/+$/, '') === ASR_PROVIDERS['openai-whisper'].defaultBaseUrl;
+  // Compatible endpoints may reject verbose_json even for whisper-1. Keep
+  // SDK behavior only for known models on the official OpenAI endpoint;
+  // otherwise reuse the JSON adapter and its guarded transport.
+  if (
+    !isOfficialEndpoint ||
+    !['whisper-1', 'gpt-4o-transcribe', 'gpt-4o-mini-transcribe'].includes(modelId)
+  ) {
+    return transcribeCustomOpenAICompatibleASR({ ...config, modelId, baseUrl }, audioBuffer);
+  }
+
   const openai = createOpenAI({
     apiKey: config.apiKey!,
-    baseURL: config.baseUrl || ASR_PROVIDERS['openai-whisper'].defaultBaseUrl,
+    baseURL: baseUrl,
     // The AI SDK issues the multipart upload through this transport, so the
     // provider request inherits the same redirect + pinned-DNS protection as
     // the raw provider fetches.
@@ -421,7 +437,7 @@ async function transcribeOpenAIWhisper(
 
   try {
     const result = await transcribe({
-      model: openai.transcription(config.modelId || ASR_PROVIDERS['openai-whisper'].defaultModelId),
+      model: openai.transcription(modelId),
       audio: audioData,
       providerOptions: {
         openai: {
@@ -538,6 +554,39 @@ async function transcribeQwenASR(
 }
 
 /**
+ * The URL an Azure base URL is sent to: the regional API host, the
+ * transcribe path, and the default `api-version` when none is set.
+ */
+function azureTranscriptionUrl(rawBaseUrl: string): URL {
+  let endpoint = rawBaseUrl.replace(/\/+$/, '');
+  if (/\.stt\.speech\.microsoft\.com$/i.test(endpoint)) {
+    endpoint = endpoint.replace(/\.stt\.speech\.microsoft\.com$/i, '.api.cognitive.microsoft.com');
+  }
+  if (!/\/speechtotext\/transcriptions:transcribe/i.test(endpoint)) {
+    endpoint = `${endpoint}/speechtotext/transcriptions:transcribe`;
+  }
+  const url = new URL(endpoint);
+  if (!url.searchParams.get('api-version')) {
+    url.searchParams.set('api-version', '2025-10-15');
+  }
+  return url;
+}
+
+/**
+ * The URL a provider's requests are sent to, where that differs from its
+ * configured base URL (today only Azure's). A base URL a request could not
+ * be sent to is returned unchanged.
+ */
+export function asrRequestUrl(providerId: string, baseUrl: string | undefined): string | undefined {
+  if (providerId !== 'azure-asr' || !baseUrl || baseUrl.includes('{region}')) return baseUrl;
+  try {
+    return azureTranscriptionUrl(baseUrl).toString();
+  } catch {
+    return baseUrl;
+  }
+}
+
+/**
  * Azure STT implementation (Fast Transcription REST API)
  * https://learn.microsoft.com/azure/ai-services/speech-service/fast-transcription-create
  */
@@ -551,17 +600,7 @@ async function transcribeAzureASR(
     throw new Error('Azure STT base URL must include a real region');
   }
 
-  let endpoint = rawBaseUrl.replace(/\/+$/, '');
-  if (/\.stt\.speech\.microsoft\.com$/i.test(endpoint)) {
-    endpoint = endpoint.replace(/\.stt\.speech\.microsoft\.com$/i, '.api.cognitive.microsoft.com');
-  }
-  if (!/\/speechtotext\/transcriptions:transcribe/i.test(endpoint)) {
-    endpoint = `${endpoint}/speechtotext/transcriptions:transcribe`;
-  }
-  const url = new URL(endpoint);
-  if (!url.searchParams.get('api-version')) {
-    url.searchParams.set('api-version', '2025-10-15');
-  }
+  const url = azureTranscriptionUrl(rawBaseUrl);
 
   let audioBlob: Blob;
   if (audioBuffer instanceof Blob) {

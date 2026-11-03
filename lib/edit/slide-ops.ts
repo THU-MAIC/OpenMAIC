@@ -1,3 +1,4 @@
+import { validateShapeGeometry, shapeGeometryChanged } from '@openmaic/geometry';
 import { current, produce } from 'immer';
 import type { SlideContent } from '@/lib/types/stage';
 import type { PPTElement, Slide } from '@openmaic/dsl';
@@ -168,6 +169,7 @@ function applyOperationToContent(
         return;
       }
       case 'element.add': {
+        assertShapeWrite(operation.element);
         if (draft.canvas.elements.some((el) => el.id === operation.element.id)) {
           throw new Error(`element.add: id "${operation.element.id}" already exists`);
         }
@@ -181,13 +183,17 @@ function applyOperationToContent(
       case 'element.update': {
         const element = draft.canvas.elements.find((item) => item.id === operation.elementId);
         if (!element) return;
+        assertShapeWrite({ ...element, ...operation.patch } as PPTElement, element);
         Object.assign(element, operation.patch);
         return;
       }
       case 'element.updateMany': {
         const elementIds = new Set(operation.elementIds);
         draft.canvas.elements.forEach((element) => {
-          if (elementIds.has(element.id)) Object.assign(element, operation.patch);
+          if (elementIds.has(element.id)) {
+            assertShapeWrite({ ...element, ...operation.patch } as PPTElement, element);
+            Object.assign(element, operation.patch);
+          }
         });
         return;
       }
@@ -258,12 +264,14 @@ function applyOperationToContent(
             // keep the kernel's invariants independent of which mutation
             // shape future op consumers pick.
             const source = structuredClone(current(element)) as PPTElement;
-            return {
+            const duplicate = {
               ...source,
               id: operation.idMap[source.id],
               left: source.left + offset.x,
               top: source.top + offset.y,
             };
+            assertShapeWrite(duplicate);
+            return duplicate;
           });
 
         draft.canvas.elements.push(...duplicatedElements);
@@ -276,6 +284,12 @@ function applyOperationToContent(
       case 'element.removeProps': {
         const element = draft.canvas.elements.find((item) => item.id === operation.elementId);
         if (!element) return;
+        const next = { ...element };
+        operation.propNames.forEach((propName) => {
+          delete (next as Record<string, unknown>)[propName];
+        });
+        // Removing a required field changes geometry just as assigning it does.
+        assertShapeWrite({ ...next, type: element.type } as PPTElement, element);
         operation.propNames.forEach((propName) => {
           delete (element as Record<string, unknown>)[propName];
         });
@@ -356,4 +370,16 @@ function alignElementsToCanvas(
     element.left -= offsetX;
     element.top -= offsetY;
   });
+}
+
+function assertShapeWrite(next: PPTElement, before?: PPTElement): void {
+  if (next.type !== 'shape') return;
+  if (before?.type === 'shape' && !shapeGeometryChanged(before, next)) return;
+  const result = validateShapeGeometry(next);
+  if (!result.ok) {
+    const { field, position, message } = result.error;
+    throw new Error(
+      `shape ${next.id}: ${field}${position === undefined ? '' : ` at ${position}`}: ${message}`,
+    );
+  }
 }

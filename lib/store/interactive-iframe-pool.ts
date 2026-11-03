@@ -139,7 +139,11 @@ export const useInteractiveIframePool = create<InteractiveIframePoolState>((set)
           : undefined;
       const entry: IframePoolEntry = {
         srcDoc: input.sourceHtml
-          ? patchHtmlForIframe(input.sourceHtml, observationIdentity)
+          ? patchHtmlForIframe(input.sourceHtml, observationIdentity, {
+              mediaId:
+                globalThis.crypto?.randomUUID?.() ??
+                `media-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            })
           : undefined,
         observationIdentity,
         sourceHtml: input.sourceHtml,

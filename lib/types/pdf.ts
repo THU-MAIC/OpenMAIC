@@ -59,6 +59,12 @@ export interface ParsedPdfContent {
        * hit names the image's pool asset instead of materializing its bytes.
        */
       assetId?: string;
+      /**
+       * The path the provider's own text uses for this image, when it has
+       * one (MinerU's markdown names images by their file, `images/<file>`),
+       * so the text's references can be matched to the image.
+       */
+      path?: string;
     }>;
     [key: string]: unknown;
   };

@@ -189,6 +189,7 @@ const PROSE_ATTRIBUTES: Record<string, string[]> = {
   '*': ['class', 'style'],
   a: ['href', 'title', 'target', 'rel', 'name'],
   p: ['align', 'data-indent'],
+  div: ['data-pptx-text-insets'],
   ol: ['start'],
   mark: ['data-index'],
   td: ['colspan', 'rowspan'],

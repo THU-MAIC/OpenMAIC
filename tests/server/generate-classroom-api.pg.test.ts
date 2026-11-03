@@ -555,7 +555,7 @@ describe.skipIf(!contractUrl)('the headless classroom API on PostgreSQL', () => 
         source: 'deployment',
         config: {
           providers: { keyless: { preset: 'deepseek' } },
-          slots: { llm: 'keyless:deepseek-v4-flash' },
+          slots: { llm: 'keyless:deepseek-flash' },
         },
       },
       legacy: false,

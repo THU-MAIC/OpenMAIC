@@ -18,6 +18,7 @@ import {
   AgentToolAbortedError,
   AgentToolTimeoutError,
   DEFAULT_AGENT_TOOL_TIMEOUT_MS,
+  agentToolBudgetRemainingMs,
   resolveAgentToolTimeoutMs,
   withAgentToolTimeout,
 } from '@/lib/agent/runtime/tool-timeout';
@@ -93,6 +94,22 @@ describe('withAgentToolTimeout', () => {
     vi.useRealTimers();
   });
 
+  it('stamps the remaining tool budget on the signal the tool receives', async () => {
+    let remaining: number | undefined;
+    const tool = withAgentToolTimeout(
+      makeTool(async (_id, _args, signal) => {
+        remaining = agentToolBudgetRemainingMs(signal);
+        return result('ok');
+      }),
+    );
+
+    await tool.execute('call-budget', {}, undefined);
+
+    expect(remaining).toEqual(expect.any(Number));
+    expect(remaining!).toBeGreaterThan(0);
+    expect(remaining!).toBeLessThanOrEqual(resolveAgentToolTimeoutMs('demo_tool'));
+  });
+
   it('rejects a never-settling tool at the configured budget and aborts its signal', async () => {
     vi.useFakeTimers();
     const captured: AbortSignal[] = [];
@@ -112,6 +129,32 @@ describe('withAgentToolTimeout', () => {
     expect(captured).toHaveLength(1);
     expect(captured[0]?.aborted).toBe(true);
     expect(captured[0]?.reason).toBeInstanceOf(AgentToolTimeoutError);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('waits for an opted-in tool to finish abort cleanup before rejecting the timeout', async () => {
+    vi.useFakeTimers();
+    const events: string[] = [];
+    const tool = withAgentToolTimeout<DemoTool & { awaitAbortCleanup: true }>({
+      ...makeTool(async (_id, _args, signal) => {
+        if (!signal?.aborted) {
+          await new Promise<void>((resolve) =>
+            signal?.addEventListener('abort', () => resolve(), { once: true }),
+          );
+        }
+        await Promise.resolve();
+        events.push('cleanup');
+        return result('late-result');
+      }),
+      awaitAbortCleanup: true,
+    });
+
+    const promise = tool.execute('call-cleanup', {}, undefined);
+    const settled = expect(promise).rejects.toBeInstanceOf(AgentToolTimeoutError);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await settled;
+
+    expect(events).toEqual(['cleanup']);
     expect(vi.getTimerCount()).toBe(0);
   });
 

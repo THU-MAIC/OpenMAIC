@@ -60,7 +60,7 @@ export interface ScenarioRunResult {
   runIndex: number;
   model: string;
   checkpoints: CheckpointResult[];
-  /** Per-turn wall-clock latency (ms) from runAgentLoop start to end. */
+  /** Per-turn wall-clock latency (ms) of the Pi request, from send until its actions settle. */
   turnDurationsMs?: number[];
   error?: string;
 }

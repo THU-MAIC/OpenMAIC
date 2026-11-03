@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { NextConfig } from 'next';
+import { PHASE_DEVELOPMENT_SERVER } from 'next/constants';
 
 async function loadConfig(): Promise<NextConfig> {
   vi.resetModules();
   const mod = await import('@/next.config');
-  return mod.default;
+  return mod.default(PHASE_DEVELOPMENT_SERVER);
 }
 
 describe('Security response headers', () => {

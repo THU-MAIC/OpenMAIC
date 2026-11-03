@@ -96,6 +96,13 @@ const SHIPPED: readonly (readonly [
     '3acac29dc0790eee5fdd4831810f19864eba2e9cef251a8804b49f74f1c48609',
   ],
   [
+    'owner-material',
+    5,
+    'material_library',
+    true,
+    'ee75e9d5cd1e893975386a6ee4cfbcac47db7a92f9a68765ca3391d28b7001d8',
+  ],
+  [
     'asset',
     1,
     'baseline',
@@ -105,6 +112,20 @@ const SHIPPED: readonly (readonly [
   [
     'asset',
     2,
+    'material_roots',
+    true,
+    'd107028738479bdded529fca86c1475fb9f0576dc8fc1f641ece92749f64c37e',
+  ],
+  [
+    'asset',
+    3,
+    'blob_stages',
+    true,
+    '4e4b5ffc76eda63297abfefb075449173f150ff298e25f0ea28d1c5038b9912f',
+  ],
+  [
+    'asset',
+    4,
     'retained-document-assets',
     true,
     '69c2f4cfe961b9f95f745e7cd412426d5d42a365ee57aebd8d56209c6739b6d1',
@@ -145,11 +166,32 @@ const SHIPPED: readonly (readonly [
     '5ca438832108d37a5c62efc951cc02bc4d2806c8aba39f1bd3cab426540507d7',
   ],
   [
+    'agent-session',
+    3,
+    'locale',
+    true,
+    'f0cacce08a67451848878babbe0499f10982a706e50c3b3bfeee591aa6433d49',
+  ],
+  [
     'agent-session-material',
     1,
     'baseline',
     false,
     '0fb90c35c638f1bdfafc106909c6bc9985b457aa158ed29f3930cfadd3edb89b',
+  ],
+  [
+    'agent-session-material',
+    2,
+    'extraction_reason_code',
+    true,
+    'b6d1c306ebb3b8ac14ebd3ca9cf219ddce32289a95cbe0f84f77db16b28137ed',
+  ],
+  [
+    'session-material-links',
+    1,
+    'baseline',
+    true,
+    'e87e9c486b8e04219b72670649dcb77deb8aa3b1f356b2c43737edf186836227',
   ],
   [
     'user-skill',

@@ -105,8 +105,14 @@ describe('workspace classroom chrome', () => {
     expect(resolveStageChromeMode(eligible)).toBe('edit');
   });
 
-  test('Start Learning is the explicit hosted transition back to playback', () => {
+  test('the host can request embedded learning independently of stored mode', () => {
     expect(resolveStageChromeMode({ ...eligible, workbenchLearning: true })).toBe('playback');
+  });
+
+  test('learning cannot render another course document during a switch', () => {
+    expect(
+      resolveStageChromeMode({ ...eligible, workbenchLearning: true, stageMatchesHost: false }),
+    ).toBe('loading');
   });
 
   test('standalone classrooms keep their own stored presentation', () => {
@@ -133,7 +139,7 @@ describe('workspace classroom chrome', () => {
     );
   });
 
-  test('playback is unreachable in a hosted pane without Start Learning', () => {
+  test('playback is unreachable without a host learning request', () => {
     // Exhaustive over every other input: with `workbenchLearning` false, no
     // combination of readiness, ownership or stored mode yields playback.
     const booleans = [false, true];

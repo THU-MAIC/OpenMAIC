@@ -402,13 +402,13 @@ describe('generate_image tool', () => {
       // only enabled entry, so the selector must pick seedream (#665).
       getConfiguredProviders: () => ({
         'openai-image': { disabled: true, models: ['gpt-image-1'] },
-        seedream: { models: ['doubao-seedream-3-0-t2i-250415'] },
+        seedream: { models: ['doubao-seedream-5-0-260128'] },
       }),
       resolveProviderConfig: () => ({
         providerId: 'seedream',
         apiKey: 'test-key',
         baseUrl: 'https://ark.cn-beijing.volces.com',
-        model: 'doubao-seedream-3-0-t2i-250415',
+        model: 'doubao-seedream-5-0-260128',
       }),
       generateConfiguredImage,
       persistGeneratedImage: (input) =>

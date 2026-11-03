@@ -25,6 +25,8 @@ export interface AgentProfilesInput {
     voiceId: string;
     voiceName: string;
     voiceLanguage?: string;
+    /** Catalog gender, when the provider lists one. */
+    gender?: 'male' | 'female' | 'neutral';
   }>;
   /** The user's globally selected TTS voice; the teacher/narrator must use it. */
   narratorVoice?: {
@@ -170,6 +172,20 @@ export async function generateAgentProfiles(
   const systemPrompt = `You are an expert instructional designer. Generate agent profiles for a multi-agent classroom simulation. Decide the appropriate number of agents (typically 3-5) based on the course content and complexity. Return ONLY valid JSON, no markdown or explanation.`;
 
   // Build voice list for prompt (if available)
+  const binaryGenderListed = availableVoices?.some(
+    (voice) => voice.gender === 'male' || voice.gender === 'female',
+  );
+  // Neutral-only catalogues (google-tts, VoxCPM voxcpm:auto) have nothing to
+  // match. Asking the model to align identity, name, and persona would collapse
+  // them onto "neutral".
+  const genderMatchRules = binaryGenderListed
+    ? `  - The voice's gender must match the agent's voiceDesign.gender
+  - The voice's gender must match the agent's voiceDesign.identity
+  - Keep the agent's name and persona consistent with that gender
+  - Only a voice labeled male or female takes part in that match. A neutral voice, or a voice with no gender, is not mismatched and must not change the agent's name, persona, or identity
+`
+    : '';
+
   const voiceListStr =
     availableVoices && availableVoices.length > 0
       ? JSON.stringify(
@@ -177,6 +193,7 @@ export async function generateAgentProfiles(
             id: advertisedVoiceToken(v),
             name: v.voiceName,
             language: v.voiceLanguage || 'unknown',
+            ...(v.gender ? { gender: v.gender } : {}),
           })),
         )
       : '';
@@ -187,12 +204,12 @@ export async function generateAgentProfiles(
   - Every OTHER agent must still be assigned a voice from this list: ${voiceListStr}
   - Prefer a voice whose language matches the course language directive
   - Pick a voice that suits each agent's personality and role (e.g. lively voice for energetic student)
-  - Try to use different voices for each non-teacher agent
+${genderMatchRules}  - Try to use different voices for each non-teacher agent
   - Never assign the fixed teacher narrator voice to any other agent`
       : `- Each agent should be assigned a voice that matches their persona from this list: ${voiceListStr}
   - Prefer a voice whose language matches the course language directive
   - Pick a voice that suits the agent's personality and role (e.g. authoritative voice for teacher, lively voice for energetic student)
-  - Try to use different voices for each agent`
+${genderMatchRules}  - Try to use different voices for each agent`
     : '';
 
   // The schema example must always be an ADVERTISED token (findAdvertisedVoice
@@ -222,10 +239,11 @@ Requirements:
   - Use the "path" value as the avatar field in the output
 - Each agent must be assigned one color from this list: ${JSON.stringify(AGENT_COLOR_PALETTE)}
   - Each agent must have a different color
-- Each agent needs a "voiceDesign" object describing their VOCAL identity (not personality), written following the language directive and consistent with the persona, as three short comma-free phrases:
-  - "identity": gender + age + role (e.g. "middle-aged male teacher")
-  - "texture": pitch + vocal quality (e.g. "warm low-pitched slightly husky")
-  - "delivery": emotion + pace (e.g. "calm measured encouraging")
+- Each agent needs a "voiceDesign" object describing their VOCAL identity (not personality), written following the language directive and consistent with the persona, as short comma-free phrases:
+  - "identity": gender + age + role as one short comma-free phrase in the course language (e.g. "middle-aged male teacher" when the course language is English)
+  - "gender": "male" or "female" only. These two English words, never a translation, naming the same gender as identity. voiceDesign.gender is language-independent
+  - "texture": pitch + vocal quality as one short comma-free phrase in the course language (e.g. "warm low-pitched slightly husky" when the course language is English)
+  - "delivery": emotion + pace as one short comma-free phrase in the course language (e.g. "calm measured encouraging" when the course language is English)
 ${voicePrompt}
 
 Return a JSON object with this exact structure:
@@ -235,7 +253,7 @@ Return a JSON object with this exact structure:
       "name": "string",
       "role": "teacher" | "assistant" | "student",
       "persona": "string (2-3 sentences)",
-      "voiceDesign": { "identity": "string", "texture": "string", "delivery": "string" },
+      "voiceDesign": { "identity": "string", "gender": "male" | "female", "texture": "string", "delivery": "string" },
       "avatar": "string (from available list)",
       "color": "string (hex color from palette)",
       "priority": number (10 for teacher, 7 for assistant, 4-6 for student)${voiceJsonField}

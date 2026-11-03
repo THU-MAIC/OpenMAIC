@@ -127,7 +127,7 @@ const providers = {
   operator: {
     preset: 'deepseek',
     apiKey: 'sk-operator-secret-0001',
-    models: ['deepseek-v4-flash'],
+    models: ['deepseek-flash'],
   },
   voice: { preset: 'minimax', apiKey: 'sk-operator-secret-0002' },
 };
@@ -240,7 +240,7 @@ describe('the settings sections', () => {
           video: null,
           webSearch: null,
         },
-        lock: ['llm', 'tts', 'image', 'video', 'webSearch'],
+        lock: ['llm', 'tts', 'image', 'video', 'webSearch', 'webFetch'],
       }),
     );
     expect(nav).not.toContain('token-plan');
@@ -286,7 +286,7 @@ describe('labels without user keys or with everything locked', () => {
       mineru: { preset: 'mineru', baseUrl: 'https://mineru.example' },
       bocha: { preset: 'bocha', apiKey: 'sk-operator-secret-0003' },
     },
-    slots: { llm: 'deepseek:deepseek-v4-flash', document: 'mineru', webSearch: 'bocha' },
+    slots: { llm: 'deepseek:deepseek-flash', document: 'mineru', webSearch: 'bocha' },
   } satisfies ModelConfigLayer['config'];
 
   it('names deployment providers on the map and in the pickers under allowUserKeys: false', () => {
@@ -348,7 +348,7 @@ describe('the course model map', () => {
     const view = viewFor(
       { providers, slots: { 'course.outline': 'operator:deepseek-v4-pro' } },
       {
-        config: { slots: { 'course.outline': 'operator:deepseek-v4-flash' } },
+        config: { slots: { 'course.outline': 'operator:deepseek-flash' } },
         revision: 1,
         unreadableSecrets: [],
       },
@@ -367,7 +367,7 @@ describe('the course model map', () => {
     const view = viewFor(
       { providers, slots: { 'course.outline': 'operator:deepseek-v4-pro' } },
       {
-        config: { slots: { llm: 'operator:deepseek-v4-flash' } },
+        config: { slots: { llm: 'operator:deepseek-flash' } },
         revision: 1,
         unreadableSecrets: [],
       },
@@ -472,9 +472,9 @@ describe('the home toolbar model picker', () => {
       providers,
       slots: {
         llm: 'operator:deepseek-v4-pro',
-        'course.outline': 'operator:deepseek-v4-flash',
-        'course.content': 'operator:deepseek-v4-flash',
-        'course.actions': 'operator:deepseek-v4-flash',
+        'course.outline': 'operator:deepseek-flash',
+        'course.content': 'operator:deepseek-flash',
+        'course.actions': 'operator:deepseek-flash',
       },
     } satisfies ModelConfigLayer['config'];
     const view = viewFor(config);
@@ -485,13 +485,13 @@ describe('the home toolbar model picker', () => {
     // Choosing a default model moves every stage onto it.
     const chosen = await applyModelSettingsChange(null, {
       kind: 'slots',
-      set: { llm: 'operator:deepseek-v4-flash' },
+      set: { llm: 'operator:deepseek-flash' },
     });
     const after = viewFor(config, { config: chosen, revision: 1, unreadableSecrets: [] });
     for (const stage of ['course.outline', 'course.content.slide', 'course.actions']) {
       expect(after.slots.find((slot) => slot.slot === stage)).toMatchObject({
         source: { kind: 'inherited', from: 'llm' },
-        effective: { source: 'workspace', modelId: 'deepseek-v4-flash' },
+        effective: { source: 'workspace', modelId: 'deepseek-flash' },
       });
     }
   });
@@ -503,15 +503,15 @@ describe('the home toolbar model picker', () => {
           providers,
           slots: {
             llm: 'operator:deepseek-v4-pro',
-            'course.content': 'operator:deepseek-v4-flash',
+            'course.content': 'operator:deepseek-flash',
           },
           lock: ['course.content'],
         },
         {
           config: {
             slots: {
-              'course.outline': 'operator:deepseek-v4-flash',
-              'course.actions': 'operator:deepseek-v4-flash',
+              'course.outline': 'operator:deepseek-flash',
+              'course.actions': 'operator:deepseek-flash',
             },
           },
           revision: 1,

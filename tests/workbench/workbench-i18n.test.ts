@@ -119,6 +119,7 @@ describe('workbench copy covers every supported locale', () => {
       'material.fileTooLargeWithLimit',
       'material.unsupportedType',
       'material.quotaExceeded',
+      'material.storageFull',
     ] as const;
     const english = flatten(workbenchEn);
     const bases: Array<[string, Map<string, string>]> = [
@@ -266,4 +267,86 @@ describe('workbench hardcoded-copy contract', () => {
     visit(ast);
     expect(offenders).toEqual([]);
   });
+});
+
+it('defines all seven knowledge-base failure explanations in all twelve locale files', () => {
+  const codes = [
+    'storage_full',
+    'source_unavailable',
+    'service_unavailable',
+    'media_too_long',
+    'no_text_extracted',
+    'processing_interrupted',
+    'too_many_pages',
+  ];
+  // A page refusal states only the counts the service gave: one wording per case.
+  const descriptions: Record<string, string[]> = {
+    too_many_pages: ['description', 'descriptionWithoutCount', 'descriptionWithoutLimit'],
+  };
+  for (const { code } of supportedLocales) {
+    const resource = JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), 'lib/i18n/locales', `${code}.json`), 'utf8'),
+    );
+    const failure = resource.workspace.knowledgeBase.failure;
+    expect(Object.keys(failure).sort()).toEqual([...codes, 'more'].sort());
+    expect(interpolations(failure.more)).toEqual(['reason']);
+    for (const reason of codes) {
+      const keys = descriptions[reason] ?? ['description'];
+      expect(Object.keys(failure[reason]).sort()).toEqual([...keys, 'label'].sort());
+      expect(failure[reason].label.trim()).not.toBe('');
+      for (const key of keys) expect(failure[reason][key].trim()).not.toBe('');
+    }
+  }
+});
+
+it('R6 defines parse and parse-again actions explicitly in all twelve locales', () => {
+  for (const { code } of supportedLocales) {
+    const resource = JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), 'lib/i18n/locales', `${code}.json`), 'utf8'),
+    );
+    for (const action of ['parse', 'reparse']) {
+      expect(resource.workspace.knowledgeBase.actions[action]).toBeTypeOf('string');
+      expect(resource.workspace.knowledgeBase.actions[action].trim()).not.toBe('');
+    }
+  }
+});
+
+it('R8.5 states the media duration limit by interpolation in all twelve locales', () => {
+  for (const { code } of supportedLocales) {
+    const resource = JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), 'lib/i18n/locales', `${code}.json`), 'utf8'),
+    );
+    const description: string = resource.workspace.knowledgeBase.failure.media_too_long.description;
+    expect(interpolations(description), code).toEqual(['minutes']);
+    // The number comes from the extractor's constant, never from the copy.
+    expect(description, code).not.toMatch(/\d/);
+    for (const key of ['open', 'downloadOriginal']) {
+      expect(resource.workspace.knowledgeBase.actions[key].trim(), code).not.toBe('');
+    }
+  }
+});
+
+it('states the page counts of a too-many-pages refusal by interpolation in all twelve locales', () => {
+  for (const { code } of supportedLocales) {
+    const resource = JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), 'lib/i18n/locales', `${code}.json`), 'utf8'),
+    );
+    const copy = resource.workspace.knowledgeBase.failure.too_many_pages;
+    expect(interpolations(copy.description), code).toEqual(['maxPages', 'pages']);
+    expect(interpolations(copy.descriptionWithoutCount), code).toEqual(['maxPages']);
+    expect(interpolations(copy.descriptionWithoutLimit), code).toEqual([]);
+    for (const key of ['description', 'descriptionWithoutCount', 'descriptionWithoutLimit']) {
+      // The numbers come from the refusal, never from the copy.
+      expect(copy[key], code).not.toMatch(/\d/);
+    }
+  }
+});
+
+it('uses Arabic singular wording for one moved material', () => {
+  expect(createWorkbenchTranslator('ar-SA')('workbench.tool.chip.material', { count: 1 })).toBe(
+    '1 مادة',
+  );
+  expect(createWorkbenchTranslator('ar-SA')('workbench.tool.chip.materials', { count: 2 })).toBe(
+    '2 مواد',
+  );
 });

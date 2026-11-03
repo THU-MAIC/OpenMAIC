@@ -122,11 +122,12 @@ describe('TTS abort propagation and per-request timeout', () => {
         force: false,
       }).catch((err: unknown) => err);
 
-      // The hung provider fails the tool call with a clear retryable error
-      // instead of wedging the session.
+      // The hung provider fails the tool call with a clear timeout error
+      // advising against blind retries instead of wedging the session.
       expect(error).toBeInstanceOf(TTSRequestTimeoutError);
       expect(String(error)).toContain('timed out');
-      expect(String(error)).toContain('Retry the tool call');
+      expect(String(error)).not.toContain('Retry the tool call');
+      expect(String(error)).toContain('TTS_REQUEST_TIMEOUT_MS');
       expect(mocks.persist).not.toHaveBeenCalled();
       // The underlying request was aborted by the timeout bound.
       expect(captured).toHaveLength(1);

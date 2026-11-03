@@ -48,6 +48,21 @@ export const AGENT_TOOL_TIMEOUT_OVERRIDES: Readonly<Record<string, number>> = {
 /** Environment variable that tunes the default tool-call budget. */
 export const AGENT_TOOL_TIMEOUT_ENV = 'OPENMAIC_AGENT_TOOL_TIMEOUT_MS';
 
+/**
+ * How long the wrapper waits for a tool that owns an inner lifecycle to finish
+ * its abort cleanup before it propagates the timeout anyway.
+ */
+const ABORT_CLEANUP_TIMEOUT_MS = 5_000;
+
+/**
+ * Optional wrapper context a tool can expose. Tools that manage a nested
+ * lifecycle opt into cleanup-before-timeout so their terminal events and
+ * accounting settle before the enclosing call reports the timeout.
+ */
+export interface AgentToolTimeoutContext {
+  awaitAbortCleanup?: boolean;
+}
+
 /** Resolve the execution budget for one tool call, in milliseconds. */
 export function resolveAgentToolTimeoutMs(
   toolName: string,
@@ -87,6 +102,22 @@ export class AgentToolAbortedError extends Error {
   }
 }
 
+const toolDeadlines = new WeakMap<AbortSignal, number>();
+
+/**
+ * Milliseconds left on the budget `withAgentToolTimeout` started for this
+ * signal. Undefined when `signal` is not that derived signal.
+ */
+export function agentToolBudgetRemainingMs(
+  signal: AbortSignal | undefined,
+  now = Date.now(),
+): number | undefined {
+  if (!signal) return undefined;
+  const deadlineAt = toolDeadlines.get(signal);
+  if (deadlineAt === undefined) return undefined;
+  return deadlineAt - now;
+}
+
 /**
  * Wrap a tool so every execution is bounded by the tool timeout and by the
  * caller's AbortSignal.
@@ -96,13 +127,25 @@ export class AgentToolAbortedError extends Error {
  * even though the agent loop itself keeps running after a timeout. Progress
  * updates emitted by a zombie tool after the race settles are dropped.
  */
-export function withAgentToolTimeout(tool: AgentTool, overrideMs?: number): AgentTool {
+export function withAgentToolTimeout<T extends AgentTool>(
+  tool: T & AgentToolTimeoutContext,
+  overrideMs?: number,
+): T {
   const timeoutMs = overrideMs ?? resolveAgentToolTimeoutMs(tool.name);
   const execute = tool.execute.bind(tool);
   return {
     ...tool,
     execute: (toolCallId, args, signal, onUpdate) =>
-      executeWithToolBound(execute, tool.name, timeoutMs, toolCallId, args, signal, onUpdate),
+      executeWithToolBound(
+        execute,
+        tool.name,
+        timeoutMs,
+        tool.awaitAbortCleanup === true,
+        toolCallId,
+        args,
+        signal,
+        onUpdate,
+      ),
   };
 }
 
@@ -113,6 +156,7 @@ async function executeWithToolBound(
   execute: ToolExecute,
   toolName: string,
   timeoutMs: number,
+  awaitAbortCleanup: boolean,
   toolCallId: string,
   args: Parameters<ToolExecute>[1],
   signal: AbortSignal | undefined,
@@ -121,12 +165,15 @@ async function executeWithToolBound(
   // The derived signal is what the tool actually sees: the outer signal is
   // forwarded into it, and the timeout fires it as well.
   const controller = new AbortController();
+  if (timeoutMs > 0) toolDeadlines.set(controller.signal, Date.now() + timeoutMs);
   const forwardAbort = () => controller.abort(signal?.reason);
   if (signal?.aborted) controller.abort(signal.reason);
   else signal?.addEventListener('abort', forwardAbort, { once: true });
 
   let settled = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let cleanupTimer: ReturnType<typeof setTimeout> | undefined;
+  let timeoutError: AgentToolTimeoutError | undefined;
 
   // Abort delivery to the tool must never break the race settlement: a
   // throwing abort listener is a tool bug, not a reason to wedge the session.
@@ -140,6 +187,7 @@ async function executeWithToolBound(
 
   const cleanup = (): void => {
     if (timer !== undefined) clearTimeout(timer);
+    if (cleanupTimer !== undefined) clearTimeout(cleanupTimer);
     if (signal) {
       signal.removeEventListener('abort', forwardAbort);
       signal.removeEventListener('abort', onCancelled);
@@ -157,6 +205,8 @@ async function executeWithToolBound(
   };
 
   const onCancelled = (): void => {
+    // A timeout that already fired keeps ownership while it waits for cleanup.
+    if (timeoutError) return;
     const error = new AgentToolAbortedError(toolName);
     finish(() => {
       abortWork(error);
@@ -166,10 +216,26 @@ async function executeWithToolBound(
 
   const onTimeout = (): void => {
     const error = new AgentToolTimeoutError(toolName, timeoutMs);
-    finish(() => {
-      abortWork(error);
-      rejectRace(error);
-    });
+    if (!awaitAbortCleanup) {
+      finish(() => {
+        abortWork(error);
+        rejectRace(error);
+      });
+      return;
+    }
+
+    // Deliver the abort first, then let the tool settle its inner lifecycle.
+    // The timeout still wins the race, but only after cleanup has completed
+    // (or the bounded cleanup grace expires).
+    timeoutError = error;
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+    abortWork(error);
+    cleanupTimer = setTimeout(() => {
+      finish(() => rejectRace(error));
+    }, ABORT_CLEANUP_TIMEOUT_MS);
   };
 
   let resolveRace: (result: ToolResult) => void = () => {};
@@ -190,13 +256,25 @@ async function executeWithToolBound(
 
   const guardedUpdate: AgentToolUpdateCallback | undefined = onUpdate
     ? (partial) => {
-        if (!settled) onUpdate(partial);
+        if (!settled && !timeoutError) onUpdate(partial);
       }
     : undefined;
 
   execute(toolCallId, args, controller.signal, guardedUpdate).then(
-    (result) => finish(() => resolveRace(result)),
-    (error) => finish(() => rejectRace(error)),
+    (result) => {
+      if (timeoutError) {
+        finish(() => rejectRace(timeoutError));
+        return;
+      }
+      finish(() => resolveRace(result));
+    },
+    (error) => {
+      if (timeoutError) {
+        finish(() => rejectRace(timeoutError));
+        return;
+      }
+      finish(() => rejectRace(error));
+    },
   );
 
   return race;

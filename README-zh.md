@@ -31,7 +31,6 @@
   <img src="https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js" alt="Next.js"/>
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=white" alt="React"/>
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript"/>
-  <img src="https://img.shields.io/badge/LangGraph-1.1-purple?style=flat-square" alt="LangGraph"/>
   <img src="https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white" alt="Tailwind CSS"/>
 </p>
 
@@ -44,6 +43,9 @@
 
 ## 🗞️ 动态
 
+- **2026-11-02** — [v1.3.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.3.1)：**DeepSeek Token Plan 与稳定性修复。** 一个 DeepSeek key 即可开通对话、联网搜索和网页抓取。上传资源不再在慢速对象存储上长期占用数据库连接，离开页面前的编辑也不再丢失。升级有发布条件（先停掉所有 1.3.0 实例，回滚需要恢复数据库），升级前请先阅读该版本的 **Breaking Changes**。
+- **2026-10-29** — [v1.3.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.3.0)：**知识库与 Pro 工作台升级。** 上传的文件都会保存在知识库里，直到手动删除；支持文件夹，每个文件只解析一次、所有会话共用；输入框可以用 `@` 引用，agent 也能读取、搜索和整理资料。Pro 工作台中，发出请求后在第一页生成之前就能看到 agent 的工作预览，课堂标签页可以在学习和编辑之间切换。升级有发布条件（先停掉所有旧实例，不能回滚到 1.3.0 之前），升级前请先阅读 [changelog](CHANGELOG.md)。
+- **2026-10-18** — [v1.2.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.1)：**联网调研。** 新增 Kimi、DeepSeek、Firecrawl 联网搜索；新增 `webFetch` 网页抓取槽位，agent 可以通过托管的阅读服务（DeepSeek、Kimi 或 Firecrawl）读取网页，不再只能用内置读取，均需手动开启。课堂聊天支持建议回复；内置模型目录移除了已下线的模型。课堂聊天现在固定走 Pi，Classroom 模型需要支持工具调用，升级前请先阅读该版本的 **Breaking Changes**。
 - **2026-10-16** — [v1.2.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.0)：**服务端优先正式发布。** 生成在服务端运行，关页面、重启都不中断；模型在 `openmaic.yml` 里统一配置（默认值、锁定、可禁止用户自带密钥）；资料添加即解析；网页端和 API 共用同一条流水线。新增[课堂导出](packages/docs/content/docs/getting-started.zh-cn.mdx#导出课堂)：导出保留全部场景的 PPTX，或一个能离线播放整堂课的 HTML 文件。需要 PostgreSQL 和常驻的 Node 服务，Vercel 部署请继续使用 1.1.x。升级前请先阅读[从 1.1.x 升级](packages/docs/content/docs/deployment.zh-cn.mdx#从-11x-升级)。
 - **2026-09-28** — [v1.1.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.2)：安全更新——provider 请求只连接已校验地址并拒绝重定向（[GHSA-g87c-cm4q-cw5x](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-g87c-cm4q-cw5x)）。
 - **2026-09-27** — [v1.1.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.1)：安全更新——加固 MinerU Cloud 文档解析（[GHSA-cpjc-vgjh-c5jp](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-cpjc-vgjh-c5jp)）。
@@ -136,12 +138,12 @@ slots:
 **支持的服务商：** OpenAI、Azure OpenAI、Anthropic、Amazon Bedrock、Google Gemini、DeepSeek、通义千问 Qwen、Kimi、MiniMax、Grok (xAI)、OpenRouter、TokenDance、豆包、腾讯混元 / TokenHub、小米 MiMo、智谱 GLM、Ollama、[Lemonade](#lemonade-local-ai) 与 [FunASR](#funasr-local-asr)（本地），以及任何兼容 OpenAI API 的服务。
 
 > [!TIP]
-> **推荐配置：** 打开全部模态时 OpenMAIC 效果最好——配图、语音讲解、视频片段与联网检索都会参与生成。最省事的方式是用一个 Key 覆盖全部模态（见下方的 Token Plan 示例），默认模型选 `deepseek-v4.1-flash` 这类速度快、长上下文的模型即可。
+> **推荐配置：** 打开全部模态时 OpenMAIC 效果最好——配图、语音讲解、视频片段、联网检索与网页抓取都会参与生成。Token Plan 可以用一个 Key 配置该套餐支持的能力（见下方示例），默认模型选 `deepseek-v4.1-flash` 这类速度快、长上下文的模型即可。
 
 <details>
 <summary><b>更多示例</b>：Token Plan、小米 MiMo 与智谱 GLM、Amazon Bedrock</summary>
 
-Token Plan 快速示例（一个 Key 同时覆盖对话、图像、视频、TTS 与联网搜索；`tokendance` 用法相同）：
+MiniMax Token Plan 快速示例（一个 Key 同时覆盖对话、图像、视频、TTS 与联网搜索；`tokendance` 用法相同）：
 
 ```yaml
 providers:
@@ -826,7 +828,7 @@ OpenMAIC/
 │
 ├── lib/                        # 核心业务逻辑
 │   ├── generation/             #   两阶段课堂生成流水线
-│   ├── orchestration/          #   LangGraph 多智能体编排（导演图）
+│   ├── orchestration/          #   智能体注册表、共享摘要器与类型
 │   ├── playback/               #   回放状态机（idle → playing → live）
 │   ├── action/                 #   动作执行引擎（语音、白板、特效）
 │   ├── ai/                     #   LLM 服务商抽象层
@@ -878,7 +880,7 @@ OpenMAIC/
 ### 核心架构
 
 - **生成流水线** (`@openmaic/generation`) — 两阶段：大纲生成 → 场景内容生成
-- **多智能体编排** (`lib/orchestration/`) — 基于 LangGraph 的状态机，管理智能体轮次和讨论
+- **多智能体编排** (`lib/chat/pi/`) — 服务端 Pi 导演循环，通过 `call_agent` 把每轮课堂对话交给各智能体
 - **回放引擎** (`lib/playback/`) — 驱动课堂回放和实时互动的状态机
 - **动作引擎** (`lib/action/`) — 执行 21 种动作类型（语音、白板绘图/文字/形状/图表、聚光灯、激光笔…）
 - **存储层** (`@openmaic/storage`) — Runtime/Document/资产存储抽象，附 Postgres 参考实现，HTTP 契约可对接任意外部存储服务

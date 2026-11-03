@@ -12,6 +12,7 @@
  * start the server (see `validateModelConfiguration`, called from
  * instrumentation).
  */
+import { DEFAULT_WEB_FETCH_PROVIDER } from '@/lib/web-fetch/registry';
 import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'js-yaml';
@@ -24,6 +25,7 @@ import {
   type SlotId,
 } from '@/lib/config/model-slots';
 import { getProviderPreset } from '@/lib/config/provider-presets';
+import { retiredPresetReason } from '@/lib/config/preset-ids';
 import { VALID_EFFORTS, VALID_LEVELS, VALID_MODES } from '@/lib/server/model-routes';
 
 export const DEFAULT_MODEL_CONFIG_FILE = 'openmaic.yml';
@@ -116,6 +118,32 @@ export const providerOptionsSchema = z.record(
 
 export type ProviderOptions = z.infer<typeof providerOptionsSchema>;
 
+const providerVoicesSchema = z
+  .array(
+    z
+      .object({
+        id: z
+          .string()
+          .trim()
+          .min(1)
+          .max(256)
+          .refine(
+            (id) => !id.includes('::'),
+            'voice id must not contain the roster binding delimiter ::',
+          ),
+        name: z.string().trim().min(1).max(256),
+        language: z.string().trim().min(1).max(64).optional(),
+        gender: z.enum(['male', 'female', 'neutral']).optional(),
+      })
+      .strict(),
+  )
+  .min(1)
+  .max(1000)
+  .refine(
+    (voices) => new Set(voices.map((voice) => voice.id)).size === voices.length,
+    'voice ids must be unique',
+  );
+
 export const providerSchema = z
   .object({
     preset: z.string().min(1),
@@ -132,6 +160,7 @@ export const providerSchema = z
      * settings view, so never a place for a key.
      */
     options: providerOptionsSchema.optional(),
+    voices: providerVoicesSchema.optional(),
   })
   .strict();
 
@@ -295,8 +324,28 @@ function crossCheck(
     const at = `providers.${id}.preset`;
     const preset = getProviderPreset(provider.preset);
     if (!preset) {
-      issues.push(`${at}: unknown preset ${shown(provider.preset, at)}`);
+      // A retired preset does not stop the server: the deployment layer
+      // leaves the provider unused and says so (deployment-layer.ts).
+      if (!retiredPresetReason(provider.preset)) {
+        issues.push(`${at}: unknown preset ${shown(provider.preset, at)}`);
+      }
       continue;
+    }
+    if (provider.voices && !preset.capabilities.tts) {
+      issues.push(`providers.${id}.voices: only TTS presets support a voice catalogue`);
+    }
+    if (provider.options?.defaultVoice !== undefined) {
+      if (!provider.voices) {
+        issues.push(`providers.${id}.voices: required when options.defaultVoice is configured`);
+      }
+      const voice = provider.options.defaultVoice;
+      if (typeof voice !== 'string' || !voice.trim()) {
+        issues.push(`providers.${id}.options.defaultVoice: must be a nonblank string`);
+      } else if (provider.voices && !provider.voices.some((entry) => entry.id === voice.trim())) {
+        issues.push(
+          `providers.${id}.options.defaultVoice: must name a voice in the configured voices list`,
+        );
+      }
     }
     if (preset.requiresBaseUrl && !provider.baseUrl) {
       issues.push(`providers.${id}.baseUrl: preset "${preset.id}" needs a baseUrl`);
@@ -310,6 +359,12 @@ function crossCheck(
     }
     // Own keys only: `constructor` and friends are not declared providers.
     const provider = Object.hasOwn(providers, providerId) ? providers[providerId] : undefined;
+    if (
+      !provider &&
+      getSlot(slot).capability === 'webFetch' &&
+      providerId === DEFAULT_WEB_FETCH_PROVIDER.id
+    )
+      return;
     if (!provider) {
       issues.push(`${at}: provider ${shown(providerId, at)} is not declared under providers`);
       return;

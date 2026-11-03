@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "Назад",
     "you": "Вы",
     "confirm": "Подтвердить",
     "cancel": "Отмена",
@@ -10,6 +11,22 @@
     "close": "Закрыть"
   },
   "home": {
+    "resumeGeneration": "Продолжить генерацию",
+    "emptyLibraryTitle": "Ваши уроки появятся здесь",
+    "emptyLibraryBody": "Создайте курс на главной странице и возвращайтесь сюда, чтобы продолжить.",
+    "mobileTitle": "Что хотите изучить?",
+    "mobileSubtitle": "Расскажите о теме, и ИИ создаст интерактивный урок.",
+    "mobilePlaceholder": "Введите тему или загрузите материалы",
+    "courseOptions": "Параметры урока",
+    "courseMaterials": "Материалы курса",
+    "courseMaterialsCount": "Материалы курса · {{n}}",
+    "backToCourseOptions": "Назад к параметрам урока",
+    "materialsDone": "Готово",
+    "allSettings": "Все настройки",
+    "examplesLabel": "Примеры тем",
+    "examplePython": "Python с нуля",
+    "exampleFourier": "Преобразование Фурье на простых примерах",
+    "desktopOnly": "Для редактора и режима Pro используйте компьютер.",
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
     "greetingWithName": "Привет, {{name}}"
   },
@@ -475,6 +492,7 @@
       "moreActions": "Ещё действия",
       "rename": "Переименовать",
       "sceneIncomplete": "Содержимое этой страницы не заполнено",
+      "sceneHasErrors": "На этой странице есть ошибки",
       "addPage": "Добавить страницу",
       "nextPage": "Следующая страница",
       "prevPage": "Предыдущая страница"
@@ -1346,11 +1364,13 @@
       "ollama": "Ollama (Локальный)",
       "tavily": "Tavily",
       "exa": "Exa",
+      "firecrawl": "Firecrawl",
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
       "claude": "Claude",
-      "searxng": "SearXNG"
+      "searxng": "SearXNG",
+      "builtin": "Встроенный сервис чтения"
     },
     "modelCount": "моделей",
     "modelSingular": "модель",
@@ -1716,7 +1736,6 @@
     "videoModel": "Модель генерации видео",
     "providerSeedance": "Seedance (ByteDance)",
     "providerKling": "Kling (Kuaishou)",
-    "providerVeo": "Veo (Google)",
     "providerSora": "Sora (OpenAI)",
     "providerMiniMaxVideo": "MiniMax Video",
     "providerGrokVideo": "Grok Video (xAI)",
@@ -1798,7 +1817,7 @@
     "tokenPlan": {
       "nav": "Token Plan",
       "title": "Token Plan Setup",
-      "desc": "Pick your token plan provider and enter the key — it auto-configures every adapted modality (LLM/image/video/speech/web search).",
+      "desc": "Pick your token plan provider and enter the key — it auto-configures every adapted modality (LLM/image/video/speech/web search/web fetch).",
       "selectPlan": "Select Provider",
       "apiKey": "API Key",
       "updateKey": "Update key",
@@ -1824,6 +1843,7 @@
       "capTts": "Синтез речи",
       "capVideo": "Генерация видео",
       "capWebSearch": "Веб-поиск",
+      "capWebFetch": "Загрузка веб-страниц",
       "saved": "Настройки подключения сохранены",
       "stageInteractive": "Интерактив",
       "stageSlide": "Слайды",
@@ -1947,7 +1967,8 @@
         "providers": "Настройте доступы, адреса API и каталоги моделей для служб языковых моделей",
         "tts": "Настройте службы синтеза речи, голоса и модели",
         "video": "Настройте доступы и каталоги моделей служб генерации видео",
-        "webSearch": "Настройте службы веб-поиска и источники поиска"
+        "webSearch": "Настройте службы веб-поиска и источники поиска",
+        "webFetch": "Настроить сервисы извлечения содержимого веб-страниц"
       },
       "nav": "Сервисы моделей",
       "notConfigured": "Не настроено",
@@ -2149,6 +2170,10 @@
         "document": {
           "name": "Разбор документов",
           "desc": "Читает загруженные документы."
+        },
+        "webFetch": {
+          "name": "Загрузка веб-страниц",
+          "desc": "Позволяет агенту читать разрешённые в сеансе веб-страницы."
         }
       },
       "source": {
@@ -2162,6 +2187,7 @@
         "lines": {
           "rewrite": "Запрос",
           "search": "Поиск",
+          "fetch": "Чтение",
           "image": "Изобр.",
           "video": "Видео"
         }
@@ -2194,9 +2220,144 @@
         "unconfirmed": "Сервер не подтвердил импорт."
       }
     },
-    "serverConfiguredAddOwn": "Чтобы использовать свои учётные данные, добавьте отдельного провайдера."
+    "serverConfiguredAddOwn": "Чтобы использовать свои учётные данные, добавьте отдельного провайдера.",
+    "webFetchSettings": "Загрузка веб-страниц",
+    "webFetchHint": "Выберите способ чтения веб-страниц. Размещённым сервисам передаются только публичные URL, разрешённые в сеансе. Результаты остаются недоверенными данными; при ошибке сервис не меняется.",
+    "webFetchApiKey": "Ключ API",
+    "webFetchSharedKeyHint": "Этот ключ также используется для чата с этим провайдером. Его изменение или удаление влияет на чат."
   },
   "workspace": {
+    "knowledgeBase": {
+      "title": "База знаний",
+      "topLevel": "Верхний уровень",
+      "back": "Назад",
+      "search": "Поиск по названию или типу файла",
+      "loading": "Загрузка…",
+      "retry": "Повторить",
+      "loadMore": "Загрузить ещё",
+      "failure": {
+        "more": "Об ошибке: {{reason}}",
+        "storage_full": {
+          "label": "Недостаточно места",
+          "description": "Недостаточно места для сохранения результатов. Освободите место и повторите попытку."
+        },
+        "source_unavailable": {
+          "label": "Исходный файл недоступен",
+          "description": "Не удалось прочитать исходный файл. Загрузите его заново и повторите попытку."
+        },
+        "service_unavailable": {
+          "label": "Сервис обработки недоступен",
+          "description": "Сервис обработки для этого типа файлов не настроен. Попросите администратора настроить его, затем запустите обработку повторно."
+        },
+        "media_too_long": {
+          "label": "Слишком длинная запись",
+          "description": "Этот способ обработки поддерживает записи длительностью до {{minutes}} минут. Сократите или разделите файл и загрузите его заново."
+        },
+        "no_text_extracted": {
+          "label": "Текст не извлечён",
+          "description": "В этот раз не удалось извлечь пригодный текст. Проверьте содержимое или попробуйте другой файл."
+        },
+        "processing_interrupted": {
+          "label": "Обработка не завершена",
+          "description": "Не удалось завершить обработку. Можно повторить попытку позже."
+        },
+        "too_many_pages": {
+          "label": "Слишком много страниц",
+          "description": "В этом PDF {{pages}} стр. — больше лимита обработки в {{maxPages}} стр. Разделите файл и загрузите части или загрузите только нужные главы.",
+          "descriptionWithoutCount": "Этот PDF превышает лимит обработки в {{maxPages}} стр. Разделите файл и загрузите части или загрузите только нужные главы.",
+          "descriptionWithoutLimit": "В этом PDF больше страниц, чем принимает сервис обработки. Разделите файл и загрузите части или загрузите только нужные главы."
+        }
+      },
+      "status": {
+        "uploading": "Загрузка",
+        "stored": "Сохранено · не обработано",
+        "parsing": "Обработка",
+        "searchable": "Доступно для поиска",
+        "failed": "Ошибка обработки"
+      },
+      "column": {
+        "name": "Название",
+        "status": "Статус",
+        "folder": "Папка",
+        "size": "Размер",
+        "date": "Дата"
+      },
+      "limits": {
+        "perFile": "До {{document}} на документ или изображение, {{media}} на аудио или видео"
+      },
+      "usage": {
+        "summary": "Занято {{used}} из {{max}} · Файлов: {{count}} из {{maxCount}}",
+        "fileStorage": "Отдельное файловое хранилище: занято {{used}} из {{max}} (включая обработанное содержимое и материалы курсов)",
+        "fileStorageUnlimited": "Отдельное файловое хранилище: занято {{used}} (включая обработанное содержимое и материалы курсов)"
+      },
+      "empty": {
+        "title": "База знаний пока пуста",
+        "body": "Загрузите учебные материалы — ассистент упорядочит и обработает их, а при подготовке курса их можно выбрать через @.",
+        "folder": "В этой папке пока нет материалов",
+        "query": "Нет материалов, соответствующих «{{query}}»"
+      },
+      "upload": {
+        "button": "Загрузить материалы",
+        "dismiss": "Скрыть"
+      },
+      "error": {
+        "load": "Не удалось загрузить базу знаний",
+        "busy": "Аккаунт обновляется. Повторите попытку чуть позже",
+        "identity": "Состояние входа изменилось. Обновите страницу",
+        "stale": "показанные данные могут быть устаревшими",
+        "nameTaken": "Папка с таким названием уже есть",
+        "invalidName": "Введите название длиной не более 255 символов",
+        "folderNameEmpty": "Введите название папки",
+        "folderNameTooLong": "Слишком длинное название папки",
+        "folderLimit": "Достигнуто максимальное число папок",
+        "notMovable": "Этот материал нельзя переместить",
+        "gone": "Он больше не существует",
+        "save": "Не получилось. Попробуйте ещё раз",
+        "notEmpty": "В папке ещё есть материалы. Сначала переместите их",
+        "materialNotFound": "Материал не найден или недоступен.",
+        "folderNotFound": "Папка не найдена или недоступна.",
+        "textUnavailable": "Текст материала недоступен.",
+        "derivative": "Производный материал использует имя исходного. Переименуйте исходный материал.",
+        "moveTooMany": "За один раз можно переместить не более {{limit}} материалов.",
+        "moveNotMovable": "Ничего не перемещено. Некоторые выбранные материалы недоступны или не могут быть перемещены.",
+        "toolFolderNameTooLong": "Название папки слишком длинное (не более 40 символов половинной или 20 символов полной ширины).",
+        "toolFolderLimit": "Достигнут предел папок базы знаний: {{limit}}.",
+        "mediaUnsupported": "В качестве медиа курса можно использовать только изображения, видео или аудио.",
+        "mediaStorageFull": "Недостаточно места для этого медиафайла. Освободите место и повторите попытку.",
+        "mediaNotFound": "Медиаматериал не найден или не содержит доступного медиафайла."
+      },
+      "actions": {
+        "parse": "Обработать",
+        "reparse": "Обработать заново",
+        "more": "Другие действия: {{name}}",
+        "rename": "Переименовать",
+        "delete": "Удалить",
+        "open": "Открыть",
+        "downloadOriginal": "Скачать оригинал",
+        "chat": "Обсудить этот материал"
+      },
+      "folder": {
+        "new": "Новая папка",
+        "items": "Элементов: {{count}}",
+        "items_one": "{{count}} элемент",
+        "items_other": "Элементов: {{count}}"
+      },
+      "dialog": {
+        "cancel": "Отмена",
+        "close": "Закрыть"
+      },
+      "delete": {
+        "materialTitle": "Удалить «{{name}}»?",
+        "materialLinks": "Диалоги, которые его используют, больше не смогут его прочитать; текст, уже появившийся в этих диалогах, сохранится.",
+        "materialCourses": "Содержимое, уже сохранённое в курсе, не изменится.",
+        "cannotUndo": "Это действие нельзя отменить.",
+        "folderTitle": "Удалить папку «{{name}}»?",
+        "folderContents": "Файлы будут перемещены на верхний уровень: {{count}}. Ни один файл не будет удалён."
+      },
+      "conversationFailure": {
+        "serviceUnavailable": "Для этого типа файлов не настроен сервис разбора. Попросите администратора настроить его."
+      }
+    },
     "untitledCourse": "未命名课堂",
     "sceneCount": "{{count}} 页",
     "sceneCount_one": "{{count}} 页",
@@ -2204,14 +2365,30 @@
     "courseLinkHint": "在右侧打开《{{name}}》",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
+      "search": "Поиск классов и материалов",
+      "searchMaterials": "Поиск материалов",
+      "searchClassrooms": "Поиск классов",
+      "courseOrder": "Сначала открытый класс, затем недавно обновлённые",
+      "materialOrder": "Сначала последние загрузки",
       "title": "为这条消息引用课堂",
+      "titleBoth": "Сослаться на класс или прикрепить материал из базы знаний к этому сообщению",
+      "titleMaterials": "Прикрепить материал из базы знаний к этому сообщению",
       "empty": "没有匹配的课堂",
       "alreadyNamed": "已引用",
       "remove": "移除{{name}}",
       "pillHint": "这条消息引用了「{{name}}」",
       "notAccepted": "Сервер временно недоступен. Повторите попытку чуть позже.",
       "reference": "引用「{{name}}」",
-      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
+      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围",
+      "classrooms": "Кабинеты",
+      "knowledgeBase": "База знаний",
+      "emptyWithMaterials": "Нет подходящих кабинетов или материалов",
+      "attachMaterial": "Прикрепить {{name}} к этому сообщению",
+      "materialUnavailable": "Не удаётся прикрепить {{name}} ({{reason}}). Откройте базу знаний, чтобы узнать причину и обработать файл заново.",
+      "materialAttached": "Уже в этой беседе",
+      "materialStaged": "Уже в этом сообщении",
+      "materialsCapped": "Показаны первые {{count}} материалов — продолжайте ввод, чтобы сузить список",
+      "materialUnavailableGuidance": "Не удалось прикрепить {{name}}. {{guidance}} Управлять материалом можно на странице базы знаний."
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
@@ -2232,6 +2409,11 @@
     "homeAria": "Back to home",
     "currentSession": "Current chat",
     "startLearning": "Начать обучение",
+    "classroomMode": "Режим класса",
+    "learningMode": "Учиться",
+    "editingMode": "Править",
+    "editingUnavailableGenerating": "Редактирование недоступно во время создания курса.",
+    "fullscreenLearning": "Учиться на весь экран",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2345,7 +2527,8 @@
     "badgeEnter": "Pro-режим",
     "badgeExit": "Вернуться в обычный режим",
     "launchPlaceholder": "Опишите учебный опыт, который хотите создать",
-    "launchSend": "Начать сборку"
+    "launchSend": "Начать сборку",
+    "mentionCourseOrMaterial": "Упомянуть кабинет или материал из базы знаний"
   },
   "workbench": {
     "tool": {

@@ -36,6 +36,7 @@
     "submit": "إرسال",
     "dismiss": "تجاهل",
     "inFormBelow": "أجب في النموذج أدناه",
+    "inPreview": "أجب في المعاينة",
     "multiAnswerSeparator": "، "
   },
   "material": {
@@ -46,7 +47,8 @@
     "fileTooLarge": "الملف كبير جدًا. اضغطه أو قسّمه ثم حاول مرة أخرى.",
     "fileTooLargeWithLimit": "الملف كبير جدًا. اختر ملفًا لا يتجاوز حجمه {{limit}} ميجابايت.",
     "unsupportedType": "نوع الملف غير مدعوم. اختر ملفًا من نوع مدعوم.",
-    "quotaExceeded": "تم بلوغ حد رفع المواد."
+    "quotaExceeded": "تم بلوغ حد رفع المواد.",
+    "storageFull": "مساحة التخزين ممتلئة. تعذّر رفع هذه المادة."
   },
   "skill": {
     "listFailed": "تعذّر تحميل قائمة المهارات",
@@ -98,6 +100,21 @@
       "vocational": "تدريب مهني",
       "workshop-style": "ورشة تفاعلية"
     }
+  },
+  "preview": {
+    "eyebrow": "قيد العمل",
+    "understanding": "فهم طلبك",
+    "understandingDesc": "نقرأ ما طلبته وما يحتاجه…",
+    "asking": "سؤال سريع",
+    "askingDesc": "يتابع الوكيل بعد إجابتك.",
+    "assembling": "تجهيز الفصل",
+    "assemblingDesc": "إنشاء المقرر واختيار المعلم والزملاء…",
+    "opening": "جارٍ فتح الفصل",
+    "page": "الصفحة {{order}}",
+    "pageCaption": "الصفحة {{order}} · {{title}}",
+    "skills": "المهارات المجهّزة",
+    "resting": "سيظهر مقررك هنا",
+    "restingDesc": "تابع المحادثة؛ عند إنشاء مقرر سيُفتح في هذه العلامة."
   },
   "thinking": {
     "active": "يفكّر…",
@@ -198,7 +215,12 @@
       "readTeachingSkill": "Read teaching section",
       "requestReview": "Ask for review",
       "completeTeachingStage": "Complete teaching step",
-      "respondToLearner": "Answer your question"
+      "respondToLearner": "Answer your question",
+      "listMaterialFolders": "فحص مجلدات قاعدة المعرفة",
+      "createMaterialFolder": "إنشاء مجلد في قاعدة المعرفة",
+      "renameMaterialFolder": "إعادة تسمية مجلد في قاعدة المعرفة",
+      "moveMaterials": "نقل المواد",
+      "renameMaterial": "إعادة تسمية المادة"
     },
     "chip": {
       "seconds": "{{count}} ثانية",
@@ -232,7 +254,19 @@
       "allCourses": "كل الدروس",
       "folderCourses": "دروس مجلد واحد",
       "reusedCourse": "أُعيد استخدام درس موجود",
-      "movedToFolder": "نُقل إلى المجلد"
+      "movedToFolder": "نُقل إلى المجلد",
+      "materialFolders": "{{count}} مجلدات",
+      "materials": "{{count}} مواد",
+      "extractionStarted": "بدأ التحليل",
+      "extractionInProgress": "التحليل جارٍ بالفعل",
+      "extractionDone": "حُلّلت من قبل",
+      "extractionComplete": "اكتمل التحليل",
+      "extractionStillRunning": "لا يزال التحليل جاريًا",
+      "parseFailed": "فشل التحليل",
+      "folderExisted": "المجلد موجود بالفعل",
+      "unchanged": "لا تغيير",
+      "movedOutOfFolder": "نُقل خارج المجلد",
+      "material": "{{count}} مادة"
     },
     "error": {
       "materialExtraction": "فشل تحليل المادة",
@@ -274,7 +308,12 @@
       "renameStage": "تعذّرت إعادة تسمية الدرس",
       "readStageOutline": "تعذّرت قراءة مخطط الدرس",
       "generic": "فشل نداء الأداة",
-      "interrupted": "Tool call interrupted"
+      "interrupted": "Tool call interrupted",
+      "listMaterialFolders": "تعذّر فحص مجلدات قاعدة المعرفة",
+      "createMaterialFolder": "تعذّر إنشاء مجلد قاعدة المعرفة",
+      "renameMaterialFolder": "تعذّرت إعادة تسمية مجلد قاعدة المعرفة",
+      "moveMaterials": "تعذّر نقل المواد",
+      "renameMaterial": "تعذّرت إعادة تسمية المادة"
     },
     "progress": {
       "scene": {

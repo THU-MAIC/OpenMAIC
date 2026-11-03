@@ -94,6 +94,8 @@ const VOICE_PROFILE_CARRY_OVER = 'lib/device-storage/database.ts';
 /** Device-local IndexedDB (see lib/device-storage/database.ts for what it holds). */
 const DEVICE_DEXIE_USERS = new Set([
   'lib/device-storage/database.ts',
+  // Read-only live evidence for legacy audio on editor issue markers.
+  'lib/device-storage/observe-legacy-speech-audio.ts',
   // Invalidates an export preview when the device media cache changes.
   'lib/video-export-app/observe-export-changes.ts',
   // Type-only: the undo history's key type.

@@ -268,6 +268,8 @@ export function buildSkillEditTools(
    * canonicalizing resolver so reads and patches follow. Defaults to `ownerId`.
    */
   currentOwner: () => Promise<string> = async () => ownerId,
+  /** A replayed turn must not resolve a deleted Skill's handle to a replacement. */
+  isAvailable?: (skill: Pick<UserSkillRecord, 'id' | 'name'>) => boolean,
 ): AgentTool<never, never>[] {
   const readSkill: AgentTool<typeof READ_SKILL_SCHEMA, unknown> = {
     name: 'read_skill',
@@ -280,7 +282,7 @@ export function buildSkillEditTools(
       const detail = params.detail ?? 'source';
       try {
         const skill = await findUserSkillByRef(await currentOwner(), params.skillId);
-        if (!skill) {
+        if (!skill || (isAvailable && !isAvailable(skill))) {
           return toolResult(
             `No Skill ${JSON.stringify(params.skillId)} was found for this owner. Only /my-* Skills you created yourself can be read or edited; built-in Skills are read with the read tool.`,
             { skillId: params.skillId, error: 'not-found' },
@@ -321,9 +323,25 @@ export function buildSkillEditTools(
       if (!intent) return toolResult('intent must not be blank', {}, true);
       const details = { skillId: params.skillId, intent };
       try {
+        let skillRef = params.skillId;
+        if (isAvailable) {
+          const skill = await findUserSkillByRef(await currentOwner(), params.skillId);
+          if (!skill || !isAvailable(skill)) {
+            return toolResult(
+              'This Skill is unavailable for the current message.',
+              {
+                ...details,
+                error: 'not-found',
+              },
+              true,
+            );
+          }
+          // Patch the checked ID, not a handle that could be recreated between queries.
+          skillRef = skill.id;
+        }
         const outcome = await patchUserSkill(
           await currentOwner(),
-          params.skillId,
+          skillRef,
           params.ops as readonly UserSkillPatchOpInput[],
         );
         const { skill, applied, changed } = outcome;

@@ -162,6 +162,8 @@ export interface TTSModelConfig {
   apiKey?: string;
   baseUrl?: string;
   voice: string;
+  /** Provider-local ordinary voices, resolved from stored server configuration. */
+  voices?: ConfiguredTTSVoice[];
   speed?: number;
   format?: string;
   providerOptions?: Record<string, unknown>;
@@ -251,4 +253,12 @@ export function isCustomTTSProvider(id: string): boolean {
 /** Returns true if the provider ID is a user-defined custom ASR provider. */
 export function isCustomASRProvider(id: string): boolean {
   return typeof id === 'string' && id.startsWith('custom-asr-');
+}
+
+/** A provider-local voice catalogue configured by the deployment. */
+export interface ConfiguredTTSVoice {
+  id: string;
+  name: string;
+  language?: string;
+  gender?: 'male' | 'female' | 'neutral';
 }

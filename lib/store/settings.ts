@@ -64,6 +64,29 @@ export function getValidASRLanguage(providerId: ASRProviderId, currentLanguage?:
   return isLanguageValid && currentLanguage ? currentLanguage : supportedLanguages[0] || 'auto';
 }
 
+/** Prefer provider auto-detection for an unset preference, otherwise resolve the UI locale. */
+export function resolveASRLanguage(
+  providerId: ASRProviderId,
+  currentLanguage: string | undefined,
+  locale: string,
+): string {
+  // 非空设置来自用户或旧版本，继续按原有规则校验，不能被界面语言覆盖。
+  if (currentLanguage) return getValidASRLanguage(providerId, currentLanguage);
+  const languages = isCustomASRProvider(providerId)
+    ? CUSTOM_ASR_DEFAULT_LANGUAGES
+    : ASR_PROVIDERS[providerId as keyof typeof ASR_PROVIDERS]?.supportedLanguages || [];
+  // 语言课程中的发言可能不同于界面语言；提供商支持时优先自动识别。
+  if (languages.includes('auto')) return 'auto';
+  const normalizedLocale = locale.toLowerCase().replaceAll('_', '-');
+  const baseLanguage = normalizedLocale.split('-')[0];
+  const exact = languages.find((language) => language.toLowerCase() === normalizedLocale);
+  const base = languages.find((language) => language.toLowerCase() === baseLanguage);
+  const regional = languages.find((language) =>
+    language.toLowerCase().startsWith(`${baseLanguage}-`),
+  );
+  return exact || base || regional || languages[0] || 'auto';
+}
+
 export interface SettingsState {
   /**
    * The narration voice the user picked, and the speech provider (registry
@@ -74,7 +97,7 @@ export interface SettingsState {
   ttsVoice: string;
   ttsVoiceProviderId: string;
   ttsSpeed: number;
-  /** The language speech input listens for (checked against the asr slot's provider). */
+  /** Speech input language; empty uses auto-detection when supported, otherwise the UI locale. */
   asrLanguage: string;
 
   /** Always open the outline review before generating scenes. */
@@ -103,6 +126,12 @@ export interface SettingsState {
    * load. Only a user-set selection carries across classrooms on restore.
    */
   agentSelectionIsUserSet: boolean;
+  /**
+   * The user's preset selection while a course's own roster stands in for it
+   * (`restoreAgentSelection`). Empty when nothing is being kept. It returns for
+   * a course without a roster, and on the home page.
+   */
+  presetAgentChoice: string[];
 
   // Layout preferences (persisted via localStorage)
   sidebarCollapsed: boolean;
@@ -139,6 +168,7 @@ export interface SettingsState {
   /** Set (or clear, with `undefined`) the persisted voice pick for one agent. */
   setAgentVoiceOverride: (agentId: string, voice: AgentVoiceOverride | undefined) => void;
   setAgentSelectionIsUserSet: (isUserSet: boolean) => void;
+  setPresetAgentChoice: (ids: string[]) => void;
 
   // Layout actions
   setSidebarCollapsed: (collapsed: boolean) => void;
@@ -164,6 +194,7 @@ const PERSISTED_FIELDS = [
   'autoAgentCount',
   'agentVoiceOverrides',
   'agentSelectionIsUserSet',
+  'presetAgentChoice',
   'sidebarCollapsed',
   'chatAreaCollapsed',
   'chatAreaWidth',
@@ -231,7 +262,8 @@ export const useSettingsStore = create<SettingsState>()(
       ttsVoice: 'default',
       ttsVoiceProviderId: '',
       ttsSpeed: 1.0,
-      asrLanguage: 'zh-CN',
+      // 留空后在录音时解析界面语言，避免初次加载或后续切换语言时固定为中文。
+      asrLanguage: '',
       reviewOutlineEnabled: false,
 
       // Playback controls
@@ -246,6 +278,7 @@ export const useSettingsStore = create<SettingsState>()(
       autoAgentCount: 3,
       agentVoiceOverrides: {},
       agentSelectionIsUserSet: false,
+      presetAgentChoice: [],
 
       // Layout preferences
       sidebarCollapsed: true,
@@ -278,6 +311,7 @@ export const useSettingsStore = create<SettingsState>()(
           return { agentVoiceOverrides: next };
         }),
       setAgentSelectionIsUserSet: (isUserSet) => set({ agentSelectionIsUserSet: isUserSet }),
+      setPresetAgentChoice: (ids) => set({ presetAgentChoice: ids }),
 
       setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
       setChatAreaCollapsed: (collapsed) => set({ chatAreaCollapsed: collapsed }),

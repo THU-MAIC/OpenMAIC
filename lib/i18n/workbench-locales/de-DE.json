@@ -36,6 +36,7 @@
     "submit": "Absenden",
     "dismiss": "Verwerfen",
     "inFormBelow": "Antworte im Formular unten",
+    "inPreview": "In der Vorschau beantworten",
     "multiAnswerSeparator": ", "
   },
   "material": {
@@ -46,7 +47,8 @@
     "fileTooLarge": "Die Datei ist zu groß. Komprimiere oder teile sie und versuche es erneut.",
     "fileTooLargeWithLimit": "Die Datei ist zu groß. Wähle eine Datei mit höchstens {{limit}} MB aus.",
     "unsupportedType": "Dieser Dateityp wird nicht unterstützt. Wähle eine unterstützte Datei aus.",
-    "quotaExceeded": "Upload-Limit für Materialien erreicht."
+    "quotaExceeded": "Upload-Limit für Materialien erreicht.",
+    "storageFull": "Der Speicherplatz ist voll. Dieses Material konnte nicht hochgeladen werden."
   },
   "skill": {
     "listFailed": "Die Skill-Liste konnte nicht geladen werden",
@@ -98,6 +100,21 @@
       "vocational": "Berufliche Ausbildung",
       "workshop-style": "Interaktiver Workshop"
     }
+  },
+  "preview": {
+    "eyebrow": "In Arbeit",
+    "understanding": "Anfrage wird verstanden",
+    "understandingDesc": "Liest deine Anfrage und was sie braucht…",
+    "asking": "Eine kurze Frage",
+    "askingDesc": "Es geht weiter, sobald du antwortest.",
+    "assembling": "Klassenzimmer wird eingerichtet",
+    "assemblingDesc": "Legt den Kurs an und besetzt Lehrkraft und Mitlernende…",
+    "opening": "Klassenzimmer wird geöffnet",
+    "page": "Seite {{order}}",
+    "pageCaption": "Seite {{order}} · {{title}}",
+    "skills": "Ausgerüstete Skills",
+    "resting": "Hier erscheint dein Kurs",
+    "restingDesc": "Sprich im Gespräch weiter; sobald ein Kurs erstellt ist, öffnet er sich in diesem Tab."
   },
   "thinking": {
     "active": "Denkt nach …",
@@ -198,7 +215,12 @@
       "readTeachingSkill": "Read teaching section",
       "requestReview": "Ask for review",
       "completeTeachingStage": "Complete teaching step",
-      "respondToLearner": "Answer your question"
+      "respondToLearner": "Answer your question",
+      "listMaterialFolders": "Ordner der Wissensbasis prüfen",
+      "createMaterialFolder": "Ordner in der Wissensbasis erstellen",
+      "renameMaterialFolder": "Ordner der Wissensbasis umbenennen",
+      "moveMaterials": "Materialien verschieben",
+      "renameMaterial": "Material umbenennen"
     },
     "chip": {
       "seconds": "{{count}} Sek.",
@@ -232,7 +254,19 @@
       "allCourses": "Alle Klassen",
       "folderCourses": "Klassen in einem Ordner",
       "reusedCourse": "Bestehende Klasse weiterverwendet",
-      "movedToFolder": "In Ordner verschoben"
+      "movedToFolder": "In Ordner verschoben",
+      "materialFolders": "{{count}} Ordner",
+      "materials": "{{count}} Materialien",
+      "extractionStarted": "Gestartet",
+      "extractionInProgress": "Läuft bereits",
+      "extractionDone": "Bereits aufbereitet",
+      "extractionComplete": "Abgeschlossen",
+      "extractionStillRunning": "Wird noch aufbereitet",
+      "parseFailed": "Analyse fehlgeschlagen",
+      "folderExisted": "Ordner gab es bereits",
+      "unchanged": "Keine Änderung",
+      "movedOutOfFolder": "Aus dem Ordner verschoben",
+      "material": "{{count}} Material"
     },
     "error": {
       "materialExtraction": "Materialaufbereitung fehlgeschlagen",
@@ -274,7 +308,12 @@
       "renameStage": "Die Klasse konnte nicht umbenannt werden",
       "readStageOutline": "Die Klassengliederung konnte nicht gelesen werden",
       "generic": "Tool-Aufruf fehlgeschlagen",
-      "interrupted": "Tool call interrupted"
+      "interrupted": "Tool call interrupted",
+      "listMaterialFolders": "Die Ordner der Wissensbasis konnten nicht geprüft werden",
+      "createMaterialFolder": "Der Ordner der Wissensbasis konnte nicht erstellt werden",
+      "renameMaterialFolder": "Der Ordner der Wissensbasis konnte nicht umbenannt werden",
+      "moveMaterials": "Die Materialien konnten nicht verschoben werden",
+      "renameMaterial": "Das Material konnte nicht umbenannt werden"
     },
     "progress": {
       "scene": {

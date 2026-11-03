@@ -2,8 +2,11 @@ import { searchWithBaidu } from './baidu';
 import { searchWithBocha } from './bocha';
 import { searchWithBrave } from './brave';
 import { searchWithClaude } from './claude';
+import { searchWithDeepSeek } from './deepseek';
 import { searchWithDoubao } from './doubao';
 import { searchWithExa } from './exa';
+import { searchWithFirecrawl } from './firecrawl';
+import { searchWithKimi } from './kimi';
 import { searchWithMiniMax } from './minimax';
 import { searchWithSearxng } from './searxng';
 import { searchWithTavily } from './tavily';
@@ -64,10 +67,16 @@ export async function searchWeb(params: {
         maxResults,
         ...abortOptions,
       });
+    case 'deepseek':
+      return searchWithDeepSeek({ query, apiKey, maxResults, baseUrl, ...abortOptions });
     case 'doubao':
       return searchWithDoubao({ query, apiKey, maxResults, baseUrl, ...abortOptions });
     case 'exa':
       return searchWithExa({ query, apiKey, maxResults, baseUrl, ...abortOptions });
+    case 'firecrawl':
+      return searchWithFirecrawl({ query, apiKey, maxResults, baseUrl, ...abortOptions });
+    case 'kimi':
+      return searchWithKimi({ query, apiKey, maxResults, baseUrl, ...abortOptions });
     case 'minimax':
       return searchWithMiniMax({ query, apiKey, maxResults, baseUrl, ...abortOptions });
     case 'searxng':

@@ -1,3 +1,4 @@
+import { usesClassicExtraction } from '@/lib/persistence/material-extraction-format';
 /**
  * Uploaded materials for a generation run (`POST /api/generation-runs`,
  * `POST /api/generate-classroom`).
@@ -66,7 +67,7 @@ export async function resolveClassroomMaterials(
   const byId = new Map(found.map((record) => [record.id, record]));
   const records = materialIds.map((id) => {
     const record = byId.get(id);
-    if (!record) throw new ClassroomMaterialsUnavailableError();
+    if (!record || !usesClassicExtraction(record)) throw new ClassroomMaterialsUnavailableError();
     return record;
   });
 

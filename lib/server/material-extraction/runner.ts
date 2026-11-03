@@ -7,7 +7,7 @@ import { agentRuntimeConfig } from '@/lib/server/agent-runtime/config';
 import { getAgentSessionMaterialStore } from '@/lib/server/agent-runtime/session-materials';
 
 import { extractClaimedSessionMaterial } from './extract';
-import { isTransientExtractionError } from './errors';
+import { isTransientExtractionError, MaterialExtractionError } from './errors';
 
 export interface MaterialExtractionRunnerHandle {
   workerId: string;
@@ -36,12 +36,16 @@ export async function runNextMaterialExtraction(
     await execute(claim);
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
+    // The diagnostic is for operators: tools give the model only a stable reason.
+    console.warn(`[material-extraction] ${claim.material.id} failed: ${reason}`);
     await store.settleExtractionFailure(
       claim.material.id,
       workerId,
       reason,
-      // An authorization refusal stays refused until the deployment changes.
       error instanceof ModelAuthorizationError ? false : isTransientExtractionError(error),
+      // The classification extraction already made, stored with the settlement
+      // (#1880); an unclassified failure stores none.
+      error instanceof MaterialExtractionError ? error.reasonCode : undefined,
     );
   } finally {
     clearInterval(heartbeat);

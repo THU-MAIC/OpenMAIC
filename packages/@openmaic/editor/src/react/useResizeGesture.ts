@@ -28,6 +28,8 @@ export interface UseResizeGestureArgs {
   scale: number;
   snapping?: boolean | SnappingOptions;
   shapePathFormulas?: ShapePathFormulaMap;
+  /** Current single selection. Null cancels a gesture when selection changes. */
+  selectedElementId?: string | null;
   onElementsChange?: (intents: EditIntent[]) => void;
 }
 
@@ -67,9 +69,16 @@ export interface UseResizeGestureResult {
  * gesture glue: no store, no `@/` imports.
  */
 export function useResizeGesture(args: UseResizeGestureArgs): UseResizeGestureResult {
-  const { slide, scale, snapping, shapePathFormulas, onElementsChange } = args;
+  const { slide, scale, snapping, shapePathFormulas, selectedElementId, onElementsChange } = args;
 
   const [resizeDrag, setResizeDrag] = useState<ResizeDrag | null>(null);
+  // Reset derived preview state while rendering the new selection, before a
+  // frame can show the previous element's box. Listener teardown runs below.
+  const [lastSelectedElementId, setLastSelectedElementId] = useState(selectedElementId);
+  if (lastSelectedElementId !== selectedElementId) {
+    setLastSelectedElementId(selectedElementId);
+    setResizeDrag(null);
+  }
 
   // Teardown for the currently-armed gesture's window listeners; the unmount
   // effect removes any listeners still live so a late move/up can't setState on
@@ -77,12 +86,27 @@ export function useResizeGesture(args: UseResizeGestureArgs): UseResizeGestureRe
   const teardownRef = useRef<(() => void) | null>(null);
   // The pointerId owning the in-flight gesture (single-pointer guard).
   const activePointerRef = useRef<number | null>(null);
+  const gestureElementIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (
+      selectedElementId === undefined ||
+      activePointerRef.current === null ||
+      gestureElementIdRef.current === selectedElementId
+    )
+      return;
+    teardownRef.current?.();
+    teardownRef.current = null;
+    activePointerRef.current = null;
+    gestureElementIdRef.current = null;
+  }, [selectedElementId]);
 
   useEffect(
     () => () => {
       teardownRef.current?.();
       teardownRef.current = null;
       activePointerRef.current = null;
+      gestureElementIdRef.current = null;
     },
     [],
   );
@@ -97,6 +121,7 @@ export function useResizeGesture(args: UseResizeGestureArgs): UseResizeGestureRe
     if (element.lock) return;
     if (activePointerRef.current !== null) return;
     activePointerRef.current = e.pointerId;
+    gestureElementIdRef.current = element.id;
 
     // A handle drag resizes the element — it must never fall through to the
     // box hit layer beneath (which would start a move or change selection).
@@ -159,6 +184,7 @@ export function useResizeGesture(args: UseResizeGestureArgs): UseResizeGestureRe
       removeListeners();
       teardownRef.current = null;
       activePointerRef.current = null;
+      gestureElementIdRef.current = null;
 
       const movedPast = Math.hypot(ev.clientX - startX, ev.clientY - startY) > DRAG_THRESHOLD_PX;
       if (movedPast && onElementsChange) {
@@ -182,6 +208,7 @@ export function useResizeGesture(args: UseResizeGestureArgs): UseResizeGestureRe
       removeListeners();
       teardownRef.current = null;
       activePointerRef.current = null;
+      gestureElementIdRef.current = null;
       setResizeDrag(null);
     };
 

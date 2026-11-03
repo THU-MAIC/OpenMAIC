@@ -19,6 +19,7 @@ interface WorkflowJob {
 }
 
 interface Workflow {
+  on: Record<string, unknown>;
   jobs: Record<string, WorkflowJob>;
 }
 
@@ -79,9 +80,9 @@ function normalizeShell(script: string | undefined): string {
 }
 
 function assertMainPushVersionGate(workflow: Workflow): void {
-  const mainPush = step(workflow, 'check', 'Package version bumps (main push)');
+  const mainPush = step(workflow, 'lint', 'Package version bumps (main push)');
 
-  expect(mainPush.if).toBe("github.event_name == 'push'");
+  expect(mainPush.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/main'");
   expect(mainPush.env).toEqual({ BEFORE_SHA: '${{ github.event.before }}' });
   expect(normalizeShell(mainPush.run)).toBe(EXPECTED_MAIN_PUSH_GATE);
 }
@@ -144,14 +145,17 @@ describe('CI video-export workflow contract', () => {
     expect(rootPackage.devDependencies?.hyperframes).toBe('0.7.60');
   });
 
-  it('preserves package version-bump gates for pull requests and main pushes', () => {
+  it('preserves package version-bump gates for pull requests, merge queue entries and main pushes', () => {
     const workflow = parseWorkflow();
-    const pullRequest = step(workflow, 'check', 'Package version bumps');
+    const pullRequest = step(workflow, 'lint', 'Package version bumps');
 
+    expect(workflow.on).toHaveProperty('merge_group');
     expect(pullRequest).toMatchObject({
-      if: "github.event_name == 'pull_request'",
+      if: "github.event_name == 'pull_request' || github.event_name == 'merge_group'",
       run: 'node scripts/check-package-version-bumps.mjs "$BASE_SHA"',
-      env: { BASE_SHA: '${{ github.event.pull_request.base.sha }}' },
+      env: {
+        BASE_SHA: '${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}',
+      },
     });
     assertMainPushVersionGate(workflow);
   });
@@ -181,7 +185,7 @@ describe('CI video-export workflow contract', () => {
     const guard = step(parseWorkflow(), 'e2e', 'Interactive static HTML Chromium smoke');
 
     expect(guard.run).toBe(
-      'pnpm exec vitest run tests/video-export/interactive-static-html.browser.test.ts',
+      'pnpm exec vitest run tests/video-export/interactive-static-html.browser.test.ts tests/video-export/interactive-self-hosted.browser.test.ts',
     );
     expect(guard.env).toEqual({ INTERACTIVE_STATIC_BROWSER: '1' });
     expect(guard.if).toBeUndefined();

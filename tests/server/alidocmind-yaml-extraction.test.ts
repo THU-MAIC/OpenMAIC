@@ -28,7 +28,8 @@ describe('YAML-only AliDocMind for classroom materials', () => {
   it('is advertised as extractable and extraction receives the managed key pair', async () => {
     const { resolveExtractableMimeTypes } =
       await import('@/lib/server/material-extraction/availability');
-    const { extractMaterialSource } = await import('@/lib/server/material-extraction/extract');
+    const { planSourceExtraction, runSourceExtraction } =
+      await import('@/lib/server/material-extraction/extract');
 
     const extractable = await resolveExtractableMimeTypes({ mediaProviders: () => [] });
     expect(extractable.has(DOCX)).toBe(true);
@@ -56,9 +57,12 @@ describe('YAML-only AliDocMind for classroom materials', () => {
       extract,
     } as unknown as DocumentExtractorProvider;
 
-    const result = await extractMaterialSource(
-      { bytes: Buffer.from('docx'), mime: DOCX, fileName: 'notes.docx' },
-      { providers: () => [alidocmind], mediaProviders: () => [] },
+    const result = await runSourceExtraction(
+      await planSourceExtraction({ bytes: Buffer.from('docx'), mime: DOCX }, 'notes.docx', {
+        providers: () => [alidocmind],
+        mediaProviders: () => [],
+      }),
+      'notes.docx',
     );
 
     expect(result.text).toBe('Extracted text');

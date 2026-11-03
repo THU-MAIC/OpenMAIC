@@ -1,5 +1,4 @@
 import { Pool } from 'pg';
-import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -11,6 +10,7 @@ import {
 import { readPriorRunRecord } from '@/lib/server/agent-runtime/entry-tree-storage';
 
 const contractUrl = process.env.PG_CONTRACT_URL;
+const TEST_SCHEMA = `openmaic_prior_runs_${process.pid}`;
 
 function transactionFor(pool: Pool): WithTransaction {
   return async (body) => {
@@ -36,15 +36,16 @@ function transactionFor(pool: Pool): WithTransaction {
  */
 describe.skipIf(!contractUrl)('prior runs read from the PostgreSQL event log', () => {
   const claimOptions = { leaseTtlMs: 10_000, maxAttempts: 5 };
-  const schema = `prior_run_${randomUUID().replaceAll('-', '')}`;
   let admin: Pool;
   let pool: Pool;
   let store: PgAgentSessionStore;
 
   beforeAll(async () => {
+    // Parallel contract suites must not truncate or claim each other's sessions.
     admin = new Pool({ connectionString: contractUrl });
-    await admin.query(`CREATE SCHEMA ${schema}`);
-    pool = new Pool({ connectionString: contractUrl, options: `-c search_path=${schema}` });
+    await admin.query(`DROP SCHEMA IF EXISTS ${TEST_SCHEMA} CASCADE`);
+    await admin.query(`CREATE SCHEMA ${TEST_SCHEMA}`);
+    pool = new Pool({ connectionString: contractUrl, options: `-c search_path=${TEST_SCHEMA}` });
     await ensureAgentSessionSchema(pool as Queryable);
   });
 
@@ -59,13 +60,10 @@ describe.skipIf(!contractUrl)('prior runs read from the PostgreSQL event log', (
   });
 
   afterAll(async () => {
-    await pool?.end();
-    if (admin) {
-      try {
-        await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
-      } finally {
-        await admin.end();
-      }
+    try {
+      await admin.query(`DROP SCHEMA IF EXISTS ${TEST_SCHEMA} CASCADE`);
+    } finally {
+      await Promise.all([pool?.end(), admin.end()]);
     }
   });
 

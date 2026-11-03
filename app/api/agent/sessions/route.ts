@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server';
 
 import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
 import { apiError } from '@/lib/server/api-response';
+import { supportedLocaleOf } from '@/lib/i18n/types';
 import { MAX_SESSION_TEXT_LENGTH } from '@/lib/server/agent-runtime/limits';
 import { findSkill, inferSkillIdFromPrompt, listSkills } from '@/lib/server/agent-runtime/skills';
 import { getAgentSessionStore } from '@/lib/server/agent-runtime/store';
@@ -36,6 +37,8 @@ interface CreateSessionBody {
   materialIds?: unknown;
   /** Classrooms named on the opening message. */
   courseRefs?: unknown;
+  /** The interface language the conversation starts in; an unsupported value is ignored. */
+  locale?: unknown;
 }
 
 export async function POST(req: NextRequest) {
@@ -89,6 +92,8 @@ export async function POST(req: NextRequest) {
     );
   }
   const decodedCourseRefs = decodeCourseRefs(body.courseRefs ?? []);
+  // Only a supported code is kept: it names the copy the run's tools load.
+  const locale = supportedLocaleOf(body.locale);
   if (!decodedCourseRefs.ok) {
     return apiError('INVALID_REQUEST', 400, decodedCourseRefs.error);
   }
@@ -167,6 +172,7 @@ export async function POST(req: NextRequest) {
         existingCourse,
         titleState: 'pending',
         origin: buildRequestOrigin(req),
+        ...(locale ? { locale } : {}),
         // Keep the runner from claiming the session until its opening materials
         // and references are durable. postUserMessage below atomically requeues it.
         ...(existingCourse || hasOpeningContext ? { status: 'succeeded' as const } : {}),
@@ -193,6 +199,7 @@ export async function POST(req: NextRequest) {
           text: openingText,
           ...(materials.length ? { materials } : {}),
           ...(decodedCourseRefs.refs.length ? { courseRefs: decodedCourseRefs.refs } : {}),
+          ...(locale ? { locale } : {}),
         },
         { expectedOwnerId: ownerId },
       );
@@ -210,6 +217,8 @@ export async function POST(req: NextRequest) {
       if (error instanceof SessionMaterialBindingError) {
         return new Response('Not found', { status: 404, headers: responseHeaders });
       }
+      const claimed = ownerWriteErrorResponse(error, responseHeaders);
+      if (claimed) return claimed;
       throw error;
     }
   });

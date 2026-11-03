@@ -24,7 +24,7 @@
  * session. Enter still barges in.
  * Send/cancel failures surface as a sonner toast, not inline chrome.
  */
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, Loader2, Send, Square } from 'lucide-react';
 import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -56,6 +56,7 @@ import { ComposerPillRow } from './composer-pill';
 import { ElementRefPills } from './element-ref-pills';
 import { CourseRefPills } from './course-ref-pills';
 import { CourseMentionMenu } from './course-mention-menu';
+import { stagedMaterialOf, type MaterialMentionCandidate } from '@/lib/workbench/material-mention';
 import {
   composerImagesFromClipboard,
   composerImagesFromDrop,
@@ -78,7 +79,10 @@ import {
   SkillButton,
   SkillSlashMenu,
   useComposerMaterials,
+  useMaterialMentions,
+  useMaterialSeed,
   type AgentSkillInfo,
+  type MaterialSeed,
 } from './compose-extras';
 import { insertSkillHandle, seedSlashQuery } from '@/lib/workbench/composer-skills';
 import { useSkillHandleBackspace } from './use-skill-handle-backspace';
@@ -99,9 +103,11 @@ import { chatColumn, composerLayout, wbStyles as styles } from './chat/chat-styl
 import { ChatTimeline } from './chat/chat-timeline';
 import { pendingQuestion } from './chat/question-card-state';
 import { QuestionForm } from './chat/question-form';
+import { useQuestionHost } from '@/lib/workbench/question-host';
+import { sessionScopedKey } from '@/lib/workbench/request-scope';
 import { composerTakeover } from './chat/question-form-state';
 import { shouldShowWorkbenchEmptyState, WorkbenchChatEmptyState } from './chat/empty-state';
-import { invalidateAgentSkills } from '@/lib/workbench/agent-skills';
+import { invalidateAgentSkills, useAgentSkills } from '@/lib/workbench/agent-skills';
 import { settleSentElementRefs } from '@/lib/workbench/element-ref-send-result';
 import { settleSentCourseRefs } from '@/lib/workbench/course-ref-send-result';
 
@@ -111,6 +117,11 @@ const NO_COURSE_REFS: CourseRef[] = [];
 export function WorkbenchChat({
   hosted = false,
   adjacentPanelOpen = false,
+  covered = false,
+  materialSeed,
+  onMaterialSeedConsumed,
+  newConversation = 0,
+  conversation,
 }: {
   /**
    * Rendered inside the workspace's conversation pane, which supplies the
@@ -125,6 +136,27 @@ export function WorkbenchChat({
    * changes, so a hosted chat must not use that value to size its transcript.
    */
   adjacentPanelOpen?: boolean;
+  /**
+   * Another page covers this conversation (the knowledge base). Its Escapes
+   * close that page's own search, menus and dialogs; none of them is the
+   * teacher asking to stop a run they cannot see.
+   */
+  covered?: boolean;
+  /** A knowledge base hand-over; this composer takes the ones for its own owner key. */
+  materialSeed?: MaterialSeed | null;
+  onMaterialSeedConsumed?: (key: number) => void;
+  /**
+   * Bumped each time a new chat is asked for. On a draft that is already
+   * empty the owner key stays the same, but it is still another conversation.
+   */
+  newConversation?: number;
+  /**
+   * The conversation the workspace has navigated this pane to: a session id,
+   * or the draft's owner key. It changes in the same commit as the teacher's
+   * click, while the store attaches the session only in a later effect.
+   * Without it, the composer's own owner is the fence.
+   */
+  conversation?: string | null;
 }) {
   const { t } = useI18n();
   const sessionId = useWorkbenchStore((s) => s.sessionId);
@@ -137,7 +169,14 @@ export function WorkbenchChat({
    */
   const draftConversation = useWorkbenchDraftConversation();
   const composerOwnerId = sessionId ?? draftConversation?.ownerKey ?? null;
-  const canSend = sessionId !== null || draftConversation !== null;
+  /**
+   * Is the store on the conversation the pane was navigated to? Not for a
+   * moment after a switch: the workspace attaches the session in an effect,
+   * and until it does `sessionId` is still the conversation just left. A send
+   * or a stop then would reach that one, so the composer waits, draft kept.
+   */
+  const ownerAttached = conversation === undefined || conversation === composerOwnerId;
+  const canSend = ownerAttached && (sessionId !== null || draftConversation !== null);
   const chat = useWorkbenchStore((s) => s.chat);
   const replaying = useWorkbenchStore((s) => s.replaying);
   const status = useWorkbenchStore((s) => s.status);
@@ -234,13 +273,60 @@ export function WorkbenchChat({
   const [pendingSend, setPendingSend] = useState(false);
   const sendStartedStatus = useRef<SessionStatus | null>(null);
   /**
+   * Which draft a send belongs to. A knowledge base hand-over starts a new
+   * draft in this same composer (often under the same `draft:<course>` key)
+   * while the previous draft's first message may still be on its way; that
+   * send's completion must then leave the new draft alone -- no restored text,
+   * no settling of its picks, no busy or STOP state of its own.
+   */
+  const sendDraft = useRef(0);
+  /** What the send in flight carries, until it settles or is released. */
+  const sendingMaterials = useRef<readonly WorkbenchMaterial[] | null>(null);
+  /**
+   * The session a draft's first message created, once it exists and until
+   * the composer shows it: the one conversation change that is this draft
+   * carrying on rather than the teacher moving away from it.
+   */
+  const createdHere = useRef<string | null>(null);
+  /**
+   * Leave the send in flight to finish on its own: its completion no longer
+   * restores text, settles picks or holds the busy and STOP state (see
+   * `submit`). The message itself still goes where it was sent.
+   */
+  const releaseSend = () => {
+    sendDraft.current += 1;
+    sendingMaterials.current = null;
+    createdHere.current = null;
+    setBusy(false);
+    sendStartedStatus.current = null;
+    setPendingSend(false);
+  };
+  /**
+   * Bumped when the composer leaves a conversation; a stop in flight belongs
+   * to the one it was pressed in.
+   */
+  const conversationTurn = useRef(0);
+  const stopping = useRef(false);
+  /**
    * The one question whose form the user waved off, by node key. Local and
    * deliberately shallow: it is a "not now", not an answer, so nothing about it
    * is persisted and nothing about the question changes. Keying it by node means
    * a NEW question takes the composer over again on its own — there is no flag to
    * remember to reset.
    */
-  const [dismissedQuestionKey, setDismissedQuestionKey] = useState<string | null>(null);
+  // Node keys repeat across conversations and this component outlives a
+  // switch, so both question markers are held with their conversation
+  // (`sessionScopedKey`) and read back only for the attached one.
+  const [dismissedQuestion, setDismissedQuestion] = useState<string | null>(null);
+  // The question whose form was brought back to write a free-text answer.
+  const [freeTextQuestion, setFreeTextQuestion] = useState<string | null>(null);
+  const questionMark = (key: string) => sessionScopedKey(sessionId, key);
+  const setDismissedQuestionKey = (key: string | null) =>
+    setDismissedQuestion(key === null ? null : questionMark(key));
+  // Only the waiting question can have been waved off.
+  const waiting = pendingQuestion(chat);
+  const dismissedQuestionKey =
+    waiting && dismissedQuestion === questionMark(waiting.key) ? waiting.key : null;
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   // The mirror flag for stop: `POST /cancel` answers 202 ("asked"), and the run
   // only actually ends when the loop notices between steps — after the tool in
@@ -249,6 +335,93 @@ export function WorkbenchChat({
   const [pendingStop, setPendingStop] = useState(false);
   // Durable material assets can be attached mid-conversation too.
   const materials = useComposerMaterials();
+  const seedTargeted =
+    materialSeed?.target.kind === 'chat' && materialSeed.target.ownerKey === composerOwnerId;
+  // A hand-over from the knowledge base starts a new conversation: what was
+  // typed or staged for the one before stays behind. This composer is not
+  // remounted for it -- the same draft key, or a session it showed before --
+  // so it is cleared here, once per hand-over. Declared before
+  // `useMaterialSeed`: in the same commit it clears, then the source is staged.
+  const handOverKey = seedTargeted ? materialSeed.key : null;
+  useEffect(() => {
+    if (handOverKey === null) return;
+    // A send still on its way belongs to the draft before this one: its
+    // completion is fenced off (see `submit`), and the new draft is free to
+    // send at once rather than waiting behind it.
+    releaseSend();
+    replaceDraft('');
+    setSlashDismissed(null);
+    setMentionDismissed(null);
+    materials.startOver();
+    const elementRefs = useElementRefsStore.getState();
+    if (elementRefs.ownerSessionId === composerOwnerId) elementRefs.clear();
+    const courseRefs = useCourseRefsStore.getState();
+    if (courseRefs.ownerSessionId === composerOwnerId) courseRefs.clear();
+    // Once per hand-over key; `materials.startOver` and the owner are read as
+    // they are then (the same event-like reset as the home composer's).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handOverKey]);
+  // Another conversation in this composer: the teacher switched, or a
+  // background change moved the column. A send or an upload still on its way
+  // belongs to the conversation it was started in, so it must not land in
+  // this one -- no restored text, no settled or added pills, no busy or STOP
+  // state left over. What the send carried leaves the staging list with it.
+  // Layout, so a completion arriving right after the switch already finds
+  // itself fenced off.
+  const leaveConversation = () => {
+    createdHere.current = null;
+    conversationTurn.current += 1;
+    materials.leaveUploads();
+    if (sendingMaterials.current) {
+      materials.removeSent(sendingMaterials.current);
+      releaseSend();
+    }
+    if (stopping.current) {
+      stopping.current = false;
+      setBusy(false);
+    }
+    setPendingStop(false);
+  };
+  // Fenced by where the pane was navigated, not by the store, which still
+  // holds the previous session until its attachment effect runs: a request
+  // failing in between would otherwise refill the next conversation.
+  const fenceOwner = conversation === undefined ? composerOwnerId : conversation;
+  const shownOwner = useRef(fenceOwner);
+  useLayoutEffect(() => {
+    if (fenceOwner === shownOwner.current) return;
+    if (fenceOwner === null) {
+      // Between two conversations. Once a draft's session exists, this may be
+      // the way to it: decide when the next one is known.
+      if (createdHere.current !== null) return;
+    } else if (fenceOwner === createdHere.current) {
+      // The draft's own conversation, created and now open: the same one.
+      createdHere.current = null;
+      shownOwner.current = fenceOwner;
+      return;
+    }
+    shownOwner.current = fenceOwner;
+    leaveConversation();
+    // Once per owner change; the helpers are read as they are then.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fenceOwner]);
+  // A new chat asked for on a draft keeps the draft's owner key, but the
+  // shell no longer opens what the earlier draft creates: the same release.
+  const shownNewConversation = useRef(newConversation);
+  useLayoutEffect(() => {
+    if (newConversation === shownNewConversation.current) return;
+    shownNewConversation.current = newConversation;
+    leaveConversation();
+    // Once per request; the helpers are read as they are then.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newConversation]);
+  // While the material handed over is waiting for the gate, a send would
+  // leave without it: the button and Enter (via `send`) both wait.
+  const awaitingMaterial = useMaterialSeed({
+    seed: materialSeed,
+    targeted: seedTargeted,
+    materials,
+    onConsumed: onMaterialSeedConsumed,
+  });
   // Slide elements the user pointed at on the canvas (the edit dock's lasso).
   // The staging lives in its own store because the picker is on the other side
   // of the workspace; this surface only reads it and clears it on send.
@@ -272,17 +445,18 @@ export function WorkbenchChat({
         node.toolName !== 'create_skill' ||
         node.toolState !== 'done' ||
         !node.toolDetails ||
-        refreshedCreateCalls.current.has(node.key)
+        refreshedCreateCalls.current.has(sessionScopedKey(sessionId, node.key))
       ) {
         continue;
       }
-      refreshedCreateCalls.current.add(node.key);
+      // Keyed with the conversation: a tool call's key repeats in another one.
+      refreshedCreateCalls.current.add(sessionScopedKey(sessionId, node.key));
       void invalidateAgentSkills().catch(() => {
         // The durable success card remains the receipt. Menus expose their own
         // retry state if this refresh fails.
       });
     }
-  }, [chat]);
+  }, [chat, sessionId]);
 
   const { scrollRef, contentRef, isNearBottom, scrollToBottom } =
     useWorkbenchAutoscroll(displayedChat);
@@ -321,6 +495,7 @@ export function WorkbenchChat({
    * and typing anything else brings it back.
    */
   const [mentionOpen, setMentionOpen] = useState(false);
+  const [pickerQuery, setPickerQuery] = useState('');
   const {
     menu: openMenu,
     slash,
@@ -333,9 +508,10 @@ export function WorkbenchChat({
     courseMenuRequested: mentionOpen,
     // The `@` keystroke and the `@` button hold the same bar: no courses to
     // name means no menu at all, not an empty one.
-    courseMenuAvailable: (navigation?.courseOptions?.length ?? 0) > 0,
+    // Classrooms, or the knowledge base when materials are enabled.
+    courseMenuAvailable: (navigation?.courseOptions?.length ?? 0) > 0 || materials.enabled,
   });
-  const mentionQuery = mention?.query ?? null;
+  const mentionQuery = mentionOpen ? pickerQuery : (mention?.query ?? '');
   const mentionMenuOpen = openMenu === 'course';
   const mentionMenuId = useId();
   const untitledCourse = t('workspace.untitledCourse');
@@ -369,13 +545,12 @@ export function WorkbenchChat({
     composerRef.current?.focus();
   }, [draft]);
   /**
-   * The `@` button's way in. Focus FIRST: the picker's keyboard contract
-   * (↑/↓/Enter) lives on the textarea, so the button has to hand the keys over
-   * to it.
+   * The toolbar opens the shared picker; its search field takes focus on mount.
    */
   const openMention = useCallback(() => {
     composerRef.current?.focus();
     setMentionDismissed(null);
+    setPickerQuery('');
     setMentionOpen(true);
   }, []);
   /**
@@ -383,26 +558,49 @@ export function WorkbenchChat({
    * text is not part of the sentence, so it goes; a menu opened from the button
    * has no trigger to remove and leaves the draft alone.
    */
+  /** What every pick leaves behind: the token out of the draft, the menu shut. */
+  const finishMentionPick = useCallback(() => {
+    // The splice can land mid-sentence now, so the caret goes back where the
+    // token was rather than wherever a shrinking controlled value leaves it.
+    const removal = !mentionOpen && mention ? replaceCourseMention(draft, mention) : null;
+    const next = removal?.draft ?? draft;
+    if (removal) {
+      pendingCaret.current = removal.caret;
+      setCaret(removal.caret);
+      setDraft(removal.draft);
+    }
+    setMentionDismissed(mentionOpen ? draft : null);
+    setMentionOpen(false);
+    // The other direction of the same rule: what the splice leaves behind may
+    // be a live `/handle`, and finishing with one menu must not open another.
+    setSlashDismissed(next);
+    composerRef.current?.focus();
+  }, [draft, mention, mentionOpen]);
   const pickMention = useCallback(
     (candidate: CourseMentionCandidate) => {
       const ref = makeCourseRef(candidate.stageId, candidate.title);
       if (ref) useCourseRefsStore.getState().add(ref);
-      // The splice can land mid-sentence now, so the caret goes back where the
-      // token was rather than wherever a shrinking controlled value leaves it.
-      const removal = mention ? replaceCourseMention(draft, mention) : null;
-      const next = removal?.draft ?? draft;
-      if (removal) {
-        pendingCaret.current = removal.caret;
-        setCaret(removal.caret);
-        setDraft(removal.draft);
-      }
-      setMentionDismissed(null);
-      setMentionOpen(false);
-      // The other direction of the same rule: what the splice leaves behind may
-      // be a live `/handle`, and finishing with one menu must not open another.
-      setSlashDismissed(next);
+      finishMentionPick();
     },
-    [draft, mention],
+    [finishMentionPick],
+  );
+  /**
+   * A knowledge-base pick stages the material as one more pill, exactly like a
+   * finished upload: nothing is attached until the message is sent.
+   */
+  const materialMentions = useMaterialMentions({
+    open: mentionMenuOpen,
+    enabled: materials.enabled,
+    query: mentionQuery ?? '',
+    sessionId: draftConversation ? null : sessionId,
+    staged: materials.materials,
+  });
+  const pickMaterialMention = useCallback(
+    (candidate: MaterialMentionCandidate) => {
+      materials.addExisting(stagedMaterialOf(candidate));
+      finishMentionPick();
+    },
+    [finishMentionPick, materials],
   );
 
   /**
@@ -432,7 +630,14 @@ export function WorkbenchChat({
   // The composer IS the question while one waits, unless this exact question's
   // form was dismissed. One derived value, so the swap below and the card's way
   // back cannot describe different states.
-  const takeover = composerTakeover({ pending, dismissedKey: dismissedQuestionKey });
+  // While the request preview shows this question as its form, the composer
+  // stays a composer and the transcript row points across to it.
+  const previewQuestionKey = useQuestionHost((s) => s.previewKey);
+  const previewHostsQuestion =
+    pending !== null && sessionScopedKey(sessionId, pending.key) === previewQuestionKey;
+  const takeover = previewHostsQuestion
+    ? null
+    : composerTakeover({ pending, dismissedKey: dismissedQuestionKey });
   // Pure-derived: the idle placeholder owns the rail only while it is truly
   // empty — no messages, not catching up, no run live. It disappears the
   // instant a bubble lands or a send flips the composer to STOP.
@@ -474,11 +679,17 @@ export function WorkbenchChat({
    * it). Both dismissals are recorded against the resulting draft, so nothing
    * reopens until the user types something new.
    */
-  /** Backspace deletes a whole `/handle`; see the hook for the IME guard. */
-  const onSkillHandleBackspace = useSkillHandleBackspace(setDraft, (next) => {
-    pendingCaret.current = next;
-    setCaret(next);
-  });
+  const { skills } = useAgentSkills();
+  const installedSkillNames = useMemo(() => skills.map((skill) => skill.name), [skills]);
+  /** Backspace deletes a resolving `/handle`; see the hook for the IME guard. */
+  const onSkillHandleBackspace = useSkillHandleBackspace(
+    setDraft,
+    (next) => {
+      pendingCaret.current = next;
+      setCaret(next);
+    },
+    installedSkillNames,
+  );
   const loadSkill = useCallback((skill: AgentSkillInfo) => {
     // The live selection, not the tracked state: the element is the freshest
     // answer either way.
@@ -567,14 +778,19 @@ export function WorkbenchChat({
   }, [pendingStop, status]);
 
   const stop = useCallback(async () => {
-    if (!sessionId || busy || pendingStop) return;
+    if (!sessionId || !ownerAttached || busy || pendingStop) return;
+    const turnAtStop = conversationTurn.current;
+    // The composer moved to another conversation meanwhile: its busy and
+    // stopping state are not this cancel's (see `leaveConversation`).
+    const left = () => turnAtStop !== conversationTurn.current;
+    stopping.current = true;
     setBusy(true);
     try {
       await cancelWorkbenchSession(sessionId);
       // 202: the runner has been ASKED. The terminal state still arrives through
       // the event stream, so the button says stopping until it does — silence
       // for tens of seconds is exactly what made stopping feel ignored.
-      setPendingStop(true);
+      if (!left()) setPendingStop(true);
     } catch (err) {
       if (recoverTerminalCancelStatus(sessionId, err)) {
         // The terminal event may have been fenced before this recovery path.
@@ -585,12 +801,15 @@ export function WorkbenchChat({
       // Nothing was accepted, so the button springs back to a pressable STOP.
       toast.error(err instanceof Error ? err.message : t('workbench.chat.stopFailed'));
     } finally {
-      setBusy(false);
+      if (!left()) {
+        stopping.current = false;
+        setBusy(false);
+      }
     }
-  }, [busy, pendingStop, sessionId, t]);
+  }, [busy, ownerAttached, pendingStop, sessionId, t]);
 
   useDoubleEscapeStop({
-    generating: live && !busy && !pendingStop && !!sessionId,
+    generating: live && !busy && !pendingStop && !!sessionId && ownerAttached && !covered,
     onStop: () => {
       void stop();
     },
@@ -614,13 +833,21 @@ export function WorkbenchChat({
       accepted: boolean;
       elementRefsAccepted: boolean;
       courseRefsAccepted: boolean;
+      /**
+       * A hand-over started a new draft, or the composer moved to another
+       * conversation, while this was on its way: leave what it shows alone.
+       */
+      superseded?: true;
     }> => {
-      if (!sessionId && !draftConversation) {
+      if (!canSend) {
         return { accepted: false, elementRefsAccepted: false, courseRefsAccepted: false };
       }
       if (busy) {
         return { accepted: false, elementRefsAccepted: false, courseRefsAccepted: false };
       }
+      const draftAtSend = sendDraft.current;
+      const superseded = () => draftAtSend !== sendDraft.current;
+      sendingMaterials.current = attachments;
       setBusy(true);
       // Optimistic: flip the composer to STOP right now. The fold's status only
       // moves once the runner claims the requeued row (`session_resumed`) — up
@@ -644,7 +871,21 @@ export function WorkbenchChat({
               materials: attachments,
               elementRefs: refs,
               courseRefs: courses,
+              onCreated: (createdId) => {
+                if (!superseded()) createdHere.current = createdId;
+              },
             });
+        // The busy and STOP state now belong to the new draft or the other
+        // conversation (`releaseSend` reset them); the message itself went
+        // where it went.
+        if (superseded()) {
+          return {
+            accepted: result.accepted,
+            elementRefsAccepted: false,
+            courseRefsAccepted: false,
+            superseded: true,
+          };
+        }
         if (!result.accepted) {
           sendStartedStatus.current = null;
           setPendingSend(false);
@@ -656,15 +897,32 @@ export function WorkbenchChat({
           courseRefsAccepted: result.courseRefsAccepted,
         };
       } catch (err) {
+        // Still said: the teacher typed that message and should know it did
+        // not go. Its text is not put back into the new draft.
+        toast.error(err instanceof Error ? err.message : t('workbench.chat.sendFailed'));
+        if (superseded()) {
+          return {
+            accepted: false,
+            elementRefsAccepted: false,
+            courseRefsAccepted: false,
+            superseded: true,
+          };
+        }
+        // A session created for a message that did not go is not opened: the
+        // draft stays this composer's conversation.
+        createdHere.current = null;
         sendStartedStatus.current = null;
         setPendingSend(false);
-        toast.error(err instanceof Error ? err.message : t('workbench.chat.sendFailed'));
         return { accepted: false, elementRefsAccepted: false, courseRefsAccepted: false };
       } finally {
-        setBusy(false);
+        // A send the new draft started meanwhile owns `busy` now.
+        if (!superseded()) {
+          sendingMaterials.current = null;
+          setBusy(false);
+        }
       }
     },
-    [busy, draftConversation, sessionId, status, t],
+    [busy, canSend, draftConversation, sessionId, status, t],
   );
 
   /**
@@ -682,6 +940,16 @@ export function WorkbenchChat({
     [submit],
   );
 
+  // Publish the one answer path for the preview's question form.
+  useEffect(() => {
+    useQuestionHost.getState().setAnswer(answerQuestion);
+    return () => {
+      if (useQuestionHost.getState().answer === answerQuestion) {
+        useQuestionHost.getState().setAnswer(null);
+      }
+    };
+  }, [answerQuestion]);
+
   async function send() {
     // What is in the box IS the message — skill handles included. There is
     // nothing to assemble here.
@@ -691,6 +959,7 @@ export function WorkbenchChat({
       busy ||
       !canSend ||
       materials.busy ||
+      awaitingMaterial ||
       // A click on the send button must respect an open menu exactly as Enter
       // does (onKeyDown returns early) — sending a half-typed `/query` is the
       // alternative.
@@ -715,8 +984,15 @@ export function WorkbenchChat({
     setMentionDismissed(null);
     setMentionOpen(false);
     const result = await submit(text, selectedMaterials, selectedRefs, selectedCourses);
+    // A hand-over started a new draft meanwhile and already cleared this one's
+    // text, picks and references, or the composer moved to another
+    // conversation: nothing it shows now is this send's to settle or restore.
+    if (result.superseded) return;
     if (result.accepted) {
-      materials.clear();
+      // One staging list serves every conversation this pane shows, so the
+      // sent picks leave it even when the conversation changed meanwhile;
+      // removeSent matches the sent objects, so later picks stay.
+      materials.removeSent(selectedMaterials);
       // Remove only this request's snapshot. Picks added while POST was pending
       // belong to the next message and must survive; an owner change meanwhile
       // also fences this completion from session B's draft. On the draft path the
@@ -801,8 +1077,18 @@ export function WorkbenchChat({
                     plan={displayedPlan}
                     onAnswer={answerQuestion}
                     dismissedQuestionKey={dismissedQuestionKey}
-                    onReviveQuestion={() => setDismissedQuestionKey(null)}
-                    takenOverQuestionKey={takeoverKey}
+                    onReviveQuestion={(freeText) => {
+                      setFreeTextQuestion(
+                        freeText && dismissedQuestionKey
+                          ? questionMark(dismissedQuestionKey)
+                          : null,
+                      );
+                      setDismissedQuestionKey(null);
+                    }}
+                    takenOverQuestionKey={
+                      takeoverKey ?? (previewHostsQuestion ? (pending?.key ?? null) : null)
+                    }
+                    questionPointer={previewHostsQuestion ? 'preview' : 'below'}
                     t={t}
                   />
                 ) : showEmptyState ? (
@@ -860,6 +1146,7 @@ export function WorkbenchChat({
               <QuestionForm
                 node={takeover}
                 onAnswer={answerQuestion}
+                startInFreeText={freeTextQuestion === questionMark(takeover.key)}
                 onDismiss={() => setDismissedQuestionKey(takeover.key)}
                 t={t}
               />
@@ -931,9 +1218,14 @@ export function WorkbenchChat({
                 {mentionMenuOpen ? (
                   <CourseMentionMenu
                     id={mentionMenuId}
+                    search={
+                      mentionOpen ? { query: pickerQuery, onChange: setPickerQuery } : undefined
+                    }
                     candidates={mentionCandidates}
                     onClose={closeMention}
                     onPick={pickMention}
+                    materials={materialMentions}
+                    onPickMaterial={pickMaterialMention}
                   />
                 ) : null}
                 {/* Two layers, one metric class: the mirror behind it draws the
@@ -989,11 +1281,17 @@ export function WorkbenchChat({
                     label={t('proMode.attach')}
                     onFiles={materials.addFiles}
                   />
-                  {(navigation?.courseOptions?.length ?? 0) > 0 ? (
+                  {/* Shown exactly when the menu can open: classrooms to name,
+                      or the knowledge base to pick from. */}
+                  {(navigation?.courseOptions?.length ?? 0) > 0 || materials.enabled ? (
                     <AtSignButton
                       testId="workbench-mention-button"
                       disabled={busy || !canSend}
-                      label={t('proMode.mentionCourse')}
+                      label={t(
+                        materials.enabled
+                          ? 'proMode.mentionCourseOrMaterial'
+                          : 'proMode.mentionCourse',
+                      )}
                       onClick={openMention}
                     />
                   ) : null}
@@ -1014,7 +1312,7 @@ export function WorkbenchChat({
                       data-testid="workbench-stop"
                       data-stopping={pendingStop ? 'true' : undefined}
                       onClick={() => void stop()}
-                      disabled={busy || pendingStop}
+                      disabled={busy || pendingStop || !ownerAttached}
                       aria-busy={pendingStop}
                       title={t(pendingStop ? 'workbench.chat.stopping' : 'workbench.chat.stop')}
                       aria-label={t(
@@ -1042,7 +1340,10 @@ export function WorkbenchChat({
                       data-mention-keep-open=""
                       onClick={() => void send()}
                       disabled={
-                        busy || (!draft.trim() && materials.materials.length === 0) || !canSend
+                        busy ||
+                        (!draft.trim() && materials.materials.length === 0) ||
+                        !canSend ||
+                        awaitingMaterial
                       }
                       title={t('workbench.common.send')}
                       aria-label={t('workbench.common.send')}

@@ -1098,12 +1098,6 @@ export async function commitGenerationRunIn(
     await insertEvents(tx, lease.runId, events);
     row = { ...row, seq: Number(row.seq) + events.length };
   }
-  if (
-    (commit.patch?.state === 'completed' || commit.patch?.state === 'ended') &&
-    commit.patch.state !== before.state
-  ) {
-    await releaseRunMaterialsIn(tx, lease.runId);
-  }
   if (commit.patch?.state !== undefined && commit.patch.state !== before.state) {
     await notifyOwner(tx, before.owner_id);
   } else if (commit.patch?.scenesCompleted !== undefined || commit.patch?.stageId !== undefined) {
@@ -1237,45 +1231,6 @@ export async function endGenerationRunsOfDeletedCourseIn(
   return ended;
 }
 
-/**
- * Release the materials a run was started with when its input asks for it
- * (`releaseMaterials`: the composer uploaded them for this run only), once the
- * run is over: marked deleted, as the material delete path marks them, so
- * they stop resolving and counting against the owner's quota; their bytes go
- * with the owner's next reclaim sweep (`reclaimStaleOwnerMaterialUploads`).
- * Only materials the run's owner owns and no other of the owner's runs that
- * is not over names; the course assets copied from their images are the
- * course's and stay. Idempotent.
- */
-export async function releaseRunMaterialsIn(tx: Queryable, runId: string): Promise<number> {
-  const provisioned = await tx.query<{ present: string | null }>(
-    "SELECT to_regclass('owner_material')::text AS present",
-  );
-  if (!provisioned.rows[0]?.present) return 0;
-  const released = await tx.query<{ id: string }>(
-    `UPDATE owner_material m
-        SET deleted_at = $2
-       FROM generation_runs r
-      WHERE r.id = $1
-        AND r.input->>'releaseMaterials' = 'true'
-        AND m.id IN (SELECT jsonb_array_elements_text(r.input->'materialIds'))
-        AND m.owner_id = r.owner_id
-        AND m.status = 'ready'
-        AND m.deleted_at IS NULL
-        -- Another run of the owner still working from it keeps it.
-        AND NOT EXISTS (
-          SELECT 1 FROM generation_runs o
-           WHERE o.id <> r.id
-             AND o.owner_id = r.owner_id
-             AND o.state NOT IN ('completed', 'ended')
-             AND o.input->'materialIds' ? m.id
-        )
-      RETURNING m.id`,
-    [runId, Date.now()],
-  );
-  return released.rows.length;
-}
-
 /** A run a transaction ended: what to tell the host once it committed. */
 export interface EndedGenerationRun {
   run: StoredRun;
@@ -1309,7 +1264,6 @@ async function endRunIn(
   const seq = await insertEvents(tx, runId, events);
   // What the run kept alive and no course names is released now.
   await setRunPendingAssetDeadlineIn(tx, 'r.id = $1', [runId], 'now()');
-  await releaseRunMaterialsIn(tx, runId);
   await notifyOwner(tx, ownerId);
   return { seq, run: storedRun(updated.rows[0]!), events };
 }

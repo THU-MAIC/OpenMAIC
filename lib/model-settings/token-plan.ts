@@ -4,12 +4,13 @@
  *
  * A plan is a workspace provider of a token-plan preset. Connecting it (or
  * saving a new key for it) assigns the preset's recommendations — the default
- * model, the course stages it names, and its image, video, speech and search
- * services — to the slots, as one `slots` change against the view's revision.
+ * model, the course stages it names, and its image, video, speech, search and
+ * fetch services — to the slots, as one `slots` change against the view's revision.
  * What those slots use now (the workspace's own assignments and the server's
  * defaults written on them) is replaced when the user chooses the plan's
  * setup, and kept otherwise (only slots with neither are filled). Slots the
- * deployment locks are never touched.
+ * deployment locks are never touched. The builtin fetch default counts as
+ * unset, so a plan fills it even when keeping the current setup.
  *
  * When several plans are connected, a plan does not take the slots a
  * higher-priority plan recommends (priority is the order of
@@ -113,7 +114,7 @@ export function tokenPlanRecommendation(
     if (offered.models.some((entry) => entry.id === model)) {
       recommendation[slotId] = modelRef(provider.id, model);
     } else if (offered.models.length === 0 && slot.capability !== 'chat') {
-      // A service without models to pick (web search): the provider by itself.
+      // A service without models to pick (web search or fetch): the provider by itself.
       recommendation[slotId] = provider.id;
     }
   }
@@ -137,13 +138,21 @@ export interface PlanConflict {
 /**
  * What a slot itself is set to now: the workspace's own assignment, else the
  * server's default written on it (while nothing of the workspace replaces
- * it); undefined when it only follows its parent or has nothing.
+ * it); undefined when it only follows its parent, has nothing, or uses the
+ * builtin fetch default. Explicit workspace choices always count.
  */
 function currentChoice(
   slot: SlotView,
 ): { current: SlotAssignment; from: PlanConflict['from'] } | undefined {
   if (slot.assignment !== undefined) return { current: slot.assignment, from: 'workspace' };
   if (slot.serverDefault !== undefined && slot.source.kind === 'default') {
+    // The builtin fetch default is open for a plan, including in keep mode.
+    if (
+      slot.capability === 'webFetch' &&
+      slot.effective.status === 'assigned' &&
+      slot.effective.registryId === 'builtin'
+    )
+      return undefined;
     return { current: slot.serverDefault, from: 'default' };
   }
   return undefined;

@@ -25,7 +25,11 @@ import type { CourseToolDeps } from './course-tools';
 import { runStageMutation } from './mutation-fence';
 import { shiftCourseOrders } from './course-edit/tools';
 import { createGenerationAiCallFactory, sceneContentStage } from './generation-ai-call';
-import { synthesizeSceneNarration } from './scene-tts';
+import {
+  describeNarrationVoice,
+  formatTtsFailureTally,
+  synthesizeSceneNarration,
+} from './scene-tts';
 import { toGenerationContent } from './generation-content';
 import { checkScenesAgainstSkill } from './skills';
 import { mayNameAPoolAsset } from '@/lib/media/media-placeholder';
@@ -67,9 +71,18 @@ const SceneParams = Type.Object({
         'Interactive pages only: widget configuration object matching widgetType (e.g. { concept, keyVariables } for simulation, { diagramType, nodes } for diagram, { language } for code, { gameType, challenge } for game, { visualizationType, objects } for visualization3d). Must be a plain object. Defaults to { concept: title } when widgetType is set; when only widgetOutline is set, widgetType defaults to simulation.',
     }),
   ),
-  brief: Type.String({ minLength: 1 }),
+  brief: Type.String({
+    minLength: 1,
+    description:
+      'The teaching intent of this one page: what the learner should take away and how the page gets there. The generator reads it as the page description and may turn its wording into page text, so it carries content intent only, not layout, styling or narration-delivery rules. For pbl, the project description.',
+  }),
   instruction: Type.Optional(Type.String()),
-  materialFacts: Type.Optional(Type.Array(Type.String())),
+  materialFacts: Type.Optional(
+    Type.Array(Type.String(), {
+      description:
+        'The content points the page must present; the generator writes each of them onto the page. Only content meant for learners belongs here; style, layout and narration constraints do not. For pbl, the target skills.',
+    }),
+  ),
   media: Type.Optional(
     Type.Array(
       Type.Object({
@@ -604,7 +617,13 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
           });
         }
       }
-      return result(`Persisted ${actions.length} known actions for "${scene.title}".`, {
+      const voiceNote =
+        audio?.voice && audio.generated > 0 ? ` ${describeNarrationVoice(audio.voice)}` : '';
+      const narration =
+        audio?.available === true
+          ? ` Narration audio: ${audio.generated} generated, ${audio.skipped} skipped, ${formatTtsFailureTally(audio.failed)}.${voiceNote}`
+          : '';
+      return result(`Persisted ${actions.length} known actions for "${scene.title}".${narration}`, {
         sceneId: scene.id,
         actions,
         ...(audio ? { audio } : {}),

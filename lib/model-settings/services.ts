@@ -33,6 +33,7 @@ export const ROOT_SLOT: Record<SlotCapability, SlotId> = {
   video: 'video',
   tts: 'tts',
   asr: 'asr',
+  webFetch: 'webFetch',
   webSearch: 'webSearch',
   document: 'document',
 };
@@ -46,6 +47,7 @@ export const ROOT_SLOT: Record<SlotCapability, SlotId> = {
  *   self-hosted service, or a server that does not let workspaces add providers).
  */
 export interface ServiceEntry {
+  metadata?: import('@/lib/web-fetch/types').WebFetchProviderInfo;
   /** The provider's id, or the id a provider of this service gets when it is added. */
   id: string;
   /** The capability registry's entry that serves it (voices, models, endpoints). */
@@ -127,7 +129,12 @@ export function serviceEntries(
         ...(preset ? { preset } : {}),
       };
     });
-  return [...others, ...services];
+  return [...others, ...services].map((entry) => ({
+    ...entry,
+    ...(capability === 'webFetch'
+      ? { metadata: view.webFetchProviders?.find((provider) => provider.id === entry.registryId) }
+      : {}),
+  }));
 }
 
 /**

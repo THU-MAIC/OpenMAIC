@@ -107,7 +107,6 @@ function post(url: string, body: unknown): NextRequest {
 describe('the Pi routes renew the anonymous owner', () => {
   beforeEach(() => {
     vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', '');
-    vi.stubEnv('NEXT_PUBLIC_PI_CHAT_ENABLED', 'true');
   });
   afterEach(async () => {
     const { resetOwnerAuthenticationForTests } = await import('@/lib/server/identity/registry');

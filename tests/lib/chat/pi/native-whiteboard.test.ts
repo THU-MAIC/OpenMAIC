@@ -1,4 +1,5 @@
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
+import type { PPTShapeElement } from '@openmaic/dsl';
 import { BrowserRuntimeStore, RuntimeAppendConflictError } from '@openmaic/storage';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
@@ -239,7 +240,14 @@ describe('Native RuntimeStore whiteboard tools', () => {
   it('keeps expectedLastSeq required and host-owned identity across every additive schema', () => {
     const tools = build(service()).tools;
     const samples: Record<string, Record<string, unknown>> = {
-      wb_draw_shape: { shape: 'rectangle', x: 1, y: 2, width: 30, height: 40 },
+      wb_draw_shape: {
+        path: 'M0 0 H1 V1 H0 Z',
+        viewBox: [1, 1],
+        x: 1,
+        y: 2,
+        width: 30,
+        height: 40,
+      },
       wb_draw_chart: {
         chartType: 'bar',
         x: 1,
@@ -256,10 +264,15 @@ describe('Native RuntimeStore whiteboard tools', () => {
 
     for (const [name, sample] of Object.entries(samples)) {
       const tool = tools.find((candidate) => candidate.name === name)!;
-      expect(
-        (tool.parameters as { properties?: { expectedLastSeq?: { description?: string } } })
-          .properties?.expectedLastSeq?.description,
-      ).toContain('Copy nextMutation.expectedLastSeq exactly');
+      const schema = tool.parameters as {
+        properties?: { expectedLastSeq?: { description?: string } };
+        anyOf?: Array<{ properties?: { expectedLastSeq?: { description?: string } } }>;
+      };
+      for (const variant of schema.anyOf ?? [schema]) {
+        expect(variant.properties?.expectedLastSeq?.description).toContain(
+          'Copy nextMutation.expectedLastSeq exactly',
+        );
+      }
       expect(() => tool.prepareArguments?.(sample)).toThrow('strict schema');
       expect(() =>
         tool.prepareArguments?.({ ...sample, expectedLastSeq: null, elementId: 'model-owned' }),
@@ -346,11 +359,12 @@ describe('Native RuntimeStore whiteboard tools', () => {
     });
   });
 
-  it('commits every remaining additive draw type through the existing element_added contract', async () => {
+  it('preserves mixed elements across custom shape draws, rejection, reopen and replay', async () => {
     vi.stubGlobal('IDBKeyRange', IDBKeyRange);
     try {
+      const indexedDB = new IDBFactory();
       const store = new BrowserRuntimeStore({
-        indexedDB: new IDBFactory(),
+        indexedDB,
         payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
       });
       const runtime = createWhiteboardRuntimeService({
@@ -363,7 +377,8 @@ describe('Native RuntimeStore whiteboard tools', () => {
         {
           name: 'wb_draw_shape',
           params: {
-            shape: 'circle',
+            path: 'M1 0 A1 1 0 1 1 1 2 A1 1 0 1 1 1 0 Z',
+            viewBox: [2, 2],
             x: 40,
             y: 50,
             width: 120,
@@ -447,8 +462,8 @@ describe('Native RuntimeStore whiteboard tools', () => {
           top: 50,
           width: 120,
           height: 120,
-          viewBox: [1000, 1000],
-          path: 'M 500 0 A 500 500 0 1 1 499 0 Z',
+          viewBox: [2, 2],
+          path: 'M1 0 A1 1 0 1 1 1 2 A1 1 0 1 1 1 0 Z',
           fill: '#123456',
           fixedRatio: false,
         }),
@@ -531,6 +546,75 @@ describe('Native RuntimeStore whiteboard tools', () => {
         expect.stringMatching(/^native-wb-code-line:[0-9a-f]{64}:0$/u),
         expect.stringMatching(/^native-wb-code-line:[0-9a-f]{64}:1$/u),
       ]);
+
+      const shape = tools.find((tool) => tool.name === 'wb_draw_shape')!;
+      const custom = {
+        expectedLastSeq: 5,
+        path: 'M0 0 L4 0 L0 3 Z',
+        viewBox: [4, 3],
+        x: 50,
+        y: 80,
+        width: 120,
+        height: 90,
+        rotate: 12.5,
+        fillColor: '#5b9bd5',
+      };
+      await expect(shape.execute('mixed-custom', custom)).resolves.toMatchObject({
+        details: { committedSeq: 6, replayed: false },
+      });
+      await expect(
+        tools
+          .find((tool) => tool.name === 'wb_draw_text')!
+          .execute('mixed-label', {
+            expectedLastSeq: 6,
+            content: 'Preserve the formula, line, chart, table and code.',
+            x: 50,
+            y: 190,
+          }),
+      ).resolves.toMatchObject({ details: { committedSeq: 7 } });
+      await expect(
+        shape.execute('mixed-curve', {
+          ...custom,
+          expectedLastSeq: 7,
+          path: 'M0 1 C1 0 2 0 3 1',
+          viewBox: [3, 1],
+          fillColor: 'transparent',
+          stroke: { color: '#333333', width: 2, style: 'dashed' },
+        }),
+      ).resolves.toMatchObject({ details: { committedSeq: 8 } });
+
+      const mixed = await runtime.read('stage-1');
+      expect(mixed.whiteboard?.elements.slice(0, draws.length)).toEqual(state.whiteboard?.elements);
+      expect(mixed.whiteboard?.elements.map((element) => element.type)).toEqual([
+        'shape',
+        'chart',
+        'latex',
+        'table',
+        'line',
+        'code',
+        'shape',
+        'text',
+        'shape',
+      ]);
+      await expect(
+        shape.execute('mixed-invalid', { ...custom, expectedLastSeq: 8, path: 'M0 0 Z1 1' }),
+      ).resolves.toMatchObject({ isError: true, details: { code: 'INVALID_WHITEBOARD_SHAPE' } });
+      await expect(shape.execute('mixed-custom', custom)).resolves.toMatchObject({
+        details: { committedSeq: 6, lastSeq: 8, replayed: true },
+      });
+      await expect(runtime.read('stage-1')).resolves.toEqual(mixed);
+
+      const reopened = createWhiteboardRuntimeService({
+        store: new BrowserRuntimeStore({
+          indexedDB,
+          payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+        }),
+        resolveLearnerKey: () => 'learner-1',
+        withMaintenanceLock: (work) => work(),
+      });
+      await expect(reopened.read('stage-1')).resolves.toEqual(mixed);
+      const sessions = await store.listSessions('stage-1', 'learner-1');
+      await expect(store.listRecords(sessions[0]!.id)).resolves.toHaveLength(9);
     } finally {
       vi.unstubAllGlobals();
     }
@@ -1733,5 +1817,404 @@ describe('Native RuntimeStore whiteboard tools', () => {
       },
     });
     expect(runtime.append).not.toHaveBeenCalled();
+  });
+});
+
+const customTriangle = {
+  expectedLastSeq: null,
+  path: 'M 0 0 L 4 0 L 0 3 Z',
+  viewBox: [4, 3],
+  x: 100,
+  y: 100,
+  width: 240,
+  height: 180,
+};
+const invalidShapes = [
+  { ...customTriangle, path: undefined },
+  { ...customTriangle, viewBox: undefined },
+  { ...customTriangle, path: '' },
+  { ...customTriangle, path: '   ' },
+  { ...customTriangle, path: 'M0 0 Z1 1' },
+  { ...customTriangle, path: 'M0 0 L' },
+  { ...customTriangle, path: '<svg><path d="M0 0"/></svg>' },
+  { ...customTriangle, viewBox: [0, 3] },
+  { ...customTriangle, viewBox: [-1, 3] },
+  { ...customTriangle, viewBox: [4, Infinity] },
+  { ...customTriangle, viewBox: [4] },
+  { ...customTriangle, viewBox: [4, 3, 1] },
+  { ...customTriangle, path: 'M0 0 L1e999 0' },
+  { ...customTriangle, path: 'M0 0 L1000001 0' },
+  { ...customTriangle, path: 'M0 0' + ' l100000 0'.repeat(11) },
+  { ...customTriangle, path: 'M0 0 L10000 0', viewBox: [0.01, 3] },
+  { ...customTriangle, path: 'M0 0' + ' L1 1'.repeat(10001) },
+  { ...customTriangle, path: 'M0 0' + ' '.repeat(100001) },
+  { ...customTriangle, width: 0 },
+  { ...customTriangle, height: -1 },
+  { ...customTriangle, width: 1000001 },
+  { ...customTriangle, rotate: NaN },
+  { ...customTriangle, rotate: Infinity },
+  { ...customTriangle, rotate: '30' },
+  { ...customTriangle, stroke: { color: '#111', width: -1 } },
+  { ...customTriangle, stroke: { color: '#111', width: Infinity } },
+  { ...customTriangle, stroke: { color: '#111', width: 2, style: 'unknown' } },
+  { ...customTriangle, stroke: { color: '#111', width: 2, extra: true } },
+  { ...customTriangle, elementId: 'model-owned' },
+  { ...customTriangle, shape: 'rectangle' },
+  { ...customTriangle, shape: 'circle' },
+  { ...customTriangle, shape: 'triangle' },
+  { ...customTriangle, shape: 'custom' },
+  { ...customTriangle, shape: 'unknown' },
+];
+
+describe('Native whiteboard rotation and custom geometry', () => {
+  it('advertises one path-only schema and rejects removed shape discriminators', () => {
+    const draw = build(service()).tools.find((tool) => tool.name === 'wb_draw_shape')!;
+    expect(draw.parameters).toMatchObject({
+      type: 'object',
+      additionalProperties: false,
+      required: expect.arrayContaining(['expectedLastSeq', 'path', 'viewBox']),
+    });
+    expect(draw.parameters).not.toHaveProperty('anyOf');
+    expect(draw.parameters).not.toHaveProperty('properties.shape');
+    for (const shape of ['rectangle', 'circle', 'triangle', 'custom']) {
+      expect(() => draw.prepareArguments?.({ ...customTriangle, shape })).toThrow(
+        'omit the removed shape field',
+      );
+    }
+  });
+
+  it('publishes provider-compatible array items schemas', () => {
+    const invalidPaths: string[] = [];
+    function visit(value: unknown, path: string) {
+      if (!value || typeof value !== 'object') return;
+      for (const [key, child] of Object.entries(value)) {
+        if (key === 'items' && Array.isArray(child)) invalidPaths.push(`${path}.items`);
+        if (Array.isArray(child))
+          child.forEach((item, index) => visit(item, `${path}.${key}[${index}]`));
+        else visit(child, `${path}.${key}`);
+      }
+    }
+    for (const tool of build(service()).tools) visit(tool.parameters, tool.name);
+    expect(invalidPaths).toEqual([]);
+  });
+
+  it.each([
+    { name: 'rectangle', path: 'M0 0 H1 V1 H0 Z', viewBox: [1, 1] },
+    {
+      name: 'circle',
+      path: 'M1 0 A1 1 0 1 1 1 2 A1 1 0 1 1 1 0 Z',
+      viewBox: [2, 2],
+    },
+    { name: 'isosceles triangle', path: 'M1 0 L2 1 L0 1 Z', viewBox: [2, 1] },
+  ])('draws a $name using path-only arguments and default styling', async ({ path, viewBox }) => {
+    const runtime = service();
+    const draw = build(runtime).tools.find((t) => t.name === 'wb_draw_shape')!;
+    await draw.execute('basic-shape', {
+      expectedLastSeq: null,
+      path,
+      viewBox,
+      x: 1,
+      y: 2,
+      width: 30,
+      height: 40,
+    });
+    expect(runtime.append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          operation: {
+            kind: 'element_added',
+            element: expect.objectContaining({
+              path,
+              viewBox,
+              rotate: 0,
+              fill: '#5b9bd5',
+              fixedRatio: false,
+            }),
+          },
+        }),
+      }),
+    );
+    const op = vi.mocked(runtime.append).mock.calls[0]![0].payload.operation;
+    if (op.kind !== 'element_added' || op.element.type !== 'shape')
+      throw new Error('missing shape');
+    expect(op.element).not.toHaveProperty('outline');
+    expect(op.element).not.toHaveProperty('shape');
+  });
+
+  it.each([45, -36.86989765, 12.5])(
+    'persists rotation %s without changing unrotated coordinates',
+    async (rotate) => {
+      const runtime = service();
+      const draw = build(runtime).tools.find((t) => t.name === 'wb_draw_shape')!;
+      const params = {
+        expectedLastSeq: null,
+        path: 'M0 0 H1 V1 H0 Z',
+        viewBox: [1, 1],
+        x: 520,
+        y: 180,
+        width: 150,
+        height: 150,
+        rotate,
+      };
+      expect(draw.prepareArguments?.(params)).toBe(params);
+      await draw.execute('rotate', params);
+      expect(runtime.append).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            operation: {
+              kind: 'element_added',
+              element: expect.objectContaining({
+                left: 520,
+                top: 180,
+                width: 150,
+                height: 150,
+                rotate,
+              }),
+            },
+          }),
+        }),
+      );
+    },
+  );
+
+  it('retains historical preset geometry after path-only draws and storage reopen', async () => {
+    vi.stubGlobal('IDBKeyRange', IDBKeyRange);
+    try {
+      const indexedDB = new IDBFactory();
+      const createRuntime = () =>
+        createWhiteboardRuntimeService({
+          store: new BrowserRuntimeStore({
+            indexedDB,
+            payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+          }),
+          resolveLearnerKey: () => 'learner-1',
+          withMaintenanceLock: (work) => work(),
+        });
+      const historical = [
+        'M 0 0 L 1000 0 L 1000 1000 L 0 1000 Z',
+        'M 500 0 A 500 500 0 1 1 499 0 Z',
+        'M 500 0 L 1000 1000 L 0 1000 Z',
+      ].map(
+        (path, index): PPTShapeElement => ({
+          id: `historical-shape-${index}`,
+          type: 'shape',
+          path,
+          viewBox: [1000, 1000],
+          left: index * 100,
+          top: 40,
+          width: 80,
+          height: 80,
+          rotate: 0,
+          fill: '#5b9bd5',
+          fixedRatio: false,
+        }),
+      );
+      const runtime = createRuntime();
+      await runtime.append({
+        stageId: 'stage-1',
+        expectedLastSeq: null,
+        payload: {
+          payloadVersion: WHITEBOARD_RUNTIME_PAYLOAD_VERSION,
+          operationId: 'historical-shape-import',
+          operation: {
+            kind: 'legacy_snapshot_imported',
+            source: {
+              kind: LEGACY_WHITEBOARD_SOURCE_KIND,
+              fingerprint: `sha256:${'1'.repeat(64)}`,
+            },
+            whiteboard: {
+              id: 'historical-board',
+              viewportSize: 1000,
+              viewportRatio: 0.5625,
+              elements: historical,
+            },
+          },
+        },
+      });
+      const draw = build(runtime).tools.find((tool) => tool.name === 'wb_draw_shape')!;
+      await expect(
+        draw.execute('new-path', { ...customTriangle, expectedLastSeq: 0 }),
+      ).resolves.toMatchObject({ details: { committedSeq: 1 } });
+      const reopened = await createRuntime().read('stage-1');
+      expect(reopened.whiteboard?.elements.slice(0, 3)).toEqual(historical);
+      expect(reopened.whiteboard?.elements).toHaveLength(4);
+      expect(reopened.whiteboard?.elements[3]).toMatchObject({ path: customTriangle.path });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each([
+    { ...customTriangle, rotate: -12.5 },
+    {
+      ...customTriangle,
+      path: 'M0 0 L4 0 L4 2 L2 3 L0 2 Z',
+      fillColor: 'transparent',
+      stroke: { color: '#111111', width: 2, style: 'dashed' },
+    },
+    {
+      ...customTriangle,
+      path: 'M0 1 C1 0 2 0 3 1',
+      viewBox: [3, 1],
+      fillColor: 'transparent',
+      stroke: { color: '#333333', width: 2 },
+    },
+    {
+      ...customTriangle,
+      path: 'M1 0 A1 1 0 1 1 1 2 A1 1 0 1 1 1 0 Z',
+      viewBox: [2, 2],
+    },
+    {
+      ...customTriangle,
+      path: 'M0 0 A1 1 0 0 1 1 1',
+      viewBox: [1, 1],
+      fillColor: 'transparent',
+      stroke: { color: '#000000', width: 2 },
+    },
+  ])('keeps custom path $path and optional stroke in PPTShapeElement', async (params) => {
+    const runtime = service();
+    const { tools, send } = build(runtime);
+    const draw = tools.find((t) => t.name === 'wb_draw_shape')!;
+    expect(draw.prepareArguments?.(params)).toBe(params);
+    const result = await draw.execute('geometry', params);
+    expect(result).toMatchObject({
+      details: {
+        committedSeq: 0,
+        affected: {
+          element: {
+            type: 'shape',
+            path: params.path,
+            viewBox: params.viewBox,
+            rotate: 'rotate' in params ? params.rotate : 0,
+          },
+        },
+      },
+    });
+    if ('stroke' in params)
+      expect(result.details).toMatchObject({
+        affected: {
+          element: {
+            outline: {
+              ...params.stroke,
+              style: 'style' in params.stroke ? params.stroke.style : 'solid',
+            },
+          },
+        },
+      });
+    expect(send).toHaveBeenCalledExactlyOnceWith({
+      type: 'whiteboard',
+      data: { kind: 'projection', stageId: 'stage-1', lastSeq: 0 },
+    });
+  });
+
+  it('rejects invalid inputs in preparation and direct execution without records, sessions or events', async () => {
+    vi.stubGlobal('IDBKeyRange', IDBKeyRange);
+    try {
+      const store = new BrowserRuntimeStore({
+        indexedDB: new IDBFactory(),
+        payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+      });
+      const runtime = createWhiteboardRuntimeService({
+        store,
+        resolveLearnerKey: () => 'learner-1',
+        withMaintenanceLock: (work) => work(),
+      });
+      const append = vi.fn(runtime.append);
+      const { tools, send } = build({ ...runtime, append });
+      const draw = tools.find((t) => t.name === 'wb_draw_shape')!;
+      for (const params of invalidShapes) {
+        expect(() => draw.prepareArguments?.(params)).toThrow(/wb_draw_shape/);
+        await expect(draw.execute('invalid', params)).resolves.toMatchObject({
+          isError: true,
+          details: { code: 'INVALID_WHITEBOARD_SHAPE' },
+        });
+      }
+      expect(append).not.toHaveBeenCalled();
+      expect(send).not.toHaveBeenCalled();
+      await expect(store.listSessions('stage-1', 'learner-1')).resolves.toEqual([]);
+      await expect(runtime.read('stage-1')).resolves.toMatchObject({
+        lastSeq: null,
+        whiteboard: null,
+      });
+      const corrected = await draw.execute('corrected', customTriangle);
+      expect(corrected).toMatchObject({ details: { committedSeq: 0 } });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('reports a useful grammar error and character position before append', async () => {
+    const runtime = service();
+    const draw = build(runtime).tools.find((t) => t.name === 'wb_draw_shape')!;
+    await expect(
+      draw.execute('bad-path', { ...customTriangle, path: 'M0 0 Z1 1' }),
+    ).resolves.toMatchObject({
+      isError: true,
+      details: { error: { code: 'syntax', field: 'path', position: expect.any(Number) } },
+      content: [expect.objectContaining({ text: expect.stringContaining('wb_draw_shape path:') })],
+    });
+    expect(runtime.append).not.toHaveBeenCalled();
+  });
+
+  it('retains custom paths and angles after reopening storage, enforces CAS, and exactly replays once', async () => {
+    vi.stubGlobal('IDBKeyRange', IDBKeyRange);
+    const indexedDB = new IDBFactory();
+    const createRuntime = () => {
+      const store = new BrowserRuntimeStore({
+        indexedDB,
+        payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+      });
+      const runtime = createWhiteboardRuntimeService({
+        store,
+        resolveLearnerKey: () => 'learner-1',
+        withMaintenanceLock: (work) => work(),
+      });
+      return { store, runtime };
+    };
+    try {
+      const { runtime } = createRuntime();
+      const params = {
+        ...customTriangle,
+        rotate: -36.86989765,
+        fillColor: 'transparent',
+        stroke: { color: '#111', width: 2 },
+      };
+      const draw = build(runtime).tools.find((t) => t.name === 'wb_draw_shape')!;
+      await expect(draw.execute('same-shape', params)).resolves.toMatchObject({
+        details: { committedSeq: 0, replayed: false },
+      });
+      const original = await runtime.read('stage-1');
+      const reopened = createRuntime();
+      await expect(reopened.runtime.read('stage-1')).resolves.toEqual(original);
+      const { tools } = build(reopened.runtime);
+      const replay = tools.find((t) => t.name === 'wb_draw_shape')!;
+      await expect(replay.execute('same-shape', params)).resolves.toMatchObject({
+        details: { committedSeq: 0, replayed: true },
+      });
+      await expect(replay.execute('stale-shape', params)).resolves.toMatchObject({
+        isError: true,
+        details: { code: 'STALE_STATE', actualLastSeq: 0 },
+      });
+      await expect(
+        replay.execute('next-shape', {
+          expectedLastSeq: 0,
+          path: 'M1 0 L2 1 L0 1 Z',
+          viewBox: [2, 1],
+          x: 10,
+          y: 20,
+          width: 30,
+          height: 40,
+        }),
+      ).resolves.toMatchObject({ details: { committedSeq: 1 } });
+      await expect(replay.execute('same-shape', params)).resolves.toMatchObject({
+        details: { committedSeq: 0, lastSeq: 1, replayed: true },
+      });
+      const final = await reopened.runtime.read('stage-1');
+      expect(final.whiteboard?.elements[0]).toEqual(original.whiteboard?.elements[0]);
+      const sessions = await reopened.store.listSessions('stage-1', 'learner-1');
+      await expect(reopened.store.listRecords(sessions[0]!.id)).resolves.toHaveLength(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

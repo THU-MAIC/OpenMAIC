@@ -296,6 +296,31 @@ describe('slide.update contract', () => {
 });
 
 describe('element.duplicate contract', () => {
+  test('rejects duplicating historical bad shapes atomically', () => {
+    const bad = {
+      id: 'bad',
+      type: 'shape' as const,
+      left: 0,
+      top: 0,
+      width: 100,
+      height: 100,
+      rotate: 0,
+      viewBox: [0, 100] as [number, number],
+      path: 'M0 0 L100 100',
+      fixedRatio: false,
+      fill: '#000000',
+    };
+    const original = slideContent([textElement({ id: 'valid' }), bad]);
+    expect(() =>
+      applySlideEditOperation(original, {
+        type: 'element.duplicate',
+        elementIds: ['valid', 'bad'],
+        idMap: { valid: 'valid-copy', bad: 'bad-copy' },
+      }),
+    ).toThrow(/viewBox/);
+    expect(original.canvas.elements.map((element) => element.id)).toEqual(['valid', 'bad']);
+  });
+
   test('uses the default offset {x:20, y:20} when no offset is given', () => {
     const original = slideContent([textElement({ id: 'a', left: 100, top: 50 })]);
 

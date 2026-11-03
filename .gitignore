@@ -76,6 +76,7 @@ next-env.d.ts
 # docs
 /docs
 # Eval results
+eval/whiteboard-shapes/results/
 eval/whiteboard-layout/results/
 eval/outline-language/results/
 eval/orchestration/results/
@@ -100,3 +101,6 @@ render-service/.owner-bound-parent-*/
 
 # Generated, self-hosted Monaco assets
 /public/code-editor/
+
+# Generated interactive libraries
+/public/vendor/interactive

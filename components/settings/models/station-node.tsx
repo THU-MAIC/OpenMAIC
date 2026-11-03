@@ -1,10 +1,10 @@
 'use client';
 
-import { forwardRef, useState } from 'react';
+import { forwardRef, useCallback, useRef, useState, type RefObject } from 'react';
 import { ChevronDown, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { ModelSettingsView, SlotView, ApplyChange } from '@/lib/model-settings/client';
@@ -83,11 +83,14 @@ function SlotLine({
   slot,
   ctx,
   size,
+  card,
 }: {
   line: StationLine;
   slot: SlotView;
   ctx: NodeContext;
   size: 'root' | 'station';
+  /** The card the line sits on: the picker opens beside it, never over it. */
+  card: RefObject<HTMLDivElement | null>;
 }) {
   const { view, apply, t, openKey, setOpenKey } = ctx;
   const text = lineText(view, slot, t);
@@ -167,6 +170,8 @@ function SlotLine({
             {content}
           </button>
         </PopoverTrigger>
+        {/* After the trigger: the anchor set last is the one the picker keeps. */}
+        <PopoverAnchor virtualRef={card as RefObject<HTMLDivElement>} />
         <PopoverContent
           align="start"
           side="bottom"
@@ -244,6 +249,15 @@ export const StationNode = forwardRef<
   }
 >(function StationNode({ station, ctx, x, y, width, empty, expanded, onExpand, followers }, ref) {
   const { t } = ctx;
+  const card = useRef<HTMLDivElement | null>(null);
+  const setCard = useCallback(
+    (element: HTMLDivElement | null) => {
+      card.current = element;
+      if (typeof ref === 'function') ref(element);
+      else if (ref) ref.current = element;
+    },
+    [ref],
+  );
   const first = station.lines[0].view;
   const lit = stationLit(station);
   const root = station.kind === 'root';
@@ -258,7 +272,7 @@ export const StationNode = forwardRef<
 
   return (
     <div
-      ref={ref}
+      ref={setCard}
       data-station={station.id}
       className={cn(
         'absolute rounded-[10px] border bg-card text-card-foreground transition-[border-color,background-color,opacity] duration-500',
@@ -309,6 +323,7 @@ export const StationNode = forwardRef<
               slot={line.view}
               ctx={ctx}
               size={root ? 'root' : 'station'}
+              card={card}
             />
           ),
         )}

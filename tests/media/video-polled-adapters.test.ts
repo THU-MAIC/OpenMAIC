@@ -5,7 +5,6 @@ import { generateWithHappyHorse } from '@/lib/media/adapters/happyhorse-adapter'
 import { generateWithKling } from '@/lib/media/adapters/kling-adapter';
 import { generateWithMiniMaxVideo } from '@/lib/media/adapters/minimax-video-adapter';
 import { generateWithSeedance } from '@/lib/media/adapters/seedance-adapter';
-import { generateWithVeo } from '@/lib/media/adapters/veo-adapter';
 
 const fetchMock = vi.fn();
 
@@ -28,38 +27,42 @@ describe('polled video adapter compatibility', () => {
     vi.useRealTimers();
   });
 
-  it('keeps Seedance task routing and success extraction unchanged', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'seed-task' })).mockResolvedValueOnce(
-      jsonResponse({
-        id: 'seed-task',
-        model: 'doubao-seedance-2-0-260128',
-        status: 'succeeded',
-        content: { video_url: 'https://cdn.example.com/seed.mp4' },
-        resolution: '720p',
-        ratio: '16:9',
+  it.each(['doubao-seedance-2-0-260128', 'doubao-seedance-1-0-lite-t2v-250428'])(
+    'keeps Seedance task routing and success extraction unchanged for %s',
+    async (model) => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'seed-task' })).mockResolvedValueOnce(
+        jsonResponse({
+          id: 'seed-task',
+          model,
+          status: 'succeeded',
+          content: { video_url: 'https://cdn.example.com/seed.mp4' },
+          resolution: '720p',
+          ratio: '16:9',
+          duration: 5,
+        }),
+      );
+
+      const promise = generateWithSeedance(
+        { providerId: 'seedance', apiKey: 'seed-key', model },
+        { prompt: 'a paper city', aspectRatio: '16:9', resolution: '720p', duration: 5 },
+      );
+
+      await vi.advanceTimersByTimeAsync(4_999);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body as string).model).toBe(model);
+      await vi.advanceTimersByTimeAsync(1);
+
+      await expect(promise).resolves.toEqual({
+        url: 'https://cdn.example.com/seed.mp4',
         duration: 5,
-      }),
-    );
-
-    const promise = generateWithSeedance(
-      { providerId: 'seedance', apiKey: 'seed-key', model: 'doubao-seedance-2-0-260128' },
-      { prompt: 'a paper city', aspectRatio: '16:9', resolution: '720p', duration: 5 },
-    );
-
-    await vi.advanceTimersByTimeAsync(4_999);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(1);
-
-    await expect(promise).resolves.toEqual({
-      url: 'https://cdn.example.com/seed.mp4',
-      duration: 5,
-      width: 1280,
-      height: 720,
-    });
-    expect(fetchMock.mock.calls[1][0]).toBe(
-      'https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks/seed-task',
-    );
-  });
+        width: 1280,
+        height: 720,
+      });
+      expect(fetchMock.mock.calls[1][0]).toBe(
+        'https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks/seed-task',
+      );
+    },
+  );
 
   it('preserves the Seedance timeout message and exact poll count', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'seed-timeout' })).mockImplementation(() =>
@@ -358,216 +361,6 @@ describe('polled video adapter compatibility', () => {
 
     await rejection;
     expect(fetchMock).toHaveBeenCalledTimes(41);
-  });
-
-  it('returns an immediately completed Veo operation without waiting or polling', async () => {
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({
-        name: 'operations/veo-immediate',
-        done: true,
-        response: {
-          videos: [{ bytesBase64Encoded: 'dmlkZW8=', mimeType: 'video/mp4' }],
-        },
-      }),
-    );
-
-    const result = await generateWithVeo(
-      {
-        providerId: 'veo',
-        apiKey: 'veo-key',
-        baseUrl: 'https://veo.example',
-        model: 'veo-3.0-generate-001',
-      },
-      { prompt: 'a paper city', aspectRatio: '16:9', duration: 8 },
-    );
-
-    expect(result).toEqual({
-      url: 'data:video/mp4;base64,dmlkZW8=',
-      duration: 8,
-      width: 1280,
-      height: 720,
-    });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(vi.getTimerCount()).toBe(0);
-  });
-
-  it('rejects an immediately failed Veo operation without waiting or polling', async () => {
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({
-        name: 'operations/veo-failed',
-        done: true,
-        error: { code: 13, message: 'render failed', status: 'INTERNAL' },
-      }),
-    );
-
-    await expect(
-      generateWithVeo(
-        {
-          providerId: 'veo',
-          apiKey: 'veo-key',
-          baseUrl: 'https://veo.example',
-          model: 'veo-3.0-generate-001',
-        },
-        { prompt: 'a paper city' },
-      ),
-    ).rejects.toThrow('Veo generation failed: 13 - render failed');
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(vi.getTimerCount()).toBe(0);
-  });
-
-  it('polls the Gemini API operation and downloads the generated video URI with the key', async () => {
-    fetchMock
-      .mockResolvedValueOnce(
-        jsonResponse({ name: 'models/veo-3.1-generate-preview/operations/veo-task' }),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse({
-          name: 'models/veo-3.1-generate-preview/operations/veo-task',
-          done: true,
-          response: {
-            '@type':
-              'type.googleapis.com/google.ai.generativelanguage.v1beta.PredictLongRunningResponse',
-            generateVideoResponse: {
-              generatedSamples: [
-                { video: { uri: 'https://veo.example/v1beta/files/abc:download?alt=media' } },
-              ],
-            },
-          },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(new Uint8Array([112, 111, 108, 108, 101, 100]), {
-          status: 200,
-          headers: { 'Content-Type': 'video/mp4' },
-        }),
-      );
-
-    const promise = generateWithVeo(
-      {
-        providerId: 'veo',
-        apiKey: 'veo-key',
-        baseUrl: 'https://veo.example',
-        model: 'veo-3.1-generate-preview',
-      },
-      { prompt: 'a paper city', aspectRatio: '9:16', duration: 8 },
-    );
-
-    await vi.advanceTimersByTimeAsync(9_999);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(1);
-
-    await expect(promise).resolves.toEqual({
-      url: 'data:video/mp4;base64,cG9sbGVk',
-      duration: 8,
-      width: 720,
-      height: 1280,
-    });
-    const [pollUrl, pollInit] = fetchMock.mock.calls[1];
-    expect(pollUrl).toBe(
-      'https://veo.example/v1beta/models/veo-3.1-generate-preview/operations/veo-task',
-    );
-    expect(pollInit).toMatchObject({
-      method: 'GET',
-      redirect: 'manual',
-      headers: { 'x-goog-api-key': 'veo-key' },
-    });
-    expect(pollInit.body).toBeUndefined();
-    const [downloadUrl, downloadInit] = fetchMock.mock.calls[2];
-    expect(downloadUrl).toBe('https://veo.example/v1beta/files/abc:download?alt=media');
-    expect(downloadInit).toMatchObject({
-      method: 'GET',
-      redirect: 'manual',
-      headers: { 'x-goog-api-key': 'veo-key' },
-    });
-  });
-
-  it('sends the Veo video download to the configured base URL, never to another host', async () => {
-    fetchMock
-      .mockResolvedValueOnce(
-        jsonResponse({
-          name: 'operations/veo-proxy',
-          done: true,
-          response: {
-            generateVideoResponse: {
-              generatedSamples: [
-                {
-                  video: {
-                    uri: 'https://generativelanguage.googleapis.com/v1beta/files/abc:download?alt=media',
-                  },
-                },
-              ],
-            },
-          },
-        }),
-      )
-      .mockResolvedValueOnce(new Response(new Uint8Array([1]), { status: 200 }));
-
-    await generateWithVeo(
-      {
-        providerId: 'veo',
-        apiKey: 'veo-key',
-        baseUrl: 'https://proxy.example/gemini',
-        model: 'veo-3.1-generate-preview',
-      },
-      { prompt: 'a paper city' },
-    );
-
-    expect(fetchMock.mock.calls[1][0]).toBe(
-      'https://proxy.example/gemini/v1beta/files/abc:download?alt=media',
-    );
-  });
-
-  it('reports a Veo operation whose output was filtered as a failure', async () => {
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({
-        name: 'operations/veo-filtered',
-        done: true,
-        response: {
-          generateVideoResponse: {
-            raiMediaFilteredCount: 1,
-            raiMediaFilteredReasons: ['The prompt could not be submitted.'],
-          },
-        },
-      }),
-    );
-
-    await expect(
-      generateWithVeo(
-        {
-          providerId: 'veo',
-          apiKey: 'veo-key',
-          baseUrl: 'https://veo.example',
-          model: 'veo-3.1-generate-preview',
-        },
-        { prompt: 'a paper city' },
-      ),
-    ).rejects.toThrow('Veo generation was filtered: The prompt could not be submitted.');
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('preserves the Veo timeout message and exact poll count', async () => {
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ name: 'operations/veo-timeout' }))
-      .mockImplementation(() =>
-        Promise.resolve(jsonResponse({ name: 'operations/veo-timeout', done: false })),
-      );
-    const promise = generateWithVeo(
-      {
-        providerId: 'veo',
-        apiKey: 'veo-key',
-        baseUrl: 'https://veo.example',
-        model: 'veo-3.0-generate-001',
-      },
-      { prompt: 'a paper city' },
-    );
-    const rejection = expect(promise).rejects.toThrow(
-      'Veo video generation timed out after 10 minutes',
-    );
-
-    await vi.advanceTimersByTimeAsync(600_000);
-
-    await rejection;
-    expect(fetchMock).toHaveBeenCalledTimes(61);
   });
 
   it('preserves the MiniMax terminal failure message', async () => {

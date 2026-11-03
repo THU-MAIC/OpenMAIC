@@ -20,7 +20,8 @@ export interface GenerationRetryOptions<T> {
 
 const DEFAULT_MAX_RETRIES = 5;
 const DEFAULT_BASE_DELAY_MS = 1000;
-const DEFAULT_MAX_DELAY_MS = 16000;
+/** Ceiling for one classroom narration retry sleep, including jitter. */
+export const DEFAULT_MAX_DELAY_MS = 16000;
 const RETRYABLE_STATUS_CODES = new Set([408, 409, 425, 429]);
 const NON_RETRYABLE_STATUS_CODES = new Set([400, 401, 403, 404, 422]);
 

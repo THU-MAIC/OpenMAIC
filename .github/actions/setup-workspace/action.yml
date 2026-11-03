@@ -1,0 +1,126 @@
+name: Set up workspace
+description: >-
+  Install Node, pnpm and the workspace dependencies, then make the workspace
+  packages' build outputs available, the way `pnpm install` leaves them.
+
+# Why the package build is cached
+#
+# The root `postinstall` runs `build:packages`, which compiles every workspace
+# package (the importer's three rollup + terser passes alone take ~50 s) and
+# then copies some of their outputs into public/vendor. That is ~85 s of every
+# install, while linking node_modules from the restored pnpm store takes ~10 s.
+# Several CI jobs install the workspace, so the build is repeated in each.
+#
+# With `build-cache: 'true'` this action installs with `--ignore-scripts` and
+# restores the packages' dist/ directories from a cache whose key covers every
+# input of that build: the tracked contents of packages/ (minus the separate
+# docs app), the root manifest (which defines `build:packages`), the lockfile,
+# the workspace file, the runner platform and the Node major version. Any
+# change to a package source, its build config or a dependency misses the
+# cache and runs the real `build:packages`, which then saves the result.
+# The outputs are plain JS, JSON and .d.ts from rollup and tsc, so the key
+# does not include the Node patch version: `node-version: 22` resolves to
+# whichever 22.x the runner image carries, and that differs between runners
+# in the same run.
+#
+# Skipping lifecycle scripts drops nothing else: pnpm 10 runs no dependency
+# build scripts unless they are allow-listed, and this workspace allow-lists
+# none, so the root `postinstall` is the only script `pnpm install` runs.
+#
+# The two sync steps at the end of `build:packages` write ignored copies into
+# public/vendor. They are cheap and read node_modules as well as dist/, so they
+# always run instead of being cached.
+#
+# `build-cache: 'false'` runs a plain `pnpm install`, real `postinstall`
+# included. The lint job uses it, because it verifies that installing does not
+# rewrite tracked files, which a restored cache would not exercise.
+
+inputs:
+  build-cache:
+    description: "'true' to restore the workspace package build from cache; 'false' to run the real postinstall."
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v5
+
+    - uses: actions/setup-node@v5
+      with:
+        node-version: 22
+        cache: pnpm
+
+    - name: Install dependencies
+      if: inputs.build-cache != 'true'
+      shell: bash
+      run: pnpm install --frozen-lockfile
+
+    - name: Install dependencies (without lifecycle scripts)
+      if: inputs.build-cache == 'true'
+      shell: bash
+      run: pnpm install --frozen-lockfile --ignore-scripts
+
+    - name: Compute package build cache key
+      if: inputs.build-cache == 'true'
+      id: build-key
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Blob ids of every tracked input, so the key changes exactly when
+        # an input's content does. packages/docs is not a workspace package.
+        inputs_hash="$(
+          git ls-tree -r HEAD -- packages package.json pnpm-lock.yaml pnpm-workspace.yaml \
+            | grep -v $'\tpackages/docs/' \
+            | sha256sum | cut -d' ' -f1
+        )"
+        echo "key=workspace-packages-v1-${RUNNER_OS}-${RUNNER_ARCH}-node$(node -p 'process.versions.node.split(".")[0]')-${inputs_hash}" >> "$GITHUB_OUTPUT"
+
+    - name: Restore package build
+      if: inputs.build-cache == 'true'
+      id: build-cache
+      uses: actions/cache/restore@v6
+      with:
+        key: ${{ steps.build-key.outputs.key }}
+        path: |
+          packages/*/dist
+          packages/@openmaic/*/dist
+
+    - name: Build workspace packages
+      if: inputs.build-cache == 'true' && steps.build-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: pnpm run build:packages
+
+    # Saved right after the build, so a later test failure in the same job
+    # does not throw the build away. Parallel jobs racing on the same key are
+    # harmless: one saves, the others log a warning.
+    - name: Save package build
+      if: inputs.build-cache == 'true' && steps.build-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        key: ${{ steps.build-key.outputs.key }}
+        path: |
+          packages/*/dist
+          packages/@openmaic/*/dist
+
+    # The sync step below reproduces the tail of `build:packages`. Fail rather
+    # than silently diverge if that script ever ends differently. Checked on
+    # every run, not only on a cache hit, so the change that breaks it fails.
+    - name: Check the uncached tail of build:packages
+      if: inputs.build-cache == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        tail='&& node scripts/sync-maic-importer.mjs && node scripts/sync-interactive-assets.mjs'
+        if ! node -e 'process.exit(require("./package.json").scripts["build:packages"].endsWith(process.argv[1]) ? 0 : 1)' "$tail"; then
+          echo "::error::build:packages no longer ends with: ${tail#&& }"
+          echo "Update .github/actions/setup-workspace so a cache hit reproduces its uncached steps."
+          exit 1
+        fi
+
+    - name: Sync package outputs into public/vendor
+      if: inputs.build-cache == 'true' && steps.build-cache.outputs.cache-hit == 'true'
+      shell: bash
+      run: |
+        node scripts/sync-maic-importer.mjs
+        node scripts/sync-interactive-assets.mjs

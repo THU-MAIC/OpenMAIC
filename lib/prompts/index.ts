@@ -27,9 +27,4 @@ export const PROMPT_IDS = {
   INTERACTIVE_OUTLINES: 'interactive-outlines',
   TASK_ENGINE_OUTLINES: 'task-engine-outlines',
   WEB_SEARCH_QUERY_REWRITE: 'web-search-query-rewrite',
-  AGENT_SYSTEM: 'agent-system',
-  AGENT_SYSTEM_WB_TEACHER: 'agent-system-wb-teacher',
-  AGENT_SYSTEM_WB_ASSISTANT: 'agent-system-wb-assistant',
-  AGENT_SYSTEM_WB_STUDENT: 'agent-system-wb-student',
-  DIRECTOR: 'director',
 } as const satisfies Record<string, PromptId>;

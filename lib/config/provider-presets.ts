@@ -16,7 +16,8 @@
  * another capability's registry id or a token plan id, the preset id is
  * spelled out in {@link PRESET_ID_OVERRIDES}.
  */
-import { PROVIDERS } from '@/lib/ai/providers';
+import { WEB_FETCH_PROVIDERS } from '@/lib/web-fetch/registry';
+import { getModelInfo, PROVIDERS } from '@/lib/ai/providers';
 import { ASR_PROVIDERS, TTS_PROVIDERS } from '@/lib/audio/constants';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
@@ -31,7 +32,7 @@ import { presetIdFor, tokenPlanPresetId } from '@/lib/config/preset-ids';
 import { STAGE_SLOTS, type SlotCapability, type SlotId } from '@/lib/config/model-slots';
 import type { LlmStage } from '@/lib/server/model-routes';
 import { getCatalogThinkingCapability } from '@/lib/ai/model-metadata';
-import type { ThinkingCapability } from '@/lib/types/provider';
+import type { ProviderId, ThinkingCapability } from '@/lib/types/provider';
 
 export interface PresetCapabilityTarget {
   /** Entry of that capability's built-in registry that serves the calls. */
@@ -88,6 +89,7 @@ const REGISTRIES: Record<SlotCapability, Record<string, RegistryEntry>> = {
   video: VIDEO_PROVIDERS,
   webSearch: WEB_SEARCH_PROVIDERS,
   document: PDF_PROVIDERS,
+  webFetch: WEB_FETCH_PROVIDERS,
 };
 
 export { PRESET_ID_OVERRIDES } from '@/lib/config/preset-ids';
@@ -109,6 +111,7 @@ const MODALITY_CAPABILITY: Record<TokenPlanModality, SlotCapability> = {
   video: 'video',
   tts: 'tts',
   webSearch: 'webSearch',
+  webFetch: 'webFetch',
 };
 
 function singlePresets(): ProviderPreset[] {
@@ -120,6 +123,8 @@ function singlePresets(): ProviderPreset[] {
     for (const [registryId, entry] of Object.entries(registry)) {
       const requiresBaseUrl =
         entry.requiresBaseUrl === true || !!REQUIRES_BASE_URL[capability]?.includes(registryId);
+      if (capability === 'webFetch' && WEB_FETCH_PROVIDERS[registryId].credentialPresets?.length)
+        continue;
       presets.push({
         id: presetIdFor(capability, registryId),
         name: entry.name ?? registryId,
@@ -161,7 +166,7 @@ export function tokenPlanToPreset(plan: TokenPlanPreset): ProviderPreset {
     };
     const root = capability === 'chat' ? 'llm' : capability;
     if (lead) recommended[root as SlotId] = lead;
-    // A capability without models to pick (web search) is served by the
+    // A capability without models to pick (web search or fetch) is served by the
     // provider alone: the recommendation names its registry entry, which
     // becomes a provider-only assignment.
     else if (!target.defaultModels?.length) recommended[root as SlotId] = target.providerId;
@@ -173,13 +178,50 @@ export function tokenPlanToPreset(plan: TokenPlanPreset): ProviderPreset {
   return { id, name: plan.name, kind: 'token-plan', capabilities, recommended };
 }
 
+// These accounts share one key and base URL across capability registries.
+const SHARED_ACCOUNT_PRESETS: ProviderPreset[] = [
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    kind: 'single',
+    capabilities: { chat: { registryId: 'deepseek' }, webSearch: { registryId: 'deepseek' } },
+  },
+  {
+    id: 'firecrawl',
+    name: 'Firecrawl',
+    kind: 'single',
+    capabilities: { webSearch: { registryId: 'firecrawl' }, webFetch: { registryId: 'firecrawl' } },
+  },
+  {
+    id: 'kimi',
+    name: 'Kimi',
+    kind: 'single',
+    capabilities: { chat: { registryId: 'kimi' }, webSearch: { registryId: 'kimi' } },
+    recommended: { webSearch: 'kimi' },
+  },
+];
+
 function buildPresets(): ProviderPreset[] {
   const plans = TOKEN_PLAN_PRESETS.map(tokenPlanToPreset);
-  const planIds = new Set(plans.map((plan) => plan.id));
-  // A token plan that covers a chat provider's own endpoint (MiniMax,
+  const combined = [...plans, ...SHARED_ACCOUNT_PRESETS];
+  const combinedIds = new Set(combined.map((preset) => preset.id));
+  // A shared account or token plan that covers a chat provider's own endpoint (MiniMax,
   // TokenDance) supersedes the single-capability preset of the same id.
-  const singles = singlePresets().filter((preset) => !planIds.has(preset.id));
-  return [...plans, ...singles];
+  const singles = singlePresets().filter((preset) => !combinedIds.has(preset.id));
+  const presets = [...combined, ...singles];
+  for (const provider of Object.values(WEB_FETCH_PROVIDERS)) {
+    if (!provider.credentialPresets?.length) continue;
+    for (const preset of presets.filter((entry) =>
+      provider.credentialPresets?.includes(entry.id),
+    )) {
+      if (preset.capabilities.webFetch) continue;
+      preset.capabilities.webFetch = {
+        registryId: provider.id,
+        baseUrl: preset.capabilities.chat?.baseUrl,
+      };
+    }
+  }
+  return presets;
 }
 
 export const PROVIDER_PRESETS: readonly ProviderPreset[] = buildPresets();
@@ -240,9 +282,11 @@ export function catalogueModel(
   id: string,
   known?: RegistryModel,
 ): CatalogueModel {
+  // This provider's thinking map wins over a borrowed catalog row, so an
+  // Ark plan id keeps the doubao request adapter.
   const thinking =
-    known?.capabilities?.thinking ??
-    (capability === 'chat' ? getCatalogThinkingCapability(registryId, id) : undefined);
+    (capability === 'chat' ? getCatalogThinkingCapability(registryId, id) : undefined) ??
+    known?.capabilities?.thinking;
   const capabilities = { ...known?.capabilities, ...(thinking ? { thinking } : {}) };
   return {
     id,
@@ -268,7 +312,8 @@ export function presetModels(preset: ProviderPreset, capability: SlotCapability)
       capability,
       target.registryId,
       id,
-      known.find((model) => model.id === id),
+      known.find((model) => model.id === id) ??
+        (capability === 'chat' ? getModelInfo(target.registryId as ProviderId, id) : undefined),
     ),
   );
 }

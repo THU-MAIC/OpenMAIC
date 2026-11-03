@@ -432,6 +432,43 @@ describe('HttpDocumentStore contract mapping', () => {
     });
   });
 
+  test('sends a row write with keepalive only when the caller asks for it', async () => {
+    const seen: Array<{ method: string; path: string; keepalive: boolean | undefined }> = [];
+    const client = new HttpDocumentStore({
+      baseUrl: BASE_URL,
+      fetch: async (input, init) => {
+        seen.push({
+          method: init?.method ?? 'GET',
+          path: new URL(String(input)).pathname,
+          keepalive: init?.keepalive,
+        });
+        return new Response(null, { status: 204 });
+      },
+    });
+    const document = makeDocument();
+    const scene = document.scenes[0]!;
+
+    await client.putScene(document.stage.id, scene, { keepalive: true });
+    await client.putStage(document.stage.id, document.stage, { keepalive: true });
+    await client.putScene(document.stage.id, scene);
+    await client.putStage(document.stage.id, document.stage);
+
+    expect(seen).toEqual([
+      {
+        method: 'PUT',
+        path: `/documents/${document.stage.id}/scenes/${scene.id}`,
+        keepalive: true,
+      },
+      { method: 'PUT', path: `/documents/${document.stage.id}/stage`, keepalive: true },
+      {
+        method: 'PUT',
+        path: `/documents/${document.stage.id}/scenes/${scene.id}`,
+        keepalive: undefined,
+      },
+      { method: 'PUT', path: `/documents/${document.stage.id}/stage`, keepalive: undefined },
+    ]);
+  });
+
   // The autosave keeps at most one save in flight and starts the next one only
   // once that promise settles. A request that never settles therefore strands
   // every later save for the life of the page — silently, because the store

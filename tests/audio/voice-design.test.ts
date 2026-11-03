@@ -54,6 +54,34 @@ describe('normalizeVoiceDesign', () => {
       delivery: '',
     });
   });
+
+  it('keeps male or female and drops a translated or unknown gender', () => {
+    expect(
+      normalizeVoiceDesign({
+        identity: '年轻女性学生',
+        texture: '清亮',
+        delivery: '轻快',
+        gender: 'female',
+      }),
+    ).toEqual({
+      identity: '年轻女性学生',
+      texture: '清亮',
+      delivery: '轻快',
+      gender: 'female',
+    });
+    expect(
+      normalizeVoiceDesign({
+        identity: '年轻女性学生',
+        texture: '清亮',
+        delivery: '轻快',
+        gender: '女性',
+      }),
+    ).toEqual({
+      identity: '年轻女性学生',
+      texture: '清亮',
+      delivery: '轻快',
+    });
+  });
 });
 
 describe('getDeterministicVoiceId', () => {

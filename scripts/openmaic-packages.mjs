@@ -31,14 +31,23 @@ import { fileURLToPath } from 'node:url';
  * scripts to hide a change can edit the production sources directly, and code
  * review, not tooling, is what stands in the way of that.
  */
-export const OPENMAIC_PACKAGES = ['dsl', 'generation', 'storage', 'renderer', 'editor', 'importer'];
+export const OPENMAIC_PACKAGES = [
+  'dsl',
+  'geometry',
+  'generation',
+  'storage',
+  'renderer',
+  'editor',
+  'importer',
+];
 
 /** The packages that depend on other owned packages, and on which ones. */
 export const INTERNAL_DEPENDENTS = {
-  generation: ['@openmaic/dsl'],
+  geometry: ['@openmaic/dsl'],
+  generation: ['@openmaic/dsl', '@openmaic/geometry'],
   storage: ['@openmaic/dsl'],
-  renderer: ['@openmaic/dsl'],
-  editor: ['@openmaic/dsl', '@openmaic/renderer'],
+  renderer: ['@openmaic/dsl', '@openmaic/geometry'],
+  editor: ['@openmaic/dsl', '@openmaic/geometry', '@openmaic/renderer'],
   importer: ['@openmaic/dsl'],
 };
 

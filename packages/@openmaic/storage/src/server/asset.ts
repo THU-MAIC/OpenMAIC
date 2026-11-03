@@ -7,6 +7,7 @@ import {
   AssetNotFoundError,
   AssetQuotaExceededError,
   AssetImmutableError,
+  AssetRootedError,
   DEFAULT_RENDERABLE_TYPES,
   EXCLUDED_RENDERABLE_TYPES,
   type AssetIndirectRead,
@@ -473,8 +474,8 @@ function servedLabel(
 /**
  * The contract code an error declares, if it declares one.
  *
- * {@link AssetNotFoundError} and {@link AssetQuotaExceededError} each carry a
- * literal `code` field, and this is what it is for: a store may reach this
+ * {@link AssetNotFoundError}, {@link AssetQuotaExceededError} and
+ * {@link AssetRootedError} each carry a literal `code` field, and this is what it is for: a store may reach this
  * handler from another module realm -- a host that bundles the package more
  * than once, an application whose store is constructed in a different bundle
  * from its handler -- and `instanceof` is false across such a boundary while
@@ -509,6 +510,13 @@ function classifyStoreError(error: unknown): never {
       409,
       'ASSET_IMMUTABLE',
       '@openmaic/storage: immutable asset; install a new content version instead',
+    );
+  }
+  if (error instanceof AssetRootedError || code === 'ASSET_ROOTED') {
+    throw new AssetHttpError(
+      409,
+      'ASSET_ROOTED',
+      '@openmaic/storage: asset is held by a reference root',
     );
   }
   throw error;

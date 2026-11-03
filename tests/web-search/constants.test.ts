@@ -44,6 +44,17 @@ describe('web search provider constants', () => {
     expect(getAllWebSearchProviders().map((provider) => provider.id)).toContain('exa');
   });
 
+  it('registers Firecrawl as an API-key web search provider', () => {
+    expect(WEB_SEARCH_PROVIDERS.firecrawl).toMatchObject({
+      id: 'firecrawl',
+      name: 'Firecrawl',
+      requiresApiKey: true,
+      defaultBaseUrl: 'https://api.firecrawl.dev',
+      endpointPath: '/v2/search',
+    });
+    expect(getAllWebSearchProviders().map((provider) => provider.id)).toContain('firecrawl');
+  });
+
   it('registers Claude as an API-key web search provider with a model list', () => {
     expect(WEB_SEARCH_PROVIDERS.claude).toMatchObject({
       id: 'claude',

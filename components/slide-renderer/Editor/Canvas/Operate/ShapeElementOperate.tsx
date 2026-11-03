@@ -11,6 +11,7 @@ import { BorderLine } from './BorderLine';
 interface ShapeElementOperateProps {
   readonly elementInfo: PPTShapeElement;
   readonly handlerVisible: boolean;
+  readonly geometryWritable?: boolean;
   readonly rotateElement: (e: React.MouseEvent, element: PPTShapeElement) => void;
   readonly scaleElement: (
     e: React.MouseEvent,
@@ -27,6 +28,7 @@ interface ShapeElementOperateProps {
 export function ShapeElementOperate({
   elementInfo,
   handlerVisible,
+  geometryWritable = true,
   rotateElement,
   scaleElement,
   moveShapeKeypoint,
@@ -44,6 +46,7 @@ export function ShapeElementOperate({
   const { resizeHandlers, borderLines } = useCommonOperate(scaleWidth, scaleHeight);
 
   const keypoints = useMemo(() => {
+    if (!geometryWritable) return [];
     if (!elementInfo.pathFormula || elementInfo.keypoints === undefined) return [];
     const pathFormula = SHAPE_PATH_FORMULAS[elementInfo.pathFormula];
 
@@ -93,7 +96,7 @@ export function ShapeElementOperate({
         styles,
       };
     });
-  }, [elementInfo, canvasScale]);
+  }, [elementInfo, canvasScale, geometryWritable]);
 
   return (
     <div className="shape-element-operate">
@@ -107,19 +110,20 @@ export function ShapeElementOperate({
       ))}
       {handlerVisible && (
         <>
-          {resizeHandlers.map((point) => (
-            <ResizeHandler
-              key={point.direction}
-              type={point.direction}
-              rotate={elementInfo.rotate}
-              style={point.style}
-              className="operate-resize-handler"
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                scaleElement(e, elementInfo, point.direction);
-              }}
-            />
-          ))}
+          {geometryWritable &&
+            resizeHandlers.map((point) => (
+              <ResizeHandler
+                key={point.direction}
+                type={point.direction}
+                rotate={elementInfo.rotate}
+                style={point.style}
+                className="operate-resize-handler"
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  scaleElement(e, elementInfo, point.direction);
+                }}
+              />
+            ))}
           <RotateHandler
             className="operate-rotate-handler"
             style={{ left: scaleWidth / 2 + 'px' }}

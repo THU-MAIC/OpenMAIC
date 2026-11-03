@@ -120,6 +120,17 @@ If you have not completed local verification, keep your PR in **Draft** status. 
 - **Ensure CI passes** before requesting review
 - **All UI text must be internationalized (i18n)** — do not hardcode user-facing strings
 
+### Review Threads
+
+Every non-draft PR gets an automated Codex review on each push; a draft is not reviewed until it is marked ready. The review follows the rules in [AGENTS.md](AGENTS.md). Its findings are advisory, and a maintainer makes the final review and merge decision.
+
+`main` only accepts a PR once every review thread is resolved, so handling the threads is part of getting a PR merged:
+
+- **Answer every thread before resolving it.** Either fix the finding and reply with the commit, or reply with why it stays (tracked in another issue or PR, or a deliberate trade-off). Do not resolve a thread silently.
+- **Outdated threads too.** When a later change removes or rewrites the code a thread points at, reply briefly to say so and resolve it.
+- **Keep the PR in draft while it is still changing.** Every push to a ready PR triggers a new review and dismisses earlier approvals; mark it ready once the changes are in.
+- **A stuck review does not block.** If the Codex review fails, or keeps running for about 20 minutes on the same commit, the maintainer decides from CI and their own review.
+
 ## Commit Message Convention
 
 We follow [Conventional Commits](https://www.conventionalcommits.org/):
@@ -144,7 +155,7 @@ docs: add CONTRIBUTING.md
 
 ## Changing a Published Package
 
-Four packages under `packages/@openmaic/` are published to npm: `dsl`, `storage`, `renderer`, and `importer`. Anything that ships inside one of those tarballs is under version control in the literal sense — the version number on npm has to keep meaning "this exact source".
+The `@openmaic` packages listed in [`scripts/openmaic-packages.mjs`](scripts/openmaic-packages.mjs) are published to npm. Anything that ships inside one of those tarballs is under version control in the literal sense — the version number on npm has to keep meaning "this exact source".
 
 **If your PR changes a publishable file in one of those packages, bump that package's `version` in its `package.json` in the same PR.** CI enforces this, and without the bump you will see:
 
@@ -166,6 +177,16 @@ Be deliberate with `@openmaic/dsl`. It is the contract the other packages and do
 
 You never publish anything yourself. Once your PR is merged, a version that is not yet on the registry is released automatically, and a `@openmaic/<name>@<version>` tag is written afterwards to record it. That tag is a marker, not a trigger: pushing one does not release anything.
 
+## App Releases
+
+App versions (the `vX.Y.Z` tags and GitHub Releases) say what a release is about. They are separate from the npm package rules above.
+
+- **Minor (`x.Y.0`)** — a themed release, titled by its theme (1.0.0 *Build courses with an agent*, 1.1.0 *Classroom chat on an agent loop*, 1.2.0 *Server-first*). Large migrations go through `-rc.N` pre-releases first.
+- **Patch (`x.y.Z`)** — cut from `main` with whatever has merged since the last release: fixes, security, and features alike, typically every one to three weeks. A patch may carry a breaking change when one is needed (tightening a default, retiring a superseded path); it is listed first under **Breaking Changes** with upgrade steps.
+- While `main` is in a minor's release-candidate cycle, security fixes for the current line ship as patches from a `release/x.y.x` branch.
+
+Every release has a `CHANGELOG.md` section, and the GitHub Release title names its headline.
+
 ## AI-Assisted PRs 🤖
 
 PRs built with AI tools (Codex, Claude, Cursor, etc.) are welcome! We just ask for transparency and self-review:
@@ -174,7 +195,7 @@ PRs built with AI tools (Codex, Claude, Cursor, etc.) are welcome! We just ask f
 - **AI-review your own code first** — before requesting maintainer review, run an AI code review (e.g. Claude, Codex, Copilot) on your changes and address the findings. This is **required** for AI-assisted PRs to avoid dumping large amounts of unreviewed generated code on maintainers.
 - **You are responsible for what you submit** — understand the code, not just the prompt.
 
-Every non-draft PR also gets an automated Codex review on each push. Treat its findings as advisory: fix what is valid, or reply with your reasoning. A maintainer still makes the final review and merge decision.
+Every non-draft PR also gets an automated Codex review on each push; see [Review Threads](#review-threads) for how to handle its findings.
 
 AI-assisted PRs are held to the same quality standard as any other PR. Community members are also encouraged to leave constructive feedback on any PR — peer review helps everyone improve.
 

@@ -5,6 +5,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { resolveBrowserVoice } from '@/lib/audio/browser-tts-preview';
 
 // Note: Window.SpeechSynthesis declaration is already in the global scope
 
@@ -15,7 +16,8 @@ export interface UseBrowserTTSOptions {
   rate?: number; // 0.1 to 10
   pitch?: number; // 0 to 2
   volume?: number; // 0 to 1
-  lang?: string; // e.g., 'zh-CN', 'en-US'
+  /** Language fallback for text detection; an explicit voice keeps its own language. */
+  lang?: string;
 }
 
 export function useBrowserTTS(options: UseBrowserTTSOptions = {}) {
@@ -73,15 +75,10 @@ export function useBrowserTTS(options: UseBrowserTTSOptions = {}) {
       utterance.rate = rate;
       utterance.pitch = pitch;
       utterance.volume = volume;
-      utterance.lang = lang;
-
-      // Set voice if specified
-      if (voiceURI) {
-        const voice = availableVoices.find((v) => v.voiceURI === voiceURI);
-        if (voice) {
-          utterance.voice = voice;
-        }
-      }
+      // 讨论发言与预览、课堂朗读共用语言和音色优先级，避免在不同播放路径之间切回中文。
+      const resolved = resolveBrowserVoice(availableVoices, voiceURI ?? '', text, lang);
+      utterance.lang = resolved.lang;
+      if (resolved.voice) utterance.voice = resolved.voice;
 
       utterance.onstart = () => {
         setIsSpeaking(true);

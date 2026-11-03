@@ -1,7 +1,8 @@
 # `lib/prompts`
 
-File-based prompt loader + templates for the runtime orchestration layer and
-app-only outline modes. Generation templates live in `@openmaic/generation`.
+File-based prompt loader + templates for app-only prompts (the interactive
+and task-engine outline modes, and web-search query rewriting). Generation
+templates live in `@openmaic/generation`.
 
 ## Directory layout
 
@@ -38,7 +39,7 @@ Conditional blocks read from the same `variables` record passed to
 ## Naming conventions
 
 - **Placeholder names use `camelCase`.** Example: `{{agentName}}`, `{{stateContext}}`.
-- **Template IDs use `kebab-case`.** Example: `agent-system`, `interactive-outlines`.
+- **Template IDs use `kebab-case`.** Example: `task-engine-outlines`, `interactive-outlines`.
 - Package-owned generation templates follow the same placeholder conventions;
   edit them under `packages/@openmaic/generation/templates/`.
 
@@ -53,16 +54,13 @@ Conditional blocks read from the same `variables` record passed to
 
 ## Still in TypeScript (not yet in templates)
 
-Not every prompt fragment lives in markdown. Some role-conditional content
-still exists as TS template literals and needs editing directly:
+Not every prompt fragment lives in markdown. The classroom chat prompts are
+built in TypeScript, and their role-conditional content needs editing directly:
 
 | What | Where | Why not in markdown |
 |---|---|---|
-| `ROLE_GUIDELINES` (teacher / assistant / student blocks) | `lib/orchestration/prompt-builder.ts` | Branches by `agentConfig.role` |
-| Length targets (100 / 80 / 50 chars per role) | `buildLengthGuidelines` in `lib/orchestration/prompt-builder.ts` | Branches by role |
-
-These may migrate into snippets in a later pass once Phase 2 eval feedback
-shows which parts need frequent iteration.
+| Role guidelines (teacher / assistant / student blocks) | `buildRoleGuideline` in `lib/chat/pi/prompts.ts` | Branches by `agent.role` |
+| Length targets (70 / 60 / 40 Chinese characters per role) | `buildLengthGuidelines` in `lib/chat/pi/prompts.ts` | Branches by role |
 
 ## Silent-passthrough gotcha
 
@@ -76,12 +74,14 @@ interpolate('hello {{missing}}', {}) === 'hello {{missing}}'
 This is intentional for partial-render scenarios but means a typo in a
 placeholder name ships literal `{{…}}` text to the LLM. Defence:
 
-- Tests in `tests/prompts/templates.test.ts` and
-  `packages/@openmaic/generation/test/` assert that fully rendered app and
-  generation prompts contain no surviving `{{…}}` tokens. Keep those checks
-  passing when adding variables.
+- `tests/prompts/templates.test.ts` lints placeholder naming in the app
+  templates. Rendered-prompt tests assert that no `{{…}}` tokens survive, for
+  app templates (for example `tests/prompts/task-engine-outlines.test.ts`) and
+  for generation prompts (in `tests/prompts/` and
+  `packages/@openmaic/generation/test/`). Keep those checks passing when adding
+  variables.
 - `{{snippet:name}}` lookups **throw** on a missing snippet file rather than
-  passing through silently, so a typo like `{{snippet:speach-guidelines}}`
+  passing through silently, so a reference like `{{snippet:missing-snippet}}`
   fails at load time instead of reaching the LLM.
 
 ## Testing a template change locally
@@ -92,11 +92,13 @@ The cheapest feedback loop is the template smoke suite:
 pnpm test tests/prompts
 ```
 
-For end-to-end runtime behaviour (agent loop + template composition +
-chat/director integration), use the whiteboard eval harness on one scenario:
+For end-to-end classroom behaviour, use the whiteboard eval harness on one
+scenario. It sends each scripted user turn to `/api/chat/pi`, which runs the Pi
+director with the default legacy child, so start the server with the native
+child runtime explicitly off:
 
 ```bash
-PORT=3100 pnpm dev &
+OPENMAIC_ENABLE_PI_NATIVE_CHILD_RUNTIME=false PORT=3100 pnpm dev &
 EVAL_CHAT_MODEL=<provider:model> EVAL_SCORER_MODEL=<provider:model> \
   pnpm eval:whiteboard --base-url http://localhost:3100 \
   --scenario econ-tech-innovation

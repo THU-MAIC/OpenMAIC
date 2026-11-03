@@ -31,11 +31,10 @@ import {
   MODEL_SETTINGS_IMPORT_ENDPOINT,
   MODEL_SETTINGS_IMPORT_KEY,
   readProposal,
+  legacyPresetInfo,
   type ModelSettingsProposal,
   type StorageLike,
 } from './model-settings';
-import { getProviderPreset } from '@/lib/config/provider-presets';
-import type { SlotCapability } from '@/lib/config/model-slots';
 import type { ModelSettingsView } from '@/lib/model-settings/client';
 
 import {
@@ -178,11 +177,11 @@ export function unimportedItems(
     const skip = skipped.get(itemKey('provider', id));
     if (skip && SETTLED_SKIPS.provider.has(skip.code)) continue;
     const preset =
-      provider && typeof provider === 'object' ? getProviderPreset(provider.preset) : undefined;
+      provider && typeof provider === 'object' ? legacyPresetInfo(provider.preset) : undefined;
     items.push({
       id,
       kind: 'provider',
-      ...(preset ? { capability: Object.keys(preset.capabilities)[0] as SlotCapability } : {}),
+      ...(preset ? { capability: preset.capability } : {}),
       name: preset?.name ?? id,
       ...(provider?.preset ? { preset: provider.preset } : {}),
       reason: reasonFor(skip),

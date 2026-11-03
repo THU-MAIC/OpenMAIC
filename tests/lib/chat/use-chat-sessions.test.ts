@@ -7,7 +7,6 @@ import {
   createPiSessionBoundaryContext,
   getPiSessionBoundaryContext,
   getPiSingleRequestOutcome,
-  fetchStatelessChat,
   isOpenLiveSession,
   normalizeStoredSessionsForRestore,
   retireLiveRequestResources,
@@ -466,6 +465,50 @@ describe('runPiSingleRequest', () => {
     }
   });
 
+  // The hook builds the fresh store state before calling runPiSingleRequest,
+  // so a teardown during that read arrives here as an already-aborted controller.
+  it('does not fetch when the turn was aborted while its store state was read', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const controller = new AbortController();
+    controller.abort();
+    const createConsumer = vi.fn(() => ({ onEvent: vi.fn(), onIterationEnd: vi.fn() }));
+    const clearLiveSessionAfterError = vi.fn();
+    const markSessionCompleted = vi.fn();
+    try {
+      await expect(
+        runPiSingleRequest(
+          'session-1',
+          {
+            messages: [],
+            storeState: {
+              stage: null,
+              scenes: [],
+              currentSceneId: null,
+              mode: 'autonomous',
+              whiteboardOpen: false,
+            },
+            config: { agentIds: ['teacher'] },
+          },
+          controller,
+          'qa',
+          createConsumer,
+          clearLiveSessionAfterError,
+          vi.fn(),
+          markSessionCompleted,
+          vi.fn(),
+          { current: vi.fn() },
+          (key) => key,
+        ),
+      ).rejects.toMatchObject({ name: 'AbortError' });
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(clearLiveSessionAfterError).not.toHaveBeenCalled();
+      expect(markSessionCompleted).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it.each([
     'removed-before-post',
     'runtime-authoritative',
@@ -797,20 +840,6 @@ describe('Pi Native whiteboard Browser events', () => {
 
 describe('classroom chat requests carry no provider data', () => {
   afterEach(() => vi.unstubAllGlobals());
-
-  it('sends the stateless /api/chat request without model headers', async () => {
-    const fetchMock = vi.fn(async () => new Response('data: {}\n\n', { status: 200 }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    await fetchStatelessChat({ messages: [] }, new AbortController().signal);
-
-    expect(fetchMock).toHaveBeenCalledWith('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: [] }),
-      signal: expect.any(AbortSignal),
-    });
-  });
 
   it('sends the /api/chat/pi request without model headers or keys', async () => {
     const body = new ReadableStream<Uint8Array>({

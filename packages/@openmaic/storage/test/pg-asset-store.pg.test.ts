@@ -1,13 +1,21 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { Pool } from 'pg';
 import { contentHashOf, type ContentHash } from '../src/asset/blob.js';
 import type { AssetByteStore } from '../src/asset/byte-store.js';
-import { AssetCollector } from '../src/asset/collector.js';
+import {
+  ASSET_REFERENCE_RULE_VERSION,
+  AssetCollector,
+  AssetReferenceRuleVersionError,
+} from '../src/asset/collector.js';
 import { PgAssetByteStore } from '../src/asset/pg-bytes.js';
 import {
   AssetQuotaExceededError,
+  AssetRootTargetError,
+  AssetRootedError,
   PgAssetStore,
+  changeAssetRoots,
   ensureAssetSchema,
+  type ChangeAssetRootsInput,
   type QueryResult,
   type Queryable,
   type WithTransaction,
@@ -18,7 +26,10 @@ import {
 } from '../src/asset/collector.js';
 import {
   backfillDocumentAssetReferences,
+  recordAssetReferenceTracking,
+  removeDocumentAssetReferences,
   sceneAssetScope,
+  syncDocumentAssetReferences,
   syncStageAssetReferences,
 } from '../src/asset/references.js';
 import {
@@ -135,38 +146,63 @@ async function waitForLockWaiter(pool: { query: Queryable['query'] }): Promise<v
   throw new Error('no backend blocked on a lock: the operation never contended for the blob row');
 }
 
-class BlockingReadByteStore implements AssetByteStore {
+/**
+ * An object-store stand-in whose byte operations can run a probe, or park
+ * until a test opens them.
+ */
+class GatedByteStore implements AssetByteStore {
   private readonly values = new Map<ContentHash, Uint8Array>();
-  private signalReadStarted!: () => void;
-  private allowReadToFinish!: () => void;
-  readonly readStarted = new Promise<void>((resolve) => {
-    this.signalReadStarted = resolve;
-  });
-  private readonly mayFinishRead = new Promise<void>((resolve) => {
-    this.allowReadToFinish = resolve;
-  });
+  private readonly gates = new Map<
+    'read' | 'write',
+    Array<{ arrive: () => void; opened: Promise<void> }>
+  >();
   // Bytes live in a process-local map, never in the registry's PostgreSQL, so
   // the plain methods cannot contend for its row locks (see
   // AssetByteStore.writesOutsideRegistryDatabase).
   readonly writesOutsideRegistryDatabase = true as const;
+  writes = 0;
+  onWrite?: () => Promise<void>;
+  onRead?: () => Promise<void>;
+
+  /** Park the next not-yet-gated operation of `kind` until `open()`. */
+  gate(kind: 'read' | 'write'): { reached: Promise<void>; open: () => void } {
+    let arrive!: () => void;
+    const reached = new Promise<void>((resolve) => {
+      arrive = resolve;
+    });
+    let open!: () => void;
+    const opened = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const queue = this.gates.get(kind) ?? [];
+    queue.push({ arrive, opened });
+    this.gates.set(kind, queue);
+    return { reached, open };
+  }
+
+  private async pass(kind: 'read' | 'write'): Promise<void> {
+    const gate = this.gates.get(kind)?.shift();
+    if (!gate) return;
+    gate.arrive();
+    await gate.opened;
+  }
 
   async write(hash: ContentHash, value: Uint8Array): Promise<void> {
+    this.writes += 1;
+    await this.onWrite?.();
+    await this.pass('write');
     this.values.set(hash, new Uint8Array(value));
   }
 
   async read(hash: ContentHash): Promise<Uint8Array | null> {
-    this.signalReadStarted();
-    await this.mayFinishRead;
+    await this.onRead?.();
+    await this.pass('read');
     const value = this.values.get(hash);
     return value === undefined ? null : new Uint8Array(value);
   }
 
   async delete(hash: ContentHash): Promise<void> {
     this.values.delete(hash);
-  }
-
-  finishRead(): void {
-    this.allowReadToFinish();
   }
 }
 
@@ -182,7 +218,9 @@ describe.skipIf(!contractUrl)('PgAssetStore with PostgreSQL 16', () => {
   });
 
   beforeEach(async () => {
-    await pool.query('TRUNCATE document_asset_refs, asset_entries, asset_blobs');
+    await pool.query(
+      'TRUNCATE asset_root_refs, document_asset_refs, asset_entries, asset_blob_stages, asset_blobs',
+    );
     bytes = new PgAssetByteStore(pool as Queryable);
     store = new PgAssetStore(pool as Queryable, {
       byteStore: bytes,
@@ -275,38 +313,6 @@ describe.skipIf(!contractUrl)('PgAssetStore with PostgreSQL 16', () => {
     );
   });
 
-  test('a resolving read pins the blob row until its byte read completes', async () => {
-    const layer = new BlockingReadByteStore();
-    const registry = new PgAssetStore(pool as Queryable, {
-      byteStore: layer,
-      withTransaction: transactionFor(pool),
-    });
-    const data = new Blob(['pinned read']);
-    const { contentHash } = await contentHashOf(data);
-    const id = await registry.put(principal, data);
-    // Make the row a collector candidate while it is still referenced. The
-    // collector's transaction re-checks references, so deleting the entry
-    // after the read starts isolates the lock interleaving under test.
-    await pool.query(`UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'`);
-
-    const resolving = registry.resolve(principal, id);
-    await layer.readStarted;
-    await pool.query('DELETE FROM asset_entries WHERE id = $1', [id]);
-
-    const collector = new AssetCollector(pool as Queryable, layer, {
-      graceMs: 0,
-      now: () => new Date('2026-01-01T00:00:00.000Z'),
-      withTransaction: transactionFor(pool),
-    });
-    const collection = collector.collect();
-    await waitForLockWaiter(pool);
-
-    layer.finishRead();
-    expect((await resolving)?.bytes).toEqual(new TextEncoder().encode('pinned read'));
-    expect(await collection).toBe(1);
-    expect(await layer.read(contentHash)).toBeNull();
-  });
-
   test('concurrent writes cannot exceed a principal logical quota', async () => {
     // A quota read on the pool is already stale when it is acted on: two
     // concurrent writes both observe the old total and both pass. Enforcement
@@ -341,6 +347,773 @@ describe.skipIf(!contractUrl)('PgAssetStore with PostgreSQL 16', () => {
         expect(result.reason).toBeInstanceOf(AssetQuotaExceededError);
       }
     }
+  });
+
+  describe('an object-store byte layer, staged outside every registry transaction', () => {
+    let probePool: Pool;
+    let probeName: string;
+
+    beforeEach(() => {
+      // A pool of its own, tagged, so the probes below see exactly this
+      // store's backends and none of a parallel suite's.
+      probeName = `asset-stage-probe-${Math.random().toString(36).slice(2)}`;
+      probePool = new Pool({ connectionString: contractUrl, max: 6, application_name: probeName });
+    });
+
+    afterEach(async () => {
+      await probePool.end();
+    });
+
+    function stagedStore(
+      layer: AssetByteStore,
+      extra: { quotaBytes?: number; stageTtlMs?: number } = {},
+    ): PgAssetStore {
+      return new PgAssetStore(probePool as Queryable, {
+        byteStore: layer,
+        withTransaction: transactionFor(probePool),
+        ...extra,
+      });
+    }
+
+    /** What is held while a byte operation runs, read from outside the store. */
+    async function heldDuringByteIo(hash: ContentHash, principalKey: string) {
+      const checkedOut = probePool.totalCount - probePool.idleCount;
+      const open = await pool.query<{ open: string }>(
+        `SELECT count(*)::text AS open FROM pg_stat_activity
+          WHERE application_name = $1 AND xact_start IS NOT NULL`,
+        [probeName],
+      );
+      // Both would wait (and then fail on NOWAIT / answer false) if the store
+      // still held the blob row lock or the principal's quota lock.
+      const row = await pool.query(
+        'SELECT 1 FROM asset_blobs WHERE content_hash = $1 FOR UPDATE NOWAIT',
+        [hash],
+      );
+      const quotaLock = await pool.query<{ got: boolean }>(
+        'SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0)) AS got',
+        [principalKey],
+      );
+      return {
+        checkedOut,
+        openTransactions: Number(open.rows[0]!.open),
+        blobRowPresent: row.rows.length === 1,
+        quotaLockFree: quotaLock.rows[0]!.got,
+      };
+    }
+
+    test('a put holds no connection, transaction or lock across the byte upload', async () => {
+      const data = new Blob(['uploaded with nothing held']);
+      const { contentHash } = await contentHashOf(data);
+      const layer = new GatedByteStore();
+      let held: Awaited<ReturnType<typeof heldDuringByteIo>> | undefined;
+      layer.onWrite = async () => {
+        held = await heldDuringByteIo(contentHash, principal.key);
+      };
+      const registry = stagedStore(layer, { quotaBytes: 1_000 });
+
+      const id = await registry.put(principal, data);
+
+      expect(held).toEqual({
+        checkedOut: 0,
+        openTransactions: 0,
+        blobRowPresent: true,
+        quotaLockFree: true,
+      });
+      expect((await registry.resolve(principal, id))?.bytes).toEqual(
+        new TextEncoder().encode('uploaded with nothing held'),
+      );
+      expect((await pool.query('SELECT * FROM asset_blob_stages')).rows).toEqual([]);
+      const blobRow = await pool.query<{ stamped: boolean }>(
+        'SELECT unreferenced_at IS NOT NULL AS stamped FROM asset_blobs',
+      );
+      expect(blobRow.rows).toEqual([{ stamped: false }]);
+    });
+
+    test('a replace holds no connection, transaction or lock across the byte upload', async () => {
+      const layer = new GatedByteStore();
+      const registry = stagedStore(layer, { quotaBytes: 1_000 });
+      const id = await registry.put(principal, new Blob(['before replace']));
+      const replacement = new Blob(['after replace']);
+      const { contentHash } = await contentHashOf(replacement);
+      let held: Awaited<ReturnType<typeof heldDuringByteIo>> | undefined;
+      layer.onWrite = async () => {
+        held = await heldDuringByteIo(contentHash, principal.key);
+      };
+
+      expect(await registry.replace(principal, id, replacement)).toBe(2);
+
+      expect(held).toEqual({
+        checkedOut: 0,
+        openTransactions: 0,
+        blobRowPresent: true,
+        quotaLockFree: true,
+      });
+      expect((await registry.resolve(principal, id))?.bytes).toEqual(
+        new TextEncoder().encode('after replace'),
+      );
+      expect((await pool.query('SELECT * FROM asset_blob_stages')).rows).toEqual([]);
+    });
+
+    test('a resolve holds no connection, transaction or lock across the byte read', async () => {
+      const data = new Blob(['read with nothing held']);
+      const { contentHash } = await contentHashOf(data);
+      const layer = new GatedByteStore();
+      const registry = stagedStore(layer);
+      const id = await registry.put(principal, data);
+      let held: Awaited<ReturnType<typeof heldDuringByteIo>> | undefined;
+      layer.onRead = async () => {
+        held = await heldDuringByteIo(contentHash, principal.key);
+      };
+
+      expect((await registry.resolve(principal, id))?.bytes).toEqual(
+        new TextEncoder().encode('read with nothing held'),
+      );
+      expect(held).toEqual({
+        checkedOut: 0,
+        openTransactions: 0,
+        blobRowPresent: true,
+        quotaLockFree: true,
+      });
+    });
+
+    test('bytes reclaimed after the registry read resolve to a miss', async () => {
+      // The read no longer pins the blob row across the byte fetch, so a
+      // removal and a collection can complete in between. The answer is then
+      // the one a read starting after the removal would give.
+      const data = new Blob(['reclaimed mid read']);
+      const { contentHash } = await contentHashOf(data);
+      const layer = new GatedByteStore();
+      const registry = stagedStore(layer);
+      const id = await registry.put(principal, data);
+      const readGate = layer.gate('read');
+
+      const resolving = registry.resolve(principal, id);
+      await readGate.reached;
+      await registry.remove(principal, id);
+      await pool.query(`UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'`);
+      const collector = new AssetCollector(pool as Queryable, layer, {
+        graceMs: 0,
+        now: () => new Date('2026-01-01T00:00:00.000Z'),
+        withTransaction: transactionFor(pool),
+      });
+      // Completes while the byte read is still parked: nothing waits on it.
+      expect(await collector.collect()).toBe(1);
+      readGate.open();
+
+      expect(await resolving).toBeNull();
+      expect(await layer.read(contentHash)).toBeNull();
+    });
+
+    test('the collector skips a blob whose staged upload is in flight', async () => {
+      const data = new Blob(['collectable content, re-uploaded']);
+      const { contentHash } = await contentHashOf(data);
+      const layer = new GatedByteStore();
+      const registry = stagedStore(layer);
+      const original = await registry.put(principal, data);
+      await registry.remove(principal, original);
+      // Eligible by every pre-existing rule: unreferenced long ago, no entry.
+      await pool.query(`UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'`);
+      const writeGate = layer.gate('write');
+
+      const putting = registry.put(principal, data);
+      await writeGate.reached;
+      const collector = new AssetCollector(pool as Queryable, layer, {
+        graceMs: 0,
+        now: () => new Date('2026-01-01T00:00:00.000Z'),
+        withTransaction: transactionFor(pool),
+      });
+      await pool.query(`UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'`);
+      expect(await collector.collect()).toBe(0);
+      writeGate.open();
+      const id = await putting;
+
+      expect(await collector.collect()).toBe(0);
+      expect((await registry.resolve(principal, id))?.bytes).toEqual(
+        new TextEncoder().encode('collectable content, re-uploaded'),
+      );
+      expect(await layer.read(contentHash)).not.toBeNull();
+    });
+
+    test('a stage waits out a collector that already holds the blob row lock', async () => {
+      const data = new Blob(['staged after a collection']);
+      const layer = new GatedByteStore();
+      const registry = stagedStore(layer);
+      const original = await registry.put(principal, data);
+      await registry.remove(principal, original);
+      await pool.query(`UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'`);
+
+      let locked!: () => void;
+      const rowLocked = new Promise<void>((resolve) => {
+        locked = resolve;
+      });
+      let release!: () => void;
+      const mayDelete = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const collector = new AssetCollector(pool as Queryable, layer, {
+        graceMs: 0,
+        now: () => new Date('2026-01-01T00:00:00.000Z'),
+        withTransaction: (body) =>
+          transactionFor(pool)((queryable) =>
+            body({
+              async query<TRow extends Record<string, unknown> = Record<string, unknown>>(
+                text: string,
+                params?: unknown[],
+              ): Promise<QueryResult<TRow>> {
+                const result = await queryable.query<TRow>(text, params);
+                if (text.includes('FOR UPDATE')) {
+                  locked();
+                  await mayDelete;
+                }
+                return result;
+              },
+            }),
+          ),
+      });
+
+      const collection = collector.collect();
+      await rowLocked;
+      const putting = registry.put(principal, data);
+      await waitForLockWaiter(pool);
+      expect(layer.writes).toBe(1);
+      release();
+
+      expect(await collection).toBe(1);
+      const id = await putting;
+      expect(layer.writes).toBe(2);
+      expect((await registry.resolve(principal, id))?.bytes).toEqual(
+        new TextEncoder().encode('staged after a collection'),
+      );
+    });
+
+    test('an allocation whose stage was reclaimed fails instead of naming missing bytes', async () => {
+      const layer = new GatedByteStore();
+      const registry = stagedStore(layer);
+      const data = new Blob(['stage outlived']);
+      const { contentHash } = await contentHashOf(data);
+      const staged = await registry.stageBytes(data);
+      // The stage expired and its blob drained: the only way a pin goes.
+      await pool.query(`UPDATE asset_blob_stages SET expires_at = '2000-01-01T00:00:00.000Z'`);
+      await pool.query(`UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'`);
+      const collector = new AssetCollector(pool as Queryable, layer, {
+        graceMs: 0,
+        now: () => new Date('2026-01-01T00:00:00.000Z'),
+        withTransaction: transactionFor(pool),
+      });
+      expect(await collector.collect()).toBe(1);
+      expect(await layer.read(contentHash)).toBeNull();
+
+      await expect(registry.putStaged(principal, staged)).rejects.toThrow(/registry put failed/);
+      expect((await pool.query('SELECT * FROM asset_entries')).rows).toEqual([]);
+      expect((await pool.query('SELECT * FROM asset_blobs')).rows).toEqual([]);
+    });
+
+    test('an expired pin is dead even while its row survives', async () => {
+      const layer = new GatedByteStore();
+      const registry = stagedStore(layer);
+      const staged = await registry.stageBytes(new Blob(['expired, not reclaimed']));
+      await pool.query(`UPDATE asset_blob_stages SET expires_at = '2000-01-01T00:00:00.000Z'`);
+
+      await expect(registry.putStaged(principal, staged)).rejects.toThrow(/registry put failed/);
+      expect((await pool.query('SELECT * FROM asset_entries')).rows).toEqual([]);
+    });
+
+    test('a collector that fails after deleting the bytes cannot leave a pin an allocation trusts', async () => {
+      // The byte delete is outside the database and survives the collector's
+      // rollback, so the blob row and its expired pin outlive the bytes. The
+      // pin must stay dead: allocating on it would name bytes that are gone.
+      const layer = new GatedByteStore();
+      const registry = stagedStore(layer);
+      const data = new Blob(['deleted, then rolled back']);
+      const { contentHash } = await contentHashOf(data);
+      const staged = await registry.stageBytes(data);
+      await pool.query(`UPDATE asset_blob_stages SET expires_at = '2000-01-01T00:00:00.000Z'`);
+      await pool.query(`UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'`);
+      const failingCollector = new AssetCollector(pool as Queryable, layer, {
+        graceMs: 0,
+        now: () => new Date('2026-01-01T00:00:00.000Z'),
+        withTransaction: (body) =>
+          transactionFor(pool)((queryable) =>
+            body({
+              async query<TRow extends Record<string, unknown> = Record<string, unknown>>(
+                text: string,
+                params?: unknown[],
+              ): Promise<QueryResult<TRow>> {
+                if (text.startsWith('DELETE FROM asset_blobs')) {
+                  throw new Error('injected failure after the byte delete');
+                }
+                return queryable.query<TRow>(text, params);
+              },
+            }),
+          ),
+      });
+
+      await expect(failingCollector.collect()).rejects.toThrow();
+      expect(await layer.read(contentHash)).toBeNull();
+      expect((await pool.query('SELECT id FROM asset_blob_stages')).rows).toHaveLength(1);
+
+      await expect(registry.putStaged(principal, staged)).rejects.toThrow(/registry put failed/);
+      expect((await pool.query('SELECT * FROM asset_entries')).rows).toEqual([]);
+    });
+
+    test('an upload that outlives its pin fails instead of allocating', async () => {
+      const layer = new GatedByteStore();
+      const registry = stagedStore(layer, { stageTtlMs: 1 });
+      const writeGate = layer.gate('write');
+
+      const putting = registry.put(principal, new Blob(['too slow']));
+      await writeGate.reached;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      writeGate.open();
+
+      await expect(putting).rejects.toThrow(/registry put failed/);
+      expect((await pool.query('SELECT * FROM asset_entries')).rows).toEqual([]);
+      expect((await pool.query('SELECT * FROM asset_blob_stages')).rows).toEqual([]);
+    });
+
+    test('a caller transaction holding a spent pin open past its deadline does not park the collector', async () => {
+      const layer = new GatedByteStore();
+      const registry = stagedStore(layer);
+      const staged = await registry.stageBytes(new Blob(['spent in a long transaction']));
+      // A deadline the open transaction below will outlive.
+      await pool.query(
+        `UPDATE asset_blob_stages SET expires_at = clock_timestamp() + interval '300 milliseconds'`,
+      );
+      let finish!: () => void;
+      const mayCommit = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      let spent!: () => void;
+      const pinSpent = new Promise<void>((resolve) => {
+        spent = resolve;
+      });
+      const host = transactionFor(probePool)(async (tx) => {
+        const id = await new PgAssetStore(tx, {
+          byteStore: layer,
+          withTransaction: (body) => body(tx),
+        }).putStaged(principal, staged);
+        spent();
+        await mayCommit;
+        return id;
+      });
+      await pinSpent;
+      await new Promise((resolve) => setTimeout(resolve, 400));
+
+      const collector = new AssetCollector(pool as Queryable, layer, {
+        withTransaction: transactionFor(pool),
+      });
+      const started = Date.now();
+      await expect(collector.collectPass()).resolves.toMatchObject({ collected: 0 });
+      expect(Date.now() - started).toBeLessThan(5_000);
+
+      finish();
+      const id = await host;
+      expect((await registry.resolve(principal, id))?.bytes).toEqual(
+        new TextEncoder().encode('spent in a long transaction'),
+      );
+    });
+
+    test('a renewal in flight is waited for, so the collector never judges the deadline it replaces', async () => {
+      // The renewal decides the pin is live and then has not committed when
+      // the old deadline passes. A collector that read the pin without waiting
+      // for it would see the old, expired deadline, delete the bytes, and --
+      // if it then failed before deleting the row -- leave a renewed pin over
+      // bytes that are gone. The renewal holds the blob row, so the collector
+      // waits for it and then sees the new deadline.
+      const layer = new GatedByteStore();
+      let renewing!: () => void;
+      const renewalPending = new Promise<void>((resolve) => {
+        renewing = resolve;
+      });
+      let commitRenewal!: () => void;
+      const mayCommitRenewal = new Promise<void>((resolve) => {
+        commitRenewal = resolve;
+      });
+      const registry = new PgAssetStore(probePool as Queryable, {
+        byteStore: layer,
+        stageTtlMs: 60_000,
+        withTransaction: (body) =>
+          transactionFor(probePool)((queryable) =>
+            body({
+              async query<TRow extends Record<string, unknown> = Record<string, unknown>>(
+                text: string,
+                params?: unknown[],
+              ): Promise<QueryResult<TRow>> {
+                const result = await queryable.query<TRow>(text, params);
+                if (text.startsWith('UPDATE asset_blob_stages')) {
+                  renewing();
+                  await mayCommitRenewal;
+                }
+                return result;
+              },
+            }),
+          ),
+      });
+      const data = new Blob(['renewed under the collector']);
+      const { contentHash } = await contentHashOf(data);
+
+      const writeGate = layer.gate('write');
+      const putting = registry.put(principal, data);
+      await writeGate.reached;
+      // Otherwise collectable. Stamped now, since the renewal will hold the
+      // row until it commits.
+      await pool.query(`UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'`);
+      // The pin's current deadline is a second out: the renewal, which runs
+      // as soon as the upload ends, decides it is live and replaces it with
+      // one a minute out.
+      await pool.query(
+        `UPDATE asset_blob_stages SET expires_at = clock_timestamp() + interval '1 second'`,
+      );
+      writeGate.open();
+      await renewalPending;
+      // The deadline the renewal replaces has now passed; the new one has not.
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      const failingCollector = new AssetCollector(pool as Queryable, layer, {
+        graceMs: 0,
+        now: () => new Date('2026-01-01T00:00:00.000Z'),
+        withTransaction: (body) =>
+          transactionFor(pool)((queryable) =>
+            body({
+              async query<TRow extends Record<string, unknown> = Record<string, unknown>>(
+                text: string,
+                params?: unknown[],
+              ): Promise<QueryResult<TRow>> {
+                if (text.startsWith('DELETE FROM asset_blobs')) {
+                  throw new Error('injected failure after the byte delete');
+                }
+                return queryable.query<TRow>(text, params);
+              },
+            }),
+          ),
+      });
+      const collection = failingCollector.collect();
+      await waitForLockWaiter(pool);
+      commitRenewal();
+
+      expect(await collection).toBe(0);
+      const id = await putting;
+      expect(await layer.read(contentHash)).not.toBeNull();
+      expect((await registry.resolve(principal, id))?.bytes).toEqual(
+        new TextEncoder().encode('renewed under the collector'),
+      );
+    }, 20_000);
+
+    test('live pins on the oldest blobs do not stall the page or keep it capped', async () => {
+      const layer = new GatedByteStore();
+      const registry = stagedStore(layer);
+      const batchSize = 2;
+      // The `batchSize` oldest unreferenced blobs are being staged again.
+      const pinned = ['pinned one', 'pinned two'];
+      for (const [index, value] of pinned.entries()) {
+        const id = await registry.put(principal, new Blob([value]));
+        await registry.remove(principal, id);
+        const { contentHash } = await contentHashOf(new Blob([value]));
+        await pool.query('UPDATE asset_blobs SET unreferenced_at = $2 WHERE content_hash = $1', [
+          contentHash,
+          `2000-01-0${index + 1}T00:00:00.000Z`,
+        ]);
+        await registry.stageBytes(new Blob([value]));
+      }
+      // A younger blob, still well past the grace period, that nothing pins.
+      const free = new Blob(['free to reclaim']);
+      const { contentHash: freeHash } = await contentHashOf(free);
+      await registry.remove(principal, await registry.put(principal, free));
+      await pool.query(
+        `UPDATE asset_blobs SET unreferenced_at = '2001-01-01T00:00:00.000Z'
+                         WHERE content_hash = $1`,
+        [freeHash],
+      );
+      const collector = new AssetCollector(pool as Queryable, layer, {
+        graceMs: 0,
+        batchSize,
+        now: () => new Date('2026-01-01T00:00:00.000Z'),
+        withTransaction: transactionFor(pool),
+      });
+
+      const first = await collector.collectPass();
+      expect(first).toMatchObject({ collected: 1, capped: false });
+      expect(await layer.read(freeHash)).toBeNull();
+
+      // A caller draining while `capped` stops.
+      let passes = 1;
+      let pass = first;
+      while (pass.capped && passes < 10) {
+        pass = await collector.collectPass();
+        passes += 1;
+      }
+      expect(pass.capped).toBe(false);
+      expect(passes).toBe(1);
+      expect((await pool.query('SELECT 1 FROM asset_blob_stages')).rows).toHaveLength(2);
+    });
+
+    test('an upload that finishes after the collector reclaimed its expired pin stays collectable', async () => {
+      const layer = new GatedByteStore();
+      const registry = stagedStore(layer, { stageTtlMs: 1 });
+      const data = new Blob(['outlived its pin']);
+      const { contentHash } = await contentHashOf(data);
+      const writeGate = layer.gate('write');
+
+      const putting = registry.put(principal, data);
+      await writeGate.reached;
+      // The pin is dead: the collector takes the row while the upload is
+      // still in flight, and the object lands only afterwards.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await pool.query(`UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'`);
+      const collector = new AssetCollector(pool as Queryable, layer, {
+        graceMs: 0,
+        now: () => new Date('2026-01-01T00:00:00.000Z'),
+        withTransaction: transactionFor(pool),
+      });
+      expect(await collector.collect()).toBe(1);
+      expect((await pool.query('SELECT 1 FROM asset_blobs')).rows).toEqual([]);
+      writeGate.open();
+
+      await expect(putting).rejects.toThrow(/registry put failed/);
+      expect(await layer.read(contentHash)).not.toBeNull();
+      const tracked = await pool.query<{ stamped: boolean }>(
+        'SELECT unreferenced_at IS NOT NULL AS stamped FROM asset_blobs WHERE content_hash = $1',
+        [contentHash],
+      );
+      expect(tracked.rows).toEqual([{ stamped: true }]);
+      expect((await pool.query('SELECT * FROM asset_entries')).rows).toEqual([]);
+
+      const later = new AssetCollector(pool as Queryable, layer, {
+        graceMs: 0,
+        now: () => new Date(Date.now() + 60_000),
+        withTransaction: transactionFor(pool),
+      });
+      expect(await later.collect()).toBe(1);
+      expect(await layer.read(contentHash)).toBeNull();
+    });
+
+    describe('a failed write on a store bound to a caller transaction leaves nothing behind', () => {
+      async function stampOf(hash: ContentHash): Promise<string[]> {
+        const rows = await pool.query<{ stamp: string | null }>(
+          `SELECT to_char(unreferenced_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS stamp
+             FROM asset_blobs WHERE content_hash = $1`,
+          [hash],
+        );
+        return rows.rows.map((row) => row.stamp ?? 'NULL');
+      }
+
+      /** Run `write` in a caller transaction that catches its failure and commits. */
+      async function callerCatchesAndCommits(
+        write: (bound: PgAssetStore) => Promise<unknown>,
+        layer: AssetByteStore,
+      ): Promise<unknown> {
+        return transactionFor(probePool)(async (tx) => {
+          const bound = new PgAssetStore(tx, {
+            byteStore: layer,
+            withTransaction: (body) => body(tx),
+          });
+          let failure: unknown;
+          try {
+            await write(bound);
+          } catch (error) {
+            failure = error;
+          }
+          // The caller's own work still runs, and commits.
+          await tx.query('SELECT 1');
+          return failure;
+        });
+      }
+
+      test('an expired stage leaves the blob stamp exactly as it was', async () => {
+        const layer = new GatedByteStore();
+        const registry = stagedStore(layer);
+        const data = new Blob(['expired stage, caller commits']);
+        const { contentHash } = await contentHashOf(data);
+        const staged = await registry.stageBytes(data);
+        await pool.query(`UPDATE asset_blob_stages SET expires_at = '2000-01-01T00:00:00.000Z'`);
+        await pool.query(`UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'`);
+
+        const failure = await callerCatchesAndCommits(
+          (bound) => bound.putStaged(principal, staged),
+          layer,
+        );
+
+        expect(String(failure)).toMatch(/registry put failed/);
+        expect(await stampOf(contentHash)).toEqual(['2000-01-01']);
+        expect((await pool.query('SELECT * FROM asset_entries')).rows).toEqual([]);
+      });
+
+      test('a reclaimed stage creates no blob row', async () => {
+        const layer = new GatedByteStore();
+        const registry = stagedStore(layer);
+        const data = new Blob(['reclaimed stage, caller commits']);
+        const { contentHash } = await contentHashOf(data);
+        const staged = await registry.stageBytes(data);
+        await pool.query('DELETE FROM asset_blobs WHERE content_hash = $1', [contentHash]);
+
+        const failure = await callerCatchesAndCommits(
+          (bound) => bound.putStaged(principal, staged),
+          layer,
+        );
+
+        expect(String(failure)).toMatch(/registry put failed/);
+        expect(await stampOf(contentHash)).toEqual([]);
+        expect((await pool.query('SELECT * FROM asset_entries')).rows).toEqual([]);
+      });
+
+      test('an in-database put whose byte write fails keeps the stamp and the transaction usable', async () => {
+        // The single-transaction path claims the blob row -- clearing its
+        // stamp -- before it writes bytes. A statement error in the byte write
+        // must not leave that claim for the caller to commit, nor leave the
+        // caller's transaction aborted.
+        const data = new Blob(['in-database write fails']);
+        const { contentHash } = await contentHashOf(data);
+        await store.remove(principal, await store.put(principal, data));
+        await pool.query(`UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'`);
+        const failingColumn: AssetByteStore & {
+          writeWith(queryable: Queryable, hash: ContentHash, bytes: Uint8Array): Promise<void>;
+        } = {
+          write: async () => undefined,
+          read: async () => null,
+          delete: async () => undefined,
+          writeWith: async (queryable) => {
+            await queryable.query('SELECT * FROM no_such_byte_table');
+          },
+        };
+
+        const failure = await callerCatchesAndCommits(
+          (bound) => bound.put(principal, data),
+          failingColumn,
+        );
+
+        expect(String(failure)).toMatch(/registry put failed/);
+        expect(await stampOf(contentHash)).toEqual(['2000-01-01']);
+        expect((await pool.query('SELECT * FROM asset_entries')).rows).toEqual([]);
+      });
+    });
+
+    test('releasing a stage lets its bytes drain, and releasing again is a no-op', async () => {
+      const layer = new GatedByteStore();
+      const registry = stagedStore(layer);
+      const data = new Blob(['given back']);
+      const { contentHash } = await contentHashOf(data);
+      const staged = await registry.stageBytes(data);
+
+      await registry.releaseStaged(staged);
+      await registry.releaseStaged(staged);
+
+      expect((await pool.query('SELECT * FROM asset_blob_stages')).rows).toEqual([]);
+      await expect(registry.putStaged(principal, staged)).rejects.toThrow(/registry put failed/);
+      await pool.query(`UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'`);
+      const collector = new AssetCollector(pool as Queryable, layer, {
+        graceMs: 0,
+        now: () => new Date('2026-01-01T00:00:00.000Z'),
+        withTransaction: transactionFor(pool),
+      });
+      expect(await collector.collect()).toBe(1);
+      expect(await layer.read(contentHash)).toBeNull();
+    });
+
+    test.each(['put', 'replace'] as const)(
+      'a transaction-bound %s and a pool-bound write of the same content and principal do not deadlock',
+      async (operation) => {
+        // The pool-bound writer stages and uploads; the host transaction then
+        // stages the same content and holds what its stage locked until it
+        // commits; the pool-bound writer then allocates (principal's lock,
+        // then the blob row) while the host is still uploading. The host's
+        // allocation must not then wait for the principal's lock while holding
+        // the blob row the pool-bound writer is waiting for.
+        const layer = new GatedByteStore();
+        const quotaBytes = 1_000;
+        const pooled = stagedStore(layer, { quotaBytes });
+        const data = new Blob([`contended ${operation}`]);
+        const existing =
+          operation === 'replace' ? await pooled.put(principal, new Blob(['original'])) : undefined;
+        const pooledGate = layer.gate('write');
+        const hostGate = layer.gate('write');
+
+        const pooledWrite = pooled.put(principal, data);
+        await pooledGate.reached;
+        const hostWrite = transactionFor(probePool)(async (tx): Promise<unknown> => {
+          const bound = new PgAssetStore(tx, {
+            byteStore: layer,
+            withTransaction: (body) => body(tx),
+            quotaBytes,
+          });
+          return operation === 'put'
+            ? bound.put(principal, data)
+            : bound.replace(principal, existing!, data);
+        });
+        await hostGate.reached;
+        pooledGate.open();
+        await waitForLockWaiter(pool);
+        hostGate.open();
+
+        const results = await Promise.allSettled([pooledWrite, hostWrite]);
+        expect(results.map((result) => result.status)).toEqual(['fulfilled', 'fulfilled']);
+        const pooledId = (results[0] as PromiseFulfilledResult<string>).value;
+        expect((await pooled.resolve(principal, pooledId))?.bytes).toEqual(
+          new TextEncoder().encode(`contended ${operation}`),
+        );
+      },
+    );
+
+    test('a store bound to a caller transaction allocates staged bytes with no byte I/O in it', async () => {
+      const layer = new GatedByteStore();
+      const registry = stagedStore(layer, { quotaBytes: 1_000 });
+      const staged = await registry.stageBytes(
+        new Blob(['staged for a host'], { type: 'text/plain' }),
+      );
+      expect(layer.writes).toBe(1);
+      const within = (queryable: Queryable) =>
+        new PgAssetStore(queryable, {
+          byteStore: layer,
+          withTransaction: (body) => body(queryable),
+          quotaBytes: 1_000,
+        });
+
+      // A rolled-back host transaction leaves the stage spendable.
+      await expect(
+        transactionFor(probePool)(async (tx) => {
+          await within(tx).putStaged(principal, staged);
+          throw new Error('host transaction rolled back');
+        }),
+      ).rejects.toThrow(/host transaction rolled back/);
+      expect((await pool.query('SELECT * FROM asset_entries')).rows).toEqual([]);
+
+      const id = await transactionFor(probePool)((tx) => within(tx).putStaged(principal, staged));
+      expect(layer.writes).toBe(1);
+      expect(await registry.resolve(principal, id)).toMatchObject({
+        bytes: new TextEncoder().encode('staged for a host'),
+        mime: 'text/plain',
+      });
+      // Spent: a second allocation from the same handle is refused.
+      await expect(registry.putStaged(principal, staged)).rejects.toThrow(/registry put failed/);
+      expect((await pool.query('SELECT * FROM asset_blob_stages')).rows).toEqual([]);
+    });
+
+    test('concurrent staged writes cannot exceed a principal logical quota', async () => {
+      const layer = new GatedByteStore();
+      const quoted = stagedStore(layer, { quotaBytes: 10 });
+
+      const results = await Promise.allSettled(
+        Array.from({ length: 4 }, (_, index) =>
+          quoted.put(principal, new Blob([`${index}`.repeat(6)])),
+        ),
+      );
+
+      const accepted = results.filter((result) => result.status === 'fulfilled');
+      expect(accepted).toHaveLength(1);
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          expect(result.reason).toBeInstanceOf(AssetQuotaExceededError);
+        }
+      }
+      const usage = await pool.query<{ total: string }>(
+        `SELECT COALESCE(SUM(blobs.byte_size), 0)::text AS total
+           FROM asset_entries AS entries
+           JOIN asset_blobs AS blobs ON blobs.content_hash = entries.content_hash
+          WHERE entries.principal = $1`,
+        [principal.key],
+      );
+      expect(Number(usage.rows[0]!.total)).toBeLessThanOrEqual(10);
+      // Every refused write released its pin.
+      expect((await pool.query('SELECT * FROM asset_blob_stages')).rows).toEqual([]);
+    });
   });
 
   test('a failed registry transaction leaves no PostgreSQL bytes behind', async () => {
@@ -411,7 +1184,9 @@ describe.skipIf(!contractUrl)('document asset references with PostgreSQL 16', ()
 
   beforeEach(async () => {
     await truncateDocumentTables(pool as Queryable);
-    await pool.query('TRUNCATE document_asset_refs, asset_entries, asset_blobs');
+    await pool.query(
+      'TRUNCATE asset_root_refs, document_asset_refs, asset_entries, asset_blob_stages, asset_blobs',
+    );
     await pool.query('TRUNCATE asset_reference_tracking, document_asset_withdrawals');
     bytes = new PgAssetByteStore(pool as Queryable);
     assets = new PgAssetStore(pool as Queryable, {
@@ -1941,5 +2716,642 @@ describe.skipIf(!contractUrl)('document asset references with PostgreSQL 16', ()
     await assets.remove(principal, id);
 
     expect((await pool.query('SELECT 1 FROM document_asset_refs')).rows).toEqual([]);
+  });
+
+  describe('reference roots', () => {
+    const principals = [principal.key];
+    const HOUR = 60 * 60 * 1000;
+
+    const change = (queryable: Queryable, input: Omit<ChangeAssetRootsInput, 'principals'>) =>
+      changeAssetRoots(queryable, { principals, ...input });
+    const addTo = (rootId: string, id: string) => ({
+      add: [{ rootKind: 'material', rootId, assetIds: [id] }],
+    });
+    const removeFrom = (rootId: string, id: string) => ({
+      remove: [{ rootKind: 'material', rootId, assetIds: [id] }],
+    });
+    const referenceIn = (queryable: Queryable, stageId: string, id: string) =>
+      syncDocumentAssetReferences(queryable, {
+        stageId,
+        scope: { scope: 'scene', sceneId: 'scene-a', candidates: [id] },
+      });
+    const stampOf = async (id: string): Promise<Date | null | undefined> =>
+      (
+        await pool.query<{ unreferenced_at: Date | null }>(
+          'SELECT unreferenced_at FROM asset_entries WHERE id = $1',
+          [id],
+        )
+      ).rows[0]?.unreferenced_at;
+    const rootsOf = async (id: string): Promise<string[]> =>
+      (
+        await pool.query<{ root_id: string }>(
+          'SELECT root_id FROM asset_root_refs WHERE asset_id = $1 ORDER BY root_id',
+          [id],
+        )
+      ).rows.map((row) => row.root_id);
+    const entryExists = async (id: string): Promise<boolean> =>
+      (await pool.query('SELECT 1 FROM asset_entries WHERE id = $1', [id])).rows.length > 0;
+    const passAt = (now: Date, graceMs = 0) =>
+      new AssetCollector(pool as Queryable, bytes, {
+        withTransaction: transactionFor(pool),
+        documentReferences: true,
+        graceMs,
+        now: () => now,
+      }).collectPass();
+
+    const backendPid = async (queryable: Queryable): Promise<number> =>
+      Number(
+        (await queryable.query<{ pid: number | string }>('SELECT pg_backend_pid() AS pid')).rows[0]!
+          .pid,
+      );
+
+    /**
+     * Wait until some backend is blocked by THIS holder's locks. Narrower than
+     * waitForLockWaiter, which any lock wait anywhere in the database would
+     * satisfy -- another suite's, say -- and so could let a test go on before
+     * its own second transaction had actually queued behind its holder.
+     */
+    const waitUntilBlockedBy = async (holderPid: number): Promise<void> => {
+      for (let attempt = 0; attempt < 400; attempt += 1) {
+        const blocked = await pool.query(
+          `SELECT 1 FROM pg_stat_activity WHERE $1::int = ANY(pg_blocking_pids(pid))`,
+          [holderPid],
+        );
+        if (blocked.rows.length > 0) return;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      throw new Error('nothing queued behind the holder: the operations never contended');
+    };
+
+    /**
+     * Run `first` in a transaction held open, start `second` in its own, prove
+     * `second` is waiting on a lock `first` holds, then commit `first` and let
+     * `second` finish. A `second` that did not contend fails here rather than
+     * passing by luck of timing.
+     */
+    const serialized = async (
+      first: (queryable: Queryable) => Promise<unknown>,
+      second: (queryable: Queryable) => Promise<unknown>,
+    ): Promise<void> => {
+      const holder = await pool.connect();
+      try {
+        await holder.query('BEGIN');
+        const holderPid = await backendPid(holder as Queryable);
+        await first(holder as Queryable);
+        const waiting = transactionFor(pool)((queryable) => second(queryable));
+        await waitUntilBlockedBy(holderPid);
+        await holder.query('COMMIT');
+        await waiting;
+      } catch (error) {
+        await holder.query('ROLLBACK').catch(() => undefined);
+        throw error;
+      } finally {
+        holder.release();
+      }
+    };
+
+    beforeEach(async () => {
+      await pool.query(
+        `INSERT INTO asset_reference_tracking (singleton, enabled_at)
+         VALUES (TRUE, now()) ON CONFLICT DO NOTHING`,
+      );
+    });
+
+    test('provisions the cascading root foreign key', async () => {
+      const foreignKey = await pool.query<{ delete_rule: string }>(
+        `SELECT delete_rule
+           FROM information_schema.referential_constraints
+          WHERE constraint_schema = current_schema()
+            AND constraint_name = 'asset_root_refs_asset_id_fkey'`,
+      );
+      expect(foreignKey.rows).toEqual([{ delete_rule: 'CASCADE' }]);
+    });
+
+    describe('the generic mutation paths against a concurrent root writer', () => {
+      /**
+       * Wait until `waiter` itself queues behind `holder`, not merely until
+       * someone does. Gives up well inside the test timeout, so a failure
+       * reaches the cleanup below instead of leaving a paused transaction
+       * holding its locks.
+       */
+      const waitUntilWaiting = async (waiter: number, holder: number): Promise<void> => {
+        for (let attempt = 0; attempt < 120; attempt += 1) {
+          const blocked = await pool.query<{ blocked: boolean }>(
+            'SELECT $2::int = ANY(pg_blocking_pids($1::int)) AS blocked',
+            [waiter, holder],
+          );
+          if (blocked.rows[0]?.blocked) return;
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+        throw new Error('the operation under test never queued behind the holder');
+      };
+
+      /**
+       * A store whose transaction reports its own backend pid once it has begun
+       * and, when `pauseAfter` matches a statement, stops right after it --
+       * holding every lock taken so far -- until `release` is called.
+       */
+      const instrumentedStore = (pauseAfter?: RegExp) => {
+        let reportPid!: (pid: number) => void;
+        const pid = new Promise<number>((resolve) => {
+          reportPid = resolve;
+        });
+        let reachedPause!: () => void;
+        const paused = new Promise<void>((resolve) => {
+          reachedPause = resolve;
+        });
+        let release!: () => void;
+        const mayProceed = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const withTransaction: WithTransaction = async (body) => {
+          const client = await pool.connect();
+          try {
+            await client.query('BEGIN');
+            reportPid(await backendPid(client as Queryable));
+            const result = await body({
+              async query<TRow extends Record<string, unknown> = Record<string, unknown>>(
+                text: string,
+                params?: unknown[],
+              ): Promise<QueryResult<TRow>> {
+                const answer = await (client as Queryable).query<TRow>(text, params);
+                if (pauseAfter?.test(text)) {
+                  reachedPause();
+                  await mayProceed;
+                }
+                return answer;
+              },
+            });
+            await client.query('COMMIT');
+            return result;
+          } catch (error) {
+            await client.query('ROLLBACK').catch(() => undefined);
+            throw error;
+          } finally {
+            client.release();
+          }
+        };
+        const store = new PgAssetStore(pool as Queryable, { byteStore: bytes, withTransaction });
+        return { store, pid, paused, release };
+      };
+
+      /** A root writer in a transaction of its own, reporting its backend pid. */
+      const startRootWriter = (id: string) => {
+        let reportPid!: (pid: number) => void;
+        const pid = new Promise<number>((resolve) => {
+          reportPid = resolve;
+        });
+        const done = transactionFor(pool)(async (queryable) => {
+          reportPid(await backendPid(queryable));
+          await change(queryable, addTo('material-1', id));
+        });
+        return { pid, done };
+      };
+
+      /**
+       * Hold a committed-later root on `id` in an open transaction, start
+       * `mutate` on an instrumented store, prove that store's own backend is
+       * waiting on the holder, then commit the root. Whatever fails on the way,
+       * the holder rolls back and `mutate` is settled before this returns.
+       */
+      const mutateBehindRoot = async (
+        id: string,
+        mutate: (store: PgAssetStore) => Promise<unknown>,
+      ): Promise<{ mutation: Promise<unknown> }> => {
+        const holder = await pool.connect();
+        const mutator = instrumentedStore();
+        let mutation: Promise<unknown> | undefined;
+        try {
+          await holder.query('BEGIN');
+          const holderPid = await backendPid(holder as Queryable);
+          await change(holder as Queryable, addTo('material-1', id));
+          mutation = mutate(mutator.store);
+          mutation.catch(() => undefined);
+          await waitUntilWaiting(await mutator.pid, holderPid);
+          await holder.query('COMMIT');
+          return { mutation };
+        } finally {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          holder.release();
+          await mutation?.catch(() => undefined);
+        }
+      };
+
+      /**
+       * Pause `mutate` right after `pauseAfter` with its entry lock held, start
+       * a root writer, prove the root writer's own backend waits on it, then let
+       * the mutation finish. The pause is lifted and both sides are settled
+       * whatever fails on the way.
+       */
+      const rootBehindMutation = async (
+        id: string,
+        pauseAfter: RegExp,
+        mutate: (store: PgAssetStore) => Promise<unknown>,
+      ): Promise<{ mutation: Promise<unknown>; rooting: Promise<void> }> => {
+        const mutator = instrumentedStore(pauseAfter);
+        const mutation = mutate(mutator.store);
+        mutation.catch(() => undefined);
+        let rooting: Promise<void> | undefined;
+        try {
+          await Promise.race([
+            mutator.paused,
+            mutation.then(() => {
+              throw new Error('the mutation finished without reaching its pause point');
+            }),
+          ]);
+          const writer = startRootWriter(id);
+          rooting = writer.done;
+          rooting.catch(() => undefined);
+          await waitUntilWaiting(await writer.pid, await mutator.pid);
+        } finally {
+          mutator.release();
+          await Promise.allSettled([mutation, rooting ?? Promise.resolve()]);
+        }
+        return { mutation, rooting };
+      };
+
+      const textOf = async (id: string): Promise<string | undefined> => {
+        const read = await assets.resolve(principal, id);
+        return read ? Buffer.from(read.bytes).toString() : undefined;
+      };
+
+      test('a remove that queues behind a root writer sees the committed root and refuses', async () => {
+        const id = await assets.put(principal, new Blob(['rooted while waiting']));
+
+        // The remove's FOR UPDATE waits on the root writer's entry lock; the
+        // root commits first, and the check after the wait must see it. A
+        // check folded into the DELETE would keep its older snapshot, delete
+        // the entry and cascade the fresh root away.
+        const { mutation } = await mutateBehindRoot(id, (store) => store.remove(principal, id));
+
+        await expect(mutation).rejects.toBeInstanceOf(AssetRootedError);
+        expect(await entryExists(id)).toBe(true);
+        expect(await rootsOf(id)).toEqual(['material-1']);
+      });
+
+      test('a root writer that queues behind a remove finds the entry gone', async () => {
+        const id = await assets.put(principal, new Blob(['removed first']));
+
+        const { mutation, rooting } = await rootBehindMutation(
+          id,
+          /^\s*DELETE FROM asset_entries/,
+          (store) => store.remove(principal, id),
+        );
+
+        await mutation;
+        await expect(rooting).rejects.toBeInstanceOf(AssetRootTargetError);
+        expect(await entryExists(id)).toBe(false);
+        expect(await rootsOf(id)).toEqual([]);
+      });
+
+      test('a replace that queues behind a root writer refuses and keeps the bytes', async () => {
+        const id = await assets.put(principal, new Blob(['original bytes']));
+
+        const { mutation } = await mutateBehindRoot(id, (store) =>
+          store.replace(principal, id, new Blob(['replacement'])),
+        );
+
+        await expect(mutation).rejects.toBeInstanceOf(AssetRootedError);
+        expect(await textOf(id)).toBe('original bytes');
+        expect(await rootsOf(id)).toEqual(['material-1']);
+      });
+
+      test('a root writer that queues behind a replace roots the replaced entry', async () => {
+        const id = await assets.put(principal, new Blob(['before replace']));
+
+        const { mutation, rooting } = await rootBehindMutation(
+          id,
+          /^\s*UPDATE asset_entries/,
+          (store) => store.replace(principal, id, new Blob(['after replace'])),
+        );
+
+        await mutation;
+        await rooting;
+        expect(await textOf(id)).toBe('after replace');
+        expect(await rootsOf(id)).toEqual(['material-1']);
+      });
+    });
+
+    describe('the reference-rule version', () => {
+      const ruleVersion = async (): Promise<number> =>
+        Number(
+          (
+            await pool.query<{ v: number }>(
+              'SELECT rule_version AS v FROM asset_reference_tracking',
+            )
+          ).rows[0]!.v,
+        );
+      const setRuleVersion = (version: number) =>
+        pool.query('UPDATE asset_reference_tracking SET rule_version = $1', [version]);
+
+      test('a root change raises a marker an older writer left', async () => {
+        const id = await assets.put(principal, new Blob(['raises the version']));
+        await setRuleVersion(1);
+        await transactionFor(pool)((queryable) => change(queryable, addTo('material-v', id)));
+        expect(await ruleVersion()).toBe(ASSET_REFERENCE_RULE_VERSION);
+        await setRuleVersion(1);
+        await transactionFor(pool)((queryable) => change(queryable, removeFrom('material-v', id)));
+        expect(await ruleVersion()).toBe(ASSET_REFERENCE_RULE_VERSION);
+      });
+
+      test('once raised, a writer does not queue on the marker row', async () => {
+        await setRuleVersion(ASSET_REFERENCE_RULE_VERSION);
+        const holder = await pool.connect();
+        try {
+          await holder.query('BEGIN');
+          const holderPid = await backendPid(holder as Queryable);
+          await holder.query('SELECT 1 FROM asset_reference_tracking FOR UPDATE');
+          // Raised already: the write finishes while the marker row is held.
+          await transactionFor(pool)((queryable) => recordAssetReferenceTracking(queryable));
+
+          // Not raised yet: the write does wait for the row, which is what
+          // shows this test can tell the two apart.
+          await holder.query('COMMIT');
+          await pool.query('UPDATE asset_reference_tracking SET rule_version = 1');
+          await holder.query('BEGIN');
+          await holder.query('SELECT 1 FROM asset_reference_tracking FOR UPDATE');
+          const raising = transactionFor(pool)((queryable) =>
+            recordAssetReferenceTracking(queryable),
+          );
+          await waitUntilBlockedBy(holderPid);
+          await holder.query('COMMIT');
+          await raising;
+          expect(await ruleVersion()).toBe(ASSET_REFERENCE_RULE_VERSION);
+        } catch (error) {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          throw error;
+        } finally {
+          holder.release();
+        }
+      });
+
+      test('a version raised while a pass waits on an entry stops the deletion', async () => {
+        await setRuleVersion(ASSET_REFERENCE_RULE_VERSION);
+        const id = await assets.put(principal, new Blob(['kept by a newer kind']));
+        await transactionFor(pool)((queryable) => change(queryable, addTo('material-x', id)));
+        await transactionFor(pool)((queryable) => change(queryable, removeFrom('material-x', id)));
+        expect(await stampOf(id)).not.toBeNull();
+
+        // A writer of a newer kind holds the entry, as its reference row's
+        // foreign key would, and raises the version before it lets go.
+        const holder = await pool.connect();
+        try {
+          await holder.query('BEGIN');
+          const holderPid = await backendPid(holder as Queryable);
+          await holder.query('SELECT 1 FROM asset_entries WHERE id = $1 FOR KEY SHARE', [id]);
+          const pass = passAt(new Date(Date.now() + HOUR)).catch((error: unknown) => error);
+          await waitUntilBlockedBy(holderPid);
+          await holder.query('UPDATE asset_reference_tracking SET rule_version = $1', [
+            ASSET_REFERENCE_RULE_VERSION + 1,
+          ]);
+          await holder.query('COMMIT');
+
+          const failure = await pass;
+          expect(failure).toBeInstanceOf(AssetReferenceRuleVersionError);
+          expect(failure).toMatchObject({ databaseVersion: ASSET_REFERENCE_RULE_VERSION + 1 });
+          expect(await entryExists(id)).toBe(true);
+        } catch (error) {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          throw error;
+        } finally {
+          holder.release();
+          await setRuleVersion(ASSET_REFERENCE_RULE_VERSION);
+        }
+      });
+    });
+
+    test('an entry held only by a root outlives its pending deadline', async () => {
+      const id = await assets.put(principal, new Blob(['rooted only']));
+      await transactionFor(pool)((queryable) => change(queryable, addTo('material-1', id)));
+
+      const lifecycle = await pool.query<{ committed_at: Date | null; expires_at: Date | null }>(
+        'SELECT committed_at, expires_at FROM asset_entries WHERE id = $1',
+        [id],
+      );
+      expect(lifecycle.rows[0]?.committed_at).not.toBeNull();
+      expect(lifecycle.rows[0]?.expires_at).toBeNull();
+      const pass = await passAt(new Date(Date.now() + 3 * 24 * HOUR));
+      expect(pass.entriesCollected).toBe(0);
+      expect(await entryExists(id)).toBe(true);
+    });
+
+    test('a course withdrawal leaves a rooted entry alone; letting go of both drains it', async () => {
+      const id = await assets.put(principal, new Blob(['held twice']));
+      await referenceIn(pool as Queryable, 'course-1', id);
+      await transactionFor(pool)((queryable) => change(queryable, addTo('material-1', id)));
+
+      await transactionFor(pool)((queryable) =>
+        removeDocumentAssetReferences(queryable, { stageId: 'course-1' }),
+      );
+      expect(await stampOf(id)).toBeNull();
+      expect((await passAt(new Date(Date.now() + 2 * HOUR))).entriesCollected).toBe(0);
+
+      await transactionFor(pool)((queryable) => change(queryable, removeFrom('material-1', id)));
+      expect(await stampOf(id)).not.toBeNull();
+      expect((await passAt(new Date(), HOUR)).entriesCollected).toBe(0);
+      expect((await passAt(new Date(Date.now() + 2 * HOUR), HOUR)).entriesCollected).toBe(1);
+      expect(await entryExists(id)).toBe(false);
+    });
+
+    test('adding a root clears a stamp the entry already carries', async () => {
+      const id = await assets.put(principal, new Blob(['brought back']));
+      await referenceIn(pool as Queryable, 'course-1', id);
+      await removeDocumentAssetReferences(pool as Queryable, { stageId: 'course-1' });
+      expect(await stampOf(id)).not.toBeNull();
+
+      await transactionFor(pool)((queryable) => change(queryable, addTo('material-1', id)));
+
+      expect(await stampOf(id)).toBeNull();
+    });
+
+    test('a root added while the collector waits keeps the entry', async () => {
+      const id = await assets.put(principal, new Blob(['rescued']));
+      await pool.query(
+        `UPDATE asset_entries SET expires_at = '2000-01-01T00:00:00.000Z' WHERE id = $1`,
+        [id],
+      );
+
+      const holder = await pool.connect();
+      try {
+        await holder.query('BEGIN');
+        const holderPid = await backendPid(holder as Queryable);
+        await change(holder as Queryable, addTo('material-1', id));
+        const releasing = passAt(new Date());
+        await waitUntilBlockedBy(holderPid);
+        await holder.query('COMMIT');
+        expect((await releasing).entriesCollected).toBe(0);
+      } finally {
+        holder.release();
+      }
+
+      expect(await entryExists(id)).toBe(true);
+      expect(await rootsOf(id)).toEqual(['material-1']);
+    });
+
+    test('a root added after the collector took the entry is refused, not left dangling', async () => {
+      const id = await assets.put(principal, new Blob(['already gone']));
+      await pool.query(
+        `UPDATE asset_entries SET expires_at = '2000-01-01T00:00:00.000Z' WHERE id = $1`,
+        [id],
+      );
+      // The collector's release transaction, held open after its DELETE.
+      let signalDeleted!: () => void;
+      const deleted = new Promise<void>((resolve) => {
+        signalDeleted = resolve;
+      });
+      let allowCommit!: () => void;
+      const mayCommit = new Promise<void>((resolve) => {
+        allowCommit = resolve;
+      });
+      let releasePid = 0;
+      const holdAfterRelease: WithTransaction = async (body) => {
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          const pid = await backendPid(client as Queryable);
+          let released = false;
+          const result = await body({
+            async query<TRow extends Record<string, unknown> = Record<string, unknown>>(
+              text: string,
+              params?: unknown[],
+            ): Promise<QueryResult<TRow>> {
+              if (text.startsWith('DELETE FROM asset_entries')) released = true;
+              return (client as Queryable).query<TRow>(text, params);
+            },
+          });
+          if (released) {
+            releasePid = pid;
+            signalDeleted();
+            await mayCommit;
+          }
+          await client.query('COMMIT');
+          return result;
+        } catch (error) {
+          await client.query('ROLLBACK').catch(() => undefined);
+          throw error;
+        } finally {
+          client.release();
+        }
+      };
+      const releasing = new AssetCollector(pool as Queryable, bytes, {
+        withTransaction: holdAfterRelease,
+        documentReferences: true,
+        graceMs: 0,
+      }).collectPass();
+      await deleted;
+
+      // Settled into a value at once: it rejects while `releasing` is still
+      // being awaited, and an unobserved rejection would fail the run.
+      const rooting = transactionFor(pool)((queryable) =>
+        change(queryable, addTo('material-1', id)),
+      ).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      await waitUntilBlockedBy(releasePid);
+      allowCommit();
+
+      expect((await releasing).entriesCollected).toBe(1);
+      expect(await rooting).toBeInstanceOf(AssetRootTargetError);
+      expect(await entryExists(id)).toBe(false);
+      expect(await rootsOf(id)).toEqual([]);
+    });
+
+    test('the legacy mark and the standing sweep do not stamp a rooted entry', async () => {
+      // Roots written directly, bypassing changeAssetRoots, so each entry keeps
+      // the exact state the collector predicate under test selects on.
+      const legacy = await assets.put(principal, new Blob(['legacy rooted']));
+      await pool.query(
+        'UPDATE asset_entries SET committed_at = NULL, expires_at = NULL WHERE id = $1',
+        [legacy],
+      );
+      const swept = await assets.put(principal, new Blob(['swept rooted']));
+      await pool.query(
+        'UPDATE asset_entries SET committed_at = now(), expires_at = NULL WHERE id = $1',
+        [swept],
+      );
+      await pool.query(
+        `INSERT INTO asset_root_refs (root_kind, root_id, asset_id)
+         VALUES ('material', 'legacy-owner', $1), ('material', 'swept-owner', $2)`,
+        [legacy, swept],
+      );
+
+      // First pass: the (empty) walk completes and the legacy entry is marked.
+      // Second pass: the standing sweep reaches the committed ones.
+      expect((await passAt(new Date())).legacyEntriesCommitted).toBe(1);
+      await passAt(new Date());
+
+      for (const id of [legacy, swept]) {
+        const row = await pool.query<{ committed_at: Date | null; unreferenced_at: Date | null }>(
+          'SELECT committed_at, unreferenced_at FROM asset_entries WHERE id = $1',
+          [id],
+        );
+        expect(row.rows[0]?.committed_at).not.toBeNull();
+        expect(row.rows[0]?.unreferenced_at).toBeNull();
+      }
+      expect((await passAt(new Date(Date.now() + 3 * 24 * HOUR))).entriesCollected).toBe(0);
+      expect(await entryExists(legacy)).toBe(true);
+      expect(await entryExists(swept)).toBe(true);
+    });
+
+    test('a rooted entry carrying a stale stamp reaches the final check and is kept', async () => {
+      const id = await assets.put(principal, new Blob(['kept by its root']));
+      await transactionFor(pool)((queryable) => change(queryable, addTo('material-1', id)));
+      // Past grace on the column alone: only the release's post-lock
+      // reference check can keep it.
+      await pool.query(
+        `UPDATE asset_entries SET unreferenced_at = now() - interval '2 days' WHERE id = $1`,
+        [id],
+      );
+
+      expect((await passAt(new Date(), HOUR)).entriesCollected).toBe(0);
+      expect(await entryExists(id)).toBe(true);
+      expect(await rootsOf(id)).toEqual(['material-1']);
+    });
+
+    test('a course withdrawal and a root being added serialize, in either order', async () => {
+      for (const withdrawFirst of [true, false]) {
+        const id = await assets.put(principal, new Blob([`withdraw-${withdrawFirst}`]));
+        const stageId = `course-${withdrawFirst}`;
+        await referenceIn(pool as Queryable, stageId, id);
+        const withdraw = (queryable: Queryable) =>
+          removeDocumentAssetReferences(queryable, { stageId });
+        const root = (queryable: Queryable) => change(queryable, addTo(`material-${id}`, id));
+
+        await (withdrawFirst ? serialized(withdraw, root) : serialized(root, withdraw));
+
+        expect(await rootsOf(id)).toEqual([`material-${id}`]);
+        expect(await stampOf(id)).toBeNull();
+      }
+    });
+
+    test('a root being removed and a course reference being added serialize, in either order', async () => {
+      for (const unrootFirst of [true, false]) {
+        const id = await assets.put(principal, new Blob([`unroot-${unrootFirst}`]));
+        await transactionFor(pool)((queryable) => change(queryable, addTo('material-1', id)));
+        const unroot = (queryable: Queryable) => change(queryable, removeFrom('material-1', id));
+        const reference = (queryable: Queryable) =>
+          referenceIn(queryable, `course-${unrootFirst}`, id);
+
+        await (unrootFirst ? serialized(unroot, reference) : serialized(reference, unroot));
+
+        expect(await rootsOf(id)).toEqual([]);
+        expect(await stampOf(id)).toBeNull();
+      }
+    });
+
+    test('adding and removing roots of one entry serialize on its row lock, in either order', async () => {
+      for (const removeFirst of [true, false]) {
+        const id = await assets.put(principal, new Blob([`move-${removeFirst}`]));
+        await transactionFor(pool)((queryable) => change(queryable, addTo('material-a', id)));
+        const remove = (queryable: Queryable) => change(queryable, removeFrom('material-a', id));
+        const add = (queryable: Queryable) => change(queryable, addTo('material-b', id));
+
+        await (removeFirst ? serialized(remove, add) : serialized(add, remove));
+
+        expect(await rootsOf(id)).toEqual(['material-b']);
+        expect(await stampOf(id)).toBeNull();
+      }
+    });
   });
 });
