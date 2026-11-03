@@ -189,6 +189,22 @@ it('can still save with a failed font and no roundRect support', async () => {
   expect(drawn.every((item) => !item.font.includes('Inter Variable'))).toBe(true);
 });
 
+it('draws a mixed Chinese/Latin project title in full when it fits in two lines', async () => {
+  const title = '用 Python 把自己的待办清单做出来学会添加事项按编号删除并验证实际操作的效果';
+  const { drawn, context } = syntheticCanvas();
+  context.measureText = (value: string) => ({
+    width: Array.from(value).reduce(
+      (width, character) => width + (/\p{Script=Han}/u.test(character) ? 40 : 20),
+      0,
+    ),
+  });
+  await renderReportShareImage({ ...content, title }, 'light', translate, 'zh-CN');
+  const titleLines = drawn.filter((item) => item.font.startsWith('500 34px '));
+  expect(titleLines).toHaveLength(2);
+  expect(titleLines.map((item) => item.value).join('')).toBe(title);
+  expect(titleLines.every((item) => context.measureText(item.value).width <= 1072)).toBe(true);
+});
+
 it.each(['', 'not a URL', 'javascript:alert(1)', 'https://user:password@course.example/'])(
   'omits promotion for %j without blocking image export',
   async (url) => {

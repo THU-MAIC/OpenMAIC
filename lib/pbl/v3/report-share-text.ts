@@ -13,14 +13,21 @@ export function wrapShareText(value: string, width: number, measure: (text: stri
       line = candidate;
       continue;
     }
-    if (line) lines.push(line);
-    line = '';
+    // CJK has break opportunities within a chunk, so use the remaining line space.
+    // Keep whitespace-separated Latin words intact when they fit on a fresh line.
+    if (!/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(word)) {
+      if (line) lines.push(line);
+      line = '';
+    }
+    let separator = line ? ' ' : '';
     for (const grapheme of splitter.iterateGraphemes(word)) {
-      if (line && measure(line + grapheme) > width) {
+      if (line && measure(line + separator + grapheme) > width) {
         lines.push(line);
         line = '';
+        separator = '';
       }
-      line += grapheme;
+      line += separator + grapheme;
+      separator = '';
     }
   }
   if (line) lines.push(line);

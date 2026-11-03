@@ -191,6 +191,21 @@ it('wraps normal words intact, while allowing long CJK and tokens to wrap', () =
   expect(wrapShareText('abcdefghijkl', 5, measure)).toEqual(['abcde', 'fghij', 'kl']);
 });
 
+it('fills the current line with CJK text after a space-separated Latin word', () => {
+  const title = '用 Python 把自己的待办清单做出来学会添加事项按编号删除并验证实际操作的效果';
+  const lines = wrapShareText(title, 26, (value) => value.length);
+  expect(title).toHaveLength(41);
+  expect(lines).toHaveLength(2);
+  expect(lines[0]).toBe(title.slice(0, 26));
+  expect(lines.join('')).toBe(title);
+
+  // Latin words still move intact to the next line after Chinese prose.
+  expect(wrapShareText('完成 Python project', 10, (value) => value.length)).toEqual([
+    '完成 Python',
+    'project',
+  ]);
+});
+
 it('never splits combined emoji when wrapping or truncating', () => {
   const measure = (value: string) => Array.from(value).length;
   expect(wrapShareText('AA1️⃣BB❤️CC', 4, measure)).toEqual(['AA', '1️⃣B', 'B❤️C', 'C']);
