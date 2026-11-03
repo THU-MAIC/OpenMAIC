@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Bug Fixes
 
+- Classroom playback resumes the remaining reading time after a narration clip fails to play, instead of getting stuck on the failed audio element. Failed clips release their playback state without interrupting a newer narration line. Pausing while a clip is still loading does not discard that narration; resume plays it. [#2109](https://github.com/THU-MAIC/OpenMAIC/issues/2109)
 - Pro workbench: when the scene-content model accepts images, `generate_scene` now sends the page's `media` to it as images, as classic generation already does. Before, the model saw only a one-line text description of each figure. Each image adds input tokens (roughly 400–1,100 for a typical textbook figure) and is read from the owner's asset storage before the call; a model without image input keeps the text-only behavior.
 
 ## [1.3.1] - 2026-11-02

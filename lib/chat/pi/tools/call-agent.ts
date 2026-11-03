@@ -5,6 +5,7 @@ import type { LanguageModel } from 'ai';
 import { nanoid } from 'nanoid';
 import { buildAgent } from '@/lib/agent/runtime/build-agent';
 import { runNativeChild } from '@/lib/agent/runtime/run-native-child';
+import { AgentToolTimeoutError } from '@/lib/agent/runtime/tool-timeout';
 import { createCallLlmStreamFn } from '@/lib/agent/runtime/stream-fn';
 import {
   createParserState,
@@ -103,6 +104,14 @@ function abortChildError(...signals: Array<AbortSignal | undefined>): Error {
     'AbortError',
   );
 }
+
+function agentToolTimeout(signal: AbortSignal | undefined): AgentToolTimeoutError | undefined {
+  return signal?.aborted && signal.reason instanceof AgentToolTimeoutError
+    ? signal.reason
+    : undefined;
+}
+
+type AgentTurnOutcome = { completed: boolean };
 
 async function emitTextDelta(opts: {
   content: string;
@@ -536,7 +545,7 @@ export function buildCallAgentTool(opts: {
   agentConfigs: AgentConfig[];
   send: SendEvent;
   languageModel: LanguageModel;
-  onAgentDone: (summary: AgentTurnSummary) => void;
+  onAgentDone: (summary: AgentTurnSummary, outcome?: AgentTurnOutcome) => void;
   onActionDone: (record?: WhiteboardActionRecord) => void;
   thinkingConfig: ThinkingConfig;
   maxOutputTokens?: number;
@@ -561,7 +570,7 @@ export function buildCallAgentTool(opts: {
     content: string;
     metadata?: Readonly<ElementReferenceEvidence>;
   }>;
-}): AgentTool<typeof CallAgentParams> {
+}): AgentTool<typeof CallAgentParams> & { awaitAbortCleanup: true } {
   let whiteboardState: PiWhiteboardRuntimeState | undefined;
   const getLegacyWhiteboardState = () => {
     whiteboardState ??= createPiWhiteboardRuntimeState(opts.body);
@@ -574,6 +583,7 @@ export function buildCallAgentTool(opts: {
       'Ask one classroom agent to produce the next in-class response. Use this before giving your final director decision.',
     parameters: CallAgentParams,
     executionMode: 'sequential',
+    awaitAbortCleanup: true,
     execute: async (_toolCallId: string, params: CallAgentParams, signal?: AbortSignal) => {
       if (opts.isSessionClosed?.()) {
         return {
@@ -746,8 +756,6 @@ export function buildCallAgentTool(opts: {
             allowedToolNames: new Set(availableToolNames),
             history: toHistoryMessages(opts.body.messages),
             abortSignal: childAbort.signal,
-            timeoutMs: 60_000,
-            maxProviderTransports: 5,
             onVisibleTextDelta: async (delta) => {
               const visibleDelta = sanitizeNativeDelta(delta);
               if (!visibleDelta) return '';
@@ -759,11 +767,27 @@ export function buildCallAgentTool(opts: {
               opts.onActionDone();
             },
           });
+          const finalText = nativeResult.visibleOutput.trim();
+          const toolTimeout = agentToolTimeout(signal);
+          if (toolTimeout) {
+            await opts.send({ type: 'agent_end', data: { messageId, agentId: agent.id } });
+            opts.onAgentDone(
+              {
+                agentId: agent.id,
+                agentName: agent.name,
+                contentPreview: finalText.slice(0, 300),
+                actionCount,
+                whiteboardActions,
+                actionWarnings: [],
+              },
+              { completed: false },
+            );
+            throw toolTimeout;
+          }
           if (nativeResult.status === 'cancelled' || opts.abortSignal.aborted || signal?.aborted) {
             throw abortChildError(opts.abortSignal, signal);
           }
 
-          const finalText = nativeResult.visibleOutput.trim();
           const isCompleted = nativeResult.status === 'completed';
           await send({ type: 'agent_end', data: { messageId, agentId: agent.id } });
           childAbort.signal.throwIfAborted();
@@ -862,6 +886,32 @@ export function buildCallAgentTool(opts: {
           });
         });
 
+        let legacyAgentEnded = false;
+        let legacySummaryRecorded = false;
+        const finalizeLegacy = async (
+          completed: boolean,
+          finalText: string,
+          eventSend: SendEvent,
+        ): Promise<void> => {
+          if (!legacyAgentEnded) {
+            await eventSend({ type: 'agent_end', data: { messageId, agentId: agent.id } });
+            legacyAgentEnded = true;
+          }
+          if (!legacySummaryRecorded) {
+            legacySummaryRecorded = true;
+            const summary = {
+              agentId: agent.id,
+              agentName: agent.name,
+              contentPreview: finalText.slice(0, 300),
+              actionCount,
+              whiteboardActions,
+              actionWarnings,
+            };
+            if (completed) opts.onAgentDone(summary);
+            else opts.onAgentDone(summary, { completed: false });
+          }
+        };
+
         try {
           childAbort.signal.throwIfAborted();
           await child.prompt(
@@ -873,58 +923,64 @@ export function buildCallAgentTool(opts: {
           await child.waitForIdle();
           childAbort.signal.throwIfAborted();
         } catch (error) {
-          // Preserve the Legacy result lifecycle for failures; cancellation must
-          // not finalize or report the partial response as a completed turn.
-          if (childAbort.signal.aborted) throw error;
+          // Preserve the Legacy result lifecycle for failures; genuine
+          // cancellation must not finalize or report the partial response as a
+          // completed turn. A global tool timeout is finalized below.
+          if (!agentToolTimeout(signal) && childAbort.signal.aborted) throw error;
         } finally {
           unsubscribe();
           childAbort.signal.removeEventListener('abort', abortChild);
         }
 
-        childAbort.signal.throwIfAborted();
-        await processParseResult({
-          result: finalizeParser(parserState),
-          signal: childAbort.signal,
-          messageId,
-          send,
-          toolsByName: childToolsByName,
-          body: opts.body,
-          appendText: (content) => {
-            text += content;
-          },
-          warn,
-        });
-
-        const emittedText = text.trim();
-        const fallbackText = sawStructuredOutput
-          ? ''
-          : sanitizeVisibleSpeech(extractLastAssistantText(child.state.messages)).trim();
-        // Only report genuine visible speech in the result. Two distinct sources need different trust levels:
-        //   - `emittedText`: already streamed through processParseResult, where every
-        //     chunk was structurally filtered (isLikelyRawStructuredFallback). It is
-        //     trusted speech — re-running the residue classifier over the whole
-        //     accumulated string would misjudge a real turn that merely *discusses*
-        //     JSON/code/brackets as empty, so we do NOT re-classify it.
-        //   - `fallbackText`: the raw last-assistant message, which bypassed the
-        //     parser entirely, so it still needs the structural backstop.
-        // This only classifies the already-drained result; the Director decides
-        // whether another classroom response is useful.
-        const safeFallback =
-          fallbackText && !isLikelyRawStructuredFallback(fallbackText) ? fallbackText : '';
-        const finalText = emittedText || safeFallback;
-        if (finalText && !emittedText) {
-          await send({ type: 'text_delta', data: { content: finalText, messageId } });
+        const toolTimeout = agentToolTimeout(signal);
+        if (toolTimeout) {
+          await finalizeLegacy(false, text.trim(), opts.send);
+          throw toolTimeout;
         }
-        await send({ type: 'agent_end', data: { messageId, agentId: agent.id } });
-        childAbort.signal.throwIfAborted();
-        opts.onAgentDone({
-          agentId: agent.id,
-          agentName: agent.name,
-          contentPreview: finalText.slice(0, 300),
-          actionCount,
-          whiteboardActions,
-          actionWarnings,
-        });
+
+        let finalText = text.trim();
+        try {
+          childAbort.signal.throwIfAborted();
+          await processParseResult({
+            result: finalizeParser(parserState),
+            signal: childAbort.signal,
+            messageId,
+            send,
+            toolsByName: childToolsByName,
+            body: opts.body,
+            appendText: (content) => {
+              text += content;
+            },
+            warn,
+          });
+
+          const emittedText = text.trim();
+          const fallbackText = sawStructuredOutput
+            ? ''
+            : sanitizeVisibleSpeech(extractLastAssistantText(child.state.messages)).trim();
+          // Only report genuine visible speech in the result. Two distinct sources need different trust levels:
+          //   - `emittedText`: already streamed through processParseResult, where every
+          //     chunk was structurally filtered (isLikelyRawStructuredFallback). It is
+          //     trusted speech — re-running the residue classifier over the whole
+          //     accumulated string would misjudge a real turn that merely *discusses*
+          //     JSON/code/brackets as empty, so we do NOT re-classify it.
+          //   - `fallbackText`: the raw last-assistant message, which bypassed the
+          //     parser entirely, so it still needs the structural backstop.
+          // This only classifies the already-drained result; the Director decides
+          // whether another classroom response is useful.
+          const safeFallback =
+            fallbackText && !isLikelyRawStructuredFallback(fallbackText) ? fallbackText : '';
+          finalText = emittedText || safeFallback;
+          if (finalText && !emittedText) {
+            await send({ type: 'text_delta', data: { content: finalText, messageId } });
+          }
+          await finalizeLegacy(true, finalText, send);
+        } catch (error) {
+          const timeoutDuringCleanup = agentToolTimeout(signal);
+          if (!timeoutDuringCleanup) throw error;
+          await finalizeLegacy(false, text.trim(), opts.send);
+          throw timeoutDuringCleanup;
+        }
 
         return {
           content: [

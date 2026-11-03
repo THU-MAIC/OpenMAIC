@@ -121,6 +121,24 @@ function extractCourseTitleFromComplete(buffer: string): string | null {
 }
 
 /**
+ * Index of the first `[` outside a JSON string, or -1. A `[` inside a string
+ * (`"E[X]"` in a languageDirective that streams before `outlines`) is not an
+ * array start.
+ */
+function firstArrayStart(buffer: string): number {
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < buffer.length; i++) {
+    const char = buffer[i];
+    if (escaped) escaped = false;
+    else if (char === '\\' && inString) escaped = true;
+    else if (char === '"') inString = !inString;
+    else if (char === '[' && !inString) return i;
+  }
+  return -1;
+}
+
+/**
  * Incremental JSON array parser.
  * Extracts complete top-level objects from a partially-streamed JSON array,
  * resuming from `scanFrom` (an index into `buffer`) so the growing buffer is
@@ -145,7 +163,7 @@ function extractNewOutlines(
     // Locate the outlines array opening once.
     const outlinesKeyIdx = buffer.indexOf('"outlines"');
     const arrayStart =
-      outlinesKeyIdx >= 0 ? buffer.indexOf('[', outlinesKeyIdx) : buffer.indexOf('[');
+      outlinesKeyIdx >= 0 ? buffer.indexOf('[', outlinesKeyIdx) : firstArrayStart(buffer);
     if (arrayStart === -1) return { outlines: results, scanFrom: 0 };
     i = arrayStart + 1;
   }
