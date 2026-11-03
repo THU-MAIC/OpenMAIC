@@ -32,8 +32,8 @@ export function reportShareContent(report: LearningReport) {
     if (Number.isFinite(completed) && Number.isFinite(total))
       metrics.push([key, `${completed}/${total}`]);
   }
-  if (summary?.skills) metrics.push(['skills', String(summary.skills.length)]);
-  if (summary?.concepts) metrics.push(['concepts', String(summary.concepts.length)]);
+  if (summary?.skills?.length) metrics.push(['skills', String(summary.skills.length)]);
+  if (summary?.concepts?.length) metrics.push(['concepts', String(summary.concepts.length)]);
   const passed = report.outcomes?.filter((outcome) => outcome.tests === 'passed').length ?? 0;
   const tested = report.outcomes?.filter((outcome) => outcome.tests !== null).length ?? 0;
   return {

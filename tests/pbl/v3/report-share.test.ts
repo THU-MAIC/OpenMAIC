@@ -11,6 +11,9 @@ import {
 } from '@/lib/pbl/v3/report-share';
 import { validateReportFindings } from '@/lib/server/pbl-v3/report-analysis';
 import { ellipsizeShareText, wrapShareText } from '@/lib/pbl/v3/report-share-text';
+import { projectReportSummary } from '@/lib/pbl/v3/report-summary';
+import { installedProject } from '@/lib/server/pbl-v3/catalog';
+import { startOrchestration } from '@/lib/pbl/v3/domain/orchestration/transition';
 const report = {
   studyId: 'private-study',
   project: { id: 'any-project', version: '1', title: 'My project' },
@@ -207,4 +210,17 @@ it('uses only an explicitly configured HTTP(S) campaign destination', () => {
     'https://token:secret@course.example/',
   ])
     expect(reportShareDestination(value)).toBeNull();
+});
+
+it('omits empty skill/concept metrics from a real metadata-free project summary, while retaining recorded zero progress', () => {
+  const project = structuredClone(
+    installedProject({ id: 'greeting-python', version: '1.0.0' }).definition,
+  );
+  for (const milestone of project.milestones) delete milestone.teaching;
+  const summary = projectReportSummary(project, startOrchestration(project).state);
+  expect(summary.concepts).toEqual([]);
+  expect(summary.skills).toEqual([]);
+  const projected = reportShareContent({ ...report, requiredComplete: false, summary });
+  expect(projected.metrics).toContainEqual(['completedMilestones', '0/1']);
+  expect(projected.metrics.map(([key]) => key)).toEqual(['completedMilestones', 'completedSteps']);
 });

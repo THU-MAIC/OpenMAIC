@@ -156,22 +156,27 @@ it.each([true, false])(
   },
 );
 
-it('omits empty factual sections instead of drawing empty headings or inventing counts', async () => {
-  const { drawn } = syntheticCanvas();
-  await renderReportShareImage(
-    reportShareContent({
-      project: { title: 'Project' },
-      requiredComplete: false,
-    } as LearningReport),
-    'light',
-    translate,
-    'ar-SA',
-  );
-  const values = drawn.map((item) => item.value);
-  expect(values).not.toContain(ar.pblV3.share.skillsSection);
-  expect(values).not.toContain(ar.pblV3.share.conceptsLabel);
-  expect(values.join(' ')).not.toContain('0/0');
-});
+it.each([undefined, { skills: [], concepts: [] }])(
+  'omits empty factual headings and metrics for summary=%j',
+  async (summary) => {
+    const { drawn } = syntheticCanvas();
+    await renderReportShareImage(
+      reportShareContent({
+        project: { title: 'Project' },
+        requiredComplete: false,
+        summary,
+      } as LearningReport),
+      'light',
+      translate,
+      'ar-SA',
+    );
+    const values = drawn.map((item) => item.value);
+    expect(values).not.toContain(ar.pblV3.share.skillsSection);
+    expect(values).not.toContain(ar.pblV3.share.skillsMetric);
+    expect(values).not.toContain(ar.pblV3.share.conceptsLabel);
+    expect(values.join(' ')).not.toContain('0/0');
+  },
+);
 
 it('can still save with a failed font and no roundRect support', async () => {
   const { drawn, context } = syntheticCanvas();
