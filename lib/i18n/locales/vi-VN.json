@@ -344,7 +344,6 @@
     "confirmSwitchTitle": "Chuyển cảnh",
     "confirmSwitchMessage": "Đang có một chủ đề dở dang. Chuyển cảnh sẽ kết thúc chủ đề đang học. Bạn có chắc không?",
     "generatingNextPage": "Cảnh đang được tạo, vui lòng đợi…",
-    "courseComplete": "Đã học xong bài",
     "fullscreen": "Toàn màn hình",
     "exitFullscreen": "Thoát toàn màn hình",
     "editCourse": "Sửa bài học",
@@ -775,21 +774,6 @@
     "dock": {
       "elementRefHint": "Tham chiếu phần tử — chọn phần tử để gửi kèm tin nhắn tiếp theo",
       "globalTools": "Công cụ chung"
-    }
-  },
-  "classroomComplete": {
-    "title": "Đã học xong bài",
-    "trailLabels": {
-      "slide": "trang",
-      "quiz": "câu đố",
-      "interactive": "phần tương tác",
-      "pbl": "dự án"
-    },
-    "quizScoreLabel": "Đúng {{correct}} / {{total}}",
-    "encouragement": {
-      "high": "Xuất sắc — bạn làm rất tốt.",
-      "mid": "Khá tốt — cứ giữ đà này.",
-      "low": "Khởi đầu ổn — hãy xem lại rồi thử lần nữa."
     }
   },
   "whiteboard": {
@@ -2578,6 +2562,30 @@
       "error": {
         "materialExtraction": null
       }
+    }
+  },
+  "classroomEnd": {
+    "close": "Quay lại trang cuối",
+    "fullScore": "100",
+    "learned": "Đã học xong {{count}} trang",
+    "result": "Đúng {{correct}} / {{total}} câu",
+    "badges": {
+      "amethyst": "Điểm tuyệt đối",
+      "silver": "Đang tiến bộ",
+      "seedling": "Bước đầu",
+      "seal": "Hoàn thành khóa học"
+    },
+    "comment": {
+      "amethyst": "Đúng hết. Bạn đã nắm được ý chính của khóa học này.",
+      "silver": "Đúng phần lớn. Còn {{wrong}} câu nữa là trọn vẹn.",
+      "seedling": "Còn {{wrong}} câu chưa đúng. Xem lại chỗ sai, lần sau sẽ khác.",
+      "seal": "Đã học xong cả {{count}} trang.",
+      "unattempted": "Vẫn còn bài kiểm tra. Làm xong để xem kết quả."
+    },
+    "actions": {
+      "reviewWrong": "Xem câu sai",
+      "doQuiz": "Làm bài kiểm tra",
+      "restart": "Học lại từ đầu"
     }
   }
 }

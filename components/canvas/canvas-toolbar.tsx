@@ -62,6 +62,8 @@ export interface CanvasToolbarProps {
   readonly elementPickActive?: boolean;
   readonly onToggleElementPick?: () => void;
   /** The dock's fold, where the toolbar sits in a dock. */
+  /** Next on the last page opens the course's end state, so it is not a dead end. */
+  readonly nextOpensEnd?: boolean;
   readonly dockCollapsed?: boolean;
   readonly onToggleDock?: () => void;
 }
@@ -129,13 +131,14 @@ export function CanvasToolbar({
   canPickSlideElement,
   elementPickActive,
   onToggleElementPick,
+  nextOpensEnd,
   dockCollapsed,
   onToggleDock,
 }: CanvasToolbarProps) {
   const { t } = useI18n();
   const remainingSoftCloseSeconds = useSoftCloseCountdown(softCloseDeadline);
   const canGoPrev = currentSceneIndex > 0;
-  const canGoNext = currentSceneIndex < scenesCount - 1;
+  const canGoNext = currentSceneIndex < scenesCount - 1 || !!nextOpensEnd;
   const showPlayPause = !isLiveSession;
 
   const whiteboardElementCount = useStageStore(
@@ -299,7 +302,7 @@ export function CanvasToolbar({
           <CtrlDivider />
 
           {/* Prev scene */}
-          {scenesCount > 1 && (
+          {(scenesCount > 1 || nextOpensEnd) && (
             <button
               onClick={onPrevSlide}
               disabled={!canGoPrev}
@@ -371,7 +374,7 @@ export function CanvasToolbar({
           ) : null}
 
           {/* Next scene */}
-          {scenesCount > 1 && (
+          {(scenesCount > 1 || nextOpensEnd) && (
             <button
               onClick={onNextSlide}
               disabled={!canGoNext}

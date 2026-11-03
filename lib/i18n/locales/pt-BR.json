@@ -762,7 +762,6 @@
     "confirmSwitchTitle": "Trocar de Cena",
     "confirmSwitchMessage": "Há um tópico em andamento. Trocar de cena vai encerrá-lo. Tem certeza?",
     "generatingNextPage": "A cena está sendo gerada, aguarde...",
-    "courseComplete": "Curso concluído",
     "fullscreen": "Tela cheia",
     "exitFullscreen": "Sair da tela cheia",
     "editCourse": "Editar curso",
@@ -775,21 +774,6 @@
       "collapse": "Recolher a barra",
       "expand": "Expandir a barra",
       "resize": "Redimensionar a barra"
-    }
-  },
-  "classroomComplete": {
-    "title": "Curso concluído",
-    "trailLabels": {
-      "slide": "páginas",
-      "quiz": "questionários",
-      "interactive": "interativas",
-      "pbl": "projetos"
-    },
-    "quizScoreLabel": "{{correct}} de {{total}} corretas",
-    "encouragement": {
-      "high": "Excelente — você arrasou!",
-      "mid": "Bom trabalho — continue assim.",
-      "low": "Um bom começo — revise e tente novamente."
     }
   },
   "whiteboard": {
@@ -2578,6 +2562,30 @@
       "error": {
         "materialExtraction": null
       }
+    }
+  },
+  "classroomEnd": {
+    "close": "Voltar à última página",
+    "fullScore": "100",
+    "learned": "{{count}} páginas concluídas",
+    "result": "{{correct}} / {{total}} corretas",
+    "badges": {
+      "amethyst": "Nota máxima",
+      "silver": "No caminho certo",
+      "seedling": "Primeiros passos",
+      "seal": "Curso concluído"
+    },
+    "comment": {
+      "amethyst": "Tudo certo. Você entendeu o essencial deste curso.",
+      "silver": "Quase tudo certo. Faltam {{wrong}} para fechar.",
+      "seedling": "{{wrong}} ainda sem acerto. Veja onde errou e a próxima vez será diferente.",
+      "seal": "As {{count}} páginas foram concluídas.",
+      "unattempted": "Ainda há quizzes. Faça-os para ver seu resultado."
+    },
+    "actions": {
+      "reviewWrong": "Ver erros",
+      "doQuiz": "Fazer o quiz",
+      "restart": "Recomeçar"
     }
   }
 }

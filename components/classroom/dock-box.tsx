@@ -23,9 +23,9 @@ import { useSettingsStore } from '@/lib/store/settings';
 /** The column the dock sits at the bottom of, in both modes: through its one wrapper. */
 const hostOf = (dock: HTMLElement | null) => dock?.parentElement?.parentElement ?? null;
 
-export function useDockBox(dockRef: RefObject<HTMLElement | null>) {
+export function useDockBox(dockRef: RefObject<HTMLElement | null>, fold = false) {
   const stored = useSettingsStore((state) => state.dockHeight);
-  const collapsed = useSettingsStore((state) => state.dockCollapsed);
+  const collapsed = useSettingsStore((state) => state.dockCollapsed) || fold;
   const [hostHeight, setHostHeight] = useState<number | null>(null);
 
   useEffect(() => {

@@ -344,7 +344,6 @@
     "confirmSwitchTitle": "Switch Scene",
     "confirmSwitchMessage": "A topic is currently in progress. Switching scenes will end the current topic. Are you sure?",
     "generatingNextPage": "Scene is being generated, please wait...",
-    "courseComplete": "Course complete",
     "fullscreen": "Fullscreen",
     "exitFullscreen": "Exit Fullscreen",
     "editCourse": "Edit course",
@@ -775,21 +774,6 @@
     "dock": {
       "elementRefHint": "Element references — pick elements to send with your next message",
       "globalTools": "Global tools"
-    }
-  },
-  "classroomComplete": {
-    "title": "Course complete",
-    "trailLabels": {
-      "slide": "pages",
-      "quiz": "quizzes",
-      "interactive": "interactives",
-      "pbl": "projects"
-    },
-    "quizScoreLabel": "{{correct}} / {{total}} correct",
-    "encouragement": {
-      "high": "Outstanding — you nailed it.",
-      "mid": "Solid work — keep it up.",
-      "low": "A good start — review and try again."
     }
   },
   "whiteboard": {
@@ -2578,6 +2562,30 @@
       "error": {
         "materialExtraction": null
       }
+    }
+  },
+  "classroomEnd": {
+    "close": "Back to the last page",
+    "fullScore": "100",
+    "learned": "{{count}} pages done",
+    "result": "{{correct}} / {{total}} correct",
+    "badges": {
+      "amethyst": "Full marks",
+      "silver": "Well on the way",
+      "seedling": "Getting started",
+      "seal": "Course complete"
+    },
+    "comment": {
+      "amethyst": "All correct. You have the main points of this course.",
+      "silver": "Most of it is right. {{wrong}} more and you have it all.",
+      "seedling": "{{wrong}} not there yet. See where they went wrong, and the next pass will be different.",
+      "seal": "All {{count}} pages done.",
+      "unattempted": "There are quizzes left. Do them to see your score."
+    },
+    "actions": {
+      "reviewWrong": "Review mistakes",
+      "doQuiz": "Take the quiz",
+      "restart": "Start over"
     }
   }
 }

@@ -344,7 +344,6 @@
     "confirmSwitchTitle": "Changer de scène",
     "confirmSwitchMessage": "Un sujet est en cours. Changer de scène mettra fin au sujet actuel. Confirmez-vous ?",
     "generatingNextPage": "La scène est en cours de génération, veuillez patienter…",
-    "courseComplete": "Cours terminé",
     "fullscreen": "Plein écran",
     "exitFullscreen": "Quitter le plein écran",
     "editCourse": "Modifier le cours",
@@ -775,21 +774,6 @@
     "dock": {
       "elementRefHint": "Références d’éléments — choisissez les éléments à joindre au prochain message",
       "globalTools": "Outils globaux"
-    }
-  },
-  "classroomComplete": {
-    "title": "Cours terminé",
-    "trailLabels": {
-      "slide": "pages",
-      "quiz": "quiz",
-      "interactive": "activités interactives",
-      "pbl": "projets"
-    },
-    "quizScoreLabel": "{{correct}} / {{total}} bonnes réponses",
-    "encouragement": {
-      "high": "Remarquable, vous maîtrisez le sujet.",
-      "mid": "Du bon travail, continuez ainsi.",
-      "low": "Un bon début. Revoyez le cours et retentez."
     }
   },
   "whiteboard": {
@@ -2578,6 +2562,30 @@
       "error": {
         "materialExtraction": null
       }
+    }
+  },
+  "classroomEnd": {
+    "close": "Revenir à la dernière page",
+    "fullScore": "100",
+    "learned": "{{count}} pages terminées",
+    "result": "{{correct}} / {{total}} correctes",
+    "badges": {
+      "amethyst": "Sans faute",
+      "silver": "En bonne voie",
+      "seedling": "Premiers pas",
+      "seal": "Cours terminé"
+    },
+    "comment": {
+      "amethyst": "Tout est juste. Tu maîtrises l'essentiel de ce cours.",
+      "silver": "L'essentiel est juste. Encore {{wrong}} et tout y sera.",
+      "seedling": "{{wrong}} à revoir. Regarde où ça a coincé, la prochaine fois sera différente.",
+      "seal": "Les {{count}} pages sont terminées.",
+      "unattempted": "Il reste des quiz. Fais-les pour voir ton résultat."
+    },
+    "actions": {
+      "reviewWrong": "Voir les erreurs",
+      "doQuiz": "Faire le quiz",
+      "restart": "Recommencer"
     }
   }
 }

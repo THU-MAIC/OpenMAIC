@@ -344,7 +344,6 @@
     "confirmSwitchTitle": "切換頁面",
     "confirmSwitchMessage": "目前主題正在進行中，切換頁面將結束目前主題。確定要切換嗎？",
     "generatingNextPage": "場景正在生成，請稍候...",
-    "courseComplete": "課程完成",
     "fullscreen": "全螢幕",
     "exitFullscreen": "離開全螢幕",
     "editCourse": "編輯課程",
@@ -2554,21 +2553,6 @@
     "placeholder": "課堂碼",
     "error": "課堂碼錯誤，請重試。"
   },
-  "classroomComplete": {
-    "title": "課程完成",
-    "trailLabels": {
-      "slide": "頁面",
-      "quiz": "測驗",
-      "interactive": "互動",
-      "pbl": "專題"
-    },
-    "quizScoreLabel": "{{correct}} / {{total}} 正確",
-    "encouragement": {
-      "high": "太棒了，你答對了！",
-      "mid": "做得好，繼續保持！",
-      "low": "不錯的開始，回顧一下再試一次。"
-    }
-  },
   "workbench": {
     "tool": {
       "label": {
@@ -2578,6 +2562,30 @@
       "error": {
         "materialExtraction": null
       }
+    }
+  },
+  "classroomEnd": {
+    "close": "回到最後一頁",
+    "fullScore": "滿分",
+    "learned": "已學完 {{count}} 頁",
+    "result": "答對 {{correct}} / {{total}} 題",
+    "badges": {
+      "amethyst": "滿分章",
+      "silver": "進階章",
+      "seedling": "起步章",
+      "seal": "完課印"
+    },
+    "comment": {
+      "amethyst": "全部答對，這節課的重點你都掌握了。",
+      "silver": "答對了大半，還差 {{wrong}} 題就全通了。",
+      "seedling": "還有 {{wrong}} 題沒對上，看看錯在哪，下一遍會不一樣。",
+      "seal": "{{count}} 頁都學完了。",
+      "unattempted": "還有小測沒做，做完再看成績。"
+    },
+    "actions": {
+      "reviewWrong": "查看錯題",
+      "doQuiz": "去做小測",
+      "restart": "重新學習"
     }
   }
 }

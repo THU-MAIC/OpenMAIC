@@ -344,7 +344,6 @@
     "confirmSwitchTitle": "장면 전환",
     "confirmSwitchMessage": "현재 진행 중인 주제가 있습니다. 장면을 전환하면 현재 주제가 종료됩니다. 계속하시겠습니까?",
     "generatingNextPage": "장면을 생성 중입니다. 잠시 기다려 주세요...",
-    "courseComplete": "강좌 완료",
     "fullscreen": "전체화면",
     "exitFullscreen": "전체화면 종료",
     "editCourse": "강좌 편집",
@@ -775,21 +774,6 @@
     "dock": {
       "elementRefHint": "요소 참조 — 다음 메시지와 함께 보낼 요소 선택",
       "globalTools": "전역 도구"
-    }
-  },
-  "classroomComplete": {
-    "title": "강좌 완료",
-    "trailLabels": {
-      "slide": "페이지",
-      "quiz": "퀴즈",
-      "interactive": "인터랙티브",
-      "pbl": "프로젝트"
-    },
-    "quizScoreLabel": "{{total}}문제 중 {{correct}}개 정답",
-    "encouragement": {
-      "high": "훌륭합니다 — 완벽하게 해내셨어요!",
-      "mid": "잘하셨어요 — 계속 이대로 나아가세요.",
-      "low": "좋은 시작입니다 — 복습하고 다시 도전해 보세요."
     }
   },
   "whiteboard": {
@@ -2578,6 +2562,30 @@
       "error": {
         "materialExtraction": null
       }
+    }
+  },
+  "classroomEnd": {
+    "close": "마지막 페이지로 돌아가기",
+    "fullScore": "만점",
+    "learned": "{{count}}페이지 완료",
+    "result": "{{correct}} / {{total}}문제 정답",
+    "badges": {
+      "amethyst": "만점 메달",
+      "silver": "성장 메달",
+      "seedling": "첫걸음",
+      "seal": "수료"
+    },
+    "comment": {
+      "amethyst": "모두 맞혔어요. 이 수업의 핵심을 이해했어요.",
+      "silver": "대부분 맞혔어요. {{wrong}}문제만 더 맞히면 완벽해요.",
+      "seedling": "{{wrong}}문제가 아직 남았어요. 어디서 틀렸는지 보면 다음엔 달라질 거예요.",
+      "seal": "{{count}}페이지를 모두 학습했어요.",
+      "unattempted": "아직 풀지 않은 퀴즈가 있어요. 풀고 나면 결과를 볼 수 있어요."
+    },
+    "actions": {
+      "reviewWrong": "오답 보기",
+      "doQuiz": "퀴즈 풀기",
+      "restart": "처음부터 학습"
     }
   }
 }

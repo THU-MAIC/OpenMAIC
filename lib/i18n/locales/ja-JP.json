@@ -344,7 +344,6 @@
     "confirmSwitchTitle": "シーンの切り替え",
     "confirmSwitchMessage": "現在トピックが進行中です。シーンを切り替えると、現在のトピックが終了します。よろしいですか？",
     "generatingNextPage": "シーンを生成中です。お待ちください...",
-    "courseComplete": "コース完了",
     "fullscreen": "全画面表示",
     "exitFullscreen": "全画面表示を終了",
     "editCourse": "コースを編集",
@@ -775,21 +774,6 @@
     "dock": {
       "elementRefHint": "要素参照 — 次のメッセージと一緒に送る要素を選ぶ",
       "globalTools": "全体ツール"
-    }
-  },
-  "classroomComplete": {
-    "title": "コース完了",
-    "trailLabels": {
-      "slide": "ページ",
-      "quiz": "クイズ",
-      "interactive": "インタラクティブ",
-      "pbl": "プロジェクト"
-    },
-    "quizScoreLabel": "{{correct}} / {{total}} 正解",
-    "encouragement": {
-      "high": "素晴らしい！完璧です。",
-      "mid": "いい感じ、その調子。",
-      "low": "始まりはこれから。復習しましょう。"
     }
   },
   "whiteboard": {
@@ -2578,6 +2562,30 @@
       "error": {
         "materialExtraction": null
       }
+    }
+  },
+  "classroomEnd": {
+    "close": "最後のページに戻る",
+    "fullScore": "満点",
+    "learned": "{{count}} ページ完了",
+    "result": "{{correct}} / {{total}} 問正解",
+    "badges": {
+      "amethyst": "満点メダル",
+      "silver": "ステップアップ",
+      "seedling": "はじめの一歩",
+      "seal": "修了"
+    },
+    "comment": {
+      "amethyst": "全問正解です。このコースの要点をつかめています。",
+      "silver": "ほとんど正解です。あと {{wrong}} 問ですべて正解です。",
+      "seedling": "あと {{wrong}} 問です。どこで間違えたかを見れば、次はきっと変わります。",
+      "seal": "{{count}} ページすべて学びました。",
+      "unattempted": "未回答の小テストがあります。解くと結果が見られます。"
+    },
+    "actions": {
+      "reviewWrong": "間違いを見る",
+      "doQuiz": "小テストへ",
+      "restart": "最初から学ぶ"
     }
   }
 }

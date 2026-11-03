@@ -15,6 +15,22 @@ import {
 } from 'react';
 import { useStageStore } from '@/lib/store';
 import { PENDING_SCENE_ID } from '@/lib/store/stage';
+import { AnimatePresence, motion } from 'motion/react';
+import { CourseEnd } from '@/components/classroom/course-end/CourseEnd';
+import {
+  readSceneQuizAnswers,
+  summarizeScenes,
+  type CompleteSummary,
+} from '@/lib/classroom/complete-summary';
+import {
+  opensOnNext,
+  opensOnPlaybackEnd,
+  opensOnQuizSubmit,
+  type CourseEndAction,
+  type CourseEndContext,
+} from '@/lib/classroom/course-end';
+import { onQuizReviewed } from '@/lib/classroom/quiz-reviewed';
+import { loadQuizAttemptState } from '@/lib/quiz/runtime';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -75,6 +91,9 @@ import {
   getSlideElementTypeLabel,
 } from '@/components/canvas/slide-element-pick-overlay';
 import { shouldClearDraftElementReference } from '@/components/chat/element-reference-receipt';
+
+/** The pause before the end state, the same as between two pages on autoplay. */
+const COURSE_END_GAP_MS = 1500;
 
 type DraftElementReference = {
   reference: ElementReference;
@@ -301,6 +320,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     }, [selectedAgentIds]);
 
     const engineRef = useRef<PlaybackEngine | null>(null);
+    const openCourseEndRef = useRef<(() => Promise<void>) | null>(null);
     const audioPlayerRef = useRef(createAudioPlayer());
     const chatAreaRef = useRef<ChatAreaRef>(null);
     const lectureSessionIdRef = useRef<string | null>(null);
@@ -965,6 +985,15 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 }
               }, 1500);
             }
+            // The last page finished: the course's end, autoplay or not.
+            const finishedSceneId = currentScene.id;
+            const finishedType = currentScene.type;
+            window.setTimeout(() => {
+              if (useStageStore.getState().currentSceneId !== finishedSceneId) return;
+              if (opensOnPlaybackEnd(courseEndContextRef.current, finishedType)) {
+                void openCourseEndRef.current?.();
+              }
+            }, COURSE_END_GAP_MS);
           },
         });
 
@@ -1233,7 +1262,65 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const isCourseComplete =
       generationComplete ||
       (outlines.length > 0 && scenes.length === outlines.length && generatingOutlines.length === 0);
-    const canAdvanceToPendingSlot = hasNextPending || isCourseComplete;
+    // The end state: a layer over the last page, with its own way in from next.
+    const nextOpensEnd = isCourseComplete && !hasNextPending;
+    const [courseEnd, setCourseEnd] = useState<CompleteSummary | null>(null);
+    const courseEndFiredRef = useRef(false);
+    const courseEndTokenRef = useRef(0);
+    const lastScene = scenes.at(-1);
+
+    const openCourseEnd = useCallback(async () => {
+      courseEndFiredRef.current = true;
+      const token = ++courseEndTokenRef.current;
+      const deck = useStageStore.getState().scenes;
+      const summary = await summarizeScenes(deck, (sceneId) =>
+        readSceneQuizAnswers(
+          deck.find((scene) => scene.id === sceneId),
+          loadQuizAttemptState,
+        ),
+      );
+      if (token === courseEndTokenRef.current) setCourseEnd(summary);
+    }, []);
+    const closeCourseEnd = useCallback(() => {
+      courseEndTokenRef.current += 1;
+      setCourseEnd(null);
+    }, []);
+
+    // It belongs to the last page: leaving that page, however, closes it.
+    useEffect(() => {
+      closeCourseEnd();
+    }, [currentSceneId, closeCourseEnd]);
+
+    // What the delayed triggers need to know when they fire, not when they were set.
+    const courseEndContextRef = useRef<CourseEndContext>({
+      courseComplete: false,
+      onLastPage: false,
+      busy: false,
+      fired: false,
+    });
+    courseEndContextRef.current = {
+      courseComplete: nextOpensEnd,
+      onLastPage: !!lastScene && lastScene.id === currentSceneId,
+      busy: isTopicActive || chatIsStreaming || engineMode === 'live',
+      fired: courseEndFiredRef.current,
+    };
+    openCourseEndRef.current = openCourseEnd;
+
+    // A quiz on the last page opens it once handed in: it is what the page was waiting for.
+    useEffect(
+      () =>
+        onQuizReviewed(() => {
+          window.setTimeout(() => {
+            if (opensOnQuizSubmit(courseEndContextRef.current)) void openCourseEnd();
+          }, COURSE_END_GAP_MS);
+        }),
+      [openCourseEnd],
+    );
+
+    // A completed course has nothing pending: don't wait on the slot for what cannot come.
+    useEffect(() => {
+      if (isPendingScene && nextOpensEnd && lastScene) setCurrentSceneId(lastScene.id);
+    }, [isPendingScene, lastScene, nextOpensEnd, setCurrentSceneId]);
 
     // previous scene (gated)
     const handlePreviousScene = useCallback(() => {
@@ -1256,16 +1343,62 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       const currentIndex = scenes.findIndex((s) => s.id === currentSceneId);
       if (currentIndex < scenes.length - 1) {
         void gatedSceneSwitch(scenes[currentIndex + 1].id);
-      } else if (canAdvanceToPendingSlot) {
-        // On last real scene → advance to pending slot (generating or completion page)
+      } else if (hasNextPending) {
+        // On last real scene → advance to the page still being generated
         void gatedSceneSwitch(PENDING_SCENE_ID);
+      } else if (opensOnNext(courseEndContextRef.current)) {
+        if (engineRef.current && engineMode === 'playing') engineRef.current.pause();
+        void openCourseEnd();
       }
-    }, [currentSceneId, gatedSceneSwitch, canAdvanceToPendingSlot, isPendingScene, scenes]);
+    }, [
+      currentSceneId,
+      engineMode,
+      gatedSceneSwitch,
+      hasNextPending,
+      isPendingScene,
+      openCourseEnd,
+      scenes,
+    ]);
+
+    const handleCourseEndAction = useCallback(
+      (action: CourseEndAction) => {
+        const target =
+          action === 'reviewWrong'
+            ? courseEnd?.firstWrongQuizId
+            : action === 'doQuiz'
+              ? courseEnd?.unattemptedQuizIds[0]
+              : scenes[0]?.id;
+        closeCourseEnd();
+        if (!target) return;
+        if (action !== 'restart') {
+          void gatedSceneSwitch(target);
+          return;
+        }
+        // A new playthrough, from the first word.
+        courseEndFiredRef.current = false;
+        clearSceneResumePosition(target);
+        if (target === currentSceneId) {
+          void handlePlayPause();
+          return;
+        }
+        autoStartRef.current = true;
+        void gatedSceneSwitch(target);
+      },
+      [
+        clearSceneResumePosition,
+        closeCourseEnd,
+        courseEnd,
+        currentSceneId,
+        gatedSceneSwitch,
+        handlePlayPause,
+        scenes,
+      ],
+    );
 
     const currentSceneIndex = isPendingScene
       ? scenes.length
       : scenes.findIndex((s) => s.id === currentSceneId);
-    const totalScenesCount = scenes.length + (canAdvanceToPendingSlot ? 1 : 0);
+    const totalScenesCount = scenes.length + (hasNextPending ? 1 : 0);
     const showElementReference = coursewareReferenceEnabled && mode === 'playback';
     const canPickSlideElement = Boolean(
       showElementReference &&
@@ -1700,7 +1833,6 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           onCollapseChange={setSidebarCollapsed}
           onSceneSelect={gatedSceneSwitch}
           onRetryOutline={onRetryOutline}
-          isCourseComplete={isCourseComplete}
         />
 
         {/* Main Content Area */}
@@ -1710,10 +1842,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             before the parent flips mode to 'edit'. */}
           {!isPresenting && !hideHeader && (
             <Header
-              currentSceneTitle={
-                currentScene?.title ||
-                (isCourseComplete && isPendingScene ? t('stage.courseComplete') : '')
-              }
+              currentSceneTitle={currentScene?.title || ''}
               mode={mode}
               canEdit={!!canEnterProMode}
               onToggleEditMode={onEnterProMode}
@@ -1774,7 +1903,6 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               onCancelElementPick={() => setElementPickActive(false)}
               hideToolbar={mode === 'playback' || (isPresenting && !controlsVisible)}
               isPendingScene={isPendingScene}
-              isCourseComplete={isCourseComplete}
               isGenerationFailed={
                 isPendingScene && failedOutlines.some((f) => f.id === generatingOutlines[0]?.id)
               }
@@ -1786,6 +1914,25 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                   : undefined
               }
             />
+            <AnimatePresence>
+              {courseEnd && !isPendingScene ? (
+                <motion.div
+                  key="course-end"
+                  className="absolute inset-0 z-[130]"
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.18 }}
+                >
+                  <CourseEnd
+                    summary={courseEnd}
+                    courseName={stage?.name ?? ''}
+                    pageCount={scenes.length}
+                    blurBehind={currentScene?.type !== 'interactive'}
+                    onDismiss={closeCourseEnd}
+                    onAction={handleCourseEndAction}
+                  />
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
           </div>
 
           {/* Roundtable Area */}
@@ -1798,6 +1945,10 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               )}
             >
               <Roundtable
+                nextOpensEnd={nextOpensEnd}
+                foldDock={
+                  Boolean(courseEnd) && !lectureSpeech && (playbackCompleted || !firstSpeechText)
+                }
                 mode={mode}
                 initialParticipants={participants}
                 playbackView={playbackView}

@@ -109,6 +109,9 @@ interface RoundtableProps {
   readonly canPickSlideElement?: boolean;
   readonly elementPickActive?: boolean;
   readonly onToggleElementPick?: () => void;
+  readonly nextOpensEnd?: boolean;
+  /** The end state is up and there is nothing to say: no empty bubble under it. */
+  readonly foldDock?: boolean;
   readonly elementReferencePill?: {
     sceneLabel: string;
     elementType: string;
@@ -213,12 +216,14 @@ export function Roundtable({
   canPickSlideElement,
   elementPickActive,
   onToggleElementPick,
+  nextOpensEnd,
+  foldDock,
   elementReferencePill,
   onClearElementReference,
 }: RoundtableProps) {
   const { t } = useI18n();
   const dockRef = useRef<HTMLDivElement>(null);
-  const dock = useDockBox(dockRef);
+  const dock = useDockBox(dockRef, foldDock);
   const setDockCollapsed = useSettingsStore((state) => state.setDockCollapsed);
   const ttsMuted = useSettingsStore((s) => s.ttsMuted);
   const setTTSMuted = useSettingsStore((s) => s.setTTSMuted);
@@ -744,6 +749,7 @@ export function Roundtable({
       canPickSlideElement={canPickSlideElement}
       elementPickActive={elementPickActive}
       onToggleElementPick={onToggleElementPick}
+      nextOpensEnd={nextOpensEnd}
       dockCollapsed={dock.collapsed}
       onToggleDock={isPresenting ? undefined : () => setDockCollapsed(!dock.collapsed)}
     />

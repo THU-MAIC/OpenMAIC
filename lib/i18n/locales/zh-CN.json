@@ -344,7 +344,6 @@
     "confirmSwitchTitle": "切换页面",
     "confirmSwitchMessage": "当前话题正在进行中，切换页面将结束当前话题。确定要切换吗？",
     "generatingNextPage": "场景正在生成，请稍候...",
-    "courseComplete": "课程完成",
     "fullscreen": "全屏",
     "exitFullscreen": "退出全屏",
     "editCourse": "编辑课程",
@@ -775,21 +774,6 @@
     "dock": {
       "elementRefHint": "元素引用 —— 选中元素随下一条消息发给 Agent",
       "globalTools": "全局工具"
-    }
-  },
-  "classroomComplete": {
-    "title": "课程完成",
-    "trailLabels": {
-      "slide": "页",
-      "quiz": "小测",
-      "interactive": "互动",
-      "pbl": "项目"
-    },
-    "quizScoreLabel": "答对 {{correct}} / {{total}}",
-    "encouragement": {
-      "high": "太棒了，完美发挥！",
-      "mid": "表现不错，继续加油！",
-      "low": "万事开头难，回去再练练吧。"
     }
   },
   "whiteboard": {
@@ -2578,6 +2562,30 @@
       "error": {
         "materialExtraction": null
       }
+    }
+  },
+  "classroomEnd": {
+    "close": "回到最后一页",
+    "fullScore": "满分",
+    "learned": "已学完 {{count}} 页",
+    "result": "答对 {{correct}} / {{total}} 题",
+    "badges": {
+      "amethyst": "满分章",
+      "silver": "进阶章",
+      "seedling": "起步章",
+      "seal": "完课印"
+    },
+    "comment": {
+      "amethyst": "全部答对，这节课的要点你都掌握了。",
+      "silver": "答对了大半，还差 {{wrong}} 题就全通了。",
+      "seedling": "还有 {{wrong}} 题没对上，看看错在哪，下一遍会不一样。",
+      "seal": "{{count}} 页都学完了。",
+      "unattempted": "还有小测没做，做完再看成绩。"
+    },
+    "actions": {
+      "reviewWrong": "查看错题",
+      "doQuiz": "去做小测",
+      "restart": "重新学习"
     }
   }
 }

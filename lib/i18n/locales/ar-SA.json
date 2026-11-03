@@ -344,7 +344,6 @@
     "confirmSwitchTitle": "تبديل المشهد",
     "confirmSwitchMessage": "يوجد موضوع قيد التقدم حاليًا. سيؤدي تبديل المشهد إلى إنهاء الموضوع الحالي. هل أنت متأكد؟",
     "generatingNextPage": "جارٍ توليد المشهد، يرجى الانتظار...",
-    "courseComplete": "اكتملت الدورة",
     "fullscreen": "ملء الشاشة",
     "exitFullscreen": "الخروج من ملء الشاشة",
     "editCourse": "تحرير الدورة",
@@ -775,21 +774,6 @@
     "dock": {
       "elementRefHint": "مراجع العناصر — اختر عناصر لإرسالها مع رسالتك التالية",
       "globalTools": "أدوات عامة"
-    }
-  },
-  "classroomComplete": {
-    "title": "اكتملت الدورة",
-    "trailLabels": {
-      "slide": "صفحات",
-      "quiz": "اختبارات",
-      "interactive": "تفاعلات",
-      "pbl": "مشاريع"
-    },
-    "quizScoreLabel": "{{correct}} / {{total}} صحيحة",
-    "encouragement": {
-      "high": "ممتاز — أبدعت!",
-      "mid": "عمل جيد — استمر.",
-      "low": "بداية جيدة — راجع وحاول مجددًا."
     }
   },
   "whiteboard": {
@@ -2578,6 +2562,30 @@
       "error": {
         "materialExtraction": null
       }
+    }
+  },
+  "classroomEnd": {
+    "close": "العودة إلى الصفحة الأخيرة",
+    "fullScore": "100",
+    "learned": "اكتملت {{count}} صفحة",
+    "result": "{{correct}} / {{total}} صحيحة",
+    "badges": {
+      "amethyst": "علامة كاملة",
+      "silver": "على الطريق الصحيح",
+      "seedling": "بداية جيدة",
+      "seal": "اكتملت الدورة"
+    },
+    "comment": {
+      "amethyst": "كل الإجابات صحيحة. لقد أتقنت أساسيات هذه الدورة.",
+      "silver": "معظم الإجابات صحيحة. بقي {{wrong}} لتكتمل.",
+      "seedling": "بقي {{wrong}} دون إجابة صحيحة. راجع موضع الخطأ وسيختلف الأمر في المرة القادمة.",
+      "seal": "اكتملت الصفحات الـ {{count}}.",
+      "unattempted": "بقيت اختبارات. أكملها لترى نتيجتك."
+    },
+    "actions": {
+      "reviewWrong": "مراجعة الأخطاء",
+      "doQuiz": "إلى الاختبار",
+      "restart": "البدء من جديد"
     }
   }
 }
