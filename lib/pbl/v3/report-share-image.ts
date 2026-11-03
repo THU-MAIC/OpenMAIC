@@ -234,29 +234,30 @@ export async function renderReportShareImage(
     });
     y += Math.ceil(content.metrics.length / 2) * 128;
   }
-  // An open checklist and a concept panel share a baseline and fill the remaining canvas.
-  const lowerTop = y + 24,
-    lowerBottom = 1320;
-  const both = content.skills.length > 0 && content.concepts.length > 0;
+  // Two open horizontal bands: a compact checklist followed by content-sized concept chips.
+  const lowerTop = y + 24;
   const rule = dark ? '#ffffff16' : '#211c3812';
   if (content.skills.length) {
-    const panelWidth = both ? 628 : width - 128;
     paragraph(
       t('pblV3.share.skillsSection'),
-      92,
+      64,
       lowerTop + 40,
-      panelWidth - 56,
-      22,
+      width - 128,
+      24,
       1,
       muted,
       600,
       true,
     );
-    const bodyTop = lowerTop + 76,
-      rowHeight = (lowerBottom - 18 - bodyTop) / content.skills.length;
+    const rows = Math.ceil(content.skills.length / 2);
+    const bodyTop = lowerTop + 70,
+      rowHeight = Math.min(66, (1140 - bodyTop) / rows);
+    const columnWidth = (width - 164) / 2;
     content.skills.forEach((id, i) => {
-      const center = bodyTop + (i + 0.5) * rowHeight;
-      const markerX = direction === 'rtl' ? 64 + panelWidth - 40 : 104;
+      const column = direction === 'rtl' ? 1 - (i % 2) : i % 2;
+      const x = 64 + column * (columnWidth + 36);
+      const center = bodyTop + (Math.floor(i / 2) + 0.5) * rowHeight;
+      const markerX = direction === 'rtl' ? x + columnWidth - 20 : x + 20;
       ctx.strokeStyle = accent;
       ctx.lineWidth = 2.4;
       ctx.lineCap = 'round';
@@ -268,10 +269,10 @@ export async function renderReportShareImage(
       ctx.stroke();
       paragraph(
         t(`pblV3.share.skillLabels.${id}`),
-        direction === 'rtl' ? 92 : 136,
+        direction === 'rtl' ? x + 12 : x + 52,
         center + 9,
-        panelWidth - 100,
-        26,
+        columnWidth - 64,
+        rowHeight < 40 ? 24 : 26,
         1,
         ink,
         500,
@@ -280,49 +281,23 @@ export async function renderReportShareImage(
     });
   }
   if (content.concepts.length) {
-    const x = both ? 716 : 64,
-      panelWidth = both ? 420 : width - 128;
-    box(x, lowerTop, panelWidth, lowerBottom - lowerTop, panel);
-    paragraph(
-      t('pblV3.share.conceptsLabel'),
-      x + 28,
-      lowerTop + 40,
-      panelWidth - 56,
-      22,
-      1,
-      muted,
-      600,
-      true,
-    );
-    const bodyTop = lowerTop + 76,
-      rowHeight = (lowerBottom - 18 - bodyTop) / content.concepts.length;
-    content.concepts.forEach((concept, i) => {
-      const center = bodyTop + (i + 0.5) * rowHeight;
-      box(
-        x + 20,
-        bodyTop + i * rowHeight + 4,
-        panelWidth - 40,
-        rowHeight - 8,
-        dark ? '#ffffff06' : '#ffffff90',
-        12,
-      );
-      const maxLines = rowHeight >= 58 ? 2 : 1;
-      ctx.font = `500 24px ${font}`;
-      const lines = Math.min(
-        maxLines,
-        wrapShareText(concept, panelWidth - 64, (value) => ctx.measureText(value).width).length,
-      );
-      paragraph(
-        concept,
-        x + 32,
-        center + 8 - Math.max(0, lines - 1) * 17.4,
-        panelWidth - 64,
-        24,
-        maxLines,
-        ink,
-        500,
-        true,
-      );
+    paragraph(t('pblV3.share.conceptsLabel'), 64, 1180, width - 128, 24, 1, muted, 600, true);
+    const chipHeight = 50,
+      gap = 14;
+    let chipX = direction === 'rtl' ? width - 64 : 64,
+      chipY = 1204;
+    content.concepts.forEach((concept) => {
+      ctx.font = `500 22px ${font}`;
+      // At most six concepts; three maximum-width chips fit a row, so two rows stay above results.
+      const chipWidth = Math.min(348, ctx.measureText(concept).width + 40);
+      if (direction === 'rtl' ? chipX - chipWidth < 64 : chipX + chipWidth > width - 64) {
+        chipX = direction === 'rtl' ? width - 64 : 64;
+        chipY += chipHeight + gap;
+      }
+      const left = direction === 'rtl' ? chipX - chipWidth : chipX;
+      box(left, chipY, chipWidth, chipHeight, dark ? '#ffffff0a' : '#ffffff80', 14);
+      paragraph(concept, left + 20, chipY + 33, chipWidth - 40, 22, 1, ink, 500);
+      chipX = direction === 'rtl' ? left - gap : left + chipWidth + gap;
     });
   }
   const { passed, tested, quizScore, quizTotal, decisions } = content.verification;
