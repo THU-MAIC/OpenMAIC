@@ -2246,8 +2246,9 @@ describe('the knowledge base page', () => {
       expect(browser().activeCourseId).toBe('stage-2');
 
       // Explicitly switch away using openCourse and back to stage-2 in the tab strip
+      const coursesPage = await openMyCourses();
       await act(async () => {
-        (mocks.railProps?.onOpenCourse as (id: string) => void)('stage-other');
+        (coursesPage.onOpenCourse as (id: string) => void)('stage-other');
       });
       await render();
       expect(browser().activeCourseId).toBe('stage-other');

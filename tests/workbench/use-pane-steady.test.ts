@@ -1,16 +1,20 @@
 // @vitest-environment jsdom
-import { act, createElement } from 'react';
+import { act, createElement, useLayoutEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PANE_ENTER_MS, usePaneSteady } from '@/components/workbench/workspace/use-pane-steady';
 
 let steady = false;
 let root: Root;
-function Probe({ open }: { open: boolean }) {
-  steady = usePaneSteady(open);
+function Probe({ open, report }: { open: boolean; report: (value: boolean) => void }) {
+  const value = usePaneSteady(open);
+  useLayoutEffect(() => report(value));
   return null;
 }
-const render = (open: boolean) => act(() => root.render(createElement(Probe, { open })));
+const report = (value: boolean) => {
+  steady = value;
+};
+const render = (open: boolean) => act(() => root.render(createElement(Probe, { open, report })));
 const wait = (ms: number) => act(() => void vi.advanceTimersByTime(ms));
 
 describe('usePaneSteady', () => {

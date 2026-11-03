@@ -127,6 +127,12 @@ export interface SettingsState {
    * load. Only a user-set selection carries across classrooms on restore.
    */
   agentSelectionIsUserSet: boolean;
+  /**
+   * The user's preset selection while a course's own roster stands in for it
+   * (`restoreAgentSelection`). Empty when nothing is being kept. It returns for
+   * a course without a roster, and on the home page.
+   */
+  presetAgentChoice: string[];
 
   // Layout preferences (persisted via localStorage)
   sidebarCollapsed: boolean;
@@ -166,6 +172,7 @@ export interface SettingsState {
   /** Set (or clear, with `undefined`) the persisted voice pick for one agent. */
   setAgentVoiceOverride: (agentId: string, voice: AgentVoiceOverride | undefined) => void;
   setAgentSelectionIsUserSet: (isUserSet: boolean) => void;
+  setPresetAgentChoice: (ids: string[]) => void;
 
   // Layout actions
   setSidebarCollapsed: (collapsed: boolean) => void;
@@ -193,6 +200,7 @@ const PERSISTED_FIELDS = [
   'autoAgentCount',
   'agentVoiceOverrides',
   'agentSelectionIsUserSet',
+  'presetAgentChoice',
   'sidebarCollapsed',
   'chatAreaCollapsed',
   'chatAreaWidth',
@@ -278,6 +286,7 @@ export const useSettingsStore = create<SettingsState>()(
       autoAgentCount: 3,
       agentVoiceOverrides: {},
       agentSelectionIsUserSet: false,
+      presetAgentChoice: [],
 
       // Layout preferences
       sidebarCollapsed: true,
@@ -312,6 +321,7 @@ export const useSettingsStore = create<SettingsState>()(
           return { agentVoiceOverrides: next };
         }),
       setAgentSelectionIsUserSet: (isUserSet) => set({ agentSelectionIsUserSet: isUserSet }),
+      setPresetAgentChoice: (ids) => set({ presetAgentChoice: ids }),
 
       setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
       setChatAreaCollapsed: (collapsed) => set({ chatAreaCollapsed: collapsed }),

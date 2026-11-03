@@ -51,6 +51,8 @@ interface ClassroomLoadSettings {
   agentMode: 'preset' | 'auto';
   selectedAgentIds: string[];
   agentSelectionIsUserSet: boolean;
+  presetAgentChoice: string[];
+  setPresetAgentChoice: (ids: string[]) => void;
   setAgentMode: (mode: 'preset' | 'auto') => void;
   setSelectedAgentIds: (ids: string[]) => void;
   setAgentSelectionIsUserSet: (isUserSet: boolean) => void;
@@ -201,16 +203,27 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
     }
 
     if (!isCurrent()) return { outcome: 'cancelled' };
-    const generatedAgentIds = applyGeneratedAgents(classroomId, effectiveConfigs);
+    applyGeneratedAgents(classroomId, effectiveConfigs);
 
     const agentsKnown = agentsReady ? await agentsReady() : true;
     if (!isCurrent()) return { outcome: 'cancelled' };
+    // A freshness sync can replace the roster during that wait: the selection
+    // follows the roster the stage has now, not the one applied above.
+    const stageNow = getCurrentStage();
+    const rosterNow =
+      (stageNow?.id === classroomId ? stageNow.generatedAgentConfigs : undefined) ??
+      effectiveConfigs;
     const settings = getSettings();
-    const { selection: next, isUserSet } = restoreSelection({
+    const {
+      selection: next,
+      isUserSet,
+      presetChoice = [],
+    } = restoreSelection({
       persisted: { mode: settings.agentMode, selectedAgentIds: settings.selectedAgentIds },
       persistedIsUserSet: settings.agentSelectionIsUserSet,
-      generatedAgentIds,
-      stageAgentIds: getCurrentStage()?.agentIds,
+      persistedPresetChoice: settings.presetAgentChoice,
+      generatedAgentIds: rosterNow.map((config) => config.id),
+      stageAgentIds: stageNow?.agentIds,
       isPresetAgent: (id) => {
         const agent = getAgent(id);
         // Unknown before the custom agents arrived: possibly one of them.
@@ -226,6 +239,9 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
     }
     if (isUserSet !== settings.agentSelectionIsUserSet) {
       settings.setAgentSelectionIsUserSet(isUserSet);
+    }
+    if (presetChoice.join() !== settings.presetAgentChoice.join()) {
+      settings.setPresetAgentChoice(presetChoice);
     }
     return { outcome: 'ready' };
   } catch (error) {
