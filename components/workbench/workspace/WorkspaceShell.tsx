@@ -125,6 +125,7 @@ import { WorkspaceRail } from './WorkspaceRail';
 import { WorkspaceHome } from './WorkspaceHome';
 import { WorkspaceChatPane } from './WorkspaceChatPane';
 import { WorkspaceClassroomPane } from './WorkspaceClassroomPane';
+import { usePaneSteady } from './use-pane-steady';
 import {
   NO_PREVIEW_TAB,
   PREVIEW_TAB_ID,
@@ -1709,6 +1710,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     setHomeRequest({ ...homeRequest, used: true });
   }
   const autoFold = homePreview && previewPaneOpen && homeRequest.requestKey !== null;
+  const paneSteady = usePaneSteady(previewPaneOpen || (Boolean(panes.courseId) && classroomOpen));
   const [navReopenedForPreview, setNavReopenedForPreview] = useState(false);
   if (!autoFold && navReopenedForPreview) setNavReopenedForPreview(false);
   const navCollapsed = collapse.value.nav || (autoFold && !navReopenedForPreview);
@@ -1738,6 +1740,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
             ? 'home'
             : `${chatOpen ? 'chat' : ''}${classroomOpen ? 'classroom' : ''}`
       }
+      data-ws-pane-steady={paneSteady || undefined}
       className="ws-root flex h-[100dvh] w-full overflow-hidden"
       // The default only — the persisted width is applied to this same
       // variable in a layout effect, so server and client markup agree.

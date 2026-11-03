@@ -530,7 +530,7 @@
 
 /* The right pane opening: it comes in from the right edge, a beat after the
    conversation starts to narrow beside it (see `WorkspaceChatPane`), on the
-   split's own curve. Replayed whenever the pane is shown again. Full screen
+   split's own curve. Full screen
    grows the classroom out of the pane the same way. */
 @keyframes ws-pane-in {
   from {
@@ -543,6 +543,11 @@
   }
 }
 
+/* A load that turns out to be a real wait says so; a short one says nothing. */
+.ws-load-late {
+  animation: ws-fade 200ms var(--ws-ease) 450ms both;
+}
+
 @keyframes ws-full-in {
   from {
     opacity: 0.6;
@@ -552,6 +557,13 @@
     opacity: 1;
     transform: none;
   }
+}
+
+/* Only opening the pane plays that. Once a pane is on screen, another tab replaces
+   it where it is, though that shows one element and hides another
+   (`usePaneSteady`). Full screen keeps its own growth. */
+.ws-root[data-ws-pane-steady] .ws-pane-enter:not(.ws-classroom-fullscreen) {
+  animation: none;
 }
 
 /* While the split plays, a column's content holds its final width, clipped,
