@@ -603,6 +603,8 @@
       "discussionTerminalHint": "토론은 장면의 끝에 고정되며 장면당 하나만 허용됩니다",
       "discussionTopicPlaceholder": "토론 주제(필수)",
       "discussionPromptPlaceholder": "안내 프롬프트(선택)",
+      "discussionTopicLabel": "토론 주제",
+      "discussionPromptLabel": "안내 프롬프트",
       "discussionAgent": "시작자",
       "discussionAgentUnset": "지정 안 함",
       "addAction": "동작 추가",

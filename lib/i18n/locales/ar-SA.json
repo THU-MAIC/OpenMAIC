@@ -676,6 +676,8 @@
       "discussionTerminalHint": "تبقى المناقشة في نهاية المشهد (واحدة لكل مشهد)",
       "discussionTopicPlaceholder": "موضوع المناقشة (مطلوب)",
       "discussionPromptPlaceholder": "توجيه (اختياري)",
+      "discussionTopicLabel": "موضوع المناقشة",
+      "discussionPromptLabel": "توجيه",
       "discussionAgent": "المُبادر",
       "discussionAgentUnset": "غير محدد",
       "addAction": "إضافة إجراء",

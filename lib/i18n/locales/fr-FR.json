@@ -676,6 +676,8 @@
       "discussionTerminalHint": "Une discussion reste à la fin de la scène (une seule par scène)",
       "discussionTopicPlaceholder": "Sujet de la discussion (obligatoire)",
       "discussionPromptPlaceholder": "Consigne d’orientation (facultative)",
+      "discussionTopicLabel": "Sujet de la discussion",
+      "discussionPromptLabel": "Consigne d’orientation",
       "discussionAgent": "Initiateur",
       "discussionAgentUnset": "Non précisé",
       "addAction": "Ajouter une action",

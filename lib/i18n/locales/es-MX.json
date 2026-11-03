@@ -676,6 +676,8 @@
       "discussionTerminalHint": "La discusión permanece al final de la escena (una por escena)",
       "discussionTopicPlaceholder": "Tema de discusión (obligatorio)",
       "discussionPromptPlaceholder": "Prompt de guía (opcional)",
+      "discussionTopicLabel": "Tema de discusión",
+      "discussionPromptLabel": "Prompt de guía",
       "discussionAgent": "Iniciador",
       "discussionAgentUnset": "Sin especificar",
       "addAction": "Agregar acción",

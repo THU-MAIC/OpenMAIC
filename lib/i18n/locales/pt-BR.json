@@ -653,6 +653,8 @@
       "discussionTerminalHint": "A discussão fica no final da cena (uma por cena)",
       "discussionTopicPlaceholder": "Tópico da discussão (obrigatório)",
       "discussionPromptPlaceholder": "Orientação (opcional)",
+      "discussionTopicLabel": "Tópico da discussão",
+      "discussionPromptLabel": "Orientação",
       "discussionAgent": "Iniciador",
       "discussionAgentUnset": "Não especificado",
       "addAction": "Adicionar ação",

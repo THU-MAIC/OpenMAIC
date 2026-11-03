@@ -676,6 +676,8 @@
       "discussionTerminalHint": "讨论固定在场景末尾，每个场景仅一个",
       "discussionTopicPlaceholder": "讨论主题（必填）",
       "discussionPromptPlaceholder": "引导语（可选）",
+      "discussionTopicLabel": "讨论主题",
+      "discussionPromptLabel": "引导语",
       "discussionAgent": "发起",
       "discussionAgentUnset": "不指定",
       "addAction": "添加动作",

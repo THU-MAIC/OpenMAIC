@@ -676,6 +676,8 @@
       "discussionTerminalHint": "Phần thảo luận luôn nằm ở cuối cảnh (mỗi cảnh một phần)",
       "discussionTopicPlaceholder": "Chủ đề thảo luận (bắt buộc)",
       "discussionPromptPlaceholder": "Câu dẫn hướng (không bắt buộc)",
+      "discussionTopicLabel": "Chủ đề thảo luận",
+      "discussionPromptLabel": "Câu dẫn hướng",
       "discussionAgent": "Người mở lời",
       "discussionAgentUnset": "Chưa chỉ định",
       "addAction": "Thêm hành động",

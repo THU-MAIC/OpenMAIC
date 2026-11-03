@@ -676,6 +676,8 @@
       "discussionTerminalHint": "Eine Diskussionsrunde bleibt am Ende der Szene (eine pro Szene)",
       "discussionTopicPlaceholder": "Diskussionsthema (erforderlich)",
       "discussionPromptPlaceholder": "Anweisung (optional)",
+      "discussionTopicLabel": "Diskussionsthema",
+      "discussionPromptLabel": "Anweisung",
       "discussionAgent": "Startrolle",
       "discussionAgentUnset": "Nicht festgelegt",
       "addAction": "Aktion hinzufügen",

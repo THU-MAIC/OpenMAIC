@@ -676,6 +676,8 @@
       "discussionTerminalHint": "A discussion stays at the end of the scene (one per scene)",
       "discussionTopicPlaceholder": "Discussion topic (required)",
       "discussionPromptPlaceholder": "Guidance prompt (optional)",
+      "discussionTopicLabel": "Discussion topic",
+      "discussionPromptLabel": "Guidance prompt",
       "discussionAgent": "Initiator",
       "discussionAgentUnset": "Unspecified",
       "addAction": "Add action",

@@ -56,8 +56,9 @@ export const QuietTextarea = forwardRef<
     const size = Math.max(THUMB_MIN_PX, (clientHeight / scrollHeight) * clientHeight);
     const travel = clientHeight - size;
     setThumb({ top: (scrollTop / (scrollHeight - clientHeight)) * travel, size });
-    setMoreBelow(scrollTop + clientHeight < scrollHeight - 1);
-  }, []);
+    // A single line has no room to fade: the 14px edge would wash it out.
+    setMoreBelow(clientHeight >= lineHeightPx * 2 && scrollTop + clientHeight < scrollHeight - 1);
+  }, [lineHeightPx]);
 
   // Whole lines, directly on the element: the dock's height changes every frame of a
   // drag, and this must not render for it. A change in height changes what there is

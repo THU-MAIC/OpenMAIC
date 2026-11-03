@@ -676,6 +676,8 @@
       "discussionTerminalHint": "Обсуждение закрепляется в конце сцены (одно на сцену)",
       "discussionTopicPlaceholder": "Тема обсуждения (обязательно)",
       "discussionPromptPlaceholder": "Подсказка (необязательно)",
+      "discussionTopicLabel": "Тема обсуждения",
+      "discussionPromptLabel": "Подсказка",
       "discussionAgent": "Инициатор",
       "discussionAgentUnset": "Не указан",
       "addAction": "Добавить действие",

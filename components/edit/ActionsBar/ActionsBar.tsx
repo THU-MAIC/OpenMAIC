@@ -25,7 +25,15 @@
  *
  * Reactive to the stage store; collapse and height belong to the dock.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+} from 'react';
 import { createPortal } from 'react-dom';
 import {
   AudioLines,
@@ -719,7 +727,7 @@ function DiscussionAgentSelect({
         size="sm"
         data-testid="discussion-agent"
         aria-label={t('edit.timeline.discussionAgent')}
-        className="h-[22px] min-w-0 max-w-[112px] gap-0.5 rounded-md border-0 bg-transparent px-1 py-0 text-[11px] text-foreground/80 shadow-none transition-colors hover:bg-gray-500/[0.08] focus-visible:ring-1 focus-visible:ring-primary/50 dark:bg-transparent dark:hover:bg-gray-400/[0.08] [&_svg]:size-3 [&_svg]:opacity-60 [&>span]:flex [&>span]:min-w-0 [&>span]:items-center [&>span]:gap-1"
+        className="min-w-0 max-w-[112px] data-[size=sm]:h-[22px] gap-0.5 rounded-md border-0 bg-transparent px-1 py-0 text-[11px] text-foreground/80 shadow-none transition-colors hover:bg-gray-500/[0.08] focus-visible:ring-1 focus-visible:ring-primary/50 dark:bg-transparent dark:hover:bg-gray-400/[0.08] [&_svg]:size-3 [&_svg]:opacity-60 [&>span]:flex [&>span]:min-w-0 [&>span]:items-center [&>span]:gap-1"
       >
         <SelectValue placeholder={t('edit.timeline.discussionAgentUnset')} />
       </SelectTrigger>
@@ -743,6 +751,51 @@ function DiscussionAgentSelect({
         )}
       </SelectContent>
     </Select>
+  );
+}
+
+/**
+ * One row of the discussion card, the same shape as the initiator in its header: a grey
+ * name on the left, its value on the right. The rows share the name column, which is as
+ * wide as the longest word of either name, so a name only ever breaks between words. On
+ * a low dock there is room for two tight lines of name and the row centers on them;
+ * otherwise `labelClassName` puts the name's first baseline on the text's.
+ */
+function DiscussionField({
+  label,
+  labelClassName,
+  rowClassName,
+  className,
+  ...field
+}: ComponentProps<typeof QuietTextarea> & {
+  label: string;
+  labelClassName: string;
+  rowClassName?: string;
+}) {
+  const id = useId();
+  return (
+    <div
+      className={cn(
+        'group/field col-span-2 grid min-h-0 grid-cols-subgrid grid-rows-[minmax(0,1fr)] overflow-hidden pb-1 pl-3 pr-1.5 pt-[5px] transition-colors hover:bg-muted/70 focus-within:bg-primary/[0.05] hover:focus-within:bg-primary/[0.05] dark:focus-within:bg-primary/[0.12] [@container(max-height:90px)]:py-px',
+        rowClassName,
+      )}
+    >
+      <label
+        htmlFor={id}
+        className={cn(
+          'text-[10px] font-medium leading-[14px] text-muted-foreground [word-break:keep-all] group-focus-within/field:text-primary supports-[word-break:auto-phrase]:[word-break:auto-phrase] [@container(max-height:90px)]:self-center [@container(max-height:90px)]:pt-0 [@container(max-height:90px)]:leading-3',
+          labelClassName,
+        )}
+      >
+        {label}
+      </label>
+      <QuietTextarea
+        {...field}
+        id={id}
+        wrapperClassName="[@container(max-height:90px)]:flex [@container(max-height:90px)]:items-center"
+        className={cn('pr-1.5', className)}
+      />
+    </div>
   );
 }
 
@@ -793,13 +846,14 @@ function DiscussionClip({
     <div
       data-cue-card=""
       className={cn(
-        'relative flex h-full w-[240px] shrink-0 flex-col overflow-hidden rounded-xl border border-gray-200/80 bg-white/70 shadow-sm transition-colors focus-within:border-yellow-400 hover:border-yellow-300/70 dark:border-gray-700/60 dark:bg-slate-800/50 dark:hover:border-yellow-500/40',
+        'relative flex h-full w-[240px] shrink-0 flex-col overflow-hidden rounded-xl border border-gray-200/80 bg-white/70 shadow-sm transition-colors focus-within:border-violet-400 hover:border-violet-300/70 dark:border-gray-700/60 dark:bg-slate-800/50 dark:hover:border-violet-500/40',
         needsTopic && INCOMPLETE_CLIP,
       )}
     >
       {/* The empty state reads from the amber dashed frame and the topic's "required"
-          placeholder; the node above it is the Flag. */}
-      <div className={CARD_HEADER}>
+          placeholder; the node above it is the Flag. pl-3 puts the header's name on the
+          12px edge of the labels below. */}
+      <div className={cn(CARD_HEADER, 'pl-3')}>
         <span
           title={t('edit.timeline.discussionTerminalHint')}
           className="-translate-y-[0.5px] truncate text-[10px] font-medium leading-[14px] text-foreground/70"
@@ -816,35 +870,41 @@ function DiscussionClip({
           <DeleteButton onDelete={onDelete} />
         </span>
       </div>
-      <QuietTextarea
-        lineHeightPx={19}
-        wrapperClassName="mt-1 flex-none h-[38px]"
-        value={topicVal}
-        onChange={(e) => {
-          topicDirty.current = true;
-          setTopicVal(e.target.value);
-        }}
-        onBlur={() => {
-          if (topicDirty.current) onTopicChange(topicVal);
-          topicDirty.current = false;
-        }}
-        placeholder={t('edit.timeline.discussionTopicPlaceholder')}
-        className="px-3 text-[12.5px] font-medium leading-[19px] text-foreground/85 placeholder:font-normal placeholder:text-amber-500/60"
-      />
-      <QuietTextarea
-        lineHeightPx={17}
-        value={promptVal}
-        onChange={(e) => {
-          promptDirty.current = true;
-          setPromptVal(e.target.value);
-        }}
-        onBlur={() => {
-          if (promptDirty.current) onPromptChange(promptVal);
-          promptDirty.current = false;
-        }}
-        placeholder={t('edit.timeline.discussionPromptPlaceholder')}
-        className="px-3 text-[11px] leading-[17px] text-muted-foreground placeholder:text-muted-foreground/35"
-      />
+      <div className="grid min-h-0 flex-1 grid-cols-[fit-content(58px)_minmax(0,1fr)] grid-rows-[minmax(0,55fr)_minmax(29px,45fr)] gap-x-2 [container-type:size]">
+        <DiscussionField
+          label={t('edit.timeline.discussionTopicLabel')}
+          labelClassName="pt-[3px]"
+          lineHeightPx={19}
+          value={topicVal}
+          onChange={(e) => {
+            topicDirty.current = true;
+            setTopicVal(e.target.value);
+          }}
+          onBlur={() => {
+            if (topicDirty.current) onTopicChange(topicVal);
+            topicDirty.current = false;
+          }}
+          placeholder={t('edit.timeline.discussionTopicPlaceholder')}
+          className="text-[12.5px] font-medium leading-[19px] text-foreground/90 placeholder:font-normal placeholder:text-amber-600/70 dark:placeholder:text-amber-400/70"
+        />
+        <DiscussionField
+          label={t('edit.timeline.discussionPromptLabel')}
+          labelClassName="pt-[2px]"
+          lineHeightPx={17}
+          rowClassName="border-t border-border/60"
+          value={promptVal}
+          onChange={(e) => {
+            promptDirty.current = true;
+            setPromptVal(e.target.value);
+          }}
+          onBlur={() => {
+            if (promptDirty.current) onPromptChange(promptVal);
+            promptDirty.current = false;
+          }}
+          placeholder={t('edit.timeline.discussionPromptPlaceholder')}
+          className="text-[12px] leading-[17px] text-foreground/70 placeholder:text-muted-foreground/50"
+        />
+      </div>
     </div>
   );
 }
