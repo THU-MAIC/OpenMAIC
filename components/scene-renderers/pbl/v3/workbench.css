@@ -46,17 +46,6 @@
   background: var(--pbl-assistant-bubble);
 }
 
-/* A reading column, rather than edge-to-edge lines when the assistant is expanded. */
-.pbl-workbench .pbl-conversation-column {
-  width: 100%;
-  max-inline-size: calc(78ch + 4rem);
-  margin-inline: auto;
-  font-size: var(--wb-text-base, 14px);
-}
-.pbl-workbench .pbl-agent-turn {
-  max-inline-size: 78ch;
-  font-size: var(--wb-text-base, 14px);
-}
 .pbl-workbench .pbl-teaching-prose .wb-prose {
   --wb-h1: 1.6em;
   --wb-h2: 1.4em;

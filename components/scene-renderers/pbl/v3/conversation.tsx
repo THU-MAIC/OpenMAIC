@@ -68,7 +68,7 @@ function AgentTurn({
   const copyText = entry.parts.flatMap((p) => (p.kind === 'text' ? [p.text] : [])).join('\n\n');
   return (
     <article
-      className="pbl-agent-turn group/turn min-w-0 space-y-1.5"
+      className="group/turn min-w-0 space-y-1.5"
       data-testid="pbl-agent-turn"
       data-status={entry.status}
       data-turn-id={entry.id}
@@ -252,7 +252,7 @@ export function LearningConversation({
     >
       <ConversationContent
         scrollClassName="pbl-conversation-scroll min-h-0 flex-1"
-        className="pbl-conversation-column gap-5 p-4 pr-12"
+        className="gap-5 p-4 pr-12"
         onClick={(event) => openReference(event)}
       >
         <ConversationHistory
