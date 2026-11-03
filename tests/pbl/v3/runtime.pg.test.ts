@@ -5463,58 +5463,68 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect((await learningView(principal, study.id)).actions).not.toContain('next');
     studyId = original;
   }, 30000);
-  it('repairs a prose-only lesson by recording its already delivered question without restarting teaching', async () => {
-    const study = await freshTeachingStudy();
-    const handle = startAgentRunner();
-    await handle.stop();
-    const queued = (await study.send('chat')) as { sessionId: string };
-    const meta = await agents.claimNextSession(handle.workerId, process.pid, {
-      sessionId: queued.sessionId,
-      leaseTtlMs: 10000,
-      maxAttempts: 5,
-    });
-    const inputs = await agents.listUserMessages(queued.sessionId);
-    await agents.markUserMessageDelivered(
-      queued.sessionId,
-      handle.workerId,
-      meta!.attempt,
-      inputs.at(-2)!.seq,
-    );
-    const question = 'What does the caller receive after adding a task?';
-    const delivered = `This milestone adds a task. A list keeps order; append modifies it. ${question}`;
-    mocked.responses = [
-      toolResponse([{ name: 'read_next_skill', input: {} }]),
-      textResponse(delivered),
-      toolResponse([
-        {
-          name: 'request_skill_review',
-          input: { explanation: delivered.slice(0, -question.length).trim(), question },
-        },
-      ]),
-    ];
-    const callsBefore = mocked.modelCalls;
-    await runSession(
-      { running: new Map(), shuttingDown: false },
-      { ...meta!, ...(await agents.getSession(queued.sessionId))! },
-    );
-    expect(mocked.modelCalls - callsBefore).toBe(3);
-    expect(mocked.modelSystems.at(-1)).toContain(delivered);
-    expect(mocked.modelSystems.at(-1)).toContain('record that SAME reply');
-    expect(mocked.modelSystems.at(-1)).toContain('verbatim into explanation');
-    expect((await agents.getSession(queued.sessionId))?.status).toBe('succeeded');
-    expect(await agents.listUserMessages(queued.sessionId)).toEqual(inputs);
-    expect((await store.binding(queued.sessionId))?.guided?.pending?.question).toBe(question);
-    const view = await learningView(principal, study.id);
-    const parts = view.conversation!.flatMap((entry) => entry.parts);
-    expect(
-      parts.filter((part) => part.kind === 'text' && part.text.includes(question)),
-    ).toHaveLength(1);
-    expect(
-      parts.filter((part) => part.kind === 'text' && part.text.includes('A list keeps order')),
-    ).toHaveLength(1);
-    expect(view.actions).not.toContain('next');
-    expect(view.state.position.stageIndex).toBe(0);
-  });
+  it.each([false, true])(
+    'repairs a prose-only lesson without repeating its closing question (already in explanation: %s)',
+    async (included) => {
+      const study = await freshTeachingStudy();
+      const handle = startAgentRunner();
+      await handle.stop();
+      const queued = (await study.send('chat')) as { sessionId: string };
+      const meta = await agents.claimNextSession(handle.workerId, process.pid, {
+        sessionId: queued.sessionId,
+        leaseTtlMs: 10000,
+        maxAttempts: 5,
+      });
+      const inputs = await agents.listUserMessages(queued.sessionId);
+      await agents.markUserMessageDelivered(
+        queued.sessionId,
+        handle.workerId,
+        meta!.attempt,
+        inputs.at(-2)!.seq,
+      );
+      const question = 'What does the caller receive after adding a task?';
+      const delivered = `This milestone adds a task. A list keeps order; append modifies it. ${question}`;
+      mocked.responses = [
+        toolResponse([{ name: 'read_next_skill', input: {} }]),
+        textResponse(delivered),
+        toolResponse([
+          {
+            name: 'request_skill_review',
+            input: {
+              explanation: included
+                ? `${delivered.slice(0, -question.length).trim()}\n\n${question}`
+                : delivered.slice(0, -question.length).trim(),
+              question,
+            },
+          },
+        ]),
+      ];
+      const callsBefore = mocked.modelCalls;
+      await runSession(
+        { running: new Map(), shuttingDown: false },
+        { ...meta!, ...(await agents.getSession(queued.sessionId))! },
+      );
+      expect(mocked.modelCalls - callsBefore).toBe(3);
+      expect(mocked.modelSystems.at(-1)).toContain(delivered);
+      expect(mocked.modelSystems.at(-1)).toContain('record that SAME reply');
+      expect(mocked.modelSystems.at(-1)).toContain('verbatim into explanation');
+      expect((await agents.getSession(queued.sessionId))?.status).toBe('succeeded');
+      expect(await agents.listUserMessages(queued.sessionId)).toEqual(inputs);
+      expect((await store.binding(queued.sessionId))?.guided?.pending?.question).toBe(question);
+      const view = await learningView(principal, study.id);
+      const parts = view.conversation!.flatMap((entry) => entry.parts);
+      expect(
+        parts.filter((part) => part.kind === 'text' && part.text.includes(question)),
+      ).toHaveLength(1);
+      const text = parts.flatMap((part) => (part.kind === 'text' ? [part.text] : [])).join('\n');
+      expect(text.split(question)).toHaveLength(2);
+      expect(
+        parts.filter((part) => part.kind === 'text' && part.text.includes('A list keeps order')),
+      ).toHaveLength(1);
+      expect(view.actions).not.toContain('next');
+      expect(view.state.position.stageIndex).toBe(0);
+    },
+  );
   it.each([false, true])(
     'repairs a prose-only assistance reply without replacing readiness or duplicating its answer (crash: %s)',
     async (crash) => {

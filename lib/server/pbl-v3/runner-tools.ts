@@ -56,7 +56,7 @@ import { currentTeachingContext, type TeachingHistoryWindow } from './teaching-c
 import { hasStageCompletion, isFinalProjectRecap } from './stage-progress';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { abortable } from '@/lib/server/agent-runtime/abortable';
-import { LEARNER_HANDOFF_EVENT, supportTurnSequences } from './review-question';
+import { LEARNER_HANDOFF_EVENT, reviewResponse, supportTurnSequences } from './review-question';
 
 /** Reserved server-created IDs route to a real role binding; a missing binding fails closed. */
 export async function teachingRunnerConfig(input: {
@@ -699,10 +699,7 @@ export async function teachingRunnerConfig(input: {
             stage.kind === 'produce' &&
             stage.reviewRequired &&
             (p.approval === true || review.state.activeFile === protocol.final);
-          const response =
-            typeof p.explanation === 'string' && p.explanation.trim()
-              ? [p.explanation.trim(), p.question].filter(Boolean).join('\n\n')
-              : undefined;
+          const response = reviewResponse(p.explanation, p.question);
           review.checkpoint(p.question, hash, approval, response);
           return {
             value: {

@@ -14,6 +14,7 @@ import {
   stageSkill,
 } from '@/lib/server/pbl-v3/skills';
 import type { TeachingPromptInput } from '@/lib/server/pbl-v3/teaching-prompt';
+import { reviewResponse } from '@/lib/server/pbl-v3/review-question';
 
 const definition = installedProject({ id: 'greeting-python', version: '1.0.0' }).definition;
 function fixture(index: number): TeachingPromptInput {
@@ -135,6 +136,32 @@ describe('learner-facing actions', () => {
 });
 
 describe('selective task emphasis and readable plans', () => {
+  const question = '**请看看这两处是否符合你的计划；没有想改的就回复认可当前版本。**';
+  const explanation = '两个函数写好了，编译检查也通过了。';
+
+  it.each(['\n\n', '\r\n\r\n', '\n \n'])(
+    'keeps an exact closing review paragraph once (separator %j)',
+    (separator) => {
+      const complete = `${explanation}${separator}${question}`;
+      expect(reviewResponse(complete, question)).toBe(complete);
+      expect(reviewResponse(`  ${complete}\n`, question)).toBe(complete);
+      expect(reviewResponse(question, question)).toBe(question);
+    },
+  );
+
+  it('preserves explanations, distinct closing actions and quoted or code examples', () => {
+    for (const body of [
+      explanation,
+      `${explanation}\n\n**请看看这两处是否符合你的计划。**`,
+      `${question}\n\n${explanation}`,
+      `> ${question}`,
+      `\`\`\`text\n${question}\n\`\`\``,
+    ])
+      expect(reviewResponse(body, question)).toBe(`${body}\n\n${question}`);
+    expect(reviewResponse(undefined, question)).toBeUndefined();
+    expect(reviewResponse(' \n', question)).toBeUndefined();
+  });
+
   it('applies action formatting to all roles while retaining teaching order, single handoff and control-only assessments', () => {
     for (let index = 0; index < 7; index++) {
       const input = fixture(index);

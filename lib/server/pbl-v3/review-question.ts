@@ -3,6 +3,19 @@ import type { Queryable } from '@openmaic/storage/agent-session/pg';
 
 export const LEARNER_HANDOFF_EVENT = 'pbl_learner_handoff';
 
+/** Join a review handoff without appending an already delivered closing paragraph. */
+export function reviewResponse(
+  explanation: string | undefined,
+  question: string,
+): string | undefined {
+  const body = explanation?.trim();
+  if (!body) return undefined;
+  const closing = question.trim();
+  const prefix = closing && body.endsWith(closing) ? body.slice(0, -closing.length) : null;
+  if (prefix !== null && (!prefix || /\r?\n[ \t]*\r?\n[ \t]*$/.test(prefix))) return body;
+  return [body, question].filter(Boolean).join('\n\n');
+}
+
 /** Support-only inputs stay in history but cannot become later understanding/approval evidence. */
 export async function supportTurnSequences(
   db: Queryable,
