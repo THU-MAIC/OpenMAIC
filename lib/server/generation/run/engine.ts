@@ -404,7 +404,7 @@ async function executeClaimedRun(
   const { lease } = claim;
   const { services, signal } = options;
   let run: StoredRun = claim.run;
-  const input = run.input;
+  let input = run.input;
   // The owner the run works for now, refreshed at every step boundary: a
   // claim may move the run's owner into an account while it generates.
   let owner = await currentOwnerOf(run.ownerId);
@@ -417,7 +417,10 @@ async function executeClaimedRun(
     for (const checkpoint of change.steps ?? []) steps.set(checkpoint.id, checkpoint.output);
     // Only a commit that changes the row moves the engine's view of it: the
     // content generated ahead and the retry events commit concurrently.
-    if (change.patch) run = committed;
+    if (change.patch) {
+      run = committed;
+      input = run.input;
+    }
     if (change.events?.length) reportCommittedRunEvents(committed, change.events, currentOwnerOf);
   };
   const stepContext: StepContext = { log, signal };
@@ -1735,6 +1738,7 @@ async function executeClaimedRun(
       if (run.state !== settled) {
         log.info(`run ${run.id}: retried while its media generated; going on with it`);
         lane.started = false;
+        input = run.input;
         return 'resume';
       }
       options.onLeaseReleased?.();
