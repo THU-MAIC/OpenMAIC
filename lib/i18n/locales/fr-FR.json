@@ -2992,7 +2992,6 @@
           "body": "Le bouton Guide de l’espace de travail permet de revoir ces commandes. Choisissez Compris, commencer pour lire le message de l’assistant et utiliser l’espace de travail."
         }
       },
-      "finishError": "Impossible d’enregistrer la consultation du guide. Réessayez. Votre progression et vos brouillons sont conservés.",
       "close": "Fermer le guide"
     }
   }

@@ -83,39 +83,37 @@ export function ConversationScroll({
   const label = generating
     ? `${t('pblV3.journey.latest')} · ${t('workbench.chat.waiting')}`
     : t('pblV3.journey.latest');
+  if (!below) return null;
   return (
-    // Reserve a stable lane outside the text viewport, so the jump control
-    // never covers questions and appearing/disappearing cannot shift reading.
+    // Reserve space only while the jump control is needed; never cover the text.
     <div
       data-testid="pbl-conversation-scroll-lane"
       className="flex h-10 shrink-0 items-center justify-end px-3"
     >
-      {below && (
-        <Button
-          className="rounded-full"
-          size="icon"
-          type="button"
-          variant="outline"
-          aria-label={label}
-          title={label}
-          data-testid="pbl-conversation-scroll-button"
-          data-generating={generating}
-          onClick={() => {
-            onFollow();
-            void scrollToBottom();
-          }}
-        >
-          {generating ? (
-            <span className={wbStyles.waiting.dots} aria-hidden="true">
-              <i className={wbStyles.waiting.dot} />
-              <i className={wbStyles.waiting.dotDelayOne} />
-              <i className={wbStyles.waiting.dotDelayTwo} />
-            </span>
-          ) : (
-            <ArrowDown className="size-4" />
-          )}
-        </Button>
-      )}
+      <Button
+        className="rounded-full"
+        size="icon"
+        type="button"
+        variant="outline"
+        aria-label={label}
+        title={label}
+        data-testid="pbl-conversation-scroll-button"
+        data-generating={generating}
+        onClick={() => {
+          onFollow();
+          void scrollToBottom();
+        }}
+      >
+        {generating ? (
+          <span className={wbStyles.waiting.dots} aria-hidden="true">
+            <i className={wbStyles.waiting.dot} />
+            <i className={wbStyles.waiting.dotDelayOne} />
+            <i className={wbStyles.waiting.dotDelayTwo} />
+          </span>
+        ) : (
+          <ArrowDown className="size-4" />
+        )}
+      </Button>
     </div>
   );
 }

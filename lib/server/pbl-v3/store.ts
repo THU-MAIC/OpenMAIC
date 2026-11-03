@@ -131,7 +131,30 @@ export class LearningStore {
   async roles(id: string, db: Pool | PoolClient = this.pool) {
     return (await db.query<RoleBinding>('SELECT * FROM pbl_v3_roles WHERE study_id=$1', [id])).rows;
   }
-  /** UI completion belongs to this owner's V3 study, never to browser or V2 history. */
+  /** A receipt on any V3 study counts for the learner across all projects. */
+  async hasSeenOnboarding(ownerId: string) {
+    const result = await this.pool.query<{ seen: boolean }>(
+      `SELECT EXISTS (
+        SELECT 1 FROM pbl_v3_studies s WHERE s.owner_id=$1 AND (
+          s.onboarding_completed_at IS NOT NULL
+          OR s.state->>'status'='completed'
+          OR (s.state#>>'{position,milestoneIndex}')::integer>0
+          OR (s.state#>>'{position,stageIndex}')::integer>0
+          OR s.archive_discard IS NOT NULL
+          OR s.environment_recovery->>'progressReset'='true'
+          OR EXISTS (SELECT 1 FROM pbl_v3_events e WHERE e.study_id=s.id
+            AND e.event->>'type' NOT IN
+              ('session.started','milestone.entered','stage.entered','agent.activated','state.persisted'))
+          OR EXISTS (SELECT 1 FROM pbl_v3_roles r JOIN agent_session_events e ON e.session_id=r.session_id
+            WHERE r.study_id=s.id AND e.type='user_message'
+              AND e.data->>'pblOpening' IS DISTINCT FROM 'true')
+        )
+      ) AS seen`,
+      [ownerId],
+    );
+    return result.rows[0].seen;
+  }
+  /** Owner-checked, idempotent receipt; never changes teaching state or revisions. */
   async completeOnboarding(id: string, ownerId: string) {
     return this.transaction(async (db) => {
       await fenceOwnerWrite(db, ownerId);

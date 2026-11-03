@@ -2992,7 +2992,6 @@
           "body": "Use Workspace guide in the toolbar to revisit these controls. Choose Got it, start exploring to read the assistant’s message and use the workspace."
         }
       },
-      "finishError": "Could not save that you have seen this guide. Please try again. Your learning progress and drafts are unchanged.",
       "close": "Close guide"
     }
   }

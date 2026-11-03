@@ -735,7 +735,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     }
     if (mocked.root) await rm(mocked.root, { recursive: true, force: true });
   });
-  it('persists V3 guide completion per owner and project without changing learning progress', async () => {
+  it('persists learner-wide V3 guide viewing without changing any project progress', async () => {
     const study = await freshStudy();
     const other = await freshStudy();
     const read = async () =>
@@ -754,7 +754,57 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     await store.completeOnboarding(study.id, principal.ownerId);
     expect((await read()).onboarding_completed_at).toEqual(after.onboarding_completed_at);
     expect((await store.get(other.id, principal.ownerId)).onboarding_completed_at).toBeNull();
+    expect((await learningView(principal, other.id)).onboardingCompleted).toBe(true);
+    expect(await store.hasSeenOnboarding('another-owner')).toBe(false);
+    const later = await freshStudy();
+    expect((await learningView(principal, later.id)).onboardingCompleted).toBe(true);
   });
+
+  it.each(['bootstrap', 'stage', 'completed', 'reset', 'discard', 'chat', 'event'] as const)(
+    'derives prior learner-wide V3 progress from %s without counting mere preparation/opening',
+    async (kind) => {
+      const study = await freshStudy();
+      const ownerId = `guide-${randomUUID()}`;
+      try {
+        if (kind === 'bootstrap' || kind === 'chat')
+          await study.send(kind === 'chat' ? 'chat' : 'begin');
+        if (kind === 'stage')
+          await pool.query(
+            "UPDATE pbl_v3_studies SET state=jsonb_set(state,'{position,stageIndex}','1') WHERE id=$1",
+            [study.id],
+          );
+        if (kind === 'completed')
+          await pool.query(
+            "UPDATE pbl_v3_studies SET state=jsonb_set(state,'{status}','\"completed\"') WHERE id=$1",
+            [study.id],
+          );
+        if (kind === 'reset')
+          await pool.query('UPDATE pbl_v3_studies SET environment_recovery=$2 WHERE id=$1', [
+            study.id,
+            { progressReset: true },
+          ]);
+        if (kind === 'discard')
+          await pool.query('UPDATE pbl_v3_studies SET archive_discard=$2 WHERE id=$1', [
+            study.id,
+            { at: new Date().toISOString() },
+          ]);
+        if (kind === 'event') {
+          const row = await store.get(study.id, principal.ownerId);
+          await store.transaction((db) =>
+            store.commit(db, row, {
+              state: { ...row.state, lastSequence: row.state.lastSequence + 1 },
+              events: [{ type: 'teaching.completed', milestoneId: 'greeting' }],
+            }),
+          );
+        }
+        await pool.query('UPDATE pbl_v3_studies SET owner_id=$2 WHERE id=$1', [study.id, ownerId]);
+        expect(await store.hasSeenOnboarding(ownerId)).toBe(kind !== 'bootstrap');
+        expect(await store.hasSeenOnboarding(`unrelated-${ownerId}`)).toBe(false);
+      } finally {
+        await releasePreparationFixtures([study.id]);
+      }
+    },
+  );
 
   it('completes plan review from spontaneous current-version acceptance without another approval question', async () => {
     const original = studyId;

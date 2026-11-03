@@ -16,7 +16,13 @@ const targets: Record<OnboardingStep, string> = {
 };
 
 type Box = { x: number; y: number; width: number; height: number };
-type Layout = { width: number; height: number; target: Box | null; card: { x: number; y: number } };
+type Layout = {
+  width: number;
+  height: number;
+  target: Box | null;
+  card: { x: number; y: number };
+  cardMaxHeight: number;
+};
 
 /** A visual tour of the live workspace. No learning commands or preview launches. */
 export function WorkbenchOnboarding({
@@ -28,7 +34,7 @@ export function WorkbenchOnboarding({
   view: LearningView;
   root: RefObject<HTMLElement | null>;
   returnFocus: RefObject<HTMLElement | null>;
-  onFinish: () => Promise<void>;
+  onFinish: () => void;
 }) {
   const { t, locale } = useI18n();
   const [nativeFullscreen, setNativeFullscreen] = useState(
@@ -47,25 +53,6 @@ export function WorkbenchOnboarding({
   const focusedStep = useRef<OnboardingStep | null>(null);
   const nextButton = useRef<HTMLButtonElement>(null);
   const body = useRef<HTMLDivElement>(null);
-  const [finishing, setFinishing] = useState(false);
-  const [finishError, setFinishError] = useState(false);
-  const finishingRef = useRef(false);
-  const finish = async () => {
-    if (finishingRef.current) return;
-    finishingRef.current = true;
-    // Keep keyboard ownership when disabling the clicked/focused button.
-    card?.focus({ preventScroll: true });
-    setFinishing(true);
-    setFinishError(false);
-    try {
-      await onFinish();
-    } catch {
-      setFinishError(true);
-    } finally {
-      finishingRef.current = false;
-      setFinishing(false);
-    }
-  };
   const maskId = useId();
   const [layout, setLayout] = useState<Layout | null>(null);
   const copy = (key: string) => t(`pblV3.onboarding.${key}`);
@@ -144,6 +131,19 @@ export function WorkbenchOnboarding({
         ch = content.offsetHeight,
         gap = 16,
         edge = 12;
+      const compactDiscussion = step === 'discussion' && width < 640 && height >= 500;
+      const opening = compactDiscussion
+        ? anchor?.querySelector('.pbl-assistant-bubble p')?.getBoundingClientRect()
+        : undefined;
+      const cardMaxHeight = compactDiscussion
+        ? Math.max(
+            180,
+            Math.min(
+              height / 2,
+              opening ? height - (opening.bottom - bounds.top) / scaleY - gap - edge : height / 2,
+            ),
+          )
+        : height - 24;
       const clamp = (value: number, max: number) => Math.max(edge, Math.min(value, max - edge));
       const positions = target
         ? [
@@ -168,10 +168,14 @@ export function WorkbenchOnboarding({
               Math.min(position.y + ch, target.y + target.height) - Math.max(position.y, target.y),
             )
           : 0;
-      const position = !target
-        ? { x: Math.max(edge, (width - cw) / 2), y: Math.max(edge, (height - ch) / 2) }
-        : candidates.sort((a, b) => overlap(a) - overlap(b))[0];
-      const next = { width, height, target, card: position };
+      // In a stacked workbench, leave the assistant's opening question above
+      // the card. The card's own body can scroll without obscuring that message.
+      const position = compactDiscussion
+        ? { x: Math.max(edge, (width - cw) / 2), y: Math.max(edge, height - ch - edge) }
+        : !target
+          ? { x: Math.max(edge, (width - cw) / 2), y: Math.max(edge, (height - ch) / 2) }
+          : candidates.sort((a, b) => overlap(a) - overlap(b))[0];
+      const next = { width, height, target, card: position, cardMaxHeight };
       setLayout((prior) => (JSON.stringify(prior) === JSON.stringify(next) ? prior : next));
     };
     const schedule = () => {
@@ -260,13 +264,11 @@ export function WorkbenchOnboarding({
             top: layout?.card.y ?? 12,
             visibility: layout ? undefined : 'hidden',
             maxWidth: layout ? layout.width - 24 : undefined,
-            maxHeight: layout ? layout.height - 24 : undefined,
+            maxHeight: layout?.cardMaxHeight,
           }}
           onOpenAutoFocus={(event) => {
             event.preventDefault();
-            if (finishing && event.target instanceof HTMLElement)
-              event.target.focus({ preventScroll: true });
-            else nextButton.current?.focus({ preventScroll: true });
+            nextButton.current?.focus({ preventScroll: true });
           }}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
@@ -284,7 +286,7 @@ export function WorkbenchOnboarding({
           onEscapeKeyDown={(event) => {
             event.preventDefault();
             event.stopPropagation();
-            void finish();
+            onFinish();
           }}
           onKeyDown={(event) => event.stopPropagation()}
         >
@@ -296,9 +298,8 @@ export function WorkbenchOnboarding({
             <button
               type="button"
               aria-label={copy('close')}
-              disabled={finishing}
               className="rounded-md p-1 hover:bg-muted disabled:opacity-40"
-              onClick={() => void finish()}
+              onClick={onFinish}
             >
               <X size={16} />
             </button>
@@ -314,11 +315,6 @@ export function WorkbenchOnboarding({
             <Dialog.Description className="whitespace-pre-line text-sm leading-relaxed">
               {copy(`steps.${step}.body`)}
             </Dialog.Description>
-            {finishError && (
-              <p role="alert" className="text-sm text-destructive">
-                {copy('finishError')}
-              </p>
-            )}
           </div>
           <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t px-4 py-3">
             <div className="flex flex-wrap gap-1">
@@ -326,7 +322,6 @@ export function WorkbenchOnboarding({
                 <button
                   type="button"
                   className={`${button} hover:bg-muted`}
-                  disabled={finishing}
                   onClick={() => move(stepIndex - 1)}
                 >
                   <ChevronLeft size={14} />
@@ -337,10 +332,8 @@ export function WorkbenchOnboarding({
                 ref={nextButton}
                 type="button"
                 className={`${button} bg-primary text-primary-foreground hover:opacity-90`}
-                disabled={finishing}
-                aria-busy={finishing}
                 onClick={() => {
-                  if (stepIndex === steps.length - 1) void finish();
+                  if (stepIndex === steps.length - 1) onFinish();
                   else move(stepIndex + 1);
                 }}
               >

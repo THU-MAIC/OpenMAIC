@@ -4,37 +4,38 @@ A short introduction to progress/tasks, the assistant, code, application preview
 when present, and replay. There are five pages (four without an application).
 The task bar provides the current learning stage's instructions.
 
-## Required V3 project entry
+## Learner-wide V3 entry
 
-Every V3 workbench entry reads the server's guide completion for the authenticated
-owner's study. There is no hard-coded course ID, recruitment flag or referrer test.
-A study identifies this learner's V3 project; PBL V2 history and legacy browser
-preferences never exempt entry. The same rule covers direct links, platform
-browsing, existing studies and interrupted first visits.
+The guide auto-opens once per learner across V3 projects. The server aggregates
+receipts and existing learning progress across that owner's V3 studies; no
+course ID, recruitment flag, referrer, browser preference or PBL V2 history is used.
+Existing V3 stage advancement, completed projects, real learner messages and
+orchestration progress count as seen, including progress reset/archive discard.
+Preparation and the automatic assistant opening alone do not count as learning.
+The existing study receipt remains an idempotent storage anchor, but its effect
+is learner-wide; no additional preference table or migration is required.
 
-An unfinished guide opens once Hero expansion, environment preparation and a
-current connected workspace snapshot are ready. Missing completion metadata also
-counts as unfinished. A layout effect transfers loading/modal ownership before
-paint. Eligibility follows the Hero visit even if the learner docks the workbench
-before restoration finishes; the initial expansion still must settle. The assistant's opening reply can continue in the background. Restored
-drafts remain intact and no longer suppress this required guide.
+An unseen learner's guide opens after Hero expansion, environment preparation
+and a current connected workspace snapshot. Docking during restoration does not
+cancel eligibility. Restored drafts or actual editing during restoration defer
+automatic entry for this visit, even if that draft is later cleared. They never
+prevent manual replay. A layout effect transfers modal ownership before paint
+when eligible; the assistant's opening reply can continue in the background.
 
-The card has Previous, Next, Finish and Close controls. Escape also closes it;
-outside clicks do not. Close, Escape and Finish all count as seen and send an
-idempotent, owner-scoped acknowledgement to
-`POST /api/pbl/v3/onboarding`. Only a confirmed response closes it. Failure keeps
-the card open with a retry message. The service records `onboarding_completed_at`
-on this V3 study without changing its learning state, revision, files or environment.
-The completion timestamp means the learner finished or explicitly closed the guide.
-It survives refresh and device changes; a different owner or V3 project
-has its own record. Completed guides do not auto-open; toolbar replay remains available.
+Previous, Next, Finish, Close and Escape remain available. Outside clicks do not
+close the guide. Close, Escape and Finish close immediately and restore focus,
+then send an owner-checked background receipt to `POST /api/pbl/v3/onboarding`.
+Failure or a bounded-out request never blocks learning; the next untouched entry
+may show the guide again and retry. The receipt changes no learning state,
+revision, files or environment. Header replay remains available to everyone,
+including completed read-only projects.
 
 Only a new project's initial Hero entry uses the loading barrier, and only while
 open/prepare is actually in flight. Continue Project, busy/completed studies and
 idle recovery states remain usable. A bounded wait releases the barrier without
 cancelling or repeating an unconfirmed request; error/recovery controls and return
 remain accessible. Tutorial eligibility is independent of this loading policy:
-an unseen V3 project still shows its guide once ready, including after recovery.
+an unseen learner with no drafting interaction can still see the guide after recovery.
 Transient visibility/online reconnection and HTTP/SSE revision gaps keep the current
 page. Real unavailability or actionable errors interrupt it, including completed
 projects with saved files: those files bypass environment requirements only. Completed read-only
@@ -43,8 +44,7 @@ workspaces need no execution environment to replay the guide.
 ## Interaction boundary
 
 Radix modals portal inside the workspace, preserving native fullscreen and focus
-isolation. Closing focuses the modal before its controls are disabled, keeping
-keyboard input out of classroom navigation while acknowledgement is pending.
+isolation. Closing restores focus immediately without waiting for acknowledgement.
 Native fullscreen changes rebuild only the modal focus/aria boundary; the guide
 step, workbench and preview stay mounted. The background is dimmed except for the introduced region, which remains
 blocked for interaction. The assistant page lights the whole panel; the progress page lights the whole task bar. Targets are clipped to each overflow ancestor’s visible viewport and scroll
@@ -53,7 +53,9 @@ Collapsed code/preview areas use their own toolbar controls; unavailable/off-scr
 targets use a centered card without an unrelated spotlight. Copy names regions
 rather than directions. Page changes focus Next; completion restores a usable entry point.
 
-The conversation jump control has a reserved lane outside the text viewport.
+The conversation jump control reserves a lane outside the text viewport only while visible.
+On narrow assistant pages, the card sits below the opening paragraph with a bounded,
+scrollable body, so the question itself stays visible.
 Page navigation performs no learning commands, preview launches, report requests
 or file edits. Finish only records guide completion. Background work continues.
 An open application receives inputPaused; readiness, candidate promotion and document
@@ -61,12 +63,12 @@ identity continue independently. Input resumes only when normal readiness/save g
 
 ## Verification
 
-Unit tests cover entry/recovery, completed studies, legacy browser records and
-completion API validation. A real PostgreSQL test covers migration, owner/project
-isolation, idempotency and unchanged learning progress. Browser tests cover mandatory
-entry with drafts, interrupted existing studies, absent metadata, acknowledgement
-failure/retry, online/visibility reconnects, live anchors, collapsed regions, narrow
-expanded/docked layouts and application input isolation/native fullscreen.
+Unit tests cover learner-wide eligibility, drafting deferral and manual replay,
+entry/recovery and legacy browser records. Real PostgreSQL tests cover cross-project
+receipts, owner isolation, existing V3 progress, automatic openings and unchanged
+learning state. Browser tests cover background receipt failures and hung requests,
+continued typing during restore, completed read-only entry, visible small-screen
+assistant text, reconnects, narrow expanded/docked layouts and native fullscreen.
 
 Browser fixtures use synthetic courses and mocked learning/preview endpoints with
 the real UI/stream parser. They do not establish live model, cloud or production

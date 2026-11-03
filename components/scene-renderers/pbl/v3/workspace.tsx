@@ -92,6 +92,7 @@ function PBLV3WorkspaceContent({
     setShowWorkspace,
     showAssistant,
     setShowAssistant,
+    restored: draftsRestored,
   } = useStudyDraft(view?.id, storageError);
   const {
     entry: pendingMessage,
@@ -373,11 +374,24 @@ function PBLV3WorkspaceContent({
   const onboarding = useWorkbenchOnboarding({
     root: workspaceRoot,
     studyId: view?.id,
-    autoStart: autoOnboarding,
+    autoStart:
+      autoOnboarding &&
+      draftsRestored &&
+      view?.state.status !== 'completed' &&
+      !view?.recovery?.progressReset &&
+      !view?.archiveDiscard &&
+      (view?.state.position.milestoneIndex ?? 0) <= 0 &&
+      (view?.state.position.stageIndex ?? 0) <= 0,
     completed: view?.onboardingCompleted === true,
     ready: !!onboardingReady,
     available: !!onboardingAvailable,
     blocked: onboardingBlocked,
+    hasDraft:
+      !!text ||
+      !!pendingMessage ||
+      dirtyFiles ||
+      quizAnswers.values.some((answer) => answer !== null) ||
+      Object.values(decisionDrafts).some((draft) => !!draft.chosen || !!draft.rationale),
   });
   useEffect(() => {
     onOnboardingChange?.(onboarding.active || entryLoading);
@@ -1175,17 +1189,17 @@ function PBLV3WorkspaceContent({
           view={view}
           root={workspaceRoot}
           returnFocus={onboarding.returnFocus}
-          onFinish={async () => {
+          onFinish={() => {
+            onboarding.close();
             if (view.onboardingCompleted !== true) {
-              const receipt = await pblRequest<{ onboardingCompleted: boolean }>(
+              void pblRequest(
                 '/api/pbl/v3/onboarding',
                 { studyId: view.id },
                 AbortSignal.timeout(10_000),
-              );
-              if (receipt.onboardingCompleted !== true)
-                throw new Error('Guide completion was not confirmed.');
+              ).catch(() => {
+                // Optional UI metadata must not block learning. A later entry can retry.
+              });
             }
-            onboarding.close();
           }}
         />
       )}

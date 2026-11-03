@@ -15,6 +15,7 @@ type EntryProps = {
   blocked?: boolean;
   completed?: boolean;
   studyId?: string;
+  hasDraft?: boolean;
 };
 function Harness({
   ready = false,
@@ -22,6 +23,7 @@ function Harness({
   blocked = false,
   completed = false,
   studyId = 'study-a',
+  hasDraft = false,
 }: EntryProps) {
   const current = useWorkbenchOnboarding({
     root: owner,
@@ -31,6 +33,7 @@ function Harness({
     available,
     blocked,
     completed,
+    hasDraft,
   });
   useEffect(() => {
     guide = current;
@@ -101,12 +104,40 @@ it('does not auto-open acknowledged studies, while manual replay remains availab
   await act(async () => guide.close());
   expect(guide.active).toBe(false);
 });
-it('keeps a successful finish closed before SSE catches up, without exempting another study', async () => {
+it('keeps a dismissal closed this visit while a different unacknowledged entry remains eligible', async () => {
   await render({ ready: true });
   await act(async () => guide.close());
   expect(guide.active).toBe(false);
   await render({ ready: true });
   expect(guide.active).toBe(false);
   await render({ ready: true, studyId: 'another-owner-or-project' });
+  expect(guide.active).toBe(true);
+});
+
+it('defers automatic entry for restored drafts, even after clearing them, while replay works', async () => {
+  await render({ hasDraft: true });
+  await render({ ready: true });
+  expect(guide.active).toBe(false);
+  await act(async () => guide.replay());
+  expect(guide.active).toBe(true);
+});
+it.each(['input', 'beforeinput', 'keydown', 'compositionstart'])(
+  'actual %s in an editor during restoration defers entry without losing focus',
+  async (type) => {
+    await render();
+    const textarea = host.querySelector('textarea')!;
+    textarea.focus();
+    textarea.dispatchEvent(new Event(type, { bubbles: true }));
+    await render({ ready: true });
+    expect(guide.active).toBe(false);
+    expect(document.activeElement).toBe(textarea);
+    await act(async () => guide.replay());
+    expect(guide.active).toBe(true);
+  },
+);
+it('layout clicks during restoration do not exempt a new learner', async () => {
+  await render();
+  host.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+  await render({ ready: true });
   expect(guide.active).toBe(true);
 });

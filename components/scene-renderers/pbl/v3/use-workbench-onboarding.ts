@@ -2,7 +2,7 @@
 
 import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
 
-/** The server's per-study completion is authoritative; browser/V2 history never exempts entry. */
+/** Learner-wide V3 completion is authoritative; drafting defers this visit's auto-entry. */
 export function useWorkbenchOnboarding({
   root,
   studyId,
@@ -11,6 +11,7 @@ export function useWorkbenchOnboarding({
   ready,
   available = ready,
   blocked,
+  hasDraft = false,
 }: {
   root: RefObject<HTMLElement | null>;
   studyId?: string;
@@ -19,9 +20,10 @@ export function useWorkbenchOnboarding({
   ready: boolean;
   available?: boolean;
   blocked: boolean;
+  hasDraft?: boolean;
 }) {
   const [openStudy, setOpenStudy] = useState<string | null>(null);
-  // A successful HTTP acknowledgement can precede the next SSE snapshot.
+  // A local dismissal stays closed this visit while its optional receipt is pending or fails.
   const [finishedStudy, setFinishedStudy] = useState<string | null>(null);
   const unavailable = blocked || !available;
   const [previousUnavailable, setPreviousUnavailable] = useState(unavailable);
@@ -30,14 +32,38 @@ export function useWorkbenchOnboarding({
     if (unavailable) setOpenStudy(null);
   }
   const returnFocus = useRef<HTMLElement | null>(null);
+  const deferredStudy = useRef<string | undefined>(undefined);
+  useLayoutEffect(() => {
+    const element = root.current;
+    const defer = (event: Event) => {
+      if (
+        event.target instanceof Element &&
+        event.target.closest('input, textarea, [contenteditable="true"]')
+      )
+        deferredStudy.current = studyId;
+    };
+    element?.addEventListener('keydown', defer, true);
+    element?.addEventListener('beforeinput', defer, true);
+    element?.addEventListener('input', defer, true);
+    element?.addEventListener('compositionstart', defer, true);
+    return () => {
+      element?.removeEventListener('keydown', defer, true);
+      element?.removeEventListener('beforeinput', defer, true);
+      element?.removeEventListener('input', defer, true);
+      element?.removeEventListener('compositionstart', defer, true);
+    };
+  }, [root, studyId]);
   const active = !!studyId && openStudy === studyId && !unavailable;
   useLayoutEffect(() => {
+    if (hasDraft) deferredStudy.current = studyId;
     if (
       !autoStart ||
       completed ||
       !ready ||
       !studyId ||
       blocked ||
+      hasDraft ||
+      deferredStudy.current === studyId ||
       finishedStudy === studyId ||
       openStudy === studyId
     )
@@ -46,7 +72,7 @@ export function useWorkbenchOnboarding({
     returnFocus.current = root.current;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Modal ownership must transfer before paint.
     setOpenStudy(studyId);
-  }, [autoStart, completed, ready, studyId, blocked, finishedStudy, openStudy, root]);
+  }, [autoStart, completed, ready, studyId, blocked, hasDraft, finishedStudy, openStudy, root]);
   const replay = () => {
     if (!studyId || !ready || blocked) return;
     returnFocus.current =
@@ -54,7 +80,7 @@ export function useWorkbenchOnboarding({
     setOpenStudy(studyId);
   };
   const close = () => {
-    // Called only after successful completion persistence, or a completed-study replay.
+    // Close locally even if the optional server receipt fails or stalls.
     setFinishedStudy(studyId ?? null);
     setOpenStudy(null);
   };

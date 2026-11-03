@@ -1242,7 +1242,7 @@ export async function learningView(
   return {
     id,
     revision: row.revision,
-    onboardingCompleted: !!row.onboarding_completed_at,
+    onboardingCompleted: await store.hasSeenOnboarding(principal.ownerId),
     title: project.definition.title,
     ...(project.application
       ? {

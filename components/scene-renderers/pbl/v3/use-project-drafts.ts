@@ -229,6 +229,7 @@ export function useStudyDraft(id: string | undefined, onStorageError: () => void
   );
   return {
     ...(state.id === id ? state.value : emptyUi()),
+    restored: state.id === id,
     setText,
     setQuizAnswers,
     setDecisionDrafts,
