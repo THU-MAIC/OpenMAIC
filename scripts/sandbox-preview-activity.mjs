@@ -182,7 +182,11 @@ export function installPreviewReadiness(frame, appOrigin, prepareDocument) {
     if (done) return;
     try {
       const doc = contentDocument(frame);
-      if (doc && documentURL(doc) !== 'about:blank' && readyState(doc) === 'complete') {
+      if (
+        doc &&
+        documentURL(doc) !== 'about:blank' &&
+        ['interactive', 'complete'].includes(readyState(doc))
+      ) {
         const html = ['text/html', 'application/xhtml+xml'].includes(contentType(doc));
         if (prepareDocument) prepareDocument();
         if (html) frame.style.visibility = '';

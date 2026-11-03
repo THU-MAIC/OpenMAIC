@@ -24,19 +24,39 @@ async function waitForApplication(
   acknowledge?: () => void,
 ) {
   assertCurrent();
-  let result = await pblRequest<ApplicationObservation>('/api/pbl/v3/application', request, signal);
+  // Environment-lock contention is a definite refusal, not a lost launch
+  // acknowledgement. Reconcile the same receipt; never invent a new launch ID.
+  const observe = async () => {
+    for (let contention = 0; ; contention++) {
+      assertCurrent();
+      try {
+        return await pblRequest<ApplicationObservation>('/api/pbl/v3/application', request, signal);
+      } catch (error) {
+        if (
+          !(error instanceof SandboxRequestError) ||
+          error.reason !== 'ENVIRONMENT_BUSY' ||
+          contention >= 2
+        )
+          throw error;
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+  };
+  let result = await observe();
   acknowledge?.();
   assertCurrent();
+  const deadline = Date.now() + 20_000;
   for (
     let retry = 0;
     result.state === 'starting' &&
-    retry < 3 &&
+    retry < 20 &&
+    Date.now() < deadline &&
     !(request.action === 'status' && result.sourceChanged);
     retry++
   ) {
     await new Promise((resolve) => setTimeout(resolve, 500));
     assertCurrent();
-    result = await pblRequest<ApplicationObservation>('/api/pbl/v3/application', request, signal);
+    result = await observe();
     acknowledge?.();
     assertCurrent();
   }
@@ -93,18 +113,32 @@ export function useApplicationPreview(
     !workbench ||
     !view.environmentId ||
     workbench.environmentId !== view.environmentId;
-  // A read-only teaching turn does not own the application's input. Pause only
-  // after a real source-write attempt, until that turn reaches its checkpoint.
-  const sourceWriting = view?.conversation?.some(
+  const reviewReady = view?.conversation?.some(
     (entry) =>
       entry.status === 'running' &&
       entry.parts.some(
-        (part) =>
-          part.kind === 'tool' &&
-          (part.action === 'write' || part.action === 'manage') &&
-          (part.args as { path?: string } | undefined)?.path !== 'PLAN.md',
+        (part) => part.kind === 'tool' && part.action === 'review' && part.status === 'succeeded',
       ),
   );
+  // A successful review tool is the existing server-enforced write checkpoint.
+  // The remaining streamed reply need not hold the learner's preview hostage.
+  const sourceWriting = view?.conversation?.some((entry) => {
+    if (entry.status !== 'running') return false;
+    const lastWrite = entry.parts.findLastIndex(
+      (part) =>
+        part.kind === 'tool' &&
+        (part.action === 'write' || part.action === 'manage') &&
+        (part.args as { path?: string } | undefined)?.path !== 'PLAN.md',
+    );
+    return (
+      lastWrite >= 0 &&
+      !entry.parts
+        .slice(lastWrite + 1)
+        .some(
+          (part) => part.kind === 'tool' && part.action === 'review' && part.status === 'succeeded',
+        )
+    );
+  });
   const disabled = unavailable || dirty || !!view?.evaluation || !!sourceWriting;
   const binding = `${view?.id}:${view?.environmentId}:${workbench?.environmentId}:${workbench?.epoch}`;
   const stage = `${view?.state?.position?.milestoneId}:${view?.state?.position?.stageIndex}`;
@@ -341,7 +375,7 @@ export function useApplicationPreview(
       open &&
       refreshNeeded &&
       !disabled &&
-      !view?.busy &&
+      (!view?.busy || reviewReady) &&
       !pending &&
       !expired &&
       (!observation?.preview || observation.preview.expiresAt > Date.now())
@@ -357,6 +391,7 @@ export function useApplicationPreview(
     observation,
     load,
     view?.busy,
+    reviewReady,
   ]);
   const renew = useCallback((expiresAt: number) => {
     if (!Number.isFinite(expiresAt) || expiresAt <= Date.now() || expiresAt > Date.now() + 300_000)

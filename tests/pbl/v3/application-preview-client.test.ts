@@ -40,6 +40,130 @@ const sourceWrite = [
   },
 ] as LearningView['conversation'];
 const workbench = { environmentId: 'environment', epoch: 0 } as LearningWorkbench;
+it('restores the preview at the write review checkpoint while the reply is still streaming', async () => {
+  mocks.request.mockResolvedValue(running);
+  const f = await fixture();
+  try {
+    await f.click();
+    const frame = f.host.querySelector('iframe')!;
+    const render = (parts: NonNullable<LearningView['conversation']>[number]['parts']) =>
+      f.root.render(
+        createElement(Harness, {
+          current: {
+            ...view,
+            busy: true,
+            conversation: [{ ...sourceWrite![0], parts }],
+          },
+        }),
+      );
+    await act(async () => render(sourceWrite![0].parts));
+    expect(frame.hasAttribute('inert')).toBe(true);
+    // Finishing the file write alone does not mean the build/review is safe.
+    const written = [{ ...sourceWrite![0].parts[0], status: 'succeeded' as const }];
+    await act(async () => render(written));
+    expect(frame.hasAttribute('inert')).toBe(true);
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      render([
+        ...written,
+        {
+          id: 'review',
+          kind: 'tool',
+          action: 'review',
+          status: 'succeeded',
+        },
+        { id: 'tail', kind: 'text', text: 'Review this version.', streaming: true },
+      ]),
+    );
+    expect(mocks.request.mock.calls.map((call) => call[1].action)).toEqual(['open', 'status']);
+    expect(f.host.querySelector('iframe')).toBe(frame);
+    expect(frame.hasAttribute('inert')).toBe(false);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it('waits for slow startup with one receipt instead of abandoning the initial automatic preview', async () => {
+  vi.useFakeTimers();
+  mocks.request.mockResolvedValue({ state: 'starting', observedAt: '' });
+  const f = await fixture();
+  try {
+    await act(async () => f.root.render(createElement(Harness, { automatic: true })));
+    await act(async () => vi.advanceTimersByTimeAsync(2500));
+    expect(f.host.querySelector('[role="alert"]')).toBeNull();
+    mocks.request.mockResolvedValue(running);
+    await act(async () => vi.advanceTimersByTimeAsync(500));
+    expect(f.host.querySelector('iframe')).not.toBeNull();
+    const ids = mocks.request.mock.calls.map((call) => call[1].id);
+    expect(new Set(ids).size).toBe(1);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it.each(['failed-review', 'new-write', 'assessment'])(
+  'keeps unsafe work paused despite an earlier review checkpoint (%s)',
+  async (kind) => {
+    mocks.request.mockResolvedValue(running);
+    const f = await fixture();
+    try {
+      await f.click();
+      const frame = f.host.querySelector('iframe')!;
+      const parts: NonNullable<LearningView['conversation']>[number]['parts'] = [
+        { ...sourceWrite![0].parts[0], status: 'succeeded' },
+        {
+          id: 'review',
+          kind: 'tool',
+          action: 'review',
+          status: kind === 'failed-review' ? 'failed' : 'succeeded',
+        },
+      ];
+      if (kind === 'new-write') parts.push({ ...sourceWrite![0].parts[0], id: 'second-write' });
+      await act(async () =>
+        f.root.render(
+          createElement(Harness, {
+            current: {
+              ...view,
+              busy: true,
+              conversation: [{ ...sourceWrite![0], parts }],
+              evaluation: kind === 'assessment' ? ({} as LearningView['evaluation']) : null,
+            },
+          }),
+        ),
+      );
+      expect(frame.hasAttribute('inert')).toBe(true);
+      expect(mocks.request).toHaveBeenCalledTimes(1);
+    } finally {
+      await f.cleanup();
+    }
+  },
+);
+
+it.each(['ENVIRONMENT_BUSY', 'network'])(
+  'reconciles only explicit environment-lock refusals with the same launch receipt (%s)',
+  async (reason) => {
+    vi.useFakeTimers();
+    mocks.request
+      .mockRejectedValueOnce(
+        reason === 'ENVIRONMENT_BUSY'
+          ? new SandboxRequestError('Environment busy', 409, 'SANDBOX_CONFLICT', reason)
+          : new Error('Unknown network outcome'),
+      )
+      .mockResolvedValue(running);
+    const f = await fixture();
+    try {
+      await act(async () => f.root.render(createElement(Harness, { automatic: true })));
+      await act(async () => vi.advanceTimersByTimeAsync(1500));
+      expect(mocks.request).toHaveBeenCalledTimes(reason === 'ENVIRONMENT_BUSY' ? 2 : 1);
+      if (reason === 'ENVIRONMENT_BUSY') {
+        expect(mocks.request.mock.calls[1][1]).toBe(mocks.request.mock.calls[0][1]);
+        expect(f.host.querySelector('iframe')).not.toBeNull();
+      } else expect(f.host.querySelector('[role="alert"]')).not.toBeNull();
+    } finally {
+      await f.cleanup();
+    }
+  },
+);
 it('shows only submitted choice labels as read-only context, without claiming implementation success', async () => {
   const f = await fixture();
   try {
@@ -541,13 +665,13 @@ it.each(['running', 'starting', 'changed'])(
       await act(async () =>
         f.root.render(createElement(Harness, { current: { ...view, revision: 1 } })),
       );
-      await act(async () => vi.advanceTimersByTimeAsync(1501));
+      await act(async () => vi.advanceTimersByTimeAsync(20_001));
       const actions = mocks.request.mock.calls.map((call) => call[1].action);
       if (outcome === 'changed') expect(actions).toEqual(['open', 'status', 'restart']);
       else {
         expect(actions).toEqual(
           outcome === 'starting'
-            ? ['open', 'status', 'status', 'status', 'status']
+            ? ['open', ...Array(21).fill('status')]
             : ['open', 'status', 'status'],
         );
         expect(f.host.querySelector('iframe')).toBe(old);
@@ -1716,7 +1840,7 @@ it.each(['ready', 'still-starting', 'rotated', 'failed'])(
       expect(replace).not.toHaveBeenCalled();
       if (status === 'rotated')
         await act(async () => f.root.render(createElement(Harness, { epoch: 1 })));
-      await act(async () => vi.advanceTimersByTimeAsync(1500));
+      await act(async () => vi.advanceTimersByTimeAsync(20_000));
       const calls = mocks.request.mock.calls.slice(1);
       expect(calls.every((c) => c[1] === calls[0][1])).toBe(true);
       if (status === 'ready') {
@@ -1800,7 +1924,7 @@ it.each(['auth', 'timeout'])(
         ),
       );
       await act(async () => f.root.render(createElement(Harness)));
-      await act(async () => vi.advanceTimersByTimeAsync(1500));
+      await act(async () => vi.advanceTimersByTimeAsync(20_000));
       mocks.request.mockResolvedValueOnce(status);
       await act(async () =>
         [...f.host.querySelectorAll('button')]
@@ -1811,11 +1935,7 @@ it.each(['auth', 'timeout'])(
         'open',
         'status',
         'open',
-        'status',
-        'status',
-        'status',
-        'status',
-        'status',
+        ...Array(22).fill('status'),
       ]);
       expect(f.host.querySelector('iframe')).toBe(fresh);
     } finally {
