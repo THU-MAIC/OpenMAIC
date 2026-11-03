@@ -16,6 +16,11 @@ const log = createLogger('AudioPlayer');
  * endpoint must not pin a playback line indefinitely. */
 const LEGACY_URL_FETCH_TIMEOUT_MS = 15_000;
 
+/** `pause()` rejects a pending `play()` with this. It is not a media failure. */
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
 /** Bytes an audio id currently resolves to, pool first. Loaded lazily to keep
  * this module importable without the media graph. */
 async function resolveBytes(audioId: string): Promise<Blob | null> {
@@ -218,10 +223,19 @@ export class AudioPlayer {
       this.audio.playbackRate = this.playbackRate;
       return true;
     } catch (error) {
-      // A failed source cannot be resumed. Leave a newer line's source intact
-      // when a superseded play rejects after the reusable element has moved on.
-      if (this.audioRequestToken === requestToken) this.stopAudioElement();
-      log.error('Failed to play audio:', error);
+      // pause() rejects a still-pending play() with AbortError. The source
+      // token survives that pause, so this is not a failed clip: resume()
+      // must play the same line. A real failure, including one that arrives
+      // after pause, still releases the source we own. A newer line is left
+      // intact when a superseded play rejects after the element has moved on.
+      const interruptedByPause =
+        isAbortError(error) &&
+        requestToken !== this.requestToken &&
+        this.audioRequestToken === requestToken;
+      if (this.audioRequestToken === requestToken && !interruptedByPause) {
+        this.stopAudioElement();
+      }
+      if (!interruptedByPause) log.error('Failed to play audio:', error);
       throw error;
     }
   }

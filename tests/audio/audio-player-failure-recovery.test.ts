@@ -118,6 +118,43 @@ describe('failed narration recovery', () => {
     player.destroy();
   });
 
+  it('keeps a pending play when pause() rejects it with AbortError', async () => {
+    const pendingPlay = Promise.withResolvers<void>();
+    const player = new AudioPlayer();
+    await player.play('audio-0');
+    const element = instances[0];
+    element.play.mockImplementationOnce(() => {
+      // play() clears paused before its promise settles, so pause() can interrupt it.
+      element.paused = false;
+      return pendingPlay.promise;
+    });
+    const playing = player.play('audio-1');
+    const rejected = expect(playing).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.waitFor(() => expect(element.play).toHaveBeenCalledTimes(2));
+    const source = element.src;
+
+    element.pause = () => {
+      element.paused = true;
+      pendingPlay.reject(
+        new DOMException(
+          'The play() request was interrupted by a call to pause().',
+          'AbortError',
+        ),
+      );
+    };
+
+    player.pause();
+    await rejected;
+    expect(player.hasActiveAudio()).toBe(true);
+    expect(element.src).toBe(source);
+    expect(element.paused).toBe(true);
+
+    player.resume();
+    expect(element.play).toHaveBeenCalledTimes(3);
+    expect(player.hasActiveAudio()).toBe(true);
+    player.destroy();
+  });
+
   it('finishes the reading fallback after pause and resume when narration is refused', async () => {
     vi.useFakeTimers();
     refusePlayback('NotAllowedError');
