@@ -787,6 +787,7 @@ export function buildCallAgentTool(opts: {
               agentId: agent.id,
               agentName: agent.name,
               text: finalText,
+              actionCount,
               runtimeMode: childRuntimeMode,
               availableToolNames,
               nativeChildRun: nativeResult,
@@ -862,6 +863,7 @@ export function buildCallAgentTool(opts: {
           });
         });
 
+        let childErrored = false;
         try {
           childAbort.signal.throwIfAborted();
           await child.prompt(
@@ -876,12 +878,16 @@ export function buildCallAgentTool(opts: {
           // Preserve the Legacy result lifecycle for failures; cancellation must
           // not finalize or report the partial response as a completed turn.
           if (childAbort.signal.aborted) throw error;
+          childErrored = true;
         } finally {
           unsubscribe();
           childAbort.signal.removeEventListener('abort', abortChild);
         }
 
         childAbort.signal.throwIfAborted();
+        // Pi settles provider failures in state rather than rejecting prompt().
+        // Treat that outcome as a failed child execution, not a completed turn.
+        childErrored = childErrored || Boolean(child.state.errorMessage);
         await processParseResult({
           result: finalizeParser(parserState),
           signal: childAbort.signal,
@@ -937,6 +943,8 @@ export function buildCallAgentTool(opts: {
             agentId: agent.id,
             agentName: agent.name,
             text: finalText,
+            actionCount,
+            childErrored,
             actionWarnings,
             ...(sceneEvidence ? { sceneEvidence: sceneEvidence.metadata } : {}),
             ...(elementReferenceEvidence?.metadata

@@ -23,8 +23,71 @@ import type { NativeWebSearchConfig } from './tools/web-search';
 import type { WhiteboardRuntimeService } from '@/lib/whiteboard/runtime/store';
 import type { ResolvedElementReference } from './element-reference';
 
+const MAX_CONSECUTIVE_EMPTY_TURNS = 2;
+
 function formatSceneEvidenceForDelegation(evidence: DirectorSceneEvidencePacket[]): string {
   return evidence.map((packet) => packet.content).join('\n\n');
+}
+
+function isUsableChildResult(context: {
+  isError?: boolean;
+  result: {
+    content?: Array<{ type: string; text?: string }>;
+    details?: unknown;
+  };
+}): boolean {
+  const details = context.result.details as Record<string, unknown> | undefined;
+  if (!details || details.skipped === true) {
+    return false;
+  }
+  const nativeRun = details.nativeChildRun as
+    | {
+        status?: string;
+        stopReason?: string;
+        visibleOutput?: string;
+        dispatchedActionCount?: number;
+      }
+    | undefined;
+
+  // A failed execution is not made usable by whatever trickled out before it.
+  // Token-limited partial output is different: it is a genuine response that
+  // simply ran out of budget, so it still counts as usable.
+  if (details.childErrored === true) return false;
+  if (nativeRun?.status === 'failed' || nativeRun?.status === 'cancelled') return false;
+  if (nativeRun?.status === 'exhausted' && nativeRun.stopReason !== 'output_token_limit') {
+    return false;
+  }
+
+  const text = typeof details.text === 'string' ? details.text.trim() : '';
+  const nativeOutput =
+    typeof nativeRun?.visibleOutput === 'string' ? nativeRun.visibleOutput.trim() : '';
+  const contentText =
+    !context.isError && Array.isArray(context.result.content)
+      ? context.result.content
+          .flatMap((part) =>
+            part.type === 'text' && typeof part.text === 'string' ? [part.text.trim()] : [],
+          )
+          .filter(Boolean)
+          .join('\n')
+      : '';
+  // The Legacy/Native result content repeats the visible text, but also carries
+  // the "(no visible response)" placeholder when the child produced nothing.
+  // Never let that placeholder make an empty result look usable.
+  const visibleContent = /\(no visible response\)\s*$/u.test(contentText) ? '' : contentText;
+  const hasVisibleText = (text || nativeOutput || visibleContent).length > 0;
+
+  const actionCount =
+    typeof details.actionCount === 'number'
+      ? details.actionCount
+      : typeof nativeRun?.dispatchedActionCount === 'number'
+        ? nativeRun.dispatchedActionCount
+        : 0;
+  const whiteboardActions = Array.isArray(details.whiteboardActions)
+    ? details.whiteboardActions.length
+    : 0;
+  const hasActions = actionCount > 0 || whiteboardActions > 0;
+
+  return hasVisibleText || hasActions;
 }
 
 export async function runPiDirectorLoop(opts: {
@@ -59,6 +122,8 @@ export async function runPiDirectorLoop(opts: {
   let sessionClosed = false;
   let endReason: string | undefined;
   let directorToolCalls = 0;
+  let consecutiveEmptyTurns = 0;
+  let consecutiveEmptyError: Error | undefined;
   const pendingSceneEvidence = new Map<string, DirectorSceneEvidencePacket>();
   // Request-scoped read-only evidence. `metadata` exists only when a component was
   // referenced; area state alone carries content without any element identity.
@@ -240,11 +305,31 @@ export async function runPiDirectorLoop(opts: {
         resultPreview,
         details: context.result.details,
       });
-      const terminate = sessionClosed || userCued;
-      if (!terminate && !evidenceError) return undefined;
+
+      if (context.toolCall.name === 'call_agent') {
+        const details = context.result.details as Record<string, unknown> | undefined;
+        if (!details?.skipped && !signal.aborted) {
+          if (isUsableChildResult(context)) {
+            consecutiveEmptyTurns = 0;
+          } else {
+            consecutiveEmptyTurns += 1;
+            if (consecutiveEmptyTurns >= MAX_CONSECUTIVE_EMPTY_TURNS) {
+              consecutiveEmptyError = new Error(
+                `Classroom agents failed to produce usable responses ${consecutiveEmptyTurns} times in a row.`,
+              );
+              director.abort();
+              return { terminate: true, isError: true };
+            }
+          }
+        }
+      }
+
+      const isConsecutiveEmptyLimit = consecutiveEmptyTurns >= MAX_CONSECUTIVE_EMPTY_TURNS;
+      const terminate = sessionClosed || userCued || isConsecutiveEmptyLimit;
+      if (!terminate && !evidenceError && !isError) return undefined;
       return {
         ...(terminate ? { terminate: true } : {}),
-        ...(evidenceError ? { isError: true } : {}),
+        ...(evidenceError || isConsecutiveEmptyLimit || isError ? { isError: true } : {}),
       };
     },
   });
@@ -259,6 +344,7 @@ export async function runPiDirectorLoop(opts: {
     await director.prompt(buildUserPrompt(opts.body, directorEvidence || undefined));
     await director.waitForIdle();
     if (signal.aborted) return;
+    if (consecutiveEmptyError) throw consecutiveEmptyError;
 
     // Pi settles provider failures in state rather than rejecting prompt(). Let
     // the route log and stream the actual reason instead of emitting a normal done.
@@ -292,7 +378,9 @@ export async function runPiDirectorLoop(opts: {
       },
     });
   } catch (error) {
-    if (!signal.aborted) throw error;
+    if (signal.aborted) return;
+    if (consecutiveEmptyError) throw consecutiveEmptyError;
+    throw error;
   } finally {
     signal.removeEventListener('abort', abortDirector);
     compactionRuntime.dispose();
