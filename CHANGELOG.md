@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Classroom playback resumes the remaining reading time after a narration clip fails to play, instead of getting stuck on the failed audio element. Failed clips release their playback state without interrupting a newer narration line. Pausing while a clip is still loading does not discard that narration; resume plays it. [#2109](https://github.com/THU-MAIC/OpenMAIC/issues/2109)
+
 ## [1.3.1] - 2026-11-02
 
 1.3.1 is a regular patch release. DeepSeek joins the Token Plan one-key setup, and most of the rest is reliability: asset uploads no longer hold database connections across slow object stores, requests stop waiting forever for a connection, and edits made just before leaving a page are kept. It has one upgrade condition and one new known issue; read **Breaking Changes** and **Known issues** before upgrading.
