@@ -7,6 +7,7 @@ const startup = vi.hoisted(() => ({
   onSchemaRefusal: undefined as unknown as (error: unknown) => Promise<void>,
   stop: vi.fn(async () => {}),
   exit: vi.fn(async () => {}),
+  extractionStart: vi.fn(() => ({ stop: async () => {} })),
 }));
 
 // register() starts the background workers. Real ones keep polling the
@@ -31,7 +32,10 @@ vi.mock('@/lib/server/legacy-classroom-import', () => ({
 }));
 vi.mock('@/lib/persistence/asset-quota', () => ({ resolveAssetQuotaBytes: vi.fn() }));
 vi.mock('@/lib/persistence/asset-pending-ttl', () => ({ resolveAssetPendingTtlMs: vi.fn() }));
-vi.mock('@/lib/persistence/schema-boot-check', () => ({ startSchemaBootCheck: vi.fn() }));
+vi.mock('@/lib/persistence/schema-boot-check', () => ({
+  startSchemaBootCheck: vi.fn(),
+  startRuntimeSchemaMonitor: vi.fn(),
+}));
 vi.mock('@/lib/persistence/asset-collector-schedule', () => ({
   startAssetCollectorSchedule: vi.fn(),
 }));
@@ -56,7 +60,7 @@ vi.mock('@/lib/server/material-extraction/runner', async () => {
   // The first agent scan can refuse the schema while register is still awaiting
   // the next worker's import. The normal drain must already be callable here.
   await startup.onSchemaRefusal(startup.error);
-  return { startMaterialExtractionRunner: () => ({ stop: async () => {} }) };
+  return { startMaterialExtractionRunner: startup.extractionStart };
 });
 vi.mock('@/lib/server/boot-failure', () => ({
   exitOnRuntimeSchemaRefusal: startup.exit,
@@ -82,6 +86,7 @@ it('drains and exits when the first scan refuses the schema before registration 
 
   expect(startup.stop).toHaveBeenCalledOnce();
   expect(startup.exit).toHaveBeenCalledWith(startup.error);
+  expect(startup.extractionStart).not.toHaveBeenCalled();
   expect(startup.stop.mock.invocationCallOrder[0]).toBeLessThan(
     startup.exit.mock.invocationCallOrder[0],
   );

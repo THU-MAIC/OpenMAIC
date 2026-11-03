@@ -48,7 +48,8 @@ export async function register(): Promise<void> {
   // this release must not run against (upgraded by a newer release) stops the
   // process here rather than failing every request that touches the store
   // (lib/persistence/schema-boot-check.ts).
-  const { startSchemaBootCheck } = await import('@/lib/persistence/schema-boot-check');
+  const { startSchemaBootCheck, startRuntimeSchemaMonitor } =
+    await import('@/lib/persistence/schema-boot-check');
   void startSchemaBootCheck(process.env.DATABASE_URL ?? '');
 
   // Warn-only: the instance secret that seals keys saved in the model settings
@@ -94,31 +95,28 @@ export async function register(): Promise<void> {
   let materialExtractor:
     | import('@/lib/server/materials/extractor-wake').OwnerMaterialExtractorHandle
     | undefined;
+  let schemaMonitor: ReturnType<typeof startRuntimeSchemaMonitor> | undefined;
   let shutdownPromise: Promise<void> | undefined;
   const shutdown = (): Promise<void> => {
     shutdownPromise ??= (async () => {
-      // Park sessions before any pool they use is closed. This preserves the
-      // last durable entry-tree checkpoint for immediate takeover.
-      try {
-        await extractionRunner?.stop();
-      } catch (error) {
-        console.error('[instrumentation] Material extraction runner drain failed', error);
-      }
-      try {
-        await materialExtractor?.stop();
-      } catch (error) {
-        console.error('[instrumentation] Material extractor drain failed', error);
-      }
-      try {
-        await runner?.stop();
-      } catch (error) {
-        console.error('[instrumentation] Agent runner drain failed', error);
-      }
-      try {
-        await generationRunner?.stop();
-      } catch (error) {
-        console.error('[instrumentation] Generation runner drain failed', error);
-      }
+      schemaMonitor?.stop();
+      // Stop every worker from claiming immediately, then await all parks before
+      // closing their shared pool. A busy extractor must not delay other stops.
+      const workers = [
+        ['Material extraction runner', extractionRunner],
+        ['Material extractor', materialExtractor],
+        ['Agent runner', runner],
+        ['Generation runner', generationRunner],
+      ] as const;
+      await Promise.all(
+        workers.map(async ([name, worker]) => {
+          try {
+            await worker?.stop();
+          } catch (error) {
+            console.error(`[instrumentation] ${name} drain failed`, error);
+          }
+        }),
+      );
       try {
         // Started at boot with the agent runtime, or on demand by the first
         // stream that subscribes to it (a generation run's events).
@@ -156,6 +154,15 @@ export async function register(): Promise<void> {
     })();
     return shutdownPromise;
   };
+  let schemaRetirement: Promise<void> | undefined;
+  const retireOnSchemaRefusal = (error: unknown): Promise<void> => {
+    schemaRetirement ??= (async () => {
+      await shutdown();
+      const { exitOnRuntimeSchemaRefusal } = await import('@/lib/server/boot-failure');
+      await exitOnRuntimeSchemaRefusal(error);
+    })();
+    return schemaRetirement;
+  };
 
   try {
     // Course generation runs on the server in every deployment (classic
@@ -192,14 +199,10 @@ export async function register(): Promise<void> {
       // retained behind the store's lazy promise and never blocks register().
       const runtime = await import('@/lib/server/agent-runtime/runner');
       runner = runtime.startAgentRunner({
-        onSchemaRefusal: async (error) => {
-          await shutdown();
-          const { exitOnRuntimeSchemaRefusal } = await import('@/lib/server/boot-failure');
-          await exitOnRuntimeSchemaRefusal(error);
-        },
+        onSchemaRefusal: retireOnSchemaRefusal,
       });
       const extraction = await import('@/lib/server/material-extraction/runner');
-      extractionRunner = extraction.startMaterialExtractionRunner();
+      if (!shutdownPromise) extractionRunner = extraction.startMaterialExtractionRunner();
     }
   } catch (error) {
     console.error('[instrumentation] Agent runtime startup failed', error);
@@ -207,6 +210,9 @@ export async function register(): Promise<void> {
 
   process.once('SIGTERM', () => void shutdown());
   process.once('SIGINT', () => void shutdown());
+  // Generation and persistence remain active when the Agent feature is off.
+  // Start after all handles exist, and never revive monitoring during retirement.
+  if (!shutdownPromise) schemaMonitor = startRuntimeSchemaMonitor(retireOnSchemaRefusal);
 }
 
 /**

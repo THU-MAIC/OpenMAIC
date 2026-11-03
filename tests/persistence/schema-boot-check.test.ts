@@ -11,6 +11,7 @@ vi.mock('@/lib/persistence/server-provider', () => ({ getServerPersistenceProvid
 import {
   assertRuntimeSchemaCompatibility,
   startSchemaBootCheck,
+  startRuntimeSchemaMonitor,
 } from '@/lib/persistence/schema-boot-check';
 import { APP_SCHEMA_STORES } from '@/lib/persistence/schema-stores';
 
@@ -84,5 +85,81 @@ describe('schema check at startup', () => {
     expect(verifySchemaMigrations).toHaveBeenCalledTimes(2);
     expect(verifySchemaMigrations).toHaveBeenLastCalledWith(pool, APP_SCHEMA_STORES);
     expect(end).not.toHaveBeenCalled();
+  });
+});
+
+describe('process runtime schema monitor', () => {
+  const end = vi.fn(async () => {});
+  beforeEach(async () => {
+    verifySchemaMigrations.mockReset().mockResolvedValue(undefined);
+    provider.mockResolvedValue({ pool: { end } });
+    end.mockClear();
+    await import('@/lib/persistence/server-provider');
+    vi.useFakeTimers();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it.each(['SchemaVersionAheadError', 'SchemaMigrationChecksumError'])(
+    'polls every 30 seconds and retires once on a later %s',
+    async (name) => {
+      const refuse = vi.fn(async () => {});
+      const monitor = startRuntimeSchemaMonitor(refuse);
+      try {
+        await vi.advanceTimersByTimeAsync(29_999);
+        expect(verifySchemaMigrations).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(verifySchemaMigrations).toHaveBeenCalledOnce();
+        const error = named(name);
+        verifySchemaMigrations.mockRejectedValueOnce(error);
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(refuse).toHaveBeenCalledWith(error);
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(verifySchemaMigrations).toHaveBeenCalledTimes(2);
+        expect(refuse).toHaveBeenCalledOnce();
+        expect(end).not.toHaveBeenCalled();
+      } finally {
+        monitor.stop();
+      }
+    },
+  );
+
+  it('retries a temporary failure on the next poll without retiring', async () => {
+    const refuse = vi.fn(async () => {});
+    const monitor = startRuntimeSchemaMonitor(refuse);
+    try {
+      verifySchemaMigrations.mockRejectedValueOnce(new Error('ECONNRESET'));
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(refuse).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(verifySchemaMigrations).toHaveBeenCalledTimes(2);
+      expect(refuse).not.toHaveBeenCalled();
+      expect(end).not.toHaveBeenCalled();
+    } finally {
+      monitor.stop();
+    }
+  });
+
+  it('does not overlap checks or retire on an in-flight result after stop', async () => {
+    const pending = Promise.withResolvers<void>();
+    verifySchemaMigrations.mockReturnValueOnce(pending.promise);
+    const refuse = vi.fn(async () => {});
+    const monitor = startRuntimeSchemaMonitor(refuse);
+    try {
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(verifySchemaMigrations).toHaveBeenCalledOnce();
+      monitor.stop();
+      pending.reject(named('SchemaVersionAheadError'));
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(verifySchemaMigrations).toHaveBeenCalledOnce();
+      expect(refuse).not.toHaveBeenCalled();
+      expect(end).not.toHaveBeenCalled();
+    } finally {
+      pending.resolve();
+      monitor.stop();
+    }
   });
 });
