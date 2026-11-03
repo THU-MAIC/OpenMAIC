@@ -94,54 +94,6 @@ export async function register(): Promise<void> {
   let materialExtractor:
     | import('@/lib/server/materials/extractor-wake').OwnerMaterialExtractorHandle
     | undefined;
-  try {
-    // Course generation runs on the server in every deployment (classic
-    // generation is the default product), so its worker does not depend on
-    // the agent runtime being enabled. It only installs a timer; its tables
-    // are provisioned by the first scan.
-    const { startGenerationRunner } = await import('@/lib/server/generation/run/runner');
-    generationRunner = startGenerationRunner();
-  } catch (error) {
-    console.error('[instrumentation] Generation runner startup failed', error);
-  }
-  try {
-    // Uploaded materials are extracted in the background from their upload
-    // on (lib/server/materials/extraction.ts), wherever uploads are served.
-    const { isServerPersistenceConfigured } = await import('@/lib/config/feature-flags');
-    if (isServerPersistenceConfigured()) {
-      const { startOwnerMaterialExtractor } = await import('@/lib/server/materials/extraction');
-      materialExtractor = startOwnerMaterialExtractor();
-    }
-  } catch (error) {
-    console.error('[instrumentation] Material extractor startup failed', error);
-  }
-  try {
-    const { isAgentRuntimeConfigured } = await import('@/lib/config/feature-flags');
-    if (isAgentRuntimeConfigured()) {
-      // One dedicated LISTEN connection per application instance. The HTTP
-      // SSE routes and the runner share its in-process fanout registry; it is
-      // not a pool client and never scales with the number of streams.
-      const { startAgentEventNotifyBus } =
-        await import('@/lib/server/agent-runtime/event-notify-bus');
-      const eventNotifyBus = startAgentEventNotifyBus();
-      stopAgentEventNotifyBus = () => eventNotifyBus.stop();
-      // startAgentRunner only installs a timer. Store/schema initialization is
-      // retained behind the store's lazy promise and never blocks register().
-      const runtime = await import('@/lib/server/agent-runtime/runner');
-      runner = runtime.startAgentRunner({
-        onSchemaRefusal: async (error) => {
-          await shutdown();
-          const { exitOnRuntimeSchemaRefusal } = await import('@/lib/server/boot-failure');
-          await exitOnRuntimeSchemaRefusal(error);
-        },
-      });
-      const extraction = await import('@/lib/server/material-extraction/runner');
-      extractionRunner = extraction.startMaterialExtractionRunner();
-    }
-  } catch (error) {
-    console.error('[instrumentation] Agent runtime startup failed', error);
-  }
-
   let shutdownPromise: Promise<void> | undefined;
   const shutdown = (): Promise<void> => {
     shutdownPromise ??= (async () => {
@@ -204,6 +156,54 @@ export async function register(): Promise<void> {
     })();
     return shutdownPromise;
   };
+
+  try {
+    // Course generation runs on the server in every deployment (classic
+    // generation is the default product), so its worker does not depend on
+    // the agent runtime being enabled. It only installs a timer; its tables
+    // are provisioned by the first scan.
+    const { startGenerationRunner } = await import('@/lib/server/generation/run/runner');
+    generationRunner = startGenerationRunner();
+  } catch (error) {
+    console.error('[instrumentation] Generation runner startup failed', error);
+  }
+  try {
+    // Uploaded materials are extracted in the background from their upload
+    // on (lib/server/materials/extraction.ts), wherever uploads are served.
+    const { isServerPersistenceConfigured } = await import('@/lib/config/feature-flags');
+    if (isServerPersistenceConfigured()) {
+      const { startOwnerMaterialExtractor } = await import('@/lib/server/materials/extraction');
+      materialExtractor = startOwnerMaterialExtractor();
+    }
+  } catch (error) {
+    console.error('[instrumentation] Material extractor startup failed', error);
+  }
+  try {
+    const { isAgentRuntimeConfigured } = await import('@/lib/config/feature-flags');
+    if (isAgentRuntimeConfigured()) {
+      // One dedicated LISTEN connection per application instance. The HTTP
+      // SSE routes and the runner share its in-process fanout registry; it is
+      // not a pool client and never scales with the number of streams.
+      const { startAgentEventNotifyBus } =
+        await import('@/lib/server/agent-runtime/event-notify-bus');
+      const eventNotifyBus = startAgentEventNotifyBus();
+      stopAgentEventNotifyBus = () => eventNotifyBus.stop();
+      // startAgentRunner only installs a timer. Store/schema initialization is
+      // retained behind the store's lazy promise and never blocks register().
+      const runtime = await import('@/lib/server/agent-runtime/runner');
+      runner = runtime.startAgentRunner({
+        onSchemaRefusal: async (error) => {
+          await shutdown();
+          const { exitOnRuntimeSchemaRefusal } = await import('@/lib/server/boot-failure');
+          await exitOnRuntimeSchemaRefusal(error);
+        },
+      });
+      const extraction = await import('@/lib/server/material-extraction/runner');
+      extractionRunner = extraction.startMaterialExtractionRunner();
+    }
+  } catch (error) {
+    console.error('[instrumentation] Agent runtime startup failed', error);
+  }
 
   process.once('SIGTERM', () => void shutdown());
   process.once('SIGINT', () => void shutdown());
