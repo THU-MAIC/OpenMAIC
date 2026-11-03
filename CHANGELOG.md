@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Bug Fixes
 
+- Classroom playback resumes the remaining reading time after a narration clip fails to play, instead of getting stuck on the failed audio element. Failed clips release their playback state without interrupting a newer narration line. Pausing while a clip is still loading does not discard that narration; resume plays it. [#2109](https://github.com/THU-MAIC/OpenMAIC/issues/2109)
 - Pro workbench: pages built from an uploaded document now show the document's extracted figures. `use_material_media` used to tell the agent to place an image with `patch_stage`, so new pages were generated through `generate_scene` without `media` and showed no figures. Its reply, the `generate_scene` description, the materials prompt and the `stage-design` skill now say to pass each image in `generate_scene.media`. [#2099](https://github.com/THU-MAIC/OpenMAIC/pull/2099)
 
 ## [1.3.1] - 2026-11-02

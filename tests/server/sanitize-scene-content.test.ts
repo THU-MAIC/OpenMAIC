@@ -135,6 +135,15 @@ const evalSceneFixtures = [
 // ---------------------------------------------------------------------------
 
 describe('sanitizeProseHtml — content outside the renderer vocabulary', () => {
+  it('preserves imported inset containers while stripping unrelated attributes and unsafe CSS', () => {
+    const output = sanitizeProseHtml(
+      '<div data-pptx-text-insets="true" data-other="x" onclick="alert(1)" style="padding: 0pt 7.2pt; background-color: url(javascript:alert(1))"><p>Label</p></div>',
+    );
+    expect(canon(output)).toEqual(
+      canon('<div data-pptx-text-insets="true" style="padding: 0pt 7.2pt"><p>Label</p></div>'),
+    );
+  });
+
   it('drops an inline event handler while preserving surrounding markup', () => {
     const input =
       '<p>Keep <strong>bold</strong> and <em>italic</em></p><p><img src="x" onerror="alert(1)">tail</p>';
