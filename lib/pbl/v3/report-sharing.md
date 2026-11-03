@@ -10,7 +10,7 @@ summary counts, practiced skill receipts and saved test/quiz results. Empty sect
 omitted. The congratulatory heading is used only when `requiredComplete` is true; unfinished
 projects use a neutral achievement heading. The invitation and campaign link/QR sit between
 the project title and factual results. Counts represent recorded practice, not mastery or rankings.
-Practice and concepts share a two-column section; saved results form a separate bottom bar.
+An open checklist and a concept label panel share a two-column section; saved results form a separate bottom bar.
 
 The projection does not read analysis, findings, quotes, conversations or evidence. There
 is no analysis placeholder or derived narrative. Generating/ready/failed analysis and

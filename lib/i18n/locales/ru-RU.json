@@ -2982,8 +2982,8 @@
       "decisionsLabel": "Принятые решения",
       "quizLabel": "Викторина",
       "skillsMetric": "Навыки на практике",
-      "skillsSection": "Ваша практика",
-      "conceptsLabel": "Ключевые понятия",
+      "skillsSection": "Выполненные задачи",
+      "conceptsLabel": "Открытые понятия",
       "skillLabels": {
         "decisions": "Инженерные решения",
         "planReview": "Проверка плана",

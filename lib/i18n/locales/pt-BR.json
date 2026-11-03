@@ -2982,8 +2982,8 @@
       "decisionsLabel": "Decisões tomadas",
       "quizLabel": "Questionário",
       "skillsMetric": "Habilidades praticadas",
-      "skillsSection": "Sua prática",
-      "conceptsLabel": "Conceitos-chave",
+      "skillsSection": "Desafios concluídos",
+      "conceptsLabel": "Conceitos desbloqueados",
       "skillLabels": {
         "decisions": "Tomar decisões de engenharia",
         "planReview": "Revisar um plano",

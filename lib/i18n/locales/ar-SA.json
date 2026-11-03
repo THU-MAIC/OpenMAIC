@@ -2982,8 +2982,8 @@
       "decisionsLabel": "القرارات",
       "quizLabel": "الاختبار",
       "skillsMetric": "مهارات تمّت ممارستها",
-      "skillsSection": "ما مارسته",
-      "conceptsLabel": "المفاهيم الأساسية",
+      "skillsSection": "التحديات المكتملة",
+      "conceptsLabel": "معارف اكتشفتها",
       "skillLabels": {
         "decisions": "اتخاذ قرارات هندسية",
         "planReview": "مراجعة خطة",

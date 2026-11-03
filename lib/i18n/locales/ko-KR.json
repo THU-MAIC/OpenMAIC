@@ -2982,8 +2982,8 @@
       "decisionsLabel": "구현 선택",
       "quizLabel": "퀴즈",
       "skillsMetric": "실습한 기술",
-      "skillsSection": "이번 실습",
-      "conceptsLabel": "학습 개념",
+      "skillsSection": "완료한 도전",
+      "conceptsLabel": "살펴본 지식",
       "skillLabels": {
         "decisions": "엔지니어링 의사 결정",
         "planReview": "계획 검토",

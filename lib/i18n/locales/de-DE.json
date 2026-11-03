@@ -2982,8 +2982,8 @@
       "decisionsLabel": "Entscheidungen",
       "quizLabel": "Wissenscheck",
       "skillsMetric": "Geübte Fähigkeiten",
-      "skillsSection": "Deine Praxis",
-      "conceptsLabel": "Kernkonzepte",
+      "skillsSection": "Abgeschlossene Aufgaben",
+      "conceptsLabel": "Freigeschaltete Konzepte",
       "skillLabels": {
         "decisions": "Technische Entscheidungen treffen",
         "planReview": "Einen Plan prüfen",

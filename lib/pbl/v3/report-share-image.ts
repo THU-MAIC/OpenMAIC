@@ -234,14 +234,13 @@ export async function renderReportShareImage(
     });
     y += Math.ceil(content.metrics.length / 2) * 128;
   }
-  // Complementary practice/concept panels share a baseline and use the remaining canvas.
+  // An open checklist and a concept panel share a baseline and fill the remaining canvas.
   const lowerTop = y + 24,
     lowerBottom = 1320;
   const both = content.skills.length > 0 && content.concepts.length > 0;
   const rule = dark ? '#ffffff16' : '#211c3812';
   if (content.skills.length) {
     const panelWidth = both ? 628 : width - 128;
-    box(64, lowerTop, panelWidth, lowerBottom - lowerTop, panel);
     paragraph(
       t('pblV3.share.skillsSection'),
       92,
@@ -259,14 +258,13 @@ export async function renderReportShareImage(
       const center = bodyTop + (i + 0.5) * rowHeight;
       const markerX = direction === 'rtl' ? 64 + panelWidth - 40 : 104;
       ctx.strokeStyle = accent;
-      ctx.lineWidth = 1.8;
+      ctx.lineWidth = 2.4;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
       ctx.beginPath();
-      ctx.arc(markerX, center, 11, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(markerX - 5, center);
-      ctx.lineTo(markerX - 1, center + 4);
-      ctx.lineTo(markerX + 6, center - 5);
+      ctx.moveTo(markerX - 6, center);
+      ctx.lineTo(markerX - 1, center + 5);
+      ctx.lineTo(markerX + 8, center - 6);
       ctx.stroke();
       paragraph(
         t(`pblV3.share.skillLabels.${id}`),
@@ -279,14 +277,6 @@ export async function renderReportShareImage(
         500,
         true,
       );
-      if (i < content.skills.length - 1) {
-        ctx.strokeStyle = rule;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(92, bodyTop + (i + 1) * rowHeight);
-        ctx.lineTo(64 + panelWidth - 28, bodyTop + (i + 1) * rowHeight);
-        ctx.stroke();
-      }
     });
   }
   if (content.concepts.length) {

@@ -2982,8 +2982,8 @@
       "decisionsLabel": "実装の選択",
       "quizLabel": "クイズ",
       "skillsMetric": "実践したスキル",
-      "skillsSection": "今回の実践",
-      "conceptsLabel": "学習ポイント",
+      "skillsSection": "クリアした課題",
+      "conceptsLabel": "出会った知識",
       "skillLabels": {
         "decisions": "設計の判断",
         "planReview": "計画のレビュー",

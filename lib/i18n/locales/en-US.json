@@ -2982,8 +2982,8 @@
       "decisionsLabel": "Decisions made",
       "quizLabel": "Quiz",
       "skillsMetric": "Skills practiced",
-      "skillsSection": "Your practice",
-      "conceptsLabel": "Key concepts",
+      "skillsSection": "Challenges completed",
+      "conceptsLabel": "Unlocked concepts",
       "skillLabels": {
         "decisions": "Making engineering decisions",
         "planReview": "Reviewing a plan",

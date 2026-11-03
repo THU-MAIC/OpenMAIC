@@ -2982,8 +2982,8 @@
       "decisionsLabel": "实现选择",
       "quizLabel": "测验",
       "skillsMetric": "实践技能",
-      "skillsSection": "本次练习",
-      "conceptsLabel": "知识点",
+      "skillsSection": "完成的挑战",
+      "conceptsLabel": "解锁的知识点",
       "skillLabels": {
         "decisions": "选择实现方式",
         "planReview": "审阅实施计划",

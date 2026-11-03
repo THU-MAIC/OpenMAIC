@@ -2982,8 +2982,8 @@
       "decisionsLabel": "Lựa chọn đã đưa ra",
       "quizLabel": "Bài kiểm tra",
       "skillsMetric": "Kỹ năng đã thực hành",
-      "skillsSection": "Nội dung thực hành",
-      "conceptsLabel": "Kiến thức chính",
+      "skillsSection": "Thử thách đã hoàn thành",
+      "conceptsLabel": "Kiến thức đã mở khóa",
       "skillLabels": {
         "decisions": "Đưa ra quyết định kỹ thuật",
         "planReview": "Xem xét kế hoạch",
