@@ -57,6 +57,9 @@ const PACKAGE_EXPORT_SOURCES = [
  * places where concrete provider knowledge belongs.
  */
 const PROVIDER_NEUTRAL_FILES = [
+  'lib/server/generation/run/engine.ts',
+  'lib/server/generation/run/failure-code.ts',
+  'lib/server/agent-runtime/scene-tts.ts',
   // LLM stage routing and agent driver
   'lib/server/model-routes.ts',
   'lib/server/resolve-model.ts',
@@ -99,6 +102,20 @@ const PROVIDER_NEUTRAL_FILES = [
  * another use of an already-allowed vendor therefore still fails the guard.
  */
 const TEMPORARY_ALLOWLIST: readonly AllowedLeak[] = [
+  {
+    file: 'lib/server/generation/run/engine.ts',
+    vendor: 'pg',
+    token: "'@openmaic/storage/document/pg'",
+    count: 1,
+    reason: 'Existing storage Queryable type import; not audio provider policy.',
+  },
+  {
+    file: 'lib/server/generation/run/engine.ts',
+    vendor: 'qwen',
+    token: "'QWEN_VC_VOICE_NOT_FOUND'",
+    count: 1,
+    reason: 'Existing main missing-clone fallback; incompatible-voice policy must remain neutral.',
+  },
   {
     file: 'lib/server/resolve-model.ts',
     vendor: 'bedrock',

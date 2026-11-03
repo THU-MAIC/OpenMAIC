@@ -106,8 +106,8 @@ describe('agent scene narration with Qwen cloned voices', () => {
       expect(result).toMatchObject({
         generated: 0,
         failed: [
-          { id: 'speech', reason: 'QWEN_VC_RECLONE_REQUIRED' },
-          { id: 'second', reason: 'QWEN_VC_RECLONE_REQUIRED' },
+          { id: 'speech', reason: 'QWEN_VC_RECLONE_REQUIRED', recovery: 'reclone' },
+          { id: 'second', reason: 'QWEN_VC_RECLONE_REQUIRED', recovery: 'reclone' },
         ],
       });
       expect(formatTtsFailureTally(result.failed)).toContain('Re-upload');

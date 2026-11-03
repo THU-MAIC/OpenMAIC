@@ -1,3 +1,4 @@
+import { AudioProviderError } from './provider-error';
 import { qwenVoiceMatchesTargetModel } from './constants';
 import type { TTSGenerationResult } from '@/lib/audio/tts-providers';
 import { createLogger } from '@/lib/logger';
@@ -41,13 +42,21 @@ export type QwenVoiceCloneErrorCode =
   | 'QWEN_VC_VOICE_PROCESSING'
   | 'QWEN_VC_BOOTSTRAP_UNSUPPORTED';
 
-export class QwenVoiceCloneError extends Error {
+export class QwenVoiceCloneError extends AudioProviderError {
   constructor(
     readonly code: QwenVoiceCloneErrorCode,
     readonly httpStatus?: number,
     readonly vendorCode?: string,
   ) {
-    super(code);
+    super(
+      code,
+      httpStatus,
+      code === 'QWEN_VC_RECLONE_REQUIRED'
+        ? 'voice-incompatible'
+        : code === 'QWEN_VC_TIMEOUT'
+          ? 'timeout'
+          : undefined,
+    );
     this.name = 'QwenVoiceCloneError';
   }
 }

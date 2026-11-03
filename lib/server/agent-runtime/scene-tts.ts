@@ -9,7 +9,7 @@ import { configuredDefaultVoice } from '@/lib/audio/provider-default-voice';
 import { authorizeMediaModel } from '@/lib/server/model-config/media';
 import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
 import { getVoiceRegistrationAdapter } from '@/lib/audio/voice-registration';
-import { QwenVoiceCloneError } from '@/lib/audio/qwen-voice-clone';
+import { audioFailureKind } from '@/lib/audio/provider-error';
 import { DEFAULT_TTS_MODELS, DEFAULT_TTS_VOICES, TTS_PROVIDERS } from '@/lib/audio/constants';
 import { generateTTS, TTSRateLimitError, TTSRequestTimeoutError } from '@/lib/audio/tts-providers';
 import { runFailureCode, type RunFailureErrorCode } from '@/lib/server/generation/run/failure-code';
@@ -29,6 +29,8 @@ export interface SceneTtsFailure {
   id: string;
   /** `runFailureCode().errorCode`. Never a provider body or `error.message`. */
   reason: RunFailureErrorCode;
+  /** Safe recovery instruction, independent of the provider’s public error code. */
+  recovery?: 'reclone';
 }
 
 /**
@@ -166,14 +168,16 @@ export function resetAgentTtsProviderGatesForTests(): void {
 }
 
 /** Model-visible tally. Error codes only, never action ids or provider bodies. */
-export function formatTtsFailureTally(failed: readonly { reason: string }[]): string {
+export function formatTtsFailureTally(
+  failed: readonly Pick<SceneTtsFailure, 'reason' | 'recovery'>[],
+): string {
   if (failed.length === 0) return '0 failed';
   const counts = new Map<string, number>();
   for (const failure of failed) {
     counts.set(failure.reason, (counts.get(failure.reason) ?? 0) + 1);
   }
   const breakdown = [...counts].map(([code, count]) => `${code}\u00d7${count}`).join(', ');
-  const guidance = counts.has('QWEN_VC_RECLONE_REQUIRED')
+  const guidance = failed.some((failure) => failure.recovery === 'reclone')
     ? ' Re-upload the reference audio to clone the saved voice again.'
     : '';
   return `${failed.length} failed (${breakdown})${guidance}`;
@@ -424,8 +428,8 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
             },
             rethrow: (error) =>
               error instanceof TTSRequestTimeoutError ||
-              (error instanceof QwenVoiceCloneError &&
-                (error.code === 'QWEN_VC_RECLONE_REQUIRED' || error.code === 'QWEN_VC_TIMEOUT')) ||
+              audioFailureKind(error) === 'voice-incompatible' ||
+              audioFailureKind(error) === 'timeout' ||
               input.signal?.aborted === true ||
               isTtsBudgetWaitError(error),
           },
@@ -457,10 +461,16 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
         if (
           error instanceof TTSRequestTimeoutError ||
           error instanceof ModelAuthorizationError ||
-          (error instanceof QwenVoiceCloneError && error.code === 'QWEN_VC_TIMEOUT')
+          audioFailureKind(error) === 'timeout'
         )
           throw error;
-        failed.push({ id: action.id, reason: runFailureCode(error).errorCode });
+        failed.push({
+          id: action.id,
+          reason: runFailureCode(error).errorCode,
+          ...(audioFailureKind(error) === 'voice-incompatible'
+            ? { recovery: 'reclone' as const }
+            : {}),
+        });
       }
     }
     return {
