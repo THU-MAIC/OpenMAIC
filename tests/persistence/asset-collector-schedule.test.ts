@@ -26,7 +26,10 @@ vi.mock('@/lib/server/materials/extraction', () => ({
 vi.mock('@/lib/server/legacy-classroom-import', () => ({
   startLegacyClassroomImport: () => ({ stop: async () => {} }),
 }));
-vi.mock('@/lib/persistence/schema-boot-check', () => ({ startSchemaBootCheck: vi.fn() }));
+vi.mock('@/lib/persistence/schema-boot-check', () => ({
+  startSchemaBootCheck: vi.fn(),
+  startRuntimeSchemaMonitor: vi.fn(),
+}));
 vi.mock('@/lib/persistence/schema-bootstrap-lock', () => ({
   SCHEMA_BOOTSTRAP_LOCK_KEY: 0,
   withSchemaBootstrapLock: <T>(pool: unknown, body: (queryable: never) => Promise<T>) =>

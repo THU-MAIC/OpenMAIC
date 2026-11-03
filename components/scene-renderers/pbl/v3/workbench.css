@@ -45,6 +45,130 @@
 .pbl-workbench .pbl-assistant-bubble {
   background: var(--pbl-assistant-bubble);
 }
+
+.pbl-workbench .pbl-teaching-prose .wb-prose {
+  --wb-h1: 1.6em;
+  --wb-h2: 1.4em;
+  --wb-h3: 1.22em;
+  line-height: 1.8;
+}
+.pbl-workbench .pbl-teaching-prose .wb-prose p {
+  margin-block: 0 0.85em;
+}
+.pbl-workbench .pbl-teaching-prose .wb-prose :is(h1, h2, h3, h4) {
+  margin-block: 1.5em 0.55em;
+  line-height: 1.45;
+  color: var(--foreground);
+  font-weight: 650;
+}
+/* Older replies used standalone bold paragraphs as section leads. Keep their
+   contents/semantics intact; ordinary inline bold must not enlarge a paragraph. */
+.pbl-workbench .pbl-teaching-prose .wb-prose > div > p[data-pbl-lead='true'] {
+  margin-block: 1.25em 0.55em;
+  font-size: 1.22em;
+  line-height: 1.5;
+}
+.pbl-workbench
+  .pbl-teaching-prose
+  .wb-prose
+  :is(h1, h2, h3, h4, p[data-pbl-lead='true']):first-child {
+  margin-block-start: 0;
+}
+.pbl-workbench .pbl-teaching-prose .wb-prose :is(ul, ol) {
+  margin-block: 0.6em 1em;
+  padding-inline-start: 1.45em;
+}
+.pbl-workbench .pbl-teaching-prose .wb-prose li {
+  margin-block: 0.4em;
+  padding-inline-start: 0.15em;
+}
+.pbl-workbench .pbl-teaching-prose .wb-prose li > p {
+  margin-block: 0;
+}
+.pbl-workbench .pbl-teaching-prose .wb-prose blockquote {
+  margin-block: 1em;
+  padding: 0.75em 1em;
+  border-inline-start: 3px solid color-mix(in srgb, var(--primary) 60%, transparent);
+  border-radius: 0 8px 8px 0;
+  background: color-mix(in srgb, var(--primary) 7%, var(--background));
+  color: var(--foreground);
+}
+
+.pbl-workbench .pbl-recovery-notice {
+  --pbl-recovery-ink: #92400e;
+  --pbl-recovery-surface: #fffbeb;
+  --pbl-recovery-line: #f2d49a;
+  --pbl-recovery-button: #92400e;
+  --pbl-recovery-button-ink: #ffffff;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  flex-shrink: 0;
+  margin: 10px 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--pbl-recovery-line);
+  border-radius: 12px;
+  background: var(--pbl-recovery-surface);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.04);
+  color: var(--foreground);
+}
+.dark .pbl-workbench .pbl-recovery-notice {
+  --pbl-recovery-ink: #fcd58a;
+  --pbl-recovery-surface: #292319;
+  --pbl-recovery-line: #705833;
+  --pbl-recovery-button: #fcd58a;
+  --pbl-recovery-button-ink: #302311;
+}
+.pbl-workbench .pbl-recovery-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  align-self: flex-start;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--pbl-recovery-ink) 12%, transparent);
+  color: var(--pbl-recovery-ink);
+}
+.pbl-workbench .pbl-recovery-copy {
+  flex: 1 1 190px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: break-word;
+}
+.pbl-workbench .pbl-recovery-copy h4 {
+  margin-bottom: 3px;
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--pbl-recovery-ink);
+}
+.pbl-workbench .pbl-recovery-hint {
+  margin-top: 3px;
+  color: var(--muted-foreground);
+}
+.pbl-workbench .pbl-recovery-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--pbl-recovery-button);
+  color: var(--pbl-recovery-button-ink);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pbl-workbench .pbl-recovery-action:hover:not(:disabled) {
+  filter: brightness(0.94);
+}
+.pbl-workbench .pbl-recovery-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .pbl-workbench .pbl-task-area {
   /* This flex area excludes the actual toolbar, notices and composer height. */
   container-type: size;

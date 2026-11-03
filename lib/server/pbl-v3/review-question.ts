@@ -3,6 +3,17 @@ import type { Queryable } from '@openmaic/storage/agent-session/pg';
 
 export const LEARNER_HANDOFF_EVENT = 'pbl_learner_handoff';
 
+/** One authored message supplies both display text and the question recorded for feedback. */
+export function reviewResponse(response: string): { response: string; question: string } {
+  const text = response.trim();
+  if (!text) throw new Error('A complete review response is required.');
+  const question = text
+    .split(/\r?\n[ \t]*\r?\n/)
+    .at(-1)!
+    .trim();
+  return { response: text, question };
+}
+
 /** Support-only inputs stay in history but cannot become later understanding/approval evidence. */
 export async function supportTurnSequences(
   db: Queryable,

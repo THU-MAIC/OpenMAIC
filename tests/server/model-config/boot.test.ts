@@ -28,7 +28,10 @@ vi.mock('@/lib/server/instance-secret-check', () => ({ warnAboutInstanceSecret: 
 vi.mock('@/lib/persistence/asset-quota', () => ({ resolveAssetQuotaBytes: vi.fn() }));
 vi.mock('@/lib/persistence/asset-pending-ttl', () => ({ resolveAssetPendingTtlMs: vi.fn() }));
 const startAssetCollectorSchedule = vi.hoisted(() => vi.fn());
-vi.mock('@/lib/persistence/schema-boot-check', () => ({ startSchemaBootCheck: vi.fn() }));
+vi.mock('@/lib/persistence/schema-boot-check', () => ({
+  startSchemaBootCheck: vi.fn(),
+  startRuntimeSchemaMonitor: vi.fn(),
+}));
 vi.mock('@/lib/persistence/asset-collector-schedule', () => ({ startAssetCollectorSchedule }));
 vi.mock('@/lib/server/config-validation', () => ({ validateServerConfig: vi.fn() }));
 vi.mock('@/lib/config/feature-flags', () => ({

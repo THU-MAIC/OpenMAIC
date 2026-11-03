@@ -10,6 +10,14 @@ OpenMAIC is a Next.js application that needs a long-running Node.js process and 
 
 Serverless hosts such as Vercel are not supported from 1.2.0: a function that ends with its request cannot run a generation. See [Vercel (up to 1.1.x)](#vercel-up-to-11x).
 
+## Updating instances that share a database
+
+Instances sharing a database must run compatible code versions. Some features migrate their tables on first use, so an old instance can become incompatible after passing its startup check when a newer instance upgrades the database.
+
+Every Node.js server also monitors schema compatibility every 30 seconds, independently of `OPENMAIC_AGENT_RUNTIME_ENABLED`, so generation and persistence-only deployments retire too. Temporary monitor failures retry on the next poll; monitoring stops before persistence closes. The Agent worker additionally checks schema compatibility before its first claim, then reuses a successful check for 30 seconds. Once that window expires, the next scan must pass a fresh check before claiming more work; temporary check failures retry on the next scan without claiming. A schema refusal during execution retires the instance immediately. An incompatible instance stops taking work and attempts to park and release existing claims before exiting. Retirement has a 30-second total deadline, including worker drain and pool shutdown; if cleanup remains blocked, it logs the timeout and exits non-zero. Unfinished leases then follow the existing stale-lease recovery rules. A compatible instance can resume the original input. This bounded detection window does not make an old release compatible with a newer schema.
+
+When first deploying this protection, drain and stop old instances that do not contain it before starting a release that may migrate the database. Later releases must also avoid leaving incompatible versions on the same database. Check schema support before rolling back an image; never delete migration records, lower their version numbers or alter checksums to bypass a refusal.
+
 ## Docker
 
 The repository includes a production-ready `Dockerfile`. The image uses Node.js 22 internally. Build and run it with:

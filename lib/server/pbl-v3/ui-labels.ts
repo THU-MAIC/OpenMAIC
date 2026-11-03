@@ -27,15 +27,19 @@ const locales: Record<string, typeof l0> = {
   'vi-VN': l11,
 };
 /** Exact localized controls, independent of the Agent response language. */
-export function visibleProductLabels(locale = 'en-US') {
+export function visibleProductLabels(locale = 'en-US', nextStep?: string) {
   const p = (locales[locale] ?? locales['en-US']!).pblV3;
+  const steps: Record<string, string> = p.journey.steps;
   return {
     projectFiles: p.files,
     task: p.journey.taskTitle,
+    submitDecision: p.submitDecision,
     runTests: p.runTests,
     submitQuiz: p.submitQuiz,
     build: p.build,
-    continue: p.next,
+    continue: nextStep
+      ? p.journey.enterStep.replace('{{step}}', () => steps[nextStep] ?? nextStep)
+      : p.next,
     report: p.report,
     refresh: p.refresh,
     restore: p.recoverWorkspace,

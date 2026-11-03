@@ -108,8 +108,8 @@ describe('teaching stage handoff', () => {
       expect(result.messages).toEqual([reflection]);
       expect(result.systemPrompt).toContain(JSON.stringify(reply));
       expect(result.systemPrompt).toContain('record that SAME reply');
-      expect(result.systemPrompt).toContain('verbatim into explanation');
-      expect(result.systemPrompt).toContain('closing question verbatim into question');
+      expect(result.systemPrompt).toContain('complete reply verbatim into response');
+      expect(result.systemPrompt).toContain('existing closing question');
       expect(result.systemPrompt).toContain('Do not omit an already delivered explanation');
       expect(result.systemPrompt).toContain('never student feedback');
       expect(result.messages.filter((message) => message.role === 'user')).toHaveLength(1);

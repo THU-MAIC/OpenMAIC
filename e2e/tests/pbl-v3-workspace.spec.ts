@@ -834,6 +834,30 @@ test('installed sample opens in the normal classroom and preserves progress afte
   await expect
     .poll(async () => (await page.getByTestId('pbl-ide').boundingBox())!.width)
     .toBeLessThan(ideBox.width);
+  // #2148: committing a drag-collapse must update the header, not require two clicks.
+  const resized = (await page.getByTestId('pbl-ide').boundingBox())!;
+  const assistant = (await page.getByTestId('pbl-assistant').boundingBox())!;
+  await page.mouse.move((resized.x + resized.width + assistant.x) / 2, resized.y + 100);
+  await page.mouse.down();
+  await page.mouse.move(resized.x, resized.y + 100, { steps: 12 });
+  await page.mouse.up();
+  const workspaceToggle = page.getByRole('button', { name: 'Toggle code workspace', exact: true });
+  await expect(workspaceToggle).toHaveAttribute('aria-pressed', 'false');
+  await workspaceToggle.click();
+  await expect(workspaceToggle).toHaveAttribute('aria-pressed', 'true');
+  await expect
+    .poll(async () => (await page.getByTestId('pbl-ide').boundingBox())!.width)
+    .toBeGreaterThan(100);
+  await expect(page.locator('.monaco-editor .view-lines')).toHaveText('Unsaved learner work');
+  await divider.focus();
+  await divider.press('End');
+  const assistantToggle = page.getByRole('button', {
+    name: 'Toggle learning assistant',
+    exact: true,
+  });
+  await expect(assistantToggle).toHaveAttribute('aria-pressed', 'false');
+  await assistantToggle.click();
+  await expect(assistantToggle).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Exit fullscreen workspace' }).click();
   await expect(page.locator('.monaco-editor .view-lines')).toHaveText('Unsaved learner work');
   // A genuinely different recovered base must remain protected. Changing only
