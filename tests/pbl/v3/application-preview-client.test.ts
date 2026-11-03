@@ -110,7 +110,13 @@ it.each(['failed-review', 'new-write', 'assessment'])(
       await f.click();
       const frame = f.host.querySelector('iframe')!;
       const parts: NonNullable<LearningView['conversation']>[number]['parts'] = [
-        { ...sourceWrite![0].parts[0], status: 'succeeded' },
+        {
+          id: 'write',
+          kind: 'tool',
+          action: 'write',
+          args: { path: 'app.py' },
+          status: 'succeeded',
+        },
         {
           id: 'review',
           kind: 'tool',
