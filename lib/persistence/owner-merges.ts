@@ -305,8 +305,13 @@ export function ownerWriteErrorResponse(
  * refusal if the owner is retired. Call it as the first statement of the
  * write's transaction.
  */
-export async function fenceOwnerWrite(tx: Queryable, ownerId: string, stageId?: string) {
-  await lockOwnerIdentities(tx, [ownerId], 'shared');
+export async function fenceOwnerWrite(
+  tx: Queryable,
+  ownerId: string,
+  stageId?: string,
+  waitMs?: number,
+) {
+  await lockOwnerIdentities(tx, [ownerId], 'shared', waitMs);
   if (!mayBeRetired(ownerId)) return;
   if ((await canonicalizeOwner(tx, ownerId)) !== ownerId) {
     throw new OwnerRetiredError(ownerId, stageId);
@@ -319,8 +324,12 @@ export async function fenceOwnerWrite(tx: Queryable, ownerId: string, stageId?: 
  * keeps working for the account its owner was claimed into. Call it as the
  * first statement of the write's transaction and write under the result.
  */
-export async function forwardOwnerWrite(tx: Queryable, ownerId: string): Promise<string> {
-  await lockOwnerIdentities(tx, [ownerId], 'shared');
+export async function forwardOwnerWrite(
+  tx: Queryable,
+  ownerId: string,
+  waitMs?: number,
+): Promise<string> {
+  await lockOwnerIdentities(tx, [ownerId], 'shared', waitMs);
   return mayBeRetired(ownerId) ? canonicalizeOwner(tx, ownerId) : ownerId;
 }
 

@@ -341,7 +341,7 @@ describe('audio provider adapters — SSRF hardening', () => {
             targetModel: 'qwen3-tts-vc',
             publicOnly: false,
           },
-          { name: 'teacher', audio: new Uint8Array(64), text: 'reference' },
+          { name: 'teacher', audio: new Uint8Array(64) },
         ),
       ).rejects.toThrow(METADATA_BLOCK_MESSAGE);
 
@@ -529,7 +529,7 @@ describe('audio provider adapters — SSRF hardening', () => {
     it('permits a server-managed localhost backend when local networks are allowed', async () => {
       process.env.ALLOW_LOCAL_NETWORKS = 'true';
       const origin = await startLoopback(
-        jsonResponse({ output: { voice: 'qwen_vc_authoritative' } }),
+        jsonResponse({ output: { voice_id: 'qwen_vc_authoritative' } }),
       );
       // The Qwen adapter accepts `localhost` over http; the pinned dispatcher
       // resolves it through the DNS double.
@@ -542,7 +542,7 @@ describe('audio provider adapters — SSRF hardening', () => {
           targetModel: 'qwen3-tts-vc',
           publicOnly: false,
         },
-        { name: 'teacher', audio: new Uint8Array(64), text: 'reference' },
+        { name: 'teacher', audio: new Uint8Array(64) },
       );
       expect(result.voiceId).toBe('qwen_vc_authoritative');
       expect(origin.requests()).toBe(1);

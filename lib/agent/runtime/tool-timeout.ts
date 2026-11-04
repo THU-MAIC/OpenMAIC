@@ -1,6 +1,7 @@
 /**
- * Global per-tool-call execution bound for every agent built through
- * `buildAgent`.
+ * Default per-tool-call execution bound for agents built through
+ * `buildAgent`. Callers can opt out with a zero override while retaining
+ * cancellation.
  *
  * pi's agent loop awaits `tool.execute(...)` with no deadline: a tool await
  * that neither resolves nor rejects (a hung provider request, a database
@@ -126,8 +127,11 @@ export function agentToolBudgetRemainingMs(
  * even though the agent loop itself keeps running after a timeout. Progress
  * updates emitted by a zombie tool after the race settles are dropped.
  */
-export function withAgentToolTimeout<T extends AgentTool>(tool: T & AgentToolTimeoutContext): T {
-  const timeoutMs = resolveAgentToolTimeoutMs(tool.name);
+export function withAgentToolTimeout<T extends AgentTool>(
+  tool: T & AgentToolTimeoutContext,
+  overrideMs?: number,
+): T {
+  const timeoutMs = overrideMs ?? resolveAgentToolTimeoutMs(tool.name);
   const execute = tool.execute.bind(tool);
   return {
     ...tool,
