@@ -17,10 +17,16 @@ test('keeps embedded activity private and new-tab applications genuinely top-lev
   test.setTimeout(60000);
   let signals = 0;
   let standalone = false;
+  let pinned = false;
   let proxiedWorkers = 0;
   const sockets = new Set<Socket>();
   const pending = new Set<ServerResponse>();
   const app = createServer((req, res) => {
+    if (req.url === '/?check=api') {
+      res.setHeader('content-type', 'application/json');
+      res.end('{"root":true}');
+      return;
+    }
     if (req.url === '/worker.js') {
       proxiedWorkers++;
       res.setHeader('content-type', 'application/javascript');
@@ -94,6 +100,16 @@ Promise.all([
     for await (const chunk of req) text += chunk;
     if (JSON.parse(text).activity === true) signals++;
     res.setHeader('content-type', 'application/json');
+    if (pinned && JSON.parse(text).document === true) {
+      res.end(
+        JSON.stringify({
+          transport: 'document',
+          html: '<h1>Pinned application</h1><output></output><script>fetch("/?check=api").then(r=>r.json()).then(r=>document.querySelector("output").textContent=String(r.root))</script>',
+          expiresAt: Date.now() + 60000,
+        }),
+      );
+      return;
+    }
     res.end(
       JSON.stringify({
         transport: 'sdk',
@@ -198,6 +214,20 @@ Promise.all([
     expect(page.frames()).toHaveLength(1);
     await page.clock.runFor(31000);
     expect(signals).toBe(3); // Standalone navigation is not a learner activity signal.
+    pinned = true;
+    await page.goto(origin + '/__openmaic_preview#test-only-grant', {
+      waitUntil: 'domcontentloaded',
+    });
+    await expect(page.getByRole('heading', { name: 'Pinned application' })).toBeVisible();
+    await expect(page.locator('output')).toHaveText('true');
+    expect(page.url()).toBe(origin + '/__openmaic_document');
+    expect(page.frames()).toHaveLength(1);
+    await page.goto(`http://127.0.0.1:${backendPort}/host`, {
+      waitUntil: 'domcontentloaded',
+    });
+    const pinnedFrame = page.frameLocator('iframe[title="Preview"]').frameLocator('iframe');
+    await expect(pinnedFrame.getByRole('heading', { name: 'Pinned application' })).toBeVisible();
+    await expect(pinnedFrame.locator('output')).toHaveText('true');
   } finally {
     await page.goto('about:blank').catch(() => {});
     if (child && child.exitCode === null) {
@@ -223,7 +253,7 @@ test('reports actual nested document readiness and rejects child claims or faile
     gateway = 'http://preview-gateway.test';
   let mode = 'ready';
   let release!: () => void;
-  const image = new Promise<void>((resolve) => {
+  const parser = new Promise<void>((resolve) => {
     release = resolve;
   });
   await page.route(`${host}/**`, (route) =>
@@ -248,17 +278,17 @@ test('reports actual nested document readiness and rejects child claims or faile
       return mode === 'auth-error'
         ? route.fulfill({ status: 403 })
         : route.fulfill({ json: { activityKey: 'fixture-private-key', appOrigin: host } });
-    if (path === '/pending-image') {
-      await image;
-      return route.fulfill({ status: 204 });
+    if (path === '/pending-parser.js') {
+      await parser;
+      return route.fulfill({ contentType: 'text/javascript', body: '' });
     }
     if (mode === 'nested-error')
       return route.fulfill({ status: 403, contentType: 'text/plain', body: 'Access denied' });
     return route.fulfill({
       contentType: 'text/html; charset=utf-8',
-      body: `<!doctype html><p>Application document</p><img src="/pending-image"><script>
+      body: `<!doctype html><p>Application document</p><script>
       parent.parent.postMessage({type:'openmaic-preview-ready'},${JSON.stringify(host)});
-    </script>`,
+    </script><script src="/pending-parser.js"></script>`,
     });
   });
   try {
@@ -329,13 +359,13 @@ test('seals shell script execution while preserving nested readiness, input and 
         headers: { 'x-openmaic-preview-expires-at': String(Date.now() + 300000) },
       });
     }
-    if (path === '/pending-image') {
+    if (path === '/pending-parser.js') {
       await pending;
-      return route.fulfill({ status: 204 });
+      return route.fulfill({ contentType: 'text/javascript', body: '' });
     }
     return route.fulfill({
       contentType: 'text/html; charset=utf-8',
-      body: `<!doctype html><input aria-label="Application input"><output id="child-script">running</output><img src="/pending-image"><script>
+      body: `<!doctype html><input aria-label="Application input"><output id="child-script">running</output><script>
       window.attacks=[];window.leakedNonce=null;
       const outer=parent.document;
       const inject=(nonce,label)=>{const script=outer.createElement('script');if(nonce)script.nonce=nonce;
@@ -352,7 +382,7 @@ test('seals shell script execution while preserving nested readiness, input and 
       seal.content="script-src * 'unsafe-inline'";seal.remove();
       inject(outer.querySelector('script[nonce]').nonce,'removed-policy');
       setTimeout(()=>document.querySelector('#child-script').textContent='child callbacks work',10);
-    </script>`,
+    </script><script src="/pending-parser.js"></script>`,
     });
   });
   try {

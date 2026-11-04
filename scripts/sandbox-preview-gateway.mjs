@@ -283,14 +283,20 @@ const server = http.createServer(async (req, res) => {
       const { ticket } = JSON.parse(Buffer.concat(chunks).toString());
       if (typeof ticket !== 'string' || ticket.length > 4096 || !/^[-_a-zA-Z0-9.]+$/.test(ticket))
         throw new Error('Invalid ticket');
-      const target = await resolve(ticket, host);
+      const target = await resolve(ticket, host, false, true);
       res.writeHead(200, {
         'cache-control': 'no-store',
         'content-type': 'application/json',
         'set-cookie': previewAuthorizationCookies(cookieName, ticket, target.expiresAt),
       });
       // Bootstrap requires the raw signed ticket, never just the app's cookie.
-      res.end(JSON.stringify({ activityKey: activityKey(host), appOrigin: target.appOrigin }));
+      res.end(
+        JSON.stringify({
+          activityKey: activityKey(host),
+          appOrigin: target.appOrigin,
+          standaloneDocument: target.transport === 'document',
+        }),
+      );
       return;
     }
     if (path.pathname === '/__openmaic_activity') {
@@ -335,7 +341,8 @@ const server = http.createServer(async (req, res) => {
     if (!['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(req.method))
       throw new Error('Unsupported method');
     const ticket = token(req);
-    const document = path.pathname === '/' && ['GET', 'HEAD'].includes(req.method);
+    const document =
+      path.pathname === '/__openmaic_document' && ['GET', 'HEAD'].includes(req.method);
     const target = await resolve(ticket, host, false, document);
     if (target.transport === 'document') {
       res.writeHead(200, {

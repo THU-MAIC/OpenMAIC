@@ -550,6 +550,26 @@ export class SandboxService {
     );
   }
 
+  /** Fence acceptance of a slow probe against workspace writers using only database I/O. */
+  async assertApplicationObservation(id: string, epoch: number, commandId: string) {
+    await this.mutation(id, 'command');
+    await this.store.exclusive(id, async () => {
+      const row = await this.running(id);
+      if (row.preview_epoch !== epoch)
+        throw sandboxConflict(
+          'Workspace was stopped. Refresh before continuing.',
+          'WORKSPACE_STOPPED',
+        );
+      await this.store.assertRecordedIdle(row, { allowApplications: true });
+      const command = await this.store.command(row, commandId);
+      if (!command || !['starting', 'running', 'unknown'].includes(command.state))
+        throw sandboxConflict(
+          'The application changed during the status check.',
+          'PROGRESS_CHANGED',
+        );
+    });
+  }
+
   async startCommand(id: string, body: Record<string, unknown>, epoch?: number) {
     await this.mutation(id, 'command');
     return this.store.exclusive(id, () => this.startCommandUnlocked(id, body, epoch));

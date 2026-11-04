@@ -43,6 +43,7 @@ const mock = vi.hoisted(() => ({
   scope: vi.fn(),
   command: vi.fn(),
   observe: vi.fn(),
+  assertObservation: vi.fn(),
   paths: ['app.py'],
   files: { 'app.py': 'pass\n' } as Record<string, string>,
 }));
@@ -99,6 +100,7 @@ const service = {
   },
   command: mock.command,
   observeApplication: mock.observe,
+  assertApplicationObservation: mock.assertObservation,
   startCommand: async () => ({
     state: 'exited',
     exitCode: 0,
@@ -262,6 +264,15 @@ describe('declared project applications', () => {
         });
     },
   );
+  it('rejects apparently healthy status when a source writer has not published its revision', async () => {
+    mock.project.application!.frontendPath = 'src/web/index.html';
+    await applicationRequest(owner, request());
+    const busy = { status: 409, reason: 'ENVIRONMENT_BUSY' };
+    mock.assertObservation.mockRejectedValueOnce(busy);
+    await expect(applicationRequest(owner, request('status'))).rejects.toMatchObject(busy);
+    expect(mock.row.revision).toBe(request().revision);
+    expect(mock.assertObservation).toHaveBeenLastCalledWith(env, mock.epoch, mock.starts[0]);
+  });
   it('checks shutdown-created source paths before recording or dispatching a new writer', async () => {
     mock.stop.mockImplementationOnce(async () => {
       mock.files = Object.fromEntries(

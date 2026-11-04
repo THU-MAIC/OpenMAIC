@@ -228,10 +228,10 @@ const controlled=new URL(location.href).searchParams.get('openmaic-input')==='1'
 const scriptSeal=document.createElement('meta');scriptSeal.httpEquiv='Content-Security-Policy';scriptSeal.content="script-src 'none'";document.head.append(scriptSeal);
 let ticket=location.hash.slice(1);history.replaceState(null,'','/__openmaic_preview');
 fetch('/__openmaic_authorize',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({ticket})})
-.then(async r=>{ticket='';if(!r.ok)throw Error();if(window.top===window){location.replace('/');return;}const {activityKey,appOrigin}=await r.json();if(typeof activityKey!=='string')throw Error();const frame=document.createElement('iframe');frame.title='Application';
+.then(async r=>{ticket='';if(!r.ok)throw Error();const {activityKey,appOrigin,standaloneDocument}=await r.json();const documentPath=standaloneDocument===true?'/__openmaic_document':'/';if(window.top===window){location.replace(documentPath);return;}if(typeof activityKey!=='string')throw Error();const frame=document.createElement('iframe');frame.title='Application';
 const prepareDocument=(${installPreviewActivity.toString()})(frame,activityKey,appOrigin,controlled);
 if(controlled)frame.style.visibility='hidden';
-(${installPreviewReadiness.toString()})(frame,appOrigin,prepareDocument);frame.src='/';document.getElementById('status').remove();document.body.append(frame);})
+(${installPreviewReadiness.toString()})(frame,appOrigin,prepareDocument);frame.src=documentPath;document.getElementById('status').remove();document.body.append(frame);})
 .catch(()=>{document.getElementById('status').textContent='Access expired. Reopen from OpenMAIC.';
 // Before authorization there is no configured appOrigin. This static failure
 // contains no credential or application data and cannot grant readiness/activity.

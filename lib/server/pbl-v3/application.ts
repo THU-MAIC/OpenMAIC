@@ -241,6 +241,8 @@ async function observeStandaloneApplication(
     const currentRun = await lastRun(store, row);
     if (currentRun?.commandId !== run?.commandId)
       throw sandboxConflict('The application changed during the status check.', 'PROGRESS_CHANGED');
+    if (run && (observation.state === 'running' || observation.state === 'starting'))
+      await service.assertApplicationObservation(environmentId, run.epoch, run.commandId);
     return observation;
   });
 }

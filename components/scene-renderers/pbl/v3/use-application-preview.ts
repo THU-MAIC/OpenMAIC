@@ -40,7 +40,11 @@ async function waitForApplication(
         if (
           !(error instanceof SandboxRequestError) ||
           (error.reason !== 'ENVIRONMENT_BUSY' &&
-            !(retryStudyContention && error.reason === 'STUDY_BUSY')) ||
+            !(
+              retryStudyContention &&
+              (error.reason === 'STUDY_BUSY' ||
+                (input.action === 'status' && error.reason === 'WORKSPACE_COMMAND_ACTIVE'))
+            )) ||
           contention >= contentionRetries
         )
           throw error;

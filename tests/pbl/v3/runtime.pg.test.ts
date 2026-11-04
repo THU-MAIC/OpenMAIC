@@ -10699,6 +10699,53 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     },
     15000,
   );
+  it('fences standalone preview status against in-flight and recorded workspace writers', async () => {
+    const fresh = await freshStudy();
+    const row = await store.get(fresh.id, principal.ownerId);
+    const environmentId = row.environment_id!;
+    const sandbox = await SandboxService.forOwner(principal);
+    const sandboxStore = await SandboxStore.open();
+    const applicationId = randomUUID();
+    const writerId = randomUUID();
+    const running = { id: applicationId, state: 'running' };
+    const fence = () =>
+      withLearningWorkspaceAccess(
+        {
+          ownerId: principal.ownerId,
+          workspaceId: learningWorkspaceId(row.id),
+          environmentIds: () => [environmentId],
+          operations: ['command'],
+        },
+        () => sandbox.assertApplicationObservation(environmentId, 0, applicationId),
+      );
+    try {
+      await pool.query(
+        "INSERT INTO sandbox_commands(environment_id,id,request_fingerprint,purpose,result_json) VALUES ($1,$2,'fixture','application',$3)",
+        [environmentId, applicationId, JSON.stringify(running)],
+      );
+      await expect(fence()).resolves.toBeUndefined();
+      await sandboxStore.exclusive(environmentId, async () => {
+        await expect(fence()).rejects.toMatchObject({ reason: 'ENVIRONMENT_BUSY' });
+      });
+      await pool.query(
+        "INSERT INTO sandbox_commands(environment_id,id,request_fingerprint) VALUES ($1,$2,'writer')",
+        [environmentId, writerId],
+      );
+      await expect(fence()).rejects.toMatchObject({ reason: 'WORKSPACE_COMMAND_ACTIVE' });
+      await pool.query(
+        'UPDATE sandbox_commands SET result_json=$3 WHERE environment_id=$1 AND id=$2',
+        [environmentId, writerId, JSON.stringify({ state: 'exited' })],
+      );
+      await expect(fence()).resolves.toBeUndefined();
+    } finally {
+      await pool.query(
+        'DELETE FROM sandbox_commands WHERE environment_id=$1 AND id=ANY($2::text[])',
+        [environmentId, [applicationId, writerId]],
+      );
+      await releasePreparationFixtures([row.id]);
+    }
+  });
+
   it('gives each role read-only application diagnostics without shared chat or execution privileges', async () => {
     const originalStudy = studyId,
       originalApplication = project.application;
