@@ -102,11 +102,12 @@ function ApplicationPreviewContent({
     observation?.state === 'running' &&
     !previous &&
     currentReady;
+  const paused = standalone && currentReady && observation?.state === 'running' && preview.updating;
   const updating =
     !expired &&
     !error &&
     (standalone
-      ? preview.open && !currentReady
+      ? preview.open && (!currentReady || paused)
       : mounted && (preview.updating || !!previous || !currentReady));
   // Modal presentation pauses input only. Readiness and candidate promotion
   // continue independently; closing a tour must never launch a replacement.
@@ -388,11 +389,13 @@ function ApplicationPreviewContent({
         >
           <LoaderCircle size={14} className="shrink-0 animate-spin" />
           {t(
-            standalone
+            standalone && !currentReady
               ? 'common.loading'
               : preview.dirty
                 ? 'pblV3.application.saveFirst'
-                : 'pblV3.application.updating',
+                : paused && disabled
+                  ? 'pblV3.application.wait'
+                  : 'pblV3.application.updating',
           )}
         </p>
       )}

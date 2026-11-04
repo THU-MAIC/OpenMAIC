@@ -133,7 +133,7 @@ it.each([429, 500, 502, 503, 504])(
 
 it('keeps new tabs top-level and clears the ticket before redirecting or mounting framed app HTML', () => {
   const html = previewShell('test-nonce');
-  expect(html).toContain("standaloneDocument===true?'/__openmaic_document':'/'");
+  expect(html).toContain("standaloneDocument===true?'/?__openmaic_document=1':'/'");
   expect(html).toContain('frame.src=documentPath');
   expect(html).toContain('nonce="test-nonce"');
   expect(html).toContain('if(window.top===window){location.replace(documentPath);return;}');

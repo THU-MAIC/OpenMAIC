@@ -343,14 +343,17 @@ const server = http.createServer(async (req, res) => {
     if (!['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(req.method))
       throw new Error('Unsupported method');
     const ticket = token(req);
-    const document =
-      path.pathname === '/__openmaic_document' && ['GET', 'HEAD'].includes(req.method);
+    // Keep the browser document at the application root: GET forms replace its
+    // query, while implicit POST forms retain it. The selector is never forwarded.
+    const documentUrl = path.pathname === '/' && path.search === '?__openmaic_document=1';
+    const document = documentUrl && ['GET', 'HEAD'].includes(req.method);
     const target = await resolve(ticket, host, false, document);
     if (target.transport === 'document') {
       res.writeHead(200, {
         'content-type': 'text/html; charset=utf-8',
         'cache-control': 'no-store',
-        'referrer-policy': 'no-referrer',
+        // Same-origin form POSTs need their Origin; cross-origin referrers remain suppressed.
+        'referrer-policy': 'same-origin',
         'x-content-type-options': 'nosniff',
         'content-security-policy':
           "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'",
@@ -361,7 +364,7 @@ const server = http.createServer(async (req, res) => {
     // Use only path/query: a client request can never select the upstream host or port.
     const url = new URL(target.url);
     url.pathname = path.pathname;
-    url.search = path.search;
+    url.search = documentUrl ? '' : path.search;
     if (Number(req.headers['content-length'] ?? 0) > maxBody) {
       fail(res, 413);
       return;

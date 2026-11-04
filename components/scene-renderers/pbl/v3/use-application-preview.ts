@@ -128,6 +128,12 @@ export function useApplicationPreview(
     request: ApplicationLaunch;
   } | null>(null);
   const applicationDeclared = !!view?.application;
+  // Quiz narration is read-only. Recover the app stopped by tests while it streams.
+  const quizNarration =
+    standaloneFrontend &&
+    view?.role === 'mentor' &&
+    view.stage?.kind === 'check' &&
+    view.stage.checker === 'quiz';
   const trigger = useRef<HTMLButtonElement | null>(null);
   const setTrigger = useCallback((element: HTMLButtonElement | null) => {
     trigger.current = element;
@@ -494,7 +500,7 @@ export function useApplicationPreview(
       refreshNeeded &&
       !deferAutomatic &&
       !disabled &&
-      (!view?.busy || reviewReady) &&
+      (!view?.busy || reviewReady || quizNarration) &&
       !pending &&
       !expired &&
       (!document || document.expiresAt > Date.now())
@@ -512,6 +518,7 @@ export function useApplicationPreview(
     load,
     view?.busy,
     reviewReady,
+    quizNarration,
   ]);
   const renew = useCallback(
     (expiresAt: number) => {

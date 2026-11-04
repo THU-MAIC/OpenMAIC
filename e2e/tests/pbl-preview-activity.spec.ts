@@ -21,7 +21,18 @@ test('keeps embedded activity private and new-tab applications genuinely top-lev
   let proxiedWorkers = 0;
   const sockets = new Set<Socket>();
   const pending = new Set<ServerResponse>();
-  const app = createServer((req, res) => {
+  const app = createServer(async (req, res) => {
+    if (
+      req.url === '/?case=get' ||
+      req.url === '/?case=relative' ||
+      (req.method === 'POST' && req.url === '/')
+    ) {
+      let body = '';
+      for await (const chunk of req) body += String(chunk);
+      res.setHeader('content-type', 'text/plain');
+      res.end(`${req.method} ${req.url} ${body}`.trim());
+      return;
+    }
     if (req.url === '/?check=api') {
       res.setHeader('content-type', 'application/json');
       res.end('{"root":true}');
@@ -104,7 +115,11 @@ Promise.all([
       res.end(
         JSON.stringify({
           transport: 'document',
-          html: '<h1>Pinned application</h1><output></output><script>fetch("/?check=api").then(r=>r.json()).then(r=>document.querySelector("output").textContent=String(r.root))</script>',
+          html: `<h1>Pinned application</h1><output></output>
+<form><input type="hidden" name="case" value="get"><button>Implicit GET</button></form>
+<form method="post"><input type="hidden" name="case" value="post"><button>Implicit POST</button></form>
+<form action="?case=relative" method="post"><button>Relative POST</button></form>
+<script>fetch("/?check=api").then(r=>r.json()).then(r=>document.querySelector("output").textContent=String(r.root))</script>`,
           expiresAt: Date.now() + 60000,
         }),
       );
@@ -220,7 +235,7 @@ Promise.all([
     });
     await expect(page.getByRole('heading', { name: 'Pinned application' })).toBeVisible();
     await expect(page.locator('output')).toHaveText('true');
-    expect(page.url()).toBe(origin + '/__openmaic_document');
+    expect(page.url()).toBe(origin + '/?__openmaic_document=1');
     expect(page.frames()).toHaveLength(1);
     await page.goto(`http://127.0.0.1:${backendPort}/host`, {
       waitUntil: 'domcontentloaded',
@@ -228,6 +243,18 @@ Promise.all([
     const pinnedFrame = page.frameLocator('iframe[title="Preview"]').frameLocator('iframe');
     await expect(pinnedFrame.getByRole('heading', { name: 'Pinned application' })).toBeVisible();
     await expect(pinnedFrame.locator('output')).toHaveText('true');
+    await pinnedFrame.getByRole('button', { name: 'Implicit GET' }).click();
+    await expect(pinnedFrame.getByText('GET /?case=get')).toBeVisible();
+    for (const [name, response] of [
+      ['Implicit POST', 'POST / case=post'],
+      ['Relative POST', 'POST /?case=relative'],
+    ]) {
+      await page.goto(origin + '/__openmaic_preview#test-only-grant', {
+        waitUntil: 'domcontentloaded',
+      });
+      await page.getByRole('button', { name }).click();
+      await expect(page.getByText(response)).toBeVisible();
+    }
   } finally {
     await page.goto('about:blank').catch(() => {});
     if (child && child.exitCode === null) {

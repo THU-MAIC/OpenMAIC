@@ -46,7 +46,7 @@ never-ready document. A successfully ready document still keeps its client state
 when the process is unchanged. Explicit reopen rechecks pending source recovery, including
 when its preceding automatic status response crossed the grant-expiry boundary.
 
-The owned gateway shell loads standalone HTML from a reserved document route so the application can use its root path for API requests. Standalone bootstrap checks the signed binding before setting the cookie. Serving the document still validates the live provider. Legacy applications still load from their own root. The shell reports readiness only after its nested same-origin HTML
+The owned gateway shell loads standalone HTML from the root URL with a reserved query selector. Root API requests and ordinary forms reach the application; the selector is stripped from implicit POST submissions. Standalone bootstrap checks the signed binding before setting the cookie. Serving the document still validates the live provider. Legacy applications still load from their own root. The shell reports readiness only after its nested same-origin HTML
 document completes. Workbench promotion checks the exact current candidate window
 and isolated origin; an application frame's own messages cannot promote it. Shell
 load and authorization alone are insufficient. Auth/load failures retain the old
