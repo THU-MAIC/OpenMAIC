@@ -25,16 +25,17 @@ async function waitForApplication(
   assertCurrent: () => void = () => signal.throwIfAborted(),
   acknowledge?: () => void,
   retryStudyContention = false,
+  observeAfterLaunch = false,
 ) {
   assertCurrent();
   // A busy response can be reconciled with the same request and durable launch receipt.
   // Network failures have no such acknowledgement and require explicit recovery.
   const contentionRetries = retryStudyContention ? 30 : 2;
-  const observe = async () => {
+  const observe = async (input = request) => {
     for (let contention = 0; ; contention++) {
       assertCurrent();
       try {
-        return await pblRequest<ApplicationObservation>('/api/pbl/v3/application', request, signal);
+        return await pblRequest<ApplicationObservation>('/api/pbl/v3/application', input, signal);
       } catch (error) {
         if (
           !(error instanceof SandboxRequestError) ||
@@ -51,17 +52,18 @@ async function waitForApplication(
   acknowledge?.();
   assertCurrent();
   const deadline = Date.now() + 20_000;
+  const readinessRequest = observeAfterLaunch ? { ...request, action: 'status' as const } : request;
   for (
     let retry = 0;
     result.state === 'starting' &&
     retry < 20 &&
     Date.now() < deadline &&
-    !(request.action === 'status' && result.sourceChanged);
+    !(readinessRequest.action === 'status' && result.sourceChanged);
     retry++
   ) {
     await new Promise((resolve) => setTimeout(resolve, 500));
     assertCurrent();
-    result = await observe();
+    result = await observe(readinessRequest);
     acknowledge?.();
     assertCurrent();
   }
@@ -346,6 +348,7 @@ export function useApplicationPreview(
             if (unresolvedLaunch.current === launch) unresolvedLaunch.current = null;
           },
           standaloneFrontend && (request.action === 'open' || recovery === 'automatic'),
+          standaloneFrontend,
         );
         if (serial === attempt.current) {
           observedRevision.current = view.revision;

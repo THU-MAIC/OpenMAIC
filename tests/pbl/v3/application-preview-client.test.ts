@@ -177,6 +177,38 @@ it('keeps a running standalone preview usable during a revision status check tha
     await f.cleanup();
   }
 });
+it('checks readiness without replaying an acknowledged standalone launch', async () => {
+  vi.useFakeTimers();
+  const current: LearningView = {
+    ...view,
+    application: { ...view.application!, standaloneFrontend: true },
+  };
+  mocks.request.mockImplementation((_url, input) =>
+    input.action === 'frontend'
+      ? running
+      : {
+          state: input.action === 'open' ? 'starting' : 'running',
+          observedAt: '',
+        },
+  );
+  const f = await fixture();
+  try {
+    await act(async () => f.root.render(createElement(Harness, { current, automatic: true })));
+    const frame = f.host.querySelector('iframe')!;
+    await act(async () => frame.dispatchEvent(new Event('load')));
+    expect(frame.hasAttribute('inert')).toBe(true);
+    await act(async () => vi.advanceTimersByTimeAsync(500));
+    expect(mocks.request.mock.calls.map(([, input]) => input.action).sort()).toEqual([
+      'frontend',
+      'open',
+      'status',
+    ]);
+    expect(f.host.querySelector('iframe')).toBe(frame);
+    expect(frame.hasAttribute('inert')).toBe(false);
+  } finally {
+    await f.cleanup();
+  }
+});
 it('restores the preview at the write review checkpoint while the reply is still streaming', async () => {
   mocks.request.mockResolvedValue(running);
   const f = await fixture();

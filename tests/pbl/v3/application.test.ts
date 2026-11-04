@@ -42,6 +42,7 @@ const mock = vi.hoisted(() => ({
   stop: vi.fn(),
   scope: vi.fn(),
   command: vi.fn(),
+  observe: vi.fn(),
   paths: ['app.py'],
   files: { 'app.py': 'pass\n' } as Record<string, string>,
 }));
@@ -97,6 +98,7 @@ const service = {
     return { state: mock.state };
   },
   command: mock.command,
+  observeApplication: mock.observe,
   startCommand: async () => ({
     state: 'exited',
     exitCode: 0,
@@ -124,7 +126,9 @@ vi.mock('@/lib/server/pbl-v3/runtime', () => ({
 }));
 vi.mock('@/lib/server/pbl-v3/environment', () => ({
   assertEnvironmentReady: vi.fn(),
-  assertEnvironmentWritable: vi.fn(),
+  assertEnvironmentWritable: async () => {
+    if (mock.row.released) throw Error('Environment released');
+  },
   touchEnvironment: async () => ({ state: 'running', workspaceReady: true }),
   environmentReleaseCommitted: (row: StudyFixture) => !!row.released,
 }));
@@ -180,6 +184,7 @@ beforeEach(() => {
     },
   };
   mock.exclusive.mockImplementation(async (_id: string, run: () => Promise<unknown>) => run());
+  mock.observe.mockResolvedValue(JSON.stringify({ sourceHash: 'new-source', httpStatus: 200 }));
   mock.command.mockImplementation(async () => ({
     state: mock.state,
     stdout: '',
@@ -189,6 +194,74 @@ beforeEach(() => {
 });
 
 describe('declared project applications', () => {
+  it.each(['status', 'open'])(
+    'keeps the study lock available while a standalone %s probe waits',
+    async (action) => {
+      mock.project.application!.frontendPath = 'src/web/index.html';
+      if (action === 'status') await applicationRequest(owner, request());
+      let locked = false;
+      mock.exclusive.mockImplementation(async (_id: string, run: () => Promise<unknown>) => {
+        if (locked) throw Error('study lock busy');
+        locked = true;
+        try {
+          return await run();
+        } finally {
+          locked = false;
+        }
+      });
+      let enter!: () => void;
+      const entered = new Promise<void>((resolve) => {
+        enter = resolve;
+      });
+      let release!: (body: string) => void;
+      mock.observe.mockImplementationOnce(
+        () =>
+          new Promise<string>((resolve) => {
+            release = resolve;
+            enter();
+          }),
+      );
+      const observing = applicationRequest(owner, request(action));
+      await Promise.race([entered, observing]);
+      try {
+        await expect(mock.exclusive(study, async () => 'learner can proceed')).resolves.toBe(
+          'learner can proceed',
+        );
+      } finally {
+        release(JSON.stringify({ sourceHash: 'new-source', httpStatus: 200 }));
+      }
+      await expect(observing).resolves.toMatchObject({ state: 'running' });
+    },
+  );
+
+  it.each(['revision', 'epoch', 'stopped', 'replacement', 'assessment', 'release'] as const)(
+    'discards a standalone probe result when %s changes while it is running',
+    async (change) => {
+      mock.project.application!.frontendPath = 'src/web/index.html';
+      await applicationRequest(owner, request());
+      mock.observe.mockImplementationOnce(async () => {
+        if (change === 'revision') mock.row.revision++;
+        if (change === 'epoch') mock.epoch++;
+        if (change === 'stopped') mock.state = 'exited';
+        if (change === 'assessment') mock.row.evaluation = {};
+        if (change === 'release') mock.row.released = true;
+        if (change === 'replacement') {
+          const original = [...mock.receipts.values()][0]!;
+          mock.receipts.set('application:new', {
+            ...original,
+            result: { ...original.result, commandId: 'new', launchSequence: 2 },
+          });
+        }
+        return JSON.stringify({ sourceHash: 'new-source', httpStatus: 200 });
+      });
+      if (change === 'release')
+        await expect(applicationRequest(owner, request('status'))).rejects.toThrow();
+      else
+        await expect(applicationRequest(owner, request('status'))).rejects.toMatchObject({
+          status: 409,
+        });
+    },
+  );
   it('checks shutdown-created source paths before recording or dispatching a new writer', async () => {
     mock.stop.mockImplementationOnce(async () => {
       mock.files = Object.fromEntries(

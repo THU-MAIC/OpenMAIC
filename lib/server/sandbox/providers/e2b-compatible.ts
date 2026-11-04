@@ -280,6 +280,27 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
     }
   }
 
+  async observeApplication(
+    resourceId: string,
+    operationId: string,
+    command: string,
+    signal?: AbortSignal,
+  ) {
+    const sandbox = await this.connect(resourceId, operationId, signal);
+    try {
+      const result = await sandbox.commands.run(command, {
+        cwd: WORKSPACE_ROOT,
+        timeoutMs: 5_000,
+        requestTimeoutMs: 8_000,
+        signal,
+      });
+      return result.stdout;
+    } catch (error) {
+      if (error instanceof CommandExitError) return '';
+      throw error;
+    }
+  }
+
   async startCommand(resourceId: string, operationId: string, input: SandboxCommandInput) {
     const sandbox = await this.connect(resourceId, operationId);
     const spec = Buffer.from(JSON.stringify(input)).toString('base64');

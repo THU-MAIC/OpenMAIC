@@ -102,18 +102,19 @@ async function applicationCommand(
     : null;
 }
 
-/** Called under the study lock and a narrow, lease-fenced command scope. Never starts an app. */
+/** Runs a fixed probe in a narrow command scope. Never starts an app. */
 export async function inspectApplication(
   store: LearningStore,
   row: Study,
   service: SandboxService,
   signal?: AbortSignal,
+  capturedRun?: { run: ApplicationRun | null },
 ): Promise<ApplicationObservation> {
   const application = projectFor(row).application;
   if (!application) throw sandboxInvalid('This project does not declare an application.');
   const observedAt = new Date().toISOString(),
     environmentId = requireEnvironment(row);
-  const run = await lastRun(store, row);
+  const run = capturedRun ? capturedRun.run : await lastRun(store, row);
   if (!run || run.epoch !== (await service.workspaceEpoch(environmentId)))
     return { observedAt, state: 'stopped' };
   const command = await applicationCommand(store, row, run, service, signal);
@@ -129,33 +130,43 @@ export async function inspectApplication(
       exitCode: command.exitCode,
       output: (command.stdout + '\n' + command.stderr).slice(-2000).trim(),
     };
-  const id = randomUUID();
-  let probe = await service.startCommand(
-    environmentId,
-    {
-      requestId: id,
-      command: applicationProbeCommand(
-        await projectFiles(service, environmentId, projectFor(row), signal),
-        application.port,
-        application.healthPath,
-      ),
-      timeoutMs: 5_000,
-    },
-    run.epoch,
-  );
-  const deadline = Date.now() + 8_000;
-  while (active(probe.state) && Date.now() < deadline) {
-    await delay(100, undefined, { signal });
-    probe = await service.command(environmentId, id, signal);
-  }
-  if (active(probe.state)) {
-    await service.cancelCommand(environmentId, id);
-    return { observedAt, state: 'unknown' };
+  const paths = await projectFiles(service, environmentId, projectFor(row), signal);
+  let stdout: string;
+  if (capturedRun) {
+    stdout = await service.observeApplication(
+      environmentId,
+      run.epoch,
+      paths,
+      application.port,
+      application.healthPath,
+      signal,
+    );
+  } else {
+    const id = randomUUID();
+    let probe = await service.startCommand(
+      environmentId,
+      {
+        requestId: id,
+        command: applicationProbeCommand(paths, application.port, application.healthPath),
+        timeoutMs: 5_000,
+      },
+      run.epoch,
+    );
+    const deadline = Date.now() + 8_000;
+    while (active(probe.state) && Date.now() < deadline) {
+      await delay(100, undefined, { signal });
+      probe = await service.command(environmentId, id, signal);
+    }
+    if (active(probe.state)) {
+      await service.cancelCommand(environmentId, id);
+      return { observedAt, state: 'unknown' };
+    }
+    stdout = probe.stdout;
   }
   try {
     const data = z
       .object({ sourceHash: z.string(), httpStatus: z.number().int().optional() })
-      .parse(JSON.parse(probe.stdout));
+      .parse(JSON.parse(stdout));
     return {
       observedAt,
       state: data.httpStatus === undefined ? 'starting' : 'running',
@@ -177,6 +188,63 @@ const requestSchema = z
     action: z.enum(['open', 'restart', 'status', 'stop', 'frontend']),
   })
   .strict();
+type ApplicationRequest = z.infer<typeof requestSchema>;
+
+function assertObservationRevision(row: Study, request: ApplicationRequest) {
+  if (row.environment_id !== request.environmentId || row.revision !== request.revision)
+    throw sandboxConflict(
+      'The learning workspace changed. Refresh before continuing.',
+      'PROGRESS_CHANGED',
+    );
+  if (row.evaluation) throw sandboxConflict('Wait for the current assessment.', 'STUDY_BUSY');
+}
+
+async function observeStandaloneApplication(
+  store: LearningStore,
+  row: Study,
+  service: SandboxService,
+  request: ApplicationRequest,
+): Promise<ApplicationObservation> {
+  const environmentId = request.environmentId;
+  const scope = {
+    ownerId: row.owner_id,
+    workspaceId: learningWorkspaceId(row.id),
+    environmentIds: () => [environmentId],
+    operations: ['command'] as const,
+  };
+  const assertCurrent = async () => {
+    const current = await store.get(row.id, row.owner_id);
+    assertObservationRevision(current, request);
+    await assertEnvironmentWritable(store, row.id, row.owner_id, environmentId);
+    assertEnvironmentReady(await service.get(environmentId));
+    if ((await service.workspaceEpoch(environmentId)) !== request.epoch)
+      throw sandboxConflict(
+        'Workspace was stopped. Refresh before continuing.',
+        'WORKSPACE_STOPPED',
+      );
+  };
+  return withLearningWorkspaceAccess(scope, async () => {
+    await assertCurrent();
+    const run = await lastRun(store, row);
+    const observation = await inspectApplication(store, row, service, undefined, { run });
+    // A source writer can stop the application before it commits a new teaching revision.
+    // Recheck the process as well as the revision and launch receipt.
+    if (run && (observation.state === 'running' || observation.state === 'starting')) {
+      const command = await applicationCommand(store, row, run, service);
+      if (!command || !active(command.state))
+        throw sandboxConflict(
+          'The application changed during the status check.',
+          'PROGRESS_CHANGED',
+        );
+    }
+    await assertCurrent();
+    const currentRun = await lastRun(store, row);
+    if (currentRun?.commandId !== run?.commandId)
+      throw sandboxConflict('The application changed during the status check.', 'PROGRESS_CHANGED');
+    return observation;
+  });
+}
+
 export async function applicationRequest(principal: OwnerPrincipal, input: unknown) {
   const parsed = requestSchema.safeParse(input);
   if (!parsed.success)
@@ -207,7 +275,17 @@ export async function applicationRequest(principal: OwnerPrincipal, input: unkno
       }),
     );
   }
-  return store.exclusive(request.studyId, async () => {
+  if (request.action === 'status') {
+    const row = await store.get(request.studyId, principal.ownerId);
+    if (projectFor(row).application?.frontendPath)
+      return observeStandaloneApplication(
+        store,
+        row,
+        await SandboxService.forOwner(principal),
+        request,
+      );
+  }
+  const result = await store.exclusive(request.studyId, async () => {
     const row = await store.get(request.studyId, principal.ownerId),
       application = projectFor(row).application;
     if (!application) throw sandboxInvalid('This project does not declare an application.');
@@ -321,16 +399,17 @@ export async function applicationRequest(principal: OwnerPrincipal, input: unkno
           }
           await store.recordActivity(row.id, row.owner_id);
         }
+        if (application.frontendPath)
+          return () => observeStandaloneApplication(store, row, service, request);
         const observation = await inspectApplication(store, row, service);
         return {
           ...observation,
-          ...(!application.frontendPath &&
-          request.action !== 'status' &&
-          observation.state === 'running'
+          ...(request.action !== 'status' && observation.state === 'running'
             ? { preview: await service.preview(environmentId, application.port, request.epoch) }
             : {}),
         };
       },
     );
   });
+  return typeof result === 'function' ? result() : result;
 }

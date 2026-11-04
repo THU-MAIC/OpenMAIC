@@ -523,6 +523,33 @@ export class SandboxService {
     return (await this.binding(id)).preview_epoch;
   }
 
+  /** Server-only status probe. Accept data for the fixed probe, never caller-supplied shell. */
+  async observeApplication(
+    id: string,
+    epoch: number,
+    paths: string[],
+    port: number,
+    healthPath: string,
+    signal?: AbortSignal,
+  ) {
+    await this.mutation(id, 'command');
+    const row = await this.running(id);
+    if (row.preview_epoch !== epoch)
+      throw sandboxConflict(
+        'Workspace was stopped. Refresh before continuing.',
+        'WORKSPACE_STOPPED',
+      );
+    if (!this.provider.observeApplication)
+      throw new SandboxError('SANDBOX_UNSUPPORTED', 422, 'Application observation is unavailable.');
+    const { applicationProbeCommand } = await import('@/lib/server/pbl-v3/application-command');
+    return this.provider.observeApplication(
+      row.resource_id,
+      row.id,
+      applicationProbeCommand(paths, port, healthPath),
+      signal,
+    );
+  }
+
   async startCommand(id: string, body: Record<string, unknown>, epoch?: number) {
     await this.mutation(id, 'command');
     return this.store.exclusive(id, () => this.startCommandUnlocked(id, body, epoch));
