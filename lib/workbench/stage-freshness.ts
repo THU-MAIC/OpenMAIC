@@ -280,7 +280,7 @@ export function sameStageRoster(left: StageRoster, right: StageRoster): boolean 
 }
 
 /** Deep equality of two JSON values, regardless of object member order. */
-function sameJsonValue(left: unknown, right: unknown): boolean {
+export function sameJsonValue(left: unknown, right: unknown): boolean {
   if (left === right) return true;
   if (Array.isArray(left) || Array.isArray(right)) {
     if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {

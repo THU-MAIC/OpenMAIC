@@ -32,6 +32,7 @@ import { migrateSlideContent } from '@/lib/edit/slide-schema';
 import type { SlideEditHistory } from '@/lib/edit/slide-ops';
 import { useStageStore } from '@/lib/store/stage';
 import type { SlideContent } from '@/lib/types/stage';
+import { sameJsonValue } from '@/lib/workbench/stage-freshness';
 
 interface SlideEditSessionState {
   sceneId: string | null;
@@ -63,7 +64,7 @@ interface SlideEditSessionState {
   setGestureActive: (active: boolean) => void;
   /**
    * Follow the stage store when something other than this session changed the
-   * scene (the freshness sync taking a server copy). The undo timeline is kept.
+   * scene (the freshness sync taking a server copy). The undo steps are kept.
    */
   adoptStoreContent: (sceneId: string, content: SlideContent) => void;
   undo: () => void;
@@ -180,7 +181,10 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
       const { sceneId: currentSceneId, history } = get();
       if (!history || currentSceneId !== sceneId) return;
       if (content === history.present || content === lastWritten) return;
-      set({ history: { ...history, present: migrateSlideContent(content) } });
+      // Another writer's content: a redo step would put the page it replaced back.
+      // The same content read back (a save's own echo) leaves the timeline alone.
+      const future = sameJsonValue(history.present, content) ? history.future : [];
+      set({ history: { ...history, present: migrateSlideContent(content), future } });
     },
 
     undo: () => {

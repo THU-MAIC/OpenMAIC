@@ -168,4 +168,38 @@ describe('a slide open in the editor when its scene changes on the server', () =
     act(() => useSlideEditSession.getState().redo());
     expect(storedText().left).toBe(321);
   });
+
+  it('keeps the redo step across an echo whose members come back in another order', () => {
+    act(() =>
+      useSlideEditSession.getState().applyOp({
+        type: 'element.update',
+        elementId: 'text-1',
+        patch: { left: 321 },
+      }),
+    );
+    act(() => useSlideEditSession.getState().undo());
+
+    // A database JSON column does not keep member order.
+    const { canvas, ...rest } = structuredClone(storedScene().content) as SlideContent;
+    serverCopyArrives({ canvas, ...rest }, 'old narration');
+
+    expect(useSlideEditSession.getState().history!.future).toHaveLength(1);
+  });
+
+  it('drops the redo step when the server copy differs, so redo cannot bring back the old page', () => {
+    act(() =>
+      useSlideEditSession.getState().applyOp({
+        type: 'element.update',
+        elementId: 'text-1',
+        patch: { left: 321 },
+      }),
+    );
+    act(() => useSlideEditSession.getState().undo());
+
+    serverCopyArrives(slideWith('agent content', 47), 'agent narration');
+    act(() => useSlideEditSession.getState().redo());
+
+    expect(storedText().content).toBe('agent content');
+    expect(storedText().left).not.toBe(321);
+  });
 });
