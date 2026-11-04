@@ -36,6 +36,7 @@
  */
 import {
   AssetNotFoundError,
+  AssetImmutableError,
   type AssetIdentity,
   type AssetBytes,
   type AssetIndirectRead,
@@ -105,6 +106,7 @@ async function foreignReadablePrincipal(
        FROM asset_entries e
       WHERE e.id = $1
         AND e.principal <> $2
+        AND e.mime <> 'application/vnd.openmaic.pbl-project+json'
         AND (
           e.principal = $3
           OR (
@@ -136,10 +138,13 @@ async function entryOwnership(
 ): Promise<EntryOwnership> {
   if (!isQueryableId(ref)) return 'foreign';
   const entry = await queryable.query(
-    `SELECT principal FROM asset_entries WHERE id = $1${lock ? ' FOR UPDATE' : ''}`,
+    `SELECT principal, mime FROM asset_entries WHERE id = $1${lock ? ' FOR UPDATE' : ''}`,
     [ref],
   );
-  const principal = (entry.rows[0] as { principal?: unknown } | undefined)?.principal;
+  const row = entry.rows[0] as { principal?: unknown; mime?: unknown } | undefined;
+  const principal = row?.principal;
+  if (principal === caller.key && row?.mime === 'application/vnd.openmaic.pbl-project+json')
+    throw new AssetImmutableError();
   if (principal === caller.key) return 'own';
   return principal === LEGACY_SHARED_ASSET_PRINCIPAL ? 'legacy' : 'foreign';
 }

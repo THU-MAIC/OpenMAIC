@@ -5,6 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const runtime = vi.hoisted(() => ({ configured: true }));
 const migrateOwnerMaterialsToPool = vi.hoisted(() => vi.fn());
 const removeDeletedOriginals = vi.hoisted(() => vi.fn());
+// The PBL and sandbox schedules belong to other boot tests and must not start here.
+vi.mock('@/lib/server/pbl-v3/lifecycle-schedule', () => ({
+  startLearningLifecycle: () => ({ stop: async () => undefined }),
+}));
+vi.mock('@/lib/server/pbl-v3/execution-watchdog', () => ({
+  startTeachingExecutionWatchdog: () => ({ stop: async () => undefined }),
+}));
+vi.mock('@/lib/server/sandbox/checkpoint-collector', () => ({
+  startCheckpointCollector: () => ({ stop: async () => undefined }),
+}));
 vi.mock('@/lib/persistence/asset-quota', () => ({ resolveAssetQuotaBytes: vi.fn() }));
 vi.mock('@/lib/persistence/asset-pending-ttl', () => ({ resolveAssetPendingTtlMs: vi.fn() }));
 vi.mock('@/lib/persistence/asset-collector-schedule', () => ({
@@ -13,6 +23,7 @@ vi.mock('@/lib/persistence/asset-collector-schedule', () => ({
 // These background tasks belong to other boot tests and must not start here.
 vi.mock('@/lib/persistence/schema-boot-check', () => ({
   startSchemaBootCheck: async () => undefined,
+  startRuntimeSchemaMonitor: () => ({ stop: () => undefined }),
 }));
 vi.mock('@/lib/server/instance-secret-check', () => ({
   warnAboutInstanceSecret: async () => undefined,

@@ -325,7 +325,6 @@ describe('voice tool runner registration', () => {
       'generate_actions',
       'duplicate_scene',
       'import_pptx',
-      'generate_image',
       'generate_tts',
       'edit_deck',
       'use_material_media',
@@ -370,7 +369,6 @@ describe('voice tool runner registration', () => {
         'extract_material',
         'fetch_url',
         'generate_actions',
-        'generate_image',
         'generate_scene',
         'generate_tts',
         'grep_stage',
@@ -424,8 +422,6 @@ describe('voice tool runner registration', () => {
       'generate_actions',
       'duplicate_scene',
       'import_pptx',
-      'generate_image',
-      'generate_tts',
       'edit_deck',
       'use_material_media',
       'read_stage',
@@ -468,9 +464,7 @@ describe('voice tool runner registration', () => {
         'extract_material',
         'fetch_url',
         'generate_actions',
-        'generate_image',
         'generate_scene',
-        'generate_tts',
         'grep_stage',
         'import_pptx',
         'list_folder_stages',
@@ -499,10 +493,8 @@ describe('voice tool runner registration', () => {
         'wait_for_materials',
       ].sort(),
     );
-    // The model is told registration is unavailable instead of being handed a
-    // tool that can only throw.
     expect(options.systemPrompt).not.toContain('register_voice the returned clipId');
-    expect(options.systemPrompt).toContain('no voice registration backend');
+    expect(options.systemPrompt).not.toContain('no voice registration backend');
     // Roster guidance is always present (the roster tools are always registered).
     expect(options.systemPrompt).toContain('list_voices');
     expect(options.systemPrompt).toContain('set_roster');

@@ -2,7 +2,7 @@ import type { TTSProviderId, ConfiguredTTSVoice } from '@/lib/audio/types';
 import { isCustomTTSProvider } from '@/lib/audio/types';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import {
-  QWEN_TTS_VOICE_CLONE_MODEL,
+  QWEN_VOICE_CLONE_GROUP_ID,
   isQwenCatalogVoice,
   isQwenCloneVoice,
   isQwenVoiceCloneModel,
@@ -464,8 +464,8 @@ export function getEnabledProvidersWithVoices(
           ...(providerId === 'qwen-tts' && extraVoices.length
             ? [
                 {
-                  modelId: QWEN_TTS_VOICE_CLONE_MODEL,
-                  modelName: 'Qwen3 TTS Voice Clone',
+                  modelId: QWEN_VOICE_CLONE_GROUP_ID,
+                  modelName: 'CosyVoice Voice Clone',
                   voices: extraVoices,
                 },
               ]

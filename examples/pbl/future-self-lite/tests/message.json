@@ -1,0 +1,19 @@
+{
+  "cases": [
+    {
+      "id": "future-message-1",
+      "argv": ["python3", "{resources}/tests/check.py", "小雨"],
+      "stdout": "给未来的小雨：继续保持好奇心。\n"
+    },
+    {
+      "id": "future-message-2",
+      "argv": ["python3", "{resources}/tests/check.py", "Ada"],
+      "stdout": "给未来的Ada：继续保持好奇心。\n"
+    },
+    {
+      "id": "future-message-3",
+      "argv": ["python3", "{resources}/tests/check.py", ""],
+      "stdout": "给未来的：继续保持好奇心。\n"
+    }
+  ]
+}

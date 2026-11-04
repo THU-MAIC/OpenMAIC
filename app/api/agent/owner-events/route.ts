@@ -14,6 +14,7 @@ import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
 import { subscribeAgentEventWakeup } from '@/lib/server/agent-runtime/event-notify-bus';
 import { authenticateRequestOwner } from '@/lib/server/identity/with-owner';
 import { getAgentSessionStore } from '@/lib/server/agent-runtime/store';
+import { isPBLRoleSession } from '@/lib/pbl/v3/session-kind';
 import { isRetiredStoredOwner, retiredCredentialCookies } from '@/lib/persistence/owner-merges';
 import { resolveSetCookies } from '@/lib/server/identity/set-cookie';
 
@@ -180,6 +181,11 @@ export async function GET(req: NextRequest) {
 
       const writePage = (events: PersistedOwnerSessionEvent[]) => {
         for (const event of events) {
+          if (isPBLRoleSession(event.sessionId)) {
+            // Consume internal events without adding them to the ordinary chat projection.
+            cursor = BigInt(event.id);
+            continue;
+          }
           if (
             !write(
               `id: ${event.id}\nevent: ${event.type}\ndata: ${JSON.stringify({

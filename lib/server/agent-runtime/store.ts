@@ -32,29 +32,36 @@ export function nodePostgresTransaction(pool: Pool): WithTransaction {
   return async <T>(body: (queryable: Queryable) => Promise<T>): Promise<T> => {
     const client = await pool.connect();
     try {
-      await client.query('BEGIN');
-      const result = await body(client);
-      await client.query('COMMIT');
-      return result;
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
+      return await transactionOn(client, body);
     } finally {
       client.release();
     }
   };
 }
 
-async function createAgentSessionStore(connectionString: string): Promise<PgAgentSessionStore> {
-  const { pool } = await getServerPersistenceProvider(connectionString);
-  await withSchemaBootstrapLock(pool as unknown as ConnectableQueryable, ensureAgentSessionSchema);
+async function transactionOn<T>(
+  client: Queryable,
+  body: (queryable: Queryable) => Promise<T>,
+): Promise<T> {
+  try {
+    await client.query('BEGIN');
+    const result = await body(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  }
+}
+
+function sessionStore(queryable: Queryable, withTransaction: WithTransaction): PgAgentSessionStore {
   // URL observations from user-authored prompt/message text are registered
   // inside the same business transaction that creates the session / posts the
   // message (reference session-store semantics), so they commit atomically and
   // a registration failure aborts the write. The hooks run only after the
   // store is constructed, so the closure reference is always assigned.
-  const store: PgAgentSessionStore = new PgAgentSessionStore(pool, {
-    withTransaction: nodePostgresTransaction(pool),
+  const store: PgAgentSessionStore = new PgAgentSessionStore(queryable, {
+    withTransaction,
     // The owner a session write is for, under that owner's identity lock (the
     // transaction's first statement, as the package requires): a retired
     // anonymous owner resolves to the account it was claimed into. This is
@@ -93,6 +100,30 @@ async function createAgentSessionStore(connectionString: string): Promise<PgAgen
       notifyDurableAgentEvent(transaction, { kind: 'session', sessionId }),
   });
   return store;
+}
+
+async function createAgentSessionStore(connectionString: string): Promise<PgAgentSessionStore> {
+  const { pool } = await getServerPersistenceProvider(connectionString);
+  await withSchemaBootstrapLock(pool as unknown as ConnectableQueryable, ensureAgentSessionSchema);
+  return sessionStore(pool, nodePostgresTransaction(pool));
+}
+
+/**
+ * Keep a checked-out connection through claim admission and late-claim cleanup.
+ * pool.end() waits for this connection; cleanup never needs to borrow from an
+ * already ending pool. The callback hands normal work off without awaiting it.
+ */
+export async function withAgentSessionClaim<T>(
+  operation: (store: PgAgentSessionStore) => Promise<T>,
+): Promise<T> {
+  await getAgentSessionStore();
+  const { pool } = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
+  const client = await pool.connect();
+  try {
+    return await operation(sessionStore(client, (body) => transactionOn(client, body)));
+  } finally {
+    client.release();
+  }
 }
 
 /**

@@ -48,9 +48,7 @@ describe('Qwen voice deletion authorization', () => {
 
   it('deletes provider-side only with the caller-owned key', async () => {
     vi.stubEnv('TTS_QWEN_API_KEY', '');
-    const fetchSpy = fetchMock.mockResolvedValue(
-      new Response(JSON.stringify({ output: { voice: 'exported-vendor-id' } })),
-    );
+    const fetchSpy = fetchMock.mockResolvedValue(new Response(JSON.stringify({ output: {} })));
     const { POST } = await import('@/app/api/generate/voice/route');
 
     const response = await POST(deleteRequest('caller-owned-key'));
@@ -61,7 +59,7 @@ describe('Qwen voice deletion authorization', () => {
       localOnly: false,
     });
     expect(JSON.parse(String(fetchSpy.mock.calls[0][1]?.body))).toMatchObject({
-      input: { action: 'delete', voice: 'exported-vendor-id' },
+      input: { action: 'delete_voice', voice_id: 'exported-vendor-id' },
     });
   });
 });
