@@ -21,7 +21,7 @@
 import { migrateScene } from '@/lib/edit/slide-schema';
 import { sanitizeSceneContent } from '@/lib/sanitize/scene-content';
 import { fieldFingerprint, sameField, trackedSceneFields } from '@/lib/edit/course-timeline';
-import { pblSceneAsPersisted } from '@/lib/pbl/v2/runtime/document-persistence';
+import { pblSceneAsPersisted } from '@/lib/pbl/v2/runtime/persisted-scene';
 import type { Scene } from '@/lib/types/stage';
 
 const WRITES_PER_FIELD = 32;

@@ -63,7 +63,9 @@ beforeEach(() => {
 
 describe('slide edits on the timeline', () => {
   it('records typing with no pointer gesture as one step, and a burst stays one step', () => {
-    useSlideEditSession.getState().commitContent('p1', withElement('p1', { content: '<p>H</p>' }), false);
+    useSlideEditSession
+      .getState()
+      .commitContent('p1', withElement('p1', { content: '<p>H</p>' }), false);
     useSlideEditSession
       .getState()
       .commitContent('p1', withElement('p1', { content: '<p>Hi</p>' }), false);
@@ -95,7 +97,9 @@ describe('slide edits on the timeline', () => {
 
   it('gives a drag then typing two steps', () => {
     useSlideEditSession.getState().commitContent('p1', withElement('p1', { left: 44 }), true);
-    useSlideEditSession.getState().commitContent('p1', withElement('p1', { content: '<p>x</p>' }), false);
+    useSlideEditSession
+      .getState()
+      .commitContent('p1', withElement('p1', { content: '<p>x</p>' }), false);
     expect(steps()).toBe(2);
   });
 
