@@ -837,6 +837,11 @@ test('installed sample opens in the normal classroom and preserves progress afte
   )
     await page.getByRole('button', { name: 'Exit fullscreen workspace', exact: true }).click();
   await page.getByRole('button', { name: 'Expand to fullscreen workspace', exact: true }).click();
+  // The frame animates to the viewport. Measure and drag the divider only once it has settled.
+  const viewport = page.viewportSize()!;
+  await expect
+    .poll(() => page.getByTestId('pbl-workspace-frame').boundingBox())
+    .toEqual({ x: 0, y: 0, ...viewport });
   await expect(page.locator('.monaco-editor .view-lines')).toHaveText('Unsaved learner work');
   const ideBox = (await page.getByTestId('pbl-ide').boundingBox())!;
   const agentBox = (await page.getByTestId('pbl-assistant').boundingBox())!;
