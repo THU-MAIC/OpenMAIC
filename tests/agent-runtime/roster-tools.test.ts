@@ -807,3 +807,51 @@ it('keeps excluded configured Qwen voices out of roster tools while allowing reg
   });
   expect(accepted.isError).toBeUndefined();
 });
+
+describe('voice registration instructions and capability awareness', () => {
+  it('ROSTER_TOOLS_PROMPT does not unconditionally instruct register_voice and forbids it without a configured backend', () => {
+    expect(ROSTER_TOOLS_PROMPT).toContain(
+      'register_voice must not be attempted without a configured backend.',
+    );
+    expect(ROSTER_TOOLS_PROMPT).toContain('re-register it if voice registration is available');
+    expect(ROSTER_TOOLS_PROMPT).not.toMatch(/re-register it, bind a catalog voice/);
+  });
+
+  it('list_voices description omits voice registration when backend is unavailable and warns against attempting it', () => {
+    const tools = buildRosterTools({
+      store: makeStore(makeDoc()),
+      onCheckpoint: () => {},
+      ttsConnection: null,
+    });
+    const listVoices = tools.find((t) => t.name === 'list_voices');
+    expect(listVoices).toBeDefined();
+    expect(listVoices?.description).toContain(
+      'register_voice must not be attempted without a configured backend.',
+    );
+    expect(listVoices?.description).not.toContain(
+      'A cloned voice registered this session with register_voice appears here too.',
+    );
+  });
+
+  it('list_voices description preserves existing instructions when voice registration backend is available', () => {
+    const tools = buildRosterTools({
+      store: makeStore(makeDoc()),
+      onCheckpoint: () => {},
+      ttsConnection: {
+        providerId: 'qwen-tts',
+        apiKey: 'test-key',
+        managed: true,
+        userEndpoint: false,
+        origin: 'configuration',
+      },
+    });
+    const listVoices = tools.find((t) => t.name === 'list_voices');
+    expect(listVoices).toBeDefined();
+    expect(listVoices?.description).toContain(
+      'A cloned voice registered this session with register_voice appears here too.',
+    );
+    expect(listVoices?.description).not.toContain(
+      'register_voice must not be attempted without a configured backend.',
+    );
+  });
+});
