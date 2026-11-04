@@ -6,7 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **Qwen voice cloning: authorize the new CosyVoice target before upgrading.** Managed deployments must add `cosyvoice-v3.5-plus` (or their configured clone target) alongside `qwen3-tts-flash` in the provider model allowlist in `TTS_QWEN_MODELS` or `openmaic.yml`. For example, use `TTS_QWEN_MODELS=qwen3-tts-flash,cosyvoice-v3.5-plus`: setting only the clone target replaces the implicit catalog-model authorization and makes catalog voices return HTTP 403. An allowlist containing only the retired `qwen3-tts-vc-2026-01-22` does not authorize the new target and will return HTTP 403. Normalizing the old target override does not change the allowlist. Existing incompatible voices must also be cloned again from suitable reference audio. [#1941](https://github.com/THU-MAIC/OpenMAIC/issues/1941)
+
 ### Bug Fixes
+
+- Qwen voice cloning: migrate enrollment and synthesis to CosyVoice (`cosyvoice-v3.5-plus` by default, Beijing DashScope). Saved voices stay visible; incompatible voices require re-uploading a suitable reference recording and re-cloning, with no automatic sample migration. Managed deployments must authorize the new target alongside `qwen3-tts-flash` in `TTS_QWEN_MODELS` or `openmaic.yml`. An empty or exact retired `TTS_QWEN_VOICE_CLONE_MODEL=qwen3-tts-vc-2026-01-22` value selects the default; other overrides remain unchanged. [#1941](https://github.com/THU-MAIC/OpenMAIC/issues/1941)
 
 - Classroom playback resumes the remaining reading time after a narration clip fails to play, instead of getting stuck on the failed audio element. Failed clips release their playback state without interrupting a newer narration line. Pausing while a clip is still loading does not discard that narration; resume plays it. [#2109](https://github.com/THU-MAIC/OpenMAIC/issues/2109)
 

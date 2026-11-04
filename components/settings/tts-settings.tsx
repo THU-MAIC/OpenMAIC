@@ -96,27 +96,6 @@ function DoubaoKeyFields({ onSave }: { onSave: (key: string) => Promise<unknown>
  * a spoken test on the server with the saved configuration, its models, and
  * the voices a user makes for voice-design providers.
  */
-/** Path each built-in TTS service calls under its base URL, for the request URL hint. */
-export function ttsEndpointPath(providerId: string): string {
-  switch (providerId) {
-    case 'openai-tts':
-    case 'glm-tts':
-    case 'lemonade-tts':
-      return '/audio/speech';
-    case 'azure-tts':
-      return '/cognitiveservices/v1';
-    case 'qwen-tts':
-      return '/services/aigc/multimodal-generation/generation';
-    case 'elevenlabs-tts':
-      return '/text-to-speech';
-    case 'doubao-tts':
-      return '/unidirectional';
-    case 'google-tts':
-      return '/interactions';
-    default:
-      return '';
-  }
-}
 
 export function TTSSettings({ view, apply, entry }: ServicePanelProps) {
   const { t, locale } = useI18n();
@@ -271,7 +250,7 @@ export function TTSSettings({ view, apply, entry }: ServicePanelProps) {
                   {ttsProvider?.defaultBaseUrl && (
                     <p className="text-xs text-muted-foreground break-all">
                       {t('settings.requestUrl')}: {ttsProvider.defaultBaseUrl}
-                      {ttsEndpointPath(providerId)}
+                      {ttsProvider.endpointPath ?? ''}
                     </p>
                   )}
                   <EndpointServerOnlyHint />

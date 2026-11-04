@@ -1153,6 +1153,7 @@
     "materialTooLarge": "{{name}} 过大：单个素材最大为 {{size}}。"
   },
   "generation": {
+    "qwenCloneNewGenerationHint": "此已保存音色需要重新克隆。请在音色设置中上传合适的参考音频，选择新音色后重新发起生成。重试此暂停任务仍会使用原音色。",
     "quotaExhausted": "生成额度已用尽。请检查套餐额度或账户余额，或联系管理员处理后重试。",
     "pdfLoadFailed": "无法加载 PDF 文件，请重试",
     "pdfParseFailed": "PDF 解析失败",
@@ -1433,6 +1434,8 @@
     "providerDoubaoTTS": "豆包 TTS 2.0（火山引擎）",
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
+    "providerXiaomiTTS": "小米 MiMo TTS",
+    "providerXiaomiASR": "小米 MiMo ASR",
     "providerGoogleTTS": "Google Gemini TTS",
     "providerLemonadeTTS": "Lemonade TTS（本地）",
     "providerBrowserNativeTTS": "浏览器原生 TTS",
@@ -1476,8 +1479,8 @@
     "voxcpmDeleteVoice": "删除音色",
     "qwenCloneVoicesTitle": "Qwen TTS 克隆音色",
     "qwenCloneUploadShort": "上传",
-    "qwenCloneRefText": "请输入与参考音频完全一致的逐字文本",
-    "qwenCloneRefAudioHint": "请使用 1–60 秒的干净人声，推荐 10–20 秒；音频会转换为 24 kHz 单声道 PCM WAV。",
+    "qwenCloneRefAudioHint": "请使用 5–60 秒的干净人声，推荐 10–20 秒；音频会转换为 24 kHz 单声道 PCM WAV。",
+    "qwenCloneMigrationHint": "此音色需要重新复刻，请在音色设置中上传原始参考音频。",
     "qwenCloneSaved": "Qwen 克隆音色已注册并保存",
     "qwenCloneSaveFailed": "Qwen 克隆音色注册失败",
     "qwenCloneUnsupported": "当前浏览器不支持录音，请改为上传音频文件。",
