@@ -78,6 +78,18 @@ describe('preloadEditor', () => {
     expect(probe.surfaceLoads).toBe(1);
   });
 
+  it('leaves the fonts to the real entry when only the surfaces are warmed', async () => {
+    const { preloadEditor, preloadEditorSurfaces } = await freshModules();
+    await preloadEditorSurfaces();
+    await settleSoon(new Promise(() => {}));
+    expect(probe.surfaceLoads).toBe(1);
+    expect(probe.fontLoads).toBe(0);
+    await preloadEditor();
+    await settleSoon(new Promise(() => {}));
+    expect(probe.surfaceLoads).toBe(1);
+    expect(probe.fontLoads).toBe(1);
+  });
+
   it('shares one in-flight load across repeated triggers', async () => {
     const { preloadEditor } = await freshModules();
     const first = preloadEditor();

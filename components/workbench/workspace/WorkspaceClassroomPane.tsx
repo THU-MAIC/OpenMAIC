@@ -37,7 +37,7 @@ import { useStageStore } from '@/lib/store/stage';
 import { useWorkbenchStore } from '@/lib/workbench/session-store';
 import { WorkbenchPanelProvider } from '@/lib/workbench/panel-context';
 import { useWorkbenchProEditing } from '@/lib/workbench/use-workbench-pro-edit';
-import { useEditorWarmup, warmEditor } from '@/lib/edit/use-editor-warmup';
+import { useEditorWarmup, warmEditorSurfaces } from '@/lib/edit/use-editor-warmup';
 import { shouldCollapseFullscreenOnEscape } from '@/lib/workbench/classroom-fullscreen';
 import { HeaderControls } from '@/components/stage/header-controls';
 import { ClassroomModeSwitch } from '@/components/workbench/ClassroomModeSwitch';
@@ -133,7 +133,7 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
   // round trips.
   const opensInEditor = preferences[courseId] === 'editing';
   useEffect(() => {
-    if (opensInEditor && !hidden) warmEditor();
+    if (opensInEditor && !hidden) warmEditorSurfaces();
   }, [opensInEditor, hidden]);
 
   const rememberMode = (mode: ClassroomMode) => {
