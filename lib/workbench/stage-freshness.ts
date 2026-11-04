@@ -162,11 +162,9 @@ async function fetchSceneChunk(stageId: string, ids: readonly string[]): Promise
  * memoize on `scenes` do not re-render a deck the agent did not touch.
  *
  * Removed ids are dropped; fetched scenes replace by id; the result is sorted
- * by `order` exactly like the full document read. There is no edit-state
- * protection anymore (#1961 decision change 2026-08-23): the agent's fresh version
- * replaces the local scene outright — the user's typed data is guarded on the
- * WRITE side instead (a veto retains the dirt and retries; see
- * `lib/store/stage.ts`), not by freezing the read side.
+ * by `order` exactly like the full document read. A fetched scene replaces the
+ * local one outright, so the caller leaves out any scene with an unsaved edit
+ * (see `useStageFreshnessSync` in `use-workbench-session.ts`).
  *
  * Returns `{scenes, changed}` where `changed` is `false` (and `scenes` the
  * input array) when nothing would be different.
