@@ -1,8 +1,7 @@
 import 'server-only';
 import { z } from 'zod';
 import type { Queryable } from '@openmaic/storage/document/pg';
-import { ensureSandboxEnvironmentSchema } from '@/lib/persistence/sandbox-environments';
-import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
+import { provisionSandboxEnvironmentSchema } from '@/lib/persistence/sandbox-environments';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import {
   isPersonalInstallationOwner,
@@ -73,7 +72,7 @@ async function persistence() {
       'Configure a database before saving sandbox settings.',
     );
   const p = await getServerPersistenceProvider(process.env.DATABASE_URL);
-  await withSchemaBootstrapLock(p.pool, ensureSandboxEnvironmentSchema);
+  await provisionSandboxEnvironmentSchema(p.pool);
   return p;
 }
 async function readRow(q: Queryable) {
