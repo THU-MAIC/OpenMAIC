@@ -24,8 +24,15 @@ import type { AgentTool } from '@earendil-works/pi-agent-core';
 import type { VoiceRegistrationAdapter } from '@/lib/audio/voice-registration';
 
 import {
+  qwenVoiceCloneRegistrationAdapter,
+  clearQwenVoiceRegistrationMemoForTests,
+} from '@/lib/audio/qwen-voice-clone-registration';
+import * as qwenVoiceClone from '@/lib/audio/qwen-voice-clone';
+
+import {
   buildVoiceCloneTools,
   VOICE_CLONE_TOOL_NAMES,
+  voiceCloneToolsPrompt,
 } from '@/lib/server/agent-runtime/voice-clone-tools';
 
 // The CI unit-test runner has no ffmpeg; only the one end-to-end clip test
@@ -198,6 +205,124 @@ describe('voice clone agent tools', () => {
     vi.restoreAllMocks();
   });
 
+  describe('provider duration contract from clip to registration', () => {
+    function setup(providerId = 'qwen-tts', outputSeconds = 5) {
+      clearQwenVoiceRegistrationMemoForTests();
+      const adapter = providerId === 'qwen-tts' ? qwenVoiceCloneRegistrationAdapter : fakeAdapter();
+      mocks.getVoiceRegistrationAdapter.mockReturnValue(adapter);
+      const enroll = vi
+        .spyOn(qwenVoiceClone, 'registerQwenVoice')
+        .mockResolvedValue({ voiceId: 'cosyvoice-clone', targetModel: 'cosyvoice-v3.5-plus' });
+      vi.spyOn(qwenVoiceClone, 'queryQwenVoiceReadiness').mockResolvedValue('ready');
+      const records = new Map([['source', material({ id: 'source' })]]);
+      const assets = new Map([
+        ['ast_clip', { bytes: synthesizeVoiceCloneWav(10), mime: 'audio/wav' }],
+      ]);
+      const storeRawAsset = vi.fn(async (_session, bytes, mime) => {
+        assets.set('new-asset', { bytes, mime });
+        return 'new-asset';
+      });
+      const tools = buildVoiceCloneTools({
+        sessionId: 'ses_1',
+        ttsConnection: {
+          providerId,
+          apiKey: 'test',
+          baseUrl: 'https://fake.example',
+          managed: false,
+          userEndpoint: false,
+          origin: 'configuration',
+        },
+        getMaterial: async (_session, id) => records.get(id) ?? null,
+        readRawAsset: async (_session, id) => assets.get(id) ?? null,
+        clipAudio: async () => synthesizeVoiceCloneWav(outputSeconds),
+        storeRawAsset,
+        createMaterial: async (_session, input) => {
+          const record = material(input);
+          records.set(record.id, record);
+          return record;
+        },
+      });
+      return {
+        clip: tool(tools, 'clip_audio'),
+        register: tool(tools, 'register_voice'),
+        storeRawAsset,
+        enroll,
+      };
+    }
+
+    it.each([1, 2, 4.999])(
+      'rejects a Qwen %s-second request before persisting a clip',
+      async (seconds) => {
+        const { clip, storeRawAsset } = setup('qwen-tts', seconds);
+        await expect(
+          clip.execute('clip', { materialId: 'source', startSec: 0, endSec: seconds } as never),
+        ).rejects.toThrow('between 5 and 60 seconds');
+        expect(storeRawAsset).not.toHaveBeenCalled();
+      },
+    );
+
+    it('rejects a truncated Qwen output even when the requested interval is five seconds', async () => {
+      const { clip, storeRawAsset } = setup('qwen-tts', 4.999);
+      await expect(
+        clip.execute('clip', { materialId: 'source', startSec: 0, endSec: 5 } as never),
+      ).rejects.toThrow('between 5 and 60 seconds');
+      expect(storeRawAsset).not.toHaveBeenCalled();
+    });
+
+    it('rejects an existing short clip before calling a duration-constrained adapter', async () => {
+      const adapter = fakeAdapter({ minReferenceDurationSeconds: 5 });
+      mocks.enabledServerTTSProviderIds.mockReturnValue(['fake-tts']);
+      mocks.getVoiceRegistrationAdapter.mockReturnValue(adapter);
+      const register = tool(
+        buildVoiceCloneTools({
+          sessionId: 'ses_1',
+          ttsConnection: ttsFromMocks(),
+          getMaterial: async () => material(),
+          readRawAsset: async () => ({ bytes: synthesizeVoiceCloneWav(4.999), mime: 'audio/wav' }),
+        }),
+        'register_voice',
+      );
+      await expect(
+        register.execute('register', {
+          clipId: 'mat_clip',
+          name: 'Speaker',
+          refText: 'Reference speech.',
+        } as never),
+      ).rejects.toThrow('between 5 and 60 seconds');
+      expect(adapter.registerVoice).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      { providerId: 'qwen-tts', seconds: 5 },
+      { providerId: 'fake-tts', seconds: 1 },
+    ])(
+      'registers the clip returned at the $providerId minimum',
+      async ({ providerId, seconds }) => {
+        const { clip, register, enroll } = setup(providerId, seconds);
+        const clipped = await clip.execute('clip', {
+          materialId: 'source',
+          startSec: 0,
+          endSec: seconds,
+        } as never);
+        const { clipId, durationSeconds } = clipped.details as {
+          clipId: string;
+          durationSeconds: number;
+        };
+        expect(durationSeconds).toBe(seconds);
+        const registered = await register.execute('register', {
+          clipId,
+          name: 'Speaker',
+          refText: 'Reference speech.',
+        } as never);
+        expect(registered.details).toMatchObject({
+          providerId,
+          voiceId: providerId === 'qwen-tts' ? 'cosyvoice-clone' : 'voice-Speaker',
+        });
+        if (providerId === 'qwen-tts') expect(enroll).toHaveBeenCalledOnce();
+      },
+    );
+  });
+
   it.each([
     { startSec: 0, endSec: 0.5 },
     { startSec: 0, endSec: 61 },
@@ -309,6 +434,32 @@ describe('voice clone agent tools', () => {
     expect(tools.map((candidate) => candidate.name)).toEqual(['clip_audio', 'register_voice']);
   });
 
+  it('accepts reference audio without a transcript in the registration tool contract', async () => {
+    mocks.enabledServerTTSProviderIds.mockReturnValue(['fake-tts']);
+    const adapter = fakeAdapter();
+    mocks.getVoiceRegistrationAdapter.mockReturnValue(adapter);
+    const register = tool(
+      buildVoiceCloneTools({
+        ttsConnection: ttsFromMocks(),
+        sessionId: 'ses_1',
+        getMaterial: vi.fn().mockResolvedValue(material()),
+        readRawAsset: vi
+          .fn()
+          .mockResolvedValue({ bytes: synthesizeVoiceCloneWav(), mime: 'audio/wav' }),
+      }),
+      'register_voice',
+    );
+    expect(register.parameters).toHaveProperty('required', ['name', 'clipId']);
+    expect(voiceCloneToolsPrompt(true)).toContain('A transcript is optional');
+    await expect(
+      register.execute('without-transcript', {
+        name: 'Teacher',
+        clipId: 'mat_clip',
+      } as never),
+    ).resolves.toMatchObject({ details: { voiceId: 'voice-Teacher' } });
+    expect(adapter.registerVoice).toHaveBeenCalledOnce();
+  });
+
   it('registers the owner-scoped clip through the fake adapter and returns its real voice id', async () => {
     mocks.enabledServerTTSProviderIds.mockReturnValue(['fake-tts']);
     const adapter = fakeAdapter();
@@ -334,7 +485,7 @@ describe('voice clone agent tools', () => {
     const duplicate = await register.execute('call_2', {
       name: 'Andrew Ng',
       clipId: 'mat_clip',
-      refText: 'Accurate words.',
+      refText: 'Corrected words.',
     } as never);
 
     expect(getMaterial).toHaveBeenCalledWith('ses_1', 'mat_clip');
@@ -359,6 +510,116 @@ describe('voice clone agent tools', () => {
       name: 'Andrew Ng',
     });
     expect(duplicate.details).toEqual(result.details);
+  });
+
+  it.each(['qwen-tts', 'voxcpm-tts'])(
+    'uses the provider name identity without changing display names: %s',
+    async (providerId) => {
+      mocks.enabledServerTTSProviderIds.mockReturnValue([providerId]);
+      const adapter = fakeAdapter({
+        normalizeRegistrationName:
+          providerId === 'qwen-tts'
+            ? qwenVoiceCloneRegistrationAdapter.normalizeRegistrationName
+            : undefined,
+      });
+      mocks.getVoiceRegistrationAdapter.mockReturnValue(adapter);
+      for (const [firstName, secondName] of [
+        ['A B', 'AB'],
+        ['A-B', 'AB'],
+        ['ab', 'AB'],
+        ['Áb', 'Ab'],
+        ['abcdefghij-one', 'abcdefghij-two'],
+      ]) {
+        adapter.registerVoice.mockClear();
+        const register = tool(
+          buildVoiceCloneTools({
+            ttsConnection: ttsFromMocks(),
+            sessionId: 'ses_1',
+            getMaterial: vi.fn().mockResolvedValue(material()),
+            readRawAsset: vi
+              .fn()
+              .mockResolvedValue({ bytes: synthesizeVoiceCloneWav(), mime: 'audio/wav' }),
+          }),
+          'register_voice',
+        );
+        const [first, second] = await Promise.all(
+          [firstName, secondName].map((name) =>
+            register.execute(name, {
+              name,
+              clipId: 'mat_clip',
+              refText: 'Reference words.',
+            } as never),
+          ),
+        );
+        expect(adapter.registerVoice).toHaveBeenCalledTimes(providerId === 'qwen-tts' ? 1 : 2);
+        expect(first.details).toMatchObject({ name: firstName });
+        expect(second.details).toMatchObject({ name: secondName });
+      }
+    },
+  );
+
+  it.each(['audio', 'account', 'model', 'endpoint', 'policy', 'name'] as const)(
+    'keeps the tool registration cache isolated by %s',
+    async (dimension) => {
+      mocks.enabledServerTTSProviderIds.mockReturnValue(['fake-tts']);
+      const adapter = fakeAdapter();
+      mocks.getVoiceRegistrationAdapter.mockReturnValue(adapter);
+      const connection = ttsFromMocks()!;
+      const wav = synthesizeVoiceCloneWav();
+      const readRawAsset = vi.fn().mockResolvedValue({ bytes: wav, mime: 'audio/wav' });
+      const register = tool(
+        buildVoiceCloneTools({
+          ttsConnection: connection,
+          sessionId: 'ses_1',
+          getMaterial: vi.fn().mockResolvedValue(material()),
+          readRawAsset,
+        }),
+        'register_voice',
+      );
+      const params = { name: 'Teacher', clipId: 'mat_clip', refText: 'Reference words.' };
+      await register.execute('first', params as never);
+      if (dimension === 'audio') {
+        const other = Buffer.from(wav);
+        other[other.length - 1] = 1;
+        readRawAsset.mockResolvedValue({ bytes: other, mime: 'audio/wav' });
+      }
+      if (dimension === 'account') connection.apiKey = 'other-account';
+      if (dimension === 'endpoint') connection.baseUrl = 'https://another.example';
+      if (dimension === 'policy') connection.userEndpoint = true;
+      if (dimension === 'model')
+        vi.mocked(adapter.resolveRegistrationModel).mockReturnValue('other-model');
+      await register.execute('second', {
+        ...params,
+        ...(dimension === 'name' ? { name: 'Other' } : {}),
+      } as never);
+      expect(adapter.registerVoice).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('evicts rejected enrollment from the tool cache so a corrected attempt can register', async () => {
+    mocks.enabledServerTTSProviderIds.mockReturnValue(['fake-tts']);
+    const rejected = new qwenVoiceClone.QwenVoiceCloneError('QWEN_VC_VOICE_REJECTED', 422);
+    const adapter = fakeAdapter();
+    adapter.registerVoice.mockRejectedValueOnce(rejected).mockResolvedValueOnce('accepted-voice');
+    mocks.getVoiceRegistrationAdapter.mockReturnValue(adapter);
+    const register = tool(
+      buildVoiceCloneTools({
+        ttsConnection: ttsFromMocks(),
+        sessionId: 'ses_1',
+        getMaterial: vi.fn().mockResolvedValue(material()),
+        readRawAsset: vi
+          .fn()
+          .mockResolvedValue({ bytes: synthesizeVoiceCloneWav(), mime: 'audio/wav' }),
+      }),
+      'register_voice',
+    );
+    const params = { name: 'Teacher', clipId: 'mat_clip' } as never;
+    await expect(register.execute('rejected', params)).rejects.toBe(rejected);
+    await expect(register.execute('retry', params)).resolves.toMatchObject({
+      details: { voiceId: 'accepted-voice' },
+    });
+    await register.execute('cached-ready', params);
+    expect(adapter.registerVoice).toHaveBeenCalledTimes(2);
   });
 
   it('records the registered voice in the shared session registry (deduped)', async () => {

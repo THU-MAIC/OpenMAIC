@@ -41,6 +41,7 @@
  * owner-bound document store); a worker executing it loses its lease.
  */
 import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
+import { audioFailureKind } from '@/lib/audio/provider-error';
 import { isAbortError } from '@openmaic/generation';
 import type { Queryable } from '@openmaic/storage/document/pg';
 
@@ -431,6 +432,7 @@ async function executeClaimedRun(
     refusalStatus,
     sleep: services.sleep,
     signal: retrySignal,
+    rethrow: (error) => audioFailureKind(error) === 'voice-incompatible',
     onRetry: async (event) => {
       log.warn(
         `run ${run.id}: retrying ${stepId} (${event.attempt}/${event.maxAttempts}): ${event.cause}`,
