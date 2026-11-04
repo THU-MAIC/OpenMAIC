@@ -517,6 +517,7 @@ describe('generation and deck tools', () => {
     };
     const schema = JSON.parse(JSON.stringify(generate.parameters));
     expect(schema.properties.widgetOutline.type).toBe('object');
+    expect(schema.properties.widgetOutline).not.toHaveProperty('additionalProperties');
     expect(Value.Check(generate.parameters, base)).toBe(true);
     for (const widgetOutline of [
       {},

@@ -65,11 +65,11 @@ const SceneParams = Type.Object({
       },
     ),
   ),
+  // Omit additionalProperties so Google's schema converter drops empty properties.
   widgetOutline: Type.Optional(
     Type.Object(
       {},
       {
-        additionalProperties: true,
         description:
           'Interactive pages only: widget configuration object matching widgetType (e.g. { concept, keyVariables } for simulation, { diagramType, nodes } for diagram, { language } for code, { gameType, challenge } for game, { visualizationType, objects } for visualization3d). Must be a plain object. Defaults to { concept: title } when widgetType is set; when only widgetOutline is set, widgetType defaults to simulation.',
       },
