@@ -1,5 +1,8 @@
 import type { Queryable } from '@openmaic/storage/document/pg';
 import { applySchemaMigrations, type SchemaMigrationSet } from '@openmaic/storage/pg-migrations';
+import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
+
+import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
 
 export const SANDBOX_ENVIRONMENT_MIGRATIONS: SchemaMigrationSet = {
   store: 'sandbox-environments',
@@ -182,4 +185,27 @@ CREATE TABLE IF NOT EXISTS sandbox_commands (
 
 export async function ensureSandboxEnvironmentSchema(queryable: Queryable): Promise<void> {
   await applySchemaMigrations(queryable, SANDBOX_ENVIRONMENT_MIGRATIONS);
+}
+
+const SCHEMA_STATE_KEY = Symbol.for('openmaic.sandbox-environment.schema');
+const globalState = globalThis as typeof globalThis & {
+  [SCHEMA_STATE_KEY]?: WeakMap<ConnectableQueryable, Promise<void>>;
+};
+const provisioned = (globalState[SCHEMA_STATE_KEY] ??= new WeakMap());
+
+/**
+ * Provision the sandbox schema at most once per process and pool, under the
+ * bootstrap lock. Callers share an attempt in flight. A failed attempt is
+ * cleared, so a later call retries once the database or a peer's migration
+ * allows it.
+ */
+export function provisionSandboxEnvironmentSchema(pool: ConnectableQueryable): Promise<void> {
+  const existing = provisioned.get(pool);
+  if (existing) return existing;
+  const attempt = withSchemaBootstrapLock(pool, ensureSandboxEnvironmentSchema).catch((error) => {
+    provisioned.delete(pool);
+    throw error;
+  });
+  provisioned.set(pool, attempt);
+  return attempt;
 }

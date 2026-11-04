@@ -233,8 +233,9 @@ export function buildSandboxTools(scope: SandboxToolScope): AgentTool<never, nev
 export async function sessionSandboxTools(sessionId: string, ownerId: string) {
   if (!process.env.DATABASE_URL) return [];
   const { SandboxStore } = await import('./store');
-  const grant = await (await SandboxStore.open()).sessionGrant(sessionId, ownerId);
+  const grant = await SandboxStore.findSessionGrant(sessionId, ownerId);
   if (!grant) return [];
+  await SandboxStore.open();
   return buildSandboxTools({
     sessionId,
     environmentId: grant.environment_id,

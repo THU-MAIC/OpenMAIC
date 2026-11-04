@@ -5,8 +5,7 @@ import type { Queryable } from '@openmaic/storage/document/pg';
 import { CheckpointStorage, type SavedCheckpoint } from './checkpoint-storage';
 
 import { fenceOwnerWrite } from '@/lib/persistence/owner-merges';
-import { ensureSandboxEnvironmentSchema } from '@/lib/persistence/sandbox-environments';
-import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
+import { provisionSandboxEnvironmentSchema } from '@/lib/persistence/sandbox-environments';
 import {
   getServerPersistenceProvider,
   type ServerPersistenceProvider,
@@ -56,22 +55,43 @@ export function publicEnvironment(row: SandboxRow): SandboxEnvironment {
 // Share admission across store instances using the same upstream pool, leaving half for SQL.
 const activeLocks = new WeakMap<Pool, number>();
 
+function sandboxPersistence(): Promise<ServerPersistenceProvider> {
+  const databaseUrl = process.env.DATABASE_URL?.trim();
+  if (!databaseUrl) {
+    throw new SandboxError(
+      'SANDBOX_STORAGE_UNAVAILABLE',
+      503,
+      'Sandbox storage is not configured.',
+    );
+  }
+  return getServerPersistenceProvider(databaseUrl);
+}
+
 export class SandboxStore {
   private constructor(private readonly persistence: ServerPersistenceProvider) {}
 
   static async open(): Promise<SandboxStore> {
-    const databaseUrl = process.env.DATABASE_URL?.trim();
-    if (!databaseUrl) {
-      throw new SandboxError(
-        'SANDBOX_STORAGE_UNAVAILABLE',
-        503,
-        'Sandbox storage is not configured.',
-      );
-    }
-    const persistence = await getServerPersistenceProvider(databaseUrl);
-    // Lazy like the other optional stores; disabling the feature provisions no table.
-    await withSchemaBootstrapLock(persistence.pool, ensureSandboxEnvironmentSchema);
+    const persistence = await sandboxPersistence();
+    // Lazy like the other optional stores, and retained once it succeeds. Sessions
+    // without a grant never get here (see findSessionGrant). Sandbox routes and
+    // settings still provision while the feature is off: web settings live here.
+    await provisionSandboxEnvironmentSchema(persistence.pool);
     return new SandboxStore(persistence);
+  }
+
+  /**
+   * Grant lookup for session start, which never provisions: a session without a
+   * grant neither waits for nor fails on sandbox schema work. Granting provisions
+   * the schema first, so a database without the table holds no grant.
+   */
+  static async findSessionGrant(sessionId: string, ownerId: string) {
+    const store = new SandboxStore(await sandboxPersistence());
+    try {
+      return await store.sessionGrant(sessionId, ownerId);
+    } catch (error) {
+      if ((error as { code?: string }).code === '42P01') return null;
+      throw error;
+    }
   }
 
   async get(ownerId: string, id: string): Promise<SandboxRow> {

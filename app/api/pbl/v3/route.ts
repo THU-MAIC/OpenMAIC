@@ -101,6 +101,7 @@ export async function POST(request: Request) {
     const body = await sandboxBody(request, 256_000);
     try {
       if (body.action === 'sample') {
+        await SandboxService.forOwner(principal);
         if (typeof body.id !== 'string' || !/^pbl-[a-f0-9-]{36}$/.test(body.id))
           throw sandboxInvalid('A stable classroom ID is required.');
         const ref = body.project ?? { id: 'greeting-python', version: '1.0.0' };
