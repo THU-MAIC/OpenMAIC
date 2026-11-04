@@ -2037,6 +2037,43 @@ it.each(['ready', 'still-starting', 'rotated', 'failed'])(
   },
 );
 
+it('offers one document retry when the standalone gateway is silent during startup', async () => {
+  vi.useFakeTimers();
+  const current = {
+    ...view,
+    application: { ...view.application!, standaloneFrontend: true },
+  };
+  const grant = {
+    ...running,
+    preview: {
+      ...running.preview,
+      url: 'https://isolated.example/__openmaic_preview#silent',
+      expiresAt: Date.now() + 300_000,
+    },
+  };
+  const launch = new Promise<ApplicationObservation>(() => {});
+  mocks.request.mockImplementation((_url, input) => (input.action === 'frontend' ? grant : launch));
+  const f = await fixture();
+  try {
+    await act(async () => f.root.render(createElement(Harness, { current, automatic: true })));
+    expect(f.host.querySelector('[role="alert"]')).toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(f.host.textContent?.match(/pblV3\.application\.unavailable/g)).toHaveLength(1);
+    await act(async () =>
+      [...f.host.querySelectorAll('button')]
+        .find((button) => button.textContent === 'pblV3.application.reopen')!
+        .click(),
+    );
+    expect(mocks.request.mock.calls.map(([, input]) => input.action)).toEqual([
+      'frontend',
+      'open',
+      'frontend',
+    ]);
+  } finally {
+    await f.cleanup();
+  }
+});
+
 it.each(['auth', 'timeout'])(
   'reopens an initial document after %s readiness failure, then retains the ready document',
   async (mode) => {

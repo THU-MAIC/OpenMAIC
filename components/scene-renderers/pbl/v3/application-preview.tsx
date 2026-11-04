@@ -203,10 +203,10 @@ function ApplicationPreviewContent({
     if (!url || currentReady) return;
     const timer = setTimeout(
       () => setReadinessFailure({ url, version: preview.frameVersion }),
-      60_000,
+      standalone ? 15_000 : 60_000,
     );
     return () => clearTimeout(timer);
-  }, [url, preview.frameVersion, currentReady]);
+  }, [url, preview.frameVersion, currentReady, standalone]);
   const renew = preview.renew;
   const documentReady = preview.documentReady;
   useLayoutEffect(() => {
@@ -253,34 +253,36 @@ function ApplicationPreviewContent({
       {(pending || preview.frontendPending || preview.updating || !!previous) && (
         <LoaderCircle size={16} className="shrink-0 animate-spin" />
       )}
-      <p>
-        {t(
-          expired
-            ? 'pblV3.application.expired'
-            : disabled
-              ? preview.dirty
-                ? 'pblV3.application.saveFirst'
-                : 'pblV3.application.wait'
-              : pending || preview.frontendPending || observation?.state === 'starting'
-                ? 'pblV3.application.starting'
-                : observation?.state === 'failed'
-                  ? 'pblV3.application.failed'
-                  : observation
-                    ? 'pblV3.application.unavailable'
-                    : 'pblV3.application.ready',
-        )}
-      </p>
+      {!error && (
+        <p>
+          {t(
+            expired
+              ? 'pblV3.application.expired'
+              : disabled
+                ? preview.dirty
+                  ? 'pblV3.application.saveFirst'
+                  : 'pblV3.application.wait'
+                : pending || preview.frontendPending || observation?.state === 'starting'
+                  ? 'pblV3.application.starting'
+                  : observation?.state === 'failed'
+                    ? 'pblV3.application.failed'
+                    : observation
+                      ? 'pblV3.application.unavailable'
+                      : 'pblV3.application.ready',
+          )}
+        </p>
+      )}
       {observation?.output && (
         <pre className="max-h-40 max-w-full overflow-auto whitespace-pre-wrap text-left text-xs">
           {observation.output}
         </pre>
       )}
-      {!pending && !preview.frontendPending && !disabled && (
+      {((standalone && !!error) || (!pending && !preview.frontendPending && !disabled)) && (
         <button
           type="button"
           className="rounded border px-3 py-2 text-foreground"
           onClick={() => {
-            if (preview.standaloneFrontend && readinessError) preview.reloadFrontend();
+            if (standalone && error) preview.reloadFrontend();
             else void preview.load('open', 'explicit');
           }}
         >
