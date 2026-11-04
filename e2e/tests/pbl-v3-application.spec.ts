@@ -751,9 +751,13 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
     await expect(restore).toBeVisible();
     await expect(page.getByTestId('pbl-application-open')).toBeDisabled();
     expect(commands).toEqual([]);
+    const completedEditor = page.locator('.monaco-editor textarea').first();
+    // The snapshot editor mounts independently from the application restore control.
+    await expect(completedEditor).toBeAttached();
+    await expect(completedEditor).not.toBeEditable();
     await restore.click();
     await expect(page.getByTestId('pbl-application-open')).toBeEnabled();
-    await expect(page.locator('.monaco-editor textarea').first()).not.toBeEditable();
+    await expect(completedEditor).not.toBeEditable();
     // A restored binding starts without a usable document. Both initial auth
     // failure and readiness timeout must obtain another ticket on explicit Reopen.
     let releaseInitial: (() => void) | undefined;

@@ -27,6 +27,7 @@ export function WorkbenchSplit({
   const hasApplication = !!application;
   const appVisible = hasApplication && showApplication;
   const workAreaVisible = showWorkspace || appVisible;
+  const [compact, setCompact] = useState(false);
   const workAreaPanel = usePanelRef(),
     workspacePanel = usePanelRef(),
     assistantPanel = usePanelRef(),
@@ -45,17 +46,17 @@ export function WorkbenchSplit({
   );
   useEffect(() => {
     syncWorkAreaVisibility(workAreaPanel.current?.getSize().inPixels ?? 0);
-  }, [syncWorkAreaVisibility, workAreaPanel]);
+  }, [compact, syncWorkAreaVisibility, workAreaPanel]);
   useEffect(() => {
     if (showAssistant) assistantPanel.current?.expand();
     else assistantPanel.current?.collapse();
-  }, [showAssistant, assistantPanel]);
+  }, [compact, showAssistant, assistantPanel]);
+  // Switching axes can clamp a visible panel to zero under the new constraints.
   useEffect(() => {
     if (workAreaVisible) workAreaPanel.current?.expand();
     else workAreaPanel.current?.collapse();
-  }, [workAreaVisible, workAreaPanel]);
+  }, [compact, workAreaVisible, workAreaPanel]);
   const ref = useRef<HTMLDivElement>(null);
-  const [compact, setCompact] = useState(false);
   const { t } = useI18n();
   const visiblePanels = Number(showWorkspace) + Number(showAssistant) + Number(appVisible);
   const stacked = compact && visiblePanels > 1;
