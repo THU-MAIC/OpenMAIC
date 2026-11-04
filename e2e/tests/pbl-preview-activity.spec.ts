@@ -18,6 +18,7 @@ test('keeps embedded activity private and new-tab applications genuinely top-lev
   let signals = 0;
   let standalone = false;
   let pinned = false;
+  let requireFreshGrant = false;
   let proxiedWorkers = 0;
   const sockets = new Set<Socket>();
   const pending = new Set<ServerResponse>();
@@ -109,12 +110,18 @@ Promise.all([
     }
     let text = '';
     for await (const chunk of req) text += chunk;
-    if (JSON.parse(text).activity === true) signals++;
+    const request = JSON.parse(text);
+    if (requireFreshGrant && request.ticket !== 'fresh-test-grant') {
+      res.writeHead(403).end();
+      return;
+    }
+    if (request.activity === true) signals++;
     res.setHeader('content-type', 'application/json');
-    if (pinned && JSON.parse(text).document === true) {
+    if (pinned && request.document === true) {
       res.end(
         JSON.stringify({
           transport: 'document',
+          appOrigin: 'http://' + req.headers.host,
           html: `<h1>Pinned application</h1><output></output>
 <form><input type="hidden" name="case" value="get"><button>Implicit GET</button></form>
 <form method="post"><input type="hidden" name="case" value="post"><button>Implicit POST</button></form>
@@ -243,6 +250,31 @@ Promise.all([
     const pinnedFrame = page.frameLocator('iframe[title="Preview"]').frameLocator('iframe');
     await expect(pinnedFrame.getByRole('heading', { name: 'Pinned application' })).toBeVisible();
     await expect(pinnedFrame.locator('output')).toHaveText('true');
+    const appOutput = pinnedFrame.locator('output');
+    const denied = await appOutput.evaluate(
+      async () =>
+        (await fetch('/__openmaic_renew', { method: 'POST', body: 'fresh-test-grant' })).status,
+    );
+    expect(denied).toBe(403);
+    await appOutput.evaluate((output) => output.setAttribute('data-preserved', 'true'));
+    expect(
+      await page.evaluate(
+        async (previewOrigin) =>
+          (
+            await fetch(previewOrigin + '/__openmaic_renew', {
+              method: 'POST',
+              credentials: 'include',
+              body: 'fresh-test-grant',
+            })
+          ).status,
+        origin,
+      ),
+    ).toBe(200);
+    requireFreshGrant = true;
+    expect(await appOutput.evaluate(async () => (await fetch('/?check=api')).status)).toBe(200);
+    await expect(appOutput).toHaveAttribute('data-preserved', 'true');
+    expect(signals).toBe(3);
+    requireFreshGrant = false;
     await pinnedFrame.getByRole('button', { name: 'Implicit GET' }).click();
     await expect(pinnedFrame.getByText('GET /?case=get')).toBeVisible();
     for (const [name, response] of [
