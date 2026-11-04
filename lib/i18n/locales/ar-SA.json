@@ -1153,6 +1153,7 @@
     "materialTooLarge": "{{name}} كبير جدًا: الحد الأقصى لحجم المادة {{size}}."
   },
   "generation": {
+    "qwenCloneNewGenerationHint": "يجب استنساخ هذا الصوت المحفوظ مجددًا. ارفع تسجيلًا مرجعيًا مناسبًا في إعدادات الصوت، واختر الصوت الجديد، ثم ابدأ عملية توليد جديدة. إعادة محاولة العملية المتوقفة مؤقتًا ستظل تستخدم الصوت الأصلي.",
     "quotaExhausted": "لقد نفدت حصة التوليد. يُرجى التحقق من حصة خطتك أو رصيد حسابك، أو التواصل مع المسؤول لحل المشكلة قبل إعادة المحاولة.",
     "pdfLoadFailed": "فشل تحميل ملف PDF، يرجى المحاولة مرة أخرى",
     "pdfParseFailed": "فشل تحليل PDF",
@@ -1433,6 +1434,8 @@
     "providerDoubaoTTS": "Doubao TTS 2.0 (فولكينجين)",
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
+    "providerXiaomiTTS": "Xiaomi MiMo TTS",
+    "providerXiaomiASR": "Xiaomi MiMo ASR",
     "providerGoogleTTS": "Google Gemini TTS",
     "providerLemonadeTTS": "Lemonade TTS (محلي)",
     "providerBrowserNativeTTS": "تحويل النص إلى كلام المدمج في المتصفح",
@@ -1476,8 +1479,8 @@
     "voxcpmDeleteVoice": "حذف الصوت",
     "qwenCloneVoicesTitle": "Qwen TTS Cloned Voices",
     "qwenCloneUploadShort": "تحميل",
-    "qwenCloneRefText": "Enter the verbatim transcript of the reference audio",
-    "qwenCloneRefAudioHint": "Use a clean 1–60 second voice sample. A 10–20 second sample is recommended; audio is converted to 24 kHz mono PCM WAV.",
+    "qwenCloneRefAudioHint": "Use a clean 5–60 second voice sample (10–20 seconds recommended). Audio is converted to 24 kHz mono PCM WAV.",
+    "qwenCloneMigrationHint": "يجب استنساخ هذا الصوت المحفوظ من جديد. ارفع التسجيل الصوتي المرجعي في إعدادات الصوت.",
     "qwenCloneSaved": "Qwen cloned voice registered and saved",
     "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
     "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",

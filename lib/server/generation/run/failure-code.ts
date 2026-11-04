@@ -4,28 +4,15 @@
  * called those routes itself.
  */
 import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
+import { AudioProviderError } from '@/lib/audio/provider-error';
 import { isUpstreamQuotaExhausted, upstreamHttpStatus } from '@/lib/server/llm-error-response';
 import { ModelConfigurationError } from '@/lib/server/model-config/llm';
 import { WebSearchConfigError } from '@/lib/server/web-search-config';
 
 import { StepRefusal } from '../steps/context';
 
-/**
- * Codes `runFailureCode` itself returns. Host classifiers may report other
- * codes through the same `errorCode` field; this union is only the built-in set.
- */
-export type RunFailureErrorCode =
-  | 'PROVIDER_DISABLED'
-  | 'MISSING_API_KEY'
-  | 'INVALID_URL'
-  | 'MODEL_CONFIG_INVALID'
-  | 'MISSING_REQUIRED_FIELD'
-  | 'INVALID_REQUEST'
-  | 'GENERATION_FAILED'
-  | 'PROVIDER_QUOTA_EXHAUSTED'
-  | 'RATE_LIMITED'
-  | 'UPSTREAM_ERROR'
-  | 'INTERNAL_ERROR';
+/** Public codes include adapter-owned actionable failures; never raw provider bodies. */
+export type RunFailureErrorCode = RunFailureCode['errorCode'];
 
 export interface RunFailureCode {
   errorCode: string;
@@ -38,9 +25,9 @@ export interface RunFailureCode {
   statusCode?: number;
 }
 
-export function runFailureCode(
-  error: unknown,
-): RunFailureCode & { errorCode: RunFailureErrorCode } {
+export function runFailureCode(error: unknown): RunFailureCode {
+  if (error instanceof AudioProviderError && error.audioFailureKind === 'voice-incompatible')
+    return { errorCode: error.code, statusCode: error.httpStatus };
   if (error instanceof ModelAuthorizationError)
     return { errorCode: error.code, statusCode: error.httpStatus };
   if (error instanceof ModelConfigurationError || error instanceof WebSearchConfigError) {

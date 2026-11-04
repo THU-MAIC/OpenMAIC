@@ -11,6 +11,9 @@ import {
   serverMediaConnection,
   type MediaConnection,
 } from '@/lib/server/model-config/media';
+import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
+import { getVoiceRegistrationAdapter } from '@/lib/audio/voice-registration';
+import { audioFailureKind } from '@/lib/audio/provider-error';
 import { DEFAULT_TTS_MODELS, DEFAULT_TTS_VOICES, TTS_PROVIDERS } from '@/lib/audio/constants';
 import { generateTTS, TTSRateLimitError, TTSRequestTimeoutError } from '@/lib/audio/tts-providers';
 import { runFailureCode, type RunFailureErrorCode } from '@/lib/server/generation/run/failure-code';
@@ -29,6 +32,8 @@ export interface SceneTtsFailure {
   id: string;
   /** `runFailureCode().errorCode`. Never a provider body or `error.message`. */
   reason: RunFailureErrorCode;
+  /** Safe recovery instruction, independent of the provider’s public error code. */
+  recovery?: 'reclone';
 }
 
 /**
@@ -166,14 +171,19 @@ export function resetAgentTtsProviderGatesForTests(): void {
 }
 
 /** Model-visible tally. Error codes only, never action ids or provider bodies. */
-export function formatTtsFailureTally(failed: readonly { reason: string }[]): string {
+export function formatTtsFailureTally(
+  failed: readonly Pick<SceneTtsFailure, 'reason' | 'recovery'>[],
+): string {
   if (failed.length === 0) return '0 failed';
   const counts = new Map<string, number>();
   for (const failure of failed) {
     counts.set(failure.reason, (counts.get(failure.reason) ?? 0) + 1);
   }
   const breakdown = [...counts].map(([code, count]) => `${code}\u00d7${count}`).join(', ');
-  return `${failed.length} failed (${breakdown})`;
+  const guidance = failed.some((failure) => failure.recovery === 'reclone')
+    ? ' Re-upload the reference audio to clone the saved voice again.'
+    : '';
+  return `${failed.length} failed (${breakdown})${guidance}`;
 }
 
 export interface SceneTtsInput {
@@ -326,12 +336,6 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
   const model =
     activeConnection.modelId ??
     (DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '');
-  // A configured slot's own model; the legacy server pins apply only to a default.
-  const modelId =
-    (activeConnection.origin === 'configuration'
-      ? slotTTSModel(providerId, model, voice, activeConnection.voices)
-      : resolveTTSModel(providerId, model, voice, activeConnection.voices)) || '';
-  authorizeMediaModel(activeConnection, 'tts', modelId);
   let generated = 0;
   let skipped = 0;
   const failed: SceneTtsFailure[] = [];
@@ -371,6 +375,16 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
                   return undefined;
                 }
                 try {
+                  getVoiceRegistrationAdapter(providerId)?.assertVoiceCompatible?.(
+                    voice,
+                    activeConnection.voices,
+                  );
+                  // Resolve and authorize the wire model only after checking the saved voice.
+                  const modelId =
+                    (activeConnection.origin === 'configuration'
+                      ? slotTTSModel(providerId, model, voice, activeConnection.voices)
+                      : resolveTTSModel(providerId, model, voice, activeConnection.voices)) || '';
+                  authorizeMediaModel(activeConnection, 'tts', modelId);
                   return await generateTTS(
                     {
                       providerId,
@@ -431,6 +445,8 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
             },
             rethrow: (error) =>
               error instanceof TTSRequestTimeoutError ||
+              audioFailureKind(error) === 'voice-incompatible' ||
+              audioFailureKind(error) === 'timeout' ||
               input.signal?.aborted === true ||
               isTtsBudgetWaitError(error),
           },
@@ -459,8 +475,19 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
         // A hung provider must fail the tool call with the retryable timeout
         // error instead of degrading into a per-action failure: the remaining
         // actions would hit the same hung upstream and the session would wedge.
-        if (error instanceof TTSRequestTimeoutError) throw error;
-        failed.push({ id: action.id, reason: runFailureCode(error).errorCode });
+        if (
+          error instanceof TTSRequestTimeoutError ||
+          error instanceof ModelAuthorizationError ||
+          audioFailureKind(error) === 'timeout'
+        )
+          throw error;
+        failed.push({
+          id: action.id,
+          reason: runFailureCode(error).errorCode,
+          ...(audioFailureKind(error) === 'voice-incompatible'
+            ? { recovery: 'reclone' as const }
+            : {}),
+        });
       }
     }
     return {
