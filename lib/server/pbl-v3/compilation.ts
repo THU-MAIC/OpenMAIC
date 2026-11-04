@@ -21,7 +21,9 @@ export async function executionCommand(store: LearningStore, row: Study, service
 
 export async function executionSnapshot(service: SandboxService, row: Study) {
   try {
-    return await fileSnapshot(service, row);
+    return await fileSnapshot(service, row, undefined, {
+      allowApplications: row.evaluation?.isolatedSources === true,
+    });
   } catch (error) {
     if (checkpointFailure(error).reason === 'source-limit') return null;
     throw error;

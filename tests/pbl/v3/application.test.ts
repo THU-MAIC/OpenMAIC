@@ -44,6 +44,8 @@ const mock = vi.hoisted(() => ({
   command: vi.fn(),
   observe: vi.fn(),
   assertObservation: vi.fn(),
+  touchEnvironment: vi.fn(),
+  dispatchApplication: vi.fn(),
   paths: ['app.py'],
   files: { 'app.py': 'pass\n' } as Record<string, string>,
 }));
@@ -98,6 +100,10 @@ const service = {
     mock.starts.push(body.requestId);
     return { state: mock.state };
   },
+  prepareApplicationCommand: async (_id: string, body: { requestId: string }) => {
+    mock.starts.push(body.requestId);
+    return mock.dispatchApplication;
+  },
   command: mock.command,
   observeApplication: mock.observe,
   assertApplicationObservation: mock.assertObservation,
@@ -131,7 +137,7 @@ vi.mock('@/lib/server/pbl-v3/environment', () => ({
   assertEnvironmentWritable: async () => {
     if (mock.row.released) throw Error('Environment released');
   },
-  touchEnvironment: async () => ({ state: 'running', workspaceReady: true }),
+  touchEnvironment: mock.touchEnvironment,
   environmentReleaseCommitted: (row: StudyFixture) => !!row.released,
 }));
 vi.mock('@/lib/server/pbl-v3/workspace-files', () => ({ projectFiles: async () => mock.paths }));
@@ -187,6 +193,8 @@ beforeEach(() => {
   };
   mock.exclusive.mockImplementation(async (_id: string, run: () => Promise<unknown>) => run());
   mock.observe.mockResolvedValue(JSON.stringify({ sourceHash: 'new-source', httpStatus: 200 }));
+  mock.touchEnvironment.mockReset().mockResolvedValue({ state: 'running', workspaceReady: true });
+  mock.dispatchApplication.mockReset().mockResolvedValue({ state: 'running' });
   mock.command.mockImplementation(async () => ({
     state: mock.state,
     stdout: '',
@@ -196,6 +204,73 @@ beforeEach(() => {
 });
 
 describe('declared project applications', () => {
+  it('releases the study lock before dispatching a reserved standalone application', async () => {
+    mock.project.application!.frontendPath = 'src/web/index.html';
+    let locked = false;
+    mock.exclusive.mockImplementation(async (_id: string, run: () => Promise<unknown>) => {
+      if (locked) throw Error('study lock busy');
+      locked = true;
+      try {
+        return await run();
+      } finally {
+        locked = false;
+      }
+    });
+    let start!: () => void;
+    const dispatched = new Promise<void>((resolve) => {
+      start = resolve;
+    });
+    let finish!: () => void;
+    mock.dispatchApplication.mockImplementationOnce(async () => {
+      start();
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const launch = applicationRequest(owner, request());
+    const rejected = expect(launch).rejects.toMatchObject({ reason: 'PROGRESS_CHANGED' });
+    await dispatched;
+    try {
+      expect(mock.starts).toEqual([request().id]);
+      await mock.exclusive(study, async () => {
+        mock.row = { ...mock.row, revision: mock.row.revision + 1 };
+      });
+    } finally {
+      finish();
+    }
+    await rejected;
+  });
+
+  it('admits teaching work during a standalone lease check and refuses the stale launch', async () => {
+    mock.project.application!.frontendPath = 'src/web/index.html';
+    let entered!: () => void;
+    const checking = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let finish!: () => void;
+    mock.touchEnvironment.mockImplementationOnce(async () => {
+      entered();
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      return { state: 'running', workspaceReady: true };
+    });
+    const launch = applicationRequest(owner, request());
+    const rejected = expect(launch).rejects.toMatchObject({ reason: 'PROGRESS_CHANGED' });
+    await checking;
+    try {
+      expect(mock.exclusive).not.toHaveBeenCalled();
+      await mock.exclusive(study, async () => {
+        mock.row = { ...mock.row, revision: mock.row.revision + 1 };
+      });
+    } finally {
+      finish();
+    }
+    await rejected;
+    expect(mock.starts).toEqual([]);
+    expect(mock.writer).not.toHaveBeenCalled();
+  });
+
   it.each(['status', 'open'])(
     'keeps the study lock available while a standalone %s probe waits',
     async (action) => {

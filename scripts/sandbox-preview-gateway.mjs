@@ -271,9 +271,13 @@ const server = http.createServer(async (req, res) => {
       res.end(previewShell(nonce));
       return;
     }
-    if (path.pathname === '/__openmaic_authorize') {
-      checkOrigin(req, host);
-      if (req.method !== 'POST' || !req.headers['content-type']?.startsWith('application/json'))
+    if (path.pathname === '/__openmaic_authorize' || path.pathname === '/__openmaic_renew') {
+      const renewing = path.pathname === '/__openmaic_renew';
+      if (!renewing) checkOrigin(req, host);
+      if (
+        req.method !== 'POST' ||
+        !req.headers['content-type']?.startsWith(renewing ? 'text/plain' : 'application/json')
+      )
         throw new Error('Invalid exchange');
       const chunks = [];
       let size = 0;
@@ -282,10 +286,27 @@ const server = http.createServer(async (req, res) => {
         if (size > 8192) throw new Error('Body limit');
         chunks.push(chunk);
       }
-      const { ticket } = JSON.parse(Buffer.concat(chunks).toString());
+      const body = Buffer.concat(chunks).toString();
+      const ticket = renewing ? body : JSON.parse(body).ticket;
       if (typeof ticket !== 'string' || ticket.length > 4096 || !/^[-_a-zA-Z0-9.]+$/.test(ticket))
         throw new Error('Invalid ticket');
-      const target = await resolve(ticket, host, false, true, true);
+      const target = await resolve(ticket, host, false, true, !renewing);
+      if (renewing) {
+        // The owner page exchanges its newly issued grant directly. The
+        // learner document receives neither the bearer nor an activity signal.
+        if (target.transport !== 'document' || req.headers.origin !== target.appOrigin)
+          throw new Error('Invalid renewal origin');
+        res.writeHead(200, {
+          'access-control-allow-origin': target.appOrigin,
+          'access-control-allow-credentials': 'true',
+          vary: 'Origin',
+          'cache-control': 'no-store',
+          'content-type': 'application/json',
+          'set-cookie': previewAuthorizationCookies(cookieName, ticket, target.expiresAt),
+        });
+        res.end(JSON.stringify({ expiresAt: target.expiresAt }));
+        return;
+      }
       res.writeHead(200, {
         'cache-control': 'no-store',
         'content-type': 'application/json',

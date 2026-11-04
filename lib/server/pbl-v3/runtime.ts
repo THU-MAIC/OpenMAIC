@@ -123,9 +123,9 @@ export async function readFiles(
   const result: Record<string, string> = {};
   const environmentId = requireEnvironment(row);
   // Durable evidence uses a quiesced snapshot by default. Read-only teaching
-  // version observations and the periodic fallback backup may leave applications
-  // running; final approval, assessments, stage checkpoints and idle release
-  // retain the strict default.
+  // version observations, detached assessments and the periodic fallback
+  // backup may leave applications running. Durable evidence and release retain
+  // the strict default.
   await service.assertWorkspaceIdle(environmentId, signal, options);
   let bytes = 0;
   const paths = await checkpointIO(
@@ -160,6 +160,7 @@ export async function saveStudyCheckpoint(
   row: Study,
   // A strict snapshot already taken by this operation under the same study lock.
   snapshotForTransition?: Awaited<ReturnType<typeof fileSnapshot>>,
+  allowApplications = false,
 ) {
   const signal = AbortSignal.timeout(CHECKPOINT_TIMEOUT_MS);
   const { pool } = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
@@ -181,15 +182,27 @@ export async function saveStudyCheckpoint(
   );
   const snapshot = await checkpointStep('snapshot', async () => {
     if (renew) await service.renewForCheckpoint(requireEnvironment(row), signal);
-    return snapshotForTransition ?? fileSnapshot(service, row, signal);
+    return snapshotForTransition ?? fileSnapshot(service, row, signal, { allowApplications });
   });
   const previous = await service.checkpoint(requireEnvironment(row));
   const prepared = await checkpointStep('archive', () =>
     service.prepareWorkspaceCheckpoint(requireEnvironment(row), previous?.revision ?? 0, signal, {
       renew: false,
+      allowApplications,
     }),
   );
   try {
+    if (allowApplications) {
+      // The study lock excludes teaching writes. Recheck the exact evidence
+      // before publishing an archive captured with the application still live.
+      const current = await fileSnapshot(service, row, signal, { allowApplications });
+      if (current.fingerprint !== snapshot.fingerprint)
+        throw new SandboxError(
+          'CHECKPOINT_CHANGED',
+          409,
+          'Source files changed during checkpoint.',
+        );
+    }
     await prepared.commit(async (db) => {
       const valid = await db.query(
         `SELECT id FROM pbl_v3_studies WHERE id=$1 AND owner_id=$2 AND environment_id=$3
@@ -864,10 +877,14 @@ export async function commandStudy(
       check('evaluate');
       if (row.evaluation && row.evaluation.id !== command.id)
         throw sandboxConflict('Collect the existing test result before starting another run.');
-      const snapshot = await fileSnapshot(service, row);
-      const testCommand =
-        row.evaluation?.evaluationCommand ??
-        evaluationCommand(
+      let testCommand = row.evaluation?.evaluationCommand;
+      if (testCommand && row.evaluation?.isolatedSources !== true) await fileSnapshot(service, row);
+      if (!testCommand) {
+        const isolatedSources = !row.evaluation && !!project.application?.frontendPath;
+        const snapshot = await fileSnapshot(service, row, undefined, {
+          allowApplications: isolatedSources,
+        });
+        testCommand = evaluationCommand(
           evaluationFor(
             project,
             row.state.position.milestoneId!,
@@ -875,19 +892,22 @@ export async function commandStudy(
             row.state.collected[row.state.position.milestoneId!]?.decisions,
           ),
           command.id,
+          isolatedSources ? snapshot.files : undefined,
         );
+        row.evaluation ??= {
+          id: command.id,
+          fingerprint: snapshot.fingerprint,
+          stageKey: stageKey(row),
+          startedAt: new Date().toISOString(),
+          evaluationCommand: testCommand,
+          ...(isolatedSources ? { isolatedSources: true as const } : {}),
+        };
+      }
       if (Buffer.byteLength(testCommand) > MAX_COMMAND_BYTES)
         throw sandboxInvalid(
           'Current evaluation sources exceed the sandbox 32 KiB command limit.',
           'PBL_SOURCE_SIZE',
         );
-      row.evaluation ??= {
-        id: command.id,
-        fingerprint: snapshot.fingerprint,
-        stageKey: stageKey(row),
-        startedAt: new Date().toISOString(),
-        evaluationCommand: testCommand,
-      };
       row = await store.transaction((db) =>
         store.commit(db, row, { state: row.state, events: [] }),
       );
@@ -913,9 +933,17 @@ export async function commandStudy(
         if (!hasStageCompletion(row, stage, binding))
           throw sandboxConflict('Complete the current teaching interaction first.');
       }
+      const endingMilestone =
+        row.state.position.stageIndex ===
+        currentMilestone(definition, row.state)!.stages.length - 1;
+      // Standalone apps can remain live during a read-only stage confirmation,
+      // using the same managed-writer fence as periodic backups.
+      const allowApplications = !endingMilestone && !!project.application?.frontendPath;
       let verifiedSnapshot: Awaited<ReturnType<typeof fileSnapshot>> | undefined;
       if (stage.kind === 'produce' || (stage.kind === 'check' && stage.checker === 'tests')) {
-        verifiedSnapshot = await fileSnapshot(service, row);
+        verifiedSnapshot = await fileSnapshot(service, row, undefined, {
+          allowApplications,
+        });
         const collected = row.state.collected[row.state.position.milestoneId!]!;
         const expected =
           stage.kind === 'check'
@@ -928,12 +956,9 @@ export async function commandStudy(
         if (stage.kind === 'produce' && stage.writes === 'plan')
           await assertLearningPlan(store, row, verifiedSnapshot.files['PLAN.md']!, true);
       }
-      const endingMilestone =
-        row.state.position.stageIndex ===
-        currentMilestone(definition, row.state)!.stages.length - 1;
       if (stage.kind === 'produce' || endingMilestone) {
         // Establish a durable artifact before acknowledging the student's stage confirmation.
-        await saveStudyCheckpoint(service, row, verifiedSnapshot);
+        await saveStudyCheckpoint(service, row, verifiedSnapshot, allowApplications);
       }
       transition = transitions.completeCurrentStage(definition, row.state);
     } else throw sandboxInvalid('Unknown learning action.');
@@ -1235,6 +1260,7 @@ export async function learningView(
           id: observed.id,
           state: observed.state,
           ...(row.evaluation.purpose ? { purpose: row.evaluation.purpose } : {}),
+          ...(row.evaluation.isolatedSources ? { isolatedSources: true as const } : {}),
           stdout: row.evaluation.purpose === 'compile' ? observed.stdout.slice(0, 8000) : '',
           stderr: row.evaluation.purpose === 'compile' ? observed.stderr.slice(0, 8000) : '',
         };
@@ -1245,6 +1271,7 @@ export async function learningView(
         stdout: '',
         stderr: '',
         ...(row.evaluation.purpose ? { purpose: row.evaluation.purpose } : {}),
+        ...(row.evaluation.isolatedSources ? { isolatedSources: true as const } : {}),
       };
       // A missing command observation does not contradict the workspace health probe.
       // Keep the execution lock until collection confirms that its writer has stopped.
