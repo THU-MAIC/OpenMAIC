@@ -572,6 +572,7 @@ export function useApplicationPreview(
   function toggle() {
     if (open) close();
     else if (!disabled) {
+      closedStudy.current = null;
       setOpen(true);
       if (
         !document ||

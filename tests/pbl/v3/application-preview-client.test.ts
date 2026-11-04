@@ -2238,6 +2238,76 @@ it('opens the application once on entry, including a read-only Agent opening, an
   }
 });
 
+it.each([
+  { change: 'epoch', reopened: false },
+  { change: 'epoch', reopened: true },
+  { change: 'environment', reopened: false },
+  { change: 'environment', reopened: true },
+])(
+  'respects the last preview toggle after a $change change (reopened: $reopened)',
+  async ({ change, reopened }) => {
+    const current: LearningView = {
+      ...view,
+      application: { ...view.application!, standaloneFrontend: true },
+    };
+    mocks.request.mockImplementation((_url, input) =>
+      input.action === 'frontend'
+        ? {
+            ...running,
+            preview: {
+              ...running.preview,
+              url: `https://isolated.example/${input.environmentId}/${input.epoch}`,
+            },
+          }
+        : { observedAt: '', state: 'running' },
+    );
+    const f = await fixture();
+    try {
+      await act(async () => f.root.render(createElement(Harness, { current, automatic: true })));
+      const originalFrame = f.host.querySelector('iframe')!;
+      expect(originalFrame).not.toBeNull();
+      await f.click();
+      if (reopened) await f.click();
+      expect(f.host.querySelector('iframe')).toBe(originalFrame);
+
+      const environmentId = change === 'environment' ? 'replacement' : current.environmentId!;
+      const epoch = change === 'epoch' ? 1 : 0;
+      await act(async () =>
+        f.root.render(
+          createElement(Harness, {
+            current: { ...current, environmentId },
+            workbenchEnvironmentId: environmentId,
+            epoch,
+            automatic: true,
+          }),
+        ),
+      );
+      expect(
+        f.host.querySelector('[data-testid="pbl-application-open"]')?.getAttribute('aria-expanded'),
+      ).toBe(String(reopened));
+      const replacementFrame = f.host.querySelector('iframe');
+      if (reopened) {
+        expect(replacementFrame).not.toBe(originalFrame);
+        expect(replacementFrame?.src).toBe(`https://isolated.example/${environmentId}/${epoch}`);
+        expect(mocks.request.mock.calls.map(([, request]) => request.action)).toEqual([
+          'frontend',
+          'open',
+          'frontend',
+          'open',
+        ]);
+      } else {
+        expect(replacementFrame).toBeNull();
+        expect(mocks.request.mock.calls.map(([, request]) => request.action)).toEqual([
+          'frontend',
+          'open',
+        ]);
+      }
+    } finally {
+      await f.cleanup();
+    }
+  },
+);
+
 it('keeps preview input active through a read-only reply and its background unchanged-source check', async () => {
   let finish!: (value: ApplicationObservation) => void;
   mocks.request.mockResolvedValueOnce(running).mockImplementationOnce(
