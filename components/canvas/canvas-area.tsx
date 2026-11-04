@@ -116,7 +116,10 @@ export function CanvasArea({
       >
         <StageViewport
           workbench={inWorkbenchPanel}
-          interactive={currentScene?.type === 'interactive'}
+          fillContainer={
+            currentScene?.type === 'interactive' ||
+            (currentScene?.content.type === 'pbl' && !!currentScene.content.projectV3)
+          }
           className={cn(
             // Only its colours ease, between scene types. Its size must not: a box
             // measured on mount would otherwise visibly shrink to 16:9 every time.
@@ -313,18 +316,18 @@ export function CanvasArea({
 
 function StageViewport({
   workbench,
-  interactive,
+  fillContainer,
   className,
   onClick,
   children,
 }: {
   readonly workbench: boolean;
-  readonly interactive: boolean;
+  readonly fillContainer: boolean;
   readonly className?: string;
   readonly onClick?: (event: React.MouseEvent) => void;
   readonly children: ReactNode;
 }) {
-  if (interactive) {
+  if (fillContainer) {
     return (
       <div className={cn('h-full w-full', className)} onClick={onClick}>
         {children}

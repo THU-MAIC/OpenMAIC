@@ -21,7 +21,8 @@
     "stop": "이번 생성 중지",
     "waiting": "처리 중",
     "emptyTitle": "새 대화를 시작하세요",
-    "emptyHint": "원하는 변경을 설명하거나 @ 로 교실을 지정해 주세요"
+    "emptyHint": "원하는 변경을 설명하거나 @ 로 교실을 지정해 주세요",
+    "copyReply": "Copy Agent reply"
   },
   "question": {
     "waiting": "답변을 기다리고 있습니다",
@@ -206,6 +207,15 @@
       "createStage": "수업 만들기",
       "renameStage": "수업 이름 변경",
       "readStageOutline": "수업 개요 읽기",
+      "writeFile": "Write file",
+      "listFiles": "List project files",
+      "manageFile": "Manage project file",
+      "runBuild": "Run build",
+      "collectBuild": "Collect build result",
+      "readTeachingSkill": "Read teaching section",
+      "requestReview": "Ask for review",
+      "completeTeachingStage": "Complete teaching step",
+      "respondToLearner": "Answer your question",
       "listMaterialFolders": "지식 베이스 폴더 확인",
       "createMaterialFolder": "지식 베이스 폴더 만들기",
       "renameMaterialFolder": "지식 베이스 폴더 이름 변경",
@@ -298,6 +308,7 @@
       "renameStage": "수업 이름을 바꾸지 못했습니다",
       "readStageOutline": "수업 개요를 읽지 못했습니다",
       "generic": "도구 호출에 실패했습니다",
+      "interrupted": "Tool call interrupted",
       "listMaterialFolders": "지식 베이스 폴더를 확인하지 못했습니다",
       "createMaterialFolder": "지식 베이스 폴더를 만들지 못했습니다",
       "renameMaterialFolder": "지식 베이스 폴더 이름을 바꾸지 못했습니다",

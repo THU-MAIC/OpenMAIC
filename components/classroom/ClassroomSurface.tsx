@@ -48,6 +48,7 @@ import { useClassroomSession } from '@/lib/classroom/use-classroom-session';
 import { applySceneDeepLink } from '@/lib/classroom/scene-deep-link';
 import { useRunCourse } from '@/lib/generation-run-client/use-run-course';
 import { pendingSceneFailureKey } from '@/lib/generation-run-client/failure-message';
+import { PblActivityProvider } from '@/components/scene-renderers/pbl/v3/activity-provider';
 
 const log = createLogger('Classroom');
 
@@ -57,7 +58,15 @@ const LOAD_UNAVAILABLE_ERROR = 'load-unavailable';
 // stage_link can become visible shortly before its document. Probe only that
 // explicit availability gap, with a small bounded backoff; media conversion
 // and ordinary failures never enter this schedule.
-export function ClassroomSurface({
+export function ClassroomSurface(props: { classroomId: string; variant?: 'page' | 'pane' }) {
+  return (
+    <PblActivityProvider classroomId={props.classroomId}>
+      <ClassroomSurfaceContent {...props} />
+    </PblActivityProvider>
+  );
+}
+
+function ClassroomSurfaceContent({
   classroomId,
   variant = 'page',
 }: {

@@ -65,3 +65,13 @@ describe('POST agent session cancellation', () => {
     expect(mocks.requestCancel).not.toHaveBeenCalled();
   });
 });
+
+it('does not expose or control a teaching session through the generic API', async () => {
+  const id = 'pbl-role-owned';
+  const response = await POST(new NextRequest('http://localhost/api/agent/sessions/' + id), {
+    params: Promise.resolve({ id }),
+  });
+  expect(response.status).toBe(404);
+  expect(mocks.getSession).not.toHaveBeenCalled();
+  expect(mocks.requestCancel).not.toHaveBeenCalled();
+});

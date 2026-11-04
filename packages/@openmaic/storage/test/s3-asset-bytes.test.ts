@@ -4,7 +4,7 @@ import {
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { contentHashOf } from '../src/asset/blob.js';
 import { S3AssetByteStore } from '../src/asset/s3-bytes.js';
 import { expectNoDigestSubstring } from './asset-contract.js';
@@ -250,4 +250,79 @@ describe('S3AssetByteStore URL signing', () => {
     expect(signed.searchParams.get('X-Amz-Expires')).toBe('60');
     expect(signed.searchParams.get('X-Amz-Signature')).toBeTruthy();
   });
+});
+
+describe('isolated byte namespaces', () => {
+  test('forwards cancellation to an isolated upload and exposes only a safe failure category', async () => {
+    const controller = new AbortController();
+    const send = vi.fn(
+      (_command: unknown, options?: { abortSignal?: AbortSignal }) =>
+        new Promise((_, reject) =>
+          options?.abortSignal?.addEventListener(
+            'abort',
+            () => reject(new DOMException('PRIVATE URL', 'AbortError')),
+            { once: true },
+          ),
+        ),
+    );
+    const store = new S3AssetByteStore({
+      bucket: 'test-bucket',
+      client: { send },
+      commands,
+    }).withPrefix('checkpoints/');
+    const { contentHash, bytes } = await contentHashOf(new Blob(['content']));
+    const saving = store.write(contentHash, new Uint8Array(bytes), { signal: controller.signal });
+    const rejected = expect(saving).rejects.toMatchObject({
+      code: 'ASSET_STORAGE_TIMEOUT',
+      message: '@openmaic/storage: S3 asset byte write failed',
+    });
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    expect(send.mock.calls[0]?.[1]?.abortSignal).toBe(controller.signal);
+    controller.abort();
+    await rejected;
+  });
+  test.each([
+    ['AccessDenied', 'ASSET_STORAGE_PERMISSION'],
+    ['NoSuchBucket', 'ASSET_STORAGE_CONFIG'],
+    ['RequestTimeout', 'ASSET_STORAGE_TIMEOUT'],
+    ['UnknownError', 'ASSET_STORAGE_UNAVAILABLE'],
+  ])('classifies %s without exposing SDK details', async (name, code) => {
+    const store = new S3AssetByteStore({
+      bucket: 'test-bucket',
+      commands,
+      client: {
+        send: async () => {
+          throw Object.assign(new Error('PRIVATE SECRET'), { name });
+        },
+      },
+    });
+    const { contentHash, bytes } = await contentHashOf(new Blob(['content']));
+    await expect(store.write(contentHash, new Uint8Array(bytes))).rejects.toMatchObject({
+      code,
+      message: '@openmaic/storage: S3 asset byte write failed',
+    });
+  });
+  test('keeps course and checkpoint bytes separate in both directions', async () => {
+    const client = new MemoryS3Client();
+    const course = makeStore(client);
+    const checkpoint = course.withPrefix('sandbox-checkpoints/v1/one/');
+    const { contentHash, bytes } = await contentHashOf(new Blob(['same content']));
+    await course.write(contentHash, new Uint8Array(bytes));
+    await checkpoint.write(contentHash, new Uint8Array(bytes));
+    expect([...client.objects.keys()]).toEqual([
+      contentHash,
+      'sandbox-checkpoints/v1/one/' + contentHash,
+    ]);
+    await course.delete(contentHash);
+    expect(await checkpoint.read(contentHash)).not.toBeNull();
+    await course.write(contentHash, new Uint8Array(bytes));
+    await checkpoint.delete(contentHash);
+    expect(await course.read(contentHash)).not.toBeNull();
+  });
+  test.each(['', '../', '/root/', 'with.dot/', 'no-trailing-slash'])(
+    'refuses unsafe namespace %j',
+    (prefix) => {
+      expect(() => makeStore().withPrefix(prefix)).toThrow();
+    },
+  );
 });

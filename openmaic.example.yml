@@ -138,3 +138,22 @@ slots:
 # false: users cannot add providers, keys or token plans; they only choose
 # among the providers declared above, for the slots lock leaves open.
 # allowUserKeys: true
+
+# Shared sandbox execution (installation-scoped, disabled unless enabled below).
+# The key selects the provider account. Do not commit literal credentials.
+# sandbox:
+#   enabled: true
+#   provider: e2b-compatible
+#   connectionId: my-installation
+#   apiUrl: https://api.e2b.dev
+#   domain: e2b.app
+#   apiKey: ${SANDBOX_API_KEY}
+#   template: your-code-template
+#   desktopTemplate: your-desktop-template  # optional
+#   lifetimeMs: 300000
+#   maxActive: 5
+#   maxActivePerOwner: 1
+# Installation administrators may override these in Settings → Sandbox.
+# Add sandbox to the existing lock list (or use lock: all) to make it read-only:
+# lock: [sandbox]
+# A locked, absent sandbox section stays disabled.

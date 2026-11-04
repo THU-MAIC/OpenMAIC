@@ -108,6 +108,9 @@ describe('workspace model configuration store', () => {
     await expect(
       saveWorkspaceModelConfig(pool, OWNER, { slots: { video: null }, lock: ['video'] }, null),
     ).rejects.toThrow(/only the deployment configuration sets lock/);
+    await expect(
+      saveWorkspaceModelConfig(pool, OWNER, { sandbox: {} } as never, null),
+    ).rejects.toThrow(/only the deployment configuration sets sandbox/);
     expect(await readWorkspaceModelConfig(pool, OWNER)).toBeNull();
   });
 

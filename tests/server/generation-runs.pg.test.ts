@@ -2614,7 +2614,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
 
       const resumed = mediaServices();
       expect(
-        await executeGenerationRun(takeover, {
+        await executeGenerationRun(takeover!, {
           services: resumed.services,
           signal: new AbortController().signal,
         }),

@@ -85,15 +85,41 @@ const COMPONENTS = {
   },
 } as const;
 
+const LESSON_COMPONENTS = {
+  ...COMPONENTS,
+  p: ({
+    children,
+    node,
+    ...props
+  }: React.HTMLAttributes<HTMLParagraphElement> & {
+    node?: { children?: { type?: string; tagName?: string }[] };
+  }) => (
+    <p
+      {...props}
+      data-pbl-lead={
+        node?.children?.length === 1 &&
+        node.children[0]?.type === 'element' &&
+        node.children[0]?.tagName === 'strong'
+          ? 'true'
+          : undefined
+      }
+    >
+      {children}
+    </p>
+  ),
+};
+
 const NO_EXCLUSIONS: ReadonlySet<string> = new Set();
 
 export function TextBlock({
   text,
   streaming = false,
   excludeCourseCards = NO_EXCLUSIONS,
+  variant = 'default',
 }: {
   text: string;
   streaming?: boolean;
+  variant?: 'default' | 'lesson';
   /**
    * Courses that get no card under this text: carded earlier in the same
    * answer, or among the cards at its tail (`chat-timeline`).
@@ -122,7 +148,7 @@ export function TextBlock({
               plugins={STREAMDOWN_PLUGINS}
               remend={REMEND}
               controls={CONTROLS}
-              components={COMPONENTS}
+              components={variant === 'lesson' ? LESSON_COMPONENTS : COMPONENTS}
               parseIncompleteMarkdown={streaming && index === segments.length - 1}
             >
               {segment.markdown}

@@ -1,3 +1,4 @@
+import { isPBLRoleSession } from '@/lib/pbl/v3/session-kind';
 /** Agent runtime control plane for reading and updating an owned session title. */
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
@@ -17,6 +18,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     const { id } = await params;
+    if (isPBLRoleSession(id))
+      return new Response('Not found', { status: 404, headers: responseHeaders });
     const store = await getAgentSessionStore();
     const meta = await store.getSession(id);
     if (!meta || meta.ownerId !== ownerId) {
@@ -33,6 +36,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     const { id } = await params;
+    if (isPBLRoleSession(id))
+      return new Response('Not found', { status: 404, headers: responseHeaders });
     const store = await getAgentSessionStore();
 
     let body: { title?: unknown } | null;
