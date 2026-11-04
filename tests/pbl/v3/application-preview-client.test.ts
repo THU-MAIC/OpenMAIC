@@ -82,6 +82,51 @@ it('shows an independent document before the process starts and preserves it acr
     await f.cleanup();
   }
 });
+it.each(['environment lock', 'unknown outcome'])(
+  'keeps the standalone page clear of runtime errors during entry (%s)',
+  async (reason) => {
+    vi.useFakeTimers();
+    const current: LearningView = {
+      ...view,
+      application: { ...view.application!, standaloneFrontend: true },
+    };
+    const launch = vi.fn().mockResolvedValue({ state: 'running', observedAt: '' });
+    if (reason === 'environment lock') {
+      for (let i = 0; i < 4; i++)
+        launch.mockRejectedValueOnce(
+          new SandboxRequestError('Environment busy', 409, 'SANDBOX_CONFLICT', 'ENVIRONMENT_BUSY'),
+        );
+    } else {
+      launch.mockRejectedValueOnce(new Error('Unknown network outcome'));
+    }
+    mocks.request.mockImplementation((_url, input) =>
+      input.action === 'frontend' ? Promise.resolve(running) : launch(input),
+    );
+    const f = await fixture();
+    try {
+      await act(async () => f.root.render(createElement(Harness, { current, automatic: true })));
+      const frame = f.host.querySelector('iframe')!;
+      await act(async () => frame.dispatchEvent(new Event('load')));
+      const panel = f.host.querySelector('[data-testid="pbl-application-panel"]')!;
+      expect(panel.querySelector('[role="alert"], [role="status"]')).toBeNull();
+      expect(frame.classList.contains('invisible')).toBe(false);
+      await act(async () => vi.advanceTimersByTimeAsync(2500));
+      expect(panel.querySelector('iframe')).toBe(frame);
+      expect(panel.querySelector('[role="alert"], [role="status"]')).toBeNull();
+      if (reason === 'environment lock') {
+        expect(launch).toHaveBeenCalledTimes(5);
+        expect(launch.mock.calls.every(([input]) => input === launch.mock.calls[0][0])).toBe(true);
+        expect(frame.hasAttribute('inert')).toBe(false);
+      } else {
+        expect(launch).toHaveBeenCalledTimes(1);
+        expect(frame.hasAttribute('inert')).toBe(true);
+        expect(panel.querySelector('details')?.textContent).toContain('Unknown network outcome');
+      }
+    } finally {
+      await f.cleanup();
+    }
+  },
+);
 it('restores the preview at the write review checkpoint while the reply is still streaming', async () => {
   mocks.request.mockResolvedValue(running);
   const f = await fixture();

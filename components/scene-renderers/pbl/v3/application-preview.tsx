@@ -80,6 +80,7 @@ function ApplicationPreviewContent({
   const readinessError =
     readinessFailure?.url === url && readinessFailure?.version === preview.frameVersion;
   const error = preview.error || (readinessError ? t('pblV3.application.unavailable') : '');
+  const standalone = preview.standaloneFrontend;
   const previous =
     !preview.standaloneFrontend &&
     displayed &&
@@ -93,11 +94,16 @@ function ApplicationPreviewContent({
     !expired &&
     !preview.updating &&
     !error &&
+    !preview.applicationError &&
     observation?.state === 'running' &&
     !previous &&
     currentReady;
   const updating =
-    mounted && !expired && !error && (preview.updating || !!previous || !currentReady);
+    !expired &&
+    !error &&
+    (standalone
+      ? preview.open && !currentReady
+      : mounted && (preview.updating || !!previous || !currentReady));
   // Modal presentation pauses input only. Readiness and candidate promotion
   // continue independently; closing a tour must never launch a replacement.
   const inputAvailable = available && !inputPaused;
@@ -231,15 +237,13 @@ function ApplicationPreviewContent({
     window.addEventListener('message', receive);
     return () => window.removeEventListener('message', receive);
   }, [url, previous?.url, preview.frameVersion, renew, documentReady, sendInput]);
-  const status = !available && !updating && (
+  const status = !available && !updating && (!standalone || !currentReady || expired) && (
     <div
       role="status"
       className={
-        preview.standaloneFrontend && currentReady && !expired
-          ? 'flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2 text-xs text-muted-foreground'
-          : mounted && !expired
-            ? 'absolute left-3 right-3 top-3 z-10 flex max-h-full flex-wrap items-center justify-center gap-2 overflow-auto rounded-lg border bg-background/95 p-3 text-center text-sm text-muted-foreground shadow-sm'
-            : 'flex h-full min-h-0 flex-col items-center justify-center gap-3 overflow-auto p-4 text-center text-sm text-muted-foreground'
+        mounted && !expired
+          ? 'absolute left-3 right-3 top-3 z-10 flex max-h-full flex-wrap items-center justify-center gap-2 overflow-auto rounded-lg border bg-background/95 p-3 text-center text-sm text-muted-foreground shadow-sm'
+          : 'flex h-full min-h-0 flex-col items-center justify-center gap-3 overflow-auto p-4 text-center text-sm text-muted-foreground'
       }
     >
       {(pending || preview.frontendPending || preview.updating || !!previous) && (
@@ -306,13 +310,17 @@ function ApplicationPreviewContent({
           <div className="absolute left-3 right-3 top-full z-30 space-y-2 rounded border bg-popover p-3 text-popover-foreground shadow-lg">
             <p className="whitespace-pre-line">{application.description}</p>
             <p className="text-muted-foreground">{t('pblV3.application.notice')}</p>
+            {preview.applicationError && <p>{preview.applicationError}</p>}
+            {standalone && observation?.output && (
+              <pre className="max-h-40 overflow-auto whitespace-pre-wrap">{observation.output}</pre>
+            )}
           </div>
         </details>
         <button
           type="button"
           disabled={pending || disabled}
           className="rounded p-1 hover:bg-muted disabled:opacity-40"
-          title={t('pblV3.application.restart')}
+          title={preview.applicationError || t('pblV3.application.restart')}
           aria-label={t('pblV3.application.restart')}
           onClick={() => void preview.load('restart')}
         >
@@ -369,10 +377,15 @@ function ApplicationPreviewContent({
           className="flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs text-muted-foreground"
         >
           <LoaderCircle size={14} className="shrink-0 animate-spin" />
-          {t(preview.dirty ? 'pblV3.application.saveFirst' : 'pblV3.application.updating')}
+          {t(
+            standalone
+              ? 'common.loading'
+              : preview.dirty
+                ? 'pblV3.application.saveFirst'
+                : 'pblV3.application.updating',
+          )}
         </p>
       )}
-      {preview.standaloneFrontend && currentReady && !expired && status}
       <div className="relative min-h-0 w-full flex-1">
         {mounted &&
           current &&
@@ -412,7 +425,7 @@ function ApplicationPreviewContent({
                 />
               );
             })}
-        {(!preview.standaloneFrontend || !currentReady || expired) && status}
+        {status}
       </div>
     </section>
   );

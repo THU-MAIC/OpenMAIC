@@ -24,6 +24,7 @@ async function waitForApplication(
   signal: AbortSignal,
   assertCurrent: () => void = () => signal.throwIfAborted(),
   acknowledge?: () => void,
+  contentionRetries = 2,
 ) {
   assertCurrent();
   // Environment-lock contention is a definite refusal, not a lost launch
@@ -37,7 +38,7 @@ async function waitForApplication(
         if (
           !(error instanceof SandboxRequestError) ||
           error.reason !== 'ENVIRONMENT_BUSY' ||
-          contention >= 2
+          contention >= contentionRetries
         )
           throw error;
         await new Promise((resolve) => setTimeout(resolve, 500));
@@ -309,6 +310,8 @@ export function useApplicationPreview(
             { ...request, action: 'status' },
             abort.signal,
             assertCurrent,
+            undefined,
+            standaloneFrontend ? 30 : undefined,
           );
           if (serial !== attempt.current) return;
           if (
@@ -332,10 +335,18 @@ export function useApplicationPreview(
         }
         const launch = resumable ?? { binding, stage, request: { ...request } };
         unresolvedLaunch.current = launch;
-        const result = await waitForApplication(request, abort.signal, assertCurrent, () => {
-          // Even a late response acknowledges this exact launch, not a newer one.
-          if (unresolvedLaunch.current === launch) unresolvedLaunch.current = null;
-        });
+        const result = await waitForApplication(
+          request,
+          abort.signal,
+          assertCurrent,
+          () => {
+            // Even a late response acknowledges this exact launch, not a newer one.
+            if (unresolvedLaunch.current === launch) unresolvedLaunch.current = null;
+          },
+          standaloneFrontend && (request.action === 'open' || recovery === 'automatic')
+            ? 30
+            : undefined,
+        );
         if (serial === attempt.current) {
           observedRevision.current = view.revision;
           if (standaloneFrontend && result.state === 'running') {
@@ -575,7 +586,8 @@ export function useApplicationPreview(
     standaloneFrontend,
     frontendPending: needsFrontend,
     reloadFrontend: () => setFrontend(null),
-    error: frontendState?.error || error,
+    error: standaloneFrontend ? frontendState?.error : error,
+    applicationError: standaloneFrontend ? error : undefined,
     expired,
     disabled,
     dirty,
