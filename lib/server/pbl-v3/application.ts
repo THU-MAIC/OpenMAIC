@@ -287,6 +287,27 @@ export async function applicationRequest(principal: OwnerPrincipal, input: unkno
         request,
       );
   }
+  // Standalone startup may wait on a slow provider lease check. Do it before
+  // taking the study lock and recheck the learning binding at admission.
+  const opening = request.action === 'open' || request.action === 'restart';
+  const preflight = opening ? await store.get(request.studyId, principal.ownerId) : null;
+  const preflightProject = preflight && projectFor(preflight);
+  const standaloneService = preflightProject?.application?.frontendPath
+    ? await SandboxService.forOwner(principal)
+    : null;
+  if (preflight && preflightProject?.application && standaloneService) {
+    assertObservationRevision(preflight, request);
+    if (request.action === 'restart' && (await busy(store, preflight)))
+      throw sandboxConflict('Wait for the current Agent or assessment.', 'STUDY_BUSY');
+    await assertEnvironmentWritable(store, preflight.id, preflight.owner_id, request.environmentId);
+    assertEnvironmentReady(await touchEnvironment(store, preflight, standaloneService));
+    const application = preflightProject.application;
+    applicationProbeCommand(
+      await projectFiles(standaloneService, request.environmentId, preflightProject),
+      application.port,
+      application.healthPath,
+    );
+  }
   const result = await store.exclusive(request.studyId, async () => {
     const row = await store.get(request.studyId, principal.ownerId),
       application = projectFor(row).application;
@@ -301,9 +322,13 @@ export async function applicationRequest(principal: OwnerPrincipal, input: unkno
       (['restart', 'stop'].includes(request.action) && (await busy(store, row)))
     )
       throw sandboxConflict('Wait for the current Agent or assessment.', 'STUDY_BUSY');
-    const service = await SandboxService.forOwner(principal),
+    const service = standaloneService ?? (await SandboxService.forOwner(principal)),
       environmentId = requireEnvironment(row);
-    assertEnvironmentReady(await touchEnvironment(store, row, service));
+    assertEnvironmentReady(
+      standaloneService
+        ? await service.get(environmentId)
+        : await touchEnvironment(store, row, service),
+    );
     if ((await service.workspaceEpoch(environmentId)) !== request.epoch)
       throw sandboxConflict(
         'Workspace was stopped. Refresh before continuing.',
@@ -329,11 +354,12 @@ export async function applicationRequest(principal: OwnerPrincipal, input: unkno
         if (request.action !== 'status') {
           // Learner-created/renamed source paths can outgrow the starter budget.
           // Reject before stopping an existing app, reserving a writer or dispatching.
-          applicationProbeCommand(
-            await projectFiles(service, environmentId, projectFor(row)),
-            application.port,
-            application.healthPath,
-          );
+          if (!standaloneService)
+            applicationProbeCommand(
+              await projectFiles(service, environmentId, projectFor(row)),
+              application.port,
+              application.healthPath,
+            );
           // A durable reservation precedes provider dispatch. A retry cannot restart a lost-ack command.
           const receiptId = `application:${request.id}`,
             hash = createHash('sha256').update(JSON.stringify(request)).digest('hex');
