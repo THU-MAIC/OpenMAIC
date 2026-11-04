@@ -8,14 +8,20 @@
  * layer reports what it writes here, field by field, and the sync compares what
  * it reads against that and against what the browser now shows.
  *
- * The server stores content through its sanitizer, so what comes back is not
- * byte for byte what went out (`<p style="">` returns as `<p>`). Every comparison
- * here is made on the form the server would hold.
+ * The server stores content through its sanitizer and strips PBL learner state,
+ * so what comes back is not byte for byte what went out (`<p style="">` returns as
+ * `<p>`). Every comparison here is made on the form the server would hold.
+ *
+ * Agents that save a whole document move every scene's revision, so a read can
+ * also bring back a scene nobody touched, older than an edit still waiting to be
+ * saved. The value a scene held before its first unsaved edit is noted too: the
+ * server still holding it is not a change.
  */
 
 import { migrateScene } from '@/lib/edit/slide-schema';
 import { sanitizeSceneContent } from '@/lib/sanitize/scene-content';
 import { fieldFingerprint, sameField, trackedSceneFields } from '@/lib/edit/course-timeline';
+import { pblSceneAsPersisted } from '@/lib/pbl/v2/runtime/document-persistence';
 import type { Scene } from '@/lib/types/stage';
 
 const WRITES_PER_FIELD = 32;
@@ -32,6 +38,8 @@ interface SceneWrites {
 }
 
 const writesByStage = new Map<string, Map<string, SceneWrites>>();
+/** When each course last sent a save that adds, removes or moves pages. */
+const structureWrittenAt = new Map<string, number>();
 
 const serverFormByScene = new WeakMap<Scene, Scene>();
 
@@ -39,17 +47,16 @@ const serverFormByScene = new WeakMap<Scene, Scene>();
 function serverForm(scene: Scene): Scene {
   let form = serverFormByScene.get(scene);
   if (!form) {
-    form = sanitizeSceneContent(scene);
+    form = sanitizeSceneContent(pblSceneAsPersisted(scene));
     serverFormByScene.set(scene, form);
   }
   return form;
 }
 
-/** Called by the storage layer with each scene it is about to send. */
-export function noteScenesWritten(
+function noteSceneValues(
   stageId: string,
   scenes: readonly Scene[],
-  now = Date.now(),
+  writtenAt: number | null,
 ): void {
   let stage = writesByStage.get(stageId);
   if (!stage) {
@@ -59,10 +66,10 @@ export function noteScenesWritten(
   for (const scene of scenes.map(serverForm)) {
     let writes = stage.get(scene.id);
     if (!writes) {
-      writes = { lastWriteAt: now, fields: new Map() };
+      writes = { lastWriteAt: writtenAt ?? 0, fields: new Map() };
       stage.set(scene.id, writes);
     }
-    writes.lastWriteAt = now;
+    if (writtenAt !== null) writes.lastWriteAt = writtenAt;
     for (const field of trackedSceneFields(scene)) {
       const value = (scene as unknown as Record<string, unknown>)[field];
       const fingerprint = fieldFingerprint(value);
@@ -75,8 +82,28 @@ export function noteScenesWritten(
   }
 }
 
+/** Called by the storage layer with each scene it is about to send. */
+export function noteScenesWritten(
+  stageId: string,
+  scenes: readonly Scene[],
+  now = Date.now(),
+): void {
+  noteSceneValues(stageId, scenes, now);
+}
+
+/** Called with a scene about to take its first unsaved edit: what the server holds. */
+export function noteSceneBeforeEdit(stageId: string, scene: Scene): void {
+  noteSceneValues(stageId, [scene], null);
+}
+
+/** Called by the storage layer with a save that adds, removes or moves pages. */
+export function noteStructureWritten(stageId: string, now = Date.now()): void {
+  structureWrittenAt.set(stageId, now);
+}
+
 export function forgetSceneWrites(stageId: string): void {
   writesByStage.delete(stageId);
+  structureWrittenAt.delete(stageId);
 }
 
 export interface FetchedScenesInput {
@@ -110,8 +137,8 @@ export interface ReconciledFetch {
  * Decide, field by field, what the sync may change.
  *
  * - Same as shown: an echo. Nothing changes, not even the object.
- * - A copy we wrote, while a write is pending or just landed: an older save read
- *   back. The newer local value stays.
+ * - A copy we wrote or held, while a write is pending or just landed: an older
+ *   state read back. The newer local value stays.
  * - Anything else: a real change, taken even over an unsaved local edit, whose
  *   value then survives as the `before` of the agent's step on the timeline.
  */
@@ -123,6 +150,11 @@ export function reconcileFetchedScenes(input: FetchedScenesInput): ReconciledFet
   const deferredIds = new Set<string>();
   const fetched: Scene[] = [];
 
+  const lastStructureWrite = structureWrittenAt.get(input.stageId);
+  // A read can be older than the save that moved a page or removed it.
+  const structureSettling =
+    input.structureDirty ||
+    (lastStructureWrite !== undefined && now - lastStructureWrite < ECHO_WINDOW_MS);
   const wroteRecently = (sceneId: string) => {
     const lastWriteAt = writes?.get(sceneId)?.lastWriteAt;
     return lastWriteAt !== undefined && now - lastWriteAt < ECHO_WINDOW_MS;
@@ -138,8 +170,8 @@ export function reconcileFetchedScenes(input: FetchedScenesInput): ReconciledFet
       const ownCopy = trackedSceneFields(server).every((field) =>
         isOwnWrite(server.id, field, serverFields[field]),
       );
-      const removedHere = input.structureDirty && !added.has(server.id);
-      if (removedHere || (ownCopy && (input.structureDirty || wroteRecently(server.id)))) {
+      const removedHere = structureSettling && !added.has(server.id);
+      if (removedHere || (ownCopy && (structureSettling || wroteRecently(server.id)))) {
         deferredIds.add(server.id);
         continue;
       }
@@ -162,7 +194,8 @@ export function reconcileFetchedScenes(input: FetchedScenesInput): ReconciledFet
         taken = true;
       }
     }
-    const order = input.structureDirty ? local.order : server.order;
+    const order = structureSettling ? local.order : server.order;
+    if (order !== server.order) deferredIds.add(local.id);
     if (!taken) {
       fetched.push(order === local.order ? local : { ...local, order });
       continue;
@@ -177,7 +210,7 @@ export function reconcileFetchedScenes(input: FetchedScenesInput): ReconciledFet
 
   const removedIds = input.removedIds.filter((id) => {
     if (!currentById.has(id)) return true;
-    if (input.structureDirty || wroteRecently(id)) {
+    if (structureSettling || wroteRecently(id)) {
       deferredIds.add(id);
       return false;
     }

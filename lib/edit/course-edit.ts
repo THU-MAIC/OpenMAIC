@@ -16,6 +16,7 @@ import {
   nextStep,
   noteDocumentRefs,
   pushEntry,
+  stampAudioOnLine,
   stepLine,
   useCourseTimeline,
   type CourseDocument,
@@ -90,6 +91,20 @@ export function recordAgentChange(before: CourseDocument, after: CourseDocument 
     runId: useCourseTimeline.getState().activeRunId(now),
   });
   if (entry) pushStep(stageId, before, entry);
+}
+
+/** Generated audio landed on a speech line: the line's recorded versions get it too. */
+export function stampAudioOnTimeline(
+  sceneId: string,
+  actionId: string,
+  text: string,
+  audioId: string,
+): void {
+  const stageId = useStageStore.getState().stage?.id;
+  if (!stageId || !useCourseTimeline.getState().lines[stageId]) return;
+  useCourseTimeline
+    .getState()
+    .updateLine(stageId, (line) => stampAudioOnLine(line, sceneId, actionId, text, audioId));
 }
 
 /**

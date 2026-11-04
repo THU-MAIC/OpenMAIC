@@ -32,12 +32,14 @@ interface SlideEditSessionState {
   /** Apply only while the transaction still belongs to the captured scene. */
   applyTransactionForScene: (sceneId: string, transaction: EditorTransaction) => void;
   /**
-   * Fold a renderer-committed snapshot in. `isPointerGesture`: the commit came
-   * from inside a pointer interaction. Without one, a change limited to a text
-   * element's size is the renderer's own auto-height (written, no step), while
-   * anything else, typing above all, is still an edit.
+   * Fold a renderer-committed snapshot in. `sceneId`: the scene `next` was built
+   * from, which a late commit (a debounce outliving a page switch) may no longer
+   * have open. `isPointerGesture`: the commit came from inside a pointer
+   * interaction. Without one, a text element's auto-height and the removal of an
+   * empty text box are the renderer tidying up (written, no step), while anything
+   * else, typing above all, is still an edit.
    */
-  commitContent: (next: SlideContent, isPointerGesture: boolean) => void;
+  commitContent: (sceneId: string, next: SlideContent, isPointerGesture: boolean) => void;
   /** Tear the session down on exit from edit mode. */
   end: () => void;
 }
@@ -78,6 +80,14 @@ function isAutoSizeOnly(previous: SlideContent, next: SlideContent): boolean {
       );
     })
   );
+}
+
+function isEmptyTextCleanup(previous: SlideContent, next: SlideContent): boolean {
+  const operations = deriveSlideEditOperations(previous, next);
+  const [only] = operations;
+  if (operations.length !== 1 || only.type !== 'element.delete') return false;
+  const element = previous.canvas.elements.find((el) => el.id === only.elementId);
+  return element?.type === 'text' && !element.content.replace(/<[^>]+>/g, '');
 }
 
 /** The burst a commit belongs to: one text element's content, edited in one go. */
@@ -149,11 +159,13 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
       if (get().sceneId === sceneId) apply(sceneId, transaction);
     },
 
-    commitContent: (next, isPointerGesture) => {
-      const { sceneId } = get();
-      const content = sceneId ? canonicalContent(sceneId) : null;
-      if (!sceneId || !content) return;
-      if (!isPointerGesture && isAutoSizeOnly(content, next)) {
+    commitContent: (sceneId, next, isPointerGesture) => {
+      const content = canonicalContent(sceneId);
+      if (!content) return;
+      if (
+        !isPointerGesture &&
+        (isAutoSizeOnly(content, next) || isEmptyTextCleanup(content, next))
+      ) {
         writeContent(sceneId, next);
         return;
       }

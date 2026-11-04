@@ -290,10 +290,10 @@ describe('agent runs', () => {
 
   it('keeps a run open until the settle window after agent_end passes', () => {
     const timeline = useCourseTimeline.getState();
-    timeline.beginAgentRun();
+    timeline.beginAgentRun(Date.now());
     const id = useCourseTimeline.getState().activeRunId(5);
     expect(id).toBeTypeOf('number');
-    useCourseTimeline.getState().beginAgentRun();
+    useCourseTimeline.getState().beginAgentRun(Date.now());
     expect(useCourseTimeline.getState().activeRunId(5)).toBe(id);
     useCourseTimeline.getState().endAgentRun(100);
     expect(useCourseTimeline.getState().activeRunId(100 + AGENT_RUN_SETTLE_MS - 1)).toBe(id);

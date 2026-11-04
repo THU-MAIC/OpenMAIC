@@ -25,6 +25,10 @@ export const MAX_TIMELINE_STEPS = 100;
 export const ASSET_RETENTION_MS = 45 * 60 * 1000;
 /** A run's writes reach the browser through the sync, shortly after `agent_end`. */
 export const AGENT_RUN_SETTLE_MS = 8_000;
+/** A run whose worker died says nothing more: past this silence, it is over. */
+export const AGENT_RUN_IDLE_MS = 10 * 60 * 1000;
+/** Edits of one text further apart than this are separate steps. */
+export const BURST_MAX_GAP_MS = 10_000;
 
 export type TimelineOrigin = 'user' | 'agent';
 export type TimelineDirection = 'undo' | 'redo';
@@ -303,7 +307,11 @@ function applyManifestDelta(
   for (const key of Object.keys(from ?? {})) {
     if (!(to && key in to)) delete next[key];
   }
-  Object.assign(next, to ?? {});
+  for (const [key, value] of Object.entries(to ?? {})) {
+    if (!from || !(key in from) || !sameField((from as Record<string, unknown>)[key], value)) {
+      next[key] = value;
+    }
+  }
   return next as VideoManifest;
 }
 
@@ -431,6 +439,8 @@ export interface CourseLine {
   readonly future: readonly TimelineEntry[];
   /** The typing burst or gesture the next entry with the same key folds into. */
   readonly activeCoalesceKey: string | null;
+  /** When the burst last grew. */
+  readonly activeCoalesceAt: number;
   /** When each reference left the document, for as long as it stays out. */
   readonly refDroppedAt: Readonly<Record<string, number>>;
   readonly knownRefs: readonly string[] | null;
@@ -440,6 +450,7 @@ export const EMPTY_LINE: CourseLine = {
   past: [],
   future: [],
   activeCoalesceKey: null,
+  activeCoalesceAt: 0,
   refDroppedAt: {},
   knownRefs: null,
 };
@@ -450,6 +461,7 @@ export function pushEntry(line: CourseLine, entry: TimelineEntry): CourseLine {
   const continuesBurst =
     entry.coalesceKey !== undefined &&
     line.activeCoalesceKey === entry.coalesceKey &&
+    entry.at - line.activeCoalesceAt <= BURST_MAX_GAP_MS &&
     top?.coalesceKey === entry.coalesceKey;
   const continuesRun = entry.runId !== undefined && top?.runId === entry.runId;
   const activeCoalesceKey = entry.coalesceKey ?? null;
@@ -460,6 +472,7 @@ export function pushEntry(line: CourseLine, entry: TimelineEntry): CourseLine {
       past: composed ? [...line.past.slice(0, -1), composed] : line.past.slice(0, -1),
       future: [],
       activeCoalesceKey,
+      activeCoalesceAt: entry.at,
     };
   }
   return {
@@ -467,7 +480,43 @@ export function pushEntry(line: CourseLine, entry: TimelineEntry): CourseLine {
     past: [...line.past, entry].slice(-MAX_TIMELINE_STEPS),
     future: [],
     activeCoalesceKey,
+    activeCoalesceAt: entry.at,
   };
+}
+
+/**
+ * Generated audio landed on a speech line. Stamping is not a step, but a step that
+ * restores `actions` must not take the audio away: every recorded version of the
+ * line with the same text gets it too.
+ */
+export function stampAudioOnLine(
+  line: CourseLine,
+  sceneId: string,
+  actionId: string,
+  text: string,
+  audioId: string,
+): CourseLine {
+  const stamp = (fields: SceneFields | null): SceneFields | null => {
+    if (!fields || !Array.isArray(fields.actions)) return fields;
+    let stamped = false;
+    const actions = (fields.actions as readonly Record<string, unknown>[]).map((action) => {
+      if (action.id !== actionId || action.text !== text || action.audioId === audioId) {
+        return action;
+      }
+      stamped = true;
+      return { ...action, audioId };
+    });
+    return stamped ? { ...fields, actions } : fields;
+  };
+  const stampEntry = (entry: TimelineEntry): TimelineEntry => {
+    const change = entry.scenes[sceneId];
+    if (!change) return entry;
+    const before = stamp(change.before);
+    const after = stamp(change.after);
+    if (before === change.before && after === change.after) return entry;
+    return withAssetRefs({ ...entry, scenes: { ...entry.scenes, [sceneId]: { before, after } } });
+  };
+  return { ...line, past: line.past.map(stampEntry), future: line.future.map(stampEntry) };
 }
 
 /** Move the top step across. An undone step is closed: nothing later folds into it. */
@@ -555,6 +604,8 @@ export function documentAssetRefs(document: CourseDocument): ReadonlySet<string>
 interface AgentRun {
   readonly id: number;
   readonly endedAt: number | null;
+  /** When the run last showed a sign of life. */
+  readonly seenAt: number;
 }
 
 interface CourseTimelineState {
@@ -562,7 +613,7 @@ interface CourseTimelineState {
   readonly agentRun: AgentRun | null;
   updateLine: (stageId: string, update: (line: CourseLine) => CourseLine) => void;
   clearCourse: (stageId: string) => void;
-  beginAgentRun: () => void;
+  beginAgentRun: (now: number) => void;
   endAgentRun: (now: number) => void;
   /** The run a remote change arriving now belongs to, if any. */
   activeRunId: (now: number) => number | undefined;
@@ -585,9 +636,12 @@ export const useCourseTimeline = create<CourseTimelineState>()((set, get) => ({
       const { [stageId]: _removed, ...lines } = state.lines;
       return { lines };
     }),
-  beginAgentRun: () =>
+  // A second start with no end is a crashed run resuming the same answer.
+  beginAgentRun: (now) =>
     set((state) =>
-      state.agentRun?.endedAt === null ? state : { agentRun: { id: nextRunId++, endedAt: null } },
+      state.agentRun?.endedAt === null && now - state.agentRun.seenAt < AGENT_RUN_IDLE_MS
+        ? { agentRun: { ...state.agentRun, seenAt: now } }
+        : { agentRun: { id: nextRunId++, endedAt: null, seenAt: now } },
     ),
   endAgentRun: (now) =>
     set((state) =>
@@ -598,7 +652,8 @@ export const useCourseTimeline = create<CourseTimelineState>()((set, get) => ({
   activeRunId: (now) => {
     const run = get().agentRun;
     if (!run) return undefined;
-    return run.endedAt === null || now - run.endedAt < AGENT_RUN_SETTLE_MS ? run.id : undefined;
+    if (run.endedAt !== null) return now - run.endedAt < AGENT_RUN_SETTLE_MS ? run.id : undefined;
+    return now - run.seenAt < AGENT_RUN_IDLE_MS ? run.id : undefined;
   },
   sealBurst: (stageId) => {
     if (get().lines[stageId]?.activeCoalesceKey) {

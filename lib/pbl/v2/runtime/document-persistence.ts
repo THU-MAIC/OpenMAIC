@@ -32,18 +32,21 @@ export async function preparePBLScenesForDocumentPersistence(
     }),
   );
 
-  return scenes.map((scene) => {
-    const content = scene.content;
-    if (content.type !== 'pbl') return scene;
-    const resolved = resolvePBLContent(content);
-    if (resolved.kind !== 'v2') return scene;
-    const designTemplate = stripToDesignTemplate(resolved.projectV2);
-    return {
-      ...scene,
-      content: {
-        ...content,
-        projectV2: designTemplate,
-      },
-    } as Scene;
-  });
+  return scenes.map(pblSceneAsPersisted);
+}
+
+/** The scene as document persistence stores it: learner state stripped from a v2 project. */
+export function pblSceneAsPersisted(scene: Scene): Scene {
+  const content = scene.content;
+  if (content.type !== 'pbl') return scene;
+  const resolved = resolvePBLContent(content);
+  if (resolved.kind !== 'v2') return scene;
+  const designTemplate = stripToDesignTemplate(resolved.projectV2);
+  return {
+    ...scene,
+    content: {
+      ...content,
+      projectV2: designTemplate,
+    },
+  } as Scene;
 }

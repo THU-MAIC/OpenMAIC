@@ -313,7 +313,7 @@ export function useSlideCanvasController(): SlideCanvasController {
         const base = currentSlideContent(sceneId);
         if (!base) return;
         const next = produce(base, updater as (draft: SlideContent) => void);
-        useSlideEditSession.getState().commitContent(next, gestureRef.current);
+        useSlideEditSession.getState().commitContent(sceneId, next, gestureRef.current);
       },
     }),
     [sceneId],

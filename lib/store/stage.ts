@@ -27,6 +27,7 @@ import type { PendingChange, StaleDroppedSave } from '@/lib/utils/stage-storage'
 import { collectStageAssetRefs } from '@/lib/media/collect-stage-asset-refs';
 import { reconcileSceneMediaAllocations } from '@/lib/media/reconcile-scene-media';
 import { useCourseTimeline, type AppliedTimelineStep } from '@/lib/edit/course-timeline';
+import { noteSceneBeforeEdit } from '@/lib/edit/scene-echo';
 import {
   isStageDeleted,
   isStageDeletionInFlight,
@@ -846,6 +847,11 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   },
 
   updateScene: (sceneId, updates) => {
+    const stageId = get().stage?.id;
+    const previous = get().scenes.find((scene) => scene.id === sceneId);
+    if (stageId && previous && !hasUnsavedSceneEdit(stageId, sceneId)) {
+      noteSceneBeforeEdit(stageId, previous);
+    }
     const scenes = get().scenes.map((scene) => {
       if (scene.id !== sceneId) return scene;
       const content = mergeSceneContentForUpdate(scene.content, updates.content) ?? scene.content;

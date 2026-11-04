@@ -28,7 +28,7 @@
  *
  * Reactive to the stage store; collapse and height belong to the dock.
  */
-import { commitCourseEdit } from '@/lib/edit/course-edit';
+import { commitCourseEdit, stampAudioOnTimeline } from '@/lib/edit/course-edit';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -1113,6 +1113,17 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
     },
     [writeActions],
   );
+  // Stamping generated audio is write-back, not an edit: no undo step. Versions of
+  // the line already on the timeline get the stamp, so undo cannot drop the clip.
+  const stampAudio = useCallback(
+    (actionId: string, audioId: string) => {
+      writeActions((cur) => setAudioIdById(cur, actionId, audioId));
+      const actions = useStageStore.getState().scenes.find((s) => s.id === sceneId)?.actions ?? [];
+      const action = actions.find((candidate) => candidate.id === actionId);
+      if (action?.type === 'speech') stampAudioOnTimeline(sceneId, actionId, action.text, audioId);
+    },
+    [sceneId, writeActions],
+  );
 
   // Regenerate TTS for every speech line in the scene, then stamp audioIds.
   // Reads the latest actions from the store at each step so a concurrent edit
@@ -1148,8 +1159,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
             language,
           );
           if (id) {
-            // Stamping generated audio is write-back, not an edit: no undo step.
-            writeActions((cur) => setAudioIdById(cur, liveAction.id!, id));
+            stampAudio(liveAction.id!, id);
             await flushStageSave();
           }
         } catch {
@@ -1164,7 +1174,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
       // batchPending flag) instead of getting stuck in the generating state.
       setTtsRefresh((n) => n + 1);
     }
-  }, [regenAll, sceneId, language, writeActions]);
+  }, [regenAll, sceneId, language, stampAudio]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const panViewport = (dir: -1 | 1) =>
@@ -1418,7 +1428,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                                 }).finally(() => setTtsRefresh((n) => n + 1));
                               }}
                               onGenerated={(assetId) => {
-                                writeActions((cur) => setAudioIdById(cur, key, assetId));
+                                stampAudio(key, assetId);
                                 // Stage persistence is debounced; flush so the
                                 // stamped reference is durable once the row
                                 // settles (pool bytes persist first, stamp last).

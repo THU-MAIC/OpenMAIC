@@ -1,7 +1,6 @@
 'use client';
 
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { debounce } from 'lodash';
 import { useCanvasStore } from '@/lib/store';
 import { useHistorySnapshot } from '@/lib/hooks/use-history-snapshot';
 import type { PPTTextElement } from '@openmaic/dsl';
@@ -143,26 +142,16 @@ export function TextElement({ elementInfo, selectElement }: TextElementProps) {
     [elementInfo.id, updateElement, addHistorySnapshot],
   );
 
-  // Check and delete empty text
-  const checkEmptyText = useCallback(() => {
-    const debouncedCheck = debounce(
-      () => {
-        const content = typeof elementInfo.content === 'string' ? elementInfo.content : '';
-        const pureText = content.replace(/<[^>]+>/g, '');
-        if (!pureText) deleteElement(elementInfo.id);
-      },
-      300,
-      { trailing: true },
-    );
-    debouncedCheck();
-  }, [elementInfo.content, elementInfo.id, deleteElement]);
-
-  // Check empty text when element is no longer handled
+  // Remove the box once it is empty and no longer handled. The wait is dropped if
+  // the content changes or the element unmounts first, so an undo that brought the
+  // text back, or a page switch, cannot have it deleted by a check that is out of date.
   useEffect(() => {
-    if (!isHandleElement) {
-      checkEmptyText();
-    }
-  }, [isHandleElement, checkEmptyText]);
+    if (isHandleElement) return;
+    const content = typeof elementInfo.content === 'string' ? elementInfo.content : '';
+    if (content.replace(/<[^>]+>/g, '')) return;
+    const timer = setTimeout(() => deleteElement(elementInfo.id), 300);
+    return () => clearTimeout(timer);
+  }, [isHandleElement, elementInfo.content, elementInfo.id, deleteElement]);
 
   return (
     <div

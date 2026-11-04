@@ -194,8 +194,10 @@ export function useWorkbenchStream(sessionId: string | null): void {
       }
       applyEvent(parsed);
       markAttached();
-      if (parsed.type === 'agent_start') useCourseTimeline.getState().beginAgentRun();
-      if (parsed.type === 'agent_end') useCourseTimeline.getState().endAgentRun(Date.now());
+      if (parsed.type === 'agent_start') useCourseTimeline.getState().beginAgentRun(Date.now());
+      if (parsed.type === 'agent_end' || parsed.type === LIFECYCLE.sessionEnd) {
+        useCourseTimeline.getState().endAgentRun(Date.now());
+      }
 
       // Async media completion (generate_video's detached job) settles into
       // the media generation store keyed by the placeholder ref — live frames
@@ -241,9 +243,14 @@ export function useWorkbenchStream(sessionId: string | null): void {
       }
       // Attached in the middle of a run: its later writes still belong together.
       const lastRunEvent = backlog.findLast(
-        (event) => event.type === 'agent_start' || event.type === 'agent_end',
+        (event) =>
+          event.type === 'agent_start' ||
+          event.type === 'agent_end' ||
+          event.type === LIFECYCLE.sessionEnd,
       );
-      if (lastRunEvent?.type === 'agent_start') useCourseTimeline.getState().beginAgentRun();
+      if (lastRunEvent?.type === 'agent_start') {
+        useCourseTimeline.getState().beginAgentRun(Date.now());
+      }
       applyEvents(compactReplayEvents(backlog));
       // Replay the media_ready side effect too: a failed job never lands in
       // the document, so without this fold a re-attached client would keep
@@ -630,7 +637,16 @@ export function useStageFreshnessSync(
             ...(currentSceneId !== current ? { currentSceneId } : {}),
           };
         });
-        if (isEditableCopy && previousStageRev !== UNVERIFIED_STAGE_REV) recordAgentChange(before);
+        // The confirming pass records nothing, unless it landed on an unsaved edit:
+        // the step is then the only place that edit still exists.
+        const replacedAnEdit = reconciled.fetched.some(
+          (scene) =>
+            hasUnsavedSceneEdit(requestedStage, scene.id) &&
+            before.scenes.find((local) => local.id === scene.id) !== scene,
+        );
+        if (isEditableCopy && (previousStageRev !== UNVERIFIED_STAGE_REV || replacedAnEdit)) {
+          recordAgentChange(before);
+        }
       }
 
       // Advance the rendered manifest to what the store now holds: applied
