@@ -1,0 +1,258 @@
+import 'server-only';
+import { createHash } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
+import type { SandboxService } from '@/lib/server/sandbox/service';
+import type { SandboxEnvironment } from '@/lib/sandbox/types';
+import { SandboxError, sandboxConflict } from '@/lib/sandbox/errors';
+import type { Study, LearningStore } from './store';
+import { createCollectedMilestoneState } from '@/lib/pbl/v3/domain/orchestration/state';
+import type { InstalledProject } from './catalog';
+
+/** Confirmed provider expiry still needs an honest recoverable-version/loss notice. */
+export async function recordExpiredWorkspace(
+  store: LearningStore,
+  row: Study,
+  service: SandboxService,
+) {
+  const environmentId = row.environment_id;
+  if (
+    !environmentId ||
+    !row.workspace_dirty_at ||
+    row.archive_discard?.environmentId === environmentId
+  )
+    return;
+  const saved = await service.checkpoint(environmentId);
+  const discard = {
+    environmentId,
+    at: (await store.now()).toISOString(),
+    checkpointRevision: saved?.revision ?? 0,
+    checkpointAt: saved?.createdAt ?? null,
+    reason: 'unavailable' as const,
+  };
+  if (await store.recordArchiveDiscard(row, discard, true)) row.archive_discard = discard;
+}
+
+/** A committed release cannot be cancelled by activity or authorize new writes. */
+export function environmentReleaseCommitted(
+  row: Pick<Study, 'archive_discard' | 'idle_turn_cleanup'>,
+  environmentId: string,
+) {
+  return (
+    row.archive_discard?.environmentId === environmentId ||
+    (row.idle_turn_cleanup?.environmentId === environmentId &&
+      row.idle_turn_cleanup.releasing === true)
+  );
+}
+
+/** Final write admission must not use a snapshot captured before project/permission I/O. */
+export async function assertEnvironmentWritable(
+  store: LearningStore,
+  id: string,
+  ownerId: string,
+  environmentId: string,
+) {
+  const current = (
+    await store.pool.query<Pick<Study, 'environment_id' | 'archive_discard' | 'idle_turn_cleanup'>>(
+      'SELECT environment_id,archive_discard,idle_turn_cleanup FROM pbl_v3_studies WHERE id=$1 AND owner_id=$2',
+      [id, ownerId],
+    )
+  ).rows[0];
+  if (!current || current.environment_id !== environmentId)
+    throw sandboxConflict('The learning environment changed.', 'ENVIRONMENT_CHANGED');
+  if (environmentReleaseCommitted(current, environmentId))
+    throw sandboxConflict(
+      'Prepare or recover the project environment before continuing.',
+      'ENVIRONMENT_UNAVAILABLE',
+    );
+}
+
+function renewalContention(error: unknown): error is SandboxError {
+  return (
+    error instanceof SandboxError &&
+    (error.reason === 'ENVIRONMENT_BUSY' || error.code === 'SANDBOX_BUSY')
+  );
+}
+
+/** Only retry lease admission, never replay initialization, file writes or allocation. */
+export async function renewPreparationLease(service: SandboxService, environmentId: string) {
+  const deadline = Date.now() + 5_000;
+  for (;;) {
+    try {
+      await service.renewForCheckpoint(environmentId);
+      return;
+    } catch (error) {
+      if (!renewalContention(error) || Date.now() >= deadline) throw error;
+      // Failed environment admission retains no extra SQL connection or lock.
+      await delay(50);
+    }
+  }
+}
+
+/** Throttle successful checks for 20 seconds; briefly recheck contention without replaying a teaching action. */
+export async function touchEnvironment(
+  store: LearningStore,
+  row: Study,
+  service: SandboxService,
+  renew = true,
+) {
+  if (!row.environment_id) return null;
+  let env = await service.get(row.environment_id);
+  if (environmentReleaseCommitted(row, row.environment_id))
+    return { ...env, workspaceReady: false };
+  const deadline = Date.now() + 5_000;
+  let reconciled = false;
+  for (;;) {
+    // Readers and role tools use different service instances, possibly in different processes.
+    // A caller's Study snapshot may predate another caller's successful renewal.
+    const current = await store.get(row.id, row.owner_id);
+    if (current.environment_id !== row.environment_id)
+      throw sandboxConflict(
+        'The learning environment changed. Refresh before continuing.',
+        'ENVIRONMENT_CHANGED',
+      );
+    if (environmentReleaseCommitted(current, row.environment_id))
+      return { ...env, workspaceReady: false };
+    if (
+      current.environment_checked_at &&
+      Date.now() - current.environment_checked_at.getTime() < 20_000
+    )
+      return env;
+    if (!reconciled) {
+      env = await service.reconcile(env.id, false);
+      reconciled = true;
+    }
+    if (env.state !== 'running' || !env.workspaceReady) {
+      if (env.state === 'destroyed') await recordExpiredWorkspace(store, row, service);
+      return env;
+    }
+    if (!renew) return env;
+    try {
+      await service.renew(env.id);
+    } catch (error) {
+      if (!renewalContention(error) || Date.now() >= deadline) throw error;
+      // No SQL connection or environment lock is retained while waiting. Mutation
+      // locks and pool admission stay fail-fast; only this keepalive is retried.
+      await delay(50);
+      env = await service.get(row.environment_id);
+      continue;
+    }
+    const updated = await store.pool.query(
+      `UPDATE pbl_v3_studies SET environment_checked_at=now()
+       WHERE id=$1 AND owner_id=$2 AND environment_id=$3 RETURNING id`,
+      [row.id, row.owner_id, env.id],
+    );
+    if (!updated.rows.length)
+      throw sandboxConflict(
+        'The learning environment changed. Refresh before continuing.',
+        'ENVIRONMENT_CHANGED',
+      );
+    return env;
+  }
+}
+export function assertEnvironmentReady(env: SandboxEnvironment | null) {
+  if (!env || env.state !== 'running' || !env.workspaceReady)
+    throw sandboxConflict(
+      'Prepare or recover the project environment before continuing.',
+      'ENVIRONMENT_UNAVAILABLE',
+    );
+}
+
+/** Revalidate artifact evidence and rewind across milestones if the restored checkpoint predates current work. */
+export function recoveredProgress(
+  row: Study,
+  project: InstalledProject,
+  files: Record<string, string>,
+  checkpointRevision?: number,
+) {
+  const state = structuredClone(row.state);
+  // Completion is backed by immutable final evidence. Reopening its application
+  // restores a runtime workspace, not an opportunity to reassess that submission.
+  if (state.status === 'completed') return { state, reset: false };
+  const saved = row.environment_recovery?.savedPosition;
+  let crossedBoundary = false;
+  let rewind = -1;
+  if (checkpointRevision === 0 && state.position.milestoneIndex > 0) rewind = 0;
+  else if (
+    saved &&
+    saved.revision === checkpointRevision &&
+    saved.milestoneIndex < state.position.milestoneIndex
+  )
+    rewind = saved.milestoneIndex;
+  if (rewind >= 0) {
+    crossedBoundary = true;
+    for (let i = rewind + 1; i < state.milestones.length; i++) {
+      const progress = state.milestones[i]!;
+      state.collected[progress.milestoneId] = createCollectedMilestoneState();
+      Object.assign(progress, {
+        status: 'pending',
+        stageIndex: -1,
+        completedStageIndexes: [],
+        evaluationIds: [],
+      });
+    }
+    const target = project.definition.milestones[rewind]!;
+    const stageIndex =
+      checkpointRevision === 0
+        ? Math.max(
+            0,
+            target.stages.findIndex((s) => s.kind === 'produce'),
+          )
+        : saved!.stageIndex;
+    state.status = 'waiting_for_student';
+    state.position = { milestoneIndex: rewind, milestoneId: target.id, stageIndex };
+    Object.assign(state.milestones[rewind]!, { status: 'active', stageIndex });
+    state.milestones[rewind]!.completedStageIndexes = state.milestones[
+      rewind
+    ]!.completedStageIndexes.filter((i) => i < stageIndex);
+  }
+  const milestone = project.definition.milestones[state.position.milestoneIndex];
+  const collected = milestone && state.collected[milestone.id];
+  if (!collected) return { state, reset: false };
+  const hash = (text: string) => createHash('sha256').update(text).digest('hex');
+  const fingerprint = hash(
+    JSON.stringify(Object.entries(files).sort(([a], [b]) => a.localeCompare(b))),
+  );
+  const planChanged =
+    !!collected.plan && collected.plan.contentHash !== hash(files['PLAN.md'] ?? '');
+  if (collected.plan && !planChanged) collected.plan.workspaceRevisionId = fingerprint;
+  const codeChanged =
+    planChanged || (!!collected.code && collected.code.workspaceRevisionId !== fingerprint);
+  const testsChanged =
+    codeChanged || (!!collected.tests && collected.tests.revision.id !== fingerprint);
+  let restart = -1;
+  if (planChanged) {
+    collected.plan = null;
+    collected.planReviewCompleted = false;
+    restart = milestone.stages.findIndex((s) => s.kind === 'produce' && s.writes === 'plan');
+  }
+  if (codeChanged) {
+    collected.code = null;
+    collected.codeReviewCompleted = false;
+    if (restart < 0)
+      restart = milestone.stages.findIndex((s) => s.kind === 'produce' && s.writes === 'code');
+  }
+  if (testsChanged || row.evaluation) {
+    collected.tests = null;
+    collected.remediation = null;
+    collected.quiz = null;
+    collected.recapCompleted = false;
+    if (restart < 0)
+      restart = milestone.stages.findIndex((s) => s.kind === 'check' && s.checker === 'tests');
+  }
+  if (restart < 0) return { state, reset: crossedBoundary };
+  // Never skip unfinished teaching on the way back to the first invalidated artifact.
+  restart = Math.min(restart, state.position.stageIndex);
+  state.status = 'waiting_for_student';
+  state.position = {
+    ...state.position,
+    stageIndex: restart,
+    activeAgent: undefined,
+    activeAgentId: undefined,
+  };
+  const progress = state.milestones[state.position.milestoneIndex]!;
+  progress.status = 'active';
+  progress.stageIndex = restart;
+  progress.completedStageIndexes = progress.completedStageIndexes.filter((i) => i < restart);
+  progress.evaluationIds = [];
+  return { state, reset: true };
+}

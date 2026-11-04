@@ -4,7 +4,7 @@ import { Type, type Static } from 'typebox';
 
 import { generateImage, IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { managedMediaProviderFetch, mediaProviderFetch } from '@/lib/server/media-provider-fetch';
-import { serverMediaConnection } from '@/lib/server/model-config/media';
+import { serverMediaConnection, type MediaConnection } from '@/lib/server/model-config/media';
 import type {
   ImageGenerationConfig,
   ImageGenerationOptions,
@@ -74,6 +74,7 @@ export interface GenerateImageToolDeps extends Pick<
   CourseToolDeps,
   'sessionId' | 'abortSignal' | 'ownerId'
 > {
+  imageConnection?: MediaConnection | 'off' | null;
   /** The providers to pick from; by default, the one the image slot resolves to. */
   getConfiguredProviders?: () => ImageProviderListing | Promise<ImageProviderListing>;
   resolveProviderConfig?: (
@@ -206,16 +207,85 @@ function slotImageProvider(ownerId: string | undefined) {
   };
 }
 
-export function buildGenerateImageTool(
-  deps: GenerateImageToolDeps,
-): AgentTool<typeof GenerateImageParams, unknown> {
-  const providerSource = () => {
-    const slot = slotImageProvider(deps.ownerId);
-    return {
-      configuredProviders: deps.getConfiguredProviders ?? slot.listing,
-      resolveProviderConfig: deps.resolveProviderConfig ?? slot.config,
-    };
+function slotImageListing(
+  connection: ReturnType<typeof serverMediaConnection> extends Promise<infer T> ? T : never,
+): ImageProviderListing {
+  return connection && connection !== 'off' ? { [connection.providerId]: {} } : {};
+}
+
+function slotImageConfig(
+  connection: ReturnType<typeof serverMediaConnection> extends Promise<infer T> ? T : never,
+  providerId: ImageProviderId,
+): ImageGenerationConfig {
+  if (!connection || connection === 'off' || connection.providerId !== providerId) {
+    throw new Error('the image slot no longer resolves to this provider');
+  }
+  return {
+    providerId,
+    apiKey: connection.apiKey ?? '',
+    ...(connection.baseUrl ? { baseUrl: connection.baseUrl } : {}),
+    model: connection.modelId ?? IMAGE_PROVIDERS[providerId]?.models?.[0]?.id,
+    fetchImpl: connection.managed ? managedMediaProviderFetch : mediaProviderFetch,
   };
+}
+
+function imageProviderSource(deps: Partial<GenerateImageToolDeps>) {
+  const connection = deps.imageConnection;
+  if (connection !== undefined) {
+    return {
+      configuredProviders: deps.getConfiguredProviders ?? (() => slotImageListing(connection)),
+      resolveProviderConfig:
+        deps.resolveProviderConfig ??
+        ((providerId: ImageProviderId) => slotImageConfig(connection, providerId)),
+    };
+  }
+  const slot = slotImageProvider(deps.ownerId);
+  return {
+    configuredProviders: deps.getConfiguredProviders ?? slot.listing,
+    resolveProviderConfig: deps.resolveProviderConfig ?? slot.config,
+  };
+}
+
+export function hasConfiguredImageGeneration(
+  depsOrConnection?: Partial<GenerateImageToolDeps> | MediaConnection | 'off' | null,
+): boolean {
+  if (!depsOrConnection) return false;
+  const isConnection =
+    depsOrConnection === 'off' ||
+    ('providerId' in (depsOrConnection as object) &&
+      typeof (depsOrConnection as { providerId?: unknown }).providerId === 'string');
+  const deps: Partial<GenerateImageToolDeps> = isConnection
+    ? { imageConnection: depsOrConnection as MediaConnection | 'off' | null }
+    : (depsOrConnection as Partial<GenerateImageToolDeps>);
+
+  const { configuredProviders, resolveProviderConfig } = imageProviderSource(deps);
+  const providers = configuredProviders();
+  if (providers instanceof Promise) return false;
+  const providerId = selectProvider(providers);
+  if (!providerId) return false;
+  if (isServerProviderDisabled('image', providerId)) return false;
+  const provider = IMAGE_PROVIDERS[providerId];
+  if (!provider) return false;
+  const config = resolveProviderConfig(providerId);
+  if (config instanceof Promise) return false;
+  return !provider.requiresApiKey || !!config.apiKey;
+}
+
+export function generateImagePromptBlock(): string {
+  return [
+    'When the page needs a new visual rather than an existing URL, call `generate_image` first, then apply its returned `src` with `patch_stage` set or add an image element; generate_image never edits the page.',
+    'When a NEW page needs visuals, obtain every real src first by reusing material or calling generate_image, then pass each image src with its description and dimensions in `generate_scene.media` so the content model sees the media while composing the page; media generation tools never edit the page.',
+  ].join('\n');
+}
+
+export function buildGenerateImageTool(deps: GenerateImageToolDeps): AgentTool<
+  typeof GenerateImageParams,
+  unknown
+> & {
+  capability: 'image';
+  promptBlock: string;
+} {
+  const providerSource = () => imageProviderSource(deps);
   const callProvider = deps.generateConfiguredImage ?? generateImage;
   const persist = deps.persistGeneratedImage ?? defaultPersistGeneratedImage;
 
@@ -225,6 +295,8 @@ export function buildGenerateImageTool(
     description:
       'Create a new image from a prompt, store it with the explicitly targeted course media, and return its src plus dimensions. The src is a stored-asset id, not a URL; use it verbatim in a later patch_stage set of an existing media element, or add an image element with patch_stage. The image is only kept once a page references it. This tool never edits a page itself.',
     parameters: GenerateImageParams,
+    capability: 'image',
+    promptBlock: generateImagePromptBlock(),
     async execute(toolCallId, params: Static<typeof GenerateImageParams>, signal) {
       const callerSignal = signal ?? deps.abortSignal;
       throwIfAborted(callerSignal);

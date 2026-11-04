@@ -46,6 +46,7 @@ import type { CheckpointInfo } from './course-tools';
 import { COURSE_STAGE_ID_DESCRIPTION } from './course-stage';
 import { markDocumentWritersSequential } from './course-tools';
 import { runStageMutation } from './mutation-fence';
+import { hasConfiguredVoiceRegistrationCapability } from './voice-clone-tools';
 
 export type CourseDocument = MaicDocument<Scene, Stage>;
 export type CourseStore = DocumentStore<Scene, Stage>;
@@ -220,13 +221,16 @@ const SET_ROSTER_PARAMS = Type.Object({
 
 /** Build the typed classroom-roster tools for the session runner. */
 export function buildRosterTools(deps: RosterToolDeps): AgentTool<never, never>[] {
+  const hasVoiceRegistration = hasConfiguredVoiceRegistrationCapability(deps.ttsConnection);
   const listVoices: AgentTool<typeof LIST_VOICES_PARAMS, unknown> = {
     name: 'list_voices',
     label: 'List available voices',
     description:
       'List every TTS voice this deployment actually serves and can bind to the roster: one flat entry per `providerId::voiceId` pair, with display name, language and gender. ' +
       'Call this BEFORE set_roster and bind `voice` from exactly one returned pair — never invent an id. ' +
-      'A cloned voice registered this session with register_voice appears here too.',
+      (hasVoiceRegistration
+        ? 'A cloned voice registered this session with register_voice appears here too.'
+        : 'register_voice must not be attempted without a configured backend.'),
     parameters: LIST_VOICES_PARAMS,
     async execute() {
       const catalog = agentVoiceCatalog(deps.registeredVoices, deps.ttsConnection);
@@ -409,6 +413,6 @@ export const ROSTER_TOOLS_PROMPT = [
   'The classroom roster is written with set_roster: pass every agent (exactly ONE teacher, at least 2 agents total) with name/role/persona and optional avatar/color/priority/voiceDesign. It persists stage.generatedAgentConfigs and drives scene/discussion generation; re-calling replaces the roster.',
   'When writing voiceDesign, always set gender to "male" or "female" (those English words only, matching identity). voiceDesign.gender is language-independent; without it a non-English identity cannot keep gender-aware voice binding after set_roster rewrites the roster.',
   'To bind a roster voice, call list_voices first and use exactly one returned `providerId::voiceId` pair; never invent a voice id.',
-  'A cloned voice registered this session with register_voice appears in list_voices and can be bound with the exact pair register_voice returned; a voice from an earlier session is not enumerable — re-register it, bind a catalog voice, or omit voice.',
+  'A cloned voice registered this session with register_voice appears in list_voices and can be bound with the exact pair register_voice returned; a voice from an earlier session is not enumerable — re-register it if voice registration is available, bind a catalog voice, or omit voice. register_voice must not be attempted without a configured backend.',
   'Omit `voice` when no usable voice exists: narration falls back to the provider default.',
 ].join(' ');

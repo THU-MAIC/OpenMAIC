@@ -17,6 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'js-yaml';
 import { z } from 'zod';
+import { sandboxConfigurationSchema } from '@/lib/sandbox/config-schema';
 import {
   getSlot,
   isSlotId,
@@ -175,6 +176,7 @@ const fileSchema = z
       .optional(),
     /** The server's defaults: users may change them unless `lock` names them. */
     slots: z.record(z.string(), assignmentSchema).optional(),
+    sandbox: sandboxConfigurationSchema.optional(),
     lock: lockSchema.optional(),
     /** Whether users may add providers, keys and token plans of their own (default true). */
     allowUserKeys: z.boolean().optional(),
@@ -380,6 +382,7 @@ function crossCheck(
     const written = config.slots ?? {};
     config.lock.forEach((slot, index) => {
       const at = `lock.${index}`;
+      if (slot === 'sandbox') return;
       if (!isSlotId(slot)) {
         issues.push(`${at}: unknown slot ${shown(slot, at)}`);
       } else if (!Object.hasOwn(written, slot)) {

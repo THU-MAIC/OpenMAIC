@@ -1,3 +1,5 @@
+import { AudioProviderError } from '@/lib/audio/provider-error';
+import { QwenVoiceCloneError } from '@/lib/audio/qwen-voice-clone';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { DEFAULT_MAX_DELAY_MS } from '@openmaic/generation';
 import { Type } from 'typebox';
@@ -46,6 +48,7 @@ vi.mock('@/lib/server/classroom-media-bytes', () => ({
 }));
 
 import {
+  formatTtsFailureTally,
   resetAgentTtsProviderGatesForTests,
   synthesizeSceneNarration,
 } from '@/lib/server/agent-runtime/scene-tts';
@@ -672,6 +675,43 @@ describe('agent TTS failure classification', () => {
     expect(JSON.stringify(summary)).not.toContain('secret-upstream');
     expect(mocks.persist).not.toHaveBeenCalled();
   });
+
+  it('reports neutral incompatibility once per line without retries, substitution or persistence', async () => {
+    mocks.generate.mockRejectedValue(
+      new AudioProviderError('EXAMPLE_RECREATE', 409, 'voice-incompatible'),
+    );
+    const request = scene('a');
+    request.actions!.push({ id: 'second', type: 'speech', text: 'Next' });
+    const sleep = vi.fn(async () => {});
+    const result = await synthesizeSceneNarration({ scene: request, force: false, sleep });
+    expect(result.failed).toEqual([
+      { id: 'speech-a', reason: 'EXAMPLE_RECREATE', recovery: 'reclone' },
+      { id: 'second', reason: 'EXAMPLE_RECREATE', recovery: 'reclone' },
+    ]);
+    expect(formatTtsFailureTally(result.failed).match(/Re-upload/g)).toHaveLength(1);
+    expect(mocks.generate).toHaveBeenCalledTimes(2);
+    expect(sleep).not.toHaveBeenCalled();
+    expect(mocks.persist).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    new AudioProviderError('EXAMPLE_TIMEOUT', 504, 'timeout'),
+    new QwenVoiceCloneError('QWEN_VC_TIMEOUT', 504),
+  ])(
+    'propagates adapter timeout without retrying or attempting later lines: $code',
+    async (error) => {
+      mocks.generate.mockRejectedValue(error);
+      const request = scene('a');
+      request.actions!.push({ id: 'second', type: 'speech', text: 'Next' });
+      const sleep = vi.fn(async () => {});
+      await expect(synthesizeSceneNarration({ scene: request, force: false, sleep })).rejects.toBe(
+        error,
+      );
+      expect(mocks.generate).toHaveBeenCalledTimes(1);
+      expect(sleep).not.toHaveBeenCalled();
+      expect(mocks.persist).not.toHaveBeenCalled();
+    },
+  );
 
   it('still aborts the call on TTSRequestTimeoutError', async () => {
     mocks.generate.mockRejectedValue(new TTSRequestTimeoutError('MiniMax', 'request timed out'));

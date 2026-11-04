@@ -26,6 +26,7 @@ beforeEach(() => {
     { id: 'session-queued', status: 'queued' },
     { id: 'session-running', status: 'running' },
     { id: 'session-done', status: 'succeeded' },
+    { id: 'pbl-role-internal', status: 'running' },
   ]);
 });
 

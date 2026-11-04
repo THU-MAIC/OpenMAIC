@@ -193,7 +193,7 @@ lock: [llm, video]   # these slots and every slot below them
 # lock: all          # every slot
 ```
 
-- Every slot `lock` names must be written under `slots` (`null` counts: `video: null` with `lock: [video]` keeps video off for everyone). An unknown slot, or a locked slot `slots` does not write, stops the server at startup with its position (`lock.1: ...`).
+- Every model slot `lock` names must be written under `slots` (`null` counts: `video: null` with `lock: [video]` keeps video off for everyone). An unknown slot, or a locked slot `slots` does not write, stops the server at startup with its position (`lock.1: ...`).
 - A locked slot fixes its children too: with `lock: [llm]`, no user can set `course.outline` or any other language model slot, and all of them resolve from `openmaic.yml` alone.
 - `lock: all` fixes every slot, written or not; a capability root `slots` leaves out is then unconfigured for everyone. For `webFetch`, an omitted assignment uses `builtin`; set `webFetch: null` to disable it.
 - `null`, a server default and a lock combine as you would expect: `video: null` alone is off until a user turns it on; with `lock: [video]` it stays off.
@@ -217,6 +217,49 @@ The model settings in the web app read and edit the same tree for the current wo
 Provider settings that a browser stored in earlier versions (providers with their keys and base URLs, the chosen model, token plan enrollment and each capability's selection) are imported into the workspace once. The import never replaces an existing workspace setting or a slot in a subtree `openmaic.yml` locks, and it skips items that `allowUserKeys: false` or validation refuses. After a 2xx answer, only what the workspace now holds leaves the browser: every item the server skipped (a custom endpoint for a media service, a preset a workspace may not use, a provider id the deployment declares, ...) is kept in this browser with its key, never sent again, announced once, and listed in Settings → Model Services with the reason until it is set up again or discarded. An Azure Speech provider with its regional endpoint is imported. A 400 refuses the whole proposal: it is not sent again, and its items are kept in this browser with their keys and listed like the skipped ones. An unreadable proposal is dropped. The proposal stays in the browser for a later attempt only on 401, 404, 409, a 5xx or a network error. Speech input that was explicitly switched off becomes `asr: null`, and narration, images or video switched off while a usable provider for them was set up become `tts: null`, `image: null` or `video: null` (a slot `openmaic.yml` locks is left as it is). These have to be set up again by hand: per-stage models (in Course Model Config, or `slots` in `openmaic.yml`), thinking settings (`thinking` on a slot), custom speech and transcription providers and AliDocMind's key pair (in `openmaic.yml`; they are kept in the browser and listed with the skipped items), the VoxCPM backend (`options.backend`), and Baidu search sub-sources (the server's defaults apply). Research switched off is not carried over (it only stopped course research; chat and the agent kept searching), nor is a switch that was off only by default: each capability now runs whenever its slot resolves.
 
 A workspace is an owner in the sense of the [persistence documentation](./deployment.mdx#server-side-persistence-postgresql): with the default Docker Compose setup (single-user mode) there is one workspace, and in a multi-user deployment each signed-in account has its own.
+
+### Sandbox execution (experimental)
+
+The shared execution provider uses the same deployment/default/override model. Configure
+`sandbox` in `openmaic.yml`; only an installation administrator may override it through
+**Settings → Sandbox**. Ordinary learners cannot read or change this configuration.
+
+```yaml
+sandbox:
+  enabled: true
+  provider: e2b-compatible
+  connectionId: my-installation
+  apiUrl: https://api.e2b.dev
+  domain: e2b.app
+  apiKey: ${SANDBOX_API_KEY}
+  template: your-code-template
+  lifetimeMs: 300000
+  maxActive: 5
+  maxActivePerOwner: 1
+# lock: [sandbox]  # Or add sandbox to your existing lock list
+```
+
+`desktopTemplate` is optional. An absent section is disabled. Missing referenced variables
+and invalid values stop startup with their location (for example `sandbox.apiKey`). Without
+a YAML file, existing `OPENMAIC_SANDBOX_*` connection and limit variables provide the same
+shape; a YAML file does not fall back to these values when it omits `sandbox`.
+
+Web edits store only values that differ from deployment defaults and explicitly entered keys.
+Saving a field at its deployment value restores inheritance for that field without resetting
+other overrides. Saved keys remain pinned to their account and endpoints. Keys use the existing
+instance-secret sealing; keep `OPENMAIC_SECRET_KEY` stable across replicas. Deployment
+keys remain inherited so rotating them does not leave an outdated copy in the database.
+`lock: [sandbox]` or `lock: all` makes the page read-only and excludes saved sandbox
+settings and keys from runtime. **Reset to deployment configuration** removes web overrides.
+Both save and reset require all environments to have been released or reconciled and
+use revision-checked writes under the same database lock as sandbox allocation.
+Drain environments before deployment-level connection or lock changes and restart all
+replicas consistently. File edits are not protected by the web-write guard.
+
+The sandbox configuration is installation-wide, separate from each user's model workspace.
+The sandbox management key never reaches the browser. Preview networking and checkpoint
+storage are still configured by the deployment; saving this form does not test connectivity
+or allocate paid resources.
 
 ### allowUserKeys
 
@@ -556,6 +599,10 @@ TTS_DOUBAO_BASE_URL=       # optional override
 TTS_QWEN_API_KEY=
 TTS_QWEN_BASE_URL=         # optional override
 
+# Xiaomi MiMo TTS
+TTS_XIAOMI_API_KEY=
+TTS_XIAOMI_BASE_URL=https://api.xiaomimimo.com/v1
+
 # Any OpenAI-compatible TTS endpoint
 TTS_OPENAI_API_KEY=
 TTS_OPENAI_BASE_URL=
@@ -564,9 +611,11 @@ TTS_OPENAI_BASE_URL=
 TTS_VOXCPM_BASE_URL=http://localhost:8000
 ```
 
-Supported TTS prefixes include `TTS_OPENAI_`, `TTS_AZURE_`, `TTS_GLM_`, `TTS_QWEN_`, `TTS_MINIMAX_`, `TTS_DOUBAO_`, `TTS_ELEVENLABS_`, `TTS_GOOGLE_`, `TTS_VOXCPM_`, and `TTS_LEMONADE_`. Local Lemonade TTS and VoxCPM2 do not require an API key. Browser-native TTS requires no server configuration.
+Supported TTS prefixes include `TTS_OPENAI_`, `TTS_AZURE_`, `TTS_GLM_`, `TTS_QWEN_`, `TTS_MINIMAX_`, `TTS_DOUBAO_`, `TTS_ELEVENLABS_`, `TTS_GOOGLE_`, `TTS_VOXCPM_`, `TTS_XIAOMI_`, and `TTS_LEMONADE_`. Local Lemonade TTS and VoxCPM2 do not require an API key. Browser-native TTS requires no server configuration.
 
 Administrators can force-disable a TTS provider on the server with `TTS_<PROVIDER>_ENABLED=false`. See the dedicated [VoxCPM2](./voxcpm.mdx) section for self-hosted TTS and voice cloning.
+
+For slow or CPU-only self-hosted TTS services (such as Kokoro or VoxCPM), synthesis operations for longer narration lines may exceed the default per-request timeout of 30 seconds (`30000` ms). Operators can configure `TTS_REQUEST_TIMEOUT_MS` (e.g. `TTS_REQUEST_TIMEOUT_MS=120000` or `300000`) in `.env.local` to allow adequate synthesis time and prevent timeout errors.
 
 To use another OpenAI-compatible TTS endpoint, declare an `openai-tts` provider with that `baseUrl` in `openmaic.yml` and assign the `tts` slot to it. Workspaces cannot add custom TTS endpoints in the model settings.
 
@@ -580,6 +629,10 @@ ASR_OPENAI_BASE_URL=       # optional override
 # Qwen ASR
 ASR_QWEN_API_KEY=
 ASR_QWEN_BASE_URL=         # optional override
+
+# Xiaomi MiMo ASR
+ASR_XIAOMI_API_KEY=
+ASR_XIAOMI_BASE_URL=https://api.xiaomimimo.com/v1
 
 # Azure ASR
 ASR_AZURE_API_KEY=

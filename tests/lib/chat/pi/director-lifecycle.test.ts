@@ -64,6 +64,15 @@ function result(parts: Record<string, unknown>[]) {
     usage: new Promise(() => {}),
   };
 }
+function hangingResult(parts: Record<string, unknown>[]) {
+  return {
+    fullStream: (async function* () {
+      yield* parts;
+      await new Promise(() => {});
+    })(),
+    usage: new Promise(() => {}),
+  };
+}
 function call(name: string, id: string, input: unknown) {
   return { type: 'tool-call', toolName: name, toolCallId: id, input };
 }
@@ -279,7 +288,7 @@ describe('Pi Director completion and request cancellation', () => {
     expect(mocks.streamLLM).toHaveBeenCalledTimes(2);
     expect(events.some((e) => e.type === 'done')).toBe(false);
   });
-  it('a tool timeout returns an error to Director and does not terminate the loop', async () => {
+  it('finalizes a timed-out Legacy child without counting a completed agent turn', async () => {
     vi.stubEnv('OPENMAIC_AGENT_TOOL_TIMEOUT_MS', '25');
     let n = 0;
     mocks.streamLLM.mockImplementation((_p, source) => {
@@ -291,10 +300,54 @@ describe('Pi Director completion and request cancellation', () => {
     const events: StatelessEvent[] = [];
     await run(events);
     expect(n).toBe(2);
+    expect(events.filter((event) => event.type === 'agent_end')).toHaveLength(1);
+    expect(done(events).totalAgents).toBe(0);
+    expect(done(events).directorState?.agentResponses).toEqual([
+      expect.objectContaining({ agentId: teacher.id, contentPreview: '', actionCount: 0 }),
+    ]);
     expect(done(events).directorToolTrace?.[0]).toMatchObject({
       isError: true,
       resultPreview: expect.stringContaining('execution budget'),
     });
+  });
+  it('retains a timed-out Native child partial response without counting it complete', async () => {
+    vi.stubEnv('OPENMAIC_AGENT_TOOL_TIMEOUT_MS', '50');
+    let directorCalls = 0;
+    let childCalls = 0;
+    mocks.streamLLM.mockImplementation((_p, source) => {
+      if (source === 'pi-chat-director') {
+        directorCalls++;
+        return result([
+          directorCalls <= 2 ? invoke('d' + directorCalls) : call('cue_user', 'cue', {}),
+          finish('tool-calls'),
+        ]);
+      }
+      childCalls++;
+      return childCalls === 1
+        ? hangingResult([{ type: 'text-delta', text: 'Partial answer from timed out child' }])
+        : speech('Recovered answer');
+    });
+    const events: StatelessEvent[] = [];
+    await run(events, new AbortController(), 'native');
+
+    expect(childCalls).toBe(2);
+    expect(events.filter((event) => event.type === 'agent_start')).toHaveLength(2);
+    expect(events.filter((event) => event.type === 'agent_end')).toHaveLength(2);
+    expect(
+      events
+        .filter((event) => event.type === 'text_delta')
+        .map((event) => event.data.content)
+        .join(''),
+    ).toContain('Partial answer from timed out child');
+    expect(done(events).totalAgents).toBe(1);
+    expect(done(events).directorState?.agentResponses).toEqual([
+      expect.objectContaining({
+        agentId: teacher.id,
+        contentPreview: 'Partial answer from timed out child',
+      }),
+      expect.objectContaining({ agentId: teacher.id, contentPreview: 'Recovered answer' }),
+    ]);
+    expect(done(events).directorToolTrace?.[0]).toMatchObject({ isError: true });
   });
   it('does not call a provider when cancelled during route model resolution', async () => {
     const controller = new AbortController();
@@ -370,12 +423,17 @@ describe('Pi Director completion and request cancellation', () => {
       expect(events.filter((e) => e.type === 'action').map((e) => e.data.actionName)).toEqual([
         'wb_open',
       ]);
-      expect(events.some((e) => e.type === 'agent_end' || e.type === 'text_delta')).toBe(false);
       if (reason === 'request cancellation') {
+        expect(events.some((e) => e.type === 'agent_end' || e.type === 'text_delta')).toBe(false);
         expect(events.some((e) => e.type === 'done')).toBe(false);
       } else {
+        expect(events.filter((e) => e.type === 'agent_end')).toHaveLength(1);
+        expect(events.some((e) => e.type === 'text_delta')).toBe(false);
         expect(done(events).totalAgents).toBe(0);
         expect(done(events).totalActions).toBe(1);
+        expect(done(events).directorState?.agentResponses).toEqual([
+          expect.objectContaining({ agentId: teacher.id, contentPreview: '', actionCount: 1 }),
+        ]);
         expect(done(events).directorState?.whiteboardLedger).toEqual([
           expect.objectContaining({ actionName: 'wb_open' }),
         ]);
@@ -457,7 +515,7 @@ describe('Pi Director completion and request cancellation', () => {
         done(events).directorState?.whiteboardLedger?.map((action) => action.actionName),
       ).toEqual(['wb_draw_text', 'wb_delete']);
       expect(done(events).directorToolTrace?.[0]).toMatchObject({ isError: true });
-      expect(events.filter((e) => e.type === 'agent_end')).toHaveLength(1);
+      expect(events.filter((e) => e.type === 'agent_end')).toHaveLength(2);
       expect(
         events.some(
           (e) => e.type === 'text_delta' && e.data.content.includes('must not be delivered'),

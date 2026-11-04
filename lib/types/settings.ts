@@ -5,6 +5,7 @@
  * own values (`providers`, `image`, ...) so an opener can go straight to one.
  */
 export type SettingsSection =
+  | 'sandbox'
   | 'general'
   | 'token-plan'
   | 'providers'

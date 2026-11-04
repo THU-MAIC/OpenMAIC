@@ -133,6 +133,8 @@ export interface MockRunOptions {
   atRunLimit?: boolean;
   /** How long the run takes between its scripted steps (ms). */
   stepMs?: number;
+  /** Test-controlled barrier after the first scene, before generation completes. */
+  afterFirstScene?: Promise<void>;
   /** How long a `countdown` run's outline waits before the run confirms it (ms). */
   countdownMs?: number;
 }
@@ -469,8 +471,8 @@ export class MockGenerationRun {
         this.push('course_created', { stageId: this.stageId });
         this.push('scene_ready', { index: 0, sceneId: 'scene-0', order: 0 });
       },
-      // Long enough for the classroom to mount while the run still generates.
-      () => new Promise((resolve) => setTimeout(resolve, 1_500)),
+      // Tests asserting in-progress UI can hold this boundary until the page is ready.
+      () => this.options.afterFirstScene ?? new Promise((resolve) => setTimeout(resolve, 1_500)),
       async () => {
         this.push('step_started', { step: 'scene:1:content' });
         await this.storeCourse(2);

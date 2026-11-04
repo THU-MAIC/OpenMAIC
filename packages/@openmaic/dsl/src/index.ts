@@ -27,6 +27,7 @@ export * from './guards.js';
 export * from './stage.js';
 export * from './interactive.js';
 export * from './pbl.js';
+export * from './pbl-v3.js';
 export * from './action.js';
 export * from './validate.js';
 export * from './normalize.js';

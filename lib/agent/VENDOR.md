@@ -4,7 +4,7 @@
 
 - Repository: github.com/earendil-works/pi
 - Author: Mario Zechner (MIT License)
-- Baseline tag: `0.78.0`
+- Baseline tag: `0.80.3`
 
 ## What we use
 
@@ -18,7 +18,12 @@ We do NOT use:
 
 ## Pinning rationale
 
-Both packages are pinned at exact version `0.78.0` (no caret range) in the root `package.json`. This ensures reproducible installs and a stable baseline for any future fork/vendor operation.
+Both packages are pinned at exact version `0.80.3` (no caret range) in the root `package.json`. This ensures reproducible installs and a stable baseline for any future fork/vendor operation.
+
+Director compaction uses Pi's explicit `Models` API with a collection scoped to
+each runtime. Its provider delegates to OpenMAIC's injected connector; model
+credentials continue to be resolved by OpenMAIC, without a global Pi provider
+registration or a separate credential store.
 
 ## Fork / vendor rule
 
@@ -26,7 +31,7 @@ Both packages are pinned at exact version `0.78.0` (no caret range) in the root 
 
 When that time comes:
 
-1. Vendor the source at the recorded baseline (`0.78.0`) by copying the relevant packages into this repository.
+1. Vendor the source at the recorded baseline (`0.80.3`) by copying the relevant packages into this repository.
 2. Run `diff baseline..upstream` to identify changes in newer upstream releases.
 3. Cherry-pick any desired upstream improvements onto the vendored copy.
 4. Remove the npm dependency and update all imports to point at the local copy.

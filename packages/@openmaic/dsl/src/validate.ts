@@ -19,6 +19,7 @@ import { isActionType } from './action.js';
 import type { ActionType } from './action.js';
 import { isWidgetType } from './interactive.js';
 import { isPBLProject } from './pbl.js';
+import { isPBLV3Reference } from './pbl-v3.js';
 import { isSceneType } from './stage.js';
 import { isIsoTimestamp, isRuntimeSessionStatus } from './runtime.js';
 import { isWellFormedDslVersion } from './version.js';
@@ -225,6 +226,15 @@ function checkPBLContent(doc: unknown, path: string, errors: ValidationIssue[]):
   }
   if (doc.type !== 'pbl') {
     errors.push({ path: `${path}/type`, message: 'expected `pbl` content type' });
+  }
+  if (
+    doc.projectV3 !== undefined &&
+    (!isPBLV3Reference(doc.projectV3) || doc.projectV2 != null || doc.projectConfig != null)
+  ) {
+    errors.push({
+      path: `${path}/projectV3`,
+      message: 'expected one valid PBL v3 project reference',
+    });
   }
   if (doc.projectV2 !== undefined && !isPBLProject(doc.projectV2)) {
     errors.push({

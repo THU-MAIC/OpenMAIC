@@ -16,16 +16,57 @@ const PRESETS = new Set(['default-1', 'default-2', 'default-3', 'default-4']);
 const isPresetAgent = (id: string) => PRESETS.has(id);
 
 describe('restoreAgentSelection', () => {
-  it('keeps a user-set preset selection even when the stage has generated agents', () => {
-    const persisted: AgentSelection = {
-      mode: 'preset',
-      selectedAgentIds: ['default-2', 'default-3'],
-    };
+  it("uses the course's own roster over a user-set preset selection, and keeps that choice", () => {
+    expect(
+      restoreAgentSelection({
+        persisted: { mode: 'preset', selectedAgentIds: ['default-1'] },
+        persistedIsUserSet: true,
+        generatedAgentIds: ['gen-a', 'gen-b'],
+        isPresetAgent,
+      }),
+    ).toEqual({
+      selection: { mode: 'auto', selectedAgentIds: ['gen-a', 'gen-b'] },
+      isUserSet: false,
+      presetChoice: ['default-1'],
+    });
+  });
+
+  it('keeps the kept choice across courses with a roster, and restores it on one without', () => {
+    const withRoster = restoreAgentSelection({
+      persisted: { mode: 'auto', selectedAgentIds: ['gen-a'] },
+      persistedIsUserSet: false,
+      persistedPresetChoice: ['default-2'],
+      generatedAgentIds: ['gen-b'],
+      isPresetAgent,
+    });
+    expect(withRoster).toEqual({
+      selection: { mode: 'auto', selectedAgentIds: ['gen-b'] },
+      isUserSet: false,
+      presetChoice: ['default-2'],
+    });
+    expect(
+      restoreAgentSelection({
+        persisted: withRoster.selection,
+        persistedIsUserSet: withRoster.isUserSet,
+        persistedPresetChoice: withRoster.presetChoice,
+        generatedAgentIds: [],
+        stageAgentIds: ['default-4'],
+        isPresetAgent,
+      }),
+    ).toEqual({
+      selection: { mode: 'preset', selectedAgentIds: ['default-2'] },
+      isUserSet: true,
+    });
+  });
+
+  it('keeps a user-set preset selection on a course without a roster', () => {
+    const persisted: AgentSelection = { mode: 'preset', selectedAgentIds: ['default-2'] };
     expect(
       restoreAgentSelection({
         persisted,
         persistedIsUserSet: true,
-        generatedAgentIds: ['gen-a', 'gen-b'],
+        generatedAgentIds: [],
+        stageAgentIds: ['default-4'],
         isPresetAgent,
       }),
     ).toEqual({ selection: persisted, isUserSet: true });
@@ -153,19 +194,29 @@ describe('restoreAgentSelection', () => {
 
   it('carries a user-set preset choice through the same A → B → A round-trip', () => {
     const persisted: AgentSelection = { mode: 'preset', selectedAgentIds: ['default-2'] };
-    let state = { selection: persisted, isUserSet: true };
-    for (const stage of [
-      { generatedAgentIds: ['gen-a1'], stageAgentIds: undefined },
-      { generatedAgentIds: [], stageAgentIds: ['default-1'] },
-      { generatedAgentIds: ['gen-a1'], stageAgentIds: undefined },
-    ]) {
+    const roster: AgentSelection = { mode: 'auto', selectedAgentIds: ['gen-a1'] };
+    let state: ReturnType<typeof restoreAgentSelection> = { selection: persisted, isUserSet: true };
+    const load = (generatedAgentIds: string[], stageAgentIds?: string[]) => {
       state = restoreAgentSelection({
         persisted: state.selection,
         persistedIsUserSet: state.isUserSet,
-        ...stage,
+        persistedPresetChoice: state.presetChoice,
+        generatedAgentIds,
+        stageAgentIds,
         isPresetAgent,
       });
-      expect(state).toEqual({ selection: persisted, isUserSet: true });
-    }
+      return state;
+    };
+    expect(load(['gen-a1'])).toEqual({
+      selection: roster,
+      isUserSet: false,
+      presetChoice: ['default-2'],
+    });
+    expect(load([], ['default-1'])).toEqual({ selection: persisted, isUserSet: true });
+    expect(load(['gen-a1'])).toEqual({
+      selection: roster,
+      isUserSet: false,
+      presetChoice: ['default-2'],
+    });
   });
 });

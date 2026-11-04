@@ -472,17 +472,20 @@ describe.skipIf(!contractUrl)('material extraction at upload on PostgreSQL', () 
     it('aborts the extractor when a heartbeat finds the lease gone, and drops its result', async () => {
       const material = await upload('lost.pdf');
       const held = await claim('worker-a');
+      const started = gate();
       let aborted = false;
       const run = runClaimedOwnerMaterialExtraction(held!, {
         ...deps(async (_name, signal) => {
-          await new Promise<void>((resolve) =>
-            signal.addEventListener('abort', () => resolve(), { once: true }),
-          );
+          await new Promise<void>((resolve) => {
+            signal.addEventListener('abort', () => resolve(), { once: true });
+            started.release();
+          });
           aborted = true;
           return parsed('too late');
         }),
         heartbeatIntervalMs: 20,
       });
+      await started.promise;
       // Another attempt takes the lease (a takeover elsewhere).
       await pool.query('UPDATE owner_material SET extraction_worker = $2 WHERE id = $1', [
         material.id,

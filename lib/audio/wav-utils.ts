@@ -1,5 +1,8 @@
 'use client';
 
+import { ASR_PROVIDERS } from './constants';
+import type { BuiltInASRProviderId } from './types';
+
 function writeAscii(view: DataView, offset: number, value: string): void {
   for (let i = 0; i < value.length; i++) {
     view.setUint8(offset + i, value.charCodeAt(i));
@@ -78,12 +81,21 @@ export async function normalizeASRUploadAudio(
   audioBlob: Blob,
   modelId?: string,
 ): Promise<{ blob: Blob; fileName: string }> {
+  // Browser recordings are WebM/Opus. A provider whose documented input
+  // formats do not include webm gets a client-side WAV transcode (a blob
+  // already in WAV passes through unchanged); everyone else receives the
+  // recording as-is. The decision comes from the provider registry, so this
+  // shared upload path holds no vendor ids.
+  const provider = ASR_PROVIDERS[providerId as BuiltInASRProviderId];
+  // Unknown ids (custom providers) pass through; a known provider whose
+  // formats lack webm transcodes.
+  const registryTranscode = provider !== undefined && !provider.supportedFormats.includes('webm');
   // Qwen3 behind a compatible transcription endpoint decodes PCM/WAV, but
   // cannot decode the browser's WebM/Opus recording container. Model IDs may
   // include a namespace and mixed case, e.g. Qwen/Qwen3-ASR-1.7B.
   const qwenCompatible =
     providerId === 'openai-whisper' && /^(?:[^/]+\/)?qwen3-asr(?:$|-)/i.test(modelId ?? '');
-  if (providerId !== 'lemonade-asr' && providerId !== 'funasr-asr' && !qwenCompatible) {
+  if (!registryTranscode && !qwenCompatible) {
     return { blob: audioBlob, fileName: 'recording.webm' };
   }
   return { blob: await audioBlobToWav(audioBlob), fileName: 'recording.wav' };
