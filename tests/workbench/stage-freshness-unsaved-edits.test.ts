@@ -37,6 +37,10 @@ const mocks = vi.hoisted(() => ({
   saveGate: null as Promise<void> | null,
   /** Runs on the server right after a save lands. */
   afterSaveOnServer: null as (() => void) | null,
+  /** The next save reports its scene changes as not written. */
+  failNextSave: false,
+  /** Held open while a test acts with a keepalive write on the wire. */
+  keepaliveGate: null as Promise<void> | null,
   saves: [] as unknown[],
 }));
 
@@ -58,6 +62,10 @@ vi.mock('@/lib/utils/stage-storage', () => {
   ) => {
     mocks.saves.push({ dirty, scenes: data.scenes });
     if (mocks.saveGate) await mocks.saveGate;
+    if (mocks.failNextSave) {
+      mocks.failNextSave = false;
+      return { failedChanges: dirty };
+    }
     for (const change of dirty) {
       if (change.kind !== 'scene' || !change.sceneId) continue;
       const scene = data.scenes.find((candidate) => candidate.id === change.sceneId);
@@ -70,8 +78,16 @@ vi.mock('@/lib/utils/stage-storage', () => {
     return { failedChanges: [] };
   };
   return {
-    saveStageData: vi.fn().mockResolvedValue(undefined),
+    saveStageData: vi.fn(async () => {
+      if (mocks.saveGate) await mocks.saveGate;
+      return undefined;
+    }),
     saveStageDataIncremental: vi.fn(save),
+    writeStageChangesForUnload: vi.fn((_stageId: string, changes: readonly unknown[]) => ({
+      sent: changes,
+      deferred: [],
+      settled: (mocks.keepaliveGate ?? Promise.resolve()).then(() => true),
+    })),
     loadStageData: vi.fn().mockResolvedValue(null),
   };
 });
@@ -92,7 +108,12 @@ vi.mock('@/lib/store/settings', () => ({
   },
 }));
 
-import { useStageStore } from '@/lib/store/stage';
+import {
+  markStagePersistenceDirty,
+  setServerGeneratingStage,
+  useStageStore,
+  writePendingChangesForUnload,
+} from '@/lib/store/stage';
 import type { Scene, Stage } from '@/lib/types/stage';
 import { useStageFreshnessSync } from '@/lib/workbench/use-workbench-session';
 
@@ -223,6 +244,8 @@ beforeEach(() => {
   mocks.sceneResponseGate = null;
   mocks.saveGate = null;
   mocks.afterSaveOnServer = null;
+  mocks.failNextSave = false;
+  mocks.keepaliveGate = null;
   mocks.saves = [];
   MockEventSource.instances = [];
   vi.stubGlobal('EventSource', MockEventSource);
@@ -256,6 +279,7 @@ afterEach(async () => {
   if (root) await act(async () => root?.unmount());
   root = null;
   document.body.innerHTML = '';
+  setServerGeneratingStage(null);
   useStageStore.getState().clearStore();
   useStageStore.setState({ serverManifestByStage: {} });
   vi.unstubAllGlobals();
@@ -429,5 +453,101 @@ describe('a freshness sync with unsaved scene edits', () => {
     expect(mocks.saves).toHaveLength(0);
     const baseline = useStageStore.getState().serverManifestByStage['stage-a'];
     expect(baseline?.scenes.find((scene) => scene.id === 'scene-1')?.rev).toBe(2);
+  });
+});
+
+describe('a freshness sync with other writes outstanding', () => {
+  it('holds every scene for a whole-document save on the wire, and reads them when it ends', async () => {
+    const source = await openCourse();
+    const save = deferred();
+    mocks.saveGate = save.promise;
+
+    const saving = useStageStore.getState().saveToStorage();
+    remoteWrite('scene-2', 'agent filled this page');
+    await act(async () => source.emitFreshness());
+    expect(titleOf('scene-2')).toBe('Two');
+
+    mocks.saveGate = null;
+    save.release();
+    await act(async () => {
+      await saving;
+    });
+    await settle(100);
+    // No frame, and well short of the fallback clock: the save's end did it.
+    expect(titleOf('scene-2')).toBe('agent filled this page');
+  });
+
+  it('holds every scene for a flush round that writes the whole document', async () => {
+    const source = await openCourse();
+    const save = deferred();
+    mocks.saveGate = save.promise;
+
+    // Two categories of document change flush together as one aggregate save.
+    edit('scene-1', 'typed locally');
+    useStageStore.setState((state) => ({ stage: { ...state.stage!, name: 'Renamed' } }));
+    markStagePersistenceDirty([{ kind: 'stage' }]);
+    await settle();
+    expect(mocks.saves).toHaveLength(1);
+
+    remoteWrite('scene-2', 'agent filled this page');
+    await act(async () => source.emitFreshness());
+    expect(titleOf('scene-2')).toBe('Two');
+
+    mocks.saveGate = null;
+    save.release();
+    await settle();
+    expect(titleOf('scene-2')).toBe('agent filled this page');
+    expect(titleOf('scene-1')).toBe('typed locally');
+  });
+
+  it('keeps an edit carried by a keepalive write on the wire', async () => {
+    const source = await openCourse();
+    // The unload path needs the storage module, which the first save loads.
+    edit('scene-2', 'an earlier edit');
+    await settle();
+
+    const keepalive = deferred();
+    mocks.keepaliveGate = keepalive.promise;
+    edit('scene-1', 'typed locally');
+    writePendingChangesForUnload();
+
+    remoteWrite('scene-1', 'server copy');
+    await act(async () => source.emitFreshness());
+    expect(titleOf('scene-1')).toBe('typed locally');
+
+    keepalive.release();
+    await settle(0);
+  });
+
+  it('keeps a learner change to a course its generation run still owns', async () => {
+    const source = await openCourse();
+    setServerGeneratingStage('stage-a');
+
+    edit('scene-1', 'learner progress');
+    expect(mocks.saves).toHaveLength(0);
+    remoteWrite('scene-1', 'server copy');
+    await act(async () => source.emitFreshness());
+
+    expect(titleOf('scene-1')).toBe('learner progress');
+  });
+
+  it('keeps an edit whose save failed, and writes it on the retry', async () => {
+    const source = await openCourse();
+    mocks.failNextSave = true;
+
+    edit('scene-1', 'typed locally');
+    await settle();
+    expect(mocks.saves).toHaveLength(1);
+    expect((mocks.serverScenes.get('scene-1') as ServerScene).title).toBe('One');
+
+    remoteWrite('scene-1', 'server copy');
+    await act(async () => source.emitFreshness());
+    expect(titleOf('scene-1')).toBe('typed locally');
+
+    await settle(2_000); // Past the first retry's backoff.
+    expect(mocks.saves).toHaveLength(2);
+    expect(lastSavedTitle('scene-1')).toBe('typed locally');
+    expect((mocks.serverScenes.get('scene-1') as ServerScene).title).toBe('typed locally');
+    expect(titleOf('scene-1')).toBe('typed locally');
   });
 });
