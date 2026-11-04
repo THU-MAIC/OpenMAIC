@@ -1150,6 +1150,7 @@
     "materialTooLarge": "{{name}} is too large: a material can be at most {{size}}."
   },
   "generation": {
+    "qwenCloneNewGenerationHint": "This saved voice must be cloned again. Upload suitable reference audio in voice settings, select the new voice, then start a new generation. Retrying this paused run keeps its original voice.",
     "quotaExhausted": "Generation quota has been exhausted. Check your plan allowance or account balance, or contact your administrator before retrying.",
     "pdfLoadFailed": "Failed to load PDF file, please try again",
     "pdfParseFailed": "PDF parsing failed",
@@ -1430,6 +1431,8 @@
     "providerDoubaoTTS": "Doubao TTS 2.0 (Volcengine)",
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
+    "providerXiaomiTTS": "Xiaomi MiMo TTS",
+    "providerXiaomiASR": "Xiaomi MiMo ASR",
     "providerGoogleTTS": "Google Gemini TTS",
     "providerLemonadeTTS": "Lemonade TTS (Local)",
     "providerBrowserNativeTTS": "Browser Native TTS",
@@ -1473,8 +1476,8 @@
     "voxcpmDeleteVoice": "Delete voice",
     "qwenCloneVoicesTitle": "Qwen TTS Cloned Voices",
     "qwenCloneUploadShort": "Upload",
-    "qwenCloneRefText": "Enter the verbatim transcript of the reference audio",
-    "qwenCloneRefAudioHint": "Use a clean 1–60 second voice sample. A 10–20 second sample is recommended; audio is converted to 24 kHz mono PCM WAV.",
+    "qwenCloneRefAudioHint": "Use a clean 5–60 second voice sample (10–20 seconds recommended). Audio is converted to 24 kHz mono PCM WAV.",
+    "qwenCloneMigrationHint": "This saved voice needs to be cloned again. Upload its reference audio in voice settings.",
     "qwenCloneSaved": "Qwen cloned voice registered and saved",
     "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
     "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",

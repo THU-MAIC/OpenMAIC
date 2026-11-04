@@ -187,9 +187,10 @@ vi.mock('@/lib/server/agent-runtime/owner-scoped-documents', () => ({
 
 // Capability resolution stays hermetic: no web search and no voice
 // registration backend in this harness.
-vi.mock('@/lib/server/agent-runtime/web-search', () => ({
-  resolveWebSearchCapability: () => null,
-}));
+vi.mock('@/lib/server/agent-runtime/web-search', async (importActual) => {
+  const actual = await importActual<typeof import('@/lib/server/agent-runtime/web-search')>();
+  return { ...actual, resolveWebSearchCapability: () => null };
+});
 vi.mock('@/lib/server/agent-runtime/voice-clone-tools', async (importActual) => {
   const actual =
     await importActual<typeof import('@/lib/server/agent-runtime/voice-clone-tools')>();

@@ -1150,6 +1150,7 @@
     "materialTooLarge": "{{name}} est trop volumineux : un support peut faire au plus {{size}}."
   },
   "generation": {
+    "qwenCloneNewGenerationHint": "Cette voix enregistrée doit être clonée à nouveau. Importez un enregistrement de référence adapté dans les paramètres vocaux, sélectionnez la nouvelle voix, puis lancez une nouvelle génération. Réessayer cette génération en pause conserve la voix initiale.",
     "quotaExhausted": "Le quota de génération est épuisé. Vérifiez le quota de votre forfait ou le solde de votre compte, ou contactez l’administrateur avant de réessayer.",
     "pdfLoadFailed": "Échec du chargement du fichier PDF, veuillez réessayer",
     "pdfParseFailed": "Échec de l’analyse du PDF",
@@ -1430,6 +1431,8 @@
     "providerDoubaoTTS": "Doubao TTS 2.0 (Volcengine)",
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
+    "providerXiaomiTTS": "Xiaomi MiMo TTS",
+    "providerXiaomiASR": "Xiaomi MiMo ASR",
     "providerGoogleTTS": "Google Gemini TTS",
     "providerLemonadeTTS": "Lemonade TTS (local)",
     "providerBrowserNativeTTS": "Synthèse vocale native du navigateur",
@@ -1473,8 +1476,8 @@
     "voxcpmDeleteVoice": "Supprimer la voix",
     "qwenCloneVoicesTitle": "Qwen TTS Cloned Voices",
     "qwenCloneUploadShort": "Téléverser",
-    "qwenCloneRefText": "Enter the verbatim transcript of the reference audio",
-    "qwenCloneRefAudioHint": "Use a clean 1–60 second voice sample. A 10–20 second sample is recommended; audio is converted to 24 kHz mono PCM WAV.",
+    "qwenCloneRefAudioHint": "Use a clean 5–60 second voice sample (10–20 seconds recommended). Audio is converted to 24 kHz mono PCM WAV.",
+    "qwenCloneMigrationHint": "Cette voix enregistrée doit être clonée à nouveau. Importez son audio de référence dans les paramètres de voix.",
     "qwenCloneSaved": "Qwen cloned voice registered and saved",
     "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
     "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",

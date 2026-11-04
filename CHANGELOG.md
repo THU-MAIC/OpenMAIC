@@ -11,6 +11,7 @@ Targeted for 1.5.0. The workbench stays off by default in this change; where it 
 ### Breaking Changes
 
 - **`NEXT_PUBLIC_PRO_WORKBENCH_ENABLED` is renamed to `NEXT_PUBLIC_WORKBENCH_ENABLED`.** The previous name is still read when the new one is unset or empty, until its removal in 1.6.0, and the server logs a deprecation warning at startup when it is used. Like every `NEXT_PUBLIC_*` flag it is compiled into the build, so switching to the new name requires a rebuild; the Docker build and `docker-compose.yml` pass both names.
+- **Qwen voice cloning: authorize the new CosyVoice target before upgrading.** Managed deployments must add `cosyvoice-v3.5-plus` (or their configured clone target) alongside `qwen3-tts-flash` in the provider model allowlist in `TTS_QWEN_MODELS` or `openmaic.yml`. For example, use `TTS_QWEN_MODELS=qwen3-tts-flash,cosyvoice-v3.5-plus`: setting only the clone target replaces the implicit catalog-model authorization and makes catalog voices return HTTP 403. An allowlist containing only the retired `qwen3-tts-vc-2026-01-22` does not authorize the new target and will return HTTP 403. Normalizing the old target override does not change the allowlist. Existing incompatible voices must also be cloned again from suitable reference audio. [#1941](https://github.com/THU-MAIC/OpenMAIC/issues/1941)
 
 ### Changed
 
@@ -26,6 +27,8 @@ Targeted for 1.5.0. The workbench stays off by default in this change; where it 
 - **Shell extension slots** (`lib/workbench/shell-extensions.tsx`). A deployment adds its own rail destinations (pages in the main area or links), account menu entries, an account summary line, an unread badge, its own sign-in identity and a section under the home composer by providing `WorkbenchShellExtensionsProvider` (mounted empty in the root layout), without changing the shell. Nested providers merge.
 
 ### Bug Fixes
+
+- Qwen voice cloning: migrate enrollment and synthesis to CosyVoice (`cosyvoice-v3.5-plus` by default, Beijing DashScope). Saved voices stay visible; incompatible voices require re-uploading a suitable reference recording and re-cloning, with no automatic sample migration. Managed deployments must authorize the new target alongside `qwen3-tts-flash` in `TTS_QWEN_MODELS` or `openmaic.yml`. An empty or exact retired `TTS_QWEN_VOICE_CLONE_MODEL=qwen3-tts-vc-2026-01-22` value selects the default; other overrides remain unchanged. [#1941](https://github.com/THU-MAIC/OpenMAIC/issues/1941)
 
 - Classroom playback resumes the remaining reading time after a narration clip fails to play, instead of getting stuck on the failed audio element. Failed clips release their playback state without interrupting a newer narration line. Pausing while a clip is still loading does not discard that narration; resume plays it. [#2109](https://github.com/THU-MAIC/OpenMAIC/issues/2109)
 
