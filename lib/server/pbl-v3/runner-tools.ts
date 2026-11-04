@@ -735,11 +735,15 @@ export async function teachingRunnerConfig(input: {
           // Reject an out-of-order model action before any remote file access.
           review.assertCompletable();
           const finalRecap = isFinalProjectRecap(project.definition, current.state.position, stage);
-          // Approve the same quiesced files that become evidence. An application may
-          // still be writing while we collect a read-only teaching fingerprint.
+          // The study lock excludes teaching writers. Keep a standalone
+          // preview alive while checking a saved plan or code for approval.
+          // Final evidence and release still require the quiesced workspace.
           const files =
             stage.kind === 'produce' || finalRecap
-              ? await readFiles(await service(signal), current, project, signal)
+              ? await readFiles(await service(signal), current, project, signal, {
+                  allowApplications:
+                    stage.kind === 'produce' && !!project.application?.frontendPath,
+                })
               : null;
           const hash = files ? filesFingerprint(files) : await fingerprint(current, signal);
           review.assertComplete(p.studentFeedback, hash, p.reuseFeedback, p.artifactApproved);

@@ -6,6 +6,7 @@ export interface ApplicationObservation {
   exitCode?: number | null;
   httpStatus?: number;
   sourceChanged?: boolean;
+  runId?: string;
   output?: string;
   preview?: { url: string; expiresAt: number };
 }

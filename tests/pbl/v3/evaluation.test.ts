@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
-import { mkdtemp, writeFile, mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -14,6 +14,39 @@ import {
   evaluationFor,
 } from '@/lib/server/pbl-v3/evaluation';
 const spec = installedProject({ id: 'greeting-python', version: '1.0.0' }).evaluations.greeting!;
+
+it('tests verified source bytes in a private working directory and rejects stale source', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'isolated-assessment-'));
+  const run = promisify(execFile);
+  const files = { 'source.txt': 'reviewed\n' };
+  const assessment = {
+    cases: [
+      {
+        id: 'copy',
+        argv: [
+          'python3',
+          '-c',
+          "from pathlib import Path; p=Path('source.txt'); print(p.read_text('utf-8-sig').strip()); p.write_text('changed by test')",
+        ],
+        stdout: 'reviewed\n',
+      },
+    ],
+  };
+  const command = evaluationCommand(assessment, 'isolated', files);
+  const path = join(cwd, 'source.txt');
+  try {
+    await writeFile(path, '\ufeff' + files['source.txt']);
+    const result = await run('/bin/sh', ['-c', command], { cwd });
+    expect(evaluationPassed(assessment, 'isolated', result.stdout)).toBe(true);
+    expect(await readFile(path, 'utf8')).toBe('\ufeff' + files['source.txt']);
+    await writeFile(path, 'edited meanwhile');
+    const stale = await run('/bin/sh', ['-c', command], { cwd });
+    expect(evaluationPassed(assessment, 'isolated', stale.stdout)).toBe(false);
+    expect(await readFile(path, 'utf8')).toBe('edited meanwhile');
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
 
 it('preserves the pre-decision runner encoding at the legacy 32 KiB boundary', async () => {
   const legacy = {
