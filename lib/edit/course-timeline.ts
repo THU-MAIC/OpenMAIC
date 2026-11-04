@@ -615,6 +615,8 @@ interface CourseTimelineState {
   clearCourse: (stageId: string) => void;
   beginAgentRun: (now: number) => void;
   endAgentRun: (now: number) => void;
+  /** The session said something: a run still open is alive. */
+  touchAgentRun: (now: number) => void;
   /** The run a remote change arriving now belongs to, if any. */
   activeRunId: (now: number) => number | undefined;
   /** End the burst in progress: the next edit is its own step, even with the same key. */
@@ -649,6 +651,13 @@ export const useCourseTimeline = create<CourseTimelineState>()((set, get) => ({
         ? { agentRun: { ...state.agentRun, endedAt: now } }
         : state,
     ),
+  touchAgentRun: (now) => {
+    const run = get().agentRun;
+    // Frames arrive many times a second; the limit is minutes.
+    if (run && run.endedAt === null && now - run.seenAt > 30_000) {
+      set({ agentRun: { ...run, seenAt: now } });
+    }
+  },
   activeRunId: (now) => {
     const run = get().agentRun;
     if (!run) return undefined;

@@ -194,6 +194,7 @@ export function useWorkbenchStream(sessionId: string | null): void {
       }
       applyEvent(parsed);
       markAttached();
+      useCourseTimeline.getState().touchAgentRun(Date.now());
       if (parsed.type === 'agent_start') useCourseTimeline.getState().beginAgentRun(Date.now());
       if (parsed.type === 'agent_end' || parsed.type === LIFECYCLE.sessionEnd) {
         useCourseTimeline.getState().endAgentRun(Date.now());

@@ -196,6 +196,31 @@ describe('the empty text box cleanup', () => {
     await act(async () => root.unmount());
   });
 
+  it('keeps a box with no text whose fill makes it a shape', async () => {
+    const scene = slide('a', '<p></p>');
+    const box = (scene.content as SlideContent).canvas.elements[0] as unknown as { fill: string };
+    box.fill = '#ff0000';
+    load([scene], 'a');
+    const root = await mountCanvas();
+    await pause(400);
+    expect(elementsOf('a')).toHaveLength(1);
+    await act(async () => root.unmount());
+  });
+
+  it('is not a step even while a drag on another element is in flight', async () => {
+    load([slide('a', '<p></p>')], 'a');
+    commitCourseEdit({}, () => useStageStore.getState().updateScene('a', { title: 'renamed' }));
+    stepCourseTimeline('undo');
+    const root = await mountCanvas();
+    const { withTidyWrite } = await import('@/lib/edit/tidy-write');
+    const empty = structuredClone(sceneOf('a').content as SlideContent);
+    empty.canvas.elements = [];
+    withTidyWrite(() => useSlideEditSession.getState().commitContent('a', empty, true));
+    expect(elementsOf('a')).toEqual([]);
+    expect([past(), future()]).toEqual([0, 1]);
+    await act(async () => root.unmount());
+  });
+
   it('opening a page with an empty box is not an edit and keeps redo', async () => {
     load([slide('a', '<p>x</p>'), slide('b', '<p></p>', 2)], 'a');
     commitCourseEdit({}, () => useStageStore.getState().updateScene('a', { title: 'renamed' }));
@@ -239,6 +264,28 @@ describe('reading back a scene nobody changed', () => {
     expect([...result.deferredIds]).toEqual(['q']);
   });
 
+  it('an undo stays undone when a whole-document save re-reads the value it undid', () => {
+    load([quiz('V0')], 'q');
+    const before = useStageStore.getState();
+    useStageStore.setState({
+      scenes: before.scenes.map((scene) => ({ ...scene, title: 'AGENT' }) as Scene),
+    });
+    recordAgentChange(before);
+    stepCourseTimeline('undo');
+    expect(sceneOf('q').title).toBe('V0');
+    const result = reconcileFetchedScenes({
+      stageId: STAGE,
+      current: useStageStore.getState().scenes,
+      fetched: [quiz('AGENT')],
+      removedIds: [],
+      addedIds: [],
+      isSceneDirty: (id) => hasUnsavedSceneEdit(STAGE, id),
+      structureDirty: false,
+    });
+    expect(result.fetched[0].title).toBe('V0');
+    expect([...result.deferredIds]).toEqual(['q']);
+  });
+
   it('a real change to another value still lands over the unsaved edit', () => {
     load([quiz('V0')], 'q');
     useStageStore.getState().updateScene('q', { title: 'V1' });
@@ -271,6 +318,22 @@ describe('reading back a scene nobody changed', () => {
     });
     expect(result.fetched.map((scene) => scene.order)).toEqual([2, 1]);
     expect([...result.deferredIds].sort()).toEqual(['b', 'q']);
+  });
+
+  it('a page the server added brings the server order, even right after a local save', () => {
+    const now = 1_000_000;
+    noteStructureWritten(STAGE, now - 1_000);
+    const result = reconcileFetchedScenes({
+      stageId: STAGE,
+      current: [quiz('A', 2)],
+      fetched: [quiz('A', 3), { ...quiz('N', 2), id: 'n' } as Scene],
+      removedIds: [],
+      addedIds: ['n'],
+      isSceneDirty: () => false,
+      structureDirty: false,
+      now,
+    });
+    expect(result.fetched.map((scene) => scene.order).sort()).toEqual([2, 3]);
   });
 
   it('a read older than a landed page deletion does not bring the page back', () => {
@@ -441,6 +504,19 @@ describe('agent runs', () => {
     expect(next).not.toBe(first);
   });
 
+  it('a long run that keeps talking keeps collecting', () => {
+    const start = 1_000_000;
+    const timeline = useCourseTimeline.getState();
+    timeline.beginAgentRun(start);
+    const first = useCourseTimeline.getState().activeRunId(start + 1);
+    const later = start + AGENT_RUN_IDLE_MS - 1_000;
+    timeline.touchAgentRun(later);
+    expect(useCourseTimeline.getState().activeRunId(later + AGENT_RUN_IDLE_MS - 1_000)).toBe(first);
+    expect(
+      useCourseTimeline.getState().activeRunId(later + AGENT_RUN_IDLE_MS + 1_000),
+    ).toBeUndefined();
+  });
+
   it('a crashed run resuming the same answer stays one run', () => {
     const start = 1_000_000;
     const timeline = useCourseTimeline.getState();
@@ -485,6 +561,15 @@ describe('typing bursts', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('the stage store', () => {
+  it('does not load the sanitizer through scene-echo', async () => {
+    const { readFileSync } = await import('node:fs');
+    expect(readFileSync('lib/store/stage.ts', 'utf8')).not.toMatch(
+      /from '@\/lib\/edit\/scene-echo'/,
+    );
   });
 });
 

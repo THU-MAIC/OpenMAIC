@@ -21,6 +21,7 @@
 import { migrateScene } from '@/lib/edit/slide-schema';
 import { sanitizeSceneContent } from '@/lib/sanitize/scene-content';
 import { fieldFingerprint, sameField, trackedSceneFields } from '@/lib/edit/course-timeline';
+import { takeScenesBeforeEdit } from '@/lib/edit/scene-before-edit';
 import { pblSceneAsPersisted } from '@/lib/pbl/v2/runtime/persisted-scene';
 import type { Scene } from '@/lib/types/stage';
 
@@ -91,17 +92,13 @@ export function noteScenesWritten(
   noteSceneValues(stageId, scenes, now);
 }
 
-/** Called with a scene about to take its first unsaved edit: what the server holds. */
-export function noteSceneBeforeEdit(stageId: string, scene: Scene): void {
-  noteSceneValues(stageId, [scene], null);
-}
-
 /** Called by the storage layer with a save that adds, removes or moves pages. */
 export function noteStructureWritten(stageId: string, now = Date.now()): void {
   structureWrittenAt.set(stageId, now);
 }
 
 export function forgetSceneWrites(stageId: string): void {
+  takeScenesBeforeEdit(stageId);
   writesByStage.delete(stageId);
   structureWrittenAt.delete(stageId);
 }
@@ -144,6 +141,7 @@ export interface ReconciledFetch {
  */
 export function reconcileFetchedScenes(input: FetchedScenesInput): ReconciledFetch {
   const now = input.now ?? Date.now();
+  noteSceneValues(input.stageId, takeScenesBeforeEdit(input.stageId), null);
   const writes = writesByStage.get(input.stageId);
   const currentById = new Map(input.current.map((scene) => [scene.id, scene]));
   const added = new Set(input.addedIds);
@@ -194,7 +192,8 @@ export function reconcileFetchedScenes(input: FetchedScenesInput): ReconciledFet
         taken = true;
       }
     }
-    const order = structureSettling ? local.order : server.order;
+    // A page the server added shifts the others: its order is the one to take.
+    const order = structureSettling && added.size === 0 ? local.order : server.order;
     if (order !== server.order) deferredIds.add(local.id);
     if (!taken) {
       fetched.push(order === local.order ? local : { ...local, order });

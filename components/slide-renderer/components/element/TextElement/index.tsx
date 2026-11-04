@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useEffect, useState, useCallback } from 'react';
+import { withTidyWrite } from '@/lib/edit/tidy-write';
 import { useCanvasStore } from '@/lib/store';
 import { useHistorySnapshot } from '@/lib/hooks/use-history-snapshot';
 import type { PPTTextElement } from '@openmaic/dsl';
@@ -142,16 +143,27 @@ export function TextElement({ elementInfo, selectElement }: TextElementProps) {
     [elementInfo.id, updateElement, addHistorySnapshot],
   );
 
-  // Remove the box once it is empty and no longer handled. The wait is dropped if
-  // the content changes or the element unmounts first, so an undo that brought the
-  // text back, or a page switch, cannot have it deleted by a check that is out of date.
+  // Remove the box once it is empty and no longer handled, unless its fill, outline
+  // or shadow make it a shape in its own right. The wait is dropped if the content
+  // changes or the element unmounts first, so an undo that brought the text back, or
+  // a page switch, cannot have it deleted by a check that is out of date.
+  const deleteElementRef = useRef(deleteElement);
   useEffect(() => {
-    if (isHandleElement) return;
+    deleteElementRef.current = deleteElement;
+  });
+  const visibleWithoutText = Boolean(
+    elementInfo.fill || elementInfo.outline?.width || elementInfo.shadow,
+  );
+  useEffect(() => {
+    if (isHandleElement || visibleWithoutText) return;
     const content = typeof elementInfo.content === 'string' ? elementInfo.content : '';
     if (content.replace(/<[^>]+>/g, '')) return;
-    const timer = setTimeout(() => deleteElement(elementInfo.id), 300);
+    const timer = setTimeout(
+      () => withTidyWrite(() => deleteElementRef.current(elementInfo.id)),
+      300,
+    );
     return () => clearTimeout(timer);
-  }, [isHandleElement, elementInfo.content, elementInfo.id, deleteElement]);
+  }, [isHandleElement, visibleWithoutText, elementInfo.content, elementInfo.id]);
 
   return (
     <div
