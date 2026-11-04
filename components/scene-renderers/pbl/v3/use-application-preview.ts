@@ -18,7 +18,9 @@ interface ApplicationLaunch {
 
 /** Readiness retries retain one launch receipt in both embedded and new-tab opens. */
 async function waitForApplication(
-  request: Omit<ApplicationLaunch, 'action'> & { action: ApplicationLaunch['action'] | 'status' },
+  request: Omit<ApplicationLaunch, 'action'> & {
+    action: ApplicationLaunch['action'] | 'status' | 'frontend';
+  },
   signal: AbortSignal,
   assertCurrent: () => void = () => signal.throwIfAborted(),
   acknowledge?: () => void,
@@ -77,6 +79,12 @@ export function useApplicationPreview(
   const closedStudy = useRef<string | null>(null);
   const [pending, setPending] = useState(false);
   const [observation, setObservation] = useState<ApplicationObservation | null>(null);
+  const standaloneFrontend = view?.application?.standaloneFrontend === true;
+  const [frontend, setFrontend] = useState<{
+    binding: string;
+    grant?: ApplicationObservation['preview'];
+    error?: string;
+  } | null>(null);
   const [error, setError] = useState('');
   const [expiredAt, setExpiredAt] = useState<number | null>(null);
   const [refreshNeeded, setRefreshNeeded] = useState(false);
@@ -94,12 +102,7 @@ export function useApplicationPreview(
     stage: string;
     request: ApplicationLaunch;
   } | null>(null);
-  const previewDeadline = useRef<number | undefined>(undefined);
-  previewDeadline.current = observation?.preview?.expiresAt;
-  const hasPreview = !!observation?.preview;
   const applicationDeclared = !!view?.application;
-  // A timeout from an older grant cannot expire a later accepted renewal.
-  const expired = !!observation?.preview && expiredAt === observation.preview.expiresAt;
   const trigger = useRef<HTMLButtonElement | null>(null);
   const setTrigger = useCallback((element: HTMLButtonElement | null) => {
     trigger.current = element;
@@ -144,6 +147,50 @@ export function useApplicationPreview(
   const stage = `${view?.state?.position?.milestoneId}:${view?.state?.position?.stageIndex}`;
   const [observedBinding, setObservedBinding] = useState(binding);
   const currentBinding = observedBinding === binding;
+  const frontendState = frontend?.binding === binding ? frontend : null;
+  const document = standaloneFrontend ? frontendState?.grant : observation?.preview;
+  const previewDeadline = useRef<number | undefined>(undefined);
+  previewDeadline.current = document?.expiresAt;
+  const hasObservation = standaloneFrontend ? !!observation : !!observation?.preview;
+  // A timeout from an older grant cannot expire a later accepted renewal.
+  const expired = !!document && expiredAt === document.expiresAt;
+  const frontendUnavailable = t('pblV3.application.unavailable');
+  const frontendStudy = view?.id;
+  const frontendEnvironment = workbench?.environmentId;
+  const frontendEpoch = workbench?.epoch;
+  const needsFrontend =
+    standaloneFrontend && currentBinding && open && !unavailable && !frontendState;
+  useEffect(() => {
+    if (!needsFrontend || !frontendStudy || !frontendEnvironment || frontendEpoch === undefined)
+      return;
+    const abort = new AbortController();
+    void waitForApplication(
+      {
+        studyId: frontendStudy,
+        environmentId: frontendEnvironment,
+        epoch: frontendEpoch,
+        revision: 0,
+        id: crypto.randomUUID(),
+        action: 'frontend',
+      },
+      abort.signal,
+    )
+      .then((result) => {
+        if (!result.preview) throw new Error(frontendUnavailable);
+        if (!abort.signal.aborted) setFrontend({ binding, grant: result.preview });
+      })
+      .catch((error: Error) => {
+        if (!abort.signal.aborted) setFrontend({ binding, error: error.message });
+      });
+    return () => abort.abort();
+  }, [
+    needsFrontend,
+    frontendStudy,
+    frontendEnvironment,
+    frontendEpoch,
+    binding,
+    frontendUnavailable,
+  ]);
   useEffect(() => {
     ++attempt.current;
     controller.current?.abort();
@@ -151,6 +198,7 @@ export function useApplicationPreview(
     setOpen(autoOpen && applicationDeclared && closedStudy.current !== view?.id);
     setPending(false);
     setObservation(null);
+    setFrontend(null);
     setError('');
     setExpiredAt(null);
     setRefreshNeeded(false);
@@ -177,6 +225,7 @@ export function useApplicationPreview(
     setPending(false);
     setError('');
     if (unavailable) {
+      setFrontend(null);
       autoLaunched.current = null;
       setObservation(null);
       setRefreshNeeded(false);
@@ -189,23 +238,25 @@ export function useApplicationPreview(
     } else setRefreshNeeded(true);
   }, [disabled, unavailable]);
   useEffect(() => {
-    if (!currentBinding || !hasPreview || view?.revision === observedRevision.current) return;
+    if (!currentBinding || !hasObservation || view?.revision === observedRevision.current) return;
     ++attempt.current;
     controller.current?.abort();
     setPending(false);
     setError('');
     setRefreshNeeded(true);
-  }, [view?.revision, hasPreview, currentBinding]);
+  }, [view?.revision, hasObservation, currentBinding]);
   useEffect(() => {
-    if (!observation?.preview) return;
-    const deadline = observation.preview.expiresAt;
+    if (!document) return;
+    const deadline = document.expiresAt;
     const timer = setTimeout(() => setExpiredAt(deadline), Math.max(0, deadline - Date.now()));
     return () => clearTimeout(timer);
-  }, [observation]);
+  }, [document]);
 
   const load = useCallback(
     async (action: 'open' | 'restart', recovery?: 'automatic' | 'explicit') => {
       if (!currentBinding || disabled || !view || !workbench) return;
+      if (standaloneFrontend && recovery === 'explicit' && (expired || frontendState?.error))
+        setFrontend(null);
       const expiredRecovery = () =>
         recovery === 'automatic' &&
         previewDeadline.current !== undefined &&
@@ -216,7 +267,7 @@ export function useApplicationPreview(
       const abort = new AbortController();
       controller.current = abort;
       setOpen(true);
-      const checking = !!recovery && !!observation?.preview && !expired;
+      const checking = !!recovery && hasObservation && !expired;
       // Status probes never take input away from a currently displayed page.
       setPending(!checking);
       setError('');
@@ -253,7 +304,7 @@ export function useApplicationPreview(
         abort.signal.throwIfAborted();
       };
       try {
-        if (!resumable && recovery && observation?.preview) {
+        if (!resumable && recovery && hasObservation) {
           const status = await waitForApplication(
             { ...request, action: 'status' },
             abort.signal,
@@ -263,8 +314,8 @@ export function useApplicationPreview(
           if (
             (status.state === 'running' || status.state === 'starting') &&
             !status.sourceChanged &&
-            !replacementNeeded.current &&
-            previewDeadline.current! > Date.now()
+            (standaloneFrontend ||
+              (!replacementNeeded.current && previewDeadline.current! > Date.now()))
           ) {
             observedRevision.current = view.revision;
             setObservation((current) => ({ ...status, preview: current?.preview }));
@@ -273,10 +324,12 @@ export function useApplicationPreview(
           if (['running', 'starting'].includes(status.state) && status.sourceChanged)
             request.action = 'restart';
         }
-        // A ticket is not a usable document, including on the first launch.
         setPending(true);
-        replacementNeeded.current = true;
-        embeddedLaunch.current = serial;
+        if (!standaloneFrontend) {
+          // Only process-served pages need a replacement document after launch.
+          replacementNeeded.current = true;
+          embeddedLaunch.current = serial;
+        }
         const launch = resumable ?? { binding, stage, request: { ...request } };
         unresolvedLaunch.current = launch;
         const result = await waitForApplication(request, abort.signal, assertCurrent, () => {
@@ -285,7 +338,9 @@ export function useApplicationPreview(
         });
         if (serial === attempt.current) {
           observedRevision.current = view.revision;
-          if (result.preview) {
+          if (standaloneFrontend && result.state === 'running') {
+            setObservation(result);
+          } else if (result.preview) {
             documentLaunch.current = serial;
             setExpiredAt(null);
             setObservation(result);
@@ -329,7 +384,20 @@ export function useApplicationPreview(
         }
       }
     },
-    [currentBinding, disabled, view, workbench, observation, t, binding, stage, expired],
+    [
+      currentBinding,
+      disabled,
+      view,
+      workbench,
+      observation,
+      t,
+      binding,
+      stage,
+      expired,
+      standaloneFrontend,
+      frontendState?.error,
+      hasObservation,
+    ],
   );
   useEffect(() => {
     const rejected = rejectedAutomaticLaunch.current;
@@ -378,7 +446,7 @@ export function useApplicationPreview(
       (!view?.busy || reviewReady) &&
       !pending &&
       !expired &&
-      (!observation?.preview || observation.preview.expiresAt > Date.now())
+      (!document || document.expiresAt > Date.now())
     )
       void load('open', 'automatic');
   }, [
@@ -388,20 +456,35 @@ export function useApplicationPreview(
     disabled,
     pending,
     expired,
-    observation,
+    document,
     load,
     view?.busy,
     reviewReady,
   ]);
-  const renew = useCallback((expiresAt: number) => {
-    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now() || expiresAt > Date.now() + 300_000)
-      return;
-    setObservation((current) =>
-      current?.preview && expiresAt > current.preview.expiresAt
-        ? { ...current, preview: { ...current.preview, expiresAt } }
-        : current,
-    );
-  }, []);
+  const renew = useCallback(
+    (expiresAt: number) => {
+      if (
+        !Number.isFinite(expiresAt) ||
+        expiresAt <= Date.now() ||
+        expiresAt > Date.now() + 300_000
+      )
+        return;
+      if (standaloneFrontend) {
+        setFrontend((current) =>
+          current?.grant && current.binding === binding && expiresAt > current.grant.expiresAt
+            ? { ...current, grant: { ...current.grant, expiresAt } }
+            : current,
+        );
+        return;
+      }
+      setObservation((current) =>
+        current?.preview && expiresAt > current.preview.expiresAt
+          ? { ...current, preview: { ...current.preview, expiresAt } }
+          : current,
+      );
+    },
+    [binding, standaloneFrontend],
+  );
   const documentReady = useCallback(
     (version: number) => {
       if (
@@ -438,7 +521,7 @@ export function useApplicationPreview(
           revision: view.revision,
           epoch: workbench.epoch,
           id: crypto.randomUUID(),
-          action: 'open',
+          action: standaloneFrontend ? 'frontend' : 'open',
         },
         abort.signal,
       );
@@ -473,13 +556,14 @@ export function useApplicationPreview(
     else if (!disabled) {
       setOpen(true);
       if (
-        !observation?.preview ||
+        !document ||
+        (standaloneFrontend && observation?.state !== 'running') ||
         expired ||
-        observation.preview.expiresAt <= Date.now() ||
+        document.expiresAt <= Date.now() ||
         refreshNeeded ||
         replacementNeeded.current
       )
-        void load('open', refreshNeeded ? 'explicit' : undefined);
+        void load('open', refreshNeeded || standaloneFrontend ? 'explicit' : undefined);
     }
   }
   return {
@@ -487,7 +571,11 @@ export function useApplicationPreview(
     open: open && currentBinding,
     pending,
     observation: currentBinding && !unavailable ? observation : null,
-    error,
+    document: currentBinding && !unavailable ? document : undefined,
+    standaloneFrontend,
+    frontendPending: needsFrontend,
+    reloadFrontend: () => setFrontend(null),
+    error: frontendState?.error || error,
     expired,
     disabled,
     dirty,

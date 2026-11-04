@@ -1092,9 +1092,10 @@ export class SandboxService {
     const config = await resolvedSandboxConfig();
     const store = await SandboxStore.open();
     const row = await store.get(grant.ownerId, grant.environmentId);
+    let frontend: string | undefined;
     if (isLearningWorkspace(row.workspace_id)) {
       const { assertLearningPreview } = await import('@/lib/server/pbl-v3/application');
-      await assertLearningPreview(grant.ownerId, row.workspace_id, row.id, grant.port);
+      frontend = await assertLearningPreview(grant.ownerId, row.workspace_id, row.id, grant.port);
     } else assertWorkspaceMutation(grant.ownerId, row.workspace_id, row.id, 'preview');
     if (
       row.state !== 'running' ||
@@ -1108,10 +1109,10 @@ export class SandboxService {
     const provider = new E2BCompatibleSandboxProvider(config);
     const environmentExpiresAt = await provider.previewLifetime(row.resource_id, row.id);
     const expiresAt = Math.min(environmentExpiresAt, grant.expiresAt);
-    return { row, grant, provider, expiresAt, environmentExpiresAt };
+    return { row, grant, provider, expiresAt, environmentExpiresAt, frontend };
   }
 
-  static async previewTarget(ticket: string, host: string, activity = false) {
+  static async previewTarget(ticket: string, host: string, activity = false, document = false) {
     const resolved = await this.resolvePreview(ticket, host);
     const { row, grant, provider, environmentExpiresAt } = resolved;
     if (activity && isLearningWorkspace(row.workspace_id)) {
@@ -1135,6 +1136,8 @@ export class SandboxService {
       ? { ticket: new URL(renewal.url).hash.slice(1), expiresAt }
       : undefined;
     const common = { expiresAt, authorization, appOrigin: previewConfig().appOrigin };
+    if (document && resolved.frontend)
+      return { transport: 'document', html: resolved.frontend, ...common };
     if (previewConfig().transport === 'sdk')
       return { transport: 'sdk', url: `http://127.0.0.1:${grant.port}`, ...common };
     return {

@@ -64,12 +64,12 @@ function ApplicationPreviewContent({
 }) {
   const { t } = useI18n();
   const { pending, observation, expired, disabled } = preview;
-  const mounted = !!observation?.preview;
+  const mounted = !!preview.document;
   const frame = useRef<HTMLIFrameElement | null>(null);
   const candidate = useRef<HTMLIFrameElement | null>(null);
   const panel = useRef<HTMLElement | null>(null);
   const lastHostFocus = useRef<HTMLElement | null>(null);
-  const url = observation?.preview?.url;
+  const url = preview.document?.url;
   const [displayed, setDisplayed] = useState<{ url: string; version: number } | null>(null);
   const current = url ? { url, version: preview.frameVersion } : null;
   const currentReady =
@@ -81,7 +81,10 @@ function ApplicationPreviewContent({
     readinessFailure?.url === url && readinessFailure?.version === preview.frameVersion;
   const error = preview.error || (readinessError ? t('pblV3.application.unavailable') : '');
   const previous =
-    displayed && current && (displayed.url !== current.url || displayed.version !== current.version)
+    !preview.standaloneFrontend &&
+    displayed &&
+    current &&
+    (displayed.url !== current.url || displayed.version !== current.version)
       ? displayed
       : null;
   const available =
@@ -107,11 +110,12 @@ function ApplicationPreviewContent({
         {
           type: 'openmaic-preview-input',
           enabled: !!inputAvailable && preview.open && element === frame.current,
+          ...(preview.standaloneFrontend ? { refreshOnEnable: true } : {}),
         },
         target.origin,
       );
     },
-    [inputAvailable, preview.open],
+    [inputAvailable, preview.open, preview.standaloneFrontend],
   );
   useLayoutEffect(() => {
     sendInput(frame.current);
@@ -227,6 +231,56 @@ function ApplicationPreviewContent({
     window.addEventListener('message', receive);
     return () => window.removeEventListener('message', receive);
   }, [url, previous?.url, preview.frameVersion, renew, documentReady, sendInput]);
+  const status = !available && !updating && (
+    <div
+      role="status"
+      className={
+        preview.standaloneFrontend && currentReady && !expired
+          ? 'flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2 text-xs text-muted-foreground'
+          : mounted && !expired
+            ? 'absolute left-3 right-3 top-3 z-10 flex max-h-full flex-wrap items-center justify-center gap-2 overflow-auto rounded-lg border bg-background/95 p-3 text-center text-sm text-muted-foreground shadow-sm'
+            : 'flex h-full min-h-0 flex-col items-center justify-center gap-3 overflow-auto p-4 text-center text-sm text-muted-foreground'
+      }
+    >
+      {(pending || preview.frontendPending || preview.updating || !!previous) && (
+        <LoaderCircle size={16} className="shrink-0 animate-spin" />
+      )}
+      <p>
+        {t(
+          expired
+            ? 'pblV3.application.expired'
+            : disabled
+              ? preview.dirty
+                ? 'pblV3.application.saveFirst'
+                : 'pblV3.application.wait'
+              : pending || preview.frontendPending || observation?.state === 'starting'
+                ? 'pblV3.application.starting'
+                : observation?.state === 'failed'
+                  ? 'pblV3.application.failed'
+                  : observation
+                    ? 'pblV3.application.unavailable'
+                    : 'pblV3.application.ready',
+        )}
+      </p>
+      {observation?.output && (
+        <pre className="max-h-40 max-w-full overflow-auto whitespace-pre-wrap text-left text-xs">
+          {observation.output}
+        </pre>
+      )}
+      {!pending && !preview.frontendPending && !disabled && (
+        <button
+          type="button"
+          className="rounded border px-3 py-2 text-foreground"
+          onClick={() => {
+            if (preview.standaloneFrontend && readinessError) preview.reloadFrontend();
+            else void preview.load('open', 'explicit');
+          }}
+        >
+          {t('pblV3.application.reopen')}
+        </button>
+      )}
+    </div>
+  );
   return (
     <section
       ref={panel}
@@ -318,6 +372,7 @@ function ApplicationPreviewContent({
           {t(preview.dirty ? 'pblV3.application.saveFirst' : 'pblV3.application.updating')}
         </p>
       )}
+      {preview.standaloneFrontend && currentReady && !expired && status}
       <div className="relative min-h-0 w-full flex-1">
         {mounted &&
           current &&
@@ -357,57 +412,7 @@ function ApplicationPreviewContent({
                 />
               );
             })}
-        {!available && !updating && (
-          <div
-            role="status"
-            className={
-              mounted && !expired
-                ? 'absolute left-3 right-3 top-3 z-10 flex max-h-full flex-wrap items-center justify-center gap-2 overflow-auto rounded-lg border bg-background/95 p-3 text-center text-sm text-muted-foreground shadow-sm'
-                : 'flex h-full min-h-0 flex-col items-center justify-center gap-3 overflow-auto p-4 text-center text-sm text-muted-foreground'
-            }
-          >
-            {(pending || preview.updating || !!previous) && (
-              <LoaderCircle size={16} className="shrink-0 animate-spin" />
-            )}
-            <p>
-              {t(
-                mounted && !expired && !error && (preview.updating || previous)
-                  ? preview.dirty
-                    ? 'pblV3.application.saveFirst'
-                    : 'pblV3.application.updating'
-                  : disabled
-                    ? preview.dirty
-                      ? 'pblV3.application.saveFirst'
-                      : 'pblV3.application.wait'
-                    : pending
-                      ? 'pblV3.application.starting'
-                      : expired
-                        ? 'pblV3.application.expired'
-                        : observation?.state === 'starting'
-                          ? 'pblV3.application.starting'
-                          : observation?.state === 'failed'
-                            ? 'pblV3.application.failed'
-                            : observation
-                              ? 'pblV3.application.unavailable'
-                              : 'pblV3.application.ready',
-              )}
-            </p>
-            {observation?.output && (
-              <pre className="max-h-40 max-w-full overflow-auto whitespace-pre-wrap text-left text-xs">
-                {observation.output}
-              </pre>
-            )}
-            {!pending && !disabled && (
-              <button
-                type="button"
-                className="rounded border px-3 py-2 text-foreground"
-                onClick={() => void preview.load('open', 'explicit')}
-              >
-                {t('pblV3.application.reopen')}
-              </button>
-            )}
-          </div>
-        )}
+        {(!preview.standaloneFrontend || !currentReady || expired) && status}
       </div>
     </section>
   );

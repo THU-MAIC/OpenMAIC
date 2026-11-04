@@ -142,12 +142,15 @@ export function installPreviewActivity(frame, activityKey, appOrigin, controlled
         return;
       }
       if (data?.type !== 'openmaic-preview-input' || typeof data.enabled !== 'boolean') return;
+      const resuming = !enabled && data.enabled;
       enabled = data.enabled;
       if (!enabled) {
         changed = false;
         cancel(timer);
       }
       trackDocument();
+      if (resuming && data.refreshOnEnable === true)
+        frame.contentWindow?.postMessage({ type: 'openmaic-preview-refresh' }, location.origin);
     });
     notify({ type: 'openmaic-preview-input-request' }, appOrigin);
   }

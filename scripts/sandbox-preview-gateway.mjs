@@ -81,8 +81,13 @@ class PreviewResolveError extends Error {
     this.statusCode = statusCode;
   }
 }
-async function resolve(ticket, host, activity = false) {
-  const body = JSON.stringify({ ticket, host, ...(activity ? { activity: true } : {}) });
+async function resolve(ticket, host, activity = false, document = false) {
+  const body = JSON.stringify({
+    ticket,
+    host,
+    ...(activity ? { activity: true } : {}),
+    ...(document ? { document: true } : {}),
+  });
   const at = String(Date.now());
   const auth =
     at +
@@ -105,7 +110,17 @@ async function resolve(ticket, host, activity = false) {
   if (!r.ok) throw new PreviewResolveError(r.status >= 500 || r.status === 429 ? r.status : 403);
   try {
     const target = await r.json();
-    validatePreviewTarget(target);
+    if (target.transport === 'document') {
+      if (
+        !document ||
+        typeof target.html !== 'string' ||
+        !target.html ||
+        Buffer.byteLength(target.html) > 1_048_576 ||
+        !Number.isFinite(target.expiresAt) ||
+        target.expiresAt <= Date.now()
+      )
+        throw new Error('Invalid preview document');
+    } else validatePreviewTarget(target);
     return target;
   } catch {
     throw new PreviewResolveError(502);
@@ -320,7 +335,20 @@ const server = http.createServer(async (req, res) => {
     if (!['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(req.method))
       throw new Error('Unsupported method');
     const ticket = token(req);
-    const target = await resolve(ticket, host);
+    const document = path.pathname === '/' && ['GET', 'HEAD'].includes(req.method);
+    const target = await resolve(ticket, host, false, document);
+    if (target.transport === 'document') {
+      res.writeHead(200, {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-store',
+        'referrer-policy': 'no-referrer',
+        'x-content-type-options': 'nosniff',
+        'content-security-policy':
+          "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'",
+      });
+      res.end(req.method === 'HEAD' ? undefined : target.html);
+      return;
+    }
     // Use only path/query: a client request can never select the upstream host or port.
     const url = new URL(target.url);
     url.pathname = path.pathname;

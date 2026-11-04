@@ -11,11 +11,19 @@ import type { ClassroomManifest } from '@/lib/export/classroom-zip-types';
 import { PROJECT_LIMITS, projectResourcesWithinLimits, safeProjectPath } from './package-policy';
 import { projectSchema, projectAdmissionSchema } from './domain/project/project-schema';
 
-import { APPLICATION_CAPABILITY } from './application';
+import { APPLICATION_CAPABILITY, STANDALONE_FRONTEND_CAPABILITY } from './application';
 
 function needsApplication(projects: readonly PBLProjectPackage[]) {
   return projects.some(
     (project) => JSON.parse(project.files['project.json'])?.runtime?.application !== undefined,
+  );
+}
+function needsStandaloneFrontend(projects: readonly PBLProjectPackage[]) {
+  return projects.some((project) =>
+    Object.hasOwn(
+      JSON.parse(project.files['project.json'])?.runtime?.application ?? {},
+      'frontendPath',
+    ),
   );
 }
 
@@ -93,6 +101,7 @@ export function validateClassroomPackageCompatibility(manifest: ClassroomManifes
             PBL_PROJECT_PACKAGE_CAPABILITY,
             DECISION_RESPONSE_CAPABILITY,
             APPLICATION_CAPABILITY,
+            STANDALONE_FRONTEND_CAPABILITY,
             PRESENTATION_CAPABILITY,
             DECISION_CONTEXT_CAPABILITY,
           ].includes(c),
@@ -161,6 +170,8 @@ export async function attachClassroomProjects(
   if (needsDecisionResponses(projects))
     manifest.requiredCapabilities.push(DECISION_RESPONSE_CAPABILITY);
   if (needsApplication(projects)) manifest.requiredCapabilities.push(APPLICATION_CAPABILITY);
+  if (needsStandaloneFrontend(projects))
+    manifest.requiredCapabilities.push(STANDALONE_FRONTEND_CAPABILITY);
   if (needsPresentation(projects)) manifest.requiredCapabilities.push(PRESENTATION_CAPABILITY);
   if (needsDecisionContext(projects))
     manifest.requiredCapabilities.push(DECISION_CONTEXT_CAPABILITY);
@@ -287,6 +298,11 @@ export async function installClassroomProjects(zip: JSZip, manifest: ClassroomMa
     !manifest.requiredCapabilities?.includes(APPLICATION_CAPABILITY)
   )
     throw new Error('Application previews require pbl-v3-application@1.');
+  if (
+    needsStandaloneFrontend(projects) &&
+    !manifest.requiredCapabilities?.includes(STANDALONE_FRONTEND_CAPABILITY)
+  )
+    throw new Error('Standalone application pages require pbl-v3-standalone-frontend@1.');
   const { references }: { references: PBLV3Reference[] } = await call({
     action: 'install',
     projects,

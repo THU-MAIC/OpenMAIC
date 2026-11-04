@@ -11,12 +11,14 @@ describe.each(['http:', 'https:'])('preview cookie exchange (%s)', (protocol) =>
   let backendStatus = 200;
   let disconnect = false;
   let malformedTarget = false;
+  let standalone = false;
   beforeEach(() => {
     revoked = false;
     activitySignals = 0;
     backendStatus = 200;
     disconnect = false;
     malformedTarget = false;
+    standalone = false;
   });
   let backend: http.Server;
   let child: ChildProcess;
@@ -48,6 +50,10 @@ describe.each(['http:', 'https:'])('preview cookie exchange (%s)', (protocol) =>
         return;
       }
       const expiresAt = Date.now() + 60000;
+      if (standalone && JSON.parse(text).document === true) {
+        res.end(JSON.stringify({ transport: 'document', html: '<h1>Standalone</h1>', expiresAt }));
+        return;
+      }
       res.end(
         JSON.stringify({
           transport: 'native',
@@ -143,6 +149,24 @@ describe.each(['http:', 'https:'])('preview cookie exchange (%s)', (protocol) =>
     expect(
       c.startsWith(protocol === 'https:' ? '__Host-openmaic_preview=' : 'openmaic_preview='),
     ).toBe(true);
+  });
+  it('serves the standalone document without an application upstream and fences revoked access', async () => {
+    standalone = true;
+    expect((await request('/')).status).toBe(403);
+    const grant = await request('/__openmaic_authorize', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ticket: 'frontend-grant' }),
+    });
+    const cookie = grant.headers.getSetCookie().at(-1)!.split(';')[0];
+    const page = await request('/', { headers: { cookie } });
+    expect(page.status).toBe(200);
+    expect(page.body).toBe('<h1>Standalone</h1>');
+    expect(page.headers.get('content-security-policy')).toContain("connect-src 'self'");
+    expect(page.headers.get('cache-control')).toBe('no-store');
+    expect((await request('/', { method: 'HEAD', headers: { cookie } })).body).toBe('');
+    revoked = true;
+    expect((await request('/', { headers: { cookie } })).status).toBe(403);
   });
   it('rejects new POST and WebSocket upgrade immediately after a warm grant is revoked', async () => {
     const r = await request('/__openmaic_authorize', {

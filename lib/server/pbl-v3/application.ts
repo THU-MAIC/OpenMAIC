@@ -41,7 +41,8 @@ export async function assertLearningPreview(
   port: number,
 ) {
   const row = await (await LearningStore.open()).get(workspaceId.slice(4), ownerId);
-  const application = projectFor(row).application;
+  const project = projectFor(row);
+  const application = project.application;
   if (!application || application.port !== port)
     throw new SandboxError('PBL_WORKSPACE_MANAGED', 409, 'Application access was revoked.');
   if (
@@ -50,6 +51,7 @@ export async function assertLearningPreview(
     environmentReleaseCommitted(row, environmentId)
   )
     throw sandboxConflict('Application access was revoked.', 'ENVIRONMENT_CHANGED');
+  return application.frontendPath ? project.files[application.frontendPath] : undefined;
 }
 
 /** Only the authenticated gateway's coalesced, real-input signal calls this. Resolving/polling never does. */
@@ -172,7 +174,7 @@ const requestSchema = z
     environmentId: z.string().uuid(),
     revision: z.number().int().nonnegative(),
     epoch: z.number().int().nonnegative(),
-    action: z.enum(['open', 'restart', 'status', 'stop']),
+    action: z.enum(['open', 'restart', 'status', 'stop', 'frontend']),
   })
   .strict();
 export async function applicationRequest(principal: OwnerPrincipal, input: unknown) {
@@ -181,6 +183,30 @@ export async function applicationRequest(principal: OwnerPrincipal, input: unkno
     throw sandboxInvalid('A current study, environment, revision and request ID are required.');
   const request = parsed.data,
     store = await LearningStore.open();
+  if (request.action === 'frontend') {
+    const row = await store.get(request.studyId, principal.ownerId);
+    const application = projectFor(row).application;
+    if (!application?.frontendPath)
+      throw sandboxInvalid('This project has no standalone frontend.');
+    if (row.environment_id !== request.environmentId)
+      throw sandboxConflict('The learning environment changed.', 'ENVIRONMENT_CHANGED');
+    // A document ticket does not start a process or depend on the teaching revision.
+    await assertEnvironmentWritable(store, row.id, row.owner_id, request.environmentId);
+    const service = await SandboxService.forOwner(principal);
+    return withLearningWorkspaceAccess(
+      {
+        ownerId: row.owner_id,
+        workspaceId: learningWorkspaceId(row.id),
+        environmentIds: () => [request.environmentId],
+        operations: ['preview'],
+      },
+      async () => ({
+        observedAt: new Date().toISOString(),
+        state: 'stopped' as const,
+        preview: await service.preview(request.environmentId, application.port, request.epoch),
+      }),
+    );
+  }
   return store.exclusive(request.studyId, async () => {
     const row = await store.get(request.studyId, principal.ownerId),
       application = projectFor(row).application;
@@ -298,7 +324,9 @@ export async function applicationRequest(principal: OwnerPrincipal, input: unkno
         const observation = await inspectApplication(store, row, service);
         return {
           ...observation,
-          ...(request.action !== 'status' && observation.state === 'running'
+          ...(!application.frontendPath &&
+          request.action !== 'status' &&
+          observation.state === 'running'
             ? { preview: await service.preview(environmentId, application.port, request.epoch) }
             : {}),
         };

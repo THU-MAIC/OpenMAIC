@@ -40,6 +40,48 @@ const sourceWrite = [
   },
 ] as LearningView['conversation'];
 const workbench = { environmentId: 'environment', epoch: 0 } as LearningWorkbench;
+it('shows an independent document before the process starts and preserves it across backend restarts', async () => {
+  const current: LearningView = {
+    ...view,
+    application: { ...view.application!, standaloneFrontend: true },
+  };
+  let launch!: (result: ApplicationObservation) => void;
+  let start = new Promise<ApplicationObservation>((resolve) => {
+    launch = resolve;
+  });
+  mocks.request.mockImplementation((_url, request) =>
+    request.action === 'frontend' ? Promise.resolve(running) : start,
+  );
+  const f = await fixture();
+  try {
+    await act(async () => f.root.render(createElement(Harness, { current, automatic: true })));
+    const frame = f.host.querySelector('iframe')!;
+    expect(frame).toBeTruthy();
+    await act(async () => frame.dispatchEvent(new Event('load')));
+    expect(frame.classList.contains('invisible')).toBe(false);
+    expect(frame.hasAttribute('inert')).toBe(true);
+    await act(async () => launch({ state: 'running', observedAt: '' }));
+    expect(frame.hasAttribute('inert')).toBe(false);
+    start = new Promise((resolve) => {
+      launch = resolve;
+    });
+    await act(async () =>
+      (
+        f.host.querySelector('[aria-label="pblV3.application.restart"]') as HTMLButtonElement
+      ).click(),
+    );
+    expect(f.host.querySelector('iframe')).toBe(frame);
+    expect(frame.classList.contains('invisible')).toBe(false);
+    await act(async () => launch({ state: 'running', observedAt: '' }));
+    expect(f.host.querySelector('iframe')).toBe(frame);
+    expect(frame.hasAttribute('inert')).toBe(false);
+    expect(
+      mocks.request.mock.calls.filter(([, input]) => input.action === 'frontend'),
+    ).toHaveLength(1);
+  } finally {
+    await f.cleanup();
+  }
+});
 it('restores the preview at the write review checkpoint while the reply is still streaming', async () => {
   mocks.request.mockResolvedValue(running);
   const f = await fixture();

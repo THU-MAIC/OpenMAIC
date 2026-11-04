@@ -11,3 +11,4 @@ export interface ApplicationObservation {
 }
 
 export const APPLICATION_CAPABILITY = 'pbl-v3-application@1';
+export const STANDALONE_FRONTEND_CAPABILITY = 'pbl-v3-standalone-frontend@1';

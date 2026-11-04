@@ -1259,6 +1259,7 @@ export async function learningView(
           application: {
             title: project.application.title,
             description: project.application.description,
+            ...(project.application.frontendPath ? { standaloneFrontend: true as const } : {}),
             choices: applicationChoices(
               project.definition,
               row.state,

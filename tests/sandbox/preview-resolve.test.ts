@@ -35,6 +35,7 @@ it('denies unsigned and malformed input before reaching the service', async () =
     'x'.repeat(8193),
     '{"ticket":1,"host":"x"}',
     JSON.stringify({ ...descriptor, activity: false }),
+    JSON.stringify({ ...descriptor, document: true }),
   ]) {
     const response = await POST(request(body));
     expect(response.status).toBe(403);
@@ -48,7 +49,7 @@ it('resolves authenticated activity with a non-cacheable response', async () => 
   const response = await POST(request());
   expect(response.status).toBe(200);
   expect(response.headers.get('cache-control')).toBe('no-store');
-  expect(target).toHaveBeenCalledWith(descriptor.ticket, descriptor.host, true);
+  expect(target).toHaveBeenCalledWith(descriptor.ticket, descriptor.host, true, false);
 });
 
 it.each([
