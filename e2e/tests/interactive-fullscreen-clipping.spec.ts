@@ -1,11 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
-import { createRequire } from 'node:module';
+import { buildSync } from 'esbuild';
 import type * as ClientRects from '../../lib/edit/visible-client-rect';
 
-const require = createRequire(process.cwd() + '/package.json');
-const { buildSync } = require(
-  createRequire(require.resolve('tsx/package.json')).resolve('esbuild'),
-);
 // Exercise the production clipping calculation with real browser fullscreen geometry.
 const script = buildSync({
   entryPoints: ['lib/edit/visible-client-rect.ts'],
