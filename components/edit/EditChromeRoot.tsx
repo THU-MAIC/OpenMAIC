@@ -10,7 +10,7 @@ import { preloadEditor } from '@/lib/edit/preload-editor';
 import { sceneEditorRegistry } from '@/lib/edit/scene-editor-registry';
 import { getScenePagerState } from '@/lib/edit/scene-pager';
 import { flushStageSave, useStageStore } from '@/lib/store/stage';
-import { useInWorkbenchPanel } from '@/lib/workbench/panel-context';
+import { useWorkbenchPanelState } from '@/lib/workbench/panel-context';
 import { supportsNarrationTimeline } from './scene-timeline';
 import type { Scene } from '@/lib/types/stage';
 
@@ -41,7 +41,11 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChro
   // nowhere to toggle to) and the Edit-with-AI right rail (the workbench
   // conversation on the left is its successor — the agent it would talk to
   // is the one building this course).
-  const inWorkbenchPanel = useInWorkbenchPanel();
+  const {
+    hosted: inWorkbenchPanel,
+    editPinned: workbenchEditing,
+    historySlot,
+  } = useWorkbenchPanelState();
 
   // Deck paging (‹ n/m ›). Same state source and setter the SlideNavRail
   // thumbnails use — `currentSceneId` / `setCurrentSceneId` — so flipping pages
@@ -134,6 +138,9 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChro
       // form — otherwise those scenes would lose paging entirely.
       pager={timelineEnabled ? undefined : pager}
       hideCommandBar={inWorkbenchPanel}
+      // Gated on the pane's own mode, not on this root being mounted: the root
+      // outlives a switch to Learn by the length of its exit fade.
+      historySlot={workbenchEditing ? historySlot : null}
     />
   );
 }

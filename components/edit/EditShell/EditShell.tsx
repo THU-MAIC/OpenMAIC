@@ -2,6 +2,7 @@
 
 import { motion, useMotionValue, useReducedMotion } from 'motion/react';
 import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import type { SceneEditorSurface, SurfaceState } from '@/lib/edit/scene-editor-surface';
 import { sceneEditorRegistry } from '@/lib/edit/scene-editor-registry';
 import { NOOP_SURFACE } from '@/lib/edit/noop-surface';
@@ -13,6 +14,7 @@ import type { SceneType } from '@/lib/types/stage';
 import { CommandBar } from './CommandBar';
 import { FloatingInsertToolbar } from './FloatingInsertToolbar';
 import { FloatingToolbar } from './FloatingToolbar';
+import { HeaderHistoryControls } from './HeaderHistoryControls';
 import { HintRail } from './HintRail';
 import { CanvasPager, type CanvasPagerProps } from './CanvasPager';
 
@@ -46,6 +48,11 @@ interface EditShellProps {
   readonly pager?: CanvasPagerProps;
   /** Omit the whole top command bar inside the workbench panel. */
   readonly hideCommandBar?: boolean;
+  /**
+   * Where undo/redo go when the host hides the command bar and has a header of
+   * its own. Nothing renders while this is null or the surface has no history.
+   */
+  readonly historySlot?: HTMLElement | null;
   /** Optional bottom bar (under the canvas) — used for the actions timeline. */
   readonly bottomRail?: ReactNode;
 }
@@ -90,6 +97,7 @@ export function EditShell({
   bottomRail,
   pager,
   hideCommandBar,
+  historySlot,
 }: EditShellProps) {
   const surface = sceneEditorRegistry.resolve(scene.type) ?? NOOP_SURFACE;
   // Surface state is published from a child runner (keyed by sceneType so it
@@ -121,6 +129,9 @@ export function EditShell({
           rules-of-hooks happy across the slide ↔ read-only surface swap
           while the rest of the chrome stays mounted. */}
       <SurfaceStateRunner key={scene.type} surface={surface} onChange={setState} />
+      {historySlot && state?.history
+        ? createPortal(<HeaderHistoryControls history={state.history} />, historySlot)
+        : null}
       <Frame
         title={scene.title}
         sceneType={scene.type}
