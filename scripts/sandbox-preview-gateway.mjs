@@ -81,12 +81,13 @@ class PreviewResolveError extends Error {
     this.statusCode = statusCode;
   }
 }
-async function resolve(ticket, host, activity = false, document = false) {
+async function resolve(ticket, host, activity = false, document = false, bootstrap = false) {
   const body = JSON.stringify({
     ticket,
     host,
     ...(activity ? { activity: true } : {}),
     ...(document ? { document: true } : {}),
+    ...(bootstrap ? { bootstrap: true } : {}),
   });
   const at = String(Date.now());
   const auth =
@@ -113,9 +114,10 @@ async function resolve(ticket, host, activity = false, document = false) {
     if (target.transport === 'document') {
       if (
         !document ||
-        typeof target.html !== 'string' ||
-        !target.html ||
-        Buffer.byteLength(target.html) > 1_048_576 ||
+        (!bootstrap &&
+          (typeof target.html !== 'string' ||
+            !target.html ||
+            Buffer.byteLength(target.html) > 1_048_576)) ||
         !Number.isFinite(target.expiresAt) ||
         target.expiresAt <= Date.now()
       )
@@ -283,7 +285,7 @@ const server = http.createServer(async (req, res) => {
       const { ticket } = JSON.parse(Buffer.concat(chunks).toString());
       if (typeof ticket !== 'string' || ticket.length > 4096 || !/^[-_a-zA-Z0-9.]+$/.test(ticket))
         throw new Error('Invalid ticket');
-      const target = await resolve(ticket, host, false, true);
+      const target = await resolve(ticket, host, false, true, true);
       res.writeHead(200, {
         'cache-control': 'no-store',
         'content-type': 'application/json',

@@ -66,7 +66,13 @@ describe.each(['http:', 'https:'])('preview cookie exchange (%s)', (protocol) =>
       }
       const expiresAt = Date.now() + 60000;
       if (standalone && JSON.parse(text).document === true) {
-        res.end(JSON.stringify({ transport: 'document', html: '<h1>Standalone</h1>', expiresAt }));
+        res.end(
+          JSON.stringify({
+            transport: 'document',
+            ...(JSON.parse(text).bootstrap === true ? {} : { html: '<h1>Standalone</h1>' }),
+            expiresAt,
+          }),
+        );
         return;
       }
       res.end(

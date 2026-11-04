@@ -1133,7 +1133,7 @@ export class SandboxService {
   }
 
   /** Only the authenticated preview gateway calls this; grants are server-issued, not owner input. */
-  private static async resolvePreview(ticket: string, host: string) {
+  private static async resolvePreviewBinding(ticket: string, host: string) {
     const grant = verifyPreviewGrant(ticket, host);
     assertSandboxId(grant.environmentId);
     const config = await resolvedSandboxConfig();
@@ -1152,15 +1152,43 @@ export class SandboxService {
       row.preview_epoch !== grant.epoch
     )
       throw sandboxConflict('Preview environment is unavailable or access was revoked.');
+    return { row, grant, config, frontend };
+  }
+
+  private static async resolvePreview(ticket: string, host: string) {
+    const binding = await this.resolvePreviewBinding(ticket, host);
+    return this.resolvePreviewProvider(binding);
+  }
+
+  private static async resolvePreviewProvider(
+    binding: Awaited<ReturnType<typeof this.resolvePreviewBinding>>,
+  ) {
+    const { row, grant, config, frontend } = binding;
     const { E2BCompatibleSandboxProvider } = await import('./providers/e2b-compatible');
     const provider = new E2BCompatibleSandboxProvider(config);
-    const environmentExpiresAt = await provider.previewLifetime(row.resource_id, row.id);
+    const environmentExpiresAt = await provider.previewLifetime(row.resource_id!, row.id);
     const expiresAt = Math.min(environmentExpiresAt, grant.expiresAt);
     return { row, grant, provider, expiresAt, environmentExpiresAt, frontend };
   }
 
-  static async previewTarget(ticket: string, host: string, activity = false, document = false) {
-    const resolved = await this.resolvePreview(ticket, host);
+  static async previewTarget(
+    ticket: string,
+    host: string,
+    activity = false,
+    document = false,
+    bootstrap = false,
+  ) {
+    const binding = await this.resolvePreviewBinding(ticket, host);
+    // The static bootstrap only sets a cookie for the existing signed grant.
+    // Its next document/API request still checks the live private provider binding.
+    if (bootstrap && document && !activity && binding.frontend)
+      return {
+        transport: 'document',
+        expiresAt: binding.grant.expiresAt,
+        authorization: undefined,
+        appOrigin: previewConfig().appOrigin,
+      };
+    const resolved = await this.resolvePreviewProvider(binding);
     const { row, grant, provider, environmentExpiresAt } = resolved;
     if (activity && isLearningWorkspace(row.workspace_id)) {
       const { recordLearningPreviewActivity } = await import('@/lib/server/pbl-v3/application');

@@ -46,11 +46,11 @@ never-ready document. A successfully ready document still keeps its client state
 when the process is unchanged. Explicit reopen rechecks pending source recovery, including
 when its preceding automatic status response crossed the grant-expiry boundary.
 
-The owned gateway shell loads standalone HTML from a reserved document route so the application can use its root path for API requests. Legacy applications still load from their own root. The shell reports readiness only after its nested same-origin HTML
+The owned gateway shell loads standalone HTML from a reserved document route so the application can use its root path for API requests. Standalone bootstrap checks the signed binding before setting the cookie. Serving the document still validates the live provider. Legacy applications still load from their own root. The shell reports readiness only after its nested same-origin HTML
 document completes. Workbench promotion checks the exact current candidate window
 and isolated origin; an application frame's own messages cannot promote it. Shell
 load and authorization alone are insufficient. Auth/load failures retain the old
-document, and missing readiness becomes an explicit error/reopen state after 60 seconds.
+document. Missing readiness exposes a document-only retry after 15 seconds for standalone previews. Legacy previews retain the 60-second readiness budget.
 Static bootstrap failure messages contain no credentials and cannot renew access.
 After its static bootstrap starts, the shell applies an additional `script-src 'none'`
 CSP policy before authorization or app loading. Existing callbacks continue, while

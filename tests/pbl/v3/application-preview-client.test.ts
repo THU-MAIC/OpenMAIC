@@ -2039,7 +2039,7 @@ it.each(['ready', 'still-starting', 'rotated', 'failed'])(
 
 it('offers one document retry when the standalone gateway is silent during startup', async () => {
   vi.useFakeTimers();
-  const current = {
+  const current: LearningView = {
     ...view,
     application: { ...view.application!, standaloneFrontend: true },
   };
