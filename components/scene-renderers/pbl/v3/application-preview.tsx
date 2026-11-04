@@ -325,7 +325,7 @@ function ApplicationPreviewContent({
         </details>
         <button
           type="button"
-          disabled={pending || disabled}
+          disabled={pending || disabled || preview.launchPaused}
           className="rounded p-1 hover:bg-muted disabled:opacity-40"
           title={applicationAction}
           aria-label={applicationAction}

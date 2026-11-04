@@ -577,10 +577,38 @@ export class SandboxService {
 
   /** Host-only declaration, not accepted from the generic command route. */
   async startApplicationCommand(id: string, body: Record<string, unknown>, epoch: number) {
+    return this.applicationCommand(id, body, epoch, false);
+  }
+
+  /** Reserve a visible application writer before releasing the learning lock.
+   * Concurrent Stop/write operations can cancel even an undispatched command.
+   */
+  async prepareApplicationCommand(id: string, body: Record<string, unknown>, epoch: number) {
+    return this.applicationCommand(id, body, epoch, true);
+  }
+
+  private async applicationCommand(
+    id: string,
+    body: Record<string, unknown>,
+    epoch: number,
+    defer: true,
+  ): Promise<() => Promise<SandboxCommandResult>>;
+  private async applicationCommand(
+    id: string,
+    body: Record<string, unknown>,
+    epoch: number,
+    defer: false,
+  ): Promise<SandboxCommandResult>;
+  private async applicationCommand(
+    id: string,
+    body: Record<string, unknown>,
+    epoch: number,
+    defer: boolean,
+  ) {
     await this.mutation(id, 'preview');
     await this.mutation(id, 'command');
-    return this.store.exclusive(id, () =>
-      this.startCommandUnlocked(
+    return this.store.exclusive(id, async () => {
+      const dispatch = await this.prepareCommandUnlocked(
         id,
         {
           ...body,
@@ -591,15 +619,23 @@ export class SandboxService {
         },
         epoch,
         'application',
-      ),
-    );
+        defer,
+      );
+      return defer ? dispatch : dispatch();
+    });
   }
 
-  private async startCommandUnlocked(
+  private async startCommandUnlocked(id: string, body: Record<string, unknown>, epoch?: number) {
+    const dispatch = await this.prepareCommandUnlocked(id, body, epoch);
+    return dispatch();
+  }
+
+  private async prepareCommandUnlocked(
     id: string,
     body: Record<string, unknown>,
     epoch?: number,
     purpose?: 'application',
+    defer = false,
   ) {
     assertSandboxId(body.requestId);
     if (
@@ -632,38 +668,51 @@ export class SandboxService {
       .update(JSON.stringify(purpose ? { ...input, purpose } : input))
       .digest('hex');
     const created = await this.store.reserveCommand(row, input.id, hash, epoch, purpose);
-    if (created) {
-      let dispatched = false;
-      try {
-        await dispatchWorkspaceMutation(this.ownerId, row.workspace_id, row.id, 'command', () => {
-          dispatched = true;
-          return this.provider.startCommand(row.resource_id, row.id, input);
-        });
-      } catch (error) {
-        if (!dispatched) {
-          // No provider dispatch happened; leave a collectable terminal command, not an orphan writer.
-          await this.store.saveCommand(row, {
+    return async (): Promise<SandboxCommandResult> => {
+      if (created) {
+        let dispatched = false;
+        try {
+          if (defer) {
+            const current = await this.running(id);
+            if (current.resource_id !== row.resource_id || current.preview_epoch !== epoch)
+              throw sandboxConflict(
+                'Workspace was stopped. Retry the operation.',
+                'WORKSPACE_STOPPED',
+              );
+            const recorded = await this.store.command(row, input.id);
+            if (recorded && !['starting', 'running', 'unknown'].includes(recorded.state))
+              return recorded;
+          }
+          await dispatchWorkspaceMutation(this.ownerId, row.workspace_id, row.id, 'command', () => {
+            dispatched = true;
+            return this.provider.startCommand(row.resource_id, row.id, input);
+          });
+        } catch (error) {
+          if (!dispatched) {
+            // No provider dispatch happened; leave a collectable terminal command, not an orphan writer.
+            await this.store.saveCommand(row, {
+              id: input.id,
+              state: 'cancelled',
+              stdout: '',
+              stderr: '',
+              exitCode: null,
+              truncated: false,
+            });
+            throw error;
+          }
+          // A lost start acknowledgement is unknown, never grounds for a second execution.
+          return {
             id: input.id,
-            state: 'cancelled',
+            state: 'unknown',
             stdout: '',
             stderr: '',
             exitCode: null,
             truncated: false,
-          });
-          throw error;
+          } satisfies SandboxCommandResult;
         }
-        // A lost start acknowledgement is unknown, never grounds for a second execution.
-        return {
-          id: input.id,
-          state: 'unknown',
-          stdout: '',
-          stderr: '',
-          exitCode: null,
-          truncated: false,
-        } satisfies SandboxCommandResult;
       }
-    }
-    return this.command(id, input.id);
+      return this.command(id, input.id);
+    };
   }
 
   async command(

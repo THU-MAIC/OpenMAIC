@@ -310,64 +310,79 @@ it('recovers a stopped preview after an observation conflict without racing a le
   }
 });
 
-it('keeps the document visible during tests and restores input during quiz narration', async () => {
-  const current: LearningView = {
-    ...view,
-    application: { ...view.application!, standaloneFrontend: true },
-  };
-  mocks.request.mockImplementation((_url, input) =>
-    input.action === 'frontend'
-      ? running
-      : { state: input.action === 'status' ? 'stopped' : 'running', observedAt: '' },
-  );
-  const f = await fixture();
-  try {
-    await act(async () => f.root.render(createElement(Harness, { current, automatic: true })));
-    const frame = f.host.querySelector('iframe')!;
-    await act(async () => frame.dispatchEvent(new Event('load')));
-    await act(async () =>
-      f.root.render(
-        createElement(Harness, {
-          current: {
-            ...current,
-            evaluation: { id: 'test', state: 'running', stdout: '', stderr: '' },
-          },
-          automatic: true,
-        }),
-      ),
+it.each([false, true])(
+  'keeps the document visible through tests and quiz (isolated: %s)',
+  async (isolated) => {
+    const current: LearningView = {
+      ...view,
+      application: { ...view.application!, standaloneFrontend: true },
+    };
+    mocks.request.mockImplementation((_url, input) =>
+      input.action === 'frontend'
+        ? running
+        : { state: input.action === 'status' && !isolated ? 'stopped' : 'running', observedAt: '' },
     );
-    expect(frame.classList.contains('invisible')).toBe(false);
-    expect(frame.hasAttribute('inert')).toBe(true);
-    expect(f.host.querySelector('[role="status"]')?.textContent).toBe('pblV3.application.wait');
-    expect(mocks.request.mock.calls.map(([, input]) => input.action)).toEqual(['frontend', 'open']);
-    await act(async () =>
-      f.root.render(
-        createElement(Harness, {
-          current: {
-            ...current,
-            revision: 1,
-            busy: true,
-            role: 'mentor',
-            stage: { kind: 'check', checker: 'quiz' } as LearningView['stage'],
-            evaluation: null,
-          },
-          automatic: true,
-        }),
-      ),
-    );
-    expect(mocks.request.mock.calls.map(([, input]) => input.action)).toEqual([
-      'frontend',
-      'open',
-      'status',
-      'open',
-    ]);
-    expect(f.host.querySelector('iframe')).toBe(frame);
-    expect(frame.hasAttribute('inert')).toBe(false);
-    expect(f.host.querySelector('[role="status"]')).toBeNull();
-  } finally {
-    await f.cleanup();
-  }
-});
+    const f = await fixture();
+    try {
+      await act(async () => f.root.render(createElement(Harness, { current, automatic: true })));
+      const frame = f.host.querySelector('iframe')!;
+      await act(async () => frame.dispatchEvent(new Event('load')));
+      await act(async () =>
+        f.root.render(
+          createElement(Harness, {
+            current: {
+              ...current,
+              revision: 1,
+              evaluation: {
+                id: 'test',
+                state: 'running',
+                stdout: '',
+                stderr: '',
+                ...(isolated ? { isolatedSources: true as const } : {}),
+              },
+            },
+            automatic: true,
+          }),
+        ),
+      );
+      expect(frame.classList.contains('invisible')).toBe(false);
+      expect(frame.hasAttribute('inert')).toBe(!isolated);
+      expect(f.host.querySelector('[role="status"]')?.textContent).toBe(
+        isolated ? undefined : 'pblV3.application.wait',
+      );
+      expect(mocks.request.mock.calls.map(([, input]) => input.action)).toEqual([
+        'frontend',
+        'open',
+      ]);
+      await act(async () =>
+        f.root.render(
+          createElement(Harness, {
+            current: {
+              ...current,
+              revision: 2,
+              busy: true,
+              role: 'mentor',
+              stage: { kind: 'check', checker: 'quiz' } as LearningView['stage'],
+              evaluation: null,
+            },
+            automatic: true,
+          }),
+        ),
+      );
+      expect(mocks.request.mock.calls.map(([, input]) => input.action)).toEqual([
+        'frontend',
+        'open',
+        'status',
+        ...(isolated ? [] : ['open']),
+      ]);
+      expect(f.host.querySelector('iframe')).toBe(frame);
+      expect(frame.hasAttribute('inert')).toBe(false);
+      expect(f.host.querySelector('[role="status"]')).toBeNull();
+    } finally {
+      await f.cleanup();
+    }
+  },
+);
 
 it('checks readiness without replaying an acknowledged standalone launch', async () => {
   vi.useFakeTimers();

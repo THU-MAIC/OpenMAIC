@@ -11092,6 +11092,130 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     }
   });
 
+  it('does not dispatch an application reservation cancelled before provider startup', async () => {
+    const fresh = await freshStudy();
+    const row = await store.get(fresh.id, principal.ownerId);
+    const environmentId = row.environment_id!;
+    const appId = randomUUID();
+    const service = await SandboxService.forOwner(principal);
+    const scope = {
+      ownerId: principal.ownerId,
+      workspaceId: learningWorkspaceId(row.id),
+      environmentIds: () => [environmentId],
+      operations: ['preview', 'command'] as const,
+    };
+    const start = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'startCommand');
+    try {
+      const dispatch = await withLearningWorkspaceAccess(scope, () =>
+        service.prepareApplicationCommand(environmentId, { requestId: appId, command: ':' }, 0),
+      );
+      expect(
+        (await service.listCommands(environmentId)).find((entry) => entry.id === appId),
+      ).toMatchObject({ purpose: 'application', state: 'unknown' });
+      expect(start).not.toHaveBeenCalled();
+      const cancelled = {
+        id: appId,
+        state: 'cancelled',
+        stdout: '',
+        stderr: '',
+        exitCode: null,
+        truncated: false,
+      };
+      await pool.query(
+        'UPDATE sandbox_commands SET result_json=$3 WHERE environment_id=$1 AND id=$2',
+        [environmentId, appId, JSON.stringify(cancelled)],
+      );
+      await expect(withLearningWorkspaceAccess(scope, dispatch)).resolves.toEqual(cancelled);
+      expect(start).not.toHaveBeenCalled();
+    } finally {
+      start.mockRestore();
+      await releasePreparationFixtures([fresh.id]);
+    }
+  }, 15000);
+
+  it('keeps a standalone application running through a real assessment and quiz entry', async () => {
+    const originalApplication = project.application;
+    const originalEvaluation = project.evaluations.greeting!;
+    project.application = {
+      title: 'Learner application',
+      description: 'A pinned frontend.',
+      argv: ['python3', 'greeting.py'],
+      frontendPath: 'greeting.py',
+      port: 8000,
+      healthPath: '/',
+    };
+    project.evaluations.greeting = {
+      cases: [
+        {
+          id: 'source-check',
+          argv: [
+            'python3',
+            '-c',
+            "from pathlib import Path; p=Path('greeting.py'); assert p.read_bytes(); p.write_text('private test change'); print('ok')",
+          ],
+          stdout: 'ok\n',
+        },
+      ],
+    };
+    const fresh = await freshStudy();
+    const row = await store.get(fresh.id, principal.ownerId);
+    const environmentId = row.environment_id!;
+    const applicationId = randomUUID();
+    const app = {
+      id: applicationId,
+      state: 'running',
+      stdout: '',
+      stderr: '',
+      exitCode: null,
+      truncated: false,
+    };
+    const service = await SandboxService.forOwner(principal);
+    const initialSource = await service.readText(environmentId, 'greeting.py');
+    try {
+      row.state.position.stageIndex = 4;
+      row.state.milestones[0]!.stageIndex = 4;
+      await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+      await writeFile(
+        join(mocked.root, environmentId, `.command-${applicationId}`),
+        JSON.stringify(app),
+      );
+      await pool.query(
+        "INSERT INTO sandbox_commands(environment_id,id,request_fingerprint,purpose,result_json) VALUES ($1,$2,'fixture','application',$3)",
+        [environmentId, applicationId, JSON.stringify(app)],
+      );
+      await fresh.send('evaluate');
+      expect((await learningView(principal, fresh.id)).evaluation).toMatchObject({
+        isolatedSources: true,
+      });
+      await fresh.send('collect');
+      expect(
+        (await store.get(fresh.id, principal.ownerId)).state.collected.greeting!.tests?.status,
+      ).toBe('passed');
+      const sourcePath = join(mocked.root, environmentId, 'greeting.py');
+      await writeFile(sourcePath, initialSource + '\n# changed after the assessment\n');
+      await expect(fresh.send('next')).rejects.toThrow('Files changed after review or testing');
+      await writeFile(sourcePath, initialSource);
+      await fresh.send('next');
+      expect((await store.get(fresh.id, principal.ownerId)).state.position.stageIndex).toBe(5);
+      await commandStudy(principal, fresh.id, {
+        id: randomUUID(),
+        revision: (await store.get(fresh.id, principal.ownerId)).revision,
+        type: 'quiz',
+        answers: project.definition.milestones[0]!.quiz.map((question) => question.answer),
+      });
+      expect(await service.command(environmentId, applicationId)).toEqual(app);
+      expect(await service.readText(environmentId, 'greeting.py')).toBe(initialSource);
+    } finally {
+      project.application = originalApplication;
+      project.evaluations.greeting = originalEvaluation;
+      await pool.query('DELETE FROM sandbox_commands WHERE environment_id=$1 AND id=$2', [
+        environmentId,
+        applicationId,
+      ]);
+      await releasePreparationFixtures([fresh.id]);
+    }
+  });
+
   it('gives each role read-only application diagnostics without shared chat or execution privileges', async () => {
     const originalStudy = studyId,
       originalApplication = project.application;

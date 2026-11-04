@@ -173,7 +173,9 @@ export function useApplicationPreview(
         )
     );
   });
-  const disabled = unavailable || dirty || !!view?.evaluation || !!sourceWriting;
+  const isolatedAssessment = view?.evaluation?.isolatedSources === true;
+  const disabled =
+    unavailable || dirty || (!!view?.evaluation && !isolatedAssessment) || !!sourceWriting;
   const binding = `${view?.id}:${view?.environmentId}:${workbench?.environmentId}:${workbench?.epoch}`;
   const stage = `${view?.state?.position?.milestoneId}:${view?.state?.position?.stageIndex}`;
   const [observedBinding, setObservedBinding] = useState(binding);
@@ -394,7 +396,7 @@ export function useApplicationPreview(
 
   const load = useCallback(
     async (action: 'open' | 'restart', recovery?: 'automatic' | 'explicit') => {
-      if (!currentBinding || disabled || !view || !workbench) return;
+      if (!currentBinding || disabled || isolatedAssessment || !view || !workbench) return;
       if (standaloneFrontend && recovery === 'explicit' && (expired || frontendState?.error))
         setFrontend(null);
       const expiredRecovery = () =>
@@ -540,6 +542,7 @@ export function useApplicationPreview(
     [
       currentBinding,
       disabled,
+      isolatedAssessment,
       view,
       workbench,
       observation,
@@ -571,6 +574,7 @@ export function useApplicationPreview(
       deferAutomatic ||
       !currentBinding ||
       disabled ||
+      isolatedAssessment ||
       !view?.application ||
       closedStudy.current === view.id ||
       autoLaunched.current === binding ||
@@ -595,6 +599,7 @@ export function useApplicationPreview(
     deferAutomatic,
     currentBinding,
     disabled,
+    isolatedAssessment,
     view,
     binding,
     pending,
@@ -608,6 +613,7 @@ export function useApplicationPreview(
       open &&
       refreshNeeded &&
       !deferAutomatic &&
+      !isolatedAssessment &&
       !disabled &&
       (!view?.busy || reviewReady || quizNarration) &&
       !pending &&
@@ -620,6 +626,7 @@ export function useApplicationPreview(
     open,
     refreshNeeded,
     deferAutomatic,
+    isolatedAssessment,
     disabled,
     pending,
     expired,
@@ -731,8 +738,10 @@ export function useApplicationPreview(
         document.expiresAt <= Date.now() ||
         refreshNeeded ||
         replacementNeeded.current
-      )
-        void load('open', refreshNeeded || standaloneFrontend ? 'explicit' : undefined);
+      ) {
+        if (isolatedAssessment) setRefreshNeeded(true);
+        else void load('open', refreshNeeded || standaloneFrontend ? 'explicit' : undefined);
+      }
     }
   }
   return {
@@ -748,6 +757,7 @@ export function useApplicationPreview(
     applicationError: standaloneFrontend ? error : undefined,
     expired,
     disabled,
+    launchPaused: isolatedAssessment,
     dirty,
     updating: disabled || pending,
     frameVersion,
