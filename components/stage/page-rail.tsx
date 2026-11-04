@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { useBrand, useIsDesktop } from '@/lib/brand/brand-context';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
+import { useInWorkbenchPanel } from '@/lib/workbench/panel-context';
 
 const MIN_WIDTH = 170;
 const MAX_WIDTH = 400;
@@ -54,6 +55,7 @@ export function PageRail({
   const router = useRouter();
   const brand = useBrand();
   const isDesktop = useIsDesktop();
+  const inWorkbenchPanel = useInWorkbenchPanel();
   const prefersReducedMotion = useReducedMotion();
   const width = useSettingsStore((s) => s.sidebarWidth);
   const setWidth = useSettingsStore((s) => s.setSidebarWidth);
@@ -168,11 +170,16 @@ export function PageRail({
       ) : null}
 
       <div className={cn('flex h-full w-full flex-col overflow-hidden', collapsed && 'hidden')}>
-        <div className="relative mt-3 mb-1 flex h-10 shrink-0 items-center justify-between px-3">
-          {isDesktop ? (
-            // The Electron title bar already shows the brand.
-            <span />
-          ) : (
+        {/* Hosted in the workbench, the shell already shows the brand, so the header
+            holds only the collapse button and is no taller than it. */}
+        <div
+          className={cn(
+            'relative mb-1 flex shrink-0 items-center px-3',
+            inWorkbenchPanel ? 'mt-2 h-7' : 'mt-3 h-10',
+          )}
+        >
+          {/* The Electron title bar shows the brand on a desktop build. */}
+          {inWorkbenchPanel || isDesktop ? null : (
             <button
               type="button"
               onClick={() => router.push('/')}
@@ -188,7 +195,7 @@ export function PageRail({
             onClick={() => onCollapseChange(true)}
             aria-label={t('edit.nav.collapse')}
             title={t('edit.nav.collapse')}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gray-100/80 text-gray-500 ring-1 ring-black/[0.04] transition-all duration-200 hover:bg-gray-200/90 hover:text-gray-700 active:scale-90 dark:bg-gray-800/80 dark:text-gray-400 dark:ring-white/[0.06] dark:hover:bg-gray-700/90 dark:hover:text-gray-200"
+            className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gray-100/80 text-gray-500 ring-1 ring-black/[0.04] transition-all duration-200 hover:bg-gray-200/90 hover:text-gray-700 active:scale-90 dark:bg-gray-800/80 dark:text-gray-400 dark:ring-white/[0.06] dark:hover:bg-gray-700/90 dark:hover:text-gray-200"
           >
             <PanelLeftClose className="h-4 w-4" aria-hidden="true" />
           </button>
