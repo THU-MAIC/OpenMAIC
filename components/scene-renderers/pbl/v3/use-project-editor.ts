@@ -34,6 +34,11 @@ export function useProjectEditor(
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [readError, setReadError] = useState<{
+    path: string;
+    source: ReturnType<typeof editorSource>;
+    message: string;
+  } | null>(null);
   const [recoveryConflicts, setRecoveryConflicts] = useState<Record<string, string>>({});
   const sequence = useRef(0),
     mounted = useRef(true);
@@ -84,16 +89,20 @@ export function useProjectEditor(
         return;
       const active = path === current.current.path;
       const ticket = active ? ++sequence.current : sequence.current;
+      const source = editorSource(view);
+      const isCurrent = () =>
+        mounted.current &&
+        (!active || ticket === sequence.current) &&
+        source === editorSource(current.current.view) &&
+        current.current.view.files.includes(path);
       if (active) setLoading(true);
       try {
         const result = await read(path);
-        if (
-          !mounted.current ||
-          (active && ticket !== sequence.current) ||
-          editorSource(view) !== editorSource(current.current.view) ||
-          !current.current.view.files.includes(path)
-        )
-          return;
+        if (!isCurrent()) return;
+        if (active)
+          setReadError((previous) =>
+            previous?.path === path && previous.source === source ? null : previous,
+          );
         const existing = current.current.buffers[path];
         const clearRecoveredFailure = () => {
           const rejected = unavailableSave.current,
@@ -171,7 +180,8 @@ export function useProjectEditor(
           setSaveError('');
         }
       } catch (error) {
-        current.current.onError((error as Error).message);
+        if (active && isCurrent())
+          setReadError({ path, source, message: (error as Error).message });
       } finally {
         if (active && ticket === sequence.current) setLoading(false);
       }
@@ -365,6 +375,8 @@ export function useProjectEditor(
     loading,
     saving,
     saveError,
+    readError:
+      readError?.path === path && readError.source === selectedSource ? readError.message : '',
     recoveryConflict: recoveryConflicts[path] === editorSource(view),
     dirty,
     anyDirty: Object.values(buffers).some((b) => b.text !== b.saved),

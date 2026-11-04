@@ -77,6 +77,34 @@ afterEach(async () => {
   error.mockClear();
 });
 
+it('clears the selected file read error when a later read succeeds', async () => {
+  const value = view('read-recovery');
+  read.mockRejectedValueOnce(new Error('Environment service temporarily unavailable'));
+  await mount(createElement(Editor, { value }));
+  expect(editor.readError).toBe('Environment service temporarily unavailable');
+  expect(error).not.toHaveBeenCalled();
+
+  await act(async () => root!.render(createElement(Editor, { value: { ...value, revision: 2 } })));
+  expect(editor.buffer?.text).toBe('Saved source');
+  expect(editor.readError).toBe('');
+});
+
+it('ignores a late read failure from the previously selected file', async () => {
+  let failRead!: (reason: Error) => void;
+  read.mockImplementationOnce(
+    () =>
+      new Promise((_resolve, reject) => {
+        failRead = reject;
+      }),
+  );
+  await mount(createElement(Editor, { value: view('stale-read-failure') }));
+  await act(async () => editor.select('main.py'));
+  await act(async () => failRead(new Error('Outdated read failure')));
+  expect(editor.buffer?.text).toBe('Saved source');
+  expect(editor.readError).toBe('');
+  expect(error).not.toHaveBeenCalled();
+});
+
 describe('study-scoped local drafts', () => {
   it('acknowledges only the submitted decision version in its original study and milestone', async () => {
     const id = `decision-receipt-${sequence++}`;
