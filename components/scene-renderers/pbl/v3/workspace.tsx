@@ -112,7 +112,13 @@ function PBLV3WorkspaceContent({
   const commandInFlight = useRef(false);
   const [sent, setSent] = useState(0);
   const [dirtyFiles, setDirtyFiles] = useState(false);
-  const applicationPreview = useApplicationPreview(view, workbench, dirtyFiles);
+  const applicationPreview = useApplicationPreview(
+    view,
+    workbench,
+    dirtyFiles,
+    true,
+    pending || !!view?.needsOpening,
+  );
   const answerKey = `${view?.id}:${view?.state.position.milestoneId}:${view?.state.position.stageIndex}`;
   const recordedAnswers =
     view?.state.collected[view.state.position.milestoneId ?? '']?.quiz?.answers;

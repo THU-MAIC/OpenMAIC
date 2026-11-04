@@ -38,6 +38,18 @@ async function waitForApplication(
         return await pblRequest<ApplicationObservation>('/api/pbl/v3/application', input, signal);
       } catch (error) {
         if (
+          retryStudyContention &&
+          input.action === 'status' &&
+          error instanceof SandboxRequestError &&
+          error.reason === 'PROGRESS_CHANGED' &&
+          contention < 2
+        ) {
+          // The standalone probe can cross a process stop before the next
+          // learning event arrives. Re-observe; a newer view aborts this request.
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          continue;
+        }
+        if (
           !(error instanceof SandboxRequestError) ||
           (error.reason !== 'ENVIRONMENT_BUSY' &&
             !(
@@ -79,6 +91,7 @@ export function useApplicationPreview(
   workbench: LearningWorkbench | null,
   dirty: boolean,
   autoOpen = true,
+  learningActionPending = false,
 ) {
   const { t } = useI18n();
   const panelId = useId();
@@ -89,6 +102,9 @@ export function useApplicationPreview(
   const [pending, setPending] = useState(false);
   const [observation, setObservation] = useState<ApplicationObservation | null>(null);
   const standaloneFrontend = view?.application?.standaloneFrontend === true;
+  const deferAutomatic = standaloneFrontend && learningActionPending;
+  const deferAutomaticRef = useRef(deferAutomatic);
+  deferAutomaticRef.current = deferAutomatic;
   const [frontend, setFrontend] = useState<{
     binding: string;
     grant?: ApplicationObservation['preview'];
@@ -335,6 +351,10 @@ export function useApplicationPreview(
           if (['running', 'starting'].includes(status.state) && status.sourceChanged)
             request.action = 'restart';
         }
+        if (recovery === 'automatic' && deferAutomaticRef.current) {
+          setRefreshNeeded(true);
+          return;
+        }
         setPending(true);
         if (!standaloneFrontend) {
           // Only process-served pages need a replacement document after launch.
@@ -433,6 +453,7 @@ export function useApplicationPreview(
   useEffect(() => {
     if (
       !autoOpen ||
+      deferAutomatic ||
       !currentBinding ||
       disabled ||
       !view?.application ||
@@ -454,12 +475,24 @@ export function useApplicationPreview(
     return () => {
       cancelled = true;
     };
-  }, [autoOpen, currentBinding, disabled, view, binding, pending, observation, error, load]);
+  }, [
+    autoOpen,
+    deferAutomatic,
+    currentBinding,
+    disabled,
+    view,
+    binding,
+    pending,
+    observation,
+    error,
+    load,
+  ]);
   useEffect(() => {
     if (
       currentBinding &&
       open &&
       refreshNeeded &&
+      !deferAutomatic &&
       !disabled &&
       (!view?.busy || reviewReady) &&
       !pending &&
@@ -471,6 +504,7 @@ export function useApplicationPreview(
     currentBinding,
     open,
     refreshNeeded,
+    deferAutomatic,
     disabled,
     pending,
     expired,

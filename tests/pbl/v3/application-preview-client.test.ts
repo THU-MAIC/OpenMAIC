@@ -177,6 +177,92 @@ it('keeps a running standalone preview usable during a revision status check tha
     await f.cleanup();
   }
 });
+it('shows the standalone document while stage entry takes priority over automatic launch', async () => {
+  const current: LearningView = {
+    ...view,
+    application: { ...view.application!, standaloneFrontend: true },
+  };
+  mocks.request.mockImplementation((_url, input) =>
+    input.action === 'frontend' ? running : { state: 'running', observedAt: '' },
+  );
+  const f = await fixture();
+  try {
+    await act(async () =>
+      f.root.render(
+        createElement(Harness, { current, automatic: true, learningActionPending: true }),
+      ),
+    );
+    const frame = f.host.querySelector('iframe')!;
+    await act(async () => frame.dispatchEvent(new Event('load')));
+    expect(frame.classList.contains('invisible')).toBe(false);
+    expect(mocks.request.mock.calls.map(([, input]) => input.action)).toEqual(['frontend']);
+    await act(async () => f.root.render(createElement(Harness, { current, automatic: true })));
+    expect(mocks.request.mock.calls.map(([, input]) => input.action)).toEqual(['frontend', 'open']);
+    expect(f.host.querySelector('iframe')).toBe(frame);
+    expect(frame.hasAttribute('inert')).toBe(false);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it('recovers a stopped preview after an observation conflict without racing a learning command', async () => {
+  vi.useFakeTimers();
+  const current: LearningView = {
+    ...view,
+    application: { ...view.application!, standaloneFrontend: true },
+  };
+  const status = vi
+    .fn()
+    .mockRejectedValueOnce(
+      new SandboxRequestError('Application changed', 409, 'SANDBOX_CONFLICT', 'PROGRESS_CHANGED'),
+    )
+    .mockResolvedValue({ state: 'stopped', observedAt: '' });
+  mocks.request.mockImplementation((_url, input) =>
+    input.action === 'frontend'
+      ? running
+      : input.action === 'status'
+        ? status(input)
+        : { state: 'running', observedAt: '' },
+  );
+  const f = await fixture();
+  try {
+    await act(async () => f.root.render(createElement(Harness, { current, automatic: true })));
+    const frame = f.host.querySelector('iframe')!;
+    await act(async () => frame.dispatchEvent(new Event('load')));
+    const updated = { ...current, revision: 1 };
+    await act(async () =>
+      f.root.render(createElement(Harness, { current: updated, automatic: true })),
+    );
+    await act(async () =>
+      f.root.render(
+        createElement(Harness, { current: updated, automatic: true, learningActionPending: true }),
+      ),
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(500));
+    expect(mocks.request.mock.calls.map(([, input]) => input.action)).toEqual([
+      'frontend',
+      'open',
+      'status',
+      'status',
+    ]);
+    await act(async () =>
+      f.root.render(createElement(Harness, { current: updated, automatic: true })),
+    );
+    expect(mocks.request.mock.calls.map(([, input]) => input.action)).toEqual([
+      'frontend',
+      'open',
+      'status',
+      'status',
+      'status',
+      'open',
+    ]);
+    expect(f.host.querySelector('iframe')).toBe(frame);
+    expect(frame.hasAttribute('inert')).toBe(false);
+  } finally {
+    await f.cleanup();
+  }
+});
+
 it('checks readiness without replaying an acknowledged standalone launch', async () => {
   vi.useFakeTimers();
   const current: LearningView = {
@@ -377,6 +463,7 @@ function Harness({
   inputPaused = false,
   workbenchEnvironmentId = workbench.environmentId,
   automatic = false,
+  learningActionPending = false,
 }: {
   current?: LearningView;
   epoch?: number;
@@ -384,12 +471,14 @@ function Harness({
   inputPaused?: boolean;
   workbenchEnvironmentId?: string;
   automatic?: boolean;
+  learningActionPending?: boolean;
 }) {
   const preview = useApplicationPreview(
     current,
     { ...workbench, environmentId: workbenchEnvironmentId, epoch },
     dirty,
     automatic,
+    learningActionPending,
   );
   return createElement(
     Fragment,
