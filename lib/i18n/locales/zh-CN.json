@@ -2854,7 +2854,7 @@
       "workspace-run": "工作区运行"
     },
     "journey": {
-      "completionHandoff": "本环节已完成。下一步操作请看输入框上方的状态栏。",
+      "completionHandoff": "本环节已完成。下一步操作请看学习助手底部的任务栏。",
       "startConversation": "学习环境就绪后，助手会主动开始当前环节。",
       "latest": "回到最新消息",
       "expand": "展开项目工作台",

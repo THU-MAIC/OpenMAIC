@@ -85,7 +85,7 @@ describe('learner-facing actions', () => {
     }
     // Historical completion messages must not claim a button for a different/current stage.
     expect(i18n.t('pblV3.journey.completionHandoff')).toBe(
-      '本环节已完成。下一步操作请看输入框上方的状态栏。',
+      '本环节已完成。下一步操作请看学习助手底部的任务栏。',
     );
     expect(teachingProductContext(fixture(0)).current.continueAvailableAfterReply).toBe(false);
     const completed = fixture(0);

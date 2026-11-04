@@ -51,10 +51,15 @@
   font-size: var(--wb-text-base);
 }
 
+/* The shared scroller reserves a second gutter on the left by default. */
+.pbl-workbench .pbl-conversation-scroll {
+  scrollbar-gutter: stable !important;
+}
+
 /* Activity cards stay compact; prose retains extra breathing room on either side. */
 :is(.pbl-workbench, .pbl-history) .pbl-assistant-bubble > .pbl-teaching-prose:not(:first-child),
 :is(.pbl-workbench, .pbl-history) .pbl-assistant-bubble > .pbl-teaching-prose + * {
-  margin-block-start: 6px;
+  margin-block-start: 7px;
 }
 
 :is(.pbl-workbench, .pbl-history) .pbl-teaching-prose .wb-prose {

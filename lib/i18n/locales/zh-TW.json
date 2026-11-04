@@ -2854,7 +2854,7 @@
       "workspace-run": "Workspace run"
     },
     "journey": {
-      "completionHandoff": "本環節已完成。下一步操作請看輸入框上方的狀態列。",
+      "completionHandoff": "本環節已完成。下一步操作請看學習助手底部的任務列。",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",
       "expand": "Expand project workspace",

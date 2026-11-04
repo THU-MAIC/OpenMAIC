@@ -91,7 +91,7 @@ export function WorkbenchSplit({
           onResize={(size) => syncWorkAreaVisibility(size.inPixels)}
           collapsible
           defaultSize="55%"
-          minSize={stacked ? `${workAreaHeight}px` : compact ? 0 : appVisible ? '60%' : '30%'}
+          minSize={stacked ? `${workAreaHeight}px` : compact ? 0 : '30%'}
           className="h-full min-w-0"
         >
           <Group

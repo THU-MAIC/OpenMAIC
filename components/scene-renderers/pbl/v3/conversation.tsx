@@ -83,7 +83,7 @@ function AgentTurn({
         {t(`pblV3.roles.${role}`)}
       </div>
       <div
-        className={`pbl-assistant-bubble flex min-w-0 flex-col gap-1.5 rounded-xl rounded-tl-md border-l-2 px-3 py-2.5 ${accents[role]}`}
+        className={`pbl-assistant-bubble flex min-w-0 flex-col gap-[5px] rounded-xl rounded-tl-md border-l-2 px-3 py-2.5 ${accents[role]}`}
       >
         {groupParts(entry.parts).map((part) =>
           Array.isArray(part) ? (
