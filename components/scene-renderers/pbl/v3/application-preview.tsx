@@ -112,6 +112,7 @@ function ApplicationPreviewContent({
   // Modal presentation pauses input only. Readiness and candidate promotion
   // continue independently; closing a tour must never launch a replacement.
   const inputAvailable = available && !inputPaused;
+  const runId = standalone ? observation?.runId : undefined;
   const sendInput = useCallback(
     (element: HTMLIFrameElement | null) => {
       if (!element) return;
@@ -121,12 +122,12 @@ function ApplicationPreviewContent({
         {
           type: 'openmaic-preview-input',
           enabled: !!inputAvailable && preview.open && element === frame.current,
-          ...(preview.standaloneFrontend ? { refreshOnEnable: true } : {}),
+          ...(runId ? { runId } : {}),
         },
         target.origin,
       );
     },
-    [inputAvailable, preview.open, preview.standaloneFrontend],
+    [inputAvailable, preview.open, runId],
   );
   useLayoutEffect(() => {
     sendInput(frame.current);
@@ -325,7 +326,7 @@ function ApplicationPreviewContent({
         </details>
         <button
           type="button"
-          disabled={pending || disabled}
+          disabled={pending || disabled || preview.launchPaused}
           className="rounded p-1 hover:bg-muted disabled:opacity-40"
           title={applicationAction}
           aria-label={applicationAction}

@@ -172,6 +172,7 @@ export async function inspectApplication(
       state: data.httpStatus === undefined ? 'starting' : 'running',
       httpStatus: data.httpStatus,
       sourceChanged: data.sourceHash !== run.sourceHash,
+      ...(capturedRun ? { runId: run.commandId } : {}),
     };
   } catch {
     return { observedAt, state: 'unknown' };
@@ -287,6 +288,27 @@ export async function applicationRequest(principal: OwnerPrincipal, input: unkno
         request,
       );
   }
+  // Standalone startup may wait on a slow provider lease check. Do it before
+  // taking the study lock and recheck the learning binding at admission.
+  const opening = request.action === 'open' || request.action === 'restart';
+  const preflight = opening ? await store.get(request.studyId, principal.ownerId) : null;
+  const preflightProject = preflight && projectFor(preflight);
+  const standaloneService = preflightProject?.application?.frontendPath
+    ? await SandboxService.forOwner(principal)
+    : null;
+  if (preflight && preflightProject?.application && standaloneService) {
+    assertObservationRevision(preflight, request);
+    if (request.action === 'restart' && (await busy(store, preflight)))
+      throw sandboxConflict('Wait for the current Agent or assessment.', 'STUDY_BUSY');
+    await assertEnvironmentWritable(store, preflight.id, preflight.owner_id, request.environmentId);
+    assertEnvironmentReady(await touchEnvironment(store, preflight, standaloneService));
+    const application = preflightProject.application;
+    applicationProbeCommand(
+      await projectFiles(standaloneService, request.environmentId, preflightProject),
+      application.port,
+      application.healthPath,
+    );
+  }
   const result = await store.exclusive(request.studyId, async () => {
     const row = await store.get(request.studyId, principal.ownerId),
       application = projectFor(row).application;
@@ -301,9 +323,13 @@ export async function applicationRequest(principal: OwnerPrincipal, input: unkno
       (['restart', 'stop'].includes(request.action) && (await busy(store, row)))
     )
       throw sandboxConflict('Wait for the current Agent or assessment.', 'STUDY_BUSY');
-    const service = await SandboxService.forOwner(principal),
+    const service = standaloneService ?? (await SandboxService.forOwner(principal)),
       environmentId = requireEnvironment(row);
-    assertEnvironmentReady(await touchEnvironment(store, row, service));
+    assertEnvironmentReady(
+      standaloneService
+        ? await service.get(environmentId)
+        : await touchEnvironment(store, row, service),
+    );
     if ((await service.workspaceEpoch(environmentId)) !== request.epoch)
       throw sandboxConflict(
         'Workspace was stopped. Refresh before continuing.',
@@ -311,107 +337,106 @@ export async function applicationRequest(principal: OwnerPrincipal, input: unkno
       );
     if (request.action === 'open' || request.action === 'restart') previewConfig();
     await assertEnvironmentWritable(store, row.id, row.owner_id, environmentId);
-    return withLearningWorkspaceAccess(
-      {
-        ownerId: row.owner_id,
-        workspaceId: learningWorkspaceId(row.id),
-        environmentIds: () => [environmentId],
-        operations: ['command', 'preview'],
-      },
-      async () => {
-        if (request.action === 'stop') {
-          await service.stopApplications(environmentId);
-          return {
-            observedAt: new Date().toISOString(),
-            state: 'stopped',
-          } satisfies ApplicationObservation;
-        }
-        if (request.action !== 'status') {
-          // Learner-created/renamed source paths can outgrow the starter budget.
-          // Reject before stopping an existing app, reserving a writer or dispatching.
+    const scope = {
+      ownerId: row.owner_id,
+      workspaceId: learningWorkspaceId(row.id),
+      environmentIds: () => [environmentId],
+      operations: ['command', 'preview'] as const,
+    };
+    return withLearningWorkspaceAccess(scope, async () => {
+      let dispatch: (() => Promise<unknown>) | undefined;
+      const launch = async (id: string) => {
+        const body = { requestId: id, command: applicationLaunchCommand(application.argv) };
+        if (application.frontendPath)
+          dispatch = await service.prepareApplicationCommand(environmentId, body, request.epoch);
+        else await service.startApplicationCommand(environmentId, body, request.epoch);
+      };
+      if (request.action === 'stop') {
+        await service.stopApplications(environmentId);
+        return {
+          observedAt: new Date().toISOString(),
+          state: 'stopped',
+        } satisfies ApplicationObservation;
+      }
+      if (request.action !== 'status') {
+        // Learner-created/renamed source paths can outgrow the starter budget.
+        // Reject before stopping an existing app, reserving a writer or dispatching.
+        if (!standaloneService)
           applicationProbeCommand(
             await projectFiles(service, environmentId, projectFor(row)),
             application.port,
             application.healthPath,
           );
-          // A durable reservation precedes provider dispatch. A retry cannot restart a lost-ack command.
-          const receiptId = `application:${request.id}`,
-            hash = createHash('sha256').update(JSON.stringify(request)).digest('hex');
-          const receipt = (
-            await store.pool.query<{ hash: string; result: ApplicationRun }>(
-              'SELECT hash,result FROM pbl_v3_commands WHERE study_id=$1 AND id=$2',
-              [row.id, receiptId],
-            )
-          ).rows[0];
-          if (receipt && receipt.hash !== hash)
-            throw sandboxConflict('Request ID was reused with different input.');
-          const previous = await lastRun(store, row);
-          const previousCommand =
-            previous && previous.epoch === request.epoch
-              ? await applicationCommand(store, row, previous, service)
-              : null;
-          const running = previousCommand && active(previousCommand.state);
-          if (!receipt && (request.action === 'restart' || !running)) {
-            await service.stopApplications(environmentId);
-            const files = await readFiles(service, row);
-            // Shutdown hooks can create sources too; check the quiesced snapshot.
-            applicationProbeCommand(
-              Object.keys(files).sort(),
-              application.port,
-              application.healthPath,
-            );
-            const run: ApplicationRun = {
-              environmentId,
-              epoch: request.epoch,
-              commandId: request.id,
-              sourceHash: applicationFingerprint(files),
-              startedAt: new Date().toISOString(),
-            };
-            // Invalidate an in-flight archive even if this writer exits before publication.
-            await store.markWorkspaceWriter(row);
-            // Allocate in the existing receipt under the cross-process study lock.
-            // Wall-clock timestamps (even identical ones) never order new launches.
-            await store.pool.query(
-              `INSERT INTO pbl_v3_commands(study_id,id,hash,result,stage_key)
+        // A durable reservation precedes provider dispatch. A retry cannot restart a lost-ack command.
+        const receiptId = `application:${request.id}`,
+          hash = createHash('sha256').update(JSON.stringify(request)).digest('hex');
+        const receipt = (
+          await store.pool.query<{ hash: string; result: ApplicationRun }>(
+            'SELECT hash,result FROM pbl_v3_commands WHERE study_id=$1 AND id=$2',
+            [row.id, receiptId],
+          )
+        ).rows[0];
+        if (receipt && receipt.hash !== hash)
+          throw sandboxConflict('Request ID was reused with different input.');
+        const previous = await lastRun(store, row);
+        const previousCommand =
+          previous && previous.epoch === request.epoch
+            ? await applicationCommand(store, row, previous, service)
+            : null;
+        const running = previousCommand && active(previousCommand.state);
+        if (!receipt && (request.action === 'restart' || !running)) {
+          await service.stopApplications(environmentId);
+          const files = await readFiles(service, row);
+          // Shutdown hooks can create sources too; check the quiesced snapshot.
+          applicationProbeCommand(
+            Object.keys(files).sort(),
+            application.port,
+            application.healthPath,
+          );
+          const run: ApplicationRun = {
+            environmentId,
+            epoch: request.epoch,
+            commandId: request.id,
+            sourceHash: applicationFingerprint(files),
+            startedAt: new Date().toISOString(),
+          };
+          // Invalidate an in-flight archive even if this writer exits before publication.
+          await store.markWorkspaceWriter(row);
+          // Allocate in the existing receipt under the cross-process study lock.
+          // Wall-clock timestamps (even identical ones) never order new launches.
+          await store.pool.query(
+            `INSERT INTO pbl_v3_commands(study_id,id,hash,result,stage_key)
                SELECT $1,$2,$3,$4::jsonb || jsonb_build_object(
                  'launchSequence',COALESCE(MAX((result->>'launchSequence')::bigint),0)+1),$5
                FROM pbl_v3_commands WHERE study_id=$1 AND id LIKE 'application:%'`,
-              [row.id, receiptId, hash, JSON.stringify(run), stageKey(row)],
-            );
-            await service.startApplicationCommand(
-              environmentId,
-              {
-                requestId: run.commandId,
-                command: applicationLaunchCommand(application.argv),
-              },
-              request.epoch,
-            );
-          }
-          if (receipt && previous?.commandId === receipt.result.commandId) {
-            // A committed intent may not have dispatched yet. Fence archive publication again.
-            await store.markWorkspaceWriter(row);
-            await service.startApplicationCommand(
-              environmentId,
-              {
-                requestId: previous.commandId,
-                command: applicationLaunchCommand(application.argv),
-              },
-              request.epoch,
-            );
-          }
-          await store.recordActivity(row.id, row.owner_id);
+            [row.id, receiptId, hash, JSON.stringify(run), stageKey(row)],
+          );
+          await launch(run.commandId);
         }
-        if (application.frontendPath)
-          return () => observeStandaloneApplication(store, row, service, request);
-        const observation = await inspectApplication(store, row, service);
-        return {
-          ...observation,
-          ...(request.action !== 'status' && observation.state === 'running'
-            ? { preview: await service.preview(environmentId, application.port, request.epoch) }
-            : {}),
+        if (receipt && previous?.commandId === receipt.result.commandId) {
+          // A committed intent may not have dispatched yet. Fence archive publication again.
+          await store.markWorkspaceWriter(row);
+          await launch(previous.commandId);
+        }
+        await store.recordActivity(row.id, row.owner_id);
+      }
+      if (application.frontendPath)
+        return async () => {
+          if (dispatch)
+            await withLearningWorkspaceAccess(scope, async () => {
+              await assertEnvironmentWritable(store, row.id, row.owner_id, environmentId);
+              await dispatch!();
+            });
+          return observeStandaloneApplication(store, row, service, request);
         };
-      },
-    );
+      const observation = await inspectApplication(store, row, service);
+      return {
+        ...observation,
+        ...(request.action !== 'status' && observation.state === 'running'
+          ? { preview: await service.preview(environmentId, application.port, request.epoch) }
+          : {}),
+      };
+    });
   });
   return typeof result === 'function' ? result() : result;
 }
