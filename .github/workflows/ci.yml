@@ -331,10 +331,18 @@ jobs:
       - name: Build container image
         run: docker build --tag openmaic-render-service:ci render-service
 
+  # The Playwright suite scales with its worker count, and a 4-core runner that
+  # also hosts the app server fits two workers, so more speed means more
+  # runners. Each shard builds the app itself, about two minutes, so the shards
+  # stay independent and no build job has to finish before any of them starts.
   e2e:
-    name: E2E Tests
+    name: E2E Tests (${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     # The app stores every course in PostgreSQL and refuses to start without
     # DATABASE_URL, so the browser suite runs against a real database; specs
     # seed their courses through the app's own persistence endpoint.
@@ -390,11 +398,13 @@ jobs:
       # (it needs the compiler), but only this job has a browser, so it runs
       # here with the flag that turns a missing one into a failure.
       - name: Cover-card layout guardrail
+        if: matrix.shard == 1
         run: pnpm exec vitest run tests/video-export/cover-card-layout.browser.test.ts
         env:
           COVER_LAYOUT_BROWSER: '1'
 
       - name: Interactive static HTML Chromium smoke
+        if: matrix.shard == 1
         run: >-
           pnpm exec vitest run
           tests/video-export/interactive-static-html.browser.test.ts
@@ -404,6 +414,7 @@ jobs:
 
       # runner.* is only valid in step contexts (not job-level env).
       - name: Materialize Hyperframes lint samples
+        if: matrix.shard == 1
         run: pnpm exec vitest run tests/video-export/e2e-materialize.test.ts
         env:
           HF_E2E_DIR: ${{ runner.temp }}/openmaic-hyperframes-samples
@@ -411,6 +422,7 @@ jobs:
       # Hyperframes 0.7.60 reports warning-only lint with exit status zero, so
       # require its plain clean summary as well as a successful process.
       - name: Lint Hyperframes samples
+        if: matrix.shard == 1
         shell: bash
         env:
           HF_E2E_DIR: ${{ runner.temp }}/openmaic-hyperframes-samples
@@ -451,12 +463,12 @@ jobs:
           NEXT_PUBLIC_COURSEWARE_REFERENCE_ENABLED: 'true'
 
       - name: Run e2e tests
-        run: pnpm exec playwright test
+        run: pnpm exec playwright test --shard=${{ matrix.shard }}/3
 
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.shard }}
           path: playwright-report/
           retention-days: 7
 

@@ -15,9 +15,9 @@ export default defineConfig({
   // Every test, its hooks and fixtures included, gets 30 s (Playwright's
   // default, stated so a spec that raises it does so explicitly).
   timeout: 30_000,
-  // The whole run stops inside the job's 20-minute budget (a passing run takes
-  // about 9 minutes after a 4-minute setup): Playwright then reports the tests
-  // still running by name, and the report is uploaded, instead of the job
+  // Each shard's run stops inside the job's 20-minute budget (a passing shard
+  // takes about 3 minutes after a 4-minute setup): Playwright then reports the
+  // tests still running by name, and the report is uploaded, instead of the job
   // being cancelled with neither.
   globalTimeout: process.env.CI ? 13 * 60_000 : undefined,
   use: {
