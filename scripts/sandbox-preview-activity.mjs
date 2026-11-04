@@ -126,6 +126,7 @@ export function installPreviewActivity(frame, activityKey, appOrigin, controlled
     } catch {}
   };
   if (controlled && notify) {
+    let refreshedRun;
     listen(globalThis, 'message', (event) => {
       if (
         !event.isTrusted ||
@@ -142,15 +143,16 @@ export function installPreviewActivity(frame, activityKey, appOrigin, controlled
         return;
       }
       if (data?.type !== 'openmaic-preview-input' || typeof data.enabled !== 'boolean') return;
-      const resuming = !enabled && data.enabled;
       enabled = data.enabled;
       if (!enabled) {
         changed = false;
         cancel(timer);
       }
       trackDocument();
-      if (resuming && data.refreshOnEnable === true)
+      if (enabled && typeof data.runId === 'string' && data.runId !== refreshedRun) {
+        refreshedRun = data.runId;
         frame.contentWindow?.postMessage({ type: 'openmaic-preview-refresh' }, location.origin);
+      }
     });
     notify({ type: 'openmaic-preview-input-request' }, appOrigin);
   }

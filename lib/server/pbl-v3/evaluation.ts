@@ -111,10 +111,22 @@ export function evaluationFor(
 /** Return observations, not a learner-controlled verdict. The host owns expected values.
  * This is learning feedback, not a hostile-code grading boundary: parent and child share the sandbox identity.
  */
-export function evaluationCommand(spec: ProjectEvaluation, requestId: string) {
+export function evaluationCommand(
+  spec: ProjectEvaluation,
+  requestId: string,
+  sourceFiles?: Readonly<Record<string, string>>,
+) {
   if (spec.decisionInputs?.some((id) => !Object.hasOwn(spec.decisionContext ?? {}, id)))
     throw sandboxConflict('Assessment choices must be bound to formal records before execution.');
+  const source = sourceFiles && Object.keys(sourceFiles).sort();
+  const sourceHash = createHash('sha256');
+  for (const path of source ?? []) {
+    if (!validSourcePath(path)) throw sandboxConflict('Invalid assessment source path.');
+    const text = sourceFiles![path]!;
+    sourceHash.update(path + '\0' + Buffer.byteLength(text) + '\0' + text);
+  }
   const execution = {
+    ...(source ? { source, sourceHash: sourceHash.digest('hex') } : {}),
     ...(spec.decisionContext ? { decisionContext: spec.decisionContext } : {}),
     prepare: spec.prepare,
     ...(spec.prepareLiteralArgIndexes?.length
@@ -129,7 +141,7 @@ export function evaluationCommand(spec: ProjectEvaluation, requestId: string) {
     })),
   };
   const payload = Buffer.from(JSON.stringify({ spec: execution, requestId })).toString('base64');
-  // Keep the legacy runner byte-for-byte unchanged unless host choices are bound.
+  // Optional host choices and source isolation keep existing runner receipts compatible.
   const boundEnvironment = spec.decisionContext !== undefined;
   const script = `import base64,json,subprocess,tempfile,os,hashlib,resource,re
 cfg=json.loads(base64.b64decode(${JSON.stringify(payload)}))
@@ -167,7 +179,27 @@ with tempfile.TemporaryDirectory(prefix='pbl-check-') as out:
    text=data.decode('utf-8').replace('\\r\\n','\\n').replace('\\r','\\n')
    return proc.returncode,hashlib.sha256(text.encode('utf-8')).hexdigest(),diagnostic
  try:
-  if spec.get('prepare'):
+${
+  sourceFiles
+    ? `  from pathlib import Path
+  root=Path.cwd().resolve(); work=Path(out)/'source'; work.mkdir()
+  total=0; digest=hashlib.sha256()
+  for name in spec['source']:
+   source=(root/name).resolve()
+   if not source.is_relative_to(root) or not source.is_file():
+    raise OSError('Assessment source unavailable')
+   with source.open('rb') as f: data=f.read(1048577-total)
+   total+=len(data)
+   if total>1048576: raise OSError('Assessment source limit exceeded')
+   try: text=data.decode('utf-8-sig').encode('utf-8')
+   except UnicodeError: raise OSError('Assessment source encoding changed')
+   digest.update(name.encode()+bytes(1)+str(len(text)).encode()+bytes(1)+text)
+   target=work/name; target.parent.mkdir(parents=True,exist_ok=True); target.write_bytes(data)
+  if digest.hexdigest()!=spec['sourceHash']: raise OSError('Assessment source changed')
+  os.chdir(work)
+`
+    : ''
+}  if spec.get('prepare'):
    code,_,locations=run(spec['prepare'],literal=spec.get('prepareLiteralArgIndexes',())); build=code==0
    if not build: buildReason='build'
   for case in spec['cases']:

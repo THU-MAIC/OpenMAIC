@@ -86,5 +86,6 @@ export interface LearningView {
     stdout: string;
     stderr: string;
     purpose?: 'compile';
+    isolatedSources?: true;
   } | null;
 }
