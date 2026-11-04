@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { expect, type Request } from '@playwright/test';
 import { test } from '../fixtures/pbl-learning-events';
+import { seedServerDocument, uniqueStageId } from '../fixtures/server-seed';
 import type { LearningView } from '@/lib/pbl/v3/types';
 
 /** Browser interaction contract; backend/runner/Python execution is covered by runtime.pg.test.ts. */
@@ -115,8 +116,6 @@ test('installed sample opens in the normal classroom and preserves progress afte
       chatEntered();
       await gate;
     }
-    if (url.searchParams.has('samples')) return route.continue();
-    if (body?.action === 'sample') return route.continue(); // actual course creation and persistence
     if (url.pathname === '/api/pbl/v3/activity') return route.fulfill({ json: { recorded: true } });
     if (url.pathname === '/api/pbl/v3/report') {
       if (req.method() === 'POST') expect(req.headers()['content-type']).toBe('application/json');
@@ -360,13 +359,27 @@ test('installed sample opens in the normal classroom and preserves progress afte
         }
       : null,
   }));
-  await page.goto('/pbl-v3');
+  // The sample page needs a configured sandbox; this suite mocks the sandbox API and has none.
+  const stageId = uniqueStageId('pbl-sample');
+  await seedServerDocument(page, {
+    stage: { id: stageId, name: 'Sample course', createdAt: Date.now(), updatedAt: Date.now() },
+    scenes: [
+      {
+        id: `${stageId}-scene`,
+        stageId,
+        title: 'Project',
+        type: 'pbl',
+        order: 0,
+        content: { type: 'pbl', projectV3: { id: 'greeting-python-lab', version: '1.2.0' } },
+        actions: [],
+      },
+    ],
+  });
   const projectRead = page.waitForResponse((response) => {
     const url = new URL(response.url());
     return url.pathname === '/api/pbl/v3' && url.searchParams.get('project') === '1';
   });
-  await page.getByRole('button', { name: 'Open selected sample' }).click();
-  await expect(page).toHaveURL(/\/classroom\/pbl-/, { timeout: 60000 });
+  await page.goto(`/classroom/${stageId}`);
   await projectRead;
   await expect(page.getByRole('heading', { name: view.title, exact: true })).toBeVisible();
   expect(calls).toHaveLength(0);

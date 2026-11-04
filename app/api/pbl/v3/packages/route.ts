@@ -1,6 +1,7 @@
 import { isPBLV3Reference, type PBLV3Reference } from '@openmaic/dsl';
 import { sandboxBody, sandboxPrincipalResponse } from '@/lib/server/sandbox/http';
 import { sandboxInvalid } from '@/lib/sandbox/errors';
+import { getPersistenceHooks } from '@/lib/server/persistence-hooks/registry';
 import { validateProjectPackage } from '@/lib/server/pbl-v3/project-package';
 import { PROJECT_LIMITS, projectResourcesWithinLimits } from '@/lib/pbl/v3/package-policy';
 import {
@@ -11,7 +12,8 @@ import {
 
 export const runtime = 'nodejs';
 export async function POST(request: Request) {
-  return sandboxPrincipalResponse(request, async ({ ownerId }) => {
+  return sandboxPrincipalResponse(request, async (principal) => {
+    const { ownerId } = principal;
     const body = await sandboxBody(request, 32 * 1024 * 1024);
     if (body.action === 'export') {
       if (
@@ -81,6 +83,17 @@ export async function POST(request: Request) {
       throw sandboxInvalid('Unreferenced project resources are not permitted.');
     if (!projectResourcesWithinLimits(projects.map(({ entry }) => entry)))
       throw sandboxInvalid('Classroom project resource limit exceeded.');
+    // Not gated on sandbox access: importing or exporting a classroom must keep its projects on
+    // an installation, or for an owner, that cannot run them. Installing stores inert template
+    // bytes, so it is an upload like the classroom's media: the same admission and owner quota,
+    // and reclaimed unless a document references it. Running one needs SandboxService.forOwner.
+    const refusal = await getPersistenceHooks().beforeAssetAllocate?.(principal, {
+      operation: 'create',
+      method: request.method,
+      url: request.url,
+      headers: request.headers,
+    });
+    if (refusal) return refusal;
     const installed = [];
     for (const project of projects) installed.push(await installProjectPackage(ownerId, project));
     return Response.json({ references: installed });
