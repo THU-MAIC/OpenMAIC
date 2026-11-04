@@ -40,6 +40,53 @@ const sourceWrite = [
   },
 ] as LearningView['conversation'];
 const workbench = { environmentId: 'environment', epoch: 0 } as LearningWorkbench;
+it('renews the standalone preview before expiry without replacing its iframe', async () => {
+  vi.useFakeTimers();
+  const current: LearningView = {
+    ...view,
+    application: { ...view.application!, standaloneFrontend: true },
+  };
+  let grants = 0;
+  mocks.request.mockImplementation((_url, input) =>
+    input.action === 'frontend'
+      ? {
+          ...running,
+          preview: {
+            url: 'https://isolated.example/preview#grant-' + ++grants,
+            expiresAt: Date.now() + 300_000,
+          },
+        }
+      : { state: 'running', observedAt: '' },
+  );
+  const exchange = vi.fn(async () => Response.json({ expiresAt: Date.now() + 300_000 }));
+  vi.stubGlobal('fetch', exchange);
+  const f = await fixture();
+  try {
+    await act(async () => f.root.render(createElement(Harness, { current, automatic: true })));
+    const frame = f.host.querySelector('iframe')!;
+    await act(async () => frame.dispatchEvent(new Event('load')));
+    const src = frame.src;
+    expect(frame.hasAttribute('inert')).toBe(false);
+    await act(async () => vi.advanceTimersByTimeAsync(240_000));
+    expect(exchange).toHaveBeenCalledOnce();
+    expect(exchange.mock.calls[0]).toEqual([
+      new URL('https://isolated.example/__openmaic_renew'),
+      expect.objectContaining({ body: 'grant-2', credentials: 'include' }),
+    ]);
+    await act(async () => vi.advanceTimersByTimeAsync(61_000));
+    expect(f.host.querySelector('iframe')).toBe(frame);
+    expect(frame.src).toBe(src);
+    expect(frame.hasAttribute('inert')).toBe(false);
+    expect(mocks.request.mock.calls.map(([, input]) => input.action)).toEqual([
+      'frontend',
+      'open',
+      'frontend',
+    ]);
+  } finally {
+    await f.cleanup();
+  }
+});
+
 it('shows an independent document before the process starts and preserves it across backend restarts', async () => {
   const current: LearningView = {
     ...view,
