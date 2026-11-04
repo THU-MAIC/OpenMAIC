@@ -337,7 +337,9 @@ jobs:
   # stay independent and no build job has to finish before any of them starts.
   e2e:
     name: E2E Tests (${{ matrix.shard }}/3)
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest now also resolves to ubuntu-26.04, where the
+    # installed Playwright cannot install Chromium.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
