@@ -5,7 +5,7 @@
  * corner. Right alignment is the whole authorship signal; there is no avatar
  * and no name.
  */
-import { useMemo, type ClipboardEvent } from 'react';
+import { Fragment, useMemo, type ClipboardEvent } from 'react';
 import { BookOpen, Paperclip } from 'lucide-react';
 import type { WorkbenchTranslator } from '@/lib/i18n/workbench';
 import { useSkillChipNames } from '@/lib/workbench/use-skill-chip-names';
@@ -127,7 +127,7 @@ export function UserBubble({
                   testId={run.chip.kind === 'skill' ? 'user-bubble-skill' : 'user-bubble-mention'}
                 />
               ) : (
-                <span key={index}>{run.text}</span>
+                <Fragment key={index}>{run.text}</Fragment>
               ),
             )}
           </div>
