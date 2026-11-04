@@ -1611,13 +1611,15 @@ export function writePendingChangesForUnload(): boolean {
       for (const [key, entry] of sentEntries) {
         if (keepaliveSentRevisions.get(key) === entry.revision) keepaliveSentRevisions.delete(key);
       }
-      if (succeeded || pendingStageId !== stageId) return;
-      // The page stayed and a write failed: queue the changes again, unless
-      // a newer edit of the same unit is already waiting.
-      for (const [key, entry] of sentEntries) {
-        if (!pendingChanges.has(key)) pendingChanges.set(key, entry);
+      if (!succeeded && pendingStageId === stageId) {
+        // The page stayed and a write failed: queue the changes again, unless
+        // a newer edit of the same unit is already waiting.
+        for (const [key, entry] of sentEntries) {
+          if (!pendingChanges.has(key)) pendingChanges.set(key, entry);
+        }
+        schedulePendingSave();
       }
-      schedulePendingSave();
+      announceStageWriteSettled();
     });
   }
   return result.deferred.length > 0 || overtakesInFlightSave;

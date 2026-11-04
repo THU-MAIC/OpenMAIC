@@ -41,6 +41,7 @@ const mocks = vi.hoisted(() => ({
   failNextSave: false,
   /** Held open while a test acts with a keepalive write on the wire. */
   keepaliveGate: null as Promise<void> | null,
+  keepaliveSucceeds: true,
   saves: [] as unknown[],
 }));
 
@@ -86,7 +87,7 @@ vi.mock('@/lib/utils/stage-storage', () => {
     writeStageChangesForUnload: vi.fn((_stageId: string, changes: readonly unknown[]) => ({
       sent: changes,
       deferred: [],
-      settled: (mocks.keepaliveGate ?? Promise.resolve()).then(() => true),
+      settled: (mocks.keepaliveGate ?? Promise.resolve()).then(() => mocks.keepaliveSucceeds),
     })),
     loadStageData: vi.fn().mockResolvedValue(null),
   };
@@ -246,6 +247,7 @@ beforeEach(() => {
   mocks.afterSaveOnServer = null;
   mocks.failNextSave = false;
   mocks.keepaliveGate = null;
+  mocks.keepaliveSucceeds = true;
   mocks.saves = [];
   MockEventSource.instances = [];
   vi.stubGlobal('EventSource', MockEventSource);
@@ -515,8 +517,35 @@ describe('a freshness sync with other writes outstanding', () => {
     await act(async () => source.emitFreshness());
     expect(titleOf('scene-1')).toBe('typed locally');
 
+    // The page stayed (a cancelled unload, a return from the back/forward cache).
+    // The frame for this rev has been consumed, so nothing else would wake the sync.
     keepalive.release();
-    await settle(0);
+    await settle(100);
+    expect(titleOf('scene-1')).toBe('server copy');
+  });
+
+  it('keeps an edit whose keepalive write failed, and saves it through the regular path', async () => {
+    const source = await openCourse();
+    edit('scene-2', 'an earlier edit');
+    await settle();
+
+    const keepalive = deferred();
+    mocks.keepaliveGate = keepalive.promise;
+    mocks.keepaliveSucceeds = false;
+    edit('scene-1', 'typed locally');
+    writePendingChangesForUnload();
+
+    remoteWrite('scene-1', 'server copy');
+    await act(async () => source.emitFreshness());
+
+    keepalive.release();
+    await settle(100); // Short of the debounce: the edit is queued again, and kept.
+    expect(titleOf('scene-1')).toBe('typed locally');
+
+    await settle();
+    expect(lastSavedTitle('scene-1')).toBe('typed locally');
+    expect((mocks.serverScenes.get('scene-1') as ServerScene).title).toBe('typed locally');
+    expect(titleOf('scene-1')).toBe('typed locally');
   });
 
   it('keeps a learner change to a course its generation run still owns', async () => {
