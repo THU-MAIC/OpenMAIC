@@ -400,13 +400,11 @@ jobs:
       # (it needs the compiler), but only this job has a browser, so it runs
       # here with the flag that turns a missing one into a failure.
       - name: Cover-card layout guardrail
-        if: matrix.shard == 1
         run: pnpm exec vitest run tests/video-export/cover-card-layout.browser.test.ts
         env:
           COVER_LAYOUT_BROWSER: '1'
 
       - name: Interactive static HTML Chromium smoke
-        if: matrix.shard == 1
         run: >-
           pnpm exec vitest run
           tests/video-export/interactive-static-html.browser.test.ts
@@ -416,7 +414,6 @@ jobs:
 
       # runner.* is only valid in step contexts (not job-level env).
       - name: Materialize Hyperframes lint samples
-        if: matrix.shard == 1
         run: pnpm exec vitest run tests/video-export/e2e-materialize.test.ts
         env:
           HF_E2E_DIR: ${{ runner.temp }}/openmaic-hyperframes-samples
@@ -424,7 +421,6 @@ jobs:
       # Hyperframes 0.7.60 reports warning-only lint with exit status zero, so
       # require its plain clean summary as well as a successful process.
       - name: Lint Hyperframes samples
-        if: matrix.shard == 1
         shell: bash
         env:
           HF_E2E_DIR: ${{ runner.temp }}/openmaic-hyperframes-samples
