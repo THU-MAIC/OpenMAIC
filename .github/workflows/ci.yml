@@ -541,10 +541,10 @@ jobs:
       # target=builder builds deps as well (COPY --from=deps), which is where
       # the install and the package builds run.
       #
-      # No layer cache. `COPY packages/` invalidates deps and `COPY . .`
-      # invalidates builder, so a type=gha cache mostly reused the base layers
-      # (seconds) while exporting it took 5-8 minutes and pushed the repository
-      # past its Actions cache limit, which evicts the other caches.
+      # No layer cache. `COPY . .` invalidates builder on every commit, and
+      # `COPY packages/` invalidates deps on many of them. A type=gha cache took
+      # 2-10 minutes to export, longer than the install it could save, and pushed
+      # the repository past its Actions cache limit.
       - name: Build deps + builder stages
         if: steps.changes.outputs.changed == 'true'
         uses: docker/build-push-action@v6
