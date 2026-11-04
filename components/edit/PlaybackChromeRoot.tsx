@@ -35,6 +35,7 @@ import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { SceneSidebar } from '@/components/stage/scene-sidebar';
+import { isTextEntryTarget } from '@/components/stage/page-rail';
 import { Header } from '@/components/header';
 import { CanvasArea } from '@/components/canvas/canvas-area';
 import { Roundtable } from '@/components/roundtable';
@@ -1676,29 +1677,12 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       setWhiteboardOpenManually(!whiteboardOpen);
     };
 
-    const isPresentationShortcutTarget = useCallback((target: EventTarget | null) => {
-      if (!(target instanceof HTMLElement)) return false;
-
-      if (target.isContentEditable || target.closest('[contenteditable="true"]')) {
-        return true;
-      }
-
-      return (
-        target.closest(
-          ['input', 'textarea', 'select', '[role="slider"]', 'input[type="range"]'].join(', '),
-        ) !== null
-      );
-    }, []);
-
     useEffect(() => {
       const onKeyDown = (event: KeyboardEvent) => {
         if (event.defaultPrevented) return;
         // Let modifier-key combos (Ctrl+C, Ctrl+S, etc.) pass through to the browser
         if (event.ctrlKey || event.metaKey || event.altKey) return;
-        if (
-          isPresentationShortcutTarget(event.target) ||
-          isPresentationShortcutTarget(document.activeElement)
-        ) {
+        if (isTextEntryTarget(event.target) || isTextEntryTarget(document.activeElement)) {
           return;
         }
 
@@ -1745,11 +1729,6 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             event.preventDefault();
             setTTSMuted(!ttsMuted);
             break;
-          case 's':
-          case 'S':
-            event.preventDefault();
-            setSidebarCollapsed(!sidebarCollapsed);
-            break;
           case 'c':
           case 'C':
             event.preventDefault();
@@ -1770,13 +1749,10 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       handlePreviousScene,
       isPresenting,
       isPresentationInteractionActive,
-      isPresentationShortcutTarget,
       resetPresentationIdleTimer,
       setChatAreaCollapsed,
-      setSidebarCollapsed,
       setTTSMuted,
       setTTSVolume,
-      sidebarCollapsed,
       togglePresentation,
       ttsMuted,
       ttsVolume,

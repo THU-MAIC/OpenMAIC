@@ -6,7 +6,6 @@ import { createSettingsStorage } from '../fixtures/test-data/settings';
 
 const SETTINGS_STORAGE = createSettingsStorage({
   sidebarCollapsed: false,
-  editRailCollapsed: false,
 });
 
 /**

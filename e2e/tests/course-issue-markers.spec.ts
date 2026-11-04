@@ -10,7 +10,7 @@ import type { Page } from '@playwright/test';
 const openEditRail = (page: Page) =>
   page.addInitScript(
     ([key, value]) => localStorage.setItem(key!, value!),
-    [SETTINGS_KV_KEY, createSettingsStorage({ agentMode: 'auto', editRailCollapsed: false })],
+    [SETTINGS_KV_KEY, createSettingsStorage({ agentMode: 'auto', sidebarCollapsed: false })],
   );
 
 test('course issue markers appear only in edit mode and clear after narration is fixed', async ({

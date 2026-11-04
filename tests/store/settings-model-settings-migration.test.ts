@@ -47,18 +47,21 @@ async function hydrate(state: Record<string, unknown>, version: number) {
   return useSettingsStore;
 }
 
-describe('settings store v5 → v6', () => {
-  it('starts the edit rail collapsed, keeping only a collapse that was chosen', async () => {
-    expect((await hydrate({ editRailCollapsed: false }, 5)).getState().editRailCollapsed).toBe(
-      true,
+describe('settings store v6 → v7', () => {
+  it('gives the shared page list the fold from Learn and the width from Edit', async () => {
+    const store = await hydrate(
+      { sidebarCollapsed: false, editRailCollapsed: true, editRailWidth: 300 },
+      6,
     );
-    vi.resetModules();
-    expect((await hydrate({ editRailCollapsed: true }, 5)).getState().editRailCollapsed).toBe(true);
-    vi.resetModules();
-    // Chosen since: a v6 blob says what the person set.
-    expect((await hydrate({ editRailCollapsed: false }, 6)).getState().editRailCollapsed).toBe(
-      false,
-    );
+    expect(store.getState().sidebarCollapsed).toBe(false);
+    expect(store.getState().sidebarWidth).toBe(300);
+    expect(store.getState()).not.toHaveProperty('editRailCollapsed');
+    expect(store.getState()).not.toHaveProperty('editRailWidth');
+  });
+
+  it('leaves the default width when Edit never stored one', async () => {
+    const store = await hydrate({ sidebarCollapsed: true }, 6);
+    expect(store.getState().sidebarWidth).toBe(220);
   });
 });
 
@@ -73,7 +76,7 @@ describe('settings store v4 → v5', () => {
         'settings-storage',
         'account',
       );
-      expect(blob?.version).toBe(6);
+      expect(blob?.version).toBe(7);
       expect(blob?.state.asrLanguage).toBe('');
     });
   });
@@ -152,7 +155,7 @@ describe('settings store v4 → v5', () => {
         'account',
       );
       expect(blob?.state.playbackSpeed).toBe(1.25);
-      expect(blob?.version).toBe(6);
+      expect(blob?.version).toBe(7);
       expect(JSON.stringify(blob)).not.toContain('sk-');
     });
   });
@@ -200,7 +203,7 @@ describe('settings store v4 → v5', () => {
         'settings-storage',
         'account',
       );
-      expect(blob?.version).toBe(6);
+      expect(blob?.version).toBe(7);
       expect(JSON.stringify(blob?.state)).toContain('sk-kept');
     });
     expect(JSON.stringify(warn.mock.calls)).not.toContain('sk-kept');

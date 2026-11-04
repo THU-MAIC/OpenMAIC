@@ -72,8 +72,8 @@ export function DockEditBar({
   const { t } = useI18n();
   const [rosterOpen, setRosterOpen] = useState(false);
   const insertSceneAt = useInsertSceneAt();
-  const railCollapsed = useSettingsStore((state) => state.editRailCollapsed);
-  const setRailCollapsed = useSettingsStore((state) => state.setEditRailCollapsed);
+  const railCollapsed = useSettingsStore((state) => state.sidebarCollapsed);
+  const setRailCollapsed = useSettingsStore((state) => state.setSidebarCollapsed);
   // Where playback has a reference button, the lasso sits on it and the roster has
   // the two slots before; without it, the two take those two slots between them. A
   // page with no lasso (nothing to point at, or no conversation to hand it to) ends

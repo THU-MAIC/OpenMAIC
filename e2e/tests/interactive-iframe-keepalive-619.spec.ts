@@ -26,7 +26,6 @@ const SHOTS = 'e2e/__screenshots-619';
 
 const SETTINGS_STORAGE = createSettingsStorage({
   sidebarCollapsed: false,
-  editRailCollapsed: false,
 });
 
 const INTERACTIVE_HTML = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>

@@ -1175,16 +1175,6 @@
   gap: 6px;
 }
 
-/* SlideNavRail inside the workbench panel drops its standalone-classroom
-   header (`h-10 + mt-3 + mb-1`) entirely — the header's only panel child was
-   the collapse control, which now lives as a chevron on the rail/slide
-   boundary (see SlideNavRail.tsx) — so the first thumbnail starts on the same
-   12px rhythm as the canvas with no overlay positioning needed. The chevron
-   is styled in the component: a bare faint 12px mark at the rail's right
-   edge, vertically centred, deliberately lighter than the pane-seam grip
-   above (no pill, no border, no boxed glyph — a whisper of ground on hover
-   only), because it marks a boundary INSIDE a pane, not a pane seam. */
-
 .ws-pane-eyebrow {
   font-size: 9.5px;
   font-weight: 600;

@@ -30,7 +30,7 @@ import {
 import { keepUnimported } from '@/lib/legacy-browser-import/model-settings-unimported';
 
 /** Persisted-blob version for zustand's `persist` `migrate` ladder. */
-const SETTINGS_PERSIST_VERSION = 6;
+const SETTINGS_PERSIST_VERSION = 7;
 
 /**
  * Bound after the store exists; see `onWriteRefused` for why it is not inlined.
@@ -136,10 +136,9 @@ export interface SettingsState {
 
   // Layout preferences (persisted via localStorage)
   sidebarCollapsed: boolean;
+  sidebarWidth: number;
   chatAreaCollapsed: boolean;
   chatAreaWidth: number;
-  editRailCollapsed: boolean;
-  editRailWidth: number;
   /** The classroom dock, shared by both modes, so a switch never moves the canvas. */
   dockHeight: number;
   dockCollapsed: boolean;
@@ -176,10 +175,9 @@ export interface SettingsState {
 
   // Layout actions
   setSidebarCollapsed: (collapsed: boolean) => void;
+  setSidebarWidth: (width: number) => void;
   setChatAreaCollapsed: (collapsed: boolean) => void;
   setChatAreaWidth: (width: number) => void;
-  setEditRailCollapsed: (collapsed: boolean) => void;
-  setEditRailWidth: (width: number) => void;
   setDockHeight: (height: number) => void;
   setDockCollapsed: (collapsed: boolean) => void;
 }
@@ -202,10 +200,9 @@ const PERSISTED_FIELDS = [
   'agentSelectionIsUserSet',
   'presetAgentChoice',
   'sidebarCollapsed',
+  'sidebarWidth',
   'chatAreaCollapsed',
   'chatAreaWidth',
-  'editRailCollapsed',
-  'editRailWidth',
   'dockHeight',
   'dockCollapsed',
   'legacyModelSettings',
@@ -290,10 +287,9 @@ export const useSettingsStore = create<SettingsState>()(
 
       // Layout preferences
       sidebarCollapsed: true,
+      sidebarWidth: 220,
       chatAreaCollapsed: true,
       chatAreaWidth: 320,
-      editRailCollapsed: true,
-      editRailWidth: 220,
       dockHeight: DOCK_DEFAULT_HEIGHT,
       dockCollapsed: false,
 
@@ -324,9 +320,8 @@ export const useSettingsStore = create<SettingsState>()(
       setPresetAgentChoice: (ids) => set({ presetAgentChoice: ids }),
 
       setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
+      setSidebarWidth: (width) => set({ sidebarWidth: width }),
       setChatAreaCollapsed: (collapsed) => set({ chatAreaCollapsed: collapsed }),
-      setEditRailCollapsed: (collapsed) => set({ editRailCollapsed: collapsed }),
-      setEditRailWidth: (width) => set({ editRailWidth: width }),
       setDockHeight: (height) => set({ dockHeight: height }),
       setDockCollapsed: (collapsed) => set({ dockCollapsed: collapsed }),
       setChatAreaWidth: (width) => set({ chatAreaWidth: width }),
@@ -348,10 +343,11 @@ export const useSettingsStore = create<SettingsState>()(
         const state = { ...((persistedState as Record<string, unknown> | null) ?? {}) };
         // v4 → v5: model settings move to the server (RFC #1701).
         const next = version < 5 ? migrateSettingsToV5(state, version) : pickPersisted(state);
-        // v5 → v6: the edit page rail starts collapsed, as playback's does. A
-        // stored `false` was the old default as often as a choice and cannot be
-        // told apart; a stored `true` can only have been chosen, and stays.
-        if (version < 6 && next.editRailCollapsed !== true) delete next.editRailCollapsed;
+        // v6 → v7: Learn and Edit share one page list. Its fold is the Learn one
+        // (`sidebarCollapsed`); only Edit ever remembered a width.
+        if (version < 7 && typeof state.editRailWidth === 'number') {
+          next.sidebarWidth = state.editRailWidth;
+        }
         return next;
       },
       // Only known preference fields reach the state; anything else a blob
