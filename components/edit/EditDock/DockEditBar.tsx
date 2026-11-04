@@ -75,7 +75,9 @@ export function DockEditBar({
   const railCollapsed = useSettingsStore((state) => state.editRailCollapsed);
   const setRailCollapsed = useSettingsStore((state) => state.setEditRailCollapsed);
   // Where playback has a reference button, the lasso sits on it and the roster has
-  // the two slots before; without it, the two take those two slots between them.
+  // the two slots before; without it, the two take those two slots between them. A
+  // page with no lasso (nothing to point at, or no conversation to hand it to) ends
+  // the pill early, on the roster's side of playback's reference button.
   const playbackHasReference = isCoursewareReferenceEnabled();
   const hasPages = !!pager && pager.count > 0;
   const pagerButton = cn(
@@ -125,98 +127,104 @@ export function DockEditBar({
         <CtrlDivider />
 
         <div className="flex min-w-0 flex-1 items-center justify-center">
+          {/* Playback's pill's footprint, centred as playback's is, which puts previous
+              and next on playback's x. The pill itself starts at its left edge and is as
+              wide as what it holds, so a missing lasso takes its slot with it. */}
           <div
-            data-testid="edit-bar-pill"
+            className="flex shrink-0"
             style={{
               width: PLAYBACK_PILL_WIDTH + (playbackHasReference ? PLAYBACK_REFERENCE_WIDTH : 0),
             }}
-            className="flex h-7 shrink-0 items-center gap-0.5 rounded-lg bg-gray-100/60 px-1 dark:bg-gray-800/60"
           >
-            {/* The timeline's actions land here. Playback's volume and speed, 58 wide. */}
-            <div ref={barActionsRef} className="flex w-[58px] shrink-0 items-center gap-0.5" />
-            <CtrlDivider />
-            <button
-              type="button"
-              data-testid="edit-canvas-prev"
-              disabled={!pager?.canPrev}
-              onClick={pager?.onPrev}
-              title={t('edit.nav.prevPage')}
-              aria-label={t('edit.nav.prevPage')}
-              className={pagerButton}
+            <div
+              data-testid="edit-bar-pill"
+              className="flex h-7 shrink-0 items-center gap-0.5 rounded-lg bg-gray-100/60 px-1 dark:bg-gray-800/60"
             >
-              <ChevronLeft className="size-3.5" />
-            </button>
-            {/* Where playback has play. */}
-            {SCENE_CREATION_ENABLED && hasPages ? (
-              <Popover>
-                <DockBarTip label={t('edit.nav.addPage')}>
-                  <PopoverTrigger asChild>
+              {/* The timeline's actions land here. Playback's volume and speed, 58 wide. */}
+              <div ref={barActionsRef} className="flex w-[58px] shrink-0 items-center gap-0.5" />
+              <CtrlDivider />
+              <button
+                type="button"
+                data-testid="edit-canvas-prev"
+                disabled={!pager?.canPrev}
+                onClick={pager?.onPrev}
+                title={t('edit.nav.prevPage')}
+                aria-label={t('edit.nav.prevPage')}
+                className={pagerButton}
+              >
+                <ChevronLeft className="size-3.5" />
+              </button>
+              {/* Where playback has play. */}
+              {SCENE_CREATION_ENABLED && hasPages ? (
+                <Popover>
+                  <DockBarTip label={t('edit.nav.addPage')}>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        data-testid="edit-add-page"
+                        aria-label={t('edit.nav.addPage')}
+                        className={cn(ctrlBtn, 'h-6 w-7 text-gray-500 dark:text-gray-400')}
+                      >
+                        <FilePlus2 className="size-3.5" />
+                      </button>
+                    </PopoverTrigger>
+                  </DockBarTip>
+                  <PopoverContent
+                    side="top"
+                    align="center"
+                    sideOffset={8}
+                    className="w-40 p-1.5"
+                    data-testid="scene-type-chooser"
+                  >
+                    <SceneTypeChoice
+                      type="slide"
+                      label={t('edit.sceneType.slide')}
+                      Icon={Presentation}
+                      onInsert={(type) => insertSceneAt(pager.index + 1, type)}
+                    />
+                    <SceneTypeChoice
+                      type="quiz"
+                      label={t('edit.sceneType.quiz')}
+                      Icon={ListChecks}
+                      onInsert={(type) => insertSceneAt(pager.index + 1, type)}
+                    />
+                  </PopoverContent>
+                </Popover>
+              ) : (
+                <span className="h-6 w-7 shrink-0" />
+              )}
+              <button
+                type="button"
+                data-testid="edit-canvas-next"
+                disabled={!pager?.canNext}
+                onClick={pager?.onNext}
+                title={t('edit.nav.nextPage')}
+                aria-label={t('edit.nav.nextPage')}
+                className={pagerButton}
+              >
+                <ChevronRight className="size-3.5" />
+              </button>
+              <CtrlDivider />
+              {/* At least as wide as the timeline's side, so without a lasso the roster has
+                  that side to itself and the pill stays even around previous and next. */}
+              <div className="flex min-w-[58px] shrink-0 gap-0.5">
+                <div className={cn('flex grow justify-center', playbackHasReference && 'w-[58px]')}>
+                  <DockBarTip label={t('edit.roster.title')}>
                     <button
                       type="button"
-                      data-testid="edit-add-page"
-                      aria-label={t('edit.nav.addPage')}
-                      className={cn(ctrlBtn, 'h-6 w-7 text-gray-500 dark:text-gray-400')}
+                      data-testid="edit-dock-roster"
+                      onClick={() => setRosterOpen(true)}
+                      aria-label={t('edit.roster.title')}
+                      className={cn(DOCK_BAR_ACTION, 'w-8')}
                     >
-                      <FilePlus2 className="size-3.5" />
+                      <Users className="size-3.5" />
                     </button>
-                  </PopoverTrigger>
-                </DockBarTip>
-                <PopoverContent
-                  side="top"
-                  align="center"
-                  sideOffset={8}
-                  className="w-40 p-1.5"
-                  data-testid="scene-type-chooser"
-                >
-                  <SceneTypeChoice
-                    type="slide"
-                    label={t('edit.sceneType.slide')}
-                    Icon={Presentation}
-                    onInsert={(type) => insertSceneAt(pager.index + 1, type)}
-                  />
-                  <SceneTypeChoice
-                    type="quiz"
-                    label={t('edit.sceneType.quiz')}
-                    Icon={ListChecks}
-                    onInsert={(type) => insertSceneAt(pager.index + 1, type)}
-                  />
-                </PopoverContent>
-              </Popover>
-            ) : (
-              <span className="h-6 w-7 shrink-0" />
-            )}
-            <button
-              type="button"
-              data-testid="edit-canvas-next"
-              disabled={!pager?.canNext}
-              onClick={pager?.onNext}
-              title={t('edit.nav.nextPage')}
-              aria-label={t('edit.nav.nextPage')}
-              className={pagerButton}
-            >
-              <ChevronRight className="size-3.5" />
-            </button>
-            <CtrlDivider />
-            <div
-              className={cn(
-                'flex shrink-0 justify-center',
-                playbackHasReference ? 'w-[58px]' : 'w-8',
-              )}
-            >
-              <DockBarTip label={t('edit.roster.title')}>
-                <button
-                  type="button"
-                  data-testid="edit-dock-roster"
-                  onClick={() => setRosterOpen(true)}
-                  aria-label={t('edit.roster.title')}
-                  className={cn(DOCK_BAR_ACTION, 'w-8')}
-                >
-                  <Users className="size-3.5" />
-                </button>
-              </DockBarTip>
-            </div>
-            <div className="flex w-6 shrink-0">
-              {canPickElements ? <ElementRefLassoButton sceneId={sceneId} /> : null}
+                  </DockBarTip>
+                </div>
+                <div className="flex w-6 shrink-0 empty:hidden">
+                  {canPickElements ? <ElementRefLassoButton sceneId={sceneId} /> : null}
+                </div>
+              </div>
             </div>
           </div>
         </div>
