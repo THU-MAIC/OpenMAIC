@@ -61,6 +61,11 @@ interface SlideEditSessionState {
    */
   commitContent: (next: SlideContent, isUserEdit: boolean) => void;
   setGestureActive: (active: boolean) => void;
+  /**
+   * Follow the stage store when something other than this session changed the
+   * scene (the freshness sync taking a server copy). The undo timeline is kept.
+   */
+  adoptStoreContent: (sceneId: string, content: SlideContent) => void;
   undo: () => void;
   redo: () => void;
   /** Tear the session down on exit from edit mode. */
@@ -68,6 +73,9 @@ interface SlideEditSessionState {
 }
 
 export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
+  /** What this session last wrote; the store holds it before `history` moves. */
+  let lastWritten: SlideContent | null = null;
+
   /**
    * Write the new canonical content through to the stage store (auto-save).
    * Single point of write-through so undo, redo, applyOp, user
@@ -79,6 +87,7 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
   const writeThrough = (next: SlideContent) => {
     const { sceneId } = get();
     if (!sceneId) return;
+    lastWritten = next;
     useStageStore.getState().updateScene(sceneId, { content: next });
   };
 
@@ -166,6 +175,13 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
     },
 
     setGestureActive: (gestureActive) => set({ gestureActive }),
+
+    adoptStoreContent: (sceneId, content) => {
+      const { sceneId: currentSceneId, history } = get();
+      if (!history || currentSceneId !== sceneId) return;
+      if (content === history.present || content === lastWritten) return;
+      set({ history: { ...history, present: migrateSlideContent(content) } });
+    },
 
     undo: () => {
       const { history } = get();

@@ -313,6 +313,19 @@ export function useSlideCanvasController(): SlideCanvasController {
     }
   }, [sceneId]);
 
+  // The session's copy is what every commit builds on, including a text-height
+  // normalization with no user input, so it must not lag behind the store: a
+  // commit would write the older content over a page the sync just brought in.
+  useEffect(() => {
+    if (!sceneId) return;
+    return useStageStore.subscribe((state, previous) => {
+      if (state.scenes === previous.scenes) return;
+      const scene = state.scenes.find((candidate) => candidate.id === sceneId);
+      if (!scene || scene.type !== 'slide') return;
+      useSlideEditSession.getState().adoptStoreContent(sceneId, scene.content as SlideContent);
+    });
+  }, [sceneId]);
+
   useEffect(() => () => useSlideEditSession.getState().end(), []);
 
   const controller = useMemo<SceneDataController>(
