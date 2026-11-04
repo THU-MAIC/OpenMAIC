@@ -132,7 +132,8 @@ import sys, errno
 try:
     exec(${JSON.stringify(CHECKPOINT_BODY)})
 except Exception as error:
-    code={'byte limit':'limit','entry limit':'limit','links or special files are not checkpointable':'unsupported','linked root parent':'unsupported','root':'unsupported','changed':'changed','workspace changed during save':'changed'}.get(str(error),'unavailable')
+    code={'byte limit':'limit','entry limit':'limit','links or special files are not checkpointable':'unsupported','linked root parent':'unsupported','root':'unsupported','changed':'changed','workspace changed during save':'changed','unexpected end of data':'changed'}.get(str(error),'unavailable')
+    if isinstance(error, FileNotFoundError): code='changed'
     if isinstance(error, PermissionError): code='permission'
     if isinstance(error, OSError) and error.errno==errno.ENOSPC: code='disk-full'
     print('OPENMAIC_CHECKPOINT_ERROR:'+code,file=sys.stderr)

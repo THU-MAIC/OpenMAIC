@@ -184,6 +184,7 @@ export async function maintainStudy(
   pendingEnvironmentId?: string,
 ) {
   let periodic: Study | undefined;
+  let periodicBesideApplication = false;
   const control = await store.reconcileIdleTurns({ id, owner_id: ownerId });
   const initial = control.row;
   const currentEnvironmentId =
@@ -270,7 +271,7 @@ export async function maintainStudy(
             await renewForMaintenance(store, service, id, environmentId);
           const agents = await activeStudyTurns(store, id, ownerId);
           // Idle release quiesces applications. A periodic backup must instead
-          // wait for an active application: stopping it discards in-memory work.
+          // leave an active application running: stopping it discards in-memory work.
           if (
             !agents.rows.length &&
             (await store.now()).getTime() - row.last_used_at.getTime() >= pblIdleTimeoutMs()
@@ -370,8 +371,7 @@ export async function maintainStudy(
           const idle = now.getTime() - row.last_used_at.getTime() >= pblIdleTimeoutMs();
           if (
             idle ||
-            (!applicationsBusy &&
-              row.workspace_dirty_at &&
+            (row.workspace_dirty_at &&
               now.getTime() - row.workspace_dirty_at.getTime() >= PBL_DIRTY_CHECKPOINT_MS)
           ) {
             if (idle) {
@@ -406,7 +406,14 @@ export async function maintainStudy(
             }
             const dirtyAt = row.workspace_dirty_at?.toISOString() ?? null;
             // A file/configuration limit is not repaired by repeatedly uploading the same workspace.
-            if (failure && !failure.retryable && failure.dirtyAt === dirtyAt) {
+            // What failed beside a running application (a socket, say) may have gone with it, so
+            // the application stopped above earns idle release one strict attempt.
+            if (
+              failure &&
+              !failure.retryable &&
+              failure.dirtyAt === dirtyAt &&
+              !(idle && failure.besideApplication)
+            ) {
               if (idle && !failure.firstIdleFailureAt)
                 await store.recordCheckpointFailure(row, {
                   ...failure,
@@ -416,6 +423,7 @@ export async function maintainStudy(
             }
             if (!idle) {
               periodic = row;
+              periodicBesideApplication = applicationsBusy;
               return;
             }
             let stage: CheckpointStage = 'archive';
@@ -475,11 +483,19 @@ export async function maintainStudy(
       await renewDeferredStudy(store, id, ownerId, currentEnvironmentId);
     throw error;
   });
-  if (periodic) await checkpointDirtyStudy(store, periodic);
+  if (periodic) await checkpointDirtyStudy(store, periodic, periodicBesideApplication);
 }
 
-/** Slow read/upload work owns a separate checkpoint lock; only publication needs the study lock. */
-async function checkpointDirtyStudy(store: LearningStore, captured: Study) {
+/**
+ * Slow read/upload work owns a separate checkpoint lock; only publication needs the study lock.
+ * This fallback copy tolerates running applications and records no evidence: recovery
+ * fingerprints whatever sources it restores, so nothing here can pass a stage.
+ */
+async function checkpointDirtyStudy(
+  store: LearningStore,
+  captured: Study,
+  besideApplication: boolean,
+) {
   const environmentId = captured.environment_id!;
   const unchanged = (current: Study) =>
     current.environment_id === environmentId &&
@@ -512,14 +528,15 @@ async function checkpointDirtyStudy(store: LearningStore, captured: Study) {
         async () => {
           const signal = AbortSignal.timeout(CHECKPOINT_TIMEOUT_MS);
           await service.renewForCheckpoint(environmentId, signal);
-          await service.assertRecordedWorkspaceIdle(environmentId);
+          await service.assertRecordedWorkspaceIdle(environmentId, { allowApplications: true });
           const snapshot = await checkpointStep('snapshot', () =>
-            fileSnapshot(service, current, signal),
+            fileSnapshot(service, current, signal, { allowApplications: true }),
           );
           const previous = await service.checkpoint(environmentId);
           const prepared = await checkpointStep('archive', () =>
             service.prepareWorkspaceCheckpoint(environmentId, previous?.revision ?? 0, signal, {
               renew: false,
+              allowApplications: true,
             }),
           );
           try {
@@ -547,7 +564,9 @@ async function checkpointDirtyStudy(store: LearningStore, captured: Study) {
     if (
       checkpointBusy(error) ||
       (error instanceof SandboxError &&
-        (error.reason === 'STUDY_BUSY' || error.code === 'CHECKPOINT_CHANGED'))
+        (error.reason === 'STUDY_BUSY' || error.code === 'CHECKPOINT_CHANGED')) ||
+      // A running application changed files during export. The next pass retries without a notice.
+      (error instanceof CheckpointAttemptError && error.failure.reason === 'workspace-changed')
     )
       return;
     await store.exclusive(captured.id, async () => {
@@ -559,6 +578,7 @@ async function checkpointDirtyStudy(store: LearningStore, captured: Study) {
         stage: error instanceof CheckpointAttemptError ? error.stage : 'archive',
         dirtyAt: latest.workspace_dirty_at?.toISOString() ?? null,
         firstIdleFailureAt: latest.checkpoint_failure?.firstIdleFailureAt ?? null,
+        ...(besideApplication ? { besideApplication } : {}),
       });
     });
   }

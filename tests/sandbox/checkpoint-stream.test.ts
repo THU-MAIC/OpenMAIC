@@ -105,6 +105,34 @@ describe('streamed checkpoint archive', () => {
       );
     }
   });
+  it.each([
+    ['vanishes', "import os\ndef gone(*_): raise FileNotFoundError(2, 'gone')\nos.lstat = gone\n"],
+    [
+      'shrinks',
+      "import tarfile\ndef short(*_, **__): raise OSError('unexpected end of data')\ntarfile.copyfileobj = short\n",
+    ],
+  ])('reports a running application whose file %s as a retryable change', (_, patch) => {
+    const x = setup();
+    writeFileSync(join(x.project, 'data'), 'application data');
+    try {
+      execFileSync(
+        'python3',
+        [
+          '-c',
+          patch + CHECKPOINT_RUNNER,
+          'export',
+          x.archive,
+          Buffer.from(JSON.stringify(x.config)).toString('base64'),
+        ],
+        { stdio: 'pipe' },
+      );
+      throw new Error('Expected export failure');
+    } catch (error) {
+      expect((error as { stderr: Buffer }).stderr.toString()).toBe(
+        'OPENMAIC_CHECKPOINT_ERROR:changed\n',
+      );
+    }
+  });
   it('validates the whole archive before touching original application data', () => {
     const x = setup();
     writeFileSync(join(x.app, 'settings'), 'original');

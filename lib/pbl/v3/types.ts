@@ -10,6 +10,8 @@ export interface ArchiveFailure {
   retryable: boolean;
   firstIdleFailureAt: string | null;
   dirtyAt: string | null;
+  /** A periodic attempt that ran beside an application; quiescing it may clear the cause. */
+  besideApplication?: boolean;
 }
 export interface ArchiveDiscard {
   environmentId: string;

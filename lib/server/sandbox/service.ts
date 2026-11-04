@@ -1023,21 +1023,22 @@ export class SandboxService {
   }
 
   /** Periodic capture/upload is read-only and holds no environment lock; publication is short. */
-  async assertRecordedWorkspaceIdle(id: string) {
-    return this.store.assertRecordedIdle(await this.running(id));
+  async assertRecordedWorkspaceIdle(id: string, options: { allowApplications?: boolean } = {}) {
+    return this.store.assertRecordedIdle(await this.running(id), options);
   }
 
   async prepareWorkspaceCheckpoint(
     id: string,
     revision: number,
     signal: AbortSignal,
-    options: { renew?: boolean } = {},
+    options: { renew?: boolean; allowApplications?: boolean } = {},
   ) {
     signal.throwIfAborted();
     await this.mutation(id, 'checkpoint');
     if (options.renew !== false) await this.renewForCheckpoint(id, signal);
     const row = await this.running(id);
-    await this.store.assertRecordedIdle(row);
+    const writers = { allowApplications: options.allowApplications };
+    await this.store.assertRecordedIdle(row, writers);
     const prepared = await this.store.prepareCheckpoint(
       row,
       revision,
@@ -1054,7 +1055,7 @@ export class SandboxService {
           const current = await this.running(id);
           if (current.resource_id !== row.resource_id)
             throw sandboxConflict('Workspace changed.', 'WORKSPACE_STOPPED');
-          await this.store.assertRecordedIdle(current);
+          await this.store.assertRecordedIdle(current, writers);
           return prepared.commit(publish);
         }),
     };
