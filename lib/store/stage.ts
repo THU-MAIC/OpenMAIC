@@ -344,10 +344,10 @@ export function isStageWriteInFlight(stageId: string): boolean {
  * the copy would discard the edit on screen, and the queued save, which reads
  * the store when it starts, would then write the copy over the edit.
  *
- * Covers the scene's own edit, queued or on the wire; a structural or outline
- * change, queued or on the wire, whose scene list and order a server copy would
- * undo; and a save on the wire that writes the whole document from a snapshot,
- * which replaces every scene and moves their revisions when it lands.
+ * Covers the scene's own edit, queued or on the wire, and a save on the wire that
+ * writes the whole document from a snapshot, which replaces every scene and moves
+ * their revisions when it lands. A whole-document change that is only QUEUED does
+ * not count: see `hasQueuedWholeDocumentChange`.
  */
 export function hasUnsavedSceneEdit(stageId: string, sceneId: string): boolean {
   if (wholeDocumentSavesInFlight.has(stageId) || hasLearnerSceneChange(stageId, sceneId)) {
@@ -355,11 +355,21 @@ export function hasUnsavedSceneEdit(stageId: string, sceneId: string): boolean {
   }
   const key = pendingChangeKey({ kind: 'scene', sceneId });
   if (keepaliveSentRevisions.has(key)) return true;
-  const coversScene = (changes: ReadonlyMap<string, PendingEntry>) =>
-    changes.has(key) || changes.has('structure') || changes.has('outline');
   const round = flushInFlight?.stageId === stageId ? flushInFlight : null;
-  if (round && (roundWritesWholeDocument(round) || coversScene(round.dirtySnapshot))) return true;
-  return pendingStageId === stageId && coversScene(pendingChanges);
+  if (round && (roundWritesWholeDocument(round) || round.dirtySnapshot.has(key))) return true;
+  return pendingStageId === stageId && pendingChanges.has(key);
+}
+
+/**
+ * Whether a structural or outline change waits in the debounce. Its flush saves
+ * the store's scene list as the whole document and deletes every stored scene
+ * absent from it, so remote scenes must keep reaching the store until the flush
+ * captures it, on top of the local list and order.
+ */
+export function hasQueuedWholeDocumentChange(stageId: string): boolean {
+  return (
+    pendingStageId === stageId && (pendingChanges.has('structure') || pendingChanges.has('outline'))
+  );
 }
 
 /**

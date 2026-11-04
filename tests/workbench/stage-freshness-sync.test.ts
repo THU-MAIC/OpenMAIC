@@ -80,6 +80,7 @@ vi.mock('@/lib/workbench/session-store', () => ({
 }));
 
 vi.mock('@/lib/store/stage', () => ({
+  hasQueuedWholeDocumentChange: () => false,
   hasUnsavedSceneEdit: (_stageId: string, sceneId: string) => mocks.unsavedScenes.has(sceneId),
   hasUnsavedStageEdit: () => mocks.unsavedStageEdit,
   stageDocumentEditClock: () => 0,

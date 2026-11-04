@@ -198,6 +198,20 @@ export function mergeFetchedScenes(input: {
   return { scenes: input.current, changed: false };
 }
 
+/**
+ * Fetched scenes as they go into a store whose own scene list has not been saved
+ * yet: a scene it holds keeps its local position, and a scene new to it goes after
+ * all of them.
+ */
+export function withLocalSceneOrder(current: readonly Scene[], fetched: readonly Scene[]): Scene[] {
+  const orderById = new Map(current.map((scene) => [scene.id, scene.order]));
+  let nextOrder = Math.max(0, ...current.map((scene) => scene.order));
+  return fetched.map((scene) => {
+    const order = orderById.get(scene.id) ?? ++nextOrder;
+    return scene.order === order ? scene : { ...scene, order };
+  });
+}
+
 /** True when every requested id has a matching entry — used by the tests. */
 export function sameIds(a: readonly string[], b: readonly string[]): boolean {
   if (a.length !== b.length) return false;

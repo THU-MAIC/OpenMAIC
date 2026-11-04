@@ -24,6 +24,7 @@ import { getDocumentStore } from '@/lib/document-store/store';
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
 import {
   forgetServerRosterBase,
+  hasQueuedWholeDocumentChange,
   hasUnsavedSceneEdit,
   hasUnsavedStageEdit,
   isStageWriteInFlight,
@@ -51,6 +52,7 @@ import {
   type StageRoster,
   mergeFetchedScenes,
   type StageManifest,
+  withLocalSceneOrder,
 } from '@/lib/workbench/stage-freshness';
 import { applyGenerateTtsResultToScenes } from '@/lib/workbench/tts-stage-sync';
 
@@ -345,6 +347,11 @@ export function useWorkbenchStream(sessionId: string | null): void {
  * The check runs before the read and again after it. A read older than an edit
  * made since it started is dropped, even if that edit is already saved.
  *
+ * A structural or outline change waiting in the debounce is different: its flush
+ * saves the store's scene list as the whole document, deleting whatever is absent
+ * from it, so holding remote scenes back would erase them. They are taken on top of
+ * the local list and order; only a scene deleted locally stays out.
+ *
  * FAILURE CONTRACT (cr D3-F1 hardening): a pass whose batch fetch returns
  * NOTHING for a non-empty request aborts WITHOUT advancing the rendered
  * manifest or the store's baseline — "could not fetch" must never be recorded
@@ -502,6 +509,7 @@ export function useStageFreshnessSync(
             return;
           }
           if (
+            hasQueuedWholeDocumentChange(requestedStage) ||
             useStageStore
               .getState()
               .scenes.some((scene) => hasUnsavedSceneEdit(requestedStage, scene.id))
@@ -579,7 +587,8 @@ export function useStageFreshnessSync(
       const idsToFetch = [...diff.changed, ...diff.added];
       const editClock = stageDocumentEditClock();
       const idsToRead = idsToFetch.filter((id) => !hasUnsavedSceneEdit(requestedStage, id));
-      if (idsToRead.length < idsToFetch.length) heldBackForSave.current = true;
+      const queuedAtRead = hasQueuedWholeDocumentChange(requestedStage);
+      if (queuedAtRead || idsToRead.length < idsToFetch.length) heldBackForSave.current = true;
       const fetched = await fetchScenesByIds(requestedStage, idsToRead);
       if (!isCurrent()) return;
 
@@ -605,7 +614,18 @@ export function useStageFreshnessSync(
         requestSync('edited-during-read');
         return;
       }
-      const applicable = fetched.filter((scene) => !hasUnsavedSceneEdit(requestedStage, scene.id));
+      // Either way the local scene list is the one to keep: the change may have
+      // been saved while the read was out, and the read would be older than it.
+      const keepLocalList = queuedAtRead || hasQueuedWholeDocumentChange(requestedStage);
+      const localScenes = useStageStore.getState().scenes;
+      const localIds = new Set(localScenes.map((scene) => scene.id));
+      const remoteOnly = new Set(diff.added);
+      const applicable = fetched.filter(
+        (scene) =>
+          !hasUnsavedSceneEdit(requestedStage, scene.id) &&
+          // Known to the server and not here: deleted locally, not remote news.
+          (!keepLocalList || localIds.has(scene.id) || remoteOnly.has(scene.id)),
+      );
       const removable = diff.removed.filter((id) => !hasUnsavedSceneEdit(requestedStage, id));
       if (applicable.length < fetched.length || removable.length < diff.removed.length) {
         heldBackForSave.current = true;
@@ -613,8 +633,8 @@ export function useStageFreshnessSync(
 
       const appliedIds = new Set(applicable.map((scene) => scene.id));
       const merge = mergeFetchedScenes({
-        current: useStageStore.getState().scenes,
-        fetched: applicable,
+        current: localScenes,
+        fetched: keepLocalList ? withLocalSceneOrder(localScenes, applicable) : applicable,
         removedIds: removable,
       });
       if (merge.changed) {
