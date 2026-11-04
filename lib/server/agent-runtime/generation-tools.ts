@@ -65,11 +65,17 @@ const SceneParams = Type.Object({
       },
     ),
   ),
+  // Open object (not Type.Unknown) so the model-facing schema says `type: object`.
+  // No Type.Record (emits patternProperties) and no `additionalProperties: true`
+  // (Google's converter then keeps an empty `properties`, which Gemini rejects).
   widgetOutline: Type.Optional(
-    Type.Unknown({
-      description:
-        'Interactive pages only: widget configuration object matching widgetType (e.g. { concept, keyVariables } for simulation, { diagramType, nodes } for diagram, { language } for code, { gameType, challenge } for game, { visualizationType, objects } for visualization3d). Must be a plain object. Defaults to { concept: title } when widgetType is set; when only widgetOutline is set, widgetType defaults to simulation.',
-    }),
+    Type.Object(
+      {},
+      {
+        description:
+          'Interactive pages only: widget configuration object matching widgetType (e.g. { concept, keyVariables } for simulation, { diagramType, nodes } for diagram, { language } for code, { gameType, challenge } for game, { visualizationType, objects } for visualization3d). Must be a plain object. Defaults to { concept: title } when widgetType is set; when only widgetOutline is set, widgetType defaults to simulation.',
+      },
+    ),
   ),
   brief: Type.String({
     minLength: 1,
