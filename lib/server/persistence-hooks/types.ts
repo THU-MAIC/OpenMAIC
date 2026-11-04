@@ -120,7 +120,10 @@ export interface AssetAllocateRequest {
  * Called for every request that stores asset bytes over
  * `/api/persistence/assets` -- an allocation (`POST /assets`) or a replace
  * (`PUT /assets/{id}/content`) -- after the owner is resolved and before the
- * upload body is read: no bytes are stored and no quota is counted yet.
+ * upload body is read: no bytes are stored and no quota is counted yet. Project
+ * packages a classroom import installs through `/api/pbl/v3/packages` are
+ * admitted here too (`operation: 'create'`), once per request, after the body is
+ * read and validated and before they are stored; a refusal fails that import.
  * Resolve `undefined` to let the upload proceed, or a `Response` to answer the
  * request with it instead.
  *

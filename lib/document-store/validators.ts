@@ -6,6 +6,7 @@ import {
   type ValidationIssue,
 } from '@openmaic/dsl';
 import type { SceneValidator, StageValidator } from '@openmaic/storage';
+import { isPBLV3Reference } from '@/lib/pbl/v3/types';
 import { hasPBLProjectV2Containers } from '@/lib/pbl/v2/types';
 import { isEmptyLegacyPBLConfig, type PBLProjectConfig } from '@/lib/pbl/legacy/read';
 
@@ -106,6 +107,19 @@ export const validateAppScene: SceneValidator = (scene) => {
       path: '/content/projectV2',
       message: '`projectV2` must contain milestones, roles and threads arrays',
     });
+  }
+
+  if (value.type === 'pbl' && content && content.projectV3 !== undefined) {
+    if (
+      !isPBLV3Reference(content.projectV3) ||
+      content.projectV2 != null ||
+      content.projectConfig != null
+    ) {
+      errors.push({
+        path: '/content/projectV3',
+        message: 'A v3 scene requires one valid project reference without v1/v2 content.',
+      });
+    }
   }
 
   // The app-only branch historically never looked at `actions`, so a

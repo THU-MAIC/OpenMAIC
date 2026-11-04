@@ -21,7 +21,8 @@
     "stop": "Dừng lượt dựng này",
     "waiting": "Đang xử lý",
     "emptyTitle": "Bắt đầu một cuộc trò chuyện",
-    "emptyHint": "Hãy mô tả thay đổi bạn muốn, hoặc dùng @ để chỉ một lớp học"
+    "emptyHint": "Hãy mô tả thay đổi bạn muốn, hoặc dùng @ để chỉ một lớp học",
+    "copyReply": "Copy Agent reply"
   },
   "question": {
     "waiting": "Đang chờ bạn trả lời",
@@ -206,6 +207,15 @@
       "createStage": "Tạo lớp học",
       "renameStage": "Đổi tên lớp học",
       "readStageOutline": "Đọc dàn ý lớp học",
+      "writeFile": "Write file",
+      "listFiles": "List project files",
+      "manageFile": "Manage project file",
+      "runBuild": "Run build",
+      "collectBuild": "Collect build result",
+      "readTeachingSkill": "Read teaching section",
+      "requestReview": "Ask for review",
+      "completeTeachingStage": "Complete teaching step",
+      "respondToLearner": "Answer your question",
       "listMaterialFolders": "Kiểm tra thư mục kho kiến thức",
       "createMaterialFolder": "Tạo thư mục trong kho kiến thức",
       "renameMaterialFolder": "Đổi tên thư mục kho kiến thức",
@@ -298,6 +308,7 @@
       "renameStage": "Không đổi được tên lớp học",
       "readStageOutline": "Không đọc được dàn ý lớp học",
       "generic": "Lần gọi tool thất bại",
+      "interrupted": "Tool call interrupted",
       "listMaterialFolders": "Không kiểm tra được thư mục kho kiến thức",
       "createMaterialFolder": "Không tạo được thư mục kho kiến thức",
       "renameMaterialFolder": "Không đổi tên được thư mục kho kiến thức",

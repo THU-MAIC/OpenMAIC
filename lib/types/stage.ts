@@ -70,6 +70,7 @@ export type InteractiveContent = DslInteractiveContent<WidgetConfig>;
  * `projectV2` with learner/runtime state.
  */
 export type PBLContent = DslPBLContent & {
+  projectV3?: import('@/lib/pbl/v3/types').PBLV3Reference;
   projectConfig?: PBLProjectConfig & Record<string, unknown>;
   projectV2?: PBLProjectV2;
 };

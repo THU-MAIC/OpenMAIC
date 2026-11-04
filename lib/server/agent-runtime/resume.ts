@@ -119,13 +119,16 @@ export function planResume(transcript: AgentMessage[] | null): ResumeAction {
     // batch (ask_user issued together with another tool — a mixed trailing batch) is caught even
     // when another result landed last. An ERRORING ask_user is a plain tool
     // result the model must recover from, so it stays a normal continuation.
+    // Teaching review/completion receipts have the same terminal semantics.
     const trailingToolResults = [];
     for (let i = messages.length - 1; i >= 0 && messages[i].role === 'toolResult'; i -= 1) {
       trailingToolResults.push(messages[i] as ToolResultMessage);
     }
     const terminalSideEffectComplete = trailingToolResults.some(
       (result) =>
-        (result.toolName === 'ask_user' || result.toolName === 'create_skill') && !result.isError,
+        ['ask_user', 'create_skill', 'request_skill_review', 'complete_stage'].includes(
+          result.toolName,
+        ) && !result.isError,
     );
     if (terminalSideEffectComplete) return { kind: 'already-complete', messages };
     return { kind: 'continue', messages, repairedToolCalls: [] };

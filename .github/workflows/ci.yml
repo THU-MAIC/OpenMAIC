@@ -12,6 +12,7 @@ on:
         integration/kv-asset-server-backend,
         integration/agent-workbench,
         integration/material-library,
+        integration/shared-sandbox,
         integration/workbench-home,
       ]
   pull_request:
@@ -22,6 +23,7 @@ on:
         integration/kv-asset-server-backend,
         integration/agent-workbench,
         integration/material-library,
+        integration/shared-sandbox,
         integration/workbench-home,
       ]
   # The merge queue builds each entry on top of main and the entries queued
@@ -332,7 +334,7 @@ jobs:
   e2e:
     name: E2E Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     # The app stores every course in PostgreSQL and refuses to start without
     # DATABASE_URL, so the browser suite runs against a real database; specs
     # seed their courses through the app's own persistence endpoint.

@@ -376,7 +376,10 @@ describe('agent session collection route', () => {
   });
 
   it('lists only sessions for the resolved owner', async () => {
-    mocks.listSessionsByOwner.mockResolvedValue([{ id: 'session-1', status: 'running' }]);
+    mocks.listSessionsByOwner.mockResolvedValue([
+      { id: 'session-1', status: 'running' },
+      { id: 'pbl-role-internal', status: 'running' },
+    ]);
     const response = await GET(new NextRequest('http://localhost/api/agent/sessions'));
 
     expect(response.status).toBe(200);

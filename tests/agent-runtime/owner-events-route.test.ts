@@ -82,6 +82,39 @@ afterEach(() => {
 });
 
 describe('GET owner session events', () => {
+  it('consumes internal teaching events without adding them to the chat projection', async () => {
+    mocks.readOwnerSessionEventMaxId.mockResolvedValue(BigInt(2));
+    mocks.readOwnerSessionEventsAfter.mockResolvedValueOnce([
+      {
+        id: '1',
+        sessionId: 'pbl-role-internal',
+        type: 'session_created',
+        ownerId: 'user:mine',
+        ts: 1,
+      },
+      {
+        id: '2',
+        sessionId: 'ordinary-session',
+        type: 'session_created',
+        ownerId: 'user:mine',
+        ts: 2,
+      },
+    ]);
+    const reader = (await call()).body!.getReader();
+    const first = await readChunk(reader);
+    expect(first).toContain('ordinary-session');
+    expect(first).not.toContain('pbl-role-internal');
+    await readChunk(reader); // caught_up
+    mocks.wake!();
+    await vi.waitFor(() =>
+      expect(mocks.readOwnerSessionEventsAfter).toHaveBeenLastCalledWith(
+        'user:mine',
+        BigInt(2),
+        500,
+      ),
+    );
+    await reader.cancel();
+  });
   it('preserves an anonymous owner cookie on the SSE response', async () => {
     mocks.resolveRequestOwnerId.mockImplementationOnce((_request, responseHeaders: Headers) => {
       responseHeaders.set('Set-Cookie', 'anonymous_id=test; Path=/; HttpOnly');
