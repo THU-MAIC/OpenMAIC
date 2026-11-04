@@ -37,7 +37,7 @@ import { useStageStore } from '@/lib/store/stage';
 import { useWorkbenchStore } from '@/lib/workbench/session-store';
 import { WorkbenchPanelProvider } from '@/lib/workbench/panel-context';
 import { useWorkbenchProEditing } from '@/lib/workbench/use-workbench-pro-edit';
-import { useEditorWarmup } from '@/lib/edit/use-editor-warmup';
+import { useEditorWarmup, warmEditor } from '@/lib/edit/use-editor-warmup';
 import { shouldCollapseFullscreenOnEscape } from '@/lib/workbench/classroom-fullscreen';
 import { HeaderControls } from '@/components/stage/header-controls';
 import { ClassroomModeSwitch } from '@/components/workbench/ClassroomModeSwitch';
@@ -127,6 +127,14 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
   // Load the editor while the course is shown in Learn mode, so the first switch
   // to Edit does not wait on its download. Only where the switch is offered.
   const warmEditorNow = useEditorWarmup(editingAllowed && learning && !hidden);
+  // A course remembered in Edit opens straight into the editor, so its chunks
+  // are needed the moment the document lands. Fetch them alongside the document
+  // rather than after it, which would hold the blank editor shell for the extra
+  // round trips.
+  const opensInEditor = preferences[courseId] === 'editing';
+  useEffect(() => {
+    if (opensInEditor && !hidden) warmEditor();
+  }, [opensInEditor, hidden]);
 
   const rememberMode = (mode: ClassroomMode) => {
     setPreferences((previous) => ({ ...previous, [courseId]: mode }));

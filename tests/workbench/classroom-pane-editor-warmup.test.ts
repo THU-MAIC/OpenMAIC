@@ -221,4 +221,19 @@ describe('warming the editor from the classroom pane', () => {
     expect(editButton().getAttribute('aria-pressed')).toBe('true');
     expect(idle).toHaveLength(0);
   });
+
+  it('loads the editor at once for a course remembered in Edit, before its document lands', async () => {
+    writeClassroomMode('stage-1', 'editing');
+    useStageStore.setState({ stage: null, scenes: [] });
+    await render();
+    expect(probe.calls).toBe(1);
+    expect(idle).toHaveLength(0);
+  });
+
+  it('does not load it for a remembered course while the pane is hidden', async () => {
+    writeClassroomMode('stage-1', 'editing');
+    useStageStore.setState({ stage: null, scenes: [] });
+    await render({ hidden: true });
+    expect(probe.calls).toBe(0);
+  });
 });
