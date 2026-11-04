@@ -24,11 +24,12 @@ async function waitForApplication(
   signal: AbortSignal,
   assertCurrent: () => void = () => signal.throwIfAborted(),
   acknowledge?: () => void,
-  contentionRetries = 2,
+  retryStudyContention = false,
 ) {
   assertCurrent();
-  // Environment-lock contention is a definite refusal, not a lost launch
-  // acknowledgement. Reconcile the same receipt; never invent a new launch ID.
+  // A busy response can be reconciled with the same request and durable launch receipt.
+  // Network failures have no such acknowledgement and require explicit recovery.
+  const contentionRetries = retryStudyContention ? 30 : 2;
   const observe = async () => {
     for (let contention = 0; ; contention++) {
       assertCurrent();
@@ -37,7 +38,8 @@ async function waitForApplication(
       } catch (error) {
         if (
           !(error instanceof SandboxRequestError) ||
-          error.reason !== 'ENVIRONMENT_BUSY' ||
+          (error.reason !== 'ENVIRONMENT_BUSY' &&
+            !(retryStudyContention && error.reason === 'STUDY_BUSY')) ||
           contention >= contentionRetries
         )
           throw error;
@@ -311,7 +313,7 @@ export function useApplicationPreview(
             abort.signal,
             assertCurrent,
             undefined,
-            standaloneFrontend ? 30 : undefined,
+            standaloneFrontend,
           );
           if (serial !== attempt.current) return;
           if (
@@ -343,9 +345,7 @@ export function useApplicationPreview(
             // Even a late response acknowledges this exact launch, not a newer one.
             if (unresolvedLaunch.current === launch) unresolvedLaunch.current = null;
           },
-          standaloneFrontend && (request.action === 'open' || recovery === 'automatic')
-            ? 30
-            : undefined,
+          standaloneFrontend && (request.action === 'open' || recovery === 'automatic'),
         );
         if (serial === attempt.current) {
           observedRevision.current = view.revision;

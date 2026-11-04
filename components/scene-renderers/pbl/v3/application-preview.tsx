@@ -81,6 +81,10 @@ function ApplicationPreviewContent({
     readinessFailure?.url === url && readinessFailure?.version === preview.frameVersion;
   const error = preview.error || (readinessError ? t('pblV3.application.unavailable') : '');
   const standalone = preview.standaloneFrontend;
+  const recoverApplication = standalone && currentReady && !expired && !!preview.applicationError;
+  const applicationAction = t(
+    recoverApplication ? 'pblV3.application.reopen' : 'pblV3.application.restart',
+  );
   const previous =
     !preview.standaloneFrontend &&
     displayed &&
@@ -320,9 +324,13 @@ function ApplicationPreviewContent({
           type="button"
           disabled={pending || disabled}
           className="rounded p-1 hover:bg-muted disabled:opacity-40"
-          title={preview.applicationError || t('pblV3.application.restart')}
-          aria-label={t('pblV3.application.restart')}
-          onClick={() => void preview.load('restart')}
+          title={applicationAction}
+          aria-label={applicationAction}
+          onClick={() =>
+            recoverApplication
+              ? void preview.load('open', 'explicit')
+              : void preview.load('restart')
+          }
         >
           {pending ? <LoaderCircle size={15} className="animate-spin" /> : <RefreshCw size={15} />}
         </button>

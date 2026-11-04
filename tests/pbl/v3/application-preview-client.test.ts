@@ -82,7 +82,7 @@ it('shows an independent document before the process starts and preserves it acr
     await f.cleanup();
   }
 });
-it.each(['environment lock', 'unknown outcome'])(
+it.each(['ENVIRONMENT_BUSY', 'STUDY_BUSY', 'unknown outcome'])(
   'keeps the standalone page clear of runtime errors during entry (%s)',
   async (reason) => {
     vi.useFakeTimers();
@@ -91,10 +91,10 @@ it.each(['environment lock', 'unknown outcome'])(
       application: { ...view.application!, standaloneFrontend: true },
     };
     const launch = vi.fn().mockResolvedValue({ state: 'running', observedAt: '' });
-    if (reason === 'environment lock') {
+    if (reason !== 'unknown outcome') {
       for (let i = 0; i < 4; i++)
         launch.mockRejectedValueOnce(
-          new SandboxRequestError('Environment busy', 409, 'SANDBOX_CONFLICT', 'ENVIRONMENT_BUSY'),
+          new SandboxRequestError('Environment busy', 409, 'SANDBOX_CONFLICT', reason),
         );
     } else {
       launch.mockRejectedValueOnce(new Error('Unknown network outcome'));
@@ -113,7 +113,7 @@ it.each(['environment lock', 'unknown outcome'])(
       await act(async () => vi.advanceTimersByTimeAsync(2500));
       expect(panel.querySelector('iframe')).toBe(frame);
       expect(panel.querySelector('[role="alert"], [role="status"]')).toBeNull();
-      if (reason === 'environment lock') {
+      if (reason !== 'unknown outcome') {
         expect(launch).toHaveBeenCalledTimes(5);
         expect(launch.mock.calls.every(([input]) => input === launch.mock.calls[0][0])).toBe(true);
         expect(frame.hasAttribute('inert')).toBe(false);
@@ -121,12 +121,62 @@ it.each(['environment lock', 'unknown outcome'])(
         expect(launch).toHaveBeenCalledTimes(1);
         expect(frame.hasAttribute('inert')).toBe(true);
         expect(panel.querySelector('details')?.textContent).toContain('Unknown network outcome');
+        await act(async () => {
+          panel
+            .querySelector<HTMLButtonElement>('[aria-label="pblV3.application.reopen"]')!
+            .click();
+        });
+        expect(launch).toHaveBeenCalledTimes(2);
+        expect(launch.mock.calls[1][0]).toEqual(launch.mock.calls[0][0]);
+        expect(panel.querySelector('iframe')).toBe(frame);
+        expect(frame.hasAttribute('inert')).toBe(false);
       }
     } finally {
       await f.cleanup();
     }
   },
 );
+it('keeps a running standalone preview usable during a revision status check that hits the study lock', async () => {
+  vi.useFakeTimers();
+  const current: LearningView = {
+    ...view,
+    application: { ...view.application!, standaloneFrontend: true },
+  };
+  const status = vi
+    .fn()
+    .mockRejectedValueOnce(
+      new SandboxRequestError('Study busy', 409, 'SANDBOX_CONFLICT', 'STUDY_BUSY'),
+    )
+    .mockResolvedValue({ state: 'running', observedAt: '' });
+  mocks.request.mockImplementation((_url, input) =>
+    input.action === 'frontend'
+      ? running
+      : input.action === 'status'
+        ? status(input)
+        : { state: 'running', observedAt: '' },
+  );
+  const f = await fixture();
+  try {
+    await act(async () => f.root.render(createElement(Harness, { current, automatic: true })));
+    const frame = f.host.querySelector('iframe')!;
+    await act(async () => frame.dispatchEvent(new Event('load')));
+    await act(async () =>
+      f.root.render(
+        createElement(Harness, { current: { ...current, revision: 1 }, automatic: true }),
+      ),
+    );
+    expect(status).toHaveBeenCalledTimes(1);
+    expect(frame.hasAttribute('inert')).toBe(false);
+    await act(async () => vi.advanceTimersByTimeAsync(500));
+    expect(status).toHaveBeenCalledTimes(2);
+    expect(status.mock.calls[1][0]).toBe(status.mock.calls[0][0]);
+    expect(f.host.querySelector('iframe')).toBe(frame);
+    expect(frame.hasAttribute('inert')).toBe(false);
+    expect(mocks.request.mock.calls.map(([, input]) => input.action)).not.toContain('restart');
+  } finally {
+    await f.cleanup();
+  }
+});
 it('restores the preview at the write review checkpoint while the reply is still streaming', async () => {
   mocks.request.mockResolvedValue(running);
   const f = await fixture();
