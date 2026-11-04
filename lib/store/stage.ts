@@ -26,6 +26,7 @@ import type { DocumentProducer } from '@/lib/document-store/persistence-types';
 import type { PendingChange, StaleDroppedSave } from '@/lib/utils/stage-storage';
 import { collectStageAssetRefs } from '@/lib/media/collect-stage-asset-refs';
 import { reconcileSceneMediaAllocations } from '@/lib/media/reconcile-scene-media';
+import { useCourseTimeline, type AppliedTimelineStep } from '@/lib/edit/course-timeline';
 import {
   isStageDeleted,
   isStageDeletionInFlight,
@@ -269,6 +270,21 @@ export function hasUnsavedStageEdit(stageId: string): boolean {
   return snapshotPendingStageChangesForDeletion(stageId).some((change) => change.kind === 'stage');
 }
 
+/** Whether an edit of this scene is queued or on its way to the server. */
+export function hasUnsavedSceneEdit(stageId: string, sceneId: string): boolean {
+  return snapshotPendingStageChangesForDeletion(stageId).some(
+    (change) => change.kind === 'scene' && change.sceneId === sceneId,
+  );
+}
+
+/** Whether a page added, removed or moved here is queued or on its way to the server. */
+export function hasUnsavedStructureEdit(stageId: string): boolean {
+  return (
+    wholeDocumentSavesInFlight.has(stageId) ||
+    snapshotPendingStageChangesForDeletion(stageId).some((change) => change.kind === 'structure')
+  );
+}
+
 /** Who teaches a course: the two stage fields a roster write sets. */
 export interface StageRosterValue {
   readonly agentIds?: readonly string[];
@@ -417,6 +433,8 @@ function clearedStageState() {
  * moved to another stage.
  */
 export function clearStoreForDeletedStage(stageId: string): void {
+  // The course is gone whichever one the store is showing.
+  if (isStageDeleted(stageId)) useCourseTimeline.getState().clearCourse(stageId);
   if (useStageStore.getState().stage?.id !== stageId) return;
   // Re-check the deleted flag at eviction time: if a same-id restore
   // completed (and unmarked the deletion) inside the cascade-tail window,
@@ -543,6 +561,8 @@ interface StageState {
   updateScene: (sceneId: string, updates: ScenePatch) => void;
   deleteScene: (sceneId: string) => void;
   setCurrentSceneId: (sceneId: string | null) => void;
+  /** Land an undo or redo: only what the step changed is marked for saving. */
+  applyCourseTimelineStep: (step: AppliedTimelineStep) => void;
   setChats: (chats: ChatSession[]) => void;
   setMode: (mode: StageMode) => void;
   setToolbarState: (state: ToolbarState) => void;
@@ -894,6 +914,20 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   setCurrentSceneId: (sceneId) => {
     set({ currentSceneId: sceneId });
     markPendingChanges(get().stage?.id, { kind: 'currentScene' });
+  },
+
+  applyCourseTimelineStep: (step) => {
+    const previousSceneId = get().currentSceneId;
+    set({ scenes: step.scenes, stage: step.stage, currentSceneId: step.currentSceneId });
+    markPendingChanges(
+      step.stage?.id,
+      ...step.changedSceneIds.map((sceneId): PendingChange => ({ kind: 'scene', sceneId })),
+      ...(step.structureChanged ? ([{ kind: 'structure' }] as PendingChange[]) : []),
+      ...(step.stageChanged ? ([{ kind: 'stage' }] as PendingChange[]) : []),
+      ...(step.currentSceneId !== previousSceneId
+        ? ([{ kind: 'currentScene' }] as PendingChange[])
+        : []),
+    );
   },
 
   setChats: (chats) => {
@@ -1429,7 +1463,6 @@ export async function flushStageSave(): Promise<void> {
   );
 
   for (let round = 0; round < MAX_FLUSH_DRAIN_ROUNDS; round += 1) {
-    cancelScheduledSave();
     const stillPendingAtEntry = [...entrySnapshot].some(([key, entry]) => {
       const pending = pendingChanges.get(key);
       return (
@@ -1438,8 +1471,11 @@ export async function flushStageSave(): Promise<void> {
         pending.revision >= entry.revision
       );
     });
+    // What landed during the round just awaited is not this drain's to write. It
+    // has its timer, armed when that round ended, which must keep running.
     if (!entryStageId || entrySnapshot.size === 0 || !stillPendingAtEntry) return;
 
+    cancelScheduledSave();
     const flushRound = startFlushRound();
     if (!flushRound) return;
     const coversEntry = roundCoversEntry(flushRound, entrySnapshot);

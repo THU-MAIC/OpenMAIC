@@ -356,6 +356,9 @@
     "proMode": "احترافي",
     "undo": "تراجع",
     "redo": "إعادة",
+    "courseHistory": {
+      "stepExpired": "لم يعد من الممكن التراجع عن هذه الخطوة"
+    },
     "delete": "حذف",
     "title": "تحرير · {{type}}",
     "unsupportedScene": "{{type}} غير قابل للتحرير بعد",
@@ -481,8 +484,6 @@
       "addSlide": "إضافة شريحة",
       "duplicate": "تكرار",
       "delete": "حذف",
-      "deleted": "تم الحذف",
-      "undo": "تراجع",
       "copySuffix": "(نسخة)",
       "untitledSlide": "شريحة بدون عنوان",
       "collapse": "طي الشريط الجانبي",

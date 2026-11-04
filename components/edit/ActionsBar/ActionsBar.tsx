@@ -28,6 +28,7 @@
  *
  * Reactive to the stage store; collapse and height belong to the dock.
  */
+import { commitCourseEdit } from '@/lib/edit/course-edit';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -1099,12 +1100,18 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
   // Apply an edit to the LATEST actions from the store (not the render-time
   // snapshot), so a concurrent agent/TTS update isn't reverted by a later UI
   // commit (drag / reorder / blur / delete).
-  const commit = useCallback(
+  const writeActions = useCallback(
     (updater: (cur: Action[]) => Action[]) => {
       const cur = useStageStore.getState().scenes.find((s) => s.id === sceneId)?.actions ?? [];
       useStageStore.getState().updateScene(sceneId, { actions: updater(cur) });
     },
     [sceneId],
+  );
+  const commit = useCallback(
+    (updater: (cur: Action[]) => Action[]) => {
+      commitCourseEdit({}, () => writeActions(updater));
+    },
+    [writeActions],
   );
 
   // Regenerate TTS for every speech line in the scene, then stamp audioIds.
@@ -1141,7 +1148,8 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
             language,
           );
           if (id) {
-            commit((cur) => setAudioIdById(cur, liveAction.id!, id));
+            // Stamping generated audio is write-back, not an edit: no undo step.
+            writeActions((cur) => setAudioIdById(cur, liveAction.id!, id));
             await flushStageSave();
           }
         } catch {
@@ -1156,7 +1164,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
       // batchPending flag) instead of getting stuck in the generating state.
       setTtsRefresh((n) => n + 1);
     }
-  }, [regenAll, sceneId, language, commit]);
+  }, [regenAll, sceneId, language, writeActions]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const panViewport = (dir: -1 | 1) =>
@@ -1410,7 +1418,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                                 }).finally(() => setTtsRefresh((n) => n + 1));
                               }}
                               onGenerated={(assetId) => {
-                                commit((cur) => setAudioIdById(cur, key, assetId));
+                                writeActions((cur) => setAudioIdById(cur, key, assetId));
                                 // Stage persistence is debounced; flush so the
                                 // stamped reference is durable once the row
                                 // settles (pool bytes persist first, stamp last).

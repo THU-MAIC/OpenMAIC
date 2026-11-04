@@ -50,7 +50,7 @@ interface EditShellProps {
   readonly hideCommandBar?: boolean;
   /**
    * Where undo/redo go when the host hides the command bar and has a header of
-   * its own. Nothing renders while this is null or the surface has no history.
+   * its own. Nothing renders while this is null.
    */
   readonly historySlot?: HTMLElement | null;
   /** Optional bottom bar (under the canvas) — used for the actions timeline. */
@@ -129,14 +129,11 @@ export function EditShell({
           rules-of-hooks happy across the slide ↔ read-only surface swap
           while the rest of the chrome stays mounted. */}
       <SurfaceStateRunner key={scene.type} surface={surface} onChange={setState} />
-      {historySlot && state?.history
-        ? createPortal(<HeaderHistoryControls history={state.history} />, historySlot)
-        : null}
+      {historySlot ? createPortal(<HeaderHistoryControls />, historySlot) : null}
       <Frame
         title={scene.title}
         sceneType={scene.type}
         leftRail={leftRail}
-        history={state?.history}
         commands={state?.commands}
         trailing={commandTrailing}
         bottomRail={bottomRail}
@@ -206,8 +203,6 @@ function SurfaceStateRunner({
  *
  * - `content` is reference-equal as long as the in-memory slide buffer
  *   hasn't been committed — the canonical "real change" signal.
- * - History flags compared individually (functions like undo/redo are
- *   stable references via `useSlideEditSession.getState()`).
  * - InsertPaletteItem / EditorCommand / FloatingAction arrays: length +
  *   per-item `id` + per-item flags that drive visual state.
  * - EditorHint compared by length + per-item severity/message.
@@ -227,8 +222,6 @@ function surfaceStateEqual(a: SurfaceState, b: SurfaceState | null): boolean {
   if (!b) return false;
   if (a.content !== b.content) return false;
   if (a.hasSelection !== b.hasSelection) return false;
-  if ((a.history?.canUndo ?? null) !== (b.history?.canUndo ?? null)) return false;
-  if ((a.history?.canRedo ?? null) !== (b.history?.canRedo ?? null)) return false;
   if (a.insertItems.length !== b.insertItems.length) return false;
   for (let i = 0; i < a.insertItems.length; i++) {
     if (a.insertItems[i].id !== b.insertItems[i].id) return false;
@@ -267,7 +260,6 @@ interface FrameProps {
   readonly title: string;
   readonly sceneType: SceneType;
   readonly leftRail?: ReactNode;
-  readonly history?: React.ComponentProps<typeof CommandBar>['history'];
   readonly commands?: React.ComponentProps<typeof CommandBar>['commands'];
   readonly trailing?: ReactNode;
   readonly bottomRail?: ReactNode;
@@ -280,7 +272,6 @@ function Frame({
   title,
   sceneType,
   leftRail,
-  history,
   commands,
   trailing,
   bottomRail,
@@ -323,7 +314,7 @@ function Frame({
             animate={cmdAnimate}
             transition={{ ...stepTransition, delay: prefersReducedMotion ? 0 : COMMANDBAR_DELAY }}
           >
-            <CommandBar title={title} history={history} commands={commands} trailing={trailing} />
+            <CommandBar title={title} commands={commands} trailing={trailing} />
           </motion.div>
         )
       }

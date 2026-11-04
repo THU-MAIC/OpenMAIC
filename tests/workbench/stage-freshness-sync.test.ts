@@ -80,6 +80,9 @@ vi.mock('@/lib/workbench/session-store', () => ({
 
 vi.mock('@/lib/store/stage', () => ({
   hasUnsavedStageEdit: () => mocks.unsavedStageEdit,
+  hasUnsavedSceneEdit: () => false,
+  hasUnsavedStructureEdit: () => false,
+  isServerGeneratingStage: () => false,
   isStageWriteInFlight: () => false,
   recordServerRosterBase: (stageId: string, roster: unknown) =>
     mocks.rosterBase.set(stageId, roster),

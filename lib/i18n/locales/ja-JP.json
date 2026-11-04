@@ -356,6 +356,9 @@
     "proMode": "プロモード",
     "undo": "元に戻す",
     "redo": "やり直し",
+    "courseHistory": {
+      "stepExpired": "この操作は元に戻せなくなりました"
+    },
     "delete": "削除",
     "title": "編集 · {{type}}",
     "unsupportedScene": "{{type}}はまだ編集できません",
@@ -481,8 +484,6 @@
       "addSlide": "スライドを追加",
       "duplicate": "複製",
       "delete": "削除",
-      "deleted": "削除しました",
-      "undo": "元に戻す",
       "copySuffix": "（コピー）",
       "untitledSlide": "無題のスライド",
       "collapse": "サイドを折りたたむ",

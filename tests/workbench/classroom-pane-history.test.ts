@@ -2,15 +2,17 @@
 
 /**
  * The workbench hides the editor's command bar, so undo/redo reach the classroom
- * pane's header through a portal. These tests mount the real pane, chrome root
- * and shell; only the surface and the heavy siblings around them are stubbed.
+ * pane's header through a portal, for every scene type. These tests mount the
+ * real pane, chrome root, shell and course timeline; only the surface and the
+ * heavy siblings around them are stubbed.
  */
 
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { create } from 'zustand';
-import type { SceneEditorSurface, SurfaceHistory } from '@/lib/edit/scene-editor-surface';
+import { commitCourseEdit } from '@/lib/edit/course-edit';
+import { useCourseTimeline } from '@/lib/edit/course-timeline';
+import type { SceneEditorSurface } from '@/lib/edit/scene-editor-surface';
 import type { Scene, SceneType } from '@/lib/types/stage';
 import { sceneEditorRegistry } from '@/lib/edit/scene-editor-registry';
 import { NOOP_SURFACE } from '@/lib/edit/noop-surface';
@@ -87,20 +89,8 @@ vi.stubGlobal(
   },
 );
 
-const undo = vi.fn();
-const redo = vi.fn();
-const useFlags = create(() => ({ canUndo: false, canRedo: false }));
-
-function surfaceWithHistory(sceneType: SceneType): SceneEditorSurface {
-  return {
-    ...NOOP_SURFACE,
-    sceneType,
-    useSurfaceState: () => {
-      const flags = useFlags();
-      const history: SurfaceHistory = { ...flags, undo, redo };
-      return { ...NOOP_SURFACE.useSurfaceState(), history };
-    },
-  };
+function surfaceFor(sceneType: SceneType): SceneEditorSurface {
+  return { ...NOOP_SURFACE, sceneType };
 }
 
 let root: Root | null = null;
@@ -138,15 +128,13 @@ const setMode = (mode: 'learning' | 'editing') =>
 
 beforeEach(() => {
   probe.sceneType = 'slide';
-  undo.mockClear();
-  redo.mockClear();
-  useFlags.setState({ canUndo: false, canRedo: false });
-  sceneEditorRegistry.register(surfaceWithHistory('slide'));
-  sceneEditorRegistry.register(surfaceWithHistory('quiz'));
+  useCourseTimeline.getState().clearCourse('stage-1');
+  sceneEditorRegistry.register(surfaceFor('slide'));
+  sceneEditorRegistry.register(surfaceFor('quiz'));
   localStorage.clear();
   useStageStore.setState({
     stage: { id: 'stage-1', name: 'Course' } as never,
-    scenes: [{ id: 'scene-1' }] as never,
+    scenes: [{ id: 'scene-1', title: 'Original', content: { type: 'quiz' } }] as never,
     currentSceneId: 'scene-1',
     isOwner: true,
     readOnly: false,
@@ -162,43 +150,101 @@ afterEach(async () => {
 });
 
 describe('undo and redo in the classroom pane header', () => {
-  it.each(['slide', 'quiz'])('sit just left of the mode group while editing a %s', async (type) => {
-    probe.sceneType = type;
-    await renderPane();
-    await setMode('editing');
+  it.each(['slide', 'quiz', 'interactive', 'pbl'])(
+    'sit just left of the mode group while editing a %s',
+    async (type) => {
+      probe.sceneType = type;
+      await renderPane();
+      await setMode('editing');
 
-    const header = byTestId('workbench-editor-header')!;
-    const redoControl = redoButton()!;
-    expect(header.contains(undoButton())).toBe(true);
-    expect(header.contains(redoControl)).toBe(true);
-    expect(redoControl.parentElement!.nextElementSibling).toBe(
-      byTestId('workbench-mode-learning')!.parentElement,
-    );
-    expect(undoButton()!.getAttribute('aria-label')).toBe('edit.undo');
-    expect(undoButton()!.title).toBe('edit.undo');
-    expect(redoControl.getAttribute('aria-label')).toBe('edit.redo');
-    expect(redoControl.title).toBe('edit.redo');
-  });
+      const header = byTestId('workbench-editor-header')!;
+      const redoControl = redoButton()!;
+      expect(header.contains(undoButton())).toBe(true);
+      expect(header.contains(redoControl)).toBe(true);
+      expect(redoControl.parentElement!.nextElementSibling).toBe(
+        byTestId('workbench-mode-learning')!.parentElement,
+      );
+      expect(undoButton()!.getAttribute('aria-label')).toBe('edit.undo');
+      expect(undoButton()!.title).toBe('edit.undo');
+      expect(redoControl.getAttribute('aria-label')).toBe('edit.redo');
+      expect(redoControl.title).toBe('edit.redo');
+    },
+  );
 
-  it('follow canUndo and canRedo, and invoke the surface history', async () => {
+  it('follow the course timeline, and undo and redo it', async () => {
+    const title = () => useStageStore.getState().scenes[0].title;
     await renderPane();
     await setMode('editing');
     expect(undoButton()!.disabled).toBe(true);
     expect(redoButton()!.disabled).toBe(true);
 
-    await act(async () => useFlags.setState({ canUndo: true }));
+    await act(async () =>
+      commitCourseEdit({}, () =>
+        useStageStore.getState().updateScene('scene-1', { title: 'Renamed' }),
+      ),
+    );
     expect(undoButton()!.disabled).toBe(false);
     expect(redoButton()!.disabled).toBe(true);
-    await act(async () => undoButton()!.click());
-    expect(undo).toHaveBeenCalledTimes(1);
-    expect(redo).not.toHaveBeenCalled();
 
-    await act(async () => useFlags.setState({ canUndo: false, canRedo: true }));
+    await act(async () => undoButton()!.click());
+    expect(title()).toBe('Original');
     expect(undoButton()!.disabled).toBe(true);
     expect(redoButton()!.disabled).toBe(false);
+
     await act(async () => redoButton()!.click());
-    expect(redo).toHaveBeenCalledTimes(1);
-    expect(undo).toHaveBeenCalledTimes(1);
+    expect(title()).toBe('Renamed');
+    expect(undoButton()!.disabled).toBe(false);
+    expect(redoButton()!.disabled).toBe(true);
+  });
+
+  it('answer the shortcuts only while editing, and leave text fields alone', async () => {
+    const title = () => useStageStore.getState().scenes[0].title;
+    const press = (init: KeyboardEventInit, target: EventTarget = document.body) => {
+      const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
+      target.dispatchEvent(event);
+      return event;
+    };
+    await renderPane();
+    await setMode('editing');
+    await act(async () =>
+      commitCourseEdit({}, () =>
+        useStageStore.getState().updateScene('scene-1', { title: 'Renamed' }),
+      ),
+    );
+
+    const input = document.body.appendChild(document.createElement('input'));
+    const editor = document.body.appendChild(document.createElement('div'));
+    editor.setAttribute('contenteditable', 'true');
+    const inner = editor.appendChild(document.createElement('p'));
+    for (const target of [input, inner]) {
+      let event!: KeyboardEvent;
+      await act(async () => {
+        event = press({ key: 'z', metaKey: true }, target);
+      });
+      expect(event.defaultPrevented).toBe(false);
+      expect(title()).toBe('Renamed');
+    }
+
+    let event!: KeyboardEvent;
+    await act(async () => {
+      event = press({ key: 'z', metaKey: true });
+    });
+    expect(event.defaultPrevented).toBe(true);
+    expect(title()).toBe('Original');
+    await act(async () => void press({ key: 'z', ctrlKey: true, shiftKey: true }));
+    expect(title()).toBe('Renamed');
+    await act(async () => void press({ key: 'z', ctrlKey: true }));
+    expect(title()).toBe('Original');
+    await act(async () => void press({ key: 'y', ctrlKey: true }));
+    expect(title()).toBe('Renamed');
+    // Cmd+Y is not redo on a Mac.
+    await act(async () => void press({ key: 'z', metaKey: true }));
+    await act(async () => void press({ key: 'y', metaKey: true }));
+    expect(title()).toBe('Original');
+
+    await setMode('learning');
+    await act(async () => void press({ key: 'y', ctrlKey: true }));
+    expect(title()).toBe('Original');
   });
 
   it('are absent in learning mode, even while the chrome root is still mounted', async () => {
@@ -228,14 +274,6 @@ describe('undo and redo in the classroom pane header', () => {
     await renderPane({ readOnly: false, hidden: true });
     expect(undoButton()).toBeNull();
   });
-
-  it('are absent on a scene type with no history', async () => {
-    probe.sceneType = 'interactive';
-    await renderPane();
-    await setMode('editing');
-    expect(byTestId('workbench-mode-editing')!.getAttribute('aria-pressed')).toBe('true');
-    expect(undoButton()).toBeNull();
-  });
 });
 
 describe('the standalone editor', () => {
@@ -251,7 +289,16 @@ describe('the standalone editor', () => {
       ),
     );
     expect(undoButton()).toBeNull();
-    expect(document.querySelector('svg.lucide-undo2')).not.toBeNull();
-    expect(document.querySelector('svg.lucide-redo2')).not.toBeNull();
+    const standaloneUndo = byTestId('edit-undo')!;
+    expect(standaloneUndo.disabled).toBe(true);
+    await act(async () =>
+      commitCourseEdit({}, () =>
+        useStageStore.getState().updateScene('scene-1', { title: 'Renamed' }),
+      ),
+    );
+    expect(standaloneUndo.disabled).toBe(false);
+    await act(async () => standaloneUndo.click());
+    expect(useStageStore.getState().scenes[0].title).toBe('Original');
+    expect(byTestId('edit-redo')!.disabled).toBe(false);
   });
 });

@@ -356,6 +356,9 @@
     "proMode": "专业模式",
     "undo": "撤销",
     "redo": "重做",
+    "courseHistory": {
+      "stepExpired": "该步骤已无法撤销"
+    },
     "delete": "删除",
     "title": "编辑 · {{type}}",
     "unsupportedScene": "{{type}}暂不支持编辑",
@@ -481,8 +484,6 @@
       "addSlide": "新增幻灯片",
       "duplicate": "复制",
       "delete": "删除",
-      "deleted": "已删除",
-      "undo": "撤销",
       "copySuffix": "（副本）",
       "untitledSlide": "未命名幻灯片",
       "collapse": "收起",

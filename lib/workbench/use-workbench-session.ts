@@ -21,6 +21,9 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
 // calls it `LIFECYCLE`. The values are the same durable event names.
 import { HOST_AGENT_LIFECYCLE as LIFECYCLE } from '@/lib/agent-runtime/lifecycle';
 import { getDocumentStore } from '@/lib/document-store/store';
+import { recordAgentChange } from '@/lib/edit/course-edit';
+import { useCourseTimeline } from '@/lib/edit/course-timeline';
+import { reconcileFetchedScenes, type ReconciledFetch } from '@/lib/edit/scene-echo';
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
 import {
   forgetServerRosterBase,
@@ -29,6 +32,9 @@ import {
   recordServerRosterBase,
   serverRosterBaseOf,
   useStageStore,
+  hasUnsavedSceneEdit,
+  hasUnsavedStructureEdit,
+  isServerGeneratingStage,
 } from '@/lib/store/stage';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Scene, Stage } from '@/lib/types/stage';
@@ -188,6 +194,8 @@ export function useWorkbenchStream(sessionId: string | null): void {
       }
       applyEvent(parsed);
       markAttached();
+      if (parsed.type === 'agent_start') useCourseTimeline.getState().beginAgentRun();
+      if (parsed.type === 'agent_end') useCourseTimeline.getState().endAgentRun(Date.now());
 
       // Async media completion (generate_video's detached job) settles into
       // the media generation store keyed by the placeholder ref — live frames
@@ -212,7 +220,10 @@ export function useWorkbenchStream(sessionId: string | null): void {
           stage.stage?.id === workbench.stageId
         ) {
           const scenes = applyGenerateTtsResultToScenes(stage.scenes, parsed);
-          if (scenes !== stage.scenes) useStageStore.setState({ scenes: [...scenes] });
+          if (scenes !== stage.scenes) {
+            useStageStore.setState({ scenes: [...scenes] });
+            recordAgentChange(stage);
+          }
         }
       }
     };
@@ -228,6 +239,11 @@ export function useWorkbenchStream(sessionId: string | null): void {
         backlog.length = 0;
         return;
       }
+      // Attached in the middle of a run: its later writes still belong together.
+      const lastRunEvent = backlog.findLast(
+        (event) => event.type === 'agent_start' || event.type === 'agent_end',
+      );
+      if (lastRunEvent?.type === 'agent_start') useCourseTimeline.getState().beginAgentRun();
       applyEvents(compactReplayEvents(backlog));
       // Replay the media_ready side effect too: a failed job never lands in
       // the document, so without this fold a re-attached client would keep
@@ -274,6 +290,7 @@ export function useWorkbenchStream(sessionId: string | null): void {
         source.removeEventListener(type, onAny as EventListener);
       source.removeEventListener('caught_up', onCaughtUp);
       source.close();
+      useCourseTimeline.getState().endAgentRun(Date.now());
       if (useWorkbenchStore.getState().sessionId === sessionId) setAttached(false);
     };
   }, [sessionId, applyEvent, applyEvents, setAttached, finishReplayState, setError]);
@@ -574,11 +591,31 @@ export function useStageFreshnessSync(
         throw new Error(`batch scene fetch returned nothing for ${requestedStage}`);
       }
 
-      const appliedIds = new Set(fetched.map((scene) => scene.id));
+      const before = useStageStore.getState();
+      // A run generating this course writes it: not an edit, nothing of ours to
+      // protect. So is a pass still confirming what the classroom load brought.
+      const isEditableCopy =
+        before.stage?.id === requestedStage &&
+        !before.courseGenerating &&
+        !isServerGeneratingStage(requestedStage);
+      const reconciled: ReconciledFetch = isEditableCopy
+        ? reconcileFetchedScenes({
+            stageId: requestedStage,
+            current: before.scenes,
+            fetched,
+            removedIds: diff.removed,
+            addedIds: diff.added,
+            isSceneDirty: (sceneId) => hasUnsavedSceneEdit(requestedStage, sceneId),
+            structureDirty: hasUnsavedStructureEdit(requestedStage),
+          })
+        : { fetched, removedIds: diff.removed, deferredIds: new Set() };
+      const appliedIds = new Set(
+        fetched.map((scene) => scene.id).filter((id) => !reconciled.deferredIds.has(id)),
+      );
       const merge = mergeFetchedScenes({
-        current: useStageStore.getState().scenes,
-        fetched,
-        removedIds: diff.removed,
+        current: before.scenes,
+        fetched: reconciled.fetched,
+        removedIds: reconciled.removedIds,
       });
       if (merge.changed) {
         useStageStore.setState((state) => {
@@ -593,6 +630,7 @@ export function useStageFreshnessSync(
             ...(currentSceneId !== current ? { currentSceneId } : {}),
           };
         });
+        if (isEditableCopy && previousStageRev !== UNVERIFIED_STAGE_REV) recordAgentChange(before);
       }
 
       // Advance the rendered manifest to what the store now holds: applied
@@ -604,7 +642,7 @@ export function useStageFreshnessSync(
       const renderedById = new Map(
         (renderedManifest.current as StageManifest).scenes.map((scene) => [scene.id, scene]),
       );
-      for (const sceneId of diff.removed) renderedById.delete(sceneId);
+      for (const sceneId of reconciled.removedIds) renderedById.delete(sceneId);
       for (const sceneId of appliedIds) {
         const fresh = freshById.get(sceneId);
         if (fresh) renderedById.set(sceneId, fresh);

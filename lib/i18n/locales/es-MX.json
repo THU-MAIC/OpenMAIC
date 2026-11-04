@@ -356,6 +356,9 @@
     "proMode": "Pro",
     "undo": "Deshacer",
     "redo": "Rehacer",
+    "courseHistory": {
+      "stepExpired": "Ese paso ya no se puede deshacer"
+    },
     "delete": "Eliminar",
     "title": "Editando · {{type}}",
     "unsupportedScene": "{{type}} aún no se puede editar",
@@ -481,8 +484,6 @@
       "addSlide": "Agregar diapositiva",
       "duplicate": "Duplicar",
       "delete": "Eliminar",
-      "deleted": "Eliminada",
-      "undo": "Deshacer",
       "copySuffix": "(copia)",
       "untitledSlide": "Diapositiva sin título",
       "collapse": "Contraer panel",

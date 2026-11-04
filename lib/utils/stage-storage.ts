@@ -32,6 +32,7 @@ import { clearAllForScene } from '@/lib/quiz/persistence';
 import { beginStageRuntimeDeletionSafely } from '@/lib/runtime/store';
 import { clearStageDrainWatermarks } from '@/lib/pbl/v2/runtime/drain';
 import { createLogger } from '@/lib/logger';
+import { noteScenesWritten } from '@/lib/edit/scene-echo';
 import {
   withRuntimeStorageExclusiveLockUntilSettled,
   withRuntimeStorageSharedLock,
@@ -268,6 +269,7 @@ export async function saveStageData(
             dropped = true;
             return;
           }
+          noteScenesWritten(stageId, data.scenes);
           await store.saveDocument(documentSnapshot(stageId, data, existingOutline, now));
           if (isStageWriteStale(stageId, capturedEpoch)) {
             dropped = true;
@@ -372,6 +374,7 @@ export async function saveStageDataIncremental(
               dropped = true;
               return;
             }
+            noteScenesWritten(stageId, persistedScenes);
             await store.saveDocument(
               documentSnapshot(
                 stageId,
@@ -409,6 +412,7 @@ export async function saveStageDataIncremental(
                   dropped = true;
                   return;
                 }
+                noteScenesWritten(stageId, [scene]);
                 await store.putScene(stageId, stampScene(stageId, scene, index, now));
               }
             }
@@ -611,6 +615,7 @@ export function writeStageChangesForUnload(
         continue;
       }
       keepaliveBytesInFlight += bytes;
+      if (change.kind !== 'stage') noteScenesWritten(stageId, [body as Scene]);
       const request =
         change.kind === 'stage'
           ? store.putStage(stageId, body as Stage, { keepalive: true })

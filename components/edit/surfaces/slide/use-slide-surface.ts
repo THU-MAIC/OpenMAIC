@@ -150,7 +150,8 @@ export function deleteSlideElement(elementId: string): void {
  * Two-way only — intermediate forward/backward steps stay AI's domain.
  */
 export function reorderSlideElement(elementId: string, edge: 'front' | 'back'): void {
-  const present = useSlideEditSession.getState().history?.present ?? null;
+  const { sceneId } = useSlideEditSession.getState();
+  const present = sceneId ? currentSlideContent(sceneId) : null;
   if (!present) return;
   const elements = present.canvas.elements;
   const currentIndex = elements.findIndex((el) => el.id === elementId);
@@ -190,15 +191,16 @@ function currentSlideContent(sceneId: string): SlideContent | null {
 }
 
 /**
- * Resolves the slide content the surface should read from: the in-memory
- * edit-session present, else the canonical stage scene, else an empty slide.
+ * Resolves the slide content the surface should read from: the canonical stage
+ * scene the session is on, else an empty slide.
  */
 export function useResolvedSlideContent(): SlideContent {
-  const history = useSlideEditSession((s) => s.history);
   const sessionSceneId = useSlideEditSession((s) => s.sceneId);
-  return (
-    history?.present ?? (sessionSceneId ? currentSlideContent(sessionSceneId) : null) ?? EMPTY_SLIDE
-  );
+  const content = useStageStore((s) => {
+    const scene = s.scenes.find((candidate) => candidate.id === sessionSceneId);
+    return scene?.type === 'slide' ? (scene.content as SlideContent) : null;
+  });
+  return content ?? EMPTY_SLIDE;
 }
 
 /**
@@ -207,7 +209,6 @@ export function useResolvedSlideContent(): SlideContent {
  */
 export function useSlideSurfaceState(): SurfaceState<SlideContent, SlideSelection> {
   const { t } = useI18n();
-  const history = useSlideEditSession((s) => s.history);
   const activeElementIds = useCanvasStore.use.activeElementIdList();
   const creatingElement = useCanvasStore.use.creatingElement();
   const rendererEditorEnabled = isEditorRendererEnabled();
@@ -217,12 +218,6 @@ export function useSlideSurfaceState(): SurfaceState<SlideContent, SlideSelectio
     content,
     selection: { activeElementIds },
     hasSelection: activeElementIds.length > 0,
-    history: {
-      canUndo: !!history && history.past.length > 0,
-      canRedo: !!history && history.future.length > 0,
-      undo: () => useSlideEditSession.getState().undo(),
-      redo: () => useSlideEditSession.getState().redo(),
-    },
     insertItems: rendererEditorEnabled ? [] : buildInsertItems(t, creatingElement?.type),
     // Every element type carries its own actions on a selection-anchored bar
     // (AnchoredTextBar / AnchoredElementBar) — the surface contributes no
@@ -248,20 +243,19 @@ interface SlideCanvasController {
 }
 
 /**
- * Owns the edit-entry lifecycle for the slide canvas: seeds the in-memory
- * undo history from the live scene and exposes the scene-context
- * controller. The controller's writes flow through `slide-edit-session`
- * which auto-saves them to the canonical `useStageStore` (no staging, no
- * "restore unsaved" UX — the stage store is the source of truth).
+ * Owns the edit-entry lifecycle for the slide canvas: points the session at the
+ * live scene and exposes the scene-context controller. The controller's writes
+ * flow through `slide-edit-session` to the canonical `useStageStore` (no
+ * staging, no "restore unsaved" UX — the stage store is the source of truth).
  */
 export function useSlideCanvasController(): SlideCanvasController {
   const sceneId = useStageStore((s) => {
     const scene = s.scenes.find((x) => x.id === s.currentSceneId) ?? null;
     return scene && scene.type === 'slide' ? scene.id : '';
   });
-  // Re-render (and thus re-feed SceneProvider's getSnapshot) on every
-  // history move (apply / commit / undo / redo).
-  useSlideEditSession((s) => s.history);
+  // Re-render (and thus re-feed SceneProvider's getSnapshot) on every change
+  // to this scene's content, whoever made it.
+  useStageStore((s) => s.scenes.find((scene) => scene.id === sceneId)?.content);
 
   // True only while a pointer gesture is in flight. The renderer commits a
   // geometry edit synchronously inside its mouseup handler (still within
@@ -273,7 +267,6 @@ export function useSlideCanvasController(): SlideCanvasController {
     const finishGesture = () => {
       setTimeout(() => {
         gestureRef.current = false;
-        useSlideEditSession.getState().setGestureActive(false);
       }, 0);
     };
     window.addEventListener('pointerup', finishGesture);
@@ -287,18 +280,15 @@ export function useSlideCanvasController(): SlideCanvasController {
     () => ({
       onPointerDownCapture: () => {
         gestureRef.current = true;
-        useSlideEditSession.getState().setGestureActive(true);
       },
       onPointerUpCapture: () => {
         setTimeout(() => {
           gestureRef.current = false;
-          useSlideEditSession.getState().setGestureActive(false);
         }, 0);
       },
       onPointerCancelCapture: () => {
         setTimeout(() => {
           gestureRef.current = false;
-          useSlideEditSession.getState().setGestureActive(false);
         }, 0);
       },
     }),
@@ -307,10 +297,7 @@ export function useSlideCanvasController(): SlideCanvasController {
 
   useEffect(() => {
     if (!sceneId) return;
-    const content = currentSlideContent(sceneId);
-    if (content && useSlideEditSession.getState().sceneId !== sceneId) {
-      useSlideEditSession.getState().seed(sceneId, content);
-    }
+    useSlideEditSession.getState().seed(sceneId);
   }, [sceneId]);
 
   useEffect(() => () => useSlideEditSession.getState().end(), []);
@@ -323,8 +310,7 @@ export function useSlideCanvasController(): SlideCanvasController {
       // it on every history move so this is always the up-to-date content.
       getSnapshot: () => currentSlideContent(sceneId) ?? EMPTY_SLIDE,
       updateSceneData: (updater) => {
-        const base =
-          useSlideEditSession.getState().history?.present ?? currentSlideContent(sceneId);
+        const base = currentSlideContent(sceneId);
         if (!base) return;
         const next = produce(base, updater as (draft: SlideContent) => void);
         useSlideEditSession.getState().commitContent(next, gestureRef.current);

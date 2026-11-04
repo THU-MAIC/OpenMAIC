@@ -9,17 +9,30 @@ import { useSlideEditSession } from '@/components/edit/surfaces/slide/slide-edit
 import { createDefaultLatexElement } from '@/lib/edit/slide-edit-elements';
 import { useCanvasStore } from '@/lib/store/canvas';
 
-function seedSlideSession(elements: unknown[] = []) {
-  /* eslint-disable @typescript-eslint/no-explicit-any */
-  useSlideEditSession.setState({
-    history: {
-      past: [],
-      present: { type: 'slide', canvas: { id: 's', elements } } as any,
-      future: [],
-    },
-  } as any);
-  /* eslint-enable @typescript-eslint/no-explicit-any */
+import { useStageStore } from '@/lib/store/stage';
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function seedSlide(elements: unknown[]) {
+  useStageStore.setState({
+    stage: { id: 'stage-test', name: 'Course' } as any,
+    scenes: [
+      {
+        id: 'scene-test',
+        stageId: 'stage-test',
+        type: 'slide',
+        title: 'Page',
+        order: 1,
+        content: { type: 'slide', schemaVersion: 1, canvas: { id: 's', elements } },
+      } as any,
+    ],
+    currentSceneId: 'scene-test',
+  });
+  useSlideEditSession.setState({ sceneId: 'scene-test' });
 }
+const slideElements = () =>
+  (useStageStore.getState().scenes[0].content as any).canvas.elements as { id: string }[];
+/* eslint-enable @typescript-eslint/no-explicit-any */
+const seedSlideSession = (elements: unknown[] = []) => seedSlide(elements);
 
 describe('slide insert palette', () => {
   beforeEach(() => seedSlideSession());
@@ -134,6 +147,6 @@ describe('slide element deletion', () => {
     deleteSlideElement('img-9');
 
     expect(spy).toHaveBeenCalledWith({ type: 'element.delete', elementId: 'img-9' });
-    expect(useSlideEditSession.getState().history?.present.canvas.elements).toEqual([]);
+    expect(slideElements()).toEqual([]);
   });
 });

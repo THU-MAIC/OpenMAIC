@@ -356,6 +356,9 @@
     "proMode": "Pro",
     "undo": "Annuler",
     "redo": "Rétablir",
+    "courseHistory": {
+      "stepExpired": "Cette étape ne peut plus être annulée"
+    },
     "delete": "Supprimer",
     "title": "Modification · {{type}}",
     "unsupportedScene": "{{type}} n’est pas encore modifiable",
@@ -481,8 +484,6 @@
       "addSlide": "Ajouter une diapositive",
       "duplicate": "Dupliquer",
       "delete": "Supprimer",
-      "deleted": "Supprimée",
-      "undo": "Annuler",
       "copySuffix": "(copie)",
       "untitledSlide": "Diapositive sans titre",
       "collapse": "Replier le volet",

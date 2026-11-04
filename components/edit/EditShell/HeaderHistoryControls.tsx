@@ -2,7 +2,7 @@
 
 import { Redo2, Undo2 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import type { SurfaceHistory } from '@/lib/edit/scene-editor-surface';
+import { useCourseHistory } from '@/lib/edit/use-course-history';
 
 const BUTTON_CLASS =
   'inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60';
@@ -11,8 +11,9 @@ const BUTTON_CLASS =
  * Undo/redo for a host that hides the CommandBar and offers its own header
  * (the workbench's classroom pane). Portalled there by `EditShell`.
  */
-export function HeaderHistoryControls({ history }: { readonly history: SurfaceHistory }) {
+export function HeaderHistoryControls() {
   const { t } = useI18n();
+  const history = useCourseHistory();
   return (
     <>
       <button
