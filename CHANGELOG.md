@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Pro workbench: pages built from an uploaded document now show the document's extracted figures. `use_material_media` used to tell the agent to place an image with `patch_stage`, so new pages were generated through `generate_scene` without `media` and showed no figures. Its reply, the `generate_scene` description, the materials prompt and the `stage-design` skill now say to pass each image in `generate_scene.media`. [#2099](https://github.com/THU-MAIC/OpenMAIC/pull/2099)
+
 ## [1.4.0] - 2026-11-04
 
 1.4.0 is about project-based learning: **PBL v3** is a new way into vibe coding where learners build the project and come away understanding how it works. Concepts become hands-on tasks that the learner gets running, an AI tutor works through requirements, design and implementation with them, each milestone gives feedback and the finished project a personal learning report, and work and progress are kept for the next visit. PBL v3 runs on a new shared sandbox and stays off until a sandbox provider is configured; no new setting is required otherwise. The upgrade is one-way; read **Breaking Changes** before upgrading.
