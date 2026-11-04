@@ -246,7 +246,7 @@ export function Canvas(_props: CanvasProps) {
     <ContextMenu>
       <ContextMenuTrigger>
         <div
-          className="canvas relative h-full w-full overflow-hidden bg-gray-100 select-none"
+          className="canvas relative h-full w-full overflow-hidden select-none"
           ref={canvasRef}
           onMouseDown={handleClickBlankArea}
           onDoubleClick={handleDblClick}
