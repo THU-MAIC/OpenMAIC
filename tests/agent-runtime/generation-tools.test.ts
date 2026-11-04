@@ -505,6 +505,42 @@ describe('generation and deck tools', () => {
     expect(Value.Check(generate.parameters, { ...base, widgetType: 'hologram' })).toBe(false);
   });
 
+  it('advertises widgetOutline as an object and rejects non-object configurations', () => {
+    const generate = find(buildGenerationTools(deps(state(document([])).store)), 'generate_scene');
+    const base = {
+      stageId: 'stage-test',
+      order: 1,
+      title: 'Loop practice',
+      type: 'interactive',
+      brief: 'Practice Python loops',
+      widgetType: 'code',
+    };
+    const schema = JSON.parse(JSON.stringify(generate.parameters));
+    expect(schema.properties.widgetOutline.type).toBe('object');
+    expect(Value.Check(generate.parameters, base)).toBe(true);
+    for (const widgetOutline of [
+      {},
+      {
+        language: 'python',
+        starterCode: 'for i in range(3):\n    print(i)',
+        tasks: ['Change the iteration count'],
+        settings: { allowRun: true, limit: 3, hint: null },
+      },
+    ]) {
+      expect(Value.Check(generate.parameters, { ...base, widgetOutline })).toBe(true);
+    }
+    for (const widgetOutline of [
+      '{"language":"python","concept":"for loop"}',
+      'mindmap',
+      null,
+      [],
+      42,
+      true,
+    ]) {
+      expect(Value.Check(generate.parameters, { ...base, widgetOutline })).toBe(false);
+    }
+  });
+
   it('detects slide media placeholders without returning page bodies', () => {
     const scene = slide('media', 1);
     (scene.content as Extract<Scene['content'], { type: 'slide' }>).canvas.elements = [
