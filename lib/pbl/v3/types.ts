@@ -27,6 +27,7 @@ export interface LearningView {
   application?: {
     title: string;
     description: string;
+    standaloneFrontend?: true;
     choices?: { id: string; label: string; choice: string }[];
   };
   reportAvailable: boolean;

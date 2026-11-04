@@ -6,7 +6,7 @@ export const runtime = 'nodejs';
 /** Machine-only endpoint. The gateway authenticates separately from a browser's owner cookie. */
 export async function POST(request: Request) {
   const headers = { 'cache-control': 'no-store' };
-  let body: { ticket: string; host: string; activity?: true };
+  let body: { ticket: string; host: string; activity?: true; document?: true; bootstrap?: true };
   try {
     if (!request.body) return new Response(null, { status: 403, headers });
     const capped = capBodyStream(request.body, 8192);
@@ -20,7 +20,10 @@ export async function POST(request: Request) {
     if (
       typeof body.ticket !== 'string' ||
       typeof body.host !== 'string' ||
-      (body.activity !== undefined && body.activity !== true)
+      (body.activity !== undefined && body.activity !== true) ||
+      (body.document !== undefined && body.document !== true) ||
+      (body.activity && body.document) ||
+      (body.bootstrap !== undefined && (body.bootstrap !== true || !body.document))
     )
       return new Response(null, { status: 403, headers });
   } catch {
@@ -28,7 +31,13 @@ export async function POST(request: Request) {
   }
   try {
     return Response.json(
-      await SandboxService.previewTarget(body.ticket, body.host, body.activity === true),
+      await SandboxService.previewTarget(
+        body.ticket,
+        body.host,
+        body.activity === true,
+        body.document === true,
+        body.bootstrap === true,
+      ),
       { headers },
     );
   } catch (error) {

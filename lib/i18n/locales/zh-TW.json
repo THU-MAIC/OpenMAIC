@@ -2854,7 +2854,7 @@
       "workspace-run": "Workspace run"
     },
     "journey": {
-      "completionHandoff": "本環節已完成。下一步操作請看輸入框上方的狀態列。",
+      "completionHandoff": "本環節已完成。下一步操作請看學習助手底部的任務列。",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",
       "expand": "Expand project workspace",
@@ -3207,8 +3207,8 @@
           "body": "使用檔案樹和分頁查看計畫與程式碼，也能點擊助手提供的檔案連結。允許編輯時，修改會自動儲存，請留意儲存狀態。頂部面板圖示可調整顯示區域，拖曳分隔線可調整大小。"
         },
         "application": {
-          "title": "點擊「開啟應用」體驗作品",
-          "body": "此按鈕會展開作品預覽區。試用已完成的功能，再把觀察結果帶回討論；尚未實作的功能會隨著專案推進逐步完成。"
+          "title": "在作品預覽區體驗功能",
+          "body": "作品預覽區會預設開啟。試用已完成的功能，再把觀察到的結果帶回討論。頂部「開啟應用」按鈕可以收起或重新展開預覽區。"
         },
         "replay": {
           "title": "需要時，從這裡重看指引",

@@ -107,7 +107,7 @@ export function ConversationHistory({
         <DialogContent
           container={portalContainer}
           overlayClassName="z-[140]"
-          className="z-[150] flex max-h-[85dvh] w-[min(56rem,90vw)] flex-col gap-3"
+          className="wbchat pbl-history z-[150] flex max-h-[85dvh] w-[min(56rem,90vw)] flex-col gap-3"
           onCloseAutoFocus={(event) => {
             // The opener is outside DialogTrigger; restore it only for ordinary closes.
             // Accepted navigation supplies its own focus target (IDE/report).

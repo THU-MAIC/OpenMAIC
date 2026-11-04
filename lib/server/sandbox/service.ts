@@ -17,6 +17,7 @@ import {
   assertWorkspaceMutation,
   isLearningWorkspace,
   dispatchWorkspaceMutation,
+  preservesLearningApplications,
   type WorkspaceMutation,
 } from './managed-workspace';
 import { issuePreviewGrant, previewConfig, verifyPreviewGrant } from './preview';
@@ -418,7 +419,11 @@ export class SandboxService {
     await this.mutation(id, 'write');
     return this.store.exclusive(id, async () => {
       const row = await this.running(id);
-      if (isLearningWorkspace(row.workspace_id)) await this.stopApplicationsUnlocked(row);
+      if (
+        isLearningWorkspace(row.workspace_id) &&
+        !preservesLearningApplications(this.ownerId, row.workspace_id, row.id)
+      )
+        await this.stopApplicationsUnlocked(row);
       const current = await this.readText(id, path);
       if (createHash('sha256').update(current).digest('hex') !== expectedHash)
         throw sandboxConflict(
@@ -441,7 +446,11 @@ export class SandboxService {
       throw new SandboxError('SANDBOX_FILE_TOO_LARGE', 413, 'Text files are limited to 1 MiB.');
     }
     const row = await this.running(id);
-    if (isLearningWorkspace(row.workspace_id)) await this.stopApplicationsUnlocked(row);
+    if (
+      isLearningWorkspace(row.workspace_id) &&
+      !preservesLearningApplications(this.ownerId, row.workspace_id, row.id)
+    )
+      await this.stopApplicationsUnlocked(row);
     await dispatchWorkspaceMutation(this.ownerId, row.workspace_id, row.id, 'write', () =>
       this.provider.writeText(row.resource_id, row.id, path, text),
     );
@@ -512,6 +521,53 @@ export class SandboxService {
   /** Observed Stop generation, also used for preview revocation; safe to expose to the owner. */
   async workspaceEpoch(id: string) {
     return (await this.binding(id)).preview_epoch;
+  }
+
+  /** Server-only status probe. Accept data for the fixed probe, never caller-supplied shell. */
+  async observeApplication(
+    id: string,
+    epoch: number,
+    paths: string[],
+    port: number,
+    healthPath: string,
+    signal?: AbortSignal,
+  ) {
+    await this.mutation(id, 'command');
+    const row = await this.running(id);
+    if (row.preview_epoch !== epoch)
+      throw sandboxConflict(
+        'Workspace was stopped. Refresh before continuing.',
+        'WORKSPACE_STOPPED',
+      );
+    if (!this.provider.observeApplication)
+      throw new SandboxError('SANDBOX_UNSUPPORTED', 422, 'Application observation is unavailable.');
+    const { applicationProbeCommand } = await import('@/lib/server/pbl-v3/application-command');
+    return this.provider.observeApplication(
+      row.resource_id,
+      row.id,
+      applicationProbeCommand(paths, port, healthPath),
+      signal,
+    );
+  }
+
+  /** Fence acceptance of a slow probe against workspace writers using only database I/O. */
+  async assertApplicationObservation(id: string, epoch: number, commandId: string) {
+    await this.mutation(id, 'command');
+    await this.store.exclusive(id, async () => {
+      const row = await this.running(id);
+      if (row.preview_epoch !== epoch)
+        throw sandboxConflict(
+          'Workspace was stopped. Refresh before continuing.',
+          'WORKSPACE_STOPPED',
+        );
+      await this.store.assertRecordedIdle(row, { allowApplications: true });
+      const command = await this.store.command(row, commandId);
+      if (!command || !['starting', 'running', 'unknown'].includes(command.state))
+        throw sandboxConflict(
+          'The application changed during the status check.',
+          'PROGRESS_CHANGED',
+        );
+    });
   }
 
   async startCommand(id: string, body: Record<string, unknown>, epoch?: number) {
@@ -871,11 +927,15 @@ export class SandboxService {
   }
 
   /** Reads/evidence must not race background commands or a terminal started before teaching took ownership. */
-  async assertWorkspaceIdle(id: string, signal?: AbortSignal) {
+  async assertWorkspaceIdle(
+    id: string,
+    signal?: AbortSignal,
+    options: { allowApplications?: boolean } = {},
+  ) {
     signal?.throwIfAborted();
     await this.binding(id);
     return this.store.exclusive(id, async () =>
-      this.assertWorkspaceIdleUnlocked(await this.running(id), signal),
+      this.assertWorkspaceIdleUnlocked(await this.running(id), signal, options),
     );
   }
 
@@ -905,11 +965,16 @@ export class SandboxService {
     }
   }
 
-  private async assertWorkspaceIdleUnlocked(row: SandboxRow, signal?: AbortSignal) {
+  private async assertWorkspaceIdleUnlocked(
+    row: SandboxRow,
+    signal?: AbortSignal,
+    options: { allowApplications?: boolean } = {},
+  ) {
     signal?.throwIfAborted();
     // A file checkpoint is not a process or database snapshot. Quiesce managed writers first.
-    await this.stopApplicationsUnlocked(row, signal);
+    if (!options.allowApplications) await this.stopApplicationsUnlocked(row, signal);
     for (const cmd of await this.store.listCommands(row)) {
+      if (options.allowApplications && cmd.purpose === 'application') continue;
       const result = await this.command(row.id, cmd.id, signal);
       if (['starting', 'running', 'unknown'].includes(result.state))
         throw sandboxConflict(
@@ -1068,15 +1133,16 @@ export class SandboxService {
   }
 
   /** Only the authenticated preview gateway calls this; grants are server-issued, not owner input. */
-  private static async resolvePreview(ticket: string, host: string) {
+  private static async resolvePreviewBinding(ticket: string, host: string) {
     const grant = verifyPreviewGrant(ticket, host);
     assertSandboxId(grant.environmentId);
     const config = await resolvedSandboxConfig();
     const store = await SandboxStore.open();
     const row = await store.get(grant.ownerId, grant.environmentId);
+    let frontend: string | undefined;
     if (isLearningWorkspace(row.workspace_id)) {
       const { assertLearningPreview } = await import('@/lib/server/pbl-v3/application');
-      await assertLearningPreview(grant.ownerId, row.workspace_id, row.id, grant.port);
+      frontend = await assertLearningPreview(grant.ownerId, row.workspace_id, row.id, grant.port);
     } else assertWorkspaceMutation(grant.ownerId, row.workspace_id, row.id, 'preview');
     if (
       row.state !== 'running' ||
@@ -1086,15 +1152,43 @@ export class SandboxService {
       row.preview_epoch !== grant.epoch
     )
       throw sandboxConflict('Preview environment is unavailable or access was revoked.');
-    const { E2BCompatibleSandboxProvider } = await import('./providers/e2b-compatible');
-    const provider = new E2BCompatibleSandboxProvider(config);
-    const environmentExpiresAt = await provider.previewLifetime(row.resource_id, row.id);
-    const expiresAt = Math.min(environmentExpiresAt, grant.expiresAt);
-    return { row, grant, provider, expiresAt, environmentExpiresAt };
+    return { row, grant, config, frontend };
   }
 
-  static async previewTarget(ticket: string, host: string, activity = false) {
-    const resolved = await this.resolvePreview(ticket, host);
+  private static async resolvePreview(ticket: string, host: string) {
+    const binding = await this.resolvePreviewBinding(ticket, host);
+    return this.resolvePreviewProvider(binding);
+  }
+
+  private static async resolvePreviewProvider(
+    binding: Awaited<ReturnType<typeof this.resolvePreviewBinding>>,
+  ) {
+    const { row, grant, config, frontend } = binding;
+    const { E2BCompatibleSandboxProvider } = await import('./providers/e2b-compatible');
+    const provider = new E2BCompatibleSandboxProvider(config);
+    const environmentExpiresAt = await provider.previewLifetime(row.resource_id!, row.id);
+    const expiresAt = Math.min(environmentExpiresAt, grant.expiresAt);
+    return { row, grant, provider, expiresAt, environmentExpiresAt, frontend };
+  }
+
+  static async previewTarget(
+    ticket: string,
+    host: string,
+    activity = false,
+    document = false,
+    bootstrap = false,
+  ) {
+    const binding = await this.resolvePreviewBinding(ticket, host);
+    // The static bootstrap only sets a cookie for the existing signed grant.
+    // Its next document/API request still checks the live private provider binding.
+    if (bootstrap && document && !activity && binding.frontend)
+      return {
+        transport: 'document',
+        expiresAt: binding.grant.expiresAt,
+        authorization: undefined,
+        appOrigin: previewConfig().appOrigin,
+      };
+    const resolved = await this.resolvePreviewProvider(binding);
     const { row, grant, provider, environmentExpiresAt } = resolved;
     if (activity && isLearningWorkspace(row.workspace_id)) {
       const { recordLearningPreviewActivity } = await import('@/lib/server/pbl-v3/application');
@@ -1117,6 +1211,8 @@ export class SandboxService {
       ? { ticket: new URL(renewal.url).hash.slice(1), expiresAt }
       : undefined;
     const common = { expiresAt, authorization, appOrigin: previewConfig().appOrigin };
+    if (document && resolved.frontend)
+      return { transport: 'document', html: resolved.frontend, ...common };
     if (previewConfig().transport === 'sdk')
       return { transport: 'sdk', url: `http://127.0.0.1:${grant.port}`, ...common };
     return {

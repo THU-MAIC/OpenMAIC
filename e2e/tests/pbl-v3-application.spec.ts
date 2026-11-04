@@ -98,6 +98,8 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
     let delayedAuthorization: Promise<void> | undefined;
     let delayedImage: Promise<void> | undefined;
     let imageWaiting = false;
+    let delayedParsing: Promise<void> | undefined;
+    let parsingWaiting = false;
     let authorizationWaiting = false;
     let authorizationFailure = false;
     const gatewayOrigin = 'http://preview-fixture.localhost';
@@ -133,8 +135,9 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
         contentType: 'text/html',
         body: `<!doctype html>
         <form onsubmit="event.preventDefault();document.querySelector('output').textContent=++window.count"><label>Draft <input aria-label="Draft"></label><button type="button" onclick="document.querySelector('output').textContent=++window.count">Increment</button><button type="submit">Submit</button></form><output>0</output>
+        <script>window.count=0;window.boot="${documents}";${nested ? 'document.querySelector("input").focus();window.initialFocusAttempt=true;' : ''}</script>
         ${nested && delayedImage ? '<img src="/pending-image">' : ''}
-        <script>window.count=0;window.boot=crypto.randomUUID();${nested ? 'document.querySelector("input").focus();window.initialFocusAttempt=true;' : ''}</script>`,
+        ${nested && delayedParsing ? '<script src="/pending-parser-script.js"></script>' : ''}`,
       });
     };
     await page.route('**/pbl-preview-fixture', serveApplication);
@@ -162,6 +165,11 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
           });
         }
         if (path === '/__openmaic_activity') return route.fulfill({ status: 204 });
+        if (path === '/pending-parser-script.js') {
+          parsingWaiting = true;
+          await delayedParsing;
+          return route.fulfill({ contentType: 'text/javascript', body: '' });
+        }
         if (path === '/pending-image') {
           const wait = delayedImage;
           delayedImage = undefined;
@@ -233,7 +241,7 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
     const publishLearning = await learningEvents(() => ({ view, workbench }));
     await page.goto(`/classroom/${stageId}`);
     await page.getByRole('button', { name: 'Continue Project', exact: true }).click();
-    await page.getByTestId('pbl-application-open').click();
+    await expect(page.getByTestId('pbl-application-open')).toHaveAttribute('aria-expanded', 'true');
     const panel = page.getByTestId('pbl-application-panel');
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page.getByText('Try this interface.', { exact: true })).toBeHidden();
@@ -347,6 +355,21 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
           return el.contains(document.elementFromPoint(rect.right - 20, rect.top + 20));
         }),
       ).toBe(true);
+    }
+    if (legacyMove && nested) {
+      const outer = page.getByRole('separator', { name: 'Resize workspace and assistant' }).last();
+      const box = (await outer.boundingBox())!;
+      const workbench = (await page.getByTestId('pbl-workbench-split').boundingBox())!;
+      const y = box.y + box.height / 2;
+      await page.mouse.move(box.x + box.width / 2, y);
+      await page.mouse.down();
+      await page.mouse.move(workbench.x + workbench.width * 0.4, y, { steps: 10 });
+      await page.mouse.up();
+      await expect
+        .poll(async () => (await page.getByTestId('assistant').boundingBox())!.width)
+        .toBeGreaterThan(workbench.width * 0.55);
+      await expect(page.getByTestId('pbl-ide')).toBeVisible();
+      await expect(panel).toBeVisible();
     }
     // Folding is layout-only: preserve the document and never start another app.
     await panel.getByRole('button', { name: 'Collapse application', exact: true }).click();
@@ -467,6 +490,22 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
     await expect(composer).toHaveValue('Keep this draft while looking at the application');
     await app.getByRole('textbox', { name: 'Draft', exact: true }).focus();
     view.busy = true;
+    view.conversation = [
+      {
+        id: 'source-change',
+        speaker: 'coder',
+        status: 'running',
+        parts: [
+          {
+            id: 'write',
+            kind: 'tool',
+            action: 'write',
+            status: 'running',
+            args: { path: 'app.py' },
+          },
+        ],
+      },
+    ];
     view.activitySequence!++;
     await publishLearning();
     await expect(panel.locator('iframe')).toHaveCount(1);
@@ -531,6 +570,7 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
       await expect(panel).not.toBeVisible();
       await attemptFocus();
       view.busy = false;
+      view.conversation = [];
       view.activitySequence!++;
       await publishLearning();
       await expect(page.getByTestId('pbl-application-open')).toBeEnabled();
@@ -544,6 +584,7 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
       await app.getByRole('textbox', { name: 'Draft', exact: true }).fill('Unsaved form input');
     }
     view.busy = false;
+    view.conversation = [];
     view.activitySequence!++;
     await publishLearning();
     await expect(panel.locator('iframe')).not.toHaveAttribute('inert', '');
@@ -553,11 +594,28 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
     expect(launches).toBe(1);
     await composer.focus();
     view.busy = true;
+    view.conversation = [
+      {
+        id: 'source-change',
+        speaker: 'coder',
+        status: 'running',
+        parts: [
+          {
+            id: 'write',
+            kind: 'tool',
+            action: 'write',
+            status: 'running',
+            args: { path: 'app.py' },
+          },
+        ],
+      },
+    ];
     view.activitySequence!++;
     await publishLearning();
     await expect(panel.locator('iframe')).toHaveAttribute('inert', '');
     await expect(composer).toBeFocused();
     view.busy = false;
+    view.conversation = [];
     view.activitySequence!++;
     await publishLearning();
     await expect(panel.locator('iframe')).not.toHaveAttribute('inert', '');
@@ -566,6 +624,22 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
     // the replacement loads, without requiring a manual reopen.
     stopped = true;
     view.busy = true;
+    view.conversation = [
+      {
+        id: 'source-change',
+        speaker: 'coder',
+        status: 'running',
+        parts: [
+          {
+            id: 'write',
+            kind: 'tool',
+            action: 'write',
+            status: 'running',
+            args: { path: 'app.py' },
+          },
+        ],
+      },
+    ];
     view.activitySequence!++;
     await publishLearning();
     await expect(panel.locator('iframe')).toHaveAttribute('inert', '');
@@ -574,16 +648,19 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
       releaseDocument = resolve;
     });
     let releaseAuthorization: (() => void) | undefined;
-    let releaseImage: (() => void) | undefined;
+    let releaseParsing: (() => void) | undefined;
     if (nested) {
       delayedAuthorization = new Promise((resolve) => {
         releaseAuthorization = resolve;
       });
-      delayedImage = new Promise((resolve) => {
-        releaseImage = resolve;
+      // A pending image does not prevent interactive readiness. Hold parsing
+      // after the child's focus attempt until the old-frame assertions finish.
+      delayedParsing = new Promise((resolve) => {
+        releaseParsing = resolve;
       });
     }
     view.busy = false;
+    view.conversation = [];
     view.revision++;
     view.activitySequence!++;
     await publishLearning();
@@ -596,7 +673,7 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
         releaseAuthorization!();
         await expect(candidate.locator('iframe')).toHaveCount(1);
         releaseDocument();
-        await expect.poll(() => imageWaiting).toBe(true);
+        await expect.poll(() => parsingWaiting).toBe(true);
         const parsingApp = candidate.frameLocator('iframe');
         await expect
           .poll(() =>
@@ -626,7 +703,8 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
     } finally {
       releaseAuthorization?.();
       releaseDocument();
-      releaseImage?.();
+      releaseParsing?.();
+      delayedParsing = undefined;
     }
     await expect(panel.locator('iframe')).toHaveCount(1);
     await expect(panel.locator('iframe')).not.toHaveAttribute('inert', '');
@@ -673,9 +751,13 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
     await expect(restore).toBeVisible();
     await expect(page.getByTestId('pbl-application-open')).toBeDisabled();
     expect(commands).toEqual([]);
+    const completedEditor = page.locator('.monaco-editor textarea').first();
+    // The snapshot editor mounts independently from the application restore control.
+    await expect(completedEditor).toBeAttached();
+    await expect(completedEditor).not.toBeEditable();
     await restore.click();
     await expect(page.getByTestId('pbl-application-open')).toBeEnabled();
-    await expect(page.locator('.monaco-editor textarea').first()).not.toBeEditable();
+    await expect(completedEditor).not.toBeEditable();
     // A restored binding starts without a usable document. Both initial auth
     // failure and readiness timeout must obtain another ticket on explicit Reopen.
     let releaseInitial: (() => void) | undefined;

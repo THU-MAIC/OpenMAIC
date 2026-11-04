@@ -636,7 +636,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await expect(enterDecisions).toBeVisible();
   await expect(
     page.getByText(
-      'This step is complete. See the task bar above the message box for the next action.',
+      'This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.',
       { exact: true },
     ),
   ).toBeVisible();

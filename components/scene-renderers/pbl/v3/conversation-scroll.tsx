@@ -87,9 +87,12 @@ export function ConversationScroll({
     : t('pblV3.journey.latest');
   if (!below || hidden) return null;
   return (
-    // Float in the content's right gutter. Toggling must not resize the viewport:
+    // Float at the reading area's bottom center. Toggling must not resize the viewport:
     // that can look like an upward scroll to the follow-tail controller.
-    <div data-testid="pbl-conversation-scroll-lane" className="absolute bottom-2 right-2">
+    <div
+      data-testid="pbl-conversation-scroll-lane"
+      className="absolute bottom-2 left-1/2 -translate-x-1/2"
+    >
       <Button
         className="rounded-full"
         size="icon"

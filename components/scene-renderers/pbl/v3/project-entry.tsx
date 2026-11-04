@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { LoaderCircle } from 'lucide-react';
+import { LoaderCircle, Maximize2, Minimize2 } from 'lucide-react';
 import type { ProjectHeroDetails } from '@/lib/pbl/project-hero';
 import { useStageStore } from '@/lib/store/stage';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -143,6 +143,7 @@ export function PBLV3Container({ sceneId }: { sceneId: string }) {
             onAutoExpandConsumed={() => setAutoExpand(false)}
             showExpandControl
             modalOpen={onboardingOpen}
+            hideControls={!reportOpen}
           >
             {reportOpen && entrance?.studyId ? (
               <div className="pbl-workbench relative h-full">
@@ -164,6 +165,26 @@ export function PBLV3Container({ sceneId }: { sceneId: string }) {
                 initialEntry={initialEntry}
                 layoutReady={!autoExpand}
                 onOnboardingChange={setOnboardingOpen}
+                toolbarControl={
+                  <button
+                    type="button"
+                    data-testid="pbl-workspace-size"
+                    className="rounded border p-1.5 hover:bg-muted"
+                    aria-label={t(
+                      fullscreenRoot
+                        ? 'pbl.v2.workspace.exitNativeFullscreen'
+                        : expanded
+                          ? 'pbl.v2.workspace.exitFullscreen'
+                          : 'pbl.v2.workspace.enterFullscreen',
+                    )}
+                    onClick={() => {
+                      if (fullscreenRoot) document.exitFullscreen?.().catch(() => {});
+                      else setExpanded(!expanded);
+                    }}
+                  >
+                    {expanded || fullscreenRoot ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                  </button>
+                }
               />
             )}
           </PBLWorkspaceLayer>,

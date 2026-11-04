@@ -2854,7 +2854,7 @@
       "workspace-run": "Workspace run"
     },
     "journey": {
-      "completionHandoff": "This step is complete. See the task bar above the message box for the next action.",
+      "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",
       "expand": "Expand project workspace",
@@ -3207,8 +3207,8 @@
           "body": "파일 트리와 탭에서 파일을 열거나 도우미가 제공한 파일 링크를 누르세요. 편집이 허용되면 자동 저장되므로 저장 상태를 확인하세요. 상단 아이콘으로 영역을 표시하거나 숨기고 구분선을 끌어 크기를 조절할 수 있습니다."
         },
         "application": {
-          "title": "앱 열기를 눌러 작품 체험하기",
-          "body": "이 버튼은 작품 미리보기를 엽니다. 구현된 기능을 시험하고 관찰한 결과를 대화에 활용하세요. 미완성 기능은 프로젝트를 진행하며 완성합니다."
+          "title": "미리보기에서 작품 사용하기",
+          "body": "미리보기는 자동으로 열립니다. 구현된 기능을 사용하고 관찰한 결과를 이야기해 보세요. 도구 모음의 앱 열기 버튼으로 미리보기를 접거나 다시 열 수 있습니다."
         },
         "replay": {
           "title": "여기에서 안내 다시 보기",

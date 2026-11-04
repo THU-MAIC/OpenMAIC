@@ -42,6 +42,8 @@ const mock = vi.hoisted(() => ({
   stop: vi.fn(),
   scope: vi.fn(),
   command: vi.fn(),
+  observe: vi.fn(),
+  assertObservation: vi.fn(),
   paths: ['app.py'],
   files: { 'app.py': 'pass\n' } as Record<string, string>,
 }));
@@ -97,6 +99,8 @@ const service = {
     return { state: mock.state };
   },
   command: mock.command,
+  observeApplication: mock.observe,
+  assertApplicationObservation: mock.assertObservation,
   startCommand: async () => ({
     state: 'exited',
     exitCode: 0,
@@ -124,7 +128,9 @@ vi.mock('@/lib/server/pbl-v3/runtime', () => ({
 }));
 vi.mock('@/lib/server/pbl-v3/environment', () => ({
   assertEnvironmentReady: vi.fn(),
-  assertEnvironmentWritable: vi.fn(),
+  assertEnvironmentWritable: async () => {
+    if (mock.row.released) throw Error('Environment released');
+  },
   touchEnvironment: async () => ({ state: 'running', workspaceReady: true }),
   environmentReleaseCommitted: (row: StudyFixture) => !!row.released,
 }));
@@ -180,6 +186,7 @@ beforeEach(() => {
     },
   };
   mock.exclusive.mockImplementation(async (_id: string, run: () => Promise<unknown>) => run());
+  mock.observe.mockResolvedValue(JSON.stringify({ sourceHash: 'new-source', httpStatus: 200 }));
   mock.command.mockImplementation(async () => ({
     state: mock.state,
     stdout: '',
@@ -189,6 +196,83 @@ beforeEach(() => {
 });
 
 describe('declared project applications', () => {
+  it.each(['status', 'open'])(
+    'keeps the study lock available while a standalone %s probe waits',
+    async (action) => {
+      mock.project.application!.frontendPath = 'src/web/index.html';
+      if (action === 'status') await applicationRequest(owner, request());
+      let locked = false;
+      mock.exclusive.mockImplementation(async (_id: string, run: () => Promise<unknown>) => {
+        if (locked) throw Error('study lock busy');
+        locked = true;
+        try {
+          return await run();
+        } finally {
+          locked = false;
+        }
+      });
+      let enter!: () => void;
+      const entered = new Promise<void>((resolve) => {
+        enter = resolve;
+      });
+      let release!: (body: string) => void;
+      mock.observe.mockImplementationOnce(
+        () =>
+          new Promise<string>((resolve) => {
+            release = resolve;
+            enter();
+          }),
+      );
+      const observing = applicationRequest(owner, request(action));
+      await Promise.race([entered, observing]);
+      try {
+        await expect(mock.exclusive(study, async () => 'learner can proceed')).resolves.toBe(
+          'learner can proceed',
+        );
+      } finally {
+        release(JSON.stringify({ sourceHash: 'new-source', httpStatus: 200 }));
+      }
+      await expect(observing).resolves.toMatchObject({ state: 'running' });
+    },
+  );
+
+  it.each(['revision', 'epoch', 'stopped', 'replacement', 'assessment', 'release'] as const)(
+    'discards a standalone probe result when %s changes while it is running',
+    async (change) => {
+      mock.project.application!.frontendPath = 'src/web/index.html';
+      await applicationRequest(owner, request());
+      mock.observe.mockImplementationOnce(async () => {
+        if (change === 'revision') mock.row.revision++;
+        if (change === 'epoch') mock.epoch++;
+        if (change === 'stopped') mock.state = 'exited';
+        if (change === 'assessment') mock.row.evaluation = {};
+        if (change === 'release') mock.row.released = true;
+        if (change === 'replacement') {
+          const original = [...mock.receipts.values()][0]!;
+          mock.receipts.set('application:new', {
+            ...original,
+            result: { ...original.result, commandId: 'new', launchSequence: 2 },
+          });
+        }
+        return JSON.stringify({ sourceHash: 'new-source', httpStatus: 200 });
+      });
+      if (change === 'release')
+        await expect(applicationRequest(owner, request('status'))).rejects.toThrow();
+      else
+        await expect(applicationRequest(owner, request('status'))).rejects.toMatchObject({
+          status: 409,
+        });
+    },
+  );
+  it('rejects apparently healthy status when a source writer has not published its revision', async () => {
+    mock.project.application!.frontendPath = 'src/web/index.html';
+    await applicationRequest(owner, request());
+    const busy = { status: 409, reason: 'ENVIRONMENT_BUSY' };
+    mock.assertObservation.mockRejectedValueOnce(busy);
+    await expect(applicationRequest(owner, request('status'))).rejects.toMatchObject(busy);
+    expect(mock.row.revision).toBe(request().revision);
+    expect(mock.assertObservation).toHaveBeenLastCalledWith(env, mock.epoch, mock.starts[0]);
+  });
   it('checks shutdown-created source paths before recording or dispatching a new writer', async () => {
     mock.stop.mockImplementationOnce(async () => {
       mock.files = Object.fromEntries(
@@ -244,7 +328,9 @@ describe('declared project applications', () => {
     });
     mock.epoch = 0;
     mock.busy = true;
-    await expect(applicationRequest(owner, request())).rejects.toMatchObject({
+    await expect(
+      applicationRequest(owner, { ...request(), action: 'restart' }),
+    ).rejects.toMatchObject({
       reason: 'STUDY_BUSY',
     });
     mock.busy = false;
@@ -402,4 +488,33 @@ describe('declared project applications', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+});
+
+it('keeps planning text out of the application source fingerprint', () => {
+  const source = { 'PLAN.md': 'old plan', 'src/app.py': 'print(1)', 'data.txt': 'runtime data' };
+  expect(applicationFingerprint(source)).toBe(
+    applicationFingerprint({ ...source, 'PLAN.md': 'new plan' }),
+  );
+  expect(applicationFingerprint(source)).not.toBe(
+    applicationFingerprint({ ...source, 'src/app.py': 'print(2)' }),
+  );
+  expect(applicationFingerprint(source)).not.toBe(
+    applicationFingerprint({ ...source, 'data.txt': 'changed runtime data' }),
+  );
+});
+
+it('permits opening and inspection during read-only Agent work while keeping destructive controls fenced', async () => {
+  mock.busy = true;
+  await expect(applicationRequest(owner, request())).resolves.toMatchObject({
+    state: 'running',
+    preview: expect.any(Object),
+  });
+  await expect(
+    applicationRequest(owner, { ...request(), action: 'status' }),
+  ).resolves.toMatchObject({ state: 'running' });
+  for (const action of ['restart', 'stop'])
+    await expect(applicationRequest(owner, { ...request(), action })).rejects.toMatchObject({
+      reason: 'STUDY_BUSY',
+    });
+  expect(mock.starts).toHaveLength(1);
 });

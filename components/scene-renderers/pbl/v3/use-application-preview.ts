@@ -5,6 +5,7 @@ import type { LearningWorkbench } from '@/lib/pbl/v3/workbench';
 import type { ApplicationObservation } from '@/lib/pbl/v3/application';
 import { pblRequest } from './request';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { SandboxRequestError } from '@/components/sandbox/client';
 
 interface ApplicationLaunch {
   studyId: string;
@@ -17,25 +18,68 @@ interface ApplicationLaunch {
 
 /** Readiness retries retain one launch receipt in both embedded and new-tab opens. */
 async function waitForApplication(
-  request: Omit<ApplicationLaunch, 'action'> & { action: ApplicationLaunch['action'] | 'status' },
+  request: Omit<ApplicationLaunch, 'action'> & {
+    action: ApplicationLaunch['action'] | 'status' | 'frontend';
+  },
   signal: AbortSignal,
   assertCurrent: () => void = () => signal.throwIfAborted(),
   acknowledge?: () => void,
+  retryStudyContention = false,
+  observeAfterLaunch = false,
 ) {
   assertCurrent();
-  let result = await pblRequest<ApplicationObservation>('/api/pbl/v3/application', request, signal);
+  // A busy response can be reconciled with the same request and durable launch receipt.
+  // Network failures have no such acknowledgement and require explicit recovery.
+  const contentionRetries = retryStudyContention ? 30 : 2;
+  const observe = async (input = request) => {
+    for (let contention = 0; ; contention++) {
+      assertCurrent();
+      try {
+        return await pblRequest<ApplicationObservation>('/api/pbl/v3/application', input, signal);
+      } catch (error) {
+        if (
+          retryStudyContention &&
+          input.action === 'status' &&
+          error instanceof SandboxRequestError &&
+          error.reason === 'PROGRESS_CHANGED' &&
+          contention < 2
+        ) {
+          // The standalone probe can cross a process stop before the next
+          // learning event arrives. Re-observe; a newer view aborts this request.
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          continue;
+        }
+        if (
+          !(error instanceof SandboxRequestError) ||
+          (error.reason !== 'ENVIRONMENT_BUSY' &&
+            !(
+              retryStudyContention &&
+              (error.reason === 'STUDY_BUSY' ||
+                (input.action === 'status' && error.reason === 'WORKSPACE_COMMAND_ACTIVE'))
+            )) ||
+          contention >= contentionRetries
+        )
+          throw error;
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+  };
+  let result = await observe();
   acknowledge?.();
   assertCurrent();
+  const deadline = Date.now() + 20_000;
+  const readinessRequest = observeAfterLaunch ? { ...request, action: 'status' as const } : request;
   for (
     let retry = 0;
     result.state === 'starting' &&
-    retry < 3 &&
-    !(request.action === 'status' && result.sourceChanged);
+    retry < 20 &&
+    Date.now() < deadline &&
+    !(readinessRequest.action === 'status' && result.sourceChanged);
     retry++
   ) {
     await new Promise((resolve) => setTimeout(resolve, 500));
     assertCurrent();
-    result = await pblRequest<ApplicationObservation>('/api/pbl/v3/application', request, signal);
+    result = await observe(readinessRequest);
     acknowledge?.();
     assertCurrent();
   }
@@ -46,12 +90,26 @@ export function useApplicationPreview(
   view: LearningView | null,
   workbench: LearningWorkbench | null,
   dirty: boolean,
+  autoOpen = true,
+  learningActionPending = false,
 ) {
   const { t } = useI18n();
   const panelId = useId();
   const [open, setOpen] = useState(false);
+  const autoLaunched = useRef<string | null>(null);
+  const rejectedAutomaticLaunch = useRef<{ binding: string; revision: number } | null>(null);
+  const closedStudy = useRef<string | null>(null);
   const [pending, setPending] = useState(false);
   const [observation, setObservation] = useState<ApplicationObservation | null>(null);
+  const standaloneFrontend = view?.application?.standaloneFrontend === true;
+  const deferAutomatic = standaloneFrontend && learningActionPending;
+  const deferAutomaticRef = useRef(deferAutomatic);
+  deferAutomaticRef.current = deferAutomatic;
+  const [frontend, setFrontend] = useState<{
+    binding: string;
+    grant?: ApplicationObservation['preview'];
+    error?: string;
+  } | null>(null);
   const [error, setError] = useState('');
   const [expiredAt, setExpiredAt] = useState<number | null>(null);
   const [refreshNeeded, setRefreshNeeded] = useState(false);
@@ -69,11 +127,13 @@ export function useApplicationPreview(
     stage: string;
     request: ApplicationLaunch;
   } | null>(null);
-  const previewDeadline = useRef<number | undefined>(undefined);
-  previewDeadline.current = observation?.preview?.expiresAt;
-  const hasPreview = !!observation?.preview;
-  // A timeout from an older grant cannot expire a later accepted renewal.
-  const expired = !!observation?.preview && expiredAt === observation.preview.expiresAt;
+  const applicationDeclared = !!view?.application;
+  // Quiz narration is read-only. Recover the app stopped by tests while it streams.
+  const quizNarration =
+    standaloneFrontend &&
+    view?.role === 'mentor' &&
+    view.stage?.kind === 'check' &&
+    view.stage.checker === 'quiz';
   const trigger = useRef<HTMLButtonElement | null>(null);
   const setTrigger = useCallback((element: HTMLButtonElement | null) => {
     trigger.current = element;
@@ -87,18 +147,89 @@ export function useApplicationPreview(
     !workbench ||
     !view.environmentId ||
     workbench.environmentId !== view.environmentId;
-  const disabled = unavailable || dirty || !!view?.busy || !!view?.evaluation;
+  const reviewReady = view?.conversation?.some(
+    (entry) =>
+      entry.status === 'running' &&
+      entry.parts.some(
+        (part) => part.kind === 'tool' && part.action === 'review' && part.status === 'succeeded',
+      ),
+  );
+  // A successful review tool is the existing server-enforced write checkpoint.
+  // The remaining streamed reply need not hold the learner's preview hostage.
+  const sourceWriting = view?.conversation?.some((entry) => {
+    if (entry.status !== 'running') return false;
+    const lastWrite = entry.parts.findLastIndex(
+      (part) =>
+        part.kind === 'tool' &&
+        (part.action === 'write' || part.action === 'manage') &&
+        (part.args as { path?: string } | undefined)?.path !== 'PLAN.md',
+    );
+    return (
+      lastWrite >= 0 &&
+      !entry.parts
+        .slice(lastWrite + 1)
+        .some(
+          (part) => part.kind === 'tool' && part.action === 'review' && part.status === 'succeeded',
+        )
+    );
+  });
+  const disabled = unavailable || dirty || !!view?.evaluation || !!sourceWriting;
   const binding = `${view?.id}:${view?.environmentId}:${workbench?.environmentId}:${workbench?.epoch}`;
   const stage = `${view?.state?.position?.milestoneId}:${view?.state?.position?.stageIndex}`;
   const [observedBinding, setObservedBinding] = useState(binding);
   const currentBinding = observedBinding === binding;
+  const frontendState = frontend?.binding === binding ? frontend : null;
+  const document = standaloneFrontend ? frontendState?.grant : observation?.preview;
+  const previewDeadline = useRef<number | undefined>(undefined);
+  previewDeadline.current = document?.expiresAt;
+  const hasObservation = standaloneFrontend ? !!observation : !!observation?.preview;
+  // A timeout from an older grant cannot expire a later accepted renewal.
+  const expired = !!document && expiredAt === document.expiresAt;
+  const frontendUnavailable = t('pblV3.application.unavailable');
+  const frontendStudy = view?.id;
+  const frontendEnvironment = workbench?.environmentId;
+  const frontendEpoch = workbench?.epoch;
+  const needsFrontend =
+    standaloneFrontend && currentBinding && open && !unavailable && !frontendState;
+  useEffect(() => {
+    if (!needsFrontend || !frontendStudy || !frontendEnvironment || frontendEpoch === undefined)
+      return;
+    const abort = new AbortController();
+    void waitForApplication(
+      {
+        studyId: frontendStudy,
+        environmentId: frontendEnvironment,
+        epoch: frontendEpoch,
+        revision: 0,
+        id: crypto.randomUUID(),
+        action: 'frontend',
+      },
+      abort.signal,
+    )
+      .then((result) => {
+        if (!result.preview) throw new Error(frontendUnavailable);
+        if (!abort.signal.aborted) setFrontend({ binding, grant: result.preview });
+      })
+      .catch((error: Error) => {
+        if (!abort.signal.aborted) setFrontend({ binding, error: error.message });
+      });
+    return () => abort.abort();
+  }, [
+    needsFrontend,
+    frontendStudy,
+    frontendEnvironment,
+    frontendEpoch,
+    binding,
+    frontendUnavailable,
+  ]);
   useEffect(() => {
     ++attempt.current;
     controller.current?.abort();
     setObservedBinding(binding);
-    setOpen(false);
+    setOpen(autoOpen && applicationDeclared && closedStudy.current !== view?.id);
     setPending(false);
     setObservation(null);
+    setFrontend(null);
     setError('');
     setExpiredAt(null);
     setRefreshNeeded(false);
@@ -107,7 +238,8 @@ export function useApplicationPreview(
     embeddedLaunch.current = null;
     documentLaunch.current = null;
     unresolvedLaunch.current = null;
-  }, [binding]);
+    rejectedAutomaticLaunch.current = null;
+  }, [binding, autoOpen, applicationDeclared, view?.id]);
   useEffect(
     () => () => {
       ++attempt.current;
@@ -124,32 +256,38 @@ export function useApplicationPreview(
     setPending(false);
     setError('');
     if (unavailable) {
+      setFrontend(null);
+      autoLaunched.current = null;
       setObservation(null);
       setRefreshNeeded(false);
       replacementNeeded.current = false;
       embeddedLaunch.current = null;
       documentLaunch.current = null;
-      unresolvedLaunch.current = null;
+      // An unavailable observation can be transient within the same binding.
+      // Retain a dispatched receipt for reconciliation after readiness returns;
+      // the binding reset above discards it when the environment really changes.
     } else setRefreshNeeded(true);
   }, [disabled, unavailable]);
   useEffect(() => {
-    if (!currentBinding || !hasPreview || view?.revision === observedRevision.current) return;
+    if (!currentBinding || !hasObservation || view?.revision === observedRevision.current) return;
     ++attempt.current;
     controller.current?.abort();
     setPending(false);
     setError('');
     setRefreshNeeded(true);
-  }, [view?.revision, hasPreview, currentBinding]);
+  }, [view?.revision, hasObservation, currentBinding]);
   useEffect(() => {
-    if (!observation?.preview) return;
-    const deadline = observation.preview.expiresAt;
+    if (!document) return;
+    const deadline = document.expiresAt;
     const timer = setTimeout(() => setExpiredAt(deadline), Math.max(0, deadline - Date.now()));
     return () => clearTimeout(timer);
-  }, [observation]);
+  }, [document]);
 
   const load = useCallback(
     async (action: 'open' | 'restart', recovery?: 'automatic' | 'explicit') => {
       if (!currentBinding || disabled || !view || !workbench) return;
+      if (standaloneFrontend && recovery === 'explicit' && (expired || frontendState?.error))
+        setFrontend(null);
       const expiredRecovery = () =>
         recovery === 'automatic' &&
         previewDeadline.current !== undefined &&
@@ -160,7 +298,9 @@ export function useApplicationPreview(
       const abort = new AbortController();
       controller.current = abort;
       setOpen(true);
-      setPending(true);
+      const checking = !!recovery && hasObservation && !expired;
+      // Status probes never take input away from a currently displayed page.
+      setPending(!checking);
       setError('');
       setRefreshNeeded(false);
       const original = unresolvedLaunch.current;
@@ -195,18 +335,20 @@ export function useApplicationPreview(
         abort.signal.throwIfAborted();
       };
       try {
-        if (!resumable && recovery && observation?.preview) {
+        if (!resumable && recovery && hasObservation) {
           const status = await waitForApplication(
             { ...request, action: 'status' },
             abort.signal,
             assertCurrent,
+            undefined,
+            standaloneFrontend,
           );
           if (serial !== attempt.current) return;
           if (
             (status.state === 'running' || status.state === 'starting') &&
             !status.sourceChanged &&
-            !replacementNeeded.current &&
-            previewDeadline.current! > Date.now()
+            (standaloneFrontend ||
+              (!replacementNeeded.current && previewDeadline.current! > Date.now()))
           ) {
             observedRevision.current = view.revision;
             setObservation((current) => ({ ...status, preview: current?.preview }));
@@ -215,18 +357,34 @@ export function useApplicationPreview(
           if (['running', 'starting'].includes(status.state) && status.sourceChanged)
             request.action = 'restart';
         }
-        // A ticket is not a usable document, including on the first launch.
-        replacementNeeded.current = true;
-        embeddedLaunch.current = serial;
+        if (recovery === 'automatic' && deferAutomaticRef.current) {
+          setRefreshNeeded(true);
+          return;
+        }
+        setPending(true);
+        if (!standaloneFrontend) {
+          // Only process-served pages need a replacement document after launch.
+          replacementNeeded.current = true;
+          embeddedLaunch.current = serial;
+        }
         const launch = resumable ?? { binding, stage, request: { ...request } };
         unresolvedLaunch.current = launch;
-        const result = await waitForApplication(request, abort.signal, assertCurrent, () => {
-          // Even a late response acknowledges this exact launch, not a newer one.
-          if (unresolvedLaunch.current === launch) unresolvedLaunch.current = null;
-        });
+        const result = await waitForApplication(
+          request,
+          abort.signal,
+          assertCurrent,
+          () => {
+            // Even a late response acknowledges this exact launch, not a newer one.
+            if (unresolvedLaunch.current === launch) unresolvedLaunch.current = null;
+          },
+          standaloneFrontend && (request.action === 'open' || recovery === 'automatic'),
+          standaloneFrontend,
+        );
         if (serial === attempt.current) {
           observedRevision.current = view.revision;
-          if (result.preview) {
+          if (standaloneFrontend && result.state === 'running') {
+            setObservation(result);
+          } else if (result.preview) {
             documentLaunch.current = serial;
             setExpiredAt(null);
             setObservation(result);
@@ -245,34 +403,147 @@ export function useApplicationPreview(
           }
         }
       } catch (e) {
-        if (serial === attempt.current && !abort.signal.aborted) setError((e as Error).message);
+        if (serial === attempt.current && !abort.signal.aborted) {
+          if (
+            e instanceof SandboxRequestError &&
+            e.reason === 'PROGRESS_CHANGED' &&
+            !resumable &&
+            !recovery &&
+            action === 'open' &&
+            !observation?.preview &&
+            autoLaunched.current === binding
+          ) {
+            // Admission rejected this fresh request before dispatch. A newer
+            // teaching revision may retry; unknown outcomes must not do so.
+            rejectedAutomaticLaunch.current = { binding, revision: request.revision };
+            if (unresolvedLaunch.current?.request.id === request.id)
+              unresolvedLaunch.current = null;
+          }
+          setError((e as Error).message);
+        }
       } finally {
-        if (serial === attempt.current) setPending(false);
+        if (serial === attempt.current) {
+          controller.current = null;
+          setPending(false);
+        }
       }
     },
-    [currentBinding, disabled, view, workbench, observation, t, binding, stage],
+    [
+      currentBinding,
+      disabled,
+      view,
+      workbench,
+      observation,
+      t,
+      binding,
+      stage,
+      expired,
+      standaloneFrontend,
+      frontendState?.error,
+      hasObservation,
+    ],
   );
+  useEffect(() => {
+    const rejected = rejectedAutomaticLaunch.current;
+    if (
+      currentBinding &&
+      rejected?.binding === binding &&
+      view &&
+      view.revision > rejected.revision
+    ) {
+      rejectedAutomaticLaunch.current = null;
+      autoLaunched.current = null;
+      setError('');
+    }
+  }, [currentBinding, binding, view?.revision, error, view]);
+  useEffect(() => {
+    if (
+      !autoOpen ||
+      deferAutomatic ||
+      !currentBinding ||
+      disabled ||
+      !view?.application ||
+      closedStudy.current === view.id ||
+      autoLaunched.current === binding ||
+      pending ||
+      observation ||
+      error
+    )
+      return;
+    // Let effect cleanup cancel an undispatched automatic launch (including
+    // StrictMode's setup/cleanup probe), rather than leaving a consumed attempt.
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      autoLaunched.current = binding;
+      void load('open');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    autoOpen,
+    deferAutomatic,
+    currentBinding,
+    disabled,
+    view,
+    binding,
+    pending,
+    observation,
+    error,
+    load,
+  ]);
   useEffect(() => {
     if (
       currentBinding &&
       open &&
       refreshNeeded &&
+      !deferAutomatic &&
       !disabled &&
+      (!view?.busy || reviewReady || quizNarration) &&
       !pending &&
       !expired &&
-      (!observation?.preview || observation.preview.expiresAt > Date.now())
+      (!document || document.expiresAt > Date.now())
     )
       void load('open', 'automatic');
-  }, [currentBinding, open, refreshNeeded, disabled, pending, expired, observation, load]);
-  const renew = useCallback((expiresAt: number) => {
-    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now() || expiresAt > Date.now() + 300_000)
-      return;
-    setObservation((current) =>
-      current?.preview && expiresAt > current.preview.expiresAt
-        ? { ...current, preview: { ...current.preview, expiresAt } }
-        : current,
-    );
-  }, []);
+  }, [
+    currentBinding,
+    open,
+    refreshNeeded,
+    deferAutomatic,
+    disabled,
+    pending,
+    expired,
+    document,
+    load,
+    view?.busy,
+    reviewReady,
+    quizNarration,
+  ]);
+  const renew = useCallback(
+    (expiresAt: number) => {
+      if (
+        !Number.isFinite(expiresAt) ||
+        expiresAt <= Date.now() ||
+        expiresAt > Date.now() + 300_000
+      )
+        return;
+      if (standaloneFrontend) {
+        setFrontend((current) =>
+          current?.grant && current.binding === binding && expiresAt > current.grant.expiresAt
+            ? { ...current, grant: { ...current.grant, expiresAt } }
+            : current,
+        );
+        return;
+      }
+      setObservation((current) =>
+        current?.preview && expiresAt > current.preview.expiresAt
+          ? { ...current, preview: { ...current.preview, expiresAt } }
+          : current,
+      );
+    },
+    [binding, standaloneFrontend],
+  );
   const documentReady = useCallback(
     (version: number) => {
       if (
@@ -309,7 +580,7 @@ export function useApplicationPreview(
           revision: view.revision,
           epoch: workbench.epoch,
           id: crypto.randomUUID(),
-          action: 'open',
+          action: standaloneFrontend ? 'frontend' : 'open',
         },
         abort.signal,
       );
@@ -322,11 +593,15 @@ export function useApplicationPreview(
       tab.close();
       if (serial === attempt.current && !abort.signal.aborted) setError((e as Error).message);
     } finally {
-      if (serial === attempt.current) setPending(false);
+      if (serial === attempt.current) {
+        controller.current = null;
+        setPending(false);
+      }
     }
   }
   function close() {
-    if (pending) {
+    closedStudy.current = view?.id ?? null;
+    if (pending || (controller.current && !controller.current.signal.aborted)) {
       ++attempt.current;
       controller.current?.abort();
       setPending(false);
@@ -338,15 +613,17 @@ export function useApplicationPreview(
   function toggle() {
     if (open) close();
     else if (!disabled) {
+      closedStudy.current = null;
       setOpen(true);
       if (
-        !observation?.preview ||
+        !document ||
+        (standaloneFrontend && observation?.state !== 'running') ||
         expired ||
-        observation.preview.expiresAt <= Date.now() ||
+        document.expiresAt <= Date.now() ||
         refreshNeeded ||
         replacementNeeded.current
       )
-        void load('open', refreshNeeded ? 'explicit' : undefined);
+        void load('open', refreshNeeded || standaloneFrontend ? 'explicit' : undefined);
     }
   }
   return {
@@ -354,15 +631,16 @@ export function useApplicationPreview(
     open: open && currentBinding,
     pending,
     observation: currentBinding && !unavailable ? observation : null,
-    error,
+    document: currentBinding && !unavailable ? document : undefined,
+    standaloneFrontend,
+    frontendPending: needsFrontend,
+    reloadFrontend: () => setFrontend(null),
+    error: standaloneFrontend ? frontendState?.error : error,
+    applicationError: standaloneFrontend ? error : undefined,
     expired,
     disabled,
     dirty,
-    updating:
-      disabled ||
-      pending ||
-      refreshNeeded ||
-      (!!observation?.preview && view?.revision !== observedRevision.current),
+    updating: disabled || pending,
     frameVersion,
     documentReady,
     documentScope: `${binding}:${unavailable}`,

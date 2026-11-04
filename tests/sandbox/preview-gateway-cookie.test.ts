@@ -11,12 +11,16 @@ describe.each(['http:', 'https:'])('preview cookie exchange (%s)', (protocol) =>
   let backendStatus = 200;
   let disconnect = false;
   let malformedTarget = false;
+  let standalone = false;
+  let upstreamRequest: string;
   beforeEach(() => {
     revoked = false;
     activitySignals = 0;
     backendStatus = 200;
     disconnect = false;
     malformedTarget = false;
+    standalone = false;
+    upstreamRequest = '';
   });
   let backend: http.Server;
   let child: ChildProcess;
@@ -25,6 +29,19 @@ describe.each(['http:', 'https:'])('preview cookie exchange (%s)', (protocol) =>
   let origin: string;
   beforeAll(async () => {
     backend = http.createServer(async (req, res) => {
+      if (req.url === '/api/sandbox/preview/tunnel') {
+        res.writeHead(200, { 'content-type': 'application/octet-stream' });
+        res.write(Buffer.from([1]));
+        req.on('data', (chunk) => {
+          upstreamRequest += String(chunk);
+          if (!upstreamRequest.includes('\r\n\r\n')) return;
+          res.end(
+            'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\nConnection: close\r\n\r\n' +
+              (upstreamRequest.startsWith('HEAD ') ? '' : '{"ok":true}'),
+          );
+        });
+        return;
+      }
       let text = '';
       for await (const chunk of req) text += String(chunk);
       if (disconnect) {
@@ -48,11 +65,25 @@ describe.each(['http:', 'https:'])('preview cookie exchange (%s)', (protocol) =>
         return;
       }
       const expiresAt = Date.now() + 60000;
+      if (standalone && JSON.parse(text).document === true) {
+        res.end(
+          JSON.stringify({
+            transport: 'document',
+            ...(JSON.parse(text).bootstrap === true ? {} : { html: '<h1>Standalone</h1>' }),
+            expiresAt,
+          }),
+        );
+        return;
+      }
       res.end(
         JSON.stringify({
-          transport: 'native',
-          url: 'https://sandbox.example.test',
-          headers: { 'e2b-traffic-access-token': 'test-only-provider-token' },
+          ...(standalone
+            ? { transport: 'sdk', url: 'http://127.0.0.1:8000' }
+            : {
+                transport: 'native',
+                url: 'https://sandbox.example.test',
+                headers: { 'e2b-traffic-access-token': 'test-only-provider-token' },
+              }),
           expiresAt,
           ...(JSON.parse(text).activity === true
             ? { authorization: { ticket: 'renewed-input-grant', expiresAt } }
@@ -143,6 +174,35 @@ describe.each(['http:', 'https:'])('preview cookie exchange (%s)', (protocol) =>
     expect(
       c.startsWith(protocol === 'https:' ? '__Host-openmaic_preview=' : 'openmaic_preview='),
     ).toBe(true);
+  });
+  it('serves the standalone document without an application upstream and fences revoked access', async () => {
+    standalone = true;
+    expect((await request('/?__openmaic_document=1')).status).toBe(403);
+    const grant = await request('/__openmaic_authorize', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ticket: 'frontend-grant' }),
+    });
+    expect(JSON.parse(grant.body).standaloneDocument).toBe(true);
+    const cookie = grant.headers.getSetCookie().at(-1)!.split(';')[0];
+    const page = await request('/?__openmaic_document=1', { headers: { cookie } });
+    expect(page.status).toBe(200);
+    expect(page.body).toBe('<h1>Standalone</h1>');
+    expect(page.headers.get('content-security-policy')).toContain("connect-src 'self'");
+    expect(page.headers.get('cache-control')).toBe('no-store');
+    expect(
+      (await request('/?__openmaic_document=1', { method: 'HEAD', headers: { cookie } })).body,
+    ).toBe('');
+    for (const method of ['GET', 'HEAD']) {
+      upstreamRequest = '';
+      // Root fetches and form navigations take the same transport path as every proxied API.
+      const root = await request('/?query=app', { method, headers: { cookie } });
+      expect(root.status).toBe(200);
+      expect(upstreamRequest).toMatch(new RegExp(`^${method} /\\?query=app HTTP/`));
+      expect(root.body).toBe(method === 'HEAD' ? '' : '{"ok":true}');
+    }
+    revoked = true;
+    expect((await request('/?__openmaic_document=1', { headers: { cookie } })).status).toBe(403);
   });
   it('rejects new POST and WebSocket upgrade immediately after a warm grant is revoked', async () => {
     const r = await request('/__openmaic_authorize', {

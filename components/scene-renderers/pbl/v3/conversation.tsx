@@ -41,6 +41,9 @@ type ToolPart = Extract<Part, { kind: 'tool' }>;
 function groupParts(parts: Part[]) {
   const groups: (Part | ToolPart[])[] = [];
   for (const part of parts) {
+    // Streaming can reserve an empty prose slot between cards. It has no
+    // visible content and must not introduce an extra pair of flex gaps.
+    if (part.kind !== 'tool' && !part.text.trim()) continue;
     const previous = groups.at(-1);
     if (part.kind === 'tool') {
       if (Array.isArray(previous)) previous.push(part);
@@ -80,14 +83,14 @@ function AgentTurn({
         {t(`pblV3.roles.${role}`)}
       </div>
       <div
-        className={`pbl-assistant-bubble min-w-0 space-y-2 rounded-xl rounded-tl-md border-l-2 px-3 py-2.5 ${accents[role]}`}
+        className={`pbl-assistant-bubble flex min-w-0 flex-col gap-[5px] rounded-xl rounded-tl-md border-l-2 px-3 py-2.5 ${accents[role]}`}
       >
         {groupParts(entry.parts).map((part) =>
           Array.isArray(part) ? (
-            <div key={part[0].id} className="space-y-2">
+            <div key={part[0].id} className="flex flex-col gap-3">
               <ToolActivity tools={part} t={t} />
               {part.some((tool) => tool.action === 'complete' && tool.status === 'succeeded') && (
-                <p className="text-foreground">
+                <p className="text-foreground" data-testid="pbl-completion-handoff">
                   {t(
                     part.some((tool) => tool.projectCompleted)
                       ? 'pblV3.reportCopy.completed'
@@ -254,7 +257,7 @@ export function LearningConversation({
     >
       <ConversationContent
         scrollClassName="pbl-conversation-scroll min-h-0 flex-1"
-        className="gap-5 p-4 pr-12"
+        className="gap-5 p-4"
         onClick={(event) => openReference(event)}
       >
         <ConversationHistory

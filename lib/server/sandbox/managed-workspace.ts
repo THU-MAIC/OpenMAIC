@@ -22,8 +22,19 @@ interface WorkspaceAccess {
   operations: readonly WorkspaceMutation[];
   signal?: AbortSignal;
   dispatch?: <T>(start: () => Promise<T>) => Promise<T>;
+  /** Host-only planning writes do not change the running application's sources. */
+  preserveApplications?: boolean;
 }
 const access = new AsyncLocalStorage<WorkspaceAccess & { active: boolean }>();
+
+export function preservesLearningApplications(
+  ownerId: string,
+  workspaceId: string,
+  environmentId: string,
+) {
+  assertWorkspaceMutation(ownerId, workspaceId, environmentId, 'write');
+  return access.getStore()?.preserveApplications === true;
+}
 
 export function learningWorkspaceId(studyId: string) {
   return `pbl-${studyId}`;

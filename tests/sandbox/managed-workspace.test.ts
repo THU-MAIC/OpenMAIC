@@ -319,3 +319,65 @@ describe('learning workspace service boundary', () => {
     },
   );
 });
+
+it('keeps read-only observation separate from strict assessment/checkpoint quiescence', async () => {
+  const s = service();
+  store.listCommands.mockResolvedValue([{ id, purpose: 'application' }]);
+  let stopped = false;
+  const command = vi.spyOn(s, 'command').mockImplementation(async () => ({
+    id,
+    state: stopped ? 'cancelled' : 'running',
+    stdout: '',
+    stderr: '',
+    exitCode: stopped ? -15 : null,
+    truncated: false,
+  }));
+  const cancel = vi.spyOn(s, 'cancelCommand').mockImplementation(async () => {
+    stopped = true;
+    return { id, cancellationRequested: true };
+  });
+  await s.assertWorkspaceIdle(id, undefined, { allowApplications: true });
+  expect(cancel).not.toHaveBeenCalled();
+  expect(command).not.toHaveBeenCalled();
+  await s.assertWorkspaceIdle(id);
+  expect(cancel).toHaveBeenCalledOnce();
+  store.listCommands.mockResolvedValue([{ id, purpose: 'command' }]);
+  stopped = false;
+  await expect(
+    s.assertWorkspaceIdle(id, undefined, { allowApplications: true }),
+  ).rejects.toMatchObject({ reason: 'WORKSPACE_COMMAND_ACTIVE' });
+});
+
+it('preserves applications only for an explicitly scoped planning write', async () => {
+  const s = service();
+  store.listCommands.mockResolvedValue([{ id, purpose: 'application' }]);
+  let stopped = false;
+  vi.spyOn(s, 'command').mockImplementation(async () => ({
+    id,
+    state: stopped ? 'cancelled' : 'running',
+    stdout: '',
+    stderr: '',
+    exitCode: stopped ? -15 : null,
+    truncated: false,
+  }));
+  const cancel = vi.spyOn(s, 'cancelCommand').mockImplementation(async () => {
+    stopped = true;
+    return { id, cancellationRequested: true };
+  });
+  await withLearningWorkspaceAccess(
+    {
+      ownerId: 'owner',
+      workspaceId,
+      environmentIds: () => [id],
+      operations: ['write'],
+      preserveApplications: true,
+    },
+    async () => {
+      expect(await s.compareAndWriteText(id, 'PLAN.md', 'new plan', hash(content))).toBe(true);
+    },
+  );
+  expect(content).toBe('new plan');
+  expect(cancel).not.toHaveBeenCalled();
+  await access(() => s.compareAndWriteText(id, 'app.py', 'new source', hash(content)));
+  expect(cancel).toHaveBeenCalledOnce();
+});

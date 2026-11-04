@@ -117,12 +117,15 @@ export async function readFiles(
   row: Study,
   project = projectFor(row),
   signal?: AbortSignal,
+  options: { allowApplications?: boolean } = {},
 ) {
   signal?.throwIfAborted();
   const result: Record<string, string> = {};
   const environmentId = requireEnvironment(row);
-  // A process can modify files without using our file API. Refuse evidence until managed writers stop.
-  await service.assertWorkspaceIdle(environmentId, signal);
+  // Durable evidence uses a quiesced snapshot by default. Read-only teaching
+  // version observations may leave applications running; final approval,
+  // assessments and archive publication retain the strict default.
+  await service.assertWorkspaceIdle(environmentId, signal, options);
   let bytes = 0;
   const paths = await checkpointIO(
     () => projectFiles(service, environmentId, project, signal),
@@ -146,7 +149,12 @@ export async function fileSnapshot(service: SandboxService, row: Study, signal?:
   const files = await readFiles(service, row, projectFor(row), signal);
   return { files, fingerprint: filesFingerprint(files) };
 }
-export async function saveStudyCheckpoint(service: SandboxService, row: Study) {
+export async function saveStudyCheckpoint(
+  service: SandboxService,
+  row: Study,
+  // A strict snapshot already taken by this operation under the same study lock.
+  snapshotForTransition?: Awaited<ReturnType<typeof fileSnapshot>>,
+) {
   const signal = AbortSignal.timeout(CHECKPOINT_TIMEOUT_MS);
   const { pool } = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
   const current = (
@@ -167,7 +175,7 @@ export async function saveStudyCheckpoint(service: SandboxService, row: Study) {
   );
   const snapshot = await checkpointStep('snapshot', async () => {
     if (renew) await service.renewForCheckpoint(requireEnvironment(row), signal);
-    return fileSnapshot(service, row, signal);
+    return snapshotForTransition ?? fileSnapshot(service, row, signal);
   });
   const previous = await service.checkpoint(requireEnvironment(row));
   const prepared = await checkpointStep('archive', () =>
@@ -899,26 +907,27 @@ export async function commandStudy(
         if (!hasStageCompletion(row, stage, binding))
           throw sandboxConflict('Complete the current teaching interaction first.');
       }
+      let verifiedSnapshot: Awaited<ReturnType<typeof fileSnapshot>> | undefined;
       if (stage.kind === 'produce' || (stage.kind === 'check' && stage.checker === 'tests')) {
-        const snapshot = await fileSnapshot(service, row);
+        verifiedSnapshot = await fileSnapshot(service, row);
         const collected = row.state.collected[row.state.position.milestoneId!]!;
         const expected =
           stage.kind === 'check'
             ? collected.tests?.revision.id
             : collected[stage.writes]?.workspaceRevisionId;
-        if (expected !== snapshot.fingerprint)
+        if (expected !== verifiedSnapshot.fingerprint)
           throw sandboxConflict(
             'Files changed after review or testing. Review and test the current files first.',
           );
         if (stage.kind === 'produce' && stage.writes === 'plan')
-          await assertLearningPlan(store, row, snapshot.files['PLAN.md']!, true);
+          await assertLearningPlan(store, row, verifiedSnapshot.files['PLAN.md']!, true);
       }
       const endingMilestone =
         row.state.position.stageIndex ===
         currentMilestone(definition, row.state)!.stages.length - 1;
       if (stage.kind === 'produce' || endingMilestone) {
         // Establish a durable artifact before acknowledging the student's stage confirmation.
-        await saveStudyCheckpoint(service, row);
+        await saveStudyCheckpoint(service, row, verifiedSnapshot);
       }
       transition = transitions.completeCurrentStage(definition, row.state);
     } else throw sandboxInvalid('Unknown learning action.');
@@ -934,6 +943,7 @@ export async function commandStudy(
         workspaceId: learningWorkspaceId(id),
         environmentIds: () => [row.environment_id, row.environment_recovery?.requestId],
         operations,
+        preserveApplications: command.type === 'save' && command.path === 'PLAN.md',
       },
       execute,
     ),
@@ -1255,6 +1265,7 @@ export async function learningView(
           application: {
             title: project.application.title,
             description: project.application.description,
+            ...(project.application.frontendPath ? { standaloneFrontend: true as const } : {}),
             choices: applicationChoices(
               project.definition,
               row.state,

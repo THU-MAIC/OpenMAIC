@@ -93,7 +93,7 @@ export function DecisionResponseForm({
         <div className="flex items-center gap-3">
           <button
             type="button"
-            className="rounded-md border px-3 py-2 text-sm disabled:opacity-40 hover:bg-muted"
+            className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
             disabled={disabled || !valid}
             aria-busy={pendingChosen !== undefined}
             onClick={() => void onSubmit(value.chosen, value.rationale || undefined)}

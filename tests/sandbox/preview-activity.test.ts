@@ -133,10 +133,14 @@ it.each([429, 500, 502, 503, 504])(
 
 it('keeps new tabs top-level and clears the ticket before redirecting or mounting framed app HTML', () => {
   const html = previewShell('test-nonce');
-  expect(html).toContain("frame.src='/'");
+  expect(html).toContain("standaloneDocument===true?'/?__openmaic_document=1':'/'");
+  expect(html).toContain('frame.src=documentPath');
   expect(html).toContain('nonce="test-nonce"');
-  expect(html.indexOf("ticket=''")).toBeLessThan(html.indexOf("document.createElement('iframe')"));
-  expect(html).toContain("if(window.top===window){location.replace('/');return;}");
+  expect(html).toContain('if(window.top===window){location.replace(documentPath);return;}');
+  const clearTicket = html.indexOf("ticket=''");
+  expect(clearTicket).toBeGreaterThanOrEqual(0);
+  expect(clearTicket).toBeLessThan(html.indexOf('location.replace(documentPath)'));
+  expect(clearTicket).toBeLessThan(html.indexOf("document.createElement('iframe')"));
   expect(html).toContain('openmaic-preview-activity');
   expect(html).toContain('scriptSeal.content="script-src \'none\'"');
   expect(html.indexOf('document.head.append(scriptSeal)')).toBeLessThan(

@@ -20,6 +20,7 @@ type Layout = {
   width: number;
   height: number;
   target: Box | null;
+  highlights: Box[];
   card: { x: number; y: number };
   cardMaxHeight: number;
 };
@@ -77,14 +78,14 @@ export function WorkbenchOnboarding({
     // Scroll only on entry to this page, never on each stream update/resize.
     // Hidden panels may use their own relevant toggle; never substitute replay.
     const selectors = targets[step].split(', ');
-    const findAnchor = () =>
+    const findAnchors = () =>
       selectors
         .flatMap((selector) => Array.from(owner.querySelectorAll<HTMLElement>(selector)))
-        .find((element) => {
+        .filter((element) => {
           const rect = element.getBoundingClientRect();
           return !element.closest('[hidden], [inert]') && rect.width > 0 && rect.height > 0;
         });
-    findAnchor()?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+    findAnchors()[0]?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
     let frame = 0;
     const measure = () => {
       frame = 0;
@@ -105,9 +106,9 @@ export function WorkbenchOnboarding({
       );
       const height = Math.min(owner.clientHeight, (window.innerHeight - bounds.top) / scaleY);
       if (width <= 0 || height <= 0) return;
-      const anchor = findAnchor();
-      let target: Box | null = null;
-      if (anchor) {
+      const anchors = findAnchors();
+      const anchor = anchors[0];
+      const visibleBox = (anchor: HTMLElement): Box | null => {
         const rect = anchor.getBoundingClientRect();
         let left = Math.max(bounds.left, rect.left - 5 * scaleX);
         let right = Math.min(bounds.left + width * scaleX, rect.right + 5 * scaleX);
@@ -133,13 +134,18 @@ export function WorkbenchOnboarding({
           if (parent === owner) break;
         }
         if (right > left && bottom > top)
-          target = {
+          return {
             x: (left - bounds.left) / scaleX,
             y: (top - bounds.top) / scaleY,
             width: (right - left) / scaleX,
             height: (bottom - top) / scaleY,
           };
-      }
+        return null;
+      };
+      const target = anchor ? visibleBox(anchor) : null;
+      const highlights = (step === 'application' ? anchors : anchors.slice(0, 1))
+        .map(visibleBox)
+        .filter((box): box is Box => box !== null);
       const cw = content.offsetWidth,
         ch = content.offsetHeight,
         gap = 16,
@@ -188,7 +194,7 @@ export function WorkbenchOnboarding({
         : !target
           ? { x: Math.max(edge, (width - cw) / 2), y: Math.max(edge, (height - ch) / 2) }
           : candidates.sort((a, b) => overlap(a) - overlap(b))[0];
-      const next = { width, height, target, card: position, cardMaxHeight };
+      const next = { width, height, target, highlights, card: position, cardMaxHeight };
       setLayout((prior) => (JSON.stringify(prior) === JSON.stringify(next) ? prior : next));
     };
     const schedule = () => {
@@ -264,7 +270,9 @@ export function WorkbenchOnboarding({
             <defs>
               <mask id={maskId}>
                 <rect width="100%" height="100%" fill="white" />
-                {layout?.target && <rect {...layout.target} rx="8" fill="black" />}
+                {layout?.highlights.map((highlight, index) => (
+                  <rect key={index} {...highlight} rx="8" fill="black" />
+                ))}
               </mask>
             </defs>
             <rect
@@ -274,16 +282,17 @@ export function WorkbenchOnboarding({
               fillOpacity="0.68"
               mask={`url(#${maskId})`}
             />
-            {layout?.target && (
+            {layout?.highlights.map((highlight, index) => (
               <rect
+                key={index}
                 data-pbl-onboarding="spotlight"
-                {...layout.target}
+                {...highlight}
                 rx="8"
                 fill="none"
                 stroke="var(--primary)"
                 strokeWidth="2"
               />
-            )}
+            ))}
           </svg>
         </Dialog.Overlay>
         <Dialog.Content

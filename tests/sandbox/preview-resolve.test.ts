@@ -35,6 +35,8 @@ it('denies unsigned and malformed input before reaching the service', async () =
     'x'.repeat(8193),
     '{"ticket":1,"host":"x"}',
     JSON.stringify({ ...descriptor, activity: false }),
+    JSON.stringify({ ...descriptor, document: true }),
+    JSON.stringify({ ...descriptor, activity: undefined, bootstrap: true }),
   ]) {
     const response = await POST(request(body));
     expect(response.status).toBe(403);
@@ -48,7 +50,24 @@ it('resolves authenticated activity with a non-cacheable response', async () => 
   const response = await POST(request());
   expect(response.status).toBe(200);
   expect(response.headers.get('cache-control')).toBe('no-store');
-  expect(target).toHaveBeenCalledWith(descriptor.ticket, descriptor.host, true);
+  expect(target).toHaveBeenCalledWith(descriptor.ticket, descriptor.host, true, false, false);
+});
+
+it('resolves signed standalone bootstrap metadata without returning a document', async () => {
+  target.mockResolvedValue({ transport: 'document', expiresAt: 1 });
+  const response = await POST(
+    request(
+      JSON.stringify({
+        ticket: descriptor.ticket,
+        host: descriptor.host,
+        document: true,
+        bootstrap: true,
+      }),
+    ),
+  );
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ transport: 'document', expiresAt: 1 });
+  expect(target).toHaveBeenCalledWith(descriptor.ticket, descriptor.host, false, true, true);
 });
 
 it.each([

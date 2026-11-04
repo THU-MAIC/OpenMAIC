@@ -190,7 +190,11 @@ export async function teachingRunnerConfig(input: {
     review.state.welcome === 'pending'
       ? digest(`project-welcome:${protocol.digest}`)
       : current.environment_id
-        ? filesFingerprint(await readFiles(await service(signal), current, project, signal))
+        ? filesFingerprint(
+            await readFiles(await service(signal), current, project, signal, {
+              allowApplications: true,
+            }),
+          )
         : digest('no-workspace');
   function tool<T extends TSchema>(
     name: string,
@@ -239,6 +243,8 @@ export async function teachingRunnerConfig(input: {
                       dispatch: dispatchWithLease(signal),
                       workspaceId: learningWorkspaceId(current.id),
                       environmentIds: () => [current.environment_id],
+                      preserveApplications:
+                        name === 'write_file' && (params as { path?: string }).path === 'PLAN.md',
                       operations:
                         name === 'write_file' || name === 'manage_file'
                           ? ['write']
@@ -728,7 +734,14 @@ export async function teachingRunnerConfig(input: {
         async (current, p, _callId, signal) => {
           // Reject an out-of-order model action before any remote file access.
           review.assertCompletable();
-          const hash = await fingerprint(current, signal);
+          const finalRecap = isFinalProjectRecap(project.definition, current.state.position, stage);
+          // Approve the same quiesced files that become evidence. An application may
+          // still be writing while we collect a read-only teaching fingerprint.
+          const files =
+            stage.kind === 'produce' || finalRecap
+              ? await readFiles(await service(signal), current, project, signal)
+              : null;
+          const hash = files ? filesFingerprint(files) : await fingerprint(current, signal);
           review.assertComplete(p.studentFeedback, hash, p.reuseFeedback, p.artifactApproved);
           await assertBuilt(store, current, hash);
           let transition: EngineTransition = { state: current.state, events: [] };
@@ -738,8 +751,7 @@ export async function teachingRunnerConfig(input: {
               transition = transitions.completeTeaching(project.definition, current.state);
             else if (stage.skill)
               transition = transitions.completeRecap(project.definition, current.state);
-          } else if (stage.kind === 'produce') {
-            const files = await readFiles(await service(signal), current, project, signal);
+          } else if (stage.kind === 'produce' && files) {
             if (stage.writes === 'plan' && !files['PLAN.md']?.trim())
               throw sandboxConflict('PLAN.md must contain the learner’s plan.');
             if (stage.writes === 'plan')
@@ -804,10 +816,9 @@ export async function teachingRunnerConfig(input: {
               };
             }
           }
-          const finalRecap = isFinalProjectRecap(project.definition, current.state.position, stage);
-          if (finalRecap) {
+          if (finalRecap && files) {
             evidence = {
-              files: await readFiles(await service(signal), current, project, signal),
+              files,
               fingerprint: hash,
               artifactKind: 'final',
             };

@@ -59,6 +59,7 @@ const descriptorSchema = z
             title: z.string().trim().min(1).max(100),
             description: z.string().trim().min(1).max(2000),
             decisionIds: z.array(z.string().min(1).max(128)).max(8).optional(),
+            frontendPath: path.optional(),
             argv: z
               .array(
                 z
@@ -407,6 +408,14 @@ export function validateProjectPackage(
   if (config.runtime.sourceRoots.some((root) => /^(skills|docs|tests|rubric)(\/|$)/.test(root)))
     return invalid('Source roots overlap private course resources.');
   const application = config.runtime.application;
+  if (
+    application?.frontendPath &&
+    (!application.frontendPath.endsWith('.html') ||
+      !Object.hasOwn(files, application.frontendPath) ||
+      !files[application.frontendPath].trim() ||
+      !config.definition.protectedPaths.includes(application.frontendPath))
+  )
+    return invalid('The preview frontend must be a protected starter HTML file.');
   if (
     application?.decisionIds &&
     (new Set(application.decisionIds).size !== application.decisionIds.length ||

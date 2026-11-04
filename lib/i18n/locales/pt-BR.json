@@ -2854,7 +2854,7 @@
       "workspace-run": "Workspace run"
     },
     "journey": {
-      "completionHandoff": "This step is complete. See the task bar above the message box for the next action.",
+      "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",
       "expand": "Expand project workspace",
@@ -3207,8 +3207,8 @@
           "body": "Abra arquivos pela árvore, pelas abas ou pelos links do assistente. Quando a edição é permitida, as alterações são salvas automaticamente; confira o estado de salvamento. Os ícones superiores mostram ou ocultam painéis; arraste as divisórias para ajustar o tamanho."
         },
         "application": {
-          "title": "Clique em Abrir aplicativo para experimentar",
-          "body": "Este botão abre a prévia do trabalho. Experimente as funções já implementadas e converse sobre suas observações. As funções pendentes serão desenvolvidas ao longo do projeto."
+          "title": "Experimente seu aplicativo",
+          "body": "A prévia abre automaticamente. Experimente as funções implementadas e converse sobre o que observar. Use Abrir aplicativo na barra de ferramentas para recolher ou reabrir a prévia."
         },
         "replay": {
           "title": "Reveja o guia aqui",

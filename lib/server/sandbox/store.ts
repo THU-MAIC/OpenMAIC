@@ -460,12 +460,13 @@ export class SandboxStore {
   }
 
   /** Final publication uses durable writer reservations, with no provider I/O under the lock. */
-  async assertRecordedIdle(row: SandboxRow) {
+  async assertRecordedIdle(row: SandboxRow, options: { allowApplications?: boolean } = {}) {
     const active = await this.persistence.pool.query(
       `SELECT 1 FROM sandbox_commands WHERE environment_id=$1 AND
+       (NOT $2::boolean OR purpose IS DISTINCT FROM 'application') AND
        (result_json IS NULL OR result_json->>'state' IN ('starting','running','unknown'))
        UNION ALL SELECT 1 FROM sandbox_terminals WHERE environment_id=$1 AND state<>'closed' LIMIT 1`,
-      [row.id],
+      [row.id, options.allowApplications === true],
     );
     if (active.rows.length)
       throw sandboxConflict('A managed writer is active.', 'WORKSPACE_COMMAND_ACTIVE');

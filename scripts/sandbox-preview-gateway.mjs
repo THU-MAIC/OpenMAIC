@@ -81,8 +81,14 @@ class PreviewResolveError extends Error {
     this.statusCode = statusCode;
   }
 }
-async function resolve(ticket, host, activity = false) {
-  const body = JSON.stringify({ ticket, host, ...(activity ? { activity: true } : {}) });
+async function resolve(ticket, host, activity = false, document = false, bootstrap = false) {
+  const body = JSON.stringify({
+    ticket,
+    host,
+    ...(activity ? { activity: true } : {}),
+    ...(document ? { document: true } : {}),
+    ...(bootstrap ? { bootstrap: true } : {}),
+  });
   const at = String(Date.now());
   const auth =
     at +
@@ -105,7 +111,18 @@ async function resolve(ticket, host, activity = false) {
   if (!r.ok) throw new PreviewResolveError(r.status >= 500 || r.status === 429 ? r.status : 403);
   try {
     const target = await r.json();
-    validatePreviewTarget(target);
+    if (target.transport === 'document') {
+      if (
+        !document ||
+        (!bootstrap &&
+          (typeof target.html !== 'string' ||
+            !target.html ||
+            Buffer.byteLength(target.html) > 1_048_576)) ||
+        !Number.isFinite(target.expiresAt) ||
+        target.expiresAt <= Date.now()
+      )
+        throw new Error('Invalid preview document');
+    } else validatePreviewTarget(target);
     return target;
   } catch {
     throw new PreviewResolveError(502);
@@ -268,14 +285,20 @@ const server = http.createServer(async (req, res) => {
       const { ticket } = JSON.parse(Buffer.concat(chunks).toString());
       if (typeof ticket !== 'string' || ticket.length > 4096 || !/^[-_a-zA-Z0-9.]+$/.test(ticket))
         throw new Error('Invalid ticket');
-      const target = await resolve(ticket, host);
+      const target = await resolve(ticket, host, false, true, true);
       res.writeHead(200, {
         'cache-control': 'no-store',
         'content-type': 'application/json',
         'set-cookie': previewAuthorizationCookies(cookieName, ticket, target.expiresAt),
       });
       // Bootstrap requires the raw signed ticket, never just the app's cookie.
-      res.end(JSON.stringify({ activityKey: activityKey(host), appOrigin: target.appOrigin }));
+      res.end(
+        JSON.stringify({
+          activityKey: activityKey(host),
+          appOrigin: target.appOrigin,
+          standaloneDocument: target.transport === 'document',
+        }),
+      );
       return;
     }
     if (path.pathname === '/__openmaic_activity') {
@@ -320,11 +343,28 @@ const server = http.createServer(async (req, res) => {
     if (!['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(req.method))
       throw new Error('Unsupported method');
     const ticket = token(req);
-    const target = await resolve(ticket, host);
+    // Keep the browser document at the application root: GET forms replace its
+    // query, while implicit POST forms retain it. The selector is never forwarded.
+    const documentUrl = path.pathname === '/' && path.search === '?__openmaic_document=1';
+    const document = documentUrl && ['GET', 'HEAD'].includes(req.method);
+    const target = await resolve(ticket, host, false, document);
+    if (target.transport === 'document') {
+      res.writeHead(200, {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-store',
+        // Same-origin form POSTs need their Origin; cross-origin referrers remain suppressed.
+        'referrer-policy': 'same-origin',
+        'x-content-type-options': 'nosniff',
+        'content-security-policy':
+          "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'",
+      });
+      res.end(req.method === 'HEAD' ? undefined : target.html);
+      return;
+    }
     // Use only path/query: a client request can never select the upstream host or port.
     const url = new URL(target.url);
     url.pathname = path.pathname;
-    url.search = path.search;
+    url.search = documentUrl ? '' : path.search;
     if (Number(req.headers['content-length'] ?? 0) > maxBody) {
       fail(res, 413);
       return;

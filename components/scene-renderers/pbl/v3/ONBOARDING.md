@@ -1,7 +1,10 @@
 # Workspace guide
 
 A short introduction to progress/tasks, the assistant, code, application preview
-when present, and replay. There are five pages (four without an application).
+when present, and replay. A declared application opens automatically once its
+environment is ready; closing it is remembered for this workspace visit. The
+application guide page lights both its visible panel and its toolbar toggle.
+There are five pages (four without an application).
 The task bar provides the current learning stage's instructions.
 
 ## Learner-wide V3 entry

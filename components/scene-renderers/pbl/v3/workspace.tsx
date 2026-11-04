@@ -26,7 +26,7 @@ import { useLearnerMessage } from './use-learner-message';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { acknowledgeDecisionDraft, hasEditorDraft, useStudyDraft } from './use-project-drafts';
 import { WorkbenchSplit } from './workbench-split';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useStageStore } from '@/lib/store/stage';
 import type { LearningView } from '@/lib/pbl/v3/types';
@@ -57,6 +57,7 @@ interface WorkspaceProps {
   initialEntry?: boolean;
   layoutReady?: boolean;
   onOnboardingChange?: (open: boolean) => void;
+  toolbarControl?: ReactNode;
 }
 
 function PBLV3WorkspaceContent({
@@ -66,6 +67,7 @@ function PBLV3WorkspaceContent({
   initialEntry = false,
   layoutReady = true,
   onOnboardingChange,
+  toolbarControl,
 }: WorkspaceProps) {
   const activityGeneration = usePblActivityGeneration(sceneId);
   const { resolvedTheme, setTheme } = useTheme();
@@ -110,7 +112,13 @@ function PBLV3WorkspaceContent({
   const commandInFlight = useRef(false);
   const [sent, setSent] = useState(0);
   const [dirtyFiles, setDirtyFiles] = useState(false);
-  const applicationPreview = useApplicationPreview(view, workbench, dirtyFiles);
+  const applicationPreview = useApplicationPreview(
+    view,
+    workbench,
+    dirtyFiles,
+    true,
+    pending || !!view?.needsOpening,
+  );
   const answerKey = `${view?.id}:${view?.state.position.milestoneId}:${view?.state.position.stageIndex}`;
   const recordedAnswers =
     view?.state.collected[view.state.position.milestoneId ?? '']?.quiz?.answers;
@@ -412,7 +420,7 @@ function PBLV3WorkspaceContent({
       // Editor, terminal and teaching inputs own their keys, not the host's slide/chat shortcuts.
       onKeyDown={(event) => event.stopPropagation()}
     >
-      <header className="pbl-topbar flex shrink-0 items-center gap-2 border-b pbl-chrome py-2 pl-3 pr-12">
+      <header className="pbl-topbar flex shrink-0 items-center gap-2 border-b pbl-chrome py-2 pl-3 pr-3">
         {onReturnToHero && (
           <button
             type="button"
@@ -545,14 +553,17 @@ function PBLV3WorkspaceContent({
         >
           <PanelRight size={14} />
         </button>
-        <button
-          type="button"
-          className="rounded border p-1.5 hover:bg-muted"
-          aria-label={t('pblV3.ide.theme')}
-          onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-        >
-          {resolvedTheme === 'dark' ? <Moon size={14} /> : <Sun size={14} />}
-        </button>
+        <div className="ms-auto flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            className="rounded border p-1.5 hover:bg-muted"
+            aria-label={t('pblV3.ide.theme')}
+            onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+          >
+            {resolvedTheme === 'dark' ? <Moon size={14} /> : <Sun size={14} />}
+          </button>
+          {toolbarControl}
+        </div>
       </header>
       {view?.reportAvailable && (
         <ProjectReport

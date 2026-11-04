@@ -88,6 +88,13 @@ export interface SandboxProvider {
     lifetimeMs: number,
     signal?: AbortSignal,
   ): Promise<void>;
+  /** Run the host's fixed application observation without registering a workspace writer. */
+  observeApplication?(
+    resourceId: string,
+    operationId: string,
+    command: string,
+    signal?: AbortSignal,
+  ): Promise<string>;
   /** Server-only descriptor. Never serialize its credentials into a browser API response. */
   nativePreview(
     resourceId: string,
