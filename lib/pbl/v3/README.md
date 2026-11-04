@@ -321,7 +321,8 @@ no tables, workers, provider, or configuration switches.
 - **No evidence from a moving workspace.** Before a source snapshot or checkpoint,
   observe managed commands and terminals. Running/unknown commands and nonclosed
   terminals block it until explicitly stopped and reconciled. This covers sessions
-  created before these restrictions. It does not detect unmanaged child processes
+  created before these restrictions. The periodic backup alone tolerates a running
+  application; it records no evidence, and recovery re-fingerprints what it restores. It does not detect unmanaged child processes
   or replace OS isolation. PBL terminal/preview support stays unavailable through
   generic controls until the dedicated teaching-aware workbench is implemented.
 - **Recovery handoff stays small.** Keep the existing durable allocation ID,
@@ -571,11 +572,13 @@ and response bodies are not rewritten.
 Application processes are recorded sandbox commands, not detached daemons. They remain
 writers until the supervisor confirms exit. Every launch advances the existing dirty/archive
 fence, including retries of an unacknowledged launch, so a completed short-lived writer
-cannot be hidden by an older upload. This does not invalidate teaching evidence or editor
+cannot be hidden by an older upload. The fence keeps the time of the first dirty write, so
+repeated relaunches cannot postpone the periodic backup, which runs beside a running
+application. This does not invalidate teaching evidence or editor
 revisions just because the learner opened their app. A study-locked sequence in the existing
 launch receipt orders new runs independently of application-machine timestamps, including
 after an upgrade from receipts without a sequence. Application processes remain in the
-writer/lifecycle registry but are excluded from one-shot workbench execution polling. Source evidence/checkpoints automatically
+writer/lifecycle registry but are excluded from one-shot workbench execution polling. Source evidence and stage/idle checkpoints automatically
 cancel and collect them; file/assessment operations cannot mistake a cancellation request
 for a stopped writer. Idle maintenance stops them rather than granting another retention
 interval. Restarting or recovering an in-memory app can clear its data. Reopen after an

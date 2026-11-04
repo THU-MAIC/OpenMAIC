@@ -366,6 +366,7 @@ import {
   openStudy,
   learningView,
   digest,
+  filesFingerprint,
   stageFor,
   stageKey,
   saveStudyCheckpoint,
@@ -8459,6 +8460,351 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     } finally {
       pool.options.max = previousMax;
     }
+  });
+
+  describe('periodic backup beside a running application', () => {
+    /** A supervised application that keeps running until the provider confirms cancellation. */
+    async function runApplication(environmentId: string) {
+      const id = randomUUID(),
+        file = join(mocked.root, environmentId, `.command-${id}`);
+      const running = {
+        id,
+        state: 'running',
+        stdout: '',
+        stderr: '',
+        exitCode: null,
+        truncated: false,
+      };
+      await pool.query(
+        "INSERT INTO sandbox_commands(environment_id,id,request_fingerprint,purpose,result_json) VALUES($1,$2,'fixture','application',$3)",
+        [environmentId, id, JSON.stringify(running)],
+      );
+      await writeFile(file, JSON.stringify(running));
+      const cancel = vi
+        .spyOn(E2BCompatibleSandboxProvider.prototype, 'cancelCommand')
+        .mockImplementation(async () => {
+          await writeFile(file, JSON.stringify({ ...running, state: 'cancelled', exitCode: -15 }));
+        });
+      onTestFinished(() => cancel.mockRestore());
+      const state = async () => JSON.parse(await readFile(file, 'utf8')).state as string;
+      return { cancel, state };
+    }
+    async function backupDue(id: string) {
+      await pool.query(
+        "UPDATE pbl_v3_studies SET workspace_dirty_at=now()-interval '2 minutes' WHERE id=$1",
+        [id],
+      );
+    }
+    const headRevision = async (environmentId: string) =>
+      (await (await SandboxService.forOwner(principal)).checkpoint(environmentId))?.revision ?? 0;
+    /** An edit saved through the learner path. Writes stop an application; callers launch afterwards. */
+    async function savedEdit(id: string, marker: string) {
+      const row = await store.get(id, principal.ownerId);
+      row.state.position.stageIndex = 3;
+      await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+      const current = await store.get(id, principal.ownerId);
+      const text = await readFile(join(mocked.root, row.environment_id!, 'greeting.py'), 'utf8');
+      await commandStudy(principal, id, {
+        id: randomUUID(),
+        revision: current.revision,
+        type: 'save',
+        path: 'greeting.py',
+        expectedHash: digest(text),
+        text: `${text}\n# ${marker}\n`,
+      });
+    }
+
+    it('saves dirty edits without stopping the application, then restores them after an abrupt loss', async () => {
+      const fresh = await freshStudy();
+      await fresh.send('checkpoint');
+      const environmentId = (await store.get(fresh.id, principal.ownerId)).environment_id!;
+      await savedEdit(fresh.id, 'edit before the outage');
+      const app = await runApplication(environmentId);
+      const archive = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'exportWorkspace');
+      onTestFinished(() => archive.mockRestore());
+      archive.mockClear();
+      const before = await headRevision(environmentId);
+      await backupDue(fresh.id);
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      expect(await headRevision(environmentId)).toBe(before + 1);
+      expect(app.cancel).not.toHaveBeenCalled();
+      expect(await app.state()).toBe('running');
+      const saved = await store.get(fresh.id, principal.ownerId);
+      expect(saved.workspace_dirty_at).toBeNull();
+      expect(saved.checkpoint_failure).toBeNull();
+      // Clean now: later passes must not archive again while the application keeps running.
+      expect(archive).toHaveBeenCalledTimes(1);
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      expect(archive).toHaveBeenCalledTimes(1);
+      expect(await headRevision(environmentId)).toBe(before + 1);
+      // Abrupt loss: the provider resource disappears with no release.
+      mocked.missing.add(environmentId);
+      await learningView(principal, fresh.id);
+      await fresh.send('prepare');
+      const recovered = await store.get(fresh.id, principal.ownerId);
+      expect(recovered.environment_id).not.toBe(environmentId);
+      expect(recovered.archive_discard).toBeNull();
+      expect(
+        await (
+          await SandboxService.forOwner(principal)
+        ).readText(recovered.environment_id!, 'greeting.py'),
+      ).toContain('edit before the outage');
+    });
+
+    it.each(['unchanged', 'changed'] as const)(
+      'recovers honestly when sources are %s between the snapshot and the export',
+      async (variant) => {
+        const fresh = await freshStudy();
+        const row = await store.get(fresh.id, principal.ownerId);
+        const environmentId = row.environment_id!;
+        const sandbox = await SandboxService.forOwner(principal);
+        const files = await readFiles(sandbox, row, project);
+        const fingerprint = filesFingerprint(files);
+        const milestoneId = row.state.position.milestoneId!;
+        const collected = row.state.collected[milestoneId]!;
+        collected.plan = {
+          id: 'plan',
+          kind: 'plan',
+          milestoneId,
+          revision: 1,
+          contentHash: digest(files['PLAN.md']!),
+          workspaceRevisionId: fingerprint,
+        };
+        collected.code = {
+          id: 'code',
+          kind: 'code',
+          milestoneId,
+          revision: 1,
+          value: 'reviewed',
+          workspaceRevisionId: fingerprint,
+        };
+        collected.tests = {
+          id: 'test',
+          status: 'passed',
+          evaluator: 'sandbox-command',
+          milestoneId,
+          stageIndex: 4,
+          revision: { id: fingerprint, provider: 'sandbox', createdAt: '' },
+          decisionRecordIds: [],
+          startedAt: '',
+          completedAt: '',
+        };
+        collected.planReviewCompleted = collected.codeReviewCompleted = true;
+        row.state.position.stageIndex = 5;
+        await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+        await fresh.send('checkpoint');
+        const good = await headRevision(environmentId);
+        const current = await store.get(fresh.id, principal.ownerId);
+        await runApplication(environmentId);
+        // The launch alone dirties the workspace, as the application path does.
+        await store.markWorkspaceWriter(current);
+        await backupDue(fresh.id);
+        const original = E2BCompatibleSandboxProvider.prototype.exportWorkspace;
+        const archive = vi
+          .spyOn(E2BCompatibleSandboxProvider.prototype, 'exportWorkspace')
+          .mockImplementation(async function* (this: E2BCompatibleSandboxProvider, ...args) {
+            if (variant === 'changed')
+              await writeFile(
+                join(mocked.root, environmentId, 'greeting.py'),
+                `${files['greeting.py']}\n# written by the application\n`,
+              );
+            yield* original.apply(this, args);
+          });
+        try {
+          await maintainStudy(store, fresh.id, principal.ownerId);
+        } finally {
+          archive.mockRestore();
+        }
+        expect(await headRevision(environmentId)).toBe(good + 1);
+        const saved = await store.get(fresh.id, principal.ownerId);
+        // Publication alone changes no teaching evidence or progress.
+        expect(saved.state).toEqual(current.state);
+        expect(saved.environment_recovery?.savedPosition?.fingerprint).toBe(fingerprint);
+        mocked.missing.add(environmentId);
+        await learningView(principal, fresh.id);
+        await fresh.send('prepare');
+        const recovered = await store.get(fresh.id, principal.ownerId);
+        const restored = await sandbox.readText(recovered.environment_id!, 'greeting.py');
+        const evidence = recovered.state.collected[milestoneId]!;
+        if (variant === 'unchanged') {
+          expect(restored).toBe(files['greeting.py']);
+          expect(recovered.environment_recovery?.progressReset).toBe(false);
+          expect(evidence.tests?.status).toBe('passed');
+          expect(recovered.state.position.stageIndex).toBe(5);
+        } else {
+          // Saved fingerprint and archive disagree: the archive wins and is judged afresh.
+          expect(restored).toContain('written by the application');
+          expect(recovered.environment_recovery?.progressReset).toBe(true);
+          expect(evidence.tests).toBeNull();
+          expect(evidence.code).toBeNull();
+          expect(evidence.codeReviewCompleted).toBe(false);
+          expect(evidence.planReviewCompleted).toBe(true);
+          expect(recovered.state.position.stageIndex).toBeLessThan(5);
+          expect(recovered.state.status).toBe('waiting_for_student');
+        }
+        expect(recovered.environment_recovery?.checkpointRevision).toBe(good + 1);
+      },
+    );
+
+    it.each([
+      ['an application changing files during export', 'changed'],
+      ['environment contention', 'busy'],
+    ] as const)(
+      'skips quietly on %s, keeps the earlier checkpoint and retries',
+      async (_, kind) => {
+        const fresh = await freshStudy();
+        await fresh.send('checkpoint');
+        const row = await store.get(fresh.id, principal.ownerId);
+        const environmentId = row.environment_id!;
+        await savedEdit(fresh.id, 'retried edit');
+        const app = await runApplication(environmentId);
+        await backupDue(fresh.id);
+        const dirty = (await store.get(fresh.id, principal.ownerId)).workspace_dirty_at;
+        const before = await headRevision(environmentId);
+        const spy =
+          kind === 'changed'
+            ? vi
+                .spyOn(E2BCompatibleSandboxProvider.prototype, 'exportWorkspace')
+                .mockImplementationOnce(async function* () {
+                  throw new SandboxError('CHECKPOINT_CHANGED', 409, 'Workspace export changed.');
+                })
+            : vi
+                .spyOn(SandboxService.prototype, 'assertWorkspaceIdle')
+                .mockRejectedValueOnce(
+                  new SandboxError('SANDBOX_CONFLICT', 409, 'busy', 'ENVIRONMENT_BUSY'),
+                );
+        onTestFinished(() => spy.mockRestore());
+        await maintainStudy(store, fresh.id, principal.ownerId);
+        const skipped = await store.get(fresh.id, principal.ownerId);
+        expect(await headRevision(environmentId)).toBe(before);
+        expect(skipped.checkpoint_failure).toBeNull();
+        expect(skipped.lifecycle_error).toBeNull();
+        expect(skipped.workspace_dirty_at).toEqual(dirty);
+        await maintainStudy(store, fresh.id, principal.ownerId);
+        expect(await headRevision(environmentId)).toBe(before + 1);
+        expect(app.cancel).not.toHaveBeenCalled();
+      },
+    );
+
+    it('keeps an earlier checkpoint and retries after a transient failure', async () => {
+      const fresh = await freshStudy();
+      await fresh.send('checkpoint');
+      const environmentId = (await store.get(fresh.id, principal.ownerId)).environment_id!;
+      await savedEdit(fresh.id, 'edit after failure');
+      const app = await runApplication(environmentId);
+      await backupDue(fresh.id);
+      const before = await headRevision(environmentId);
+      mocked.failExport = true;
+      onTestFinished(() => {
+        mocked.failExport = false;
+      });
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      expect(await headRevision(environmentId)).toBe(before);
+      expect((await store.get(fresh.id, principal.ownerId)).checkpoint_failure).toMatchObject({
+        retryable: true,
+        besideApplication: true,
+        firstIdleFailureAt: null,
+      });
+      mocked.failExport = false;
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      expect(await headRevision(environmentId)).toBe(before + 1);
+      const saved = await store.get(fresh.id, principal.ownerId);
+      expect(saved.checkpoint_failure).toBeNull();
+      expect(saved.lifecycle_error).toBeNull();
+      expect(app.cancel).not.toHaveBeenCalled();
+    });
+
+    it('lets idle release retry a deterministic failure that needed the application running', async () => {
+      const fresh = await freshStudy();
+      await fresh.send('checkpoint');
+      const environmentId = (await store.get(fresh.id, principal.ownerId)).environment_id!;
+      await savedEdit(fresh.id, 'saved at idle release');
+      const app = await runApplication(environmentId);
+      await backupDue(fresh.id);
+      const before = await headRevision(environmentId);
+      const archive = vi
+        .spyOn(E2BCompatibleSandboxProvider.prototype, 'exportWorkspace')
+        .mockImplementationOnce(async function* () {
+          throw new SandboxError('CHECKPOINT_UNSUPPORTED_FILES', 409, 'A socket is open.');
+        });
+      onTestFinished(() => archive.mockRestore());
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      expect((await store.get(fresh.id, principal.ownerId)).checkpoint_failure).toMatchObject({
+        reason: 'unsupported-files',
+        retryable: false,
+        besideApplication: true,
+      });
+      // The same generation is not exported again while the application still runs.
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      expect(archive).toHaveBeenCalledTimes(1);
+      expect(app.cancel).not.toHaveBeenCalled();
+      await ageStudy(fresh.id);
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      expect(app.cancel).toHaveBeenCalled();
+      expect(archive).toHaveBeenCalledTimes(2);
+      expect(await headRevision(environmentId)).toBe(before + 1);
+      const released = await store.get(fresh.id, principal.ownerId);
+      expect(released.archive_discard).toBeNull();
+      expect(await (await SandboxService.forOwner(principal)).get(environmentId)).toMatchObject({
+        state: 'destroyed',
+      });
+    });
+
+    it('keeps stage checkpoints, idle release and recorded idle checks strict', async () => {
+      const fresh = await freshStudy();
+      const environmentId = (await store.get(fresh.id, principal.ownerId)).environment_id!;
+      const sandbox = await SandboxService.forOwner(principal);
+      const stage = await runApplication(environmentId);
+      await expect(sandbox.assertRecordedWorkspaceIdle(environmentId)).rejects.toMatchObject({
+        reason: 'WORKSPACE_COMMAND_ACTIVE',
+      });
+      await expect(
+        withLearningWorkspaceAccess(
+          {
+            ownerId: principal.ownerId,
+            workspaceId: learningWorkspaceId(fresh.id),
+            environmentIds: () => [environmentId],
+            operations: ['checkpoint'],
+          },
+          () => sandbox.prepareWorkspaceCheckpoint(environmentId, 0, AbortSignal.timeout(5_000)),
+        ),
+      ).rejects.toMatchObject({ reason: 'WORKSPACE_COMMAND_ACTIVE' });
+      await fresh.send('checkpoint');
+      expect(stage.cancel).toHaveBeenCalled();
+      expect(await stage.state()).toBe('cancelled');
+      stage.cancel.mockRestore();
+      const idle = await runApplication(environmentId);
+      await ageStudy(fresh.id);
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      expect(idle.cancel).toHaveBeenCalled();
+      expect(await idle.state()).toBe('cancelled');
+      expect(await sandbox.get(environmentId)).toMatchObject({ state: 'destroyed' });
+    });
+
+    it('does not let relaunches postpone a backup, and a clean launch waits its turn', async () => {
+      const fresh = await freshStudy();
+      await fresh.send('checkpoint');
+      const environmentId = (await store.get(fresh.id, principal.ownerId)).environment_id!;
+      await runApplication(environmentId);
+      const before = await headRevision(environmentId);
+      // A clean workspace gets a fresh age from its first launch.
+      const clean = await store.get(fresh.id, principal.ownerId);
+      expect(clean.workspace_dirty_at).toBeNull();
+      await store.markWorkspaceWriter(clean);
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      expect(await headRevision(environmentId)).toBe(before);
+      // Every save relaunches: the generation advances while the age is retained.
+      await backupDue(fresh.id);
+      const current = await store.get(fresh.id, principal.ownerId);
+      const aged = current.workspace_dirty_at!.getTime();
+      for (let n = 0; n < 5; n++) await store.markWorkspaceWriter(current);
+      const relaunched = await store.get(fresh.id, principal.ownerId);
+      expect(relaunched.workspace_dirty_at!.getTime()).toBeGreaterThan(aged);
+      expect(relaunched.workspace_dirty_at!.getTime()).toBeLessThan(aged + 1_000);
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      expect(await headRevision(environmentId)).toBe(before + 1);
+    });
   });
 
   it.each(['poll', 'maintenance'] as const)(

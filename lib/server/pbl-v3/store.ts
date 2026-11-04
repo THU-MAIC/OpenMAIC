@@ -335,13 +335,14 @@ export class LearningStore {
 
   /** Called under the study lock before dispatching an application writer.
    * Advance the archive fence on every start, without changing teaching evidence or editor revisions.
+   * A dirty workspace keeps its age, so repeated relaunches cannot postpone the periodic backup.
    */
   async markWorkspaceWriter(row: Study) {
     const updated = await this.transaction(async (db) => {
       await fenceOwnerWrite(db, row.owner_id);
       return db.query<Pick<Study, 'workspace_dirty_at'>>(
-        `UPDATE pbl_v3_studies SET workspace_dirty_at=GREATEST(
-           date_trunc('milliseconds',clock_timestamp()), workspace_dirty_at+interval '1 millisecond')
+        `UPDATE pbl_v3_studies SET workspace_dirty_at=COALESCE(
+           workspace_dirty_at+interval '1 millisecond', date_trunc('milliseconds',clock_timestamp()))
          WHERE id=$1 AND owner_id=$2 AND environment_id=$3 AND revision=$4
            AND idle_turn_cleanup->>'releasing' IS DISTINCT FROM 'true'
            AND (archive_discard IS NULL OR archive_discard->>'environmentId'<>$3)

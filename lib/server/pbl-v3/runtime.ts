@@ -123,8 +123,9 @@ export async function readFiles(
   const result: Record<string, string> = {};
   const environmentId = requireEnvironment(row);
   // Durable evidence uses a quiesced snapshot by default. Read-only teaching
-  // version observations may leave applications running; final approval,
-  // assessments and archive publication retain the strict default.
+  // version observations and the periodic fallback backup may leave applications
+  // running; final approval, assessments, stage checkpoints and idle release
+  // retain the strict default.
   await service.assertWorkspaceIdle(environmentId, signal, options);
   let bytes = 0;
   const paths = await checkpointIO(
@@ -145,8 +146,13 @@ export async function readFiles(
 export function filesFingerprint(files: Record<string, string>) {
   return digest(JSON.stringify(Object.entries(files).sort(([a], [b]) => a.localeCompare(b))));
 }
-export async function fileSnapshot(service: SandboxService, row: Study, signal?: AbortSignal) {
-  const files = await readFiles(service, row, projectFor(row), signal);
+export async function fileSnapshot(
+  service: SandboxService,
+  row: Study,
+  signal?: AbortSignal,
+  options: { allowApplications?: boolean } = {},
+) {
+  const files = await readFiles(service, row, projectFor(row), signal, options);
   return { files, fingerprint: filesFingerprint(files) };
 }
 export async function saveStudyCheckpoint(

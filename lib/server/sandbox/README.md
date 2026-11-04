@@ -149,15 +149,25 @@ If closure cannot be confirmed before expiry, release without a new archive unde
 existing durable discard/loss policy. Terminal closure itself does not count as activity.
 
 File invalidation marks the workspace dirty before the remote write. In addition to teaching
-checkpoints, dirty work is checkpointed after 60 seconds when no managed writer is active.
+checkpoints, dirty work is checkpointed after 60 seconds when no Agent, one-shot command or
+terminal is active. A running PBL application does not block this backup and is not stopped.
 Periodic capture/upload holds a separate checkpoint lock while study and file operations
 remain available. Publication briefly locks the study/environment and validates the same
-revision, dirty generation, environment and writer reservations. Checkpoint head and study
-recovery metadata publish in one PostgreSQL transaction. Concurrent edits or work discard
-the pending upload without replacing the previous checkpoint or clearing dirty state.
-This limits the normal between-stage recovery window; a long running writer or unavailable
-storage can extend it. Unexpected provider expiry or application/storage failure can lose
-changes since the last successful checkpoint. Local browser drafts are not durable backups.
+revision, dirty generation, environment and non-application writer reservations. Checkpoint
+head and study recovery metadata publish in one PostgreSQL transaction. Concurrent edits,
+work, a relaunch, or an application changing files during export discard the attempt without
+replacing the previous checkpoint or clearing dirty state; the next pass retries it.
+
+A periodic copy is a recovery fallback, never evidence. The export is internally consistent,
+but application-owned data can be from mid-run, and recovery fingerprints the restored sources
+again, so changed sources clear their reviews and tests instead of passing them. The first copy
+after a launch clears the dirty state. Later application-only writes wait for the next edit,
+launch or idle release, and an unexpected loss of only those writes shows no loss notice.
+
+This limits the normal between-stage recovery window; a long running Agent or command, an
+application constantly changing archived files, or unavailable storage can extend it. Unexpected
+provider expiry or application/storage failure can lose changes since the last successful
+checkpoint. Local browser drafts are not durable backups.
 
 Intentional reclamation collects outcomes, quiesces writers, commits a checkpoint and its
 study recovery position, then destroys the resource. It preserves the logical study and
@@ -169,7 +179,9 @@ durable release intent, return completes deletion and restoration under the orig
 
 Checkpoint failures record a safe reason, stage and first idle failure timestamp. Transient
 failures retry on the next pass; deterministic size/file/quota/configuration failures wait
-for user activity or an explicit retry instead of repeatedly exporting unchanged files.
+for user activity or an explicit retry instead of repeatedly exporting unchanged files. A
+deterministic failure captured beside a running application (a socket, say) may not outlive it,
+so idle release stops the application and tries the strict archive once before it applies.
 `OPENMAIC_PBL_ARCHIVE_FAILURE_GRACE_MS` is optional, read at runtime, defaults to **300000**
 and accepts 60000–86400000. For archive failures it starts on the first failed **idle
 reclamation**, not a periodic dirty checkpoint. The same setting bounds departed-turn
