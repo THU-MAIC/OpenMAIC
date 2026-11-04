@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Pro workbench: when the scene-content model accepts images, `generate_scene` now sends the page's `media` to it as images, as classic generation already does. Before, the model saw only a one-line text description of each figure. Each image adds input tokens (roughly 400–1,100 for a typical textbook figure) and is read from the owner's asset storage before the call; a model without image input keeps the text-only behavior.
+
 ## [1.4.0] - 2026-11-04
 
 1.4.0 is about project-based learning: **PBL v3** is a new way into vibe coding where learners build the project and come away understanding how it works. Concepts become hands-on tasks that the learner gets running, an AI tutor works through requirements, design and implementation with them, each milestone gives feedback and the finished project a personal learning report, and work and progress are kept for the next visit. PBL v3 runs on a new shared sandbox and stays off until a sandbox provider is configured; no new setting is required otherwise. The upgrade is one-way; read **Breaking Changes** before upgrading.

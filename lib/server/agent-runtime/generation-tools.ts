@@ -431,11 +431,17 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
       let content: Awaited<ReturnType<typeof generateSceneContent>>;
       let contentFailure: SceneContentFailureCode | undefined;
       try {
-        content = await generateSceneContent(outline, aiCallFor(sceneContentStage(params.type)), {
+        const contentStage = sceneContentStage(params.type);
+        // The content model sees page media as images when its routed model
+        // accepts them, so it can place and annotate them by what they show.
+        // An injected aiCall (tests) keeps the text-only contract.
+        const visionEnabled =
+          assignedImages.length > 0 && !deps.aiCall && (await routed.supportsVision(contentStage));
+        content = await generateSceneContent(outline, aiCallFor(contentStage), {
           agents,
           languageDirective: doc.stage.languageDirective ?? '',
           allowProceduralSkill: true,
-          ...(assignedImages.length ? { assignedImages, imageMapping } : {}),
+          ...(assignedImages.length ? { assignedImages, imageMapping, visionEnabled } : {}),
           ...(params.instruction ? { editDirective: params.instruction } : {}),
           ...(baseline ? { baselineContent: baseline } : {}),
           onFailure: (failure) => {
