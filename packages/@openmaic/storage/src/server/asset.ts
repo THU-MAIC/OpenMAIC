@@ -6,6 +6,7 @@ import {
   ASSET_DESCRIPTOR_MEDIA_TYPE,
   AssetNotFoundError,
   AssetQuotaExceededError,
+  AssetImmutableError,
   AssetRootedError,
   DEFAULT_RENDERABLE_TYPES,
   EXCLUDED_RENDERABLE_TYPES,
@@ -483,8 +484,8 @@ function servedLabel(
  * degrading into a 500 in those hosts, which is the difference between a
  * client that stops and a client that retries a paid operation forever.
  *
- * Only these three codes are recognised, and only as a fallback after the class
- * check, so nothing else can dress itself up as a contract error by accident:
+ * Only these declared asset codes are recognised, as a fallback after the
+ * class check, so nothing else can dress itself up as a contract error by accident:
  * a PostgreSQL error's `code` is a SQLSTATE, and no SQLSTATE spells
  * `ASSET_NOT_FOUND`.
  */
@@ -502,6 +503,13 @@ function classifyStoreError(error: unknown): never {
       507,
       'ASSET_QUOTA_EXCEEDED',
       '@openmaic/storage: asset quota exceeded for this principal',
+    );
+  }
+  if (error instanceof AssetImmutableError || code === 'ASSET_IMMUTABLE') {
+    throw new AssetHttpError(
+      409,
+      'ASSET_IMMUTABLE',
+      '@openmaic/storage: immutable asset; install a new content version instead',
     );
   }
   if (error instanceof AssetRootedError || code === 'ASSET_ROOTED') {

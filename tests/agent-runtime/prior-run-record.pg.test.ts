@@ -50,6 +50,7 @@ describe.skipIf(!contractUrl)('prior runs read from the PostgreSQL event log', (
   });
 
   beforeEach(async () => {
+    // Keep cleanup local to this suite, even while other contracts claim sessions.
     await pool.query(
       `TRUNCATE agent_session_entries, agent_session_events,
                 agent_owner_session_events, agent_owner_session_event_counters,

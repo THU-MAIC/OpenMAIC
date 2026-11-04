@@ -931,12 +931,26 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     // Selection mirror honors provenance (same semantics as
     // restoreAgentSelection): a stage-derived selection tracks the roster
     // wholesale; a user's explicit auto choice is handled by cases below. A
-    // user-set preset selection references non-generated agents only, so a
-    // roster edit does not concern it.
+    // user-set preset selection steps aside for the course's own roster and
+    // is kept for when no roster applies.
     const settings = useSettingsStore.getState();
     const nextRosterIds = configs.map((a) => a.id);
-    if (!settings.agentSelectionIsUserSet) {
+    if (nextRosterIds.length === 0 && settings.presetAgentChoice.length > 0) {
+      // The roster the kept choice stepped aside for is gone: same as loading
+      // a course without a roster.
+      settings.setAgentMode('preset');
+      settings.setSelectedAgentIds(settings.presetAgentChoice);
+      settings.setAgentSelectionIsUserSet(true);
+      settings.setPresetAgentChoice([]);
+    } else if (!settings.agentSelectionIsUserSet) {
       settings.setSelectedAgentIds(nextRosterIds);
+    } else if (settings.agentMode === 'preset') {
+      if (nextRosterIds.length > 0) {
+        settings.setPresetAgentChoice(settings.selectedAgentIds);
+        settings.setAgentMode('auto');
+        settings.setSelectedAgentIds(nextRosterIds);
+        settings.setAgentSelectionIsUserSet(false);
+      }
     } else if (settings.agentMode === 'auto') {
       // The AgentBar's auto toggle snapshots the whole roster as the user's
       // selection, so "selection === pre-edit full roster" means the intent

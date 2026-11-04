@@ -2,6 +2,7 @@
 
 import { requireContextOwner } from '@/lib/server/identity/resolve';
 import { getAgentSessionStore } from '@/lib/server/agent-runtime/store';
+import { isPBLRoleSession } from '@/lib/pbl/v3/session-kind';
 
 /**
  * Server Action mutation used by the workspace row menu.
@@ -17,6 +18,7 @@ export async function deleteWorkspaceSession(id: string): Promise<{ deleted: boo
   const sessionId = id.trim();
   if (!sessionId) return { deleted: false };
   const { ownerId } = await requireContextOwner();
+  if (isPBLRoleSession(sessionId)) return { deleted: false };
   const store = await getAgentSessionStore();
   return { deleted: await store.softDeleteSession(sessionId, ownerId) };
 }

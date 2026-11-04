@@ -1,0 +1,303 @@
+/* The transcript portal shares the workspace palette without size containment. */
+.pbl-workbench {
+  container-type: size;
+}
+.pbl-workbench,
+.pbl-history {
+  --background: #ffffff;
+  --foreground: #243248;
+  --card: #ffffff;
+  --card-foreground: #243248;
+  --popover: #ffffff;
+  --popover-foreground: #243248;
+  --muted: #edf2f7;
+  --muted-foreground: #607087;
+  --border: #dce3ec;
+  --input: #dce3ec;
+  --primary: #0b7a52;
+  --primary-foreground: #ffffff;
+  --accent: #e5f3ed;
+  --accent-foreground: #135d43;
+  --ring: #0b7a52;
+  --pbl-assistant-bubble: #f0f4f8;
+  --pbl-chrome: #f8fafc;
+}
+.dark .pbl-workbench,
+.dark .pbl-history {
+  color-scheme: dark;
+  --background: #111827;
+  --foreground: #dce4ef;
+  --card: #151d2b;
+  --card-foreground: #dce4ef;
+  --popover: #1a2332;
+  --popover-foreground: #dce4ef;
+  --muted: #223046;
+  --muted-foreground: #a4b0c2;
+  --border: #2b384c;
+  --input: #2b384c;
+  --primary: #3bf0a4;
+  --primary-foreground: #012417;
+  --accent: #153b30;
+  --accent-foreground: #63f5ba;
+  --ring: #3bf0a4;
+  --pbl-assistant-bubble: #202b3d;
+  --pbl-chrome: #151d2b;
+}
+.pbl-workbench .pbl-chrome {
+  background: var(--pbl-chrome);
+}
+:is(.pbl-workbench, .pbl-history) .pbl-assistant-bubble {
+  background: var(--pbl-assistant-bubble);
+  font-size: var(--wb-text-base);
+}
+
+/* The shared scroller reserves a second gutter on the left by default. */
+.pbl-workbench .pbl-conversation-scroll {
+  scrollbar-gutter: stable !important;
+}
+
+/* Activity cards stay compact; prose retains extra breathing room on either side. */
+:is(.pbl-workbench, .pbl-history) .pbl-assistant-bubble > .pbl-teaching-prose:not(:first-child),
+:is(.pbl-workbench, .pbl-history) .pbl-assistant-bubble > .pbl-teaching-prose + * {
+  margin-block-start: 7px;
+}
+
+:is(.pbl-workbench, .pbl-history) .pbl-teaching-prose .wb-prose {
+  --wb-h1: 20px;
+  --wb-h2: 20px;
+  --wb-h3: 16px;
+  line-height: 1.8;
+}
+:is(.pbl-workbench, .pbl-history) .pbl-teaching-prose .wb-prose p {
+  margin-block: 0 0.85em;
+}
+:is(.pbl-workbench, .pbl-history) .pbl-teaching-prose .wb-prose :is(h1, h2, h3, h4) {
+  margin-block: 1.5em 0.55em;
+  line-height: 1.45;
+  color: var(--foreground);
+  font-weight: 650;
+}
+/* Emphasis changes weight, never the body font size. */
+:is(.pbl-workbench, .pbl-history)
+  .pbl-teaching-prose
+  .wb-prose
+  :is(h1, h2, h3, h4, p[data-pbl-lead='true']):first-child {
+  margin-block-start: 0;
+}
+:is(.pbl-workbench, .pbl-history) .pbl-teaching-prose .wb-prose :is(ul, ol) {
+  margin-block: 0.6em 1em;
+  padding-inline-start: 1.45em;
+}
+:is(.pbl-workbench, .pbl-history) .pbl-teaching-prose .wb-prose li {
+  margin-block: 0.4em;
+  padding-inline-start: 0.15em;
+}
+:is(.pbl-workbench, .pbl-history) .pbl-teaching-prose .wb-prose li > p {
+  margin-block: 0;
+}
+:is(.pbl-workbench, .pbl-history) .pbl-teaching-prose .wb-prose blockquote {
+  margin-block: 1em;
+  padding: 0.75em 1em;
+  border-inline-start: 3px solid color-mix(in srgb, var(--primary) 60%, transparent);
+  border-radius: 0 8px 8px 0;
+  background: color-mix(in srgb, var(--primary) 7%, var(--background));
+  color: var(--foreground);
+}
+
+:is(.pbl-workbench, .pbl-history) .pbl-teaching-prose .wb-prose :is(h1, h2) {
+  font-size: var(--wb-h2);
+}
+:is(.pbl-workbench, .pbl-history) .pbl-teaching-prose .wb-prose :is(h3, h4) {
+  font-size: var(--wb-h3);
+}
+:is(.pbl-workbench, .pbl-history) .pbl-teaching-prose .wb-prose :is(h5, h6) {
+  font-size: var(--wb-text-base);
+}
+:is(.pbl-workbench, .pbl-history) .pbl-teaching-prose .wb-prose > div > :last-child {
+  margin-block-end: 0;
+}
+
+.pbl-workbench .pbl-recovery-notice {
+  --pbl-recovery-ink: #92400e;
+  --pbl-recovery-surface: #fffbeb;
+  --pbl-recovery-line: #f2d49a;
+  --pbl-recovery-button: #92400e;
+  --pbl-recovery-button-ink: #ffffff;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  flex-shrink: 0;
+  margin: 10px 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--pbl-recovery-line);
+  border-radius: 12px;
+  background: var(--pbl-recovery-surface);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.04);
+  color: var(--foreground);
+}
+.dark .pbl-workbench .pbl-recovery-notice {
+  --pbl-recovery-ink: #fcd58a;
+  --pbl-recovery-surface: #292319;
+  --pbl-recovery-line: #705833;
+  --pbl-recovery-button: #fcd58a;
+  --pbl-recovery-button-ink: #302311;
+}
+.pbl-workbench .pbl-recovery-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  align-self: flex-start;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--pbl-recovery-ink) 12%, transparent);
+  color: var(--pbl-recovery-ink);
+}
+.pbl-workbench .pbl-recovery-copy {
+  flex: 1 1 190px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: break-word;
+}
+.pbl-workbench .pbl-recovery-copy h4 {
+  margin-bottom: 3px;
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--pbl-recovery-ink);
+}
+.pbl-workbench .pbl-recovery-hint {
+  margin-top: 3px;
+  color: var(--muted-foreground);
+}
+.pbl-workbench .pbl-recovery-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--pbl-recovery-button);
+  color: var(--pbl-recovery-button-ink);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pbl-workbench .pbl-recovery-action:hover:not(:disabled) {
+  filter: brightness(0.94);
+}
+.pbl-workbench .pbl-recovery-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.pbl-workbench .pbl-task-area {
+  /* This flex area excludes the actual toolbar, notices and composer height. */
+  container-type: size;
+}
+.pbl-workbench .pbl-task-drawer {
+  /* Keep its close control inside the chat area, even in a short scene. */
+  max-height: min(560px, max(0px, calc(100cqh - 64px)));
+  transform-origin: bottom center;
+  animation: pbl-task-open 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes pbl-task-open {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pbl-workbench .pbl-task-drawer {
+    animation: none;
+  }
+}
+@container (max-width: 500px) {
+  .pbl-workbench .pbl-task-trigger .pbl-task-step,
+  .pbl-workbench .pbl-task-trigger .pbl-task-hint {
+    display: none;
+  }
+}
+/* OpenPBL's filled ready action, with a neutral unavailable state. */
+.pbl-workbench .pbl-stage-action {
+  cursor: pointer;
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+.pbl-workbench .pbl-stage-action:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--primary) 85%, transparent);
+}
+.pbl-workbench .pbl-stage-action:disabled {
+  cursor: not-allowed;
+  border-color: var(--border);
+  background: transparent;
+  color: var(--muted-foreground);
+  box-shadow: none;
+}
+.pbl-workbench button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+@container (max-width: 850px) {
+  .pbl-workbench .pbl-environment-label {
+    display: none;
+  }
+}
+
+@container (max-width: 560px) {
+  .pbl-workbench .pbl-topbar {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .pbl-workbench .pbl-topbar h2 {
+    flex-basis: 100%;
+  }
+}
+
+/* Keep Monaco's cursor-side lock message compact and consistent with the workbench. */
+.pbl-workbench .monaco-editor-overlaymessage .message {
+  max-width: min(360px, calc(100vw - 32px));
+  padding: 6px 9px;
+  border-color: var(--border);
+  border-radius: 6px;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  font-size: 12px;
+  line-height: 1.5;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
+}
+
+/* Version-matched AI edits; selection itself remains Monaco's native selection. */
+.pbl-change-added {
+  background-color: rgb(34 197 94 / 15%);
+}
+.pbl-change-modified {
+  background-color: rgb(34 197 94 / 10%);
+}
+.pbl-change-gutter-added,
+.pbl-change-gutter-modified {
+  border-left: 3px solid #22c55e;
+}
+.pbl-change-gutter-added::after {
+  content: '+';
+  color: #16a34a;
+  font-weight: 700;
+  padding-left: 2px;
+}
+.pbl-change-gutter-modified::after {
+  content: '~';
+  color: #16a34a;
+  font-weight: 700;
+  padding-left: 2px;
+}
+.pbl-change-gutter-deleted {
+  border-top: 3px solid #ef4444;
+}

@@ -1,0 +1,15 @@
+milestone,stage,measured_command_and_agent_wait_seconds,agent_turns,agent_wait_seconds
+greeting,teaching,106.732,3,106.235
+greeting,decision,27.541,1,25.930
+greeting,planning,118.308,3,113.621
+greeting,coding,180.644,3,167.421
+greeting,evaluation,12.984,0,0.000
+greeting,quiz,1.189,0,0.000
+greeting,recap,132.152,3,128.169
+normalize,teaching,86.555,2,86.028
+normalize,decision,22.033,1,21.514
+normalize,planning,174.156,3,161.957
+normalize,coding,122.316,2,108.325
+normalize,evaluation,11.618,0,0.000
+normalize,quiz,1.259,0,0.000
+normalize,recap,125.069,3,125.069

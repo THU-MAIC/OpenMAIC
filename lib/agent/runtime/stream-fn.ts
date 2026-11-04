@@ -1,3 +1,5 @@
+import { llmExecutionContext } from '@/lib/ai/thinking-context';
+import { MODEL_REQUEST_IDLE_TIMEOUT, modelRequestFailure } from './request-failure';
 /**
  * MAIC Agent — pi StreamFn adapter (promoted from PoC).
  *
@@ -151,7 +153,14 @@ export interface CallLlmStreamFnOptions {
    * hard max_tokens on the provider call.
    */
   omitMaxOutputTokens?: boolean;
-  thinkingConfig?: ThinkingConfig;
+  /** Resolve per model request so a validated teaching transition applies within the same turn. */
+  thinkingConfig?: ThinkingConfig | (() => ThinkingConfig);
+  /** No application-level header/body deadline for this conversation. */
+  unbounded?: boolean;
+  /** Per-request silence guard, reset by upstream stream parts; never a total turn deadline. */
+  responseIdleTimeoutMs?: number;
+  /** Upstream execution feedback, before presentation throttling; never a local heartbeat. */
+  onProgress?: () => void;
   source?: string;
   /** Optional abort signal forwarded to the underlying streamLLM call. */
   abortSignal?: AbortSignal;
@@ -255,7 +264,10 @@ export function createPartMapper(
 export function createCallLlmStreamFn(opts: CallLlmStreamFnOptions): StreamFn {
   return ((_piModel, context: PiContext, streamOptions?: SimpleStreamOptions) => {
     const stream = new LocalAssistantEventStream();
-    void pump(stream, context, opts, streamOptions).catch((error) => stream.fail(error));
+    const run = () => pump(stream, context, opts, streamOptions);
+    void (opts.unbounded ? llmExecutionContext.run({ unbounded: true }, run) : run()).catch(
+      (error) => stream.fail(error),
+    );
     return stream as unknown as AssistantMessageEventStream;
   }) as StreamFn;
 }
@@ -282,6 +294,22 @@ async function pump(
   const mapper = createPartMapper(partial, (event) => stream.push(event));
   let settled = false;
   let cleanupAbortListeners = () => {};
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  const requestAbort = new AbortController();
+  const clearIdleTimer = () => clearTimeout(idleTimer);
+  const armIdleTimer = () => {
+    clearIdleTimer();
+    if (!opts.responseIdleTimeoutMs || settled) return;
+    idleTimer = setTimeout(() => {
+      const error = new Error(
+        `[${MODEL_REQUEST_IDLE_TIMEOUT}] Model request received no upstream response within the idle window. Retry to continue.`,
+      );
+      // Settle even if a broken transport ignores abort. No late tool call may execute.
+      requestAbort.abort(error);
+      settleError('error', error);
+    }, opts.responseIdleTimeoutMs);
+    idleTimer.unref?.();
+  };
 
   const setUsage = (rawUsage: LanguageModelUsage | undefined): void => {
     const usage = normalizeUsage(rawUsage);
@@ -309,6 +337,10 @@ async function pump(
   const settleError = (reason: 'error' | 'aborted', error: unknown): boolean => {
     if (settled) return false;
     settled = true;
+    // Settling the local stream must also release a still-open provider request.
+    // Mark settled first because abort synchronously invokes our own listener.
+    requestAbort.abort(error);
+    clearIdleTimer();
     mapper.finalize();
     removeExecutableToolCalls();
     partial.stopReason = reason;
@@ -316,6 +348,8 @@ async function pump(
       error,
       reason === 'aborted' ? 'Operation aborted' : 'LLM stream error',
     );
+    if (reason === 'error' && opts.responseIdleTimeoutMs)
+      partial.errorMessage = modelRequestFailure(partial.errorMessage);
     cleanupAbortListeners();
     stream.push({ type: 'error', reason, error: partial });
     return true;
@@ -326,6 +360,7 @@ async function pump(
     totalUsage: LanguageModelUsage | undefined,
   ): boolean => {
     if (settled) return false;
+    clearIdleTimer();
 
     const hasToolCall = partial.content.some((content) => content.type === 'toolCall');
     mapper.finalize();
@@ -381,9 +416,9 @@ async function pump(
       return;
     }
 
-    const combinedAbort = combineAbortSignals(abortSources);
+    const combinedAbort = combineAbortSignals([...abortSources, requestAbort.signal]);
     const onAbort = () => {
-      settleError('aborted', combinedAbort.signal?.reason);
+      settleError(requestAbort.signal.aborted ? 'error' : 'aborted', combinedAbort.signal?.reason);
     };
     combinedAbort.signal?.addEventListener('abort', onAbort, { once: true });
     cleanupAbortListeners = () => {
@@ -402,6 +437,7 @@ async function pump(
       : opts.maxOutputTokens && requestedMaxTokens
         ? Math.min(opts.maxOutputTokens, requestedMaxTokens)
         : (requestedMaxTokens ?? opts.maxOutputTokens);
+    armIdleTimer();
     const result = await streamLLM(
       {
         model: opts.languageModel,
@@ -418,11 +454,22 @@ async function pump(
         abortSignal: combinedAbort.signal,
       },
       opts.source ?? 'maic-agent',
-      opts.thinkingConfig,
+      typeof opts.thinkingConfig === 'function' ? opts.thinkingConfig() : opts.thinkingConfig,
     );
 
     for await (const part of result.fullStream as AsyncIterable<Record<string, unknown>>) {
       if (settled) break;
+      armIdleTimer();
+      const delta = part.text ?? part.delta ?? part.textDelta;
+      const feedback =
+        (['text-delta', 'text', 'reasoning-delta', 'reasoning', 'tool-input-delta'].includes(
+          String(part.type),
+        ) &&
+          typeof delta === 'string' &&
+          delta.length > 0) ||
+        part.type === 'tool-call' ||
+        part.type === 'finish';
+      if (feedback) opts.onProgress?.();
       if (part.type === 'finish') {
         settleFinish(
           part.finishReason as FinishReason | undefined,
@@ -444,6 +491,7 @@ async function pump(
   } catch (err) {
     settleError('error', err);
   } finally {
+    clearIdleTimer();
     cleanupAbortListeners();
   }
 }
