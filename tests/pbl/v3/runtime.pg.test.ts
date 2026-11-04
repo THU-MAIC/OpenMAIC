@@ -11183,6 +11183,20 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         "INSERT INTO sandbox_commands(environment_id,id,request_fingerprint,purpose,result_json) VALUES ($1,$2,'fixture','application',$3)",
         [environmentId, applicationId, JSON.stringify(app)],
       );
+      const before = await service.checkpoint(environmentId);
+      await store.exclusive(row.id, () =>
+        withLearningWorkspaceAccess(
+          {
+            ownerId: row.owner_id,
+            workspaceId: learningWorkspaceId(row.id),
+            environmentIds: () => [environmentId],
+            operations: ['checkpoint'],
+          },
+          () => saveStudyCheckpoint(service, row, undefined, true),
+        ),
+      );
+      expect((await service.checkpoint(environmentId))?.revision).toBe((before?.revision ?? 0) + 1);
+      expect(await service.command(environmentId, applicationId)).toEqual(app);
       await fresh.send('evaluate');
       expect((await learningView(principal, fresh.id)).evaluation).toMatchObject({
         isolatedSources: true,

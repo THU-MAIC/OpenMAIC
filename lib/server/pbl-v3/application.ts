@@ -172,6 +172,7 @@ export async function inspectApplication(
       state: data.httpStatus === undefined ? 'starting' : 'running',
       httpStatus: data.httpStatus,
       sourceChanged: data.sourceHash !== run.sourceHash,
+      ...(capturedRun ? { runId: run.commandId } : {}),
     };
   } catch {
     return { observedAt, state: 'unknown' };
