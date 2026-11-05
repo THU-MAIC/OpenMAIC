@@ -29,6 +29,9 @@ const ALLOW_LOCAL_DNS_TIMEOUT_MS = 3_000;
 const CLOUD_METADATA_BLOCK_MESSAGE =
   'Cloud instance metadata endpoints are never allowed as outbound targets, even with ALLOW_LOCAL_NETWORKS=true.';
 
+const RESERVED_NETWORK_BLOCK_MESSAGE =
+  'IANA reserved, benchmark/fake-ip (198.18.0.0/15), multicast, and broadcast addresses are never allowed as outbound targets, even with ALLOW_LOCAL_NETWORKS=true. If a local proxy uses fake-ip DNS interception, exclude the provider domain from fake-ip so it resolves to its real address.';
+
 const LOCAL_NETWORK_BLOCK_MESSAGE =
   'Local/private network URLs are not allowed. If this is a self-hosted deployment or internal gateway (including split-horizon DNS), set ALLOW_LOCAL_NETWORKS=true to allow local network targets.';
 
@@ -264,7 +267,7 @@ export function connectionAddressBlockReason(
   // IANA reserved/multicast/broadcast ranges are never legitimate proxy
   // targets, opt-in or not.
   if (isNeverAllowedRange(canonical)) {
-    return LOCAL_NETWORK_BLOCK_MESSAGE;
+    return RESERVED_NETWORK_BLOCK_MESSAGE;
   }
   if (allowLocalNetworks) {
     return null;
@@ -518,7 +521,7 @@ export async function validateUrlForSSRFWithPolicy(
   // matching the connect-time dispatcher policy. It also covers the case Node
   // never runs `connect.lookup` for: an IP-literal URL.
   if (isNeverAllowedRange(hostname)) {
-    return LOCAL_NETWORK_BLOCK_MESSAGE;
+    return RESERVED_NETWORK_BLOCK_MESSAGE;
   }
 
   if (allowLocal) {
@@ -542,7 +545,7 @@ export async function validateUrlForSSRFWithPolicy(
       return CLOUD_METADATA_BLOCK_MESSAGE;
     }
     if (resolvedAddresses?.some(({ address }) => isNeverAllowedRange(address))) {
-      return LOCAL_NETWORK_BLOCK_MESSAGE;
+      return RESERVED_NETWORK_BLOCK_MESSAGE;
     }
     return null;
   }
@@ -576,12 +579,12 @@ export async function validateUrlForSSRFWithPolicy(
     return CLOUD_METADATA_BLOCK_MESSAGE;
   }
 
-  // A never-allowed answer stays on the generic message: server configuration
-  // does not unlock reserved, multicast, or broadcast ranges either. The
-  // client-supplied wording applies only when every disqualifying answer is
-  // opt-in-governed.
+  // A never-allowed answer keeps its own refusal message: neither
+  // ALLOW_LOCAL_NETWORKS nor operator provider configuration unlocks reserved,
+  // multicast, or broadcast ranges. The client-supplied wording applies only
+  // when every disqualifying answer is opt-in-governed.
   if (resolvedAddresses.some(({ address }) => isNeverAllowedRange(address))) {
-    return LOCAL_NETWORK_BLOCK_MESSAGE;
+    return RESERVED_NETWORK_BLOCK_MESSAGE;
   }
 
   if (resolvedAddresses.some(({ address }) => isOptInGovernedRange(address))) {
