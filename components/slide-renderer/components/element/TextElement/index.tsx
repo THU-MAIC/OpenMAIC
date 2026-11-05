@@ -19,6 +19,9 @@ export interface TextElementProps {
   ) => void;
 }
 
+/** How long after the user leaves a text box its debounced input can still arrive. */
+const EMPTY_TEXT_LEAVE_WINDOW_MS = 1_000;
+
 /**
  * Editable text element component
  * Includes auto-height adjustment and empty text cleanup
@@ -164,12 +167,20 @@ export function TextElement({ elementInfo, selectElement }: TextElementProps) {
   // Remove empty text when the user leaves the element. Removing it saves the
   // whole scene, so this follows that action: rendering an empty box (entering
   // Edit, an undo, a server copy) must not write this tab's copy to the server.
+  // The editor reports input after a debounce, so text cleared just before the
+  // leave arrives just after it, and counts as part of it.
   const wasHandled = useRef(isHandleElement);
+  const leftAt = useRef(Number.NEGATIVE_INFINITY);
+  const checkedContent = useRef(elementInfo.content);
   useEffect(() => {
     const left = wasHandled.current && !isHandleElement;
+    const contentChanged = checkedContent.current !== elementInfo.content;
     wasHandled.current = isHandleElement;
-    if (left) checkEmptyText();
-  }, [isHandleElement, checkEmptyText]);
+    checkedContent.current = elementInfo.content;
+    if (left) leftAt.current = Date.now();
+    const justLeft = !isHandleElement && Date.now() - leftAt.current < EMPTY_TEXT_LEAVE_WINDOW_MS;
+    if (left || (contentChanged && justLeft)) checkEmptyText();
+  }, [isHandleElement, elementInfo.content, checkEmptyText]);
 
   return (
     <div

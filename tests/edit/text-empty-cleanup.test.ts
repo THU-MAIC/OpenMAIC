@@ -24,8 +24,18 @@ vi.mock('@/lib/utils/stage-storage', () => ({
 vi.mock('@/lib/hooks/use-history-snapshot', () => ({
   useHistorySnapshot: () => ({ addHistorySnapshot: vi.fn() }),
 }));
+const editorInput = vi.hoisted(() => new Map<string, (value: string) => void>());
 vi.mock('@/components/slide-renderer/components/element/ProsemirrorEditor', () => ({
-  ProsemirrorEditor: () => null,
+  ProsemirrorEditor: ({
+    elementId,
+    onUpdate,
+  }: {
+    elementId: string;
+    onUpdate: (update: { value: string }) => void;
+  }) => {
+    editorInput.set(elementId, (value) => onUpdate({ value }));
+    return null;
+  },
 }));
 
 import { useSlideEditSession } from '@/components/edit/surfaces/slide/slide-edit-session';
@@ -189,6 +199,31 @@ describe('an empty text box on the legacy canvas', () => {
     await select('');
     await settle();
     expect(storedIds()).toEqual(['kept']);
+  });
+
+  it('goes when the user clears it and clicks away before the editor reports the change', async () => {
+    await openEditor(slideWith(['kept', '<p>text</p>'], ['cleared', '<p>was here</p>']));
+
+    await select('cleared');
+    await select('');
+    // The editor's input is debounced: the empty content arrives after the leave.
+    await settle(200);
+    act(() => editorInput.get('cleared')!(''));
+    await settle();
+
+    expect(storedIds()).toEqual(['kept']);
+  });
+
+  it('stays when its content empties long after the user left it', async () => {
+    await openEditor(slideWith(['kept', '<p>text</p>'], ['later', '<p>was here</p>']));
+
+    await select('later');
+    await select('');
+    await settle(5_000);
+    act(() => editorInput.get('later')!(''));
+    await settle();
+
+    expect(storedIds()).toEqual(['kept', 'later']);
   });
 
   it('stays when another box is the one the user leaves', async () => {
