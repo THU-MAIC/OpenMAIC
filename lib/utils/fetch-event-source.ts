@@ -20,6 +20,8 @@
  */
 
 const DEFAULT_RECONNECT_MS = 3_000;
+/** How long frames may run before the page gets a turn: reads resolve as microtasks. */
+const MAX_BUSY_MS = 50;
 /** Native has no floor; this one stops `retry: 0` over an empty 200 from spinning. */
 const MIN_RECONNECT_MS = 1_000;
 /** A longer delay overflows `setTimeout`, which then fires at once. */
@@ -273,12 +275,17 @@ export class FetchEventSource extends EventTarget {
     );
     this.parser = parser;
     const decoder = new TextDecoder();
+    let busySince = performance.now();
     try {
       for (;;) {
         const { value, done } = await reader.read();
         if (done || controller.signal.aborted) break;
         parser.feed(decoder.decode(value, { stream: true }));
         this.lastEventId = parser.lastEventId;
+        if (performance.now() - busySince > MAX_BUSY_MS) {
+          await new Promise((resolve) => setTimeout(resolve));
+          busySince = performance.now();
+        }
         if (controller.signal.aborted) break;
       }
     } catch {
