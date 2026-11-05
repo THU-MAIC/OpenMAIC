@@ -28,7 +28,7 @@
  *
  * Reactive to the stage store; collapse and height belong to the dock.
  */
-import { commitCourseEdit, stampAudioOnTimeline } from '@/lib/edit/course-edit';
+import { commitCourseEdit, stampGeneratedAudio } from '@/lib/edit/course-edit';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -77,7 +77,6 @@ import {
   moveById,
   moveByIdDir,
   removeById,
-  setAudioIdById,
   setDiscussionAgentById,
   setDiscussionPromptById,
   setDiscussionTopicById,
@@ -303,7 +302,7 @@ export function SpeechTtsBar({
    * identities (the blob is stored under the returned id), so the id cannot be
    * re-derived by the caller like the reference's deterministic key.
    */
-  onGenerated: (audioId: string) => void;
+  onGenerated: (audioId: string, sourceText: string) => void;
 }) {
   const { t } = useI18n();
   const [status, setStatus] = useState<TtsStatus>('none');
@@ -446,7 +445,7 @@ export function SpeechTtsBar({
       );
       if (id) {
         setReadAudioId(id);
-        onGenerated(id);
+        onGenerated(id, text);
         setStatus('ready');
       } else {
         setStatus('none');
@@ -556,7 +555,7 @@ function SpeechClip({
   ttsRefresh?: number;
   regenerating?: boolean;
   onCommit: (text: string) => void;
-  onGenerated: (audioId: string) => void;
+  onGenerated: (audioId: string, sourceText: string) => void;
   onDelete: () => void;
   onMoveLeft: () => void;
   onMoveRight: () => void;
@@ -1113,17 +1112,6 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
     },
     [writeActions],
   );
-  // Stamping generated audio is write-back, not an edit: no undo step. Versions of
-  // the line already on the timeline get the stamp, so undo cannot drop the clip.
-  const stampAudio = useCallback(
-    (actionId: string, audioId: string) => {
-      writeActions((cur) => setAudioIdById(cur, actionId, audioId));
-      const actions = useStageStore.getState().scenes.find((s) => s.id === sceneId)?.actions ?? [];
-      const action = actions.find((candidate) => candidate.id === actionId);
-      if (action?.type === 'speech') stampAudioOnTimeline(sceneId, actionId, action.text, audioId);
-    },
-    [sceneId, writeActions],
-  );
 
   // Regenerate TTS for every speech line in the scene, then stamp audioIds.
   // Reads the latest actions from the store at each step so a concurrent edit
@@ -1159,7 +1147,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
             language,
           );
           if (id) {
-            stampAudio(liveAction.id!, id);
+            stampGeneratedAudio(sceneId, liveAction.id!, liveAction.text, id);
             await flushStageSave();
           }
         } catch {
@@ -1174,7 +1162,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
       // batchPending flag) instead of getting stuck in the generating state.
       setTtsRefresh((n) => n + 1);
     }
-  }, [regenAll, sceneId, language, stampAudio]);
+  }, [regenAll, sceneId, language]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const panViewport = (dir: -1 | 1) =>
@@ -1427,8 +1415,8 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                                   audioId: prevAudioId,
                                 }).finally(() => setTtsRefresh((n) => n + 1));
                               }}
-                              onGenerated={(assetId) => {
-                                stampAudio(key, assetId);
+                              onGenerated={(assetId, sourceText) => {
+                                stampGeneratedAudio(sceneId, key, sourceText, assetId);
                                 // Stage persistence is debounced; flush so the
                                 // stamped reference is durable once the row
                                 // settles (pool bytes persist first, stamp last).

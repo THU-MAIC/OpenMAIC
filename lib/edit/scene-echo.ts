@@ -19,6 +19,18 @@ import { pblSceneAsPersisted } from '@/lib/pbl/v2/runtime/persisted-scene';
 import { sanitizeSceneContent } from '@/lib/sanitize/scene-content';
 import type { Scene } from '@/lib/types/stage';
 
+const storedFormByScene = new WeakMap<Scene, Scene>();
+
+/** Scene objects do not change, and a whole-document save re-reads every scene. */
+function storedForm(scene: Scene): Scene {
+  let form = storedFormByScene.get(scene);
+  if (!form) {
+    form = sanitizeSceneContent(pblSceneAsPersisted(migrateScene(scene)));
+    storedFormByScene.set(scene, form);
+  }
+  return form;
+}
+
 /**
  * The scenes to merge, field by field: a field the server holds as it is shown keeps
  * the local value, and a scene with nothing new keeps its object, so a save read back
@@ -35,9 +47,7 @@ export function keepLocalWhereUnchanged(
     if (!local) return server;
     const serverFields = server as unknown as Record<string, unknown>;
     const localFields = local as unknown as Record<string, unknown>;
-    const localAsStored = sanitizeSceneContent(
-      pblSceneAsPersisted(migrateScene(local)),
-    ) as unknown as Record<string, unknown>;
+    const localAsStored = storedForm(local) as unknown as Record<string, unknown>;
     const merged: Record<string, unknown> = { ...serverFields };
     let taken = false;
     for (const field of new Set([...trackedSceneFields(local), ...trackedSceneFields(server)])) {

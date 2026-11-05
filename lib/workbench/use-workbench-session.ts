@@ -501,6 +501,9 @@ export function useStageFreshnessSync(
     /** One pass: manifest → diff → narrow re-fetch → local apply. */
     const syncOnce = async () => {
       heldBackForSave.current = false;
+      // Taken before the manifest: one older than an edit made since must not
+      // decide what to drop or read, even if that edit is already saved.
+      const editClock = stageDocumentEditClock();
       const manifestResult = await fetchStageManifest(requestedStage);
       if (!isCurrent()) return;
       if (manifestResult.status !== 'ok') {
@@ -608,7 +611,6 @@ export function useStageFreshnessSync(
       }
 
       const idsToFetch = [...diff.changed, ...diff.added];
-      const editClock = stageDocumentEditClock();
       const idsToRead = idsToFetch.filter((id) => !hasUnsavedSceneEdit(requestedStage, id));
       const queuedAtRead = hasQueuedWholeDocumentChange(requestedStage);
       if (queuedAtRead || idsToRead.length < idsToFetch.length) heldBackForSave.current = true;

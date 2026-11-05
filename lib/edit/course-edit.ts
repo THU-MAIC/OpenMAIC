@@ -7,6 +7,7 @@
  * them. Undo and redo go through one store action and the normal autosave.
  */
 
+import { setAudioIdById } from '@/components/edit/ActionsBar/actions-edit';
 import {
   applyTimelineEntry,
   diffCourse,
@@ -93,14 +94,25 @@ export function recordAgentChange(before: CourseDocument, after: CourseDocument 
   if (entry) pushStep(stageId, before, entry);
 }
 
-/** Generated audio landed on a speech line: the line's recorded versions get it too. */
-export function stampAudioOnTimeline(
+/**
+ * Audio generated from `text` is back. It belongs on the line only if the line still
+ * says that: an edit or an undo may have moved on while it was generating. Versions of
+ * the line on the timeline with that text get it either way, so a redo finds its clip.
+ * Stamping is write-back, not an edit: no step.
+ */
+export function stampGeneratedAudio(
   sceneId: string,
   actionId: string,
   text: string,
   audioId: string,
 ): void {
-  const stageId = useStageStore.getState().stage?.id;
+  const store = useStageStore.getState();
+  const actions = store.scenes.find((scene) => scene.id === sceneId)?.actions ?? [];
+  const live = actions.find((action) => action.id === actionId);
+  if (live?.type === 'speech' && live.text === text) {
+    store.updateScene(sceneId, { actions: setAudioIdById(actions, actionId, audioId) });
+  }
+  const stageId = store.stage?.id;
   if (!stageId || !useCourseTimeline.getState().lines[stageId]) return;
   useCourseTimeline
     .getState()

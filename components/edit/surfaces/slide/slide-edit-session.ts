@@ -84,24 +84,28 @@ function isAutoSizeOnly(previous: SlideContent, next: SlideContent): boolean {
 }
 
 /** The burst a commit belongs to: one text element's content, edited in one go. */
-function textBurstOf(previous: SlideContent, next: SlideContent): string | undefined {
+function textBurstOf(
+  sceneId: string,
+  previous: SlideContent,
+  next: SlideContent,
+): string | undefined {
   const operations = deriveSlideEditOperations(previous, next);
   const [first] = operations;
   if (operations.length !== 1 || first.type !== 'element.update') return undefined;
   const keys = Object.keys(first.patch);
   if (!keys.every((key) => TEXT_EDIT_FIELDS.has(key))) return undefined;
   if (keys.every((key) => AUTO_SIZE_FIELDS.has(key))) return undefined;
-  return `text:${first.elementId}`;
+  return `text:${sceneId}:${first.elementId}`;
 }
 
-function transactionTextBurst(transaction: EditorTransaction): string | undefined {
+function transactionTextBurst(sceneId: string, transaction: EditorTransaction): string | undefined {
   const ids = new Set(
     transaction.operations.map((operation) =>
       TEXT_OPERATIONS.has(operation.type) && 'elementId' in operation ? operation.elementId : null,
     ),
   );
   const [id] = ids;
-  return ids.size === 1 && id ? `text:${id}` : undefined;
+  return ids.size === 1 && id ? `text:${sceneId}:${id}` : undefined;
 }
 
 export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
@@ -116,7 +120,7 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
       writeContent(sceneId, next);
       return;
     }
-    commitCourseEdit({ coalesceKey: transactionTextBurst(transaction) }, () =>
+    commitCourseEdit({ coalesceKey: transactionTextBurst(sceneId, transaction) }, () =>
       writeContent(sceneId, next),
     );
   };
@@ -164,7 +168,7 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
       // to that fallback until its React surface moves into @openmaic/editor.
       const committed = commitSlideEdit({ past: [], present: content, future: [] }, next);
       if (committed.present === content) return;
-      commitCourseEdit({ coalesceKey: textBurstOf(content, next) }, () =>
+      commitCourseEdit({ coalesceKey: textBurstOf(sceneId, content, next) }, () =>
         writeContent(sceneId, committed.present),
       );
     },

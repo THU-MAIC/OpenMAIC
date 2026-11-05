@@ -35,7 +35,7 @@ vi.mock('@/components/slide-renderer/components/element/ProsemirrorEditor', () =
 const { createDefaultSlide, createDefaultTextElement } =
   await import('@/lib/edit/slide-edit-elements');
 const { useStageStore, discardPendingStageChanges } = await import('@/lib/store/stage');
-const { commitCourseEdit, recordAgentChange, stampAudioOnTimeline, stepCourseTimeline } =
+const { commitCourseEdit, recordAgentChange, stampGeneratedAudio, stepCourseTimeline } =
   await import('@/lib/edit/course-edit');
 const { useCourseTimeline, AGENT_RUN_IDLE_MS, BURST_MAX_GAP_MS, applyTimelineEntry, diffCourse } =
   await import('@/lib/edit/course-timeline');
@@ -316,16 +316,8 @@ describe('write-backs that are not steps', () => {
         ] as never,
       }),
     );
-    const stamp = (id: string, text: string, audioId: string) => {
-      useStageStore.getState().updateScene('a', {
-        actions: sceneOf('a').actions!.map((action) =>
-          action.id === id ? { ...action, audioId } : action,
-        ) as never,
-      });
-      stampAudioOnTimeline('a', id, text, audioId);
-    };
-    stamp('1', 'ONE', 'tts_1');
-    stamp('2', 'two', 'tts_2');
+    stampGeneratedAudio('a', '1', 'ONE', 'tts_1');
+    stampGeneratedAudio('a', '2', 'two', 'tts_2');
     expect(past()).toBe(1);
 
     const audio = () =>
@@ -337,6 +329,29 @@ describe('write-backs that are not steps', () => {
     expect(audio()).toEqual([null, 'tts_2']);
     stepCourseTimeline('redo');
     expect(audio()).toEqual(['tts_1', 'tts_2']);
+  });
+});
+
+describe('audio generated from text that has since changed', () => {
+  it('stays off the line, and comes back with the text on redo', () => {
+    const scene = slide('a', '<p>x</p>');
+    (scene as unknown as { actions: unknown[] }).actions = [
+      { id: '1', type: 'speech', text: 'old' },
+    ];
+    load([scene], 'a');
+    commitCourseEdit({}, () =>
+      useStageStore.getState().updateScene('a', {
+        actions: [{ id: '1', type: 'speech', text: 'new' }] as never,
+      }),
+    );
+    // Generating from 'new' when the undo lands.
+    stepCourseTimeline('undo');
+    stampGeneratedAudio('a', '1', 'new', 'tts_new');
+    const audio = () => (sceneOf('a').actions![0] as unknown as { audioId?: string }).audioId;
+    expect((sceneOf('a').actions![0] as unknown as { text: string }).text).toBe('old');
+    expect(audio()).toBeUndefined();
+    stepCourseTimeline('redo');
+    expect(audio()).toBe('tts_new');
   });
 });
 
@@ -410,6 +425,43 @@ describe('typing bursts', () => {
     expect(past()).toBe(2);
     stepCourseTimeline('undo');
     expect(sceneOf('a').title).toBe('typed');
+  });
+
+  it('text with the same element id on two pages stays two steps', () => {
+    const shared = (id: string, order: number) => {
+      const scene = slide(id, '<p>start</p>', order);
+      (scene.content as SlideContent).canvas.elements[0].id = 'same-id';
+      return scene;
+    };
+    load([shared('a', 1), shared('b', 2)], 'a');
+    const text = (id: string, content: string) => {
+      const next = structuredClone(sceneOf(id).content as SlideContent);
+      (next.canvas.elements[0] as unknown as { content: string }).content = content;
+      useSlideEditSession.getState().commitContent(id, next, false);
+    };
+    text('a', '<p>on a</p>');
+    text('b', '<p>on b</p>');
+    expect(past()).toBe(2);
+  });
+
+  it('text operations with the same element id on two pages stay two steps', () => {
+    const shared = (id: string, order: number) => {
+      const scene = slide(id, '<p>start</p>', order);
+      (scene.content as SlideContent).canvas.elements[0].id = 'same-id';
+      return scene;
+    };
+    load([shared('a', 1), shared('b', 2)], 'a');
+    const typeIn = (id: string, content: string) => {
+      useSlideEditSession.getState().seed(id);
+      useSlideEditSession.getState().applyTransaction({
+        origin: 'canvas',
+        history: 'record',
+        operations: [{ type: 'text.updateContent', elementId: 'same-id', content }],
+      } as never);
+    };
+    typeIn('a', '<p>on a</p>');
+    typeIn('b', '<p>on b</p>');
+    expect(past()).toBe(2);
   });
 
   it('edits of one text far apart in time are separate steps', () => {
