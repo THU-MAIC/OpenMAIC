@@ -407,6 +407,71 @@ describe('FetchEventSource', () => {
     source.close();
   });
 
+  it('a listener that closes on open reads nothing from the stream', async () => {
+    const source = new FetchEventSource('/s');
+    const seen = record(source, 'message');
+    source.onopen = () => source.close();
+    await settle();
+    expect(connections[0]!.cancelled()).toBe(true);
+    expect(seen).toEqual([]);
+  });
+
+  it('fires open in the same turn as the state change, before anything is read', async () => {
+    const source = new FetchEventSource('/s');
+    let openedByNextMicrotask: boolean | undefined;
+    let opened = false;
+    source.addEventListener('open', () => (opened = true));
+    let state = source.readyState;
+    Object.defineProperty(source, 'readyState', {
+      get: () => state,
+      set(next: 0 | 1 | 2) {
+        state = next;
+        if (next === 1) queueMicrotask(() => (openedByNextMicrotask = opened));
+      },
+    });
+    await settle();
+    expect(openedByNextMicrotask).toBe(true);
+    source.close();
+  });
+
+  it('starts each connection with a fresh decoder', async () => {
+    const source = new FetchEventSource('/s');
+    const seen = record(source, 'message');
+    await settle();
+    // The first two bytes of a three-byte character, then the connection ends.
+    connections[0]!.controller.enqueue(Uint8Array.of(0xe8, 0xaf));
+    connections[0]!.end();
+    await vi.advanceTimersByTimeAsync(3_000);
+    connections[1]!.send('data: a\n\n');
+    await settle();
+    expect(seen.map(({ data }) => data)).toEqual(['a']);
+    source.close();
+  });
+
+  it('keeps an on* handler where it was first assigned among the listeners', async () => {
+    const source = new FetchEventSource('/s');
+    const order: string[] = [];
+    source.addEventListener('message', () => order.push('first'));
+    source.onmessage = () => order.push('handler');
+    source.addEventListener('message', () => order.push('last'));
+    await settle();
+    connections[0]!.send('data: a\n\n');
+    await settle();
+    expect(order).toEqual(['first', 'handler', 'last']);
+    order.length = 0;
+    source.onmessage = () => order.push('replaced');
+    connections[0]!.send('data: b\n\n');
+    await settle();
+    expect(order).toEqual(['first', 'replaced', 'last']);
+    order.length = 0;
+    source.onmessage = null;
+    source.onmessage = () => order.push('again');
+    connections[0]!.send('data: c\n\n');
+    await settle();
+    expect(order).toEqual(['first', 'again', 'last']);
+    source.close();
+  });
+
   it('close() aborts the request, cancels the body and stops retrying', async () => {
     const source = new FetchEventSource('/s');
     const seen = record(source, 'error');
