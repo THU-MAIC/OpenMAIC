@@ -76,7 +76,9 @@ export function TextElement({ elementInfo, selectElement }: TextElementProps) {
     updateElement,
   ]);
 
-  // Monitor text element size changes
+  // Monitor text element size changes. This fires whenever the element renders,
+  // with nobody editing, so it reports a measurement. A resize the user is
+  // dragging is cached above and commits as an edit when the drag ends.
   const updateTextElementHeight = useCallback(
     (entries: ResizeObserverEntry[]) => {
       const contentRect = entries[0].contentRect;
@@ -90,6 +92,7 @@ export function TextElement({ elementInfo, selectElement }: TextElementProps) {
           updateElement({
             id: elementInfo.id,
             props: { height: realHeight },
+            measurement: true,
           });
         } else {
           setRealHeightCache(realHeight);
@@ -100,6 +103,7 @@ export function TextElement({ elementInfo, selectElement }: TextElementProps) {
           updateElement({
             id: elementInfo.id,
             props: { width: realWidth },
+            measurement: true,
           });
         } else {
           setRealWidthCache(realWidth);
