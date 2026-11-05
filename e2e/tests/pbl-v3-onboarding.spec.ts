@@ -281,15 +281,34 @@ async function finish(page: Page) {
   }
 }
 async function correctSpotlight(page: Page, selector: string) {
-  const spotlight = page.locator('[data-pbl-onboarding="spotlight"]').first();
+  const spotlights = page.locator('[data-pbl-onboarding="spotlight"]');
   // A hidden/off-screen region may have no spotlight, but never an unrelated one.
-  if (!(await spotlight.count())) return;
-  const anchor = (await page.locator(selector).boundingBox())!;
-  const box = (await spotlight.boundingBox())!;
-  expect(box.x + box.width).toBeGreaterThan(anchor.x);
-  expect(box.x).toBeLessThan(anchor.x + anchor.width);
-  expect(box.y + box.height).toBeGreaterThan(anchor.y);
-  expect(box.y).toBeLessThan(anchor.y + anchor.height);
+  if (!(await spotlights.count())) return;
+  await expect
+    .poll(async () => {
+      const anchors = await Promise.all(
+        (await page.locator(selector).all()).map((anchor) => anchor.boundingBox()),
+      );
+      const boxes = await Promise.all(
+        (await spotlights.all()).map((spotlight) => spotlight.boundingBox()),
+      );
+      return (
+        boxes.length > 0 &&
+        boxes.every(
+          (box) =>
+            box &&
+            anchors.some(
+              (anchor) =>
+                anchor &&
+                box.x + box.width > anchor.x &&
+                box.x < anchor.x + anchor.width &&
+                box.y + box.height > anchor.y &&
+                box.y < anchor.y + anchor.height,
+            ),
+        )
+      );
+    })
+    .toBe(true);
 }
 
 test('blocks pointer and keyboard interaction during preparation, then opens the first real region', async ({
@@ -814,6 +833,8 @@ test('narrow conversation jump control stays centered without widening either me
   await fixture.publish();
   const assistant = page.getByTestId('pbl-assistant');
   const scroll = assistant.getByTestId('pbl-conversation-scroll-button');
+  await assistant.locator('.pbl-conversation-scroll').hover();
+  await page.mouse.wheel(0, -180);
   await expect(scroll).toBeVisible();
   const control = (await scroll.boundingBox())!;
   const viewport = await assistant
@@ -855,7 +876,7 @@ for (const [width, height, locale, docked] of [
       '[data-pbl-tour="progress"]',
       '[data-pbl-tour="conversation"]',
       '[data-testid="pbl-ide"]',
-      '[data-testid="pbl-application-open"]',
+      '[data-testid="pbl-application-panel"], [data-testid="pbl-application-open"]',
       '[data-pbl-tour="replay"]',
     ];
     for (let i = 0; i < 5; i++) {
@@ -1056,6 +1077,11 @@ test('hides Latest during the guide and restores the working control after dismi
   await project(page, learningEvents, { openingText: 'A long welcome.\n\n'.repeat(80) });
   await expect(tour(page)).toBeVisible();
   const viewport = page.locator('.pbl-conversation-scroll');
+  await next(page).click();
+  await expect(tour(page)).toHaveAttribute('data-step', 'discussion');
+  const readingBox = (await viewport.boundingBox())!;
+  await page.mouse.move(readingBox.x + readingBox.width / 2, readingBox.y + readingBox.height / 2);
+  await page.mouse.wheel(0, -180);
   await expect
     .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
     .toBeGreaterThan(8);
@@ -1188,12 +1214,10 @@ for (const [width, height] of [
     await fixture.publish();
     const viewport = page.locator('.pbl-conversation-scroll');
     const latest = page.getByTestId('pbl-conversation-scroll-button');
-    await expect(latest).toBeVisible();
     const before = await viewport.evaluate((el) => el.clientHeight);
-    await latest.click();
     await expect
       .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
-      .toBeLessThanOrEqual(8);
+      .toBeLessThanOrEqual(1);
     await expect(latest).toHaveCount(0);
     expect(await viewport.evaluate((el) => el.clientHeight)).toBe(before);
     for (let chunk = 0; chunk < 3; chunk++) {
