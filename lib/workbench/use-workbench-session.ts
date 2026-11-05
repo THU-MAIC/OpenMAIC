@@ -196,8 +196,9 @@ export function useWorkbenchStream(sessionId: string | null): void {
       }
       applyEvent(parsed);
       markAttached();
-      useCourseTimeline.getState().touchAgentRun(Date.now());
+      // Start first: it judges an abandoned run by how long that run has been silent.
       if (parsed.type === 'agent_start') useCourseTimeline.getState().beginAgentRun(Date.now());
+      else useCourseTimeline.getState().touchAgentRun(Date.now());
       if (parsed.type === 'agent_end' || parsed.type === LIFECYCLE.sessionEnd) {
         useCourseTimeline.getState().endAgentRun(Date.now());
       }
