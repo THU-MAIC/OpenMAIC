@@ -20,9 +20,9 @@ import { sanitizeSceneContent } from '@/lib/sanitize/scene-content';
 import type { Scene, SlideContent } from '@/lib/types/stage';
 
 /**
- * A text box's size is what each browser measures for it, and a measurement is not
- * saved until the next real edit, so it differs from the server's with nobody having
- * changed anything.
+ * A text box's height (its width, when vertical) is what each browser measures for
+ * it, and a measurement is not saved until the next real edit, so it differs from the
+ * server's with nobody having changed anything. The other dimension is set on purpose.
  */
 function withoutMeasuredSizes(field: string, value: unknown): unknown {
   const content = value as SlideContent | undefined;
@@ -33,7 +33,7 @@ function withoutMeasuredSizes(field: string, value: unknown): unknown {
       ...content.canvas,
       elements: content.canvas.elements.map((element) => {
         if (element.type !== 'text') return element;
-        const { width: _width, height: _height, ...rest } = element;
+        const { [element.vertical ? 'width' : 'height']: _measured, ...rest } = element;
         return rest;
       }),
     },

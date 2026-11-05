@@ -85,6 +85,29 @@ describe('keepLocalWhereUnchanged', () => {
     expect(keepLocalWhereUnchanged([measured], [server])[0]).toBe(measured);
   });
 
+  it('takes a width another writer set on horizontal text', () => {
+    const local = slideWithHtml('a', '<p>Hello</p>');
+    const server = slideWithHtml('a', '<p>Hello</p>');
+    const element = (server.content as SlideContent).canvas.elements[0] as unknown as {
+      width: number;
+    };
+    element.width = 777;
+    const [result] = keepLocalWhereUnchanged([local], [server]);
+    expect(result).not.toBe(local);
+    expect((result.content as SlideContent).canvas.elements[0].width).toBe(777);
+  });
+
+  it('on vertical text, ignores the measured width and takes a set height', () => {
+    const vertical = (patch: Record<string, unknown>) => {
+      const scene = slideWithHtml('a', '<p>Hello</p>');
+      Object.assign((scene.content as SlideContent).canvas.elements[0], { vertical: true }, patch);
+      return scene;
+    };
+    const local = vertical({});
+    expect(keepLocalWhereUnchanged([local], [vertical({ width: 321 })])[0]).toBe(local);
+    expect(keepLocalWhereUnchanged([local], [vertical({ height: 321 })])[0]).not.toBe(local);
+  });
+
   it('takes a changed field and keeps the unchanged ones local', () => {
     const local = slideWithHtml('a', '<p style="">Hello</p>');
     const server = { ...slideWithHtml('a', '<p>Hello</p>'), title: 'Agent title' } as Scene;
