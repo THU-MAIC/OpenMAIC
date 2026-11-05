@@ -1569,18 +1569,21 @@ async function readPassage(page: Page, number: number) {
     .toBeLessThanOrEqual(1);
   await expect(page.locator('[data-pbl-tour="replay"]')).toBeEnabled();
   await page.evaluate(() => document.fonts.ready);
+  await viewport.hover();
+  await page.mouse.wheel(0, -200);
+  await expect
+    .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
+    .toBeGreaterThan(100);
   await paragraph.evaluate((element) =>
     element.scrollIntoView({ block: 'start', behavior: 'instant' }),
   );
-  await viewport.hover();
-  await page.mouse.wheel(0, -1);
   const offset = () =>
     paragraph.evaluate(
       (element) =>
         element.getBoundingClientRect().top -
         element.closest('.pbl-conversation-scroll')!.getBoundingClientRect().top,
     );
-  await expect.poll(async () => Math.abs((await offset()) - 1)).toBeLessThanOrEqual(2);
+  await expect.poll(async () => Math.abs(await offset())).toBeLessThanOrEqual(2);
   return { viewport, paragraph, offset };
 }
 
@@ -1696,16 +1699,25 @@ test.describe('native mobile touch reading', () => {
     const box = (await viewport.boundingBox())!;
     const touch = await page.context().newCDPSession(page);
     const x = box.x + box.width / 2,
-      y = box.y + box.height / 2;
-    await touch.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
-    await touch.send('Input.synthesizeScrollGesture', {
-      x,
-      y,
-      yDistance: 160,
-      speed: 300,
-      preventFling: true,
-      gestureSourceType: 'touch',
+      y = box.y + 10;
+    // Keep the finger inside the short mobile conversation viewport. Dispatch
+    // native touch events: Chromium's synthesized scroll gesture is a no-op on
+    // the Linux CI runner even with a touch-enabled browser context.
+    await touch.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ x, y }],
     });
+    for (let step = 1; step <= 10; step++) {
+      await touch.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [{ x, y: y + ((box.height - 20) * step) / 10 }],
+      });
+      await page.waitForTimeout(20);
+    }
+    // Lift after a stationary hold so inertial scrolling cannot race the
+    // reading-position assertion that follows.
+    await page.waitForTimeout(150);
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     await expect.poll(distance).toBeGreaterThan(80);
     const reading = await viewport.evaluate((element) => element.scrollTop);
     fixture.view.messages[0].text += '\n\n' + 'More output after a touch gesture.\n\n'.repeat(15);
