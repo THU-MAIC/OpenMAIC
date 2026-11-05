@@ -471,7 +471,9 @@ export function pushEntry(line: CourseLine, entry: TimelineEntry): CourseLine {
       ...line,
       past: composed ? [...line.past.slice(0, -1), composed] : line.past.slice(0, -1),
       future: [],
-      activeCoalesceKey,
+      // A burst that cancelled out is over: the next edit must not fold into an
+      // older step that happens to carry the same key.
+      activeCoalesceKey: composed ? activeCoalesceKey : null,
       activeCoalesceAt: entry.at,
     };
   }

@@ -543,6 +543,25 @@ describe('agent runs', () => {
 });
 
 describe('typing bursts', () => {
+  it('a burst that cancels out does not let the next edit fold into an older step', () => {
+    load([slide('a', '<p>a</p>')], 'a');
+    const type = (title: string) =>
+      commitCourseEdit({ coalesceKey: 'text:t-a' }, () =>
+        useStageStore.getState().updateScene('a', { title }),
+      );
+    type('typed');
+    commitCourseEdit({}, () => useStageStore.getState().updateScene('a', { notes: 'x' } as never));
+    stepCourseTimeline('undo');
+    expect(sceneOf('a').title).toBe('typed');
+    type('typed more');
+    type('typed');
+    expect(past()).toBe(1);
+    type('typed again');
+    expect(past()).toBe(2);
+    stepCourseTimeline('undo');
+    expect(sceneOf('a').title).toBe('typed');
+  });
+
   it('edits of one text far apart in time are separate steps', () => {
     vi.useFakeTimers({ now: 1_000_000, toFake: ['Date'] });
     try {
