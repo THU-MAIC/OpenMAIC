@@ -204,10 +204,27 @@ function readPblBriefing(content: PBLContent): PblBriefing | null {
 }
 
 /**
+ * Resolve a scene url against `baseUrl`, keeping only http(s): a root-relative
+ * url works inside the classroom iframe, but a link or a QR code has no host to
+ * resolve against, and a deck must not carry a `javascript:` or `data:` target.
+ */
+function absoluteSceneUrl(url: string | undefined, baseUrl: string | undefined) {
+  if (!url || !url.trim()) return undefined;
+  try {
+    const resolved = new URL(url.trim(), baseUrl);
+    return resolved.protocol === 'http:' || resolved.protocol === 'https:'
+      ? resolved.toString()
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * The scenes that get a PPTX slide, in lesson order: slide, quiz and PBL
- * scenes, and interactive scenes that ship an HTML page; only the slide scenes
- * when `includePlaceholders` is false. Export is possible exactly when this
- * list is non-empty; `planPptxDeck` lays out the same list.
+ * scenes, and interactive scenes that carry an html payload or a url; only the
+ * slide scenes when `includePlaceholders` is false. Export is possible exactly
+ * when this list is non-empty; `planPptxDeck` lays out the same list.
  */
 export function pptxDeckScenes(
   scenes: readonly Scene[],
@@ -219,15 +236,16 @@ export function pptxDeckScenes(
       (includePlaceholders &&
         (scene.content.type === 'quiz' ||
           scene.content.type === 'pbl' ||
-          (scene.content.type === 'interactive' && !!scene.content.html))),
+          // `url` alone is a page too: the renderer falls back to it as the
+          // iframe `src` when there is no inline html.
+          (scene.content.type === 'interactive' && (!!scene.content.html || !!scene.content.url)))),
   );
 }
 
 /**
  * Lay out the PPTX in lesson order. Slide scenes map to their slide; quiz,
- * interactive and PBL scenes get a placeholder slide. Interactive scenes
- * without an html payload are left out, matching the Resource Pack, which has
- * no page for them.
+ * interactive and PBL scenes get a placeholder slide. A url-only interactive
+ * scene ships no Resource Pack page, so its placeholder links the url itself.
  */
 export function planPptxDeck(
   scenes: readonly Scene[],
@@ -253,7 +271,8 @@ export function planPptxDeck(
       deck.push({ kind: 'slide', slideIndex: slideIndex++ });
     } else if (content.type === 'interactive') {
       const path = pagePaths.get(scene);
-      if (!path) continue;
+      // No pack page: link the scene's own url, made absolute for the QR code.
+      const liveUrl = path ? undefined : absoluteSceneUrl(content.url, classroomUrl);
       const typeLabel = t('export.placeholder.interactiveLabel');
       deck.push({
         kind: 'placeholder',
@@ -263,15 +282,18 @@ export function planPptxDeck(
           typeLabel,
           title: title || typeLabel,
           description: t('export.placeholder.interactiveDesc'),
-          online: onlineLink(scene),
-          offline: linkInteractivePages
-            ? {
-                label: t('export.placeholder.openOffline'),
-                hint: t('export.placeholder.offlineHint'),
-                target: relativeHyperlinkTarget(path),
-                path,
-              }
-            : undefined,
+          online: liveUrl
+            ? { url: liveUrl, label: t('export.placeholder.openOnline') }
+            : onlineLink(scene),
+          offline:
+            path && linkInteractivePages
+              ? {
+                  label: t('export.placeholder.openOffline'),
+                  hint: t('export.placeholder.offlineHint'),
+                  target: relativeHyperlinkTarget(path),
+                  path,
+                }
+              : undefined,
         },
       });
     } else if (content.type === 'quiz') {
