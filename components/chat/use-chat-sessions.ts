@@ -255,6 +255,7 @@ type StatelessStreamConsumerFactory = (
     directorState: DirectorState | undefined;
     totalAgents: number;
     agentHadContent: boolean;
+    teachingAgentFailedOrEmpty?: boolean;
     cueUserReceived?: boolean;
     sessionClosed?: boolean;
     endReason?: string;
@@ -319,10 +320,10 @@ export function resumeSoftClosingSessionWithoutMessage(
 }
 
 export type PiSingleRequestOutcome =
-  | { type: 'error'; messageKey: 'chat.error.streamInterrupted' }
+  | { type: 'error'; messageKey: 'chat.error.streamInterrupted' | 'chat.error.teacherNoResponse' }
   | { type: 'soft_closing'; endReason?: string; directorState?: DirectorState }
-  | { type: 'cue_user'; directorState?: DirectorState }
-  | { type: 'completed'; directorState?: DirectorState };
+  | { type: 'cue_user'; directorState?: DirectorState; teachingAgentFailed?: boolean }
+  | { type: 'completed'; directorState?: DirectorState; teachingAgentFailed?: boolean };
 
 export function getPiSingleRequestOutcome(
   doneData: Awaited<ReturnType<ReturnType<StatelessStreamConsumerFactory>['onIterationEnd']>>,
@@ -337,13 +338,25 @@ export function getPiSingleRequestOutcome(
       directorState: doneData.directorState,
     };
   }
-  if (doneData.totalAgents === 0 || doneData.agentHadContent === false) {
-    return { type: 'error', messageKey: 'chat.error.streamInterrupted' };
+  // A finished turn with nothing visible gets a fixed notice rather than a
+  // stream error: the Director (and any explanation it wrote) may be failing too.
+  // agentHadContent decides, not totalAgents: a timed-out child is not counted
+  // as a turn but may already have shown partial output.
+  if (doneData.agentHadContent === false) {
+    return { type: 'error', messageKey: 'chat.error.teacherNoResponse' };
   }
+  const failure = doneData.teachingAgentFailedOrEmpty ? { teachingAgentFailed: true } : {};
   if (doneData.cueUserReceived) {
-    return { type: 'cue_user', directorState: doneData.directorState };
+    return { type: 'cue_user', directorState: doneData.directorState, ...failure };
   }
-  return { type: 'completed', directorState: doneData.directorState };
+  return { type: 'completed', directorState: doneData.directorState, ...failure };
+}
+
+/** Output a learner can see from this request; whiteboard projections count as drawing. */
+function isVisibleAgentOutput(event: StatelessEvent): boolean {
+  if (event.type === 'text_delta') return event.data.content.trim().length > 0;
+  if (event.type === 'whiteboard') return event.data.kind === 'projection';
+  return event.type === 'action';
 }
 
 export async function runPiSingleRequest(
@@ -420,6 +433,8 @@ export async function runPiSingleRequest(
   const decoder = new TextDecoder();
   let sseBuffer = '';
   let sawDoneEvent = false;
+  let sawAgentOutput = false;
+  let failedWithoutOutput = false;
 
   for (;;) {
     const { done, value } = await reader.read();
@@ -433,9 +448,26 @@ export async function runPiSingleRequest(
       const dataLine = part.split('\n').find((line) => line.startsWith('data: '));
       if (!dataLine) continue;
       const event = JSON.parse(dataLine.slice(6)) as StatelessEvent;
+      if (failedWithoutOutput) continue;
+      // A server-side failure (e.g. the Director's own provider) before any
+      // classroom output gets the same fixed notice as a turn with no response,
+      // instead of the raw error. Errors after visible output keep the old path.
+      if (event.type === 'error' && !sawAgentOutput) {
+        log.error('[ChatArea] Pi stream error before classroom output:', event.data.message);
+        failedWithoutOutput = true;
+        continue;
+      }
+      if (isVisibleAgentOutput(event)) sawAgentOutput = true;
       if (event.type === 'done') sawDoneEvent = true;
       consumer.onEvent(event);
     }
+  }
+
+  if (controller.signal.aborted) return;
+  if (failedWithoutOutput) {
+    clearLiveSessionAfterError(sessionId, t('chat.error.teacherNoResponse'));
+    onStopSessionRef.current?.({ sessionId, source: 'error' });
+    return;
   }
 
   const doneData = sawDoneEvent ? await consumer.onIterationEnd() : null;
@@ -448,6 +480,10 @@ export async function runPiSingleRequest(
     onStopSessionRef.current?.({ sessionId, source: 'error' });
     return;
   }
+  // Partial answer after a failed or empty teacher/assistant call: keep the
+  // session, but tell the learner with a fixed notice (cue_user prompt is not shown).
+  if (outcome.type !== 'soft_closing' && outcome.teachingAgentFailed)
+    toast.warning(t('chat.error.teacherIncomplete'));
 
   if (outcome.type === 'soft_closing') {
     enterSoftClosing(sessionId, {
@@ -582,6 +618,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
     directorState?: DirectorState;
     totalAgents: number;
     agentHadContent?: boolean;
+    teachingAgentFailedOrEmpty?: boolean;
     cueUserReceived: boolean;
     sessionClosed?: boolean;
     endReason?: string;
@@ -1074,6 +1111,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             totalActions: number;
             totalAgents: number;
             agentHadContent?: boolean;
+            teachingAgentFailedOrEmpty?: boolean;
             cueUserReceived?: boolean;
             sessionClosed?: boolean;
             endReason?: string;
@@ -1084,6 +1122,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
               directorState: data.directorState,
               totalAgents: data.totalAgents,
               agentHadContent: data.agentHadContent ?? true,
+              teachingAgentFailedOrEmpty: data.teachingAgentFailedOrEmpty,
               cueUserReceived:
                 data.cueUserReceived ?? loopDoneDataRef.current?.cueUserReceived ?? false,
               sessionClosed: data.sessionClosed,
@@ -1215,6 +1254,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           directorState: doneData.directorState,
           totalAgents: doneData.totalAgents,
           agentHadContent: doneData.agentHadContent ?? true,
+          teachingAgentFailedOrEmpty: doneData.teachingAgentFailedOrEmpty,
           cueUserReceived: doneData.cueUserReceived,
           sessionClosed: doneData.sessionClosed,
           endReason: doneData.endReason,
