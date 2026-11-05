@@ -791,6 +791,7 @@ describe('student conversation projection', () => {
           kind: 'tool',
           action: 'skill',
           name: 'read_next_skill',
+          args: { studentFeedback: 'The learner has answered the current question.' },
           status: 'failed',
         },
       ],
@@ -807,6 +808,8 @@ describe('student conversation projection', () => {
       { ...success, inputId: 6 },
       { ...success, id: 'pbl-role-second:turn-2' },
       { ...success, inputId: undefined },
+      { ...success, parts: [{ ...success.parts[0], args: undefined }] },
+      { ...success, parts: [{ ...success.parts[0], args: {} }] },
     ])
       expect(markRecoveredTeachingTools([failure, changed])[0].parts[0]).toMatchObject({
         recovered: false,
@@ -817,6 +820,52 @@ describe('student conversation projection', () => {
     const merged = mergeConversationHistory([[failure], [success]]);
     expect(merged[0].parts[0]).toMatchObject({ recovered: true });
     expect(failure).toEqual(before);
+  });
+
+  it('keeps a failed skill advancement visible after a successful reread in live and paginated history', () => {
+    const events = [
+      event(1, 'user_message', { text: 'I understand, continue.' }),
+      event(2, 'tool_execution_end', {
+        toolName: 'read_next_skill',
+        toolCallId: 'advance-failed',
+        args: { studentFeedback: 'The learner understood the current goal.' },
+        isError: true,
+        result: { error: 'File access is temporarily unavailable.' },
+      }),
+      event(3, 'tool_execution_end', {
+        toolName: 'read_next_skill',
+        toolCallId: 'reread',
+        args: {},
+        result: { content: [] },
+      }),
+    ];
+    const live = projectConversation(events, 'mentor', false);
+    const tools = live.flatMap((entry) => entry.parts).filter((part) => part.kind === 'tool');
+    expect(tools[0]).toMatchObject({ status: 'failed', recovered: false });
+    const pages = [
+      live.map((entry) => ({ ...entry, parts: entry.parts.slice(0, 1) })),
+      live.map((entry) => ({ ...entry, parts: entry.parts.slice(1) })),
+    ];
+    expect(mergeConversationHistory(pages).flatMap((entry) => entry.parts)[1]).toMatchObject({
+      status: 'failed',
+      recovered: false,
+    });
+    const recovered = projectConversation(
+      [
+        ...events,
+        event(4, 'tool_execution_end', {
+          toolName: 'read_next_skill',
+          toolCallId: 'advance-succeeded',
+          args: { studentFeedback: 'The learner understood the current goal.' },
+          result: { content: [] },
+        }),
+      ],
+      'mentor',
+      false,
+    );
+    expect(
+      recovered.flatMap((entry) => entry.parts).find((part) => part.id === tools[0].id),
+    ).toMatchObject({ status: 'failed', recovered: true });
   });
 
   it('settles partial thinking and tool activity when the worker is interrupted', () => {

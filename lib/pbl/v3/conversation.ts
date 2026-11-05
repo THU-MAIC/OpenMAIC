@@ -164,7 +164,16 @@ export function markRecoveredTeachingTools(entries: readonly LearningConversatio
     if (entry.inputId === undefined) continue;
     for (const part of entry.parts.toReversed()) {
       if (part.kind !== 'tool' || !['skill', 'review', 'complete'].includes(part.action)) continue;
-      const key = `${conversationScope(entry)}:${entry.inputId}:${part.action}`;
+      let operation: string = part.action;
+      if (part.action === 'skill') {
+        // A successful reread does not prove that a failed advancement recovered.
+        // Missing legacy arguments cannot establish which operation succeeded.
+        if (!part.args || typeof part.args !== 'object' || Array.isArray(part.args)) continue;
+        operation += (part.args as { studentFeedback?: unknown }).studentFeedback
+          ? ':advance'
+          : ':read';
+      }
+      const key = `${conversationScope(entry)}:${entry.inputId}:${operation}`;
       if (part.status === 'succeeded') successful.add(key);
       else if (part.status === 'failed' && successful.has(key)) recovered.add(part);
     }

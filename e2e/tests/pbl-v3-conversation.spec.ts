@@ -469,6 +469,45 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   ).toHaveCount(1);
   await expect(transcript.getByText('Your reflection is recorded.', { exact: true })).toBeVisible();
   await transcript.screenshot({ path: 'test-results/pbl-tool-after-recovery.png' });
+  view.conversation[0].parts.push(
+    {
+      kind: 'tool',
+      id: 'advance-failed',
+      action: 'skill',
+      name: 'read_next_skill',
+      args: { studentFeedback: 'The learner understood this section.' },
+      status: 'failed',
+      result: { error: 'File access is temporarily unavailable.' },
+    },
+    {
+      kind: 'tool',
+      id: 'reread-succeeded',
+      action: 'skill',
+      name: 'read_next_skill',
+      args: {},
+      status: 'succeeded',
+    },
+  );
+  view.conversation = markRecoveredTeachingTools(view.conversation);
+  view.activitySequence!++;
+  publishLearning();
+  await expect(
+    transcript.locator('[data-testid="workbench-tool-card"][data-status="failed"]'),
+  ).toHaveCount(1);
+  view.conversation[0].parts.push({
+    kind: 'tool',
+    id: 'advance-succeeded',
+    action: 'skill',
+    name: 'read_next_skill',
+    args: { studentFeedback: 'The learner understood this section.' },
+    status: 'succeeded',
+  });
+  view.conversation = markRecoveredTeachingTools(view.conversation);
+  view.activitySequence!++;
+  publishLearning();
+  await expect(
+    transcript.locator('[data-testid="workbench-tool-card"][data-status="failed"]'),
+  ).toHaveCount(0);
   view.conversation = baselineConversation;
   view.activitySequence!++;
   publishLearning();
