@@ -22,6 +22,8 @@
 const DEFAULT_RECONNECT_MS = 3_000;
 /** Native has no floor; this one stops `retry: 0` over an empty 200 from spinning. */
 const MIN_RECONNECT_MS = 1_000;
+/** A longer delay overflows `setTimeout`, which then fires at once. */
+const MAX_RECONNECT_MS = 2_147_483_647;
 
 export interface SseFrame {
   readonly type: string;
@@ -300,9 +302,7 @@ export class FetchEventSource extends EventTarget {
     this.dispatchEvent(new Event('error'));
     // A listener may have closed the stream.
     if (this.readyState !== FetchEventSource.CONNECTING) return;
-    this.timer = setTimeout(
-      () => void this.connect(),
-      Math.max(this.reconnectMs, MIN_RECONNECT_MS),
-    );
+    const delay = Math.min(Math.max(this.reconnectMs, MIN_RECONNECT_MS), MAX_RECONNECT_MS);
+    this.timer = setTimeout(() => void this.connect(), delay);
   }
 }

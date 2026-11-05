@@ -388,6 +388,19 @@ describe('FetchEventSource', () => {
   });
 
   it.each([
+    ['2147483648', '2147483648'],
+    ['a 400-digit number', '9'.repeat(400)],
+  ])('a retry of %s cannot overflow the timer into a tight loop', async (_name, retry) => {
+    fetchMock.mockImplementation(
+      async () => new Response(`retry: ${retry}\n\n`, { headers: SSE_HEADERS }),
+    );
+    const source = new FetchEventSource('/s');
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    source.close();
+  });
+
+  it.each([
     ['an empty 200', '', 11],
     ['an empty 200 that asked for retry: 0', 'retry: 0\n\n', 31],
   ])('%s cannot spin', async (_name, body, atMost) => {
