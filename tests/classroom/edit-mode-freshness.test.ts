@@ -219,6 +219,18 @@ describe('the freshness sync on the standalone classroom page', () => {
     expect(mocks.fetches).toEqual([]);
   });
 
+  it('stays off while the store holds another course', async () => {
+    useStageStore.setState({
+      stage: { id: 'stage-other', name: 'Other', createdAt: 1, updatedAt: 1 } as Stage,
+    });
+    await open();
+    await setMode('edit');
+    await settle(40_000);
+
+    expect(MockEventSource.instances).toEqual([]);
+    expect(mocks.fetches).toEqual([]);
+  });
+
   it('leaves the workspace pane to the sync its host runs', async () => {
     await open('pane');
     await setMode('edit');

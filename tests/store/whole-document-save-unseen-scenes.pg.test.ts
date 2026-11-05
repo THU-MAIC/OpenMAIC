@@ -342,6 +342,19 @@ describe.skipIf(!contractUrl)('a whole-document save and scenes this browser nev
     expect(await storedIds()).toEqual(['a', 'c']);
   });
 
+  it('a reload starts over: a scene removed while away and written again is unseen', async () => {
+    await openCourse();
+    useStageStore.getState().clearStore();
+    await store.deleteScene(stageId, 'b');
+    await openCourse();
+
+    await remoteWrite(sceneOf(stageId, 'b', 5, 'written again'));
+    useStageStore.getState().deleteScene('c');
+    await flushStageSave();
+
+    expect(await storedIds()).toEqual(['a', 'b']);
+  });
+
   it('a scene another tab deleted comes back from a stale list, as it does today', async () => {
     await openCourse();
     await store.deleteScene(stageId, 'c');
