@@ -212,6 +212,19 @@ describe('FetchEventSource', () => {
     source.close();
   });
 
+  it('sends a non-ASCII id as its UTF-8 bytes, which fetch can carry', async () => {
+    const source = new FetchEventSource('/s');
+    await settle();
+    connections[0]!.send('id: 课堂\ndata: a\n\n');
+    await settle();
+    connections[0]!.end();
+    await vi.advanceTimersByTimeAsync(3_000);
+    const sent = sentHeaders(1)['last-event-id']!;
+    expect(new Headers({ 'last-event-id': sent }).get('last-event-id')).toBe(sent);
+    expect(new TextDecoder().decode(Uint8Array.from(sent, (c) => c.charCodeAt(0)))).toBe('课堂');
+    source.close();
+  });
+
   it('keeps an id committed by a frame without data', async () => {
     const source = new FetchEventSource('/s');
     await settle();

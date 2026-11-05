@@ -104,6 +104,14 @@ export class SseParser {
   }
 }
 
+/**
+ * `fetch` throws on a header value above U+00FF and sends the rest one byte per
+ * code unit, so an id's UTF-8 bytes go out as they do from a native `EventSource`.
+ */
+function utf8AsByteString(value: string): string {
+  return Array.from(new TextEncoder().encode(value), (byte) => String.fromCharCode(byte)).join('');
+}
+
 type Handler = ((event: Event) => void) | null;
 
 export class FetchEventSource extends EventTarget {
@@ -190,7 +198,7 @@ export class FetchEventSource extends EventTarget {
     const controller = new AbortController();
     this.controller = controller;
     const headers: Record<string, string> = { accept: 'text/event-stream' };
-    if (this.lastEventId) headers['last-event-id'] = this.lastEventId;
+    if (this.lastEventId) headers['last-event-id'] = utf8AsByteString(this.lastEventId);
 
     let reader: ReadableStreamDefaultReader<Uint8Array>;
     try {
