@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Workbench: a background course sync no longer overwrites a scene edit that has not finished saving, so the edit no longer reverts on screen and the older copy is no longer saved over it. The scene is read again as soon as the save finishes. [#2168](https://github.com/THU-MAIC/OpenMAIC/pull/2168)
 - Editor: a slide open in the legacy Pro editor follows a server change to its scene, so the next commit from the canvas, including an automatic text-height adjustment, no longer writes the older content back over a page an agent just changed. [#2168](https://github.com/THU-MAIC/OpenMAIC/pull/2168)
+- Editor: the automatic text-height adjustment in the legacy Pro editor no longer saves the scene, so it no longer puts an older copy of a page back on the server from a tab that had not picked up a newer version, and no longer holds back an agent's next change. The height is kept in that tab and saved with its next real edit.
 
 ## [1.4.0] - 2026-11-04
 
