@@ -272,6 +272,49 @@ describe.skipIf(!contractUrl)('a whole-document save and scenes this browser nev
     expect(await storedIds()).toEqual(['a', 'b', 'c']);
   });
 
+  it('a scene the sync brought in while a save was on the wire can be deleted', async () => {
+    await openCourse();
+    await remoteWrite(sceneOf(stageId, 'agent-new', 3));
+
+    const realSave = store.saveDocument.bind(store);
+    vi.spyOn(store, 'saveDocument').mockImplementationOnce(async (document) => {
+      await realSave(document);
+      // The save that kept it has landed but not settled; the sync takes it now.
+      useStageStore.setState((state) => ({
+        scenes: [...state.scenes, sceneOf(stageId, 'agent-new', 3)],
+      }));
+    });
+    useStageStore.getState().deleteScene('b');
+    await flushStageSave();
+    expect(await storedIds()).toEqual(['a', 'agent-new', 'c']);
+
+    useStageStore.getState().deleteScene('agent-new');
+    await flushStageSave();
+
+    expect(await storedIds()).toEqual(['a', 'c']);
+  });
+
+  it('a page restored while its deletion was on the wire can be deleted again', async () => {
+    await openCourse();
+    const pageB = useStageStore.getState().scenes.find((scene) => scene.id === 'b')!;
+
+    const realSave = store.saveDocument.bind(store);
+    vi.spyOn(store, 'saveDocument').mockImplementationOnce(async (document) => {
+      await realSave(document);
+      // The user undoes the deletion before the save settles.
+      useStageStore.getState().setScenes([...useStageStore.getState().scenes, pageB]);
+    });
+    useStageStore.getState().deleteScene('b');
+    await flushStageSave();
+    await flushStageSave();
+    expect(await storedIds()).toEqual(['a', 'b', 'c']);
+
+    useStageStore.getState().deleteScene('b');
+    await flushStageSave();
+
+    expect(await storedIds()).toEqual(['a', 'c']);
+  });
+
   it('a scene another tab deleted comes back from a stale list, as it does today', async () => {
     await openCourse();
     await store.deleteScene(stageId, 'c');

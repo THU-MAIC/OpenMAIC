@@ -163,7 +163,11 @@ async function saveWholeDocument(
     ...document,
     scenes: [...document.scenes, ...withLocalSceneOrder(document.scenes, unseen)],
   });
-  settleKnownScenes(stageId, stored, document.scenes);
+  const kept = new Set([...document.scenes, ...unseen].map((scene) => scene.id));
+  settleKnownScenes(
+    stageId,
+    stored.filter((scene) => !kept.has(scene.id)),
+  );
 }
 
 function documentSnapshot(
