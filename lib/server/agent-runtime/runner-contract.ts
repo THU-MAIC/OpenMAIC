@@ -1,5 +1,16 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { courseSystemPrompt, DSL_TOOLS_PROMPT } from './course-tools';
+export {
+  assembleCapabilityRuntime,
+  resolveRunnerCapabilities,
+  createCapabilityMap,
+  isCapabilityTool,
+  type CapabilityRequirement,
+  type CapabilityDependentTool,
+  type ResolvedCapabilityMap,
+  type AssembleCapabilityRuntimeOptions,
+  type AssembledCapabilityRuntime,
+} from './capability-tools';
 
 type PromptBlocks = Parameters<typeof courseSystemPrompt>[0];
 

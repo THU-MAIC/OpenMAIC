@@ -8,6 +8,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { AssetId } from '../src/asset/id.js';
 import {
   AssetQuotaExceededError,
+  AssetImmutableError,
   AssetRootedError,
   type AssetIndirectReadRequest,
   type AssetPrincipal,
@@ -139,6 +140,16 @@ describe('store refusals are classified by contract, not by class identity', () 
 
     expect(response.status).toBe(500);
     expect(await response.json()).toMatchObject({ error: { code: 'INTERNAL_ERROR' } });
+  });
+
+  test('answers an immutable template with 409 without leaking the host error', async () => {
+    const { url } = await serve({
+      ...stubStore(),
+      remove: () => Promise.reject(new AssetImmutableError()),
+    });
+    const response = await fetch(`${url}/assets/ast_template`, { method: 'DELETE' });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: { code: 'ASSET_IMMUTABLE' } });
   });
 
   test('answers a rooted entry with 409 on DELETE and on PUT', async () => {

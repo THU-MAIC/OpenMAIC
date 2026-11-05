@@ -51,6 +51,13 @@ export const PARSE_PPTX_TIMEOUT_MS = 90_000;
 export const AFTER_IMPORT_NEXT_STEP =
   'Next: set_roster if the classroom has no roster; inspect every imported page with list_scenes, read_stage, and render_scene_preview when that tool is registered; load the pro-editing skill to fix visual bad cases; understand the course; then patch_stage the actions when needed; then generate_tts. Do not patch actions or generate_tts before inspection.';
 
+export const AFTER_IMPORT_NEXT_STEP_NO_TTS =
+  'Next: set_roster if the classroom has no roster; inspect every imported page with list_scenes, read_stage, and render_scene_preview when that tool is registered; load the pro-editing skill to fix visual bad cases; understand the course; then patch_stage the actions when needed. Do not patch actions before inspection.';
+
+export function afterImportNextStep(hasTts = true): string {
+  return hasTts ? AFTER_IMPORT_NEXT_STEP : AFTER_IMPORT_NEXT_STEP_NO_TTS;
+}
+
 const ImportParams = Type.Object({
   stageId: Type.String({ description: COURSE_STAGE_ID_DESCRIPTION }),
   materialId: Type.String({
@@ -377,6 +384,8 @@ export function buildImportPptxTool(
       : resolveRawMaterial);
   const parsePptx = deps.parsePptx ?? parsePptxIsolated;
   const upload = deps.uploadImportedMedia ?? defaultUploadImportedMedia;
+  const hasTts = deps.capabilities ? deps.capabilities.isAvailable('tts') : true;
+  const nextStepText = afterImportNextStep(hasTts);
 
   return {
     name: IMPORT_PPTX_TOOL_NAME,
@@ -496,7 +505,7 @@ export function buildImportPptxTool(
               receiptSceneIds.length !== live.length
                 ? `${receiptSceneIds.length - live.length} of the imported page(s) have since been deleted.`
                 : '',
-              `To import this file again on purpose, delete those pages first (edit_deck op=delete), then call import_pptx again. ${AFTER_IMPORT_NEXT_STEP}`,
+              `To import this file again on purpose, delete those pages first (edit_deck op=delete), then call import_pptx again. ${nextStepText}`,
             ]
               .filter(Boolean)
               .join(' '),
@@ -664,8 +673,8 @@ export function buildImportPptxTool(
             ? `${notesPages} page(s) received narration from speaker notes.`
             : 'No speaker notes were found; pages have no narration yet.',
           previousRoster?.length
-            ? `A classroom roster already exists. ${AFTER_IMPORT_NEXT_STEP}`
-            : AFTER_IMPORT_NEXT_STEP,
+            ? `A classroom roster already exists. ${nextStepText}`
+            : nextStepText,
         ]
           .filter(Boolean)
           .join(' '),

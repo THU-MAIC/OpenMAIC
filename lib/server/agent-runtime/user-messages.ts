@@ -4,6 +4,10 @@ import { HOST_AGENT_LIFECYCLE } from '@/lib/agent-runtime/lifecycle';
 
 export interface AgentUserMessageWithElementRefs extends AgentSessionUserMessage {
   elementRefs?: unknown[];
+  /** Server-created PBL stage entry, never learner feedback. */
+  pblOpening?: boolean;
+  /** PBL interface locale, not message text or evidence of learner understanding. */
+  pblUiLocale?: string;
 }
 
 export interface DetachedSessionSkill {
@@ -76,6 +80,12 @@ export async function readAgentMessageLog(
         seq: event.id,
         ts: event.ts,
         text: String(data.text ?? ''),
+        ...(sessionId.startsWith('pbl-role-') && data.pblOpening === true
+          ? { pblOpening: true }
+          : {}),
+        ...(sessionId.startsWith('pbl-role-') && typeof data.pblUiLocale === 'string'
+          ? { pblUiLocale: data.pblUiLocale }
+          : {}),
         delivery: String(data.delivery ?? ''),
         materials: Array.isArray(data.materials) ? data.materials : [],
         ...(Array.isArray(data.elementRefs) ? { elementRefs: data.elementRefs } : {}),

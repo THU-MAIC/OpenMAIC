@@ -8,6 +8,15 @@ import {
 // register() is exercised for its database requirement only.
 // register() starts the background workers. Real ones keep polling the
 // database after the file's tests end and log into a closing worker.
+vi.mock('@/lib/server/pbl-v3/lifecycle-schedule', () => ({
+  startLearningLifecycle: vi.fn(),
+}));
+vi.mock('@/lib/server/pbl-v3/execution-watchdog', () => ({
+  startTeachingExecutionWatchdog: vi.fn(),
+}));
+vi.mock('@/lib/server/sandbox/checkpoint-collector', () => ({
+  startCheckpointCollector: vi.fn(),
+}));
 vi.mock('@/lib/server/generation/run/runner', () => ({
   startGenerationRunner: () => ({ workerId: 'test', wake: () => {}, stop: async () => {} }),
 }));
@@ -21,10 +30,16 @@ vi.mock('@/lib/server/instance-secret-check', () => ({ warnAboutInstanceSecret: 
 vi.mock('@/lib/persistence/asset-quota', () => ({ resolveAssetQuotaBytes: vi.fn() }));
 vi.mock('@/lib/persistence/asset-pending-ttl', () => ({ resolveAssetPendingTtlMs: vi.fn() }));
 const startAssetCollectorSchedule = vi.hoisted(() => vi.fn());
-vi.mock('@/lib/persistence/schema-boot-check', () => ({ startSchemaBootCheck: vi.fn() }));
+vi.mock('@/lib/persistence/schema-boot-check', () => ({
+  startSchemaBootCheck: vi.fn(),
+  startRuntimeSchemaMonitor: vi.fn(),
+}));
 vi.mock('@/lib/persistence/asset-collector-schedule', () => ({ startAssetCollectorSchedule }));
 vi.mock('@/lib/server/config-validation', () => ({ validateServerConfig: vi.fn() }));
-vi.mock('@/lib/config/feature-flags', () => ({ isAgentRuntimeConfigured: () => false }));
+vi.mock('@/lib/config/feature-flags', () => ({
+  isAgentRuntimeConfigured: () => false,
+  isServerPersistenceConfigured: () => false,
+}));
 
 let exit: ReturnType<typeof vi.spyOn>;
 let stderr: string[];

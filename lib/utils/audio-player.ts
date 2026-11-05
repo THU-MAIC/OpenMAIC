@@ -16,6 +16,11 @@ const log = createLogger('AudioPlayer');
  * endpoint must not pin a playback line indefinitely. */
 const LEGACY_URL_FETCH_TIMEOUT_MS = 15_000;
 
+/** `pause()` rejects a pending `play()` with this. It is not a media failure. */
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
 /** Bytes an audio id currently resolves to, pool first. Loaded lazily to keep
  * this module importable without the media graph. */
 async function resolveBytes(audioId: string): Promise<Blob | null> {
@@ -48,6 +53,8 @@ export class AudioPlayer {
   private volume: number = 1;
   private playbackRate: number = 1;
   private requestToken: number = 0;
+  // Unlike requestToken, source ownership survives pause until the line is released.
+  private audioRequestToken: number | null = null;
   /** The object URL backing the current audio element, if any. */
   private blobUrl: string | null = null;
   /**
@@ -100,6 +107,7 @@ export class AudioPlayer {
       }
       this.audio = null;
     }
+    this.audioRequestToken = null;
     // The element outlives this line now, so the line's own state has to be
     // released with it: a stale ended handler would report speech that is no
     // longer playing, and a revoked object URL still loaded keeps the narration
@@ -184,6 +192,7 @@ export class AudioPlayer {
       // element's programmatic play() is what mobile autoplay policies refuse,
       // which left the narration silent from the second line on.
       this.audio = this.getAudioElement();
+      this.audioRequestToken = requestToken;
 
       // Set audio source
       const blobUrl = blob ? URL.createObjectURL(blob) : undefined;
@@ -205,15 +214,7 @@ export class AudioPlayer {
         this.onEndedCallback?.();
       };
 
-      // Play. If play() rejects (autoplay policy, decode error, interrupted
-      // load) the 'ended' listener never fires, so revoke the blob URL here to
-      // avoid leaking it for the lifetime of the document.
-      try {
-        await this.audio.play();
-      } catch (playError) {
-        this.releaseBlobUrl(blobUrl);
-        throw playError;
-      }
+      await this.audio.play();
       if (requestToken !== this.requestToken) {
         this.releaseBlobUrl(blobUrl);
         return false;
@@ -222,7 +223,19 @@ export class AudioPlayer {
       this.audio.playbackRate = this.playbackRate;
       return true;
     } catch (error) {
-      log.error('Failed to play audio:', error);
+      // pause() rejects a still-pending play() with AbortError. The source
+      // token survives that pause, so this is not a failed clip: resume()
+      // must play the same line. A real failure, including one that arrives
+      // after pause, still releases the source we own. A newer line is left
+      // intact when a superseded play rejects after the element has moved on.
+      const interruptedByPause =
+        isAbortError(error) &&
+        requestToken !== this.requestToken &&
+        this.audioRequestToken === requestToken;
+      if (this.audioRequestToken === requestToken && !interruptedByPause) {
+        this.stopAudioElement();
+      }
+      if (!interruptedByPause) log.error('Failed to play audio:', error);
       throw error;
     }
   }

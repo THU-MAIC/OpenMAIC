@@ -132,6 +132,32 @@ describe('withAgentToolTimeout', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('waits for an opted-in tool to finish abort cleanup before rejecting the timeout', async () => {
+    vi.useFakeTimers();
+    const events: string[] = [];
+    const tool = withAgentToolTimeout<DemoTool & { awaitAbortCleanup: true }>({
+      ...makeTool(async (_id, _args, signal) => {
+        if (!signal?.aborted) {
+          await new Promise<void>((resolve) =>
+            signal?.addEventListener('abort', () => resolve(), { once: true }),
+          );
+        }
+        await Promise.resolve();
+        events.push('cleanup');
+        return result('late-result');
+      }),
+      awaitAbortCleanup: true,
+    });
+
+    const promise = tool.execute('call-cleanup', {}, undefined);
+    const settled = expect(promise).rejects.toBeInstanceOf(AgentToolTimeoutError);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await settled;
+
+    expect(events).toEqual(['cleanup']);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('settles promptly when the caller signal aborts a never-settling tool', async () => {
     vi.useFakeTimers();
     const captured: AbortSignal[] = [];

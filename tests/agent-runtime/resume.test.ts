@@ -96,6 +96,28 @@ describe('planResume', () => {
     expect(planResume(transcript)).toEqual({ kind: 'already-complete', messages: transcript });
   });
 
+  it.each(['request_skill_review', 'complete_stage'])(
+    'settles a successful %s in a mixed batch, but continues errors and new student turns',
+    (name) => {
+      const prefix = [
+        user('Teach me'),
+        assistantWithCalls([
+          { id: 'read', name: 'read_next_skill' },
+          { id: 'review', name },
+          { id: 'tail', name: 'read_file' },
+        ]),
+        toolResult('read', 'read_next_skill'),
+      ];
+      const transcript = [...prefix, toolResult('review', name), toolResult('tail', 'read_file')];
+      expect(planResume([...transcript, interruptedAssistant([])])).toEqual({
+        kind: 'already-complete',
+        messages: transcript,
+      });
+      expect(planResume([...prefix, failingToolResult('review', name)]).kind).toBe('continue');
+      expect(planResume([...transcript, user('I checked the example')]).kind).toBe('continue');
+    },
+  );
+
   it('settles after a durable successful create_skill instead of creating it twice on takeover', () => {
     const transcript = [
       user('Save this method as a skill'),

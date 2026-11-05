@@ -135,7 +135,7 @@ describe('buildResourcePackZip', () => {
   });
 
   describe('interactive scene without html', () => {
-    it('treats an interactive scene lacking an html payload as non-exportable', async () => {
+    it('exports a placeholder slide for a scene that only has a url', async () => {
       const getPptxBlob = vi.fn(async () => new Blob(['pptx-bytes']));
       const sceneNoHtml = interactiveScene({
         content: { type: 'interactive', url: 'https://example.com', html: '' },
@@ -150,7 +150,27 @@ describe('buildResourcePackZip', () => {
         getPptxBlob,
       });
 
-      // No html + no slides ⇒ nothing to ship.
+      expect(result.empty).toBe(false);
+      expect(result.skippedPptx).toBe(false);
+      expect(getPptxBlob).toHaveBeenCalledTimes(1);
+    });
+
+    it('treats a scene with neither html nor url as non-exportable', async () => {
+      const getPptxBlob = vi.fn(async () => new Blob(['pptx-bytes']));
+      const sceneNoHtml = interactiveScene({
+        content: { type: 'interactive', url: '', html: '' },
+      });
+
+      const result = await buildResourcePackZip([sceneNoHtml], {
+        viewportRatio: 0.5625,
+        viewportSize: 960,
+        ratioPx2Inch: 96,
+        ratioPx2Pt: 96 / 72,
+        fileName: 'demo',
+        getPptxBlob,
+      });
+
+      // No html, no url and no slides ⇒ nothing to ship.
       expect(result.empty).toBe(true);
       expect(result.blob).toBeNull();
       expect(getPptxBlob).not.toHaveBeenCalled();

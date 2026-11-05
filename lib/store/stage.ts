@@ -34,6 +34,8 @@ import {
   stageDeletionSettled,
 } from '@/lib/utils/deleted-stages';
 
+import { recordKnownScenes, resetKnownScenes } from '@/lib/store/known-scenes';
+
 const log = createLogger('StageStore');
 
 /** Virtual scene ID used when the user navigates to a page still being generated */
@@ -94,6 +96,7 @@ function trackWholeDocumentSave<T>(stageId: string, save: Promise<T>): Promise<T
     const count = (wholeDocumentSavesInFlight.get(stageId) ?? 1) - 1;
     if (count > 0) wholeDocumentSavesInFlight.set(stageId, count);
     else wholeDocumentSavesInFlight.delete(stageId);
+    announceStageWriteSettled();
   };
   return save.finally(release);
 }
@@ -105,6 +108,25 @@ function trackWholeDocumentSave<T>(stageId: string, save: Promise<T>): Promise<T
  * second unload event from sending the same revision again.
  */
 const keepaliveSentRevisions = new Map<string, number>();
+
+/**
+ * Moves with every document change this browser makes, saved or not. A read
+ * that started before it moved may be older than the edit, even if the edit
+ * has already been saved by the time the response arrives.
+ */
+let documentEditClock = 0;
+
+export function stageDocumentEditClock(): number {
+  return documentEditClock;
+}
+
+/**
+ * A save of the course finished: a freshness sync that left scenes alone for
+ * it can read them now (see `hasUnsavedSceneEdit`).
+ */
+function announceStageWriteSettled(): void {
+  useStageStore.setState((state) => ({ stageSyncRequest: state.stageSyncRequest + 1 }));
+}
 
 const SAVE_DEBOUNCE_MS = 500;
 const SAVE_BACKOFF_MAX_MS = 30_000;
@@ -222,6 +244,7 @@ const DOCUMENT_CHANGE_KINDS = new Set<PendingChange['kind']>([
 
 function markPendingChanges(stageId: string | undefined, ...changes: PendingChange[]): void {
   if (!stageId || isStageDeleted(stageId)) return;
+  if (changes.some((change) => DOCUMENT_CHANGE_KINDS.has(change.kind))) documentEditClock += 1;
   if (isServerGeneratingStage(stageId)) {
     for (const change of changes) {
       if (change.kind !== 'scene') continue;
@@ -259,6 +282,96 @@ export function markStagePersistenceDirty(changes: PendingChange[]): void {
  */
 export function discardPendingStageChanges(stageId: string): void {
   if (pendingStageId === stageId) resetPendingChanges();
+}
+
+/**
+ * Whether this browser holds a stage-level edit (the roster included) not yet
+ * written, queued or in flight: a server read must not overwrite it.
+ */
+export function hasUnsavedStageEdit(stageId: string): boolean {
+  return snapshotPendingStageChangesForDeletion(stageId).some((change) => change.kind === 'stage');
+}
+
+/** Who teaches a course: the two stage fields a roster write sets. */
+export interface StageRosterValue {
+  readonly agentIds?: readonly string[];
+  readonly generatedAgentConfigs?: readonly GeneratedAgentConfig[];
+}
+
+function rosterOfStage(stage: Stage): StageRosterValue {
+  return {
+    ...(stage.agentIds ? { agentIds: stage.agentIds } : {}),
+    ...(stage.generatedAgentConfigs ? { generatedAgentConfigs: stage.generatedAgentConfigs } : {}),
+  };
+}
+
+/**
+ * Per course, the roster this browser last knew the server to hold: the base
+ * of the roster three-way merge in the freshness sync. A server roster that
+ * differs from it while the shown roster still equals it is a remote change
+ * the classroom takes (even with other stage edits pending, so their flush
+ * carries it); a shown roster that differs from it is a local edit, kept.
+ * Recorded by the sync (when it first sees the course and whenever it applies
+ * or confirms a server roster) and here, after a save that wrote the stage.
+ */
+const serverRosterBase = new Map<string, StageRosterValue>();
+
+export function recordServerRosterBase(stageId: string, roster: StageRosterValue): void {
+  serverRosterBase.set(stageId, roster);
+}
+
+export function forgetServerRosterBase(stageId: string): void {
+  serverRosterBase.delete(stageId);
+}
+
+export function serverRosterBaseOf(stageId: string): StageRosterValue | undefined {
+  return serverRosterBase.get(stageId);
+}
+
+/**
+ * Whether a write of the stage document is on the wire now (a flush round
+ * that carries the stage, or a whole-document save). Its payload was captured
+ * when it started, so a roster applied locally now would not be in it.
+ */
+export function isStageWriteInFlight(stageId: string): boolean {
+  return (
+    (flushInFlight?.stageId === stageId && flushInFlight.dirtySnapshot.has('stage')) ||
+    wholeDocumentSavesInFlight.has(stageId)
+  );
+}
+
+/**
+ * Whether a server copy of this scene must stay out of the store for now,
+ * because this browser holds work on it that is not on the server yet. Taking
+ * the copy would discard the edit on screen, and the queued save, which reads
+ * the store when it starts, would then write the copy over the edit.
+ *
+ * Covers the scene's own edit, queued or on the wire, and a save on the wire that
+ * writes the whole document from a snapshot, which replaces every scene and moves
+ * their revisions when it lands. A whole-document change that is only QUEUED does
+ * not count: see `hasQueuedWholeDocumentChange`.
+ */
+export function hasUnsavedSceneEdit(stageId: string, sceneId: string): boolean {
+  if (wholeDocumentSavesInFlight.has(stageId) || hasLearnerSceneChange(stageId, sceneId)) {
+    return true;
+  }
+  const key = pendingChangeKey({ kind: 'scene', sceneId });
+  if (keepaliveSentRevisions.has(key)) return true;
+  const round = flushInFlight?.stageId === stageId ? flushInFlight : null;
+  if (round && (roundWritesWholeDocument(round) || round.dirtySnapshot.has(key))) return true;
+  return pendingStageId === stageId && pendingChanges.has(key);
+}
+
+/**
+ * Whether a structural or outline change waits in the debounce. Its flush saves
+ * the store's scene list as the whole document and deletes every stored scene
+ * absent from it, so remote scenes must keep reaching the store until the flush
+ * captures it, on top of the local list and order.
+ */
+export function hasQueuedWholeDocumentChange(stageId: string): boolean {
+  return (
+    pendingStageId === stageId && (pendingChanges.has('structure') || pendingChanges.has('outline'))
+  );
 }
 
 /**
@@ -469,13 +582,11 @@ interface StageState {
   generationStatus: 'idle' | 'generating' | 'paused' | 'completed' | 'error';
   failedOutlines: SceneOutline[];
 
-  // Workbench canvas-freshness projections (Mono #1960 Part 2 port).
-  // The workbench stage-freshness sync records the manifest this browser has
-  // actually rendered (`serverManifestByStage`) and the store's save paths may
-  // bump `stageSyncRequest` when a refused write must converge the baseline
-  // before the next save is judged. Both are written by
-  // `lib/workbench/use-workbench-session.ts` / future ownership slices; the
-  // upstream host's own save paths do not consume them yet.
+  // Workbench canvas-freshness projections. The stage-freshness sync
+  // (`lib/workbench/use-workbench-session.ts`) records the manifest this browser
+  // has actually rendered (`serverManifestByStage`). `stageSyncRequest` moves
+  // whenever a save of the course finishes, so a sync that left scenes alone
+  // for that save can read them again without waiting for its next signal.
   serverManifestByStage: Record<string, StageManifest>;
   stageSyncRequest: number;
 
@@ -485,12 +596,29 @@ interface StageState {
   addScene: (scene: Scene) => void;
   insertSceneAfter: (anchorSceneId: string, scene: Scene) => void;
   updateScene: (sceneId: string, updates: ScenePatch) => void;
+  /**
+   * Hold what a canvas measured from a scene's layout (text auto-height), not
+   * something anyone changed. Unlike `updateScene` this queues no save and does
+   * not count as an unsaved edit: the value differs per browser and is measured
+   * again on every render, and saving it would write this tab's whole copy of
+   * the scene over whatever the server holds now, with no user input. The next
+   * real save of the scene carries it.
+   */
+  updateSceneMeasurement: (sceneId: string, content: Scene['content']) => void;
   deleteScene: (sceneId: string) => void;
   setCurrentSceneId: (sceneId: string | null) => void;
   setChats: (chats: ChatSession[]) => void;
   setMode: (mode: StageMode) => void;
   setToolbarState: (state: ToolbarState) => void;
-  setStageAgents: (configs: GeneratedAgentConfig[]) => void;
+  /**
+   * Replace the roster. `fromServer`: the server already holds it (the
+   * freshness sync read it back), so the classroom follows it without the
+   * write a local edit makes; `agentIds` then comes along with it.
+   */
+  setStageAgents: (
+    configs: GeneratedAgentConfig[],
+    options?: { readonly fromServer?: boolean; readonly agentIds?: string[] },
+  ) => void;
   setOutlines: (outlines: SceneOutline[]) => void;
   setGenerationComplete: (complete: boolean) => void;
   /**
@@ -509,6 +637,16 @@ interface StageState {
   saveToStorage: () => Promise<boolean>;
   loadFromStorage: (stageId: string, loadToken?: StageSceneLoadToken) => Promise<void>;
   clearStore: () => void;
+}
+
+function scenesWithPatch(scenes: Scene[], sceneId: string, updates: ScenePatch): Scene[] {
+  return scenes.map((scene) => {
+    if (scene.id !== sceneId) return scene;
+    const content = mergeSceneContentForUpdate(scene.content, updates.content) ?? scene.content;
+    // Rebind `type` to the merged content's kind (a type-only patch can no
+    // longer desync the discriminant from the content).
+    return makeScene({ ...scene, ...updates }, content);
+  });
 }
 
 function isDeckComplete({
@@ -762,15 +900,12 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   },
 
   updateScene: (sceneId, updates) => {
-    const scenes = get().scenes.map((scene) => {
-      if (scene.id !== sceneId) return scene;
-      const content = mergeSceneContentForUpdate(scene.content, updates.content) ?? scene.content;
-      // Rebind `type` to the merged content's kind (a type-only patch can no
-      // longer desync the discriminant from the content).
-      return makeScene({ ...scene, ...updates }, content);
-    });
-    set({ scenes });
+    set({ scenes: scenesWithPatch(get().scenes, sceneId, updates) });
     markPendingChanges(get().stage?.id, { kind: 'scene', sceneId });
+  },
+
+  updateSceneMeasurement: (sceneId, content) => {
+    set({ scenes: scenesWithPatch(get().scenes, sceneId, { content }) });
   },
 
   deleteScene: (sceneId) => {
@@ -848,24 +983,45 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
 
   setToolbarState: (toolbarState) => set({ toolbarState }),
 
-  setStageAgents: (configs) => {
+  setStageAgents: (configs, options) => {
     const stage = get().stage;
     if (!stage) return;
-    set({ stage: { ...stage, generatedAgentConfigs: configs } });
+    set({
+      stage: {
+        ...stage,
+        generatedAgentConfigs: configs,
+        ...(options?.agentIds ? { agentIds: options.agentIds } : {}),
+      },
+    });
     // The roster is part of the stage document — persistence rides the shared
     // pending-change scheduler like every other stage mutation. The registry
-    // and selection updates below are synchronous in-memory mirrors only.
-    markPendingChanges(stage.id, { kind: 'stage' });
+    // and selection updates below are synchronous in-memory mirrors only. A
+    // roster read back from the server is already stored: no write.
+    if (!options?.fromServer) markPendingChanges(stage.id, { kind: 'stage' });
     applyGeneratedAgentsToRegistry(stage.id, configs);
     // Selection mirror honors provenance (same semantics as
     // restoreAgentSelection): a stage-derived selection tracks the roster
     // wholesale; a user's explicit auto choice is handled by cases below. A
-    // user-set preset selection references non-generated agents only, so a
-    // roster edit does not concern it.
+    // user-set preset selection steps aside for the course's own roster and
+    // is kept for when no roster applies.
     const settings = useSettingsStore.getState();
     const nextRosterIds = configs.map((a) => a.id);
-    if (!settings.agentSelectionIsUserSet) {
+    if (nextRosterIds.length === 0 && settings.presetAgentChoice.length > 0) {
+      // The roster the kept choice stepped aside for is gone: same as loading
+      // a course without a roster.
+      settings.setAgentMode('preset');
+      settings.setSelectedAgentIds(settings.presetAgentChoice);
+      settings.setAgentSelectionIsUserSet(true);
+      settings.setPresetAgentChoice([]);
+    } else if (!settings.agentSelectionIsUserSet) {
       settings.setSelectedAgentIds(nextRosterIds);
+    } else if (settings.agentMode === 'preset') {
+      if (nextRosterIds.length > 0) {
+        settings.setPresetAgentChoice(settings.selectedAgentIds);
+        settings.setAgentMode('auto');
+        settings.setSelectedAgentIds(nextRosterIds);
+        settings.setAgentSelectionIsUserSet(false);
+      }
     } else if (settings.agentMode === 'auto') {
       // The AgentBar's auto toggle snapshots the whole roster as the user's
       // selection, so "selection === pre-edit full roster" means the intent
@@ -977,6 +1133,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         }
 
         const failedKeys = new Set((result?.failedChanges ?? []).map(pendingChangeKey));
+        // The server now holds the roster this save wrote.
+        if (!failedKeys.has('stage')) recordServerRosterBase(stage.id, rosterOfStage(stage));
         if (
           failedKeys.has('chats') &&
           pendingStageId === stage.id &&
@@ -1175,6 +1333,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         const generatingOutlines = generationComplete
           ? []
           : outlines.filter((o) => !migrated.some((s) => s.order === o.order));
+        resetKnownScenes(stageId);
         set({
           stage: data.stage,
           scenes: migrated,
@@ -1234,6 +1393,16 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
 
 export const useStageStore = createSelectors(useStageStoreBase);
 
+// Whatever way a scene reached the store, this tab now knows of it: a whole-document
+// save that no longer lists it is removing it (see `known-scenes.ts`).
+useStageStoreBase.subscribe((state, previous) => {
+  if (state.scenes === previous.scenes || !state.stage) return;
+  recordKnownScenes(
+    state.stage.id,
+    state.scenes.map((scene) => scene.id),
+  );
+});
+
 // ==================== Debounced Save ====================
 
 const MAX_FLUSH_DRAIN_ROUNDS = 20;
@@ -1288,6 +1457,15 @@ function startFlushRound(): FlushRound | null {
           },
         });
       }
+      if (
+        !staleDropped &&
+        snapshot.stage &&
+        dirtySnapshot.has('stage') &&
+        !failedKeys.has('stage')
+      ) {
+        // The server now holds the roster this round wrote.
+        recordServerRosterBase(stageId, rosterOfStage(snapshot.stage));
+      }
       recordFlushOutcome(failedKeys.size > 0);
       return failedKeys;
     } catch (error) {
@@ -1299,6 +1477,7 @@ function startFlushRound(): FlushRound | null {
       // Successive mutations and failed writes both leave durable work queued.
       // Always restore the retry timer so dirt is never stranded.
       if (pendingChanges.size > 0 && pendingStageId) schedulePendingSave();
+      announceStageWriteSettled();
     }
   })();
   const round = { stageId, dirtySnapshot, promise: run };
@@ -1461,13 +1640,15 @@ export function writePendingChangesForUnload(): boolean {
       for (const [key, entry] of sentEntries) {
         if (keepaliveSentRevisions.get(key) === entry.revision) keepaliveSentRevisions.delete(key);
       }
-      if (succeeded || pendingStageId !== stageId) return;
-      // The page stayed and a write failed: queue the changes again, unless
-      // a newer edit of the same unit is already waiting.
-      for (const [key, entry] of sentEntries) {
-        if (!pendingChanges.has(key)) pendingChanges.set(key, entry);
+      if (!succeeded && pendingStageId === stageId) {
+        // The page stayed and a write failed: queue the changes again, unless
+        // a newer edit of the same unit is already waiting.
+        for (const [key, entry] of sentEntries) {
+          if (!pendingChanges.has(key)) pendingChanges.set(key, entry);
+        }
+        schedulePendingSave();
       }
-      schedulePendingSave();
+      announceStageWriteSettled();
     });
   }
   return result.deferred.length > 0 || overtakesInFlightSave;

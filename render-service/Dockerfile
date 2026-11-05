@@ -38,8 +38,8 @@ RUN printf '%s\n' \
      "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/${DEBIAN_SNAPSHOT} bookworm-security main" \
      > /etc/apt/sources.list \
   && rm -f /etc/apt/sources.list.d/debian.sources \
-  && apt-get update \
-  && apt-get install -y --no-install-recommends \
+  && apt-get -o Acquire::Retries=5 update \
+  && apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
      "chromium-common=${CHROMIUM_VERSION}" \
      "chromium-headless-shell=${CHROMIUM_VERSION}" \
      "ffmpeg=${FFMPEG_VERSION}" \

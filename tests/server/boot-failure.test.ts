@@ -5,10 +5,15 @@ import {
   isInvalidBootConfigurationError,
   runConfigurationCheck,
 } from '@/lib/server/boot-configuration-error';
-import { exitOnBootFailure, formatBootFailure } from '@/lib/server/boot-failure';
+import {
+  exitOnBootFailure,
+  exitOnRuntimeSchemaRefusal,
+  formatBootFailure,
+} from '@/lib/server/boot-failure';
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 function refused(message: string): InvalidBootConfigurationError {
@@ -111,5 +116,47 @@ describe('exitOnBootFailure', () => {
     expect(order[0]).toMatch(/^write:\[boot\] Server startup failed; the server will not start:\n/);
     expect(order[0]).toContain("Error: Cannot find module './chunk-42.js'");
     expect(order[1]).toBe('exit:1');
+  });
+
+  it('reports runtime incompatibility distinctly and flushes diagnostics before exiting', async () => {
+    vi.useFakeTimers();
+    const { order, exit, flush } = stubProcess();
+    const done = exitOnRuntimeSchemaRefusal(new Error('newer schema'));
+    await Promise.resolve();
+    expect(exit).not.toHaveBeenCalled();
+    flush();
+    await done;
+    expect(order[0]).toContain('retiring this instance and refusing further work');
+    expect(order[0]).not.toContain('startup failed');
+    expect(order[1]).toBe('exit:1');
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(exit).toHaveBeenCalledOnce();
+  });
+
+  it('bounds a stalled runtime stderr flush and ignores a later flush callback', async () => {
+    vi.useFakeTimers();
+    const { exit, flush } = stubProcess();
+    const done = exitOnRuntimeSchemaRefusal(new Error('newer schema'));
+    await vi.advanceTimersByTimeAsync(999);
+    expect(exit).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await done;
+    expect(exit).toHaveBeenCalledExactlyOnceWith(1);
+    expect(vi.getTimerCount()).toBe(0);
+    flush();
+    await Promise.resolve();
+    expect(exit).toHaveBeenCalledOnce();
+  });
+
+  it('exits immediately when writing runtime diagnostics throws', async () => {
+    vi.useFakeTimers();
+    const { exit } = stubProcess();
+    vi.mocked(process.stderr.write).mockImplementation(() => {
+      throw new Error('closed pipe');
+    });
+    await exitOnRuntimeSchemaRefusal(new Error('newer schema'));
+    expect(exit).toHaveBeenCalledExactlyOnceWith(1);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

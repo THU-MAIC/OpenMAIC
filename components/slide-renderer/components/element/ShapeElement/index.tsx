@@ -3,7 +3,7 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import type { PPTShapeElement, ShapeText } from '@openmaic/dsl';
 import { validateShapeGeometry, RENDER_PATH_LIMITS, shapeToTextFallback } from '@openmaic/geometry';
-import { BaseTextElement } from '@openmaic/renderer/elements';
+import { BaseTextElement, hasTextInsets } from '@openmaic/renderer/elements';
 import { useCanvasStore } from '@/lib/store';
 import { useCanvasOperations } from '@/lib/hooks/use-canvas-operations';
 import { useHistorySnapshot } from '@/lib/hooks/use-history-snapshot';
@@ -234,7 +234,7 @@ export function ShapeElement({ elementInfo, selectElement }: ShapeElementProps) 
           </svg>
 
           <div
-            className={`shape-text absolute inset-0 flex flex-col p-[10px] leading-[1.5] break-words pointer-events-none ${
+            className={`shape-text absolute inset-0 flex flex-col leading-[1.5] break-words pointer-events-none ${
               editable || text.content ? 'pointer-events-auto' : ''
             } ${
               text.align === 'top'
@@ -244,6 +244,7 @@ export function ShapeElement({ elementInfo, selectElement }: ShapeElementProps) 
                   : 'justify-center'
             }`}
             style={{
+              padding: hasTextInsets(text.content) ? 0 : 10,
               lineHeight: text.lineHeight,
               letterSpacing: `${text.wordSpace || 0}px`,
               // @ts-expect-error - CSS custom property

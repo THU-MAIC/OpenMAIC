@@ -22,7 +22,19 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
 import { HOST_AGENT_LIFECYCLE as LIFECYCLE } from '@/lib/agent-runtime/lifecycle';
 import { getDocumentStore } from '@/lib/document-store/store';
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
-import { useStageStore } from '@/lib/store/stage';
+import { hydratePBLScenesFromRuntime } from '@/lib/pbl/v2/runtime/hydration';
+import { forgetKnownScenes } from '@/lib/store/known-scenes';
+import {
+  forgetServerRosterBase,
+  hasQueuedWholeDocumentChange,
+  hasUnsavedSceneEdit,
+  hasUnsavedStageEdit,
+  isStageWriteInFlight,
+  recordServerRosterBase,
+  serverRosterBaseOf,
+  stageDocumentEditClock,
+  useStageStore,
+} from '@/lib/store/stage';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Scene, Stage } from '@/lib/types/stage';
 import {
@@ -36,8 +48,13 @@ import {
   diffStageManifest,
   fetchScenesByIds,
   fetchStageManifest,
+  fetchStageRoster,
+  sameStageRoster,
+  stageRosterChanged,
+  type StageRoster,
   mergeFetchedScenes,
   type StageManifest,
+  withLocalSceneOrder,
 } from '@/lib/workbench/stage-freshness';
 import { applyGenerateTtsResultToScenes } from '@/lib/workbench/tts-stage-sync';
 
@@ -285,7 +302,8 @@ export function useWorkbenchStream(sessionId: string | null): void {
  *   - an EventSource re-open after a drop (frames lost during the gap);
  *   - a low-frequency fallback timer (period + jitter) — the correctness
  *     backstop when the stream is dead or a signal was dropped; and
- *   - a user-triggered manual reload of a protected scene (LWW #6).
+ *   - a save of the course finishing, when the last pass left scenes alone
+ *     for it (see UNSAVED EDITS).
  *
  * The stream is a PURE optimization: if it never connects, the fallback still
  * converges, just on the fallback clock. This is the "push for latency, pull for correctness"
@@ -319,24 +337,64 @@ export function useWorkbenchStream(sessionId: string | null): void {
  * nothing changed, so a deck the agent did not touch does not re-render every
  * consumer that memoizes on `scenes`.
  *
- * EDIT-STATE PROTECTION (REMOVED, #1961 decision change 2026-08-23): the read path no
- * longer freezes the page being edited — an agent refresh replaces it
- * outright. The user's typed data is guarded on the WRITE side instead: a
- * save veto retains the pending dirt and retries once the baseline converges
- * (see `lib/store/stage.ts`), so a false veto can no longer silently eat
- * keystrokes.
+ * UNSAVED EDITS: a scene with an edit this browser has not finished saving is
+ * left as it is (`hasUnsavedSceneEdit`). Taking the server's copy would discard
+ * the edit, and the queued save would then write the copy over it. There is no
+ * merging: the scene keeps its old rev in the rendered manifest, so a later pass
+ * reads it again; the pass runs as soon as the save finishes (`stageSyncRequest`).
+ * Writes are last-write-wins on the server, so a remote change to the scene that
+ * landed before that save is replaced by it. A scene with no unsaved edit takes
+ * the server's copy outright, including the page open in the editor.
+ *
+ * The check runs before the read and again after it. A read older than an edit
+ * made since it started is dropped, even if that edit is already saved.
+ *
+ * A structural or outline change waiting in the debounce is different: its flush
+ * saves the store's scene list as the whole document, deleting whatever is absent
+ * from it, so holding remote scenes back would erase them. They are taken on top of
+ * the local list and order; only a scene deleted locally stays out.
  *
  * FAILURE CONTRACT (cr D3-F1 hardening): a pass whose batch fetch returns
  * NOTHING for a non-empty request aborts WITHOUT advancing the rendered
- * manifest or the write baseline — "could not fetch" must never be recorded
- * as "already up to date" (that is how a zeroed baseline polluted the write
- * baseline and permanently vetoed every save on >200-scene courses).
+ * manifest or the store's baseline — "could not fetch" must never be recorded
+ * as "already up to date".
  */
 const STAGE_SYNC_FALLBACK_MS = 30_000;
 /** Jitter band around the fallback period, so a fleet of tabs desyncs. */
 const STAGE_SYNC_FALLBACK_JITTER = 0.2;
 const STAGE_SYNC_RETRY_DELAY_MS = 3_000;
 const STAGE_SYNC_MAX_RETRIES = 5;
+/** The roster fields of a stage, as the roster route answers them. */
+function rosterOf(stage: Stage): StageRoster {
+  return {
+    ...(stage.agentIds ? { agentIds: stage.agentIds } : {}),
+    ...(stage.generatedAgentConfigs ? { generatedAgentConfigs: stage.generatedAgentConfigs } : {}),
+  };
+}
+
+/**
+ * The scenes as a classroom holds them. A stored PBL project is a design template,
+ * with the learner's work in the runtime store, so it is folded back in here as on
+ * a load. Taken as stored it would empty the project on screen, and the next save
+ * would record that as the learner's state. A scene whose fold fails is left out:
+ * it keeps its old rev and is read again, and the others still go through.
+ */
+async function readScenes(
+  stageId: string,
+  ids: readonly string[],
+): Promise<{ scenes: Scene[]; foldFailures: number }> {
+  const fetched = await fetchScenesByIds(stageId, ids);
+  const folded = await Promise.allSettled(
+    fetched.map((scene) => hydratePBLScenesFromRuntime(stageId, [scene])),
+  );
+  return {
+    scenes: folded.flatMap((result) => (result.status === 'fulfilled' ? result.value : [])),
+    foldFailures: folded.filter((result) => result.status === 'rejected').length,
+  };
+}
+
+/** A stage rev no manifest carries: the next pass treats the stage as moved. */
+const UNVERIFIED_STAGE_REV = -1;
 
 export function useStageFreshnessSync(
   stageId: string | null,
@@ -358,6 +416,10 @@ export function useStageFreshnessSync(
   const pendingSync = useRef(0);
   const served = useRef(0);
   const renderedManifest = useRef<StageManifest | null>(null);
+  /** This run's baseline is a manifest from before the classroom load (see below). */
+  const coldBaseline = useRef(false);
+  /** The last pass left scenes behind for a save still to finish (see UNSAVED EDITS). */
+  const heldBackForSave = useRef(false);
   const mounted = useRef(false);
   const retries = useRef(0);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -390,6 +452,8 @@ export function useStageFreshnessSync(
     pendingSync.current = 0;
     served.current = 0;
     renderedManifest.current = null;
+    coldBaseline.current = false;
+    heldBackForSave.current = false;
     retries.current = 0;
     if (retryTimer.current) {
       clearTimeout(retryTimer.current);
@@ -409,18 +473,17 @@ export function useStageFreshnessSync(
       mounted.current && generation.current === token && activeStage.current === requestedStage;
 
     /**
-     * Mirror the read-side rendered manifest into the store's write-side
-     * baseline (the aggregate-save veto, #1960 Part 2 fix): the save paths
-     * compare that baseline against a manifest fetched at write time, so it
-     * must track what THIS browser has actually applied. Recorded on every
-     * pass EXCEPT the warm zeroed-baseline branch below, where scene revs are
-     * unknown — recording the zeroed manifest there would make every later
-     * save look stale; the store's own load records the true baseline instead.
+     * Mirror the rendered manifest into the store (`serverManifestByStage`):
+     * what THIS browser has actually applied. Recorded on every pass EXCEPT the
+     * warm zeroed-baseline branch below, where scene revs are unknown, and a run
+     * that started cold: its manifest describes what the load was going to bring,
+     * which a later start must not take as applied.
      */
     const recordWriteBaseline = (fresh: StageManifest) => {
+      if (coldBaseline.current) return;
       const previous = useStageStore.getState().serverManifestByStage?.[requestedStage];
       // Revs never roll back (Part 1): a stale response must not regress the
-      // baseline and re-open a false veto.
+      // baseline.
       if (previous && fresh.rev < previous.rev) return;
       useStageStore.setState((state) => ({
         serverManifestByStage: { ...state.serverManifestByStage, [requestedStage]: fresh },
@@ -443,6 +506,7 @@ export function useStageFreshnessSync(
 
     /** One pass: manifest → diff → narrow re-fetch → local apply. */
     const syncOnce = async () => {
+      heldBackForSave.current = false;
       const manifestResult = await fetchStageManifest(requestedStage);
       if (!isCurrent()) return;
       if (manifestResult.status !== 'ok') {
@@ -461,13 +525,33 @@ export function useStageFreshnessSync(
         if (bootstrapDocumentRef.current) {
           // The sync is the delegated initial reader: one full read, manifest first so the
           // recorded baseline is never newer than the content it describes.
+          const editClock = stageDocumentEditClock();
           const doc = await getDocumentStore().loadDocument(requestedStage);
           if (!isCurrent()) return;
+          let loadedScenes = (doc?.scenes ?? []) as unknown as Scene[];
+          if (loadedScenes.some((scene) => scene.content?.type === 'pbl')) {
+            loadedScenes = await hydratePBLScenesFromRuntime(requestedStage, loadedScenes);
+            if (!isCurrent()) return;
+          }
           if (!doc) {
             console.warn(`[workbench] course document unavailable for ${requestedStage}; retrying`);
             throw new Error(`course document unavailable for ${requestedStage}`);
           }
-          const scenes = [...(doc.scenes as unknown as Scene[])].sort((a, b) => a.order - b.order);
+          // This read replaces every scene; it waits for any unsaved edit.
+          if (stageDocumentEditClock() !== editClock) {
+            requestSync('edited-during-read');
+            return;
+          }
+          if (
+            hasQueuedWholeDocumentChange(requestedStage) ||
+            useStageStore
+              .getState()
+              .scenes.some((scene) => hasUnsavedSceneEdit(requestedStage, scene.id))
+          ) {
+            heldBackForSave.current = true;
+            return;
+          }
+          const scenes = [...loadedScenes].sort((a, b) => a.order - b.order);
           const record = doc.outline as AppDocumentOutline | undefined;
           const outlines = (record?.outlines as SceneOutline[]) ?? [];
           useStageStore.setState((state) => ({
@@ -483,6 +567,10 @@ export function useStageFreshnessSync(
             generationComplete: record?.generationComplete ?? false,
             outlineProducer: record?.producer ?? state.outlineProducer,
           }));
+          const loadedStage = useStageStore.getState().stage;
+          if (loadedStage?.id === requestedStage) {
+            recordServerRosterBase(requestedStage, rosterOf(loadedStage));
+          }
           renderedManifest.current = manifest;
           recordWriteBaseline(manifest);
           return;
@@ -494,58 +582,99 @@ export function useStageFreshnessSync(
         const store = useStageStore.getState();
         const warm = store.stage?.id === requestedStage && store.scenes.length > 0;
         if (warm) {
+          // The roster the load brought is the server's, as far as this
+          // browser knows: the merge base (see `syncRoster`).
+          recordServerRosterBase(requestedStage, rosterOf(store.stage!));
           // Content revs are unknown (the load does not carry them). Record a
           // ZEROED baseline so the next pass treats every scene as changed and
           // verifies the true revs exactly once — this closes the window where
           // a manifest recorded after the load could hide a write that landed
-          // in between.
-          renderedManifest.current = {
-            rev: manifest.rev,
+          // in between. The stage rev is a sentinel no manifest carries, for
+          // the same reason: a roster written between the load and here is
+          // read on the next pass, not hidden behind the rev recorded now.
+          //
+          // Unless this page has synced the course before: what it recorded then
+          // is what it applied, so it is never newer than the store, and only
+          // what changed since is read again (a host that stops and starts the
+          // sync does not re-read the whole course each time).
+          renderedManifest.current = store.serverManifestByStage?.[requestedStage] ?? {
+            rev: UNVERIFIED_STAGE_REV,
             scenes: manifest.scenes.map((scene) => ({ ...scene, rev: 0 })),
           };
         } else {
+          // Store still cold: no roster known yet (a base from an earlier
+          // visit may be stale); the first roster read records one.
+          forgetServerRosterBase(requestedStage);
           // Store still cold: record the real manifest. The classroom load's
           // content lands after, so any write between here and there shows up
           // as a change on the next diff (never hidden).
           renderedManifest.current = manifest;
-          recordWriteBaseline(manifest);
+          coldBaseline.current = true;
         }
         return;
       }
 
+      const previousStageRev = renderedManifest.current.rev;
       const diff = diffStageManifest(renderedManifest.current, manifest);
       if (diff.changed.length === 0 && diff.added.length === 0 && diff.removed.length === 0) {
-        // Only the stage rev moved (an outline/stage-name write): record it,
-        // nothing else to do — scene content is unchanged.
-        renderedManifest.current = manifest;
-        recordWriteBaseline(manifest);
+        // Only the stage rev moved (an outline/stage-name/roster write): scene
+        // content is unchanged, the roster may not be.
+        await settleStage(manifest, previousStageRev);
         return;
       }
 
       const idsToFetch = [...diff.changed, ...diff.added];
-      const fetched = await fetchScenesByIds(requestedStage, idsToFetch);
+      const editClock = stageDocumentEditClock();
+      const idsToRead = idsToFetch.filter((id) => !hasUnsavedSceneEdit(requestedStage, id));
+      const queuedAtRead = hasQueuedWholeDocumentChange(requestedStage);
+      if (queuedAtRead || idsToRead.length < idsToFetch.length) heldBackForSave.current = true;
+      const { scenes: fetched, foldFailures } = await readScenes(requestedStage, idsToRead);
       if (!isCurrent()) return;
 
       // D3-F1 structural guard: a non-empty request that fetched NOTHING must
       // abort this pass — do NOT advance `renderedManifest`, do NOT
-      // `recordWriteBaseline` (a zeroed baseline written here would make every
-      // later save look stale and permanently veto the course). Throwing lands
-      // in the retry budget; the fallback clock keeps ticking underneath. Even
-      // if the chunked fetch has a bug, "could not fetch" is never recorded as
-      // "already up to date".
-      if (idsToFetch.length > 0 && fetched.length === 0) {
+      // `recordWriteBaseline`. Throwing lands in the retry budget; the fallback
+      // clock keeps ticking underneath. Even if the chunked fetch has a bug,
+      // "could not fetch" is never recorded as "already up to date".
+      if (idsToRead.length > 0 && fetched.length === 0) {
         console.warn(
           `[workbench] batch scene fetch returned nothing for ${requestedStage} ` +
-            `(${idsToFetch.length} ids); aborting pass`,
+            `(${idsToRead.length} ids); aborting pass`,
         );
         throw new Error(`batch scene fetch returned nothing for ${requestedStage}`);
       }
 
-      const appliedIds = new Set(fetched.map((scene) => scene.id));
+      // The store holds another course (the classroom load has not caught up
+      // with this stage, or has moved on): these scenes are not its to take.
+      if (useStageStore.getState().stage?.id !== requestedStage) return;
+      // Edited since the read started: the response may be older than the edit
+      // even if that edit is already saved, so read again now.
+      if (stageDocumentEditClock() !== editClock) {
+        requestSync('edited-during-read');
+        return;
+      }
+      // Either way the local scene list is the one to keep: the change may have
+      // been saved while the read was out, and the read would be older than it.
+      const keepLocalList = queuedAtRead || hasQueuedWholeDocumentChange(requestedStage);
+      const localScenes = useStageStore.getState().scenes;
+      const localIds = new Set(localScenes.map((scene) => scene.id));
+      const remoteOnly = new Set(diff.added);
+      const applicable = fetched.filter(
+        (scene) =>
+          !hasUnsavedSceneEdit(requestedStage, scene.id) &&
+          // Known to the server and not here: deleted locally, not remote news.
+          (!keepLocalList || localIds.has(scene.id) || remoteOnly.has(scene.id)),
+      );
+      const removable = diff.removed.filter((id) => !hasUnsavedSceneEdit(requestedStage, id));
+      if (applicable.length < fetched.length || removable.length < diff.removed.length) {
+        heldBackForSave.current = true;
+      }
+
+      const appliedIds = new Set(applicable.map((scene) => scene.id));
       const merge = mergeFetchedScenes({
-        current: useStageStore.getState().scenes,
-        fetched,
-        removedIds: diff.removed,
+        current: localScenes,
+        fetched: keepLocalList ? withLocalSceneOrder(localScenes, applicable) : applicable,
+        removedIds: removable,
       });
       if (merge.changed) {
         useStageStore.setState((state) => {
@@ -564,26 +693,108 @@ export function useStageFreshnessSync(
 
       // Advance the rendered manifest to what the store now holds: applied
       // scenes get their fresh rev/order, removed scenes are dropped. Scenes
-      // that were in the diff but NOT fetched (a chunk failed) keep their old
-      // rev so the next pass re-attempts them — partial failure must never be
-      // recorded as fully applied (cr D3-F3).
+      // that were in the diff but NOT applied (a chunk failed, or an unsaved
+      // edit kept them) keep their old rev so the next pass re-attempts them —
+      // that must never be recorded as fully applied (cr D3-F3).
       const freshById = new Map(manifest.scenes.map((scene) => [scene.id, scene]));
       const renderedById = new Map(
         (renderedManifest.current as StageManifest).scenes.map((scene) => [scene.id, scene]),
       );
-      for (const sceneId of diff.removed) renderedById.delete(sceneId);
+      for (const sceneId of removable) renderedById.delete(sceneId);
+      forgetKnownScenes(requestedStage, removable);
       for (const sceneId of appliedIds) {
         const fresh = freshById.get(sceneId);
         if (fresh) renderedById.set(sceneId, fresh);
       }
-      renderedManifest.current = {
-        rev: manifest.rev,
-        scenes: [...renderedById.values()].sort((a, b) => a.order - b.order),
-      };
-      // The write-side baseline mirrors the rendered manifest: every applied
-      // scene carries its fresh rev (no edit-state protection anymore, so no
-      // scene keeps an old rev here — #1961 decision change).
+      await settleStage(
+        {
+          rev: manifest.rev,
+          scenes: [...renderedById.values()].sort((a, b) => a.order - b.order),
+        },
+        previousStageRev,
+      );
+      // The rest is applied; into the retry budget for what is left, since no new
+      // signal may come for it.
+      if (foldFailures > 0) {
+        throw new Error(`${foldFailures} PBL scene(s) of ${requestedStage} could not be folded`);
+      }
+    };
+
+    /**
+     * Last step of a pass, after the scenes: follow the stage's own fields
+     * when its rev moved, then record the baseline. A roster write
+     * (`set_roster`, an edit in another tab) lands only on the stage, and the
+     * classroom on screen must follow it -- names, avatars, voices -- without
+     * a reload. When the roster could not be settled, the stage rev keeps its
+     * previous value (the scenes still advance), so the next pass reads the
+     * roster again instead of taking the moved rev as already seen.
+     */
+    const settleStage = async (next: StageManifest, previousStageRev: number) => {
+      const settled = next.rev === previousStageRev || (await syncRoster());
+      if (!isCurrent()) return;
+      renderedManifest.current = settled ? next : { ...next, rev: previousStageRev };
       recordWriteBaseline(renderedManifest.current);
+    };
+
+    /**
+     * Read the course's roster and merge it into the one on screen, three-way
+     * against the roster this browser last knew the server to hold (the
+     * base, kept by the stage store). Answers whether the shown roster is now
+     * reconciled with the server's; never throws, so a roster that cannot be
+     * read does not hold up the scenes.
+     *
+     * - server equals shown: nothing to do; the base becomes it.
+     * - shown equals base: the server's is a remote change (`set_roster`, an
+     *   edit in another tab). It is applied even with other stage edits
+     *   pending: the apply queues no write of its own, and the pending flush,
+     *   which captures the stage when it starts, then writes the new roster
+     *   rather than putting the old one back.
+     * - shown differs from base: a roster edit of this browser's own. It is
+     *   kept and not settled; once its save lands (which moves the base),
+     *   the next pass reconciles again. Concurrent edits: the last save wins.
+     */
+    const syncRoster = async (): Promise<boolean> => {
+      // A stage write already on the wire carries the roster it captured;
+      // applying under it would be overwritten. Try again once it lands.
+      if (isStageWriteInFlight(requestedStage)) return false;
+      const roster = await fetchStageRoster(requestedStage);
+      if (!isCurrent()) return false;
+      if (!roster) {
+        console.warn(`[workbench] stage roster unavailable for ${requestedStage}; will retry`);
+        return false;
+      }
+      const store = useStageStore.getState();
+      // The classroom has not loaded this course yet: its load brings the
+      // roster; read again on the next pass rather than assume it is current.
+      if (store.stage?.id !== requestedStage) return false;
+      // A course that never stored a roster: nothing to take from it.
+      if (!roster.generatedAgentConfigs) return true;
+      if (isStageWriteInFlight(requestedStage)) return false;
+      const shown = rosterOf(store.stage);
+      // The server's roster in full: one without agentIds keeps the shown ones.
+      const agentIds = roster.agentIds ?? shown.agentIds;
+      const server: StageRoster = {
+        ...(agentIds ? { agentIds } : {}),
+        generatedAgentConfigs: roster.generatedAgentConfigs,
+      };
+      if (!stageRosterChanged(shown, roster)) {
+        recordServerRosterBase(requestedStage, server);
+        return true;
+      }
+      let base = serverRosterBaseOf(requestedStage);
+      if (!base) {
+        // No base yet (the store was cold at the first pass). With no stage
+        // edit pending, the shown roster is the one the load brought.
+        if (hasUnsavedStageEdit(requestedStage)) return false;
+        base = shown;
+      }
+      if (!sameStageRoster(shown, base)) return false;
+      store.setStageAgents([...roster.generatedAgentConfigs], {
+        fromServer: true,
+        ...(roster.agentIds ? { agentIds: [...roster.agentIds] } : {}),
+      });
+      recordServerRosterBase(requestedStage, server);
+      return true;
     };
 
     const runPass = async (_reason: string) => {
@@ -651,14 +862,13 @@ export function useStageFreshnessSync(
     };
     document.addEventListener('visibilitychange', onVisibility);
 
-    // The aggregate-save veto bumped the store's sync-request tick when it
-    // refused a write: the server moved past the browser's baseline, so the
-    // store must converge before the user's next save is judged. Run one pass
-    // (the store's tick only moves forward, so a repeat render cannot loop).
-    const unsubscribeVetoSync = useStageStore.subscribe((state, prev) => {
+    // A save of the course finished. Its own frame may be up to a poll interval
+    // away, and may have come already, while the write was still in flight: if
+    // the last pass left scenes behind for a save, read them now.
+    const unsubscribeSaveSettled = useStageStore.subscribe((state, prev) => {
       const now = (state as { stageSyncRequest?: number }).stageSyncRequest ?? 0;
       const before = (prev as { stageSyncRequest?: number }).stageSyncRequest ?? 0;
-      if (now > before && isCurrent()) requestSync('veto');
+      if (now > before && heldBackForSave.current && isCurrent()) requestSync('save-settled');
     });
 
     return () => {
@@ -670,7 +880,7 @@ export function useStageFreshnessSync(
       source.close();
       if (sourceRef.current === source) sourceRef.current = null;
       document.removeEventListener('visibilitychange', onVisibility);
-      unsubscribeVetoSync();
+      unsubscribeSaveSettled();
     };
   }, [stageId]);
 }

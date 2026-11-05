@@ -108,6 +108,8 @@ function makeDeps(overrides: Partial<Parameters<typeof runClassroomLoad>[0]> = {
     agentMode: 'auto' as const,
     selectedAgentIds: [] as string[],
     agentSelectionIsUserSet: false,
+    presetAgentChoice: [] as string[],
+    setPresetAgentChoice: vi.fn(),
     setAgentMode: vi.fn(),
     setSelectedAgentIds: vi.fn(),
     setAgentSelectionIsUserSet: vi.fn(),
@@ -885,5 +887,128 @@ describe('runClassroomLoad before the custom agents arrived', () => {
       'default-3',
     ]);
     expect(settings.setAgentSelectionIsUserSet).toHaveBeenCalledWith(false);
+  });
+});
+
+describe("runClassroomLoad with the course's own roster", () => {
+  const roster = [
+    makeAgentConfig('gen-teacher', { name: 'Dr. Chen' }),
+    makeAgentConfig('gen-student', { name: 'Zhou', role: 'student' }),
+  ];
+
+  /** A real load over the real selection rule, with settings that really change. */
+  function loadWith(
+    stage: Stage,
+    selection: { mode: 'preset' | 'auto'; ids: string[]; userSet: boolean; kept?: string[] },
+  ) {
+    const applied: { stageId: string; ids: string[] }[] = [];
+    const { deps, settings, setStage } = makeDeps({
+      classroomId: stage.id,
+      getAgent: (id) => (id.startsWith('default-') ? { isGenerated: false } : undefined),
+      agentsReady: vi.fn().mockResolvedValue(true),
+      applyGeneratedAgents: (stageId, configs) => {
+        const ids = configs.map((config) => config.id);
+        applied.push({ stageId, ids });
+        return ids;
+      },
+      restoreAgentSelection,
+    });
+    const state = settings as unknown as {
+      agentMode: string;
+      selectedAgentIds: string[];
+      agentSelectionIsUserSet: boolean;
+      presetAgentChoice: string[];
+    };
+    state.agentMode = selection.mode;
+    state.selectedAgentIds = selection.ids;
+    state.agentSelectionIsUserSet = selection.userSet;
+    state.presetAgentChoice = selection.kept ?? [];
+    settings.setAgentMode.mockImplementation((mode: string) => (state.agentMode = mode));
+    settings.setSelectedAgentIds.mockImplementation(
+      (ids: string[]) => (state.selectedAgentIds = ids),
+    );
+    settings.setAgentSelectionIsUserSet.mockImplementation(
+      (value: boolean) => (state.agentSelectionIsUserSet = value),
+    );
+    settings.setPresetAgentChoice.mockImplementation(
+      (ids: string[]) => (state.presetAgentChoice = ids),
+    );
+    setStage(stage);
+    return { deps, state, applied, setStage };
+  }
+
+  it('shows it even when the AgentBar last chose a preset teacher', async () => {
+    const { deps, state, applied } = loadWith(makeStage('stage-a', roster), {
+      mode: 'preset',
+      ids: ['default-1'],
+      userSet: true,
+    });
+    await expect(runClassroomLoad(deps)).resolves.toEqual({ outcome: 'ready' });
+
+    expect(applied).toEqual([{ stageId: 'stage-a', ids: ['gen-teacher', 'gen-student'] }]);
+    expect(state).toMatchObject({
+      agentMode: 'auto',
+      selectedAgentIds: ['gen-teacher', 'gen-student'],
+      agentSelectionIsUserSet: false,
+      presetAgentChoice: ['default-1'],
+    });
+  });
+
+  it('follows a roster that a sync replaced while waiting for the custom agents', async () => {
+    const replaced = [makeAgentConfig('gen-new', { name: 'Dr. Lin' })];
+    const { deps, state, setStage } = loadWith(makeStage('stage-a', roster), {
+      mode: 'auto',
+      ids: [],
+      userSet: false,
+    });
+    deps.agentsReady = async () => {
+      setStage(makeStage('stage-a', replaced));
+      return true;
+    };
+    await runClassroomLoad(deps);
+
+    expect(state).toMatchObject({
+      agentMode: 'auto',
+      selectedAgentIds: ['gen-new'],
+      agentSelectionIsUserSet: false,
+    });
+  });
+
+  it('gives the kept choice back when a sync emptied the roster during that wait', async () => {
+    const { deps, state, setStage } = loadWith(makeStage('stage-a', roster), {
+      mode: 'auto',
+      ids: ['gen-teacher', 'gen-student'],
+      userSet: false,
+      kept: ['default-1'],
+    });
+    deps.agentsReady = async () => {
+      setStage(makeStage('stage-a', []));
+      return true;
+    };
+    await runClassroomLoad(deps);
+
+    expect(state).toMatchObject({
+      agentMode: 'preset',
+      selectedAgentIds: ['default-1'],
+      agentSelectionIsUserSet: true,
+      presetAgentChoice: [],
+    });
+  });
+
+  it('gives the kept choice back on a course without a roster', async () => {
+    const { deps, state } = loadWith(makeStage('stage-b', []), {
+      mode: 'auto',
+      ids: ['gen-teacher', 'gen-student'],
+      userSet: false,
+      kept: ['default-1'],
+    });
+    await runClassroomLoad(deps);
+
+    expect(state).toMatchObject({
+      agentMode: 'preset',
+      selectedAgentIds: ['default-1'],
+      agentSelectionIsUserSet: true,
+      presetAgentChoice: [],
+    });
   });
 });

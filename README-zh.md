@@ -43,26 +43,29 @@
 
 ## 🗞️ 动态
 
+- **2026-11-04** — [v1.4.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.4.0)：**项目式学习 PBL v3 上线，用 PBL 解锁 Vibe Coding 的全新打开方式：把作品做出来，把原理学明白。** 边学边练，把知识点变成实操任务，亲自动手让项目运行起来；AI 导师全程引导，一起拆解需求、讨论方案、逐步实现，疑惑随时提问；分阶段反馈，按里程碑完成挑战，获得阶段反馈和个性化学习报告；学习成果和进度保留，按自己的节奏学，下次回来接着做。开启方式：[配置沙箱服务](packages/docs/content/docs/configuration.mdx#sandbox-execution-experimental)和检查点存储后打开 `/pbl-v3`（[配置指南](lib/pbl/v3/README.md#try-the-sample)），未配置时保持关闭。升级不可逆（先停掉所有 1.3.x 实例，回滚需要恢复数据库；此后数据库被新版本迁移时，旧副本会退出），升级前请先阅读该版本的 **Breaking Changes**。
+- **2026-11-02** — [v1.3.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.3.1)：**DeepSeek Token Plan 与稳定性修复。** 一个 DeepSeek key 即可开通对话、联网搜索和网页抓取。上传资源不再在慢速对象存储上长期占用数据库连接，离开页面前的编辑也不再丢失。升级有发布条件（先停掉所有 1.3.0 实例，回滚需要恢复数据库），升级前请先阅读该版本的 **Breaking Changes**。
 - **2026-10-29** — [v1.3.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.3.0)：**知识库与 Pro 工作台升级。** 上传的文件都会保存在知识库里，直到手动删除；支持文件夹，每个文件只解析一次、所有会话共用；输入框可以用 `@` 引用，agent 也能读取、搜索和整理资料。Pro 工作台中，发出请求后在第一页生成之前就能看到 agent 的工作预览，课堂标签页可以在学习和编辑之间切换。升级有发布条件（先停掉所有旧实例，不能回滚到 1.3.0 之前），升级前请先阅读 [changelog](CHANGELOG.md)。
 - **2026-10-18** — [v1.2.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.1)：**联网调研。** 新增 Kimi、DeepSeek、Firecrawl 联网搜索；新增 `webFetch` 网页抓取槽位，agent 可以通过托管的阅读服务（DeepSeek、Kimi 或 Firecrawl）读取网页，不再只能用内置读取，均需手动开启。课堂聊天支持建议回复；内置模型目录移除了已下线的模型。课堂聊天现在固定走 Pi，Classroom 模型需要支持工具调用，升级前请先阅读该版本的 **Breaking Changes**。
 - **2026-10-16** — [v1.2.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.0)：**服务端优先正式发布。** 生成在服务端运行，关页面、重启都不中断；模型在 `openmaic.yml` 里统一配置（默认值、锁定、可禁止用户自带密钥）；资料添加即解析；网页端和 API 共用同一条流水线。新增[课堂导出](packages/docs/content/docs/getting-started.zh-cn.mdx#导出课堂)：导出保留全部场景的 PPTX，或一个能离线播放整堂课的 HTML 文件。需要 PostgreSQL 和常驻的 Node 服务，Vercel 部署请继续使用 1.1.x。升级前请先阅读[从 1.1.x 升级](packages/docs/content/docs/deployment.zh-cn.mdx#从-11x-升级)。
+
+<details>
+<summary>更早版本</summary>
+
+- **2026-10-05** — [v1.1.3](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.3)：安全更新——`/api/persistence` 返回的课程文档只保留净化后的幻灯片 HTML（[GHSA-6c52-8h4v-5xvg](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-6c52-8h4v-5xvg)）。
 - **2026-09-28** — [v1.1.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.2)：安全更新——provider 请求只连接已校验地址并拒绝重定向（[GHSA-g87c-cm4q-cw5x](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-g87c-cm4q-cw5x)）。
 - **2026-09-27** — [v1.1.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.1)：安全更新——加固 MinerU Cloud 文档解析（[GHSA-cpjc-vgjh-c5jp](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-cpjc-vgjh-c5jp)）。
 - **2026-09-24** — [v1.1.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.0)：课堂对话改为 Agent 循环（可针对幻灯片元素、交互组件、白板内容提问）；设置按课程流程重构；Token Plan 一键接入。
 - **2026-09-15** — [v1.0.3](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.0.3)：安全更新——访问码令牌过期、渲染服务网络策略、音频连接固定、修复 Next.js RCE。
 - **2026-09-14** — [v1.0.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.0.2)：安全更新——修复 SSRF、DNS 重绑定与课堂覆盖问题。
 - **2026-09-06** — [v1.0.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.0.1)：安全与稳定性更新，收紧两项默认配置。
-- **2026-08-27** — **v1.0.0**：Agent 工作台、持久会话、可复用技能、会话资料、厂商中立的服务端能力。
-
-<details>
-<summary>更早版本</summary>
-
+- **2026-08-27** — [v1.0.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.0.0)：Agent 工作台、持久会话、可复用技能、会话资料、厂商中立的服务端能力。
 - **2026-08-14** — [v0.3.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.3.2)：视频导出加固、服务端持久化与资产注册中心、`@openmaic/generation`、四种新语言、FunASR。
 - **2026-07-21** — [v0.3.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.3.1)：一键导出 MP4、直接编辑幻灯片元素、“Edit with AI”升级、文档解析扩展。
 - **2026-06-28** — [v0.3.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.3.0)：PBL v2、“Edit with AI”编辑智能体、`@openmaic/*` SDK 发布到 npm、协议改为 MIT。
 - **2026-06-02** — [v0.2.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.2.2)：MAIC Editor 专业模式、可编辑大纲、课堂离线导出。
 - **2026-04-26** — [v0.2.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.2.1)：VoxCPM2 TTS 与音色克隆、按模型思考配置、课程完成页。
-- **2026-04-20** — **v0.2.0**：深度交互模式——3D、模拟实验、游戏、思维导图、在线编程。
+- **2026-04-20** — [v0.2.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.2.0)：深度交互模式——3D、模拟实验、游戏、思维导图、在线编程。
 - **2026-04-14** — [v0.1.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.1.1)：自动语言推断、ACCESS_CODE、课堂 ZIP 导入导出、Ollama。
 - **2026-03-26** — [v0.1.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.1.0)：讨论语音、沉浸模式、键盘快捷键。
 

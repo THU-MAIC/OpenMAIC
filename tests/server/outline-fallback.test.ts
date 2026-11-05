@@ -173,4 +173,27 @@ describe('outline step fallback wiring', () => {
     const errorEvent = events.find((e) => e.type === 'error');
     expect(errorEvent?.error).toBe('LLM response blocked by content filter');
   });
+
+  it.each([
+    [
+      'a "[" in a string before the outlines key',
+      '```json\n{"languageDirective":"English; write E[X] and Var(X).","outlines":[{"title":"Joint PMFs"},{"title":"Covariance"}]}\n```',
+    ],
+    ['a flat array', '[{"title":"Joint PMFs"},{"title":"Covariance"}]'],
+  ])('parses streamed outlines with %s', async (_case, text) => {
+    streamLLMMock.mockImplementation(() =>
+      fullStreamOf([
+        ...(text.match(/[\s\S]{1,20}/g) ?? []).map((chunk) => ({
+          type: 'text-delta',
+          text: chunk,
+        })),
+        { type: 'finish', finishReason: 'stop' },
+      ]),
+    );
+
+    const events = await outlineEvents(resolvedModel(true));
+
+    expect(streamLLMMock).toHaveBeenCalledTimes(1);
+    expect(events.filter((e) => e.type === 'outline')).toHaveLength(2);
+  });
 });

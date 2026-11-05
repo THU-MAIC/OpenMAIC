@@ -25,6 +25,9 @@ function next(request: NextRequest, identity: NavigationIdentity | undefined): N
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // This machine-only route verifies its own signed gateway request in Node.
+  if (pathname === '/api/sandbox/preview/resolve') return NextResponse.next();
+
   // Return an actual server-side 404 when either half of the workbench is off.
   // The request gateway runs on the Node.js runtime, allowing direct inspection
   // of server-side deployment configuration to enforce the workbench gate.
@@ -70,5 +73,7 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|logos/).*)'],
+  // The duplex machine route authenticates its signed descriptor itself. Middleware
+  // forwarding buffers POST bodies and would deadlock a bidirectional stream.
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|logos/|api/sandbox/preview/tunnel$).*)'],
 };

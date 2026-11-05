@@ -11,13 +11,17 @@
  *   and settles normally (the session does NOT die);
  * - a cancel request that lands while a tool is hung settles the session as
  *   `cancelled` promptly — without waiting for the tool to finish — and the
- *   abort signal is delivered to the tool's in-flight work.
+ *   abort signal is delivered to the tool's in-flight work;
+ * - V3 teaching turns have no total duration, output or tool-count cap, while
+ *   cancellation, shutdown, and lease-loss retain their meaning.
  */
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { InMemorySessionRepo, Session } from '@earendil-works/pi-agent-core';
 import type { ClaimedAgentSession } from '@openmaic/storage';
 import { Type } from 'typebox';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('server-only', () => ({}));
 
 const mocks = vi.hoisted(() => ({
   randomUUID: vi.fn(() => 'runner-test-uuid'),
@@ -27,6 +31,7 @@ const mocks = vi.hoisted(() => ({
   resolveAgentDriverModel: vi.fn(),
   streamLLM: vi.fn(),
   assembleRunnerTools: vi.fn(),
+  teachingRunnerConfig: vi.fn(),
   buildRunnerCoursePrompt: vi.fn(() => 'system prompt'),
   getOwnerScopedDocumentStore: vi.fn(async () => ({})),
 }));
@@ -86,6 +91,11 @@ vi.mock('@/lib/server/agent-runtime/runner-contract', () => ({
   assembleRunnerTools: mocks.assembleRunnerTools,
   buildRunnerCoursePrompt: mocks.buildRunnerCoursePrompt,
 }));
+
+vi.mock('@/lib/server/pbl-v3/runner-tools', async (importActual) => {
+  const actual = await importActual<typeof import('@/lib/server/pbl-v3/runner-tools')>();
+  return { ...actual, teachingRunnerConfig: mocks.teachingRunnerConfig };
+});
 
 vi.mock('@/lib/server/agent-runtime/owner-scoped-documents', () => ({
   getBackgroundDocumentStore: mocks.getOwnerScopedDocumentStore,
@@ -181,6 +191,7 @@ function makeStore(meta: ClaimedAgentSession, options: { cancelRequested?: () =>
       },
     ),
     clearCancel: vi.fn(async () => undefined),
+    pruneMessageUpdates: vi.fn(async () => 0),
     finishSession: vi.fn(
       async (_id: string, _workerId: string, _patch: { status: string }) => true,
     ),
@@ -195,8 +206,6 @@ function makeStore(meta: ClaimedAgentSession, options: { cancelRequested?: () =>
     requeueSession: vi.fn(async () => false),
   };
 }
-
-type FakeStore = ReturnType<typeof makeStore>;
 
 async function makeEntryTree(): Promise<Session> {
   const repo = new InMemorySessionRepo();
@@ -351,4 +360,467 @@ describe('runner: cancel of a hung tool', () => {
     // not on the tool.
     expect(store.finishSession.mock.calls[0]?.[2]).toMatchObject({ status: 'cancelled' });
   });
+});
+
+describe('runner: unbounded V3 teaching turns', () => {
+  it.each(['cancel', 'shutdown', 'lease-loss'] as const)(
+    'keeps a tool alive beyond all former deadlines, then honors %s',
+    async (outcome) => {
+      vi.useFakeTimers();
+      setToolTimeout('10');
+      const meta = makeMeta({ id: 'pbl-role-long' });
+      const session = await makeEntryTree();
+      let cancelRequested = false;
+      const store = makeStore(meta, { cancelRequested: () => cancelRequested });
+      const captured: AbortSignal[] = [];
+      let started!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        started = resolve;
+      });
+      mocks.openEntryStorage.mockResolvedValue(session.getStorage());
+      mocks.getAgentSessionStore.mockResolvedValue(store);
+      mocks.teachingRunnerConfig.mockResolvedValue({
+        tools: [makeHungTool(captured, started)],
+        systemPrompt: 'Teaching test',
+        thinkingConfig: () => ({ mode: 'enabled', effort: 'low', level: 'low' }),
+        allowedToolNames: new Set([TOOL_NAME]),
+        needsTurnReceipt: () => false,
+        isTurnComplete: () => false,
+      });
+      useResponses([[toolCallPart(), finish('tool-calls')]]);
+      const ctx = { running: new Map(), shuttingDown: false };
+      const run = runSession(ctx, meta);
+      await gate;
+      await vi.advanceTimersByTimeAsync(1_200_000);
+      expect(captured[0]?.aborted).toBe(false);
+      expect(store.finishSession).not.toHaveBeenCalled();
+      expect(ctx.running.size).toBe(1);
+      if (outcome === 'cancel') cancelRequested = true;
+      if (outcome === 'shutdown') {
+        ctx.shuttingDown = true;
+        ctx.running.get(meta.id)!.abort.abort();
+      }
+      if (outcome === 'lease-loss') store.heartbeat.mockResolvedValue(false);
+      await vi.advanceTimersByTimeAsync(5_000);
+      await run;
+      expect(captured[0]?.aborted).toBe(true);
+      if (outcome === 'cancel')
+        expect(store.finishSession).toHaveBeenCalledWith(
+          meta.id,
+          WORKER_ID,
+          expect.objectContaining({ status: 'cancelled' }),
+        );
+      else expect(store.finishSession).not.toHaveBeenCalled();
+      expect(ctx.running.size).toBe(0);
+    },
+  );
+  it.each([undefined, 0, Number.NaN, 16_384])(
+    'uses only a confirmed provider output window (%s) for teaching transport',
+    async (wireMaxOutputTokens) => {
+      const meta = makeMeta({ id: 'pbl-role-output-window' });
+      const session = await makeEntryTree(),
+        store = makeStore(meta);
+      mocks.resolveAgentDriverModel.mockResolvedValue({
+        connection: { model: {} as never },
+        piModel: {
+          api: 'openai-completions',
+          provider: 'openai',
+          id: 'driver-model',
+          contextWindow: 200_000,
+          maxTokens: wireMaxOutputTokens ?? 8192,
+        },
+        wireMaxOutputTokens,
+      });
+      mocks.openEntryStorage.mockResolvedValue(session.getStorage());
+      mocks.getAgentSessionStore.mockResolvedValue(store);
+      mocks.teachingRunnerConfig.mockResolvedValue({
+        tools: [],
+        systemPrompt: 'Teaching test',
+        allowedToolNames: new Set(),
+        needsTurnReceipt: () => false,
+        isTurnComplete: () => false,
+        thinkingConfig: () => ({ mode: 'enabled', effort: 'low', level: 'low' }),
+      });
+      mocks.streamLLM.mockImplementation(() => ({
+        fullStream: (async function* () {
+          yield { type: 'text-delta', text: 'Ready for review.' };
+          yield finish('stop');
+        })(),
+      }));
+      await runSession({ running: new Map(), shuttingDown: false }, meta);
+      expect(mocks.streamLLM.mock.calls[0]![0].maxOutputTokens).toBe(
+        wireMaxOutputTokens === 16_384 ? 16_384 : undefined,
+      );
+      expect(store.finishSession).toHaveBeenCalledWith(
+        meta.id,
+        WORKER_ID,
+        expect.objectContaining({ status: 'succeeded' }),
+      );
+    },
+  );
+  it.each([8192, undefined])('uses the shared teaching fallback allowance (%s)', async (output) => {
+    const meta = makeMeta({ id: 'pbl-role-shared-fallback-window' });
+    const session = await makeEntryTree(),
+      store = makeStore(meta);
+    mocks.resolveAgentDriverModel.mockResolvedValue({
+      connection: { model: {} as never },
+      piModel: {
+        api: 'openai-completions',
+        provider: 'openai',
+        id: 'primary',
+        contextWindow: 200_000,
+        maxTokens: 32_768,
+      },
+      wireMaxOutputTokens: 32_768,
+      teaching: {
+        piModel: {
+          api: 'openai-completions',
+          provider: 'openai',
+          id: 'primary',
+          contextWindow: 64_000,
+          maxTokens: 8192,
+        },
+        wireMaxOutputTokens: output,
+      },
+    });
+    mocks.openEntryStorage.mockResolvedValue(session.getStorage());
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    mocks.teachingRunnerConfig.mockResolvedValue({
+      tools: [],
+      systemPrompt: 'Teaching test',
+      allowedToolNames: new Set(),
+      needsTurnReceipt: () => false,
+      isTurnComplete: () => false,
+      thinkingConfig: () => ({ mode: 'enabled', effort: 'low', level: 'low' }),
+    });
+    useResponses([[{ type: 'text-delta', text: 'Ready.' }, finish('stop')]]);
+    await runSession({ running: new Map(), shuttingDown: false }, meta);
+    expect(mocks.streamLLM.mock.calls[0]![0].maxOutputTokens).toBe(output);
+    expect(store.finishSession).toHaveBeenCalledWith(
+      meta.id,
+      WORKER_ID,
+      expect.objectContaining({ status: 'succeeded' }),
+    );
+  });
+  it.each([
+    ['unknown-primary', undefined, undefined],
+    ['unknown-backup', 16_384, undefined],
+    ['confirmed-backup', 16_384, 512],
+  ] as const)(
+    'compacts and continues with %s output capacity',
+    async (_name, primaryOutput, sharedOutput) => {
+      const meta = makeMeta({ id: 'pbl-role-long-summary-output' });
+      const session = await makeEntryTree(),
+        store = makeStore(meta);
+      const original = [
+        {
+          role: 'user' as const,
+          content: 'Historical learner reasoning. '.repeat(5000),
+          timestamp: 0,
+        },
+        { role: 'user' as const, content: 'Continue from my latest choice.', timestamp: 1 },
+      ];
+      for (const message of original) await session.appendMessage(message);
+      mocks.resolveAgentDriverModel.mockResolvedValue({
+        connection: { model: {} as never },
+        piModel: {
+          api: 'openai-completions',
+          provider: 'openai',
+          id: 'primary',
+          contextWindow: 200_000,
+          maxTokens: primaryOutput ?? 8192,
+        },
+        wireMaxOutputTokens: primaryOutput,
+        teaching: {
+          piModel: {
+            api: 'openai-completions',
+            provider: 'openai',
+            id: 'primary',
+            contextWindow: 32_000,
+            maxTokens: sharedOutput ?? 8192,
+          },
+          wireMaxOutputTokens: sharedOutput,
+        },
+      });
+      mocks.openEntryStorage.mockResolvedValue(session.getStorage());
+      mocks.getAgentSessionStore.mockResolvedValue(store);
+      mocks.teachingRunnerConfig.mockResolvedValue({
+        tools: [],
+        systemPrompt: 'Teaching test',
+        allowedToolNames: new Set(),
+        historyWindow: { stageKey: 'm:0', studentTurns: 1 },
+        liveContext: async () => JSON.stringify({ currentVersion: 1, approved: false }),
+        needsTurnReceipt: () => false,
+        isTurnComplete: () => false,
+        thinkingConfig: () => ({ mode: 'enabled', effort: 'low', level: 'low' }),
+      });
+      mocks.streamLLM.mockImplementation((params, source) => {
+        if (source === 'pbl-context-compaction') {
+          // This uncatalogued provider really accepts only 128 output tokens.
+          // Sending the internal summary reservation reproduces its API rejection.
+          if (
+            params.maxOutputTokens !== undefined &&
+            params.maxOutputTokens > (sharedOutput ?? 128)
+          )
+            return resultFrom([
+              { type: 'error', error: new Error('Provider output limit exceeded') },
+            ]);
+          return resultFrom([
+            {
+              type: 'text-delta',
+              text: 'Earlier learner preferred append; no approval is established.',
+            },
+            finish('stop'),
+          ]);
+        }
+        return resultFrom([
+          { type: 'text-delta', text: 'Continue from the current choice.' },
+          finish('stop'),
+        ]);
+      });
+      await runSession({ running: new Map(), shuttingDown: false }, meta);
+      const summaries = mocks.streamLLM.mock.calls.filter(
+        (call) => call[1] === 'pbl-context-compaction',
+      );
+      expect(store.finishSession).toHaveBeenCalledWith(
+        meta.id,
+        WORKER_ID,
+        expect.objectContaining({ status: 'succeeded' }),
+      );
+      expect(summaries.length).toBeGreaterThan(1);
+      for (const [params, , thinking] of summaries) {
+        if (sharedOutput === undefined) expect(params.maxOutputTokens).toBeUndefined();
+        else expect(params.maxOutputTokens).toBeLessThanOrEqual(sharedOutput);
+        expect(thinking).toEqual({ mode: 'disabled' });
+      }
+      expect(mocks.streamLLM.mock.calls.some((call) => call[1] === 'agent-runtime')).toBe(true);
+      expect((await session.buildContext()).messages.slice(0, original.length)).toEqual(original);
+      expect(
+        (await session.getBranch()).some(
+          (entry) => entry.type === 'custom' && entry.customType === 'pbl.teaching-context.v1',
+        ),
+      ).toBe(true);
+    },
+  );
+  it('keeps progressing long replies uncapped when output capacity is unknown and uses low effort', async () => {
+    vi.useFakeTimers();
+    const meta = makeMeta({ id: 'pbl-role-thinking' }),
+      session = await makeEntryTree(),
+      store = makeStore(meta);
+    mocks.resolveAgentDriverModel.mockResolvedValue({
+      connection: { model: {} as never },
+      piModel: { api: 'openai-completions', provider: 'openai', id: 'driver-model' },
+      wireMaxOutputTokens: undefined,
+    });
+    mocks.openEntryStorage.mockResolvedValue(session.getStorage());
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    mocks.teachingRunnerConfig.mockResolvedValue({
+      tools: [],
+      systemPrompt: 'Teaching test',
+      thinkingConfig: () => ({ mode: 'enabled', effort: 'low', level: 'low' }),
+      allowedToolNames: new Set(),
+      needsTurnReceipt: () => false,
+      isTurnComplete: () => false,
+    });
+    let started!: () => void;
+    const gate = new Promise<void>((r) => {
+      started = r;
+    });
+    const text = 'Detailed explanation. '.repeat(40_000);
+    mocks.streamLLM.mockImplementation((params) => ({
+      fullStream: (async function* () {
+        started();
+        for (let i = 0; i < 4; i++) {
+          await new Promise((r) => setTimeout(r, 300_000));
+          yield { type: 'reasoning-delta', text: 'Still reasoning.' };
+        }
+        yield { type: 'text-delta', text };
+        yield finish(params.maxOutputTokens ? 'length' : 'stop');
+      })(),
+      usage: new Promise(() => {}),
+    }));
+    const run = runSession({ running: new Map(), shuttingDown: false }, meta);
+    await gate;
+    await vi.advanceTimersByTimeAsync(1_200_000);
+    await run;
+    expect(store.finishSession).toHaveBeenCalledWith(
+      meta.id,
+      WORKER_ID,
+      expect.objectContaining({ status: 'succeeded' }),
+    );
+    // An internal fallback reservation is not a confirmed provider output limit.
+    expect(mocks.streamLLM.mock.calls[0]![0].maxOutputTokens).toBeUndefined();
+    expect(mocks.streamLLM.mock.calls[0]![2]).toMatchObject({ effort: 'low' });
+    expect(JSON.stringify((await session.buildContext()).messages)).toContain(text);
+    const snapshots = store.appendRunEvent.mock.calls
+      .map(
+        (call) =>
+          call[2] as {
+            type: string;
+            ts: number;
+            data: { pblThinkingTimings?: Record<string, { startedAt: number; endedAt?: number }> };
+          },
+      )
+      .filter((event) => event.type === 'message_update' || event.type === 'message_end');
+    const firstThinking = snapshots.find((event) => event.data.pblThinkingTimings?.[0]);
+    const finalThinking = snapshots.findLast((event) => event.type === 'message_end')!;
+    expect(firstThinking?.data.pblThinkingTimings?.[0]?.startedAt).toBe(firstThinking?.ts);
+    expect(finalThinking.data.pblThinkingTimings?.[0]).toEqual({
+      startedAt: firstThinking!.ts,
+      endedAt: finalThinking.ts,
+    });
+  });
+  it('switches from disabled welcome to low after readiness and retains low across tools', async () => {
+    const meta = makeMeta({ id: 'pbl-role-readiness' }),
+      session = await makeEntryTree(),
+      store = makeStore(meta);
+    mocks.openEntryStorage.mockResolvedValue(session.getStorage());
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    let ready = false;
+    const tool = {
+      ...makeHungTool([]),
+      execute: vi.fn(async () => {
+        ready = true;
+        return { content: [{ type: 'text' as const, text: 'Teaching is open.' }], details: {} };
+      }),
+    };
+    mocks.teachingRunnerConfig.mockResolvedValue({
+      tools: [tool],
+      systemPrompt: 'Teaching test',
+      thinkingConfig: () =>
+        ready ? { mode: 'enabled', effort: 'low', level: 'low' } : { mode: 'disabled' },
+      allowedToolNames: new Set([TOOL_NAME]),
+      needsTurnReceipt: () => false,
+      isTurnComplete: () => false,
+    });
+    useResponses([
+      [toolCallPart(), finish('tool-calls')],
+      [{ ...toolCallPart(), toolCallId: 'call-2' }, finish('tool-calls')],
+      [{ type: 'text-delta', text: 'The lesson.' }, finish('stop')],
+    ]);
+    await runSession({ running: new Map(), shuttingDown: false }, meta);
+    expect(mocks.streamLLM.mock.calls.map((call) => call[2])).toEqual([
+      { mode: 'disabled' },
+      { mode: 'enabled', effort: 'low', level: 'low' },
+      { mode: 'enabled', effort: 'low', level: 'low' },
+    ]);
+    expect(tool.execute).toHaveBeenCalledTimes(2);
+    expect(store.finishSession).toHaveBeenCalledWith(
+      meta.id,
+      WORKER_ID,
+      expect.objectContaining({ status: 'succeeded' }),
+    );
+  });
+  it('runs more than one hundred tool calls without a conversation quota', async () => {
+    const meta = makeMeta({ id: 'pbl-role-many-tools' }),
+      session = await makeEntryTree(),
+      store = makeStore(meta);
+    mocks.openEntryStorage.mockResolvedValue(session.getStorage());
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    const tool = {
+      ...makeHungTool([]),
+      execute: vi.fn(async () => ({
+        content: [{ type: 'text' as const, text: 'done' }],
+        details: {},
+      })),
+    };
+    mocks.teachingRunnerConfig.mockResolvedValue({
+      tools: [tool],
+      systemPrompt: 'Teaching test',
+      thinkingConfig: () => ({ mode: 'enabled', effort: 'low', level: 'low' }),
+      allowedToolNames: new Set([TOOL_NAME]),
+      needsTurnReceipt: () => false,
+      isTurnComplete: () => false,
+    });
+    useResponses([
+      ...Array.from({ length: 125 }, (_, i) => [
+        { ...toolCallPart(), toolCallId: `call-${i}` },
+        finish('tool-calls'),
+      ]),
+      [{ type: 'text-delta', text: 'Finished all tools.' }, finish('stop')],
+    ]);
+    await runSession({ running: new Map(), shuttingDown: false }, meta);
+    expect(tool.execute).toHaveBeenCalledTimes(125);
+    expect(store.finishSession).toHaveBeenCalledWith(
+      meta.id,
+      WORKER_ID,
+      expect.objectContaining({ status: 'succeeded' }),
+    );
+  });
+});
+
+it('fails an ended teaching turn after one receipt repair rather than continuing indefinitely', async () => {
+  const meta = makeMeta({ id: 'pbl-role-no-receipt' });
+  const session = await makeEntryTree();
+  const store = makeStore(meta);
+  mocks.openEntryStorage.mockResolvedValue(session.getStorage());
+  mocks.getAgentSessionStore.mockResolvedValue(store);
+  mocks.teachingRunnerConfig.mockResolvedValue({
+    tools: [],
+    systemPrompt: 'Teaching test',
+    thinkingConfig: () => ({ mode: 'enabled', effort: 'low', level: 'low' }),
+    allowedToolNames: new Set(),
+    needsTurnReceipt: () => true,
+    isTurnComplete: () => false,
+    historyWindow: { stageKey: 'm:0', studentTurns: 1 },
+  });
+  useResponses([
+    [{ type: 'text-delta', text: 'Build blocked, please help.' }, finish('stop')],
+    [{ type: 'text-delta', text: 'Still blocked.' }, finish('stop')],
+  ]);
+  await runSession({ running: new Map(), shuttingDown: false }, meta);
+  expect(mocks.streamLLM).toHaveBeenCalledTimes(2);
+  expect(store.finishSession).toHaveBeenCalledWith(
+    meta.id,
+    WORKER_ID,
+    expect.objectContaining({
+      status: 'failed',
+      error: expect.stringContaining('Teaching turn ended without recording'),
+    }),
+  );
+});
+
+it('persists a request timeout as failed and releases the worker without cancelling learning', async () => {
+  vi.useFakeTimers();
+  const meta = makeMeta({ id: 'pbl-role-silent-request' });
+  const session = await makeEntryTree(),
+    store = makeStore(meta);
+  mocks.openEntryStorage.mockResolvedValue(session.getStorage());
+  mocks.getAgentSessionStore.mockResolvedValue(store);
+  mocks.teachingRunnerConfig.mockResolvedValue({
+    tools: [],
+    systemPrompt: 'Teaching test',
+    thinkingConfig: () => ({ mode: 'disabled' }),
+    allowedToolNames: new Set(),
+    needsTurnReceipt: () => true,
+    isTurnComplete: () => false,
+  });
+  let started!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  mocks.streamLLM.mockImplementation(() => {
+    started();
+    return new Promise(() => {});
+  });
+  const ctx = { running: new Map(), shuttingDown: false };
+  const run = runSession(ctx, meta);
+  await ready;
+  await vi.advanceTimersByTimeAsync(15 * 60_000);
+  await run;
+  expect(store.finishSession).toHaveBeenCalledWith(
+    meta.id,
+    WORKER_ID,
+    expect.objectContaining({
+      status: 'failed',
+      error: expect.stringContaining('[MODEL_REQUEST_IDLE_TIMEOUT]'),
+    }),
+  );
+  expect(ctx.running.size).toBe(0);
+  expect(
+    store.appendRunEvent.mock.calls.some(
+      (call) =>
+        call[2].type === 'session_end' && call[2].data?.errorCode === 'MODEL_REQUEST_IDLE_TIMEOUT',
+    ),
+  ).toBe(true);
 });

@@ -17,7 +17,8 @@
 import type { AgentEvent, AgentMessage } from '@earendil-works/pi-agent-core';
 import { InMemorySessionRepo, Session } from '@earendil-works/pi-agent-core';
 import type { ClaimedAgentSession } from '@openmaic/storage';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { PgAgentSessionStore } from '@openmaic/storage/agent-session/pg';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   randomUUID: vi.fn(() => 'runner-test-uuid'),
@@ -27,6 +28,12 @@ const mocks = vi.hoisted(() => ({
   resolveAgentDriverModel: vi.fn(),
   createCallLlmStreamFn: vi.fn(),
   buildAgent: vi.fn(),
+  checkSchema: vi.fn(),
+}));
+
+vi.mock('@/lib/persistence/schema-boot-check', async (importActual) => ({
+  ...(await importActual<typeof import('@/lib/persistence/schema-boot-check')>()),
+  assertRuntimeSchemaCompatibility: mocks.checkSchema,
 }));
 
 vi.mock('node:crypto', async (importActual) => {
@@ -36,6 +43,8 @@ vi.mock('node:crypto', async (importActual) => {
 
 vi.mock('@/lib/server/agent-runtime/store', () => ({
   getAgentSessionStore: mocks.getAgentSessionStore,
+  withAgentSessionClaim: async <T>(operation: (store: PgAgentSessionStore) => Promise<T>) =>
+    operation(await mocks.getAgentSessionStore()),
 }));
 
 vi.mock('@/lib/persistence/server-provider', () => ({
@@ -99,7 +108,7 @@ vi.mock('@/lib/server/agent-runtime/user-skills', async (importActual) => {
   return { ...actual, listUserSkills: vi.fn(async () => []) };
 });
 
-import { runSession } from '@/lib/server/agent-runtime/runner';
+import { runSession, startAgentRunner } from '@/lib/server/agent-runtime/runner';
 
 const SESSION_ID = 'session-1';
 const TOOL_CALL_ID = 'call_1';
@@ -158,7 +167,7 @@ function makeStore(meta: ClaimedAgentSession) {
     getCancelRequestedAt: vi.fn(async () => null),
     isCancelRequested: vi.fn(async () => false),
     listUserMessages: vi.fn(async () => []),
-    releaseLease: vi.fn(async () => undefined),
+    releaseLease: vi.fn(async (): Promise<void> => undefined),
     requeueForRetry: vi.fn(async () => false),
     requeueSession: vi.fn(async () => false),
   };
@@ -251,6 +260,7 @@ function expectInterruptedReceipt(messages: readonly AgentMessage[]): void {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.checkSchema.mockReset().mockResolvedValue(undefined);
   mocks.resolveAgentDriverModel.mockResolvedValue({
     connection: { model: undefined, thinkingConfig: undefined },
     piModel: { api: 'openai-completions', provider: 'openai', id: 'driver-model' },
@@ -262,6 +272,290 @@ beforeEach(() => {
   // (buildAgent is mocked), so a bare forOwner facade is enough.
   mocks.getServerPersistenceProvider.mockResolvedValue({
     documentStore: { forOwner: () => ({}) },
+  });
+});
+
+afterEach(() => vi.useRealTimers());
+
+describe('runner claim drain', () => {
+  it('still executes and settles a normal claim before shutdown', async () => {
+    vi.useFakeTimers();
+    const meta = makeMeta();
+    const store = {
+      ...makeStore(meta),
+      claimNextSession: vi
+        .fn(async (): Promise<ClaimedAgentSession | null> => null)
+        .mockResolvedValueOnce(meta),
+    };
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    mocks.openEntryStorage.mockResolvedValue((await makeEntryTree()).getStorage());
+    mocks.buildAgent.mockReturnValue(makeFakeAgent({ onPrompt: emitToolCallTurn }));
+    const runner = startAgentRunner();
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mocks.buildAgent).toHaveBeenCalledOnce();
+      expect(store.finishSession).toHaveBeenCalledWith(
+        meta.id,
+        WORKER_ID,
+        expect.objectContaining({ status: 'succeeded' }),
+      );
+      expect(store.releaseLease).not.toHaveBeenCalled();
+    } finally {
+      await runner.stop();
+    }
+  });
+
+  it('waits for an in-flight claim and its lease release without starting the late turn', async () => {
+    vi.useFakeTimers();
+    const claim = Promise.withResolvers<ClaimedAgentSession | null>();
+    const release = Promise.withResolvers<void>();
+    const meta = makeMeta();
+    const store = {
+      ...makeStore(meta),
+      claimNextSession: vi.fn((_workerId: string) => claim.promise),
+    };
+    store.releaseLease.mockImplementation(() => release.promise);
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    mocks.openEntryStorage.mockResolvedValue((await makeEntryTree()).getStorage());
+    mocks.buildAgent.mockReturnValue(makeFakeAgent({}));
+    const runner = startAgentRunner();
+    const drained = vi.fn();
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store.claimNextSession).toHaveBeenCalledOnce();
+      const stopping = runner.stop().then(drained);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(drained).not.toHaveBeenCalled();
+      claim.resolve(meta);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store.releaseLease).toHaveBeenCalledWith(
+        meta.id,
+        store.claimNextSession.mock.calls[0]![0],
+      );
+      await vi.advanceTimersByTimeAsync(200);
+      expect(drained).not.toHaveBeenCalled();
+      release.resolve();
+      await vi.advanceTimersByTimeAsync(200);
+      await stopping;
+      expect(drained).toHaveBeenCalledOnce();
+      expect(mocks.buildAgent).not.toHaveBeenCalled();
+      expect(store.finishSession).not.toHaveBeenCalled();
+      expect(store.claimNextSession).toHaveBeenCalledOnce();
+    } finally {
+      claim.resolve(null);
+      release.resolve();
+      await vi.advanceTimersByTimeAsync(200);
+      await runner.stop({ timeoutMs: 0 });
+    }
+  });
+
+  it('keeps shutdown bounded and still releases a claim that returns after the drain timeout', async () => {
+    vi.useFakeTimers();
+    const claim = Promise.withResolvers<ClaimedAgentSession | null>();
+    const meta = makeMeta();
+    const store = {
+      ...makeStore(meta),
+      claimNextSession: vi.fn((_workerId: string) => claim.promise),
+    };
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    mocks.openEntryStorage.mockResolvedValue((await makeEntryTree()).getStorage());
+    mocks.buildAgent.mockReturnValue(makeFakeAgent({}));
+    const runner = startAgentRunner();
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      const drained = vi.fn();
+      const stopping = runner.stop({ timeoutMs: 200 }).then(drained);
+      await vi.advanceTimersByTimeAsync(200);
+      await stopping;
+      expect(drained).toHaveBeenCalledOnce();
+      claim.resolve(meta);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store.releaseLease).toHaveBeenCalledWith(
+        meta.id,
+        store.claimNextSession.mock.calls[0]![0],
+      );
+      expect(mocks.buildAgent).not.toHaveBeenCalled();
+      expect(store.finishSession).not.toHaveBeenCalled();
+    } finally {
+      claim.resolve(null);
+      await vi.advanceTimersByTimeAsync(200);
+      await runner.stop({ timeoutMs: 0 });
+    }
+  });
+
+  it('drains a concurrent late claim before schema-refusal retirement completes', async () => {
+    vi.useFakeTimers();
+    const setup = Promise.withResolvers<never>();
+    const lateClaim = Promise.withResolvers<ClaimedAgentSession | null>();
+    const meta = makeMeta({
+      lease: { workerId: `${WORKER_ID}:runner-test-uuid`, workerPid: process.pid, heartbeatAt: 0 },
+    });
+    const late = makeMeta({ id: 'late-session' });
+    const store = {
+      ...makeStore(meta),
+      claimNextSession: vi
+        .fn(async (_workerId: string): Promise<ClaimedAgentSession | null> => null)
+        .mockResolvedValueOnce(meta)
+        .mockImplementationOnce(() => lateClaim.promise),
+    };
+    store.getSession.mockResolvedValue({ ...meta, lease: meta.lease! });
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    mocks.openEntryStorage.mockReturnValueOnce(setup.promise);
+    const drained = vi.fn();
+    const onSchemaRefusal = vi.fn(async () => {
+      await runner.stop();
+      drained();
+    });
+    const runner: ReturnType<typeof startAgentRunner> = startAgentRunner({ onSchemaRefusal });
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store.claimNextSession).toHaveBeenCalledTimes(2);
+      const error = Object.assign(new Error('newer schema'), { name: 'SchemaVersionAheadError' });
+      setup.reject(error);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(onSchemaRefusal).toHaveBeenCalledWith(error);
+      expect(drained).not.toHaveBeenCalled();
+      lateClaim.resolve(late);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(store.releaseLease).toHaveBeenCalledWith(
+        late.id,
+        store.claimNextSession.mock.calls[1]![0],
+      );
+      expect(drained).toHaveBeenCalledOnce();
+      expect(mocks.buildAgent).not.toHaveBeenCalled();
+      expect(store.finishSession).not.toHaveBeenCalled();
+      expect(store.claimNextSession).toHaveBeenCalledTimes(2);
+    } finally {
+      setup.reject(new Error('test cleanup'));
+      lateClaim.resolve(null);
+      await vi.advanceTimersByTimeAsync(200);
+      await runner.stop({ timeoutMs: 0 });
+    }
+  });
+});
+
+describe('runtime schema incompatibility', () => {
+  const refusal = () =>
+    Object.assign(new Error('newer schema'), { name: 'SchemaVersionAheadError' });
+
+  it('reuses a successful schema check between scans and refreshes it after 30 seconds', async () => {
+    vi.useFakeTimers();
+    const claimNextSession = vi.fn(async () => null);
+    mocks.getAgentSessionStore.mockResolvedValue({ claimNextSession });
+    const runner = startAgentRunner();
+    try {
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(mocks.checkSchema).toHaveBeenCalledOnce();
+      expect(claimNextSession.mock.calls.length).toBeGreaterThan(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(mocks.checkSchema).toHaveBeenCalledTimes(2);
+    } finally {
+      await runner.stop();
+    }
+  });
+
+  it('stops before another claim when a previously compatible schema becomes incompatible', async () => {
+    vi.useFakeTimers();
+    const claimNextSession = vi.fn(async () => null);
+    mocks.getAgentSessionStore.mockResolvedValue({ claimNextSession });
+    const onSchemaRefusal = vi.fn(async () => {});
+    const runner = startAgentRunner({ onSchemaRefusal });
+    try {
+      await vi.advanceTimersByTimeAsync(29_999);
+      const claims = claimNextSession.mock.calls.length;
+      const error = refusal();
+      mocks.checkSchema.mockRejectedValueOnce(error);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(onSchemaRefusal).toHaveBeenCalledWith(error);
+      expect(claimNextSession).toHaveBeenCalledTimes(claims);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(mocks.checkSchema).toHaveBeenCalledTimes(2);
+      expect(claimNextSession).toHaveBeenCalledTimes(claims);
+    } finally {
+      await runner.stop();
+    }
+  });
+
+  it('does not cache a failed refresh or claim input until that check succeeds', async () => {
+    vi.useFakeTimers();
+    const claimNextSession = vi.fn(async () => null);
+    mocks.getAgentSessionStore.mockResolvedValue({ claimNextSession });
+    const onSchemaRefusal = vi.fn(async () => {});
+    const runner = startAgentRunner({ onSchemaRefusal });
+    try {
+      await vi.advanceTimersByTimeAsync(29_999);
+      const claims = claimNextSession.mock.calls.length;
+      mocks.checkSchema.mockRejectedValueOnce(new Error('ECONNRESET'));
+      await vi.advanceTimersByTimeAsync(1);
+      expect(claimNextSession).toHaveBeenCalledTimes(claims);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.checkSchema).toHaveBeenCalledTimes(3);
+      expect(claimNextSession).toHaveBeenCalledTimes(claims + 1);
+      expect(onSchemaRefusal).not.toHaveBeenCalled();
+    } finally {
+      await runner.stop();
+    }
+  });
+
+  it('does not claim a learner input when another release has upgraded a lazy store', async () => {
+    vi.useFakeTimers();
+    const claimNextSession = vi.fn(async () => null);
+    mocks.getAgentSessionStore.mockResolvedValue({ claimNextSession });
+    const onSchemaRefusal = vi.fn(async () => {});
+    mocks.checkSchema.mockRejectedValueOnce(refusal());
+    const runner = startAgentRunner({ onSchemaRefusal });
+    try {
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(onSchemaRefusal).toHaveBeenCalledOnce();
+      expect(claimNextSession).not.toHaveBeenCalled();
+      expect(mocks.checkSchema).toHaveBeenCalledOnce();
+    } finally {
+      await runner.stop();
+    }
+  });
+
+  it('keeps polling on temporary database failure without claiming or retiring the process', async () => {
+    vi.useFakeTimers();
+    const claimNextSession = vi.fn(async () => null);
+    mocks.getAgentSessionStore.mockResolvedValue({ claimNextSession });
+    const onSchemaRefusal = vi.fn(async () => {});
+    mocks.checkSchema.mockRejectedValueOnce(new Error('ECONNRESET'));
+    const runner = startAgentRunner({ onSchemaRefusal });
+    try {
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(onSchemaRefusal).not.toHaveBeenCalled();
+      expect(claimNextSession).toHaveBeenCalled();
+    } finally {
+      await runner.stop();
+    }
+  });
+
+  it('parks a claim if migration races the preflight instead of failing and automatically retrying the input', async () => {
+    const meta = makeMeta();
+    const store = makeStore(meta);
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    const error = refusal();
+    mocks.openEntryStorage.mockRejectedValueOnce(error);
+    const onSchemaRefusal = vi.fn(async () => {});
+    const other = new AbortController();
+    const ctx = {
+      running: new Map([['other', { abort: other }]]),
+      shuttingDown: false,
+      onSchemaRefusal,
+    };
+    await runSession(ctx, meta);
+    expect(ctx.shuttingDown).toBe(true);
+    expect(other.signal.aborted).toBe(true);
+    expect(onSchemaRefusal).toHaveBeenCalledWith(error);
+    expect(store.finishSession).not.toHaveBeenCalled();
+    expect(store.requeueForRetry).not.toHaveBeenCalled();
+    expect(store.releaseLease).toHaveBeenCalledWith(SESSION_ID, WORKER_ID);
+    expect(runEvents(store)).toContainEqual(
+      expect.objectContaining({
+        type: 'session_interrupted',
+        data: expect.objectContaining({ reason: 'schema compatibility changed' }),
+      }),
+    );
   });
 });
 
