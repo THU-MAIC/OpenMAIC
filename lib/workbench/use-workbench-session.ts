@@ -376,11 +376,21 @@ function rosterOf(stage: Stage): StageRoster {
  * The scenes as a classroom holds them. A stored PBL project is a design template,
  * with the learner's work in the runtime store, so it is folded back in here as on
  * a load. Taken as stored it would empty the project on screen, and the next save
- * would record that as the learner's state. A failed fold rejects: the pass is
- * retried, and the scene stays as it is meanwhile.
+ * would record that as the learner's state. A scene whose fold fails is left out:
+ * it keeps its old rev and is read again, and the others still go through.
  */
-async function readScenes(stageId: string, ids: readonly string[]): Promise<Scene[]> {
-  return hydratePBLScenesFromRuntime(stageId, await fetchScenesByIds(stageId, ids));
+async function readScenes(
+  stageId: string,
+  ids: readonly string[],
+): Promise<{ scenes: Scene[]; foldFailures: number }> {
+  const fetched = await fetchScenesByIds(stageId, ids);
+  const folded = await Promise.allSettled(
+    fetched.map((scene) => hydratePBLScenesFromRuntime(stageId, [scene])),
+  );
+  return {
+    scenes: folded.flatMap((result) => (result.status === 'fulfilled' ? result.value : [])),
+    foldFailures: folded.filter((result) => result.status === 'rejected').length,
+  };
 }
 
 /** A stage rev no manifest carries: the next pass treats the stage as moved. */
@@ -612,7 +622,7 @@ export function useStageFreshnessSync(
       const idsToRead = idsToFetch.filter((id) => !hasUnsavedSceneEdit(requestedStage, id));
       const queuedAtRead = hasQueuedWholeDocumentChange(requestedStage);
       if (queuedAtRead || idsToRead.length < idsToFetch.length) heldBackForSave.current = true;
-      const fetched = await readScenes(requestedStage, idsToRead);
+      const { scenes: fetched, foldFailures } = await readScenes(requestedStage, idsToRead);
       if (!isCurrent()) return;
 
       // D3-F1 structural guard: a non-empty request that fetched NOTHING must
@@ -697,6 +707,11 @@ export function useStageFreshnessSync(
         },
         previousStageRev,
       );
+      // The rest is applied; into the retry budget for what is left, since no new
+      // signal may come for it.
+      if (foldFailures > 0) {
+        throw new Error(`${foldFailures} PBL scene(s) of ${requestedStage} could not be folded`);
+      }
     };
 
     /**

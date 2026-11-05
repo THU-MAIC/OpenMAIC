@@ -328,6 +328,34 @@ describe('a freshness sync over a PBL v2 scene', () => {
     expect(shownProject().submissions).toHaveLength(1);
   });
 
+  it('holds back only the scene whose fold failed, and retries it', async () => {
+    await openAndSync();
+    const stored = await documents.getScene(STAGE, 'pbl');
+    await documents.putScene(STAGE, {
+      ...stored!,
+      content: {
+        type: 'pbl',
+        projectV2: { ...stripToDesignTemplate(project()), title: 'Renamed by the agent' },
+      },
+    } as AppScene);
+    await documents.putScene(STAGE, { ...slideScene(), title: 'Changed' } as AppScene);
+    sceneRev += 1;
+
+    const failing = vi.spyOn(runtimeStore, 'listSessions').mockRejectedValue(new Error('down'));
+    await syncPass();
+    const slide = () => useStageStore.getState().scenes.find((scene) => scene.id === 'slide')!;
+    expect(slide().title).toBe('Changed');
+    expect(shownProject().title).toBe('Project');
+    expect(shownProject().submissions).toHaveLength(1);
+
+    failing.mockRestore();
+    const reads = manifestReads;
+    // The pass retries by itself, with no new signal.
+    await vi.waitFor(() => expect(manifestReads).toBeGreaterThan(reads), { timeout: 5_000 });
+    await vi.waitFor(() => expect(shownProject().title).toBe('Renamed by the agent'));
+    expect(shownProject().submissions).toHaveLength(1);
+  });
+
   it('applies other kinds of scene as they are', async () => {
     await openAndSync();
     await documents.putScene(STAGE, { ...slideScene(), title: 'Changed' } as AppScene);
