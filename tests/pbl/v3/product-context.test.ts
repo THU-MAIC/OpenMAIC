@@ -92,6 +92,37 @@ describe('authoritative product guidance', () => {
     );
   });
 
+  it.each([0, 2, 6])(
+    'preserves feedback coverage and pacing in guided stage %s, beyond recap alone',
+    (index) => {
+      const input = { ...fixture(index), feedbackSource: 'verified_feedback' as const };
+      const prompt = renderTeachingPrompt(input).systemPrompt;
+      expect(prompt).toContain(
+        'set reuseFeedback: true only if the previously verified same-version learner reply covers the current goal',
+      );
+      expect(prompt).toContain(
+        'The presence of verified_feedback alone does not mean a new goal is answered',
+      );
+      for (const delivery of [
+        prompt,
+        ...input.skill.progression
+          .slice(1)
+          .map((section) => teachingSection(input, section).delivery),
+      ]) {
+        expect(delivery).toContain(
+          'New unanswered goals require one request_skill_review and real new feedback',
+        );
+        expect(delivery).toContain(
+          'Do not add another example or boundary question merely to prolong review',
+        );
+        expect(delivery).toContain(
+          'Explicit confident understanding is sufficient absent unresolved errors or questions',
+        );
+        expect(delivery).toContain('it does not replace required artifact approval');
+      }
+    },
+  );
+
   it('names the visible task trigger and directs decisions to a presentation-only drawer link', () => {
     const input = fixture(1);
     const context = teachingProductContext({ ...input, uiLocale: 'zh-CN' });

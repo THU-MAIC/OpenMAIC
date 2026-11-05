@@ -160,9 +160,9 @@ export function handoffEchoes<
 export function markRecoveredTeachingTools(entries: readonly LearningConversationEntry[]) {
   const successful = new Set<string>();
   const recovered = new Set<LearningConversationEntry['parts'][number]>();
-  for (const entry of entries.toReversed()) {
+  for (const entry of [...entries].reverse()) {
     if (entry.inputId === undefined) continue;
-    for (const part of entry.parts.toReversed()) {
+    for (const part of [...entry.parts].reverse()) {
       if (part.kind !== 'tool' || !['skill', 'review', 'complete'].includes(part.action)) continue;
       let operation: string = part.action;
       if (part.action === 'skill') {
