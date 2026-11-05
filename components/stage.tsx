@@ -452,10 +452,10 @@ export function Stage({
   return (
     <div className="relative flex flex-1 overflow-hidden">
       {/* The edit-mode guard has been removed (#1961 decision change 2026-08-23): a
-          new agent version directly replaces the canvas; the user's typed data is
-          protected by the write-path veto/retry channel (see lib/store/stage.ts),
-          and there is no longer an "agent modified this page" banner or a manual
-          reload entry. */}
+          new agent version directly replaces the canvas, except a scene with an
+          edit not yet saved, which the freshness sync leaves alone until it is
+          (see useStageFreshnessSync). There is no longer an "agent modified this
+          page" banner or a manual reload entry. */}
       {classroomChrome}
       {/* Full-screen playback steps the workspace aside; the return to the
           conversation lives in the classroom header's left slot (passed as

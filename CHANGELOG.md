@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Workbench: a background course sync no longer overwrites a scene edit that has not finished saving, so the edit no longer reverts on screen and the older copy is no longer saved over it. The scene is read again as soon as the save finishes. [#2168](https://github.com/THU-MAIC/OpenMAIC/pull/2168)
+- Editor: a slide open in the legacy Pro editor follows a server change to its scene, so the next commit from the canvas, including an automatic text-height adjustment, no longer writes the older content back over a page an agent just changed. [#2168](https://github.com/THU-MAIC/OpenMAIC/pull/2168)
+
 ## [1.4.0] - 2026-11-04
 
 1.4.0 is about project-based learning: **PBL v3** is a new way into vibe coding where learners build the project and come away understanding how it works. Concepts become hands-on tasks that the learner gets running, an AI tutor works through requirements, design and implementation with them, each milestone gives feedback and the finished project a personal learning report, and work and progress are kept for the next visit. PBL v3 runs on a new shared sandbox and stays off until a sandbox provider is configured; no new setting is required otherwise. The upgrade is one-way; read **Breaking Changes** before upgrading.
