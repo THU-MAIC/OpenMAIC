@@ -106,6 +106,70 @@ describe('SseParser', () => {
   });
 });
 
+describe('FetchEventSource on the back/forward cache', () => {
+  const page = new EventTarget();
+  const transition = (type: string, persisted: boolean) =>
+    page.dispatchEvent(Object.assign(new Event(type), { persisted }));
+
+  beforeEach(() => {
+    vi.stubGlobal('addEventListener', page.addEventListener.bind(page));
+    vi.stubGlobal('removeEventListener', page.removeEventListener.bind(page));
+  });
+
+  it('lets go of the connection in the cache and resumes from the last id on return', async () => {
+    const source = new FetchEventSource('/s');
+    const seen = record(source, 'open', 'error');
+    await settle();
+    connections[0]!.send('id: 4\ndata: a\n\n');
+    await settle();
+    transition('pagehide', true);
+    await settle();
+    expect(connections[0]!.init.signal!.aborted).toBe(true);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    transition('pageshow', true);
+    await settle();
+    expect(seen.at(-1)).toMatchObject({ type: 'error', state: 0 });
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(sentHeaders(1)['last-event-id']).toBe('4');
+    expect(source.readyState).toBe(1);
+    source.close();
+  });
+
+  it('cancels a pending retry while cached', async () => {
+    const source = new FetchEventSource('/s');
+    await settle();
+    connections[0]!.end();
+    await settle();
+    transition('pagehide', true);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    source.close();
+  });
+
+  it('ignores a page that is not going into the cache', async () => {
+    const source = new FetchEventSource('/s');
+    await settle();
+    transition('pagehide', false);
+    transition('pageshow', false);
+    await settle();
+    expect(connections[0]!.init.signal!.aborted).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    source.close();
+  });
+
+  it('stays closed when closed in the cache, and leaves no listeners behind', async () => {
+    const source = new FetchEventSource('/s');
+    await settle();
+    transition('pagehide', true);
+    source.close();
+    transition('pageshow', true);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(source.readyState).toBe(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('FetchEventSource', () => {
   it.each(SSE_CASES)('delivers "$name" split at every byte', async ({ body, expected }) => {
     const bytes = new TextEncoder().encode(body);

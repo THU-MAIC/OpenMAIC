@@ -131,12 +131,32 @@ export class FetchEventSource extends EventTarget {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private reconnectMs = DEFAULT_RECONNECT_MS;
   private lastEventId = '';
+  private suspended = false;
 
   constructor(url: string) {
     super();
     this.url = new URL(url, location.href).href;
+    globalThis.addEventListener?.('pagehide', this.onPageHide);
+    globalThis.addEventListener?.('pageshow', this.onPageShow);
     void this.connect();
   }
+
+  /**
+   * A response still receiving data evicts its page from the back/forward cache,
+   * where a native stream would not, and every route here pings. So a page going
+   * in lets go of the connection, and picks it up where it left off on return.
+   */
+  private readonly onPageHide = (event: Event) => {
+    if (!(event as PageTransitionEvent).persisted) return;
+    this.suspended = true;
+    this.stopConnection();
+  };
+
+  private readonly onPageShow = (event: Event) => {
+    if (!(event as PageTransitionEvent).persisted || !this.suspended) return;
+    this.suspended = false;
+    this.scheduleReconnect();
+  };
 
   get onopen(): Handler {
     return this.handlers.get('open') ?? null;
@@ -159,6 +179,12 @@ export class FetchEventSource extends EventTarget {
 
   close(): void {
     this.readyState = FetchEventSource.CLOSED;
+    globalThis.removeEventListener?.('pagehide', this.onPageHide);
+    globalThis.removeEventListener?.('pageshow', this.onPageShow);
+    this.stopConnection();
+  }
+
+  private stopConnection(): void {
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
     this.parser?.stop();
