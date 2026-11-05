@@ -508,6 +508,33 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await expect(
     transcript.locator('[data-testid="workbench-tool-card"][data-status="failed"]'),
   ).toHaveCount(0);
+  for (const studentFeedback of [null, false, 0]) {
+    view.conversation[0].parts.push(
+      {
+        kind: 'tool',
+        id: `coerced-failure-${studentFeedback}`,
+        action: 'skill',
+        name: 'read_next_skill',
+        args: { studentFeedback },
+        status: 'failed',
+        result: { error: 'Advancement failed after argument coercion.' },
+      },
+      {
+        kind: 'tool',
+        id: `reread-after-${studentFeedback}`,
+        action: 'skill',
+        name: 'read_next_skill',
+        args: {},
+        status: 'succeeded',
+      },
+    );
+  }
+  view.conversation = markRecoveredTeachingTools(view.conversation);
+  view.activitySequence!++;
+  publishLearning();
+  await expect(
+    transcript.locator('[data-testid="workbench-tool-card"][data-status="failed"]'),
+  ).toHaveCount(3);
   view.conversation = baselineConversation;
   view.activitySequence!++;
   publishLearning();

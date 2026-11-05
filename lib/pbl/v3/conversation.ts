@@ -169,9 +169,10 @@ export function markRecoveredTeachingTools(entries: readonly LearningConversatio
         // A successful reread does not prove that a failed advancement recovered.
         // Missing legacy arguments cannot establish which operation succeeded.
         if (!part.args || typeof part.args !== 'object' || Array.isArray(part.args)) continue;
-        operation += (part.args as { studentFeedback?: unknown }).studentFeedback
-          ? ':advance'
-          : ':read';
+        const { studentFeedback } = part.args as { studentFeedback?: unknown };
+        // Execution may coerce non-string values; recorded arguments stay original.
+        if (studentFeedback !== undefined && typeof studentFeedback !== 'string') continue;
+        operation += studentFeedback ? ':advance' : ':read';
       }
       const key = `${conversationScope(entry)}:${entry.inputId}:${operation}`;
       if (part.status === 'succeeded') successful.add(key);

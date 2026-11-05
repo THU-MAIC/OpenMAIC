@@ -868,6 +868,42 @@ describe('student conversation projection', () => {
     ).toMatchObject({ status: 'failed', recovered: true });
   });
 
+  it.each([null, false, 0, true, 1, [], {}].map((studentFeedback) => ({ studentFeedback })))(
+    'does not infer skill recovery from non-string feedback $studentFeedback',
+    ({ studentFeedback }) => {
+      for (const laterArgs of [{}, { studentFeedback: 'The learner understood.' }]) {
+        const events = [
+          event(1, 'user_message', { text: 'Continue.' }),
+          event(2, 'tool_execution_end', {
+            toolName: 'read_next_skill',
+            toolCallId: 'failed',
+            args: { studentFeedback },
+            isError: true,
+          }),
+          event(3, 'tool_execution_end', {
+            toolName: 'read_next_skill',
+            toolCallId: 'later-success',
+            args: laterArgs,
+          }),
+        ];
+        const live = projectConversation(events, 'mentor', false);
+        const failure = live
+          .flatMap((entry) => entry.parts)
+          .find((part) => part.kind === 'tool' && part.status === 'failed');
+        expect(failure).toMatchObject({ status: 'failed', recovered: false });
+        const pages = [
+          live.map((entry) => ({ ...entry, parts: entry.parts.slice(0, 1) })),
+          live.map((entry) => ({ ...entry, parts: entry.parts.slice(1) })),
+        ];
+        expect(
+          mergeConversationHistory(pages)
+            .flatMap((entry) => entry.parts)
+            .find((part) => part.kind === 'tool' && part.status === 'failed'),
+        ).toMatchObject({ status: 'failed', recovered: false });
+      }
+    },
+  );
+
   it('settles partial thinking and tool activity when the worker is interrupted', () => {
     const output = projectConversation(
       [
