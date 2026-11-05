@@ -52,7 +52,7 @@ importers:
         version: 1.2.0(@types/react@19.2.14)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       '@copilotkit/backend':
         specifier: ^0.37.0
-        version: 0.37.0(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/client-bedrock-runtime@3.1048.0)(@aws-sdk/client-s3@3.1106.0)(@aws-sdk/credential-provider-node@3.972.78)(@mozilla/readability@0.6.0)(@smithy/util-utf8@2.3.0)(axios@1.13.6)(fast-xml-parser@5.7.3)(ignore@5.3.2)(jsdom@29.1.1(@noble/hashes@1.8.0)(canvas@3.2.3))(lodash@4.18.1)(pg@8.22.0)(playwright@1.58.2)(ws@8.21.3)
+        version: 0.37.0(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/client-bedrock-runtime@3.1048.0)(@aws-sdk/client-s3@3.1106.0)(@aws-sdk/credential-provider-node@3.972.78)(@mozilla/readability@0.6.0)(@smithy/util-utf8@2.3.0)(axios@1.13.6)(fast-xml-parser@5.7.3)(ignore@5.3.2)(jsdom@29.1.1(@noble/hashes@1.8.0)(canvas@3.2.3))(lodash@4.18.1)(pg@8.22.0)(playwright@1.61.0)(ws@8.21.3)
       '@copilotkit/runtime':
         specifier: ^1.51.2
         version: 1.53.0(@ag-ui/encoder@0.0.47)(@cfworker/json-schema@4.1.1)(@copilotkitnext/shared@1.53.0)(@langchain/core@1.1.31(@opentelemetry/api@1.9.0)(openai@4.104.0(ws@8.21.3)(zod@4.3.6)))(@langchain/langgraph-sdk@1.7.1(@langchain/core@1.1.31(@opentelemetry/api@1.9.0)(openai@4.104.0(ws@8.21.3)(zod@4.3.6))))(@opentelemetry/api@1.9.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(ws@8.21.3)
@@ -203,12 +203,12 @@ importers:
       copilotkit:
         specifier: ^0.0.58
         version: 0.0.58(@types/node@20.19.37)(typescript@5.9.3)
-      diff:
-        specifier: 8.0.3
-        version: 8.0.3
       dexie:
         specifier: ^4.2.1
         version: 4.3.0
+      diff:
+        specifier: 8.0.3
+        version: 8.0.3
       docx:
         specifier: 9.4.1
         version: 9.4.1
@@ -229,7 +229,7 @@ importers:
         version: 2.0.5
       geist:
         specifier: ^1.7.0
-        version: 1.7.0(next@16.3.3(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.58.2)(@types/node@20.19.37)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))
+        version: 1.7.0(next@16.3.3(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.61.0)(@types/node@20.19.37)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))
       graphemer:
         specifier: 1.4.0
         version: 1.4.0
@@ -292,7 +292,7 @@ importers:
         version: 5.1.16
       next:
         specifier: 16.3.3
-        version: 16.3.3(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.58.2)(@types/node@20.19.37)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+        version: 16.3.3(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.61.0)(@types/node@20.19.37)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       next-themes:
         specifier: ^0.4.6
         version: 0.4.6(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
@@ -463,8 +463,8 @@ importers:
         specifier: 5.3.0
         version: 5.3.0
       '@playwright/test':
-        specifier: ^1.58.2
-        version: 1.58.2
+        specifier: ^1.61.0
+        version: 1.61.0
       '@rollup/plugin-commonjs':
         specifier: ^28.0.1
         version: 28.0.9(rollup@4.59.0)
@@ -4186,8 +4186,8 @@ packages:
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
 
-  '@playwright/test@1.58.2':
-    resolution: {integrity: sha512-akea+6bHYBBfA9uQqSYmlJXn61cTa+jbO87xVLCWbTqbWadRVmhxlXATaOjOgcBaWU4ePo0wB41KMFv3o35IXA==}
+  '@playwright/test@1.61.0':
+    resolution: {integrity: sha512-cKA5B6lpFEMyMGjxF54QihfYpB4FkEGH+qZhtArDEG+wezQAJY8Pq6C7T1SjWz+FFzt3TbyoXBQYk/0292TdJA==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -11348,13 +11348,13 @@ packages:
   platform@1.3.6:
     resolution: {integrity: sha512-fnWVljUchTro6RiCFvCXBbNhJc2NijN7oIQxbwsyL0buWJPG85v81ehlHI9fXrJsMNgTofEoWIQeClKpgxFLrg==}
 
-  playwright-core@1.58.2:
-    resolution: {integrity: sha512-yZkEtftgwS8CsfYo7nm0KE8jsvm6i/PTgVtB8DL726wNf6H2IMsDuxCpJj59KDaxCtSnrWan2AeDqM7JBaultg==}
+  playwright-core@1.61.0:
+    resolution: {integrity: sha512-caX7TrY3Ml6egyDX0WUcTHDxodl/b51y5wJOdCEA36QviK/s2g081hvmGs8eaE3DWb6NYZQ6BjO/QkNRPenoPA==}
     engines: {node: '>=18'}
     hasBin: true
 
-  playwright@1.58.2:
-    resolution: {integrity: sha512-vA30H8Nvkq/cPBnNw4Q8TWz1EJyqgpuinBcHET0YVJVFldr8JDNiU9LaWAE1KqSkRYazuaBhTpB5ZzShOezQ6A==}
+  playwright@1.61.0:
+    resolution: {integrity: sha512-Z+7BeeqQPRRzklHsVFP4KTGIyMxKUmfeRA4WisM6G3/XW6nwGeX6fX9qYaDa+CiUqpOkb2f6X3nar05R3kSuJQ==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -15624,14 +15624,14 @@ snapshots:
     dependencies:
       '@bufbuild/protobuf': 2.11.0
 
-  '@copilotkit/backend@0.37.0(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/client-bedrock-runtime@3.1048.0)(@aws-sdk/client-s3@3.1106.0)(@aws-sdk/credential-provider-node@3.972.78)(@mozilla/readability@0.6.0)(@smithy/util-utf8@2.3.0)(axios@1.13.6)(fast-xml-parser@5.7.3)(ignore@5.3.2)(jsdom@29.1.1(@noble/hashes@1.8.0)(canvas@3.2.3))(lodash@4.18.1)(pg@8.22.0)(playwright@1.58.2)(ws@8.21.3)':
+  '@copilotkit/backend@0.37.0(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/client-bedrock-runtime@3.1048.0)(@aws-sdk/client-s3@3.1106.0)(@aws-sdk/credential-provider-node@3.972.78)(@mozilla/readability@0.6.0)(@smithy/util-utf8@2.3.0)(axios@1.13.6)(fast-xml-parser@5.7.3)(ignore@5.3.2)(jsdom@29.1.1(@noble/hashes@1.8.0)(canvas@3.2.3))(lodash@4.18.1)(pg@8.22.0)(playwright@1.61.0)(ws@8.21.3)':
     dependencies:
       '@copilotkit/shared': 0.37.0
       '@google/generative-ai': 0.11.5
       '@langchain/core': 0.1.63(openai@4.104.0(ws@8.21.3)(zod@4.3.6))
       '@langchain/openai': 0.0.28(ws@8.21.3)
       js-tiktoken: 1.0.21
-      langchain: 0.1.37(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/client-bedrock-runtime@3.1048.0)(@aws-sdk/client-s3@3.1106.0)(@aws-sdk/credential-provider-node@3.972.78)(@mozilla/readability@0.6.0)(@smithy/util-utf8@2.3.0)(axios@1.13.6)(fast-xml-parser@5.7.3)(ignore@5.3.2)(jsdom@29.1.1(@noble/hashes@1.8.0)(canvas@3.2.3))(lodash@4.18.1)(openai@4.104.0(ws@8.21.3)(zod@4.3.6))(pg@8.22.0)(playwright@1.58.2)(ws@8.21.3)
+      langchain: 0.1.37(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/client-bedrock-runtime@3.1048.0)(@aws-sdk/client-s3@3.1106.0)(@aws-sdk/credential-provider-node@3.972.78)(@mozilla/readability@0.6.0)(@smithy/util-utf8@2.3.0)(axios@1.13.6)(fast-xml-parser@5.7.3)(ignore@5.3.2)(jsdom@29.1.1(@noble/hashes@1.8.0)(canvas@3.2.3))(lodash@4.18.1)(openai@4.104.0(ws@8.21.3)(zod@4.3.6))(pg@8.22.0)(playwright@1.61.0)(ws@8.21.3)
       openai: 4.104.0(ws@8.21.3)(zod@3.25.76)
       zod: 3.25.76
     transitivePeerDependencies:
@@ -17353,9 +17353,9 @@ snapshots:
 
   '@pinojs/redact@0.4.0': {}
 
-  '@playwright/test@1.58.2':
+  '@playwright/test@1.61.0':
     dependencies:
-      playwright: 1.58.2
+      playwright: 1.61.0
 
   '@protobuf-ts/protoc@2.11.1': {}
 
@@ -22253,9 +22253,9 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  geist@1.7.0(next@16.3.3(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.58.2)(@types/node@20.19.37)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)):
+  geist@1.7.0(next@16.3.3(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.61.0)(@types/node@20.19.37)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)):
     dependencies:
-      next: 16.3.3(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.58.2)(@types/node@20.19.37)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+      next: 16.3.3(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.61.0)(@types/node@20.19.37)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
 
   generator-function@2.0.1: {}
 
@@ -23848,7 +23848,7 @@ snapshots:
 
   kleur@4.1.5: {}
 
-  langchain@0.1.37(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/client-bedrock-runtime@3.1048.0)(@aws-sdk/client-s3@3.1106.0)(@aws-sdk/credential-provider-node@3.972.78)(@mozilla/readability@0.6.0)(@smithy/util-utf8@2.3.0)(axios@1.13.6)(fast-xml-parser@5.7.3)(ignore@5.3.2)(jsdom@29.1.1(@noble/hashes@1.8.0)(canvas@3.2.3))(lodash@4.18.1)(openai@4.104.0(ws@8.21.3)(zod@4.3.6))(pg@8.22.0)(playwright@1.58.2)(ws@8.21.3):
+  langchain@0.1.37(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/client-bedrock-runtime@3.1048.0)(@aws-sdk/client-s3@3.1106.0)(@aws-sdk/credential-provider-node@3.972.78)(@mozilla/readability@0.6.0)(@smithy/util-utf8@2.3.0)(axios@1.13.6)(fast-xml-parser@5.7.3)(ignore@5.3.2)(jsdom@29.1.1(@noble/hashes@1.8.0)(canvas@3.2.3))(lodash@4.18.1)(openai@4.104.0(ws@8.21.3)(zod@4.3.6))(pg@8.22.0)(playwright@1.61.0)(ws@8.21.3):
     dependencies:
       '@anthropic-ai/sdk': 0.9.1
       '@langchain/community': 0.0.57(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/client-bedrock-runtime@3.1048.0)(@aws-sdk/credential-provider-node@3.972.78)(@mozilla/readability@0.6.0)(@smithy/util-utf8@2.3.0)(jsdom@29.1.1(@noble/hashes@1.8.0)(canvas@3.2.3))(lodash@4.18.1)(openai@4.104.0(ws@8.21.3)(zod@4.3.6))(pg@8.22.0)(ws@8.21.3)
@@ -23875,7 +23875,7 @@ snapshots:
       fast-xml-parser: 5.7.3
       ignore: 5.3.2
       jsdom: 29.1.1(@noble/hashes@1.8.0)(canvas@3.2.3)
-      playwright: 1.58.2
+      playwright: 1.61.0
       ws: 8.21.3
     transitivePeerDependencies:
       - '@aws-crypto/sha256-js'
@@ -25105,7 +25105,7 @@ snapshots:
 
   next-tick@1.1.0: {}
 
-  next@16.3.3(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.58.2)(@types/node@20.19.37)(react-dom@19.2.3(react@19.2.3))(react@19.2.3):
+  next@16.3.3(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.61.0)(@types/node@20.19.37)(react-dom@19.2.3(react@19.2.3))(react@19.2.3):
     dependencies:
       '@next/env': 16.3.3
       '@swc/helpers': 0.5.23
@@ -25125,7 +25125,7 @@ snapshots:
       '@next/swc-win32-arm64-msvc': 16.3.3
       '@next/swc-win32-x64-msvc': 16.3.3
       '@opentelemetry/api': 1.9.0
-      '@playwright/test': 1.58.2
+      '@playwright/test': 1.61.0
       sharp: 0.35.4(@types/node@20.19.37)
     transitivePeerDependencies:
       - '@babel/core'
@@ -25693,11 +25693,11 @@ snapshots:
 
   platform@1.3.6: {}
 
-  playwright-core@1.58.2: {}
+  playwright-core@1.61.0: {}
 
-  playwright@1.58.2:
+  playwright@1.61.0:
     dependencies:
-      playwright-core: 1.58.2
+      playwright-core: 1.61.0
     optionalDependencies:
       fsevents: 2.3.2
 
