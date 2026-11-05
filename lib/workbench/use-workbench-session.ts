@@ -416,6 +416,8 @@ export function useStageFreshnessSync(
   const pendingSync = useRef(0);
   const served = useRef(0);
   const renderedManifest = useRef<StageManifest | null>(null);
+  /** This run's baseline is a manifest from before the classroom load (see below). */
+  const coldBaseline = useRef(false);
   /** The last pass left scenes behind for a save still to finish (see UNSAVED EDITS). */
   const heldBackForSave = useRef(false);
   const mounted = useRef(false);
@@ -450,6 +452,7 @@ export function useStageFreshnessSync(
     pendingSync.current = 0;
     served.current = 0;
     renderedManifest.current = null;
+    coldBaseline.current = false;
     heldBackForSave.current = false;
     retries.current = 0;
     if (retryTimer.current) {
@@ -472,9 +475,12 @@ export function useStageFreshnessSync(
     /**
      * Mirror the rendered manifest into the store (`serverManifestByStage`):
      * what THIS browser has actually applied. Recorded on every pass EXCEPT the
-     * warm zeroed-baseline branch below, where scene revs are unknown.
+     * warm zeroed-baseline branch below, where scene revs are unknown, and a run
+     * that started cold: its manifest describes what the load was going to bring,
+     * which a later start must not take as applied.
      */
     const recordWriteBaseline = (fresh: StageManifest) => {
+      if (coldBaseline.current) return;
       const previous = useStageStore.getState().serverManifestByStage?.[requestedStage];
       // Revs never roll back (Part 1): a stale response must not regress the
       // baseline.
@@ -603,7 +609,7 @@ export function useStageFreshnessSync(
           // content lands after, so any write between here and there shows up
           // as a change on the next diff (never hidden).
           renderedManifest.current = manifest;
-          recordWriteBaseline(manifest);
+          coldBaseline.current = true;
         }
         return;
       }

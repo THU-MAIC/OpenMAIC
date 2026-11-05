@@ -244,6 +244,24 @@ describe('the freshness sync on the standalone classroom page', () => {
     expect(useStageStore.getState().scenes[0]!.title).toBe('changed while playing');
   });
 
+  it('re-entering Edit reads a scene a sync that started cold never applied', async () => {
+    useStageStore.setState({ scenes: [] });
+    await open();
+    await setMode('edit');
+    await act(async () => MockEventSource.instances[0]!.onopen?.());
+    await settle();
+    expect(useStageStore.getState().scenes).toEqual([]);
+
+    // The store fills with something else: the manifest's scene never reached it.
+    useStageStore.setState({ scenes: [{ ...scene('local'), id: 'local' }] });
+    await setMode('playback');
+    await setMode('edit');
+    await act(async () => MockEventSource.instances[1]!.onopen?.());
+    await settle();
+
+    expect(useStageStore.getState().scenes.map((held) => held.id)).toContain('scene-1');
+  });
+
   it('stays off for a read-only viewer, in any mode', async () => {
     useStageStore.setState({ readOnly: true });
     await open();
