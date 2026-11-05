@@ -13,7 +13,7 @@ import { createLogger } from '@/lib/logger';
 
 import { ANONYMOUS_PREMINT_ENV, resolveAnonymousPremint } from './navigation';
 import { assertNoRetiredIdentityConfiguration } from './retired-config';
-import type { OwnerAuthMethod, StoredOwnerDescription } from './types';
+import type { OwnerAuthMethod, OwnerPrincipal, StoredOwnerDescription } from './types';
 
 const log = createLogger('OwnerIdentity');
 
@@ -254,6 +254,19 @@ export function ownerAuthConfigurationForResolution(): OwnerAuthConfiguration {
   const state = registry();
   state.inUse = true;
   return state.configured ?? configurationFromEnvironment();
+}
+
+/**
+ * Whether a resolved principal is the owner of the configured personal installation.
+ * Consumers need not read identity settings or depend on a built-in method's internals.
+ * This does not authenticate a request: callers must first resolve its principal.
+ */
+export function isPersonalInstallationOwner(principal: OwnerPrincipal): boolean {
+  return (
+    principal.kind === 'user' &&
+    ownerAuthConfigurationForResolution().methods.some(isSingleUserAuthMethod) &&
+    principal.ownerId === resolveSingleUserOwnerId()
+  );
 }
 
 /**

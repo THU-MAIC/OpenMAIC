@@ -2,9 +2,17 @@ name: Storage PostgreSQL Contract
 
 on:
   push:
-    branches: [main]
+    branches: [main, integration/shared-sandbox]
   pull_request:
-    branches: [main, runtime-server-backend, feat/maic-editor-v0, feat/maic-editor-v1, integration/material-library]
+    branches:
+      [
+        main,
+        runtime-server-backend,
+        feat/maic-editor-v0,
+        feat/maic-editor-v1,
+        integration/shared-sandbox,
+        integration/material-library,
+      ]
 
 concurrency:
   group: storage-pg-contract-${{ github.ref }}
@@ -72,8 +80,16 @@ jobs:
         # These suites create schemas and run races against a shared database
         # service, so a test can take several seconds on a busy runner. The
         # default 5 s test/hook timeout made unrelated PRs fail intermittently.
+        # Suites also open independent PG pools and may launch toolchains, so
+        # file-level fan-out stays bounded; in-suite lock/race contracts remain
+        # concurrent.
         run: |
-          pnpm exec vitest run --testTimeout=30000 --hookTimeout=30000 \
+          pnpm exec vitest run --maxWorkers=2 --testTimeout=30000 --hookTimeout=30000 \
+            tests/pbl/v3/runtime.pg.test.ts \
+            tests/sandbox/checkpoint-schema.pg.test.ts \
+            tests/sandbox/checkpoint-storage.pg.test.ts \
+            tests/sandbox/settings.pg.test.ts \
+            tests/sandbox/store-lock.pg.test.ts \
             tests/lib/whiteboard/runtime-store.pg.test.ts \
             tests/persistence/document-asset-references.pg.test.ts \
             tests/persistence/asset-reference-backfill.pg.test.ts \
@@ -88,6 +104,7 @@ jobs:
             tests/persistence/owner-material-extraction.pg.test.ts \
             tests/persistence/owner-material-pool.pg.test.ts \
             tests/persistence/material-library.pg.test.ts \
+            tests/persistence/runtime-schema-change.pg.test.ts \
             tests/persistence/workspace-model-config.pg.test.ts \
             tests/server/agents/owner-agents.pg.test.ts \
             tests/persistence/runtime-tombstone-collision.pg.test.ts \

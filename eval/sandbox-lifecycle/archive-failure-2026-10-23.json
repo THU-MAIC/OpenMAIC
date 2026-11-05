@@ -1,0 +1,59 @@
+{
+  "date": "2026-10-23T11:31:18.091Z",
+  "fixture": "Real cloud provider and local S3-compatible store. The harness selects the coding stage and fast-forwards durable inactivity/failure timestamps; this is fault acceptance, not a complete teaching journey or a wall-clock retention benchmark.",
+  "results": [
+    {
+      "label": "real-api-files-created-over-snapshot-limit",
+      "at": "2026-10-23T11:31:40.267Z",
+      "environmentId": "887563f1-540b-4bcb-b031-1e20f952bf4b"
+    },
+    {
+      "label": "snapshot-failure-classified-and-environment-retained",
+      "at": "2026-10-23T11:32:01.622Z",
+      "failure": {
+        "stage": "snapshot",
+        "reason": "source-limit",
+        "dirtyAt": "2026-10-23T11:31:30.357Z",
+        "retryable": false,
+        "environmentId": "887563f1-540b-4bcb-b031-1e20f952bf4b",
+        "firstIdleFailureAt": "2026-10-23T11:31:59.181Z"
+      },
+      "environment": {
+        "state": "running",
+        "ready": true
+      }
+    },
+    {
+      "label": "released-without-new-archive",
+      "at": "2026-10-23T11:32:22.600Z",
+      "discard": {
+        "at": "2026-10-23T11:32:22.302Z",
+        "reason": "source-limit",
+        "checkpointAt": "2026-10-23T11:31:27.477Z",
+        "environmentId": "887563f1-540b-4bcb-b031-1e20f952bf4b",
+        "checkpointRevision": 1
+      },
+      "environment": {
+        "state": "destroyed",
+        "ready": false
+      }
+    },
+    {
+      "label": "restored-previous-checkpoint-with-explicit-loss-notice",
+      "at": "2026-10-23T11:32:29.353Z",
+      "environmentId": "c58d7aa5-f449-4bc7-8193-d9ec8f7ce7db",
+      "checkpointRevision": 1,
+      "files": ["PLAN.md", "src/greeting.py"]
+    },
+    {
+      "label": "all-live-resources-confirmed-destroyed",
+      "at": "2026-10-23T11:32:58.090Z",
+      "activeCount": 0
+    }
+  ],
+  "courseId": "pbl-8e248b05-e75a-4215-9e77-9ca53dfb8ebe",
+  "studyId": "887563f1-540b-4bcb-b031-1e20f952bf4b",
+  "originalEnvironmentId": "887563f1-540b-4bcb-b031-1e20f952bf4b",
+  "restoredEnvironmentId": "c58d7aa5-f449-4bc7-8193-d9ec8f7ce7db",
+  "status": "passed"
+}

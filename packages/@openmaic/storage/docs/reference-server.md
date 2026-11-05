@@ -70,6 +70,17 @@ Writes use bounded `multipart/form-data`; reads are private and uncached. The fu
 
 ## Asset reclamation a host must schedule
 
+`retainDocumentAssets` from `@openmaic/storage/asset/pg` retains asset IDs for a
+server-owned record within an existing document. Call it on the record's creation
+transaction, after authorizing the document owner, with `stageId`, a stable
+`referenceId`, `assetIds`, and the allowed `principals`. It takes the document lock
+before ordered entry locks. Its separate `retained` scope survives full saves and
+scene deletion, counts toward live quota, and is withdrawn with the owning document.
+It cannot retain assets for a missing or explicitly withdrawn document. There is no
+HTTP endpoint for creating these references. Upgrade all document writers before
+using retained scopes; older writers that replace every reference row cannot
+preserve them.
+
 **Nothing in this package runs on a timer.** `AssetCollector` is a re-runnable pass a host has to schedule; left unscheduled, unreferenced entries and bytes grow without bound. A host composing this server owns that schedule — a periodic call to `collect()` in-process, a cron job against the same database, whatever fits the deployment. `collect()` is bounded per call and answers how many blobs it deleted; `collectPass()` answers that plus whether the batch was full, which is exactly "run again", and the entry counts below.
 
 Three options decide how much of the [two-level reclamation](./asset-http-contract.md) a deployment gets. All three are off or generous by default, so an existing deployment behaves as it did:

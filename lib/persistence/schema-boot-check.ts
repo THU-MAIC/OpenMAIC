@@ -30,6 +30,49 @@ export function isSchemaRefusal(error: unknown): boolean {
 
 export type SchemaCheckPoolFactory = (connectionString: string) => Pool;
 
+/** A running release can become incompatible after another instance migrates the database. */
+export async function assertRuntimeSchemaCompatibility(): Promise<void> {
+  const { getServerPersistenceProvider } = await import('./server-provider');
+  const { pool } = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
+  await verifySchemaMigrations(pool, APP_SCHEMA_STORES);
+}
+
+/** Keep every Node server protected, including deployments without Agent workers. */
+export function startRuntimeSchemaMonitor(onSchemaRefusal: (error: unknown) => Promise<void>) {
+  let stopped = false;
+  let checking = false;
+  const check = async () => {
+    if (stopped || checking) return;
+    checking = true;
+    try {
+      await assertRuntimeSchemaCompatibility();
+    } catch (error) {
+      if (stopped) return;
+      if (!isSchemaRefusal(error)) {
+        console.error('[persistence] Runtime schema check failed; retrying next interval', error);
+        return;
+      }
+      stopped = true;
+      clearInterval(timer);
+      // The retirement callback drains the monitor too; never await that drain here.
+      void Promise.resolve()
+        .then(() => onSchemaRefusal(error))
+        .catch((failure) => console.error('[persistence] Schema retirement failed', failure));
+    } finally {
+      checking = false;
+    }
+  };
+  // The one-time boot check covers startup; ongoing process checks run every 30s.
+  const timer = setInterval(() => void check(), 30_000);
+  timer.unref?.();
+  return {
+    stop() {
+      stopped = true;
+      clearInterval(timer);
+    },
+  };
+}
+
 export async function startSchemaBootCheck(
   connectionString: string,
   poolFactory: SchemaCheckPoolFactory = (value) => new Pool({ connectionString: value, max: 1 }),
