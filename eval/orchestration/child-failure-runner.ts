@@ -11,16 +11,7 @@ async function main() {
   const samples = Number(process.env.EVAL_SAMPLES ?? 1);
   if (!Number.isInteger(samples) || samples <= 0)
     throw new Error('EVAL_SAMPLES must be a positive integer');
-  const agents = [
-    scenarioAgentConfig({ id: 'teacher', name: 'Teacher', role: 'teacher', priority: 10 }),
-    scenarioAgentConfig({
-      id: 'assistant',
-      name: 'Teaching assistant',
-      role: 'assistant',
-      priority: 5,
-    }),
-  ];
-  const request = {
+  const baseRequest = {
     messages: [
       {
         id: 'question',
@@ -36,14 +27,41 @@ async function main() {
       mode: 'autonomous',
       whiteboardOpen: false,
     },
-    config: { agentIds: agents.map((agent) => agent.id), agentConfigs: agents },
     apiKey: '',
-  } as StatelessChatRequest;
+  };
+  const teacher = scenarioAgentConfig({
+    id: 'teacher',
+    name: 'Teacher',
+    role: 'teacher',
+    priority: 10,
+  });
+  const assistant = scenarioAgentConfig({
+    id: 'assistant',
+    name: 'Teaching assistant',
+    role: 'assistant',
+    priority: 5,
+  });
+  // A student alone does not satisfy the normal teaching check, so this roster
+  // exercises the cue_user exception after a teacher failure.
+  const student = scenarioAgentConfig({
+    id: 'student',
+    name: 'Student',
+    role: 'student',
+    priority: 3,
+  });
+  const requestFor = (scenario: ChildFailureScenario): StatelessChatRequest => {
+    const agents = scenario === 'teacher-error-student' ? [teacher, student] : [teacher, assistant];
+    return {
+      ...baseRequest,
+      config: { agentIds: agents.map((agent) => agent.id), agentConfigs: agents },
+    } as StatelessChatRequest;
+  };
   const scenarios: ChildFailureScenario[] = [
     'error',
     'timeout',
     'empty',
     'teacher-error',
+    'teacher-error-student',
     'partial',
   ];
   const selected = scenarios.filter(
@@ -55,13 +73,13 @@ async function main() {
   for (const mode of ['legacy', 'native'] as const) {
     for (const scenario of selected) {
       for (let sample = 1; sample <= samples; sample++) {
-        const report = await runChildFailureEval(request, model, scenario, mode);
+        const report = await runChildFailureEval(requestFor(scenario), model, scenario, mode);
         writeFileSync(
           join(directory, `${mode}-${scenario}-${sample}.json`),
           JSON.stringify({ model: modelName, ...report }, null, 2),
         );
         console.log(
-          `${mode}/${scenario}/${sample}: ${report.ending}, child calls=${report.childCalls}, capped=${report.capped}`,
+          `${mode}/${scenario}/${sample}: ${report.ending}, covered=${report.covered}, child calls=${report.childCalls}, capped=${report.capped}`,
         );
       }
     }

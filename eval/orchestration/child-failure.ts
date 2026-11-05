@@ -8,7 +8,17 @@ import type { ChildRuntimeMode } from '@/lib/chat/pi/child-runtime';
 import type { StatelessChatRequest } from '@/lib/types/chat';
 import { runPiClassroomRequest, type EvalModel } from './pi-harness';
 
-export type ChildFailureScenario = 'error' | 'timeout' | 'empty' | 'teacher-error' | 'partial';
+export type ChildFailureScenario =
+  | 'error'
+  | 'timeout'
+  | 'empty'
+  | 'teacher-error'
+  | 'teacher-error-student'
+  | 'partial';
+
+/** Only the teacher fails; other agents use the real model. */
+const teacherOnly = (scenario: ChildFailureScenario) =>
+  scenario === 'teacher-error' || scenario === 'teacher-error-student';
 
 function terminalMessage(stopReason: AssistantMessage['stopReason']): AssistantMessage {
   return {
@@ -48,7 +58,7 @@ function injectedStream(
     return stream;
   }
   const partial = scenario === 'partial';
-  const error = scenario === 'error' || scenario === 'teacher-error';
+  const error = scenario === 'error' || teacherOnly(scenario);
   const message: AssistantMessage = {
     ...terminalMessage(error ? 'error' : partial ? 'length' : 'stop'),
     content: partial ? [{ type: 'text', text: 'Here is the first part of the explanation.' }] : [],
@@ -86,6 +96,7 @@ export async function runChildFailureEval(
   }
   const controller = new AbortController();
   const calls: string[] = [];
+  let teacherCalls = 0;
   const childResults: Array<{ toolCallId: string; isError: boolean; text: string }> = [];
   let providerCalls = 0;
   let injectedTransports = 0;
@@ -101,11 +112,14 @@ export async function runChildFailureEval(
     if (agent) {
       // Count delegations, not transports: a Native child may make several.
       if (calls.length >= limits.childCalls) cap();
-      else calls.push(agent.id);
+      else {
+        calls.push(agent.id);
+        if (agent.role === 'teacher') teacherCalls += 1;
+      }
     }
     return ((...args: Parameters<StreamFn>) => {
       controller.signal.throwIfAborted();
-      if (agent && (scenario !== 'teacher-error' || agent.role === 'teacher')) {
+      if (agent && (!teacherOnly(scenario) || agent.role === 'teacher')) {
         injectedTransports += 1;
         return injectedStream(scenario, args[2]?.signal);
       }
@@ -157,6 +171,17 @@ export async function runChildFailureEval(
   const perAgent = Object.fromEntries(
     [...new Set(calls)].map((id) => [id, calls.filter((call) => call === id).length]),
   );
+  // The Director picks its own delegations, so a sample may never reach the
+  // injected failure (or, for teacher-only scenarios, never try another agent).
+  const reachedFailure = injectedTransports > 0;
+  const covered = teacherOnly(scenario)
+    ? reachedFailure && calls.length > teacherCalls
+    : reachedFailure;
+  // The Director may call cue_user itself, or finish and let the runtime cue.
+  const explicitCue = run?.done.directorToolTrace?.some(
+    (entry) =>
+      entry.toolName === 'cue_user' && (entry.details as { emitted?: boolean })?.emitted === true,
+  );
   return {
     scenario,
     mode,
@@ -170,8 +195,13 @@ export async function runChildFailureEval(
       : run.done.sessionClosed
         ? 'close'
         : run.done.cueUserReceived
-          ? 'cue'
+          ? explicitCue
+            ? 'explicit_cue'
+            : 'auto_cue'
           : 'plain_finish',
+    covered,
+    agentHadContent: run?.done.agentHadContent,
+    teachingAgentFailedOrEmpty: run?.done.teachingAgentFailedOrEmpty,
     capped,
     error,
     childResults,

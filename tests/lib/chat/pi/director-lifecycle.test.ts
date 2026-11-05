@@ -301,10 +301,44 @@ describe('Pi Director completion and request cancellation', () => {
         mode,
       );
       expect(report.error).toBeUndefined();
-      expect(report.ending).toBe('cue');
+      expect(report.ending).toBe('auto_cue');
+      expect(report.covered).toBe(true);
       expect(report.childCalls).toBe(2);
       expect(report.injectedTransports).toBe(1);
       expect(report.providerCalls).toBe(4);
+    },
+  );
+  it.each(['legacy', 'native'] as const)(
+    'reports an explicit %s cue after teacher failure and a student reply',
+    async (mode) => {
+      const request = body();
+      const student = { ...teacher, id: 'student-1', name: 'Student', role: 'student' };
+      request.config.agentConfigs = [teacher, student];
+      request.config.agentIds = [teacher.id, student.id];
+      let turn = 0;
+      mocks.streamLLM.mockImplementation((_p, source) => {
+        if (source !== 'pi-chat-director') return speech('A student reaction');
+        turn++;
+        if (turn === 1) return result([invoke('d1'), finish('tool-calls')]);
+        if (turn === 2)
+          return result([
+            call('call_agent', 'd2', { agentId: student.id, instruction: 'React briefly' }),
+            finish('tool-calls'),
+          ]);
+        if (turn === 3) return result([call('cue_user', 'cue', {}), finish('tool-calls')]);
+        return speech('done');
+      });
+      const report = await runChildFailureEval(
+        request,
+        { model: model as never, modelInfo: null },
+        'teacher-error-student',
+        mode,
+      );
+      expect(report.error).toBeUndefined();
+      expect(report.ending).toBe('explicit_cue');
+      expect(report.covered).toBe(true);
+      expect(report.teachingAgentFailedOrEmpty).toBe(true);
+      expect(report.perAgent).toEqual({ [teacher.id]: 1, [student.id]: 1 });
     },
   );
   it('reports an eval cap as no_done, retaining repeated child-call counts', async () => {
@@ -767,4 +801,117 @@ describe('Pi Director completion and request cancellation', () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
     expect(events.some((e) => e.type === 'done')).toBe(false);
   });
+});
+
+describe('Pi Director after a failed teaching call', () => {
+  beforeEach(() => vi.clearAllMocks());
+  const student: AgentConfig = { ...teacher, id: 'student-1', name: 'Student', role: 'student' };
+  const askStudent = (id: string) =>
+    call('call_agent', id, { agentId: student.id, instruction: 'React briefly' });
+  async function runWith(agents: AgentConfig[], mode: 'native' | 'legacy') {
+    const events: StatelessEvent[] = [];
+    const b = body();
+    b.config.agentConfigs = agents;
+    b.config.agentIds = agents.map((agent) => agent.id);
+    await runPiDirectorLoop({
+      body: b,
+      agentConfigs: agents,
+      send: async (e) => {
+        events.push(e);
+      },
+      languageModel: model as never,
+      thinkingConfig: { mode: 'disabled', enabled: false },
+      abortSignal: new AbortController().signal,
+      signal: new AbortController().signal,
+      enableWhiteboardTools: false,
+      childRuntimeMode: mode,
+    });
+    return events;
+  }
+  const cueTrace = (events: StatelessEvent[]) =>
+    done(events).directorToolTrace?.find((entry) => entry.toolName === 'cue_user');
+
+  it.each(['legacy', 'native'] as const)(
+    'lets the %s Director cue the user after the teacher fails and a student speaks',
+    async (mode) => {
+      let turn = 0;
+      mocks.streamLLM.mockImplementation((p, source) => {
+        if (source !== 'pi-chat-director') {
+          if (JSON.stringify(p).includes('Student')) return speech('A student reaction');
+          throw new Error('provider down');
+        }
+        turn++;
+        if (turn === 1) return result([invoke('d1'), finish('tool-calls')]);
+        if (turn === 2) return result([askStudent('d2'), finish('tool-calls')]);
+        if (turn === 3) return result([call('cue_user', 'cue', {}), finish('tool-calls')]);
+        return speech('done');
+      });
+      const events = await runWith([teacher, student], mode);
+      expect(cueTrace(events)?.details).toMatchObject({ emitted: true });
+      expect(done(events)).toMatchObject({
+        cueUserReceived: true,
+        agentHadContent: true,
+        teachingAgentFailedOrEmpty: true,
+      });
+    },
+  );
+
+  it.each(['legacy', 'native'] as const)(
+    'still rejects a %s cue when only a student was called',
+    async (mode) => {
+      let turn = 0;
+      mocks.streamLLM.mockImplementation((_p, source) => {
+        if (source !== 'pi-chat-director') throw new Error('provider down');
+        turn++;
+        if (turn === 1) return result([askStudent('d1'), finish('tool-calls')]);
+        if (turn === 2) return result([call('cue_user', 'cue', {}), finish('tool-calls')]);
+        return speech('done');
+      });
+      const events = await runWith([teacher, student], mode);
+      expect(cueTrace(events)?.details).toMatchObject({
+        emitted: false,
+        reason: 'no_substantive_teaching_turn',
+      });
+      expect(done(events)).toMatchObject({
+        agentHadContent: false,
+        teachingAgentFailedOrEmpty: false,
+      });
+    },
+  );
+
+  it.each([
+    ['legacy', 'empty'],
+    ['native', 'empty'],
+    ['legacy', 'token limit'],
+    ['native', 'token limit'],
+  ] as const)('flags a %s teacher %s result', async (mode, failure) => {
+    let turn = 0;
+    mocks.streamLLM.mockImplementation((_p, source) => {
+      if (source !== 'pi-chat-director') {
+        return failure === 'empty'
+          ? result([finish()])
+          : result([{ type: 'text-delta', text: 'Partial answer' }, finish('length')]);
+      }
+      return ++turn === 1 ? result([invoke('d1'), finish('tool-calls')]) : speech('done');
+    });
+    const events = await runWith([teacher], mode);
+    expect(done(events)).toMatchObject({
+      totalAgents: 1,
+      agentHadContent: failure !== 'empty',
+      teachingAgentFailedOrEmpty: true,
+    });
+  });
+
+  it.each(['legacy', 'native'] as const)(
+    'does not flag a normal %s teacher answer',
+    async (mode) => {
+      let turn = 0;
+      mocks.streamLLM.mockImplementation((_p, source) => {
+        if (source !== 'pi-chat-director') return speech('A full answer');
+        return ++turn === 1 ? result([invoke('d1'), finish('tool-calls')]) : speech('done');
+      });
+      const events = await runWith([teacher], mode);
+      expect(done(events).teachingAgentFailedOrEmpty).toBe(false);
+    },
+  );
 });
