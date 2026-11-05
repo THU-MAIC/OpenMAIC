@@ -107,6 +107,16 @@ async function settle(ms = 1_000) {
   });
 }
 
+/** What the sync does with a server copy: into the store, with no save. */
+async function serverCopyWith(id: string, content: string) {
+  await act(async () => {
+    const scene = structuredClone(useStageStore.getState().scenes[0]!);
+    const elements = (scene.content as SlideContent).canvas.elements;
+    (elements.find((element) => element.id === id) as Text).content = content;
+    useStageStore.setState({ scenes: [scene] });
+  });
+}
+
 async function select(id: string) {
   await act(async () => useCanvasStore.getState().setActiveElementIdList(id ? [id] : []));
 }
@@ -214,16 +224,124 @@ describe('an empty text box on the legacy canvas', () => {
     expect(storedIds()).toEqual(['kept']);
   });
 
-  it('stays when its content empties long after the user left it', async () => {
-    await openEditor(slideWith(['kept', '<p>text</p>'], ['later', '<p>was here</p>']));
-
-    await select('later');
+  it('stays when an undo empties it just after the user left it', async () => {
+    await openEditor(slideWith(['kept', '<p>text</p>'], ['box', '']));
+    await select('box');
+    act(() =>
+      useSlideEditSession.getState().applyOp({
+        type: 'element.update',
+        elementId: 'box',
+        patch: { content: '<p>hello</p>' },
+      }),
+    );
+    await settle(100);
     await select('');
-    await settle(5_000);
-    act(() => editorInput.get('later')!(''));
+    await settle(400);
+
+    await act(async () => useSlideEditSession.getState().undo());
     await settle();
 
-    expect(storedIds()).toEqual(['kept', 'later']);
+    expect(storedIds()).toEqual(['kept', 'box']);
+  });
+
+  it('stays, unsaved, when a server copy empties it just after the user left it', async () => {
+    await openEditor(slideWith(['kept', '<p>text</p>'], ['box', '<p>was here</p>']));
+    await select('box');
+    await select('');
+    await settle(200);
+    saveStageDataIncremental.mockClear();
+
+    await serverCopyWith('box', '');
+    await settle(2_000);
+
+    expect(storedIds()).toEqual(['kept', 'box']);
+    expect(saveStageDataIncremental).not.toHaveBeenCalled();
+  });
+
+  it('stays when the user comes back to it before the check fires, and types', async () => {
+    await openEditor(slideWith(['kept', '<p>text</p>'], ['box', '<p>was</p>']));
+    await select('box');
+    await select('');
+    await settle(100);
+    act(() => editorInput.get('box')!(''));
+    await settle(100);
+
+    await select('box');
+    await settle(50);
+    act(() => editorInput.get('box')!('<p>typing again</p>'));
+    await settle();
+
+    expect(storedIds()).toEqual(['kept', 'box']);
+  });
+
+  it('stays when the user comes back to it before the editor reports it empty', async () => {
+    await openEditor(slideWith(['kept', '<p>text</p>'], ['box', '<p>was</p>']));
+    await select('box');
+    await select('');
+    await settle(100);
+
+    await select('box');
+    act(() => editorInput.get('box')!(''));
+    await settle();
+
+    expect(storedIds()).toEqual(['kept', 'box']);
+  });
+
+  it('keeps text typed into it just before the user clicked away', async () => {
+    await openEditor(slideWith(['kept', '<p>text</p>'], ['box', '']));
+    await select('box');
+    await settle(100);
+    await select('');
+    // The input debounce started before the leave, so it fires before the check.
+    await settle(100);
+    act(() => editorInput.get('box')!('<p>typed</p>'));
+    await settle();
+
+    expect(storedIds()).toEqual(['kept', 'box']);
+  });
+
+  it('stays when an agent writes text into it just after the user left it', async () => {
+    await openEditor(slideWith(['kept', '<p>text</p>'], ['box', '']));
+    await select('box');
+    await select('');
+    await settle(100);
+
+    await serverCopyWith('box', '<p>agent text</p>');
+    await settle(2_000);
+
+    expect(storedIds()).toEqual(['kept', 'box']);
+  });
+
+  it('a removal builds on the copy of when it fires, not of when the user left', async () => {
+    await openEditor(slideWith(['kept', '<p>text</p>'], ['box', '']));
+    await select('box');
+    await select('');
+    await settle(100);
+
+    act(() =>
+      useSlideEditSession.getState().applyOp({
+        type: 'element.update',
+        elementId: 'kept',
+        patch: { left: 321 },
+      }),
+    );
+    await settle();
+
+    const content = useStageStore.getState().scenes[0]!.content as SlideContent;
+    expect(content.canvas.elements.map((element) => element.id)).toEqual(['kept']);
+    expect(content.canvas.elements[0]).toMatchObject({ left: 321 });
+  });
+
+  it('does not fire once the canvas is gone', async () => {
+    await openEditor(slideWith(['kept', '<p>text</p>'], ['box', '']));
+    await select('box');
+    await select('');
+
+    await act(async () => root?.unmount());
+    root = null;
+    await settle();
+
+    expect(storedIds()).toEqual(['kept', 'box']);
   });
 
   it('stays when another box is the one the user leaves', async () => {
