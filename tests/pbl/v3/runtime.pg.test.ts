@@ -8176,6 +8176,109 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     return { row: await store.get(created.id, principal.ownerId), documents, ref };
   }
 
+  it('keeps a deleted built-in sandbox leased while a command is still protected', async () => {
+    const priorLifetime = mocked.lifetimeMs;
+    mocked.lifetimeMs = 60_000;
+    onTestFinished(() => {
+      mocked.lifetimeMs = priorLifetime;
+    });
+    const fresh = await freshStudy();
+    onTestFinished(() => releasePreparationFixtures([fresh.id]));
+    const row = await store.get(fresh.id, principal.ownerId);
+    const environmentId = row.environment_id!;
+    const documents = createOwnerBoundDocumentStore<
+      import('@/lib/types/stage').Scene,
+      import('@/lib/types/stage').Stage
+    >({
+      pool,
+      ownerId: principal.ownerId,
+      validateScene: validateAppScene,
+      validateStage: validateAppStage,
+    });
+    await documents.saveDocument({
+      stage: { id: row.stage_id, name: 'Deleted built-in course', createdAt: 1, updatedAt: 1 },
+      scenes: [
+        {
+          id: row.scene_id,
+          stageId: row.stage_id,
+          type: 'pbl',
+          title: 'Project',
+          order: 0,
+          content: { type: 'pbl', projectV3: project.ref },
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    });
+    const commandId = randomUUID();
+    const running = { id: commandId, state: 'running', stdout: '', stderr: '', exitCode: null };
+    await writeFile(
+      join(mocked.root, environmentId, `.command-${commandId}`),
+      JSON.stringify(running),
+    );
+    await pool.query(
+      `INSERT INTO sandbox_commands(environment_id,id,request_fingerprint,result_json)
+       VALUES($1,$2,'fixture',$3)`,
+      [environmentId, commandId, JSON.stringify(running)],
+    );
+    // A command admitted near the previous renewal still needs the next maintenance
+    // pass to extend a short provider lease, even though learner inactivity is longer.
+    let elapsed = 25_000,
+      expiresAt = 40_000;
+    const originalInspect = E2BCompatibleSandboxProvider.prototype.inspect;
+    const inspect = vi
+      .spyOn(E2BCompatibleSandboxProvider.prototype, 'inspect')
+      .mockImplementation(async function (this: E2BCompatibleSandboxProvider, ...args) {
+        if (args[0] === environmentId && elapsed >= expiresAt) return null;
+        return originalInspect.apply(this, args);
+      });
+    const originalRenew = E2BCompatibleSandboxProvider.prototype.renew;
+    const renew = vi
+      .spyOn(E2BCompatibleSandboxProvider.prototype, 'renew')
+      .mockImplementation(async function (this: E2BCompatibleSandboxProvider, ...args) {
+        await originalRenew.apply(this, args);
+        if (args[0] === environmentId) expiresAt = Math.max(expiresAt, elapsed + args[2]);
+      });
+    onTestFinished(() => {
+      inspect.mockRestore();
+      renew.mockRestore();
+    });
+    await documents.deleteDocument(row.stage_id);
+    await maintainStudy(store, row.id, principal.ownerId);
+    elapsed = 45_000;
+    expect(
+      await (await SandboxService.forOwner(principal)).reconcile(environmentId, false),
+    ).toMatchObject({ state: 'running' });
+  });
+
+  it('reclaims a deleted packaged course with an admitted evaluation without collecting it', async () => {
+    const { row, documents } = await packagedStudyForDeletion();
+    row.state.position.stageIndex = 4;
+    row.state.milestones[0]!.stageIndex = 4;
+    const testing = await store.transaction((db) =>
+      store.commit(db, row, { state: row.state, events: [] }),
+    );
+    await commandStudy(principal, row.id, {
+      id: randomUUID(),
+      revision: testing.revision,
+      type: 'evaluate',
+    });
+    const admitted = await store.get(row.id, principal.ownerId);
+    expect(admitted.evaluation).not.toBeNull();
+    const service = await SandboxService.forOwner(principal);
+    const checkpoint = await service.checkpoint(row.environment_id!);
+    await documents.deleteDocument(row.stage_id);
+    await ageStudy(row.id);
+    await maintainLearningEnvironments();
+    expect(await service.get(row.environment_id!)).toMatchObject({ state: 'destroyed' });
+    const retired = (await pool.query('SELECT * FROM pbl_v3_studies WHERE id=$1', [row.id]))
+      .rows[0];
+    expect(retired.evaluation).toEqual(admitted.evaluation);
+    expect(retired.state).toEqual(admitted.state);
+    expect(retired.revision).toBe(admitted.revision);
+    expect(await service.checkpoint(row.environment_id!)).toEqual(checkpoint);
+  });
+
   it.each(['retained', 'withdrawn', 'removed'] as const)(
     'reclaims deleted packaged-course sandboxes with package references %s',
     async (references) => {

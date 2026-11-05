@@ -281,14 +281,16 @@ export async function maintainStudy(
               await service.destroy(environmentId);
             return;
           }
+          // Cover collection/export with a fresh provider lease, even after the last tab closes.
+          if (!archiveGraceExpired(row, await store.now()))
+            await renewForMaintenance(store, service, id, environmentId);
+          // A deleted course still protects its current writers until the inactivity
+          // deadline. Renew their provider lease before skipping package-dependent work.
           if (
             deleted &&
             (await store.now()).getTime() - row.last_used_at.getTime() < pblIdleTimeoutMs()
           )
             return;
-          // Cover collection/export with a fresh provider lease, even after the last tab closes.
-          if (!archiveGraceExpired(row, await store.now()))
-            await renewForMaintenance(store, service, id, environmentId);
           const agents = await activeStudyTurns(store, id, ownerId);
           // Idle release quiesces applications. A periodic backup must instead
           // leave an active application running: stopping it discards in-memory work.
