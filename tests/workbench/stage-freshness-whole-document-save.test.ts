@@ -17,6 +17,7 @@ const documents = vi.hoisted(() => ({
   store: null as unknown,
 }));
 
+vi.mock('@/lib/utils/fetch-event-source', () => import('../helpers/native-event-source-mock'));
 vi.mock('@/lib/document-store', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/document-store')>()),
   mutateDocument: async (

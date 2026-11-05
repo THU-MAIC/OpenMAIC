@@ -54,6 +54,7 @@ import {
   type StageManifest,
   withLocalSceneOrder,
 } from '@/lib/workbench/stage-freshness';
+import { FetchEventSource } from '@/lib/utils/fetch-event-source';
 import { applyGenerateTtsResultToScenes } from '@/lib/workbench/tts-stage-sync';
 
 /**
@@ -165,7 +166,7 @@ export function useWorkbenchStream(sessionId: string | null): void {
     // Read the resume point imperatively: subscribing to `lastEventId` would
     // re-run this effect on every event and reconnect in a loop.
     const from = useWorkbenchStore.getState().lastEventId;
-    const source = new EventSource(
+    const source = new FetchEventSource(
       `/api/agent/sessions/${encodeURIComponent(sessionId)}/events?lastEventId=${from}`,
     );
 
@@ -263,7 +264,7 @@ export function useWorkbenchStream(sessionId: string | null): void {
       connected = false;
       setAttached(false);
       // EventSource retries on its own; only surface a hard failure.
-      if (source.readyState === EventSource.CLOSED) {
+      if (source.readyState === FetchEventSource.CLOSED) {
         finishReplay();
         setError('event stream closed');
       }
@@ -399,7 +400,7 @@ export function useStageFreshnessSync(
   const retries = useRef(0);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fallbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const sourceRef = useRef<EventSource | null>(null);
+  const sourceRef = useRef<FetchEventSource | null>(null);
   // Read at pass time so an explicit host handoff uses the current bootstrap
   // policy without restarting the course's freshness stream.
   const bootstrapDocumentRef = useRef(bootstrapDocument);
@@ -792,7 +793,9 @@ export function useStageFreshnessSync(
     // ── triggers ───────────────────────────────────────────────────────────
     requestSync('mount');
 
-    const source = new EventSource(`/api/stages/${encodeURIComponent(requestedStage)}/freshness`);
+    const source = new FetchEventSource(
+      `/api/stages/${encodeURIComponent(requestedStage)}/freshness`,
+    );
     sourceRef.current = source;
     let streamHadError = false;
     const onFreshnessFrame = () => {

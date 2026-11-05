@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   typeInto: null as ((value: string) => void) | null,
 }));
 
+vi.mock('@/lib/utils/fetch-event-source', () => import('../helpers/native-event-source-mock'));
 vi.mock('@/lib/live-mode', () => ({ isLiveMode: true }));
 vi.mock('@/lib/workbench/session-store', () => ({
   appendCompactedReplayEvent: vi.fn(),

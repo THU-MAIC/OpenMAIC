@@ -40,6 +40,7 @@ describe('learning SSE client', () => {
     expect(fetch).toHaveBeenCalledWith(
       '/api/pbl/v3/events?id=study',
       expect.objectContaining({
+        priority: 'low',
         signal: expect.any(AbortSignal),
         headers: { 'x-openmaic-sandbox': '1', accept: 'text/event-stream' },
       }),
