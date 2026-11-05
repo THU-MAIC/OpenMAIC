@@ -25,6 +25,11 @@ Targeted for 1.5.0. The workbench stays off by default in this change; where it 
 
 - **Shell extension slots** (`lib/workbench/shell-extensions.tsx`). A deployment adds its own rail destinations (pages in the main area or links), account menu entries, an account summary line, an unread badge, its own sign-in identity and a section under the home composer by providing `WorkbenchShellExtensionsProvider` (mounted empty in the root layout), without changing the shell. Nested providers merge.
 
+### Bug Fixes
+
+- Workbench: a background course sync no longer overwrites a scene edit that has not finished saving, so the edit no longer reverts on screen and the older copy is no longer saved over it. The scene is read again as soon as the save finishes. [#2168](https://github.com/THU-MAIC/OpenMAIC/pull/2168)
+- Editor: a slide open in the legacy Pro editor follows a server change to its scene, so the next commit from the canvas, including an automatic text-height adjustment, no longer writes the older content back over a page an agent just changed. [#2168](https://github.com/THU-MAIC/OpenMAIC/pull/2168)
+
 ## [1.4.0] - 2026-11-04
 
 1.4.0 is about project-based learning: **PBL v3** is a new way into vibe coding where learners build the project and come away understanding how it works. Concepts become hands-on tasks that the learner gets running, an AI tutor works through requirements, design and implementation with them, each milestone gives feedback and the finished project a personal learning report, and work and progress are kept for the next visit. PBL v3 runs on a new shared sandbox and stays off until a sandbox provider is configured; no new setting is required otherwise. The upgrade is one-way; read **Breaking Changes** before upgrading.
