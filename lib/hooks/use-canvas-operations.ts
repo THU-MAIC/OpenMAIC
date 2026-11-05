@@ -44,6 +44,8 @@ interface UpdateElementData {
   id: string | string[];
   props: Partial<PPTElement>;
   slideId?: string;
+  /** The canvas measured these props rather than anyone changing them. */
+  measurement?: boolean;
 }
 
 export function useCanvasOperations() {
@@ -130,16 +132,19 @@ export function useCanvasOperations() {
    */
   const updateElement = useCallback(
     (data: UpdateElementData) => {
-      const { id, props } = data;
+      const { id, props, measurement } = data;
       const elementIds = Array.isArray(id) ? id : [id];
 
-      updateSceneData((draft) => {
-        draft.canvas.elements.forEach((el) => {
-          if (elementIds.includes(el.id)) {
-            Object.assign(el, props);
-          }
-        });
-      });
+      updateSceneData(
+        (draft) => {
+          draft.canvas.elements.forEach((el) => {
+            if (elementIds.includes(el.id)) {
+              Object.assign(el, props);
+            }
+          });
+        },
+        { measurement },
+      );
     },
     [updateSceneData],
   );

@@ -237,8 +237,7 @@ interface SlideCanvasController {
   readonly controller: SceneDataController;
   /**
    * Spread onto the canvas wrapper. Tracks whether a pointer gesture is in
-   * flight so a renderer commit can be classified as a real user edit vs
-   * ResizeObserver normalization (which fires with no pointer gesture).
+   * flight: a commit inside one gets its own undo step.
    */
   readonly gestureProps: {
     readonly onPointerDownCapture: () => void;
@@ -265,9 +264,8 @@ export function useSlideCanvasController(): SlideCanvasController {
 
   // True only while a pointer gesture is in flight. The renderer commits a
   // geometry edit synchronously inside its mouseup handler (still within
-  // the gesture); its ResizeObserver text-normalization commits later with
-  // no gesture. Cleared on a macrotask after pointerup so the synchronous
-  // commit still observes `true`.
+  // the gesture); typing commits with no gesture. Cleared on a macrotask after
+  // pointerup so the synchronous commit still observes `true`.
   const gestureRef = useRef(false);
   useEffect(() => {
     const finishGesture = () => {
@@ -313,6 +311,19 @@ export function useSlideCanvasController(): SlideCanvasController {
     }
   }, [sceneId]);
 
+  // The session's copy is what every commit builds on, so it must not lag behind
+  // the store: a commit would write the older content over a page the sync just
+  // brought in.
+  useEffect(() => {
+    if (!sceneId) return;
+    return useStageStore.subscribe((state, previous) => {
+      if (state.scenes === previous.scenes) return;
+      const scene = state.scenes.find((candidate) => candidate.id === sceneId);
+      if (!scene || scene.type !== 'slide') return;
+      useSlideEditSession.getState().adoptStoreContent(sceneId, scene.content as SlideContent);
+    });
+  }, [sceneId]);
+
   useEffect(() => () => useSlideEditSession.getState().end(), []);
 
   const controller = useMemo<SceneDataController>(
@@ -322,11 +333,15 @@ export function useSlideCanvasController(): SlideCanvasController {
       // Read from the canonical stage store; the session writes through to
       // it on every history move so this is always the up-to-date content.
       getSnapshot: () => currentSlideContent(sceneId) ?? EMPTY_SLIDE,
-      updateSceneData: (updater) => {
+      updateSceneData: (updater, options) => {
         const base =
           useSlideEditSession.getState().history?.present ?? currentSlideContent(sceneId);
         if (!base) return;
         const next = produce(base, updater as (draft: SlideContent) => void);
+        if (options?.measurement) {
+          useSlideEditSession.getState().commitMeasurement(next);
+          return;
+        }
         useSlideEditSession.getState().commitContent(next, gestureRef.current);
       },
     }),

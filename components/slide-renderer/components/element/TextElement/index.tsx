@@ -1,7 +1,6 @@
 'use client';
 
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { debounce } from 'lodash';
 import { useCanvasStore } from '@/lib/store';
 import { useHistorySnapshot } from '@/lib/hooks/use-history-snapshot';
 import type { PPTTextElement } from '@openmaic/dsl';
@@ -17,6 +16,10 @@ export interface TextElementProps {
     element: PPTTextElement,
     canMove?: boolean,
   ) => void;
+}
+
+function isEmptyText(content: unknown): boolean {
+  return !(typeof content === 'string' ? content : '').replace(/<[^>]+>/g, '');
 }
 
 /**
@@ -76,7 +79,9 @@ export function TextElement({ elementInfo, selectElement }: TextElementProps) {
     updateElement,
   ]);
 
-  // Monitor text element size changes
+  // Monitor text element size changes. This fires whenever the element renders,
+  // with nobody editing, so it reports a measurement. A resize the user is
+  // dragging is cached above and commits as an edit when the drag ends.
   const updateTextElementHeight = useCallback(
     (entries: ResizeObserverEntry[]) => {
       const contentRect = entries[0].contentRect;
@@ -90,6 +95,7 @@ export function TextElement({ elementInfo, selectElement }: TextElementProps) {
           updateElement({
             id: elementInfo.id,
             props: { height: realHeight },
+            measurement: true,
           });
         } else {
           setRealHeightCache(realHeight);
@@ -100,6 +106,7 @@ export function TextElement({ elementInfo, selectElement }: TextElementProps) {
           updateElement({
             id: elementInfo.id,
             props: { width: realWidth },
+            measurement: true,
           });
         } else {
           setRealWidthCache(realWidth);
@@ -130,6 +137,37 @@ export function TextElement({ elementInfo, selectElement }: TextElementProps) {
     };
   }, [updateTextElementHeight]);
 
+  // Remove empty text when the user leaves the element. Removing it saves the
+  // whole scene, so this follows that action: rendering an empty box (entering
+  // Edit, an undo, a server copy) must not write this tab's copy to the server.
+  // It waits out the editor's input debounce, and decides when it fires: the box
+  // must be empty as the user left it and still be empty then, and the user must
+  // not have come back. A copy from elsewhere that empties it is not their doing.
+  const latest = useRef({ content: elementInfo.content, deleteElement });
+  useEffect(() => {
+    latest.current = { content: elementInfo.content, deleteElement };
+  });
+  const contentAsLeft = useRef(elementInfo.content);
+  const emptyTextCheck = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const scheduleEmptyTextCheck = useCallback(() => {
+    clearTimeout(emptyTextCheck.current);
+    emptyTextCheck.current = setTimeout(() => {
+      if (useCanvasStore.getState().handleElementId === elementInfo.id) return;
+      const { content, deleteElement: remove } = latest.current;
+      if (isEmptyText(contentAsLeft.current) && isEmptyText(content)) remove(elementInfo.id);
+    }, 300);
+  }, [elementInfo.id]);
+  useEffect(() => () => clearTimeout(emptyTextCheck.current), []);
+
+  const wasHandled = useRef(isHandleElement);
+  useEffect(() => {
+    if (wasHandled.current && !isHandleElement) {
+      contentAsLeft.current = latest.current.content;
+      scheduleEmptyTextCheck();
+    }
+    wasHandled.current = isHandleElement;
+  }, [isHandleElement, scheduleEmptyTextCheck]);
+
   // Update content
   const updateContent = useCallback(
     (content: string, ignore = false) => {
@@ -137,32 +175,18 @@ export function TextElement({ elementInfo, selectElement }: TextElementProps) {
         id: elementInfo.id,
         props: { content },
       });
+      latest.current = { ...latest.current, content };
 
       if (!ignore) addHistorySnapshot();
+      // The user's own input, reported after they left: text cleared just before
+      // the leave arrives just after it.
+      if (useCanvasStore.getState().handleElementId !== elementInfo.id) {
+        contentAsLeft.current = content;
+        scheduleEmptyTextCheck();
+      }
     },
-    [elementInfo.id, updateElement, addHistorySnapshot],
+    [elementInfo.id, updateElement, addHistorySnapshot, scheduleEmptyTextCheck],
   );
-
-  // Check and delete empty text
-  const checkEmptyText = useCallback(() => {
-    const debouncedCheck = debounce(
-      () => {
-        const content = typeof elementInfo.content === 'string' ? elementInfo.content : '';
-        const pureText = content.replace(/<[^>]+>/g, '');
-        if (!pureText) deleteElement(elementInfo.id);
-      },
-      300,
-      { trailing: true },
-    );
-    debouncedCheck();
-  }, [elementInfo.content, elementInfo.id, deleteElement]);
-
-  // Check empty text when element is no longer handled
-  useEffect(() => {
-    if (!isHandleElement) {
-      checkEmptyText();
-    }
-  }, [isHandleElement, checkEmptyText]);
 
   return (
     <div

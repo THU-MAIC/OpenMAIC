@@ -9,8 +9,9 @@ import type { SlideContent } from '@/lib/types/stage';
 // touch the stage store (it only adopts the existing content as the
 // in-memory baseline).
 const updateScene = vi.fn();
+const updateSceneMeasurement = vi.fn();
 vi.mock('@/lib/store/stage', () => ({
-  useStageStore: { getState: () => ({ updateScene }) },
+  useStageStore: { getState: () => ({ updateScene, updateSceneMeasurement }) },
 }));
 
 // Imported AFTER the mock setup (vi.mock is hoisted by Vitest).
@@ -30,6 +31,7 @@ describe('useSlideEditSession (auto-save to stage store)', () => {
   beforeEach(() => {
     useSlideEditSession.getState().end();
     updateScene.mockClear();
+    updateSceneMeasurement.mockClear();
   });
 
   it('seed adopts a baseline without touching the stage store', () => {
@@ -102,10 +104,42 @@ describe('useSlideEditSession (auto-save to stage store)', () => {
     expect(updateScene).toHaveBeenCalledTimes(1);
   });
 
-  it('non-user (ResizeObserver) commit folds into present without an undo step AND still writes through', () => {
-    // Auto-fit height IS the new canonical state, so it must reach the
-    // stage store. But it must NOT push an undo step (the reflow can
-    // chase a user resize; wiping past/future would silently break undo).
+  it('a measurement folds into present without an undo step and does not count as an edit', () => {
+    useSlideEditSession.getState().seed('scene-1', makeContent());
+    const measured = structuredClone(useSlideEditSession.getState().history!.present);
+    (measured.canvas.elements[0] as PPTTextElement).height = 999;
+    useSlideEditSession.getState().commitMeasurement(measured);
+    const { history } = useSlideEditSession.getState();
+    expect(history?.past).toEqual([]);
+    expect(history?.present).toEqual(measured);
+    expect(updateScene).not.toHaveBeenCalled();
+    expect(updateSceneMeasurement).toHaveBeenCalledWith('scene-1', measured);
+  });
+
+  it('a measurement after an undo clears the redo branch, as other commits do', () => {
+    useSlideEditSession.getState().seed('scene-1', makeContent());
+    useSlideEditSession.getState().applyOp({
+      type: 'element.update',
+      elementId: 'text-1',
+      patch: { left: 321 },
+    });
+    useSlideEditSession.getState().undo();
+    expect(useSlideEditSession.getState().history?.future).toHaveLength(1);
+    const measured = structuredClone(useSlideEditSession.getState().history!.present);
+    (measured.canvas.elements[0] as PPTTextElement).height = 999;
+    useSlideEditSession.getState().commitMeasurement(measured);
+    expect(useSlideEditSession.getState().history?.future).toEqual([]);
+  });
+
+  it('a measurement after end does nothing', () => {
+    useSlideEditSession.getState().seed('scene-1', makeContent());
+    const measured = structuredClone(useSlideEditSession.getState().history!.present);
+    useSlideEditSession.getState().end();
+    useSlideEditSession.getState().commitMeasurement(measured);
+    expect(updateSceneMeasurement).not.toHaveBeenCalled();
+  });
+
+  it('a commit outside a gesture (typing) folds into present without an undo step AND still writes through', () => {
     useSlideEditSession.getState().seed('scene-1', makeContent());
     const normalized = structuredClone(useSlideEditSession.getState().history!.present);
     (normalized.canvas.elements[0] as PPTTextElement).height = 999;
@@ -145,12 +179,11 @@ describe('useSlideEditSession (auto-save to stage store)', () => {
   });
 
   it('a non-user commit after an undo clears the stale redo branch (no resurrected content)', () => {
-    // Regression: user edit → undo (content moves to `future`) → the
-    // ResizeObserver auto-height normalization fires a non-user commit. If
-    // that commit folds into `present` but keeps the now-stale `future[0]`,
-    // a later redo resurrects the pre-undo snapshot and silently discards
-    // the normalization (canvas/store diverge). The non-user commit must
-    // clear `future` so redo is a no-op.
+    // Regression: user edit → undo (content moves to `future`) → a commit
+    // outside a gesture lands. If that commit folds into `present` but keeps
+    // the now-stale `future[0]`, a later redo resurrects the pre-undo snapshot
+    // and silently discards the commit (canvas/store diverge). It must clear
+    // `future` so redo is a no-op.
     useSlideEditSession.getState().seed('scene-1', makeContent());
     const resized = structuredClone(useSlideEditSession.getState().history!.present);
     resized.canvas.elements[0].width = 640;

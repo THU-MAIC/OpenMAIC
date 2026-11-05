@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- PBL: a background course sync no longer empties a PBL v2 project on screen. It used to take the stored design template as it was, and the next whole-document save then recorded the empty state, so the learner's submissions and progress were gone after a reload. [#2184](https://github.com/THU-MAIC/OpenMAIC/pull/2184)
+- Workbench: a background course sync no longer overwrites a scene edit that has not finished saving, so the edit no longer reverts on screen and the older copy is no longer saved over it. The scene is read again as soon as the save finishes. [#2168](https://github.com/THU-MAIC/OpenMAIC/pull/2168)
+- Editor: a slide open in the legacy Pro editor follows a server change to its scene, so the next commit from the canvas, including an automatic text-height adjustment, no longer writes the older content back over a page an agent just changed. [#2168](https://github.com/THU-MAIC/OpenMAIC/pull/2168)
+- Interactive diagrams: narration now walks the nodes in order and reveals them, and a reveal moves the page's own step state, so the diagram no longer stays on its first node during playback. The step label stays right and Next/Back continue from the revealed node, without ever moving behind a learner who has stepped further. This applies to newly generated pages; existing pages need regenerating. `@openmaic/generation` 0.3.29. [#2120](https://github.com/THU-MAIC/OpenMAIC/issues/2120)
+- Editor: the automatic text-height adjustment in the legacy Pro editor no longer saves the scene, so it no longer puts an older copy of a page back on the server from a tab that had not picked up a newer version, and no longer holds back an agent's next change. The height is kept in that tab and saved with its next real edit. [#2181](https://github.com/THU-MAIC/OpenMAIC/pull/2181)
+- Editor: saving a structural change, such as deleting or reordering a page, no longer deletes a page an agent or another tab added that this tab had not heard of yet. A page the user deleted is still deleted. [#2184](https://github.com/THU-MAIC/OpenMAIC/pull/2184)
+- Editor: the standalone classroom page follows server changes while in Edit, so a page an agent changed appears within seconds, including one changed before Edit was opened, instead of only after a reload. [#2184](https://github.com/THU-MAIC/OpenMAIC/pull/2184)
+- Editor: the legacy Pro editor removes an empty text box when the user leaves it, not whenever it renders, so opening a page no longer saves it with no user input. An empty box that already exists, or that an undo brings back, stays until it is selected and left. [#2184](https://github.com/THU-MAIC/OpenMAIC/pull/2184)
+
 ## [1.4.0] - 2026-11-04
 
 1.4.0 is about project-based learning: **PBL v3** is a new way into vibe coding where learners build the project and come away understanding how it works. Concepts become hands-on tasks that the learner gets running, an AI tutor works through requirements, design and implementation with them, each milestone gives feedback and the finished project a personal learning report, and work and progress are kept for the next visit. PBL v3 runs on a new shared sandbox and stays off until a sandbox provider is configured; no new setting is required otherwise. The upgrade is one-way; read **Breaking Changes** before upgrading.

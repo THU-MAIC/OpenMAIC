@@ -331,7 +331,7 @@ describe('interactive page naming', () => {
 });
 
 describe('planPptxDeck', () => {
-  it('keeps lesson order with PBL in place and skips html-less interactive scenes', () => {
+  it('keeps lesson order with PBL in place and skips interactive scenes with neither html nor url', () => {
     const deck = planPptxDeck(lesson, t, { linkInteractivePages: true });
     expect(
       deck.map((e) => (e.kind === 'slide' ? `slide:${e.slideIndex}` : e.placeholder.scene.id)),
@@ -899,5 +899,88 @@ describe('placeholder slides turned off', () => {
       getPptxBlob: vi.fn(),
     });
     expect(result.empty).toBe(true);
+  });
+});
+
+describe('interactive scenes that only have a url', () => {
+  // `url` is the renderer's iframe `src` fallback, so this is a page too.
+  const urlOnly = (id: string, url: string): Scene =>
+    ({
+      id,
+      stageId: 'stage-1',
+      type: 'interactive',
+      title: `Page ${id}`,
+      order: 0,
+      content: { type: 'interactive', url },
+      actions: [{ id: `${id}-speech`, type: 'speech', text: `Narration for ${id}` }],
+    }) as unknown as Scene;
+
+  const placeholderOf = (url: string) => {
+    const entry = planPptxDeck([urlOnly('u', url)], t, {
+      linkInteractivePages: true,
+      classroomUrl: CLASSROOM_URL,
+    })[0];
+    if (entry.kind !== 'placeholder') throw new Error('expected a placeholder');
+    return entry.placeholder;
+  };
+
+  it('counts as PPTX content, so the step is not silently skipped', () => {
+    expect(pptxDeckScenes([urlOnly('u', 'https://viewer.example/page')])).toHaveLength(1);
+    expect(pptxDeckScenes([urlOnly('u', '/embed/page.html')])).toHaveLength(1);
+    // A slides-only export still holds the slide scenes only.
+    expect(
+      pptxDeckScenes([urlOnly('u', '/embed/page.html')], { includePlaceholders: false }),
+    ).toEqual([]);
+  });
+
+  it('still drops a scene with neither html nor url', () => {
+    expect(pptxDeckScenes([interactiveScene('blank', 'Blank', '')])).toHaveLength(0);
+  });
+
+  it('links its own address, and offers no offline copy it does not ship', () => {
+    const placeholder = placeholderOf('https://viewer.example/page');
+    expect(placeholder.online).toEqual({
+      url: 'https://viewer.example/page',
+      label: 'export.placeholder.openOnline',
+    });
+    expect(placeholder.offline).toBeUndefined();
+  });
+
+  it('makes a root-relative url absolute, so a QR code scanned on a phone opens', () => {
+    const origin = new URL(CLASSROOM_URL).origin;
+    expect(placeholderOf('/embed/page.html?x=1').online?.url).toBe(`${origin}/embed/page.html?x=1`);
+  });
+
+  it('refuses a non-web target and falls back to the classroom link', () => {
+    for (const url of ['javascript:alert(1)', 'data:text/html,<p>x</p>', 'file:///c:/x.html']) {
+      expect(placeholderOf(url).online?.url).toContain(CLASSROOM_URL);
+    }
+  });
+
+  it('writes the absolute address, not the relative one, into the deck', async () => {
+    const origin = new URL(CLASSROOM_URL).origin;
+    const zip = await loadZip(await buildLessonPptx([urlOnly('u', '/embed/page.html?x=1')]));
+    const rels = await readText(zip, 'ppt/slides/_rels/slide1.xml.rels');
+    expect(rels).toContain(`Target="${origin}/embed/page.html?x=1" TargetMode="External"`);
+    expect(rels).not.toContain('Target="/embed');
+    expect(await readText(zip, 'ppt/slides/slide1.xml')).toContain(`${origin}/embed/page.html`);
+  });
+
+  it('keeps the link but drops the QR code when the url is too long to encode', async () => {
+    // Past the ~2.3 KB capacity of `uqr` at ECC M: no code fits, the link does.
+    const url = `https://viewer.example/page?data=${'x'.repeat(3000)}`;
+    const zip = await loadZip(await buildLessonPptx([urlOnly('u', url)]));
+    expect(await readText(zip, 'ppt/slides/slide1.xml')).toContain('export.placeholder.openOnline');
+    expect(await readText(zip, 'ppt/slides/_rels/slide1.xml.rels')).toContain(`Target="${url}"`);
+    expect(await slideImage(zip, 1)).toBeNull();
+  });
+
+  it('ships the deck without an HTML page, since the page lives elsewhere', async () => {
+    const scenes = [urlOnly('u', '/embed/page.html')];
+    const result = await buildPack(scenes);
+    expect(result.empty).toBe(false);
+    expect(result.skippedPptx).toBe(false);
+    const pack = await loadZip(result.blob!);
+    expect(Object.keys(pack.files).filter((n) => !pack.files[n].dir)).toEqual(['deck.pptx']);
   });
 });
