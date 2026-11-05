@@ -34,6 +34,10 @@ export function useProjectEditor(
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [readErrors, setReadErrors] = useState<
+    Record<string, { source: ReturnType<typeof editorSource>; message: string }>
+  >({});
+  const readTickets = useRef(new Map<string, number>());
   const [recoveryConflicts, setRecoveryConflicts] = useState<Record<string, string>>({});
   const sequence = useRef(0),
     mounted = useRef(true);
@@ -84,16 +88,26 @@ export function useProjectEditor(
         return;
       const active = path === current.current.path;
       const ticket = active ? ++sequence.current : sequence.current;
+      const source = editorSource(view);
+      const readTicket = (readTickets.current.get(path) ?? 0) + 1;
+      readTickets.current.set(path, readTicket);
+      const isCurrent = () =>
+        mounted.current &&
+        (!active || ticket === sequence.current) &&
+        readTickets.current.get(path) === readTicket &&
+        view.id === current.current.view.id &&
+        source === editorSource(current.current.view) &&
+        current.current.view.files.includes(path);
       if (active) setLoading(true);
       try {
         const result = await read(path);
-        if (
-          !mounted.current ||
-          (active && ticket !== sequence.current) ||
-          editorSource(view) !== editorSource(current.current.view) ||
-          !current.current.view.files.includes(path)
-        )
-          return;
+        if (!isCurrent()) return;
+        setReadErrors((previous) => {
+          if (previous[path]?.source !== source) return previous;
+          const next = { ...previous };
+          delete next[path];
+          return next;
+        });
         const existing = current.current.buffers[path];
         const clearRecoveredFailure = () => {
           const rejected = unavailableSave.current,
@@ -171,7 +185,11 @@ export function useProjectEditor(
           setSaveError('');
         }
       } catch (error) {
-        current.current.onError((error as Error).message);
+        if (isCurrent())
+          setReadErrors((previous) => ({
+            ...previous,
+            [path]: { source, message: (error as Error).message },
+          }));
       } finally {
         if (active && ticket === sequence.current) setLoading(false);
       }
@@ -365,6 +383,7 @@ export function useProjectEditor(
     loading,
     saving,
     saveError,
+    readError: readErrors[path]?.source === selectedSource ? readErrors[path].message : '',
     recoveryConflict: recoveryConflicts[path] === editorSource(view),
     dirty,
     anyDirty: Object.values(buffers).some((b) => b.text !== b.saved),

@@ -4,6 +4,10 @@ import {
 } from '@/lib/pbl/v3/domain/project/project-schema';
 import type { Study, RoleBinding } from './store';
 
+export function requiresArtifactApproval(stage: StageDefinition): boolean {
+  return stage.kind === 'produce' && stage.reviewRequired;
+}
+
 /** Report access follows the final committed project recap. */
 export function canViewProjectReport(state: Study['state']): boolean {
   return state.status === 'completed';

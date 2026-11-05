@@ -9,7 +9,11 @@ import {
   learningRunFailure,
   boundConversation,
 } from '@/lib/server/pbl-v3/conversation';
-import { mergeConversationHistory } from '@/lib/pbl/v3/conversation';
+import {
+  mergeConversationHistory,
+  markRecoveredTeachingTools,
+  type LearningConversationEntry,
+} from '@/lib/pbl/v3/conversation';
 import { stageSkill, interactionRules } from '@/lib/server/pbl-v3/skills';
 import { installedProject } from '@/lib/server/pbl-v3/catalog';
 import { renderTeachingPrompt, teachingSection } from '@/lib/server/pbl-v3/teaching-prompt';
@@ -736,6 +740,85 @@ describe('student conversation projection', () => {
     expect(JSON.stringify(output)).toContain('INTERNAL');
     expect(JSON.stringify(output)).toContain('PROTOCOL');
   });
+  it('marks only later-recovered teaching tools while retaining original errors and file failures', () => {
+    const result = { content: [{ type: 'text', text: 'Protocol guard rejected the call' }] };
+    const entries = projectConversation(
+      [
+        event(1, 'user_message', { text: 'I understand, finish the recap.' }),
+        event(2, 'tool_execution_end', {
+          toolName: 'complete_stage',
+          toolCallId: 'failed',
+          isError: true,
+          result,
+        }),
+        event(3, 'tool_execution_end', {
+          toolName: 'read_file',
+          toolCallId: 'file-failed',
+          isError: true,
+          result,
+        }),
+        event(4, 'tool_execution_end', {
+          toolName: 'complete_stage',
+          toolCallId: 'success',
+          result: { content: [] },
+        }),
+        event(5, 'tool_execution_end', {
+          toolName: 'request_skill_review',
+          toolCallId: 'unresolved',
+          isError: true,
+          result,
+        }),
+        event(6, 'session_end', { status: 'succeeded' }),
+      ],
+      'mentor',
+      false,
+    );
+    const tools = entries.flatMap((entry) => entry.parts).filter((part) => part.kind === 'tool');
+    expect(tools[0]).toMatchObject({ status: 'failed', recovered: true, result });
+    expect(tools[1]).toMatchObject({ status: 'failed', recovered: false });
+    expect(tools[2]).toMatchObject({ status: 'succeeded', recovered: false });
+    expect(tools[3]).toMatchObject({ status: 'failed', recovered: false });
+  });
+
+  it('recomputes recovery across history pages without crossing learner inputs or role sessions', () => {
+    const failure: LearningConversationEntry = {
+      id: 'pbl-role-first:turn-1',
+      inputId: 5,
+      speaker: 'mentor',
+      parts: [
+        {
+          id: 'failed',
+          kind: 'tool',
+          action: 'skill',
+          name: 'read_next_skill',
+          status: 'failed',
+        },
+      ],
+    };
+    const success: LearningConversationEntry = {
+      ...failure,
+      id: 'pbl-role-first:turn-2',
+      parts: [
+        { ...failure.parts[0], id: 'success', kind: 'tool', action: 'skill', status: 'succeeded' },
+      ],
+    };
+    const before = structuredClone(failure);
+    for (const changed of [
+      { ...success, inputId: 6 },
+      { ...success, id: 'pbl-role-second:turn-2' },
+      { ...success, inputId: undefined },
+    ])
+      expect(markRecoveredTeachingTools([failure, changed])[0].parts[0]).toMatchObject({
+        recovered: false,
+      });
+    expect(markRecoveredTeachingTools([success, failure])[1].parts[0]).toMatchObject({
+      recovered: false,
+    });
+    const merged = mergeConversationHistory([[failure], [success]]);
+    expect(merged[0].parts[0]).toMatchObject({ recovered: true });
+    expect(failure).toEqual(before);
+  });
+
   it('settles partial thinking and tool activity when the worker is interrupted', () => {
     const output = projectConversation(
       [
