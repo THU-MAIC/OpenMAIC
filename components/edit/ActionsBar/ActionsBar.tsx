@@ -88,7 +88,6 @@ import type { PickerType } from './picker-options';
 import {
   audioExists,
   audioObjectUrl,
-  discardSpeechAudio,
   regenerateSpeechAudio,
   resolveLegacySpeechAudioId,
   resolveSpeechAudioId,
@@ -1400,20 +1399,11 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                               autoFocus={key === focusId}
                               onFocused={() => setFocusId(null)}
                               onCommit={(text) => {
-                                // Editing the text invalidates any cached audio
-                                // (the blob is keyed by order+id and the stamped
-                                // audioId, not the text), so drop the stamped
-                                // fields and delete the blob — the line then
-                                // reads as un-voiced until regen.
-                                const prevAudioId = (action as { audioId?: string }).audioId;
+                                // The new wording has no audio until regenerated. The old
+                                // clip's local copy stays: an undo brings its reference
+                                // back, and nothing resolves it while the line names no id.
                                 commit((cur) => setSpeechTextClearAudioById(cur, key, text));
-                                // Re-check status only AFTER the blob is gone, so
-                                // the status row can't race the async delete and
-                                // briefly still read "voiced".
-                                void discardSpeechAudio(sceneOrder, {
-                                  id: key,
-                                  audioId: prevAudioId,
-                                }).finally(() => setTtsRefresh((n) => n + 1));
+                                setTtsRefresh((n) => n + 1);
                               }}
                               onGenerated={(assetId, sourceText) => {
                                 stampGeneratedAudio(sceneId, key, sourceText, assetId);
