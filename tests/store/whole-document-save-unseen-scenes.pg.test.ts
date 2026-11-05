@@ -211,6 +211,33 @@ describe.skipIf(!contractUrl)('a whole-document save and scenes this browser nev
     expect(stored.map((scene) => scene.id)).toEqual(['c', 'a', 'b', 'agent-new']);
   });
 
+  it('leaves the order of an unseen scene alone when nothing else holds it', async () => {
+    await openCourse();
+    await remoteWrite(sceneOf(stageId, 'agent-new', 5));
+
+    useStageStore.getState().deleteScene('c');
+    await flushStageSave();
+
+    expect((await store.getScene(stageId, 'agent-new'))?.order).toBe(5);
+  });
+
+  it('moves unseen scenes that collide, past every scene and each other', async () => {
+    await openCourse();
+    await remoteWrite(sceneOf(stageId, 'agent-1', 1));
+    await remoteWrite(sceneOf(stageId, 'agent-2', 9));
+    await remoteWrite(sceneOf(stageId, 'agent-3', 9));
+
+    useStageStore.getState().deleteScene('c');
+    await flushStageSave();
+
+    const stored = (await store.loadDocument(stageId))!.scenes;
+    const orders = stored.map((scene) => scene.order);
+    expect(new Set(orders).size).toBe(orders.length);
+    expect(stored.find((scene) => scene.id === 'b')!.order).toBe(1);
+    expect(stored.find((scene) => scene.id === 'agent-1')!.order).toBeGreaterThan(9);
+    expect(orders).toContain(9);
+  });
+
   it('keeps the content of the unseen scene as the agent wrote it', async () => {
     await openCourse();
     await remoteWrite(sceneOf(stageId, 'agent-new', 3, 'written by the agent'));
