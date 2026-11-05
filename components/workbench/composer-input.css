@@ -65,6 +65,13 @@
   color: #ddd6fe;
 }
 
+/* On a solid primary bubble the chip takes the bubble's own pair, reversed, which
+   holds in both themes because `--primary` flips with them. */
+[data-tone='primary'] .composer-chip[data-surface='bubble'] {
+  background: var(--primary-foreground);
+  color: var(--primary);
+}
+
 .composer-chip-label {
   min-width: 0;
   overflow: clip;

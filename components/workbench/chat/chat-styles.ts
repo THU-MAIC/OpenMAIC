@@ -25,6 +25,10 @@ export const wbStyles = {
     row: 'flex justify-end',
     bubble:
       'flex max-w-[85%] flex-col gap-1.5 whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-violet-100 px-3.5 py-2.5 text-[length:var(--wb-text-base)] leading-relaxed text-slate-900 [overflow-wrap:anywhere] dark:bg-violet-500/20 dark:text-slate-100',
+    // The solid fill, for a surface that sets its own `--primary` (PBL's green). It
+    // shows text and skill chips only: its caller sends no attachments.
+    bubblePrimary:
+      'flex max-w-[85%] flex-col gap-1.5 whitespace-pre-wrap break-words rounded-2xl rounded-tr-md bg-primary px-3 py-2 text-[length:var(--wb-text-base)] leading-relaxed text-primary-foreground [overflow-wrap:anywhere]',
     materials: 'flex flex-wrap gap-1',
     // One chip skin for both kinds of attachment inside the bubble (a file, an
     // element reference): 7px radius to match the composer's pill geometry, but

@@ -3,7 +3,8 @@
 /**
  * User bubble — a soft violet fill with ink text and a tightened trailing
  * corner. Right alignment is the whole authorship signal; there is no avatar
- * and no name.
+ * and no name. `tone="primary"` is the solid fill of a surface with its own
+ * `--primary`.
  */
 import { Fragment, useMemo, type ClipboardEvent } from 'react';
 import { BookOpen, Paperclip } from 'lucide-react';
@@ -74,12 +75,14 @@ export function UserBubble({
   elementRefs = [],
   courseRefs = [],
   t,
+  tone,
 }: {
   text: string;
   materials?: string[];
   elementRefs?: readonly ElementRef[];
   courseRefs?: readonly CourseRef[];
   t?: WorkbenchTranslator;
+  tone?: 'primary';
 }) {
   const skills = useSkillChipNames(t);
   // A course or material named in the sentence (`@name`, as the composer writes
@@ -116,7 +119,10 @@ export function UserBubble({
   const chipMaterials = materials.filter((name) => !named(name));
   return (
     <div className={styles.userBubble.row}>
-      <div className={styles.userBubble.bubble}>
+      <div
+        className={tone === 'primary' ? styles.userBubble.bubblePrimary : styles.userBubble.bubble}
+        data-tone={tone}
+      >
         {text ? (
           <div onCopy={copyAsWritten}>
             {runs.map((run, index) =>

@@ -183,6 +183,7 @@ function ConversationEntry({
   ) : entry.speaker === 'user' ? (
     <UserBubble
       key={entry.id}
+      tone="primary"
       text={entry.parts.flatMap((p) => (p.kind === 'text' ? [p.text] : [])).join('\n')}
     />
   ) : (

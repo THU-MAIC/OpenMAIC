@@ -51,6 +51,19 @@ describe('a sent message', () => {
     expect(container.querySelector('[data-testid="user-bubble-course-ref"]')).toBeNull();
   });
 
+  it('keeps the same chips in the primary tone, marked for their on-primary skin', async () => {
+    const container = await mount({ text: '/deep-interactive please', tone: 'primary' });
+    const chip = container.querySelector<HTMLElement>('[data-testid="user-bubble-skill"]');
+    expect(chip?.closest('[data-tone="primary"]')?.className).toContain('bg-primary');
+  });
+
+  it('draws the default bubble without a tone', async () => {
+    const container = await mount({ text: 'hello' });
+    expect(container.querySelector('[data-tone]')).toBeNull();
+    expect(container.querySelector('.bg-primary')).toBeNull();
+    expect(container.querySelector('.bg-violet-100')).not.toBeNull();
+  });
+
   it('leaves what does not resolve as written', async () => {
     const container = await mount({ text: '/deleted-skill and @Gone stay as they are' });
     expect(container.querySelector('.composer-chip')).toBeNull();
