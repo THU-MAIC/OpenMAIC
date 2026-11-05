@@ -7,8 +7,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWorkbenchStore } from '@/lib/workbench/session-store';
 import { useWorkbenchStream } from '@/lib/workbench/use-workbench-session';
 
-vi.mock('@/lib/utils/fetch-event-source', () => import('../helpers/native-event-source-mock'));
-
 class FakeEventSource {
   static readonly CLOSED = 2;
   readonly readyState = 1;

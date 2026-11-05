@@ -69,7 +69,6 @@ const mocks = vi.hoisted(() => ({
 // The sync runs against the REAL `stage-freshness.ts`, whose manifest fetch
 // short-circuits when `!isLiveMode` (D1-F5) — pin live mode on so the suite
 // exercises the actual request path.
-vi.mock('@/lib/utils/fetch-event-source', () => import('../helpers/native-event-source-mock'));
 vi.mock('@/lib/live-mode', () => ({ isLiveMode: true }));
 
 vi.mock('@/lib/workbench/session-store', () => ({
