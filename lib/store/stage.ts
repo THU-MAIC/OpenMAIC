@@ -966,6 +966,13 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   },
 
   setCurrentSceneId: (sceneId) => {
+    // A selection names elements by id, and ids can repeat across pages. Carried over,
+    // it would open the next page's element for editing before its content arrives.
+    if (sceneId !== get().currentSceneId) {
+      const canvas = useCanvasStore.getState();
+      if (canvas.activeElementIdList.length > 0) canvas.setActiveElementIdList([]);
+      if (canvas.editingElementId) canvas.setEditingElementId('');
+    }
     set({ currentSceneId: sceneId });
     markPendingChanges(get().stage?.id, { kind: 'currentScene' });
   },

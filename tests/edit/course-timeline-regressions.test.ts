@@ -39,6 +39,7 @@ const { commitCourseEdit, recordAgentChange, stampGeneratedAudio, stepCourseTime
   await import('@/lib/edit/course-edit');
 const { useCourseTimeline, AGENT_RUN_IDLE_MS, BURST_MAX_GAP_MS, applyTimelineEntry, diffCourse } =
   await import('@/lib/edit/course-timeline');
+const { useCanvasStore } = await import('@/lib/store/canvas');
 const { useSlideEditSession } = await import('@/components/edit/surfaces/slide/slide-edit-session');
 const { useSlideCanvasController } =
   await import('@/components/edit/surfaces/slide/use-slide-surface');
@@ -123,6 +124,19 @@ beforeEach(() => {
   useCourseTimeline.getState().clearCourse(STAGE);
   useCourseTimeline.setState({ agentRun: null });
   useSlideEditSession.getState().end();
+});
+
+describe('switching pages', () => {
+  it('drops the selection, which could name an element with the same id on the next page', () => {
+    load([slide('a', '<p>a</p>'), slide('b', '<p>b</p>', 2)], 'a');
+    useCanvasStore.getState().setActiveElementIdList(['t-a']);
+    useCanvasStore.getState().setEditingElementId('t-a');
+    useStageStore.getState().setCurrentSceneId('a');
+    expect(useCanvasStore.getState().activeElementIdList).toEqual(['t-a']);
+    useStageStore.getState().setCurrentSceneId('b');
+    expect(useCanvasStore.getState().activeElementIdList).toEqual([]);
+    expect(useCanvasStore.getState().editingElementId).toBe('');
+  });
 });
 
 describe('a commit that outlives its page', () => {
