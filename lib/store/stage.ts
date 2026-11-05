@@ -34,6 +34,8 @@ import {
   stageDeletionSettled,
 } from '@/lib/utils/deleted-stages';
 
+import { recordKnownScenes, resetKnownScenes } from '@/lib/store/known-scenes';
+
 const log = createLogger('StageStore');
 
 /** Virtual scene ID used when the user navigates to a page still being generated */
@@ -1331,6 +1333,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         const generatingOutlines = generationComplete
           ? []
           : outlines.filter((o) => !migrated.some((s) => s.order === o.order));
+        resetKnownScenes(stageId);
         set({
           stage: data.stage,
           scenes: migrated,
@@ -1389,6 +1392,16 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
 }));
 
 export const useStageStore = createSelectors(useStageStoreBase);
+
+// Whatever way a scene reached the store, this tab now knows of it: a whole-document
+// save that no longer lists it is removing it (see `known-scenes.ts`).
+useStageStoreBase.subscribe((state, previous) => {
+  if (state.scenes === previous.scenes || !state.stage) return;
+  recordKnownScenes(
+    state.stage.id,
+    state.scenes.map((scene) => scene.id),
+  );
+});
 
 // ==================== Debounced Save ====================
 

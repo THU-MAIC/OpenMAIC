@@ -22,6 +22,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
 import { HOST_AGENT_LIFECYCLE as LIFECYCLE } from '@/lib/agent-runtime/lifecycle';
 import { getDocumentStore } from '@/lib/document-store/store';
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
+import { forgetKnownScenes } from '@/lib/store/known-scenes';
 import {
   forgetServerRosterBase,
   hasQueuedWholeDocumentChange,
@@ -662,6 +663,7 @@ export function useStageFreshnessSync(
         (renderedManifest.current as StageManifest).scenes.map((scene) => [scene.id, scene]),
       );
       for (const sceneId of removable) renderedById.delete(sceneId);
+      forgetKnownScenes(requestedStage, removable);
       for (const sceneId of appliedIds) {
         const fresh = freshById.get(sceneId);
         if (fresh) renderedById.set(sceneId, fresh);

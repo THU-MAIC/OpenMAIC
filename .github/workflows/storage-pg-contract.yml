@@ -119,4 +119,5 @@ jobs:
             tests/server/generation-run-hooks.pg.test.ts \
             tests/server/material-extraction.pg.test.ts \
             tests/server/legacy-classroom-import.pg.test.ts \
-            tests/persistence/exclusive-create-invariant.pg.test.ts
+            tests/persistence/exclusive-create-invariant.pg.test.ts \
+            tests/store/whole-document-save-unseen-scenes.pg.test.ts
