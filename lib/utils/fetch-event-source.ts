@@ -208,13 +208,16 @@ export class FetchEventSource extends EventTarget {
         void response.body?.cancel().catch(() => {});
         // A definite answer from the server: native gives up here, and callers
         // rely on it (the freshness stream stops on a 404).
-        this.close();
-        this.dispatchEvent(new Event('error'));
+        this.giveUp();
         return;
       }
       reader = response.body.getReader();
     } catch {
-      if (!controller.signal.aborted) this.scheduleReconnect();
+      if (controller.signal.aborted) return;
+      const redirected = await this.answersWithRedirect(headers, controller.signal);
+      if (controller.signal.aborted) return;
+      if (redirected) this.giveUp();
+      else this.scheduleReconnect();
       return;
     }
 
@@ -247,6 +250,38 @@ export class FetchEventSource extends EventTarget {
     }
     void reader.cancel().catch(() => {});
     if (!controller.signal.aborted) this.scheduleReconnect();
+  }
+
+  /**
+   * Fetch reports a redirect the browser refused to follow, such as a login page
+   * on another origin, exactly as it reports a dropped connection. Native gives
+   * up on the first and retries the second, and callers rely on the difference,
+   * so ask again without following. A same-origin redirect never gets here unless
+   * its target failed, which is the one case this treats differently from native.
+   */
+  private async answersWithRedirect(
+    headers: Record<string, string>,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    try {
+      const response = await fetch(this.url, {
+        headers,
+        cache: 'no-store',
+        credentials: 'same-origin',
+        priority: 'low',
+        redirect: 'manual',
+        signal,
+      });
+      void response.body?.cancel().catch(() => {});
+      return response.type === 'opaqueredirect';
+    } catch {
+      return false;
+    }
+  }
+
+  private giveUp(): void {
+    this.close();
+    this.dispatchEvent(new Event('error'));
   }
 
   private dispatchFrame(frame: SseFrame): void {

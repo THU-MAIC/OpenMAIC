@@ -252,7 +252,9 @@ describe('FetchEventSource', () => {
   });
 
   it('retries when the request itself fails', async () => {
-    fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    fetchMock
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'));
     const source = new FetchEventSource('/s');
     const seen = record(source, 'open', 'error');
     await settle();
@@ -260,6 +262,46 @@ describe('FetchEventSource', () => {
     await vi.advanceTimersByTimeAsync(3_000);
     expect(seen.at(-1)).toMatchObject({ type: 'open', state: 1 });
     source.close();
+  });
+
+  it('retries when a request fails but the same URL answers without a redirect', async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    const source = new FetchEventSource('/s');
+    const seen = record(source, 'error');
+    await settle();
+    expect(fetchMock.mock.calls[1]![1]).toMatchObject({ redirect: 'manual', priority: 'low' });
+    expect(connections[0]!.cancelled()).toBe(true);
+    expect(seen).toMatchObject([{ type: 'error', state: 0 }]);
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(source.readyState).toBe(1);
+    source.close();
+  });
+
+  it('closes without a retry when the failure was a refused redirect', async () => {
+    fetchMock
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce({ type: 'opaqueredirect', body: null });
+    const source = new FetchEventSource('/s');
+    const seen = record(source, 'open', 'error');
+    await settle();
+    expect(seen).toMatchObject([{ type: 'error', state: 2 }]);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('close() during that check neither reports nor retries', async () => {
+    let answer!: (response: unknown) => void;
+    fetchMock
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)));
+    const source = new FetchEventSource('/s');
+    const seen = record(source, 'error');
+    await settle();
+    source.close();
+    answer({ type: 'opaqueredirect', body: null });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(seen).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it.each([
