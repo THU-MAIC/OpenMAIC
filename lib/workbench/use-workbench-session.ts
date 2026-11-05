@@ -22,6 +22,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
 import { HOST_AGENT_LIFECYCLE as LIFECYCLE } from '@/lib/agent-runtime/lifecycle';
 import { getDocumentStore } from '@/lib/document-store/store';
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
+import { hydratePBLScenesFromRuntime } from '@/lib/pbl/v2/runtime/hydration';
 import { forgetKnownScenes } from '@/lib/store/known-scenes';
 import {
   forgetServerRosterBase,
@@ -371,6 +372,17 @@ function rosterOf(stage: Stage): StageRoster {
   };
 }
 
+/**
+ * The scenes as a classroom holds them. A stored PBL project is a design template,
+ * with the learner's work in the runtime store, so it is folded back in here as on
+ * a load. Taken as stored it would empty the project on screen, and the next save
+ * would record that as the learner's state. A failed fold rejects: the pass is
+ * retried, and the scene stays as it is meanwhile.
+ */
+async function readScenes(stageId: string, ids: readonly string[]): Promise<Scene[]> {
+  return hydratePBLScenesFromRuntime(stageId, await fetchScenesByIds(stageId, ids));
+}
+
 /** A stage rev no manifest carries: the next pass treats the stage as moved. */
 const UNVERIFIED_STAGE_REV = -1;
 
@@ -500,6 +512,11 @@ export function useStageFreshnessSync(
           const editClock = stageDocumentEditClock();
           const doc = await getDocumentStore().loadDocument(requestedStage);
           if (!isCurrent()) return;
+          let loadedScenes = (doc?.scenes ?? []) as unknown as Scene[];
+          if (loadedScenes.some((scene) => scene.content?.type === 'pbl')) {
+            loadedScenes = await hydratePBLScenesFromRuntime(requestedStage, loadedScenes);
+            if (!isCurrent()) return;
+          }
           if (!doc) {
             console.warn(`[workbench] course document unavailable for ${requestedStage}; retrying`);
             throw new Error(`course document unavailable for ${requestedStage}`);
@@ -518,7 +535,7 @@ export function useStageFreshnessSync(
             heldBackForSave.current = true;
             return;
           }
-          const scenes = [...(doc.scenes as unknown as Scene[])].sort((a, b) => a.order - b.order);
+          const scenes = [...loadedScenes].sort((a, b) => a.order - b.order);
           const record = doc.outline as AppDocumentOutline | undefined;
           const outlines = (record?.outlines as SceneOutline[]) ?? [];
           useStageStore.setState((state) => ({
@@ -590,7 +607,7 @@ export function useStageFreshnessSync(
       const idsToRead = idsToFetch.filter((id) => !hasUnsavedSceneEdit(requestedStage, id));
       const queuedAtRead = hasQueuedWholeDocumentChange(requestedStage);
       if (queuedAtRead || idsToRead.length < idsToFetch.length) heldBackForSave.current = true;
-      const fetched = await fetchScenesByIds(requestedStage, idsToRead);
+      const fetched = await readScenes(requestedStage, idsToRead);
       if (!isCurrent()) return;
 
       // D3-F1 structural guard: a non-empty request that fetched NOTHING must

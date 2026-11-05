@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Bug Fixes
 
+- PBL: a background course sync no longer empties a PBL v2 project on screen. It used to take the stored design template as it was, and the next whole-document save then recorded the empty state, so the learner's submissions and progress were gone after a reload. [#2184](https://github.com/THU-MAIC/OpenMAIC/pull/2184)
 - Workbench: a background course sync no longer overwrites a scene edit that has not finished saving, so the edit no longer reverts on screen and the older copy is no longer saved over it. The scene is read again as soon as the save finishes. [#2168](https://github.com/THU-MAIC/OpenMAIC/pull/2168)
 - Editor: a slide open in the legacy Pro editor follows a server change to its scene, so the next commit from the canvas, including an automatic text-height adjustment, no longer writes the older content back over a page an agent just changed. [#2168](https://github.com/THU-MAIC/OpenMAIC/pull/2168)
 - Editor: the automatic text-height adjustment in the legacy Pro editor no longer saves the scene, so it no longer puts an older copy of a page back on the server from a tab that had not picked up a newer version, and no longer holds back an agent's next change. The height is kept in that tab and saved with its next real edit. [#2181](https://github.com/THU-MAIC/OpenMAIC/pull/2181)
