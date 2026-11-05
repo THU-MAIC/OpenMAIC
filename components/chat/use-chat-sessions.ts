@@ -352,11 +352,29 @@ export function getPiSingleRequestOutcome(
   return { type: 'completed', directorState: doneData.directorState, ...failure };
 }
 
-/** Output a learner can see from this request; whiteboard projections count as drawing. */
-function isVisibleAgentOutput(event: StatelessEvent): boolean {
+/**
+ * Output a learner can see from this request. Opening or closing the whiteboard
+ * is not output in either runtime: Legacy sends it as an action, Native as a
+ * whiteboard open/close event. Native drawing arrives as a projection.
+ */
+export function isVisibleAgentOutput(event: StatelessEvent): boolean {
   if (event.type === 'text_delta') return event.data.content.trim().length > 0;
   if (event.type === 'whiteboard') return event.data.kind === 'projection';
-  return event.type === 'action';
+  if (event.type === 'action') {
+    return event.data.actionName !== 'wb_open' && event.data.actionName !== 'wb_close';
+  }
+  return false;
+}
+
+/**
+ * An explicit agentHadContent wins (a timed-out child may show output without
+ * counting as a turn); a done without it falls back to whether any turn counted.
+ */
+export function doneHadAgentContent(data: {
+  agentHadContent?: boolean;
+  totalAgents: number;
+}): boolean {
+  return data.agentHadContent ?? data.totalAgents > 0;
 }
 
 export async function runPiSingleRequest(
@@ -1121,7 +1139,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             loopDoneDataRef.current = {
               directorState: data.directorState,
               totalAgents: data.totalAgents,
-              agentHadContent: data.agentHadContent ?? true,
+              agentHadContent: doneHadAgentContent(data),
               teachingAgentFailedOrEmpty: data.teachingAgentFailedOrEmpty,
               cueUserReceived:
                 data.cueUserReceived ?? loopDoneDataRef.current?.cueUserReceived ?? false,
@@ -1253,7 +1271,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         return {
           directorState: doneData.directorState,
           totalAgents: doneData.totalAgents,
-          agentHadContent: doneData.agentHadContent ?? true,
+          agentHadContent: doneHadAgentContent(doneData),
           teachingAgentFailedOrEmpty: doneData.teachingAgentFailedOrEmpty,
           cueUserReceived: doneData.cueUserReceived,
           sessionClosed: doneData.sessionClosed,

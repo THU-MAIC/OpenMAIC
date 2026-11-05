@@ -13,6 +13,8 @@ import {
   resumeSoftClosingSessionForFollowUp,
   resumeSoftClosingSessionWithoutMessage,
   runPiSingleRequest,
+  isVisibleAgentOutput,
+  doneHadAgentContent,
   shouldAwaitPresentationAction,
   lectureActionPersistParams,
   withPiInclassWhiteboardTools,
@@ -1007,6 +1009,62 @@ describe('runPiSingleRequest fixed notices', () => {
         { onEvent, onIterationEnd: vi.fn(async () => null) },
       ),
     ).rejects.toThrow('raw provider failure');
+  });
+
+  it.each([
+    [
+      'Legacy wb_open',
+      {
+        type: 'action',
+        data: { actionId: 'a1', actionName: 'wb_open', params: {}, agentId: 'teacher-1' },
+      },
+    ],
+    [
+      'Legacy wb_close',
+      {
+        type: 'action',
+        data: { actionId: 'a1', actionName: 'wb_close', params: {}, agentId: 'teacher-1' },
+      },
+    ],
+    [
+      'Native whiteboard open',
+      {
+        type: 'whiteboard',
+        data: { kind: 'open', stageId: 'stage-1', manualVisibilityRevision: 1 },
+      },
+    ],
+  ] as Array<[string, StatelessEvent]>)(
+    'treats a %s followed by an error as no classroom output',
+    async (_label, toggle) => {
+      const onEvent = vi.fn();
+      const { clearAfterError } = await request(
+        [start, toggle, { type: 'error', data: { message: 'raw provider failure' } }],
+        { onEvent, onIterationEnd: vi.fn(async () => null) },
+      );
+      expect(clearAfterError).toHaveBeenCalledWith('session-1', 'chat.error.teacherNoResponse');
+    },
+  );
+
+  it('counts drawing as output in both runtimes', () => {
+    expect(
+      isVisibleAgentOutput({
+        type: 'action',
+        data: { actionId: 'a1', actionName: 'wb_draw_text', params: {}, agentId: 'teacher-1' },
+      }),
+    ).toBe(true);
+    expect(
+      isVisibleAgentOutput({
+        type: 'whiteboard',
+        data: { kind: 'projection', stageId: 'stage-1', lastSeq: 3 },
+      }),
+    ).toBe(true);
+  });
+
+  it('keeps the totalAgents fallback only when done omits agentHadContent', () => {
+    expect(doneHadAgentContent({ totalAgents: 0 })).toBe(false);
+    expect(doneHadAgentContent({ totalAgents: 2 })).toBe(true);
+    expect(doneHadAgentContent({ totalAgents: 0, agentHadContent: true })).toBe(true);
+    expect(doneHadAgentContent({ totalAgents: 3, agentHadContent: false })).toBe(false);
   });
 
   it('shows the fixed partial notice once when a teaching call failed before the cue', async () => {
