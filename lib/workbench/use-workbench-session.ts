@@ -576,7 +576,12 @@ export function useStageFreshnessSync(
           // in between. The stage rev is a sentinel no manifest carries, for
           // the same reason: a roster written between the load and here is
           // read on the next pass, not hidden behind the rev recorded now.
-          renderedManifest.current = {
+          //
+          // Unless this page has synced the course before: what it recorded then
+          // is what it applied, so it is never newer than the store, and only
+          // what changed since is read again (a host that stops and starts the
+          // sync does not re-read the whole course each time).
+          renderedManifest.current = store.serverManifestByStage?.[requestedStage] ?? {
             rev: UNVERIFIED_STAGE_REV,
             scenes: manifest.scenes.map((scene) => ({ ...scene, rev: 0 })),
           };

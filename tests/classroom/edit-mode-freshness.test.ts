@@ -209,6 +209,41 @@ describe('the freshness sync on the standalone classroom page', () => {
     expect(MockEventSource.instances[1]!.closed).toBe(false);
   });
 
+  it('re-entering Edit reads nothing that has not changed, and keeps the objects', async () => {
+    await open();
+    await setMode('edit');
+    await act(async () => MockEventSource.instances[0]!.onopen?.());
+    await settle();
+    await setMode('playback');
+    const held = useStageStore.getState().scenes[0];
+    mocks.fetches = [];
+
+    await setMode('edit');
+    await act(async () => MockEventSource.instances[1]!.onopen?.());
+    await settle();
+
+    expect(mocks.fetches.filter((url) => url.includes('/scenes?'))).toEqual([]);
+    expect(mocks.fetches.filter((url) => url.includes('/roster'))).toEqual([]);
+    expect(useStageStore.getState().scenes[0]).toBe(held);
+  });
+
+  it('re-entering Edit reads what changed in between', async () => {
+    await open();
+    await setMode('edit');
+    await act(async () => MockEventSource.instances[0]!.onopen?.());
+    await settle();
+    await setMode('playback');
+
+    mocks.title = 'changed while playing';
+    mocks.sceneRev += 1;
+    mocks.stageRev += 1;
+    await setMode('edit');
+    await act(async () => MockEventSource.instances[1]!.onopen?.());
+    await settle();
+
+    expect(useStageStore.getState().scenes[0]!.title).toBe('changed while playing');
+  });
+
   it('stays off for a read-only viewer, in any mode', async () => {
     useStageStore.setState({ readOnly: true });
     await open();
