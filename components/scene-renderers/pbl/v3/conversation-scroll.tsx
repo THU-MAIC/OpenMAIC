@@ -49,7 +49,6 @@ export function ConversationViewport({
         ref={scrollRef}
         tabIndex={0}
         className="pbl-conversation-scroll min-h-0 flex-1 overflow-y-auto"
-        style={{ overflowAnchor: 'none' }}
       >
         <div ref={contentRef} className="flex flex-col gap-5 p-4" onClick={onClick}>
           {children}

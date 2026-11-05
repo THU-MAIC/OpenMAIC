@@ -1553,3 +1553,174 @@ test('live and historical turns share regular spacing and body-size handoffs in 
     await page.keyboard.press('Escape');
   }
 });
+
+const readingParagraphs = () =>
+  Array.from(
+    { length: 100 },
+    (_, index) =>
+      `Reading passage ${index + 1}. This distinct paragraph wraps as the conversation pane changes width. Keep this passage visible while reading earlier output.`,
+  ).join('\n\n');
+
+async function readPassage(page: Page, number: number) {
+  const viewport = page.locator('.pbl-conversation-scroll');
+  const paragraph = viewport.locator('p').filter({ hasText: `Reading passage ${number}.` });
+  await expect
+    .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
+    .toBeLessThanOrEqual(1);
+  const delta = await paragraph.evaluate(
+    (element) =>
+      element.getBoundingClientRect().top -
+      element.closest('.pbl-conversation-scroll')!.getBoundingClientRect().top,
+  );
+  await viewport.hover();
+  await page.mouse.wheel(0, delta);
+  const offset = () =>
+    paragraph.evaluate(
+      (element) =>
+        element.getBoundingClientRect().top -
+        element.closest('.pbl-conversation-scroll')!.getBoundingClientRect().top,
+    );
+  await expect.poll(offset).toBeCloseTo(0, 0);
+  return { viewport, paragraph, offset };
+}
+
+test('paused reading keeps the same passage through divider reflow and a delayed image', async ({
+  page,
+  learningEvents,
+}) => {
+  await page.setViewportSize({ width: 1365, height: 900 });
+  let loadImage!: () => void;
+  const imageGate = new Promise<void>((resolve) => (loadImage = resolve));
+  await page.route('https://pbl-reading.test/delayed.svg', async (route) => {
+    await imageGate;
+    await route.fulfill({
+      contentType: 'image/svg+xml',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="300" height="300" fill="lightblue"/></svg>',
+    });
+  });
+  await project(page, learningEvents, {
+    started: true,
+    openingText:
+      '![Delayed illustration](https://pbl-reading.test/delayed.svg)\n\n' + readingParagraphs(),
+  });
+  const { viewport, offset } = await readPassage(page, 60);
+  const beforeWidth = await viewport.evaluate((element) => element.clientWidth);
+  const divider = page.getByRole('separator', { name: 'Resize workspace and assistant' }).last();
+  const handle = (await divider.boundingBox())!;
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2 + 100, handle.y + handle.height / 2, {
+    steps: 10,
+  });
+  await page.mouse.up();
+  await expect
+    .poll(() => viewport.evaluate((element) => element.clientWidth))
+    .toBeLessThan(beforeWidth - 70);
+  await expect.poll(offset).toBeCloseTo(0, 0);
+  loadImage();
+  await expect
+    .poll(() => viewport.locator('img').evaluate((image) => image.naturalHeight))
+    .toBe(300);
+  await expect.poll(offset).toBeCloseTo(0, 0);
+});
+
+test('a failure notice preserves paused reading after a small upward scroll and more output', async ({
+  page,
+  learningEvents,
+}) => {
+  const fixture = await project(page, learningEvents, {
+    started: true,
+    openingText: readingParagraphs(),
+  });
+  const viewport = page.locator('.pbl-conversation-scroll');
+  const distance = () =>
+    viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
+  await expect.poll(distance).toBeLessThanOrEqual(1);
+  await viewport.hover();
+  await page.mouse.wheel(0, -50);
+  await expect.poll(distance).toBeGreaterThan(40);
+  await expect.poll(distance).toBeLessThan(80);
+  const reading = await viewport.evaluate((element) => element.scrollTop);
+  fixture.view.messages[0].text +=
+    '\n\n' + 'Additional output below the selected passage.\n\n'.repeat(20);
+  fixture.view.activitySequence!++;
+  await fixture.publish();
+  await expect(viewport).toContainText('Additional output below the selected passage.');
+  await expect.poll(distance).toBeGreaterThan(300);
+  const height = await viewport.evaluate((element) => element.clientHeight);
+  fixture.view.roleRun = { status: 'failed', failure: 'timeout', canRetry: true };
+  fixture.view.revision++;
+  await fixture.publish();
+  await expect(page.getByTestId('pbl-assistant').getByRole('alert')).toBeVisible();
+  await expect
+    .poll(() => viewport.evaluate((element) => element.clientHeight))
+    .toBeLessThan(height);
+  await expect
+    .poll(() => viewport.evaluate((element) => element.scrollTop))
+    .toBeCloseTo(reading, 0);
+});
+
+test('mobile touch reading survives task details and resumes after returning to the tail', async ({
+  page,
+  learningEvents,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const fixture = await project(page, learningEvents, {
+    started: true,
+    openingText: readingParagraphs(),
+  });
+  fixture.view.stage = {
+    kind: 'dialogue',
+    agent: 'discussion',
+    studentActions: ['chat', 'decide'],
+  } as LearningView['stage'];
+  fixture.view.state.position.stageIndex = 1;
+  fixture.view.decisions = [
+    {
+      id: 'choice',
+      prompt: 'Choose a direction',
+      options: [{ id: 'a', label: 'First direction' }],
+    },
+  ];
+  fixture.view.revision++;
+  await fixture.publish();
+  const viewport = page.locator('.pbl-conversation-scroll');
+  const distance = () =>
+    viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
+  await expect.poll(distance).toBeLessThanOrEqual(1);
+  await viewport.scrollIntoViewIfNeeded();
+  const box = (await viewport.boundingBox())!;
+  const touch = await page.context().newCDPSession(page);
+  const x = box.x + box.width / 2,
+    y = box.y + box.height / 2;
+  await touch.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+  await touch.send('Input.synthesizeScrollGesture', {
+    x,
+    y,
+    yDistance: 160,
+    speed: 300,
+    preventFling: true,
+    gestureSourceType: 'touch',
+  });
+  await expect.poll(distance).toBeGreaterThan(80);
+  const reading = await viewport.evaluate((element) => element.scrollTop);
+  fixture.view.messages[0].text += '\n\n' + 'More output after a touch gesture.\n\n'.repeat(15);
+  fixture.view.activitySequence!++;
+  await fixture.publish();
+  await expect(viewport).toContainText('More output after a touch gesture.');
+  await page.locator('[data-pbl-tour="task-trigger"]').click();
+  await expect(page.getByRole('region', { name: 'Current task details' })).toBeVisible();
+  await expect
+    .poll(() => viewport.evaluate((element) => element.scrollTop))
+    .toBeCloseTo(reading, 0);
+  await page.getByRole('button', { name: 'Close task details' }).click();
+  await viewport.hover();
+  await page.mouse.wheel(0, 100000);
+  await expect.poll(distance).toBeLessThanOrEqual(1);
+  fixture.view.messages[0].text += '\n\nFollowing again after manual return.';
+  fixture.view.activitySequence!++;
+  await fixture.publish();
+  await expect(viewport).toContainText('Following again after manual return.');
+  await expect.poll(distance).toBeLessThanOrEqual(8);
+  await touch.detach();
+});

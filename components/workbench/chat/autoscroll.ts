@@ -27,27 +27,10 @@ import { useEffect, useRef } from 'react';
 import { useStickToBottom, type StickToBottomInstance } from 'use-stick-to-bottom';
 import type { ChatNode } from '@/lib/workbench/session-store';
 
-const VIEWPORT_NEAR_BOTTOM_PX = 80;
-
-interface ViewportGeometry {
-  readonly clientHeight: number;
-  readonly scrollHeight: number;
-  readonly scrollTop: number;
-}
-
-function viewportGeometry(viewport: HTMLElement): ViewportGeometry {
-  return {
-    clientHeight: viewport.clientHeight,
-    scrollHeight: viewport.scrollHeight,
-    scrollTop: viewport.scrollTop,
-  };
-}
-
 /**
  * Composer rows and question controls grow outside the transcript content, so
  * the library's content observer cannot see them. Track the scroll viewport's
- * own height and preserve the bottom lock only when the user was near the tail
- * before that height was taken away.
+ * own height and let the library retain its existing follow/release state.
  */
 export function useWorkbenchViewportAnchor(
   scrollRef: StickToBottomInstance['scrollRef'],
@@ -62,26 +45,17 @@ export function useWorkbenchViewportAnchor(
     const viewport = scrollRef.current;
     if (!viewport || typeof ResizeObserver === 'undefined') return;
 
-    let previous = viewportGeometry(viewport);
-    const rememberScroll = () => {
-      previous = viewportGeometry(viewport);
-    };
+    let previousHeight = viewport.clientHeight;
     const observer = new ResizeObserver(() => {
-      const current = viewportGeometry(viewport);
-      const wasNearBottom =
-        previous.scrollHeight - previous.scrollTop - previous.clientHeight <=
-        VIEWPORT_NEAR_BOTTOM_PX;
-      if (current.clientHeight < previous.clientHeight && wasNearBottom) {
-        void scrollToBottomRef.current({ animation: 'instant' });
+      const height = viewport.clientHeight;
+      if (height < previousHeight) {
+        // A smaller viewport must not re-lock someone reading earlier output.
+        void scrollToBottomRef.current({ animation: 'instant', preserveScrollPosition: true });
       }
-      previous = viewportGeometry(viewport);
+      previousHeight = height;
     });
     observer.observe(viewport);
-    viewport.addEventListener('scroll', rememberScroll, { passive: true });
-    return () => {
-      observer.disconnect();
-      viewport.removeEventListener('scroll', rememberScroll);
-    };
+    return () => observer.disconnect();
   }, [scrollRef]);
 }
 
