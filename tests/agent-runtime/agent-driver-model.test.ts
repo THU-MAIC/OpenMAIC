@@ -238,4 +238,53 @@ describe('agent driver model', () => {
     )();
     expect(resolved.piModel.contextWindow).toBe(32_000);
   });
+
+  it.each([
+    [64_000, 8192, 64_000, 8192],
+    [undefined, undefined, 128_000, undefined],
+    [0, Number.NaN, 128_000, undefined],
+    [400_000, 32_768, 200_000, 16_384],
+  ])(
+    'budgets teaching for both slot targets (fallback context %s, output %s)',
+    async (contextWindow, outputWindow, expectedContext, expectedOutput) => {
+      const providers = await import('@/lib/ai/providers');
+      const original = providers.getModelInfo;
+      const spy = vi
+        .spyOn(providers, 'getModelInfo')
+        .mockImplementation((provider, id) =>
+          id === 'gpt-4.1'
+            ? ({ id, name: id, contextWindow, outputWindow } as never)
+            : original(provider, id),
+        );
+      try {
+        const resolved = await (
+          await configure({ model: 'openai:gpt-5.6-luna', fallback: 'openai:gpt-4.1' })
+        )();
+        expect(resolved.teaching.piModel.contextWindow).toBe(expectedContext);
+        expect(resolved.teaching.wireMaxOutputTokens).toBe(expectedOutput);
+        // Ordinary Agent calls retain the original primary metadata and transport.
+        expect(resolved.piModel.contextWindow).toBe(200_000);
+        expect(resolved.wireMaxOutputTokens).toBe(16_384);
+      } finally {
+        spy.mockRestore();
+      }
+    },
+  );
+
+  it('does not reserve for a fallback the slot cannot use', async () => {
+    const resolved = await (
+      await configure({ model: 'openai:gpt-5.6-luna', fallback: 'ac:qwen/qwen3.5-flash' })
+    )();
+    expect(resolved.teaching.piModel).toEqual(resolved.piModel);
+    expect(resolved.teaching.wireMaxOutputTokens).toBe(16_384);
+  });
+
+  it('does not infer a known wire cap when only the fallback output is known', async () => {
+    mocks.modelInfo = null;
+    const resolved = await (
+      await configure({ model: 'openai:some-model', fallback: 'openai:gpt-4.1' })
+    )();
+    expect(resolved.teaching.wireMaxOutputTokens).toBeUndefined();
+    expect(resolved.wireMaxOutputTokens).toBeUndefined();
+  });
 });

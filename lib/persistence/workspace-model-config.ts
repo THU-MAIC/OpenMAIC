@@ -150,7 +150,7 @@ export async function saveWorkspaceModelConfig(
 ): Promise<number> {
   const { config, issues } = checkModelConfigShape(next);
   if (!config) throw new WorkspaceConfigInvalidError(issues);
-  const deploymentOnly = (['lock', 'allowUserKeys'] as const).filter(
+  const deploymentOnly = (['lock', 'allowUserKeys', 'sandbox'] as const).filter(
     (key) => config[key] !== undefined,
   );
   if (deploymentOnly.length) {

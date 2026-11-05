@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   ensureAgentSessionSchema,
@@ -7,6 +8,18 @@ import {
   type Queryable,
   type WithTransaction,
 } from '../../packages/@openmaic/storage/src/agent-session/pg';
+
+const runtime = vi.hoisted(() => ({ pool: undefined as unknown as Pool, buildAgent: vi.fn() }));
+vi.mock('@/lib/persistence/server-provider', () => ({
+  getServerPersistenceProvider: async () => ({ pool: runtime.pool }),
+}));
+vi.mock('@/lib/persistence/schema-boot-check', async (importActual) => ({
+  ...(await importActual<typeof import('@/lib/persistence/schema-boot-check')>()),
+  assertRuntimeSchemaCompatibility: async () => {},
+}));
+vi.mock('@/lib/agent/runtime/build-agent', () => ({ buildAgent: runtime.buildAgent }));
+import { getAgentSessionStore } from '@/lib/server/agent-runtime/store';
+import { startAgentRunner } from '@/lib/server/agent-runtime/runner';
 
 const contractUrl = process.env.PG_CONTRACT_URL;
 const TEST_SCHEMA = `openmaic_park_attempts_${process.pid}`;
@@ -131,4 +144,94 @@ describe.skipIf(!contractUrl)('session attempt budget takeovers', () => {
       attempt: 7,
     });
   });
+});
+
+describe.skipIf(!contractUrl)('late claims after pool shutdown (PostgreSQL)', () => {
+  it.each(['committed', 'cancelled'] as const)(
+    'cleans up a %s claim on the closing pool without spending another attempt',
+    async (outcome) => {
+      const schema = `late_claim_${randomUUID().replaceAll('-', '')}`;
+      const admin = new Pool({ connectionString: contractUrl });
+      await admin.query(`CREATE SCHEMA ${schema}`);
+      const options = { connectionString: contractUrl, options: `-c search_path=${schema}` };
+      const applicationName = `late-claim-${randomUUID()}`;
+      runtime.pool = new Pool({ ...options, application_name: applicationName });
+      const observer = new Pool(options);
+      const blocker = await observer.connect();
+      let runner: ReturnType<typeof startAgentRunner> | undefined;
+      let closing: Promise<void> | undefined;
+      const runtimeUrl = new URL(contractUrl!);
+      runtimeUrl.searchParams.set('application_name', applicationName);
+      vi.stubEnv('DATABASE_URL', runtimeUrl.toString());
+      try {
+        const store = await getAgentSessionStore();
+        await store.createSession({ id: 'late-session', ownerId: 'owner', prompt: 'Wait' });
+        await blocker.query('BEGIN');
+        await blocker.query("SELECT id FROM agent_sessions WHERE id = 'late-session' FOR UPDATE");
+        runner = startAgentRunner();
+        // Observe the real blocked claim, rather than assuming a timer started it.
+        await expect
+          .poll(
+            async () => {
+              const result = await admin.query(
+                `SELECT 1 FROM pg_stat_activity
+           WHERE application_name = $1 AND wait_event_type = 'Lock'
+             AND query LIKE '%FOR UPDATE%'`,
+                [applicationName],
+              );
+              return result.rowCount;
+            },
+            { timeout: 5_000 },
+          )
+          .toBe(1);
+        // Zero exercises the existing deadline-expired branch without a 15s sleep.
+        await runner.stop({ timeoutMs: 0 });
+        closing = runtime.pool.end();
+        if (outcome === 'cancelled') {
+          await admin.query(
+            `SELECT pg_cancel_backend(pid) FROM pg_stat_activity
+           WHERE application_name = $1 AND wait_event_type = 'Lock'`,
+            [applicationName],
+          );
+        }
+        await blocker.query('COMMIT');
+        await closing;
+        const settled = await observer.query(
+          "SELECT status, attempt, lease_worker_id FROM agent_sessions WHERE id = 'late-session'",
+        );
+        expect(settled.rows[0]).toEqual({
+          status: outcome === 'committed' ? 'running' : 'queued',
+          attempt: outcome === 'committed' ? 1 : 0,
+          lease_worker_id: null,
+        });
+        expect(runtime.buildAgent).not.toHaveBeenCalled();
+        const replacement = new PgAgentSessionStore(observer, {
+          withTransaction: transactionFor(observer),
+        });
+        // Zero TTL also exposes an incorrectly retained lease immediately.
+        expect(
+          await replacement.claimNextSession('replacement', 200, {
+            leaseTtlMs: 0,
+            maxAttempts: 5,
+          }),
+        ).toMatchObject({
+          attempt: 1,
+          claimReason: outcome === 'committed' ? 'orphaned' : 'queued',
+        });
+      } finally {
+        await runner?.stop({ timeoutMs: 0 });
+        await blocker.query('ROLLBACK');
+        blocker.release();
+        await (closing ?? runtime.pool.end());
+        await observer.end();
+        try {
+          await admin.query(`DROP SCHEMA ${schema} CASCADE`);
+        } finally {
+          await admin.end();
+          vi.unstubAllEnvs();
+        }
+      }
+    },
+    15_000,
+  );
 });

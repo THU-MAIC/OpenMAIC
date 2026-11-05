@@ -643,6 +643,7 @@ export async function buildStandaloneHtmlExport(
   // collected (or counted as missing) either; without narration, interactive
   // pages do not fetch their clips.
   const snapshot = await buildClassroomExportSnapshot(stage, scenes, options.documentDeps, {
+    pblProjects: false,
     audio: includeNarration,
     videoBytes: includeNarration,
     audioElements: false,

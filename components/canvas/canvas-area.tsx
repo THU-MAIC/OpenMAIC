@@ -119,7 +119,10 @@ export function CanvasArea({
       >
         <StageViewport
           workbench={inWorkbenchPanel}
-          interactive={currentScene?.type === 'interactive'}
+          fillContainer={
+            currentScene?.type === 'interactive' ||
+            (currentScene?.content.type === 'pbl' && !!currentScene.content.projectV3)
+          }
           className={cn(
             'bg-white dark:bg-gray-800 shadow-2xl rounded-lg overflow-hidden relative transition-all duration-700',
             showControls && !isLiveSession && currentScene?.type === 'slide' && 'cursor-pointer',
@@ -326,18 +329,18 @@ export function CanvasArea({
 
 function StageViewport({
   workbench,
-  interactive,
+  fillContainer,
   className,
   onClick,
   children,
 }: {
   readonly workbench: boolean;
-  readonly interactive: boolean;
+  readonly fillContainer: boolean;
   readonly className?: string;
   readonly onClick?: (event: React.MouseEvent) => void;
   readonly children: ReactNode;
 }) {
-  if (interactive) {
+  if (fillContainer) {
     return (
       <div className={cn('h-full w-full', className)} onClick={onClick}>
         {children}

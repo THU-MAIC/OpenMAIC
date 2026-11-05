@@ -79,7 +79,39 @@ const COMPONENTS = {
   },
 } as const;
 
-export function TextBlock({ text, streaming = false }: { text: string; streaming?: boolean }) {
+const LESSON_COMPONENTS = {
+  ...COMPONENTS,
+  p: ({
+    children,
+    node,
+    ...props
+  }: React.HTMLAttributes<HTMLParagraphElement> & {
+    node?: { children?: { type?: string; tagName?: string }[] };
+  }) => (
+    <p
+      {...props}
+      data-pbl-lead={
+        node?.children?.length === 1 &&
+        node.children[0]?.type === 'element' &&
+        node.children[0]?.tagName === 'strong'
+          ? 'true'
+          : undefined
+      }
+    >
+      {children}
+    </p>
+  ),
+};
+
+export function TextBlock({
+  text,
+  streaming = false,
+  variant = 'default',
+}: {
+  text: string;
+  streaming?: boolean;
+  variant?: 'default' | 'lesson';
+}) {
   if (!text) return null;
   return (
     <div className="wb-prose">
@@ -90,7 +122,7 @@ export function TextBlock({ text, streaming = false }: { text: string; streaming
         plugins={STREAMDOWN_PLUGINS}
         remend={REMEND}
         controls={CONTROLS}
-        components={COMPONENTS}
+        components={variant === 'lesson' ? LESSON_COMPONENTS : COMPONENTS}
         parseIncompleteMarkdown={streaming}
       >
         {text}

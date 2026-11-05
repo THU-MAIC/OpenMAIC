@@ -1,4 +1,5 @@
 import { Session, type AgentTool } from '@earendil-works/pi-agent-core';
+import { isPBLRoleSession } from '@/lib/pbl/v3/session-kind';
 import type { AgentSessionMeta, AgentSessionStore } from '@openmaic/storage';
 import { Type, type Static } from 'typebox';
 
@@ -385,6 +386,7 @@ export function createPersonalHistorySource(
     async listChats(ownerId) {
       const store = await sessionStore();
       const sessions = (await store.listSessionsByOwner(ownerId))
+        .filter((session) => !isPBLRoleSession(session.id))
         .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id))
         .slice(0, HISTORY_SCAN_MAX);
       return Promise.all(sessions.map(chat));

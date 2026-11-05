@@ -30,7 +30,7 @@ export type {
 } from './types';
 export { OWNER_ROLES, principalHasRole } from './types';
 export type { OwnerAuthenticationOptions } from './registry';
-export { configureOwnerAuthentication } from './registry';
+export { configureOwnerAuthentication, isPersonalInstallationOwner } from './registry';
 export { sharedTeamAuthMethod } from './shared-team';
 export { singleUserAuthMethod } from './single-user';
 export { principalFromStoredOwner } from './stored-owner';

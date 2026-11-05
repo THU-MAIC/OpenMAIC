@@ -34,8 +34,7 @@ vi.mock('@/components/slide-renderer/components/element/ProsemirrorEditor', () =
 
 const { createDefaultSlide, createDefaultTextElement } =
   await import('@/lib/edit/slide-edit-elements');
-const { useStageStore, discardPendingStageChanges, hasUnsavedSceneEdit } =
-  await import('@/lib/store/stage');
+const { useStageStore, discardPendingStageChanges } = await import('@/lib/store/stage');
 const { commitCourseEdit, recordAgentChange, stampAudioOnTimeline, stepCourseTimeline } =
   await import('@/lib/edit/course-edit');
 const { useCourseTimeline, AGENT_RUN_IDLE_MS, BURST_MAX_GAP_MS, applyTimelineEntry, diffCourse } =
@@ -45,8 +44,7 @@ const { useSlideCanvasController } =
   await import('@/components/edit/surfaces/slide/use-slide-surface');
 const { SceneProvider } = await import('@/lib/contexts/scene-context');
 const { TextElement } = await import('@/components/slide-renderer/components/element/TextElement');
-const { forgetSceneWrites, noteScenesWritten, noteStructureWritten, reconcileFetchedScenes } =
-  await import('@/lib/edit/scene-echo');
+const { keepLocalWhereUnchanged } = await import('@/lib/edit/scene-echo');
 const { stripToDesignTemplate } = await import('@/lib/pbl/v2/runtime/learner-state');
 
 const STAGE = 'stage-1';
@@ -122,7 +120,6 @@ function clearText(id: string) {
 
 beforeEach(() => {
   discardPendingStageChanges(STAGE);
-  forgetSceneWrites(STAGE);
   useCourseTimeline.getState().clearCourse(STAGE);
   useCourseTimeline.setState({ agentRun: null });
   useSlideEditSession.getState().end();
@@ -235,142 +232,7 @@ describe('the empty text box cleanup', () => {
 });
 
 describe('reading back a scene nobody changed', () => {
-  const quiz = (title: string, order = 1) =>
-    ({
-      id: 'q',
-      stageId: STAGE,
-      type: 'quiz',
-      title,
-      order,
-      content: { type: 'quiz', questions: [] },
-      actions: [],
-      createdAt: 1,
-      updatedAt: 1,
-    }) as unknown as Scene;
-
-  it('an unsaved first edit survives an agent saving the whole document', () => {
-    load([quiz('V0')], 'q');
-    useStageStore.getState().updateScene('q', { title: 'V1' });
-    const result = reconcileFetchedScenes({
-      stageId: STAGE,
-      current: useStageStore.getState().scenes,
-      fetched: [quiz('V0')],
-      removedIds: [],
-      addedIds: [],
-      isSceneDirty: (id) => hasUnsavedSceneEdit(STAGE, id),
-      structureDirty: false,
-    });
-    expect(result.fetched[0].title).toBe('V1');
-    expect([...result.deferredIds]).toEqual(['q']);
-  });
-
-  it('an undo stays undone when a whole-document save re-reads the value it undid', () => {
-    load([quiz('V0')], 'q');
-    const before = useStageStore.getState();
-    useStageStore.setState({
-      scenes: before.scenes.map((scene) => ({ ...scene, title: 'AGENT' }) as Scene),
-    });
-    recordAgentChange(before);
-    stepCourseTimeline('undo');
-    expect(sceneOf('q').title).toBe('V0');
-    const result = reconcileFetchedScenes({
-      stageId: STAGE,
-      current: useStageStore.getState().scenes,
-      fetched: [quiz('AGENT')],
-      removedIds: [],
-      addedIds: [],
-      isSceneDirty: (id) => hasUnsavedSceneEdit(STAGE, id),
-      structureDirty: false,
-    });
-    expect(result.fetched[0].title).toBe('V0');
-    expect([...result.deferredIds]).toEqual(['q']);
-  });
-
-  it('a real change to another value still lands over the unsaved edit', () => {
-    load([quiz('V0')], 'q');
-    useStageStore.getState().updateScene('q', { title: 'V1' });
-    const result = reconcileFetchedScenes({
-      stageId: STAGE,
-      current: useStageStore.getState().scenes,
-      fetched: [quiz('agent')],
-      removedIds: [],
-      addedIds: [],
-      isSceneDirty: (id) => hasUnsavedSceneEdit(STAGE, id),
-      structureDirty: false,
-    });
-    expect(result.fetched[0].title).toBe('agent');
-  });
-
-  it('a read older than a landed reorder keeps the local order, and reads again', () => {
-    const now = 1_000_000;
-    const local = [quiz('A', 2), { ...quiz('B', 1), id: 'b' } as Scene];
-    noteScenesWritten(STAGE, local, now - 1_000);
-    noteStructureWritten(STAGE, now - 1_000);
-    const result = reconcileFetchedScenes({
-      stageId: STAGE,
-      current: local,
-      fetched: [quiz('A', 1), { ...quiz('B', 2), id: 'b' } as Scene],
-      removedIds: [],
-      addedIds: [],
-      isSceneDirty: () => false,
-      structureDirty: false,
-      now,
-    });
-    expect(result.fetched.map((scene) => scene.order)).toEqual([2, 1]);
-    expect([...result.deferredIds].sort()).toEqual(['b', 'q']);
-  });
-
-  it('a page the server added brings the server order, even right after a local save', () => {
-    const now = 1_000_000;
-    noteStructureWritten(STAGE, now - 1_000);
-    const result = reconcileFetchedScenes({
-      stageId: STAGE,
-      current: [quiz('A', 2)],
-      fetched: [quiz('A', 3), { ...quiz('N', 2), id: 'n' } as Scene],
-      removedIds: [],
-      addedIds: ['n'],
-      isSceneDirty: () => false,
-      structureDirty: false,
-      now,
-    });
-    expect(result.fetched.map((scene) => scene.order).sort()).toEqual([2, 3]);
-  });
-
-  it('a read older than a landed page deletion does not bring the page back', () => {
-    const now = 1_000_000;
-    noteScenesWritten(STAGE, [quiz('A')], now - 60_000);
-    noteStructureWritten(STAGE, now - 1_000);
-    const result = reconcileFetchedScenes({
-      stageId: STAGE,
-      current: [],
-      fetched: [quiz('A')],
-      removedIds: [],
-      addedIds: [],
-      isSceneDirty: () => false,
-      structureDirty: false,
-      now,
-    });
-    expect(result.fetched).toEqual([]);
-    expect([...result.deferredIds]).toEqual(['q']);
-  });
-
-  it('a page deleted by the agent after the window is taken', () => {
-    const now = 1_000_000;
-    noteStructureWritten(STAGE, now - 60_000);
-    const result = reconcileFetchedScenes({
-      stageId: STAGE,
-      current: [quiz('A')],
-      fetched: [],
-      removedIds: ['q'],
-      addedIds: [],
-      isSceneDirty: () => false,
-      structureDirty: false,
-      now,
-    });
-    expect(result.removedIds).toEqual(['q']);
-  });
-
-  it('a PBL scene with learner progress reads back as an echo after the window', () => {
+  it('a PBL scene with learner progress reads back as unchanged', () => {
     const project = {
       uiPhase: 'workspace',
       title: 'p',
@@ -434,19 +296,7 @@ describe('reading back a scene nobody changed', () => {
         },
       }),
     ) as Scene;
-    const now = 1_000_000;
-    noteScenesWritten(STAGE, [persisted], now - 60_000);
-    const result = reconcileFetchedScenes({
-      stageId: STAGE,
-      current: [local],
-      fetched: [persisted],
-      removedIds: [],
-      addedIds: [],
-      isSceneDirty: () => false,
-      structureDirty: false,
-      now,
-    });
-    expect(result.fetched[0]).toBe(local);
+    expect(keepLocalWhereUnchanged([local], [persisted])[0]).toBe(local);
   });
 });
 
@@ -580,15 +430,6 @@ describe('typing bursts', () => {
     } finally {
       vi.useRealTimers();
     }
-  });
-});
-
-describe('the stage store', () => {
-  it('does not load the sanitizer through scene-echo', async () => {
-    const { readFileSync } = await import('node:fs');
-    expect(readFileSync('lib/store/stage.ts', 'utf8')).not.toMatch(
-      /from '@\/lib\/edit\/scene-echo'/,
-    );
   });
 });
 

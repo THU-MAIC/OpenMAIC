@@ -21,6 +21,9 @@ import type { SettingsSection } from '@/lib/types/settings';
 vi.mock('@/lib/hooks/use-i18n', () => ({
   useI18n: () => ({ t: (key: string) => key, locale: 'en-US', setLocale: () => {} }),
 }));
+vi.mock('@/components/settings/sandbox-settings', () => ({
+  SandboxSettings: () => createElement('div', { 'data-testid': 'panel-sandbox' }),
+}));
 vi.mock('@/components/settings/general-settings', () => ({
   GeneralSettings: () => createElement('div', { 'data-testid': 'panel-general' }),
 }));
@@ -144,5 +147,43 @@ describe('the Skills section follows the agent runtime', () => {
     await flush();
 
     expect(panel('skills')).not.toBeNull();
+  });
+});
+
+describe('the Sandbox section follows the deployment and administrator gate', () => {
+  it.each([403, 404, 500])('hides the entry and panel when settings return %s', async (status) => {
+    const fallback = stubRuntime(true);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input).includes('/api/sandbox/settings')
+          ? Response.json(
+              { success: false, error: { code: 'SANDBOX_SETTINGS_DISABLED' } },
+              { status },
+            )
+          : fallback(input),
+      ),
+    );
+    await mountDialog('sandbox');
+    await flush();
+    expect(document.querySelector('[data-testid="settings-nav-sandbox"]')).toBeNull();
+    expect(panel('sandbox')).toBeNull();
+    expect(panel('token-plan')).not.toBeNull();
+  });
+
+  it('shows the entry and requested panel only after the server allows settings', async () => {
+    const fallback = stubRuntime(true);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input).includes('/api/sandbox/settings')
+          ? Response.json({ success: true, data: {} })
+          : fallback(input),
+      ),
+    );
+    await mountDialog('sandbox');
+    await flush();
+    expect(document.querySelector('[data-testid="settings-nav-sandbox"]')).not.toBeNull();
+    expect(panel('sandbox')).not.toBeNull();
   });
 });

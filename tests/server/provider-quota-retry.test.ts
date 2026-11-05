@@ -107,6 +107,29 @@ describe('explicit provider quota stops retries', () => {
     expect(primary.fetch).toHaveBeenCalledTimes(1);
   });
 
+  it('uses a configured fallback on an explicit balance refusal (HTTP 402)', async () => {
+    const primary = provider(() =>
+      Response.json(
+        {
+          error: {
+            message: 'Insufficient Balance',
+            type: 'insufficient_balance_error',
+            code: 'invalid_request_error',
+          },
+        },
+        { status: 402 },
+      ),
+    );
+    const fallback = provider(() => success('backup', true));
+    attachModelFallback(primary.model, async () => ({
+      model: fallback.model,
+      modelString: 'openai:backup',
+    }));
+    expect(await streamed(primary.model)).toBe('backup');
+    expect(primary.fetch).toHaveBeenCalledTimes(1);
+    expect(fallback.fetch).toHaveBeenCalledTimes(1);
+  });
+
   it.each(['generate', 'stream'] as const)(
     'keeps SDK retries for a bare 429 (%s)',
     async (mode) => {
