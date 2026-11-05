@@ -77,26 +77,62 @@ function getEdgePoints(from, to) {
 }
 ```
 
+## Step State
+
+Keep all reveal state in one `revealedCount` (how many `revealOrder` entries are shown, starting at 1) and one `renderStep()` derived from it. Next, Back, reset and the listener below only change `revealedCount` and call `renderStep()`. It alone decides which nodes and edges are shown, and it also updates the step label, the Next/Back disabled state, the detail panel and the state publication, so learner clicks and narration can never disagree.
+
+Hide nodes from `renderStep()` only. A message handler must not write `display` or `opacity` on a node group: the inline style would survive `renderStep()` and Back could no longer hide that node.
+
 ## CRITICAL: postMessage Listener for Widget Actions (REQUIRED)
 
 The platform drives this widget by posting messages into the iframe
 (`SET_WIDGET_STATE`, `HIGHLIGHT_ELEMENT`, `ANNOTATE_ELEMENT`, `REVEAL_ELEMENT`).
-Your HTML MUST register this listener, or those actions silently do nothing:
+Your HTML MUST register this listener, or those actions silently do nothing.
+Narration moves the diagram with `REVEAL_ELEMENT` targeting `#node-{id}`:
 
 ```javascript
-// Add this script at the end of your HTML
+// Add this script at the end of your HTML, after revealOrder, revealedCount and renderStep exist.
+
+// Move forward to a node, through step state. Never moves backwards: a learner
+// who has already stepped further keeps their position.
+function revealThroughNode(id) {
+  const index = revealOrder.indexOf(id);
+  if (index + 1 > revealedCount) {
+    revealedCount = index + 1;
+    renderStep();
+  }
+}
+
+function targetNodeId(target) {
+  const id = String(target).replace(/^#node-/, '');
+  return revealOrder.includes(id) ? id : null;
+}
+
+// A node must be shown before it can be highlighted or annotated. An unknown or
+// invalid selector resolves to null, so that message does nothing.
+function showTarget(target) {
+  const nodeId = targetNodeId(target);
+  if (nodeId) revealThroughNode(nodeId);
+  try {
+    return document.querySelector(target);
+  } catch {
+    return null;
+  }
+}
+
 window.addEventListener('message', function(event) {
   const { type, target, state, content } = event.data;
 
   switch (type) {
     case 'SET_WIDGET_STATE':
-      // Apply state keyed by node id. Use the same convention as REVEAL_ELEMENT:
-      // each diagram node is `id="node-{id}"` (matching the JSON node ids).
+      // Apply state keyed by node id (the JSON node ids).
       if (state) {
         Object.entries(state).forEach(([key, value]) => {
-          const node = document.getElementById('node-' + key) || document.querySelector('[data-node="' + key + '"]');
-          if (node) {
-            node.style.opacity = value ? '1' : '0.35';
+          if (value) revealThroughNode(key);
+          const node = document.getElementById('node-' + key);
+          const body = node && node.querySelector('.node-body');
+          if (body) {
+            body.style.opacity = value ? '1' : '0.35';
             node.classList.toggle('active', !!value);
           }
         });
@@ -105,7 +141,7 @@ window.addEventListener('message', function(event) {
 
     case 'HIGHLIGHT_ELEMENT':
       // Highlight the target element with a pulsing border
-      const highlightEl = document.querySelector(target);
+      const highlightEl = showTarget(target);
       if (highlightEl) {
         highlightEl.style.outline = '3px solid rgba(139, 92, 246, 0.8)';
         highlightEl.style.outlineOffset = '4px';
@@ -119,7 +155,7 @@ window.addEventListener('message', function(event) {
 
     case 'ANNOTATE_ELEMENT':
       // Show an annotation tooltip near the target element
-      const annotateEl = document.querySelector(target);
+      const annotateEl = showTarget(target);
       if (annotateEl && content) {
         const rect = annotateEl.getBoundingClientRect();
         const tooltip = document.createElement('div');
@@ -132,9 +168,9 @@ window.addEventListener('message', function(event) {
       break;
 
     case 'REVEAL_ELEMENT':
-      // Reveal a hidden node/element
-      const revealEl = document.querySelector(target);
-      if (revealEl) {
+      // Nodes reveal through step state; any other element reveals directly.
+      const revealEl = showTarget(target);
+      if (revealEl && !targetNodeId(target)) {
         revealEl.style.display = '';
         revealEl.style.opacity = '1';
       }
@@ -150,8 +186,8 @@ document.head.appendChild(style);
 
 ### Element Naming Convention
 
-So highlight/annotate/reveal can target nodes, give each node a stable id:
-- Node groups: `id="node-{id}"` (e.g., `id="node-n1"`), matching the JSON `id`.
+So highlight/annotate/reveal can target nodes, every node has one stable id, whether it is written in the markup or built by script:
+- Node groups: always `id="node-{id}"`, with `{id}` exactly as in the JSON `id`. Do not use other id patterns for nodes.
 - Edge labels: `id="edge-{from}-{to}"` if they need to be targeted.
 
 ## Output

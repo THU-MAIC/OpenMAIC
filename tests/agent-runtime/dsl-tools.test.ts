@@ -1243,6 +1243,34 @@ describe('patch_stage robustness', () => {
     expect(current.putScene).not.toHaveBeenCalled();
   });
 
+  it('diagnoses newline escaping in a path-less patch without writing it', async () => {
+    const current = richState();
+    const patch = tool(dslTools(current.store), 'patch_stage');
+    const anchor = 'first line\nsecond line';
+    const setup = await patch.execute('setup', {
+      target: '/scenes/1',
+      intent: 'Set text',
+      ops: [{ op: 'set', path: '/actions/0/text', value: anchor }],
+    } as never);
+    expect(setup).not.toHaveProperty('isError');
+    current.putScene.mockClear();
+    const failed = await patch.execute('escaped', {
+      target: '/scenes/1',
+      intent: 'Edit text',
+      ops: [{ op: 'str_replace', oldText: anchor.replaceAll('\n', '\\n'), newText: 'updated' }],
+    } as never);
+    expect(failed).toMatchObject({ isError: true });
+    expect(textOf(failed)).toContain('literal backslash+n');
+    expect(textOf(failed)).toContain('/actions/0/text');
+    expect(current.putScene).not.toHaveBeenCalled();
+    const retried = await patch.execute('exact', {
+      target: '/scenes/1',
+      intent: 'Edit text',
+      ops: [{ op: 'str_replace', oldText: anchor, newText: 'updated' }],
+    } as never);
+    expect(retried).not.toHaveProperty('isError');
+  });
+
   it('resolves str_replace without path to the single field holding the anchor', async () => {
     const current = richState();
     const patch = tool(dslTools(current.store), 'patch_stage');
