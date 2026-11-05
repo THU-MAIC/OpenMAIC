@@ -966,6 +966,15 @@ describe('interactive scenes that only have a url', () => {
     expect(await readText(zip, 'ppt/slides/slide1.xml')).toContain(`${origin}/embed/page.html`);
   });
 
+  it('keeps the link but drops the QR code when the url is too long to encode', async () => {
+    // Past the ~2.3 KB capacity of `uqr` at ECC M: no code fits, the link does.
+    const url = `https://viewer.example/page?data=${'x'.repeat(3000)}`;
+    const zip = await loadZip(await buildLessonPptx([urlOnly('u', url)]));
+    expect(await readText(zip, 'ppt/slides/slide1.xml')).toContain('export.placeholder.openOnline');
+    expect(await readText(zip, 'ppt/slides/_rels/slide1.xml.rels')).toContain(`Target="${url}"`);
+    expect(await slideImage(zip, 1)).toBeNull();
+  });
+
   it('ships the deck without an HTML page, since the page lives elsewhere', async () => {
     const scenes = [urlOnly('u', '/embed/page.html')];
     const result = await buildPack(scenes);
