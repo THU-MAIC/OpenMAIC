@@ -1229,6 +1229,12 @@ for (const [width, height] of [
         .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
         .toBeLessThanOrEqual(8);
     }
+    // The shared Pro viewport anchor also follows changes outside the transcript.
+    await page.setViewportSize({ width, height: height - 80 });
+    await expect
+      .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
+      .toBeLessThanOrEqual(8);
+    await page.setViewportSize({ width, height });
     // Deliberate upward reading still escapes follow mode.
     const following = await viewport.evaluate((el) => el.scrollTop);
     await viewport.hover();

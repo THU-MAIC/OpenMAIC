@@ -110,6 +110,7 @@ function PBLV3WorkspaceContent({
   );
   const [refreshing, setRefreshing] = useState(false);
   const commandInFlight = useRef(false);
+  const [sent, setSent] = useState(0);
   const [dirtyFiles, setDirtyFiles] = useState(false);
   const applicationPreview = useApplicationPreview(
     view,
@@ -204,6 +205,7 @@ function PBLV3WorkspaceContent({
           id: String(request.payload.decisionId),
           chosen: String(request.payload.chosen),
         });
+      if (type === 'chat' && !repeat) setSent((n) => n + 1);
       if (request.type === 'chat') beginMessage(view, request.id, String(request.payload.text));
       const baseline = latestView.current;
       try {
@@ -814,6 +816,7 @@ function PBLV3WorkspaceContent({
                       view.reportAvailable && !view.busy ? () => setReportOpen(true) : undefined
                     }
                     onOpenTask={() => taskDock.current?.open()}
+                    sent={sent}
                     pendingMessage={pendingMessage}
                     requesting={['chat', 'begin', 'retry'].includes(pendingAction ?? '')}
                   />

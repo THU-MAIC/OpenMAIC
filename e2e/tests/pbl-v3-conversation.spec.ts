@@ -1008,10 +1008,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await expect(thinking.getByRole('button')).toBeEnabled();
   await expect(thinking.getByRole('button')).toHaveAttribute('aria-expanded', 'false');
 
-  // Prior tool inspection may have moved the viewport; explicitly resume following first.
-  const resume = conversation.getByTestId('pbl-conversation-scroll-button');
-  if (await resume.isVisible()) await resume.click();
-  // Streaming follows the tail until the learner takes control, at any distance.
+  // A new learner send follows its answer, as in Pro. Output alone never reclaims reading.
   const requestsBeforeLongReply = chatRequests;
   await page.getByLabel('Your message', { exact: true }).fill('Please explain this in detail.');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
@@ -1070,9 +1067,9 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   expect(await scrollArea.evaluate((el) => el.scrollTop)).toBeCloseTo(reading, 0);
   await expect(belowButton).toHaveAttribute('data-generating', 'true');
 
-  // Scrolling down near the tail must not silently turn automatic following back on.
-  await page.mouse.wheel(0, (await distance()) - 30);
-  await expect.poll(distance).toBeCloseTo(30, 0);
+  // Downward reading outside Pro's near-bottom tolerance remains paused.
+  await page.mouse.wheel(0, (await distance()) - 100);
+  await expect.poll(distance).toBeCloseTo(100, 0);
   const nearTail = await scrollArea.evaluate((el) => el.scrollTop);
   longReply.parts[0]!.text += '\n\nMore output while reading near the tail.\n\n'.repeat(12);
   view.activitySequence++;
@@ -1082,23 +1079,28 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   expect(await scrollArea.evaluate((el) => el.scrollTop)).toBeCloseTo(nearTail, 0);
   await conversation.screenshot({ path: 'test-results/pbl-manual-reading.png' });
 
-  // Even a wheel gesture ending exactly at the bottom leaves the learner in control.
+  // Pro's shared near-bottom tolerance resumes following without a button click.
+  await page.mouse.wheel(0, (await distance()) - 30);
+  await expect.poll(distance).toBeCloseTo(30, 0);
+  await settleScroll();
+  longReply.parts[0]!.text += '\n\nFollowing near the tail.\n\n'.repeat(10);
+  view.activitySequence++;
+  await publishLearning();
+  await expect(longTurn).toContainText('Following near the tail.');
+  await expect.poll(distance).toBeLessThanOrEqual(8);
+  await expect(belowButton).toHaveCount(0);
+
+  // Returning all the way to the bottom also restores following during output.
+  await page.mouse.wheel(0, -180);
+  await expect.poll(distance).toBeGreaterThan(100);
   await page.mouse.wheel(0, 100000);
   await expect.poll(distance).toBeLessThanOrEqual(1);
-  const manualBottom = await scrollArea.evaluate((el) => el.scrollTop);
-  longReply.parts[0]!.text += '\n\nNo implicit relock.\n\n'.repeat(10);
-  view.activitySequence++;
-  await publishLearning();
-  await expect(longTurn).toContainText('No implicit relock.');
   await settleScroll();
-  expect(await scrollArea.evaluate((el) => el.scrollTop)).toBeCloseTo(manualBottom, 0);
-  await belowButton.click();
-  await expect.poll(distance).toBeLessThanOrEqual(1);
-  longReply.parts[0]!.text += '\n\nFollowing again.\n\n'.repeat(10);
+  longReply.parts[0]!.text += '\n\nFollowing after manual return to bottom.\n\n'.repeat(10);
   view.activitySequence++;
   await publishLearning();
-  await expect(longTurn).toContainText('Following again.');
-  await expect.poll(distance).toBeLessThanOrEqual(1);
+  await expect(longTurn).toContainText('Following after manual return to bottom.');
+  await expect.poll(distance).toBeLessThanOrEqual(8);
 
   // Native keyboard scrolling has the same priority as wheel input.
   await scrollArea.focus();

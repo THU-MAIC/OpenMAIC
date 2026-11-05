@@ -67,8 +67,6 @@ export function WorkbenchOnboarding({
     const bounds = viewport.getBoundingClientRect();
     if (x < bounds.left || x > bounds.right || y < bounds.top || y > bounds.bottom) return false;
     const unit = mode === 1 ? 16 : mode === 2 ? viewport.clientHeight : 1;
-    // Forward the learner's intent as well as the movement, even at the boundary.
-    viewport.dispatchEvent(new WheelEvent('wheel', { deltaY: delta, bubbles: true }));
     viewport.scrollBy({ top: delta * unit, behavior: 'instant' });
     return true;
   };

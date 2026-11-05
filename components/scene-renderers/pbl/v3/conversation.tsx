@@ -190,6 +190,7 @@ function ConversationEntry({
 }
 export function LearningConversation({
   view,
+  sent,
   requesting = false,
   modalActive = false,
   pendingMessage = null,
@@ -201,6 +202,7 @@ export function LearningConversation({
   onOpenReport?: () => void;
   onOpenFile?: (reference: FileReference) => void;
   onOpenTask?: () => void;
+  sent: number;
   requesting?: boolean;
   modalActive?: boolean;
   pendingMessage?: LearningConversationEntry | null;
@@ -240,6 +242,7 @@ export function LearningConversation({
   return (
     <ConversationViewport
       key={view.id}
+      sent={sent}
       hidden={modalActive}
       generating={requesting || view.busy || entries.some((entry) => entry.status === 'running')}
       onClick={(event) => openReference(event)}
