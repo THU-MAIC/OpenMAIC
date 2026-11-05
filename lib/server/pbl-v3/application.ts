@@ -21,6 +21,7 @@ import {
 } from './environment';
 import { projectFiles } from './workspace-files';
 import { applicationLaunchCommand, applicationProbeCommand } from './application-command';
+import { additionalBuildSources } from './build-command';
 export { applicationProbeCommand } from './application-command';
 
 const active = (state: string) => ['starting', 'running', 'unknown'].includes(state);
@@ -346,7 +347,25 @@ export async function applicationRequest(principal: OwnerPrincipal, input: unkno
     return withLearningWorkspaceAccess(scope, async () => {
       let dispatch: (() => Promise<unknown>) | undefined;
       const launch = async (id: string) => {
-        const body = { requestId: id, command: applicationLaunchCommand(application.argv) };
+        const project = projectFor(row);
+        const java = project.coursePackage?.descriptor.runtime.profile === 'java';
+        const sources = java
+          ? [
+              ...new Set([
+                ...(project.coursePackage!.descriptor.runtime.buildSources ??
+                  Object.keys(project.files).filter((path) => path.endsWith('.java'))),
+                ...additionalBuildSources(
+                  project,
+                  await projectFiles(service, environmentId, project),
+                  '.java',
+                ),
+              ]),
+            ]
+          : undefined;
+        const body = {
+          requestId: id,
+          command: applicationLaunchCommand(application.argv, sources),
+        };
         if (application.frontendPath)
           dispatch = await service.prepareApplicationCommand(environmentId, body, request.epoch);
         else await service.startApplicationCommand(environmentId, body, request.epoch);
