@@ -196,6 +196,7 @@ export function useWorkbenchStream(sessionId: string | null): void {
       }
       if (!caughtUp) {
         appendCompactedReplayEvent(backlog, parsed);
+        armReplayWatchdog();
         return;
       }
       applyEvent(parsed);
@@ -262,10 +263,10 @@ export function useWorkbenchStream(sessionId: string | null): void {
     };
     source.addEventListener('caught_up', onCaughtUp);
     // A low-priority request can wait in the browser's queue for as long as other
-    // requests hold it there, so the wait for `caught_up` counts from the open.
-    // Finishing early would let the late replay in as live frames: an old course
-    // link would open its tab. The backstop only ends the spinner on a stream that
-    // never gets through.
+    // requests hold it there, so the wait for `caught_up` runs only while a
+    // connection is open and counts from its last sign of progress. Finishing early
+    // would let the late replay in as live frames: an old course link would open its
+    // tab. The backstop only ends the spinner on a stream that never gets through.
     let replayWatchdog: number | undefined;
     const armReplayWatchdog = () => {
       window.clearTimeout(replayWatchdog);
@@ -277,6 +278,7 @@ export function useWorkbenchStream(sessionId: string | null): void {
     for (const type of WORKBENCH_EVENT_TYPES) source.addEventListener(type, onAny as EventListener);
     source.onerror = () => {
       if (!isCurrent()) return;
+      window.clearTimeout(replayWatchdog);
       // During native auto-reconnect the server snapshot is more current than
       // this frozen fold. The next received frame marks it attached again.
       connected = false;

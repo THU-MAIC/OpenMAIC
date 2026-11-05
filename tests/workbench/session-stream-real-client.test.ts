@@ -98,6 +98,56 @@ describe('replay on a stream the browser holds back', () => {
     },
   );
 
+  it('an old course link stays history when the reconnect waits in the queue', async () => {
+    await open();
+    await send(frame(1, 'session_start', {}));
+    await act(async () => {
+      stream.error(new Error('cut'));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    // The retry fires after 3 s, and the browser then holds the new request.
+    await advance(30_000);
+    expect(store().replaying).toBe(true);
+    await open();
+    await send(frame(2, 'stage_link', { stageId: 'old-course' }) + CAUGHT_UP);
+    expect(store().replayedStageLinkCount).toBe(1);
+  });
+
+  it('an old course link stays history while a slow replay is still arriving', async () => {
+    await open();
+    for (let id = 1; id <= 25; id++) {
+      await send(frame(id, 'session_start', {}));
+      await advance(999);
+    }
+    expect(store().replaying).toBe(true);
+    await send(frame(30, 'stage_link', { stageId: 'old-course' }) + CAUGHT_UP);
+    expect(store().replayedStageLinkCount).toBe(1);
+  });
+
+  it('gives up 20 s after the last replay frame', async () => {
+    await open();
+    await advance(15_000);
+    await send(frame(1, 'session_start', {}));
+    await advance(19_998);
+    expect(store().replaying).toBe(true);
+    await advance(2);
+    expect(store().replaying).toBe(false);
+  });
+
+  it('the backstop still ends a replay that keeps dropping', async () => {
+    await open();
+    for (let elapsed = 0; elapsed < 120_000; elapsed += 10_000) {
+      await act(async () => {
+        stream.error(new Error('cut'));
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      await advance(4_000);
+      await open();
+      await advance(6_000);
+    }
+    expect(store().replaying).toBe(false);
+  });
+
   it('still gives up on an open stream that never sends caught_up', async () => {
     await advance(30_000);
     await open();
