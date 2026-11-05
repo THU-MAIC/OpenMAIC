@@ -111,6 +111,11 @@ export const WORKBENCH_EVENT_TYPES: readonly string[] = [
   ...PI_EVENT_TYPES,
 ];
 
+/** How long an open stream may take to send `caught_up`. */
+const REPLAY_WATCHDOG_MS = 20_000;
+/** How long the transcript may wait for a stream that has not opened at all. */
+const REPLAY_BACKSTOP_MS = 120_000;
+
 /**
  * Attach to a session's durable event stream.
  *
@@ -254,7 +259,18 @@ export function useWorkbenchStream(sessionId: string | null): void {
       markAttached();
     };
     source.addEventListener('caught_up', onCaughtUp);
-    const replayWatchdog = window.setTimeout(finishReplay, 20_000);
+    // A low-priority request can wait in the browser's queue for as long as other
+    // requests hold it there, so the wait for `caught_up` counts from the open.
+    // Finishing early would let the late replay in as live frames: an old course
+    // link would open its tab. The backstop only ends the spinner on a stream that
+    // never gets through.
+    let replayWatchdog: number | undefined;
+    const armReplayWatchdog = () => {
+      window.clearTimeout(replayWatchdog);
+      if (!caughtUp) replayWatchdog = window.setTimeout(finishReplay, REPLAY_WATCHDOG_MS);
+    };
+    source.addEventListener('open', armReplayWatchdog);
+    const replayBackstop = window.setTimeout(finishReplay, REPLAY_BACKSTOP_MS);
 
     for (const type of WORKBENCH_EVENT_TYPES) source.addEventListener(type, onAny as EventListener);
     source.onerror = () => {
@@ -275,6 +291,8 @@ export function useWorkbenchStream(sessionId: string | null): void {
       caughtUp = true;
       backlog.length = 0;
       window.clearTimeout(replayWatchdog);
+      window.clearTimeout(replayBackstop);
+      source.removeEventListener('open', armReplayWatchdog);
       for (const type of WORKBENCH_EVENT_TYPES)
         source.removeEventListener(type, onAny as EventListener);
       source.removeEventListener('caught_up', onCaughtUp);

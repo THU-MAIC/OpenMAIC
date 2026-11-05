@@ -4,9 +4,14 @@
  * Chromium gives a native `EventSource` a medium priority that cannot be
  * lowered. On a connection it rates 3G or slower, its ResourceScheduler holds
  * low-priority requests while `in-flight low + 3 x in-flight medium >= 8`, so
- * three open streams hold every lazy script chunk until its 15 s queueing limit
- * lets a batch through. As low-priority requests the same streams count once
- * each and leave room for the chunks.
+ * three open streams hold back every lazy script chunk, batch after batch. As
+ * low-priority requests the same streams count once each and leave room for the
+ * chunks.
+ *
+ * The price: the stream itself now queues behind other low-priority requests,
+ * and how long depends on how many are in flight and how slow they are. On that
+ * kind of connection `open` can come tens of seconds after the constructor, so
+ * a caller's timeout should count from `open`.
  *
  * Semantics follow the HTML spec's server-sent events section, and Chromium
  * where the spec leaves a choice (the last event id survives a reconnect).
