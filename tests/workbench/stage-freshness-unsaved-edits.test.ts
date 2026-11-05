@@ -115,6 +115,7 @@ import {
   useStageStore,
   writePendingChangesForUnload,
 } from '@/lib/store/stage';
+import { unseenScenes } from '@/lib/store/known-scenes';
 import type { Scene, Stage } from '@/lib/types/stage';
 import { useStageFreshnessSync } from '@/lib/workbench/use-workbench-session';
 
@@ -289,6 +290,18 @@ afterEach(async () => {
 });
 
 describe('a freshness sync with unsaved scene edits', () => {
+  it('forgets a scene it removed, so the id written again later counts as new', async () => {
+    const source = await openCourse();
+    const stored = [{ id: 'scene-2' }];
+    expect(unseenScenes('stage-a', stored, [])).toEqual([]);
+
+    remoteDelete('scene-2');
+    await act(async () => source.emitFreshness());
+
+    expect(useStageStore.getState().scenes.map((scene) => scene.id)).toEqual(['scene-1']);
+    expect(unseenScenes('stage-a', stored, [])).toEqual(stored);
+  });
+
   it('keeps an edit still inside the save debounce, and the save writes the edit', async () => {
     const source = await openCourse();
 
