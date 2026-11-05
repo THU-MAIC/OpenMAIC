@@ -5,6 +5,8 @@
  * `process.env.NEXT_RUNTIME === 'nodejs'` so Next.js's Edge instrumentation
  * compiler does not flag `process.once` during static analysis.
  */
+const SCHEMA_RETIREMENT_TIMEOUT_MS = 30_000;
+
 export async function registerNodeInstrumentation(): Promise<void> {
   const { warnIfDefaultDatabasePasswordIsPublished } =
     await import('@/lib/server/database-password-warning');
