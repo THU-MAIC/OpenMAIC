@@ -33,14 +33,16 @@ interface SlideEditSessionState {
   /** Apply only while the transaction still belongs to the captured scene. */
   applyTransactionForScene: (sceneId: string, transaction: EditorTransaction) => void;
   /**
-   * Fold a renderer-committed snapshot in. `sceneId`: the scene `next` was built
-   * from, which a late commit (a debounce outliving a page switch) may no longer
-   * have open. `isPointerGesture`: the commit came from inside a pointer
-   * interaction. Without one, a text element's auto-height is the renderer's own
-   * layout (written, no step), while anything else, typing above all, is still an
-   * edit. The renderer's explicit tidying (`withTidyWrite`) is never a step.
+   * Fold a renderer-committed snapshot in, and save it. `sceneId`: the scene `next`
+   * was built from. The renderer's explicit tidying (`withTidyWrite`) is written with
+   * no step; anything else is an edit.
    */
-  commitContent: (sceneId: string, next: SlideContent, isPointerGesture: boolean) => void;
+  commitContent: (sceneId: string, next: SlideContent) => void;
+  /**
+   * Hold what the canvas measured (text auto-height), with no edit behind it: no
+   * step and no save. It goes out with the next real edit of the scene.
+   */
+  commitMeasurement: (sceneId: string, next: SlideContent) => void;
   /** Tear the session down on exit from edit mode. */
   end: () => void;
 }
@@ -66,21 +68,6 @@ function canonicalContent(sceneId: string): SlideContent | null {
 
 function writeContent(sceneId: string, next: SlideContent): void {
   useStageStore.getState().updateScene(sceneId, { content: next });
-}
-
-function isAutoSizeOnly(previous: SlideContent, next: SlideContent): boolean {
-  const operations = deriveSlideEditOperations(previous, next);
-  return (
-    operations.length > 0 &&
-    operations.every((operation) => {
-      if (operation.type !== 'element.update') return false;
-      const element = previous.canvas.elements.find((el) => el.id === operation.elementId);
-      return (
-        element?.type === 'text' &&
-        Object.keys(operation.patch).every((key) => AUTO_SIZE_FIELDS.has(key))
-      );
-    })
-  );
 }
 
 /** The burst a commit belongs to: one text element's content, edited in one go. */
@@ -156,10 +143,10 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
       if (get().sceneId === sceneId) apply(sceneId, transaction);
     },
 
-    commitContent: (sceneId, next, isPointerGesture) => {
+    commitContent: (sceneId, next) => {
       const content = canonicalContent(sceneId);
       if (!content) return;
-      if (isTidyWrite() || (!isPointerGesture && isAutoSizeOnly(content, next))) {
+      if (isTidyWrite()) {
         writeContent(sceneId, next);
         return;
       }
@@ -171,6 +158,10 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
       commitCourseEdit({ coalesceKey: textBurstOf(sceneId, content, next) }, () =>
         writeContent(sceneId, committed.present),
       );
+    },
+
+    commitMeasurement: (sceneId, next) => {
+      useStageStore.getState().updateSceneMeasurement(sceneId, next);
     },
 
     end: () => set({ sceneId: null }),

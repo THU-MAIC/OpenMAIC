@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { keepLocalWhereUnchanged } from '@/lib/edit/scene-echo';
 import { mergeFetchedScenes } from '@/lib/workbench/stage-freshness';
-import type { Scene } from '@/lib/types/stage';
+import type { Scene, SlideContent } from '@/lib/types/stage';
 
 function quiz(
   id: string,
@@ -75,6 +75,14 @@ describe('keepLocalWhereUnchanged', () => {
     const local = quiz('a', [{ id: 'q', note: undefined, text: 'x' }]);
     const server = quiz('a', [{ text: 'x', id: 'q' }]);
     expect(keepLocalWhereUnchanged([local], [server])[0]).toBe(local);
+  });
+
+  it('does not take a text height this browser measured for a change', () => {
+    const measured = slideWithHtml('a', '<p>Hello</p>');
+    const canvas = (measured.content as SlideContent).canvas;
+    (canvas.elements[0] as unknown as { height: number }).height = 123;
+    const server = slideWithHtml('a', '<p>Hello</p>');
+    expect(keepLocalWhereUnchanged([measured], [server])[0]).toBe(measured);
   });
 
   it('takes a changed field and keeps the unchanged ones local', () => {

@@ -17,7 +17,28 @@ import { fieldFingerprint, trackedSceneFields } from '@/lib/edit/course-timeline
 import { migrateScene } from '@/lib/edit/slide-schema';
 import { pblSceneAsPersisted } from '@/lib/pbl/v2/runtime/persisted-scene';
 import { sanitizeSceneContent } from '@/lib/sanitize/scene-content';
-import type { Scene } from '@/lib/types/stage';
+import type { Scene, SlideContent } from '@/lib/types/stage';
+
+/**
+ * A text box's size is what each browser measures for it, and a measurement is not
+ * saved until the next real edit, so it differs from the server's with nobody having
+ * changed anything.
+ */
+function withoutMeasuredSizes(field: string, value: unknown): unknown {
+  const content = value as SlideContent | undefined;
+  if (field !== 'content' || content?.type !== 'slide' || !content.canvas) return value;
+  return {
+    ...content,
+    canvas: {
+      ...content.canvas,
+      elements: content.canvas.elements.map((element) => {
+        if (element.type !== 'text') return element;
+        const { width: _width, height: _height, ...rest } = element;
+        return rest;
+      }),
+    },
+  };
+}
 
 const storedFormByScene = new WeakMap<Scene, Scene>();
 
@@ -51,7 +72,10 @@ export function keepLocalWhereUnchanged(
     const merged: Record<string, unknown> = { ...serverFields };
     let taken = false;
     for (const field of new Set([...trackedSceneFields(local), ...trackedSceneFields(server)])) {
-      if (fieldFingerprint(localAsStored[field]) !== fieldFingerprint(serverFields[field])) {
+      if (
+        fieldFingerprint(withoutMeasuredSizes(field, localAsStored[field])) !==
+        fieldFingerprint(withoutMeasuredSizes(field, serverFields[field]))
+      ) {
         taken = true;
       } else if (localFields[field] === undefined) {
         delete merged[field];

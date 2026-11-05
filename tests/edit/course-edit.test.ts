@@ -63,12 +63,8 @@ beforeEach(() => {
 
 describe('slide edits on the timeline', () => {
   it('records typing with no pointer gesture as one step, and a burst stays one step', () => {
-    useSlideEditSession
-      .getState()
-      .commitContent('p1', withElement('p1', { content: '<p>H</p>' }), false);
-    useSlideEditSession
-      .getState()
-      .commitContent('p1', withElement('p1', { content: '<p>Hi</p>' }), false);
+    useSlideEditSession.getState().commitContent('p1', withElement('p1', { content: '<p>H</p>' }));
+    useSlideEditSession.getState().commitContent('p1', withElement('p1', { content: '<p>Hi</p>' }));
     expect(steps()).toBe(1);
     stepCourseTimeline('undo');
     expect(textOf('p1').content).toBe('<p>Hello</p>');
@@ -77,29 +73,27 @@ describe('slide edits on the timeline', () => {
   });
 
   it('writes auto-height with no step, and does not clear redo', () => {
-    useSlideEditSession.getState().commitContent('p1', withElement('p1', { left: 7 }), true);
+    useSlideEditSession.getState().commitContent('p1', withElement('p1', { left: 7 }));
     stepCourseTimeline('undo');
-    useSlideEditSession.getState().commitContent('p1', withElement('p1', { height: 321 }), false);
+    useSlideEditSession.getState().commitMeasurement('p1', withElement('p1', { height: 321 }));
     expect(textOf('p1').height).toBe(321);
     expect(steps()).toBe(0);
     expect(line().future).toHaveLength(1);
   });
 
   it('records a user resize of the same field made inside a pointer gesture', () => {
-    useSlideEditSession.getState().commitContent('p1', withElement('p1', { height: 321 }), true);
+    useSlideEditSession.getState().commitContent('p1', withElement('p1', { height: 321 }));
     expect(steps()).toBe(1);
   });
 
   it('records a move even if the gesture flag was lost', () => {
-    useSlideEditSession.getState().commitContent('p1', withElement('p1', { left: 44 }), false);
+    useSlideEditSession.getState().commitContent('p1', withElement('p1', { left: 44 }));
     expect(steps()).toBe(1);
   });
 
   it('gives a drag then typing two steps', () => {
-    useSlideEditSession.getState().commitContent('p1', withElement('p1', { left: 44 }), true);
-    useSlideEditSession
-      .getState()
-      .commitContent('p1', withElement('p1', { content: '<p>x</p>' }), false);
+    useSlideEditSession.getState().commitContent('p1', withElement('p1', { left: 44 }));
+    useSlideEditSession.getState().commitContent('p1', withElement('p1', { content: '<p>x</p>' }));
     expect(steps()).toBe(2);
   });
 
@@ -157,7 +151,7 @@ describe('the #1529 case', () => {
 
   it('a local edit builds on an agent change instead of overwriting it', () => {
     agentWrite(addAgentElement);
-    useSlideEditSession.getState().commitContent('p1', withElement('p1', { left: 5 }), true);
+    useSlideEditSession.getState().commitContent('p1', withElement('p1', { left: 5 }));
     expect(ids()).toContain('agent-text');
     useSlideEditSession
       .getState()
@@ -166,7 +160,7 @@ describe('the #1529 case', () => {
   });
 
   it('undo is strictly ordered: the agent step, then the hand edit, and redo returns both', () => {
-    useSlideEditSession.getState().commitContent('p1', withElement('p1', { left: 5 }), true);
+    useSlideEditSession.getState().commitContent('p1', withElement('p1', { left: 5 }));
     agentWrite(addAgentElement);
     expect(steps()).toBe(2);
     expect(line().past[1].origin).toBe('agent');
@@ -206,7 +200,7 @@ describe('the #1529 case', () => {
 
 describe('undo and redo across the course', () => {
   it('jumps to the page, clears the selection, and restores a deleted page in place', () => {
-    useSlideEditSession.getState().commitContent('p1', withElement('p1', { left: 5 }), true);
+    useSlideEditSession.getState().commitContent('p1', withElement('p1', { left: 5 }));
     useStageStore.getState().setCurrentSceneId('p3');
     commitCourseEdit({}, () => useStageStore.getState().deleteScene('p2'));
     useCanvasStore.getState().setActiveElementIdList(['t-p3']);

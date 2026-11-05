@@ -230,16 +230,6 @@ export function useSlideSurfaceState(): SurfaceState<SlideContent, SlideSelectio
 
 interface SlideCanvasController {
   readonly controller: SceneDataController;
-  /**
-   * Spread onto the canvas wrapper. Tracks whether a pointer gesture is in
-   * flight so a renderer commit can be classified as a real user edit vs
-   * ResizeObserver normalization (which fires with no pointer gesture).
-   */
-  readonly gestureProps: {
-    readonly onPointerDownCapture: () => void;
-    readonly onPointerUpCapture: () => void;
-    readonly onPointerCancelCapture: () => void;
-  };
 }
 
 /**
@@ -257,44 +247,6 @@ export function useSlideCanvasController(): SlideCanvasController {
   // to this scene's content, whoever made it.
   useStageStore((s) => s.scenes.find((scene) => scene.id === sceneId)?.content);
 
-  // True only while a pointer gesture is in flight. The renderer commits a
-  // geometry edit synchronously inside its mouseup handler (still within
-  // the gesture); its ResizeObserver text-normalization commits later with
-  // no gesture. Cleared on a macrotask after pointerup so the synchronous
-  // commit still observes `true`.
-  const gestureRef = useRef(false);
-  useEffect(() => {
-    const finishGesture = () => {
-      setTimeout(() => {
-        gestureRef.current = false;
-      }, 0);
-    };
-    window.addEventListener('pointerup', finishGesture);
-    window.addEventListener('pointercancel', finishGesture);
-    return () => {
-      window.removeEventListener('pointerup', finishGesture);
-      window.removeEventListener('pointercancel', finishGesture);
-    };
-  }, []);
-  const gestureProps = useMemo(
-    () => ({
-      onPointerDownCapture: () => {
-        gestureRef.current = true;
-      },
-      onPointerUpCapture: () => {
-        setTimeout(() => {
-          gestureRef.current = false;
-        }, 0);
-      },
-      onPointerCancelCapture: () => {
-        setTimeout(() => {
-          gestureRef.current = false;
-        }, 0);
-      },
-    }),
-    [],
-  );
-
   useEffect(() => {
     if (!sceneId) return;
     useSlideEditSession.getState().seed(sceneId);
@@ -309,20 +261,21 @@ export function useSlideCanvasController(): SlideCanvasController {
       // Read from the canonical stage store; the session writes through to
       // it on every history move so this is always the up-to-date content.
       getSnapshot: () => currentSlideContent(sceneId) ?? EMPTY_SLIDE,
-      updateSceneData: (updater) => {
+      updateSceneData: (updater, options) => {
         const base = currentSlideContent(sceneId);
         if (!base) return;
         const next = produce(base, updater as (draft: SlideContent) => void);
-        useSlideEditSession.getState().commitContent(sceneId, next, gestureRef.current);
+        if (options?.measurement) {
+          useSlideEditSession.getState().commitMeasurement(sceneId, next);
+          return;
+        }
+        useSlideEditSession.getState().commitContent(sceneId, next);
       },
     }),
     [sceneId],
   );
 
-  return {
-    controller,
-    gestureProps,
-  };
+  return { controller };
 }
 
 /**

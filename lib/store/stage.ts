@@ -597,6 +597,15 @@ interface StageState {
   addScene: (scene: Scene) => void;
   insertSceneAfter: (anchorSceneId: string, scene: Scene) => void;
   updateScene: (sceneId: string, updates: ScenePatch) => void;
+  /**
+   * Hold what a canvas measured from a scene's layout (text auto-height), not
+   * something anyone changed. Unlike `updateScene` this queues no save and does
+   * not count as an unsaved edit: the value differs per browser and is measured
+   * again on every render, and saving it would write this tab's whole copy of
+   * the scene over whatever the server holds now, with no user input. The next
+   * real save of the scene carries it.
+   */
+  updateSceneMeasurement: (sceneId: string, content: Scene['content']) => void;
   deleteScene: (sceneId: string) => void;
   setCurrentSceneId: (sceneId: string | null) => void;
   /** Land an undo or redo: only what the step changed is marked for saving. */
@@ -631,6 +640,16 @@ interface StageState {
   saveToStorage: () => Promise<boolean>;
   loadFromStorage: (stageId: string, loadToken?: StageSceneLoadToken) => Promise<void>;
   clearStore: () => void;
+}
+
+function scenesWithPatch(scenes: Scene[], sceneId: string, updates: ScenePatch): Scene[] {
+  return scenes.map((scene) => {
+    if (scene.id !== sceneId) return scene;
+    const content = mergeSceneContentForUpdate(scene.content, updates.content) ?? scene.content;
+    // Rebind `type` to the merged content's kind (a type-only patch can no
+    // longer desync the discriminant from the content).
+    return makeScene({ ...scene, ...updates }, content);
+  });
 }
 
 function isDeckComplete({
@@ -884,15 +903,12 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   },
 
   updateScene: (sceneId, updates) => {
-    const scenes = get().scenes.map((scene) => {
-      if (scene.id !== sceneId) return scene;
-      const content = mergeSceneContentForUpdate(scene.content, updates.content) ?? scene.content;
-      // Rebind `type` to the merged content's kind (a type-only patch can no
-      // longer desync the discriminant from the content).
-      return makeScene({ ...scene, ...updates }, content);
-    });
-    set({ scenes });
+    set({ scenes: scenesWithPatch(get().scenes, sceneId, updates) });
     markPendingChanges(get().stage?.id, { kind: 'scene', sceneId });
+  },
+
+  updateSceneMeasurement: (sceneId, content) => {
+    set({ scenes: scenesWithPatch(get().scenes, sceneId, { content }) });
   },
 
   deleteScene: (sceneId) => {

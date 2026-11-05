@@ -115,7 +115,7 @@ const pause = (ms: number) =>
 function clearText(id: string) {
   const next = structuredClone(sceneOf(id).content as SlideContent);
   (next.canvas.elements[0] as unknown as { content: string }).content = '<p></p>';
-  useSlideEditSession.getState().commitContent(id, next, false);
+  useSlideEditSession.getState().commitContent(id, next);
 }
 
 beforeEach(() => {
@@ -131,7 +131,7 @@ describe('a commit that outlives its page', () => {
     useSlideEditSession.getState().seed('b');
     const edited = structuredClone(sceneOf('a').content as SlideContent);
     edited.canvas.elements = [];
-    useSlideEditSession.getState().commitContent('a', edited, true);
+    useSlideEditSession.getState().commitContent('a', edited);
     expect(elementsOf('b').map((element) => element.id)).toEqual(['t-b']);
     expect(elementsOf('a')).toEqual([]);
   });
@@ -212,7 +212,7 @@ describe('the empty text box cleanup', () => {
     const { withTidyWrite } = await import('@/lib/edit/tidy-write');
     const empty = structuredClone(sceneOf('a').content as SlideContent);
     empty.canvas.elements = [];
-    withTidyWrite(() => useSlideEditSession.getState().commitContent('a', empty, true));
+    withTidyWrite(() => useSlideEditSession.getState().commitContent('a', empty));
     expect(elementsOf('a')).toEqual([]);
     expect([past(), future()]).toEqual([0, 1]);
     await act(async () => root.unmount());
@@ -437,7 +437,7 @@ describe('typing bursts', () => {
     const text = (id: string, content: string) => {
       const next = structuredClone(sceneOf(id).content as SlideContent);
       (next.canvas.elements[0] as unknown as { content: string }).content = content;
-      useSlideEditSession.getState().commitContent(id, next, false);
+      useSlideEditSession.getState().commitContent(id, next);
     };
     text('a', '<p>on a</p>');
     text('b', '<p>on b</p>');
