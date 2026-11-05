@@ -49,18 +49,23 @@ interface SlideEditSessionState {
   /** Apply only while the transaction still belongs to the captured scene. */
   applyTransactionForScene: (sceneId: string, transaction: EditorTransaction) => void;
   /**
-   * Fold a renderer-committed snapshot in. `isUserEdit` is the causal
-   * discriminator: a real gesture commits synchronously inside a pointer
-   * interaction, whereas the renderer's ResizeObserver normalization (text
-   * auto-height) commits with no pointer gesture in flight. Non-user
-   * commits update `present` only — no new undo step, so `past` is left
-   * untouched (the reflow can chase a user resize and wiping the undo
-   * stack would silently break undo). `future` IS cleared, though: once
-   * `present` is replaced by the normalized content it has diverged from
-   * whatever the redo branch pointed at, so those stale entries are no
-   * longer valid continuations.
+   * Fold a renderer-committed snapshot in, and save it. `isUserEdit` says
+   * whether it came from a pointer gesture, which commits synchronously inside
+   * the interaction. Any other commit (typing, for one) updates `present` only:
+   * no new undo step, so `past` is left untouched. `future` IS cleared, though:
+   * once `present` is replaced it has diverged from whatever the redo branch
+   * pointed at, so those stale entries are no longer valid continuations.
    */
   commitContent: (next: SlideContent, isUserEdit: boolean) => void;
+  /**
+   * Fold in what the canvas measured (text auto-height), with no edit behind
+   * it. A scene save writes the whole scene, so this must not save: it would
+   * put this tab's copy over whatever the server holds now, with no user input,
+   * and as a pending edit it would hold back the next remote change. It stays
+   * in the store for this tab and goes out with the next real edit. No undo
+   * step, and `future` is cleared, as for a commit outside a gesture.
+   */
+  commitMeasurement: (next: SlideContent) => void;
   setGestureActive: (active: boolean) => void;
   /**
    * Follow the stage store when something other than this session changed the
@@ -79,11 +84,10 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
 
   /**
    * Write the new canonical content through to the stage store (auto-save).
-   * Single point of write-through so undo, redo, applyOp, user
-   * commitContent, and ResizeObserver normalization all stay in lockstep
-   * with `useStageStore`. Stage updates fire first so renderer subscribers
-   * (SceneProvider reads via `currentSlideContent`) see the new content as
-   * soon as React processes the next batch.
+   * Single point of write-through so undo, redo, applyOp and commitContent
+   * all stay in lockstep with `useStageStore`. Stage updates fire first so
+   * renderer subscribers (SceneProvider reads via `currentSlideContent`) see
+   * the new content as soon as React processes the next batch.
    */
   const writeThrough = (next: SlideContent) => {
     const { sceneId } = get();
@@ -155,14 +159,11 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
       const { history } = get();
       if (!history) return;
       if (!isUserEdit) {
-        // ResizeObserver / auto-height normalization: don't push an undo
-        // step (the reflow can chase a user resize and wiping `past` would
-        // silently break undo), but DO write through — the auto-fit height
-        // IS the new canonical state. Clear `future`, though: `present` now
-        // holds the normalized content, which has diverged from whatever
-        // the redo branch pointed at, so replaying those stale entries
-        // would discard this normalization. Leaving them would let a later
-        // redo silently revert to pre-undo content (canvas/store divergence).
+        // No gesture: don't push an undo step, but DO write through. Clear
+        // `future`: `present` now holds this content, which has diverged from
+        // whatever the redo branch pointed at. Leaving those entries would let
+        // a later redo silently revert to pre-undo content (canvas/store
+        // divergence).
         writeThrough(next);
         set({ history: { ...history, present: next, future: [] } });
         return;
@@ -173,6 +174,14 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
       replace(
         commitSlideEdit(history as unknown as SlideEditHistory, next) as unknown as EditorHistory,
       );
+    },
+
+    commitMeasurement: (next) => {
+      const { history, sceneId } = get();
+      if (!history || !sceneId) return;
+      lastWritten = next;
+      useStageStore.getState().updateSceneMeasurement(sceneId, next);
+      set({ history: { ...history, present: next, future: [] } });
     },
 
     setGestureActive: (gestureActive) => set({ gestureActive }),
