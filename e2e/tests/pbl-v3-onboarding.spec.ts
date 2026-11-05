@@ -491,7 +491,7 @@ test('uses the current progress anchor after a live stage transition', async ({
   await fixture.publish();
   await expect(page.locator('[data-pbl-tour="progress"]')).toContainText('2/7');
   await expect(page.locator('[data-pbl-onboarding="spotlight"]')).toBeVisible();
-  await correctSpotlight(page, '[data-pbl-tour="progress"]');
+  await correctSpotlight(page, '[data-pbl-tour="task"]');
 });
 
 test('completed projects replay basic UI without claiming a current learning step', async ({
@@ -873,7 +873,7 @@ for (const [width, height, locale, docked] of [
     if (docked) await page.getByTestId('pbl-workspace-size').click();
     await page.locator('[data-pbl-tour="replay"]').click();
     const selectors = [
-      '[data-pbl-tour="progress"]',
+      '[data-pbl-tour="task"]',
       '[data-pbl-tour="conversation"]',
       '[data-testid="pbl-ide"]',
       '[data-testid="pbl-application-panel"], [data-testid="pbl-application-open"]',
