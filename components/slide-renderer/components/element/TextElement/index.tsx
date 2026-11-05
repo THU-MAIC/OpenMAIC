@@ -161,11 +161,14 @@ export function TextElement({ elementInfo, selectElement }: TextElementProps) {
     debouncedCheck();
   }, [elementInfo.content, elementInfo.id, deleteElement]);
 
-  // Check empty text when element is no longer handled
+  // Remove empty text when the user leaves the element. Removing it saves the
+  // whole scene, so this follows that action: rendering an empty box (entering
+  // Edit, an undo, a server copy) must not write this tab's copy to the server.
+  const wasHandled = useRef(isHandleElement);
   useEffect(() => {
-    if (!isHandleElement) {
-      checkEmptyText();
-    }
+    const left = wasHandled.current && !isHandleElement;
+    wasHandled.current = isHandleElement;
+    if (left) checkEmptyText();
   }, [isHandleElement, checkEmptyText]);
 
   return (

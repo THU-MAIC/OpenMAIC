@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Editor: the automatic text-height adjustment in the legacy Pro editor no longer saves the scene, so it no longer puts an older copy of a page back on the server from a tab that had not picked up a newer version, and no longer holds back an agent's next change. The height is kept in that tab and saved with its next real edit. [#2181](https://github.com/THU-MAIC/OpenMAIC/pull/2181)
 - Editor: saving a structural change, such as deleting or reordering a page, no longer deletes a page an agent or another tab added that this tab had not heard of yet. A page the user deleted is still deleted.
 - Editor: the standalone classroom page follows server changes while in Edit, so a page an agent changed appears within seconds, including one changed before Edit was opened, instead of only after a reload.
+- Editor: the legacy Pro editor removes an empty text box when the user leaves it, not whenever it renders, so opening a page no longer saves it with no user input. An empty box that already exists, or that an undo brings back, stays until it is selected and left.
 
 ## [1.4.0] - 2026-11-04
 
