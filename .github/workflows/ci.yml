@@ -306,6 +306,8 @@ jobs:
       PUPPETEER_SKIP_DOWNLOAD: "true"
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v5
         with:
@@ -328,7 +330,40 @@ jobs:
         working-directory: render-service
         run: npm test
 
+      # The image is built only from render-service/, and its packages come from
+      # snapshot.debian.org, so an outage there would fail pull requests that
+      # cannot affect the image. Pull requests and merge queue entries build only
+      # when an input changes; every push still builds.
+      - name: Detect render image changes
+        id: changes
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            pull_request | merge_group) ;;
+            *) echo "changed=true" >> "$GITHUB_OUTPUT"; exit 0 ;;
+          esac
+          if [ -z "$PR_BASE" ] || ! git rev-parse --verify --quiet "$PR_BASE^{commit}" >/dev/null; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          inputs="$(git diff --name-only "$PR_BASE" "$GITHUB_SHA" | grep -E \
+            -e '^render-service/' \
+            -e '^\.github/workflows/ci\.yml$' || true)"
+          if [ -n "$inputs" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Render image inputs changed:"
+            printf '%s\n' "$inputs"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No render image input changed; skipping the image build."
+          fi
+
       - name: Build container image
+        if: steps.changes.outputs.changed == 'true'
         run: docker build --tag openmaic-render-service:ci render-service
 
   # The Playwright suite scales with its worker count, and a 4-core runner that
