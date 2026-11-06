@@ -1022,13 +1022,13 @@ function PBLV3WorkspaceContent({
                         <div className="grid gap-2">
                           {question.options.map((option, i) => (
                             <label
-                              className="group block"
+                              className="group relative block"
                               data-selected={answers[index] === i}
                               key={i}
                             >
                               <input
                                 type="radio"
-                                className="peer sr-only"
+                                className="peer absolute inset-0 z-10 m-0 size-full cursor-pointer opacity-0 disabled:cursor-default"
                                 name={`quiz-${index}`}
                                 disabled={pendingAction === 'quiz'}
                                 checked={answers[index] === i}
@@ -1043,7 +1043,7 @@ function PBLV3WorkspaceContent({
                                   })
                                 }
                               />
-                              <span className="grid cursor-pointer grid-cols-[1.75rem_minmax(0,1fr)_1rem] items-start gap-2.5 rounded-lg border border-border bg-card px-2.5 py-2 text-card-foreground transition-colors hover:border-primary/40 hover:bg-accent/40 peer-checked:border-primary/65 peer-checked:bg-primary/10 peer-focus-visible:border-primary peer-disabled:cursor-default peer-disabled:opacity-65 motion-reduce:transition-none">
+                              <span className="grid grid-cols-[1.75rem_minmax(0,1fr)_1rem] items-start gap-2.5 rounded-lg border border-border bg-card px-2.5 py-2 text-card-foreground transition-colors peer-hover:border-primary/40 peer-hover:bg-accent/40 peer-checked:border-primary/65 peer-checked:bg-primary/10 peer-focus-visible:border-primary peer-disabled:cursor-default peer-disabled:opacity-65 motion-reduce:transition-none">
                                 <span
                                   aria-hidden="true"
                                   className="inline-flex size-7 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground group-data-[selected=true]:bg-primary group-data-[selected=true]:text-primary-foreground"
