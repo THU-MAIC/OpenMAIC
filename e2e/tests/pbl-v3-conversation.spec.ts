@@ -1144,7 +1144,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await expect(thinking.getByRole('button')).toBeEnabled();
   await expect(thinking.getByRole('button')).toHaveAttribute('aria-expanded', 'false');
 
-  // A long streaming reply keeps its heading readable instead of chasing its tail.
+  // A new learner send follows its answer, as in Pro. Output alone never reclaims reading.
   const requestsBeforeLongReply = chatRequests;
   await page.getByLabel('Your message', { exact: true }).fill('Please explain this in detail.');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
@@ -1173,40 +1173,88 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   ).join('');
   view.activitySequence++;
   await publishLearning();
-  await expect(belowButton).toHaveAttribute('data-generating', 'true');
-  await expect
-    .poll(async () => {
-      const heading = await longTurn.boundingBox(),
-        viewport = await scrollArea.boundingBox();
-      return !!heading && !!viewport && heading.y >= viewport.y - 2 && heading.y <= viewport.y + 24;
-    })
-    .toBe(true);
+  const distance = () =>
+    scrollArea.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
+  const settleScroll = () =>
+    scrollArea.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    );
+  await expect.poll(distance).toBeLessThanOrEqual(1);
+  await expect(belowButton).toHaveCount(0);
   const pinned = await scrollArea.evaluate((el) => el.scrollTop);
   longReply.parts[0]!.text += '\n\n' + 'More content below the viewport.\n\n'.repeat(25);
   view.activitySequence++;
   await publishLearning();
   await expect(longTurn).toContainText('More content below the viewport.');
-  await expect.poll(() => scrollArea.evaluate((el) => el.scrollTop)).toBeCloseTo(pinned, 0);
-  // Manual upward reading remains in place while output continues.
+  await expect.poll(distance).toBeLessThanOrEqual(1);
+  expect(await scrollArea.evaluate((el) => el.scrollTop)).toBeGreaterThan(pinned);
+  await conversation.screenshot({ path: 'test-results/pbl-follow-tail.png' });
+
   await scrollArea.hover();
+  const following = await scrollArea.evaluate((el) => el.scrollTop);
   await page.mouse.wheel(0, -180);
-  await expect.poll(() => scrollArea.evaluate((el) => el.scrollTop)).toBeLessThan(pinned - 30);
+  await expect.poll(() => scrollArea.evaluate((el) => el.scrollTop)).toBeLessThan(following - 30);
   const reading = await scrollArea.evaluate((el) => el.scrollTop);
   longReply.parts[0]!.text += '\n\nStill generating.\n\n'.repeat(10);
   view.activitySequence++;
   await publishLearning();
   await expect(longTurn).toContainText('Still generating.');
-  await expect.poll(() => scrollArea.evaluate((el) => el.scrollTop)).toBeCloseTo(reading, 0);
+  await settleScroll();
+  expect(await scrollArea.evaluate((el) => el.scrollTop)).toBeCloseTo(reading, 0);
+  await expect(belowButton).toHaveAttribute('data-generating', 'true');
+
+  // Downward reading outside Pro's near-bottom tolerance remains paused.
+  await page.mouse.wheel(0, (await distance()) - 100);
+  await expect.poll(distance).toBeCloseTo(100, 0);
+  const nearTail = await scrollArea.evaluate((el) => el.scrollTop);
+  longReply.parts[0]!.text += '\n\nMore output while reading near the tail.\n\n'.repeat(12);
+  view.activitySequence++;
+  await publishLearning();
+  await expect(longTurn).toContainText('More output while reading near the tail.');
+  await settleScroll();
+  expect(await scrollArea.evaluate((el) => el.scrollTop)).toBeCloseTo(nearTail, 0);
+  await conversation.screenshot({ path: 'test-results/pbl-manual-reading.png' });
+
+  // Pro's shared near-bottom tolerance resumes following without a button click.
+  await page.mouse.wheel(0, (await distance()) - 30);
+  await expect.poll(distance).toBeCloseTo(30, 0);
+  await settleScroll();
+  longReply.parts[0]!.text += '\n\nFollowing near the tail.\n\n'.repeat(10);
+  view.activitySequence++;
+  await publishLearning();
+  await expect(longTurn).toContainText('Following near the tail.');
+  await expect.poll(distance).toBeLessThanOrEqual(8);
+  await expect(belowButton).toHaveCount(0);
+
+  // Returning all the way to the bottom also restores following during output.
+  await page.mouse.wheel(0, -180);
+  await expect.poll(distance).toBeGreaterThan(100);
+  await page.mouse.wheel(0, 100000);
+  await expect.poll(distance).toBeLessThanOrEqual(1);
+  await settleScroll();
+  longReply.parts[0]!.text += '\n\nFollowing after manual return to bottom.\n\n'.repeat(10);
+  view.activitySequence++;
+  await publishLearning();
+  await expect(longTurn).toContainText('Following after manual return to bottom.');
+  await expect.poll(distance).toBeLessThanOrEqual(8);
+
+  // Native keyboard scrolling has the same priority as wheel input.
+  await scrollArea.focus();
+  await page.keyboard.press('Home');
+  await expect.poll(() => scrollArea.evaluate((el) => el.scrollTop)).toBe(0);
+  longReply.parts[0]!.text += '\n\nKeyboard reading.\n\n'.repeat(10);
+  view.activitySequence++;
+  await publishLearning();
+  await expect(longTurn).toContainText('Keyboard reading.');
+  await settleScroll();
+  expect(await scrollArea.evaluate((el) => el.scrollTop)).toBe(0);
+  await belowButton.click();
   longReply.status = 'succeeded';
   longReply.parts[0]!.streaming = false;
   view.busy = false;
   view.activitySequence++;
   await publishLearning();
-  await expect(belowButton).toHaveAttribute('data-generating', 'false');
-  await belowButton.click();
-  await expect
-    .poll(() => scrollArea.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
-    .toBeLessThanOrEqual(8);
+  await expect.poll(distance).toBeLessThanOrEqual(1);
   await expect(belowButton).toHaveCount(0);
   view.conversation = previousEntries;
   view.activitySequence++;
