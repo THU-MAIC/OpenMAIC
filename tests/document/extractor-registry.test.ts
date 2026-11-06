@@ -31,6 +31,8 @@ describe('document extractor registry', () => {
       'mineru',
       'mineru-cloud',
       'alidocmind',
+      'paddleocr',
+      'paddleocr-cloud',
     ]);
     expect(providers.every((provider) => provider.supportedMimeTypes)).toBe(true);
     expect(
