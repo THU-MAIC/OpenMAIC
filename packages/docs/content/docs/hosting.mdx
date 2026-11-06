@@ -518,9 +518,9 @@ configureOwnerAuthentication({
   work that holds only the id (an agent run, a claim). The anonymous fallback
   is asked first, then the methods in order. An id nobody recognizes is a
   `user` with no roles.
-- The middleware mints the anonymous cookie on page navigations whenever
-  neither `OWNER_SINGLE_USER` nor `PERSISTENCE_SHARED_OWNER_ID` is set: it can
-  run in the Edge runtime and cannot see this registration. A page cookie next
+- The gateway (`proxy.ts`) mints the anonymous cookie on page navigations whenever
+  neither `OWNER_SINGLE_USER` nor `PERSISTENCE_SHARED_OWNER_ID` is set: it runs
+  on the Node.js runtime and cannot see this registration. A page cookie next
   to a host credential is a claim candidate like any other anonymous cookie.
   - With `anonymousFallback: false`, set `OWNER_ANONYMOUS_PREMINT=false`: the
     cookie would serve no request, and with `OWNER_CLAIM_TRIGGER=auto` it
@@ -529,7 +529,7 @@ configureOwnerAuthentication({
   - With the anonymous fallback on (the default), keep pre-minting: without
     it, an anonymous visitor's first API requests each mint their own owner
     again. To avoid a claim candidate beside your credential, skip
-    `anonymousOwnerForNavigation` in `middleware.ts` only for the requests your
+    `anonymousOwnerForNavigation` in `proxy.ts` only for the requests your
     methods authenticate themselves (a page request carrying your session
     cookie, say).
 - `issuesAnonymousOwners: true` with `clearCredential()` is only for a method
