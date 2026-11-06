@@ -287,7 +287,17 @@ export async function renderReportShareImage(
             true,
           );
           if (description) {
-            paragraph(description, x + 24, titleEnd + 28, w - 48, 22, 2, muted, 500, true);
+            paragraph(
+              description,
+              x + 24,
+              Math.max(y + 88, titleEnd + 28),
+              w - 48,
+              21,
+              2,
+              muted,
+              500,
+              true,
+            );
           }
         });
       },
