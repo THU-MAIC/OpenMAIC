@@ -22,8 +22,8 @@ import type { ChatNode } from './session-store';
 export type RequestCourse =
   /**
    * The request works on a course the conversation already has: no preview.
-   * `courseId` is that course when it is known — the one the conversation was
-   * started beside, or the one its latest persisted page went to.
+   * `courseId` is that course when it is known — the one its latest persisted
+   * page went to, else the one the conversation was started beside.
    */
   | { readonly kind: 'course'; readonly courseId: string | null }
   /**
@@ -80,15 +80,16 @@ export function requestCourse(
     existingCourse !== false || chat.slice(0, start).some((node) => persistedPage(node));
   if (hasCourse && !creates) {
     if (existingCourse === null) return { kind: 'course', courseId: null };
-    if (existingCourse) return { kind: 'course', courseId: boundStageId || null };
-    // The course the conversation's latest persisted page went to.
+    // The course the conversation's latest persisted page went to — the one a
+    // conversation started beside a course went on to create, included —
+    // else the course it was started beside.
     let courseId: string | null = null;
     let lastCreated: string | null = null;
     for (const node of chat) {
       lastCreated = createdStageId(node) ?? lastCreated;
       if (persistedPage(node)) courseId = pageStageId(node) ?? lastCreated ?? courseId;
     }
-    return { kind: 'course', courseId };
+    return { kind: 'course', courseId: courseId ?? (existingCourse ? boundStageId || null : null) };
   }
 
   // The courses this request created, so far, in creation order.

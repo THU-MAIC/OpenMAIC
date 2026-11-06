@@ -39,6 +39,20 @@ describe('rule 1: a conversation started beside an existing course', () => {
     expect(requestCourse(chat, true, 'stage-a')).toEqual({ kind: 'course', courseId: 'stage-a' });
   });
 
+  it('then works on the course it created, once that course has pages', () => {
+    const chat = [
+      user('u1', 'make a sequel of this course'),
+      created('c', 'stage-new'),
+      page('p', 'stage-new'),
+      user('u2', 'change the roster of this course'),
+      tool('r', 'set_roster'),
+    ];
+    expect(requestCourse(chat, true, 'stage-a')).toEqual({
+      kind: 'course',
+      courseId: 'stage-new',
+    });
+  });
+
   it('shows nothing while the flag is not known yet, so nothing flashes', () => {
     expect(requestCourse([user('u'), tool('s', 'web_search')], null)).toEqual({
       kind: 'course',
