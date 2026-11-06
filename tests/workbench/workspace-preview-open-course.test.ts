@@ -74,6 +74,7 @@ const mocks = vi.hoisted(() => ({
     waitingKey: null as string | null,
     waitingArmed: false,
     stageId: null as string | null,
+    existingCourse: false as boolean | null,
     libraryRevision: 0,
     stageLinkStageIds: [] as readonly string[],
     touchedStageIds: [] as readonly string[],
@@ -340,6 +341,7 @@ beforeEach(() => {
   mocks.unconfirmedSessionTitles.clear();
   mocks.store.sessionId = null;
   mocks.store.stageId = null;
+  mocks.store.existingCourse = false;
   mocks.store.status = 'succeeded';
   mocks.store.sessionTitle = null;
   mocks.store.sessionPrompt = null;
@@ -428,7 +430,7 @@ describe('opening a course while a request preview is the active tab', () => {
     expect(container!.querySelector('[data-testid="request-preview"]')).not.toBeNull();
   });
 
-  it('keeps an opened course on screen when the conversation carried over beside it is already asking', async () => {
+  it('lets the preview of a conversation carried over beside an opened course take focus once, like any request', async () => {
     vi.stubGlobal(
       'ResizeObserver',
       class {
@@ -444,6 +446,13 @@ describe('opening a course while a request preview is the active tab', () => {
     mocks.searchParams = new URLSearchParams('session=ses-1&course=stage-1');
     mocks.store.sessionId = 'ses-1';
     mocks.store.status = 'running';
+    await render();
+    // No carried-over exception: the request's preview takes focus once, and
+    // the opened course stays mounted behind it, one tab away.
+    expect(mocks.classroomProps?.hidden).toBe(true);
+    expect(mocks.previewHidden).toBe(false);
+    const browser = mocks.classroomProps?.browser as { onActivateCourse: (id: string) => void };
+    await act(async () => browser.onActivateCourse('stage-1'));
     await render();
     expect(mocks.classroomProps?.hidden).toBe(false);
     expect(mocks.previewHidden).toBe(true);

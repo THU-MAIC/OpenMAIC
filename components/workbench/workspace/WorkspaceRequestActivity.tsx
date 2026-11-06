@@ -97,13 +97,17 @@ export interface PreviewTabStrip {
 }
 
 /**
- * The placeholder for the course this conversation may produce — the role the
- * classic generation preview plays — as a regular tab in the right pane's tab
- * strip, beside any course tabs. The first tool call or question of a request
- * opens it; it never folds on its own: between requests it rests, and the next
- * request animates in the same tab. It goes when the conversation's first scene
- * hands off to its course tab (which takes its place), or when the user closes
- * it — remembered for that request (`lib/workbench/preview-tab.ts`).
+ * The tab of the new course a request is making — the role the classic
+ * generation preview plays — as a regular tab in the right pane's tab strip,
+ * beside any course tabs. The workspace mounts it only while the request is
+ * making a course (`lib/workbench/conversation-course.ts`). A request opens it
+ * the moment it is sent, on understanding. A request that ends without a page
+ * rests here once the conversation has done something (a tool call, a
+ * question), and the next request animates in the same tab; a conversation
+ * that has only talked folds it away until its next request. When the
+ * course's first page is persisted, the workspace turns this tab into the
+ * course tab, in place. Closing it is remembered for that request
+ * (`lib/workbench/preview-tab.ts`).
  */
 export function WorkspaceRequestActivity({
   onStateChange,
@@ -167,15 +171,16 @@ export function WorkspaceRequestActivity({
   const conversationActive = chat.some(
     (node) => (node.kind === 'tool' && !!node.toolName) || node.kind === 'question',
   );
-  // `quiet` is a request with no tool call or question yet; `collapsed` one that did and ended.
-  const requestActive = view !== null && view.mode !== 'quiet';
+  // Every request shows here from the moment it is sent. One that ended
+  // without a page rests here only in a conversation that has done something;
+  // a conversation that has only talked folds the tab away and gives the main
+  // column back. Closing the tab is for that request only.
   const closedFor = closedKey ?? closedPreviewRequest(sessionId);
   const shown =
     track !== null &&
     view !== null &&
     closedFor !== track.key &&
-    // Closed for an earlier request: only this request's own activity reopens it.
-    (closedFor !== null ? requestActive : conversationActive || requestActive);
+    (view.mode !== 'collapsed' || conversationActive);
   const live = shown && view?.mode === 'scene';
   // The conversation's name, as the rail and the chat header show it: its
   // generated title, else its first request — never a later follow-up.
@@ -250,7 +255,7 @@ function sceneCopy(
   if (view.mode === 'classroom') {
     return { key: 'opening', title: t('workbench.preview.opening'), description: '' };
   }
-  if (view.mode === 'quiet' || view.mode === 'collapsed') {
+  if (view.mode === 'collapsed') {
     // Between requests: the placeholder at rest.
     return {
       key: 'resting',
