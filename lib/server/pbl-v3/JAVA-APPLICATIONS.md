@@ -4,8 +4,10 @@ Java course packages can use the existing PBL application preview lifecycle by d
 `runtime.profile: "java"`, Java `buildSources`, and an application command of
 `["java", "-cp", "/tmp/pbl-project-build", "your.package.Main", ...args]`.
 The main class must match a declared Java source. The host compiles declared sources
-(and permitted added sources) into the fixed build directory before starting Java.
-Python packages retain their existing launch behavior.
+(and permitted added sources) with the JDK into a clean preview-only output
+directory before starting Java. The classpath in the descriptor identifies the
+supported launch format. The host supplies the actual preview classpath at
+runtime. A launch retry reuses the original command from its receipt.
 
 Packages using this extension declare `pbl-v3-java-application@1` in their classroom
 manifest. Older hosts reject the unsupported capability instead of accepting a
@@ -15,6 +17,9 @@ Deployment requires both this host support and a configured sandbox code templat
 with Python 3 (host workspace operations) and a JDK providing `java` and `javac` on
 PATH. The JDK must support the language features used by the particular course.
 Choose the code template through the existing sandbox configuration/settings.
+This preview profile supports JDK-only applications. Course authors provide the
+source files and main class. Maven projects and downloaded JAR dependencies
+are outside this launch format.
 No new environment variable is introduced, and setting a model key or a Java-related
 variable cannot replace the host update or installation of a JDK. Changing the
 configured template does not install tools into existing environments; recreate

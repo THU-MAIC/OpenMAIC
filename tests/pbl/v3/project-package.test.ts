@@ -77,9 +77,7 @@ describe('self-contained PBL project packages', () => {
     for (const scene of m.scenes)
       scene.content = {
         type: 'pbl',
-        projectV3: original.entry
-          ? { id: original.entry.id, version: original.entry.version }
-          : source('greeting-java').ref,
+        projectV3: { id: original.entry.id, version: original.entry.version },
       };
     const fetcher = vi
       .spyOn(globalThis, 'fetch')

@@ -33,11 +33,15 @@ export function applicationLaunchCommand(argv: string[], javaSources?: readonly 
     const data = Buffer.from(
       JSON.stringify({ argv, sources: [...new Set(javaSources)].sort() }),
     ).toString('base64');
-    const script = `import base64,json,os,shutil,subprocess,sys
+    const script = `import base64,json,os,shutil,subprocess,sys,tempfile
 c=json.loads(base64.b64decode('${data}'))
 if not shutil.which('javac') or not shutil.which('java'):
  sys.exit('Java preview requires a JDK with java and javac in the sandbox template.')
-subprocess.run(['javac','-encoding','UTF-8','-d','${JAVA_APPLICATION_CLASSES}',*['./'+p for p in c['sources']]],check=True)
+classes=os.path.join(tempfile.gettempdir(),'pbl-java-preview')
+if os.path.exists(classes): shutil.rmtree(classes)
+os.mkdir(classes)
+subprocess.run(['javac','-encoding','UTF-8','-classpath',classes,'-d',classes,*['./'+p for p in c['sources']]],check=True)
+c['argv'][2]=classes
 os.execvp('java',c['argv'])`;
     return checkedCommand(`exec python3 -I -B -c ${quote(script)}`);
   }
