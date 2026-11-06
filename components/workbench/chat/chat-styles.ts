@@ -184,7 +184,7 @@ export const wbStyles = {
     head: 'flex items-center gap-1.5 text-[length:var(--wb-text-xs)] font-medium text-[var(--wb-accent)] group-data-[answered=true]/question:font-normal group-data-[answered=true]/question:text-[var(--wb-text-faint)]',
     glyph: 'size-[13px] shrink-0',
     question:
-      'whitespace-pre-wrap break-words text-[length:var(--wb-text-base)] leading-relaxed text-[var(--wb-text)] [overflow-wrap:anywhere] group-data-[answered=true]/question:text-[var(--wb-text-muted)]',
+      'break-words text-[length:var(--wb-text-base)] leading-relaxed text-[var(--wb-text)] [overflow-wrap:anywhere] group-data-[answered=true]/question:text-[var(--wb-text-muted)]',
     options: 'flex flex-wrap gap-1.5',
     // One button skin for both pick modes: `data-picked` is the multi-select
     // checked state, and a disabled button keeps the shape but drops every
@@ -239,7 +239,7 @@ export const wbStyles = {
     // The question is the form's title, so it carries the weight a title does —
     // the one place in the rail where prose is bold.
     question:
-      'max-h-[22vh] overflow-y-auto whitespace-pre-wrap break-words text-[length:var(--wb-text-base)] font-semibold leading-relaxed text-[var(--wb-text)] [overflow-wrap:anywhere]',
+      'max-h-[22vh] overflow-y-auto break-words text-[length:var(--wb-text-base)] leading-relaxed text-[var(--wb-text)] [overflow-wrap:anywhere]',
     rows: 'flex max-h-[34vh] flex-col gap-1 overflow-y-auto',
     /**
      * One row = one decision. The frame lives on the wrapper (not the button)

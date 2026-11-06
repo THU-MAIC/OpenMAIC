@@ -39,6 +39,7 @@ import { Check } from 'lucide-react';
 import type { ChatNode } from '@/lib/workbench/session-store';
 import { defaultWorkbenchTranslator, type WorkbenchTranslator } from '@/lib/i18n/workbench';
 import { wbStyles as styles } from './chat-styles';
+import { TextBlock } from './text-block';
 import { editingKindFor, questionFormKeyAction, useQuestionForm } from './question-form-state';
 
 /** The keyboard legend, decoration only — the keys work whether or not it is read. */
@@ -135,7 +136,11 @@ export function QuestionForm({
         else onDismiss();
       }}
     >
-      <p className={styles.questionForm.question}>{node.text}</p>
+      {/* The agent writes its question in Markdown (bold options, lists), as it
+          writes its replies. */}
+      <div className={styles.questionForm.question}>
+        <TextBlock text={node.text} />
+      </div>
 
       {mode === 'open' ? (
         <textarea
