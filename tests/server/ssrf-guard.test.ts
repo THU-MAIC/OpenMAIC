@@ -16,6 +16,8 @@ const CLIENT_SUPPLIED_LOCAL_NETWORK_BLOCK_MESSAGE =
   'Local/private network URLs are not allowed for a client-supplied endpoint. ALLOW_LOCAL_NETWORKS does not apply to this path. The endpoint must be a provider configured by the operator in openmaic.yml.';
 const CLOUD_METADATA_BLOCK_MESSAGE =
   'Cloud instance metadata endpoints are never allowed as outbound targets, even with ALLOW_LOCAL_NETWORKS=true.';
+const RESERVED_NETWORK_BLOCK_MESSAGE =
+  'IANA reserved, benchmark/fake-ip (198.18.0.0/15), multicast, and broadcast addresses are never allowed as outbound targets, even with ALLOW_LOCAL_NETWORKS=true. If a local proxy uses fake-ip DNS interception, exclude the provider domain from fake-ip so it resolves to its real address.';
 const ALLOW_LOCAL_NETWORKS_GUIDANCE = 'ALLOW_LOCAL_NETWORKS=true';
 const originalAllowLocalNetworks = process.env.ALLOW_LOCAL_NETWORKS;
 
@@ -107,21 +109,31 @@ describe('validateUrlForSSRF', () => {
   it('rejects CGNAT/reserved/multicast literals without DNS', async () => {
     const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
 
-    const urls = [
+    const cgnatUrls = [
       'http://100.64.0.1/',
       'http://100.100.100.100/',
-      'http://240.0.0.1/',
-      'http://198.18.0.1/',
       'http://[::ffff:100.64.0.1]/',
-      'http://224.0.0.1/',
-      'http://255.255.255.255/',
       // WHATWG URL canonicalizes legacy decimal/hex IPv4 spellings first.
       'http://0x64646464/', // 100.100.100.100
       'http://1684300998/', // 100.100.100.198
     ];
 
-    for (const url of urls) {
+    for (const url of cgnatUrls) {
       await expect(validateUrlForSSRF(url)).resolves.toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
+    }
+
+    const neverAllowedUrls = [
+      'http://240.0.0.1/',
+      'http://198.18.0.1/',
+      'http://198.19.255.254/',
+      'http://224.0.0.1/',
+      'http://255.255.255.255/',
+    ];
+
+    for (const url of neverAllowedUrls) {
+      const refused = await validateUrlForSSRF(url);
+      expect(refused).toBe(RESERVED_NETWORK_BLOCK_MESSAGE);
+      expect(refused).not.toContain('set ALLOW_LOCAL_NETWORKS=true');
     }
 
     expect(lookupMock).not.toHaveBeenCalled();
@@ -342,20 +354,32 @@ describe('validateUrlForSSRF', () => {
   it('rejects hostnames that resolve into CGNAT/reserved ranges', async () => {
     const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
 
-    const answers: Array<{ address: string; family: number }> = [
+    const cgnatAnswers: Array<{ address: string; family: number }> = [
       { address: '100.64.0.1', family: 4 },
       { address: '100.100.100.100', family: 4 },
-      { address: '240.0.0.1', family: 4 },
-      { address: '198.18.0.1', family: 4 },
       { address: '::ffff:100.64.0.1', family: 6 },
     ];
 
-    for (const answer of answers) {
+    for (const answer of cgnatAnswers) {
       lookupMock.mockReset();
       lookupMock.mockResolvedValue([answer]);
       await expect(validateUrlForSSRF('https://special.example')).resolves.toBe(
         PRIVATE_NETWORK_BLOCK_MESSAGE,
       );
+    }
+
+    const reservedAnswers: Array<{ address: string; family: number }> = [
+      { address: '240.0.0.1', family: 4 },
+      { address: '198.18.0.1', family: 4 },
+      { address: '198.18.0.208', family: 4 },
+    ];
+
+    for (const answer of reservedAnswers) {
+      lookupMock.mockReset();
+      lookupMock.mockResolvedValue([answer]);
+      const refused = await validateUrlForSSRF('https://special.example');
+      expect(refused).toBe(RESERVED_NETWORK_BLOCK_MESSAGE);
+      expect(refused).not.toContain('set ALLOW_LOCAL_NETWORKS=true');
     }
   });
 
@@ -431,14 +455,19 @@ describe('validateUrlForSSRF', () => {
       'http://224.0.0.1/',
       'http://255.255.255.255/',
     ]) {
-      await expect(validateUrlForSSRF(url)).resolves.toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
+      const refused = await validateUrlForSSRF(url);
+      expect(refused).toBe(RESERVED_NETWORK_BLOCK_MESSAGE);
+      expect(refused).not.toContain('set ALLOW_LOCAL_NETWORKS=true');
     }
     expect(lookupMock).not.toHaveBeenCalled();
 
-    lookupMock.mockResolvedValue([{ address: '240.0.0.1', family: 4 }]);
-    await expect(validateUrlForSSRF('https://special.example')).resolves.toBe(
-      PRIVATE_NETWORK_BLOCK_MESSAGE,
-    );
+    for (const address of ['240.0.0.1', '198.18.0.208']) {
+      lookupMock.mockReset();
+      lookupMock.mockResolvedValue([{ address, family: 4 }]);
+      const refused = await validateUrlForSSRF('https://special.example');
+      expect(refused).toBe(RESERVED_NETWORK_BLOCK_MESSAGE);
+      expect(refused).not.toContain('set ALLOW_LOCAL_NETWORKS=true');
+    }
   });
 
   it('keeps allowing tunnel literals that embed public or private IPv4 when ALLOW_LOCAL_NETWORKS=true', async () => {
@@ -626,7 +655,10 @@ describe('validatePublicUrlForSSRF', () => {
       CLOUD_METADATA_BLOCK_MESSAGE,
     );
     await expect(validatePublicUrlForSSRF('http://240.0.0.1/')).resolves.toBe(
-      PRIVATE_NETWORK_BLOCK_MESSAGE,
+      RESERVED_NETWORK_BLOCK_MESSAGE,
+    );
+    await expect(validatePublicUrlForSSRF('http://198.18.0.208/')).resolves.toBe(
+      RESERVED_NETWORK_BLOCK_MESSAGE,
     );
 
     lookupMock.mockResolvedValue([{ address: '192.168.1.10', family: 4 }]);
@@ -639,7 +671,7 @@ describe('validatePublicUrlForSSRF', () => {
       { address: '240.0.0.1', family: 4 },
     ]);
     await expect(validatePublicUrlForSSRF('https://mixed.example')).resolves.toBe(
-      PRIVATE_NETWORK_BLOCK_MESSAGE,
+      RESERVED_NETWORK_BLOCK_MESSAGE,
     );
 
     lookupMock.mockResolvedValue([{ address: '169.254.169.254', family: 4 }]);
@@ -827,9 +859,18 @@ describe('connectionAddressBlockReason', () => {
   it('matches validateUrlForSSRF for reserved/multicast ranges, opt-in or not', async () => {
     const { connectionAddressBlockReason } = await import('@/lib/server/ssrf-guard');
 
-    for (const address of ['240.0.0.1', '198.18.0.1', '224.0.0.1', '255.255.255.255']) {
-      expect(connectionAddressBlockReason(address, false)).toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
-      expect(connectionAddressBlockReason(address, true)).toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
+    for (const address of [
+      '240.0.0.1',
+      '198.18.0.1',
+      '198.18.0.208',
+      '224.0.0.1',
+      '255.255.255.255',
+    ]) {
+      const blockedWithoutOptIn = connectionAddressBlockReason(address, false);
+      const blockedWithOptIn = connectionAddressBlockReason(address, true);
+      expect(blockedWithoutOptIn).toBe(RESERVED_NETWORK_BLOCK_MESSAGE);
+      expect(blockedWithOptIn).toBe(RESERVED_NETWORK_BLOCK_MESSAGE);
+      expect(blockedWithoutOptIn).not.toContain('set ALLOW_LOCAL_NETWORKS=true');
     }
   });
 
