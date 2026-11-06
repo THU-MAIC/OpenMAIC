@@ -23,7 +23,7 @@
  * with the mount snapshot as the baseline — which is what keeps a replayed
  * backlog from looking like N sends.
  */
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, type RefCallback } from 'react';
 import { useStickToBottom, type StickToBottomInstance } from 'use-stick-to-bottom';
 import type { ChatNode } from '@/lib/workbench/session-store';
 
@@ -32,31 +32,53 @@ import type { ChatNode } from '@/lib/workbench/session-store';
  * the library's content observer cannot see them. Track the scroll viewport's
  * own height and let the library retain its existing follow/release state.
  */
-export function useWorkbenchViewportAnchor(
-  scrollRef: StickToBottomInstance['scrollRef'],
-  scrollToBottom: StickToBottomInstance['scrollToBottom'],
-): void {
-  const scrollToBottomRef = useRef(scrollToBottom);
-  useEffect(() => {
-    scrollToBottomRef.current = scrollToBottom;
-  }, [scrollToBottom]);
+export function useWorkbenchViewportAnchor({
+  scrollRef,
+  scrollToBottom,
+  state,
+}: Pick<
+  StickToBottomInstance,
+  'scrollRef' | 'scrollToBottom' | 'state'
+>): RefCallback<HTMLElement> {
+  // Pro can replace the transcript viewport while replaying a conversation.
+  // Bind to the current element each time React attaches the ref.
+  return useCallback(
+    (viewport) => {
+      scrollRef(viewport);
+      if (!viewport || typeof ResizeObserver === 'undefined') return;
 
-  useEffect(() => {
-    const viewport = scrollRef.current;
-    if (!viewport || typeof ResizeObserver === 'undefined') return;
+      const ignoreClampedScroll = () => {
+        const { scrollTop, scrollHeight, clientHeight } = viewport;
+        const maxScrollTop = scrollHeight - clientHeight;
+        if (
+          (state.lastScrollTop ?? scrollTop) > maxScrollTop &&
+          Math.abs(scrollTop - maxScrollTop) < 1
+        ) {
+          // A larger viewport can clamp the old offset to the new bottom. Mark
+          // that scroll before the library treats it as a gesture away from the tail.
+          state.ignoreScrollToTop = scrollTop;
+        }
+      };
+      viewport.addEventListener('scroll', ignoreClampedScroll, { capture: true, passive: true });
 
-    let previousHeight = viewport.clientHeight;
-    const observer = new ResizeObserver(() => {
-      const height = viewport.clientHeight;
-      if (height < previousHeight) {
-        // A smaller viewport must not re-lock someone reading earlier output.
-        void scrollToBottomRef.current({ animation: 'instant', preserveScrollPosition: true });
-      }
-      previousHeight = height;
-    });
-    observer.observe(viewport);
-    return () => observer.disconnect();
-  }, [scrollRef]);
+      let previousHeight = viewport.clientHeight;
+      const observer = new ResizeObserver(() => {
+        const height = viewport.clientHeight;
+        if (height < previousHeight) {
+          // A smaller viewport must not re-lock someone reading earlier output.
+          void scrollToBottom({ animation: 'instant', preserveScrollPosition: true });
+        }
+        previousHeight = height;
+      });
+      observer.observe(viewport);
+      return () => {
+        observer.disconnect();
+        viewport.removeEventListener('scroll', ignoreClampedScroll, true);
+        scrollRef(null);
+      };
+    },
+    [scrollRef, scrollToBottom, state],
+  );
 }
 
 function userNodeKeys(chat: ChatNode[]): string[] {
@@ -65,6 +87,7 @@ function userNodeKeys(chat: ChatNode[]): string[] {
 
 export function useWorkbenchAutoscroll(chat: ChatNode[]): {
   scrollRef: StickToBottomInstance['scrollRef'];
+  viewportRef: RefCallback<HTMLElement>;
   contentRef: StickToBottomInstance['contentRef'];
   isNearBottom: boolean;
   scrollToBottom: StickToBottomInstance['scrollToBottom'];
@@ -74,13 +97,14 @@ export function useWorkbenchAutoscroll(chat: ChatNode[]): {
     typeof window.matchMedia === 'function' &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  const { scrollRef, contentRef, scrollToBottom, isNearBottom } = useStickToBottom({
+  const stick = useStickToBottom({
     // A replayed backlog must open already at the bottom; a spring from the
     // top of a 16-minute log is not an animation, it is a loading screen.
     initial: 'instant',
     resize: reducedMotion ? 'instant' : undefined,
   });
-  useWorkbenchViewportAnchor(scrollRef, scrollToBottom);
+  const { scrollRef, contentRef, scrollToBottom, isNearBottom } = stick;
+  const viewportRef = useWorkbenchViewportAnchor(stick);
 
   // Re-anchor only when a NEW user node appears after the mount baseline —
   // i.e. a local send, never an agent turn and never the replayed backlog.
@@ -104,5 +128,5 @@ export function useWorkbenchAutoscroll(chat: ChatNode[]): {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userKey]);
 
-  return { scrollRef, contentRef, isNearBottom, scrollToBottom };
+  return { scrollRef, viewportRef, contentRef, isNearBottom, scrollToBottom };
 }

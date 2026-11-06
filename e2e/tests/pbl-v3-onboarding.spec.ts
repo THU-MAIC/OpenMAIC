@@ -1741,3 +1741,81 @@ test.describe('native mobile touch reading', () => {
     await touch.detach();
   });
 });
+
+for (const checker of ['tests', 'quiz'] as const) {
+  test(`keeps following the conversation when entering the ${checker} check without a composer`, async ({
+    page,
+    learningEvents,
+  }) => {
+    const fixture = await project(page, learningEvents, {
+      started: true,
+      application: false,
+      openingText: readingParagraphs(),
+    });
+    await expect(page.locator('[data-pbl-tour="replay"]')).toBeEnabled();
+    const viewport = page.locator('.pbl-conversation-scroll');
+    const composer = page.locator('[data-pbl-tour="composer"]');
+    const distance = () =>
+      viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
+    await expect(composer).toBeVisible();
+    await expect.poll(distance).toBeLessThanOrEqual(1);
+    const height = await viewport.evaluate((el) => el.clientHeight);
+
+    fixture.view.stage = { kind: 'check', checker } as LearningView['stage'];
+    fixture.view.state.position.stageIndex = checker === 'tests' ? 4 : 5;
+    fixture.view.actions = checker === 'tests' ? ['evaluate'] : ['quiz'];
+    if (checker === 'quiz')
+      fixture.view.questions = [{ q: 'What did you build?', options: ['A list', 'A timer'] }];
+    fixture.view.revision++;
+    await fixture.publish();
+    await expect(composer).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Current task', exact: true })).toBeVisible();
+    await expect.poll(() => viewport.evaluate((el) => el.clientHeight)).toBeGreaterThan(height);
+    await expect.poll(distance).toBeLessThanOrEqual(1);
+
+    const reply = {
+      id: 'check-reply',
+      speaker: 'mentor' as const,
+      status: 'running' as const,
+      parts: [{ kind: 'text' as const, id: 'body', text: '', streaming: true }],
+    };
+    fixture.view.conversation = [
+      {
+        id: '0',
+        speaker: 'discussion',
+        status: 'succeeded',
+        parts: [{ kind: 'text', id: '0', text: fixture.view.messages[0].text }],
+      },
+      reply,
+    ];
+    fixture.view.busy = true;
+    const append = async (paragraph: string) => {
+      reply.parts[0].text += `\n\n${paragraph}\n\n` + 'The check is progressing.\n\n'.repeat(8);
+      fixture.view.revision++;
+      await fixture.publish();
+      await expect(viewport).toContainText(paragraph);
+    };
+    await append('Check output starts.');
+    await expect.poll(distance).toBeLessThanOrEqual(1);
+    await append('Check output continues.');
+    await expect.poll(distance).toBeLessThanOrEqual(1);
+
+    const following = await viewport.evaluate((el) => el.scrollTop);
+    await viewport.hover();
+    await page.mouse.wheel(0, -180);
+    await expect
+      .poll(() => viewport.evaluate((el) => el.scrollTop))
+      .toBeCloseTo(following - 180, 0);
+    const latest = page.getByTestId('pbl-conversation-scroll-button');
+    await expect(latest).toBeVisible();
+    const reading = await viewport.evaluate((el) => el.scrollTop);
+    await append('More output while reading.');
+    await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeCloseTo(reading, 0);
+
+    await page.mouse.wheel(0, (await distance()) - 40);
+    await expect.poll(distance).toBeCloseTo(40, 0);
+    await expect(latest).toHaveCount(0);
+    await append('More output after returning near the bottom.');
+    await expect.poll(distance).toBeLessThanOrEqual(1);
+  });
+}
