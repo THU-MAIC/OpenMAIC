@@ -211,6 +211,13 @@ const milestoneSchema = z
     optional: z.literal(false).default(false),
     title: nonEmptyString,
     goal: nonEmptyString.optional(),
+    shareResult: z
+      .object({
+        title: nonEmptyString.max(80),
+        description: nonEmptyString.max(160),
+      })
+      .strict()
+      .optional(),
     teaching: z
       .object({
         projectContext: nonEmptyString.optional(),

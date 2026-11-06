@@ -1,4 +1,4 @@
-import type { LearningReport } from './report';
+import { reportProjectResults, type LearningReport } from './report';
 
 /** Shared image coordinates keep the preview's clickable invitation aligned with its artwork. */
 export const reportShareLayout = {
@@ -44,7 +44,6 @@ export function reportShareDisplayUrl(destination: string): string {
 /** A deliberately small public projection. Never pass conversations, citations or quotes to a poster. */
 export function reportShareContent(report: LearningReport) {
   const summary = report.summary;
-  const skills = summary?.skills?.map((skill) => skill.id) ?? [];
   const metrics: (readonly [string, string])[] = [];
   for (const [key, completed, total] of [
     ['completedMilestones', summary?.completedMilestones, summary?.totalMilestones],
@@ -53,7 +52,6 @@ export function reportShareContent(report: LearningReport) {
     if (Number.isFinite(completed) && Number.isFinite(total))
       metrics.push([key, `${completed}/${total}`]);
   }
-  if (summary?.skills?.length) metrics.push(['skills', String(summary.skills.length)]);
   if (summary?.concepts?.length) metrics.push(['concepts', String(summary.concepts.length)]);
   const passed = report.outcomes?.filter((outcome) => outcome.tests === 'passed').length ?? 0;
   const tested = report.outcomes?.filter((outcome) => outcome.tests !== null).length ?? 0;
@@ -61,7 +59,10 @@ export function reportShareContent(report: LearningReport) {
     title: report.project.title,
     completed: report.requiredComplete,
     metrics,
-    skills,
+    results: reportProjectResults(report)
+      .slice(0, 6)
+      .map(({ title, goal, shareResult }) => shareResult ?? { title, description: goal ?? '' }),
+    workflow: summary?.skills?.map(({ id }) => id) ?? [],
     concepts: summary?.concepts?.slice(0, 6) ?? [],
     verification: {
       passed,

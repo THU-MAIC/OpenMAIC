@@ -97,7 +97,13 @@ function reportAnalysisProjection(report: LearningReport) {
   });
   const input = {
     project: report.project,
-    milestones: report.milestones,
+    milestones: report.milestones.map(({ id, title, optional, status, stages }) => ({
+      id,
+      title,
+      optional,
+      status,
+      stages,
+    })),
     outcomes: report.outcomes,
     facts: report.facts,
     summary: report.summary,
