@@ -20,7 +20,9 @@ import {
   touchEnvironment,
 } from './environment';
 import { projectFiles } from './workspace-files';
+import type { InstalledProject } from './catalog';
 import { applicationLaunchCommand, applicationProbeCommand } from './application-command';
+import { additionalBuildSources } from './build-command';
 export { applicationProbeCommand } from './application-command';
 
 const active = (state: string) => ['starting', 'running', 'unknown'].includes(state);
@@ -70,10 +72,25 @@ interface ApplicationRun {
   epoch: number;
   commandId: string;
   sourceHash: string;
+  /** Java inputs are resolved once so a retry dispatches the original command. */
+  launchCommand?: string;
   /** Absent on legacy receipts; new launches are ordered under the existing study lock. */
   launchSequence?: number;
   startedAt: string;
 }
+function launchCommand(project: InstalledProject, argv: string[], paths: readonly string[]) {
+  const runtime = project.coursePackage?.descriptor.runtime;
+  const sources =
+    runtime?.profile === 'java'
+      ? [
+          ...(runtime.buildSources ??
+            Object.keys(project.files).filter((path) => path.endsWith('.java'))),
+          ...additionalBuildSources(project, paths, '.java'),
+        ]
+      : undefined;
+  return applicationLaunchCommand(argv, sources);
+}
+
 async function lastRun(store: LearningStore, row: Study): Promise<ApplicationRun | null> {
   const result = await store.pool.query<{ result: ApplicationRun }>(
     `SELECT result FROM pbl_v3_commands WHERE study_id=$1 AND id LIKE 'application:%'
@@ -303,15 +320,14 @@ export async function applicationRequest(principal: OwnerPrincipal, input: unkno
     await assertEnvironmentWritable(store, preflight.id, preflight.owner_id, request.environmentId);
     assertEnvironmentReady(await touchEnvironment(store, preflight, standaloneService));
     const application = preflightProject.application;
-    applicationProbeCommand(
-      await projectFiles(standaloneService, request.environmentId, preflightProject),
-      application.port,
-      application.healthPath,
-    );
+    const paths = await projectFiles(standaloneService, request.environmentId, preflightProject);
+    applicationProbeCommand(paths, application.port, application.healthPath);
+    if (application.argv[0] === 'java') launchCommand(preflightProject, application.argv, paths);
   }
   const result = await store.exclusive(request.studyId, async () => {
     const row = await store.get(request.studyId, principal.ownerId),
-      application = projectFor(row).application;
+      project = projectFor(row),
+      application = project.application;
     if (!application) throw sandboxInvalid('This project does not declare an application.');
     if (row.environment_id !== request.environmentId || row.revision !== request.revision)
       throw sandboxConflict(
@@ -345,8 +361,19 @@ export async function applicationRequest(principal: OwnerPrincipal, input: unkno
     };
     return withLearningWorkspaceAccess(scope, async () => {
       let dispatch: (() => Promise<unknown>) | undefined;
-      const launch = async (id: string) => {
-        const body = { requestId: id, command: applicationLaunchCommand(application.argv) };
+      const launch = async (run: ApplicationRun) => {
+        const body = {
+          requestId: run.commandId,
+          command:
+            run.launchCommand ??
+            launchCommand(
+              project,
+              application.argv,
+              application.argv[0] === 'java'
+                ? await projectFiles(service, environmentId, project)
+                : [],
+            ),
+        };
         if (application.frontendPath)
           dispatch = await service.prepareApplicationCommand(environmentId, body, request.epoch);
         else await service.startApplicationCommand(environmentId, body, request.epoch);
@@ -361,12 +388,11 @@ export async function applicationRequest(principal: OwnerPrincipal, input: unkno
       if (request.action !== 'status') {
         // Learner-created/renamed source paths can outgrow the starter budget.
         // Reject before stopping an existing app, reserving a writer or dispatching.
-        if (!standaloneService)
-          applicationProbeCommand(
-            await projectFiles(service, environmentId, projectFor(row)),
-            application.port,
-            application.healthPath,
-          );
+        if (!standaloneService) {
+          const paths = await projectFiles(service, environmentId, project);
+          applicationProbeCommand(paths, application.port, application.healthPath);
+          if (application.argv[0] === 'java') launchCommand(project, application.argv, paths);
+        }
         // A durable reservation precedes provider dispatch. A retry cannot restart a lost-ack command.
         const receiptId = `application:${request.id}`,
           hash = createHash('sha256').update(JSON.stringify(request)).digest('hex');
@@ -398,6 +424,9 @@ export async function applicationRequest(principal: OwnerPrincipal, input: unkno
             epoch: request.epoch,
             commandId: request.id,
             sourceHash: applicationFingerprint(files),
+            ...(application.argv[0] === 'java'
+              ? { launchCommand: launchCommand(project, application.argv, Object.keys(files)) }
+              : {}),
             startedAt: new Date().toISOString(),
           };
           // Invalidate an in-flight archive even if this writer exits before publication.
@@ -411,12 +440,12 @@ export async function applicationRequest(principal: OwnerPrincipal, input: unkno
                FROM pbl_v3_commands WHERE study_id=$1 AND id LIKE 'application:%'`,
             [row.id, receiptId, hash, JSON.stringify(run), stageKey(row)],
           );
-          await launch(run.commandId);
+          await launch(run);
         }
         if (receipt && previous?.commandId === receipt.result.commandId) {
           // A committed intent may not have dispatched yet. Fence archive publication again.
           await store.markWorkspaceWriter(row);
-          await launch(previous.commandId);
+          await launch(receipt.result);
         }
         await store.recordActivity(row.id, row.owner_id);
       }

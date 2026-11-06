@@ -10,6 +10,7 @@ import {
   renderTeachingPrompt,
   teachingLiveContext,
   teachingLiveSuffix,
+  teachingSection,
 } from '@/lib/server/pbl-v3/teaching-prompt';
 import { stageSkill } from '@/lib/server/pbl-v3/skills';
 import { startOrchestration } from '@/lib/pbl/v3/domain/orchestration/transition';
@@ -61,6 +62,67 @@ describe('authoritative product guidance', () => {
     expect(welcome.activeInstruction.instruction).not.toBe(input.skill.content[section]);
     expect(welcome.activeInstruction.delivery).toContain('Welcome only');
   });
+  it('guides recap completion with the current feedback source and no artifact approval', () => {
+    const recap = fixture(6);
+    const final = recap.skill.progression.at(-1)!;
+    const input = {
+      ...recap,
+      activeSection: final,
+      reviewedSectionCount: recap.skill.progression.length - 2,
+      feedbackSource: 'verified_feedback' as const,
+    };
+    const prompt = renderTeachingPrompt(input).systemPrompt;
+    expect(prompt).not.toContain('Actual current-version plan/code approval is still required');
+    expect(prompt).toContain('artifactApprovalRequired');
+    const live = JSON.parse(teachingLiveContext(input));
+    expect(live).toMatchObject({
+      artifactApprovalRequired: false,
+      feedbackSource: 'verified_feedback',
+      activeSection: final,
+      nextSection: null,
+    });
+    expect(live).not.toHaveProperty('priorArtifactApproval');
+    expect(live.activeInstruction.delivery).toContain('complete_stage');
+    expect(teachingSection(recap, recap.skill.progression[1]!).delivery).toContain(
+      'read_next_skill',
+    );
+    expect(JSON.parse(teachingLiveContext(fixture(2))).artifactApprovalRequired).toBe(true);
+    expect(renderTeachingPrompt(fixture(2)).systemPrompt).toContain(
+      'Actual current-version plan/code approval is still required',
+    );
+  });
+
+  it.each([0, 2, 6])(
+    'preserves feedback coverage and pacing in guided stage %s, beyond recap alone',
+    (index) => {
+      const input = { ...fixture(index), feedbackSource: 'verified_feedback' as const };
+      const prompt = renderTeachingPrompt(input).systemPrompt;
+      expect(prompt).toContain(
+        'set reuseFeedback: true only if the previously verified same-version learner reply covers the current goal',
+      );
+      expect(prompt).toContain(
+        'The presence of verified_feedback alone does not mean a new goal is answered',
+      );
+      for (const delivery of [
+        prompt,
+        ...input.skill.progression
+          .slice(1)
+          .map((section) => teachingSection(input, section).delivery),
+      ]) {
+        expect(delivery).toContain(
+          'New unanswered goals require one request_skill_review and real new feedback',
+        );
+        expect(delivery).toContain(
+          'Do not add another example or boundary question merely to prolong review',
+        );
+        expect(delivery).toContain(
+          'Explicit confident understanding is sufficient absent unresolved errors or questions',
+        );
+        expect(delivery).toContain('it does not replace required artifact approval');
+      }
+    },
+  );
+
   it('names the visible task trigger and directs decisions to a presentation-only drawer link', () => {
     const input = fixture(1);
     const context = teachingProductContext({ ...input, uiLocale: 'zh-CN' });

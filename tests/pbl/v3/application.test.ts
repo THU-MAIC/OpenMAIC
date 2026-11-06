@@ -163,7 +163,7 @@ const owner: OwnerPrincipal = {
   ownerId: 'owner',
   kind: 'user',
   assurance: 'verified',
-  roles: new Set(['sandbox:use']),
+  roles: new Set(),
 };
 beforeEach(() => {
   vi.clearAllMocks();

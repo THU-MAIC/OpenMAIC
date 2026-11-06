@@ -255,12 +255,12 @@ export function LearningWorkbenchPanel({
       data-testid="pbl-ide"
       className="flex h-full min-h-0 min-w-0 flex-col bg-background"
     >
-      {error && (
+      {(error || editor.readError) && (
         <p
           role="alert"
           className="shrink-0 border-b bg-destructive/10 p-2 text-xs text-destructive"
         >
-          {error}
+          {error || editor.readError}
         </p>
       )}
       {manage && work?.canManageFiles && (

@@ -118,6 +118,31 @@ describe('guided review boundaries', () => {
     ).not.toThrow();
   });
 
+  it('distinguishes a new recap reply from verified coverage when opening the closing section', () => {
+    const review = new GuidedSkillReview(protocol);
+    const opening = { seq: 1, text: 'Begin the recap.' };
+    review.beginRun('milestone:6', [opening], false);
+    review.advance('A-teach.md', undefined, artifact);
+    review.checkpoint('What stood out?', artifact);
+    expect(review.feedbackSource()).toBeNull();
+
+    const reply = { seq: 3, text: 'The delete rule made the list easier to use. I am done.' };
+    review.beginRun('milestone:6', [opening, reply], true);
+    expect(review.feedbackSource()).toBe('pending_review_reply');
+    expect(() =>
+      review.advance('B-review.md', 'The learner reflected on the delete rule.', artifact, true),
+    ).toThrow();
+    review.advance('B-review.md', 'The learner reflected on the delete rule.', artifact);
+
+    expect(review.feedbackSource()).toBe('verified_feedback');
+    expect(() => review.complete('The learner reflected on the delete rule.', artifact)).toThrow();
+    expect(() =>
+      review.complete('The learner reflected on the delete rule.', 'b'.repeat(64), true),
+    ).toThrow();
+    review.complete('The learner reflected on the delete rule.', artifact, true);
+    expect(review.feedbackSource()).toBeNull();
+  });
+
   it('cannot skip sections or reuse receipts after a protocol change', () => {
     const review = new GuidedSkillReview(protocol);
     review.beginRun('intro:0', [{ seq: 1, text: 'Start' }], false);

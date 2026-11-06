@@ -25,6 +25,14 @@ Targeted for 1.5.0. The workbench stays off by default in this change; where it 
 
 - **Shell extension slots** (`lib/workbench/shell-extensions.tsx`). A deployment adds its own rail destinations (pages in the main area or links), account menu entries, an account summary line, an unread badge, its own sign-in identity and a section under the home composer by providing `WorkbenchShellExtensionsProvider` (mounted empty in the root layout), without changing the shell. Nested providers merge.
 
+### Behavior Changes
+
+- Sandbox: once a deployment enables sandboxes, any owner it admits may use them, including anonymous and shared-team owners; the `sandbox:use` role and the single-user requirement are gone, and `SANDBOX_FORBIDDEN` is no longer returned. Model calls were never gated by identity either. Each owner still reaches only its own sandboxes, files, previews and checkpoints. **On an anonymous public deployment this lets any visitor start billable sandboxes up to `maxActivePerOwner` and `maxActive`**: protect it with `ACCESS_CODE` or your own sign-in, keep the caps and lifetime low, and set a budget at the sandbox provider. See [SECURITY.md](SECURITY.md#deployment-assumptions).
+
+## [1.4.1] - 2026-11-05
+
+1.4.1 is a regular patch release with no upgrade conditions over 1.4.0. Most of it stops edits and learner progress from being lost when a background sync crosses a save, makes courses open quickly again on slow connections, and fixes PBL v3 sandbox cleanup and tutoring. Upgrading from 1.3.x carries the conditions of [1.4.0](#140---2026-11-04), and the 1.4.0 **Known issues** still apply.
+
 ### Bug Fixes
 
 - PBL: a background course sync no longer empties a PBL v2 project on screen. It used to take the stored design template as it was, and the next whole-document save then recorded the empty state, so the learner's submissions and progress were gone after a reload. [#2184](https://github.com/THU-MAIC/OpenMAIC/pull/2184)
@@ -36,6 +44,23 @@ Targeted for 1.5.0. The workbench stays off by default in this change; where it 
 - Editor: saving a structural change, such as deleting or reordering a page, no longer deletes a page an agent or another tab added that this tab had not heard of yet. A page the user deleted is still deleted. [#2184](https://github.com/THU-MAIC/OpenMAIC/pull/2184)
 - Editor: the standalone classroom page follows server changes while in Edit, so a page an agent changed appears within seconds, including one changed before Edit was opened, instead of only after a reload. [#2184](https://github.com/THU-MAIC/OpenMAIC/pull/2184)
 - Editor: the legacy Pro editor removes an empty text box when the user leaves it, not whenever it renders, so opening a page no longer saves it with no user input. An empty box that already exists, or that an undo brings back, stays until it is selected and left. [#2184](https://github.com/THU-MAIC/OpenMAIC/pull/2184)
+
+- PBL v3: deleting a course now releases its sandbox. Background maintenance used to fail loading the deleted course's withdrawn project and never reclaimed the sandbox, so it kept running. The last checkpoint and teaching state are kept. [#2176](https://github.com/THU-MAIC/OpenMAIC/pull/2176) (by @cosarah)
+- PBL v3: the tutor no longer mistakes a learner's reflection for artifact approval or uses the wrong feedback mode during a recap, and a failed teaching call that a later call recovers no longer stays in the transcript; it is kept in the recorded activity. An IDE file-read error clears when the file is read again successfully. [#2173](https://github.com/THU-MAIC/OpenMAIC/pull/2173) (by @Irisdai517)
+- PBL v3: a long tutor reply keeps scrolling with its end instead of stopping once its heading reaches the top. Scrolling up releases following and scrolling back near the bottom resumes it, as in the workbench. [#2178](https://github.com/THU-MAIC/OpenMAIC/pull/2178) (by @Irisdai517)
+- Export: an interactive page that has only a `url` keeps its placeholder slide in the PPTX deck, with its button and QR code pointing at the page's own address, instead of disappearing. [#2175](https://github.com/THU-MAIC/OpenMAIC/pull/2175) (by @puxiao)
+- Interactive pages: player fullscreen with workbench panels open no longer cuts the page off on the left. [#2145](https://github.com/THU-MAIC/OpenMAIC/pull/2145) (by @YizukiAme)
+- Agent: `generate_scene` declares `widgetOutline` as an object, so models stop sending it as a JSON string that every call rejected with `invalid-widget-outline`. [#2157](https://github.com/THU-MAIC/OpenMAIC/pull/2157) (by @rome-xi)
+- Agent: course-edit guidance and errors explain newline escaping, so an agent recovers when a replacement anchor written with literal `\n` does not match. Matching stays exact. [#2152](https://github.com/THU-MAIC/OpenMAIC/pull/2152) (by @yipwingtim)
+- Storage: the asset collector no longer stalls when still-referenced entries fill its candidate page; they are excluded up front, so releasable assets behind them are collected. `@openmaic/storage` 0.39.3. [#2103](https://github.com/THU-MAIC/OpenMAIC/pull/2103) (by @bhushan4work)
+
+### Packages
+
+- `@openmaic/generation` 0.3.29 (was 0.3.28) and `@openmaic/storage` 0.39.3 (was 0.39.2). Other packages are unchanged from 1.4.0.
+
+### Other Changes
+
+- CI: the Playwright suite runs in three shards on the upgraded Playwright, and the render image is built only when its inputs change. [#2165](https://github.com/THU-MAIC/OpenMAIC/pull/2165) [#2171](https://github.com/THU-MAIC/OpenMAIC/pull/2171) [#2183](https://github.com/THU-MAIC/OpenMAIC/pull/2183)
 
 ## [1.4.0] - 2026-11-04
 

@@ -52,11 +52,11 @@ import PBLExamplesPage from '@/app/pbl-v3/page';
 import { installedProject } from '@/lib/server/pbl-v3/catalog';
 import { packageBuiltin } from '@/lib/server/pbl-v3/project-package';
 
-const authorized: OwnerPrincipal = {
+const user: OwnerPrincipal = {
   ownerId: 'owner',
   kind: 'user',
   assurance: 'verified',
-  roles: new Set(['sandbox:use']),
+  roles: new Set(),
 };
 const anonymous: OwnerPrincipal = {
   ownerId: 'anonymous-owner',
@@ -64,7 +64,7 @@ const anonymous: OwnerPrincipal = {
   assurance: 'unverified-legacy',
   roles: new Set(),
 };
-const unauthorized: OwnerPrincipal = { ...authorized, roles: new Set() };
+const shared: OwnerPrincipal = { ...user, ownerId: 'team', kind: 'shared' };
 const disabled = new SandboxError('SANDBOX_DISABLED', 503, 'Sandbox provider is not configured.');
 const classroomId = 'pbl-00000000-0000-4000-8000-000000000000';
 
@@ -117,24 +117,10 @@ afterEach(() => vi.unstubAllEnvs());
 describe('creating a sample classroom', () => {
   it.each([
     ['anonymous', anonymous],
-    ['unauthorized', unauthorized],
-  ])('refuses an %s principal before reading sandbox settings', async (_, principal) => {
+    ['shared', shared],
+    ['user', user],
+  ])('refuses a %s principal while the sandbox is off', async (_, principal) => {
     state.principal = principal;
-    const response = await openSample();
-    expect(response.status).toBe(403);
-    expect(await response.json()).toEqual({
-      success: false,
-      error: {
-        code: 'SANDBOX_FORBIDDEN',
-        message: 'This identity is not allowed to use sandboxes.',
-      },
-    });
-    expect(state.config).not.toHaveBeenCalled();
-    expect(state.createDocument).not.toHaveBeenCalled();
-  });
-
-  it('refuses an authorized principal while the sandbox is off', async () => {
-    state.principal = authorized;
     state.config.mockRejectedValue(disabled);
     const response = await openSample();
     expect(response.status).toBe(503);
@@ -145,8 +131,12 @@ describe('creating a sample classroom', () => {
     expect(state.createDocument).not.toHaveBeenCalled();
   });
 
-  it('creates the classroom for an authorized principal', async () => {
-    state.principal = authorized;
+  it.each([
+    ['anonymous', anonymous],
+    ['shared', shared],
+    ['user', user],
+  ])('creates the classroom for a %s principal, which needs no role', async (_, principal) => {
+    state.principal = principal;
     const response = await openSample();
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ classroomId });
@@ -169,10 +159,10 @@ describe('the sample page', () => {
 
 describe('project packages stay available to classroom import and export', () => {
   it.each([
-    ['sandbox off', authorized, true],
+    ['sandbox off', user, true],
     ['anonymous', anonymous, false],
-    ['unauthorized', unauthorized, false],
-    ['authorized', authorized, false],
+    ['shared', shared, false],
+    ['user', user, false],
   ])('installs for a principal that is %s', async (_, principal, off) => {
     state.principal = principal;
     if (off) state.config.mockRejectedValue(disabled);

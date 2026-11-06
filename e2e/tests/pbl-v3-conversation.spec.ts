@@ -4,6 +4,7 @@ import { seedServerDocument, uniqueStageId } from '../fixtures/server-seed';
 import { createSettingsStorage } from '../fixtures/test-data/settings';
 import { defaultTheme } from '../fixtures/test-data/slide-theme';
 import type { LearningView } from '@/lib/pbl/v3/types';
+import { markRecoveredTeachingTools } from '@/lib/pbl/v3/conversation';
 
 test('PBL conversation stays in the host classroom through expansion, scene navigation and refresh', async ({
   page,
@@ -134,6 +135,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
       },
     ],
   } as unknown as LearningView;
+  let fileReadFailures = 0;
   let failDecision = true;
   let decisionGate: Promise<void> | null = null;
   let decisionEntered = () => {};
@@ -343,7 +345,11 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
       view.needsOpening = false;
       return route.fulfill({ json: { view } });
     }
-    if (new URL(route.request().url()).searchParams.has('file'))
+    if (new URL(route.request().url()).searchParams.has('file')) {
+      if (fileReadFailures > 0) {
+        fileReadFailures--;
+        return route.fulfill({ status: 503, json: { error: { code: 'SANDBOX_UNAVAILABLE' } } });
+      }
       return route.fulfill({
         json: {
           text:
@@ -354,6 +360,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
           hash: 'a'.repeat(64),
         },
       });
+    }
     // Also supports local combination with the companion workbench PR.
     if (new URL(route.request().url()).pathname.endsWith('/workspace'))
       return route.fulfill({
@@ -403,6 +410,135 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await page.getByTestId('scene-title').filter({ hasText: 'Practice project' }).click();
   await page.getByRole('button', { name: 'Continue Project', exact: true }).click();
   await expect(page.getByTestId('pbl-v3-workspace')).toBeVisible();
+  const ide = page.getByTestId('pbl-ide');
+  await expect(ide.locator('.monaco-editor .view-lines')).toContainText('Greeting plan');
+  fileReadFailures = 1;
+  view.revision++;
+  await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
+  await expect(ide.getByRole('alert')).toBeVisible();
+  await ide.screenshot({ path: 'test-results/pbl-ide-read-failure.png' });
+  view.revision++;
+  await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
+  await expect(ide.getByRole('alert')).toHaveCount(0);
+  await ide.screenshot({ path: 'test-results/pbl-ide-read-recovered.png' });
+
+  const baselineConversation = view.conversation!;
+  view.conversation = [
+    {
+      id: 'pbl-role-feedback:turn-1',
+      inputId: 100,
+      speaker: 'mentor',
+      status: 'running',
+      parts: [
+        {
+          kind: 'tool',
+          id: 'early-complete',
+          action: 'complete',
+          name: 'complete_stage',
+          status: 'failed',
+          args: { studentFeedback: 'Earlier completion attempt' },
+          result: { error: 'The closing section is not open yet.' },
+        },
+        { kind: 'text', id: 'recap-text', text: 'Your reflection is recorded.' },
+      ],
+    },
+  ];
+  view.activitySequence!++;
+  publishLearning();
+  const transcript = page.getByRole('log', { name: 'Learning conversation' });
+  await expect(
+    transcript.locator('[data-testid="workbench-tool-card"][data-status="failed"]'),
+  ).toHaveCount(1);
+  await transcript.screenshot({ path: 'test-results/pbl-tool-before-recovery.png' });
+  view.conversation[0].parts.push({
+    kind: 'tool',
+    id: 'committed-complete',
+    action: 'complete',
+    name: 'complete_stage',
+    status: 'succeeded',
+    result: { readyForStudentConfirmation: true },
+  });
+  view.conversation = markRecoveredTeachingTools(view.conversation);
+  view.activitySequence!++;
+  publishLearning();
+  await expect(
+    transcript.locator('[data-testid="workbench-tool-card"][data-status="failed"]'),
+  ).toHaveCount(0);
+  await expect(
+    transcript.locator('[data-testid="workbench-tool-card"][data-status="succeeded"]'),
+  ).toHaveCount(1);
+  await expect(transcript.getByText('Your reflection is recorded.', { exact: true })).toBeVisible();
+  await transcript.screenshot({ path: 'test-results/pbl-tool-after-recovery.png' });
+  view.conversation[0].parts.push(
+    {
+      kind: 'tool',
+      id: 'advance-failed',
+      action: 'skill',
+      name: 'read_next_skill',
+      args: { studentFeedback: 'The learner understood this section.' },
+      status: 'failed',
+      result: { error: 'File access is temporarily unavailable.' },
+    },
+    {
+      kind: 'tool',
+      id: 'reread-succeeded',
+      action: 'skill',
+      name: 'read_next_skill',
+      args: {},
+      status: 'succeeded',
+    },
+  );
+  view.conversation = markRecoveredTeachingTools(view.conversation);
+  view.activitySequence!++;
+  publishLearning();
+  await expect(
+    transcript.locator('[data-testid="workbench-tool-card"][data-status="failed"]'),
+  ).toHaveCount(1);
+  view.conversation[0].parts.push({
+    kind: 'tool',
+    id: 'advance-succeeded',
+    action: 'skill',
+    name: 'read_next_skill',
+    args: { studentFeedback: 'The learner understood this section.' },
+    status: 'succeeded',
+  });
+  view.conversation = markRecoveredTeachingTools(view.conversation);
+  view.activitySequence!++;
+  publishLearning();
+  await expect(
+    transcript.locator('[data-testid="workbench-tool-card"][data-status="failed"]'),
+  ).toHaveCount(0);
+  for (const studentFeedback of [null, false, 0]) {
+    view.conversation[0].parts.push(
+      {
+        kind: 'tool',
+        id: `coerced-failure-${studentFeedback}`,
+        action: 'skill',
+        name: 'read_next_skill',
+        args: { studentFeedback },
+        status: 'failed',
+        result: { error: 'Advancement failed after argument coercion.' },
+      },
+      {
+        kind: 'tool',
+        id: `reread-after-${studentFeedback}`,
+        action: 'skill',
+        name: 'read_next_skill',
+        args: {},
+        status: 'succeeded',
+      },
+    );
+  }
+  view.conversation = markRecoveredTeachingTools(view.conversation);
+  view.activitySequence!++;
+  publishLearning();
+  await expect(
+    transcript.locator('[data-testid="workbench-tool-card"][data-status="failed"]'),
+  ).toHaveCount(3);
+  view.conversation = baselineConversation;
+  view.activitySequence!++;
+  publishLearning();
+
   // Show the actual help tool label and expandable payload, without a new UI.
   view.conversation!.push({
     id: 'assistance-preview',
@@ -1008,7 +1144,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await expect(thinking.getByRole('button')).toBeEnabled();
   await expect(thinking.getByRole('button')).toHaveAttribute('aria-expanded', 'false');
 
-  // A long streaming reply keeps its heading readable instead of chasing its tail.
+  // A new learner send follows its answer, as in Pro. Output alone never reclaims reading.
   const requestsBeforeLongReply = chatRequests;
   await page.getByLabel('Your message', { exact: true }).fill('Please explain this in detail.');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
@@ -1037,40 +1173,88 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   ).join('');
   view.activitySequence++;
   await publishLearning();
-  await expect(belowButton).toHaveAttribute('data-generating', 'true');
-  await expect
-    .poll(async () => {
-      const heading = await longTurn.boundingBox(),
-        viewport = await scrollArea.boundingBox();
-      return !!heading && !!viewport && heading.y >= viewport.y - 2 && heading.y <= viewport.y + 24;
-    })
-    .toBe(true);
+  const distance = () =>
+    scrollArea.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
+  const settleScroll = () =>
+    scrollArea.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    );
+  await expect.poll(distance).toBeLessThanOrEqual(1);
+  await expect(belowButton).toHaveCount(0);
   const pinned = await scrollArea.evaluate((el) => el.scrollTop);
   longReply.parts[0]!.text += '\n\n' + 'More content below the viewport.\n\n'.repeat(25);
   view.activitySequence++;
   await publishLearning();
   await expect(longTurn).toContainText('More content below the viewport.');
-  await expect.poll(() => scrollArea.evaluate((el) => el.scrollTop)).toBeCloseTo(pinned, 0);
-  // Manual upward reading remains in place while output continues.
+  await expect.poll(distance).toBeLessThanOrEqual(1);
+  expect(await scrollArea.evaluate((el) => el.scrollTop)).toBeGreaterThan(pinned);
+  await conversation.screenshot({ path: 'test-results/pbl-follow-tail.png' });
+
   await scrollArea.hover();
+  const following = await scrollArea.evaluate((el) => el.scrollTop);
   await page.mouse.wheel(0, -180);
-  await expect.poll(() => scrollArea.evaluate((el) => el.scrollTop)).toBeLessThan(pinned - 30);
+  await expect.poll(() => scrollArea.evaluate((el) => el.scrollTop)).toBeLessThan(following - 30);
   const reading = await scrollArea.evaluate((el) => el.scrollTop);
   longReply.parts[0]!.text += '\n\nStill generating.\n\n'.repeat(10);
   view.activitySequence++;
   await publishLearning();
   await expect(longTurn).toContainText('Still generating.');
-  await expect.poll(() => scrollArea.evaluate((el) => el.scrollTop)).toBeCloseTo(reading, 0);
+  await settleScroll();
+  expect(await scrollArea.evaluate((el) => el.scrollTop)).toBeCloseTo(reading, 0);
+  await expect(belowButton).toHaveAttribute('data-generating', 'true');
+
+  // Downward reading outside Pro's near-bottom tolerance remains paused.
+  await page.mouse.wheel(0, (await distance()) - 100);
+  await expect.poll(distance).toBeCloseTo(100, 0);
+  const nearTail = await scrollArea.evaluate((el) => el.scrollTop);
+  longReply.parts[0]!.text += '\n\nMore output while reading near the tail.\n\n'.repeat(12);
+  view.activitySequence++;
+  await publishLearning();
+  await expect(longTurn).toContainText('More output while reading near the tail.');
+  await settleScroll();
+  expect(await scrollArea.evaluate((el) => el.scrollTop)).toBeCloseTo(nearTail, 0);
+  await conversation.screenshot({ path: 'test-results/pbl-manual-reading.png' });
+
+  // Pro's shared near-bottom tolerance resumes following without a button click.
+  await page.mouse.wheel(0, (await distance()) - 30);
+  await expect.poll(distance).toBeCloseTo(30, 0);
+  await settleScroll();
+  longReply.parts[0]!.text += '\n\nFollowing near the tail.\n\n'.repeat(10);
+  view.activitySequence++;
+  await publishLearning();
+  await expect(longTurn).toContainText('Following near the tail.');
+  await expect.poll(distance).toBeLessThanOrEqual(8);
+  await expect(belowButton).toHaveCount(0);
+
+  // Returning all the way to the bottom also restores following during output.
+  await page.mouse.wheel(0, -180);
+  await expect.poll(distance).toBeGreaterThan(100);
+  await page.mouse.wheel(0, 100000);
+  await expect.poll(distance).toBeLessThanOrEqual(1);
+  await settleScroll();
+  longReply.parts[0]!.text += '\n\nFollowing after manual return to bottom.\n\n'.repeat(10);
+  view.activitySequence++;
+  await publishLearning();
+  await expect(longTurn).toContainText('Following after manual return to bottom.');
+  await expect.poll(distance).toBeLessThanOrEqual(8);
+
+  // Native keyboard scrolling has the same priority as wheel input.
+  await scrollArea.focus();
+  await page.keyboard.press('Home');
+  await expect.poll(() => scrollArea.evaluate((el) => el.scrollTop)).toBe(0);
+  longReply.parts[0]!.text += '\n\nKeyboard reading.\n\n'.repeat(10);
+  view.activitySequence++;
+  await publishLearning();
+  await expect(longTurn).toContainText('Keyboard reading.');
+  await settleScroll();
+  expect(await scrollArea.evaluate((el) => el.scrollTop)).toBe(0);
+  await belowButton.click();
   longReply.status = 'succeeded';
   longReply.parts[0]!.streaming = false;
   view.busy = false;
   view.activitySequence++;
   await publishLearning();
-  await expect(belowButton).toHaveAttribute('data-generating', 'false');
-  await belowButton.click();
-  await expect
-    .poll(() => scrollArea.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
-    .toBeLessThanOrEqual(8);
+  await expect.poll(distance).toBeLessThanOrEqual(1);
   await expect(belowButton).toHaveCount(0);
   view.conversation = previousEntries;
   view.activitySequence++;
