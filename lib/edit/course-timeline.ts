@@ -2,7 +2,8 @@
  * One linear undo/redo line per course, in memory only.
  *
  * An entry is a diff: for each scene it touched, the top-level fields it changed
- * (a scene it added or removed is held whole), plus the page order, the page in
+ * (a scene it added or removed is held whole, as it last left the document), plus
+ * the page order, the page in
  * focus and the video manifest when those moved. Undoing an entry therefore
  * touches only what the entry changed. Every change to a course's content lands
  * on the line, hand edits and agent edits alike, so steps replay strictly in
@@ -539,11 +540,45 @@ export function stampAudioOnLine(
   return { ...line, past: line.past.map(stampEntry), future: line.future.map(stampEntry) };
 }
 
-/** Move the top step across. An undone step is closed: nothing later folds into it. */
-export function stepLine(line: CourseLine, direction: TimelineDirection): CourseLine {
+/**
+ * `entry` as it should cross the line once replayed on `document`: a scene the
+ * replay removes is held as it left, so bringing it back again restores what was
+ * there then, learner work included, not what was there when the step was first
+ * recorded. Learner work is not edit history, and a stale copy of it must not come
+ * back.
+ */
+export function withRemovedScenesAsLeft(
+  entry: TimelineEntry,
+  direction: TimelineDirection,
+  document: CourseDocument,
+): TimelineEntry {
+  const toSide = direction === 'undo' ? 'before' : 'after';
+  const fromSide = direction === 'undo' ? 'after' : 'before';
+  const byId = new Map(document.scenes.map((scene) => [scene.id, scene]));
+  let scenes: Record<string, SceneChange> | null = null;
+  for (const [id, change] of Object.entries(entry.scenes)) {
+    const existing = byId.get(id);
+    if (change[toSide] !== null || change[fromSide] === null || !existing) continue;
+    if (change[fromSide] === (existing as unknown as SceneFields)) continue;
+    scenes ??= { ...entry.scenes };
+    scenes[id] = { ...change, [fromSide]: existing as unknown as SceneFields };
+  }
+  return scenes ? withAssetRefs({ ...entry, scenes }) : entry;
+}
+
+/**
+ * Move the top step across. An undone step is closed: nothing later folds into it.
+ * `replayed` is the step as it crosses (see {@link withRemovedScenesAsLeft}).
+ */
+export function stepLine(
+  line: CourseLine,
+  direction: TimelineDirection,
+  replayed?: TimelineEntry,
+): CourseLine {
   const source = direction === 'undo' ? line.past : line.future;
-  const entry = direction === 'undo' ? source[source.length - 1] : source[0];
-  if (!entry) return line;
+  const top = direction === 'undo' ? source[source.length - 1] : source[0];
+  if (!top) return line;
+  const entry = replayed && replayed.id === top.id ? replayed : top;
   const { runId: _runId, ...closed } = entry;
   return {
     ...line,

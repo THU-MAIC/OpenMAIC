@@ -424,6 +424,49 @@ describe('a PBL v2 project', () => {
     const now = (sceneOf('p').content as unknown as { projectV2: { title: string } }).projectV2;
     expect(now.title).toBe('Design one');
   });
+
+  const submission = (id: string) => ({
+    id,
+    microtaskId: 'microtask-1',
+    milestoneId: 'milestone-1',
+    kind: 'text',
+    content: id,
+    createdAt: '2026-08-07T08:00:04.000Z',
+  });
+  const submissionsOf = (id: string) =>
+    (sceneOf(id).content as unknown as { projectV2: { submissions: { id: string }[] } }).projectV2
+      .submissions;
+  const deletePage = () => commitCourseEdit({}, () => useStageStore.getState().deleteScene('p'));
+
+  it('brings a deleted page back with its learner work', () => {
+    load([slide('a', 'A'), pbl(project('Design one', [submission('submission-1')]))], 'p');
+    deletePage();
+    stepCourseTimeline('undo');
+    expect(submissionsOf('p').map((item) => item.id)).toEqual(['submission-1']);
+  });
+
+  it('brings a page back again with the learner work done since it last came back', () => {
+    load([slide('a', 'A'), pbl(project('Design one', [submission('submission-1')]))], 'p');
+    deletePage();
+    stepCourseTimeline('undo');
+    // The learner works on the restored page: not a step.
+    useStageStore.getState().updateScene('p', {
+      content: {
+        type: 'pbl',
+        projectV2: withEvents(
+          project('Design one', [submission('submission-1'), submission('submission-2')]),
+        ),
+      } as never,
+    });
+    stepCourseTimeline('redo');
+    expect(useStageStore.getState().scenes.some((scene) => scene.id === 'p')).toBe(false);
+    stepCourseTimeline('undo');
+    expect(submissionsOf('p').map((item) => item.id)).toEqual(['submission-1', 'submission-2']);
+    const restored = (
+      sceneOf('p').content as unknown as { projectV2: { runtimeEvents?: unknown[] } }
+    ).projectV2;
+    expect(restored.runtimeEvents).toEqual([runtimeEvent]);
+  });
 });
 
 describe('a course coming back from another tab', () => {

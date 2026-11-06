@@ -20,6 +20,7 @@ import {
   stampAudioOnLine,
   stepLine,
   useCourseTimeline,
+  withRemovedScenesAsLeft,
   type CourseDocument,
   type TimelineDirection,
   type TimelineEntry,
@@ -156,7 +157,8 @@ export function stepCourseTimeline(direction: TimelineDirection): void {
       return current && scene !== current ? withLearnerStateOf(scene, current) : scene;
     });
     useStageStore.getState().applyCourseTimelineStep({ ...applied, scenes });
-    timeline.updateLine(stageId, (current) => stepLine(current, direction));
+    const replayed = withRemovedScenesAsLeft(step, direction, document);
+    timeline.updateLine(stageId, (current) => stepLine(current, direction, replayed));
     timeline.splitAgentRun();
     noteRefs(stageId, readDocument(), Date.now());
     if (applied.currentSceneId !== document.currentSceneId) {
