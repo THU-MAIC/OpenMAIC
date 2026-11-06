@@ -143,6 +143,12 @@ export interface WorkbenchDraftConversation {
     readonly elementRefsAccepted: boolean;
     readonly courseRefsAccepted: boolean;
   }>;
+  /**
+   * What the empty conversation says instead of the default placeholder, for a
+   * draft whose first message does something other than continue the course
+   * beside it (the built-in guide course: a message there starts a new one).
+   */
+  readonly emptyState?: { readonly title: string; readonly hint: string };
 }
 
 const WorkbenchDraftConversationContext = createContext<WorkbenchDraftConversation | null>(null);

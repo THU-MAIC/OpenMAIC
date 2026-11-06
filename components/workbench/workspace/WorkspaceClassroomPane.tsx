@@ -23,7 +23,7 @@
  * course, at either size, is a perfectly legitimate thing to do with one.
  */
 
-import { Eye, Maximize, Minimize2 } from 'lucide-react';
+import { CircleHelp, Eye, Maximize, Minimize2 } from 'lucide-react';
 import { memo, useEffect, useLayoutEffect, useState } from 'react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
@@ -41,7 +41,17 @@ import { useEditorWarmup, warmEditorSurfaces } from '@/lib/edit/use-editor-warmu
 import { shouldCollapseFullscreenOnEscape } from '@/lib/workbench/classroom-fullscreen';
 import { HeaderControls } from '@/components/stage/header-controls';
 import { ClassroomModeSwitch } from '@/components/workbench/ClassroomModeSwitch';
+import {
+  markOnboardingSeen,
+  resetOnboarding,
+  useOnboardingPending,
+  useTourActive,
+} from '@/lib/workbench/onboarding';
 import { WorkspaceCourseTabs, type WorkspaceCourseTabItem } from './WorkspaceCourseTabs';
+import { WorkspaceTour } from './WorkspaceTour';
+import { EDIT_TOUR_STEPS } from './edit-tour-steps';
+
+const noop = () => {};
 import { PaneFoldButton } from './PaneFoldButton';
 
 export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
@@ -170,6 +180,44 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
     />
   );
 
+  // The one-time hint, the first time any course is on screen here.
+  const hintPending = useOnboardingPending('pane');
+  const tourActive = useTourActive();
+  // The Edit tour, the first time the viewer edits a course of theirs. It
+  // replaces the Learn/Edit hint there rather than stacking on it. (Not gated
+  // on `tourActive`: that flag is the playing tour's own, this one's included.)
+  const editTourPending = useOnboardingPending('edit');
+  const showEditTour =
+    editTourPending &&
+    !learning &&
+    editingAllowed &&
+    !hidden &&
+    !fullscreen &&
+    loadedCourseId === courseId;
+  // Replaying the Edit tour lives where it applies: in Edit mode, on a course
+  // the viewer can edit. Clearing the mark is enough; `showEditTour` picks it up.
+  const editGuideButton =
+    !learning && editingAllowed && loadedCourseId === courseId && !showEditTour ? (
+      <button
+        type="button"
+        data-testid="workspace-edit-guide"
+        onClick={() => resetOnboarding('edit')}
+        aria-label={t('workspace.editGuide')}
+        title={t('workspace.editGuide')}
+        className="ws-head-icon"
+      >
+        <CircleHelp className="size-4" aria-hidden="true" />
+      </button>
+    ) : null;
+  const showHint =
+    hintPending &&
+    learning &&
+    !tourActive &&
+    !fullscreen &&
+    !hidden &&
+    loadedCourseId === courseId &&
+    scenes.length > 0;
+
   const courseName =
     browser.tabs.find((tab) => tab.id === courseId)?.name || t('workspace.untitledCourse');
   const sceneIndex = scenes.findIndex((scene) => scene.id === currentSceneId);
@@ -182,7 +230,7 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
       aria-label={t('workspace.classroomPaneAria')}
       aria-hidden={hidden || undefined}
       className={cn(
-        'ws-pane ws-pane-last h-full min-w-0 flex-1 flex-col',
+        'ws-pane ws-pane-last relative h-full min-w-0 flex-1 flex-col',
         fullscreen && 'ws-classroom-fullscreen',
         // Opening the pane (a course handed over from the request preview, or
         // opened from the library) comes in from the right edge as the
@@ -227,6 +275,7 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
           />
           <span className="ws-ctabs-rule" aria-hidden="true" />
           {readOnly ? <ReadOnlyBadge /> : null}
+          {editGuideButton}
           {modeSwitch}
           <span className="ws-vsep" aria-hidden="true" />
           <button
@@ -263,6 +312,7 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
           {readOnly ? <ReadOnlyBadge /> : null}
           {/* Export and sharing, which the split view leaves to this size. */}
           <HeaderControls variant="compact" showGlobalControls={false} showCourseActions />
+          {editGuideButton}
           {modeSwitch}
           <span className="ws-vsep" aria-hidden="true" />
           <button
@@ -278,6 +328,20 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
         </header>
       )}
 
+      {showHint ? <PaneHint /> : null}
+      {showEditTour ? (
+        <WorkspaceTour
+          steps={EDIT_TOUR_STEPS}
+          doneLabel="workspace.tour.editDone"
+          onNavigate={noop}
+          onSendExample={noop}
+          onEnd={() => {
+            markOnboardingSeen('edit');
+            markOnboardingSeen('pane');
+          }}
+        />
+      ) : null}
+
       {/* One course surface for both modes and both sizes. Generation and access
           gates override remembered editing without overwriting the course's
           preference. */}
@@ -289,6 +353,34 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
     </section>
   );
 });
+
+/**
+ * Learn vs Edit, and that the conversation can change the course too. Shown
+ * once, the first time a course opens in this pane; it points at the switch.
+ */
+function PaneHint() {
+  const { t } = useI18n();
+  return (
+    <div role="note" className="ws-pane-hint" data-testid="workspace-pane-hint">
+      <div className="ws-pane-hint-title">{t('workspace.onboarding.paneTitle')}</div>
+      <ul>
+        <li>{t('workspace.onboarding.paneLearn')}</li>
+        <li>{t('workspace.onboarding.paneEdit')}</li>
+        <li>{t('workspace.onboarding.paneChat')}</li>
+      </ul>
+      <div className="ws-pane-hint-foot">
+        <button
+          type="button"
+          data-testid="workspace-pane-hint-ok"
+          className="ws-pane-hint-ok"
+          onClick={() => markOnboardingSeen('pane')}
+        >
+          {t('workspace.onboarding.gotIt')}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function ReadOnlyBadge() {
   const { t } = useI18n();

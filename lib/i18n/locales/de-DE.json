@@ -2412,6 +2412,7 @@
     "learningMode": "Lernen",
     "editingMode": "Bearbeiten",
     "editingUnavailableGenerating": "Während der Kurserstellung ist die Bearbeitung nicht verfügbar.",
+    "editGuide": "Bearbeitungshilfe",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2515,17 +2516,132 @@
       "aboutBody": "Eine Open-Source-Plattform, die jedes Thema in ein interaktives Klassenzimmer mit KI-Lehrkräften und -Mitschülern verwandelt. Veröffentlicht unter der MIT-Lizenz.",
       "viewOnGithub": "Auf GitHub ansehen",
       "docs": "Dokumentation",
-      "signOut": "Abmelden"
+      "signOut": "Abmelden",
+      "onboarding": "Erste Schritte"
     },
     "coursesPage": {
       "subtitle": "Kurse, die du erstellt oder importiert hast, und die Ordner, in denen du sie ablegst",
       "searchPlaceholder": "Meine Kurse durchsuchen",
       "results": "Suchergebnisse",
-      "allCourses": "Alle Kurse"
+      "allCourses": "Alle Kurse",
+      "emptyHint": "Beschreibe auf der Startseite ein Thema, dann erscheint hier dein erster Kurs.",
+      "makeCourse": "Kurs erstellen"
     },
     "fullscreen": {
       "expand": "Vollbild",
       "collapse": "Vollbild beenden (Esc)"
+    },
+    "guide": {
+      "chatTitle": "Diesen Kurs ändern? Sag es hier",
+      "chatHint": "Etwa „mach Seite 2 einfacher“. Für einen neuen Kurs: „Neuer Chat“."
+    },
+    "onboarding": {
+      "paneTitle": "Lernen oder bearbeiten",
+      "paneLearn": "Lernen: Die KI-Lehrkraft führt durch den Kurs, frag jederzeit.",
+      "paneEdit": "Bearbeiten: Seiten direkt ändern.",
+      "paneChat": "Oder bitte im Chat, z. B. „mach Seite 2 einfacher“.",
+      "gotIt": "Verstanden"
+    },
+    "tour": {
+      "skip": "Überspringen",
+      "prev": "Zurück",
+      "next": "Weiter",
+      "done": "Selbst eingeben",
+      "count": "{{index}} / {{total}}",
+      "openGuide": "Probekurs starten",
+      "welcome": {
+        "title": "Willkommen bei OpenMAIC",
+        "body": "Sag, was du lernen willst, und OpenMAIC macht daraus einen interaktiven Kurs mit KI-Lehrkraft und Mitlernenden."
+      },
+      "start": {
+        "title": "Hier geht es los",
+        "body": "„Neuer Chat“ startet einen neuen Kurs. Suche (⌘K) findet Kurse, Chats und Materialien."
+      },
+      "courses": {
+        "title": "Der Probekurs",
+        "body": "Auch dieser 5-Minuten-Kurs ist mit OpenMAIC gemacht. Öffne ihn und sieh, wo Unterricht stattfindet."
+      },
+      "library": {
+        "title": "Wissensdatenbank",
+        "body": "Handouts und PDFs einmal hochladen und in jedem Kurs verwenden."
+      },
+      "conversations": {
+        "title": "Chats",
+        "body": "Jeder Kurs entsteht in einem Chat. Um ihn zu ändern, frag in diesem Chat."
+      },
+      "mode": {
+        "title": "Lernen oder bearbeiten",
+        "body": "Lernen: Kurs mit der KI-Lehrkraft. Bearbeiten: Seite für Seite ändern."
+      },
+      "dock": {
+        "title": "Der Unterricht",
+        "body": "Abspielen, blättern, jederzeit die KI-Lehrkraft fragen; Mitlernende diskutieren mit."
+      },
+      "chat": {
+        "title": "Per Chat ändern",
+        "body": "Sag im Chat daneben einfach „mach Seite 2 einfacher“, und die KI ändert den Kurs."
+      },
+      "account": {
+        "title": "Konto und Einstellungen",
+        "body": "Profil, Einstellungen, Sprache und Design – und diese Einführung zum erneuten Ansehen."
+      },
+      "try": {
+        "title": "Jetzt ausprobieren",
+        "body": "Gib ein Thema ein oder wähle ein Beispiel, um sofort zu starten.",
+        "attach": "Material: Handout hochladen und den Kurs darauf aufbauen",
+        "mention": "Verweis: @ einen Kurs oder ein Material der Wissensdatenbank",
+        "skill": "Skills: einen Unterrichtsstil wählen, z. B. Deep Interactive"
+      },
+      "examples": {
+        "sky": {
+          "label": "Warum ist der Himmel blau?",
+          "prompt": "Warum ist der Himmel blau? Erkläre es mit Dingen aus dem Alltag"
+        },
+        "interest": {
+          "label": "Wie Zinseszins funktioniert",
+          "prompt": "Erkläre mit Alltagsbeispielen, wie Zinseszins funktioniert"
+        },
+        "teach": {
+          "label": "Unterrichten: Pythagoras, Klasse 8",
+          "prompt": "Eine Stunde zum Satz des Pythagoras für die 8. Klasse, mit einem kurzen Quiz am Ende"
+        }
+      },
+      "coursesNav": {
+        "title": "Meine Kurse",
+        "body": "Hier liegen deine fertigen Kurse. Klick einmal darauf."
+      },
+      "openLook": "Öffnen",
+      "edit": {
+        "canvas": {
+          "title": "Die Seite",
+          "body": "Klick auf Text, Bilder oder Formen, um sie zu ändern; ziehen zum Verschieben oder Skalieren."
+        },
+        "pages": {
+          "title": "Seiten",
+          "body": "Hier die Seitenliste öffnen: Seiten hinzufügen, per Ziehen umsortieren, löschen."
+        },
+        "bar": {
+          "title": "Die Steuerleiste",
+          "body": "Aktion hinzufügen, Sprechertext vertonen, blättern und Seiten hinzufügen, Lehrkraft und Mitlernende festlegen; rechts Elemente für die KI markieren."
+        },
+        "timeline": {
+          "title": "Die Aktionsspur",
+          "body": "Jede Karte ist eine Aktion: Erklärung, Spotlight, Diskussion. Ziehen zum Umsortieren, Klicken zum Bearbeiten."
+        },
+        "dock": {
+          "title": "Das Dock",
+          "body": "Am oberen Rand ziehen zum Anpassen der Höhe, oder einklappen für mehr Platz."
+        },
+        "learn": {
+          "title": "Vorschau",
+          "body": "Wechsle zurück zu „Lernen“, um den Kurs wie Lernende zu sehen."
+        },
+        "chat": {
+          "title": "Die KI fragen",
+          "body": "Lieber nicht von Hand? Sag es im Chat, z. B. „füge Seite 2 eine Übung hinzu“."
+        }
+      },
+      "editDone": "Bearbeiten"
     }
   },
   "profile": {
@@ -2571,6 +2687,7 @@
   },
   "classroomEnd": {
     "close": "Zurück zur letzten Seite",
+    "nextPageComing": "Die nächste Seite ist gleich da",
     "learned": "{{count}} Seiten geschafft",
     "result": "{{correct}} / {{total}} richtig",
     "actions": {

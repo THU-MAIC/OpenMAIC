@@ -35,7 +35,15 @@ import {
   type ComponentProps,
   type ReactNode,
 } from 'react';
-import { ChevronLeft, ChevronRight, FolderInput, FolderPlus, Search, Upload } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  FolderInput,
+  FolderPlus,
+  Plus,
+  Search,
+  Upload,
+} from 'lucide-react';
 import { FOLDER_TILE_FRAME, FolderTileCover } from '@/components/discovery/folder-card';
 import { toast } from 'sonner';
 import type { Slide } from '@openmaic/dsl';
@@ -121,6 +129,7 @@ export function WorkspaceCoursesPage({
   onOpenCourse,
   onDeleteCourse,
   onDiscardRun,
+  onMakeCourse,
 }: {
   readonly courses: Discovery;
   readonly courseRuns: ReadonlyMap<string, RunSnapshot>;
@@ -130,6 +139,8 @@ export function WorkspaceCoursesPage({
   readonly onDeleteCourse: (courseId: string) => Promise<void> | void;
   /** Discard a run whose course does not exist yet. */
   readonly onDiscardRun?: (runId: string) => Promise<void> | void;
+  /** The empty library's way to a first course: the home composer. */
+  readonly onMakeCourse?: () => void;
 }) {
   const { t } = useI18n();
   const [query, setQuery] = useState('');
@@ -551,6 +562,26 @@ export function WorkspaceCoursesPage({
                 <ThumbnailSkeleton />
               </div>
             ))}
+          </div>
+        ) : empty && !searching && !folder && onMakeCourse ? (
+          // The whole library is empty: say how a course gets here, and offer
+          // the way there rather than only stating the absence.
+          <div className="ws-page-empty" data-testid="workspace-courses-empty">
+            <p className="text-[14px] font-medium text-[var(--ws-ink-soft)]">
+              {t('workspace.coursesEmpty')}
+            </p>
+            <p className="mt-1">{t('workspace.coursesPage.emptyHint')}</p>
+            <div className="ws-page-empty-actions">
+              <button
+                type="button"
+                data-testid="workspace-courses-make"
+                className="ws-page-btn ws-page-btn-primary"
+                onClick={onMakeCourse}
+              >
+                <Plus className="size-4" aria-hidden="true" />
+                {t('workspace.coursesPage.makeCourse')}
+              </button>
+            </div>
           </div>
         ) : empty ? (
           <p className="ws-page-empty" data-testid="workspace-courses-empty">

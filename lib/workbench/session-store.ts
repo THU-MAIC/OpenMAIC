@@ -263,6 +263,22 @@ export type SessionStatus =
  */
 export const COURSE_NODE_KEY = 'course-deck';
 
+/**
+ * The attached run is writing this course right now: the run is live and the
+ * answer under way has written or linked the course (`runCourseStageIds`, which
+ * `agent_end` drains). A course the agent only read, or wrote in an earlier
+ * answer, is not being built.
+ */
+export function sessionBuildsCourse(
+  state: Pick<WorkbenchFold, 'status' | 'runCourseStageIds'>,
+  stageId: string | null | undefined,
+): boolean {
+  if (!stageId) return false;
+  const live =
+    state.status === 'connecting' || state.status === 'queued' || state.status === 'running';
+  return live && state.runCourseStageIds.includes(stageId);
+}
+
 /** The fold's half of the store: everything `foldEvent` may read or write. */
 export interface WorkbenchFold {
   status: SessionStatus;

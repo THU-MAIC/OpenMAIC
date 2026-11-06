@@ -2412,6 +2412,7 @@
     "learningMode": "Học",
     "editingMode": "Chỉnh sửa",
     "editingUnavailableGenerating": "Không thể chỉnh sửa khi khóa học đang được tạo.",
+    "editGuide": "Hướng dẫn chỉnh sửa",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2515,17 +2516,132 @@
       "aboutBody": "Nền tảng mã nguồn mở biến mọi chủ đề thành một lớp học tương tác với giáo viên và bạn học AI. Phát hành theo giấy phép MIT.",
       "viewOnGithub": "Xem trên GitHub",
       "docs": "Tài liệu",
-      "signOut": "Đăng xuất"
+      "signOut": "Đăng xuất",
+      "onboarding": "Hướng dẫn bắt đầu"
     },
     "coursesPage": {
       "subtitle": "Các khóa học bạn đã tạo hoặc nhập, và các thư mục để sắp xếp chúng",
       "searchPlaceholder": "Tìm trong khóa học của tôi",
       "results": "Kết quả tìm kiếm",
-      "allCourses": "Tất cả khóa học"
+      "allCourses": "Tất cả khóa học",
+      "emptyHint": "Mô tả một chủ đề ở trang chủ, bài học đầu tiên của bạn sẽ xuất hiện ở đây.",
+      "makeCourse": "Tạo bài học"
     },
     "fullscreen": {
       "expand": "Toàn màn hình",
       "collapse": "Thoát toàn màn hình (Esc)"
+    },
+    "guide": {
+      "chatTitle": "Muốn sửa bài học này? Hãy nói ở đây",
+      "chatHint": "Ví dụ «làm trang 2 đơn giản hơn». Muốn bài mới, bấm «Cuộc trò chuyện mới»."
+    },
+    "onboarding": {
+      "paneTitle": "Học hay chỉnh sửa",
+      "paneLearn": "«Học»: giáo viên AI dẫn bạn qua bài học, hỏi bất cứ lúc nào.",
+      "paneEdit": "«Chỉnh sửa»: sửa trực tiếp các trang.",
+      "paneChat": "Hoặc nhờ trong khung chat, ví dụ «làm trang 2 đơn giản hơn».",
+      "gotIt": "Đã hiểu"
+    },
+    "tour": {
+      "skip": "Bỏ qua",
+      "prev": "Quay lại",
+      "next": "Tiếp",
+      "done": "Tự nhập",
+      "count": "{{index}} / {{total}}",
+      "openGuide": "Học thử ngay",
+      "welcome": {
+        "title": "Chào mừng đến với OpenMAIC",
+        "body": "Nói điều bạn muốn học, OpenMAIC sẽ tạo một lớp học tương tác cùng giáo viên AI và bạn học."
+      },
+      "start": {
+        "title": "Bắt đầu từ đây",
+        "body": "«Cuộc trò chuyện mới» bắt đầu bài học mới. Tìm kiếm (⌘K) tìm bài học, cuộc trò chuyện và tài liệu."
+      },
+      "courses": {
+        "title": "Bài học trải nghiệm",
+        "body": "Bài học 5 phút này cũng được làm bằng OpenMAIC. Mở ra để xem lớp học diễn ra ở đâu."
+      },
+      "library": {
+        "title": "Kho kiến thức",
+        "body": "Tải tài liệu, PDF lên một lần và dùng lại trong mọi bài học."
+      },
+      "conversations": {
+        "title": "Cuộc trò chuyện",
+        "body": "Mỗi bài học được tạo trong một cuộc trò chuyện. Muốn sửa, hãy quay lại đó và nhờ."
+      },
+      "mode": {
+        "title": "Học hay chỉnh sửa",
+        "body": "«Học»: học cùng giáo viên AI. «Chỉnh sửa»: sửa từng trang."
+      },
+      "dock": {
+        "title": "Lớp học",
+        "body": "Phát, lật trang, hỏi giáo viên AI bất cứ lúc nào; bạn học cũng cùng thảo luận."
+      },
+      "chat": {
+        "title": "Sửa bằng trò chuyện",
+        "body": "Chỉ cần nói «làm trang 2 đơn giản hơn» ở khung chat bên cạnh, AI sẽ sửa bài."
+      },
+      "account": {
+        "title": "Tài khoản và cài đặt",
+        "body": "Hồ sơ, cài đặt, ngôn ngữ và giao diện ở đây, cả hướng dẫn này nữa."
+      },
+      "try": {
+        "title": "Thử ngay",
+        "body": "Nhập một chủ đề hoặc chọn một ví dụ để bắt đầu.",
+        "attach": "Tài liệu: tải giáo trình lên làm nền cho bài học",
+        "mention": "Tham chiếu: @ một bài học hoặc tài liệu trong kho",
+        "skill": "Kỹ năng: chọn cách dạy, ví dụ Tương tác sâu"
+      },
+      "examples": {
+        "sky": {
+          "label": "Vì sao bầu trời màu xanh?",
+          "prompt": "Vì sao bầu trời màu xanh? Giải thích bằng những hiện tượng thường ngày"
+        },
+        "interest": {
+          "label": "Lãi kép hoạt động thế nào",
+          "prompt": "Giải thích lãi kép hoạt động thế nào bằng ví dụ đời thường"
+        },
+        "teach": {
+          "label": "Dạy: định lý Pythagore, lớp 8",
+          "prompt": "Một tiết về định lý Pythagore cho học sinh lớp 8, có bài kiểm tra ngắn ở cuối"
+        }
+      },
+      "coursesNav": {
+        "title": "Khóa học của tôi",
+        "body": "Bài học đã xong nằm ở đây. Bấm để xem."
+      },
+      "openLook": "Mở xem",
+      "edit": {
+        "canvas": {
+          "title": "Trang",
+          "body": "Bấm vào chữ, hình ảnh hay hình khối trên trang để sửa; kéo để di chuyển hoặc đổi kích thước."
+        },
+        "pages": {
+          "title": "Danh sách trang",
+          "body": "Mở danh sách trang ở đây: thêm trang, kéo để sắp xếp, xóa trang."
+        },
+        "bar": {
+          "title": "Thanh điều khiển",
+          "body": "Thêm hành động, lồng tiếng, lật và thêm trang, chọn giáo viên và bạn học; bên phải có thể khoanh vùng để AI sửa."
+        },
+        "timeline": {
+          "title": "Dải hành động",
+          "body": "Mỗi thẻ là một hành động: giảng, làm nổi bật, thảo luận. Kéo để sắp xếp, bấm để sửa."
+        },
+        "dock": {
+          "title": "Thanh dưới",
+          "body": "Kéo mép trên để chỉnh chiều cao, hoặc thu gọn để trang rộng hơn."
+        },
+        "learn": {
+          "title": "Xem trước",
+          "body": "Chuyển lại «Học» để xem lớp học như học sinh."
+        },
+        "chat": {
+          "title": "Nhờ AI sửa",
+          "body": "Không muốn tự sửa? Nói trong khung chat, ví dụ «thêm một bài tập ở trang 2»."
+        }
+      },
+      "editDone": "Bắt đầu sửa"
     }
   },
   "profile": {
@@ -2571,6 +2687,7 @@
   },
   "classroomEnd": {
     "close": "Quay lại trang cuối",
+    "nextPageComing": "Trang tiếp theo sắp xong",
     "learned": "Đã học xong {{count}} trang",
     "result": "Đúng {{correct}} / {{total}} câu",
     "actions": {

@@ -2412,6 +2412,7 @@
     "learningMode": "Apprendre",
     "editingMode": "Modifier",
     "editingUnavailableGenerating": "La modification est indisponible pendant la génération du cours.",
+    "editGuide": "Guide d’édition",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2515,17 +2516,132 @@
       "aboutBody": "Une plateforme open source qui transforme n’importe quel sujet en classe interactive, avec des enseignants et des camarades IA. Publiée sous licence MIT.",
       "viewOnGithub": "Voir sur GitHub",
       "docs": "Documentation",
-      "signOut": "Se déconnecter"
+      "signOut": "Se déconnecter",
+      "onboarding": "Prise en main"
     },
     "coursesPage": {
       "subtitle": "Les cours que vous avez créés ou importés, et les dossiers où vous les rangez",
       "searchPlaceholder": "Rechercher dans mes cours",
       "results": "Résultats",
-      "allCourses": "Tous les cours"
+      "allCourses": "Tous les cours",
+      "emptyHint": "Décrivez un sujet sur l’accueil et votre premier cours apparaîtra ici.",
+      "makeCourse": "Créer un cours"
     },
     "fullscreen": {
       "expand": "Plein écran",
       "collapse": "Quitter le plein écran (Échap)"
+    },
+    "guide": {
+      "chatTitle": "Modifier ce cours ? Dites-le ici",
+      "chatHint": "Par exemple « simplifie la page 2 ». Pour un nouveau cours, « Nouvelle discussion »."
+    },
+    "onboarding": {
+      "paneTitle": "Apprendre ou modifier",
+      "paneLearn": "Apprendre : l’enseignant IA vous guide, posez vos questions à tout moment.",
+      "paneEdit": "Modifier : changez les pages directement.",
+      "paneChat": "Ou demandez dans la discussion, par exemple « simplifie la page 2 ».",
+      "gotIt": "Compris"
+    },
+    "tour": {
+      "skip": "Passer",
+      "prev": "Retour",
+      "next": "Suivant",
+      "done": "Écrire moi-même",
+      "count": "{{index}} / {{total}}",
+      "openGuide": "Suivre le cours d’essai",
+      "welcome": {
+        "title": "Bienvenue sur OpenMAIC",
+        "body": "Dites ce que vous voulez apprendre : OpenMAIC en fait un cours interactif avec un enseignant IA et des camarades."
+      },
+      "start": {
+        "title": "Pour commencer",
+        "body": "« Nouvelle discussion » lance un nouveau cours. La recherche (⌘K) trouve cours, discussions et documents."
+      },
+      "courses": {
+        "title": "Le cours d’essai",
+        "body": "Ce cours de 5 minutes a lui aussi été fait avec OpenMAIC. Ouvrez-le pour voir où se passe un cours."
+      },
+      "library": {
+        "title": "Base de connaissances",
+        "body": "Importez supports et PDF une fois, puis citez-les dans n’importe quel cours."
+      },
+      "conversations": {
+        "title": "Discussions",
+        "body": "Chaque cours naît d’une discussion. Pour le modifier, revenez-y et demandez."
+      },
+      "mode": {
+        "title": "Apprendre ou modifier",
+        "body": "Apprendre : suivre le cours avec l’enseignant IA. Modifier : page par page."
+      },
+      "dock": {
+        "title": "La salle de classe",
+        "body": "Lecture, pages, questions à l’enseignant IA à tout moment ; les camarades participent."
+      },
+      "chat": {
+        "title": "Modifier en discutant",
+        "body": "Dites simplement « simplifie la page 2 » dans la discussion à côté, et l’IA modifie le cours."
+      },
+      "account": {
+        "title": "Compte et paramètres",
+        "body": "Profil, paramètres, langue et thème sont ici, ainsi que ce guide."
+      },
+      "try": {
+        "title": "Essayez maintenant",
+        "body": "Tapez un sujet ou choisissez un exemple pour commencer tout de suite.",
+        "attach": "Document : importez un support comme base du cours",
+        "mention": "Référence : @ un cours ou un document de la base",
+        "skill": "Compétences : choisissez un style, par exemple Interaction approfondie"
+      },
+      "examples": {
+        "sky": {
+          "label": "Pourquoi le ciel est-il bleu ?",
+          "prompt": "Pourquoi le ciel est-il bleu ? Explique-le avec des choses du quotidien"
+        },
+        "interest": {
+          "label": "Les intérêts composés",
+          "prompt": "Explique les intérêts composés avec des exemples du quotidien"
+        },
+        "teach": {
+          "label": "Enseigner : Pythagore, 4e",
+          "prompt": "Un cours sur le théorème de Pythagore pour des élèves de 4e, avec un petit quiz à la fin"
+        }
+      },
+      "coursesNav": {
+        "title": "Mes cours",
+        "body": "Vos cours terminés sont ici. Cliquez pour voir."
+      },
+      "openLook": "L’ouvrir",
+      "edit": {
+        "canvas": {
+          "title": "La page",
+          "body": "Cliquez sur un texte, une image ou une forme pour la modifier ; faites glisser pour déplacer ou redimensionner."
+        },
+        "pages": {
+          "title": "Les pages",
+          "body": "Ouvrez ici la liste des pages : ajouter, glisser pour réordonner, supprimer."
+        },
+        "bar": {
+          "title": "La barre de contrôle",
+          "body": "Ajouter une action, enregistrer la narration, changer et ajouter des pages, choisir l’enseignant et les camarades ; à droite, entourer des éléments pour l’IA."
+        },
+        "timeline": {
+          "title": "La piste d’actions",
+          "body": "Chaque carte est une action : explication, projecteur, discussion. Glissez pour réordonner, cliquez pour modifier."
+        },
+        "dock": {
+          "title": "Le dock",
+          "body": "Glissez son bord supérieur pour le redimensionner, ou repliez-le pour agrandir la page."
+        },
+        "learn": {
+          "title": "Aperçu",
+          "body": "Revenez à « Apprendre » pour voir le cours comme un élève."
+        },
+        "chat": {
+          "title": "Demander à l’IA",
+          "body": "Pas envie de le faire à la main ? Dites-le dans la discussion, par exemple « ajoute un exercice page 2 »."
+        }
+      },
+      "editDone": "Commencer"
     }
   },
   "profile": {
@@ -2571,6 +2687,7 @@
   },
   "classroomEnd": {
     "close": "Revenir à la dernière page",
+    "nextPageComing": "La page suivante arrive",
     "learned": "{{count}} pages terminées",
     "result": "{{correct}} / {{total}} correctes",
     "actions": {

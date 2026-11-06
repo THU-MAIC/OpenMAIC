@@ -77,4 +77,12 @@ describe('a conversation working on existing courses', () => {
       false,
     );
   });
+  it('is not a new conversation whose stage id names no course yet', () => {
+    // A new request's stage id is where its course will be created: glancing
+    // at the library before create_stage must not hide its preview.
+    const library = new Set(['stage-a']);
+    const exists = (id: string) => library.has(id);
+    expect(worksOnExistingCourses(lookThrough, 'stage-new', exists)).toBe(false);
+    expect(worksOnExistingCourses(lookThrough, 'stage-a', exists)).toBe(true);
+  });
 });

@@ -22,6 +22,7 @@ import {
   Check,
   ChevronDown,
   ChevronsUpDown,
+  Compass,
   Github,
   Info,
   Languages,
@@ -121,9 +122,11 @@ function AccountAvatar({
 export function WorkspaceAccountBlock({
   mini = false,
   onOpenSettings,
+  onOpenGuide,
 }: {
   readonly mini?: boolean;
   readonly onOpenSettings: () => void;
+  readonly onOpenGuide?: () => void;
 }) {
   const { t } = useI18n();
   const extensions = useWorkbenchShellExtensions();
@@ -137,6 +140,7 @@ export function WorkspaceAccountBlock({
       trigger={trigger}
       mini={mini}
       onOpenSettings={onOpenSettings}
+      onOpenGuide={onOpenGuide}
       onOpenAbout={() => setAboutOpen(true)}
       profileEditable={account.editable}
     />
@@ -238,12 +242,14 @@ function AccountMenu({
   trigger,
   mini,
   onOpenSettings,
+  onOpenGuide,
   onOpenAbout,
   profileEditable,
 }: {
   readonly trigger: ReactNode;
   readonly mini: boolean;
   readonly onOpenSettings: () => void;
+  readonly onOpenGuide?: () => void;
   readonly onOpenAbout: () => void;
   /** The identity is the local profile, which the learner can edit here. */
   readonly profileEditable: boolean;
@@ -502,6 +508,17 @@ function AccountMenu({
 
           <DropdownMenuSeparator />
 
+          {onOpenGuide ? (
+            <DropdownMenuItem
+              {...HOLD_FOCUS}
+              data-testid="workspace-account-onboarding"
+              onSelect={onOpenGuide}
+              className="ws-menu-item"
+            >
+              <Compass className="size-4" aria-hidden="true" />
+              <span className="flex-1">{t('workspace.account.onboarding')}</span>
+            </DropdownMenuItem>
+          ) : null}
           <DropdownMenuItem
             {...HOLD_FOCUS}
             data-testid="workspace-account-about"

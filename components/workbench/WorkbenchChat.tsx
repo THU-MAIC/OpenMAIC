@@ -1252,7 +1252,10 @@ export function WorkbenchChat({
                     t={t}
                   />
                 ) : showEmptyState ? (
-                  <WorkbenchChatEmptyState t={t} />
+                  <WorkbenchChatEmptyState
+                    t={t}
+                    copy={sessionId ? undefined : draftConversation?.emptyState}
+                  />
                 ) : null}
               </div>
             </div>

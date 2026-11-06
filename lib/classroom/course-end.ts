@@ -20,6 +20,49 @@ export function pageAwaitsLearner(type: SceneType | undefined): boolean {
   return type === 'quiz' || type === 'interactive' || type === 'pbl';
 }
 
+/** How far the course on screen is built, as the classroom can see it. */
+export interface CourseBuildState {
+  /** The persisted flag. An agent-minted course carries it from birth, before any page. */
+  readonly generationComplete: boolean;
+  readonly outlineCount: number;
+  readonly sceneCount: number;
+  /** Outlines the classic generation run still has to turn into pages. */
+  readonly generatingCount: number;
+  /** A live agent run is writing this course right now. */
+  readonly agentBuilding: boolean;
+}
+
+/** More pages can still land: a generation run or an agent is still at work. */
+export function moreIsComing(state: CourseBuildState): boolean {
+  return state.agentBuilding || state.generatingCount > 0;
+}
+
+/**
+ * The course is finished, so its last page is the end. Never while something is
+ * still building it: an agent grows the outline page by page, so between two
+ * pages every outline has its scene and the course only looks complete.
+ */
+export function courseIsComplete(state: CourseBuildState): boolean {
+  if (moreIsComing(state)) return false;
+  return (
+    state.generationComplete || (state.outlineCount > 0 && state.sceneCount === state.outlineCount)
+  );
+}
+
+/**
+ * The learner is at the last page there is and more is on its way, with no
+ * placeholder page to step onto: they wait where they are, told the next page is
+ * coming, instead of being shown the end.
+ */
+export function waitsForNextPage(ctx: {
+  readonly moreComing: boolean;
+  readonly onLastPage: boolean;
+  /** A classic run's placeholder page exists for the page being generated. */
+  readonly pendingPage: boolean;
+}): boolean {
+  return ctx.moreComing && ctx.onLastPage && !ctx.pendingPage;
+}
+
 export interface CourseEndContext {
   readonly courseComplete: boolean;
   readonly onLastPage: boolean;
@@ -43,6 +86,15 @@ export function opensOnQuizSubmit(ctx: CourseEndContext): boolean {
 /** Pressing next is asked for by hand, so it reopens as often as it is pressed. */
 export function opensOnNext(ctx: CourseEndContext): boolean {
   return ctx.courseComplete && ctx.onLastPage && !ctx.busy;
+}
+
+/**
+ * The build finished while the learner was waiting on its last page: that page
+ * was the end after all. A wait begun by pressing next opens it as next would;
+ * one begun by the page ending opens it as the page's end would have.
+ */
+export function opensWhenBuildEnds(ctx: CourseEndContext, byHand: boolean): boolean {
+  return byHand ? opensOnNext(ctx) : mayOpenByItself(ctx);
 }
 
 export function tiltAllowed(reducedMotion: boolean, finePointer: boolean): boolean {

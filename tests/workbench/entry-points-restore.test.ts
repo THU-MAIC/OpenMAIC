@@ -192,7 +192,9 @@ describe('entry point 3 — the settings entry in the rail’s account menu', ()
 
   it('mounts the account block, whose menu carries settings, in the expanded foot', () => {
     const foot = rail.slice(rail.indexOf('data-testid="pro-rail-utilities"'));
-    expect(foot).toContain('<WorkspaceAccountBlock onOpenSettings={onOpenSettings} />');
+    expect(foot).toContain(
+      '<WorkspaceAccountBlock onOpenSettings={onOpenSettings} onOpenGuide={onOpenGuide} />',
+    );
     expect(account).toContain('data-testid="workspace-account-settings"');
     expect(account).toContain('onSelect={onOpenSettings}');
   });
@@ -202,7 +204,9 @@ describe('entry point 3 — the settings entry in the rail’s account menu', ()
       rail.indexOf('pro-rail-utilities-mini'),
       rail.indexOf('renderCourseRow'),
     );
-    expect(mini).toContain('<WorkspaceAccountBlock mini onOpenSettings={onOpenSettings} />');
+    expect(mini).toContain(
+      '<WorkspaceAccountBlock mini onOpenSettings={onOpenSettings} onOpenGuide={onOpenGuide} />',
+    );
   });
 
   it('opens the model/provider dialog, mounted by the shell for the rail and the search', () => {

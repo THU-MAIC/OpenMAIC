@@ -2412,6 +2412,7 @@
     "learningMode": "学习",
     "editingMode": "编辑",
     "editingUnavailableGenerating": "课程生成期间无法编辑。",
+    "editGuide": "编辑引导",
     "time": {
       "justNow": "刚刚",
       "minutesAgo": "{{count}} 分钟前",
@@ -2515,17 +2516,132 @@
       "aboutBody": "开源的多智能体互动课堂平台：输入任何主题，AI 老师和同学陪你一起学。基于 MIT 许可证发布。",
       "viewOnGithub": "在 GitHub 上查看",
       "docs": "文档",
-      "signOut": "退出登录"
+      "signOut": "退出登录",
+      "onboarding": "新手引导"
     },
     "coursesPage": {
       "subtitle": "你生成或导入的课程，以及整理它们的文件夹",
       "searchPlaceholder": "搜索我的课程",
       "results": "搜索结果",
-      "allCourses": "全部课程"
+      "allCourses": "全部课程",
+      "emptyHint": "在首页说一句想学的内容，第一节课就会出现在这里。",
+      "makeCourse": "做一节课"
     },
     "fullscreen": {
       "expand": "全屏",
       "collapse": "退出全屏（Esc）"
+    },
+    "guide": {
+      "chatTitle": "想改这节课？在这里说一句",
+      "chatHint": "比如「第 2 页讲得更简单」。想做一节新课，点「新建对话」。"
+    },
+    "onboarding": {
+      "paneTitle": "学习，或者编辑",
+      "paneLearn": "「学习」：AI 老师带你上课，随时可以提问。",
+      "paneEdit": "「编辑」：直接修改页面。",
+      "paneChat": "也可以在对话里说「把第 2 页讲得更简单」，让 AI 帮你改。",
+      "gotIt": "知道了"
+    },
+    "tour": {
+      "skip": "跳过",
+      "prev": "上一步",
+      "next": "下一步",
+      "done": "自己输入",
+      "count": "{{index}} / {{total}}",
+      "openGuide": "去上体验课",
+      "welcome": {
+        "title": "欢迎来到 OpenMAIC",
+        "body": "说一句想学什么，OpenMAIC 就生成一节有 AI 老师和同学陪你上的互动课。"
+      },
+      "start": {
+        "title": "从这里开始",
+        "body": "「新建对话」开始一节新课；「搜索」（⌘K）找课程、对话和资料。"
+      },
+      "courses": {
+        "title": "体验课",
+        "body": "这节 5 分钟的课也是 OpenMAIC 做的。打开它，看看上课的地方。"
+      },
+      "library": {
+        "title": "知识库",
+        "body": "讲义、PDF 上传一次，之后做课时都能引用。"
+      },
+      "conversations": {
+        "title": "对话",
+        "body": "每节课都是在一段对话里做出来的。想改课，回到那段对话里说。"
+      },
+      "mode": {
+        "title": "学习，或者编辑",
+        "body": "「学习」跟着 AI 老师上课；「编辑」逐页修改。"
+      },
+      "dock": {
+        "title": "上课的地方",
+        "body": "播放、翻页，随时向 AI 老师提问，同学们也会一起讨论。"
+      },
+      "chat": {
+        "title": "用对话改课",
+        "body": "在旁边的对话里直接说「第 2 页讲简单点」，AI 会帮你改。"
+      },
+      "account": {
+        "title": "账号与设置",
+        "body": "个人资料、设置、语言和主题都在这里，也能从这里重看这份引导。"
+      },
+      "try": {
+        "title": "现在试一节",
+        "body": "在输入框写一个主题，或者点一个例子马上开始。",
+        "attach": "材料：上传讲义，照着它做课",
+        "mention": "引用：@ 一节课或知识库里的资料",
+        "skill": "技能：选一种教学方式，比如深度交互"
+      },
+      "examples": {
+        "sky": {
+          "label": "为什么天空是蓝色的？",
+          "prompt": "为什么天空是蓝色的？用生活里能看到的现象讲清楚"
+        },
+        "interest": {
+          "label": "复利是怎么回事",
+          "prompt": "用生活里的例子，讲懂复利是怎么回事"
+        },
+        "teach": {
+          "label": "备课：初二勾股定理",
+          "prompt": "给初二学生上一节勾股定理课，最后带一个小测验"
+        }
+      },
+      "coursesNav": {
+        "title": "我的课程",
+        "body": "做好的课都在这里，点一下看看。"
+      },
+      "openLook": "打开看看",
+      "edit": {
+        "canvas": {
+          "title": "页面",
+          "body": "直接点页面上的文字、图片、形状来改，拖动调整位置和大小。"
+        },
+        "pages": {
+          "title": "页面列表",
+          "body": "点这里展开页面列表：加页、拖动排序、删除页面。"
+        },
+        "bar": {
+          "title": "控制栏",
+          "body": "加动作、配旁白语音、翻页和加页、设置老师和同学；最右边可以圈选元素交给 AI 改。"
+        },
+        "timeline": {
+          "title": "动作轨道",
+          "body": "每张卡片是一个动作：讲解、聚光、讨论。拖动排序，点开修改。"
+        },
+        "dock": {
+          "title": "底栏",
+          "body": "拖动上边缘调整高度，或者收起来给页面更多空间。"
+        },
+        "learn": {
+          "title": "预览",
+          "body": "切回「学习」，看看学生上课时的样子。"
+        },
+        "chat": {
+          "title": "让 AI 帮你改",
+          "body": "不想手动改？在对话里直接说，比如「第 2 页加一道练习」。"
+        }
+      },
+      "editDone": "开始编辑"
     }
   },
   "profile": {
@@ -2571,6 +2687,7 @@
   },
   "classroomEnd": {
     "close": "回到最后一页",
+    "nextPageComing": "下一页马上就好",
     "learned": "已学完 {{count}} 页",
     "result": "答对 {{correct}} / {{total}} 题",
     "actions": {

@@ -2412,6 +2412,7 @@
     "learningMode": "Aprender",
     "editingMode": "Editar",
     "editingUnavailableGenerating": "A edição está indisponível durante a geração do curso.",
+    "editGuide": "Guia de edição",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2515,17 +2516,132 @@
       "aboutBody": "Uma plataforma de código aberto que transforma qualquer tema em uma sala de aula interativa com professores e colegas de IA. Publicada sob a licença MIT.",
       "viewOnGithub": "Ver no GitHub",
       "docs": "Documentação",
-      "signOut": "Sair"
+      "signOut": "Sair",
+      "onboarding": "Primeiros passos"
     },
     "coursesPage": {
       "subtitle": "Os cursos que você criou ou importou, e as pastas onde os organiza",
       "searchPlaceholder": "Pesquisar meus cursos",
       "results": "Resultados",
-      "allCourses": "Todos os cursos"
+      "allCourses": "Todos os cursos",
+      "emptyHint": "Descreva um tema na página inicial e sua primeira aula aparecerá aqui.",
+      "makeCourse": "Criar uma aula"
     },
     "fullscreen": {
       "expand": "Tela cheia",
       "collapse": "Sair da tela cheia (Esc)"
+    },
+    "guide": {
+      "chatTitle": "Quer mudar esta aula? Diga aqui",
+      "chatHint": "Por exemplo “deixe a página 2 mais simples”. Para uma aula nova, use “Nova conversa”."
+    },
+    "onboarding": {
+      "paneTitle": "Aprender ou editar",
+      "paneLearn": "Aprender: o professor de IA conduz a aula; pergunte quando quiser.",
+      "paneEdit": "Editar: altere as páginas diretamente.",
+      "paneChat": "Ou peça no chat, por exemplo “deixe a página 2 mais simples”.",
+      "gotIt": "Entendi"
+    },
+    "tour": {
+      "skip": "Pular",
+      "prev": "Voltar",
+      "next": "Próximo",
+      "done": "Escrever a minha",
+      "count": "{{index}} / {{total}}",
+      "openGuide": "Fazer a aula de experiência",
+      "welcome": {
+        "title": "Boas-vindas ao OpenMAIC",
+        "body": "Diga o que quer aprender e o OpenMAIC cria uma aula interativa com um professor de IA e colegas."
+      },
+      "start": {
+        "title": "Comece aqui",
+        "body": "“Nova conversa” inicia uma nova aula. A busca (⌘K) encontra aulas, conversas e materiais."
+      },
+      "courses": {
+        "title": "A aula de experiência",
+        "body": "Esta aula de 5 minutos também foi feita com o OpenMAIC. Abra-a para ver onde a aula acontece."
+      },
+      "library": {
+        "title": "Base de conhecimento",
+        "body": "Envie apostilas e PDFs uma vez e use-os em qualquer aula."
+      },
+      "conversations": {
+        "title": "Conversas",
+        "body": "Cada aula nasce de uma conversa. Para mudá-la, volte a essa conversa e peça."
+      },
+      "mode": {
+        "title": "Aprender ou editar",
+        "body": "Aprender: faça a aula com o professor de IA. Editar: altere página por página."
+      },
+      "dock": {
+        "title": "A sala de aula",
+        "body": "Reproduza, mude de página, pergunte ao professor de IA quando quiser; os colegas também participam."
+      },
+      "chat": {
+        "title": "Mude conversando",
+        "body": "Diga “deixe a página 2 mais simples” na conversa ao lado e a IA edita a aula."
+      },
+      "account": {
+        "title": "Conta e configurações",
+        "body": "Perfil, configurações, idioma e tema estão aqui, assim como este guia."
+      },
+      "try": {
+        "title": "Experimente agora",
+        "body": "Digite um tema ou escolha um exemplo para começar já.",
+        "attach": "Material: envie uma apostila como base da aula",
+        "mention": "Referência: @ uma aula ou um material da base",
+        "skill": "Habilidades: escolha um estilo de ensino, como Interação profunda"
+      },
+      "examples": {
+        "sky": {
+          "label": "Por que o céu é azul?",
+          "prompt": "Por que o céu é azul? Explique com coisas que vejo no dia a dia"
+        },
+        "interest": {
+          "label": "Como funcionam os juros compostos",
+          "prompt": "Explique como funcionam os juros compostos com exemplos do dia a dia"
+        },
+        "teach": {
+          "label": "Ensinar: Pitágoras, 8º ano",
+          "prompt": "Uma aula sobre o teorema de Pitágoras para o 8º ano, com um quiz curto no final"
+        }
+      },
+      "coursesNav": {
+        "title": "Meus cursos",
+        "body": "Suas aulas prontas ficam aqui. Clique para ver."
+      },
+      "openLook": "Abrir",
+      "edit": {
+        "canvas": {
+          "title": "A página",
+          "body": "Clique em um texto, imagem ou forma para alterar; arraste para mover ou redimensionar."
+        },
+        "pages": {
+          "title": "Páginas",
+          "body": "Abra aqui a lista de páginas: adicione, arraste para reordenar, exclua."
+        },
+        "bar": {
+          "title": "A barra de controle",
+          "body": "Adicione uma ação, dê voz à narração, mude e adicione páginas, defina professor e colegas; à direita, laceie elementos para a IA."
+        },
+        "timeline": {
+          "title": "A trilha de ações",
+          "body": "Cada cartão é uma ação: explicação, destaque, discussão. Arraste para reordenar, clique para editar."
+        },
+        "dock": {
+          "title": "O painel inferior",
+          "body": "Arraste a borda superior para ajustar a altura ou recolha-o para dar mais espaço à página."
+        },
+        "learn": {
+          "title": "Pré-visualizar",
+          "body": "Volte a “Aprender” para ver a aula como um aluno."
+        },
+        "chat": {
+          "title": "Peça à IA",
+          "body": "Prefere não fazer à mão? Diga no chat, por exemplo “adicione um exercício na página 2”."
+        }
+      },
+      "editDone": "Começar a editar"
     }
   },
   "profile": {
@@ -2571,6 +2687,7 @@
   },
   "classroomEnd": {
     "close": "Voltar à última página",
+    "nextPageComing": "A próxima página já está chegando",
     "learned": "{{count}} páginas concluídas",
     "result": "{{correct}} / {{total}} corretas",
     "actions": {

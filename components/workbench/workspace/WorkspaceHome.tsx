@@ -34,7 +34,7 @@ import { useWorkbenchShellExtensions } from '@/lib/workbench/shell-extensions';
 import { OPENMAIC_GITHUB_URL } from '@/lib/workbench/shell-links';
 import { GITHUB_STARS_ENDPOINT, formatStarCount } from '@/lib/workbench/github-stars';
 import { useBrand, useIsDesktop } from '@/lib/brand/brand-context';
-import { ProLaunchPanel } from '@/components/workbench/ProLaunchPanel';
+import { ProLaunchPanel, type PromptSeed } from '@/components/workbench/ProLaunchPanel';
 import type { CourseMentionSource } from '@/lib/workbench/course-mention';
 import type { MaterialSeed } from '@/components/workbench/compose-extras';
 
@@ -45,6 +45,8 @@ export function WorkspaceHome({
   onOpenSessionAfterLeaving,
   materialSeed,
   onMaterialSeedConsumed,
+  promptSeed,
+  onPromptSeedConsumed,
 }: {
   readonly composerReset: number;
   /**
@@ -58,6 +60,9 @@ export function WorkspaceHome({
   /** A knowledge base hand-over, passed through to the composer. */
   readonly materialSeed?: MaterialSeed | null;
   readonly onMaterialSeedConsumed?: (key: number) => void;
+  /** An example picked in the first-run tour, put in (or sent from) the composer. */
+  readonly promptSeed?: PromptSeed | null;
+  readonly onPromptSeedConsumed?: (key: number) => void;
 }) {
   const { t } = useI18n();
   const brand = useBrand();
@@ -147,6 +152,8 @@ export function WorkspaceHome({
               onSessionCreatedAfterLeaving={onOpenSessionAfterLeaving}
               materialSeed={materialSeed}
               onMaterialSeedConsumed={onMaterialSeedConsumed}
+              promptSeed={promptSeed}
+              onPromptSeedConsumed={onPromptSeedConsumed}
             />
           </div>
         </section>

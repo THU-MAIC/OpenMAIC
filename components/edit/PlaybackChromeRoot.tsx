@@ -23,12 +23,19 @@ import {
   type CompleteSummary,
 } from '@/lib/classroom/complete-summary';
 import {
+  courseIsComplete,
+  moreIsComing,
   opensOnNext,
   opensOnPlaybackEnd,
   opensOnQuizSubmit,
+  opensWhenBuildEnds,
+  pageAwaitsLearner,
+  waitsForNextPage,
   type CourseEndAction,
   type CourseEndContext,
 } from '@/lib/classroom/course-end';
+import { sessionBuildsCourse, useWorkbenchStore } from '@/lib/workbench/session-store';
+import { NextPageComing } from '@/components/classroom/course-end/NextPageComing';
 import { onQuizReviewed } from '@/lib/classroom/quiz-reviewed';
 import { loadQuizAttemptState } from '@/lib/quiz/runtime';
 import { useCanvasStore } from '@/lib/store/canvas';
@@ -176,6 +183,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const failedOutlines = useStageStore.use.failedOutlines();
     const generationComplete = useStageStore.use.generationComplete();
     const generationInterrupted = useStageStore.use.generationInterrupted();
+    // The workspace's agent run is writing this very course: its pages keep landing.
+    const agentBuilding = useWorkbenchStore((s) => sessionBuildsCourse(s, stage?.id));
 
     const currentScene = getCurrentScene();
     const coursewareReferenceEnabled = isCoursewareReferenceEnabled();
@@ -322,6 +331,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
 
     const engineRef = useRef<PlaybackEngine | null>(null);
     const openCourseEndRef = useRef<(() => Promise<void>) | null>(null);
+    const beginWaitRef = useRef<((sceneId: string, byHand: boolean) => void) | null>(null);
     const audioPlayerRef = useRef(createAudioPlayer());
     const chatAreaRef = useRef<ChatAreaRef>(null);
     const lectureSessionIdRef = useRef<string | null>(null);
@@ -993,6 +1003,9 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               if (useStageStore.getState().currentSceneId !== finishedSceneId) return;
               if (opensOnPlaybackEnd(courseEndContextRef.current, finishedType)) {
                 void openCourseEndRef.current?.();
+              } else if (!pageAwaitsLearner(finishedType)) {
+                // More is being built: wait here for it, not at an end that isn't one.
+                beginWaitRef.current?.(finishedSceneId, false);
               }
             }, COURSE_END_GAP_MS);
           },
@@ -1252,19 +1265,21 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     // get scene information
     const isPendingScene = currentSceneId === PENDING_SCENE_ID;
     const hasNextPending = generatingOutlines.length > 0;
-    // True when every outline has materialized into a scene and nothing is
-    // currently generating — signals the classroom has finished and the user
-    // can see a completion page. Comparing scenes.length === outlines.length
-    // (rather than just `scenes.length > 0`) means a partial generation with
-    // some failed outlines does not falsely trigger completion. The persisted
-    // generationComplete flag also marks completion directly, so an edited
-    // finished deck (e.g. a deleted slide, leaving outlines.length > scenes)
-    // still reads as complete.
-    const isCourseComplete =
-      generationComplete ||
-      (outlines.length > 0 && scenes.length === outlines.length && generatingOutlines.length === 0);
+    // Complete once every outline has its scene, or the persisted flag says so
+    // (an edited finished deck can have fewer scenes than outlines) — but never
+    // while a generation run or the workspace's agent is still building it: an
+    // agent grows the outline page by page, so between two pages it only looks
+    // complete. See `courseIsComplete`.
+    const courseBuild = {
+      generationComplete,
+      outlineCount: outlines.length,
+      sceneCount: scenes.length,
+      generatingCount: generatingOutlines.length,
+      agentBuilding,
+    };
+    const moreComing = moreIsComing(courseBuild);
     // The end state: a layer over the last page, with its own way in from next.
-    const nextOpensEnd = isCourseComplete && !hasNextPending;
+    const nextOpensEnd = courseIsComplete(courseBuild);
     const [courseEnd, setCourseEnd] = useState<CompleteSummary | null>(null);
     const courseEndFiredRef = useRef(false);
     const courseEndTokenRef = useRef(0);
@@ -1307,12 +1322,62 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     };
     openCourseEndRef.current = openCourseEnd;
 
+    // At the last page while more is being built: the learner waits here for the
+    // next page, told it is coming, and moves on to it when it lands.
+    const [waitingPast, setWaitingPast] = useState<{
+      readonly sceneId: string;
+      /** Begun by pressing next, rather than by the page ending. */
+      readonly byHand: boolean;
+    } | null>(null);
+    const waitContextRef = useRef({ moreComing, onLastPage: false, pendingPage: hasNextPending });
+    waitContextRef.current = {
+      moreComing,
+      onLastPage: courseEndContextRef.current.onLastPage,
+      pendingPage: hasNextPending,
+    };
+    const beginWait = useCallback((sceneId: string, byHand: boolean) => {
+      if (courseEndContextRef.current.busy) return;
+      if (!waitsForNextPage(waitContextRef.current)) return;
+      setWaitingPast({ sceneId, byHand });
+    }, []);
+    beginWaitRef.current = beginWait;
+    // Replaying the page hides the note; the wait itself holds until the page lands.
+    const waitingForNext =
+      waitingPast !== null && waitingPast.sceneId === currentSceneId && engineMode !== 'playing';
+
+    useEffect(() => {
+      if (!waitingPast) return;
+      const index = scenes.findIndex((scene) => scene.id === waitingPast.sceneId);
+      const next = index >= 0 ? scenes[index + 1] : undefined;
+      if (waitingPast.sceneId !== currentSceneId) {
+        setWaitingPast(null);
+      } else if (next) {
+        // The next page landed: go on to it, playing on if playback was.
+        setWaitingPast(null);
+        const autoplay = useSettingsStore.getState().autoPlayLecture;
+        if (waitingPast.byHand || autoplay) {
+          if (autoplay && !waitingPast.byHand) autoStartRef.current = true;
+          setCurrentSceneId(next.id);
+        }
+      } else if (!moreComing) {
+        // The build ended with this page last: it was the end after all.
+        setWaitingPast(null);
+        if (opensWhenBuildEnds(courseEndContextRef.current, waitingPast.byHand)) {
+          void openCourseEnd();
+        }
+      }
+    }, [currentSceneId, moreComing, openCourseEnd, scenes, setCurrentSceneId, waitingPast]);
+
     // A quiz on the last page opens it once handed in: it is what the page was waiting for.
     useEffect(
       () =>
         onQuizReviewed(() => {
           window.setTimeout(() => {
             if (opensOnQuizSubmit(courseEndContextRef.current)) void openCourseEnd();
+            else {
+              const sceneId = useStageStore.getState().currentSceneId;
+              if (sceneId) beginWaitRef.current?.(sceneId, false);
+            }
           }, COURSE_END_GAP_MS);
         }),
       [openCourseEnd],
@@ -1350,8 +1415,11 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       } else if (opensOnNext(courseEndContextRef.current)) {
         if (engineRef.current && engineMode === 'playing') engineRef.current.pause();
         void openCourseEnd();
+      } else if (currentSceneId) {
+        beginWait(currentSceneId, true);
       }
     }, [
+      beginWait,
       currentSceneId,
       engineMode,
       gatedSceneSwitch,
@@ -1908,6 +1976,9 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                     onAction={handleCourseEndAction}
                   />
                 </motion.div>
+              ) : null}
+              {waitingForNext && !courseEnd && !isPendingScene ? (
+                <NextPageComing key="next-page-coming" />
               ) : null}
             </AnimatePresence>
           </div>

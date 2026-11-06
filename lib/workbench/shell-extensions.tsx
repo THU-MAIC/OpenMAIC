@@ -103,6 +103,19 @@ export interface WorkbenchShellExtensions {
   readonly identity?: WorkbenchShellIdentity;
   /** Content under the home composer, such as a featured-course strip. */
   readonly homeSection?: ReactNode;
+  /**
+   * The guide course seeded into every owner's library the first time it
+   * loads (see `lib/workbench/guide-course.ts`). `false` seeds nothing (and
+   * the first-run tour leaves out its steps); `{ src }` seeds other documents,
+   * `{locale}` in the URL standing for `zh` or `en` (English is the fallback).
+   * Unset seeds the bundled course.
+   */
+  readonly guideCourse?: false | WorkbenchGuideCourse;
+}
+
+export interface WorkbenchGuideCourse {
+  /** A URL template, such as `/my-guide/{locale}.json`, in the persisted document format. */
+  readonly src: string;
 }
 
 const EMPTY: WorkbenchShellExtensions = {};
@@ -121,6 +134,7 @@ export function mergeWorkbenchShellExtensions(
     accountBadge: inner.accountBadge ?? outer.accountBadge,
     identity: inner.identity ?? outer.identity,
     homeSection: inner.homeSection ?? outer.homeSection,
+    guideCourse: inner.guideCourse ?? outer.guideCourse,
   };
 }
 

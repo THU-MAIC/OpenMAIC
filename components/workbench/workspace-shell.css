@@ -2727,3 +2727,457 @@
   background-color: var(--ws-accent-wash);
   box-shadow: 0 0 0 2px var(--ws-accent-thread);
 }
+
+/* ── First-run tour ──────────────────────────────────────────────────────
+   One lit box over a dimmed workspace, and a card beside it (`WorkspaceTour`).
+   The box's own shadow is the mask, so moving the light between areas is a
+   transition of one element's box. The card is the product's card: the
+   raised surface, the violet step badge, the ink ramp. */
+.ws-tour {
+  --ws-tour-mask: rgba(15, 23, 42, 0.5);
+  --ws-tour-ring: rgba(167, 139, 250, 0.95);
+  --ws-tour-glow: rgba(124, 58, 237, 0.38);
+  --ws-tour-spring: cubic-bezier(0.32, 1.18, 0.56, 1);
+  --ws-tour-glide: cubic-bezier(0.32, 0.72, 0, 1);
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  /* The layer itself takes no pointer: its blocks and its card do, so a lit
+     element that takes its own click (\`passThrough\`) gets it. */
+  pointer-events: none;
+  animation: ws-tour-in 280ms var(--ws-ease) both;
+}
+
+.dark .ws-tour {
+  --ws-tour-mask: rgba(2, 6, 23, 0.68);
+  --ws-tour-glow: rgba(167, 139, 250, 0.32);
+}
+
+.ws-tour-leaving {
+  opacity: 0;
+  transition: opacity 200ms var(--ws-ease);
+}
+
+.ws-tour-block {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+}
+
+.ws-tour-hole {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  box-shadow:
+    0 0 0 1.5px var(--ws-tour-ring),
+    0 0 26px 6px var(--ws-tour-glow),
+    0 0 0 200vmax var(--ws-tour-mask);
+  transition:
+    transform 380ms var(--ws-tour-glide),
+    width 380ms var(--ws-tour-glide),
+    height 380ms var(--ws-tour-glide),
+    border-radius 380ms var(--ws-tour-glide),
+    box-shadow 240ms var(--ws-ease);
+}
+
+/* A centred step: the light is a point, its ring and glow gone. */
+.ws-tour-hole-none {
+  box-shadow:
+    0 0 0 0 transparent,
+    0 0 0 0 transparent,
+    0 0 0 200vmax var(--ws-tour-mask);
+}
+
+/* Waiting for the next area to settle on screen: the light holds and
+   breathes, the card steps back until there is somewhere true to point. */
+.ws-tour-hole-wait {
+  animation: ws-tour-wait 1100ms var(--ws-ease) infinite;
+}
+
+/* A lit element that takes its own click: a slow ring invites it. */
+.ws-tour-hole-live {
+  animation: ws-tour-live 1600ms var(--ws-ease) infinite;
+}
+
+.ws-tour-card.ws-tour-card-wait {
+  opacity: 0;
+  pointer-events: none;
+  translate: 0 4px;
+}
+
+.ws-tour-card {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 340px;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid var(--ws-line-soft);
+  background: var(--ws-raised);
+  box-shadow:
+    0 24px 60px -18px rgba(15, 23, 42, 0.45),
+    0 2px 6px rgba(15, 23, 42, 0.08);
+  color: var(--ws-ink-soft);
+  pointer-events: auto;
+  transition:
+    transform 400ms var(--ws-tour-spring),
+    opacity 200ms var(--ws-ease),
+    translate 200ms var(--ws-ease);
+  animation: ws-tour-card-in 320ms var(--ws-tour-spring) both;
+}
+
+.dark .ws-tour-card {
+  box-shadow:
+    0 24px 60px -18px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(167, 139, 250, 0.12);
+}
+
+.ws-tour-progress {
+  height: 3px;
+  background: var(--ws-tint);
+}
+
+.ws-tour-progress > span {
+  display: block;
+  height: 100%;
+  transform-origin: left;
+  background: linear-gradient(90deg, #8b5cf6, #7c3aed);
+  transition: transform 380ms var(--ws-tour-glide);
+}
+
+[dir='rtl'] .ws-tour-progress > span {
+  transform-origin: right;
+}
+
+.ws-tour-content {
+  padding: 14px 16px 2px;
+  animation: ws-tour-content-in 260ms var(--ws-ease) both;
+}
+
+.ws-tour-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.ws-tour-badge {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--ws-accent-wash);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ws-accent);
+  box-shadow: inset 0 0 0 1px var(--ws-accent-thread);
+}
+
+.ws-tour-title {
+  min-width: 0;
+  flex: 1;
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--ws-ink);
+}
+
+.ws-tour-close {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  margin-right: -6px;
+  border-radius: 8px;
+  color: var(--ws-ink-mute);
+}
+
+.ws-tour-close:hover {
+  background: var(--ws-tint);
+  color: var(--ws-ink);
+}
+
+.ws-tour-body {
+  margin-top: 7px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.ws-tour-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 9px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ws-ink-mute);
+}
+
+.ws-tour-lines li {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.ws-tour-lines svg {
+  margin-top: 3px;
+  flex-shrink: 0;
+  color: var(--ws-accent);
+}
+
+.ws-tour-examples {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.ws-tour-example {
+  display: flex;
+  height: 36px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-radius: 11px;
+  border: 1px solid var(--ws-line);
+  background: var(--ws-surface);
+  font-size: 13px;
+  color: var(--ws-ink);
+  text-align: left;
+  transition:
+    border-color 160ms var(--ws-ease),
+    background-color 160ms var(--ws-ease);
+  animation: ws-tour-chip-in 300ms var(--ws-tour-spring) both;
+}
+
+.ws-tour-example svg {
+  color: var(--ws-accent);
+  transition: transform 160ms var(--ws-ease);
+}
+
+.ws-tour-example:hover {
+  border-color: var(--ws-accent-thread);
+  background: var(--ws-accent-wash);
+}
+
+.ws-tour-example:hover svg {
+  transform: translateX(2px);
+}
+
+.ws-tour-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 16px 14px;
+}
+
+.ws-tour-count {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ws-ink-mute);
+}
+
+.ws-tour-btn {
+  display: inline-flex;
+  height: 30px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ws-ink-soft);
+}
+
+.ws-tour-btn:hover {
+  background: var(--ws-tint);
+  color: var(--ws-ink);
+}
+
+.ws-tour-btn-primary,
+.ws-tour-btn-primary:hover {
+  background: #7c3aed;
+  color: #fff;
+  box-shadow: 0 4px 12px -4px rgba(124, 58, 237, 0.55);
+}
+
+.ws-tour-btn-primary:hover {
+  opacity: 0.92;
+}
+
+.ws-tour-btn:focus-visible,
+.ws-tour-close:focus-visible,
+.ws-tour-example:focus-visible {
+  outline: 2px solid var(--ws-accent-thread);
+  outline-offset: 2px;
+}
+
+@keyframes ws-tour-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes ws-tour-card-in {
+  from {
+    opacity: 0;
+    scale: 0.96;
+  }
+}
+
+@keyframes ws-tour-content-in {
+  from {
+    opacity: 0;
+    translate: 0 4px;
+  }
+}
+
+@keyframes ws-tour-chip-in {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
+}
+
+@keyframes ws-tour-wait {
+  50% {
+    box-shadow:
+      0 0 0 1.5px transparent,
+      0 0 18px 2px var(--ws-tour-glow),
+      0 0 0 200vmax var(--ws-tour-mask);
+  }
+}
+
+@keyframes ws-tour-live {
+  50% {
+    box-shadow:
+      0 0 0 3px var(--ws-tour-ring),
+      0 0 34px 10px var(--ws-tour-glow),
+      0 0 0 200vmax var(--ws-tour-mask);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-tour,
+  .ws-tour-card,
+  .ws-tour-content,
+  .ws-tour-example,
+  .ws-tour-hole-wait,
+  .ws-tour-hole-live {
+    animation: none;
+  }
+
+  .ws-tour-hole,
+  .ws-tour-card,
+  .ws-tour-progress > span {
+    transition: none;
+  }
+}
+
+/* The classroom pane's one-time hint, under its Learn | Edit switch. */
+.ws-pane-hint {
+  position: absolute;
+  top: calc(var(--ws-pane-head-h) + 8px);
+  right: 10px;
+  z-index: 30;
+  width: 300px;
+  padding: 14px 14px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--ws-line-soft);
+  background: var(--ws-raised);
+  box-shadow: var(--ws-lift);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ws-ink-soft);
+  animation: ws-pane-hint-in 220ms var(--ws-ease);
+}
+
+/* The caret points at the switch. */
+.ws-pane-hint::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  right: 114px;
+  width: 10px;
+  height: 10px;
+  transform: rotate(45deg);
+  border-left: 1px solid var(--ws-line-soft);
+  border-top: 1px solid var(--ws-line-soft);
+  background: var(--ws-raised);
+}
+
+.ws-pane-hint-title {
+  margin-bottom: 6px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ws-ink);
+}
+
+.ws-pane-hint li {
+  display: flex;
+  gap: 6px;
+}
+
+.ws-pane-hint li + li {
+  margin-top: 4px;
+}
+
+.ws-pane-hint-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+.ws-pane-hint-ok {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: #7c3aed;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #fff;
+}
+
+.ws-pane-hint-ok:hover {
+  opacity: 0.9;
+}
+
+@keyframes ws-pane-hint-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-pane-hint {
+    animation: none;
+  }
+}
+
+/* My courses, empty: say how a course gets here, and offer the way. */
+.ws-page-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.ws-page-btn-primary,
+.dark .ws-page-btn-primary {
+  border-color: transparent;
+  background: #7c3aed;
+  color: #fff;
+}
+
+.ws-page-btn-primary:hover:not(:disabled) {
+  border-color: transparent;
+  color: #fff;
+  opacity: 0.92;
+}

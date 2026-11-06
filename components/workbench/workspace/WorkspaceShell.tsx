@@ -67,6 +67,15 @@ import { resolveCourseChatBootstrap } from '@/lib/workbench/course-chat-bootstra
 import { startConversationWithFirstMessage } from '@/lib/workbench/first-message-session';
 import { createdCourseTabsToOpen } from '@/lib/workbench/created-course-tabs';
 import { isCourseReadOnly } from '@/lib/workbench/course-read-only';
+import { findGuideCourse, isGuideCourseId, seedGuideCourse } from '@/lib/workbench/guide-course';
+import {
+  markOnboardingSeen,
+  resetOnboarding,
+  useOnboardingPending,
+} from '@/lib/workbench/onboarding';
+import { usePromptSeed } from '@/lib/workbench/prompt-seed';
+import { useTourViewport, WorkspaceTour, type TourEnd } from './WorkspaceTour';
+import { TOUR_STEPS, type TourView } from './tour-steps';
 import {
   clampRailWidth,
   parseRailWidth,
@@ -410,6 +419,11 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       sessionState,
     ],
   );
+  /** The conversation last carried over beside an opened course (see the preview focus). */
+  const [adoptedSession, setAdoptedSession] = useState<string | null>(null);
+  if (courseChatBootstrap.kind === 'adopt' && adoptedSession !== courseChatBootstrap.sessionId) {
+    setAdoptedSession(courseChatBootstrap.sessionId);
+  }
   /** The course an empty, not-yet-created conversation is sitting beside. */
   const draftCourseId = courseChatBootstrap.kind === 'draft' ? courseChatBootstrap.courseId : null;
 
@@ -612,9 +626,18 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     }
   }, [courseTabs, navigation, panes]);
 
+  /**
+   * Step the request preview back behind the course tabs. Bound below, where
+   * the preview's focus state lives; an explicit open of a course (My courses,
+   * a course link in the chat, the tour) must show that course even while a
+   * preview is the active tab. The preview stays in the strip, mounted, so an
+   * ask waiting in it is still there when its tab is chosen again.
+   */
+  const unfocusPreview = useRef<() => void>(() => {});
   const openCourse = useCallback(
     (courseId: string) => {
       previewHandedOffCourseIdRef.current = null;
+      unfocusPreview.current();
       const next = openCourseTab(courseTabs, courseId);
       setCourseTabs(next);
       persistCourseTabs(next);
@@ -834,6 +857,24 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    */
   const shellExtensions = useWorkbenchShellExtensions();
   const hostPages = useMemo(() => hostPageItems(shellExtensions), [shellExtensions]);
+  /*
+   * The guide course: seeded into the owner's library the first time it loads
+   * (once per owner; see `lib/workbench/guide-course.ts`), then an ordinary
+   * course of theirs, which the first-run tour walks through.
+   */
+  const guideOption = shellExtensions.guideCourse;
+  const coursesReady = courses.state === 'ready';
+  const reloadCourses = courses.reload;
+  const courseList = courses.classrooms;
+  useEffect(() => {
+    if (!coursesReady) return;
+    void seedGuideCourse(guideOption, courseList).then((outcome) => {
+      if (outcome === 'created') void reloadCourses();
+    });
+    // Settled owners return at once (browser memory), so a list that changes
+    // later costs nothing.
+  }, [coursesReady, guideOption, courseList, reloadCourses]);
+  const guideCourseId = guideOption === false ? null : findGuideCourse(courses.classrooms);
   const unknownView =
     !!panes.view &&
     panes.view !== WORKSPACE_LIBRARY_VIEW &&
@@ -943,7 +984,10 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    * the two columns are independent, and a new chat is not a reason to put the
    * course away. That is `startNewConversation` below.
    */
+  /** The tour's example prompt on its way to the home composer, taken once. */
+  const promptSeeds = usePromptSeed();
   const goHome = () => {
+    promptSeeds.clear();
     if (panes.sessionId || panes.courseId || panes.view) {
       navigation.push({ sessionId: null, courseId: null });
     }
@@ -953,6 +997,42 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     setMaterialSeed(null);
     setComposerReset((value) => value + 1);
   };
+
+  /* ── First-run tour ────────────────────────────────────────────────────
+     Plays once, on the first desktop visit to home (and again from the
+     account menu's "Getting started"). Once started it stays up while it
+     walks the workspace through My courses and the built-in course. */
+  const tourPending = useOnboardingPending('home');
+  // The rail it walks through is there from `md` up; a phone gets no tour.
+  const tourFits = useTourViewport();
+  const [tourRunning, setTourRunning] = useState(false);
+  const showTour = tourPending && (tourRunning || (render.home && tourFits));
+  const tourSteps = useMemo(
+    () => TOUR_STEPS.filter((step) => !step.needsGuide || !!guideCourseId),
+    [guideCourseId],
+  );
+  const tourNavigate = (view: TourView) => {
+    if (view === 'courses') {
+      if (render.view !== WORKSPACE_COURSES_VIEW) openView(WORKSPACE_COURSES_VIEW);
+    } else if (view === 'classroom') {
+      if (guideCourseId && (panes.courseId !== guideCourseId || render.view))
+        openCourse(guideCourseId);
+    } else if (!render.home) {
+      leaveTourCourse();
+    }
+  };
+  /** Back to an empty home: the course the tour opened is closed again. */
+  const leaveTourCourse = () => goHome();
+  const endTour = (how: TourEnd) => {
+    setTourRunning(false);
+    markOnboardingSeen('home');
+    if (how === 'guide' && guideCourseId) {
+      openCourse(guideCourseId);
+      return;
+    }
+    if (!render.home) leaveTourCourse();
+  };
+  const sendTourExample = (prompt: string) => promptSeeds.send(prompt);
 
   /**
    * A new conversation in the middle column. THE CLASSROOM PANE IS LEFT ALONE.
@@ -1119,7 +1199,20 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   );
   // Bound beside a course and looking through existing courses (and creating
   // none): the conversation is about existing courses; no placeholder.
-  const onExistingCourses = useWorkbenchStore((s) => worksOnExistingCourses(s.chat, s.stageId));
+  // Until the library has loaded, a bound id counts as a course: a conversation
+  // beside one must not flash a placeholder (or take focus) while it loads.
+  const libraryCourseIds = useMemo(
+    () =>
+      courses.state === 'ready' ? new Set(courses.classrooms.map((course) => course.id)) : null,
+    [courses.state, courses.classrooms],
+  );
+  const onExistingCourses = useWorkbenchStore((s) =>
+    worksOnExistingCourses(
+      s.chat,
+      s.stageId,
+      (id) => !libraryCourseIds || libraryCourseIds.has(id),
+    ),
+  );
   // The courses this request created that this visit saw it create while the
   // run was live, and that are not reconciled as a tab yet (opened, closed, or
   // remembered). They outlive the run: a run that ends before a course's first
@@ -1185,9 +1278,21 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     previewTab.requestKey !== previewFocus.focusedKey &&
     previewFocus.sessionId === attachedSessionId
   ) {
-    // A request started animating: the tab takes focus, once per request.
-    setPreviewFocus({ ...previewFocus, active: true, focusedKey: previewTab.requestKey });
+    // A request started animating: the tab takes focus, once per request --
+    // except the request a conversation was already in when it was carried
+    // over beside a course the user just opened (`adopt`): that course stays
+    // on screen, the preview waits as a tab.
+    const carriedOver =
+      previewFocus.focusedKey === null && !!panes.courseId && adoptedSession === attachedSessionId;
+    setPreviewFocus({
+      ...previewFocus,
+      active: !carriedOver,
+      focusedKey: previewTab.requestKey,
+    });
   }
+  useLayoutEffect(() => {
+    unfocusPreview.current = () => setPreviewFocus((current) => ({ ...current, active: false }));
+  }, []);
   /** The preview is the tab on screen: it is active, or there is no course tab to show. */
   const previewShowing = previewTabOpen && (previewFocus.active || !panes.courseId);
   useLayoutEffect(() => {
@@ -1522,6 +1627,16 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       draftCourseId
         ? {
             ownerKey: `draft:${draftCourseId}`,
+            // Beside the guide course, which no conversation made, the empty
+            // chat says what it is for: changing that course.
+            ...(isGuideCourseId(draftCourseId)
+              ? {
+                  emptyState: {
+                    title: t('workspace.guide.chatTitle'),
+                    hint: t('workspace.guide.chatHint'),
+                  },
+                }
+              : {}),
             start: async (message: {
               readonly text: string;
               readonly materials: readonly WorkbenchMaterial[];
@@ -1561,7 +1676,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
             },
           }
         : null,
-    [draftCourseId, loadSessions, navigateInBackground],
+    [draftCourseId, loadSessions, navigateInBackground, t],
   );
 
   // The owner list stream and attached conversation stream have independent
@@ -1647,6 +1762,8 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
      nothing at all (`null`), which the renderers show as "untitled" and as no
      page count rather than as a fabricated zero. */
   const courseTitle = useWorkbenchStore((s) => s.courseTitle);
+  // The built-in course goes by one product name everywhere (its card in My
+  // courses, its tab, the tour), whatever its document calls itself.
   const lookupCourse = useCallback(
     (courseId: string): WorkbenchCourseSummary | null => {
       const known = courses.classrooms.find((course) => course.id === courseId);
@@ -1853,6 +1970,10 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           onRenameSession={renameSession}
           onOpenSearch={() => setSearchOpen(true)}
           onOpenSettings={() => setSettingsOpen(true)}
+          onOpenGuide={() => {
+            resetOnboarding('home');
+            goHome();
+          }}
           activeView={render.view}
           onOpenView={openView}
           resizeHandle={
@@ -1971,6 +2092,8 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           onOpenSessionAfterLeaving={openCreatedSessionAfterLeaving}
           materialSeed={materialSeed}
           onMaterialSeedConsumed={consumeMaterialSeed}
+          promptSeed={promptSeeds.seed}
+          onPromptSeedConsumed={promptSeeds.consume}
         />
       ) : null}
 
@@ -1991,6 +2114,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           pendingRuns={pendingRuns}
           onOpenCourse={openCourse}
           onDeleteCourse={handleCourseDeleted}
+          onMakeCourse={goHome}
           onDiscardRun={discardPendingRun}
         />
       ) : render.view ? (
@@ -2000,6 +2124,16 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
         >
           {hostPages.get(render.view)?.render?.()}
         </main>
+      ) : null}
+
+      {showTour && tourSteps.length > 0 ? (
+        <WorkspaceTour
+          steps={tourSteps}
+          onNavigate={tourNavigate}
+          onEnd={endTour}
+          onSendExample={sendTourExample}
+          onStart={() => setTourRunning(true)}
+        />
       ) : null}
     </div>
   );

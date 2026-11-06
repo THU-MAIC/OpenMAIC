@@ -51,6 +51,7 @@ import {
   type MaterialSeed,
 } from '@/components/workbench/compose-extras';
 import { insertSkillHandle, seedSlashQuery } from '@/lib/workbench/composer-skills';
+import { takePromptSeed, type PromptSeed } from '@/lib/workbench/prompt-seed';
 import { resolveComposerMenu } from '@/lib/workbench/composer-menus';
 import { ComposerInput, type ComposerInputHandle } from '@/components/workbench/composer-input';
 import { useInlineMentions } from '@/components/workbench/use-inline-mentions';
@@ -74,6 +75,8 @@ import {
   type CourseRef,
 } from '@/lib/workbench/course-refs';
 
+export type { PromptSeed } from '@/lib/workbench/prompt-seed';
+
 /** Stable identity, so the `@` memo does not re-run on every parentless render. */
 const NO_COURSE_OPTIONS: readonly CourseMentionSource[] = [];
 
@@ -86,6 +89,8 @@ export function ProLaunchPanel({
   onSessionCreatedAfterLeaving,
   materialSeed,
   onMaterialSeedConsumed,
+  promptSeed,
+  onPromptSeedConsumed,
 }: {
   autoFocus?: boolean;
   /** Increment to clear the draft/attachments and focus this existing composer. */
@@ -113,12 +118,21 @@ export function ProLaunchPanel({
   /** A knowledge base hand-over; this composer takes the ones for `home`. */
   materialSeed?: MaterialSeed | null;
   onMaterialSeedConsumed?: (key: number) => void;
+  /**
+   * An example picked outside the composer (the first-run tour): its text
+   * replaces the draft and, with `send`, is sent. Taken once per key, ever (see
+   * `lib/workbench/prompt-seed.ts`); the host drops it on `onPromptSeedConsumed`.
+   */
+  promptSeed?: PromptSeed | null;
+  onPromptSeedConsumed?: (key: number) => void;
 }) {
   const { t } = useI18n();
   const [prompt, setPrompt] = useState('');
   const [submitting, setSubmitting] = useState(false);
   /** Invalidates a slow create when this panel is reset or sends again. */
   const requestGeneration = useRef(0);
+  /** A create is in flight from this composer (see `submit`). */
+  const sending = useRef(false);
   /** This panel left the tree: a slow create's answer goes to the host. */
   const left = useRef(false);
   /** The draft an Escape closed the `@` menu on — same rule as the chat composer. */
@@ -355,6 +369,7 @@ export function ProLaunchPanel({
   useEffect(() => {
     if (focusSignal === 0) return;
     requestGeneration.current += 1;
+    sending.current = false;
     setSubmitting(false);
     replacePrompt('');
     setCourseRefs([]);
@@ -369,6 +384,20 @@ export function ProLaunchPanel({
     // object identity would rerun this reset after every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusSignal]);
+
+  const seedKey = promptSeed?.key;
+  useEffect(() => {
+    // A seed is an event: taken once per key for the page's lifetime, so a
+    // remount of this composer or a second effect run never repeats it.
+    if (!promptSeed || !takePromptSeed(promptSeed.key)) return;
+    onPromptSeedConsumed?.(promptSeed.key);
+    pendingCaret.current = promptSeed.text.length;
+    replacePrompt(promptSeed.text);
+    setMentionDismissed(null);
+    setSlashDismissed(null);
+    if (promptSeed.send) void submit(promptSeed.text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedKey]);
 
   // After the reset above: arriving from the knowledge base remounts this
   // composer with a non-zero `focusSignal`, and that reset runs in the same
@@ -388,9 +417,13 @@ export function ProLaunchPanel({
   const canSend =
     hasWords && !submitting && !materials.busy && !awaitingMaterial && openMenu === null;
 
-  async function submit() {
-    const text = expandMentions(prompt, inlineMentions.mentions);
-    if (!hasWords || submitting || materials.busy || awaitingMaterial) return;
+  async function submit(seededText?: string) {
+    const text = seededText ?? expandMentions(prompt, inlineMentions.mentions);
+    const ready = seededText ? !!seededText.trim() : hasWords;
+    // `submitting` is render state: two calls before the next render would both
+    // read false. The ref is what actually admits one create at a time.
+    if (!ready || sending.current || submitting || materials.busy || awaitingMaterial) return;
+    sending.current = true;
     setMentionOpen(false);
     setSubmitting(true);
     const generation = ++requestGeneration.current;
@@ -400,8 +433,10 @@ export function ProLaunchPanel({
         ...(materials.materials.length ? { materials: materials.materials } : {}),
         ...(courseRefs.length ? { courseRefs } : {}),
       });
-      if (requestGeneration.current !== generation) return;
-      if (left.current) {
+      // A create that was overtaken (the composer was reset meanwhile) or whose
+      // composer left still made a conversation: hand it to the host, which
+      // lists it, rather than dropping it unseen.
+      if (requestGeneration.current !== generation || left.current) {
         onSessionCreatedAfterLeaving?.(session.id);
         return;
       }
@@ -411,6 +446,7 @@ export function ProLaunchPanel({
       onSessionCreated(session.id);
     } catch (error) {
       if (requestGeneration.current !== generation || left.current) return;
+      sending.current = false;
       toast.error(error instanceof Error ? error.message : t('workbench.launch.createFailed'));
       setSubmitting(false);
     }
@@ -579,7 +615,7 @@ export function ProLaunchPanel({
             onClick={openSkillMenu}
           />
           <div className="flex-1" />
-          <ProLaunchSend canSend={canSend} onSubmit={submit} />
+          <ProLaunchSend canSend={canSend} onSubmit={() => void submit()} />
         </div>
       </div>
     </div>

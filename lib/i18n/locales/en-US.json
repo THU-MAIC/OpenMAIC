@@ -2412,6 +2412,7 @@
     "learningMode": "Learn",
     "editingMode": "Edit",
     "editingUnavailableGenerating": "Editing is unavailable while this course is generating.",
+    "editGuide": "Editing guide",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2515,17 +2516,132 @@
       "aboutBody": "An open-source platform that turns any topic into an interactive classroom with AI teachers and classmates. Released under the MIT license.",
       "viewOnGithub": "View on GitHub",
       "docs": "Docs",
-      "signOut": "Sign out"
+      "signOut": "Sign out",
+      "onboarding": "Getting started"
     },
     "coursesPage": {
       "subtitle": "Courses you made or imported, and the folders you keep them in",
       "searchPlaceholder": "Search my courses",
       "results": "Search results",
-      "allCourses": "All courses"
+      "allCourses": "All courses",
+      "emptyHint": "Describe a topic on the home page and your first class appears here.",
+      "makeCourse": "Make a class"
     },
     "fullscreen": {
       "expand": "Full screen",
       "collapse": "Exit full screen (Esc)"
+    },
+    "guide": {
+      "chatTitle": "Want to change this class? Say it here",
+      "chatHint": "Like “make page 2 simpler”. For a new class, use New chat."
+    },
+    "onboarding": {
+      "paneTitle": "Learn or edit",
+      "paneLearn": "Learn: the AI teacher takes you through the class. Ask anytime.",
+      "paneEdit": "Edit: change the pages directly.",
+      "paneChat": "Or just ask in the chat, like “make page 2 simpler”.",
+      "gotIt": "Got it"
+    },
+    "tour": {
+      "skip": "Skip",
+      "prev": "Back",
+      "next": "Next",
+      "done": "Type my own",
+      "count": "{{index}} / {{total}}",
+      "openGuide": "Take the sample class",
+      "welcome": {
+        "title": "Welcome to OpenMAIC",
+        "body": "Say what you want to learn, and OpenMAIC makes an interactive class with an AI teacher and classmates."
+      },
+      "start": {
+        "title": "Start here",
+        "body": "New chat starts a new class. Search (⌘K) finds classes, chats and materials."
+      },
+      "courses": {
+        "title": "The sample class",
+        "body": "This 5-minute class was made with OpenMAIC too. Open it to see where a class happens."
+      },
+      "library": {
+        "title": "Knowledge base",
+        "body": "Upload handouts and PDFs once, and reference them in any class."
+      },
+      "conversations": {
+        "title": "Chats",
+        "body": "Every class is made in a chat. To change a class, go back to its chat and ask."
+      },
+      "mode": {
+        "title": "Learn or edit",
+        "body": "Learn takes the class with the AI teacher; Edit changes it page by page."
+      },
+      "dock": {
+        "title": "The classroom",
+        "body": "Play and turn pages, ask the AI teacher anytime, and classmates join the discussion."
+      },
+      "chat": {
+        "title": "Change it by chatting",
+        "body": "Just say “make page 2 simpler” in the chat beside it, and the AI edits the class."
+      },
+      "account": {
+        "title": "Account and settings",
+        "body": "Profile, settings, language and theme are here, and so is this guide."
+      },
+      "try": {
+        "title": "Try a class now",
+        "body": "Type a topic, or pick an example to start right away.",
+        "attach": "Material: upload a handout to build the class from",
+        "mention": "Reference: @ a class or a knowledge base material",
+        "skill": "Skills: pick a teaching style, such as Deep Interactive"
+      },
+      "examples": {
+        "sky": {
+          "label": "Why is the sky blue?",
+          "prompt": "Why is the sky blue? Explain it with things I can see every day"
+        },
+        "interest": {
+          "label": "How compound interest works",
+          "prompt": "Explain how compound interest works, with everyday examples"
+        },
+        "teach": {
+          "label": "Teach: Pythagorean theorem, grade 8",
+          "prompt": "A class on the Pythagorean theorem for 8th graders, with a short quiz at the end"
+        }
+      },
+      "coursesNav": {
+        "title": "My courses",
+        "body": "Your finished classes live here. Click to take a look."
+      },
+      "openLook": "Open it",
+      "edit": {
+        "canvas": {
+          "title": "The page",
+          "body": "Click any text, image or shape on the page to change it; drag to move or resize."
+        },
+        "pages": {
+          "title": "Pages",
+          "body": "Open the page list here: add pages, drag to reorder, delete."
+        },
+        "bar": {
+          "title": "The control bar",
+          "body": "Add an action, voice the narration, turn and add pages, set the teacher and classmates; at the right, lasso elements for the AI to change."
+        },
+        "timeline": {
+          "title": "The action track",
+          "body": "Each card is one action: narration, spotlight, discussion. Drag to reorder, click to edit."
+        },
+        "dock": {
+          "title": "The dock",
+          "body": "Drag its top edge to resize it, or fold it away to give the page more room."
+        },
+        "learn": {
+          "title": "Preview",
+          "body": "Switch back to Learn to see the class as a student does."
+        },
+        "chat": {
+          "title": "Ask the AI instead",
+          "body": "Rather not do it by hand? Say it in the chat, like “add an exercise to page 2”."
+        }
+      },
+      "editDone": "Start editing"
     }
   },
   "profile": {
@@ -2571,6 +2687,7 @@
   },
   "classroomEnd": {
     "close": "Back to the last page",
+    "nextPageComing": "Next page is on its way",
     "learned": "{{count}} pages done",
     "result": "{{correct}} / {{total}} correct",
     "actions": {

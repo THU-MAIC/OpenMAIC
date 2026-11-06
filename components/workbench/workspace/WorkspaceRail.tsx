@@ -49,7 +49,9 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type ComponentProps,
   type MouseEvent as ReactMouseEvent,
@@ -120,6 +122,7 @@ export function WorkspaceRail({
   onRenameSession,
   onOpenSearch,
   onOpenSettings,
+  onOpenGuide,
   activeView,
   onOpenView,
   resizeHandle,
@@ -151,6 +154,8 @@ export function WorkspaceRail({
   readonly onOpenSearch: () => void;
   /** Open the model/provider settings (the shell owns the dialog: the search opens it too). */
   readonly onOpenSettings: () => void;
+  /** Show the first-run guidance again (the account menu's "Getting started"). */
+  readonly onOpenGuide?: () => void;
   /**
    * The main-area page on screen (`library`, `courses` or a host page id), or
    * null. Its destination row is marked current.
@@ -262,10 +267,6 @@ export function WorkspaceRail({
     setPages((current) =>
       withPages(current, id, nextPage(items, pagesFor(current, id), { initial })),
     );
-  }, []);
-
-  const collapsePage = useCallback((id: string) => {
-    setPages((current) => withPages(current, id, 0));
   }, []);
 
   // ── Drag to reorder ──────────────────────────────────────────────────
@@ -392,7 +393,7 @@ export function WorkspaceRail({
           data-testid="pro-rail-utilities-mini"
           className="flex shrink-0 flex-col items-center pb-3.5 pt-2"
         >
-          <WorkspaceAccountBlock mini onOpenSettings={onOpenSettings} />
+          <WorkspaceAccountBlock mini onOpenSettings={onOpenSettings} onOpenGuide={onOpenGuide} />
         </div>
       </nav>
     );
@@ -572,7 +573,6 @@ export function WorkspaceRail({
         className="flex shrink-0 items-center gap-2 px-4 pb-1 pt-2.5 text-[11.5px] font-medium tracking-[0.02em] text-[color:var(--ws-ink-mute)]"
       >
         <span>{t('workspace.sections.sessions')}</span>
-        <span className="ws-seam-rail min-w-0 flex-1" />
       </div>
 
       <div
@@ -593,7 +593,6 @@ export function WorkspaceRail({
             initial={SESSION_ROW_LIMIT}
             pages={pagesFor(pages, 'sessions')}
             onMore={() => openPage('sessions', orderedSessions, SESSION_ROW_LIMIT)}
-            onCollapse={() => collapsePage('sessions')}
             render={(session) => renderSessionRow(session)}
           />
         </RailList>
@@ -607,7 +606,7 @@ export function WorkspaceRail({
         aria-label={t('workspace.utilitiesAria')}
         data-testid="pro-rail-utilities"
       >
-        <WorkspaceAccountBlock onOpenSettings={onOpenSettings} />
+        <WorkspaceAccountBlock onOpenSettings={onOpenSettings} onOpenGuide={onOpenGuide} />
       </div>
 
       {resizeHandle}
@@ -697,7 +696,6 @@ function PagedRows<T>({
   initial,
   pages,
   onMore,
-  onCollapse,
   render,
 }: {
   readonly id: string;
@@ -705,36 +703,39 @@ function PagedRows<T>({
   readonly initial: number;
   readonly pages: number;
   readonly onMore: () => void;
-  readonly onCollapse: () => void;
   readonly render: (item: T) => ReactNode;
 }) {
-  const { t } = useI18n();
-  const { visible, nextCount, canCollapse } = pageList(items, pages, { initial });
+  const { visible, nextCount } = pageList(items, pages, { initial });
+  // The next page loads as the list's end scrolls into view, as in any chat
+  // app's history: no "show more" / "show less" controls to read or press.
+  const sentinel = useRef<HTMLDivElement>(null);
+  const more = useRef(onMore);
+  useLayoutEffect(() => {
+    more.current = onMore;
+  });
+  useEffect(() => {
+    const node = sentinel.current;
+    if (!node || nextCount === 0) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) more.current();
+      },
+      { rootMargin: '0px 0px 160px 0px' },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [nextCount, visible.length]);
 
   return (
     <>
       {visible.map(render)}
       {nextCount > 0 ? (
-        <button
-          type="button"
-          data-testid={`pro-nav-show-more-${id}`}
-          onClick={onMore}
-          className="ws-more flex h-7 w-full items-center px-2 text-left text-[12px]"
-        >
-          {/* The count is what THIS press adds, not what the list is hiding:
-              the old label offered "show more (124)" and meant it. */}
-          {t('workspace.showMore', { count: nextCount })}
-        </button>
-      ) : null}
-      {canCollapse ? (
-        <button
-          type="button"
-          data-testid={`pro-nav-show-less-${id}`}
-          onClick={onCollapse}
-          className="ws-more flex h-7 w-full items-center px-2 text-left text-[12px]"
-        >
-          {t('workspace.showLess')}
-        </button>
+        <div
+          ref={sentinel}
+          data-testid={`pro-nav-more-sentinel-${id}`}
+          aria-hidden="true"
+          className="h-px"
+        />
       ) : null}
     </>
   );
