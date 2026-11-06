@@ -150,6 +150,7 @@ import { isMacPlatform, isNewChatShortcut, isSearchShortcut } from '@/lib/workbe
 import type { LibraryMaterial } from '@/lib/workbench/material-library-client';
 import { hostPageItems, useWorkbenchShellExtensions } from '@/lib/workbench/shell-extensions';
 import type { MaterialSeed, MaterialSeedTarget } from '@/components/workbench/compose-extras';
+import { FetchEventSource } from '@/lib/utils/fetch-event-source';
 
 const EMPTY_SESSIONS: ProHomeSessionItem[] = [];
 
@@ -501,7 +502,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   useEffect(() => {
     const client = new OwnerSessionClient({
       fetchSessions,
-      createEventSource: (url) => new EventSource(url),
+      createEventSource: (url) => new FetchEventSource(url),
       onSessions: publishOwnerSessions,
       onSessionTitle: syncAttachedSessionTitle,
       onState: setSessionState,

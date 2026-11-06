@@ -45,6 +45,23 @@ export function shouldShowWorkbenchEmptyState(input: {
   return chat.length === 0 && !catchingUp && !live;
 }
 
+/**
+ * Whether the last settled transcript may stay on screen while the pane catches
+ * up. Its own conversation may keep it for as long as that takes. Another one only
+ * for a moment, to avoid a flash when its log arrives quickly: the composer already
+ * targets the new conversation, so its title over the old transcript would invite a
+ * reply to the wrong content.
+ */
+export function shouldRetainTranscript(input: {
+  catchingUp: boolean;
+  settledSessionId: string | null | undefined;
+  sessionId: string | null;
+  graceOver: boolean;
+}): boolean {
+  const { catchingUp, settledSessionId, sessionId, graceOver } = input;
+  return catchingUp && (settledSessionId === sessionId || !graceOver);
+}
+
 export function WorkbenchChatEmptyState({
   t = defaultWorkbenchTranslator,
 }: {

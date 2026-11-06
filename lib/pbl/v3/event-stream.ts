@@ -37,6 +37,7 @@ export async function readLearningStream(
     const response = await fetch(`/api/pbl/v3/events?id=${encodeURIComponent(studyId)}`, {
       headers: { 'x-openmaic-sandbox': '1', accept: 'text/event-stream' },
       cache: 'no-store',
+      priority: 'low',
       signal: connection.signal,
     });
     if (connection.signal.aborted) {

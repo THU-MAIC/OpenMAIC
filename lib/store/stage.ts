@@ -34,6 +34,8 @@ import {
   stageDeletionSettled,
 } from '@/lib/utils/deleted-stages';
 
+import { recordKnownScenes, resetKnownScenes } from '@/lib/store/known-scenes';
+
 const log = createLogger('StageStore');
 
 /** Virtual scene ID used when the user navigates to a page still being generated */
@@ -608,6 +610,15 @@ interface StageState {
   addScene: (scene: Scene) => void;
   insertSceneAfter: (anchorSceneId: string, scene: Scene) => void;
   updateScene: (sceneId: string, updates: ScenePatch) => void;
+  /**
+   * Hold what a canvas measured from a scene's layout (text auto-height), not
+   * something anyone changed. Unlike `updateScene` this queues no save and does
+   * not count as an unsaved edit: the value differs per browser and is measured
+   * again on every render, and saving it would write this tab's whole copy of
+   * the scene over whatever the server holds now, with no user input. The next
+   * real save of the scene carries it.
+   */
+  updateSceneMeasurement: (sceneId: string, content: Scene['content']) => void;
   deleteScene: (sceneId: string) => void;
   setCurrentSceneId: (sceneId: string | null) => void;
   setChats: (chats: ChatSession[]) => void;
@@ -640,6 +651,16 @@ interface StageState {
   saveToStorage: () => Promise<boolean>;
   loadFromStorage: (stageId: string, loadToken?: StageSceneLoadToken) => Promise<void>;
   clearStore: () => void;
+}
+
+function scenesWithPatch(scenes: Scene[], sceneId: string, updates: ScenePatch): Scene[] {
+  return scenes.map((scene) => {
+    if (scene.id !== sceneId) return scene;
+    const content = mergeSceneContentForUpdate(scene.content, updates.content) ?? scene.content;
+    // Rebind `type` to the merged content's kind (a type-only patch can no
+    // longer desync the discriminant from the content).
+    return makeScene({ ...scene, ...updates }, content);
+  });
 }
 
 function isDeckComplete({
@@ -893,15 +914,12 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   },
 
   updateScene: (sceneId, updates) => {
-    const scenes = get().scenes.map((scene) => {
-      if (scene.id !== sceneId) return scene;
-      const content = mergeSceneContentForUpdate(scene.content, updates.content) ?? scene.content;
-      // Rebind `type` to the merged content's kind (a type-only patch can no
-      // longer desync the discriminant from the content).
-      return makeScene({ ...scene, ...updates }, content);
-    });
-    set({ scenes });
+    set({ scenes: scenesWithPatch(get().scenes, sceneId, updates) });
     markPendingChanges(get().stage?.id, { kind: 'scene', sceneId });
+  },
+
+  updateSceneMeasurement: (sceneId, content) => {
+    set({ scenes: scenesWithPatch(get().scenes, sceneId, { content }) });
   },
 
   deleteScene: (sceneId) => {
@@ -1329,6 +1347,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         const generatingOutlines = generationComplete
           ? []
           : outlines.filter((o) => !migrated.some((s) => s.order === o.order));
+        resetKnownScenes(stageId);
         set({
           stage: data.stage,
           scenes: migrated,
@@ -1387,6 +1406,16 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
 }));
 
 export const useStageStore = createSelectors(useStageStoreBase);
+
+// Whatever way a scene reached the store, this tab now knows of it: a whole-document
+// save that no longer lists it is removing it (see `known-scenes.ts`).
+useStageStoreBase.subscribe((state, previous) => {
+  if (state.scenes === previous.scenes || !state.stage) return;
+  recordKnownScenes(
+    state.stage.id,
+    state.scenes.map((scene) => scene.id),
+  );
+});
 
 // ==================== Debounced Save ====================
 

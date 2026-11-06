@@ -111,13 +111,19 @@ import { QuestionForm } from './chat/question-form';
 import { useQuestionHost } from '@/lib/workbench/question-host';
 import { sessionScopedKey } from '@/lib/workbench/request-scope';
 import { composerTakeover } from './chat/question-form-state';
-import { shouldShowWorkbenchEmptyState, WorkbenchChatEmptyState } from './chat/empty-state';
+import {
+  shouldRetainTranscript,
+  shouldShowWorkbenchEmptyState,
+  WorkbenchChatEmptyState,
+} from './chat/empty-state';
 import { invalidateAgentSkills } from '@/lib/workbench/agent-skills';
 import { settleSentElementRefs } from '@/lib/workbench/element-ref-send-result';
 import { settleSentCourseRefs } from '@/lib/workbench/course-ref-send-result';
 
 const NO_ELEMENT_REFS: ElementRef[] = [];
 const NO_COURSE_REFS: CourseRef[] = [];
+/** How long another conversation's transcript may stay up while the next one loads. */
+const TRANSCRIPT_RETENTION_GRACE_MS = 1_000;
 
 export function WorkbenchChat({
   hosted = false,
@@ -204,9 +210,10 @@ export function WorkbenchChat({
    * Switching conversations rebuilds the attached fold from its event log. The
    * old implementation replaced the whole transcript with a blank, centred
    * spinner for that interval; when chat owned the wide column this read as a
-   * full-screen flash. Keep the last settled transcript painted but inert until
-   * the next fold is ready. An initial deep link still gets the ordinary loader
-   * because there is no previous content to retain.
+   * full-screen flash. Keep the last settled transcript painted but inert while
+   * the next fold is on its way, for a moment: its stream can wait behind other
+   * requests on a slow connection. After that, and on an initial deep link with
+   * no previous content to retain, the pane gets the ordinary loader.
    */
   /**
    * A draft's first message, on screen from the moment it is sent. The draft
@@ -233,14 +240,33 @@ export function WorkbenchChat({
     [chat, openingMessage],
   );
   const settledTranscriptRef = useRef<{
+    readonly sessionId: string | null;
     readonly chat: ChatNode[];
     readonly plan: PlannedPage[];
   } | null>(null);
   useEffect(() => {
     if (catchingUp) return;
-    settledTranscriptRef.current = { chat: liveChat, plan };
-  }, [catchingUp, liveChat, plan]);
-  const retainedTranscript = catchingUp ? settledTranscriptRef.current : null;
+    settledTranscriptRef.current = { sessionId, chat: liveChat, plan };
+  }, [catchingUp, sessionId, liveChat, plan]);
+  const [retentionGraceOver, setRetentionGraceOver] = useState(false);
+  useEffect(() => {
+    if (!catchingUp) return;
+    const timer = setTimeout(() => setRetentionGraceOver(true), TRANSCRIPT_RETENTION_GRACE_MS);
+    return () => {
+      clearTimeout(timer);
+      setRetentionGraceOver(false);
+    };
+  }, [catchingUp, sessionId]);
+  const retainedTranscript = shouldRetainTranscript({
+    catchingUp,
+    settledSessionId: settledTranscriptRef.current?.sessionId,
+    sessionId,
+    // A draft turning into its conversation keeps its opening bubble until the
+    // replay lands: the retained transcript is that same conversation's.
+    graceOver: retentionGraceOver && !openingMessage,
+  })
+    ? settledTranscriptRef.current
+    : null;
   // While a just-created conversation replays, the bubble already sent stays.
   const displayedChat =
     catchingUp && openingMessage && retainedTranscript

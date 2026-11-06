@@ -45,6 +45,7 @@ import {
   resolveClassroomSurfaceView,
 } from '@/lib/classroom/progressive-load-policy';
 import { useClassroomSession } from '@/lib/classroom/use-classroom-session';
+import { useEditModeFreshness } from '@/lib/classroom/use-edit-mode-freshness';
 import { applySceneDeepLink } from '@/lib/classroom/scene-deep-link';
 import { useRunCourse } from '@/lib/generation-run-client/use-run-course';
 import { pendingSceneFailureKey } from '@/lib/generation-run-client/failure-message';
@@ -93,6 +94,7 @@ function ClassroomSurfaceContent({
   const loadEpochRef = useRef(0);
 
   const { mayGenerate, refreshOwnership } = useClassroomSession({ classroomId, variant });
+  useEditModeFreshness(classroomId, variant);
 
   const loadClassroom = useCallback(
     async (isEffectCurrent: () => boolean): Promise<ClassroomLoadOutcome> => {

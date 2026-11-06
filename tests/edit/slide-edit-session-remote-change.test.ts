@@ -4,9 +4,8 @@
  * A slide open in the editor when its scene changes on the server: the real
  * canvas controller, session and stage store, with only the storage module
  * faked. The freshness sync replaces the scene in the store; the next commit
- * from the canvas, which may be an automatic text-height normalization with no
- * user input, must build on that content rather than on the copy the session
- * took when the page was opened.
+ * from the canvas must build on that content rather than on the copy the
+ * session took when the page was opened.
  */
 import { act, createElement, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -78,12 +77,24 @@ function Harness({
   return null;
 }
 
-/** A commit with no gesture, as the canvas makes when it re-measures text. */
-function normalizeHeight(height: number) {
+/** A commit with no pointer gesture, as typing makes. */
+function commitWithoutGesture(left: number) {
   act(() =>
     controller!.updateSceneData((draft) => {
-      textIn(draft as SlideContent).height = height;
+      textIn(draft as SlideContent).left = left;
     }),
+  );
+}
+
+/** What the canvas does when it re-measures text. */
+function measureHeight(height: number) {
+  act(() =>
+    controller!.updateSceneData(
+      (draft) => {
+        textIn(draft as SlideContent).height = height;
+      },
+      { measurement: true },
+    ),
   );
 }
 
@@ -119,19 +130,43 @@ afterEach(async () => {
 });
 
 describe('a slide open in the editor when its scene changes on the server', () => {
-  it('an automatic height commit keeps the new content, in the store and in the save', async () => {
+  it('a commit with no gesture keeps the new content, in the store and in the save', async () => {
     serverCopyArrives(slideWith('agent content', 47), 'agent narration');
 
-    normalizeHeight(107);
+    commitWithoutGesture(321);
 
     expect(storedText().content).toBe('agent content');
-    expect(storedText().height).toBe(107);
+    expect(storedText().left).toBe(321);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_000);
     });
     const saved = saveStageDataIncremental.mock.calls.at(-1)![2] as { scenes: Scene[] };
     expect(textIn(saved.scenes[0]!.content as SlideContent).content).toBe('agent content');
     expect(saved.scenes[0]!.actions).toEqual(storedScene().actions);
+  });
+
+  it('a measurement builds on the new content, and the next edit saves both', async () => {
+    serverCopyArrives(slideWith('agent content', 47), 'agent narration');
+
+    measureHeight(107);
+
+    expect(storedText().content).toBe('agent content');
+    expect(storedText().height).toBe(107);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(saveStageDataIncremental).not.toHaveBeenCalled();
+
+    commitWithoutGesture(321);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    const saved = saveStageDataIncremental.mock.calls.at(-1)![2] as { scenes: Scene[] };
+    expect(textIn(saved.scenes[0]!.content as SlideContent)).toMatchObject({
+      content: 'agent content',
+      height: 107,
+      left: 321,
+    });
   });
 
   it('a user edit from the toolbar builds on the new content', () => {
