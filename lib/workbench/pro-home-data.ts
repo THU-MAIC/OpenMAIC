@@ -14,6 +14,8 @@ export interface ProHomeSessionItem {
    */
   readonly title?: string | null;
   readonly status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+  /** Started beside an existing course (the session's durable flag); absent on older rows. */
+  readonly existingCourse?: boolean;
   readonly createdAt: number;
   readonly updatedAt: number;
 }

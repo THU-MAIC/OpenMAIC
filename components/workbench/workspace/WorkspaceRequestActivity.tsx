@@ -97,13 +97,15 @@ export interface PreviewTabStrip {
 }
 
 /**
- * The placeholder for the course this conversation may produce — the role the
- * classic generation preview plays — as a regular tab in the right pane's tab
- * strip, beside any course tabs. The first tool call or question of a request
- * opens it; it never folds on its own: between requests it rests, and the next
- * request animates in the same tab. It goes when the conversation's first scene
- * hands off to its course tab (which takes its place), or when the user closes
- * it — remembered for that request (`lib/workbench/preview-tab.ts`).
+ * The tab of the new course a request is making — the role the classic
+ * generation preview plays — as a regular tab in the right pane's tab strip,
+ * beside any course tabs. The workspace mounts it only while the request is
+ * making a course (`lib/workbench/conversation-course.ts`). The first tool call
+ * or question of a request opens it; it never folds on its own: between
+ * requests it rests, and the next request animates in the same tab. When the
+ * course's first page is persisted, the workspace turns this tab into the
+ * course tab, in place. Closing it is remembered for that request
+ * (`lib/workbench/preview-tab.ts`).
  */
 export function WorkspaceRequestActivity({
   onStateChange,
