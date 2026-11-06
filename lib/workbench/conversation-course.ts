@@ -8,9 +8,12 @@ import type { ChatNode } from './session-store';
  * - A conversation started beside an existing course (`existingCourse`, the
  *   durable fact the server keeps on the session) works on that course: the
  *   pane is that course, never a preview.
- * - A new conversation is making its course: from the request's first tool
- *   call or question a preview tab stands for it, and when the course's first
- *   page is persisted that same tab becomes the course tab.
+ * - A new conversation is making its course: from the moment its request is
+ *   sent (queued, connecting, the agent only thinking) a preview tab stands
+ *   for it, and when the course's first page is persisted that same tab
+ *   becomes the course tab. A request that ends without one leaves the tab at
+ *   rest (folded away while the conversation has only talked); the next
+ *   request animates in it.
  * - Once the conversation has its course (an earlier request persisted a
  *   page), later requests work on it: the pane is that course.
  * - Any request that calls `create_stage` is making a new course, whatever

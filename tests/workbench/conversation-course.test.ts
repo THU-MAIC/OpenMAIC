@@ -139,11 +139,35 @@ describe('rule 2: a new conversation', () => {
   });
 });
 
-describe('rule 3: a request that only chats', () => {
-  it('is still the new course in the making; the preview itself stays quiet', () => {
-    // `quiet` (no tool call, no question) keeps the pane closed: see the
-    // scheduler. The lifecycle only says which course the request is about.
-    expect(requestCourse([user('u', 'hi')], false)).toEqual({ kind: 'new', ready: [] });
+describe('rule 3: a new conversation shows its preview from the moment it is sent', () => {
+  it('is the new course in the making before any tool call or question', () => {
+    // Nothing folded yet (queued) and only the opening message: the preview
+    // is up, on understanding (see the scheduler).
+    expect(requestCourse([], false)).toEqual({ kind: 'new', ready: [] });
+    expect(requestCourse([user('u', 'the history of Disney')], false)).toEqual({
+      kind: 'new',
+      ready: [],
+    });
+    const thinking: ChatNode = { key: 't', kind: 'thinking', text: 'Planning…' };
+    expect(requestCourse([user('u'), thinking], false)).toEqual({ kind: 'new', ready: [] });
+  });
+
+  it('stays the course in the making after a request that only chatted', () => {
+    // The chat-only request folded away; the next request opens the preview again.
+    const chat = [
+      user('u1', 'hi'),
+      { key: 'a', kind: 'assistant', text: 'Hello! What shall we build?' } as ChatNode,
+      user('u2', 'a course on fractions'),
+    ];
+    expect(requestCourse(chat, false)).toEqual({ kind: 'new', ready: [] });
+  });
+
+  it('never applies beside a course, nor before the flag is known', () => {
+    expect(requestCourse([user('u', 'hi')], true, 'stage-a')).toEqual({
+      kind: 'course',
+      courseId: 'stage-a',
+    });
+    expect(requestCourse([user('u', 'hi')], null)).toEqual({ kind: 'course', courseId: null });
   });
 });
 

@@ -2297,7 +2297,7 @@ describe('the knowledge base page', () => {
       expect(mocks.routerPush).toHaveBeenCalledTimes(1);
     });
 
-    it('stays out of the way while a request only talks', async () => {
+    it('opens the preview as soon as a new request is sent, before any tool call', async () => {
       await render();
       mocks.store.status = 'running';
       mocks.store.chat = [
@@ -2305,9 +2305,11 @@ describe('the knowledge base page', () => {
         { key: 'a', kind: 'assistant', text: 'Light bends because…', streaming: true },
       ];
       await render();
-      expect(container?.querySelector('[data-testid="workspace-request-activity"]')).toBeNull();
-      expect(mocks.chatPaneProps?.fill).toBe(true);
-      expect(mocks.railProps?.collapsed).toBe(false);
+      await render();
+      const pane = container?.querySelector('[data-testid="workspace-request-activity"]');
+      expect(pane?.getAttribute('data-scene')).toBe('understanding');
+      expect(pane?.getAttribute('aria-hidden')).toBeNull();
+      expect(mocks.chatPaneProps?.fill).toBe(false);
     });
 
     it('gives the main column back to the conversation once the activity settles', async () => {
@@ -2642,7 +2644,8 @@ describe('the knowledge base page', () => {
         { key: 'w', kind: 'waiting', text: '' },
       ];
       await render();
-      expect(pane()?.getAttribute('data-scene')).toBe('resting');
+      // Sent, before any tool call: the request is being understood.
+      expect(pane()?.getAttribute('data-scene')).toBe('understanding');
       mocks.store.chat = [
         ...mocks.store.chat.slice(0, -1),
         { key: 'cs', kind: 'tool', text: '', toolName: 'create_stage', toolState: 'running' },
