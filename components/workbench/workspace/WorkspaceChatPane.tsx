@@ -13,13 +13,17 @@
  * the text from running the full width of a wide window.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { LoaderCircle } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils/cn';
 import { WorkbenchChat } from '@/components/workbench/WorkbenchChat';
 import type { MaterialSeed } from '@/components/workbench/compose-extras';
 import { PaneFoldButton } from './PaneFoldButton';
+
+/** The split's timing: a gentle ease-out, a little slow on purpose. */
+export const PANE_SPLIT_MS = 400;
+export const PANE_SPLIT_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
 import { useWorkbenchStore } from '@/lib/workbench/session-store';
 import { presentWorkspaceSession } from '@/lib/workbench/workspace-navigation';
 import { SESSION_TITLE_MAX_LENGTH, workbenchSessionTitle } from '@/lib/workbench/session-title';
@@ -125,8 +129,77 @@ export function WorkspaceChatPane({
   const title = named ?? t(draftConversation ? 'workspace.newSession' : 'workspace.currentSession');
   const canRename = !!onRename && !draftConversation;
 
+  // ── The split, animated ─────────────────────────────────────────────
+  // When the right pane opens the conversation goes from filling the main
+  // area to its own column, and back when the pane closes. The layout changes
+  // at once — the classroom measures its final box one time — and the
+  // column's width is played from where it was to where it is. During the
+  // play both columns hold their content at its final width, clipped, so no
+  // text rewraps and no canvas relays out frame by frame; it is released when
+  // the play ends.
+  const paneRef = useRef<HTMLElement>(null);
+  const lastWidth = useRef<number | null>(null);
+  const lastFill = useRef(fill);
+  useEffect(() => {
+    const pane = paneRef.current;
+    if (!pane || typeof ResizeObserver === 'undefined') return;
+    // Every width it takes, the last frame of a play included: that is where
+    // the next one starts from.
+    const observer = new ResizeObserver(([entry]) => {
+      // A hidden column measures 0: that is not a width it was shown at.
+      if (entry.contentRect.width > 0) lastWidth.current = entry.contentRect.width;
+    });
+    observer.observe(pane);
+    return () => observer.disconnect();
+  }, []);
+  useLayoutEffect(() => {
+    const pane = paneRef.current;
+    const from = lastWidth.current;
+    const changed = lastFill.current !== fill;
+    lastFill.current = fill;
+    if (!pane || !changed || hidden || !from) return;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const to = pane.getBoundingClientRect().width;
+    if (Math.abs(to - from) < 8 || typeof pane.animate !== 'function') return;
+    // The right pane (when there is one) keeps its final width inside too.
+    const partner = [...(pane.parentElement?.children ?? [])].find(
+      (el): el is HTMLElement =>
+        el instanceof HTMLElement &&
+        el !== pane &&
+        el.classList.contains('ws-pane-last') &&
+        el.getBoundingClientRect().width > 0,
+    );
+    const freeze = (el: HTMLElement, width: number) => {
+      el.style.setProperty('--ws-pane-freeze', `${Math.round(width)}px`);
+      el.dataset.wsFreeze = '';
+    };
+    const release = (el: HTMLElement) => {
+      el.style.removeProperty('--ws-pane-freeze');
+      delete el.dataset.wsFreeze;
+    };
+    freeze(pane, to);
+    if (partner) freeze(partner, partner.getBoundingClientRect().width);
+    const play = pane.animate(
+      // The basis as well as the width: a filling column is `flex: 1 1 0%`,
+      // whose zero basis would otherwise win over the width (and play the
+      // close from nothing, then jump).
+      [
+        { width: `${from}px`, flexBasis: `${from}px`, flexGrow: 0, flexShrink: 0 },
+        { width: `${to}px`, flexBasis: `${to}px`, flexGrow: 0, flexShrink: 0 },
+      ],
+      { duration: PANE_SPLIT_MS, easing: PANE_SPLIT_EASING },
+    );
+    const done = () => {
+      release(pane);
+      if (partner) release(partner);
+    };
+    play.addEventListener('finish', done);
+    play.addEventListener('cancel', done);
+  }, [fill, hidden]);
+
   return (
     <section
+      ref={paneRef}
       data-testid="workspace-chat-pane"
       aria-label={t('workspace.chatPaneAria')}
       aria-hidden={hidden || undefined}

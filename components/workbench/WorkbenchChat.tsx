@@ -51,10 +51,9 @@ import {
   useWorkbenchCourseNavigation,
   useWorkbenchDraftConversation,
 } from '@/lib/workbench/panel-context';
-import { ComposerTextarea } from './composer-input';
+import { ComposerInput, type ComposerInputHandle } from './composer-input';
 import { ComposerPillRow } from './composer-pill';
 import { ElementRefPills } from './element-ref-pills';
-import { CourseRefPills } from './course-ref-pills';
 import { CourseMentionMenu } from './course-mention-menu';
 import { stagedMaterialOf, type MaterialMentionCandidate } from '@/lib/workbench/material-mention';
 import {
@@ -85,7 +84,12 @@ import {
   type MaterialSeed,
 } from './compose-extras';
 import { insertSkillHandle, seedSlashQuery } from '@/lib/workbench/composer-skills';
-import { useSkillHandleBackspace } from './use-skill-handle-backspace';
+import { useInlineMentions } from './use-inline-mentions';
+import {
+  expandMentions,
+  stripMentions,
+  type InlineMention,
+} from '@/lib/workbench/composer-mentions';
 import { resolveComposerMenu } from '@/lib/workbench/composer-menus';
 import {
   isComposerLive,
@@ -95,6 +99,7 @@ import {
 } from './chat/composer-send-state';
 import {
   COMPOSER_SEND_ARIA_KEYSHORTCUTS,
+  composerKeyEventOf,
   shouldSendComposerKey,
 } from '@/lib/workbench/composer-keys';
 import { useDoubleEscapeStop } from './chat/composer-escape';
@@ -111,7 +116,7 @@ import {
   shouldShowWorkbenchEmptyState,
   WorkbenchChatEmptyState,
 } from './chat/empty-state';
-import { invalidateAgentSkills, useAgentSkills } from '@/lib/workbench/agent-skills';
+import { invalidateAgentSkills } from '@/lib/workbench/agent-skills';
 import { settleSentElementRefs } from '@/lib/workbench/element-ref-send-result';
 import { settleSentCourseRefs } from '@/lib/workbench/course-ref-send-result';
 
@@ -210,6 +215,30 @@ export function WorkbenchChat({
    * requests on a slow connection. After that, and on an initial deep link with
    * no previous content to retain, the pane gets the ordinary loader.
    */
+  /**
+   * A draft's first message, on screen from the moment it is sent. The draft
+   * has no conversation yet — the message is what creates it — so nothing in
+   * the store can show it until the new conversation is attached and its log
+   * replayed; without this the column sat empty in between. It steps aside
+   * the moment the store shows a message of the teacher's own.
+   */
+  const [openingMessage, setOpeningMessage] = useState<ChatNode | null>(null);
+  const [openingOwner, setOpeningOwner] = useState(composerOwnerId);
+  if (openingOwner !== composerOwnerId) {
+    setOpeningOwner(composerOwnerId);
+    // The draft becoming its own conversation keeps the bubble; another
+    // conversation, or a new draft, does not.
+    if (!(openingOwner?.startsWith('draft:') && !composerOwnerId?.startsWith('draft:'))) {
+      setOpeningMessage(null);
+    }
+  }
+  const liveChat = useMemo(
+    () =>
+      openingMessage && !chat.some((node) => node.kind === 'user')
+        ? [...chat, openingMessage]
+        : chat,
+    [chat, openingMessage],
+  );
   const settledTranscriptRef = useRef<{
     readonly sessionId: string | null;
     readonly chat: ChatNode[];
@@ -217,8 +246,8 @@ export function WorkbenchChat({
   } | null>(null);
   useEffect(() => {
     if (catchingUp) return;
-    settledTranscriptRef.current = { sessionId, chat, plan };
-  }, [catchingUp, sessionId, chat, plan]);
+    settledTranscriptRef.current = { sessionId, chat: liveChat, plan };
+  }, [catchingUp, sessionId, liveChat, plan]);
   const [retentionGraceOver, setRetentionGraceOver] = useState(false);
   useEffect(() => {
     if (!catchingUp) return;
@@ -232,11 +261,19 @@ export function WorkbenchChat({
     catchingUp,
     settledSessionId: settledTranscriptRef.current?.sessionId,
     sessionId,
-    graceOver: retentionGraceOver,
+    // A draft turning into its conversation keeps its opening bubble until the
+    // replay lands: the retained transcript is that same conversation's.
+    graceOver: retentionGraceOver && !openingMessage,
   })
     ? settledTranscriptRef.current
     : null;
-  const displayedChat = retainedTranscript?.chat ?? chat;
+  // While a just-created conversation replays, the bubble already sent stays.
+  const displayedChat =
+    catchingUp && openingMessage && retainedTranscript
+      ? retainedTranscript.chat.some((node) => node.key === openingMessage.key)
+        ? retainedTranscript.chat
+        : [...retainedTranscript.chat, openingMessage]
+      : (retainedTranscript?.chat ?? liveChat);
   const displayedPlan = retainedTranscript?.plan ?? plan;
 
   const [draft, setDraft] = useState('');
@@ -245,11 +282,16 @@ export function WorkbenchChat({
    *
    * Both triggers read the token AROUND it (`lib/workbench/composer-tokens`), so
    * this is half of what decides whether a menu is open — which is why it is state
-   * and not a ref: it has to re-render the menu. `ComposerTextarea` reports it on
+   * and not a ref: it has to re-render the menu. `ComposerInput` reports it on
    * every way it can move, and the two paths that move it programmatically (a
    * skill insertion, an `@` token spliced out) set it themselves.
    */
   const [caret, setCaret] = useState(0);
+  const [caretBesideChip, setCaretBesideChip] = useState(false);
+  const reportCaret = useCallback((next: number, besideChip: boolean) => {
+    setCaret(next);
+    setCaretBesideChip(besideChip);
+  }, []);
   /**
    * Put text in the box, caret at its end — the ONE door for a write that replaces
    * the whole draft (cleared on send, restored when the send is refused).
@@ -284,7 +326,7 @@ export function WorkbenchChat({
   const [busy, setBusy] = useState(false);
   /**
    * Where the caret goes after a skill handle is written into the draft, applied
-   * once the controlled textarea has rendered the new value. A ref, not state:
+   * once the input has taken the new value. A ref, not state:
    * it is a one-shot instruction to the DOM, not something anything renders.
    */
   const pendingCaret = useRef<number | null>(null);
@@ -351,7 +393,7 @@ export function WorkbenchChat({
   const waiting = pendingQuestion(chat);
   const dismissedQuestionKey =
     waiting && dismissedQuestion === questionMark(waiting.key) ? waiting.key : null;
-  const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const composerRef = useRef<ComposerInputHandle | null>(null);
   // The mirror flag for stop: `POST /cancel` answers 202 ("asked"), and the run
   // only actually ends when the loop notices between steps — after the tool in
   // flight returns, which can be tens of seconds. Without this the button just
@@ -374,6 +416,7 @@ export function WorkbenchChat({
     // send at once rather than waiting behind it.
     releaseSend();
     replaceDraft('');
+    inlineMentions.reset();
     setSlashDismissed(null);
     setMentionDismissed(null);
     materials.startOver();
@@ -457,6 +500,61 @@ export function WorkbenchChat({
   // mention is that the agent is told, not that it infers from what is open.
   useCourseRefsOwnerLifecycle(composerOwnerId);
   const courseRefs = useCourseRefsForSession(composerOwnerId);
+  /** What an `@` pick staged, for the undo that brings its chip back. */
+  const pickedMaterials = useRef(new Map<string, WorkbenchMaterial>());
+  /**
+   * The `@` picks, written into the draft as inline mentions (see
+   * `use-inline-mentions`); taking one out of the text takes its reference too.
+   */
+  const inlineMentions = useInlineMentions(
+    useCallback(
+      (dropped: InlineMention) => {
+        if (dropped.kind === 'course') useCourseRefsStore.getState().remove(dropped.id);
+        else materials.remove(dropped.id);
+      },
+      // `materials.remove` reads the staging list through a ref.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [],
+    ),
+    (revived: InlineMention) => {
+      if (revived.kind === 'course') {
+        const ref = makeCourseRef(revived.id, revived.name);
+        if (ref) useCourseRefsStore.getState().add(ref);
+      } else {
+        const material = pickedMaterials.current.get(revived.id);
+        if (material) materials.addExisting(material);
+      }
+    },
+  );
+  /**
+   * Another conversation in this composer: a course mention the draft still
+   * holds keeps its reference there if the course can be named in it
+   * (re-bound to the new owner's references), and otherwise becomes plain
+   * text — never a highlight that stands for nothing.
+   */
+  const mentionsOwner = useRef(composerOwnerId);
+  useEffect(() => {
+    if (mentionsOwner.current === composerOwnerId) return;
+    mentionsOwner.current = composerOwnerId;
+    const mentions = inlineMentions.mentions;
+    if (!mentions.some((mention) => mention.kind === 'course')) return;
+    const courses = useCourseRefsStore.getState();
+    const kept = mentions.filter((mention) => {
+      if (mention.kind !== 'course') return true;
+      if (courses.ownerSessionId !== composerOwnerId) return false;
+      if (courses.refs.some((ref) => ref.stageId === mention.id)) return true;
+      const accessible = (navigation?.courseOptions ?? []).some(
+        (course) => course.id === mention.id,
+      );
+      const ref = accessible ? makeCourseRef(mention.id, mention.name) : null;
+      if (!ref) return false;
+      courses.add(ref);
+      return true;
+    });
+    if (kept.length !== mentions.length) inlineMentions.restore(kept);
+    // Once per owner change; the mentions and options are read as they are then.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [composerOwnerId]);
   const refreshedCreateCalls = useRef(new Set<string>());
 
   // The durable completed tool node is the source of truth: replay and a live
@@ -527,6 +625,7 @@ export function WorkbenchChat({
   } = resolveComposerMenu({
     draft,
     caret,
+    caretBesideChip,
     slashDismissedOn: slashDismissed,
     mentionDismissedOn: mentionDismissed,
     courseMenuRequested: mentionOpen,
@@ -583,28 +682,40 @@ export function WorkbenchChat({
    * has no trigger to remove and leaves the draft alone.
    */
   /** What every pick leaves behind: the token out of the draft, the menu shut. */
-  const finishMentionPick = useCallback(() => {
-    // The splice can land mid-sentence now, so the caret goes back where the
-    // token was rather than wherever a shrinking controlled value leaves it.
-    const removal = !mentionOpen && mention ? replaceCourseMention(draft, mention) : null;
-    const next = removal?.draft ?? draft;
-    if (removal) {
-      pendingCaret.current = removal.caret;
-      setCaret(removal.caret);
-      setDraft(removal.draft);
-    }
-    setMentionDismissed(mentionOpen ? draft : null);
-    setMentionOpen(false);
-    // The other direction of the same rule: what the splice leaves behind may
-    // be a live `/handle`, and finishing with one menu must not open another.
-    setSlashDismissed(next);
-    composerRef.current?.focus();
-  }, [draft, mention, mentionOpen]);
+  const finishMentionPick = useCallback(
+    (pick?: Parameters<typeof inlineMentions.add>[3]) => {
+      // The splice can land mid-sentence now, so the caret goes back where the
+      // token was rather than wherever a shrinking controlled value leaves it.
+      const removal = !mentionOpen && mention ? replaceCourseMention(draft, mention) : null;
+      let next = removal?.draft ?? draft;
+      let nextCaret = removal?.caret ?? composerRef.current?.selectionStart ?? draft.length;
+      // The pick goes into the sentence where the `@` was, as an inline mention.
+      const written = pick ? inlineMentions.add(next, nextCaret, nextCaret, pick) : null;
+      if (written) {
+        next = written.draft;
+        nextCaret = written.caret;
+      }
+      if (next !== draft) {
+        pendingCaret.current = nextCaret;
+        setCaret(nextCaret);
+        setDraft(next);
+      }
+      // The mention just written must not reopen the menu it came from.
+      setMentionDismissed(next);
+      setMentionOpen(false);
+      // The other direction of the same rule: what the splice leaves behind may
+      // be a live `/handle`, and finishing with one menu must not open another.
+      setSlashDismissed(next);
+      composerRef.current?.focus();
+    },
+    [draft, inlineMentions, mention, mentionOpen],
+  );
   const pickMention = useCallback(
     (candidate: CourseMentionCandidate) => {
       const ref = makeCourseRef(candidate.stageId, candidate.title);
-      if (ref) useCourseRefsStore.getState().add(ref);
-      finishMentionPick();
+      if (!ref) return finishMentionPick();
+      useCourseRefsStore.getState().add(ref);
+      finishMentionPick({ kind: 'course', id: ref.stageId, name: ref.title });
     },
     [finishMentionPick],
   );
@@ -621,8 +732,14 @@ export function WorkbenchChat({
   });
   const pickMaterialMention = useCallback(
     (candidate: MaterialMentionCandidate) => {
-      materials.addExisting(stagedMaterialOf(candidate));
-      finishMentionPick();
+      const staged = stagedMaterialOf(candidate);
+      const outcome = materials.addExisting(staged);
+      pickedMaterials.current.set(staged.materialId, staged);
+      finishMentionPick(
+        outcome === 'staged' || outcome === 'already'
+          ? { kind: 'material', id: staged.materialId, name: staged.name }
+          : undefined,
+      );
     },
     [finishMentionPick, materials],
   );
@@ -665,7 +782,7 @@ export function WorkbenchChat({
   // Pure-derived: the idle placeholder owns the rail only while it is truly
   // empty — no messages, not catching up, no run live. It disappears the
   // instant a bubble lands or a send flips the composer to STOP.
-  const showEmptyState = shouldShowWorkbenchEmptyState({ chat, catchingUp, live });
+  const showEmptyState = shouldShowWorkbenchEmptyState({ chat: liveChat, catchingUp, live });
   // Where the composer sits, and therefore how much of the viewport the
   // transcript gets. See `composerLayout`.
   const layout = composerLayout(takeover !== null);
@@ -673,12 +790,16 @@ export function WorkbenchChat({
   // box exists only when it has something to hold, so an empty composer is the
   // same height it always was. A loaded skill is NOT one of these things: it is
   // text in the box, not something staged beside it.
+  // A course is only ever named in the text; a material picked from the `@`
+  // menu is too, so only uploads keep a pill.
+  const pillMaterials = materials.materials.filter(
+    (item) => !inlineMentions.has('material', item.materialId),
+  );
   const hasComposerContext =
-    materials.materials.length > 0 ||
+    pillMaterials.length > 0 ||
     materials.uploading.length > 0 ||
     materials.failed.length > 0 ||
-    elementRefs.length > 0 ||
-    courseRefs.length > 0;
+    elementRefs.length > 0;
 
   /**
    * A skill handle was written into the draft (picked from the `/` menu, opened
@@ -690,10 +811,10 @@ export function WorkbenchChat({
     const caret = pendingCaret.current;
     if (caret === null) return;
     pendingCaret.current = null;
-    const textarea = composerRef.current;
-    if (!textarea) return;
-    textarea.focus();
-    textarea.setSelectionRange(caret, caret);
+    const input = composerRef.current;
+    if (!input) return;
+    input.focus();
+    input.setSelectionRange(caret, caret);
   }, [draft]);
 
   /**
@@ -703,17 +824,6 @@ export function WorkbenchChat({
    * it). Both dismissals are recorded against the resulting draft, so nothing
    * reopens until the user types something new.
    */
-  const { skills } = useAgentSkills();
-  const installedSkillNames = useMemo(() => skills.map((skill) => skill.name), [skills]);
-  /** Backspace deletes a resolving `/handle`; see the hook for the IME guard. */
-  const onSkillHandleBackspace = useSkillHandleBackspace(
-    setDraft,
-    (next) => {
-      pendingCaret.current = next;
-      setCaret(next);
-    },
-    installedSkillNames,
-  );
   const loadSkill = useCallback((skill: AgentSkillInfo) => {
     // The live selection, not the tracked state: the element is the freshest
     // answer either way.
@@ -734,7 +844,7 @@ export function WorkbenchChat({
    * the full list — the same flow typing `/` has, minus the typing. An
    * Esc-dismissed query reopens; an active one is already open, so the click is
    * spent. Focus first: the menu's keyboard contract (↑/↓/Enter) lives on the
-   * textarea.
+   * input.
    */
   const openSkillMenu = useCallback(() => {
     composerRef.current?.focus();
@@ -975,11 +1085,14 @@ export function WorkbenchChat({
   }, [answerQuestion]);
 
   async function send() {
-    // What is in the box IS the message — skill handles included. There is
-    // nothing to assemble here.
-    const text = draft.trim();
+    // What is in the box IS the message — skill handles included — with each
+    // `@` mention written out in full; the references go beside it as before.
+    const text = expandMentions(draft, inlineMentions.mentions);
+    const hasWords = !!stripMentions(draft, inlineMentions.mentions);
+    const typed = draft;
+    const sentMentions = inlineMentions.mentions;
     if (
-      (!text && materials.materials.length === 0) ||
+      (!hasWords && materials.materials.length === 0) ||
       busy ||
       !canSend ||
       materials.busy ||
@@ -1001,8 +1114,23 @@ export function WorkbenchChat({
     const coursesState = useCourseRefsStore.getState();
     const selectedCourses =
       coursesState.ownerSessionId === composerOwnerId ? coursesState.refs : NO_COURSE_REFS;
+    // The named courses go WITH this message: out of the composer now, so the
+    // next message does not carry them and nothing is left behind as a pill.
+    if (selectedCourses.length > 0) useCourseRefsStore.getState().clear();
+    // A draft's first message is on screen at once (see `openingMessage`).
+    if (!sessionId && draftConversation) {
+      setOpeningMessage({
+        key: `opening-${Date.now()}`,
+        kind: 'user',
+        text,
+        ...(selectedMaterials.length ? { materials: selectedMaterials.map((m) => m.name) } : {}),
+        ...(selectedRefs.length ? { elementRefs: [...selectedRefs] } : {}),
+        ...(selectedCourses.length ? { courseRefs: [...selectedCourses] } : {}),
+      });
+    }
     // Clear first so Enter does not freeze the box on the in-flight POST.
     replaceDraft('');
+    inlineMentions.reset();
     // Both dismissal memories go with the draft they named.
     setSlashDismissed(null);
     setMentionDismissed(null);
@@ -1035,7 +1163,14 @@ export function WorkbenchChat({
         warnUnsupported: () => toast.warning(t('workspace.courseMention.notAccepted')),
       });
     } else {
-      replaceDraft(text);
+      // Back as it was typed, mentions and all, with the courses they name.
+      setOpeningMessage(null);
+      replaceDraft(typed);
+      inlineMentions.restore(sentMentions);
+      const courses = useCourseRefsStore.getState();
+      if (courses.ownerSessionId === composerOwnerId) {
+        for (const ref of selectedCourses) courses.add(ref);
+      }
     }
   }
 
@@ -1099,6 +1234,7 @@ export function WorkbenchChat({
                   <ChatTimeline
                     chat={displayedChat}
                     plan={displayedPlan}
+                    turnActive={live}
                     onAnswer={answerQuestion}
                     dismissedQuestionKey={dismissedQuestionKey}
                     onReviveQuestion={(freeText) => {
@@ -1116,7 +1252,10 @@ export function WorkbenchChat({
                     t={t}
                   />
                 ) : showEmptyState ? (
-                  <WorkbenchChatEmptyState t={t} />
+                  <WorkbenchChatEmptyState
+                    t={t}
+                    copy={sessionId ? undefined : draftConversation?.emptyState}
+                  />
                 ) : null}
               </div>
             </div>
@@ -1210,21 +1349,19 @@ export function WorkbenchChat({
                   >
                     <MaterialChips
                       inline
-                      materials={materials.materials}
+                      materials={pillMaterials}
                       uploading={materials.uploading}
                       failed={materials.failed}
                       onRemove={materials.remove}
                       onRemoveFailed={materials.removeFailed}
+                      extraction={materials.extraction}
+                      onRetryFailed={materials.retryFailed}
+                      onRetryExtraction={materials.retryExtraction}
                     />
                     <ElementRefPills
                       inline
                       refs={elementRefs}
                       onRemove={useElementRefsStore.getState().removeRef}
-                    />
-                    <CourseRefPills
-                      inline
-                      refs={courseRefs}
-                      onRemove={useCourseRefsStore.getState().remove}
                     />
                   </ComposerPillRow>
                 ) : null}
@@ -1232,7 +1369,7 @@ export function WorkbenchChat({
                   <SkillSlashMenu
                     key={slash}
                     filter={slash}
-                    title={t('proMode.skillMenuTitle')}
+                    title={t('workspace.composer.skillMenuTitle')}
                     // A completion, not a picker: the half-typed `/query` becomes
                     // the real handle and the caret lands after it.
                     onPick={loadSkill}
@@ -1252,36 +1389,34 @@ export function WorkbenchChat({
                     onPickMaterial={pickMaterialMention}
                   />
                 ) : null}
-                {/* Two layers, one metric class: the mirror behind it draws the
-                    draft's `/handle` runs as inline pills without the value ever
-                    stopping being plain text (see `composer-input`). */}
-                <ComposerTextarea
-                  textareaRef={composerRef}
-                  data-testid="workbench-chat-composer"
-                  mirrorTestId="workbench-chat-composer-mirror"
-                  // Moving the caret while typing a query is not a press
-                  // "somewhere else" — see `CourseMentionMenu`'s outside press.
-                  data-mention-keep-open=""
+                <ComposerInput
+                  inputRef={composerRef}
+                  testId="workbench-chat-composer"
+                  rows={2}
                   value={draft}
-                  onCaretChange={setCaret}
-                  onChange={(e) => setDraft(e.target.value)}
+                  onCaretChange={reportCaret}
+                  mentions={inlineMentions.mentions}
+                  onMentionRestored={inlineMentions.revive}
+                  onValueChange={(text) => {
+                    setDraft(text);
+                    inlineMentions.afterEdit(text);
+                  }}
                   onPaste={(event) => {
-                    if (!materials.enabled) return;
+                    if (!materials.enabled || !event.clipboardData) return;
                     const images = composerImagesFromClipboard(event.clipboardData);
                     if (images.length === 0) return;
                     event.preventDefault();
                     materials.addFiles(images);
                   }}
                   onKeyDown={(e) => {
-                    if (onSkillHandleBackspace(e)) return;
                     if (openMenu === 'skill') return; // the slash menu owns Enter while open
                     if (mentionMenuOpen) return; // …and so does the `@` course menu
-                    if (!shouldSendComposerKey(e)) return;
+                    if (!shouldSendComposerKey(composerKeyEventOf(e))) return;
                     e.preventDefault();
                     void send();
                   }}
                   disabled={!canSend}
-                  aria-keyshortcuts={COMPOSER_SEND_ARIA_KEYSHORTCUTS}
+                  ariaKeyShortcuts={COMPOSER_SEND_ARIA_KEYSHORTCUTS}
                   placeholder={t(
                     shouldPromptForRefInstruction({
                       hasElementRefs: elementRefs.length > 0,
@@ -1302,7 +1437,7 @@ export function WorkbenchChat({
                   <AttachButton
                     testId="workbench-attach"
                     disabled={busy || !canSend}
-                    label={t('proMode.attach')}
+                    label={t('workspace.composer.attach')}
                     onFiles={materials.addFiles}
                   />
                   {/* Shown exactly when the menu can open: classrooms to name,
@@ -1313,8 +1448,8 @@ export function WorkbenchChat({
                       disabled={busy || !canSend}
                       label={t(
                         materials.enabled
-                          ? 'proMode.mentionCourseOrMaterial'
-                          : 'proMode.mentionCourse',
+                          ? 'workspace.composer.mentionCourseOrMaterial'
+                          : 'workspace.composer.mentionCourse',
                       )}
                       onClick={openMention}
                     />
@@ -1322,7 +1457,7 @@ export function WorkbenchChat({
                   <SkillButton
                     testId="workbench-skill-button"
                     disabled={busy || !canSend}
-                    label={t('proMode.loadSkill')}
+                    label={t('workspace.composer.loadSkill')}
                     onClick={openSkillMenu}
                   />
                 </div>
@@ -1365,7 +1500,8 @@ export function WorkbenchChat({
                       onClick={() => void send()}
                       disabled={
                         busy ||
-                        (!draft.trim() && materials.materials.length === 0) ||
+                        (!stripMentions(draft, inlineMentions.mentions) &&
+                          materials.materials.length === 0) ||
                         !canSend ||
                         awaitingMaterial
                       }

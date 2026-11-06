@@ -848,10 +848,11 @@ test('narrow conversation jump control stays centered without widening either me
   expect(control.x + control.width / 2).toBeCloseTo(viewport.x + viewport.width / 2, 0);
   expect(bubble.x - viewport.x).toBeCloseTo(16, 0);
   expect(viewport.contentRight - bubble.x - bubble.width).toBeCloseTo(16, 0);
-  const learner = (await assistant
-    .getByText('Learner question', { exact: true })
-    .locator('..')
-    .boundingBox())!;
+  const learnerBubble = assistant.getByText('Learner question', { exact: true }).locator('..');
+  await expect(learnerBubble).toHaveCSS('background-color', 'rgb(11, 122, 82)');
+  await expect(learnerBubble).toHaveCSS('color', 'rgb(255, 255, 255)');
+  await expect(learnerBubble).toHaveCSS('padding', '8px 12px');
+  const learner = (await learnerBubble.boundingBox())!;
   expect(viewport.contentRight - learner.x - learner.width).toBeCloseTo(16, 0);
   expect(control.y + control.height).toBeLessThanOrEqual(viewport.y + viewport.height);
 });

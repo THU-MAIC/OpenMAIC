@@ -11,6 +11,7 @@ import {
   isPptxImportEnabled,
   isVideoExportEnabled,
   isVocationalTaskEngineEnabled,
+  isWorkbenchEnabled,
   resolveVocationalActive,
   shouldShowVocationalTestUi,
 } from '@/lib/config/feature-flags';
@@ -56,14 +57,18 @@ describe('agent runtime configuration predicate', () => {
 });
 
 describe('isMaicEditorEnabled', () => {
-  const PRO_FLAG = 'NEXT_PUBLIC_PRO_WORKBENCH_ENABLED';
+  const WORKBENCH_FLAG = 'NEXT_PUBLIC_WORKBENCH_ENABLED';
+  const LEGACY_WORKBENCH_FLAG = 'NEXT_PUBLIC_PRO_WORKBENCH_ENABLED';
   let original: string | undefined;
-  let originalPro: string | undefined;
+  let originalWorkbench: string | undefined;
+  let originalLegacyWorkbench: string | undefined;
 
   beforeEach(() => {
     original = process.env[FLAG];
-    originalPro = process.env[PRO_FLAG];
-    delete process.env[PRO_FLAG];
+    originalWorkbench = process.env[WORKBENCH_FLAG];
+    originalLegacyWorkbench = process.env[LEGACY_WORKBENCH_FLAG];
+    delete process.env[WORKBENCH_FLAG];
+    delete process.env[LEGACY_WORKBENCH_FLAG];
   });
 
   afterEach(() => {
@@ -72,10 +77,15 @@ describe('isMaicEditorEnabled', () => {
     } else {
       process.env[FLAG] = original;
     }
-    if (originalPro === undefined) {
-      delete process.env[PRO_FLAG];
+    if (originalWorkbench === undefined) {
+      delete process.env[WORKBENCH_FLAG];
     } else {
-      process.env[PRO_FLAG] = originalPro;
+      process.env[WORKBENCH_FLAG] = originalWorkbench;
+    }
+    if (originalLegacyWorkbench === undefined) {
+      delete process.env[LEGACY_WORKBENCH_FLAG];
+    } else {
+      process.env[LEGACY_WORKBENCH_FLAG] = originalLegacyWorkbench;
     }
   });
 
@@ -104,16 +114,56 @@ describe('isMaicEditorEnabled', () => {
     expect(isMaicEditorEnabled()).toBe(false);
   });
 
-  it('is implied by the Pro workbench flag when its own flag is unset', () => {
+  it('is implied by the workbench flag when its own flag is unset', () => {
     delete process.env[FLAG];
-    process.env[PRO_FLAG] = 'true';
+    process.env[WORKBENCH_FLAG] = 'true';
     expect(isMaicEditorEnabled()).toBe(true);
   });
 
-  it('stays on under the Pro workbench flag even with its own flag set false', () => {
+  it('stays on under the workbench flag even with its own flag set false', () => {
     process.env[FLAG] = 'false';
-    process.env[PRO_FLAG] = 'true';
+    process.env[WORKBENCH_FLAG] = 'true';
     expect(isMaicEditorEnabled()).toBe(true);
+  });
+
+  it('is implied by the previous workbench flag name', () => {
+    delete process.env[FLAG];
+    process.env[LEGACY_WORKBENCH_FLAG] = 'true';
+    expect(isMaicEditorEnabled()).toBe(true);
+  });
+});
+
+describe('isWorkbenchEnabled', () => {
+  const WORKBENCH_FLAG = 'NEXT_PUBLIC_WORKBENCH_ENABLED';
+  const LEGACY_WORKBENCH_FLAG = 'NEXT_PUBLIC_PRO_WORKBENCH_ENABLED';
+  const originals = new Map<string, string | undefined>();
+
+  beforeEach(() => {
+    for (const name of [WORKBENCH_FLAG, LEGACY_WORKBENCH_FLAG]) {
+      originals.set(name, process.env[name]);
+      delete process.env[name];
+    }
+  });
+
+  afterEach(() => {
+    for (const [name, value] of originals) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    originals.clear();
+  });
+
+  it.each([
+    ['both names are unset', undefined, undefined, false],
+    ['only the new name is on', 'true', undefined, true],
+    ['only the previous name is on', undefined, 'true', true],
+    ['the previous name is on and the new name is blank', '', '1', true],
+    ['the new name is off and the previous name is on', 'false', 'true', false],
+    ['the new name is on and the previous name is off', '1', 'false', true],
+  ])('when %s', (_case, workbench, legacyWorkbench, expected) => {
+    if (workbench !== undefined) process.env[WORKBENCH_FLAG] = workbench;
+    if (legacyWorkbench !== undefined) process.env[LEGACY_WORKBENCH_FLAG] = legacyWorkbench;
+    expect(isWorkbenchEnabled()).toBe(expected);
   });
 });
 

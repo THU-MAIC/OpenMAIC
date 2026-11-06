@@ -26,7 +26,6 @@
     "examplesLabel": "Примеры тем",
     "examplePython": "Python с нуля",
     "exampleFourier": "Преобразование Фурье на простых примерах",
-    "desktopOnly": "Для редактора и режима Pro используйте компьютер.",
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
     "greetingWithName": "Привет, {{name}}"
   },
@@ -345,15 +344,25 @@
     "confirmSwitchTitle": "Переключить сцену",
     "confirmSwitchMessage": "В данный момент идёт обсуждение. Переключение сцены завершит текущую тему. Продолжить?",
     "generatingNextPage": "Сцена генерируется, пожалуйста подождите...",
-    "courseComplete": "Курс завершён",
     "fullscreen": "Полный экран",
     "exitFullscreen": "Свернуть",
     "editCourse": "Редактировать курс",
     "doneEditing": "Завершить редактирование",
-    "proModeDisabledHint": "Редактирование недоступно на этой странице — откройте слайд курса, чтобы редактировать в Pro-режиме."
+    "editDisabledHint": "Редактирование недоступно на этой странице — откройте слайд курса, чтобы его отредактировать.",
+    "editToggle": "Правка",
+    "openInWorkspace": "Открыть в рабочем пространстве",
+    "openInWorkspaceHint": "Открыть в рабочем пространстве, чтобы продолжить работу над курсом в диалоге",
+    "dock": {
+      "collapse": "Свернуть панель",
+      "expand": "Развернуть панель",
+      "resize": "Изменить высоту панели"
+    },
+    "chatPanel": {
+      "expand": "Показать панель беседы",
+      "collapse": "Скрыть панель беседы"
+    }
   },
   "edit": {
-    "proMode": "Pro",
     "undo": "Отменить",
     "redo": "Повторить",
     "courseHistory": {
@@ -581,7 +590,19 @@
       "whiteboardLatex": "Формула",
       "whiteboardTable": "Таблица",
       "action": "Действие",
-      "discussion": "Обсуждение"
+      "discussion": "Обсуждение",
+      "playVideo": "Воспроизвести видео",
+      "whiteboardChart": "Диаграмма",
+      "whiteboardLine": "Линия",
+      "whiteboardClear": "Очистить доску",
+      "whiteboardDelete": "Убрать элемент",
+      "whiteboardClose": "Закрыть доску",
+      "whiteboardCode": "Блок кода",
+      "whiteboardEditCode": "Изменить код",
+      "widgetHighlight": "Выделить в активности",
+      "widgetSetState": "Задать состояние активности",
+      "widgetAnnotation": "Подписать в активности",
+      "widgetReveal": "Показать в активности"
     },
     "element": {
       "toolbar": "Панель элемента",
@@ -646,12 +667,6 @@
     "timeline": {
       "title": "Сценарий закадрового текста",
       "regenAllTts": "Сгенерировать всю озвучку заново",
-      "voiceAll": "Озвучить всё",
-      "counts": "{{speech}} реплик · {{cue}} действий",
-      "panLeft": "Прокрутить влево",
-      "panRight": "Прокрутить вправо",
-      "collapseAxis": "Свернуть до оси",
-      "expandTrack": "Развернуть дорожку",
       "emptyHint": "Перетащите действия на ось, чтобы начать, или позвольте MAIC Agent сгенерировать закадровый текст.",
       "speechPlaceholder": "Введите эту реплику…",
       "reorder": "Перетащите для изменения порядка",
@@ -663,13 +678,15 @@
       "fieldElement": "Элемент",
       "fieldContent": "Содержимое",
       "addDiscussionExists": "Только одно обсуждение на сцену",
-      "discussionTerminal": "КОНЕЦ",
       "discussionTerminalHint": "Обсуждение закрепляется в конце сцены (одно на сцену)",
-      "discussionTopicPlaceholder": "Тема обсуждения (обязательно)",
-      "discussionPromptPlaceholder": "Подсказка (необязательно)",
+      "discussionTopicPlaceholder": "Обязательно",
+      "discussionPromptPlaceholder": "Необязательно",
+      "discussionTopicLabel": "Тема обсуждения",
+      "discussionPromptLabel": "Подсказка",
       "discussionAgent": "Инициатор",
       "discussionAgentUnset": "Не указан",
-      "addAction": "Добавить действие"
+      "addAction": "Добавить действие",
+      "fieldState": "Состояние"
     },
     "picker": {
       "title": "Вставить действие",
@@ -753,8 +770,7 @@
       "moveDown": "Переместить вниз",
       "removeFromClass": "Удалить из класса",
       "aiClassmates": "AI-одноклассники · {{count}}",
-      "addRole": "Добавить роль",
-      "shortTitle": "Состав"
+      "addRole": "Добавить роль"
     },
     "elementRef": {
       "remove": "移除引用 {{label}}",
@@ -765,21 +781,6 @@
     "dock": {
       "elementRefHint": "Ссылки на элементы — выберите элементы для следующего сообщения",
       "globalTools": "Общие инструменты"
-    }
-  },
-  "classroomComplete": {
-    "title": "Курс завершён",
-    "trailLabels": {
-      "slide": "страниц",
-      "quiz": "тестов",
-      "interactive": "интерактивов",
-      "pbl": "проектов"
-    },
-    "quizScoreLabel": "Верно {{correct}} из {{total}}",
-    "encouragement": {
-      "high": "Отлично — вы справились!",
-      "mid": "Хорошая работа — продолжайте.",
-      "low": "Неплохое начало — повторите ещё раз."
     }
   },
   "whiteboard": {
@@ -2367,6 +2368,7 @@
     "sceneCount_one": "{{count}} 页",
     "sceneCount_other": "{{count}} 页",
     "courseLinkHint": "在右侧打开《{{name}}》",
+    "courseLinkOpen": "Открыть",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
       "search": "Поиск классов и материалов",
@@ -2398,7 +2400,6 @@
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
     "newSession": "New chat",
     "sections": {
-      "courses": "Courses",
       "sessions": "Chats"
     },
     "coursesEmpty": "No courses yet",
@@ -2408,7 +2409,6 @@
     "retry": "Retry",
     "untitledSession": "Untitled chat",
     "pagePosition": "Page {{index}} of {{total}}",
-    "exitPro": "Exit Pro",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
@@ -2417,7 +2417,7 @@
     "learningMode": "Учиться",
     "editingMode": "Править",
     "editingUnavailableGenerating": "Редактирование недоступно во время создания курса.",
-    "fullscreenLearning": "Учиться на весь экран",
+    "editGuide": "Руководство по редактированию",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2433,8 +2433,6 @@
       "cancelled": "Stopped"
     },
     "backToWorkspace": "Back to workspace",
-    "searchPlaceholder": "Filter by name",
-    "searchAria": "Search {{section}}",
     "searchEmpty": "No matches",
     "showMore": "Show {{count}} more",
     "showLess": "Show less",
@@ -2456,7 +2454,6 @@
     "coursePausedDesc": "Одну страницу не удалось создать. Повторите попытку в классе; курс откроется здесь, когда создание завершится.",
     "viewGenerationProgress": "Посмотреть ход создания",
     "openToRetry": "Открыть и повторить",
-    "courseGeneratingRowHint": "Доступно после завершения создания",
     "noCourseTitle": "No course open",
     "noCourseHint": "Откройте по ссылке на курс в переписке или выберите курс в списке слева — переписка останется на месте",
     "resizeChatAria": "Drag to resize the conversation pane",
@@ -2465,7 +2462,6 @@
     "autoSaved": "Сохранено",
     "collapsedTitle": "Both panes are collapsed",
     "collapsedHint": "Use the tabs on the left to bring the conversation or the classroom back",
-    "moreUtilities": "More",
     "rowMore": "Другие действия для {{name}}",
     "folderDeleteHint": "Курсы из папки вернутся на верхний уровень. Ничего не удаляется.",
     "dropToUnfile": "Перетащите сюда, чтобы убрать из папки",
@@ -2479,11 +2475,179 @@
     "confirmDelete": "Подтвердить удаление",
     "deleting": "Удаление…",
     "deleteFailed": "Не удалось удалить. Повторите попытку.",
-    "tabsAria": "Chats and courses",
     "courseTabsAria": "Открытые курсы",
     "courseTabClose": "Закрыть вкладку: {{name}}",
     "courseTabRunning": "Генерируется",
-    "foldersUnavailable": "Папки недоступны в этой сборке"
+    "foldersUnavailable": "Папки недоступны в этой сборке",
+    "composer": {
+      "attach": "Прикрепить материал",
+      "mentionCourse": "引用课堂",
+      "mentionCourseOrMaterial": "Упомянуть кабинет или материал из базы знаний",
+      "loadSkill": "加载 skill",
+      "skillMenuTitle": "选择课程设计技能",
+      "skillsLoading": "正在加载 skill…",
+      "noSkillsAvailable": "暂无可用 skill",
+      "userSkillsGroup": "我的 Skill",
+      "builtinSkillsGroup": "内置 Skill",
+      "skillsLoadFailed": "Skill 加载失败，点击重试",
+      "retrySkills": "重试",
+      "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+      "launchPlaceholder": "Опишите учебный опыт, который хотите создать",
+      "launchSend": "Начать сборку"
+    },
+    "nav": {
+      "search": "Поиск",
+      "myCourses": "Мои курсы"
+    },
+    "search": {
+      "placeholder": "Поиск по чатам, курсам и материалам",
+      "recentChats": "Недавние чаты",
+      "recentCourses": "Недавние курсы",
+      "courses": "Курсы",
+      "materials": "Материалы",
+      "actions": "Быстрые действия",
+      "searching": "Поиск…",
+      "empty": "Ничего не найдено по запросу «{{query}}»",
+      "materialsFailed": "Не удалось выполнить поиск в базе знаний",
+      "themeAction": "Тема: {{name}}",
+      "languageAction": "Язык: {{name}}"
+    },
+    "account": {
+      "signIn": "Войти",
+      "menu": "Аккаунт и настройки",
+      "profileSaved": "Сохранено",
+      "language": "Язык",
+      "about": "Об OpenMAIC",
+      "aboutBody": "Платформа с открытым исходным кодом, которая превращает любую тему в интерактивный класс с ИИ-преподавателями и одноклассниками. Распространяется по лицензии MIT.",
+      "viewOnGithub": "Открыть на GitHub",
+      "docs": "Документация",
+      "signOut": "Выйти",
+      "onboarding": "С чего начать"
+    },
+    "coursesPage": {
+      "subtitle": "Курсы, которые вы создали или импортировали, и папки, в которых они лежат",
+      "searchPlaceholder": "Поиск по моим курсам",
+      "results": "Результаты поиска",
+      "allCourses": "Все курсы",
+      "emptyHint": "Опишите тему на главной странице, и здесь появится ваш первый урок.",
+      "makeCourse": "Создать урок"
+    },
+    "fullscreen": {
+      "expand": "Во весь экран",
+      "collapse": "Выйти из полноэкранного режима (Esc)"
+    },
+    "guide": {
+      "chatTitle": "Хотите изменить урок? Напишите здесь",
+      "chatHint": "Например: «сделай страницу 2 проще». Для нового урока — «Новый чат»."
+    },
+    "onboarding": {
+      "paneTitle": "Учиться или редактировать",
+      "paneLearn": "«Учиться»: ИИ-преподаватель ведёт урок, задавайте вопросы в любой момент.",
+      "paneEdit": "«Редактировать»: меняйте страницы напрямую.",
+      "paneChat": "Или попросите в чате, например: «сделай страницу 2 проще».",
+      "gotIt": "Понятно"
+    },
+    "tour": {
+      "skip": "Пропустить",
+      "prev": "Назад",
+      "next": "Далее",
+      "done": "Написать своё",
+      "count": "{{index}} / {{total}}",
+      "openGuide": "Пройти пробный урок",
+      "welcome": {
+        "title": "Добро пожаловать в OpenMAIC",
+        "body": "Скажите, что хотите изучить, и OpenMAIC создаст интерактивный урок с ИИ-преподавателем и однокурсниками."
+      },
+      "start": {
+        "title": "Начните здесь",
+        "body": "«Новый чат» начинает новый урок. Поиск (⌘K) находит уроки, чаты и материалы."
+      },
+      "courses": {
+        "title": "Пробный урок",
+        "body": "Этот 5-минутный урок тоже сделан в OpenMAIC. Откройте его и посмотрите, где идёт урок."
+      },
+      "library": {
+        "title": "База знаний",
+        "body": "Загрузите конспекты и PDF один раз и используйте их в любом уроке."
+      },
+      "conversations": {
+        "title": "Чаты",
+        "body": "Каждый урок создаётся в чате. Чтобы изменить его, вернитесь в этот чат и попросите."
+      },
+      "mode": {
+        "title": "Учиться или редактировать",
+        "body": "«Учиться» — урок с ИИ-преподавателем, «Редактировать» — правка по страницам."
+      },
+      "dock": {
+        "title": "Класс",
+        "body": "Воспроизведение, страницы, вопросы ИИ-преподавателю в любой момент; однокурсники тоже обсуждают."
+      },
+      "chat": {
+        "title": "Меняйте в чате",
+        "body": "Просто напишите в чате рядом «сделай страницу 2 проще», и ИИ изменит урок."
+      },
+      "account": {
+        "title": "Аккаунт и настройки",
+        "body": "Профиль, настройки, язык и тема — здесь, и это руководство тоже."
+      },
+      "try": {
+        "title": "Попробуйте сейчас",
+        "body": "Введите тему или выберите пример, чтобы начать сразу.",
+        "attach": "Материал: загрузите конспект как основу урока",
+        "mention": "Ссылка: @ урок или материал из базы знаний",
+        "skill": "Навыки: выберите стиль, например «Глубокое взаимодействие»"
+      },
+      "examples": {
+        "sky": {
+          "label": "Почему небо голубое?",
+          "prompt": "Почему небо голубое? Объясни на том, что я вижу каждый день"
+        },
+        "interest": {
+          "label": "Как работают сложные проценты",
+          "prompt": "Объясни на бытовых примерах, как работают сложные проценты"
+        },
+        "teach": {
+          "label": "Преподать: Пифагор, 8 класс",
+          "prompt": "Урок по теореме Пифагора для 8 класса с коротким тестом в конце"
+        }
+      },
+      "coursesNav": {
+        "title": "Мои курсы",
+        "body": "Здесь ваши готовые уроки. Нажмите, чтобы посмотреть."
+      },
+      "openLook": "Открыть",
+      "edit": {
+        "canvas": {
+          "title": "Страница",
+          "body": "Нажмите на текст, изображение или фигуру, чтобы изменить; перетаскивайте, чтобы двигать и менять размер."
+        },
+        "pages": {
+          "title": "Страницы",
+          "body": "Здесь открывается список страниц: добавляйте, перетаскивайте, удаляйте."
+        },
+        "bar": {
+          "title": "Панель управления",
+          "body": "Добавить действие, озвучить текст, листать и добавлять страницы, выбрать преподавателя и однокурсников; справа — обвести элементы для ИИ."
+        },
+        "timeline": {
+          "title": "Дорожка действий",
+          "body": "Каждая карточка — действие: объяснение, подсветка, обсуждение. Перетаскивайте для порядка, нажмите для правки."
+        },
+        "dock": {
+          "title": "Нижняя панель",
+          "body": "Потяните за верхний край, чтобы изменить высоту, или сверните её, чтобы освободить место."
+        },
+        "learn": {
+          "title": "Предпросмотр",
+          "body": "Вернитесь в «Учиться», чтобы увидеть урок глазами ученика."
+        },
+        "chat": {
+          "title": "Попросите ИИ",
+          "body": "Не хотите вручную? Напишите в чате, например: «добавь упражнение на страницу 2»."
+        }
+      },
+      "editDone": "Начать правку"
+    }
   },
   "profile": {
     "title": "Профиль",
@@ -2515,25 +2679,6 @@
     "placeholder": "Код доступа",
     "error": "Неверный код доступа. Попробуйте ещё раз."
   },
-  "proMode": {
-    "attach": "Прикрепить материал",
-    "mentionCourse": "引用课堂",
-    "loadSkill": "加载 skill",
-    "skillMenuTitle": "选择课程设计技能",
-    "skillsLoading": "正在加载 skill…",
-    "noSkillsAvailable": "暂无可用 skill",
-    "userSkillsGroup": "我的 Skill",
-    "builtinSkillsGroup": "内置 Skill",
-    "skillsLoadFailed": "Skill 加载失败，点击重试",
-    "retrySkills": "重试",
-    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
-    "badgeAria": "Pro-режим",
-    "badgeEnter": "Pro-режим",
-    "badgeExit": "Вернуться в обычный режим",
-    "launchPlaceholder": "Опишите учебный опыт, который хотите создать",
-    "launchSend": "Начать сборку",
-    "mentionCourseOrMaterial": "Упомянуть кабинет или материал из базы знаний"
-  },
   "workbench": {
     "tool": {
       "label": {
@@ -2543,6 +2688,16 @@
       "error": {
         "materialExtraction": null
       }
+    }
+  },
+  "classroomEnd": {
+    "close": "Вернуться на последнюю страницу",
+    "learned": "Страниц пройдено: {{count}}",
+    "result": "Верно: {{correct}} из {{total}}",
+    "actions": {
+      "reviewWrong": "Разобрать ошибки",
+      "doQuiz": "К тесту",
+      "restart": "Начать заново"
     }
   },
   "sandbox": {

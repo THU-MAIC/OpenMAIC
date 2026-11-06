@@ -42,6 +42,20 @@ const log = createLogger('StageStore');
 /** Virtual scene ID used when the user navigates to a page still being generated */
 export const PENDING_SCENE_ID = '__pending__';
 
+/**
+ * The pending slot means a page still being generated. A course that has none left has
+ * no such slot, though older documents saved it as where they were (it used to be the
+ * completion page too): those land on the last real page.
+ */
+export function resolveLoadedSceneId(
+  currentSceneId: string | null,
+  scenes: readonly { id: string }[],
+  generatingOutlines: readonly unknown[],
+): string | null {
+  if (currentSceneId !== PENDING_SCENE_ID || generatingOutlines.length > 0) return currentSceneId;
+  return scenes.at(-1)?.id ?? currentSceneId;
+}
+
 export type StageSceneLoadToken = number;
 
 let latestStageSceneLoadToken = 0;
@@ -1363,7 +1377,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         set({
           stage: data.stage,
           scenes: migrated,
-          currentSceneId: data.currentSceneId,
+          currentSceneId: resolveLoadedSceneId(data.currentSceneId, migrated, generatingOutlines),
           chats: data.chats,
           chatSnapshot: data.chatSnapshot ?? { sessions: [], restoreMarker: undefined },
           outlines,

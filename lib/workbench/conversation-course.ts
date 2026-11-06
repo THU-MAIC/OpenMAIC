@@ -41,12 +41,18 @@ export function conversationTargetStageIds(chat: readonly ChatNode[]): string[] 
  * look through existing courses and that has created none: it is working on
  * existing courses, not producing one. Durable facts only — the binding and
  * the calls the agent made — never the wording of the request.
+ *
+ * Every conversation carries a stage id, a new one included: there it is the
+ * id its course will be created under, so it names nothing yet. Only a bound
+ * id that is a course in the library (`isExistingCourse`) is a binding beside
+ * one; a new request glancing at the library is still producing a course.
  */
 export function worksOnExistingCourses(
   chat: readonly ChatNode[],
   boundStageId: string | null,
+  isExistingCourse: (stageId: string) => boolean = () => true,
 ): boolean {
-  if (!boundStageId) return false;
+  if (!boundStageId || !isExistingCourse(boundStageId)) return false;
   let looked = false;
   for (const node of chat) {
     if (node.kind !== 'tool' || !node.toolName) continue;

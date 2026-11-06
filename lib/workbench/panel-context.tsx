@@ -13,11 +13,9 @@ export interface WorkbenchPanelState {
   readonly hosted: boolean;
   /** Whether the classroom column is actually visible in the workspace. */
   readonly visible: boolean;
-  /** Whether the hosted classroom is in full-screen learning playback. */
-  readonly playback: boolean;
   /** Whether this pane currently requests the learning chrome. */
   readonly learning: boolean;
-  /** Editing intent after applying visibility, playback and course access gates. */
+  /** Editing intent after applying visibility and course access gates. */
   readonly editPinned: boolean;
   /** The pane header's element that hosts the editor's undo/redo buttons. */
   readonly historySlot: HTMLElement | null;
@@ -26,7 +24,6 @@ export interface WorkbenchPanelState {
 const OUTSIDE_WORKBENCH: WorkbenchPanelState = {
   hosted: false,
   visible: true,
-  playback: false,
   editPinned: false,
   learning: false,
   historySlot: null,
@@ -37,26 +34,26 @@ const WorkbenchPanelContext = createContext<WorkbenchPanelState>(OUTSIDE_WORKBEN
 export function WorkbenchPanelProvider({
   children,
   visible = true,
-  playback = false,
-  learning = playback,
+  learning = true,
   historySlot = null,
 }: {
   readonly children: ReactNode;
   readonly visible?: boolean;
-  readonly playback?: boolean;
   readonly learning?: boolean;
   readonly historySlot?: HTMLElement | null;
 }) {
+  // The pane's size (split or full screen) is not part of this: the hosted
+  // classroom renders the same chrome at either size, and the pane draws the
+  // header around it.
   const value = useMemo<WorkbenchPanelState>(
     () => ({
       hosted: true,
       visible,
-      playback,
       learning,
-      editPinned: visible && !playback && !learning,
+      editPinned: visible && !learning,
       historySlot,
     }),
-    [playback, visible, learning, historySlot],
+    [visible, learning, historySlot],
   );
   return <WorkbenchPanelContext.Provider value={value}>{children}</WorkbenchPanelContext.Provider>;
 }
@@ -79,6 +76,8 @@ export interface WorkbenchCourseSummary {
   readonly id: string;
   readonly name: string;
   readonly pageCount: number | null;
+  /** Its last change (epoch ms), the version its cover is cached under; `null` when unknown. */
+  readonly updatedAt?: number | null;
 }
 
 /**
@@ -150,6 +149,12 @@ export interface WorkbenchDraftConversation {
     readonly elementRefsAccepted: boolean;
     readonly courseRefsAccepted: boolean;
   }>;
+  /**
+   * What the empty conversation says instead of the default placeholder, for a
+   * draft whose first message does something other than continue the course
+   * beside it (the built-in guide course: a message there starts a new one).
+   */
+  readonly emptyState?: { readonly title: string; readonly hint: string };
 }
 
 const WorkbenchDraftConversationContext = createContext<WorkbenchDraftConversation | null>(null);

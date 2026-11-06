@@ -341,15 +341,16 @@ function RequestPreview({
       data-preview-awaiting={asking ? 'true' : undefined}
       aria-hidden={hidden || undefined}
       className={cn(
-        'ws-pane ws-pane-last h-full min-w-0 flex-1 flex-col',
+        'ws-pane ws-pane-last ws-pane-enter h-full min-w-0 flex-1 flex-col',
         hidden ? 'hidden' : 'flex',
       )}
     >
       {/* The course pane's header, with the one preview tab in its strip. */}
       <header className="ws-pane-head ws-classroom-head flex shrink-0 items-center px-2">
         {onCollapse ? (
-          <span className="mr-1 flex shrink-0 items-center">
+          <span className="flex shrink-0 items-center">
             <PaneFoldButton
+              className="ws-pane-fold"
               testId="workspace-preview-fold"
               label={t('workspace.collapseClassroom')}
               direction="right"
@@ -358,7 +359,10 @@ function RequestPreview({
           </span>
         ) : null}
         <WorkspaceCourseTabs
-          tabs={[...(strip?.tabs ?? []), { id: PREVIEW_TAB_ID, name: label }]}
+          tabs={[
+            ...(strip?.tabs ?? []),
+            { id: PREVIEW_TAB_ID, name: label, kind: 'preview', busy: copy.key !== 'resting' },
+          ]}
           activeCourseId={PREVIEW_TAB_ID}
           onActivate={(id) => (id === PREVIEW_TAB_ID ? undefined : strip?.onActivate(id))}
           onClose={(id) => (id === PREVIEW_TAB_ID ? onClose() : strip?.onCloseCourse(id))}
@@ -649,6 +653,10 @@ function AgentDocument({ text }: { readonly text: string }) {
  * that stays for the rest of the request. Each badge settles in with one soft
  * shine; a skill load is never a scene of its own.
  */
+function isInternalSkillId(id: string): boolean {
+  return id.startsWith('usk_');
+}
+
 function EquippedSkills({
   skills,
   t,
@@ -674,13 +682,20 @@ function EquippedSkills({
         const known = (Array.isArray(registry) ? registry : []).find(
           (skill) => skill.id === id || skill.name === id,
         );
-        const title = skillTitle(known ?? { name: id }, t as WorkbenchTranslator) ?? id;
+        // A user Skill is equipped by its internal id (`usk_*`); until the
+        // registry names it, it shows nothing rather than that id.
+        const title =
+          skillTitle(known ?? { name: id }, t as WorkbenchTranslator) ??
+          (known ? known.name : isInternalSkillId(id) ? null : id);
+        if (!title) return null;
         return (
           <motion.li
             key={id}
             layout={!reduced}
             data-skill={id}
-            title={`/${id}`}
+            // The readable name, for a badge too narrow to show it whole. Never
+            // the id: a skill the user made is named by an internal id.
+            title={title}
             initial={reduced ? false : { opacity: 0, y: -4, scale: 0.92 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ duration: reduced ? 0 : 0.45, ease: EASE }}

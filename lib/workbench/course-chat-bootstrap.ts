@@ -38,6 +38,8 @@
  * conversation minted for it, because none is minted for anybody.
  */
 
+import { isGuideCourseId } from './guide-course';
+
 export type CourseChatBootstrap =
   /** Nothing to do: no course open, or a conversation is already there. */
   | { readonly kind: 'settled' }
@@ -132,6 +134,10 @@ export function resolveCourseChatBootstrap(input: {
   // teardown before showing the draft made New chat briefly remove the whole
   // middle column.
   if (newConversationRequested) return { kind: 'draft', courseId };
+  // The seeded guide course was made by no conversation: carrying the most
+  // recent one over would set an unrelated course's chat beside it. An empty
+  // one is offered instead, whose first message is about this course.
+  if (isGuideCourseId(courseId)) return { kind: 'draft', courseId };
   if (attachedSessionId) return { kind: 'settled' };
   if (!sessionsLoaded) return { kind: 'settled' };
   const recent = mostRecentSession(sessions);

@@ -26,7 +26,6 @@
     "examplesLabel": "テーマの例",
     "examplePython": "Python を基礎から学ぶ",
     "exampleFourier": "フーリエ変換を直感的に学ぶ",
-    "desktopOnly": "エディターと Pro モードはパソコンをご利用ください。",
     "slogan": "マルチエージェント対話型教室で生成的に学ぶ",
     "greetingWithName": "こんにちは、{{name}}さん"
   },
@@ -345,15 +344,25 @@
     "confirmSwitchTitle": "シーンの切り替え",
     "confirmSwitchMessage": "現在トピックが進行中です。シーンを切り替えると、現在のトピックが終了します。よろしいですか？",
     "generatingNextPage": "シーンを生成中です。お待ちください...",
-    "courseComplete": "コース完了",
     "fullscreen": "全画面表示",
     "exitFullscreen": "全画面表示を終了",
     "editCourse": "コースを編集",
     "doneEditing": "編集を完了",
-    "proModeDisabledHint": "このページでは編集できません。コースのスライドを開くと Pro モードで編集できます。"
+    "editDisabledHint": "このページでは編集できません。コースのスライドを開くと編集できます。",
+    "editToggle": "編集",
+    "openInWorkspace": "ワークスペースで開く",
+    "openInWorkspaceHint": "ワークスペースで開き、会話しながらこのコースの作業を続ける",
+    "dock": {
+      "collapse": "下部バーを折りたたむ",
+      "expand": "下部バーを展開",
+      "resize": "下部バーの高さを変更"
+    },
+    "chatPanel": {
+      "expand": "会話パネルを表示",
+      "collapse": "会話パネルを隠す"
+    }
   },
   "edit": {
-    "proMode": "プロモード",
     "undo": "元に戻す",
     "redo": "やり直し",
     "courseHistory": {
@@ -581,7 +590,19 @@
       "whiteboardLatex": "数式",
       "whiteboardTable": "表",
       "action": "アクション",
-      "discussion": "ディスカッション"
+      "discussion": "ディスカッション",
+      "playVideo": "動画を再生",
+      "whiteboardChart": "グラフ",
+      "whiteboardLine": "線を描く",
+      "whiteboardClear": "ボードを消去",
+      "whiteboardDelete": "要素を消す",
+      "whiteboardClose": "ボードを閉じる",
+      "whiteboardCode": "コードブロック",
+      "whiteboardEditCode": "コードを編集",
+      "widgetHighlight": "インタラクティブ要素を強調",
+      "widgetSetState": "インタラクティブ状態を設定",
+      "widgetAnnotation": "インタラクティブ要素に注釈",
+      "widgetReveal": "インタラクティブ要素を表示"
     },
     "element": {
       "toolbar": "要素ツールバー",
@@ -646,12 +667,6 @@
     "timeline": {
       "title": "ナレーション台本",
       "regenAllTts": "すべての音声を再生成",
-      "voiceAll": "全音声生成",
-      "counts": "{{speech}} ナレーション · {{cue}} アクション",
-      "panLeft": "左にスクロール",
-      "panRight": "右にスクロール",
-      "collapseAxis": "軸に折りたたむ",
-      "expandTrack": "トラックを展開",
       "emptyHint": "上のアクションを軸にドラッグして開始するか、MAIC Agent にナレーションを生成させましょう。",
       "speechPlaceholder": "このナレーションを入力…",
       "reorder": "ドラッグして並べ替え",
@@ -663,13 +678,15 @@
       "fieldElement": "要素",
       "fieldContent": "内容",
       "addDiscussionExists": "各シーンにディスカッションは1つまで",
-      "discussionTerminal": "末尾",
       "discussionTerminalHint": "ディスカッションはシーンの末尾に固定され、各シーンに1つだけです",
-      "discussionTopicPlaceholder": "ディスカッションの主題（必須）",
-      "discussionPromptPlaceholder": "ガイドプロンプト（任意）",
+      "discussionTopicPlaceholder": "必須",
+      "discussionPromptPlaceholder": "任意",
+      "discussionTopicLabel": "ディスカッションの主題",
+      "discussionPromptLabel": "ガイドプロンプト",
       "discussionAgent": "開始者",
       "discussionAgentUnset": "指定なし",
-      "addAction": "アクションを追加"
+      "addAction": "アクションを追加",
+      "fieldState": "状態"
     },
     "picker": {
       "title": "アクションを挿入",
@@ -753,8 +770,7 @@
       "moveDown": "下へ移動",
       "removeFromClass": "クラスから削除",
       "aiClassmates": "AIクラスメイト · {{count}}",
-      "addRole": "役割を追加",
-      "shortTitle": "編成"
+      "addRole": "役割を追加"
     },
     "elementRef": {
       "remove": "移除引用 {{label}}",
@@ -765,21 +781,6 @@
     "dock": {
       "elementRefHint": "要素参照 — 次のメッセージと一緒に送る要素を選ぶ",
       "globalTools": "全体ツール"
-    }
-  },
-  "classroomComplete": {
-    "title": "コース完了",
-    "trailLabels": {
-      "slide": "ページ",
-      "quiz": "クイズ",
-      "interactive": "インタラクティブ",
-      "pbl": "プロジェクト"
-    },
-    "quizScoreLabel": "{{correct}} / {{total}} 正解",
-    "encouragement": {
-      "high": "素晴らしい！完璧です。",
-      "mid": "いい感じ、その調子。",
-      "low": "始まりはこれから。復習しましょう。"
     }
   },
   "whiteboard": {
@@ -2367,6 +2368,7 @@
     "sceneCount_one": "{{count}} 页",
     "sceneCount_other": "{{count}} 页",
     "courseLinkHint": "在右侧打开《{{name}}》",
+    "courseLinkOpen": "開く",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
       "search": "教室と資料を検索",
@@ -2398,7 +2400,6 @@
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
     "newSession": "New chat",
     "sections": {
-      "courses": "Courses",
       "sessions": "Chats"
     },
     "coursesEmpty": "No courses yet",
@@ -2408,7 +2409,6 @@
     "retry": "Retry",
     "untitledSession": "Untitled chat",
     "pagePosition": "Page {{index}} of {{total}}",
-    "exitPro": "Exit Pro",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
@@ -2417,7 +2417,7 @@
     "learningMode": "学習",
     "editingMode": "編集",
     "editingUnavailableGenerating": "コース生成中は編集できません。",
-    "fullscreenLearning": "全画面で学習",
+    "editGuide": "編集ガイド",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2433,8 +2433,6 @@
       "cancelled": "Stopped"
     },
     "backToWorkspace": "Back to workspace",
-    "searchPlaceholder": "Filter by name",
-    "searchAria": "Search {{section}}",
     "searchEmpty": "No matches",
     "showMore": "Show {{count}} more",
     "showLess": "Show less",
@@ -2456,7 +2454,6 @@
     "coursePausedDesc": "生成に失敗したページがあります。教室で再試行してください。生成が完了するとここで開きます。",
     "viewGenerationProgress": "生成の進捗を見る",
     "openToRetry": "開いて再試行",
-    "courseGeneratingRowHint": "生成完了後に開けます",
     "noCourseTitle": "No course open",
     "noCourseHint": "会話内のコースリンクから開くか、左のリストから選んでください。会話はそのまま残ります",
     "resizeChatAria": "Drag to resize the conversation pane",
@@ -2465,7 +2462,6 @@
     "autoSaved": "保存済み",
     "collapsedTitle": "Both panes are collapsed",
     "collapsedHint": "Use the tabs on the left to bring the conversation or the classroom back",
-    "moreUtilities": "More",
     "rowMore": "{{name}}のその他の操作",
     "folderDeleteHint": "フォルダー内のコースはトップレベルに戻ります。削除はされません。",
     "dropToUnfile": "ここにドロップするとフォルダーから外れます",
@@ -2479,11 +2475,179 @@
     "confirmDelete": "削除を確認",
     "deleting": "削除中…",
     "deleteFailed": "削除できませんでした。もう一度お試しください。",
-    "tabsAria": "Chats and courses",
     "courseTabsAria": "開いているコース",
     "courseTabClose": "タブを閉じる：{{name}}",
     "courseTabRunning": "生成中",
-    "foldersUnavailable": "このビルドではフォルダーは利用できません"
+    "foldersUnavailable": "このビルドではフォルダーは利用できません",
+    "composer": {
+      "attach": "教材を添付",
+      "mentionCourse": "引用课堂",
+      "mentionCourseOrMaterial": "クラスまたはナレッジベースの素材を参照",
+      "loadSkill": "加载 skill",
+      "skillMenuTitle": "选择课程设计技能",
+      "skillsLoading": "正在加载 skill…",
+      "noSkillsAvailable": "暂无可用 skill",
+      "userSkillsGroup": "我的 Skill",
+      "builtinSkillsGroup": "内置 Skill",
+      "skillsLoadFailed": "Skill 加载失败，点击重试",
+      "retrySkills": "重试",
+      "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+      "launchPlaceholder": "作りたい学習体験を描いてください",
+      "launchSend": "構築を開始"
+    },
+    "nav": {
+      "search": "検索",
+      "myCourses": "マイコース"
+    },
+    "search": {
+      "placeholder": "チャット、コース、資料を検索",
+      "recentChats": "最近のチャット",
+      "recentCourses": "最近のコース",
+      "courses": "コース",
+      "materials": "資料",
+      "actions": "クイック操作",
+      "searching": "検索中…",
+      "empty": "「{{query}}」に一致する結果はありません",
+      "materialsFailed": "ナレッジベースを検索できませんでした",
+      "themeAction": "テーマ：{{name}}",
+      "languageAction": "言語：{{name}}"
+    },
+    "account": {
+      "signIn": "ログイン",
+      "menu": "アカウントと設定",
+      "profileSaved": "保存しました",
+      "language": "言語",
+      "about": "OpenMAIC について",
+      "aboutBody": "どんなテーマでも、AI の先生とクラスメートがいるインタラクティブな教室に変えるオープンソースのプラットフォームです。MIT ライセンスで公開しています。",
+      "viewOnGithub": "GitHub で見る",
+      "docs": "ドキュメント",
+      "signOut": "ログアウト",
+      "onboarding": "はじめてガイド"
+    },
+    "coursesPage": {
+      "subtitle": "作成またはインポートしたコースと、それを整理するフォルダー",
+      "searchPlaceholder": "マイコースを検索",
+      "results": "検索結果",
+      "allCourses": "すべてのコース",
+      "emptyHint": "ホームでテーマを書くと、最初のクラスがここに表示されます。",
+      "makeCourse": "クラスを作る"
+    },
+    "fullscreen": {
+      "expand": "全画面",
+      "collapse": "全画面を終了（Esc）"
+    },
+    "guide": {
+      "chatTitle": "このクラスを直したい？ここに書いてください",
+      "chatHint": "例：「2 ページ目をもっと簡単に」。新しいクラスは「新しいチャット」から。"
+    },
+    "onboarding": {
+      "paneTitle": "学習か、編集か",
+      "paneLearn": "「学習」：AI 先生と授業を進め、いつでも質問できます。",
+      "paneEdit": "「編集」：ページを直接修正します。",
+      "paneChat": "チャットで「2 ページ目をもっと簡単に」と頼むこともできます。",
+      "gotIt": "OK"
+    },
+    "tour": {
+      "skip": "スキップ",
+      "prev": "戻る",
+      "next": "次へ",
+      "done": "自分で入力",
+      "count": "{{index}} / {{total}}",
+      "openGuide": "体験クラスを受ける",
+      "welcome": {
+        "title": "OpenMAIC へようこそ",
+        "body": "学びたいことを一言書くと、AI の先生とクラスメートがいる対話型クラスを作ります。"
+      },
+      "start": {
+        "title": "ここから始める",
+        "body": "「新しいチャット」で新しいクラスを。「検索」（⌘K）でクラス・チャット・資料を探せます。"
+      },
+      "courses": {
+        "title": "体験クラス",
+        "body": "この 5 分のクラスも OpenMAIC で作られています。開いて授業の場を見てみましょう。"
+      },
+      "library": {
+        "title": "ナレッジベース",
+        "body": "資料や PDF を一度アップロードすれば、どのクラスでも参照できます。"
+      },
+      "conversations": {
+        "title": "チャット",
+        "body": "クラスはチャットの中で作られます。直したいときは、そのチャットで頼みます。"
+      },
+      "mode": {
+        "title": "学習か編集か",
+        "body": "「学習」は AI の先生と受講、「編集」はページごとに修正します。"
+      },
+      "dock": {
+        "title": "授業の場所",
+        "body": "再生・ページ送り、いつでも AI の先生に質問。クラスメートも議論に加わります。"
+      },
+      "chat": {
+        "title": "チャットで直す",
+        "body": "横のチャットで「2 ページ目をもっと簡単に」と言えば、AI が直します。"
+      },
+      "account": {
+        "title": "アカウントと設定",
+        "body": "プロフィール、設定、言語、テーマはここに。このガイドもここから見直せます。"
+      },
+      "try": {
+        "title": "さっそく試す",
+        "body": "テーマを入力するか、例を選んですぐ始めましょう。",
+        "attach": "資料：資料をアップロードしてクラスの元にする",
+        "mention": "参照：@ でクラスやナレッジベースの資料を指定",
+        "skill": "スキル：教え方を選ぶ（例：ディープインタラクティブ）"
+      },
+      "examples": {
+        "sky": {
+          "label": "空はなぜ青い？",
+          "prompt": "空はなぜ青いの？身近な現象で説明して"
+        },
+        "interest": {
+          "label": "複利のしくみ",
+          "prompt": "身近な例で複利のしくみを説明して"
+        },
+        "teach": {
+          "label": "教える：中 2 三平方の定理",
+          "prompt": "中学 2 年生向けに三平方の定理の授業を。最後に小テスト付きで"
+        }
+      },
+      "coursesNav": {
+        "title": "マイコース",
+        "body": "完成したクラスはここに。クリックしてみましょう。"
+      },
+      "openLook": "開いてみる",
+      "edit": {
+        "canvas": {
+          "title": "ページ",
+          "body": "ページ上の文字・画像・図形をクリックして編集、ドラッグで移動やサイズ変更。"
+        },
+        "pages": {
+          "title": "ページ一覧",
+          "body": "ここでページ一覧を開けます：追加、ドラッグで並べ替え、削除。"
+        },
+        "bar": {
+          "title": "コントロールバー",
+          "body": "アクション追加、ナレーション音声、ページ送りと追加、先生とクラスメートの設定。右端では要素を囲んで AI に修正を頼めます。"
+        },
+        "timeline": {
+          "title": "アクショントラック",
+          "body": "カード 1 枚が 1 つのアクション（解説・スポットライト・ディスカッション）。ドラッグで並べ替え、クリックで編集。"
+        },
+        "dock": {
+          "title": "ドック",
+          "body": "上端をドラッグして高さを調整、折りたたんでページを広く。"
+        },
+        "learn": {
+          "title": "プレビュー",
+          "body": "「学習」に戻すと受講者の見え方を確認できます。"
+        },
+        "chat": {
+          "title": "AI に頼む",
+          "body": "手で直さなくても、チャットで「2 ページ目に練習問題を追加」と頼めます。"
+        }
+      },
+      "editDone": "編集を始める"
+    }
   },
   "profile": {
     "title": "プロフィール",
@@ -2515,25 +2679,6 @@
     "placeholder": "アクセスコード",
     "error": "アクセスコードが正しくありません。もう一度お試しください。"
   },
-  "proMode": {
-    "attach": "教材を添付",
-    "mentionCourse": "引用课堂",
-    "loadSkill": "加载 skill",
-    "skillMenuTitle": "选择课程设计技能",
-    "skillsLoading": "正在加载 skill…",
-    "noSkillsAvailable": "暂无可用 skill",
-    "userSkillsGroup": "我的 Skill",
-    "builtinSkillsGroup": "内置 Skill",
-    "skillsLoadFailed": "Skill 加载失败，点击重试",
-    "retrySkills": "重试",
-    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
-    "badgeAria": "Pro モード",
-    "badgeEnter": "Pro モード",
-    "badgeExit": "通常モードに戻る",
-    "launchPlaceholder": "作りたい学習体験を描いてください",
-    "launchSend": "構築を開始",
-    "mentionCourseOrMaterial": "クラスまたはナレッジベースの素材を参照"
-  },
   "workbench": {
     "tool": {
       "label": {
@@ -2543,6 +2688,16 @@
       "error": {
         "materialExtraction": null
       }
+    }
+  },
+  "classroomEnd": {
+    "close": "最後のページに戻る",
+    "learned": "{{count}} ページ完了",
+    "result": "{{correct}} / {{total}} 問正解",
+    "actions": {
+      "reviewWrong": "間違いを見る",
+      "doQuiz": "小テストへ",
+      "restart": "最初から学ぶ"
     }
   },
   "sandbox": {

@@ -70,6 +70,8 @@
  *    providerElevenLabsTTS: 'ElevenLabs TTS' / 'ElevenLabs Text-to-Speech'
  */
 
+import type { VoiceDesign } from '@/lib/audio/voice-design';
+
 // ============================================================================
 // TTS (Text-to-Speech) Types
 // ============================================================================
@@ -160,6 +162,14 @@ export interface TTSProviderConfig {
   supportsSpeed?: boolean;
 }
 
+/** A speaking agent, as a provider that designs voices may read it. */
+export interface TTSSpeaker {
+  name?: string;
+  role?: string;
+  persona?: string;
+  voiceDesign?: VoiceDesign;
+}
+
 /**
  * TTS Model Configuration for API calls
  */
@@ -174,6 +184,12 @@ export interface TTSModelConfig {
   speed?: number;
   format?: string;
   providerOptions?: Record<string, unknown>;
+  /**
+   * Who is speaking, for a provider that designs a voice from a description
+   * when no voice of its own was chosen. The browser sends that description in
+   * `providerOptions`; a server-side caller passes the speaker instead.
+   */
+  speaker?: TTSSpeaker;
   /**
    * Cancel the provider request(s) when this signal aborts. The agent runtime
    * threads the session cancel signal here so an in-flight synthesis fetch is

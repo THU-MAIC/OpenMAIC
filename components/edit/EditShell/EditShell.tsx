@@ -16,12 +16,24 @@ import { FloatingInsertToolbar } from './FloatingInsertToolbar';
 import { FloatingToolbar } from './FloatingToolbar';
 import { HeaderHistoryControls } from './HeaderHistoryControls';
 import { HintRail } from './HintRail';
+import { cn } from '@/lib/utils';
 import { CanvasPager, type CanvasPagerProps } from './CanvasPager';
 
 /** 16:9 classroom surfaces. Quiz is a form and stays full-bleed. */
+/**
+ * Whether a scene's card is the contain-fit 16:9 box. Playback's rule, so a page
+ * does not move when the mode changes: an interactive scene fills the frame there
+ * and here, and everything else is the classroom's box.
+ */
 function usesClassroomAspect(type: SceneType): boolean {
-  return type === 'slide' || type === 'interactive' || type === 'pbl';
+  return type !== 'interactive';
 }
+
+/** The card, as playback draws it (`CanvasArea`): switching modes must not change it. */
+const STAGE_CARD_CLASS =
+  'overflow-hidden rounded-lg bg-white shadow-2xl shadow-gray-200/50 ring-1 ring-gray-950/5 dark:bg-gray-800 dark:shadow-gray-800/50 dark:ring-white/5';
+const INTERACTIVE_CARD_CLASS =
+  'overflow-hidden rounded-lg bg-white shadow-2xl shadow-blue-200/50 ring-1 ring-blue-900/5 dark:bg-gray-800 dark:shadow-blue-900/50 dark:ring-blue-500/10';
 
 interface EditShellProps {
   readonly scene: Scene;
@@ -301,7 +313,8 @@ function Frame({
 
   return (
     <StageGrid
-      className="bg-gradient-to-b from-zinc-100 to-zinc-200 dark:from-zinc-950 dark:to-zinc-900"
+      // `pr-px`: playback's collapsed chat column keeps its 1px border there.
+      className="bg-gray-50 pr-px dark:bg-gray-900"
       topSlot={
         hideCommandBar ? null : (
           // `data-maic-edit-chrome`: the workbench's hand-edit signal scope
@@ -331,8 +344,9 @@ function Frame({
         ) : null
       }
       centerSlot={
-        // Padded studio frame. Classroom scenes contain-fit the card at
-        // exactly 16:9, everywhere — a wide workbench panel gets side
+        // Padded studio frame, with playback's padding and ground, so a page
+        // keeps its place when the mode changes. Classroom scenes contain-fit
+        // the card at exactly 16:9, everywhere — a wide workbench panel gets side
         // gutters, never a cropped slide. `fill-width` was tried here
         // (card as wide as the frame) but it sized the card taller than
         // the frame once the pane got wider than 16:9 of its height, and
@@ -345,36 +359,42 @@ function Frame({
         // bottom banner) wherever containment puts the card; a frame-anchored
         // one drops into the letterbox gap below the card in a tall pane and
         // never overlaps the slide.
-        <div
-          data-maic-studio-frame="true"
-          className="relative h-full min-h-0 w-full overflow-hidden p-3 sm:p-4"
-        >
-          {/* `data-maic-edit-canvas`: the workbench's hand-edit signal scope
+        // The ground is playback's stack, an opaque layer in its own group, not just
+        // the same two colours: the translucent one rounds differently over the page.
+        <div className="isolate h-full w-full bg-gray-50 dark:bg-gray-900">
+          <div
+            data-maic-studio-frame="true"
+            className={cn(
+              'relative h-full min-h-0 w-full overflow-hidden p-2',
+              sceneType === 'interactive'
+                ? 'bg-blue-50/30 dark:bg-blue-900/10'
+                : 'bg-gray-50/30 dark:bg-gray-900/30',
+            )}
+          >
+            {/* `data-maic-edit-canvas`: the workbench's hand-edit signal scope
               (typing / pointer gestures on the page itself). See
               lib/workbench/use-workbench-pro-edit.ts. */}
-          {usesClassroomAspect(sceneType) ? (
-            <ContainBox
-              fit="contain"
-              className="overflow-hidden rounded-xl bg-white ring-1 ring-zinc-200/80 dark:bg-zinc-900 dark:ring-zinc-800/80 shadow-[0_10px_40px_-12px_rgba(15,23,42,0.18)] dark:shadow-[0_10px_40px_-12px_rgba(0,0,0,0.6)]"
-            >
+            {usesClassroomAspect(sceneType) ? (
+              <ContainBox fit="contain" className={STAGE_CARD_CLASS}>
+                <div
+                  data-maic-edit-canvas="true"
+                  data-maic-stage-card="true"
+                  className="relative h-full w-full"
+                >
+                  {children}
+                </div>
+              </ContainBox>
+            ) : (
               <div
                 data-maic-edit-canvas="true"
                 data-maic-stage-card="true"
-                className="relative h-full w-full"
+                className={cn('relative h-full w-full', INTERACTIVE_CARD_CLASS)}
               >
                 {children}
               </div>
-            </ContainBox>
-          ) : (
-            <div
-              data-maic-edit-canvas="true"
-              data-maic-stage-card="true"
-              className="relative h-full w-full overflow-hidden rounded-xl bg-white ring-1 ring-zinc-200/80 dark:bg-zinc-900 dark:ring-zinc-800/80 shadow-[0_10px_40px_-12px_rgba(15,23,42,0.18)] dark:shadow-[0_10px_40px_-12px_rgba(0,0,0,0.6)]"
-            >
-              {children}
-            </div>
-          )}
-          {pager ? <CanvasPager {...pager} /> : null}
+            )}
+            {pager ? <CanvasPager {...pager} /> : null}
+          </div>
         </div>
       }
       bottomSlot={bottomRail ?? null}

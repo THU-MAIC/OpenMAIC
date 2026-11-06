@@ -26,7 +26,6 @@
     "examplesLabel": "Beispielthemen",
     "examplePython": "Python von Grund auf lernen",
     "exampleFourier": "Fourier-Transformation mit anschaulichen Beispielen",
-    "desktopOnly": "Verwende für den Editor und Pro-Modus einen Computer.",
     "slogan": "Generatives Lernen im interaktiven Lernraum mit mehreren KI-Agenten",
     "greetingWithName": "Hallo, {{name}}"
   },
@@ -345,15 +344,25 @@
     "confirmSwitchTitle": "Szene wechseln",
     "confirmSwitchMessage": "Ein Thema läuft gerade. Beim Wechseln der Szene wird das aktuelle Thema beendet. Möchtest du wirklich wechseln?",
     "generatingNextPage": "Die Szene wird generiert. Bitte warten...",
-    "courseComplete": "Kurs abgeschlossen",
     "fullscreen": "Vollbild",
     "exitFullscreen": "Vollbild beenden",
     "editCourse": "Kurs bearbeiten",
     "doneEditing": "Bearbeitung abschließen",
-    "proModeDisabledHint": "Diese Seite kann nicht bearbeitet werden — öffne eine Kursfolie, um sie im Pro-Modus zu bearbeiten."
+    "editDisabledHint": "Diese Seite kann nicht bearbeitet werden — öffne eine Kursfolie, um sie zu bearbeiten.",
+    "editToggle": "Bearbeiten",
+    "openInWorkspace": "Im Arbeitsbereich öffnen",
+    "openInWorkspaceHint": "Im Arbeitsbereich öffnen, um im Gespräch an diesem Kurs weiterzuarbeiten",
+    "dock": {
+      "collapse": "Leiste einklappen",
+      "expand": "Leiste ausklappen",
+      "resize": "Leistenhöhe ändern"
+    },
+    "chatPanel": {
+      "expand": "Gesprächsbereich einblenden",
+      "collapse": "Gesprächsbereich ausblenden"
+    }
   },
   "edit": {
-    "proMode": "Pro",
     "undo": "Rückgängig",
     "redo": "Wiederholen",
     "courseHistory": {
@@ -581,7 +590,19 @@
       "whiteboardLatex": "Formel",
       "whiteboardTable": "Tabelle",
       "action": "Aktion",
-      "discussion": "Diskussionsrunde"
+      "discussion": "Diskussionsrunde",
+      "playVideo": "Video abspielen",
+      "whiteboardChart": "Diagramm",
+      "whiteboardLine": "Linie zeichnen",
+      "whiteboardClear": "Tafel leeren",
+      "whiteboardDelete": "Element entfernen",
+      "whiteboardClose": "Tafel schließen",
+      "whiteboardCode": "Codeblock",
+      "whiteboardEditCode": "Code bearbeiten",
+      "widgetHighlight": "Aktivität hervorheben",
+      "widgetSetState": "Aktivitätsstatus setzen",
+      "widgetAnnotation": "Aktivität annotieren",
+      "widgetReveal": "In Aktivität einblenden"
     },
     "element": {
       "toolbar": "Elementwerkzeuge",
@@ -646,12 +667,6 @@
     "timeline": {
       "title": "Sprechertext",
       "regenAllTts": "Alle Vertonungen neu erstellen",
-      "voiceAll": "Alles vertonen",
-      "counts": "Sprechertexte: {{speech}} · Aktionen: {{cue}}",
-      "panLeft": "Nach links verschieben",
-      "panRight": "Nach rechts verschieben",
-      "collapseAxis": "Auf Achse einklappen",
-      "expandTrack": "Spur ausklappen",
       "emptyHint": "Ziehe Aktionen auf die Achse, um zu beginnen, oder lass den MAIC Agent einen Sprechertext erstellen.",
       "speechPlaceholder": "Sprechertext eingeben…",
       "reorder": "Zum Neuanordnen ziehen",
@@ -663,13 +678,15 @@
       "fieldElement": "Element",
       "fieldContent": "Inhalt",
       "addDiscussionExists": "Pro Szene ist nur eine Diskussionsrunde möglich",
-      "discussionTerminal": "ENDE",
       "discussionTerminalHint": "Eine Diskussionsrunde bleibt am Ende der Szene (eine pro Szene)",
-      "discussionTopicPlaceholder": "Diskussionsthema (erforderlich)",
-      "discussionPromptPlaceholder": "Anweisung (optional)",
+      "discussionTopicPlaceholder": "Erforderlich",
+      "discussionPromptPlaceholder": "Optional",
+      "discussionTopicLabel": "Diskussionsthema",
+      "discussionPromptLabel": "Anweisung",
       "discussionAgent": "Startrolle",
       "discussionAgentUnset": "Nicht festgelegt",
-      "addAction": "Aktion hinzufügen"
+      "addAction": "Aktion hinzufügen",
+      "fieldState": "Status"
     },
     "picker": {
       "title": "Aktion einfügen",
@@ -753,8 +770,7 @@
       "moveDown": "Nach unten",
       "removeFromClass": "Aus dem Kurs entfernen",
       "aiClassmates": "KI-Mitlernende · {{count}}",
-      "addRole": "Rolle hinzufügen",
-      "shortTitle": "Roster"
+      "addRole": "Rolle hinzufügen"
     },
     "elementRef": {
       "remove": "移除引用 {{label}}",
@@ -765,21 +781,6 @@
     "dock": {
       "elementRefHint": "Elementverweise – Elemente für die nächste Nachricht auswählen",
       "globalTools": "Globale Werkzeuge"
-    }
-  },
-  "classroomComplete": {
-    "title": "Kurs abgeschlossen",
-    "trailLabels": {
-      "slide": "Folien",
-      "quiz": "Quiz",
-      "interactive": "interaktive Inhalte",
-      "pbl": "Projekte"
-    },
-    "quizScoreLabel": "{{correct}} / {{total}} richtig",
-    "encouragement": {
-      "high": "Hervorragend — das sitzt.",
-      "mid": "Starke Leistung — weiter so.",
-      "low": "Ein guter Anfang — wiederhole den Stoff und versuche es erneut."
     }
   },
   "whiteboard": {
@@ -2367,6 +2368,7 @@
     "sceneCount_one": "{{count}} 页",
     "sceneCount_other": "{{count}} 页",
     "courseLinkHint": "在右侧打开《{{name}}》",
+    "courseLinkOpen": "Öffnen",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
       "search": "Klassenzimmer und Materialien suchen",
@@ -2398,7 +2400,6 @@
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
     "newSession": "New chat",
     "sections": {
-      "courses": "Courses",
       "sessions": "Chats"
     },
     "coursesEmpty": "No courses yet",
@@ -2408,7 +2409,6 @@
     "retry": "Retry",
     "untitledSession": "Untitled chat",
     "pagePosition": "Page {{index}} of {{total}}",
-    "exitPro": "Exit Pro",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
@@ -2417,7 +2417,7 @@
     "learningMode": "Lernen",
     "editingMode": "Bearbeiten",
     "editingUnavailableGenerating": "Während der Kurserstellung ist die Bearbeitung nicht verfügbar.",
-    "fullscreenLearning": "Im Vollbild lernen",
+    "editGuide": "Bearbeitungshilfe",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2433,8 +2433,6 @@
       "cancelled": "Stopped"
     },
     "backToWorkspace": "Back to workspace",
-    "searchPlaceholder": "Filter by name",
-    "searchAria": "Search {{section}}",
     "searchEmpty": "No matches",
     "showMore": "Show {{count}} more",
     "showLess": "Show less",
@@ -2456,7 +2454,6 @@
     "coursePausedDesc": "Eine Seite konnte nicht generiert werden. Wiederholen Sie sie im Klassenraum; der Kurs öffnet sich hier, sobald die Generierung abgeschlossen ist.",
     "viewGenerationProgress": "Fortschritt ansehen",
     "openToRetry": "Zum Wiederholen öffnen",
-    "courseGeneratingRowHint": "Verfügbar, sobald die Generierung abgeschlossen ist",
     "noCourseTitle": "No course open",
     "noCourseHint": "Open one from a course link in the conversation, or pick one from the list on the left — the conversation stays put",
     "resizeChatAria": "Drag to resize the conversation pane",
@@ -2465,7 +2462,6 @@
     "autoSaved": "Gespeichert",
     "collapsedTitle": "Both panes are collapsed",
     "collapsedHint": "Use the tabs on the left to bring the conversation or the classroom back",
-    "moreUtilities": "More",
     "rowMore": "More actions for {{name}}",
     "folderDeleteHint": "Die Kurse darin wandern zurück auf die oberste Ebene. Nichts wird gelöscht.",
     "dropToUnfile": "Hier ablegen, um aus dem Ordner zu nehmen",
@@ -2479,11 +2475,179 @@
     "confirmDelete": "Confirm delete",
     "deleting": "Deleting…",
     "deleteFailed": "Couldn't delete. Please try again.",
-    "tabsAria": "Chats and courses",
     "courseTabsAria": "Open courses",
     "courseTabClose": "Close tab: {{name}}",
     "courseTabRunning": "Generating",
-    "foldersUnavailable": "Ordner sind in dieser Version nicht verfügbar"
+    "foldersUnavailable": "Ordner sind in dieser Version nicht verfügbar",
+    "composer": {
+      "attach": "Attach material",
+      "mentionCourse": "引用课堂",
+      "mentionCourseOrMaterial": "Auf einen Kursraum oder ein Material der Wissensbasis verweisen",
+      "loadSkill": "加载 skill",
+      "skillMenuTitle": "选择课程设计技能",
+      "skillsLoading": "正在加载 skill…",
+      "noSkillsAvailable": "暂无可用 skill",
+      "userSkillsGroup": "我的 Skill",
+      "builtinSkillsGroup": "内置 Skill",
+      "skillsLoadFailed": "Skill 加载失败，点击重试",
+      "retrySkills": "重试",
+      "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+      "launchPlaceholder": "Describe the learning experience you want to create",
+      "launchSend": "Start build"
+    },
+    "nav": {
+      "search": "Suchen",
+      "myCourses": "Meine Kurse"
+    },
+    "search": {
+      "placeholder": "Chats, Kurse und Materialien durchsuchen",
+      "recentChats": "Letzte Chats",
+      "recentCourses": "Letzte Kurse",
+      "courses": "Kurse",
+      "materials": "Materialien",
+      "actions": "Schnellaktionen",
+      "searching": "Suche läuft…",
+      "empty": "Keine Treffer für „{{query}}“",
+      "materialsFailed": "Die Wissensdatenbank konnte nicht durchsucht werden",
+      "themeAction": "Design: {{name}}",
+      "languageAction": "Sprache: {{name}}"
+    },
+    "account": {
+      "signIn": "Anmelden",
+      "menu": "Konto und Einstellungen",
+      "profileSaved": "Gespeichert",
+      "language": "Sprache",
+      "about": "Über OpenMAIC",
+      "aboutBody": "Eine Open-Source-Plattform, die jedes Thema in ein interaktives Klassenzimmer mit KI-Lehrkräften und -Mitschülern verwandelt. Veröffentlicht unter der MIT-Lizenz.",
+      "viewOnGithub": "Auf GitHub ansehen",
+      "docs": "Dokumentation",
+      "signOut": "Abmelden",
+      "onboarding": "Erste Schritte"
+    },
+    "coursesPage": {
+      "subtitle": "Kurse, die du erstellt oder importiert hast, und die Ordner, in denen du sie ablegst",
+      "searchPlaceholder": "Meine Kurse durchsuchen",
+      "results": "Suchergebnisse",
+      "allCourses": "Alle Kurse",
+      "emptyHint": "Beschreibe auf der Startseite ein Thema, dann erscheint hier dein erster Kurs.",
+      "makeCourse": "Kurs erstellen"
+    },
+    "fullscreen": {
+      "expand": "Vollbild",
+      "collapse": "Vollbild beenden (Esc)"
+    },
+    "guide": {
+      "chatTitle": "Diesen Kurs ändern? Sag es hier",
+      "chatHint": "Etwa „mach Seite 2 einfacher“. Für einen neuen Kurs: „Neuer Chat“."
+    },
+    "onboarding": {
+      "paneTitle": "Lernen oder bearbeiten",
+      "paneLearn": "Lernen: Die KI-Lehrkraft führt durch den Kurs, frag jederzeit.",
+      "paneEdit": "Bearbeiten: Seiten direkt ändern.",
+      "paneChat": "Oder bitte im Chat, z. B. „mach Seite 2 einfacher“.",
+      "gotIt": "Verstanden"
+    },
+    "tour": {
+      "skip": "Überspringen",
+      "prev": "Zurück",
+      "next": "Weiter",
+      "done": "Selbst eingeben",
+      "count": "{{index}} / {{total}}",
+      "openGuide": "Probekurs starten",
+      "welcome": {
+        "title": "Willkommen bei OpenMAIC",
+        "body": "Sag, was du lernen willst, und OpenMAIC macht daraus einen interaktiven Kurs mit KI-Lehrkraft und Mitlernenden."
+      },
+      "start": {
+        "title": "Hier geht es los",
+        "body": "„Neuer Chat“ startet einen neuen Kurs. Suche (⌘K) findet Kurse, Chats und Materialien."
+      },
+      "courses": {
+        "title": "Der Probekurs",
+        "body": "Auch dieser 5-Minuten-Kurs ist mit OpenMAIC gemacht. Öffne ihn und sieh, wo Unterricht stattfindet."
+      },
+      "library": {
+        "title": "Wissensdatenbank",
+        "body": "Handouts und PDFs einmal hochladen und in jedem Kurs verwenden."
+      },
+      "conversations": {
+        "title": "Chats",
+        "body": "Jeder Kurs entsteht in einem Chat. Um ihn zu ändern, frag in diesem Chat."
+      },
+      "mode": {
+        "title": "Lernen oder bearbeiten",
+        "body": "Lernen: Kurs mit der KI-Lehrkraft. Bearbeiten: Seite für Seite ändern."
+      },
+      "dock": {
+        "title": "Der Unterricht",
+        "body": "Abspielen, blättern, jederzeit die KI-Lehrkraft fragen; Mitlernende diskutieren mit."
+      },
+      "chat": {
+        "title": "Per Chat ändern",
+        "body": "Sag im Chat daneben einfach „mach Seite 2 einfacher“, und die KI ändert den Kurs."
+      },
+      "account": {
+        "title": "Konto und Einstellungen",
+        "body": "Profil, Einstellungen, Sprache und Design – und diese Einführung zum erneuten Ansehen."
+      },
+      "try": {
+        "title": "Jetzt ausprobieren",
+        "body": "Gib ein Thema ein oder wähle ein Beispiel, um sofort zu starten.",
+        "attach": "Material: Handout hochladen und den Kurs darauf aufbauen",
+        "mention": "Verweis: @ einen Kurs oder ein Material der Wissensdatenbank",
+        "skill": "Skills: einen Unterrichtsstil wählen, z. B. Deep Interactive"
+      },
+      "examples": {
+        "sky": {
+          "label": "Warum ist der Himmel blau?",
+          "prompt": "Warum ist der Himmel blau? Erkläre es mit Dingen aus dem Alltag"
+        },
+        "interest": {
+          "label": "Wie Zinseszins funktioniert",
+          "prompt": "Erkläre mit Alltagsbeispielen, wie Zinseszins funktioniert"
+        },
+        "teach": {
+          "label": "Unterrichten: Pythagoras, Klasse 8",
+          "prompt": "Eine Stunde zum Satz des Pythagoras für die 8. Klasse, mit einem kurzen Quiz am Ende"
+        }
+      },
+      "coursesNav": {
+        "title": "Meine Kurse",
+        "body": "Hier liegen deine fertigen Kurse. Klick einmal darauf."
+      },
+      "openLook": "Öffnen",
+      "edit": {
+        "canvas": {
+          "title": "Die Seite",
+          "body": "Klick auf Text, Bilder oder Formen, um sie zu ändern; ziehen zum Verschieben oder Skalieren."
+        },
+        "pages": {
+          "title": "Seiten",
+          "body": "Hier die Seitenliste öffnen: Seiten hinzufügen, per Ziehen umsortieren, löschen."
+        },
+        "bar": {
+          "title": "Die Steuerleiste",
+          "body": "Aktion hinzufügen, Sprechertext vertonen, blättern und Seiten hinzufügen, Lehrkraft und Mitlernende festlegen; rechts Elemente für die KI markieren."
+        },
+        "timeline": {
+          "title": "Die Aktionsspur",
+          "body": "Jede Karte ist eine Aktion: Erklärung, Spotlight, Diskussion. Ziehen zum Umsortieren, Klicken zum Bearbeiten."
+        },
+        "dock": {
+          "title": "Das Dock",
+          "body": "Am oberen Rand ziehen zum Anpassen der Höhe, oder einklappen für mehr Platz."
+        },
+        "learn": {
+          "title": "Vorschau",
+          "body": "Wechsle zurück zu „Lernen“, um den Kurs wie Lernende zu sehen."
+        },
+        "chat": {
+          "title": "Die KI fragen",
+          "body": "Lieber nicht von Hand? Sag es im Chat, z. B. „füge Seite 2 eine Übung hinzu“."
+        }
+      },
+      "editDone": "Bearbeiten"
+    }
   },
   "profile": {
     "title": "Profil",
@@ -2515,25 +2679,6 @@
     "placeholder": "Zugangscode",
     "error": "Ungültiger Zugangscode. Bitte versuche es erneut."
   },
-  "proMode": {
-    "attach": "Attach material",
-    "mentionCourse": "引用课堂",
-    "loadSkill": "加载 skill",
-    "skillMenuTitle": "选择课程设计技能",
-    "skillsLoading": "正在加载 skill…",
-    "noSkillsAvailable": "暂无可用 skill",
-    "userSkillsGroup": "我的 Skill",
-    "builtinSkillsGroup": "内置 Skill",
-    "skillsLoadFailed": "Skill 加载失败，点击重试",
-    "retrySkills": "重试",
-    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
-    "badgeAria": "Pro mode",
-    "badgeEnter": "Pro mode",
-    "badgeExit": "Back to classic",
-    "launchPlaceholder": "Describe the learning experience you want to create",
-    "launchSend": "Start build",
-    "mentionCourseOrMaterial": "Auf einen Kursraum oder ein Material der Wissensbasis verweisen"
-  },
   "workbench": {
     "tool": {
       "label": {
@@ -2543,6 +2688,16 @@
       "error": {
         "materialExtraction": null
       }
+    }
+  },
+  "classroomEnd": {
+    "close": "Zurück zur letzten Seite",
+    "learned": "{{count}} Seiten geschafft",
+    "result": "{{correct}} / {{total}} richtig",
+    "actions": {
+      "reviewWrong": "Fehler ansehen",
+      "doQuiz": "Zum Quiz",
+      "restart": "Neu beginnen"
     }
   },
   "sandbox": {
