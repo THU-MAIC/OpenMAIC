@@ -25,6 +25,8 @@ import { recordAgentChange } from '@/lib/edit/course-edit';
 import { useCourseTimeline } from '@/lib/edit/course-timeline';
 import { keepLocalWhereUnchanged } from '@/lib/edit/scene-echo';
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
+import { hydratePBLScenesFromRuntime } from '@/lib/pbl/v2/runtime/hydration';
+import { forgetKnownScenes } from '@/lib/store/known-scenes';
 import {
   forgetServerRosterBase,
   hasQueuedWholeDocumentChange,
@@ -58,6 +60,7 @@ import {
   type StageManifest,
   withLocalSceneOrder,
 } from '@/lib/workbench/stage-freshness';
+import { FetchEventSource } from '@/lib/utils/fetch-event-source';
 import { applyGenerateTtsResultToScenes } from '@/lib/workbench/tts-stage-sync';
 
 /**
@@ -114,6 +117,11 @@ export const WORKBENCH_EVENT_TYPES: readonly string[] = [
   ...PI_EVENT_TYPES,
 ];
 
+/** How long an open stream may take to send `caught_up`. */
+const REPLAY_WATCHDOG_MS = 20_000;
+/** How long the transcript may wait for a stream that has not opened at all. */
+const REPLAY_BACKSTOP_MS = 120_000;
+
 /**
  * Attach to a session's durable event stream.
  *
@@ -169,7 +177,7 @@ export function useWorkbenchStream(sessionId: string | null): void {
     // Read the resume point imperatively: subscribing to `lastEventId` would
     // re-run this effect on every event and reconnect in a loop.
     const from = useWorkbenchStore.getState().lastEventId;
-    const source = new EventSource(
+    const source = new FetchEventSource(
       `/api/agent/sessions/${encodeURIComponent(sessionId)}/events?lastEventId=${from}`,
     );
 
@@ -192,6 +200,7 @@ export function useWorkbenchStream(sessionId: string | null): void {
       }
       if (!caughtUp) {
         appendCompactedReplayEvent(backlog, parsed);
+        armReplayWatchdog();
         return;
       }
       applyEvent(parsed);
@@ -276,17 +285,29 @@ export function useWorkbenchStream(sessionId: string | null): void {
       markAttached();
     };
     source.addEventListener('caught_up', onCaughtUp);
-    const replayWatchdog = window.setTimeout(finishReplay, 20_000);
+    // A low-priority request can wait in the browser's queue for as long as other
+    // requests hold it there, so the wait for `caught_up` runs only while a
+    // connection is open and counts from its last sign of progress. Finishing early
+    // would let the late replay in as live frames: an old course link would open its
+    // tab. The backstop only ends the spinner on a stream that never gets through.
+    let replayWatchdog: number | undefined;
+    const armReplayWatchdog = () => {
+      window.clearTimeout(replayWatchdog);
+      if (!caughtUp) replayWatchdog = window.setTimeout(finishReplay, REPLAY_WATCHDOG_MS);
+    };
+    source.addEventListener('open', armReplayWatchdog);
+    const replayBackstop = window.setTimeout(finishReplay, REPLAY_BACKSTOP_MS);
 
     for (const type of WORKBENCH_EVENT_TYPES) source.addEventListener(type, onAny as EventListener);
     source.onerror = () => {
       if (!isCurrent()) return;
+      window.clearTimeout(replayWatchdog);
       // During native auto-reconnect the server snapshot is more current than
       // this frozen fold. The next received frame marks it attached again.
       connected = false;
       setAttached(false);
       // EventSource retries on its own; only surface a hard failure.
-      if (source.readyState === EventSource.CLOSED) {
+      if (source.readyState === FetchEventSource.CLOSED) {
         finishReplay();
         setError('event stream closed');
       }
@@ -297,6 +318,8 @@ export function useWorkbenchStream(sessionId: string | null): void {
       caughtUp = true;
       backlog.length = 0;
       window.clearTimeout(replayWatchdog);
+      window.clearTimeout(replayBackstop);
+      source.removeEventListener('open', armReplayWatchdog);
       for (const type of WORKBENCH_EVENT_TYPES)
         source.removeEventListener(type, onAny as EventListener);
       source.removeEventListener('caught_up', onCaughtUp);
@@ -394,6 +417,27 @@ function rosterOf(stage: Stage): StageRoster {
   };
 }
 
+/**
+ * The scenes as a classroom holds them. A stored PBL project is a design template,
+ * with the learner's work in the runtime store, so it is folded back in here as on
+ * a load. Taken as stored it would empty the project on screen, and the next save
+ * would record that as the learner's state. A scene whose fold fails is left out:
+ * it keeps its old rev and is read again, and the others still go through.
+ */
+async function readScenes(
+  stageId: string,
+  ids: readonly string[],
+): Promise<{ scenes: Scene[]; foldFailures: number }> {
+  const fetched = await fetchScenesByIds(stageId, ids);
+  const folded = await Promise.allSettled(
+    fetched.map((scene) => hydratePBLScenesFromRuntime(stageId, [scene])),
+  );
+  return {
+    scenes: folded.flatMap((result) => (result.status === 'fulfilled' ? result.value : [])),
+    foldFailures: folded.filter((result) => result.status === 'rejected').length,
+  };
+}
+
 /** A stage rev no manifest carries: the next pass treats the stage as moved. */
 const UNVERIFIED_STAGE_REV = -1;
 
@@ -417,13 +461,15 @@ export function useStageFreshnessSync(
   const pendingSync = useRef(0);
   const served = useRef(0);
   const renderedManifest = useRef<StageManifest | null>(null);
+  /** This run's baseline is a manifest from before the classroom load (see below). */
+  const coldBaseline = useRef(false);
   /** The last pass left scenes behind for a save still to finish (see UNSAVED EDITS). */
   const heldBackForSave = useRef(false);
   const mounted = useRef(false);
   const retries = useRef(0);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fallbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const sourceRef = useRef<EventSource | null>(null);
+  const sourceRef = useRef<FetchEventSource | null>(null);
   // Read at pass time so an explicit host handoff uses the current bootstrap
   // policy without restarting the course's freshness stream.
   const bootstrapDocumentRef = useRef(bootstrapDocument);
@@ -451,6 +497,7 @@ export function useStageFreshnessSync(
     pendingSync.current = 0;
     served.current = 0;
     renderedManifest.current = null;
+    coldBaseline.current = false;
     heldBackForSave.current = false;
     retries.current = 0;
     if (retryTimer.current) {
@@ -473,9 +520,12 @@ export function useStageFreshnessSync(
     /**
      * Mirror the rendered manifest into the store (`serverManifestByStage`):
      * what THIS browser has actually applied. Recorded on every pass EXCEPT the
-     * warm zeroed-baseline branch below, where scene revs are unknown.
+     * warm zeroed-baseline branch below, where scene revs are unknown, and a run
+     * that started cold: its manifest describes what the load was going to bring,
+     * which a later start must not take as applied.
      */
     const recordWriteBaseline = (fresh: StageManifest) => {
+      if (coldBaseline.current) return;
       const previous = useStageStore.getState().serverManifestByStage?.[requestedStage];
       // Revs never roll back (Part 1): a stale response must not regress the
       // baseline.
@@ -526,6 +576,11 @@ export function useStageFreshnessSync(
           const editClock = stageDocumentEditClock();
           const doc = await getDocumentStore().loadDocument(requestedStage);
           if (!isCurrent()) return;
+          let loadedScenes = (doc?.scenes ?? []) as unknown as Scene[];
+          if (loadedScenes.some((scene) => scene.content?.type === 'pbl')) {
+            loadedScenes = await hydratePBLScenesFromRuntime(requestedStage, loadedScenes);
+            if (!isCurrent()) return;
+          }
           if (!doc) {
             console.warn(`[workbench] course document unavailable for ${requestedStage}; retrying`);
             throw new Error(`course document unavailable for ${requestedStage}`);
@@ -544,7 +599,7 @@ export function useStageFreshnessSync(
             heldBackForSave.current = true;
             return;
           }
-          const scenes = [...(doc.scenes as unknown as Scene[])].sort((a, b) => a.order - b.order);
+          const scenes = [...loadedScenes].sort((a, b) => a.order - b.order);
           const record = doc.outline as AppDocumentOutline | undefined;
           const outlines = (record?.outlines as SceneOutline[]) ?? [];
           useStageStore.setState((state) => ({
@@ -585,7 +640,12 @@ export function useStageFreshnessSync(
           // in between. The stage rev is a sentinel no manifest carries, for
           // the same reason: a roster written between the load and here is
           // read on the next pass, not hidden behind the rev recorded now.
-          renderedManifest.current = {
+          //
+          // Unless this page has synced the course before: what it recorded then
+          // is what it applied, so it is never newer than the store, and only
+          // what changed since is read again (a host that stops and starts the
+          // sync does not re-read the whole course each time).
+          renderedManifest.current = store.serverManifestByStage?.[requestedStage] ?? {
             rev: UNVERIFIED_STAGE_REV,
             scenes: manifest.scenes.map((scene) => ({ ...scene, rev: 0 })),
           };
@@ -597,7 +657,7 @@ export function useStageFreshnessSync(
           // content lands after, so any write between here and there shows up
           // as a change on the next diff (never hidden).
           renderedManifest.current = manifest;
-          recordWriteBaseline(manifest);
+          coldBaseline.current = true;
         }
         return;
       }
@@ -615,7 +675,7 @@ export function useStageFreshnessSync(
       const idsToRead = idsToFetch.filter((id) => !hasUnsavedSceneEdit(requestedStage, id));
       const queuedAtRead = hasQueuedWholeDocumentChange(requestedStage);
       if (queuedAtRead || idsToRead.length < idsToFetch.length) heldBackForSave.current = true;
-      const fetched = await fetchScenesByIds(requestedStage, idsToRead);
+      const { scenes: fetched, foldFailures } = await readScenes(requestedStage, idsToRead);
       if (!isCurrent()) return;
 
       // D3-F1 structural guard: a non-empty request that fetched NOTHING must
@@ -683,8 +743,9 @@ export function useStageFreshnessSync(
             ...(currentSceneId !== current ? { currentSceneId } : {}),
           };
         });
-        // A pass still confirming what the classroom load brought is no change.
-        if (isEditableCopy && previousStageRev !== UNVERIFIED_STAGE_REV) recordAgentChange(before);
+        // Including the pass that confirms what the load brought: a copy equal to it
+        // records nothing, and anything else changed after the load.
+        if (isEditableCopy) recordAgentChange(before);
       }
 
       // Advance the rendered manifest to what the store now holds: applied
@@ -697,6 +758,7 @@ export function useStageFreshnessSync(
         (renderedManifest.current as StageManifest).scenes.map((scene) => [scene.id, scene]),
       );
       for (const sceneId of removable) renderedById.delete(sceneId);
+      forgetKnownScenes(requestedStage, removable);
       for (const sceneId of appliedIds) {
         const fresh = freshById.get(sceneId);
         if (fresh) renderedById.set(sceneId, fresh);
@@ -708,6 +770,11 @@ export function useStageFreshnessSync(
         },
         previousStageRev,
       );
+      // The rest is applied; into the retry budget for what is left, since no new
+      // signal may come for it.
+      if (foldFailures > 0) {
+        throw new Error(`${foldFailures} PBL scene(s) of ${requestedStage} could not be folded`);
+      }
     };
 
     /**
@@ -827,7 +894,9 @@ export function useStageFreshnessSync(
     // ── triggers ───────────────────────────────────────────────────────────
     requestSync('mount');
 
-    const source = new EventSource(`/api/stages/${encodeURIComponent(requestedStage)}/freshness`);
+    const source = new FetchEventSource(
+      `/api/stages/${encodeURIComponent(requestedStage)}/freshness`,
+    );
     sourceRef.current = source;
     let streamHadError = false;
     const onFreshnessFrame = () => {

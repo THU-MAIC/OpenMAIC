@@ -17,7 +17,6 @@ import {
 import { commitCourseEdit } from '@/lib/edit/course-edit';
 import { commitSlideEdit, deriveSlideEditOperations } from '@/lib/edit/scene-edit-bridge';
 import { migrateSlideContent } from '@/lib/edit/slide-schema';
-import { isTidyWrite } from '@/lib/edit/tidy-write';
 import { useStageStore } from '@/lib/store/stage';
 import type { SlideContent } from '@/lib/types/stage';
 
@@ -34,8 +33,7 @@ interface SlideEditSessionState {
   applyTransactionForScene: (sceneId: string, transaction: EditorTransaction) => void;
   /**
    * Fold a renderer-committed snapshot in, and save it. `sceneId`: the scene `next`
-   * was built from. The renderer's explicit tidying (`withTidyWrite`) is written with
-   * no step; anything else is an edit.
+   * was built from.
    */
   commitContent: (sceneId: string, next: SlideContent) => void;
   /**
@@ -146,10 +144,6 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
     commitContent: (sceneId, next) => {
       const content = canonicalContent(sceneId);
       if (!content) return;
-      if (isTidyWrite()) {
-        writeContent(sceneId, next);
-        return;
-      }
       // The legacy Canvas still emits complete snapshots while the renderer
       // editor is feature-flagged. Keep this compatibility bridge isolated
       // to that fallback until its React surface moves into @openmaic/editor.

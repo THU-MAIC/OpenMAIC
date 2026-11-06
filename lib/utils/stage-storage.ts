@@ -32,12 +32,14 @@ import { clearAllForScene } from '@/lib/quiz/persistence';
 import { beginStageRuntimeDeletionSafely } from '@/lib/runtime/store';
 import { clearStageDrainWatermarks } from '@/lib/pbl/v2/runtime/drain';
 import { createLogger } from '@/lib/logger';
+import { settleKnownScenes, unseenScenes } from '@/lib/store/known-scenes';
 import {
   withRuntimeStorageExclusiveLockUntilSettled,
   withRuntimeStorageSharedLock,
 } from './chat-storage-lock';
 import {
   DocumentVersionError,
+  type DocumentStore,
   type DocumentSummary,
   type HttpDocumentWriteOptions,
 } from '@openmaic/storage';
@@ -139,6 +141,46 @@ function stampScene(stageId: string, scene: Scene, index: number, now: number): 
     createdAt: scene.createdAt || now,
     updatedAt: scene.updatedAt || now,
   };
+}
+
+/**
+ * Scenes joining a list, with the order they came with: other writers address a
+ * page by it. Only a scene whose order the list already holds moves, past the rest.
+ */
+function withoutOrderCollisions(list: readonly Scene[], joining: readonly Scene[]): Scene[] {
+  const taken = new Set(list.map((scene) => scene.order));
+  let next = Math.max(0, ...list.map((scene) => scene.order), ...joining.map((s) => s.order));
+  return joining.map((scene) => {
+    const order = taken.has(scene.order) ? ++next : scene.order;
+    taken.add(order);
+    return order === scene.order ? scene : { ...scene, order };
+  });
+}
+
+/**
+ * Write the whole document. The stored scene list is replaced by the one being
+ * saved, which would also delete a scene another writer added since this tab
+ * last synced, so those stay. A scene this tab has held and
+ * no longer lists is one it removed, and goes. The list and the read of what is
+ * stored are one round trip apart: a scene added in between is still deleted.
+ */
+async function saveWholeDocument(
+  store: Pick<DocumentStore<Scene, Stage>, 'saveDocument'>,
+  stageId: string,
+  existing: { readonly scenes?: readonly Scene[] } | null | undefined,
+  document: ReturnType<typeof documentSnapshot>,
+): Promise<void> {
+  const stored = existing?.scenes ?? [];
+  const unseen = unseenScenes(stageId, stored, document.scenes);
+  await store.saveDocument({
+    ...document,
+    scenes: [...document.scenes, ...withoutOrderCollisions(document.scenes, unseen)],
+  });
+  const kept = new Set([...document.scenes, ...unseen].map((scene) => scene.id));
+  settleKnownScenes(
+    stageId,
+    stored.filter((scene) => !kept.has(scene.id)),
+  );
 }
 
 function documentSnapshot(
@@ -268,7 +310,12 @@ export async function saveStageData(
             dropped = true;
             return;
           }
-          await store.saveDocument(documentSnapshot(stageId, data, existingOutline, now));
+          await saveWholeDocument(
+            store,
+            stageId,
+            existing,
+            documentSnapshot(stageId, data, existingOutline, now),
+          );
           if (isStageWriteStale(stageId, capturedEpoch)) {
             dropped = true;
             return;
@@ -372,7 +419,10 @@ export async function saveStageDataIncremental(
               dropped = true;
               return;
             }
-            await store.saveDocument(
+            await saveWholeDocument(
+              store,
+              stageId,
+              existing,
               documentSnapshot(
                 stageId,
                 { ...data, scenes: persistedScenes },

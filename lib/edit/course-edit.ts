@@ -24,7 +24,8 @@ import {
   type TimelineDirection,
   type TimelineEntry,
 } from '@/lib/edit/course-timeline';
-import { sanitizeSceneContent } from '@/lib/sanitize/scene-content';
+import { keepLocalWhereUnchanged } from '@/lib/edit/scene-echo';
+import { withLearnerStateOf } from '@/lib/pbl/v2/runtime/persisted-scene';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useStageStore } from '@/lib/store/stage';
 
@@ -149,8 +150,14 @@ export function stepCourseTimeline(direction: TimelineDirection): void {
       timeline.updateLine(stageId, (current) => dropStep(current, step));
       continue;
     }
-    useStageStore.getState().applyCourseTimelineStep(applied);
+    const byId = new Map(document.scenes.map((scene) => [scene.id, scene]));
+    const scenes = applied.scenes.map((scene) => {
+      const current = byId.get(scene.id);
+      return current && scene !== current ? withLearnerStateOf(scene, current) : scene;
+    });
+    useStageStore.getState().applyCourseTimelineStep({ ...applied, scenes });
     timeline.updateLine(stageId, (current) => stepLine(current, direction));
+    timeline.splitAgentRun();
     noteRefs(stageId, readDocument(), Date.now());
     if (applied.currentSceneId !== document.currentSceneId) {
       const canvas = useCanvasStore.getState();
@@ -166,7 +173,7 @@ export function stepCourseTimeline(direction: TimelineDirection): void {
  * the meantime. Those changes go on the line, so undoing an older step cannot
  * silently overwrite them.
  */
-const departures = new Map<string, CourseDocument>();
+const departures = new Map<string, { readonly document: CourseDocument; readonly at: number }>();
 
 let trackingCourseSwitches = false;
 
@@ -179,9 +186,12 @@ function trackCourseSwitches(): void {
       const line = useCourseTimeline.getState().lines[leaving];
       if (line && (line.past.length > 0 || line.future.length > 0)) {
         departures.set(leaving, {
-          stage: previous.stage,
-          scenes: previous.scenes,
-          currentSceneId: previous.currentSceneId,
+          document: {
+            stage: previous.stage,
+            scenes: previous.scenes,
+            currentSceneId: previous.currentSceneId,
+          },
+          at: Date.now(),
         });
       }
     }
@@ -190,12 +200,23 @@ function trackCourseSwitches(): void {
     const departure = departures.get(arriving);
     if (!departure) return;
     departures.delete(arriving);
-    // Compared in the form the server holds: what came back was sanitized.
-    const left = { ...departure, scenes: sanitizeSceneContent(departure.scenes) };
-    recordAgentChange(left, {
+    const arrived: CourseDocument = {
       stage: state.stage,
       scenes: state.scenes,
       currentSceneId: state.currentSceneId,
+    };
+    // Media gone when the course came back may have gone any time while it was away:
+    // count from the departure, so the expiry never trusts it longer than it can.
+    useCourseTimeline
+      .getState()
+      .updateLine(arriving, (line) =>
+        noteDocumentRefs(line, documentAssetRefs(arrived), departure.at),
+      );
+    // Compared as the sync compares a read-back: in the form the server holds, with
+    // the sizes this browser measures left out.
+    recordAgentChange(departure.document, {
+      ...arrived,
+      scenes: keepLocalWhereUnchanged(departure.document.scenes, state.scenes),
     });
   });
 }

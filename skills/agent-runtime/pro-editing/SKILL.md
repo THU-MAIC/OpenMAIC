@@ -44,11 +44,19 @@ because it strips the styles. Before any slide write, read the page with
 **`detail:"source"`**: it returns the page's exact persisted JSON (all style
 fields, raw content HTML with inline marks and line breaks, exact geometry,
 z-order), and it is the root your patch paths address — a field read at
-`/content/canvas/elements/2/left` is written back through that same path. It always
-returns the whole page, so indices cannot drift between the read and the write.
+`/content/canvas/elements/2/left` is written back through that same path. Source output paginates after 12,000 characters; follow `nextOffset` until the
+target field and its exact anchor are available. Do not reconstruct omitted text.
 **`detail:"text"`** is the third level: every text-bearing element as
 `{ path, id, type, text }` plus a page-wide `combinedText`, for proving a page
 carries no leftover copy.
+
+For `str_replace`, copy the **decoded field value**, not the JSON serialization:
+actual newlines and literal backslash+n are different characters. Preserve HTML
+marks, whitespace and quotes exactly in `oldText`; never invent styles from the
+visible-text view. Supply the field's explicit `path`. The same rule applies to
+`newText`: preserve the intended code's escaping, not the surrounding JSON's.
+After an anchor rejection, use the returned diagnostic and re-read source where
+needed; correct the anchor rather than repeating the same failed patch.
 
 ## Choose the smallest operation
 

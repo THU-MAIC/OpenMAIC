@@ -6,11 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-11-05
+
+1.4.1 is a regular patch release with no upgrade conditions over 1.4.0. Most of it stops edits and learner progress from being lost when a background sync crosses a save, makes courses open quickly again on slow connections, and fixes PBL v3 sandbox cleanup and tutoring. Upgrading from 1.3.x carries the conditions of [1.4.0](#140---2026-11-04), and the 1.4.0 **Known issues** still apply.
+
 ### Bug Fixes
 
+- PBL: a background course sync no longer empties a PBL v2 project on screen. It used to take the stored design template as it was, and the next whole-document save then recorded the empty state, so the learner's submissions and progress were gone after a reload. [#2184](https://github.com/THU-MAIC/OpenMAIC/pull/2184)
 - Workbench: a background course sync no longer overwrites a scene edit that has not finished saving, so the edit no longer reverts on screen and the older copy is no longer saved over it. The scene is read again as soon as the save finishes. [#2168](https://github.com/THU-MAIC/OpenMAIC/pull/2168)
+- Workbench: on a connection Chromium rates 3G or slower, a course no longer takes close to a minute to open and Edit no longer stalls for about 15 s. The workbench and generation event streams now run as low-priority requests, so script chunks are not held back behind them. On such a connection the streams can themselves wait behind other requests, so a conversation's transcript can appear after the course does. A server-sent `retry:` below 1 s is treated as 1 s, and a page restored from the back/forward cache reconnects instead of keeping its connection. [#2185](https://github.com/THU-MAIC/OpenMAIC/pull/2185)
 - Editor: a slide open in the legacy Pro editor follows a server change to its scene, so the next commit from the canvas, including an automatic text-height adjustment, no longer writes the older content back over a page an agent just changed. [#2168](https://github.com/THU-MAIC/OpenMAIC/pull/2168)
+- Interactive diagrams: narration now walks the nodes in order and reveals them, and a reveal moves the page's own step state, so the diagram no longer stays on its first node during playback. The step label stays right and Next/Back continue from the revealed node, without ever moving behind a learner who has stepped further. This applies to newly generated pages; existing pages need regenerating. `@openmaic/generation` 0.3.29. [#2120](https://github.com/THU-MAIC/OpenMAIC/issues/2120)
 - Editor: the automatic text-height adjustment in the legacy Pro editor no longer saves the scene, so it no longer puts an older copy of a page back on the server from a tab that had not picked up a newer version, and no longer holds back an agent's next change. The height is kept in that tab and saved with its next real edit. [#2181](https://github.com/THU-MAIC/OpenMAIC/pull/2181)
+- Editor: saving a structural change, such as deleting or reordering a page, no longer deletes a page an agent or another tab added that this tab had not heard of yet. A page the user deleted is still deleted. [#2184](https://github.com/THU-MAIC/OpenMAIC/pull/2184)
+- Editor: the standalone classroom page follows server changes while in Edit, so a page an agent changed appears within seconds, including one changed before Edit was opened, instead of only after a reload. [#2184](https://github.com/THU-MAIC/OpenMAIC/pull/2184)
+- Editor: the legacy Pro editor removes an empty text box when the user leaves it, not whenever it renders, so opening a page no longer saves it with no user input. An empty box that already exists, or that an undo brings back, stays until it is selected and left. [#2184](https://github.com/THU-MAIC/OpenMAIC/pull/2184)
+
+- PBL v3: deleting a course now releases its sandbox. Background maintenance used to fail loading the deleted course's withdrawn project and never reclaimed the sandbox, so it kept running. The last checkpoint and teaching state are kept. [#2176](https://github.com/THU-MAIC/OpenMAIC/pull/2176) (by @cosarah)
+- PBL v3: the tutor no longer mistakes a learner's reflection for artifact approval or uses the wrong feedback mode during a recap, and a failed teaching call that a later call recovers no longer stays in the transcript; it is kept in the recorded activity. An IDE file-read error clears when the file is read again successfully. [#2173](https://github.com/THU-MAIC/OpenMAIC/pull/2173) (by @Irisdai517)
+- PBL v3: a long tutor reply keeps scrolling with its end instead of stopping once its heading reaches the top. Scrolling up releases following and scrolling back near the bottom resumes it, as in the workbench. [#2178](https://github.com/THU-MAIC/OpenMAIC/pull/2178) (by @Irisdai517)
+- Export: an interactive page that has only a `url` keeps its placeholder slide in the PPTX deck, with its button and QR code pointing at the page's own address, instead of disappearing. [#2175](https://github.com/THU-MAIC/OpenMAIC/pull/2175) (by @puxiao)
+- Interactive pages: player fullscreen with workbench panels open no longer cuts the page off on the left. [#2145](https://github.com/THU-MAIC/OpenMAIC/pull/2145) (by @YizukiAme)
+- Agent: `generate_scene` declares `widgetOutline` as an object, so models stop sending it as a JSON string that every call rejected with `invalid-widget-outline`. [#2157](https://github.com/THU-MAIC/OpenMAIC/pull/2157) (by @rome-xi)
+- Agent: course-edit guidance and errors explain newline escaping, so an agent recovers when a replacement anchor written with literal `\n` does not match. Matching stays exact. [#2152](https://github.com/THU-MAIC/OpenMAIC/pull/2152) (by @yipwingtim)
+- Storage: the asset collector no longer stalls when still-referenced entries fill its candidate page; they are excluded up front, so releasable assets behind them are collected. `@openmaic/storage` 0.39.3. [#2103](https://github.com/THU-MAIC/OpenMAIC/pull/2103) (by @bhushan4work)
+
+### Packages
+
+- `@openmaic/generation` 0.3.29 (was 0.3.28) and `@openmaic/storage` 0.39.3 (was 0.39.2). Other packages are unchanged from 1.4.0.
+
+### Other Changes
+
+- CI: the Playwright suite runs in three shards on the upgraded Playwright, and the render image is built only when its inputs change. [#2165](https://github.com/THU-MAIC/OpenMAIC/pull/2165) [#2171](https://github.com/THU-MAIC/OpenMAIC/pull/2171) [#2183](https://github.com/THU-MAIC/OpenMAIC/pull/2183)
 
 ## [1.4.0] - 2026-11-04
 

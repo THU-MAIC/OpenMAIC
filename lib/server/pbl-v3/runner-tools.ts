@@ -53,7 +53,11 @@ import {
 } from './teaching-prompt';
 import { GuidedSkillReview } from './guided-review';
 import { currentTeachingContext, type TeachingHistoryWindow } from './teaching-context';
-import { hasStageCompletion, isFinalProjectRecap } from './stage-progress';
+import {
+  hasStageCompletion,
+  isFinalProjectRecap,
+  requiresArtifactApproval,
+} from './stage-progress';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { abortable } from '@/lib/server/agent-runtime/abortable';
 import { LEARNER_HANDOFF_EVENT, reviewResponse, supportTurnSequences } from './review-question';
@@ -76,6 +80,7 @@ export async function teachingRunnerConfig(input: {
     stage = stageFor(row);
   if (bound.stage_key !== stageKey(row)) throw sandboxConflict('The teaching stage changed.');
   const milestone = currentMilestone(project.definition, row.state)!;
+  const artifactApprovalRequired = requiresArtifactApproval(stage);
   const agents = await getAgentSessionStore();
   const userMessages = await listAgentUserMessages(agents, input.sessionId);
   const latest = userMessages.at(-1);
@@ -101,7 +106,7 @@ export async function teachingRunnerConfig(input: {
       row.state.position.stageIndex === 0 &&
       stage.kind === 'mentor_say' &&
       stage.skill !== 'recap',
-    stage.kind === 'produce' && stage.reviewRequired,
+    artifactApprovalRequired,
   );
   const runId = `${bound.stage_key}:${latest?.seq ?? 0}`;
   const supportTurns = await supportTurnSequences(store.pool, input.sessionId, bound.stage_key);
@@ -603,7 +608,7 @@ export async function teachingRunnerConfig(input: {
     tools.push(
       tool(
         'read_next_skill',
-        'Read the current or next teaching section. Omit studentFeedback to reread; to advance, explain how the actual student responses answer the pending review. Quotes and summaries are allowed. While welcome is pending, actual later readiness feedback starts A without advancing sections. Set reuseFeedback only when earlier verified learner replies already satisfy the current section; explain the coverage and do not ask again.',
+        'Open the first section or reread the active section without studentFeedback. To advance to nextSection, explain the learner evidence in studentFeedback. For feedbackSource pending_review_reply, omit reuseFeedback. For verified_feedback, set reuseFeedback: true only if that evidence covers the goal. A real readiness reply starts teaching in A while welcome is pending. Once finalSection is open, use complete_stage when its goal is satisfied.',
         Type.Object({
           studentFeedback: Type.Optional(Type.String()),
           reuseFeedback: Type.Optional(Type.Boolean()),
@@ -626,7 +631,12 @@ export async function teachingRunnerConfig(input: {
                 ];
           if (!next)
             throw sandboxConflict(
-              'All sections are open; request final feedback and complete the review.',
+              'The final section is already open. Use complete_stage if available learner feedback covers it, or request one necessary review question.',
+            );
+          if (startingTeaching || (!reread && review.state.activeFile))
+            review.assertFeedbackSource(
+              p.studentFeedback,
+              startingTeaching ? false : p.reuseFeedback,
             );
           // Opening/rereading trusted protocol content does not need a cloud
           // request. Only advancing past a delivered review validates files.
@@ -642,10 +652,18 @@ export async function teachingRunnerConfig(input: {
             );
           return {
             value: {
-              priorArtifactApproval:
-                review.state.approval?.stageKey === bound.stage_key
-                  ? { studentSeq: review.state.approval.studentSeq, revalidateCurrentVersion: true }
-                  : null,
+              feedbackSource: review.feedbackSource(),
+              ...(artifactApprovalRequired
+                ? {
+                    priorArtifactApproval:
+                      review.state.approval?.stageKey === bound.stage_key
+                        ? {
+                            studentSeq: review.state.approval.studentSeq,
+                            revalidateCurrentVersion: true,
+                          }
+                        : null,
+                  }
+                : {}),
               ...teachingSection(
                 {
                   skill,
@@ -702,8 +720,7 @@ export async function teachingRunnerConfig(input: {
           const hash = await fingerprint(current, signal);
           await assertBuilt(store, current, hash);
           const approval =
-            stage.kind === 'produce' &&
-            stage.reviewRequired &&
+            artifactApprovalRequired &&
             (p.approval === true || review.state.activeFile === protocol.final);
           review.checkpoint(question, hash, approval, response);
           return {
@@ -720,7 +737,7 @@ export async function teachingRunnerConfig(input: {
     tools.push(
       tool(
         'complete_stage',
-        'Call only when teachingContext.activeSection equals finalSection and the learner has answered its recorded question. Otherwise use read_next_skill, deliver that section and request_skill_review first. When goals and any required current-version approval are already satisfied by verified learner replies, use reuseFeedback rather than repeat a question. Signal completion after the final student review. In studentFeedback, explain how the actual student responses answer the pending review; quotes and summaries are allowed. The server validates the current artifact. The final project recap finishes the project immediately; other stages wait for the learner to use the next-step button named by productContext.visibleLabels.continue.',
+        'Finish the stage after reading finalSection and satisfying its goal. Use studentFeedback to explain the real learner evidence. For feedbackSource pending_review_reply, omit reuseFeedback. For verified_feedback, use reuseFeedback: true when the evidence covers the final goal. If a necessary question remains, use request_skill_review and wait. Artifact approval applies only when artifactApprovalRequired is true. The final project recap completes the project immediately. For other stages, the learner uses the next-step button named by productContext.visibleLabels.continue.',
         Type.Object({
           studentFeedback: Type.String({ minLength: 1 }),
           reuseFeedback: Type.Optional(Type.Boolean()),
@@ -734,6 +751,7 @@ export async function teachingRunnerConfig(input: {
         async (current, p, _callId, signal) => {
           // Reject an out-of-order model action before any remote file access.
           review.assertCompletable();
+          review.assertFeedbackSource(p.studentFeedback, p.reuseFeedback);
           const finalRecap = isFinalProjectRecap(project.definition, current.state.position, stage);
           // The study lock excludes teaching writers. Keep a standalone
           // preview alive while checking a saved plan or code for approval.
@@ -899,6 +917,7 @@ export async function teachingRunnerConfig(input: {
     welcomePresented: review.state.welcome === 'pending' ? !!review.state.pending : undefined,
     activeSection: review.state.activeFile,
     reviewedSectionCount: review.state.reviewedFiles.length,
+    feedbackSource: review.feedbackSource(),
     priorArtifactApproval:
       review.state.approval?.stageKey === bound.stage_key
         ? { studentSeq: review.state.approval.studentSeq, revalidateCurrentVersion: true }

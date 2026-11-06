@@ -68,6 +68,8 @@ export interface LearningConversationEntry {
         display?: unknown;
         progress?: { kind?: string; text?: string; percent?: number; data?: unknown };
         projectCompleted?: boolean;
+        /** A later successful teaching-control call recovered this failure for the same input. */
+        recovered?: boolean;
         startedAt?: number;
         endedAt?: number;
         status: 'running' | 'succeeded' | 'failed' | 'interrupted';
@@ -154,6 +156,37 @@ export function handoffEchoes<
   );
 }
 
+/** Derive presentation state after live projection or paginated history has been merged. */
+export function markRecoveredTeachingTools(entries: readonly LearningConversationEntry[]) {
+  const successful = new Set<string>();
+  const recovered = new Set<LearningConversationEntry['parts'][number]>();
+  for (const entry of [...entries].reverse()) {
+    if (entry.inputId === undefined) continue;
+    for (const part of [...entry.parts].reverse()) {
+      if (part.kind !== 'tool' || !['skill', 'review', 'complete'].includes(part.action)) continue;
+      let operation: string = part.action;
+      if (part.action === 'skill') {
+        // A successful reread does not prove that a failed advancement recovered.
+        // Missing legacy arguments cannot establish which operation succeeded.
+        if (!part.args || typeof part.args !== 'object' || Array.isArray(part.args)) continue;
+        const { studentFeedback } = part.args as { studentFeedback?: unknown };
+        // Execution may coerce non-string values; recorded arguments stay original.
+        if (studentFeedback !== undefined && typeof studentFeedback !== 'string') continue;
+        operation += studentFeedback ? ':advance' : ':read';
+      }
+      const key = `${conversationScope(entry)}:${entry.inputId}:${operation}`;
+      if (part.status === 'succeeded') successful.add(key);
+      else if (part.status === 'failed' && successful.has(key)) recovered.add(part);
+    }
+  }
+  return entries.map((entry) => ({
+    ...entry,
+    parts: entry.parts.map((part) =>
+      part.kind === 'tool' ? { ...part, recovered: recovered.has(part) } : part,
+    ),
+  }));
+}
+
 /** Also used after paginated fragments merge, when the original may arrive on an older page. */
 export function deduplicateHandoffs(entries: readonly LearningConversationEntry[]) {
   const replies = entries.flatMap((entry) =>
@@ -176,7 +209,7 @@ export function deduplicateHandoffs(entries: readonly LearningConversationEntry[
   const duplicates = new Set<LearningConversationEntry['parts'][number]>(
     [...handoffEchoes(replies)].map((reply) => reply.part),
   );
-  return entries.flatMap((entry) => {
+  const deduplicated = entries.flatMap((entry) => {
     const parts = entry.parts.filter((part) => !duplicates.has(part));
     if (
       entry.parts.length &&
@@ -188,4 +221,5 @@ export function deduplicateHandoffs(entries: readonly LearningConversationEntry[
       return [];
     return [{ ...entry, parts }];
   });
+  return markRecoveredTeachingTools(deduplicated);
 }

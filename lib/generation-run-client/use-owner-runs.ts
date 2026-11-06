@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { createLogger } from '@/lib/logger';
+import { FetchEventSource } from '@/lib/utils/fetch-event-source';
 
 import { listActiveGenerationRuns } from './api';
 import { OwnerRunsWatcher } from './owner-runs';
@@ -36,7 +37,7 @@ export function useOwnerRuns(options: OwnerRunsOptions = {}): {
       openStream:
         typeof EventSource === 'undefined'
           ? null
-          : () => new EventSource('/api/generation-runs/events'),
+          : () => new FetchEventSource('/api/generation-runs/events'),
       onChange: setRuns,
       onCourseChanged: (run) => onCourseChangedRef.current?.(run),
       onWarn: (message, error) => log.warn(`${message}:`, error),

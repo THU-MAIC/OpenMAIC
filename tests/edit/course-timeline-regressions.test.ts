@@ -7,8 +7,6 @@
  * session and store rather than calling the session with hand-built snapshots.
  */
 
-import { act, createElement } from 'react';
-import { createRoot } from 'react-dom/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Scene, SlideContent, Stage } from '@/lib/types/stage';
 
@@ -35,16 +33,23 @@ vi.mock('@/components/slide-renderer/components/element/ProsemirrorEditor', () =
 const { createDefaultSlide, createDefaultTextElement } =
   await import('@/lib/edit/slide-edit-elements');
 const { useStageStore, discardPendingStageChanges } = await import('@/lib/store/stage');
-const { commitCourseEdit, recordAgentChange, stampGeneratedAudio, stepCourseTimeline } =
-  await import('@/lib/edit/course-edit');
-const { useCourseTimeline, AGENT_RUN_IDLE_MS, BURST_MAX_GAP_MS, applyTimelineEntry, diffCourse } =
-  await import('@/lib/edit/course-timeline');
+const {
+  commitCourseEdit,
+  recordAgentChange,
+  stampGeneratedAudio,
+  stepCourseTimeline,
+  sweepExpiredCourseSteps,
+} = await import('@/lib/edit/course-edit');
+const {
+  useCourseTimeline,
+  AGENT_RUN_IDLE_MS,
+  ASSET_RETENTION_MS,
+  BURST_MAX_GAP_MS,
+  applyTimelineEntry,
+  diffCourse,
+} = await import('@/lib/edit/course-timeline');
 const { useCanvasStore } = await import('@/lib/store/canvas');
 const { useSlideEditSession } = await import('@/components/edit/surfaces/slide/slide-edit-session');
-const { useSlideCanvasController } =
-  await import('@/components/edit/surfaces/slide/use-slide-surface');
-const { SceneProvider } = await import('@/lib/contexts/scene-context');
-const { TextElement } = await import('@/components/slide-renderer/components/element/TextElement');
 const { keepLocalWhereUnchanged } = await import('@/lib/edit/scene-echo');
 const { stripToDesignTemplate } = await import('@/lib/pbl/v2/runtime/learner-state');
 
@@ -84,41 +89,6 @@ function load(scenes: Scene[], currentSceneId: string) {
   });
 }
 
-function Canvas() {
-  const current = useStageStore((state) => state.currentSceneId);
-  const { controller } = useSlideCanvasController();
-  const content = useStageStore(
-    (state) => state.scenes.find((scene) => scene.id === current)?.content,
-  ) as SlideContent | undefined;
-  return createElement(
-    SceneProvider,
-    { controller } as never,
-    (content?.canvas.elements ?? []).map((element) =>
-      createElement(TextElement, { key: element.id, elementInfo: element } as never),
-    ),
-  );
-}
-
-async function mountCanvas() {
-  const host = document.createElement('div');
-  document.body.append(host);
-  const root = createRoot(host);
-  await act(async () => root.render(createElement(Canvas)));
-  return root;
-}
-
-const pause = (ms: number) =>
-  act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, ms));
-  });
-
-/** Clear the text the way typing does: a commit from outside any pointer gesture. */
-function clearText(id: string) {
-  const next = structuredClone(sceneOf(id).content as SlideContent);
-  (next.canvas.elements[0] as unknown as { content: string }).content = '<p></p>';
-  useSlideEditSession.getState().commitContent(id, next);
-}
-
 beforeEach(() => {
   discardPendingStageChanges(STAGE);
   useCourseTimeline.getState().clearCourse(STAGE);
@@ -148,100 +118,6 @@ describe('a commit that outlives its page', () => {
     useSlideEditSession.getState().commitContent('a', edited);
     expect(elementsOf('b').map((element) => element.id)).toEqual(['t-b']);
     expect(elementsOf('a')).toEqual([]);
-  });
-
-  it('a page flip off an empty text box leaves the next page alone', async () => {
-    load([slide('a', '<p></p>'), slide('b', '<p>bbb</p>', 2)], 'a');
-    const root = await mountCanvas();
-    await act(async () => useStageStore.getState().setCurrentSceneId('b'));
-    await pause(400);
-    expect(elementsOf('b').map((element) => element.id)).toEqual(['t-b']);
-    await act(async () => root.unmount());
-  });
-});
-
-describe('the empty text box cleanup', () => {
-  it('undo brings the text back and stays back', async () => {
-    load([slide('a', '<p>abc</p>')], 'a');
-    const root = await mountCanvas();
-    await pause(350);
-    expect(past()).toBe(0);
-
-    await act(async () => clearText('a'));
-    await pause(400);
-    expect(elementsOf('a')).toEqual([]);
-    expect(past()).toBe(1);
-
-    await act(async () => stepCourseTimeline('undo'));
-    await pause(400);
-    expect(elementsOf('a').map((element) => element.content)).toEqual(['<p>abc</p>']);
-    expect([past(), future()]).toEqual([0, 1]);
-    await act(async () => root.unmount());
-  });
-
-  it('an undo inside the wait cancels the removal it would have overtaken', async () => {
-    load([slide('a', '<p>abc</p>')], 'a');
-    const root = await mountCanvas();
-    await act(async () => clearText('a'));
-    await pause(50);
-    await act(async () => stepCourseTimeline('undo'));
-    await pause(400);
-    expect(elementsOf('a').map((element) => element.content)).toEqual(['<p>abc</p>']);
-    await act(async () => root.unmount());
-  });
-
-  it('redo lands on the emptied box without losing the way back', async () => {
-    load([slide('a', '<p>abc</p>')], 'a');
-    const root = await mountCanvas();
-    await act(async () => clearText('a'));
-    await pause(400);
-    await act(async () => stepCourseTimeline('undo'));
-    await pause(50);
-    await act(async () => stepCourseTimeline('redo'));
-    await pause(400);
-    expect(elementsOf('a')).toEqual([]);
-    expect([past(), future()]).toEqual([1, 0]);
-    await act(async () => stepCourseTimeline('undo'));
-    await pause(400);
-    expect(elementsOf('a').map((element) => element.content)).toEqual(['<p>abc</p>']);
-    await act(async () => root.unmount());
-  });
-
-  it('keeps a box with no text whose fill makes it a shape', async () => {
-    const scene = slide('a', '<p></p>');
-    const box = (scene.content as SlideContent).canvas.elements[0] as unknown as { fill: string };
-    box.fill = '#ff0000';
-    load([scene], 'a');
-    const root = await mountCanvas();
-    await pause(400);
-    expect(elementsOf('a')).toHaveLength(1);
-    await act(async () => root.unmount());
-  });
-
-  it('is not a step even while a drag on another element is in flight', async () => {
-    load([slide('a', '<p></p>')], 'a');
-    commitCourseEdit({}, () => useStageStore.getState().updateScene('a', { title: 'renamed' }));
-    stepCourseTimeline('undo');
-    const root = await mountCanvas();
-    const { withTidyWrite } = await import('@/lib/edit/tidy-write');
-    const empty = structuredClone(sceneOf('a').content as SlideContent);
-    empty.canvas.elements = [];
-    withTidyWrite(() => useSlideEditSession.getState().commitContent('a', empty));
-    expect(elementsOf('a')).toEqual([]);
-    expect([past(), future()]).toEqual([0, 1]);
-    await act(async () => root.unmount());
-  });
-
-  it('opening a page with an empty box is not an edit and keeps redo', async () => {
-    load([slide('a', '<p>x</p>'), slide('b', '<p></p>', 2)], 'a');
-    commitCourseEdit({}, () => useStageStore.getState().updateScene('a', { title: 'renamed' }));
-    stepCourseTimeline('undo');
-    await act(async () => useStageStore.getState().setCurrentSceneId('b'));
-    const root = await mountCanvas();
-    await pause(400);
-    expect(elementsOf('b')).toEqual([]);
-    expect([past(), future()]).toEqual([0, 1]);
-    await act(async () => root.unmount());
   });
 });
 
@@ -418,6 +294,152 @@ describe('agent runs', () => {
       recordAgentChange(before);
     }
     expect(past()).toBe(1);
+  });
+});
+
+describe('an agent run across an undo', () => {
+  it('starts a new step: undo does not jump past where the run had got to', () => {
+    load([slide('a', '<p>a</p>')], 'a');
+    const agentTitle = (title: string) => {
+      const before = useStageStore.getState();
+      useStageStore.setState({
+        scenes: before.scenes.map((scene) => ({ ...scene, title }) as Scene),
+      });
+      recordAgentChange(before);
+    };
+    useCourseTimeline.getState().beginAgentRun(Date.now());
+    agentTitle('A1');
+    commitCourseEdit({}, () => useStageStore.getState().updateScene('a', { notes: 'h' } as never));
+    agentTitle('A2');
+    stepCourseTimeline('undo');
+    stepCourseTimeline('undo');
+    expect(sceneOf('a').title).toBe('A1');
+    agentTitle('A3');
+    stepCourseTimeline('undo');
+    expect(sceneOf('a').title).toBe('A1');
+  });
+});
+
+describe('a PBL v2 project', () => {
+  const project = (title: string, submissions: unknown[]) => ({
+    uiPhase: 'workspace',
+    title,
+    description: 'd',
+    proficiency: 'intermediate',
+    language: 'en-US',
+    tags: [],
+    status: 'active',
+    roles: [{ id: 'instructor-1', type: 'instructor', name: 'Instructor' }],
+    milestones: [
+      {
+        id: 'milestone-1',
+        title: 'M',
+        status: 'active',
+        order: 0,
+        microtasks: [
+          { id: 'microtask-1', title: 'T', status: 'todo', assignee: 'user', hints: [], order: 0 },
+        ],
+      },
+    ],
+    submissions,
+    evaluations: [],
+    threads: [],
+    engagementEvents: [],
+    runtimeEvents: [],
+    createdAt: '2026-08-07T08:00:00.000Z',
+    updatedAt: '2026-08-07T08:00:03.000Z',
+  });
+  const pbl = (projectV2: unknown) =>
+    ({
+      id: 'p',
+      stageId: STAGE,
+      type: 'pbl',
+      title: 'P',
+      order: 1,
+      actions: [],
+      content: { type: 'pbl', projectV2 },
+    }) as unknown as Scene;
+
+  it('keeps learner work done after a design change that is undone', () => {
+    load([pbl(project('Design one', []))], 'p');
+    const before = useStageStore.getState();
+    useStageStore.setState({ scenes: [pbl(project('Design two', []))] });
+    recordAgentChange(before);
+    // The learner works: not a step.
+    const work = [
+      {
+        id: 'submission-1',
+        microtaskId: 'microtask-1',
+        milestoneId: 'milestone-1',
+        kind: 'text',
+        content: 'learner work',
+        createdAt: '2026-08-07T08:00:04.000Z',
+      },
+    ];
+    useStageStore.getState().updateScene('p', {
+      content: { type: 'pbl', projectV2: project('Design two', work) } as never,
+    });
+    stepCourseTimeline('undo');
+    const now = (
+      sceneOf('p').content as unknown as { projectV2: { title: string; submissions: unknown[] } }
+    ).projectV2;
+    expect(now.title).toBe('Design one');
+    expect(now.submissions).toHaveLength(1);
+  });
+});
+
+describe('a course coming back from another tab', () => {
+  const other = (id: string) =>
+    ({ ...slide(`${id}-1`, '<p>x</p>'), stageId: id }) as unknown as Scene;
+  const switchTo = (stageId: string, scenes: Scene[]) =>
+    useStageStore.setState({
+      stage: { id: stageId, name: stageId } as unknown as Stage,
+      scenes,
+      currentSceneId: scenes[0].id,
+    });
+
+  it('does not take a measured text height for a change, and keeps redo', () => {
+    load([slide('a', '<p>a</p>')], 'a');
+    commitCourseEdit({}, () => useStageStore.getState().updateScene('a', { title: 'renamed' }));
+    stepCourseTimeline('undo');
+    const left = useStageStore.getState().scenes;
+    switchTo('other', [other('other')]);
+    const back = structuredClone(left);
+    ((back[0].content as SlideContent).canvas.elements[0] as { height: number }).height = 92;
+    switchTo(STAGE, back);
+    expect([past(), future()]).toEqual([0, 1]);
+  });
+
+  it('dates media gone while it was away from the departure', () => {
+    vi.useFakeTimers({ now: 1_000_000, toFake: ['Date'] });
+    try {
+      const withImage = slide('a', '<p>a</p>');
+      (withImage.content as SlideContent).canvas.elements.push({
+        id: 'img',
+        type: 'image',
+        left: 0,
+        top: 0,
+        width: 10,
+        height: 10,
+        rotate: 0,
+        fixedRatio: true,
+        src: 'asset:ast_image_1',
+      } as never);
+      load([withImage], 'a');
+      commitCourseEdit({}, () => useStageStore.getState().updateScene('a', { title: 'renamed' }));
+      const left = useStageStore.getState().scenes;
+      switchTo('other', [other('other')]);
+      vi.setSystemTime(1_000_000 + ASSET_RETENTION_MS + 60_000);
+      const back = structuredClone(left);
+      (back[0].content as SlideContent).canvas.elements = (
+        back[0].content as SlideContent
+      ).canvas.elements.filter((element) => element.id !== 'img');
+      switchTo(STAGE, back);
+      expect(past()).toBe(2);
+      expect(sweepExpiredCourseSteps()).toBeGreaterThan(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

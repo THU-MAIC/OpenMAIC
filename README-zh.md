@@ -43,6 +43,7 @@
 
 ## 🗞️ 动态
 
+- **2026-11-05** — [v1.4.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.4.1)：**后台同步不再丢失编辑和学习进度。** 后台同步不再丢掉未保存的编辑、清空 PBL v2 项目或删掉 agent 刚添加的页面；慢速网络下课程重新能快速打开；PBL v3 删除课程后会释放其沙箱。从 1.4.0 升级无额外条件。
 - **2026-11-04** — [v1.4.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.4.0)：**项目式学习 PBL v3 上线，用 PBL 解锁 Vibe Coding 的全新打开方式：把作品做出来，把原理学明白。** 边学边练，把知识点变成实操任务，亲自动手让项目运行起来；AI 导师全程引导，一起拆解需求、讨论方案、逐步实现，疑惑随时提问；分阶段反馈，按里程碑完成挑战，获得阶段反馈和个性化学习报告；学习成果和进度保留，按自己的节奏学，下次回来接着做。开启方式：[配置沙箱服务](packages/docs/content/docs/configuration.mdx#sandbox-execution-experimental)和检查点存储后打开 `/pbl-v3`（[配置指南](lib/pbl/v3/README.md#try-the-sample)），未配置时保持关闭。升级不可逆（先停掉所有 1.3.x 实例，回滚需要恢复数据库；此后数据库被新版本迁移时，旧副本会退出），升级前请先阅读该版本的 **Breaking Changes**。
 - **2026-11-02** — [v1.3.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.3.1)：**DeepSeek Token Plan 与稳定性修复。** 一个 DeepSeek key 即可开通对话、联网搜索和网页抓取。上传资源不再在慢速对象存储上长期占用数据库连接，离开页面前的编辑也不再丢失。升级有发布条件（先停掉所有 1.3.0 实例，回滚需要恢复数据库），升级前请先阅读该版本的 **Breaking Changes**。
 - **2026-10-29** — [v1.3.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.3.0)：**知识库与 Pro 工作台升级。** 上传的文件都会保存在知识库里，直到手动删除；支持文件夹，每个文件只解析一次、所有会话共用；输入框可以用 `@` 引用，agent 也能读取、搜索和整理资料。Pro 工作台中，发出请求后在第一页生成之前就能看到 agent 的工作预览，课堂标签页可以在学习和编辑之间切换。升级有发布条件（先停掉所有旧实例，不能回滚到 1.3.0 之前），升级前请先阅读 [changelog](CHANGELOG.md)。

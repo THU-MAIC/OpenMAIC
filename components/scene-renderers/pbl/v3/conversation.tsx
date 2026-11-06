@@ -11,13 +11,12 @@ import {
   ListChecks,
   MessageSquareText,
 } from 'lucide-react';
-import { Conversation, ConversationContent } from '@/components/ai-elements/conversation';
 import { TextBlock } from '@/components/workbench/chat/text-block';
 import { ThinkingBlock } from '@/components/workbench/chat/thinking-block';
 import { WaitingBar } from '@/components/workbench/chat/waiting-bar';
 import { ToolActivity } from './tool-activity';
 import { ConversationHistory } from './conversation-history';
-import { ConversationScroll, useConversationScrollTarget } from './conversation-scroll';
+import { ConversationViewport } from './conversation-scroll';
 import { UserBubble } from '@/components/workbench/chat/user-bubble';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { LearningView } from '@/lib/pbl/v3/types';
@@ -69,6 +68,13 @@ function AgentTurn({
     part.kind === 'tool' ? part.status === 'running' : part.kind === 'thinking' && part.streaming,
   );
   const copyText = entry.parts.flatMap((p) => (p.kind === 'text' ? [p.text] : [])).join('\n\n');
+  const parts = entry.parts.filter((part) => part.kind !== 'tool' || !part.recovered);
+  if (
+    entry.parts.length &&
+    !parts.length &&
+    !['running', 'failed', 'cancelled', 'interrupted'].includes(entry.status ?? '')
+  )
+    return null;
   return (
     <article
       className="group/turn min-w-0 space-y-1.5"
@@ -85,7 +91,7 @@ function AgentTurn({
       <div
         className={`pbl-assistant-bubble flex min-w-0 flex-col gap-[5px] rounded-xl rounded-tl-md border-l-2 px-3 py-2.5 ${accents[role]}`}
       >
-        {groupParts(entry.parts).map((part) =>
+        {groupParts(parts).map((part) =>
           Array.isArray(part) ? (
             <div key={part[0].id} className="flex flex-col gap-3">
               <ToolActivity tools={part} t={t} />
@@ -240,69 +246,50 @@ export function LearningConversation({
     }
   };
   const placeholder = (requesting || view.busy) && !entries.some((e) => e.status === 'running');
-  const last = entries.at(-1);
-  const turnId = placeholder
-    ? 'queued'
-    : !pendingMessage && last && last.speaker !== 'user' && !last.boundary
-      ? last.id
-      : null;
-  const { targetScrollTop, follow } = useConversationScrollTarget(turnId, sent);
   return (
-    <Conversation
-      className="flex min-h-0 flex-1 flex-col bg-background"
-      aria-label={t('pblV3.learning')}
-      targetScrollTop={targetScrollTop}
-      initial="instant"
-      resize="instant"
+    <ConversationViewport
+      key={view.id}
+      sent={sent}
+      hidden={modalActive}
+      generating={requesting || view.busy || entries.some((entry) => entry.status === 'running')}
+      onClick={(event) => openReference(event)}
     >
-      <ConversationContent
-        scrollClassName="pbl-conversation-scroll min-h-0 flex-1"
-        className="gap-5 p-4"
-        onClick={(event) => openReference(event)}
-      >
-        <ConversationHistory
-          id={view.id}
-          sources={view.conversationHistory ?? []}
-          renderEntry={(entry, dismiss) => (
-            <div onClick={(event) => openReference(event, dismiss)}>
-              <ConversationEntry
-                entry={entry}
-                onOpenReport={
-                  onOpenReport
-                    ? () => {
-                        dismiss();
-                        onOpenReport();
-                      }
-                    : undefined
-                }
-              />
-            </div>
-          )}
-        />
-        {entries.some((entry) => entry.omitted) && (
-          <p role="status" className="text-xs text-muted-foreground">
-            {t('pblV3.conversationLimited')}
-          </p>
+      <ConversationHistory
+        id={view.id}
+        sources={view.conversationHistory ?? []}
+        renderEntry={(entry, dismiss) => (
+          <div onClick={(event) => openReference(event, dismiss)}>
+            <ConversationEntry
+              entry={entry}
+              onOpenReport={
+                onOpenReport
+                  ? () => {
+                      dismiss();
+                      onOpenReport();
+                    }
+                  : undefined
+              }
+            />
+          </div>
         )}
-        {!entries.length && !view.busy && (
-          <p className="text-sm text-muted-foreground">{t('pblV3.journey.startConversation')}</p>
-        )}
-        {entries.map((entry) => (
-          <ConversationEntry key={entry.id} entry={entry} onOpenReport={onOpenReport} />
-        ))}
-        {pendingMessage && <ConversationEntry entry={pendingMessage} />}
-        {placeholder && (
-          <AgentTurn
-            entry={{ id: 'queued', speaker: view.role ?? 'mentor', status: 'running', parts: [] }}
-          />
-        )}
-      </ConversationContent>
-      <ConversationScroll
-        hidden={modalActive}
-        sent={sent}
-        onFollow={follow}
-        generating={requesting || view.busy || entries.some((entry) => entry.status === 'running')}
       />
-    </Conversation>
+      {entries.some((entry) => entry.omitted) && (
+        <p role="status" className="text-xs text-muted-foreground">
+          {t('pblV3.conversationLimited')}
+        </p>
+      )}
+      {!entries.length && !view.busy && (
+        <p className="text-sm text-muted-foreground">{t('pblV3.journey.startConversation')}</p>
+      )}
+      {entries.map((entry) => (
+        <ConversationEntry key={entry.id} entry={entry} onOpenReport={onOpenReport} />
+      ))}
+      {pendingMessage && <ConversationEntry entry={pendingMessage} />}
+      {placeholder && (
+        <AgentTurn
+          entry={{ id: 'queued', speaker: view.role ?? 'mentor', status: 'running', parts: [] }}
+        />
+      )}
+    </ConversationViewport>
   );
 }

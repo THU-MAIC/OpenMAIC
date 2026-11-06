@@ -616,6 +616,8 @@ interface CourseTimelineState {
   updateLine: (stageId: string, update: (line: CourseLine) => CourseLine) => void;
   clearCourse: (stageId: string) => void;
   beginAgentRun: (now: number) => void;
+  /** An undo or redo landed: what the open run writes next is a step of its own. */
+  splitAgentRun: () => void;
   endAgentRun: (now: number) => void;
   /** The session said something: a run still open is alive. */
   touchAgentRun: (now: number) => void;
@@ -647,6 +649,8 @@ export const useCourseTimeline = create<CourseTimelineState>()((set, get) => ({
         ? { agentRun: { ...state.agentRun, seenAt: now } }
         : { agentRun: { id: nextRunId++, endedAt: null, seenAt: now } },
     ),
+  splitAgentRun: () =>
+    set((state) => (state.agentRun ? { agentRun: { ...state.agentRun, id: nextRunId++ } } : state)),
   endAgentRun: (now) =>
     set((state) =>
       state.agentRun && state.agentRun.endedAt === null

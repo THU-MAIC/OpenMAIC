@@ -330,6 +330,7 @@ export function SpeechTtsBar({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const objUrlRef = useRef<string | null>(null);
 
+  const [statusRecheck, setStatusRecheck] = useState(0);
   const lookupId = resolveSpeechAudioId(sceneOrder, { id: actionId, audioId });
   const [readAudioId, setReadAudioId] = useState<string | undefined>(lookupId);
   const [seededLookupId, setSeededLookupId] = useState(lookupId);
@@ -386,7 +387,16 @@ export function SpeechTtsBar({
     return () => {
       alive = false;
     };
-  }, [lookupId, actionId, sceneOrder, audioInvalidated, audioUrl, refreshKey, regenerating]);
+  }, [
+    lookupId,
+    actionId,
+    sceneOrder,
+    audioInvalidated,
+    audioUrl,
+    refreshKey,
+    regenerating,
+    statusRecheck,
+  ]);
 
   useEffect(() => () => stopPreview(), [stopPreview]);
 
@@ -443,9 +453,20 @@ export function SpeechTtsBar({
         language,
       );
       if (id) {
-        setReadAudioId(id);
         onGenerated(id, text);
-        setStatus('ready');
+        const live = useStageStore
+          .getState()
+          .scenes.find((scene) => scene.order === sceneOrder)
+          ?.actions?.find((action) => action.id === actionId);
+        if (live?.type === 'speech' && live.text === text) {
+          setReadAudioId(id);
+          setStatus('ready');
+        } else {
+          // The line moved on while this was generating (an edit, an undo): show what
+          // it says now, not the clip that just arrived.
+          setStatus('none');
+          setStatusRecheck((n) => n + 1);
+        }
       } else {
         setStatus('none');
       }
