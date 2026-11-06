@@ -60,6 +60,63 @@ async function archive(bundle: ReturnType<typeof packageBuiltin>) {
   return JSZip.loadAsync(await zip.generateAsync({ type: 'uint8array' }));
 }
 describe('self-contained PBL project packages', () => {
+  it('exports the Java-preview capability and rejects an archive without it before upload', async () => {
+    const original = packageBuiltin(source('greeting-java'));
+    const files = { ...original.files };
+    const descriptor = JSON.parse(files['project.json']);
+    descriptor.runtime.application = {
+      title: 'Java preview',
+      description: 'A declared main class',
+      argv: ['java', '-cp', '/tmp/pbl-project-build', 'Greeting'],
+      port: 8000,
+      healthPath: '/api/health',
+    };
+    files['project.json'] = JSON.stringify(descriptor);
+    const bundle = indexProjectFiles(original.entry.id, original.entry.version, files);
+    const m = manifest();
+    for (const scene of m.scenes)
+      scene.content = {
+        type: 'pbl',
+        projectV3: { id: original.entry.id, version: original.entry.version },
+      };
+    const fetcher = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(Response.json({ projects: [bundle] }));
+    try {
+      await attachClassroomProjects('java-course', m, new Map());
+      expect(m.requiredCapabilities).toContain('pbl-v3-java-application@1');
+      m.requiredCapabilities = m.requiredCapabilities!.filter(
+        (c) => c !== 'pbl-v3-java-application@1',
+      );
+      fetcher.mockClear();
+      await expect(installClassroomProjects(await archive(bundle), m)).rejects.toThrow(
+        'Java application previews',
+      );
+      expect(fetcher).not.toHaveBeenCalled();
+    } finally {
+      fetcher.mockRestore();
+    }
+  });
+  it('admits a Java application while retaining its registered Java runtime and sources', () => {
+    const original = packageBuiltin(source('greeting-java'));
+    const files = { ...original.files };
+    const descriptor = JSON.parse(files['project.json']);
+    descriptor.runtime.application = {
+      title: 'Java preview',
+      description: 'A declared Java main class',
+      argv: ['java', '-cp', '/tmp/pbl-project-build', 'Greeting'],
+      port: 8000,
+      healthPath: '/api/health',
+    };
+    files['project.json'] = JSON.stringify(descriptor);
+    const bundle = indexProjectFiles(original.entry.id, original.entry.version, files);
+    expect(validateProjectPackage(bundle).project.application?.argv[0]).toBe('java');
+    descriptor.runtime.application.argv = ['java', '-jar', 'arbitrary.jar'];
+    files['project.json'] = JSON.stringify(descriptor);
+    expect(() =>
+      validateProjectPackage(indexProjectFiles(original.entry.id, original.entry.version, files)),
+    ).toThrow();
+  });
   it.each(['missing', 'text', 'duplicate', 'host-context'])(
     'rejects invalid assessment choice bindings: %s',
     (kind) => {

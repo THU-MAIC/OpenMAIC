@@ -7846,6 +7846,14 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           bundle.files[document] = `PACKAGED REFERENCE ${binding.stage}`;
       }
       const java = descriptor.runtime.profile === 'java';
+      if (java)
+        descriptor.runtime.application = {
+          title: 'Java preview',
+          description: 'Exercise the imported Java launcher.',
+          argv: ['java', '-cp', '/tmp/pbl-project-build', 'Greeting', 'Ada'],
+          port: 8000,
+          healthPath: '/',
+        };
       bundle.files['rubric/expected.txt'] = 'Hello, Ada!\nHello, Lin!\n';
       bundle.files['tests/private.py'] = java
         ? 'import subprocess,sys\nfor name in ["  Ada  ","Lin"]: print(subprocess.run(["java","-cp",sys.argv[1],"Greeting",name],check=True,text=True,stdout=subprocess.PIPE).stdout.strip())\n'
@@ -7996,6 +8004,35 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       expect(await service.listFiles(environmentId)).not.toEqual(
         expect.arrayContaining([expect.objectContaining({ path: 'tests/private.py' })]),
       );
+      if (java) {
+        vi.stubEnv('OPENMAIC_SECRET_KEY', 'local-secret-'.repeat(4));
+        vi.stubEnv('OPENMAIC_PREVIEW_GATEWAY_KEY', 'local-gateway-'.repeat(4));
+        vi.stubEnv('OPENMAIC_APP_ORIGIN', 'https://app.example.com');
+        vi.stubEnv('OPENMAIC_SANDBOX_PREVIEW_ORIGIN', 'https://{id}.preview-example.net');
+        const row = await store.get(created.id, principal.ownerId);
+        const request = {
+          studyId: row.id,
+          id: randomUUID(),
+          environmentId,
+          revision: row.revision,
+          epoch: await service.workspaceEpoch(environmentId),
+          action: 'open',
+        };
+        const success = { state: 'stopped', commandState: 'exited', exitCode: 0 };
+        expect(await applicationRequest(principal, request)).toMatchObject(success);
+        const extra = join(mocked.root, environmentId, 'src/Added.java');
+        try {
+          // A new launch sees the added source. Replaying the same ID retains
+          // the earlier command fingerprint instead of rebuilding its arguments.
+          await writeFile(extra, 'class Added { invalid Java }');
+          expect(await applicationRequest(principal, request)).toMatchObject(success);
+          expect(
+            await applicationRequest(principal, { ...request, id: randomUUID() }),
+          ).toMatchObject({ state: 'failed', output: expect.stringContaining('Added.java') });
+        } finally {
+          await rm(extra, { force: true });
+        }
+      }
       let evaluations = 0;
       while ((await store.get(created.id, principal.ownerId)).state.status !== 'completed') {
         const row = await store.get(created.id, principal.ownerId),

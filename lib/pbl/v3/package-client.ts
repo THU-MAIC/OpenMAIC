@@ -11,12 +11,22 @@ import type { ClassroomManifest } from '@/lib/export/classroom-zip-types';
 import { PROJECT_LIMITS, projectResourcesWithinLimits, safeProjectPath } from './package-policy';
 import { projectSchema, projectAdmissionSchema } from './domain/project/project-schema';
 
-import { APPLICATION_CAPABILITY, STANDALONE_FRONTEND_CAPABILITY } from './application';
+import {
+  APPLICATION_CAPABILITY,
+  STANDALONE_FRONTEND_CAPABILITY,
+  JAVA_APPLICATION_CAPABILITY,
+} from './application';
 
 function needsApplication(projects: readonly PBLProjectPackage[]) {
   return projects.some(
     (project) => JSON.parse(project.files['project.json'])?.runtime?.application !== undefined,
   );
+}
+function needsJavaApplication(projects: readonly PBLProjectPackage[]) {
+  return projects.some((project) => {
+    const runtime = JSON.parse(project.files['project.json'])?.runtime;
+    return runtime?.profile === 'java' && runtime.application !== undefined;
+  });
 }
 function needsStandaloneFrontend(projects: readonly PBLProjectPackage[]) {
   return projects.some((project) =>
@@ -101,6 +111,7 @@ export function validateClassroomPackageCompatibility(manifest: ClassroomManifes
             PBL_PROJECT_PACKAGE_CAPABILITY,
             DECISION_RESPONSE_CAPABILITY,
             APPLICATION_CAPABILITY,
+            JAVA_APPLICATION_CAPABILITY,
             STANDALONE_FRONTEND_CAPABILITY,
             PRESENTATION_CAPABILITY,
             DECISION_CONTEXT_CAPABILITY,
@@ -170,6 +181,8 @@ export async function attachClassroomProjects(
   if (needsDecisionResponses(projects))
     manifest.requiredCapabilities.push(DECISION_RESPONSE_CAPABILITY);
   if (needsApplication(projects)) manifest.requiredCapabilities.push(APPLICATION_CAPABILITY);
+  if (needsJavaApplication(projects))
+    manifest.requiredCapabilities.push(JAVA_APPLICATION_CAPABILITY);
   if (needsStandaloneFrontend(projects))
     manifest.requiredCapabilities.push(STANDALONE_FRONTEND_CAPABILITY);
   if (needsPresentation(projects)) manifest.requiredCapabilities.push(PRESENTATION_CAPABILITY);
@@ -281,6 +294,11 @@ export async function installClassroomProjects(zip: JSZip, manifest: ClassroomMa
     !manifest.requiredCapabilities?.includes(DECISION_RESPONSE_CAPABILITY)
   )
     throw new Error('Decision response forms require pbl-v3-decision-responses@1.');
+  if (
+    needsJavaApplication(projects) &&
+    !manifest.requiredCapabilities?.includes(JAVA_APPLICATION_CAPABILITY)
+  )
+    throw new Error('Java application previews require pbl-v3-java-application@1.');
   if (
     needsPresentation(projects) &&
     !manifest.requiredCapabilities?.includes(PRESENTATION_CAPABILITY)
