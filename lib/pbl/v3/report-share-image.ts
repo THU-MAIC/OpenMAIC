@@ -120,14 +120,11 @@ export async function renderReportShareImage(
     else ctx!.fillText(value, x, y, maxWidth);
   }
   // Fixed text slots fit built-in copy; authored long titles remain bounded with an ellipsis.
-  function paragraph(
+  function layoutParagraph(
     value: string,
-    x: number,
-    y: number,
     w: number,
     size: number,
     maxLines: number,
-    color = ink,
     weight = 400,
     fit = false,
     flow: CanvasDirection = direction,
@@ -144,11 +141,20 @@ export async function renderReportShareImage(
     const visible = lines.slice(0, maxLines);
     if (lines.length > maxLines)
       visible[maxLines - 1] = ellipsizeShareText(visible[maxLines - 1] ?? '', w, measure);
-    visible.forEach((s, i) =>
+    return { lines: visible, size, weight, flow, lineHeight: size * 1.45 };
+  }
+  function drawParagraph(
+    { lines, size, weight, flow, lineHeight }: ReturnType<typeof layoutParagraph>,
+    x: number,
+    y: number,
+    w: number,
+    color: string,
+  ) {
+    lines.forEach((s, i) =>
       text(
         s,
         flow === 'rtl' ? x + w : x,
-        y + i * size * 1.45,
+        y + i * lineHeight,
         size,
         color,
         weight,
@@ -156,7 +162,27 @@ export async function renderReportShareImage(
         flow === 'rtl' ? 'right' : 'left',
       ),
     );
-    return y + Math.max(0, visible.length - 1) * size * 1.45;
+    return y + Math.max(0, lines.length - 1) * lineHeight;
+  }
+  function paragraph(
+    value: string,
+    x: number,
+    y: number,
+    w: number,
+    size: number,
+    maxLines: number,
+    color = ink,
+    weight = 400,
+    fit = false,
+    flow: CanvasDirection = direction,
+  ) {
+    return drawParagraph(
+      layoutParagraph(value, w, size, maxLines, weight, fit, flow),
+      x,
+      y,
+      w,
+      color,
+    );
   }
   // Use the supplied official wordmark intact; no platform-font imitation.
   ctx.drawImage(logo, 64, 56, 344, 344 * (logo.naturalHeight / logo.naturalWidth));
@@ -245,9 +271,33 @@ export async function renderReportShareImage(
     const columns = Math.min(2, content.results.length);
     const gap = 16;
     const w = (bodyWidth - gap * (columns - 1)) / columns;
-    const h = 164;
+    const textGap = 22;
+    function measureParagraph(layout: ReturnType<typeof layoutParagraph>) {
+      const { lines, size, weight, flow, lineHeight } = layout;
+      ctx!.font = `${weight} ${size}px ${font}`;
+      ctx!.direction = flow;
+      const first = ctx!.measureText(lines[0] ?? '');
+      const last = ctx!.measureText(lines.at(-1) ?? '');
+      const ascent = first.actualBoundingBoxAscent ?? size * 0.8;
+      const descent = last.actualBoundingBoxDescent ?? size * 0.2;
+      return { layout, ascent, height: ascent + (lines.length - 1) * lineHeight + descent };
+    }
+    const cards = content.results.map(({ title, description }) => {
+      const heading = measureParagraph(layoutParagraph(title, w - 84, 29, 2, 700, true));
+      const body = description
+        ? measureParagraph(layoutParagraph(description, w - 48, 21, 2, 500, true))
+        : null;
+      return { heading, body, contentHeight: heading.height + (body ? textGap + body.height : 0) };
+    });
+    const rows = Array.from({ length: Math.ceil(cards.length / columns) }, (_, index) => {
+      const items = cards.slice(index * columns, (index + 1) * columns);
+      return {
+        items,
+        height: Math.max(132, ...items.map(({ contentHeight }) => contentHeight + 60)),
+      };
+    });
     sections.push({
-      height: 42 + Math.ceil(content.results.length / columns) * (h + gap) - gap,
+      height: 42 + rows.reduce((height, row) => height + row.height + gap, -gap),
       draw(top) {
         paragraph(
           t('pblV3.reportCopy.projectResults'),
@@ -260,46 +310,43 @@ export async function renderReportShareImage(
           600,
           true,
         );
-        content.results.forEach(({ title, description }, i) => {
-          const x = mirror(margin + (i % columns) * (w + gap), w);
-          const y = top + 42 + Math.floor(i / columns) * (h + gap);
-          box(x, y, w, h, panel, 20);
-          const marker = rtl ? x + w - 48 : x + 24;
-          box(marker, y + 24, 24, 24, tint, 8);
-          ctx.strokeStyle = accent;
-          ctx.lineWidth = 2.4;
-          ctx.lineCap = 'round';
-          ctx.lineJoin = 'round';
-          ctx.beginPath();
-          ctx.moveTo(marker + 6, y + 36);
-          ctx.lineTo(marker + 10, y + 40);
-          ctx.lineTo(marker + 18, y + 32);
-          ctx.stroke();
-          const titleEnd = paragraph(
-            title,
-            rtl ? x + 24 : x + 60,
-            y + 44,
-            w - 84,
-            29,
-            2,
-            ink,
-            700,
-            true,
-          );
-          if (description) {
-            paragraph(
-              description,
-              x + 24,
-              Math.max(y + 88, titleEnd + 28),
-              w - 48,
-              21,
-              2,
-              muted,
-              500,
-              true,
+        let y = top + 42;
+        for (const { items, height } of rows) {
+          items.forEach(({ heading, body, contentHeight }, column) => {
+            const x = mirror(margin + column * (w + gap), w);
+            box(x, y, w, height, panel, 20);
+            const contentTop = y + (height - contentHeight) / 2;
+            const marker = rtl ? x + w - 48 : x + 24;
+            const markerY = contentTop + (heading.layout.size - 24) / 2;
+            box(marker, markerY, 24, 24, tint, 8);
+            ctx.strokeStyle = accent;
+            ctx.lineWidth = 2.4;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.beginPath();
+            ctx.moveTo(marker + 6, markerY + 12);
+            ctx.lineTo(marker + 10, markerY + 16);
+            ctx.lineTo(marker + 18, markerY + 8);
+            ctx.stroke();
+            drawParagraph(
+              heading.layout,
+              rtl ? x + 24 : x + 60,
+              contentTop + heading.ascent,
+              w - 84,
+              ink,
             );
-          }
-        });
+            if (body) {
+              drawParagraph(
+                body.layout,
+                x + 24,
+                contentTop + heading.height + textGap + body.ascent,
+                w - 48,
+                muted,
+              );
+            }
+          });
+          y += height + gap;
+        }
       },
     });
   }

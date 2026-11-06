@@ -27,6 +27,7 @@ function syntheticCanvas() {
     maxWidth?: number;
   }[] = [];
   const assets: string[] = [];
+  const boxes: { y: number; height: number; radius: number }[] = [];
   const context = {
     direction: 'inherit',
     textAlign: 'start',
@@ -35,7 +36,9 @@ function syntheticCanvas() {
     createLinearGradient: () => ({ addColorStop() {} }),
     fillRect() {},
     beginPath() {},
-    roundRect() {},
+    roundRect(_x: number, y: number, _w: number, height: number, radius: number) {
+      boxes.push({ y: offsetY + scale * y, height: scale * height, radius });
+    },
     fill() {},
     drawImage() {},
     save() {},
@@ -91,7 +94,7 @@ function syntheticCanvas() {
     fonts: { load: async () => [] },
     createElement: () => canvas,
   });
-  return { drawn, canvas, context, assets };
+  return { drawn, canvas, context, assets, boxes };
 }
 
 const content = reportShareContent({
@@ -317,3 +320,36 @@ it.each(['', 'https://workshop.example/intro'])(
     expect(lines.at(-1)!.y).toBeLessThan(at(zh.pblV3.share.testsPassed).y);
   },
 );
+
+it('centers outcome text in equally sized cards with room for wrapped descriptions', async () => {
+  const { drawn, boxes } = syntheticCanvas();
+  const short = '一段简短的说明';
+  const long = '人设说明与当前问题一起成为模型输入'.repeat(4);
+  await renderReportShareImage(
+    {
+      ...content,
+      results: [
+        { title: '问答接通', description: short },
+        { title: '应用人设', description: long },
+      ],
+      workflow: [],
+    },
+    'light',
+    translate,
+    'zh-CN',
+  );
+  const [first, second] = boxes.filter((box) => box.radius === 20);
+  expect(first).toEqual(second);
+  for (const [index, title] of ['问答接通', '应用人设'].entries()) {
+    const titleY = drawn.find((item) => item.value === title)!.y;
+    const description =
+      index === 0
+        ? drawn.filter((item) => item.value === short)
+        : drawn.filter((item) => /人设说明与当前问题/u.test(item.value));
+    expect(description).toHaveLength(index + 1);
+    const lastY = description.at(-1)!.y;
+    // With the synthetic font fallback, the first and last baselines sit 0.8em and 0.2em from the ink edges.
+    expect(titleY - 29 * 0.8 - first.y).toBeCloseTo(first.y + first.height - lastY - 21 * 0.2);
+    expect(description[0].y - 21 * 0.8 - (titleY + 29 * 0.2)).toBeCloseTo(22);
+  }
+});
