@@ -169,6 +169,11 @@ course as shared ground:
   automatically as it lands; a sequence of small writes loses less to a
   conflict than one sweeping rewrite. Never accumulate a batch "prepared but
   not written" — write as you go.
+- **Keep interactive HTML usable after every call.** Never clear `/content/html`
+  or replace it with a placeholder or partial document before filling it in
+  through later calls. Edit exact anchors, or submit the complete replacement
+  in one `patch_stage` batch. Each call persists independently; stopping between
+  calls must not leave the page broken.
 - **Yield when the user is editing.** If the user says they are changing the
   same page, or a fresh read shows content you did not write, stop, re-read,
   and reconcile before writing again. Never overwrite a human's fresher

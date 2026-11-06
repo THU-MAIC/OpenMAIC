@@ -755,6 +755,56 @@ describe('patch_stage', () => {
     expect(milestones[0]!.microtasks[1]).toMatchObject({ id: 'mt-2', title: 'Prototype' });
   });
 
+  it.each(['__PLACEHOLDER__', '__W1__', '<!DOCTYPE html>', '  <!doctype html>\n', ''])(
+    'rejects replacing an existing interactive page with incomplete HTML %j',
+    async (html) => {
+      const current = state(course([interactiveScene()]));
+      const before = structuredClone(current.get());
+      const patch = tool(dslTools(current.store), 'patch_stage');
+      const result = await patch.execute('patch', {
+        target: '/scenes/scene_widget',
+        intent: 'Rewrite the page',
+        ops: [{ op: 'set', path: '/content/html', value: html }],
+      });
+      expect(result).toMatchObject({ isError: true });
+      expect(textOf(result)).toContain('complete replacement');
+      expect(current.putScene).not.toHaveBeenCalled();
+      expect(current.get()).toEqual(before);
+    },
+  );
+
+  it('validates only the final HTML when a batch replaces a temporary placeholder', async () => {
+    const current = state(course([interactiveScene()]));
+    const patch = tool(dslTools(current.store), 'patch_stage');
+    const html = '<button onclick="this.textContent=1">Run</button>';
+    const result = await patch.execute('patch', {
+      target: '/scenes/scene_widget',
+      intent: 'Replace the page atomically',
+      ops: [
+        { op: 'set', path: '/content/html', value: '__W1__' },
+        { op: 'str_replace', path: '/content/html', oldText: '__W1__', newText: html },
+      ],
+    });
+    expect(result).not.toHaveProperty('isError');
+    expect(current.putScene).toHaveBeenCalledTimes(1);
+    expect((current.get().scenes[0]!.content as InteractiveContent).html).toBe(html);
+  });
+
+  it('allows switching an HTML page to a URL-backed page', async () => {
+    const current = state(course([interactiveScene()]));
+    const patch = tool(dslTools(current.store), 'patch_stage');
+    const result = await patch.execute('patch', {
+      target: '/scenes/scene_widget',
+      intent: 'Use a hosted widget',
+      ops: [
+        { op: 'set', path: '/content/html', value: '' },
+        { op: 'set', path: '/content/url', value: 'https://example.com/widget' },
+      ],
+    });
+    expect(result).not.toHaveProperty('isError');
+    expect(current.putScene).toHaveBeenCalledTimes(1);
+  });
+
   it('str_replace swaps one exact anchor inside a long HTML field and leaves siblings byte-identical', async () => {
     const scene = interactiveScene();
     const head =
