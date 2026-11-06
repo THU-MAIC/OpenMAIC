@@ -4,6 +4,7 @@ import { seedServerDocument, uniqueStageId } from '../fixtures/server-seed';
 import { createSettingsStorage } from '../fixtures/test-data/settings';
 import { defaultTheme } from '../fixtures/test-data/slide-theme';
 import type { LearningView } from '@/lib/pbl/v3/types';
+import { markRecoveredTeachingTools } from '@/lib/pbl/v3/conversation';
 
 test('PBL conversation stays in the host classroom through expansion, scene navigation and refresh', async ({
   page,
@@ -134,6 +135,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
       },
     ],
   } as unknown as LearningView;
+  let fileReadFailures = 0;
   let failDecision = true;
   let decisionGate: Promise<void> | null = null;
   let decisionEntered = () => {};
@@ -343,7 +345,11 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
       view.needsOpening = false;
       return route.fulfill({ json: { view } });
     }
-    if (new URL(route.request().url()).searchParams.has('file'))
+    if (new URL(route.request().url()).searchParams.has('file')) {
+      if (fileReadFailures > 0) {
+        fileReadFailures--;
+        return route.fulfill({ status: 503, json: { error: { code: 'SANDBOX_UNAVAILABLE' } } });
+      }
       return route.fulfill({
         json: {
           text:
@@ -354,6 +360,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
           hash: 'a'.repeat(64),
         },
       });
+    }
     // Also supports local combination with the companion workbench PR.
     if (new URL(route.request().url()).pathname.endsWith('/workspace'))
       return route.fulfill({
@@ -403,6 +410,135 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await page.getByTestId('scene-title').filter({ hasText: 'Practice project' }).click();
   await page.getByRole('button', { name: 'Continue Project', exact: true }).click();
   await expect(page.getByTestId('pbl-v3-workspace')).toBeVisible();
+  const ide = page.getByTestId('pbl-ide');
+  await expect(ide.locator('.monaco-editor .view-lines')).toContainText('Greeting plan');
+  fileReadFailures = 1;
+  view.revision++;
+  await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
+  await expect(ide.getByRole('alert')).toBeVisible();
+  await ide.screenshot({ path: 'test-results/pbl-ide-read-failure.png' });
+  view.revision++;
+  await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
+  await expect(ide.getByRole('alert')).toHaveCount(0);
+  await ide.screenshot({ path: 'test-results/pbl-ide-read-recovered.png' });
+
+  const baselineConversation = view.conversation!;
+  view.conversation = [
+    {
+      id: 'pbl-role-feedback:turn-1',
+      inputId: 100,
+      speaker: 'mentor',
+      status: 'running',
+      parts: [
+        {
+          kind: 'tool',
+          id: 'early-complete',
+          action: 'complete',
+          name: 'complete_stage',
+          status: 'failed',
+          args: { studentFeedback: 'Earlier completion attempt' },
+          result: { error: 'The closing section is not open yet.' },
+        },
+        { kind: 'text', id: 'recap-text', text: 'Your reflection is recorded.' },
+      ],
+    },
+  ];
+  view.activitySequence!++;
+  publishLearning();
+  const transcript = page.getByRole('log', { name: 'Learning conversation' });
+  await expect(
+    transcript.locator('[data-testid="workbench-tool-card"][data-status="failed"]'),
+  ).toHaveCount(1);
+  await transcript.screenshot({ path: 'test-results/pbl-tool-before-recovery.png' });
+  view.conversation[0].parts.push({
+    kind: 'tool',
+    id: 'committed-complete',
+    action: 'complete',
+    name: 'complete_stage',
+    status: 'succeeded',
+    result: { readyForStudentConfirmation: true },
+  });
+  view.conversation = markRecoveredTeachingTools(view.conversation);
+  view.activitySequence!++;
+  publishLearning();
+  await expect(
+    transcript.locator('[data-testid="workbench-tool-card"][data-status="failed"]'),
+  ).toHaveCount(0);
+  await expect(
+    transcript.locator('[data-testid="workbench-tool-card"][data-status="succeeded"]'),
+  ).toHaveCount(1);
+  await expect(transcript.getByText('Your reflection is recorded.', { exact: true })).toBeVisible();
+  await transcript.screenshot({ path: 'test-results/pbl-tool-after-recovery.png' });
+  view.conversation[0].parts.push(
+    {
+      kind: 'tool',
+      id: 'advance-failed',
+      action: 'skill',
+      name: 'read_next_skill',
+      args: { studentFeedback: 'The learner understood this section.' },
+      status: 'failed',
+      result: { error: 'File access is temporarily unavailable.' },
+    },
+    {
+      kind: 'tool',
+      id: 'reread-succeeded',
+      action: 'skill',
+      name: 'read_next_skill',
+      args: {},
+      status: 'succeeded',
+    },
+  );
+  view.conversation = markRecoveredTeachingTools(view.conversation);
+  view.activitySequence!++;
+  publishLearning();
+  await expect(
+    transcript.locator('[data-testid="workbench-tool-card"][data-status="failed"]'),
+  ).toHaveCount(1);
+  view.conversation[0].parts.push({
+    kind: 'tool',
+    id: 'advance-succeeded',
+    action: 'skill',
+    name: 'read_next_skill',
+    args: { studentFeedback: 'The learner understood this section.' },
+    status: 'succeeded',
+  });
+  view.conversation = markRecoveredTeachingTools(view.conversation);
+  view.activitySequence!++;
+  publishLearning();
+  await expect(
+    transcript.locator('[data-testid="workbench-tool-card"][data-status="failed"]'),
+  ).toHaveCount(0);
+  for (const studentFeedback of [null, false, 0]) {
+    view.conversation[0].parts.push(
+      {
+        kind: 'tool',
+        id: `coerced-failure-${studentFeedback}`,
+        action: 'skill',
+        name: 'read_next_skill',
+        args: { studentFeedback },
+        status: 'failed',
+        result: { error: 'Advancement failed after argument coercion.' },
+      },
+      {
+        kind: 'tool',
+        id: `reread-after-${studentFeedback}`,
+        action: 'skill',
+        name: 'read_next_skill',
+        args: {},
+        status: 'succeeded',
+      },
+    );
+  }
+  view.conversation = markRecoveredTeachingTools(view.conversation);
+  view.activitySequence!++;
+  publishLearning();
+  await expect(
+    transcript.locator('[data-testid="workbench-tool-card"][data-status="failed"]'),
+  ).toHaveCount(3);
+  view.conversation = baselineConversation;
+  view.activitySequence!++;
+  publishLearning();
+
   // Show the actual help tool label and expandable payload, without a new UI.
   view.conversation!.push({
     id: 'assistance-preview',

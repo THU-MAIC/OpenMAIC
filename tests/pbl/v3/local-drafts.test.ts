@@ -77,6 +77,92 @@ afterEach(async () => {
   error.mockClear();
 });
 
+it('clears a file read failure after that file is successfully reread', async () => {
+  const value = view('read-recovery');
+  read.mockRejectedValueOnce(new Error('Environment service temporarily unavailable'));
+  await mount(createElement(Editor, { value }));
+  expect(editor.readError).toBe('Environment service temporarily unavailable');
+  expect(error).not.toHaveBeenCalled();
+  await act(async () => root!.render(createElement(Editor, { value: { ...value, revision: 2 } })));
+  expect(editor.buffer?.text).toBe('Saved source');
+  expect(editor.readError).toBe('');
+});
+
+it('keeps another file failure while the selected file recovers', async () => {
+  read.mockRejectedValueOnce(new Error('PLAN unavailable'));
+  await mount(createElement(Editor, { value: view('separate-read-errors') }));
+  expect(editor.readError).toBe('PLAN unavailable');
+  read.mockRejectedValueOnce(new Error('Code unavailable'));
+  await act(async () => editor.select('main.py'));
+  expect(editor.readError).toBe('Code unavailable');
+  await act(async () => editor.reload());
+  expect(editor.readError).toBe('');
+  read.mockRejectedValueOnce(new Error('PLAN still unavailable'));
+  await act(async () => editor.select('PLAN.md'));
+  expect(editor.readError).toBe('PLAN still unavailable');
+  expect(error).not.toHaveBeenCalled();
+});
+
+it('ignores late read failures after selecting another file or environment', async () => {
+  for (const replacement of ['file', 'environment'] as const) {
+    let fail!: (reason: Error) => void;
+    read.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          fail = reject;
+        }),
+    );
+    const value = view('late-read-' + replacement);
+    await mount(createElement(Editor, { value }));
+    if (replacement === 'file') await act(async () => editor.select('main.py'));
+    else
+      await act(async () =>
+        root!.render(
+          createElement(Editor, {
+            value: { ...value, environmentId: 'replacement-environment' },
+          }),
+        ),
+      );
+    await act(async () => fail(new Error('Outdated failure')));
+    expect(editor.readError).toBe('');
+    expect(error).not.toHaveBeenCalled();
+    await leave();
+  }
+});
+
+it('keeps a newer read failure when an older read succeeds late', async () => {
+  let succeed!: (result: { text: string; hash: string }) => void;
+  read.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        succeed = resolve;
+      }),
+  );
+  await mount(createElement(Editor, { value: view('newer-read-failure') }));
+  read.mockRejectedValueOnce(new Error('Current failure'));
+  await act(async () => editor.reload());
+  expect(editor.readError).toBe('Current failure');
+  await act(async () => succeed({ text: 'Old content', hash: 'old' }));
+  expect(editor.readError).toBe('Current failure');
+  expect(editor.buffer).toBeUndefined();
+});
+
+it('does not clear an unresolved save failure when a read recovers', async () => {
+  const value = view('read-and-save-errors');
+  await mount(createElement(Editor, { value }));
+  save.mockRejectedValueOnce(new Error('Save unavailable'));
+  await act(async () => editor.edit('Unsaved content'));
+  await act(async () => editor.save());
+  expect(editor.saveError).toBe('Save unavailable');
+  read.mockRejectedValueOnce(new Error('Read unavailable'));
+  await act(async () => editor.select('main.py'));
+  expect(editor.readError).toBe('Read unavailable');
+  await act(async () => root!.render(createElement(Editor, { value: { ...value, revision: 2 } })));
+  expect(editor.readError).toBe('');
+  expect(editor.saveError).toBe('Save unavailable');
+  expect(editor.anyDirty).toBe(true);
+});
+
 describe('study-scoped local drafts', () => {
   it('acknowledges only the submitted decision version in its original study and milestone', async () => {
     const id = `decision-receipt-${sequence++}`;

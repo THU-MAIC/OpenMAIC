@@ -1538,6 +1538,10 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             );
             await invoke(config, 'request_skill_review', { question: 'Ready to begin?' });
           });
+        const finalRecap =
+          stage.kind === 'mentor_say' &&
+          stage.skill === 'recap' &&
+          position.milestoneIndex === selected.definition.milestones.length - 1;
         const parts = stage.kind === 'produce' ? 4 : 3;
         for (let part = 0; part < parts; part++)
           await roleTurn(
@@ -1547,6 +1551,30 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
                 ? 'Ready, please begin teaching.'
                 : 'Please begin.',
             async (config) => {
+              const finishRecap = finalRecap && part === parts - 1;
+              if (finishRecap) {
+                expect(JSON.parse(await config.liveContext())).toMatchObject({
+                  artifactApprovalRequired: false,
+                  feedbackSource: 'pending_review_reply',
+                });
+                const reads = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'readText');
+                try {
+                  await expect(
+                    invoke(config, 'complete_stage', {
+                      studentFeedback: 'The learner is ready to finish.',
+                    }),
+                  ).rejects.toThrow('必须完成各段');
+                  await expect(
+                    invoke(config, 'read_next_skill', {
+                      studentFeedback: 'The learner reflected on this work.',
+                      reuseFeedback: true,
+                    }),
+                  ).rejects.toThrow('只能沿用');
+                  expect(reads).not.toHaveBeenCalled();
+                } finally {
+                  reads.mockRestore();
+                }
+              }
               const section = await invoke(
                 config,
                 'read_next_skill',
@@ -1557,6 +1585,19 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
                     : {},
               );
               expect(JSON.stringify(section)).not.toContain('PBL_RESULT');
+              if (finishRecap) {
+                expect(JSON.stringify(section)).toContain('verified_feedback');
+                expect(JSON.parse(await config.liveContext())).toMatchObject({
+                  nextSection: null,
+                  feedbackSource: 'verified_feedback',
+                });
+                await invoke(config, 'complete_stage', {
+                  studentFeedback: 'The learner confirmed understanding of the completed work.',
+                  reuseFeedback: true,
+                });
+                expect(config.isTurnComplete()).toBe(true);
+                return;
+              }
               if (part === 0 && write && !repairEmptyPlan) {
                 const row = await store.get(id, principal.ownerId);
                 const current = await (
@@ -1586,6 +1627,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
               expect(config.isTurnComplete()).toBe(true);
             },
           );
+        if (finalRecap) return;
         if (repairEmptyPlan && write)
           await roleTurn('I checked this part and approve the current version.', async (config) => {
             await expect(

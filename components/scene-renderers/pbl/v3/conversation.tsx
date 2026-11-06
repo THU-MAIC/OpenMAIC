@@ -69,6 +69,13 @@ function AgentTurn({
     part.kind === 'tool' ? part.status === 'running' : part.kind === 'thinking' && part.streaming,
   );
   const copyText = entry.parts.flatMap((p) => (p.kind === 'text' ? [p.text] : [])).join('\n\n');
+  const parts = entry.parts.filter((part) => part.kind !== 'tool' || !part.recovered);
+  if (
+    entry.parts.length &&
+    !parts.length &&
+    !['running', 'failed', 'cancelled', 'interrupted'].includes(entry.status ?? '')
+  )
+    return null;
   return (
     <article
       className="group/turn min-w-0 space-y-1.5"
@@ -85,7 +92,7 @@ function AgentTurn({
       <div
         className={`pbl-assistant-bubble flex min-w-0 flex-col gap-[5px] rounded-xl rounded-tl-md border-l-2 px-3 py-2.5 ${accents[role]}`}
       >
-        {groupParts(entry.parts).map((part) =>
+        {groupParts(parts).map((part) =>
           Array.isArray(part) ? (
             <div key={part[0].id} className="flex flex-col gap-3">
               <ToolActivity tools={part} t={t} />
