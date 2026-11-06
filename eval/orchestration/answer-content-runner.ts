@@ -23,11 +23,11 @@
  *     attempt is recorded, or the first recorded one is skipped, marked
  *     isError, or has no text. So the score includes the routing step.
  *   - Only failures the trace exposes count. A teacher attempt rejected by the
- *     tool schema is not recorded, so a later recorded one is judged. A legacy
- *     child whose provider fails after streaming partial text is not marked as
- *     failed; that partial text is judged as the student would see it. Scores
- *     can therefore be overstated, and a judged reply is not proof of a
- *     complete answer or of an error-free run.
+ *     tool schema is not recorded, so a later recorded one is judged. Legacy
+ *     child provider failures are marked isError even with partial text and
+ *     score 0 under this eval's existing rule. The Director may still use that
+ *     partial text; this eval does not measure recovery after a failed call.
+ *     A judged reply is not proof of a complete answer or an error-free run.
  *   - Results are a Pi baseline; they are not comparable with the retired
  *     single-prompt A/B.
  *
@@ -342,7 +342,7 @@ function writeReport(
     `- **Reply judged**: full text of the first recorded call_agent attempt naming the teacher. Samples score 0 out of all requested samples on a run or judge error, no recorded teacher attempt, or a first one that is skipped, marked isError or empty.`,
   );
   lines.push(
-    `- **Limits**: only failures the trace exposes score 0 — a schema-rejected teacher attempt is not recorded (a later one is judged), and a legacy child provider failure after partial text is judged on that text, so scores can be overstated and a judged reply does not prove a complete answer or an error-free run. Pi caps teacher replies at 1–2 sentences, so leads-with-answer and answered-anywhere nearly coincide; the score includes the director's routing; a Pi baseline, not comparable with the retired prompt A/B. Route authorization and tool-capability checks are not exercised.`,
+    `- **Limits**: only failures the trace exposes score 0 — a schema-rejected teacher attempt is not recorded (a later one is judged). Legacy provider failures score 0 even with partial text; this eval does not measure recovery after a failed call. A judged reply does not prove a complete answer or an error-free run. Pi caps teacher replies at 1–2 sentences, so leads-with-answer and answered-anywhere nearly coincide; the score includes the director's routing; a Pi baseline, not comparable with the retired prompt A/B. Route authorization and tool-capability checks are not exercised.`,
   );
   lines.push(``);
   lines.push(`## Aggregate`, ``);

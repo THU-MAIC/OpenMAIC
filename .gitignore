@@ -104,3 +104,6 @@ render-service/.owner-bound-parent-*/
 
 # Generated interactive libraries
 /public/vendor/interactive
+
+# Local forced-child eval results
+eval/orchestration/results-child-failure/
