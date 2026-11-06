@@ -356,6 +356,9 @@
     "proMode": "Pro",
     "undo": "Undo",
     "redo": "Redo",
+    "courseHistory": {
+      "stepExpired": "That step can no longer be undone"
+    },
     "delete": "Delete",
     "title": "Editing · {{type}}",
     "unsupportedScene": "{{type}} is not editable yet",
@@ -481,8 +484,6 @@
       "addSlide": "Add slide",
       "duplicate": "Duplicate",
       "delete": "Delete",
-      "deleted": "Deleted",
-      "undo": "Undo",
       "copySuffix": "(copy)",
       "untitledSlide": "Untitled slide",
       "collapse": "Collapse rail",

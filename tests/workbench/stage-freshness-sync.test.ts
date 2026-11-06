@@ -83,6 +83,7 @@ vi.mock('@/lib/store/stage', () => ({
   hasQueuedWholeDocumentChange: () => false,
   hasUnsavedSceneEdit: (_stageId: string, sceneId: string) => mocks.unsavedScenes.has(sceneId),
   hasUnsavedStageEdit: () => mocks.unsavedStageEdit,
+  isServerGeneratingStage: () => false,
   stageDocumentEditClock: () => 0,
   isStageWriteInFlight: () => false,
   recordServerRosterBase: (stageId: string, roster: unknown) =>

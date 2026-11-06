@@ -28,6 +28,7 @@
  *
  * Reactive to the stage store; collapse and height belong to the dock.
  */
+import { commitCourseEdit, stampGeneratedAudio } from '@/lib/edit/course-edit';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -76,7 +77,6 @@ import {
   moveById,
   moveByIdDir,
   removeById,
-  setAudioIdById,
   setDiscussionAgentById,
   setDiscussionPromptById,
   setDiscussionTopicById,
@@ -88,7 +88,6 @@ import type { PickerType } from './picker-options';
 import {
   audioExists,
   audioObjectUrl,
-  discardSpeechAudio,
   regenerateSpeechAudio,
   resolveLegacySpeechAudioId,
   resolveSpeechAudioId,
@@ -302,7 +301,7 @@ export function SpeechTtsBar({
    * identities (the blob is stored under the returned id), so the id cannot be
    * re-derived by the caller like the reference's deterministic key.
    */
-  onGenerated: (audioId: string) => void;
+  onGenerated: (audioId: string, sourceText: string) => void;
 }) {
   const { t } = useI18n();
   const [status, setStatus] = useState<TtsStatus>('none');
@@ -331,6 +330,7 @@ export function SpeechTtsBar({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const objUrlRef = useRef<string | null>(null);
 
+  const [statusRecheck, setStatusRecheck] = useState(0);
   const lookupId = resolveSpeechAudioId(sceneOrder, { id: actionId, audioId });
   const [readAudioId, setReadAudioId] = useState<string | undefined>(lookupId);
   const [seededLookupId, setSeededLookupId] = useState(lookupId);
@@ -387,7 +387,16 @@ export function SpeechTtsBar({
     return () => {
       alive = false;
     };
-  }, [lookupId, actionId, sceneOrder, audioInvalidated, audioUrl, refreshKey, regenerating]);
+  }, [
+    lookupId,
+    actionId,
+    sceneOrder,
+    audioInvalidated,
+    audioUrl,
+    refreshKey,
+    regenerating,
+    statusRecheck,
+  ]);
 
   useEffect(() => () => stopPreview(), [stopPreview]);
 
@@ -444,9 +453,20 @@ export function SpeechTtsBar({
         language,
       );
       if (id) {
-        setReadAudioId(id);
-        onGenerated(id);
-        setStatus('ready');
+        onGenerated(id, text);
+        const live = useStageStore
+          .getState()
+          .scenes.find((scene) => scene.order === sceneOrder)
+          ?.actions?.find((action) => action.id === actionId);
+        if (live?.type === 'speech' && live.text === text) {
+          setReadAudioId(id);
+          setStatus('ready');
+        } else {
+          // The line moved on while this was generating (an edit, an undo): show what
+          // it says now, not the clip that just arrived.
+          setStatus('none');
+          setStatusRecheck((n) => n + 1);
+        }
       } else {
         setStatus('none');
       }
@@ -555,7 +575,7 @@ function SpeechClip({
   ttsRefresh?: number;
   regenerating?: boolean;
   onCommit: (text: string) => void;
-  onGenerated: (audioId: string) => void;
+  onGenerated: (audioId: string, sourceText: string) => void;
   onDelete: () => void;
   onMoveLeft: () => void;
   onMoveRight: () => void;
@@ -1099,12 +1119,18 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
   // Apply an edit to the LATEST actions from the store (not the render-time
   // snapshot), so a concurrent agent/TTS update isn't reverted by a later UI
   // commit (drag / reorder / blur / delete).
-  const commit = useCallback(
+  const writeActions = useCallback(
     (updater: (cur: Action[]) => Action[]) => {
       const cur = useStageStore.getState().scenes.find((s) => s.id === sceneId)?.actions ?? [];
       useStageStore.getState().updateScene(sceneId, { actions: updater(cur) });
     },
     [sceneId],
+  );
+  const commit = useCallback(
+    (updater: (cur: Action[]) => Action[]) => {
+      commitCourseEdit({}, () => writeActions(updater));
+    },
+    [writeActions],
   );
 
   // Regenerate TTS for every speech line in the scene, then stamp audioIds.
@@ -1141,7 +1167,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
             language,
           );
           if (id) {
-            commit((cur) => setAudioIdById(cur, liveAction.id!, id));
+            stampGeneratedAudio(sceneId, liveAction.id!, liveAction.text, id);
             await flushStageSave();
           }
         } catch {
@@ -1156,7 +1182,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
       // batchPending flag) instead of getting stuck in the generating state.
       setTtsRefresh((n) => n + 1);
     }
-  }, [regenAll, sceneId, language, commit]);
+  }, [regenAll, sceneId, language]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const panViewport = (dir: -1 | 1) =>
@@ -1394,23 +1420,14 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                               autoFocus={key === focusId}
                               onFocused={() => setFocusId(null)}
                               onCommit={(text) => {
-                                // Editing the text invalidates any cached audio
-                                // (the blob is keyed by order+id and the stamped
-                                // audioId, not the text), so drop the stamped
-                                // fields and delete the blob — the line then
-                                // reads as un-voiced until regen.
-                                const prevAudioId = (action as { audioId?: string }).audioId;
+                                // The new wording has no audio until regenerated. The old
+                                // clip's local copy stays: an undo brings its reference
+                                // back, and nothing resolves it while the line names no id.
                                 commit((cur) => setSpeechTextClearAudioById(cur, key, text));
-                                // Re-check status only AFTER the blob is gone, so
-                                // the status row can't race the async delete and
-                                // briefly still read "voiced".
-                                void discardSpeechAudio(sceneOrder, {
-                                  id: key,
-                                  audioId: prevAudioId,
-                                }).finally(() => setTtsRefresh((n) => n + 1));
+                                setTtsRefresh((n) => n + 1);
                               }}
-                              onGenerated={(assetId) => {
-                                commit((cur) => setAudioIdById(cur, key, assetId));
+                              onGenerated={(assetId, sourceText) => {
+                                stampGeneratedAudio(sceneId, key, sourceText, assetId);
                                 // Stage persistence is debounced; flush so the
                                 // stamped reference is durable once the row
                                 // settles (pool bytes persist first, stamp last).

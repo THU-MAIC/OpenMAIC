@@ -356,6 +356,9 @@
     "proMode": "Pro",
     "undo": "Rückgängig",
     "redo": "Wiederholen",
+    "courseHistory": {
+      "stepExpired": "Dieser Schritt kann nicht mehr rückgängig gemacht werden"
+    },
     "delete": "Löschen",
     "title": "Bearbeiten · {{type}}",
     "unsupportedScene": "{{type}} kann noch nicht bearbeitet werden",
@@ -481,8 +484,6 @@
       "addSlide": "Folie hinzufügen",
       "duplicate": "Duplizieren",
       "delete": "Löschen",
-      "deleted": "Gelöscht",
-      "undo": "Rückgängig",
       "copySuffix": "(Kopie)",
       "untitledSlide": "Unbenannte Folie",
       "collapse": "Leiste einklappen",

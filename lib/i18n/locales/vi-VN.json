@@ -356,6 +356,9 @@
     "proMode": "Pro",
     "undo": "Hoàn tác",
     "redo": "Làm lại",
+    "courseHistory": {
+      "stepExpired": "Không thể hoàn tác bước này nữa"
+    },
     "delete": "Xóa",
     "title": "Đang sửa · {{type}}",
     "unsupportedScene": "{{type}} chưa sửa được",
@@ -481,8 +484,6 @@
       "addSlide": "Thêm slide",
       "duplicate": "Nhân đôi",
       "delete": "Xóa",
-      "deleted": "Đã xóa",
-      "undo": "Hoàn tác",
       "copySuffix": "(bản sao)",
       "untitledSlide": "Slide chưa có tiêu đề",
       "collapse": "Thu gọn thanh bên",

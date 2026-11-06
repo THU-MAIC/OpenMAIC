@@ -150,7 +150,8 @@ export function deleteSlideElement(elementId: string): void {
  * Two-way only — intermediate forward/backward steps stay AI's domain.
  */
 export function reorderSlideElement(elementId: string, edge: 'front' | 'back'): void {
-  const present = useSlideEditSession.getState().history?.present ?? null;
+  const { sceneId } = useSlideEditSession.getState();
+  const present = sceneId ? currentSlideContent(sceneId) : null;
   if (!present) return;
   const elements = present.canvas.elements;
   const currentIndex = elements.findIndex((el) => el.id === elementId);
@@ -190,15 +191,16 @@ function currentSlideContent(sceneId: string): SlideContent | null {
 }
 
 /**
- * Resolves the slide content the surface should read from: the in-memory
- * edit-session present, else the canonical stage scene, else an empty slide.
+ * Resolves the slide content the surface should read from: the canonical stage
+ * scene the session is on, else an empty slide.
  */
 export function useResolvedSlideContent(): SlideContent {
-  const history = useSlideEditSession((s) => s.history);
   const sessionSceneId = useSlideEditSession((s) => s.sceneId);
-  return (
-    history?.present ?? (sessionSceneId ? currentSlideContent(sessionSceneId) : null) ?? EMPTY_SLIDE
-  );
+  const content = useStageStore((s) => {
+    const scene = s.scenes.find((candidate) => candidate.id === sessionSceneId);
+    return scene?.type === 'slide' ? (scene.content as SlideContent) : null;
+  });
+  return content ?? EMPTY_SLIDE;
 }
 
 /**
@@ -207,7 +209,6 @@ export function useResolvedSlideContent(): SlideContent {
  */
 export function useSlideSurfaceState(): SurfaceState<SlideContent, SlideSelection> {
   const { t } = useI18n();
-  const history = useSlideEditSession((s) => s.history);
   const activeElementIds = useCanvasStore.use.activeElementIdList();
   const creatingElement = useCanvasStore.use.creatingElement();
   const rendererEditorEnabled = isEditorRendererEnabled();
@@ -217,12 +218,6 @@ export function useSlideSurfaceState(): SurfaceState<SlideContent, SlideSelectio
     content,
     selection: { activeElementIds },
     hasSelection: activeElementIds.length > 0,
-    history: {
-      canUndo: !!history && history.past.length > 0,
-      canRedo: !!history && history.future.length > 0,
-      undo: () => useSlideEditSession.getState().undo(),
-      redo: () => useSlideEditSession.getState().redo(),
-    },
     insertItems: rendererEditorEnabled ? [] : buildInsertItems(t, creatingElement?.type),
     // Every element type carries its own actions on a selection-anchored bar
     // (AnchoredTextBar / AnchoredElementBar) — the surface contributes no
@@ -235,93 +230,26 @@ export function useSlideSurfaceState(): SurfaceState<SlideContent, SlideSelectio
 
 interface SlideCanvasController {
   readonly controller: SceneDataController;
-  /**
-   * Spread onto the canvas wrapper. Tracks whether a pointer gesture is in
-   * flight: a commit inside one gets its own undo step.
-   */
-  readonly gestureProps: {
-    readonly onPointerDownCapture: () => void;
-    readonly onPointerUpCapture: () => void;
-    readonly onPointerCancelCapture: () => void;
-  };
 }
 
 /**
- * Owns the edit-entry lifecycle for the slide canvas: seeds the in-memory
- * undo history from the live scene and exposes the scene-context
- * controller. The controller's writes flow through `slide-edit-session`
- * which auto-saves them to the canonical `useStageStore` (no staging, no
- * "restore unsaved" UX — the stage store is the source of truth).
+ * Owns the edit-entry lifecycle for the slide canvas: points the session at the
+ * live scene and exposes the scene-context controller. The controller's writes
+ * flow through `slide-edit-session` to the canonical `useStageStore` (no
+ * staging, no "restore unsaved" UX — the stage store is the source of truth).
  */
 export function useSlideCanvasController(): SlideCanvasController {
   const sceneId = useStageStore((s) => {
     const scene = s.scenes.find((x) => x.id === s.currentSceneId) ?? null;
     return scene && scene.type === 'slide' ? scene.id : '';
   });
-  // Re-render (and thus re-feed SceneProvider's getSnapshot) on every
-  // history move (apply / commit / undo / redo).
-  useSlideEditSession((s) => s.history);
-
-  // True only while a pointer gesture is in flight. The renderer commits a
-  // geometry edit synchronously inside its mouseup handler (still within
-  // the gesture); typing commits with no gesture. Cleared on a macrotask after
-  // pointerup so the synchronous commit still observes `true`.
-  const gestureRef = useRef(false);
-  useEffect(() => {
-    const finishGesture = () => {
-      setTimeout(() => {
-        gestureRef.current = false;
-        useSlideEditSession.getState().setGestureActive(false);
-      }, 0);
-    };
-    window.addEventListener('pointerup', finishGesture);
-    window.addEventListener('pointercancel', finishGesture);
-    return () => {
-      window.removeEventListener('pointerup', finishGesture);
-      window.removeEventListener('pointercancel', finishGesture);
-    };
-  }, []);
-  const gestureProps = useMemo(
-    () => ({
-      onPointerDownCapture: () => {
-        gestureRef.current = true;
-        useSlideEditSession.getState().setGestureActive(true);
-      },
-      onPointerUpCapture: () => {
-        setTimeout(() => {
-          gestureRef.current = false;
-          useSlideEditSession.getState().setGestureActive(false);
-        }, 0);
-      },
-      onPointerCancelCapture: () => {
-        setTimeout(() => {
-          gestureRef.current = false;
-          useSlideEditSession.getState().setGestureActive(false);
-        }, 0);
-      },
-    }),
-    [],
-  );
+  // Re-render (and thus re-feed SceneProvider's getSnapshot) on every change
+  // to this scene's content, whoever made it.
+  useStageStore((s) => s.scenes.find((scene) => scene.id === sceneId)?.content);
 
   useEffect(() => {
     if (!sceneId) return;
-    const content = currentSlideContent(sceneId);
-    if (content && useSlideEditSession.getState().sceneId !== sceneId) {
-      useSlideEditSession.getState().seed(sceneId, content);
-    }
-  }, [sceneId]);
-
-  // The session's copy is what every commit builds on, so it must not lag behind
-  // the store: a commit would write the older content over a page the sync just
-  // brought in.
-  useEffect(() => {
-    if (!sceneId) return;
-    return useStageStore.subscribe((state, previous) => {
-      if (state.scenes === previous.scenes) return;
-      const scene = state.scenes.find((candidate) => candidate.id === sceneId);
-      if (!scene || scene.type !== 'slide') return;
-      useSlideEditSession.getState().adoptStoreContent(sceneId, scene.content as SlideContent);
-    });
+    useSlideEditSession.getState().seed(sceneId);
   }, [sceneId]);
 
   useEffect(() => () => useSlideEditSession.getState().end(), []);
@@ -334,24 +262,20 @@ export function useSlideCanvasController(): SlideCanvasController {
       // it on every history move so this is always the up-to-date content.
       getSnapshot: () => currentSlideContent(sceneId) ?? EMPTY_SLIDE,
       updateSceneData: (updater, options) => {
-        const base =
-          useSlideEditSession.getState().history?.present ?? currentSlideContent(sceneId);
+        const base = currentSlideContent(sceneId);
         if (!base) return;
         const next = produce(base, updater as (draft: SlideContent) => void);
         if (options?.measurement) {
-          useSlideEditSession.getState().commitMeasurement(next);
+          useSlideEditSession.getState().commitMeasurement(sceneId, next);
           return;
         }
-        useSlideEditSession.getState().commitContent(next, gestureRef.current);
+        useSlideEditSession.getState().commitContent(sceneId, next);
       },
     }),
     [sceneId],
   );
 
-  return {
-    controller,
-    gestureProps,
-  };
+  return { controller };
 }
 
 /**

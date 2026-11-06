@@ -39,6 +39,8 @@ vi.mock('@/components/slide-renderer/components/element/ProsemirrorEditor', () =
 }));
 
 import { useSlideEditSession } from '@/components/edit/surfaces/slide/slide-edit-session';
+import { stepCourseTimeline } from '@/lib/edit/course-edit';
+import { useCourseTimeline } from '@/lib/edit/course-timeline';
 import {
   useResolvedSlideContent,
   useSlideCanvasController,
@@ -122,6 +124,7 @@ async function select(id: string) {
 }
 
 beforeEach(() => {
+  useCourseTimeline.setState({ lines: {}, agentRun: null });
   vi.useFakeTimers();
   saveStageDataIncremental.mockClear();
   vi.stubGlobal(
@@ -201,7 +204,7 @@ describe('an empty text box on the legacy canvas', () => {
     await settle();
     expect(storedIds()).toEqual(['kept']);
 
-    await act(async () => useSlideEditSession.getState().undo());
+    await act(async () => stepCourseTimeline('undo'));
     await settle();
     expect(storedIds()).toEqual(['kept', 'empty']);
 
@@ -238,7 +241,7 @@ describe('an empty text box on the legacy canvas', () => {
     await select('');
     await settle(400);
 
-    await act(async () => useSlideEditSession.getState().undo());
+    await act(async () => stepCourseTimeline('undo'));
     await settle();
 
     expect(storedIds()).toEqual(['kept', 'box']);
@@ -353,6 +356,19 @@ describe('an empty text box on the legacy canvas', () => {
 
     expect(storedIds()).toEqual(['kept', 'empty']);
     expect(saveStageDataIncremental).not.toHaveBeenCalled();
+  });
+
+  it('with no text but a fill stays when the user leaves it', async () => {
+    const scene = slideWith(['kept', '<p>text</p>'], ['panel', '']);
+    const panel = (scene.content as SlideContent).canvas.elements.find(
+      (element) => element.id === 'panel',
+    ) as Text & { fill?: string };
+    panel.fill = '#ff0000';
+    await openEditor(scene);
+    await select('panel');
+    await select('');
+    await settle();
+    expect(storedIds()).toEqual(['kept', 'panel']);
   });
 
   it('with text stays when the user leaves it', async () => {

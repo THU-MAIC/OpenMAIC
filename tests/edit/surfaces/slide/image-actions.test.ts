@@ -6,20 +6,31 @@ import {
 import { useSlideEditSession } from '@/components/edit/surfaces/slide/slide-edit-session';
 import type { PPTImageElement } from '@openmaic/dsl';
 
+import { useStageStore } from '@/lib/store/stage';
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
-function seedImage() {
-  useSlideEditSession.setState({
-    sceneId: null,
-    history: {
-      past: [],
-      present: {
+function seedSlide(elements: unknown[]) {
+  useStageStore.setState({
+    stage: { id: 'stage-test', name: 'Course' } as any,
+    scenes: [
+      {
+        id: 'scene-test',
+        stageId: 'stage-test',
         type: 'slide',
-        canvas: { id: 's', elements: [{ id: 'img', type: 'image', src: 'a.png' }] },
+        title: 'Page',
+        order: 1,
+        content: { type: 'slide', schemaVersion: 1, canvas: { id: 's', elements } },
       } as any,
-      future: [],
-    },
-  } as any);
+    ],
+    currentSceneId: 'scene-test',
+  });
+  useSlideEditSession.setState({ sceneId: 'scene-test' });
 }
+/* eslint-enable @typescript-eslint/no-explicit-any */
+function seedImage() {
+  seedSlide([{ id: 'img', type: 'image', src: 'a.png' }]);
+}
+/* eslint-disable @typescript-eslint/no-explicit-any */
 const img = (over: Partial<PPTImageElement>) =>
   ({ id: 'img', type: 'image', src: 'a.png', ...over }) as any;
 /* eslint-enable @typescript-eslint/no-explicit-any */

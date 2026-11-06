@@ -340,6 +340,9 @@
     "proMode": "Pro",
     "undo": "Desfazer",
     "redo": "Refazer",
+    "courseHistory": {
+      "stepExpired": "Essa etapa não pode mais ser desfeita"
+    },
     "delete": "Excluir",
     "title": "Editando · {{type}}",
     "unsupportedScene": "{{type}} ainda não pode ser editada",
@@ -465,8 +468,6 @@
       "addSlide": "Adicionar slide",
       "duplicate": "Duplicar",
       "delete": "Excluir",
-      "deleted": "Excluído",
-      "undo": "Desfazer",
       "copySuffix": "(cópia)",
       "untitledSlide": "Slide sem título",
       "collapse": "Recolher painel",

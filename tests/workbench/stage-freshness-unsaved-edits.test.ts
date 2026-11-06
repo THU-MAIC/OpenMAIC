@@ -33,6 +33,8 @@ const mocks = vi.hoisted(() => ({
   sceneFetches: [] as string[][],
   /** Held open while a test acts between the server's read and the response. */
   sceneResponseGate: null as Promise<void> | null,
+  /** Held open while a test acts with a manifest on its way back. */
+  manifestResponseGate: null as Promise<void> | null,
   /** Held open while a test acts with a write on the wire. */
   saveGate: null as Promise<void> | null,
   /** Runs on the server right after a save lands. */
@@ -244,6 +246,7 @@ beforeEach(() => {
   mocks.manifestFetches = 0;
   mocks.sceneFetches = [];
   mocks.sceneResponseGate = null;
+  mocks.manifestResponseGate = null;
   mocks.saveGate = null;
   mocks.afterSaveOnServer = null;
   mocks.failNextSave = false;
@@ -259,6 +262,7 @@ beforeEach(() => {
       if (url.includes('/manifest')) {
         mocks.manifestFetches += 1;
         const body = manifest();
+        if (mocks.manifestResponseGate) await mocks.manifestResponseGate;
         return { ok: true, status: 200, json: async () => body };
       }
       if (url.includes('/scenes?')) {
@@ -376,6 +380,24 @@ describe('a freshness sync with unsaved scene edits', () => {
     await act(async () => response.release());
     await settle();
     expect(titleOf('scene-1')).toBe('typed and saved');
+  });
+
+  it('drops a manifest older than an edit saved while it was on its way', async () => {
+    const source = await openCourse();
+    const response = deferred();
+    mocks.manifestResponseGate = response.promise;
+
+    // The server lacks the page when it answers; a restore lands before the response.
+    remoteDelete('scene-2');
+    await act(async () => source.emitFreshness());
+    edit('scene-2', 'restored and saved');
+    await settle();
+    expect((mocks.serverScenes.get('scene-2') as ServerScene).title).toBe('restored and saved');
+
+    mocks.manifestResponseGate = null;
+    await act(async () => response.release());
+    await settle();
+    expect(titleOf('scene-2')).toBe('restored and saved');
   });
 
   it('takes a remote change once the local edit is saved, without waiting for a signal', async () => {

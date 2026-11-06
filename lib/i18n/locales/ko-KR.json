@@ -356,6 +356,9 @@
     "proMode": "프로 모드",
     "undo": "실행 취소",
     "redo": "다시 실행",
+    "courseHistory": {
+      "stepExpired": "이 단계는 더 이상 실행 취소할 수 없습니다"
+    },
     "delete": "삭제",
     "title": "편집 중 · {{type}}",
     "unsupportedScene": "{{type}}은(는) 아직 편집할 수 없습니다",
@@ -481,8 +484,6 @@
       "addSlide": "슬라이드 추가",
       "duplicate": "복제",
       "delete": "삭제",
-      "deleted": "삭제됨",
-      "undo": "실행 취소",
       "copySuffix": "(사본)",
       "untitledSlide": "제목 없는 슬라이드",
       "collapse": "패널 접기",

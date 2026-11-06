@@ -36,12 +36,12 @@ function currentQuizContent(sceneId: string): QuizContent | null {
 
 /** The working content: in-memory session present, else the canonical scene, else empty. */
 function resolvePresent(): QuizContent {
-  const { history, sceneId } = useQuizEditSession.getState();
-  return history?.present ?? (sceneId ? currentQuizContent(sceneId) : null) ?? EMPTY_QUIZ;
+  const { sceneId } = useQuizEditSession.getState();
+  return (sceneId ? currentQuizContent(sceneId) : null) ?? EMPTY_QUIZ;
 }
 
 // ---------------------------------------------------------------------------
-// Bound mutations. Each reads `present` via getState (a stable module closure,
+// Bound mutations. Each reads the canonical content via getState (a stable module closure,
 // never a per-render capture) so the EditShell's `surfaceStateEqual` — which
 // does NOT compare callbacks — stays correct without special-casing.
 //
@@ -135,41 +135,30 @@ export function buildQuizHints(
  * pre-seed fallback, else an empty quiz.
  */
 export function useResolvedQuizContent(): QuizContent {
-  const history = useQuizEditSession((s) => s.history);
-  // Fall back to the canonical current quiz scene so the form has its content
-  // on the very first render — before the session seeds in an effect. (`seed`
-  // adopts this exact object, so the ref is stable across the seed and the
-  // chrome's `surfaceStateEqual` doesn't see a spurious change.) Reading it
-  // from the stage store also keeps the form's question-id set stable from the
-  // first populated render, so the "auto-expand a newly added question" logic
-  // in QuizForm doesn't fire for the seeded questions.
+  // The stage store has the form's content from the very first render, before
+  // the session seeds in an effect, which keeps the form's question-id set
+  // stable: the "auto-expand a newly added question" logic in QuizForm doesn't
+  // fire for the seeded questions.
   const sceneContent = useStageStore((s) => {
     const scene = s.scenes.find((x) => x.id === s.currentSceneId) ?? null;
     return scene && scene.type === 'quiz' ? (scene.content as QuizContent) : null;
   });
-  return history?.present ?? sceneContent ?? EMPTY_QUIZ;
+  return sceneContent ?? EMPTY_QUIZ;
 }
 
 /**
  * The quiz surface's `useSurfaceState`. Pure read over the shared session
  * store. No selection model, no floating actions — the structured form owns
- * all of its editing affordances inline; the chrome only contributes undo/redo.
+ * all of its editing affordances inline.
  */
 export function useQuizSurfaceState(): SurfaceState<QuizContent, QuizSelection> {
   const { t } = useI18n();
-  const history = useQuizEditSession((s) => s.history);
   const content = useResolvedQuizContent();
 
   return {
     content,
     selection: undefined,
     hasSelection: false,
-    history: {
-      canUndo: !!history && history.past.length > 0,
-      canRedo: !!history && history.future.length > 0,
-      undo: () => useQuizEditSession.getState().undo(),
-      redo: () => useQuizEditSession.getState().redo(),
-    },
     insertItems: [],
     floatingActions: [],
     commands: [],
@@ -191,10 +180,7 @@ export function useQuizSurfaceLifecycle(): string {
 
   useEffect(() => {
     if (!sceneId) return;
-    const content = currentQuizContent(sceneId);
-    if (content && useQuizEditSession.getState().sceneId !== sceneId) {
-      useQuizEditSession.getState().seed(sceneId, content);
-    }
+    useQuizEditSession.getState().seed(sceneId);
   }, [sceneId]);
 
   useEffect(() => () => useQuizEditSession.getState().end(), []);

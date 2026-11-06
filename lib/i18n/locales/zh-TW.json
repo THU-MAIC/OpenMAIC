@@ -356,6 +356,9 @@
     "proMode": "專業模式",
     "undo": "復原",
     "redo": "重做",
+    "courseHistory": {
+      "stepExpired": "該步驟已無法復原"
+    },
     "delete": "刪除",
     "title": "編輯 {{type}}",
     "unsupportedScene": "{{type}} 尚無法編輯",
@@ -430,8 +433,6 @@
       "addSlide": "新增投影片",
       "duplicate": "複製",
       "delete": "刪除",
-      "deleted": "已刪除",
-      "undo": "復原",
       "copySuffix": "（副本）",
       "untitledSlide": "未命名投影片",
       "collapse": "收合側欄",

@@ -356,6 +356,9 @@
     "proMode": "Pro",
     "undo": "Отменить",
     "redo": "Повторить",
+    "courseHistory": {
+      "stepExpired": "Этот шаг больше нельзя отменить"
+    },
     "delete": "Удалить",
     "title": "Редактирование · {{type}}",
     "unsupportedScene": "{{type}} пока нельзя редактировать",
@@ -481,8 +484,6 @@
       "addSlide": "Добавить слайд",
       "duplicate": "Дублировать",
       "delete": "Удалить",
-      "deleted": "Удалено",
-      "undo": "Отменить",
       "copySuffix": "(копия)",
       "untitledSlide": "Безымянный слайд",
       "collapse": "Свернуть панель",
