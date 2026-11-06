@@ -61,7 +61,8 @@ export function reportShareContent(report: LearningReport) {
     metrics,
     results: reportProjectResults(report)
       .slice(0, 6)
-      .map(({ title }) => title),
+      .map(({ title, goal, shareResult }) => shareResult ?? { title, description: goal ?? '' }),
+    workflow: summary?.skills?.map(({ id }) => id) ?? [],
     concepts: summary?.concepts?.slice(0, 6) ?? [],
     verification: {
       passed,

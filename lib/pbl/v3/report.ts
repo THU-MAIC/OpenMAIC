@@ -1,3 +1,5 @@
+import type { MilestoneDefinition } from './domain/project/project-schema';
+
 /** Owner-scoped, saved project report. Public evidence never contains course protocols or answer keys. */
 export interface LearningReport {
   formatVersion?: number;
@@ -10,6 +12,7 @@ export interface LearningReport {
     id: string;
     title: string;
     goal?: string;
+    shareResult?: MilestoneDefinition['shareResult'];
     optional: boolean;
     status: string;
     stages: string[];

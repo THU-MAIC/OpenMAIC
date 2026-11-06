@@ -40,6 +40,7 @@ export async function renderReportShareImage(
   const heading = t(
     content.completed ? 'pblV3.reportCopy.congratulations' : 'pblV3.share.achievement',
   );
+  const workflow = content.workflow.map((id) => t(`pblV3.reportCopy.skillLabels.${id}`));
   let font = primaryFont;
   if (document.fonts) {
     try {
@@ -53,7 +54,9 @@ export async function renderReportShareImage(
           heading,
           t('pblV3.share.workshop'),
           t('pblV3.share.entryLabel'),
-          ...content.results,
+          ...content.results.flatMap(({ title, description }) => [title, description]),
+          ...workflow,
+          t('pblV3.reportCopy.workflow'),
           t('pblV3.reportCopy.projectResults'),
           t('pblV3.share.conceptsLabel'),
           t('pblV3.share.invite'),
@@ -193,119 +196,241 @@ export async function renderReportShareImage(
   const headingEnd = paragraph(heading, 64, 254, width - 128, 54, 1, ink, 700, true);
   const titleEnd = paragraph(content.title, 64, headingEnd + 70, width - 128, 34, 2, muted, 500);
 
-  // Results lead the image. A configured invitation always stays at the bottom.
-  const resultsY = destination ? 1108 : 1360;
-  // Existing factual sections retain their content and flow only when data exists.
+  const margin = 64;
+  const bodyWidth = width - 2 * margin;
+  const rtl = direction === 'rtl';
   const panel = dark ? '#ffffff0c' : '#ffffffa8';
-  let y = titleEnd + 62;
-  const metricStride = destination ? 128 : 156;
-  const metricHeight = metricStride - 16;
-  if (content.metrics.length) {
-    const columnWidth = (width - 136) / 2;
-    content.metrics.forEach(([key, value], i) => {
-      const x = 64 + (i % 2) * (columnWidth + 8);
-      const cardWidth = i % 2 === 0 && i === content.metrics.length - 1 ? width - 128 : columnWidth;
-      const top = y + Math.floor(i / 2) * metricStride;
-      box(x, top, cardWidth, metricHeight, panel);
-      text(
-        value,
-        direction === 'rtl' ? x + cardWidth - 24 : x + 24,
-        top + (destination ? 48 : 60),
-        42,
-        accent,
-        700,
-        'ltr',
-        direction === 'rtl' ? 'right' : 'left',
-      );
-      paragraph(
-        t(key === 'concepts' ? 'pblV3.share.conceptsLabel' : `pblV3.reportCopy.${key}`),
-        x + 24,
-        top + (destination ? 84 : 104),
-        cardWidth - 48,
-        20,
-        1,
-        muted,
-        500,
-        true,
-      );
-    });
-    y += Math.ceil(content.metrics.length / 2) * metricStride;
-  }
-  // Size chips first so longer authored concepts can wrap without covering the checklist.
-  const chipHeight = 50,
-    gap = 14;
-  const chips: { text: string; x: number; row: number; width: number }[] = [];
-  let chipX = direction === 'rtl' ? width - 64 : 64,
-    chipRow = 0;
-  content.concepts.forEach((concept) => {
-    ctx.font = `500 22px ${font}`;
-    const chipWidth = Math.min(348, ctx.measureText(concept).width + 40);
-    if (direction === 'rtl' ? chipX - chipWidth < 64 : chipX + chipWidth > width - 64) {
-      chipX = direction === 'rtl' ? width - 64 : 64;
-      chipRow++;
-    }
-    const left = direction === 'rtl' ? chipX - chipWidth : chipX;
-    chips.push({ text: concept, x: left, row: chipRow, width: chipWidth });
-    chipX = direction === 'rtl' ? left - gap : left + chipWidth + gap;
-  });
-  const conceptHeight = chips.length ? (chipRow + 1) * (chipHeight + gap) - gap : 0;
-  const conceptsY = resultsY - 88 - conceptHeight;
-  const lowerTop = y + 24;
+  const tint = dark ? '#c3a5ff12' : '#722ed10a';
   const rule = dark ? '#ffffff16' : '#211c3812';
+  const resultsY = destination ? 1108 : 1360;
+  const sections: { height: number; draw: (top: number) => void }[] = [];
+  const mirror = (x: number, w: number) => (rtl ? width - x - w : x);
+
+  if (content.metrics.length) {
+    const metricHeight = 108;
+    sections.push({
+      height: metricHeight,
+      draw(top) {
+        const w = (bodyWidth - 14 * (content.metrics.length - 1)) / content.metrics.length;
+        content.metrics.forEach(([key, value], i) => {
+          const x = mirror(margin + i * (w + 14), w);
+          box(x, top, w, metricHeight, panel);
+          text(
+            value,
+            rtl ? x + w - 24 : x + 24,
+            top + 51,
+            41,
+            accent,
+            700,
+            'ltr',
+            rtl ? 'right' : 'left',
+          );
+          paragraph(
+            t(key === 'concepts' ? 'pblV3.share.conceptsLabel' : `pblV3.reportCopy.${key}`),
+            x + 24,
+            top + 83,
+            w - 48,
+            20,
+            1,
+            muted,
+            500,
+            true,
+          );
+        });
+      },
+    });
+  }
+
   if (content.results.length) {
-    paragraph(
-      t('pblV3.reportCopy.projectResults'),
-      64,
-      lowerTop + 40,
-      width - 128,
-      24,
-      1,
-      muted,
-      600,
-      true,
-    );
-    const rows = Math.ceil(content.results.length / 2);
-    const bodyTop = lowerTop + 70;
-    const rowHeight = Math.min(
-      destination ? 66 : 104,
-      ((chips.length ? conceptsY - 40 : resultsY - 40) - bodyTop) / rows,
-    );
-    const columnWidth = (width - 164) / 2;
-    content.results.forEach((title, i) => {
-      const column = direction === 'rtl' ? 1 - (i % 2) : i % 2;
-      const x = 64 + column * (columnWidth + 36);
-      const center = bodyTop + (Math.floor(i / 2) + 0.5) * rowHeight;
-      const markerX = direction === 'rtl' ? x + columnWidth - 20 : x + 20;
-      ctx.strokeStyle = accent;
-      ctx.lineWidth = 2.4;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.beginPath();
-      ctx.moveTo(markerX - 6, center);
-      ctx.lineTo(markerX - 1, center + 5);
-      ctx.lineTo(markerX + 8, center - 6);
-      ctx.stroke();
-      paragraph(
-        title,
-        direction === 'rtl' ? x + 12 : x + 52,
-        center + 9,
-        columnWidth - 64,
-        rowHeight < 40 ? 22 : 26,
-        1,
-        ink,
-        500,
-        true,
-      );
+    const columns = Math.min(2, content.results.length);
+    const gap = 16;
+    const w = (bodyWidth - gap * (columns - 1)) / columns;
+    const h = 164;
+    sections.push({
+      height: 42 + Math.ceil(content.results.length / columns) * (h + gap) - gap,
+      draw(top) {
+        paragraph(
+          t('pblV3.reportCopy.projectResults'),
+          margin,
+          top + 24,
+          bodyWidth,
+          25,
+          1,
+          muted,
+          600,
+          true,
+        );
+        content.results.forEach(({ title, description }, i) => {
+          const x = mirror(margin + (i % columns) * (w + gap), w);
+          const y = top + 42 + Math.floor(i / columns) * (h + gap);
+          box(x, y, w, h, panel, 20);
+          const marker = rtl ? x + w - 48 : x + 24;
+          box(marker, y + 24, 24, 24, tint, 8);
+          ctx.strokeStyle = accent;
+          ctx.lineWidth = 2.4;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.beginPath();
+          ctx.moveTo(marker + 6, y + 36);
+          ctx.lineTo(marker + 10, y + 40);
+          ctx.lineTo(marker + 18, y + 32);
+          ctx.stroke();
+          const titleEnd = paragraph(
+            title,
+            rtl ? x + 24 : x + 60,
+            y + 44,
+            w - 84,
+            29,
+            2,
+            ink,
+            700,
+            true,
+          );
+          if (description) {
+            paragraph(description, x + 24, titleEnd + 28, w - 48, 22, 2, muted, 500, true);
+          }
+        });
+      },
     });
   }
-  if (chips.length) {
-    paragraph(t('pblV3.share.conceptsLabel'), 64, conceptsY, width - 128, 24, 1, muted, 600, true);
-    chips.forEach((chip) => {
-      const top = conceptsY + 24 + chip.row * (chipHeight + gap);
-      box(chip.x, top, chip.width, chipHeight, dark ? '#ffffff0a' : '#ffffff80', 14);
-      paragraph(chip.text, chip.x + 20, top + 33, chip.width - 40, 22, 1, ink, 500);
+
+  if (workflow.length) {
+    const w = bodyWidth / workflow.length;
+    ctx.font = `600 20px ${font}`;
+    ctx.direction = direction;
+    const labels = workflow.map((label) =>
+      wrapShareText(label, w - 32, (value) => ctx.measureText(value).width).map((line) => ({
+        line,
+        width: ctx.measureText(line).width,
+      })),
+    );
+    const h = Math.max(120, 80 + 24 * Math.max(...labels.map((lines) => lines.length)));
+    sections.push({
+      height: 42 + h,
+      draw(top) {
+        paragraph(
+          t('pblV3.reportCopy.workflow'),
+          margin,
+          top + 24,
+          bodyWidth,
+          25,
+          1,
+          muted,
+          600,
+          true,
+        );
+        const y = top + 42;
+        box(margin, y, bodyWidth, h, tint, 20);
+        const centerY = y + 36;
+        ctx.strokeStyle = dark ? '#c3a5ff30' : '#722ed12c';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(margin + w / 2, centerY);
+        ctx.lineTo(width - margin - w / 2, centerY);
+        ctx.stroke();
+        labels.forEach((lines, i) => {
+          const x = mirror(margin + i * w, w);
+          const center = x + w / 2;
+          box(center - 17, centerY - 17, 34, 34, dark ? '#493667' : '#e2d1fa', 17);
+          text(
+            String(i + 1).padStart(2, '0'),
+            center,
+            centerY + 5,
+            15,
+            accent,
+            700,
+            'ltr',
+            'center',
+          );
+          lines.forEach(({ line, width: lineWidth }, row) =>
+            text(
+              line,
+              center + (rtl ? lineWidth : -lineWidth) / 2,
+              y + 80 + row * 24,
+              20,
+              ink,
+              600,
+              direction,
+              rtl ? 'right' : 'left',
+            ),
+          );
+        });
+      },
     });
   }
+
+  if (content.concepts.length) {
+    const gap = 12;
+    let x = margin;
+    let y = 42;
+    let rowHeight = 0;
+    ctx.font = `500 22px ${font}`;
+    ctx.direction = direction;
+    const measure = (value: string) => ctx.measureText(value).width;
+    const chips = content.concepts.map((concept) => {
+      const w = Math.min(bodyWidth, Math.ceil(measure(concept)) + 40);
+      const lines = wrapShareText(concept, w - 40, measure);
+      const h = 44 + Math.max(0, lines.length - 1) * 28;
+      if (x + w > width - margin) {
+        x = margin;
+        y += rowHeight + gap;
+        rowHeight = 0;
+      }
+      const chip = { x: mirror(x, w), y, w, h, lines };
+      x += w + gap;
+      rowHeight = Math.max(rowHeight, h);
+      return chip;
+    });
+    sections.push({
+      height: y + rowHeight,
+      draw(top) {
+        paragraph(
+          t('pblV3.share.conceptsLabel'),
+          margin,
+          top + 24,
+          bodyWidth,
+          25,
+          1,
+          muted,
+          600,
+          true,
+        );
+        for (const chip of chips) {
+          box(chip.x, top + chip.y, chip.w, chip.h, panel, 14);
+          chip.lines.forEach((line, i) =>
+            text(
+              line,
+              rtl ? chip.x + chip.w - 20 : chip.x + 20,
+              top + chip.y + 29 + i * 28,
+              22,
+              ink,
+              500,
+              direction,
+              rtl ? 'right' : 'left',
+            ),
+          );
+        }
+      },
+    });
+  }
+
+  // Keep the footer and campaign hit area fixed while fitting dense authored content above.
+  const top = titleEnd + 56;
+  const available = resultsY - top - 40;
+  const sectionHeight = sections.reduce((height, section) => height + section.height, 0);
+  const gaps = Math.max(0, sections.length - 1);
+  const gap = Math.min(80, Math.max(26, (available - sectionHeight) / Math.max(1, gaps)));
+  const scale = Math.min(1, available / (sectionHeight + gaps * gap));
+  ctx.save();
+  ctx.translate(((1 - scale) * width) / 2, top);
+  ctx.scale(scale, scale);
+  let offset = 0;
+  for (const section of sections) {
+    section.draw(offset);
+    offset += section.height + gap;
+  }
+  ctx.restore();
+
   const { passed, tested, quizScore, quizTotal, decisions } = content.verification;
   const number = (value: string | number) =>
     direction === 'rtl' ? `\u2066${value}\u2069` : String(value);

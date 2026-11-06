@@ -14,6 +14,9 @@ afterEach(() => {
 });
 
 function syntheticCanvas() {
+  let offsetX = 0;
+  let offsetY = 0;
+  let scale = 1;
   const drawn: {
     value: string;
     direction: string;
@@ -36,9 +39,18 @@ function syntheticCanvas() {
     fill() {},
     drawImage() {},
     save() {},
-    translate() {},
+    translate(x: number, y: number) {
+      offsetX = x;
+      offsetY = y;
+    },
+    scale(x: number) {
+      scale = x;
+    },
     rotate() {},
-    restore() {},
+    restore() {
+      offsetX = offsetY = 0;
+      scale = 1;
+    },
     moveTo() {},
     lineTo() {},
     quadraticCurveTo() {},
@@ -49,8 +61,8 @@ function syntheticCanvas() {
     fillText(value: string, x: number, y: number, maxWidth?: number) {
       drawn.push({
         value,
-        x,
-        y,
+        x: offsetX + scale * x,
+        y: offsetY + scale * y,
         direction: this.direction,
         align: this.textAlign,
         font: this.font,
@@ -269,3 +281,39 @@ it('places the approved workshop, factual results and final invitation in order'
     /OpenMAIC · Vibe Coding|示例|上线前替换/,
   );
 });
+
+it.each(['', 'https://workshop.example/intro'])(
+  'shows authored results, recorded workflow and the complete long concept before the footer (%s)',
+  async (url) => {
+    reportShareCampaign.url = url;
+    const { drawn } = syntheticCanvas();
+    const t = (key: string) => {
+      let value: unknown = zh;
+      for (const part of key.split('.')) value = (value as Record<string, unknown>)[part];
+      return String(value);
+    };
+    const concept = '人设说明与当前问题一起成为模型输入'.repeat(10);
+    const result = {
+      title: '我的 Agent 会回复啦！',
+      description: '发出问题，就能收到模型的回答。',
+    };
+    await renderReportShareImage(
+      { ...content, results: Array(6).fill(result), concepts: [concept] },
+      'dark',
+      t,
+      'zh-CN',
+    );
+    const at = (value: string) => drawn.find((item) => item.value === value)!;
+    expect(at(result.title).y).toBeLessThan(at(result.description).y);
+    expect(at(result.description).y).toBeLessThan(at(zh.pblV3.reportCopy.workflow).y);
+    expect(at(zh.pblV3.reportCopy.skillLabels.planReview).y).toBeGreaterThan(
+      at(zh.pblV3.reportCopy.workflow).y,
+    );
+    const lines = drawn.filter((item) =>
+      /^([人设说明与当前问题一起成为模型输入])+$/u.test(item.value),
+    );
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines.map((line) => line.value).join('')).toBe(concept);
+    expect(lines.at(-1)!.y).toBeLessThan(at(zh.pblV3.share.testsPassed).y);
+  },
+);

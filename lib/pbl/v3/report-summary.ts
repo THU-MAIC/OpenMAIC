@@ -60,6 +60,7 @@ export function projectReportMilestones(
     id: milestone.id,
     title: milestone.title,
     ...(milestone.goal ? { goal: excerpt(milestone.goal) } : {}),
+    ...(milestone.shareResult ? { shareResult: milestone.shareResult } : {}),
     optional: !!milestone.optional,
     status:
       state.milestones.find((progress) => progress.milestoneId === milestone.id)?.status ??
