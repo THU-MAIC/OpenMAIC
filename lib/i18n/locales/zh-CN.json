@@ -356,6 +356,10 @@
       "collapse": "收起底栏",
       "expand": "展开底栏",
       "resize": "调整底栏高度"
+    },
+    "chatPanel": {
+      "expand": "展开会话区",
+      "collapse": "收起会话区"
     }
   },
   "edit": {

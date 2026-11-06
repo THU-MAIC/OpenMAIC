@@ -776,6 +776,10 @@
       "collapse": "Recolher a barra",
       "expand": "Expandir a barra",
       "resize": "Redimensionar a barra"
+    },
+    "chatPanel": {
+      "expand": "Mostrar painel de conversa",
+      "collapse": "Ocultar painel de conversa"
     }
   },
   "whiteboard": {

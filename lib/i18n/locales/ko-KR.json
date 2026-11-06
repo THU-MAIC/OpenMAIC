@@ -356,6 +356,10 @@
       "collapse": "하단 막대 접기",
       "expand": "하단 막대 펼치기",
       "resize": "하단 막대 높이 조절"
+    },
+    "chatPanel": {
+      "expand": "대화 패널 펼치기",
+      "collapse": "대화 패널 접기"
     }
   },
   "edit": {

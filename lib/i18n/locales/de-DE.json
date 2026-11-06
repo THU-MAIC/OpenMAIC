@@ -356,6 +356,10 @@
       "collapse": "Leiste einklappen",
       "expand": "Leiste ausklappen",
       "resize": "Leistenhöhe ändern"
+    },
+    "chatPanel": {
+      "expand": "Gesprächsbereich einblenden",
+      "collapse": "Gesprächsbereich ausblenden"
     }
   },
   "edit": {

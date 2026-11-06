@@ -356,6 +356,10 @@
       "collapse": "Collapse the dock",
       "expand": "Expand the dock",
       "resize": "Resize the dock"
+    },
+    "chatPanel": {
+      "expand": "Show conversation panel",
+      "collapse": "Hide conversation panel"
     }
   },
   "edit": {

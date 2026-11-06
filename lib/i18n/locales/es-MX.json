@@ -356,6 +356,10 @@
       "collapse": "Contraer la barra",
       "expand": "Expandir la barra",
       "resize": "Cambiar la altura de la barra"
+    },
+    "chatPanel": {
+      "expand": "Mostrar panel de conversación",
+      "collapse": "Ocultar panel de conversación"
     }
   },
   "edit": {

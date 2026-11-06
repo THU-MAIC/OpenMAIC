@@ -421,6 +421,33 @@ export function WorkspaceCoursesPage({
   const atTop = !searching && !activeFolderId;
   const showFolders = foldersAvailable && atTop;
 
+  // ── Scroll paging: one page of cards at a time ──────────────────────
+  // The grid renders a page and adds the next as its end nears the viewport;
+  // changing folder or query starts again from one page. Reordering still
+  // works on the whole list (`ordered`), never on what is on screen.
+  const pageKey = `${activeFolderId ?? ''}\u0000${searching ? query : ''}`;
+  const [paging, setPaging] = useState({ key: pageKey, count: COURSE_PAGE_SIZE });
+  const shownCount = paging.key === pageKey ? paging.count : COURSE_PAGE_SIZE;
+  const shownCourses = visible.length > shownCount ? visible.slice(0, shownCount) : visible;
+  const hasMore = visible.length > shownCount;
+  const moreSentinel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const node = moreSentinel.current;
+    if (!node || !hasMore) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        setPaging((current) => ({
+          key: pageKey,
+          count: (current.key === pageKey ? current.count : COURSE_PAGE_SIZE) + COURSE_PAGE_SIZE,
+        }));
+      },
+      { rootMargin: '0px 0px 480px 0px' },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasMore, pageKey, shownCount]);
+
   // ── Drag: file into a folder, out of one, or reorder ────────────────
   const drag = useTreeDrag({
     axis: 'horizontal',
@@ -659,7 +686,7 @@ export function WorkspaceCoursesPage({
                   <PendingRunCard key={run.id} run={run} onDiscard={onDiscardRun} />
                 ))
               : null}
-            {visible.map((course) => (
+            {shownCourses.map((course) => (
               <CourseCard
                 key={course.id}
                 course={course}
@@ -695,6 +722,14 @@ export function WorkspaceCoursesPage({
             ))}
           </div>
         )}
+        {hasMore ? (
+          <div
+            ref={moreSentinel}
+            data-testid="workspace-courses-more-sentinel"
+            aria-hidden="true"
+            className="h-px"
+          />
+        ) : null}
       </div>
 
       {/* Deleting a folder does something to the courses inside it, so it is
@@ -737,6 +772,8 @@ export function WorkspaceCoursesPage({
   );
 }
 
+/** Course cards per scroll page: a few rows of the grid at any width. */
+const COURSE_PAGE_SIZE = 24;
 const NO_COVERS: Slide[] = [];
 const NO_ORDER: readonly string[] = [];
 

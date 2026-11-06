@@ -8,7 +8,8 @@ import {
   Pause,
   PencilLine,
   LayoutList,
-  MessageSquare,
+  PanelRightClose,
+  PanelRightOpen,
   Volume1,
   Volume2,
   VolumeX,
@@ -518,9 +519,16 @@ export function CanvasToolbar({
                 ? 'text-gray-400 dark:text-gray-500'
                 : 'text-gray-600 dark:text-gray-300',
             )}
-            aria-label="Toggle chat"
+            aria-label={t(chatCollapsed ? 'stage.chatPanel.expand' : 'stage.chatPanel.collapse')}
+            title={t(chatCollapsed ? 'stage.chatPanel.expand' : 'stage.chatPanel.collapse')}
           >
-            <MessageSquare className="w-3.5 h-3.5" />
+            {/* A panel, not a speech bubble: the bubble is the classroom's own
+                type-to-speak control, and the two must not read as one. */}
+            {chatCollapsed ? (
+              <PanelRightOpen className="w-3.5 h-3.5" />
+            ) : (
+              <PanelRightClose className="w-3.5 h-3.5" />
+            )}
           </button>
         )}
       </div>

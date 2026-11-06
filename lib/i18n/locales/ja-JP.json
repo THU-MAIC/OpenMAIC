@@ -356,6 +356,10 @@
       "collapse": "下部バーを折りたたむ",
       "expand": "下部バーを展開",
       "resize": "下部バーの高さを変更"
+    },
+    "chatPanel": {
+      "expand": "会話パネルを表示",
+      "collapse": "会話パネルを隠す"
     }
   },
   "edit": {

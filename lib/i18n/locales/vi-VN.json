@@ -356,6 +356,10 @@
       "collapse": "Thu gọn thanh dưới",
       "expand": "Mở rộng thanh dưới",
       "resize": "Đổi chiều cao thanh dưới"
+    },
+    "chatPanel": {
+      "expand": "Hiện bảng hội thoại",
+      "collapse": "Ẩn bảng hội thoại"
     }
   },
   "edit": {

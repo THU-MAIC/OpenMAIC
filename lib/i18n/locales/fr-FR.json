@@ -356,6 +356,10 @@
       "collapse": "Replier la barre",
       "expand": "Déplier la barre",
       "resize": "Redimensionner la barre"
+    },
+    "chatPanel": {
+      "expand": "Afficher le panneau de discussion",
+      "collapse": "Masquer le panneau de discussion"
     }
   },
   "edit": {
