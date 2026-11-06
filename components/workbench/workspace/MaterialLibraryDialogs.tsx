@@ -299,3 +299,179 @@ export function DeleteDialog({
     </AlertDialog>
   );
 }
+
+/** One file of a batch deletion, as it was named when the teacher confirmed. */
+export interface BatchDeleteItem {
+  readonly materialId: string;
+  readonly name: string;
+}
+
+/**
+ * Confirm deleting the selected files, naming each, and delete them one by
+ * one through the single-source route: each deletion is its own, so some can
+ * succeed while others fail. The list is fixed when the dialog opens; nothing
+ * selected later joins it. Afterwards the dialog says how many were deleted
+ * and which were not, and why, across every pass: "Retry" asks again only
+ * for those that may still go through, and the others keep their result.
+ * A 404 is read per file as `deleteOutcomeOf` reads it.
+ * `onSettled` runs once after each pass, with the files that are now gone
+ * (deleted, or already gone); `onDeleted` once all of them are.
+ */
+export function BatchDeleteDialog({
+  items,
+  remove,
+  onSettled,
+  onDeleted,
+  onClose,
+  returnFocus,
+  t,
+}: {
+  readonly items: readonly BatchDeleteItem[];
+  readonly remove: (materialId: string) => Promise<void>;
+  readonly onSettled: (goneIds: readonly string[]) => void;
+  readonly onDeleted: () => void;
+  readonly onClose: () => void;
+  readonly returnFocus: ReturnFocus;
+  readonly t: Translate;
+}) {
+  type Failure = { readonly item: BatchDeleteItem; readonly result: DeleteOutcome };
+  const [phase, setPhase] = useState<
+    | { readonly kind: 'confirm' | 'busy' }
+    | { readonly kind: 'result'; readonly deleted: number; readonly failures: readonly Failure[] }
+  >({ kind: 'confirm' });
+  /** Files whose earlier attempt may have committed: a 404 now means done. */
+  const failedBefore = useRef(new Set<string>());
+  /** Each file's latest result, over every pass: a retry replaces only its own. */
+  const outcomes = useRef(new Map<string, DeleteOutcome>());
+
+  const attempt = async (batch: readonly BatchDeleteItem[]) => {
+    setPhase({ kind: 'busy' });
+    const gone: string[] = [];
+    let stopped: DeleteOutcome | null = null;
+    for (const item of batch) {
+      // A changed sign-in refuses every later request too: those are not sent.
+      if (stopped) {
+        outcomes.current.set(item.materialId, stopped);
+        continue;
+      }
+      let error: unknown = null;
+      try {
+        await remove(item.materialId);
+      } catch (caught) {
+        error = caught;
+      }
+      const result = deleteOutcomeOf(error, failedBefore.current.has(item.materialId));
+      outcomes.current.set(item.materialId, result);
+      if (result.outcome === 'deleted' || result.outcome === 'gone') gone.push(item.materialId);
+      if (result.outcome === 'retry') failedBefore.current.add(item.materialId);
+      if (result.outcome === 'identity') stopped = result;
+    }
+    onSettled(gone);
+    // The whole confirmed list decides, not this pass.
+    const failures: Failure[] = [];
+    let deleted = 0;
+    for (const item of items) {
+      const result = outcomes.current.get(item.materialId);
+      if (result?.outcome === 'deleted') deleted += 1;
+      else if (result) failures.push({ item, result });
+    }
+    if (failures.length === 0) {
+      onDeleted();
+      onClose();
+      return;
+    }
+    setPhase({ kind: 'result', deleted, failures });
+  };
+
+  const busy = phase.kind === 'busy';
+  const retryable =
+    phase.kind === 'result'
+      ? phase.failures.filter((failure) => failure.result.outcome === 'retry')
+      : [];
+  return (
+    <AlertDialog open onOpenChange={(next) => (!next && !busy ? onClose() : undefined)}>
+      <AlertDialogContent
+        data-testid="kb-batch-delete-dialog"
+        onCloseAutoFocus={returnFocus}
+        className="sm:max-w-[420px]"
+      >
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            {t('workspace.knowledgeBase.delete.batchTitle', { count: items.length })}
+          </AlertDialogTitle>
+          <AlertDialogDescription asChild>
+            <div className="flex flex-col gap-1">
+              <p>{t('workspace.knowledgeBase.delete.batchLinks')}</p>
+              <p>{t('workspace.knowledgeBase.delete.batchPartial')}</p>
+              <p>{t('workspace.knowledgeBase.delete.materialCourses')}</p>
+              <p>{t('workspace.knowledgeBase.delete.cannotUndo')}</p>
+            </div>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {phase.kind === 'result' ? (
+          <div data-testid="kb-batch-delete-dialog-result" role="alert" className="text-[12px]">
+            <p className="text-red-600">
+              {t('workspace.knowledgeBase.delete.batchResult', {
+                deleted: phase.deleted,
+                total: items.length,
+              })}
+            </p>
+            <ul className="mt-1 max-h-40 overflow-y-auto">
+              {phase.failures.map(({ item, result }) => (
+                <li
+                  key={item.materialId}
+                  data-testid={`kb-batch-delete-failed-${item.materialId}`}
+                  className="break-words"
+                >
+                  {item.name}
+                  {' · '}
+                  {result.outcome === 'deleted' ? null : t(result.messageKey)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <ul
+            data-testid="kb-batch-delete-dialog-items"
+            aria-label={t('workspace.knowledgeBase.delete.batchTitle', { count: items.length })}
+            className="max-h-40 overflow-y-auto rounded-md border px-3 py-2 text-[13px]"
+          >
+            {items.map((item) => (
+              <li key={item.materialId} className="break-words">
+                {item.name}
+              </li>
+            ))}
+          </ul>
+        )}
+        <AlertDialogFooter>
+          <AlertDialogCancel data-testid="kb-batch-delete-dialog-cancel" disabled={busy}>
+            {t(
+              phase.kind === 'result'
+                ? 'workspace.knowledgeBase.dialog.close'
+                : 'workspace.knowledgeBase.dialog.cancel',
+            )}
+          </AlertDialogCancel>
+          {phase.kind === 'result' && retryable.length === 0 ? null : (
+            <Button
+              type="button"
+              variant="destructive"
+              data-testid="kb-batch-delete-dialog-confirm"
+              disabled={busy}
+              onClick={() =>
+                void attempt(
+                  phase.kind === 'result' ? retryable.map((failure) => failure.item) : items,
+                )
+              }
+            >
+              {t(
+                phase.kind === 'result'
+                  ? 'workspace.knowledgeBase.retry'
+                  : 'workspace.knowledgeBase.actions.delete',
+              )}
+            </Button>
+          )}
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
