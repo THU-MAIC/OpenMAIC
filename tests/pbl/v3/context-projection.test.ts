@@ -18,6 +18,7 @@ import {
 } from '@/lib/server/pbl-v3/context-projection';
 import { teachingModelBudget, estimatedRequestTokens } from '@/lib/server/pbl-v3/context-budget';
 import { currentTeachingContext } from '@/lib/server/pbl-v3/teaching-context';
+import { readProjectFileExcerpt } from '@/lib/server/pbl-v3/file-read';
 
 const usage = {
   input: 0,
@@ -478,6 +479,49 @@ describe('model-aware teaching context projection', () => {
       runtime.dispose();
     },
   );
+  it('keeps an ordinary coding continuation within budget after reading a large protected preview', async () => {
+    const runtime = createTeachingContextProjection(summarizer());
+    const target = { ...model, contextWindow: 128_000, maxTokens: 8192 };
+    const path = 'src/web/index.html';
+    const source = '<section>Preview for this milestone</section>\n'.repeat(720);
+    const toolCall = (id: string, path: string): AssistantMessage => ({
+      ...assistant(''),
+      stopReason: 'toolUse',
+      content: [{ type: 'toolCall', id, name: 'read_file', arguments: { path } }],
+    });
+    const result = (id: string, value: object): Context['messages'][number] => ({
+      role: 'toolResult',
+      toolCallId: id,
+      toolName: 'read_file',
+      content: [{ type: 'text', text: JSON.stringify(value) }],
+      isError: false,
+      timestamp: 1,
+    });
+    const prior: Context = {
+      systemPrompt: 'p'.repeat(60_000),
+      messages: [
+        { role: 'user', content: '继续', timestamp: 0 },
+        toolCall('java', 'src/Application.java'),
+        result('java', { text: 'j'.repeat(14_000) }),
+        toolCall('preview', path),
+      ],
+    };
+    await expect(
+      runtime.prepare(
+        { ...prior, messages: [...prior.messages, result('preview', { path, text: source })] },
+        window,
+        target,
+      ),
+    ).rejects.toThrow('PBL_CONTEXT_ACTIVE_TURN_CAPACITY:');
+
+    const excerpt = readProjectFileExcerpt(source);
+    expect(excerpt.nextOffset).toBeDefined();
+    const messages = [...prior.messages, result('preview', { path, ...excerpt })];
+    const projected = await runtime.prepare({ ...prior, messages }, window, target);
+    expect(projected.messages).toEqual(messages);
+    expect(estimatedRequestTokens(projected)).toBeLessThan(teachingModelBudget(target).inputTokens);
+  });
+
   it('requires a new learner message to compact a failed active tool turn, preserving raw records', async () => {
     const stream = summarizer();
     const saved = vi.fn();
