@@ -123,9 +123,18 @@ test('completed project reports stay discoverable, show facts before analysis, a
       {
         id: 'todo',
         title: 'A working todo list',
+        goal: 'Add and delete items from a numbered list.',
         optional: false,
         status: 'completed',
         stages: steps,
+        decisions: [
+          {
+            id: 'placement',
+            question: 'Where should a new task go?',
+            answer: 'Place it at the top.',
+            rationale: 'New tasks should be easy to find.',
+          },
+        ],
       },
     ],
     outcomes: [
@@ -318,7 +327,21 @@ test('completed project reports stay discoverable, show facts before analysis, a
   const report = page.getByTestId('pbl-project-report');
   await expect(report.getByText('7/7', { exact: true })).toBeVisible();
   await expect(report.getByText('Concepts practiced', { exact: true }).first()).toBeVisible();
-  await expect(report.getByText('Reviewing a plan', { exact: true })).toBeVisible();
+  const results = report.getByRole('region', { name: 'What you built' });
+  await expect(results.getByText('A working todo list', { exact: true })).toBeVisible();
+  await expect(results.getByText('Add and delete items from a numbered list.')).toBeVisible();
+  const journey = report.getByRole('region', { name: 'Your project journey' });
+  await expect(journey.getByText('How you worked')).toBeVisible();
+  await expect(journey.getByText(/Reviewing a plan/)).toBeVisible();
+  await expect(journey.getByText('Your decision', { exact: true })).toBeVisible();
+  await expect(journey.getByText('Place it at the top.', { exact: true })).toBeVisible();
+  const rationale = journey.getByText('New tasks should be easy to find.', { exact: true });
+  const reasonToggle = journey.getByText('Your rationale', { exact: true });
+  await expect(rationale).toBeHidden();
+  await reasonToggle.click();
+  await expect(rationale).toBeVisible();
+  await reasonToggle.click();
+  await expect(rationale).toBeHidden();
   await expect.poll(() => generations).toBe(1);
   const failure = report.getByText(
     'The analysis could not be generated. Your learning records are saved; you can retry.',

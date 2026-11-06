@@ -44,10 +44,9 @@ it('shows the authored result and each milestone’s latest real decision indepe
   first.goal = 'A visitor can enter a name and receive a greeting.';
   project.milestones.push({
     ...structuredClone(first),
-    id: 'optional',
+    id: 'later',
     title: 'An unfinished extension',
-    goal: 'Add optional formatting.',
-    optional: true,
+    goal: 'Add more formatting.',
     decisions: [],
   });
   const state = startOrchestration(project).state;
