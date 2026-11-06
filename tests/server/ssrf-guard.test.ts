@@ -111,7 +111,6 @@ describe('validateUrlForSSRF', () => {
       'http://100.64.0.1/',
       'http://100.100.100.100/',
       'http://240.0.0.1/',
-      'http://198.18.0.1/',
       'http://[::ffff:100.64.0.1]/',
       'http://224.0.0.1/',
       'http://255.255.255.255/',
@@ -346,7 +345,6 @@ describe('validateUrlForSSRF', () => {
       { address: '100.64.0.1', family: 4 },
       { address: '100.100.100.100', family: 4 },
       { address: '240.0.0.1', family: 4 },
-      { address: '198.18.0.1', family: 4 },
       { address: '::ffff:100.64.0.1', family: 6 },
     ];
 
@@ -425,12 +423,7 @@ describe('validateUrlForSSRF', () => {
 
     const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
 
-    for (const url of [
-      'http://240.0.0.1/',
-      'http://198.18.0.1/',
-      'http://224.0.0.1/',
-      'http://255.255.255.255/',
-    ]) {
+    for (const url of ['http://240.0.0.1/', 'http://224.0.0.1/', 'http://255.255.255.255/']) {
       await expect(validateUrlForSSRF(url)).resolves.toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
     }
     expect(lookupMock).not.toHaveBeenCalled();
@@ -827,7 +820,7 @@ describe('connectionAddressBlockReason', () => {
   it('matches validateUrlForSSRF for reserved/multicast ranges, opt-in or not', async () => {
     const { connectionAddressBlockReason } = await import('@/lib/server/ssrf-guard');
 
-    for (const address of ['240.0.0.1', '198.18.0.1', '224.0.0.1', '255.255.255.255']) {
+    for (const address of ['240.0.0.1', '224.0.0.1', '255.255.255.255']) {
       expect(connectionAddressBlockReason(address, false)).toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
       expect(connectionAddressBlockReason(address, true)).toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
     }
@@ -875,5 +868,120 @@ describe('connectionAddressBlockReason', () => {
     expect(connectionAddressBlockReason('::a9fe:a9fe', false)).toBe(CLOUD_METADATA_BLOCK_MESSAGE);
     expect(connectionAddressBlockReason('::a9fe:a9fe', true)).toBe(CLOUD_METADATA_BLOCK_MESSAGE);
     expect(connectionAddressBlockReason('::808:808', false)).toBeNull();
+  });
+});
+
+describe('fake-ip range (198.18.0.0/15)', () => {
+  const FAKE_IP_BLOCK_MESSAGE =
+    'The target resolved to 198.18.0.0/15, which usually means a TUN/fake-ip proxy (Clash, Surge, Shadowrocket, ...) answered the DNS lookup. Exclude the provider domain from fake-ip (for example fake-ip-filter or always-real-ip), or set ALLOW_LOCAL_NETWORKS=true to allow this range for server-configured providers.';
+  const CLIENT_SUPPLIED_FAKE_IP_BLOCK_MESSAGE =
+    'The target resolved to 198.18.0.0/15, which usually means a TUN/fake-ip proxy (Clash, Surge, Shadowrocket, ...) answered the DNS lookup. Exclude the provider domain from fake-ip (for example fake-ip-filter or always-real-ip). ALLOW_LOCAL_NETWORKS does not apply to a client-supplied endpoint.';
+  const FAKE_IP_ADDRESSES = ['198.18.0.1', '198.18.0.208', '198.19.255.254', '::ffff:198.18.0.1'];
+
+  beforeEach(() => {
+    vi.resetModules();
+    lookupMock.mockReset();
+    delete process.env.ALLOW_LOCAL_NETWORKS;
+  });
+
+  afterEach(() => {
+    if (originalAllowLocalNetworks === undefined) {
+      delete process.env.ALLOW_LOCAL_NETWORKS;
+    } else {
+      process.env.ALLOW_LOCAL_NETWORKS = originalAllowLocalNetworks;
+    }
+  });
+
+  it('refuses fake-ip literals and answers by default with the fake-ip message', async () => {
+    const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+    for (const url of [
+      'http://198.18.0.1/',
+      'http://198.19.255.254/',
+      'http://[::ffff:198.18.0.1]/',
+    ]) {
+      await expect(validateUrlForSSRF(url)).resolves.toBe(FAKE_IP_BLOCK_MESSAGE);
+    }
+    expect(lookupMock).not.toHaveBeenCalled();
+
+    lookupMock.mockResolvedValue([{ address: '198.18.0.208', family: 4 }]);
+    await expect(validateUrlForSSRF('https://api.minimaxi.com')).resolves.toBe(
+      FAKE_IP_BLOCK_MESSAGE,
+    );
+  });
+
+  it('does not widen past the /15 boundary', async () => {
+    const { validateUrlForSSRF, connectionAddressBlockReason } =
+      await import('@/lib/server/ssrf-guard');
+
+    await expect(validateUrlForSSRF('http://198.17.255.255/')).resolves.toBeNull();
+    await expect(validateUrlForSSRF('http://198.20.0.1/')).resolves.toBeNull();
+    expect(connectionAddressBlockReason('198.20.0.1', false)).toBeNull();
+  });
+
+  it('allows fake-ip literals and answers under ALLOW_LOCAL_NETWORKS=true', async () => {
+    process.env.ALLOW_LOCAL_NETWORKS = 'true';
+    const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+    await expect(validateUrlForSSRF('http://198.18.0.1/')).resolves.toBeNull();
+    await expect(validateUrlForSSRF('http://[::ffff:198.18.0.1]/')).resolves.toBeNull();
+    expect(lookupMock).not.toHaveBeenCalled();
+
+    lookupMock.mockResolvedValue([{ address: '198.18.0.208', family: 4 }]);
+    await expect(validateUrlForSSRF('https://api.minimaxi.com')).resolves.toBeNull();
+  });
+
+  it('keeps the other reserved, multicast and broadcast ranges blocked under the opt-in', async () => {
+    process.env.ALLOW_LOCAL_NETWORKS = 'true';
+    const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+    for (const url of [
+      'http://240.0.0.1/',
+      'http://192.0.2.1/',
+      'http://224.0.0.1/',
+      'http://255.255.255.255/',
+    ]) {
+      await expect(validateUrlForSSRF(url)).resolves.toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
+    }
+
+    // A fake-ip answer does not launder a never-allowed one.
+    lookupMock.mockResolvedValue([
+      { address: '198.18.0.1', family: 4 },
+      { address: '240.0.0.1', family: 4 },
+    ]);
+    await expect(validateUrlForSSRF('https://mixed.example')).resolves.toBe(
+      PRIVATE_NETWORK_BLOCK_MESSAGE,
+    );
+  });
+
+  it('keeps client-supplied endpoints outside the opt-in, without flag guidance', async () => {
+    process.env.ALLOW_LOCAL_NETWORKS = 'true';
+    const { validatePublicUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+    const literal = await validatePublicUrlForSSRF('http://198.18.0.1/');
+    expect(literal).toBe(CLIENT_SUPPLIED_FAKE_IP_BLOCK_MESSAGE);
+    expect(literal).not.toContain('set ALLOW_LOCAL_NETWORKS=true');
+
+    lookupMock.mockResolvedValue([{ address: '198.18.0.208', family: 4 }]);
+    await expect(validatePublicUrlForSSRF('https://api.minimaxi.com')).resolves.toBe(
+      CLIENT_SUPPLIED_FAKE_IP_BLOCK_MESSAGE,
+    );
+  });
+
+  it('agrees with connectionAddressBlockReason at connect time', async () => {
+    const { connectionAddressBlockReason } = await import('@/lib/server/ssrf-guard');
+
+    for (const address of FAKE_IP_ADDRESSES) {
+      expect(connectionAddressBlockReason(address, false)).toBe(FAKE_IP_BLOCK_MESSAGE);
+      expect(connectionAddressBlockReason(address, true)).toBeNull();
+    }
+  });
+
+  it('stays refused by the strict assertSafeIp policy', async () => {
+    const { assertSafeIp } = await import('@/lib/server/ssrf-guard');
+
+    for (const address of FAKE_IP_ADDRESSES) {
+      expect(() => assertSafeIp(address)).toThrow(STRICT_BLOCK_MESSAGE);
+    }
   });
 });
