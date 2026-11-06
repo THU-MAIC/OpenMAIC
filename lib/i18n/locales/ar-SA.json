@@ -2687,7 +2687,6 @@
   },
   "classroomEnd": {
     "close": "العودة إلى الصفحة الأخيرة",
-    "nextPageComing": "الصفحة التالية في الطريق",
     "learned": "اكتملت {{count}} صفحة",
     "result": "{{correct}} / {{total}} صحيحة",
     "actions": {

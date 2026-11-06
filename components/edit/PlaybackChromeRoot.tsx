@@ -35,7 +35,6 @@ import {
   type CourseEndContext,
 } from '@/lib/classroom/course-end';
 import { sessionBuildsCourse, useWorkbenchStore } from '@/lib/workbench/session-store';
-import { NextPageComing } from '@/components/classroom/course-end/NextPageComing';
 import { onQuizReviewed } from '@/lib/classroom/quiz-reviewed';
 import { loadQuizAttemptState } from '@/lib/quiz/runtime';
 import { useCanvasStore } from '@/lib/store/canvas';
@@ -1341,9 +1340,6 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       setWaitingPast({ sceneId, byHand });
     }, []);
     beginWaitRef.current = beginWait;
-    // Replaying the page hides the note; the wait itself holds until the page lands.
-    const waitingForNext =
-      waitingPast !== null && waitingPast.sceneId === currentSceneId && engineMode !== 'playing';
 
     useEffect(() => {
       if (!waitingPast) return;
@@ -1976,9 +1972,6 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                     onAction={handleCourseEndAction}
                   />
                 </motion.div>
-              ) : null}
-              {waitingForNext && !courseEnd && !isPendingScene ? (
-                <NextPageComing key="next-page-coming" />
               ) : null}
             </AnimatePresence>
           </div>

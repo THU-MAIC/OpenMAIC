@@ -2687,7 +2687,6 @@
   },
   "classroomEnd": {
     "close": "마지막 페이지로 돌아가기",
-    "nextPageComing": "다음 페이지를 준비하고 있어요",
     "learned": "{{count}}페이지 완료",
     "result": "{{correct}} / {{total}}문제 정답",
     "actions": {

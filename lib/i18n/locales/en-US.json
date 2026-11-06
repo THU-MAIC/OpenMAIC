@@ -2687,7 +2687,6 @@
   },
   "classroomEnd": {
     "close": "Back to the last page",
-    "nextPageComing": "Next page is on its way",
     "learned": "{{count}} pages done",
     "result": "{{correct}} / {{total}} correct",
     "actions": {

@@ -2687,7 +2687,6 @@
   },
   "classroomEnd": {
     "close": "回到最后一页",
-    "nextPageComing": "下一页马上就好",
     "learned": "已学完 {{count}} 页",
     "result": "答对 {{correct}} / {{total}} 题",
     "actions": {

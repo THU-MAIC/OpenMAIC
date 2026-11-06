@@ -468,9 +468,26 @@ export function CanvasToolbar({
         </div>
       </div>
 
-      {/* ── Right: fullscreen + chat toggle ── */}
+      {/* ── Right: dock fold, fullscreen, then the chat toggle at the edge ── */}
       <div className="flex items-center justify-end gap-px shrink-0 pr-1">
         <CtrlDivider />
+        {onToggleDock && (
+          <button
+            type="button"
+            data-testid="dock-fold"
+            aria-expanded={!dockCollapsed}
+            onClick={onToggleDock}
+            className={cn(ctrlBtn, 'w-6 h-6 text-gray-500 dark:text-gray-400')}
+            aria-label={t(dockCollapsed ? 'stage.dock.expand' : 'stage.dock.collapse')}
+            title={t(dockCollapsed ? 'stage.dock.expand' : 'stage.dock.collapse')}
+          >
+            {dockCollapsed ? (
+              <UnfoldVertical className="w-3.5 h-3.5" />
+            ) : (
+              <FoldVertical className="w-3.5 h-3.5" />
+            )}
+          </button>
+        )}
         {onTogglePresentation && (
           <button
             onClick={onTogglePresentation}
@@ -504,23 +521,6 @@ export function CanvasToolbar({
             aria-label="Toggle chat"
           >
             <MessageSquare className="w-3.5 h-3.5" />
-          </button>
-        )}
-        {onToggleDock && (
-          <button
-            type="button"
-            data-testid="dock-fold"
-            aria-expanded={!dockCollapsed}
-            onClick={onToggleDock}
-            className={cn(ctrlBtn, 'w-6 h-6 text-gray-500 dark:text-gray-400')}
-            aria-label={t(dockCollapsed ? 'stage.dock.expand' : 'stage.dock.collapse')}
-            title={t(dockCollapsed ? 'stage.dock.expand' : 'stage.dock.collapse')}
-          >
-            {dockCollapsed ? (
-              <UnfoldVertical className="w-3.5 h-3.5" />
-            ) : (
-              <FoldVertical className="w-3.5 h-3.5" />
-            )}
           </button>
         )}
       </div>

@@ -2687,7 +2687,6 @@
   },
   "classroomEnd": {
     "close": "最後のページに戻る",
-    "nextPageComing": "次のページを準備しています",
     "learned": "{{count}} ページ完了",
     "result": "{{correct}} / {{total}} 問正解",
     "actions": {

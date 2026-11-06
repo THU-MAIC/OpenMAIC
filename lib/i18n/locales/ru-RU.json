@@ -2687,7 +2687,6 @@
   },
   "classroomEnd": {
     "close": "Вернуться на последнюю страницу",
-    "nextPageComing": "Следующая страница почти готова",
     "learned": "Страниц пройдено: {{count}}",
     "result": "Верно: {{correct}} из {{total}}",
     "actions": {

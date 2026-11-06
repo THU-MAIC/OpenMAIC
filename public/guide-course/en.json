@@ -3,11 +3,7 @@
   "stage": {
     "id": "guide-openmaic-en",
     "name": "OpenMAIC in 5 Minutes",
-    "agentIds": [
-      "gen-yy7QeLrg",
-      "gen--S25ynUT",
-      "gen-Qk7aavax"
-    ],
+    "agentIds": ["gen-yy7QeLrg", "gen--S25ynUT", "gen-Qk7aavax"],
     "createdAt": 1793880000000,
     "updatedAt": 1793880000000,
     "description": "A light, friendly first look at OpenMAIC for new students and teachers.",
@@ -130,13 +126,7 @@
           "viewportRatio": 0.5625,
           "theme": {
             "backgroundColor": "#FBF8F2",
-            "themeColors": [
-              "#6D28D9",
-              "#7C3AED",
-              "#10B981",
-              "#F59E7B",
-              "#1F2340"
-            ],
+            "themeColors": ["#6D28D9", "#7C3AED", "#10B981", "#F59E7B", "#1F2340"],
             "fontColor": "#1F2340",
             "fontName": "Arial"
           },
@@ -153,10 +143,7 @@
               "width": 250,
               "height": 34,
               "rotate": 0,
-              "viewBox": [
-                250,
-                34
-              ],
+              "viewBox": [250, 34],
               "path": "M 17 0 L 233 0 Q 250 0 250 17 L 250 17 Q 250 34 233 34 L 17 34 Q 0 34 0 17 L 0 17 Q 0 0 17 0 Z",
               "fixedRatio": false,
               "fill": "#EDE9FE",
@@ -204,10 +191,7 @@
               "width": 494,
               "height": 132,
               "rotate": 0,
-              "viewBox": [
-                494,
-                132
-              ],
+              "viewBox": [494, 132],
               "path": "M 20 0 L 474 0 Q 494 0 494 20 L 494 112 Q 494 132 474 132 L 20 132 Q 0 132 0 112 L 0 20 Q 0 0 20 0 Z",
               "fixedRatio": false,
               "fill": "rgba(255,255,255,0)"
@@ -220,10 +204,7 @@
               "width": 228,
               "height": 46,
               "rotate": 0,
-              "viewBox": [
-                228,
-                46
-              ],
+              "viewBox": [228, 46],
               "path": "M 23 0 L 205 0 Q 228 0 228 23 L 228 23 Q 228 46 205 46 L 23 46 Q 0 46 0 23 L 0 23 Q 0 0 23 0 Z",
               "fixedRatio": false,
               "fill": "#FFFFFF",
@@ -254,10 +235,7 @@
               "width": 228,
               "height": 46,
               "rotate": 0,
-              "viewBox": [
-                228,
-                46
-              ],
+              "viewBox": [228, 46],
               "path": "M 23 0 L 205 0 Q 228 0 228 23 L 228 23 Q 228 46 205 46 L 23 46 Q 0 46 0 23 L 0 23 Q 0 0 23 0 Z",
               "fixedRatio": false,
               "fill": "#FFFFFF",
@@ -288,10 +266,7 @@
               "width": 228,
               "height": 46,
               "rotate": 0,
-              "viewBox": [
-                228,
-                46
-              ],
+              "viewBox": [228, 46],
               "path": "M 23 0 L 205 0 Q 228 0 228 23 L 228 23 Q 228 46 205 46 L 23 46 Q 0 46 0 23 L 0 23 Q 0 0 23 0 Z",
               "fixedRatio": false,
               "fill": "#FFFFFF",
@@ -322,10 +297,7 @@
               "width": 228,
               "height": 46,
               "rotate": 0,
-              "viewBox": [
-                228,
-                46
-              ],
+              "viewBox": [228, 46],
               "path": "M 23 0 L 205 0 Q 228 0 228 23 L 228 23 Q 228 46 205 46 L 23 46 Q 0 46 0 23 L 0 23 Q 0 0 23 0 Z",
               "fixedRatio": false,
               "fill": "#FFFFFF",
@@ -370,10 +342,7 @@
               "width": 404,
               "height": 308,
               "rotate": 0,
-              "viewBox": [
-                404,
-                308
-              ],
+              "viewBox": [404, 308],
               "path": "M 28 0 L 376 0 Q 404 0 404 28 L 404 280 Q 404 308 376 308 L 28 308 Q 0 308 0 280 L 0 28 Q 0 0 28 0 Z",
               "fixedRatio": false,
               "fill": "#FFFFFF",
@@ -397,14 +366,8 @@
               "clip": {
                 "shape": "roundRect",
                 "range": [
-                  [
-                    0,
-                    0
-                  ],
-                  [
-                    100,
-                    100
-                  ]
+                  [0, 0],
+                  [100, 100]
                 ]
               },
               "radius": 22
@@ -477,13 +440,7 @@
           "viewportRatio": 0.5625,
           "theme": {
             "backgroundColor": "#FBF8F2",
-            "themeColors": [
-              "#6D28D9",
-              "#7C3AED",
-              "#10B981",
-              "#F59E7B",
-              "#1F2340"
-            ],
+            "themeColors": ["#6D28D9", "#7C3AED", "#10B981", "#F59E7B", "#1F2340"],
             "fontColor": "#1F2340",
             "fontName": "Arial"
           },
@@ -528,10 +485,7 @@
               "width": 560,
               "height": 150,
               "rotate": 0,
-              "viewBox": [
-                560,
-                150
-              ],
+              "viewBox": [560, 150],
               "path": "M 22 0 L 538 0 Q 560 0 560 22 L 560 128 Q 560 150 538 150 L 22 150 Q 0 150 0 128 L 0 22 Q 0 0 22 0 Z",
               "fixedRatio": false,
               "fill": "#FFFFFF",
@@ -583,10 +537,7 @@
               "width": 36,
               "height": 36,
               "rotate": 0,
-              "viewBox": [
-                36,
-                36
-              ],
+              "viewBox": [36, 36],
               "path": "M 18.0 0 L 18.0 0 Q 36 0 36 18.0 L 36 18.0 Q 36 36 18.0 36 L 18.0 36 Q 0 36 0 18.0 L 0 18.0 Q 0 0 18.0 0 Z",
               "fixedRatio": false,
               "fill": "#EDE9FE",
@@ -606,10 +557,7 @@
               "width": 38,
               "height": 38,
               "rotate": 0,
-              "viewBox": [
-                38,
-                38
-              ],
+              "viewBox": [38, 38],
               "path": "M 19.0 0 L 19.0 0 Q 38 0 38 19.0 L 38 19.0 Q 38 38 19.0 38 L 19.0 38 Q 0 38 0 19.0 L 0 19.0 Q 0 0 19.0 0 Z",
               "fixedRatio": false,
               "fill": "#7C3AED",
@@ -627,20 +575,11 @@
               "left": 116,
               "top": 284,
               "width": 2,
-              "start": [
-                0,
-                0
-              ],
-              "end": [
-                44,
-                46
-              ],
+              "start": [0, 0],
+              "end": [44, 46],
               "style": "dashed",
               "color": "#7C3AED",
-              "points": [
-                "",
-                "arrow"
-              ]
+              "points": ["", "arrow"]
             },
             {
               "id": "p2_callout",
@@ -650,10 +589,7 @@
               "width": 460,
               "height": 66,
               "rotate": 0,
-              "viewBox": [
-                460,
-                66
-              ],
+              "viewBox": [460, 66],
               "path": "M 16 0 L 444 0 Q 460 0 460 16 L 460 50 Q 460 66 444 66 L 16 66 Q 0 66 0 50 L 0 16 Q 0 0 16 0 Z",
               "fixedRatio": false,
               "fill": "#F5F3FF",
@@ -678,10 +614,7 @@
               "width": 304,
               "height": 340,
               "rotate": 0,
-              "viewBox": [
-                304,
-                340
-              ],
+              "viewBox": [304, 340],
               "path": "M 20 0 L 284 0 Q 304 0 304 20 L 304 320 Q 304 340 284 340 L 20 340 Q 0 340 0 320 L 0 20 Q 0 0 20 0 Z",
               "fixedRatio": false,
               "fill": "rgba(255,255,255,0)"
@@ -694,10 +627,7 @@
               "width": 292,
               "height": 150,
               "rotate": 0,
-              "viewBox": [
-                292,
-                150
-              ],
+              "viewBox": [292, 150],
               "path": "M 20 0 L 272 0 Q 292 0 292 20 L 292 130 Q 292 150 272 150 L 20 150 Q 0 150 0 130 L 0 20 Q 0 0 20 0 Z",
               "fixedRatio": false,
               "fill": "#D1FAE5",
@@ -717,10 +647,7 @@
               "width": 292,
               "height": 166,
               "rotate": 0,
-              "viewBox": [
-                292,
-                166
-              ],
+              "viewBox": [292, 166],
               "path": "M 20 0 L 272 0 Q 292 0 292 20 L 292 146 Q 292 166 272 166 L 20 166 Q 0 166 0 146 L 0 20 Q 0 0 20 0 Z",
               "fixedRatio": false,
               "fill": "#FDE7DC",
@@ -794,13 +721,7 @@
           "viewportRatio": 0.5625,
           "theme": {
             "backgroundColor": "#FBF8F2",
-            "themeColors": [
-              "#6D28D9",
-              "#7C3AED",
-              "#10B981",
-              "#F59E7B",
-              "#1F2340"
-            ],
+            "themeColors": ["#6D28D9", "#7C3AED", "#10B981", "#F59E7B", "#1F2340"],
             "fontColor": "#1F2340",
             "fontName": "Arial"
           },
@@ -845,10 +766,7 @@
               "width": 380,
               "height": 223,
               "rotate": 0,
-              "viewBox": [
-                380,
-                223
-              ],
+              "viewBox": [380, 223],
               "path": "M 24 0 L 356 0 Q 380 0 380 24 L 380 199 Q 380 223 356 223 L 24 223 Q 0 223 0 199 L 0 24 Q 0 0 24 0 Z",
               "fixedRatio": false,
               "fill": "#FFFFFF",
@@ -872,14 +790,8 @@
               "clip": {
                 "shape": "roundRect",
                 "range": [
-                  [
-                    0,
-                    0
-                  ],
-                  [
-                    100,
-                    100
-                  ]
+                  [0, 0],
+                  [100, 100]
                 ]
               },
               "radius": 18
@@ -892,10 +804,7 @@
               "width": 484,
               "height": 66,
               "rotate": 0,
-              "viewBox": [
-                484,
-                66
-              ],
+              "viewBox": [484, 66],
               "path": "M 18 0 L 466 0 Q 484 0 484 18 L 484 48 Q 484 66 466 66 L 18 66 Q 0 66 0 48 L 0 18 Q 0 0 18 0 Z",
               "fixedRatio": false,
               "fill": "#FFFFFF",
@@ -919,10 +828,7 @@
               "width": 40,
               "height": 40,
               "rotate": 0,
-              "viewBox": [
-                40,
-                40
-              ],
+              "viewBox": [40, 40],
               "path": "M 20.0 0 L 20.0 0 Q 40 0 40 20.0 L 40 20.0 Q 40 40 20.0 40 L 20.0 40 Q 0 40 0 20.0 L 0 20.0 Q 0 0 20.0 0 Z",
               "fixedRatio": false,
               "fill": "#7C3AED",
@@ -970,10 +876,7 @@
               "width": 484,
               "height": 66,
               "rotate": 0,
-              "viewBox": [
-                484,
-                66
-              ],
+              "viewBox": [484, 66],
               "path": "M 18 0 L 466 0 Q 484 0 484 18 L 484 48 Q 484 66 466 66 L 18 66 Q 0 66 0 48 L 0 18 Q 0 0 18 0 Z",
               "fixedRatio": false,
               "fill": "#FFFFFF",
@@ -997,10 +900,7 @@
               "width": 40,
               "height": 40,
               "rotate": 0,
-              "viewBox": [
-                40,
-                40
-              ],
+              "viewBox": [40, 40],
               "path": "M 20.0 0 L 20.0 0 Q 40 0 40 20.0 L 40 20.0 Q 40 40 20.0 40 L 20.0 40 Q 0 40 0 20.0 L 0 20.0 Q 0 0 20.0 0 Z",
               "fixedRatio": false,
               "fill": "#7C3AED",
@@ -1048,10 +948,7 @@
               "width": 484,
               "height": 66,
               "rotate": 0,
-              "viewBox": [
-                484,
-                66
-              ],
+              "viewBox": [484, 66],
               "path": "M 18 0 L 466 0 Q 484 0 484 18 L 484 48 Q 484 66 466 66 L 18 66 Q 0 66 0 48 L 0 18 Q 0 0 18 0 Z",
               "fixedRatio": false,
               "fill": "#FFFFFF",
@@ -1075,10 +972,7 @@
               "width": 40,
               "height": 40,
               "rotate": 0,
-              "viewBox": [
-                40,
-                40
-              ],
+              "viewBox": [40, 40],
               "path": "M 20.0 0 L 20.0 0 Q 40 0 40 20.0 L 40 20.0 Q 40 40 20.0 40 L 20.0 40 Q 0 40 0 20.0 L 0 20.0 Q 0 0 20.0 0 Z",
               "fixedRatio": false,
               "fill": "#7C3AED",
@@ -1126,10 +1020,7 @@
               "width": 890,
               "height": 112,
               "rotate": 0,
-              "viewBox": [
-                890,
-                112
-              ],
+              "viewBox": [890, 112],
               "path": "M 22 0 L 868 0 Q 890 0 890 22 L 890 90 Q 890 112 868 112 L 22 112 Q 0 112 0 90 L 0 22 Q 0 0 22 0 Z",
               "fixedRatio": false,
               "fill": "#6D28D9"
@@ -1156,10 +1047,7 @@
               "width": 100,
               "height": 42,
               "rotate": 0,
-              "viewBox": [
-                100,
-                42
-              ],
+              "viewBox": [100, 42],
               "path": "M 12 0 L 88 0 Q 100 0 100 12 L 100 30 Q 100 42 88 42 L 12 42 Q 0 42 0 30 L 0 12 Q 0 0 12 0 Z",
               "fixedRatio": false,
               "fill": "#10B981",
@@ -1179,10 +1067,7 @@
               "width": 100,
               "height": 42,
               "rotate": 0,
-              "viewBox": [
-                100,
-                42
-              ],
+              "viewBox": [100, 42],
               "path": "M 12 0 L 88 0 Q 100 0 100 12 L 100 30 Q 100 42 88 42 L 12 42 Q 0 42 0 30 L 0 12 Q 0 0 12 0 Z",
               "fixedRatio": false,
               "fill": "rgba(255,255,255,0.18)",
@@ -1207,10 +1092,7 @@
               "width": 100,
               "height": 42,
               "rotate": 0,
-              "viewBox": [
-                100,
-                42
-              ],
+              "viewBox": [100, 42],
               "path": "M 12 0 L 88 0 Q 100 0 100 12 L 100 30 Q 100 42 88 42 L 12 42 Q 0 42 0 30 L 0 12 Q 0 0 12 0 Z",
               "fixedRatio": false,
               "fill": "rgba(255,255,255,0.18)",
@@ -1235,10 +1117,7 @@
               "width": 100,
               "height": 42,
               "rotate": 0,
-              "viewBox": [
-                100,
-                42
-              ],
+              "viewBox": [100, 42],
               "path": "M 12 0 L 88 0 Q 100 0 100 12 L 100 30 Q 100 42 88 42 L 12 42 Q 0 42 0 30 L 0 12 Q 0 0 12 0 Z",
               "fixedRatio": false,
               "fill": "rgba(255,255,255,0.18)",
@@ -1263,10 +1142,7 @@
               "width": 100,
               "height": 42,
               "rotate": 0,
-              "viewBox": [
-                100,
-                42
-              ],
+              "viewBox": [100, 42],
               "path": "M 12 0 L 88 0 Q 100 0 100 12 L 100 30 Q 100 42 88 42 L 12 42 Q 0 42 0 30 L 0 12 Q 0 0 12 0 Z",
               "fixedRatio": false,
               "fill": "rgba(255,255,255,0.18)",
@@ -1291,10 +1167,7 @@
               "width": 100,
               "height": 42,
               "rotate": 0,
-              "viewBox": [
-                100,
-                42
-              ],
+              "viewBox": [100, 42],
               "path": "M 12 0 L 88 0 Q 100 0 100 12 L 100 30 Q 100 42 88 42 L 12 42 Q 0 42 0 30 L 0 12 Q 0 0 12 0 Z",
               "fixedRatio": false,
               "fill": "rgba(255,255,255,0.18)",
@@ -1319,10 +1192,7 @@
               "width": 100,
               "height": 42,
               "rotate": 0,
-              "viewBox": [
-                100,
-                42
-              ],
+              "viewBox": [100, 42],
               "path": "M 12 0 L 88 0 Q 100 0 100 12 L 100 30 Q 100 42 88 42 L 12 42 Q 0 42 0 30 L 0 12 Q 0 0 12 0 Z",
               "fixedRatio": false,
               "fill": "rgba(255,255,255,0.18)",
@@ -1451,13 +1321,7 @@
           "viewportRatio": 0.5625,
           "theme": {
             "backgroundColor": "#FBF8F2",
-            "themeColors": [
-              "#6D28D9",
-              "#7C3AED",
-              "#10B981",
-              "#F59E7B",
-              "#1F2340"
-            ],
+            "themeColors": ["#6D28D9", "#7C3AED", "#10B981", "#F59E7B", "#1F2340"],
             "fontColor": "#1F2340",
             "fontName": "Arial"
           },
@@ -1502,10 +1366,7 @@
               "width": 300,
               "height": 230,
               "rotate": 0,
-              "viewBox": [
-                300,
-                230
-              ],
+              "viewBox": [300, 230],
               "path": "M 24 0 L 276 0 Q 300 0 300 24 L 300 206 Q 300 230 276 230 L 24 230 Q 0 230 0 206 L 0 24 Q 0 0 24 0 Z",
               "fixedRatio": false,
               "fill": "#FFFFFF",
@@ -1529,14 +1390,8 @@
               "clip": {
                 "shape": "roundRect",
                 "range": [
-                  [
-                    0,
-                    0
-                  ],
-                  [
-                    100,
-                    100
-                  ]
+                  [0, 0],
+                  [100, 100]
                 ]
               },
               "radius": 18
@@ -1549,10 +1404,7 @@
               "width": 566,
               "height": 214,
               "rotate": 0,
-              "viewBox": [
-                566,
-                214
-              ],
+              "viewBox": [566, 214],
               "path": "M 22 0 L 544 0 Q 566 0 566 22 L 566 192 Q 566 214 544 214 L 22 214 Q 0 214 0 192 L 0 22 Q 0 0 22 0 Z",
               "fixedRatio": false,
               "fill": "#FFFFFF",
@@ -1576,10 +1428,7 @@
               "width": 258,
               "height": 42,
               "rotate": 0,
-              "viewBox": [
-                258,
-                42
-              ],
+              "viewBox": [258, 42],
               "path": "M 21 0 L 237 0 Q 258 0 258 21 L 258 21 Q 258 42 237 42 L 21 42 Q 0 42 0 21 L 0 21 Q 0 0 21 0 Z",
               "fixedRatio": false,
               "fill": "#7C3AED",
@@ -1599,10 +1448,7 @@
               "width": 378,
               "height": 42,
               "rotate": 0,
-              "viewBox": [
-                378,
-                42
-              ],
+              "viewBox": [378, 42],
               "path": "M 21 0 L 357 0 Q 378 0 378 21 L 378 21 Q 378 42 357 42 L 21 42 Q 0 42 0 21 L 0 21 Q 0 0 21 0 Z",
               "fixedRatio": false,
               "fill": "#7C3AED",
@@ -1622,10 +1468,7 @@
               "width": 268,
               "height": 42,
               "rotate": 0,
-              "viewBox": [
-                268,
-                42
-              ],
+              "viewBox": [268, 42],
               "path": "M 21 0 L 247 0 Q 268 0 268 21 L 268 21 Q 268 42 247 42 L 21 42 Q 0 42 0 21 L 0 21 Q 0 0 21 0 Z",
               "fixedRatio": false,
               "fill": "#7C3AED",
@@ -1659,10 +1502,7 @@
               "width": 890,
               "height": 112,
               "rotate": 0,
-              "viewBox": [
-                890,
-                112
-              ],
+              "viewBox": [890, 112],
               "path": "M 22 0 L 868 0 Q 890 0 890 22 L 890 90 Q 890 112 868 112 L 22 112 Q 0 112 0 90 L 0 22 Q 0 0 22 0 Z",
               "fixedRatio": false,
               "fill": "#F5F3FF",
@@ -1694,10 +1534,7 @@
               "width": 150,
               "height": 46,
               "rotate": 0,
-              "viewBox": [
-                150,
-                46
-              ],
+              "viewBox": [150, 46],
               "path": "M 23 0 L 127 0 Q 150 0 150 23 L 150 23 Q 150 46 127 46 L 23 46 Q 0 46 0 23 L 0 23 Q 0 0 23 0 Z",
               "fixedRatio": false,
               "fill": "#1F2340",
@@ -1731,10 +1568,7 @@
               "width": 150,
               "height": 46,
               "rotate": 0,
-              "viewBox": [
-                150,
-                46
-              ],
+              "viewBox": [150, 46],
               "path": "M 23 0 L 127 0 Q 150 0 150 23 L 150 23 Q 150 46 127 46 L 23 46 Q 0 46 0 23 L 0 23 Q 0 0 23 0 Z",
               "fixedRatio": false,
               "fill": "#FFFFFF",
@@ -1827,13 +1661,7 @@
           "viewportRatio": 0.5625,
           "theme": {
             "backgroundColor": "#FBF8F2",
-            "themeColors": [
-              "#6D28D9",
-              "#7C3AED",
-              "#10B981",
-              "#F59E7B",
-              "#1F2340"
-            ],
+            "themeColors": ["#6D28D9", "#7C3AED", "#10B981", "#F59E7B", "#1F2340"],
             "fontColor": "#1F2340",
             "fontName": "Arial"
           },
@@ -1878,10 +1706,7 @@
               "width": 300,
               "height": 230,
               "rotate": 0,
-              "viewBox": [
-                300,
-                230
-              ],
+              "viewBox": [300, 230],
               "path": "M 24 0 L 276 0 Q 300 0 300 24 L 300 206 Q 300 230 276 230 L 24 230 Q 0 230 0 206 L 0 24 Q 0 0 24 0 Z",
               "fixedRatio": false,
               "fill": "#FFFFFF",
@@ -1905,14 +1730,8 @@
               "clip": {
                 "shape": "roundRect",
                 "range": [
-                  [
-                    0,
-                    0
-                  ],
-                  [
-                    100,
-                    100
-                  ]
+                  [0, 0],
+                  [100, 100]
                 ]
               },
               "radius": 18
@@ -1925,10 +1744,7 @@
               "width": 566,
               "height": 72,
               "rotate": 0,
-              "viewBox": [
-                566,
-                72
-              ],
+              "viewBox": [566, 72],
               "path": "M 18 0 L 548 0 Q 566 0 566 18 L 566 54 Q 566 72 548 72 L 18 72 Q 0 72 0 54 L 0 18 Q 0 0 18 0 Z",
               "fixedRatio": false,
               "fill": "#FFFFFF",
@@ -1952,10 +1768,7 @@
               "width": 48,
               "height": 48,
               "rotate": 0,
-              "viewBox": [
-                48,
-                48
-              ],
+              "viewBox": [48, 48],
               "path": "M 24.0 0 L 24.0 0 Q 48 0 48 24.0 L 48 24.0 Q 48 48 24.0 48 L 24.0 48 Q 0 48 0 24.0 L 0 24.0 Q 0 0 24.0 0 Z",
               "fixedRatio": false,
               "fill": "#EDE9FE",
@@ -2003,10 +1816,7 @@
               "width": 566,
               "height": 72,
               "rotate": 0,
-              "viewBox": [
-                566,
-                72
-              ],
+              "viewBox": [566, 72],
               "path": "M 18 0 L 548 0 Q 566 0 566 18 L 566 54 Q 566 72 548 72 L 18 72 Q 0 72 0 54 L 0 18 Q 0 0 18 0 Z",
               "fixedRatio": false,
               "fill": "#FFFFFF",
@@ -2030,10 +1840,7 @@
               "width": 48,
               "height": 48,
               "rotate": 0,
-              "viewBox": [
-                48,
-                48
-              ],
+              "viewBox": [48, 48],
               "path": "M 24.0 0 L 24.0 0 Q 48 0 48 24.0 L 48 24.0 Q 48 48 24.0 48 L 24.0 48 Q 0 48 0 24.0 L 0 24.0 Q 0 0 24.0 0 Z",
               "fixedRatio": false,
               "fill": "#EDE9FE",
@@ -2081,10 +1888,7 @@
               "width": 566,
               "height": 72,
               "rotate": 0,
-              "viewBox": [
-                566,
-                72
-              ],
+              "viewBox": [566, 72],
               "path": "M 18 0 L 548 0 Q 566 0 566 18 L 566 54 Q 566 72 548 72 L 18 72 Q 0 72 0 54 L 0 18 Q 0 0 18 0 Z",
               "fixedRatio": false,
               "fill": "#FFFFFF",
@@ -2108,10 +1912,7 @@
               "width": 48,
               "height": 48,
               "rotate": 0,
-              "viewBox": [
-                48,
-                48
-              ],
+              "viewBox": [48, 48],
               "path": "M 24.0 0 L 24.0 0 Q 48 0 48 24.0 L 48 24.0 Q 48 48 24.0 48 L 24.0 48 Q 0 48 0 24.0 L 0 24.0 Q 0 0 24.0 0 Z",
               "fixedRatio": false,
               "fill": "#EDE9FE",
@@ -2159,10 +1960,7 @@
               "width": 890,
               "height": 74,
               "rotate": 0,
-              "viewBox": [
-                890,
-                74
-              ],
+              "viewBox": [890, 74],
               "path": "M 22 0 L 868 0 Q 890 0 890 22 L 890 52 Q 890 74 868 74 L 22 74 Q 0 74 0 52 L 0 22 Q 0 0 22 0 Z",
               "fixedRatio": false,
               "fill": "#6D28D9",
@@ -2198,9 +1996,7 @@
           {
             "id": "q1",
             "type": "single",
-            "answer": [
-              "A"
-            ],
+            "answer": ["A"],
             "points": 10,
             "options": [
               {
@@ -2227,9 +2023,7 @@
           {
             "id": "q2",
             "type": "single",
-            "answer": [
-              "C"
-            ],
+            "answer": ["C"],
             "points": 10,
             "options": [
               {
@@ -2256,9 +2050,7 @@
           {
             "id": "q3",
             "type": "single",
-            "answer": [
-              "C"
-            ],
+            "answer": ["C"],
             "points": 10,
             "options": [
               {

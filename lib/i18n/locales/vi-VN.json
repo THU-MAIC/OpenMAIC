@@ -2687,7 +2687,6 @@
   },
   "classroomEnd": {
     "close": "Quay lại trang cuối",
-    "nextPageComing": "Trang tiếp theo sắp xong",
     "learned": "Đã học xong {{count}} trang",
     "result": "Đúng {{correct}} / {{total}} câu",
     "actions": {

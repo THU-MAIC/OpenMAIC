@@ -2687,7 +2687,6 @@
   },
   "classroomEnd": {
     "close": "回到最後一頁",
-    "nextPageComing": "下一頁馬上就好",
     "learned": "已學完 {{count}} 頁",
     "result": "答對 {{correct}} / {{total}} 題",
     "actions": {
