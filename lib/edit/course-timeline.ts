@@ -14,6 +14,7 @@
 
 import { create } from 'zustand';
 import { collectStageAssetRefs } from '@/lib/media/collect-stage-asset-refs';
+import { pblSceneAsPersisted } from '@/lib/pbl/v2/runtime/persisted-scene';
 import type { Scene, Stage } from '@/lib/types/stage';
 
 export const MAX_TIMELINE_STEPS = 100;
@@ -128,10 +129,26 @@ export function trackedSceneFields(scene: object): string[] {
 // Building entries
 // ---------------------------------------------------------------------------
 
+const designFormByScene = new WeakMap<Scene, Scene>();
+
+/**
+ * A scene without its learner state. Learner work is not edit history: a step
+ * records and compares only the design (undo puts the current learner state back
+ * on, see `withLearnerStateOf`).
+ */
+function designForm(scene: Scene): Scene {
+  let form = designFormByScene.get(scene);
+  if (!form) {
+    form = pblSceneAsPersisted(scene);
+    designFormByScene.set(scene, form);
+  }
+  return form;
+}
+
 function diffScene(before: Scene, after: Scene): SceneChange | null {
   if (before === after) return null;
-  const left = before as unknown as Record<string, unknown>;
-  const right = after as unknown as Record<string, unknown>;
+  const left = designForm(before) as unknown as Record<string, unknown>;
+  const right = designForm(after) as unknown as Record<string, unknown>;
   const beforeFields: Record<string, unknown> = {};
   const afterFields: Record<string, unknown> = {};
   for (const key of new Set([...trackedSceneFields(left), ...trackedSceneFields(right)])) {
@@ -375,11 +392,12 @@ export function applyTimelineEntry(
       continue;
     }
     const current = existing as unknown as Record<string, unknown>;
+    const shown = designForm(existing) as unknown as Record<string, unknown>;
     const fields = change[fromSide] === null ? trackedSceneFields(to) : Object.keys(to);
     const next: Record<string, unknown> = { ...current };
     let moved = false;
     for (const key of fields) {
-      if (sameField(current[key], to[key])) continue;
+      if (sameField(shown[key], to[key])) continue;
       moved = true;
       if (to[key] === undefined) delete next[key];
       else next[key] = to[key];

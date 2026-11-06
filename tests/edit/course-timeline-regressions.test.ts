@@ -386,6 +386,44 @@ describe('a PBL v2 project', () => {
     expect(now.title).toBe('Design one');
     expect(now.submissions).toHaveLength(1);
   });
+
+  // The sync brings the server's copy back without the learner state this browser
+  // holds (here, the runtime event outbox).
+  const runtimeEvent = { id: 'event-1', type: 'microtask_started', at: '2026-08-07T08:00:05Z' };
+  const withEvents = (projectV2: Record<string, unknown>) => ({
+    ...projectV2,
+    runtimeEvents: [runtimeEvent],
+  });
+  const withoutEvents = (projectV2: Record<string, unknown>) => {
+    const { runtimeEvents: _events, ...rest } = projectV2;
+    return rest;
+  };
+
+  it('puts no step on the line for a change to learner state only', () => {
+    load([pbl(withEvents(project('Design one', [])))], 'p');
+    const before = useStageStore.getState();
+    useStageStore.setState({ scenes: [pbl(withoutEvents(project('Design one', [])))] });
+    recordAgentChange(before);
+    expect(past()).toBe(0);
+  });
+
+  it('records only the design part of a change that also moves learner state', () => {
+    load([pbl(withEvents(project('Design one', [])))], 'p');
+    const before = useStageStore.getState();
+    useStageStore.setState({ scenes: [pbl(withoutEvents(project('Design two', [])))] });
+    recordAgentChange(before);
+    // The learner's outbox fills again, then the sync takes it away again.
+    useStageStore.setState({ scenes: [pbl(withEvents(project('Design two', [])))] });
+    const synced = useStageStore.getState();
+    useStageStore.setState({ scenes: [pbl(withoutEvents(project('Design two', [])))] });
+    recordAgentChange(synced);
+    expect(past()).toBe(1);
+    const recorded = Object.values(line().past[0].scenes)[0];
+    expect(JSON.stringify(recorded)).not.toContain('event-1');
+    stepCourseTimeline('undo');
+    const now = (sceneOf('p').content as unknown as { projectV2: { title: string } }).projectV2;
+    expect(now.title).toBe('Design one');
+  });
 });
 
 describe('a course coming back from another tab', () => {
