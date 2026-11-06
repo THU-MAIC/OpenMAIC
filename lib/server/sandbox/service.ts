@@ -2,7 +2,6 @@ import 'server-only';
 
 import { createHash, randomUUID } from 'node:crypto';
 
-import { isPersonalInstallationOwner } from '@/lib/server/identity';
 import type { OwnerPrincipal } from '@/lib/server/identity/types';
 import { SandboxError, sandboxConflict, sandboxInvalid } from '@/lib/sandbox/errors';
 import {
@@ -51,22 +50,6 @@ function assertPath(path: unknown): asserts path is string {
   }
 }
 
-/** No anonymous/shared-owner billable resources, and no implicit shell grant to course agents. */
-function authorize(principal: OwnerPrincipal): void {
-  if (isPersonalInstallationOwner(principal)) return;
-  if (
-    (principal.kind === 'user' || principal.kind === 'service') &&
-    principal.assurance === 'verified' &&
-    principal.roles.has('sandbox:use')
-  )
-    return;
-  throw new SandboxError(
-    'SANDBOX_FORBIDDEN',
-    403,
-    'This identity is not allowed to use sandboxes.',
-  );
-}
-
 export class SandboxService {
   private constructor(
     private readonly ownerId: string,
@@ -75,8 +58,12 @@ export class SandboxService {
     private readonly provider: SandboxProvider,
   ) {}
 
+  /**
+   * Any owner the deployment resolves may use sandboxes once the installation enables them.
+   * The returned service is scoped to that owner: it never reaches another owner's resources.
+   * Operators bound spend with ACCESS_CODE, `maxActivePerOwner`, `maxActive` and lifetimes.
+   */
   static async forOwner(principal: OwnerPrincipal): Promise<SandboxService> {
-    authorize(principal);
     const config = await resolvedSandboxConfig();
     const { E2BCompatibleSandboxProvider } = await import('./providers/e2b-compatible');
     return new SandboxService(

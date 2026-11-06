@@ -234,7 +234,7 @@ limits stop startup with the exact configuration location, without echoing secre
 
 **Settings → Sandbox** is available only to the explicit personal-installation owner or
 a host-verified user/service with the existing `admin` role. Ordinary learners cannot
-read or edit it. The separate `sandbox:use` permission is required to operate a sandbox.
+read or edit it. Operating a sandbox needs no role: see [Authorization and limits](#authorization-and-limits).
 No separate settings-UI opt-in is needed. These rules apply equally to a hosted installation
 and a local deployment; the page never changes a learner's personal model settings.
 
@@ -299,13 +299,24 @@ traffic tokens. The adapter does not place management keys in the sandbox enviro
 
 ### Authorization and limits
 
-Allowed callers:
+Sandbox use is open to any owner the deployment admits: anonymous-cookie, shared-team,
+single-user and host-authenticated `user`/`service` principals alike, with no role or
+assurance requirement. Model API calls are not gated by identity either. What remains:
 
-1. Explicit `OWNER_SINGLE_USER` owner in a loopback/private or access-code-protected installation.
-2. Host-authenticated `user`/`service`, assurance `verified`, with `sandbox:use`.
+- The installation must enable the `sandbox` section; otherwise every owner gets
+  `SANDBOX_DISABLED`.
+- `ACCESS_CODE`, when set, gates application and API requests before an owner is resolved.
+- `maxActivePerOwner`, `maxActive` and the finite lifetime bound concurrent spend.
 
-Anonymous/shared owners cannot allocate resources. Existing agents receive no extra roles.
-The server must supply the principal, never trust an owner ID sent by the model/client.
+**Enabling sandboxes on an anonymous public deployment lets any visitor start billable
+sandboxes up to these caps.** Operators who expose a deployment publicly should rely on
+`ACCESS_CODE`, the caps above, host auth methods with `anonymousFallback: false` where
+appropriate, and a budget or spending limit at the sandbox provider.
+
+Ownership is unchanged: a principal reaches only its own sandboxes, workspaces, files,
+previews and checkpoints, and another owner's IDs return 404. Existing agents receive no
+extra roles or tools. The server must supply the principal, never trust an owner ID sent
+by the model/client.
 
 A shared PG advisory lock enforces the installation-wide allocation limit across owners;
 owner/workspace limits are enforced in the same reservation transaction. `unknown`,

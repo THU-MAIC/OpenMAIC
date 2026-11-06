@@ -84,9 +84,9 @@ export async function POST(request: Request) {
     if (!projectResourcesWithinLimits(projects.map(({ entry }) => entry)))
       throw sandboxInvalid('Classroom project resource limit exceeded.');
     // Not gated on sandbox access: importing or exporting a classroom must keep its projects on
-    // an installation, or for an owner, that cannot run them. Installing stores inert template
-    // bytes, so it is an upload like the classroom's media: the same admission and owner quota,
-    // and reclaimed unless a document references it. Running one needs SandboxService.forOwner.
+    // an installation that cannot run them. Installing stores inert template bytes, so it is an
+    // upload like the classroom's media: the same admission and owner quota, and reclaimed
+    // unless a document references it. Running one needs SandboxService.forOwner.
     const refusal = await getPersistenceHooks().beforeAssetAllocate?.(principal, {
       operation: 'create',
       method: request.method,

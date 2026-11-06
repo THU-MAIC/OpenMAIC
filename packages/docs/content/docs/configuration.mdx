@@ -261,6 +261,13 @@ The sandbox management key never reaches the browser. Preview networking and che
 storage are still configured by the deployment; saving this form does not test connectivity
 or allocate paid resources.
 
+Once sandboxes are enabled, any owner the deployment admits may use them, including
+anonymous visitors and the shared-team workspace; no role is required. Each owner reaches
+only its own sandboxes, files and previews. On a publicly reachable deployment, enabling
+sandboxes lets any visitor start billable sandboxes up to `maxActivePerOwner` and
+`maxActive`: protect it with [`ACCESS_CODE`](#access_code--site-wide-password) or your own
+sign-in, keep the caps and `lifetimeMs` low, and set a budget at the sandbox provider.
+
 ### allowUserKeys
 
 ```yaml

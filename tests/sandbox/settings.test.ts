@@ -204,7 +204,7 @@ describe('installation sandbox settings', () => {
     };
     expect(() => assertSandboxSettingsAdmin(p)).not.toThrow();
     for (const other of [
-      { ...p, roles: new Set(['sandbox:use']) },
+      { ...p, roles: new Set<string>() },
       { ...p, kind: 'anonymous' as const },
       { ...p, assurance: 'unverified-legacy' as const },
     ])

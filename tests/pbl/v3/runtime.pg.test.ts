@@ -396,7 +396,7 @@ const principal: OwnerPrincipal = {
   ownerId: 'learner-a',
   kind: 'user',
   assurance: 'verified',
-  roles: new Set(['sandbox:use']),
+  roles: new Set(),
 };
 const project = installedProject({ id: 'greeting-python', version: '1.0.0' });
 // Other scenarios mutate the catalog project; deletion probes need an independent package.
