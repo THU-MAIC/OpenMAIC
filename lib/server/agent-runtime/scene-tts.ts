@@ -25,6 +25,7 @@ import { BROWSER_NATIVE_TTS_PROVIDER_ID } from '@/lib/audio/provider-enablement'
 import type { LegacySpeechAction, SpeechAction } from '@/lib/types/action';
 import type { GeneratedAgentConfig, Scene } from '@/lib/types/stage';
 import { adapterOptions } from '@/lib/server/model-config/adapter-options';
+import { VOXCPM_TTS_PROVIDER_ID, voxCPMPromptProviderOptions } from '@/lib/audio/voxcpm';
 import { resolveTTSModel, slotTTSModel } from '@/lib/server/provider-config';
 import { persistClassroomMediaBytes } from '@/lib/server/classroom-media-bytes';
 
@@ -250,6 +251,32 @@ function narratorVoice(roster: SceneTtsInput['roster']) {
   return roster?.find((agent) => agent.role === 'teacher' && agent.voiceConfig)?.voiceConfig;
 }
 
+/**
+ * A voice's own provider options, as the browser sends them for the classic
+ * narration route. VoxCPM's auto voice (and a profile voice the server cannot
+ * read) is designed from the narrator's voice design, persona or role; without
+ * that prompt the provider refuses every line.
+ */
+function narratorVoiceOptions(
+  roster: SceneTtsInput['roster'],
+  providerId: string,
+  voice: string,
+): Record<string, unknown> | undefined {
+  if (providerId !== VOXCPM_TTS_PROVIDER_ID) return undefined;
+  // The same teacher narratorVoice picks: the first bound one, else the first.
+  const teacher =
+    roster?.find((agent) => agent.role === 'teacher' && agent.voiceConfig) ??
+    roster?.find((agent) => agent.role === 'teacher');
+  return {
+    ...voxCPMPromptProviderOptions(voice, {
+      ...(teacher?.name ? { agentName: teacher.name } : {}),
+      ...(teacher?.role ? { role: teacher.role } : {}),
+      ...(teacher?.persona ? { persona: teacher.persona } : {}),
+      ...(teacher?.voiceDesign ? { voiceDesign: teacher.voiceDesign } : {}),
+    }),
+  };
+}
+
 function voiceReport(
   roster: SceneTtsInput['roster'],
   providerId: string,
@@ -333,6 +360,7 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
       : configuredDefaultVoice(activeConnection.options, activeConnection.voices) ||
         DEFAULT_TTS_VOICES[providerId as keyof typeof DEFAULT_TTS_VOICES] ||
         '';
+  const voiceOptions = narratorVoiceOptions(input.roster, providerId, voice);
   const model =
     activeConnection.modelId ??
     (DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '');
@@ -397,7 +425,7 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
                       ...(activeConnection.voices ? { voices: activeConnection.voices } : {}),
                       speed: speech.speed,
                       // The provider's own options (a VoxCPM backend, say).
-                      providerOptions: adapterOptions(activeConnection),
+                      providerOptions: adapterOptions(activeConnection, voiceOptions),
                       signal: input.signal,
                     },
                     speech.text,
