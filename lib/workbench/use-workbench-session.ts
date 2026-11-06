@@ -56,6 +56,7 @@ import {
   type StageManifest,
   withLocalSceneOrder,
 } from '@/lib/workbench/stage-freshness';
+import { FetchEventSource } from '@/lib/utils/fetch-event-source';
 import { applyGenerateTtsResultToScenes } from '@/lib/workbench/tts-stage-sync';
 
 /**
@@ -112,6 +113,11 @@ export const WORKBENCH_EVENT_TYPES: readonly string[] = [
   ...PI_EVENT_TYPES,
 ];
 
+/** How long an open stream may take to send `caught_up`. */
+const REPLAY_WATCHDOG_MS = 20_000;
+/** How long the transcript may wait for a stream that has not opened at all. */
+const REPLAY_BACKSTOP_MS = 120_000;
+
 /**
  * Attach to a session's durable event stream.
  *
@@ -167,7 +173,7 @@ export function useWorkbenchStream(sessionId: string | null): void {
     // Read the resume point imperatively: subscribing to `lastEventId` would
     // re-run this effect on every event and reconnect in a loop.
     const from = useWorkbenchStore.getState().lastEventId;
-    const source = new EventSource(
+    const source = new FetchEventSource(
       `/api/agent/sessions/${encodeURIComponent(sessionId)}/events?lastEventId=${from}`,
     );
 
@@ -190,6 +196,7 @@ export function useWorkbenchStream(sessionId: string | null): void {
       }
       if (!caughtUp) {
         appendCompactedReplayEvent(backlog, parsed);
+        armReplayWatchdog();
         return;
       }
       applyEvent(parsed);
@@ -255,17 +262,29 @@ export function useWorkbenchStream(sessionId: string | null): void {
       markAttached();
     };
     source.addEventListener('caught_up', onCaughtUp);
-    const replayWatchdog = window.setTimeout(finishReplay, 20_000);
+    // A low-priority request can wait in the browser's queue for as long as other
+    // requests hold it there, so the wait for `caught_up` runs only while a
+    // connection is open and counts from its last sign of progress. Finishing early
+    // would let the late replay in as live frames: an old course link would open its
+    // tab. The backstop only ends the spinner on a stream that never gets through.
+    let replayWatchdog: number | undefined;
+    const armReplayWatchdog = () => {
+      window.clearTimeout(replayWatchdog);
+      if (!caughtUp) replayWatchdog = window.setTimeout(finishReplay, REPLAY_WATCHDOG_MS);
+    };
+    source.addEventListener('open', armReplayWatchdog);
+    const replayBackstop = window.setTimeout(finishReplay, REPLAY_BACKSTOP_MS);
 
     for (const type of WORKBENCH_EVENT_TYPES) source.addEventListener(type, onAny as EventListener);
     source.onerror = () => {
       if (!isCurrent()) return;
+      window.clearTimeout(replayWatchdog);
       // During native auto-reconnect the server snapshot is more current than
       // this frozen fold. The next received frame marks it attached again.
       connected = false;
       setAttached(false);
       // EventSource retries on its own; only surface a hard failure.
-      if (source.readyState === EventSource.CLOSED) {
+      if (source.readyState === FetchEventSource.CLOSED) {
         finishReplay();
         setError('event stream closed');
       }
@@ -276,6 +295,8 @@ export function useWorkbenchStream(sessionId: string | null): void {
       caughtUp = true;
       backlog.length = 0;
       window.clearTimeout(replayWatchdog);
+      window.clearTimeout(replayBackstop);
+      source.removeEventListener('open', armReplayWatchdog);
       for (const type of WORKBENCH_EVENT_TYPES)
         source.removeEventListener(type, onAny as EventListener);
       source.removeEventListener('caught_up', onCaughtUp);
@@ -424,7 +445,7 @@ export function useStageFreshnessSync(
   const retries = useRef(0);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fallbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const sourceRef = useRef<EventSource | null>(null);
+  const sourceRef = useRef<FetchEventSource | null>(null);
   // Read at pass time so an explicit host handoff uses the current bootstrap
   // policy without restarting the course's freshness stream.
   const bootstrapDocumentRef = useRef(bootstrapDocument);
@@ -837,7 +858,9 @@ export function useStageFreshnessSync(
     // ── triggers ───────────────────────────────────────────────────────────
     requestSync('mount');
 
-    const source = new EventSource(`/api/stages/${encodeURIComponent(requestedStage)}/freshness`);
+    const source = new FetchEventSource(
+      `/api/stages/${encodeURIComponent(requestedStage)}/freshness`,
+    );
     sourceRef.current = source;
     let streamHadError = false;
     const onFreshnessFrame = () => {
