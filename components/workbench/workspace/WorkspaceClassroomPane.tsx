@@ -116,6 +116,7 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
   const isOwner = useStageStore((s) => s.isOwner);
   const stageReadOnly = useStageStore((s) => s.readOnly);
   const [preferences, setPreferences] = useState<Record<string, ClassroomMode>>({});
+  const [historySlot, setHistorySlot] = useState<HTMLDivElement | null>(null);
 
   useLayoutEffect(() => {
     // Apply browser memory before paint. A different course never inherits an
@@ -275,6 +276,14 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
           />
           <span className="ws-ctabs-rule" aria-hidden="true" />
           {readOnly ? <ReadOnlyBadge /> : null}
+          {/* The editor portals its undo/redo here while editing; empty, it
+              takes no space. It sits with the other editing control (the
+              tour's ?) just before Learn | Edit. */}
+          <div
+            ref={setHistorySlot}
+            data-testid="workspace-history-slot"
+            className="flex shrink-0 items-center gap-0.5 empty:hidden"
+          />
           {editGuideButton}
           {modeSwitch}
           <span className="ws-vsep" aria-hidden="true" />
@@ -312,6 +321,14 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
           {readOnly ? <ReadOnlyBadge /> : null}
           {/* Export and sharing, which the split view leaves to this size. */}
           <HeaderControls variant="compact" showGlobalControls={false} showCourseActions />
+          {/* The editor portals its undo/redo here while editing; empty, it
+              takes no space. It sits with the other editing control (the
+              tour's ?) just before Learn | Edit. */}
+          <div
+            ref={setHistorySlot}
+            data-testid="workspace-history-slot-fullscreen"
+            className="flex shrink-0 items-center gap-0.5 empty:hidden"
+          />
           {editGuideButton}
           {modeSwitch}
           <span className="ws-vsep" aria-hidden="true" />
@@ -346,7 +363,7 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
           gates override remembered editing without overwriting the course's
           preference. */}
       <div className="ws-classroom-body relative flex min-h-0 flex-1">
-        <WorkbenchPanelProvider visible={!hidden} learning={learning}>
+        <WorkbenchPanelProvider visible={!hidden} learning={learning} historySlot={historySlot}>
           <ClassroomSurface classroomId={courseId} variant="pane" />
         </WorkbenchPanelProvider>
       </div>

@@ -78,6 +78,7 @@ vi.mock('@/components/slide-renderer/components/element/ProsemirrorEditor', () =
 }));
 
 import { useSlideEditSession } from '@/components/edit/surfaces/slide/slide-edit-session';
+import { useCourseTimeline } from '@/lib/edit/course-timeline';
 import {
   useResolvedSlideContent,
   useSlideCanvasController,
@@ -273,9 +274,6 @@ describe('a text height the canvas measured, with no edit behind it', () => {
     await settle();
 
     expect(textIn(storedScene()).height).toBe(47);
-    expect(
-      (useSlideEditSession.getState().history!.present.canvas.elements[0] as Text).height,
-    ).toBe(47);
     expect(mocks.saves).toEqual([]);
     expect(textIn(mocks.serverScene).height).toBe(68);
     expect(hasUnsavedSceneEdit('stage-a', 'scene-1')).toBe(false);
@@ -327,11 +325,12 @@ describe('a text height the canvas measured, with no edit behind it', () => {
         patch: { left: 321 },
       }),
     );
-    const past = useSlideEditSession.getState().history!.past;
+    const past = useCourseTimeline.getState().lines['stage-a']?.past;
+    expect(past).toBeDefined();
 
     canvasMeasures(47);
 
-    expect(useSlideEditSession.getState().history!.past).toEqual(past);
+    expect(useCourseTimeline.getState().lines['stage-a']?.past).toBe(past);
   });
 
   it('settles: reading a save of its own back does not start the save again', async () => {

@@ -23,11 +23,12 @@ export function ConversationViewport({
   onClick: (event: MouseEvent<HTMLDivElement>) => void;
 }) {
   const { t } = useI18n();
-  const { scrollRef, contentRef, isNearBottom, scrollToBottom } = useStickToBottom({
+  const stick = useStickToBottom({
     initial: 'instant',
     resize: 'instant',
   });
-  useWorkbenchViewportAnchor(scrollRef, scrollToBottom);
+  const { contentRef, isNearBottom, scrollToBottom } = stick;
+  const viewportRef = useWorkbenchViewportAnchor(stick);
   const previous = useRef(sent);
   useLayoutEffect(() => {
     if (previous.current !== sent) {
@@ -46,7 +47,7 @@ export function ConversationViewport({
       className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-background"
     >
       <div
-        ref={scrollRef}
+        ref={viewportRef}
         tabIndex={0}
         className="pbl-conversation-scroll min-h-0 flex-1 overflow-y-auto"
       >

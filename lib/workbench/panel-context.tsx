@@ -17,6 +17,8 @@ export interface WorkbenchPanelState {
   readonly learning: boolean;
   /** Editing intent after applying visibility and course access gates. */
   readonly editPinned: boolean;
+  /** The pane header's element that hosts the editor's undo/redo buttons. */
+  readonly historySlot: HTMLElement | null;
 }
 
 const OUTSIDE_WORKBENCH: WorkbenchPanelState = {
@@ -24,6 +26,7 @@ const OUTSIDE_WORKBENCH: WorkbenchPanelState = {
   visible: true,
   editPinned: false,
   learning: false,
+  historySlot: null,
 };
 
 const WorkbenchPanelContext = createContext<WorkbenchPanelState>(OUTSIDE_WORKBENCH);
@@ -32,10 +35,12 @@ export function WorkbenchPanelProvider({
   children,
   visible = true,
   learning = true,
+  historySlot = null,
 }: {
   readonly children: ReactNode;
   readonly visible?: boolean;
   readonly learning?: boolean;
+  readonly historySlot?: HTMLElement | null;
 }) {
   // The pane's size (split or full screen) is not part of this: the hosted
   // classroom renders the same chrome at either size, and the pane draws the
@@ -46,8 +51,9 @@ export function WorkbenchPanelProvider({
       visible,
       learning,
       editPinned: visible && !learning,
+      historySlot,
     }),
-    [visible, learning],
+    [visible, learning, historySlot],
   );
   return <WorkbenchPanelContext.Provider value={value}>{children}</WorkbenchPanelContext.Provider>;
 }

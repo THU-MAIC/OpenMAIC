@@ -8062,6 +8062,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
               const opening = JSON.stringify(await invoke(config, 'read_next_skill'));
               expect(opening).not.toContain(`PACKAGED SKILL ${key}`);
               expect(config.systemPrompt).not.toContain(`PACKAGED REFERENCE ${key}`);
+              expect(await config.liveContext()).not.toContain(`PACKAGED REFERENCE ${key}`);
               await invoke(config, 'request_skill_review', { question: 'Ready to begin?' });
             });
           for (let part = 0; part < teaching.sections.length; part++) {
@@ -8088,9 +8089,15 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
                       : {}),
                 });
                 expect(JSON.stringify(section)).toContain(`PACKAGED SKILL ${key}`);
-                if (welcome && part === 0)
-                  expect(JSON.stringify(section)).toContain(`PACKAGED REFERENCE ${key}`);
-                else expect(config.systemPrompt).toContain(`PACKAGED REFERENCE ${key}`);
+                expect(JSON.stringify(section)).not.toContain(`PACKAGED REFERENCE ${key}`);
+                const liveContext = await config.liveContext();
+                if (welcome && part === 0) {
+                  expect(config.systemPrompt).not.toContain(`PACKAGED REFERENCE ${key}`);
+                  expect(liveContext).toContain(`PACKAGED REFERENCE ${key}`);
+                } else {
+                  expect(config.systemPrompt).toContain(`PACKAGED REFERENCE ${key}`);
+                  expect(liveContext).not.toContain(`PACKAGED REFERENCE ${key}`);
+                }
                 if (part === 0 && stage.kind === 'produce') {
                   const path =
                     stage.writes === 'plan'

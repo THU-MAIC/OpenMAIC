@@ -365,6 +365,9 @@
   "edit": {
     "undo": "Annuler",
     "redo": "Rétablir",
+    "courseHistory": {
+      "stepExpired": "Cette étape ne peut plus être annulée"
+    },
     "delete": "Supprimer",
     "title": "Modification · {{type}}",
     "unsupportedScene": "{{type}} n’est pas encore modifiable",
@@ -490,8 +493,6 @@
       "addSlide": "Ajouter une diapositive",
       "duplicate": "Dupliquer",
       "delete": "Supprimer",
-      "deleted": "Supprimée",
-      "undo": "Annuler",
       "copySuffix": "(copie)",
       "untitledSlide": "Diapositive sans titre",
       "collapse": "Replier le volet",
@@ -3055,6 +3056,7 @@
       "closeDetails": "Close task details",
       "milestoneSteps": "Milestone learning steps",
       "enterStep": "Continue to {{step}}",
+      "enterMilestone": "Étape suivante",
       "planArtifact": "Open PLAN.md in the IDE to read the current plan. Discuss, review and approve it in the conversation.",
       "codeArtifact": "Inspect the current project files in the IDE. Review the implementation and save edits before continuing.",
       "taskTitle": "Current task",
@@ -3180,8 +3182,11 @@
       "completedMilestones": "Étapes terminées",
       "completedSteps": "Actions terminées",
       "concepts": "Concepts pratiqués",
-      "skills": "Compétences pratiquées",
-      "practiceNotice": "Ces traces décrivent votre pratique et ne certifient pas la maîtrise.",
+      "projectResults": "Ce que vous avez réalisé",
+      "workflow": "Votre démarche",
+      "decisionQuestion": "Question à trancher",
+      "decisionChoice": "Votre décision",
+      "decisionReason": "Votre justification",
       "viewWorkbench": "Voir l’atelier en lecture seule",
       "completedTitle": "Projet terminé",
       "completionHint": "Votre travail est enregistré. Consultez le rapport ou retrouvez votre atelier.",
@@ -3329,16 +3334,7 @@
       "testsPassed": "Tests de comportement réussis",
       "decisionsLabel": "Décisions prises",
       "quizLabel": "Questionnaire",
-      "skillsMetric": "Compétences pratiquées",
-      "skillsSection": "Défis accomplis",
       "conceptsLabel": "Notions débloquées",
-      "skillLabels": {
-        "decisions": "Prendre des décisions techniques",
-        "planReview": "Relire un plan",
-        "codeReview": "Vérifier une implémentation",
-        "verification": "Vérifier par les tests",
-        "reflection": "Réfléchir à partir des traces"
-      },
       "workshop": "Atelier Vibe Coding",
       "entryLabel": "Cours d’introduction à l’atelier Vibe Coding"
     },

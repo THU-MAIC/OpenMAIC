@@ -21,6 +21,9 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
 // calls it `LIFECYCLE`. The values are the same durable event names.
 import { HOST_AGENT_LIFECYCLE as LIFECYCLE } from '@/lib/agent-runtime/lifecycle';
 import { getDocumentStore } from '@/lib/document-store/store';
+import { recordAgentChange } from '@/lib/edit/course-edit';
+import { useCourseTimeline } from '@/lib/edit/course-timeline';
+import { keepLocalWhereUnchanged } from '@/lib/edit/scene-echo';
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
 import { hydratePBLScenesFromRuntime } from '@/lib/pbl/v2/runtime/hydration';
 import { forgetKnownScenes } from '@/lib/store/known-scenes';
@@ -34,6 +37,7 @@ import {
   serverRosterBaseOf,
   stageDocumentEditClock,
   useStageStore,
+  isServerGeneratingStage,
 } from '@/lib/store/stage';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Scene, Stage } from '@/lib/types/stage';
@@ -201,6 +205,12 @@ export function useWorkbenchStream(sessionId: string | null): void {
       }
       applyEvent(parsed);
       markAttached();
+      // Start first: it judges an abandoned run by how long that run has been silent.
+      if (parsed.type === 'agent_start') useCourseTimeline.getState().beginAgentRun(Date.now());
+      else useCourseTimeline.getState().touchAgentRun(Date.now());
+      if (parsed.type === 'agent_end' || parsed.type === LIFECYCLE.sessionEnd) {
+        useCourseTimeline.getState().endAgentRun(Date.now());
+      }
 
       // Async media completion (generate_video's detached job) settles into
       // the media generation store keyed by the placeholder ref — live frames
@@ -225,7 +235,10 @@ export function useWorkbenchStream(sessionId: string | null): void {
           stage.stage?.id === workbench.stageId
         ) {
           const scenes = applyGenerateTtsResultToScenes(stage.scenes, parsed);
-          if (scenes !== stage.scenes) useStageStore.setState({ scenes: [...scenes] });
+          if (scenes !== stage.scenes) {
+            useStageStore.setState({ scenes: [...scenes] });
+            recordAgentChange(stage);
+          }
         }
       }
     };
@@ -240,6 +253,16 @@ export function useWorkbenchStream(sessionId: string | null): void {
       if (!isCurrent()) {
         backlog.length = 0;
         return;
+      }
+      // Attached in the middle of a run: its later writes still belong together.
+      const lastRunEvent = backlog.findLast(
+        (event) =>
+          event.type === 'agent_start' ||
+          event.type === 'agent_end' ||
+          event.type === LIFECYCLE.sessionEnd,
+      );
+      if (lastRunEvent?.type === 'agent_start') {
+        useCourseTimeline.getState().beginAgentRun(Date.now());
       }
       applyEvents(compactReplayEvents(backlog));
       // Replay the media_ready side effect too: a failed job never lands in
@@ -301,6 +324,7 @@ export function useWorkbenchStream(sessionId: string | null): void {
         source.removeEventListener(type, onAny as EventListener);
       source.removeEventListener('caught_up', onCaughtUp);
       source.close();
+      useCourseTimeline.getState().endAgentRun(Date.now());
       if (useWorkbenchStore.getState().sessionId === sessionId) setAttached(false);
     };
   }, [sessionId, applyEvent, applyEvents, setAttached, finishReplayState, setError]);
@@ -528,6 +552,9 @@ export function useStageFreshnessSync(
     /** One pass: manifest → diff → narrow re-fetch → local apply. */
     const syncOnce = async () => {
       heldBackForSave.current = false;
+      // Taken before the manifest: one older than an edit made since must not
+      // decide what to drop or read, even if that edit is already saved.
+      const editClock = stageDocumentEditClock();
       const manifestResult = await fetchStageManifest(requestedStage);
       if (!isCurrent()) return;
       if (manifestResult.status !== 'ok') {
@@ -645,7 +672,6 @@ export function useStageFreshnessSync(
       }
 
       const idsToFetch = [...diff.changed, ...diff.added];
-      const editClock = stageDocumentEditClock();
       const idsToRead = idsToFetch.filter((id) => !hasUnsavedSceneEdit(requestedStage, id));
       const queuedAtRead = hasQueuedWholeDocumentChange(requestedStage);
       if (queuedAtRead || idsToRead.length < idsToFetch.length) heldBackForSave.current = true;
@@ -677,7 +703,8 @@ export function useStageFreshnessSync(
       // Either way the local scene list is the one to keep: the change may have
       // been saved while the read was out, and the read would be older than it.
       const keepLocalList = queuedAtRead || hasQueuedWholeDocumentChange(requestedStage);
-      const localScenes = useStageStore.getState().scenes;
+      const before = useStageStore.getState();
+      const localScenes = before.scenes;
       const localIds = new Set(localScenes.map((scene) => scene.id));
       const remoteOnly = new Set(diff.added);
       const applicable = fetched.filter(
@@ -691,10 +718,16 @@ export function useStageFreshnessSync(
         heldBackForSave.current = true;
       }
 
+      // A run generating this course writes it: not an edit, nothing to tell apart.
+      const isEditableCopy = !before.courseGenerating && !isServerGeneratingStage(requestedStage);
+      const incoming = isEditableCopy
+        ? keepLocalWhereUnchanged(localScenes, applicable)
+        : applicable;
+
       const appliedIds = new Set(applicable.map((scene) => scene.id));
       const merge = mergeFetchedScenes({
         current: localScenes,
-        fetched: keepLocalList ? withLocalSceneOrder(localScenes, applicable) : applicable,
+        fetched: keepLocalList ? withLocalSceneOrder(localScenes, incoming) : incoming,
         removedIds: removable,
       });
       if (merge.changed) {
@@ -710,6 +743,9 @@ export function useStageFreshnessSync(
             ...(currentSceneId !== current ? { currentSceneId } : {}),
           };
         });
+        // Including the pass that confirms what the load brought: a copy equal to it
+        // records nothing, and anything else changed after the load.
+        if (isEditableCopy) recordAgentChange(before);
       }
 
       // Advance the rendered manifest to what the store now holds: applied

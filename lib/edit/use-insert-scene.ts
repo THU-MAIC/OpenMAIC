@@ -1,5 +1,6 @@
 'use client';
 
+import { commitCourseEdit } from '@/lib/edit/course-edit';
 import { useCallback } from 'react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { createBlankEditableScene, insertSceneAtIndex } from '@/lib/edit/scene-defaults';
@@ -17,8 +18,11 @@ export function useInsertSceneAt() {
       if (!stage) return;
       const title = type === 'slide' ? t('edit.nav.untitledSlide') : t('edit.sceneType.quiz');
       const scene = createBlankEditableScene(type, stage.id, title, insertIndex + 1);
-      setScenes(insertSceneAtIndex(scenes, scene, insertIndex));
-      setCurrentSceneId(scene.id);
+      // One undo step, like every other hand edit of the course.
+      commitCourseEdit({}, () => {
+        setScenes(insertSceneAtIndex(scenes, scene, insertIndex));
+        setCurrentSceneId(scene.id);
+      });
     },
     [setCurrentSceneId, setScenes, t],
   );

@@ -1,5 +1,7 @@
 'use client';
 
+import { commitCourseEdit } from '@/lib/edit/course-edit';
+import { useCourseTimeline } from '@/lib/edit/course-timeline';
 import { memo, useCallback, useRef, useState } from 'react';
 import { Reorder } from 'motion/react';
 import { MoreHorizontal } from 'lucide-react';
@@ -74,7 +76,7 @@ function ThumbItemComponent({
   const commitRename = useCallback(() => {
     const trimmed = draft.trim();
     if (trimmed && trimmed !== scene.title) {
-      updateScene(scene.id, { title: trimmed });
+      commitCourseEdit({}, () => updateScene(scene.id, { title: trimmed }));
     }
     setRenaming(false);
   }, [draft, scene.id, scene.title, updateScene]);
@@ -90,6 +92,8 @@ function ThumbItemComponent({
     <Reorder.Item
       ref={ref}
       value={scene.id}
+      // One drag is one step, however many slots it crossed.
+      onDragEnd={() => useCourseTimeline.getState().sealBurst(scene.stageId)}
       // `layout="position"` restricts the implicit layout animation to
       // y-axis position changes (what reorder needs). Width changes from
       // rail-resize don't fire layout animations because vertical

@@ -23,6 +23,9 @@ vi.mock('@/lib/utils/stage-storage', () => ({
 
 import { useSlideEditSession } from '@/components/edit/surfaces/slide/slide-edit-session';
 import { useSlideCanvasController } from '@/components/edit/surfaces/slide/use-slide-surface';
+import { recordAgentChange, stepCourseTimeline } from '@/lib/edit/course-edit';
+import { useCourseTimeline } from '@/lib/edit/course-timeline';
+import { keepLocalWhereUnchanged } from '@/lib/edit/scene-echo';
 import { createDefaultSlide, createDefaultTextElement } from '@/lib/edit/slide-edit-elements';
 import { useStageStore } from '@/lib/store/stage';
 import type { Scene, SlideContent, Stage } from '@/lib/types/stage';
@@ -61,8 +64,16 @@ function storedText(): Text {
 
 /** What the freshness sync does when another writer changed the scene. */
 function serverCopyArrives(content: SlideContent, narration: string) {
-  act(() => useStageStore.setState({ scenes: [sceneWith(content, narration)] }));
+  act(() => {
+    const before = useStageStore.getState();
+    useStageStore.setState({
+      scenes: keepLocalWhereUnchanged(before.scenes, [sceneWith(content, narration)]),
+    });
+    recordAgentChange(before);
+  });
 }
+
+const redoSteps = () => useCourseTimeline.getState().lines['stage-a']?.future.length ?? 0;
 
 let controller: ReturnType<typeof useSlideCanvasController>['controller'] | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
@@ -101,6 +112,7 @@ function measureHeight(height: number) {
 beforeEach(async () => {
   vi.useFakeTimers();
   saveStageDataIncremental.mockClear();
+  useCourseTimeline.getState().clearCourse('stage-a');
   useStageStore.setState({
     stage: { id: 'stage-a', name: 'Course', createdAt: 1, updatedAt: 1 } as Stage,
     scenes: [sceneWith(slideWith('old placeholder', 47), 'old narration')],
@@ -192,15 +204,14 @@ describe('a slide open in the editor when its scene changes on the server', () =
         patch: { left: 321 },
       }),
     );
-    act(() => useSlideEditSession.getState().undo());
-    const future = useSlideEditSession.getState().history!.future;
-    expect(future).toHaveLength(1);
+    act(() => stepCourseTimeline('undo'));
+    expect(redoSteps()).toBe(1);
 
     // The sync reads back what this page just saved: an equal, new object.
     serverCopyArrives(structuredClone(storedScene().content) as SlideContent, 'old narration');
 
-    expect(useSlideEditSession.getState().history!.future).toEqual(future);
-    act(() => useSlideEditSession.getState().redo());
+    expect(redoSteps()).toBe(1);
+    act(() => stepCourseTimeline('redo'));
     expect(storedText().left).toBe(321);
   });
 
@@ -212,13 +223,13 @@ describe('a slide open in the editor when its scene changes on the server', () =
         patch: { left: 321 },
       }),
     );
-    act(() => useSlideEditSession.getState().undo());
+    act(() => stepCourseTimeline('undo'));
 
     // A database JSON column does not keep member order.
     const { canvas, ...rest } = structuredClone(storedScene().content) as SlideContent;
     serverCopyArrives({ canvas, ...rest }, 'old narration');
 
-    expect(useSlideEditSession.getState().history!.future).toHaveLength(1);
+    expect(redoSteps()).toBe(1);
   });
 
   it('drops the redo step when the server copy differs, so redo cannot bring back the old page', () => {
@@ -229,10 +240,10 @@ describe('a slide open in the editor when its scene changes on the server', () =
         patch: { left: 321 },
       }),
     );
-    act(() => useSlideEditSession.getState().undo());
+    act(() => stepCourseTimeline('undo'));
 
     serverCopyArrives(slideWith('agent content', 47), 'agent narration');
-    act(() => useSlideEditSession.getState().redo());
+    act(() => stepCourseTimeline('redo'));
 
     expect(storedText().content).toBe('agent content');
     expect(storedText().left).not.toBe(321);

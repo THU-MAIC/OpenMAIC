@@ -143,9 +143,14 @@ export function TextElement({ elementInfo, selectElement }: TextElementProps) {
   // It waits out the editor's input debounce, and decides when it fires: the box
   // must be empty as the user left it and still be empty then, and the user must
   // not have come back. A copy from elsewhere that empties it is not their doing.
-  const latest = useRef({ content: elementInfo.content, deleteElement });
+  // A box with no text but a visible fill, outline or shadow is a shape in its own
+  // right, and stays.
+  const visibleWithoutText = Boolean(
+    elementInfo.fill || elementInfo.outline?.width || elementInfo.shadow,
+  );
+  const latest = useRef({ content: elementInfo.content, deleteElement, visibleWithoutText });
   useEffect(() => {
-    latest.current = { content: elementInfo.content, deleteElement };
+    latest.current = { content: elementInfo.content, deleteElement, visibleWithoutText };
   });
   const contentAsLeft = useRef(elementInfo.content);
   const emptyTextCheck = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -153,7 +158,8 @@ export function TextElement({ elementInfo, selectElement }: TextElementProps) {
     clearTimeout(emptyTextCheck.current);
     emptyTextCheck.current = setTimeout(() => {
       if (useCanvasStore.getState().handleElementId === elementInfo.id) return;
-      const { content, deleteElement: remove } = latest.current;
+      const { content, deleteElement: remove, visibleWithoutText: visible } = latest.current;
+      if (visible) return;
       if (isEmptyText(contentAsLeft.current) && isEmptyText(content)) remove(elementInfo.id);
     }, 300);
   }, [elementInfo.id]);

@@ -580,7 +580,7 @@ export function WorkbenchChat({
     }
   }, [chat, sessionId]);
 
-  const { scrollRef, contentRef, isNearBottom, scrollToBottom } =
+  const { scrollRef, viewportRef, contentRef, isNearBottom, scrollToBottom } =
     useWorkbenchAutoscroll(displayedChat);
   // The transcript's column centers inside the scroll viewport, whose content box
   // is narrower than the footer's by however much the scrollbar reserves — 0 with
@@ -1209,7 +1209,7 @@ export function WorkbenchChat({
             </div>
           ) : (
             <div
-              ref={scrollRef}
+              ref={viewportRef}
               data-testid="workbench-chat-scroll"
               aria-busy={catchingUp ? 'true' : undefined}
               inert={retainedTranscript ? true : undefined}
