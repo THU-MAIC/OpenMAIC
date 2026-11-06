@@ -14,7 +14,7 @@ describe('PBL file excerpts', () => {
       let offset = 0;
       const pages = [];
       for (;;) {
-        const excerpt = readProjectFileExcerpt(source, offset);
+        const excerpt = readProjectFileExcerpt(source, { offset });
         expect(Buffer.byteLength(excerpt.text)).toBeLessThanOrEqual(8192);
         pages.push(excerpt.text);
         if (excerpt.nextOffset === undefined) break;
@@ -27,8 +27,33 @@ describe('PBL file excerpts', () => {
     },
   );
 
+  it('reads an inclusive line range and preserves exact line endings', () => {
+    const source = 'first\r\nsecond🙂\r\nthird\nlast';
+    expect(readProjectFileExcerpt(source, { startLine: 2, endLine: 3 })).toEqual({
+      text: 'second🙂\r\nthird\n',
+      offset: 'first\r\n'.length,
+    });
+    expect(readProjectFileExcerpt(source, { startLine: 4, endLine: 4 }).text).toBe('last');
+    expect(() => readProjectFileExcerpt(source, { startLine: 5 })).toThrow('valid startLine');
+    expect(() => readProjectFileExcerpt(source, { startLine: 3, endLine: 2 })).toThrow(
+      'valid startLine',
+    );
+  });
+
+  it('can continue a long line range without reading beyond its requested end', () => {
+    const body = '中文🙂'.repeat(3_000) + '\n';
+    const source = 'before\n' + body + 'after';
+    let page = readProjectFileExcerpt(source, { startLine: 2, endLine: 2 });
+    let result = page.text;
+    while (page.nextOffset !== undefined) {
+      page = readProjectFileExcerpt(source, { offset: page.nextOffset, endLine: 2 });
+      result += page.text;
+    }
+    expect(result).toBe(body);
+  });
+
   it('rejects offsets past the end or inside a surrogate pair', () => {
-    expect(() => readProjectFileExcerpt('hello', 6)).toThrow('valid file offset');
-    expect(() => readProjectFileExcerpt('🙂', 1)).toThrow('valid file offset');
+    expect(() => readProjectFileExcerpt('hello', { offset: 6 })).toThrow('valid file offset');
+    expect(() => readProjectFileExcerpt('🙂', { offset: 1 })).toThrow('valid file offset');
   });
 });

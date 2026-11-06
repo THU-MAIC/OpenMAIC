@@ -19,6 +19,10 @@ import {
 import { teachingModelBudget, estimatedRequestTokens } from '@/lib/server/pbl-v3/context-budget';
 import { currentTeachingContext } from '@/lib/server/pbl-v3/teaching-context';
 import { readProjectFileExcerpt } from '@/lib/server/pbl-v3/file-read';
+import { installedProject } from '@/lib/server/pbl-v3/catalog';
+import { stageSkill } from '@/lib/server/pbl-v3/skills';
+import { renderTeachingPrompt, teachingSection } from '@/lib/server/pbl-v3/teaching-prompt';
+import { startOrchestration } from '@/lib/pbl/v3/domain/orchestration/transition';
 
 const usage = {
   input: 0,
@@ -520,6 +524,66 @@ describe('model-aware teaching context projection', () => {
     const projected = await runtime.prepare({ ...prior, messages }, window, target);
     expect(projected.messages).toEqual(messages);
     expect(estimatedRequestTokens(projected)).toBeLessThan(teachingModelBudget(target).inputTokens);
+  });
+
+  it('fits multiple code review sections in one turn without repeating the course references', async () => {
+    const runtime = createTeachingContextProjection(summarizer());
+    const target = { ...model, contextWindow: 128_000, maxTokens: 8192 };
+    const { definition } = installedProject({ id: 'greeting-python', version: '1.0.0' });
+    const milestone = definition.milestones[0]!;
+    const stage = milestone.stages[3]!;
+    const documents = [{ path: 'contract.md', text: 'Course reference. '.repeat(470) }];
+    const skill = { ...stageSkill(stage), documents };
+    const sections = skill.progression.slice(-3);
+    const input = {
+      definition,
+      milestone,
+      stage,
+      skill,
+      role: 'coder' as const,
+      stageKey: window.stageKey,
+      packaged: true,
+      collected: startOrchestration(definition).state.collected[milestone.id]!,
+    };
+    const system = renderTeachingPrompt(input).systemPrompt;
+    expect(system).toContain(JSON.stringify(documents));
+    const buildContext = (repeatReferences: boolean): Context => ({
+      // Model the full live review prompt, plan, tool schemas and prior observations.
+      systemPrompt: system + 'p'.repeat(79_000 - Buffer.byteLength(system)),
+      messages: [
+        { role: 'user', content: '我认可当前版本，可以继续。', timestamp: 0 },
+        ...sections.flatMap((section, i): Context['messages'] => [
+          {
+            ...assistant(''),
+            stopReason: 'toolUse',
+            content: [{ type: 'toolCall', id: String(i), name: 'read_next_skill', arguments: {} }],
+          },
+          {
+            role: 'toolResult',
+            toolCallId: String(i),
+            toolName: 'read_next_skill',
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  ...teachingSection(input, section),
+                  ...(repeatReferences ? { referenceMaterials: documents } : {}),
+                }),
+              },
+            ],
+            isError: false,
+            timestamp: i + 1,
+          },
+        ]),
+      ],
+    });
+    await expect(runtime.prepare(buildContext(true), window, target)).rejects.toThrow(
+      'PBL_CONTEXT_ACTIVE_TURN_CAPACITY:',
+    );
+    const context = buildContext(false);
+    const projected = await runtime.prepare(context, window, target);
+    expect(projected.messages).toEqual(context.messages);
+    expect(projected.systemPrompt).toContain(JSON.stringify(documents));
   });
 
   it('requires a new learner message to compact a failed active tool turn, preserving raw records', async () => {
