@@ -122,7 +122,12 @@ const decisionDefinitionSchema = z.object({
   responseType: z.enum(['choice', 'text']).optional(),
   requiresRationale: z.boolean().optional(),
   options: z.array(
-    z.object({ id: nonEmptyString, label: nonEmptyString, summary: nonEmptyString }),
+    z.object({
+      id: nonEmptyString,
+      label: nonEmptyString,
+      summary: nonEmptyString,
+      previewLabel: z.string().trim().min(1).max(80).optional(),
+    }),
   ),
   rubricAnchor: nonEmptyString,
   gatesGlobs: z.array(nonEmptyString),
