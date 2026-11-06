@@ -3,6 +3,7 @@ import { visibleProductLabels } from './ui-labels';
 import en from '@/lib/i18n/locales/en-US.json';
 import zh from '@/lib/i18n/locales/zh-CN.json';
 import {
+  continuesToNextMilestone,
   hasTaskDrawer,
   learningWorkbenchFeatures,
   stageStep,
@@ -89,12 +90,17 @@ export function teachingProductContext(input: {
   const step = stageStep(stage);
   const milestoneId = workspace?.state.position.milestoneId;
   const collected = milestoneId ? workspace?.state.collected[milestoneId] : undefined;
-  const milestone = workspace
-    ? definition.milestones[workspace.state.position.milestoneIndex]
-    : definition.milestones.find((item) => item.stages.includes(stage));
+  const milestoneIndex =
+    workspace?.state.position.milestoneIndex ??
+    definition.milestones.findIndex((item) => item.stages.includes(stage));
+  const milestone = definition.milestones[milestoneIndex];
   const stageIndex = workspace?.state.position.stageIndex ?? milestone?.stages.indexOf(stage) ?? -1;
   const nextStage = stageIndex >= 0 ? milestone?.stages[stageIndex + 1] : undefined;
   const nextStep = nextStage ? stageStep(nextStage) : undefined;
+  const nextMilestone = continuesToNextMilestone(
+    { milestoneIndex, stageIndex },
+    definition.milestones,
+  );
   return {
     role: { current: role, responsibilities },
     host: 'A project scene within an OpenMAIC course; other scenes and the learner screen are unobserved.',
@@ -117,12 +123,12 @@ export function teachingProductContext(input: {
     labels: {
       ...labels,
       continue: {
-        en: visibleProductLabels('en-US', nextStep).continue,
-        zh: visibleProductLabels('zh-CN', nextStep).continue,
+        en: visibleProductLabels('en-US', nextStep, nextMilestone).continue,
+        zh: visibleProductLabels('zh-CN', nextStep, nextMilestone).continue,
       },
     },
     uiLocale: input.uiLocale ?? 'en-US',
-    visibleLabels: visibleProductLabels(input.uiLocale, nextStep),
+    visibleLabels: visibleProductLabels(input.uiLocale, nextStep, nextMilestone),
     taskLink: TASK_DRAWER_LINK,
     features: { ...learningWorkbenchFeatures, applicationPreview: !!workspace?.application },
     application: workspace?.application

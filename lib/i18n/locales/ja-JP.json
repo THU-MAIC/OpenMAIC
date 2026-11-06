@@ -2900,6 +2900,7 @@
       "closeDetails": "Close task details",
       "milestoneSteps": "Milestone learning steps",
       "enterStep": "Continue to {{step}}",
+      "enterMilestone": "次のステージへ",
       "planArtifact": "Open PLAN.md in the IDE to read the current plan. Discuss, review and approve it in the conversation.",
       "codeArtifact": "Inspect the current project files in the IDE. Review the implementation and save edits before continuing.",
       "taskTitle": "Current task",
