@@ -1043,14 +1043,14 @@ function PBLV3WorkspaceContent({
                                   })
                                 }
                               />
-                              <span className="grid cursor-pointer grid-cols-[1.75rem_minmax(0,1fr)_1rem] items-start gap-2.5 rounded-lg border border-border bg-card px-2.5 py-2 text-card-foreground transition-colors hover:border-primary/40 hover:bg-accent/40 peer-checked:border-primary/65 peer-checked:bg-primary/10 peer-focus-visible:ring-2 peer-focus-visible:ring-primary peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background peer-disabled:cursor-default peer-disabled:opacity-65 motion-reduce:transition-none">
+                              <span className="grid cursor-pointer grid-cols-[1.75rem_minmax(0,1fr)_1rem] items-start gap-2.5 rounded-lg border border-border bg-card px-2.5 py-2 text-card-foreground transition-colors hover:border-primary/40 hover:bg-accent/40 peer-checked:border-primary/65 peer-checked:bg-primary/10 peer-focus-visible:border-primary peer-disabled:cursor-default peer-disabled:opacity-65 motion-reduce:transition-none">
                                 <span
                                   aria-hidden="true"
                                   className="inline-flex size-7 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground group-data-[selected=true]:bg-primary group-data-[selected=true]:text-primary-foreground"
                                 >
                                   {i < 26 ? String.fromCharCode(65 + i) : i + 1}
                                 </span>
-                                <span className="min-w-0 whitespace-pre-wrap break-words py-1 leading-5">
+                                <span className="min-w-0 whitespace-pre-wrap break-words py-1 leading-5 group-has-[:focus-visible]:underline group-has-[:focus-visible]:decoration-2 group-has-[:focus-visible]:underline-offset-4">
                                   {option}
                                 </span>
                                 <Check
