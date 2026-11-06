@@ -90,7 +90,6 @@ export function teachingSection(
       section,
       welcomePresented: welcomePresented ?? false,
       instruction: projectWelcomeRules,
-      referenceMaterials: [],
       project: { title: definition?.title, overview: definition?.intro.say },
       milestone: { title: milestone.title, goal: milestone.goal ?? milestone.title },
       steps: milestone.stages.map(stageStep),
@@ -101,7 +100,6 @@ export function teachingSection(
     section,
     instruction: skill.content[section],
     ...(section === skill.progression[1] ? { teaching: milestone.teaching } : {}),
-    referenceMaterials: skill.documents,
     delivery:
       (stage.kind === 'mentor_say' &&
       stage.agent === 'discussion' &&
@@ -342,7 +340,10 @@ function teachingReview(review: TeachingPromptInput['pendingReview']) {
 }
 
 /** Only changing state is repeated; the product guide is already in the system prompt. */
-export function teachingLiveContext(input: TeachingPromptInput): string {
+export function teachingLiveContext(
+  input: TeachingPromptInput,
+  startedWithWelcome = false,
+): string {
   const artifactApprovalRequired = requiresArtifactApproval(input.stage);
   const guided = input.stage.kind === 'mentor_say' || input.stage.kind === 'produce';
   const repair =
@@ -361,6 +362,11 @@ export function teachingLiveContext(input: TeachingPromptInput): string {
   return JSON.stringify({
     productContext: { current: teachingProductContext(input).current },
     communication: input.communication ?? { uiLocale: 'en-US', responseLanguage: null },
+    // The static prompt intentionally hides lesson references during the welcome.
+    // Make them available on the same run once the learner starts the lesson.
+    ...(startedWithWelcome && input.welcome === 'ready'
+      ? { referenceMaterials: input.skill.documents }
+      : {}),
     stageKey: input.stageKey,
     completionRecorded: input.completionRecorded ?? false,
     // Builds also run during planning/coding; their existing ID must survive
@@ -410,13 +416,7 @@ export function teachingLiveContext(input: TeachingPromptInput): string {
           // The active section may otherwise exist only in an old tool result.
           // Restore its exact instructions after any history projection.
           activeInstruction: input.activeSection
-            ? (() => {
-                const { referenceMaterials: _references, ...section } = teachingSection(
-                  input,
-                  input.activeSection!,
-                );
-                return section;
-              })()
+            ? teachingSection(input, input.activeSection)
             : null,
           nextSection:
             (input.welcome === 'pending' && input.activeSection

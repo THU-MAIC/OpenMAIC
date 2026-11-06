@@ -16,7 +16,11 @@ import {
 } from '@/lib/pbl/v3/conversation';
 import { stageSkill, interactionRules } from '@/lib/server/pbl-v3/skills';
 import { installedProject } from '@/lib/server/pbl-v3/catalog';
-import { renderTeachingPrompt, teachingSection } from '@/lib/server/pbl-v3/teaching-prompt';
+import {
+  renderTeachingPrompt,
+  teachingLiveContext,
+  teachingSection,
+} from '@/lib/server/pbl-v3/teaching-prompt';
 import { isFinalProjectRecap } from '@/lib/server/pbl-v3/stage-progress';
 import {
   startOrchestration,
@@ -1008,11 +1012,15 @@ describe('general teaching protocols', () => {
     expect(pending).toContain('Do not teach concepts');
     expect(pending).not.toContain('LESSON_RESOURCE_SENTINEL');
     const opening = teachingSection(input, skill.progression[1]!);
-    expect(opening.referenceMaterials).toEqual([]);
     expect(JSON.stringify(opening)).not.toContain('LESSON_RESOURCE_SENTINEL');
-    expect(
-      JSON.stringify(teachingSection({ ...input, welcome: 'ready' }, skill.progression[1]!)),
-    ).toContain('LESSON_RESOURCE_SENTINEL');
+    expect(teachingLiveContext(input, true)).not.toContain('LESSON_RESOURCE_SENTINEL');
+    const ready = { ...input, welcome: 'ready' as const, activeSection: skill.progression[1]! };
+    expect(teachingLiveContext(ready, true)).toContain('LESSON_RESOURCE_SENTINEL');
+    expect(teachingLiveContext(ready)).not.toContain('LESSON_RESOURCE_SENTINEL');
+    expect(renderTeachingPrompt(ready).systemPrompt).toContain('LESSON_RESOURCE_SENTINEL');
+    expect(JSON.stringify(teachingSection(ready, ready.activeSection))).not.toContain(
+      'LESSON_RESOURCE_SENTINEL',
+    );
     expect(renderTeachingPrompt(input).sectionBytes).toBeGreaterThan(0);
   });
   it.each([0, 1])(
