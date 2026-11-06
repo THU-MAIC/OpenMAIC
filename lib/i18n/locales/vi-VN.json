@@ -3026,8 +3026,8 @@
       "completedMilestones": "Giai đoạn hoàn thành",
       "completedSteps": "Bước hoàn thành",
       "concepts": "Khái niệm đã thực hành",
-      "skills": "Kỹ năng đã thực hành",
-      "practiceNotice": "Các bản ghi cho thấy nội dung đã thực hành, không chứng nhận mức độ thành thạo.",
+      "projectResults": "Những gì bạn đã xây dựng",
+      "workflow": "Quá trình thực hiện",
       "viewWorkbench": "Xem không gian làm việc chỉ đọc",
       "completedTitle": "Dự án đã hoàn thành",
       "completionHint": "Công việc đã được lưu. Xem báo cáo hoặc quay lại không gian làm việc.",
@@ -3175,16 +3175,7 @@
       "testsPassed": "Đã vượt qua kiểm thử hành vi",
       "decisionsLabel": "Lựa chọn đã đưa ra",
       "quizLabel": "Bài kiểm tra",
-      "skillsMetric": "Kỹ năng đã thực hành",
-      "skillsSection": "Thử thách đã hoàn thành",
       "conceptsLabel": "Kiến thức đã mở khóa",
-      "skillLabels": {
-        "decisions": "Đưa ra quyết định kỹ thuật",
-        "planReview": "Xem xét kế hoạch",
-        "codeReview": "Xem xét phần triển khai",
-        "verification": "Kiểm chứng bằng kiểm thử",
-        "reflection": "Suy ngẫm từ bằng chứng"
-      },
       "workshop": "Hội thảo Vibe Coding",
       "entryLabel": "Khóa nhập môn hội thảo Vibe Coding"
     },

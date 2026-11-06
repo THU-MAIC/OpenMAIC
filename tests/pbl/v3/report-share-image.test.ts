@@ -85,6 +85,7 @@ function syntheticCanvas() {
 const content = reportShareContent({
   project: { title: 'مشروع تجريبي' },
   requiredComplete: true,
+  milestones: [{ id: 'one', title: 'أضفت محادثة إلى التطبيق', status: 'completed' }],
   summary: {
     completedMilestones: 1,
     totalMilestones: 1,
@@ -154,8 +155,7 @@ it.each([true, false])(
     expect(text).not.toContain(
       completed ? zh.pblV3.share.achievement : zh.pblV3.reportCopy.congratulations,
     );
-    expect(text).toContain(zh.pblV3.share.skillsSection);
-    expect(text).not.toContain(zh.pblV3.reportCopy.skills);
+    expect(text).toContain(zh.pblV3.reportCopy.projectResults);
   },
 );
 
@@ -174,8 +174,7 @@ it.each([undefined, { skills: [], concepts: [] }])(
       'ar-SA',
     );
     const values = drawn.map((item) => item.value);
-    expect(values).not.toContain(ar.pblV3.share.skillsSection);
-    expect(values).not.toContain(ar.pblV3.share.skillsMetric);
+    expect(values).not.toContain(ar.pblV3.reportCopy.projectResults);
     expect(values).not.toContain(ar.pblV3.share.conceptsLabel);
     expect(values.join(' ')).not.toContain('0/0');
   },

@@ -53,9 +53,8 @@ export async function renderReportShareImage(
           heading,
           t('pblV3.share.workshop'),
           t('pblV3.share.entryLabel'),
-          ...content.skills.map((id) => t(`pblV3.share.skillLabels.${id}`)),
-          t('pblV3.share.skillsMetric'),
-          t('pblV3.share.skillsSection'),
+          ...content.results,
+          t('pblV3.reportCopy.projectResults'),
           t('pblV3.share.conceptsLabel'),
           t('pblV3.share.invite'),
           t('pblV3.share.tagline'),
@@ -202,9 +201,10 @@ export async function renderReportShareImage(
   const metricStride = destination ? 128 : 156;
   const metricHeight = metricStride - 16;
   if (content.metrics.length) {
-    const cardWidth = (width - 136) / 2;
+    const columnWidth = (width - 136) / 2;
     content.metrics.forEach(([key, value], i) => {
-      const x = 64 + (i % 2) * (cardWidth + 8);
+      const x = 64 + (i % 2) * (columnWidth + 8);
+      const cardWidth = i % 2 === 0 && i === content.metrics.length - 1 ? width - 128 : columnWidth;
       const top = y + Math.floor(i / 2) * metricStride;
       box(x, top, cardWidth, metricHeight, panel);
       text(
@@ -218,13 +218,7 @@ export async function renderReportShareImage(
         direction === 'rtl' ? 'right' : 'left',
       );
       paragraph(
-        t(
-          key === 'skills'
-            ? 'pblV3.share.skillsMetric'
-            : key === 'concepts'
-              ? 'pblV3.share.conceptsLabel'
-              : `pblV3.reportCopy.${key}`,
-        ),
+        t(key === 'concepts' ? 'pblV3.share.conceptsLabel' : `pblV3.reportCopy.${key}`),
         x + 24,
         top + (destination ? 84 : 104),
         cardWidth - 48,
@@ -258,9 +252,9 @@ export async function renderReportShareImage(
   const conceptsY = resultsY - 88 - conceptHeight;
   const lowerTop = y + 24;
   const rule = dark ? '#ffffff16' : '#211c3812';
-  if (content.skills.length) {
+  if (content.results.length) {
     paragraph(
-      t('pblV3.share.skillsSection'),
+      t('pblV3.reportCopy.projectResults'),
       64,
       lowerTop + 40,
       width - 128,
@@ -270,14 +264,14 @@ export async function renderReportShareImage(
       600,
       true,
     );
-    const rows = Math.ceil(content.skills.length / 2);
+    const rows = Math.ceil(content.results.length / 2);
     const bodyTop = lowerTop + 70;
     const rowHeight = Math.min(
       destination ? 66 : 104,
       ((chips.length ? conceptsY - 40 : resultsY - 40) - bodyTop) / rows,
     );
     const columnWidth = (width - 164) / 2;
-    content.skills.forEach((id, i) => {
+    content.results.forEach((title, i) => {
       const column = direction === 'rtl' ? 1 - (i % 2) : i % 2;
       const x = 64 + column * (columnWidth + 36);
       const center = bodyTop + (Math.floor(i / 2) + 0.5) * rowHeight;
@@ -292,7 +286,7 @@ export async function renderReportShareImage(
       ctx.lineTo(markerX + 8, center - 6);
       ctx.stroke();
       paragraph(
-        t(`pblV3.share.skillLabels.${id}`),
+        title,
         direction === 'rtl' ? x + 12 : x + 52,
         center + 9,
         columnWidth - 64,

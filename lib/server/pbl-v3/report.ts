@@ -1,7 +1,6 @@
 import 'server-only';
 import { createLogger } from '@/lib/logger';
-import { projectReportSummary } from '@/lib/pbl/v3/report-summary';
-import { stageStep } from '@/lib/pbl/v3/presentation';
+import { projectReportMilestones, projectReportSummary } from '@/lib/pbl/v3/report-summary';
 import { responseLanguage } from './communication';
 import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
@@ -517,13 +516,7 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
     project: { id: project.ref.id, version: project.ref.version, title: project.definition.title },
     revision: row.revision,
     requiredComplete: canViewProjectReport(row.state),
-    milestones: project.definition.milestones.map((m, i) => ({
-      id: m.id,
-      title: m.title,
-      optional: !!m.optional,
-      status: row.state.milestones[i]?.status ?? 'pending',
-      stages: m.stages.map(stageStep),
-    })),
+    milestones: projectReportMilestones(project.definition, row.state),
     outcomes: project.definition.milestones.map((m) => {
       const collected = row.state.collected[m.id];
       return {
@@ -598,7 +591,13 @@ async function readReportSnapshot(
     )
   ).rows[0];
   if (saved?.status === 'ready' && saved.document?.formatVersion === REPORT_FORMAT_VERSION)
-    return { report: saved.document, completionRevision };
+    return {
+      report: {
+        ...saved.document,
+        milestones: projectReportMilestones(projectFor(row).definition, row.state),
+      },
+      completionRevision,
+    };
   const evidence = await buildLearningEvidence(db, row);
   const stale = saved?.status === 'generating' && Date.now() - saved.updated_at.getTime() > 120000;
   const report: LearningReport = {

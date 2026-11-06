@@ -3026,8 +3026,8 @@
       "completedMilestones": "المراحل المكتملة",
       "completedSteps": "الخطوات المكتملة",
       "concepts": "المفاهيم التي مارستها",
-      "skills": "المهارات التي مارستها",
-      "practiceNotice": "توضح هذه السجلات ما مارسته ولا تُعد شهادة إتقان.",
+      "projectResults": "ما أنجزته في المشروع",
+      "workflow": "خطوات العمل",
       "viewWorkbench": "عرض مساحة العمل للقراءة فقط",
       "completedTitle": "اكتمل المشروع",
       "completionHint": "تم حفظ عملك. يمكنك عرض التقرير أو العودة إلى مساحة العمل.",
@@ -3175,16 +3175,7 @@
       "testsPassed": "تم اجتياز اختبارات السلوك",
       "decisionsLabel": "القرارات",
       "quizLabel": "الاختبار",
-      "skillsMetric": "مهارات تمّت ممارستها",
-      "skillsSection": "التحديات المكتملة",
       "conceptsLabel": "معارف اكتشفتها",
-      "skillLabels": {
-        "decisions": "اتخاذ قرارات هندسية",
-        "planReview": "مراجعة خطة",
-        "codeReview": "مراجعة التنفيذ",
-        "verification": "التحقق بالاختبارات",
-        "reflection": "التأمل بناءً على الأدلة"
-      },
       "workshop": "ورشة Vibe Coding",
       "entryLabel": "الدورة التمهيدية لورشة Vibe Coding"
     },

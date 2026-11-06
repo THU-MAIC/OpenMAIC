@@ -19,6 +19,15 @@ const report = {
   studyId: 'private-study',
   project: { id: 'any-project', version: '1', title: 'My project' },
   requiredComplete: true,
+  milestones: [
+    {
+      id: 'one',
+      title: 'Connect the dialogue',
+      status: 'completed',
+      decisions: [{ id: 'choice', question: 'PRIVATE QUESTION', answer: 'PRIVATE ANSWER' }],
+    },
+    { id: 'two', title: 'Optional next step', status: 'pending' },
+  ],
   summary: {
     completedMilestones: 1,
     totalMilestones: 1,
@@ -54,7 +63,8 @@ it('projects identical facts regardless of analysis state, private findings or r
     expect(projected).toEqual(facts);
     expect(JSON.stringify(projected)).not.toMatch(/PRIVATE|private-study|evidence|quote/);
   }
-  expect(facts.metrics).toContainEqual(['skills', '1']);
+  expect(facts.results).toEqual(['Connect the dialogue']);
+  expect(facts.metrics.some(([key]) => key === 'skills')).toBe(false);
   expect(facts).not.toHaveProperty('waiting');
   expect(facts).not.toHaveProperty('highlights');
 });
@@ -118,7 +128,7 @@ it('omits missing summary fields rather than inventing counts or rendering undef
     summary: { completedSteps: 3, totalSteps: 7 } as LearningReport['summary'],
   });
   expect(content.metrics).toEqual([['completedSteps', '3/7']]);
-  expect(content.skills).toEqual([]);
+  expect(content.results).toEqual(['Connect the dialogue']);
   expect(content.concepts).toEqual([]);
   expect(JSON.stringify(content)).not.toContain('undefined');
 });

@@ -6,7 +6,15 @@ export interface LearningReport {
   project: { id: string; version: string; title: string };
   revision: number;
   requiredComplete: boolean;
-  milestones: { id: string; title: string; optional: boolean; status: string; stages: string[] }[];
+  milestones: {
+    id: string;
+    title: string;
+    goal?: string;
+    optional: boolean;
+    status: string;
+    stages: string[];
+    decisions?: { id: string; question: string; answer: string; rationale?: string }[];
+  }[];
   outcomes?: {
     milestoneId: string;
     tests: string | null;
@@ -63,6 +71,11 @@ export interface LearningReport {
     omitted: boolean;
     canRetry: boolean;
   };
+}
+
+/** The course describes the result, and the recorded milestone confirms it was reached. */
+export function reportProjectResults(report: Pick<LearningReport, 'milestones'>) {
+  return (report.milestones ?? []).filter((milestone) => milestone.status === 'completed');
 }
 
 /** Bound report text in UTF-16 units without cutting a valid surrogate pair. */

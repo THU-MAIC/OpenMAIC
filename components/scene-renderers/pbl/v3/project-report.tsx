@@ -15,7 +15,11 @@ import {
   X,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { reportConversationMessages, type LearningReport } from '@/lib/pbl/v3/report';
+import {
+  reportConversationMessages,
+  reportProjectResults,
+  type LearningReport,
+} from '@/lib/pbl/v3/report';
 import { TextBlock } from '@/components/workbench/chat/text-block';
 import { ReportShareDialog } from './report-share-dialog';
 import { readReportResponse, ReportResponseError } from '@/lib/pbl/v3/report-client';
@@ -142,7 +146,7 @@ export function ProjectReport({
     : [];
   const button =
     'inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50';
-  const stepLabel = (step: string) => t(`pblV3.journey.steps.${step}`);
+  const results = report ? reportProjectResults(report) : [];
   return (
     <section
       ref={surface}
@@ -308,38 +312,32 @@ export function ProjectReport({
         )}
         {report && (
           <>
-            {!!summary?.skills.length && (
-              <section aria-label={t('pblV3.reportCopy.skills')}>
+            {results.length > 0 && (
+              <section aria-label={t('pblV3.reportCopy.projectResults')}>
                 <div className="mb-4 flex items-center gap-2">
                   <Target size={18} className="text-violet-500" />
-                  <h3 className="text-xl font-semibold">{t('pblV3.reportCopy.skills')}</h3>
+                  <h3 className="text-xl font-semibold">{t('pblV3.reportCopy.projectResults')}</h3>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {summary.skills.map((skill, i) => (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {results.map((result) => (
                     <article
-                      key={skill.id}
-                      className="flex items-start gap-3 rounded-2xl border bg-gradient-to-br from-violet-500/5 to-transparent p-4"
+                      key={result.id}
+                      className="flex min-w-0 items-start gap-3 rounded-2xl border bg-gradient-to-br from-violet-500/5 to-transparent p-4"
                     >
-                      <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 font-mono text-sm text-violet-500">
-                        0{i + 1}
+                      <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-500">
+                        <CheckCircle2 size={18} aria-hidden="true" />
                       </span>
-                      <div>
-                        <h4 className="text-sm font-semibold">
-                          {t(`pblV3.reportCopy.skillLabels.${skill.id}`)}
-                        </h4>
-                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                          {skill.milestoneIds
-                            .map((id) => report.milestones.find((m) => m.id === id)?.title)
-                            .filter(Boolean)
-                            .join(' · ')}
-                        </p>
+                      <div className="min-w-0 break-words">
+                        <h4 className="text-sm font-semibold">{result.title}</h4>
+                        {result.goal && (
+                          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                            {result.goal}
+                          </p>
+                        )}
                       </div>
                     </article>
                   ))}
                 </div>
-                <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                  {t('pblV3.reportCopy.practiceNotice')}
-                </p>
               </section>
             )}
             {!!summary?.concepts.length && (
@@ -433,6 +431,17 @@ export function ProjectReport({
             </section>
             <section aria-label={t('pblV3.reportCopy.journey')}>
               <h3 className="mb-4 text-xl font-semibold">{t('pblV3.reportCopy.journey')}</h3>
+              {!!summary?.skills.length && (
+                <p className="mb-4 text-sm leading-relaxed text-muted-foreground">
+                  <span className="font-medium text-foreground">
+                    {t('pblV3.reportCopy.workflow')}
+                  </span>
+                  {' · '}
+                  {summary.skills
+                    .map(({ id }) => t(`pblV3.reportCopy.skillLabels.${id}`))
+                    .join(' · ')}
+                </p>
+              )}
               <ol className="space-y-4">
                 {report.milestones.map((m, i) => (
                   <li key={m.id} className="rounded-2xl border p-5">
@@ -445,16 +454,21 @@ export function ProjectReport({
                         <CheckCircle2 size={17} className="ml-auto shrink-0 text-emerald-500" />
                       )}
                     </div>
-                    <div className="mb-4 flex flex-wrap gap-2">
-                      {m.stages.map((step, j) => (
-                        <span
-                          key={j}
-                          className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground"
-                        >
-                          {j + 1} · {stepLabel(step)}
-                        </span>
-                      ))}
-                    </div>
+                    {!!m.decisions?.length && (
+                      <dl className="mb-4 space-y-3 border-l-2 border-violet-500/20 pl-4 text-sm [overflow-wrap:anywhere]">
+                        {m.decisions.map((decision) => (
+                          <div key={decision.id}>
+                            <dt className="text-muted-foreground">{decision.question}</dt>
+                            <dd className="mt-1 font-medium">{decision.answer}</dd>
+                            {decision.rationale && (
+                              <dd className="mt-1 whitespace-pre-wrap text-muted-foreground">
+                                {decision.rationale}
+                              </dd>
+                            )}
+                          </div>
+                        ))}
+                      </dl>
+                    )}
                     {report.outcomes
                       ?.filter((o) => o.milestoneId === m.id)
                       .map((o) => (

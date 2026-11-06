@@ -3026,8 +3026,8 @@
       "completedMilestones": "完了した段階",
       "completedSteps": "完了したステップ",
       "concepts": "実践した概念",
-      "skills": "実践したスキル",
-      "practiceNotice": "記録は実践の内容を示すもので、習熟を認定するものではありません。",
+      "projectResults": "このプロジェクトで作ったもの",
+      "workflow": "取り組みの流れ",
       "viewWorkbench": "読み取り専用の作業画面",
       "completedTitle": "プロジェクト完了",
       "completionHint": "作品と学習記録を保存しました。レポートや作業画面で振り返れます。",
@@ -3175,16 +3175,7 @@
       "testsPassed": "動作テストに合格",
       "decisionsLabel": "実装の選択",
       "quizLabel": "クイズ",
-      "skillsMetric": "実践したスキル",
-      "skillsSection": "クリアした課題",
       "conceptsLabel": "出会った知識",
-      "skillLabels": {
-        "decisions": "設計の判断",
-        "planReview": "計画のレビュー",
-        "codeReview": "実装のレビュー",
-        "verification": "テストによる検証",
-        "reflection": "記録に基づく振り返り"
-      },
       "workshop": "Vibe Coding ワークショップ",
       "entryLabel": "Vibe Coding ワークショップ入門コース"
     },

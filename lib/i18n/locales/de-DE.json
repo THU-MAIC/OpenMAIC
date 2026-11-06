@@ -3026,8 +3026,8 @@
       "completedMilestones": "Abschnitte abgeschlossen",
       "completedSteps": "Schritte abgeschlossen",
       "concepts": "Geübte Konzepte",
-      "skills": "Geübte Fähigkeiten",
-      "practiceNotice": "Diese Aufzeichnungen zeigen deine Praxis und bestätigen keine Beherrschung.",
+      "projectResults": "Deine Projektergebnisse",
+      "workflow": "Arbeitsablauf",
       "viewWorkbench": "Arbeitsbereich schreibgeschützt öffnen",
       "completedTitle": "Projekt abgeschlossen",
       "completionHint": "Deine Arbeit ist gespeichert. Öffne den Bericht oder sieh im Arbeitsbereich nach.",
@@ -3175,16 +3175,7 @@
       "testsPassed": "Verhaltenstests bestanden",
       "decisionsLabel": "Entscheidungen",
       "quizLabel": "Wissenscheck",
-      "skillsMetric": "Geübte Fähigkeiten",
-      "skillsSection": "Abgeschlossene Aufgaben",
       "conceptsLabel": "Freigeschaltete Konzepte",
-      "skillLabels": {
-        "decisions": "Technische Entscheidungen treffen",
-        "planReview": "Einen Plan prüfen",
-        "codeReview": "Implementierung prüfen",
-        "verification": "Verhalten mit Tests prüfen",
-        "reflection": "Anhand von Belegen reflektieren"
-      },
       "workshop": "Vibe Coding Workshop",
       "entryLabel": "Einführungskurs zum Vibe Coding Workshop"
     },
