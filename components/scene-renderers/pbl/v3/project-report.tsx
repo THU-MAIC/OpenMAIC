@@ -455,19 +455,37 @@ export function ProjectReport({
                       )}
                     </div>
                     {!!m.decisions?.length && (
-                      <dl className="mb-4 space-y-3 border-l-2 border-violet-500/20 pl-4 text-sm [overflow-wrap:anywhere]">
+                      <div className="mb-4 space-y-4 border-s-2 border-violet-500/20 ps-4 text-sm [overflow-wrap:anywhere]">
                         {m.decisions.map((decision) => (
                           <div key={decision.id}>
-                            <dt className="text-muted-foreground">{decision.question}</dt>
-                            <dd className="mt-1 font-medium">{decision.answer}</dd>
+                            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
+                              <dt className="self-baseline text-xs font-medium text-muted-foreground">
+                                {t('pblV3.reportCopy.decisionQuestion')}
+                              </dt>
+                              <dd className="text-muted-foreground">{decision.question}</dd>
+                              <dt className="self-baseline text-xs font-medium text-violet-700 dark:text-violet-300">
+                                {t('pblV3.reportCopy.decisionChoice')}
+                              </dt>
+                              <dd className="font-semibold">{decision.answer}</dd>
+                            </dl>
                             {decision.rationale && (
-                              <dd className="mt-1 whitespace-pre-wrap text-muted-foreground">
-                                {decision.rationale}
-                              </dd>
+                              <details className="group/rationale mt-2">
+                                <summary className="inline-flex min-h-7 cursor-pointer list-none items-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+                                  {t('pblV3.reportCopy.decisionReason')}
+                                  <ChevronDown
+                                    size={14}
+                                    aria-hidden="true"
+                                    className="shrink-0 transition-transform group-open/rationale:rotate-180"
+                                  />
+                                </summary>
+                                <p className="mt-1 rounded-lg bg-muted/40 px-3 py-2 leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                                  {decision.rationale}
+                                </p>
+                              </details>
                             )}
                           </div>
                         ))}
-                      </dl>
+                      </div>
                     )}
                     {report.outcomes
                       ?.filter((o) => o.milestoneId === m.id)
