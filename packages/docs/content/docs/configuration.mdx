@@ -178,6 +178,8 @@ Fallbacks apply to language-model slots: `llm` and every slot below it. A `fallb
 
 A slot's `fallback` is tried once when a call on the primary model fails after its own retries with a retryable failure: a transient SDK error, a timeout, a network error, a rate limit (429), capacity (503), or empty output. An explicit quota refusal from the provider (an OpenAI-compatible code such as `insufficient_quota`, whatever its HTTP status) is not retried on the primary model: the call goes to the fallback at once. Content-safety refusals and other 4xx errors never fall back. The fallback applies to both regular and streaming calls and uses the slot's `thinking` parameters.
 
+Fallback requests cap `maxOutputTokens` at the fallback model's known output window, while preserving a smaller caller limit. If the caller omits the limit, the known window is used; if the window is unknown, the request's limit is left unchanged. `eval-*` and `verify-model` calls never switch models, even when a fallback is configured.
+
 The fallback belongs to the assignment and is inherited with it: `course.content.slide` without an assignment of its own uses the model and the fallback of `course.content`. A slot with a requirement does not retry on a fallback that fails it.
 
 ### Turning a capability off

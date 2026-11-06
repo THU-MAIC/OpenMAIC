@@ -22,6 +22,7 @@ import {
 } from '@/lib/server/generation-run-hooks/runtime';
 import {
   attachedModelFallback,
+  fallbackMaxOutputTokens,
   type FallbackLoader,
   type FallbackModel,
 } from '@/lib/ai/model-fallbacks';
@@ -358,8 +359,7 @@ export async function callLLM<T extends GenerateTextParams>(
   // its result and every production caller passes it through here; a
   // client-supplied model (x-model with a garbage key) must never be allowed
   // to burn the operator's fallback key, so an absent stamp means NOT armed.
-  // verify-model additionally probes the exact primary model, so it never
-  // falls back either.
+  // Model probes and evaluations must preserve the requested model's identity.
   // A model resolved through a slot carries its slot's fallback, which is
   // server configuration by construction: that is authorization enough. The
   // serverManaged stamp gates only MODEL_FALLBACK on the request path.
@@ -367,7 +367,7 @@ export async function callLLM<T extends GenerateTextParams>(
   const allowFallback =
     fallbackOptions?.enabled !== false &&
     (attached !== undefined || fallbackOptions?.serverManaged === true) &&
-    source !== 'verify-model';
+    !requiresExactModel(source);
   // Resolve the fallback once up front. The empty-output safety net below only
   // arms when a fallback model is actually configured; without this gate an
   // empty result would flip from success to failure for operators who never
@@ -500,6 +500,7 @@ export async function callLLM<T extends GenerateTextParams>(
         {
           ...params,
           model: fallback.model,
+          maxOutputTokens: fallbackMaxOutputTokens(params.maxOutputTokens, fallback.outputWindow),
           maxRetries: 0,
           abortSignal: fallbackOptions?.preserveAbortSignal ? params.abortSignal : undefined,
         } as T,
@@ -538,9 +539,7 @@ async function loadFallbackSafe(
 }
 
 /** Lazily resolve the fallback model; never throws (fallback is best-effort). */
-async function resolveFallbackModelSafe(
-  source: string,
-): Promise<{ model: LanguageModel; modelString: string } | null> {
+async function resolveFallbackModelSafe(source: string): Promise<FallbackModel | null> {
   try {
     const { resolveFallbackModel } = await import('@/lib/server/llm-fallback');
     return await resolveFallbackModel();
@@ -548,6 +547,10 @@ async function resolveFallbackModelSafe(
     log.warn(`[${source}] Fallback model resolution failed, skipping fallback:`, err);
     return null;
   }
+}
+
+function requiresExactModel(source: string): boolean {
+  return source === 'verify-model' || source.startsWith('eval-');
 }
 
 type ModelV3 = Parameters<typeof wrapLanguageModel>[0]['model'];
@@ -785,6 +788,7 @@ function withStreamFallback(
     try {
       const result = await served.doStream({
         ...params,
+        maxOutputTokens: fallbackMaxOutputTokens(params.maxOutputTokens, fallback.outputWindow),
         providerOptions: providerOptionsFor(fallback) as typeof params.providerOptions,
       });
       return track(result, served);
@@ -867,7 +871,9 @@ export function streamLLM<T extends StreamTextParams>(
   // withStreamFallback); a caller with its own fallback handling opts out.
   // Its usage is recorded per step, against the model that served the step.
   const attached =
-    fallbackOptions?.enabled === false ? undefined : attachedModelFallback(params.model);
+    fallbackOptions?.enabled === false || requiresExactModel(source)
+      ? undefined
+      : attachedModelFallback(params.model);
   const state: StreamFallbackState = { contentStarted: false, primaryAttempts: 0, servedBy: [] };
   const streamsWithFallback = attached !== undefined && typeof params.model === 'object';
   const original = params;

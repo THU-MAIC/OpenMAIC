@@ -10,7 +10,7 @@
  * once on the stage's fallback model, and every retry is reported as an event.
  */
 import { prepareVisionImages } from '../vision-images';
-import { attachedModelFallback } from '@/lib/ai/model-fallbacks';
+import { attachedModelFallback, fallbackMaxOutputTokens } from '@/lib/ai/model-fallbacks';
 import { streamLLM } from '@/lib/ai/llm';
 import {
   resolveFallbackModel,
@@ -604,7 +604,11 @@ async function streamOutlines(
       return false;
     }
     if (!fallback) return false;
-    streamParams = { ...streamParams, model: fallback.model };
+    streamParams = {
+      ...streamParams,
+      model: fallback.model,
+      maxOutputTokens: fallbackMaxOutputTokens(streamParams.maxOutputTokens, fallback.outputWindow),
+    };
     fellBack = true;
     logFallbackFired(
       'scene-outlines-stream',

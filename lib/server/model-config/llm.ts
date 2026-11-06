@@ -174,7 +174,11 @@ export async function slotLanguageModel(
     if (!fallback || fallbackUnmet || (requireToolCalling && incompatibleRoute(fallback)))
       return null;
     const built = await languageModelFor(fallback, resolution.thinking);
-    return { model: built.model, modelString: built.modelString };
+    return {
+      model: built.model,
+      modelString: built.modelString,
+      outputWindow: built.modelInfo?.outputWindow,
+    };
   });
   return { ...resolved, resolution };
 }
