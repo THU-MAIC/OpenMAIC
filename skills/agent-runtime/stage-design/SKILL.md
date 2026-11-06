@@ -68,6 +68,14 @@ order:
    checkpoint for its page: the page survives an interruption only once the
    call has returned. As soon as a page's `generate_scene` succeeds, call
    `generate_tts` on that page, then go on to the next page.
+
+   **First page first.** The user is waiting to see the classroom take shape,
+   so get page 1 persisted as early as possible: once the stage and roster
+   exist, generate page 1 before any work that page does not need. Research
+   a page relies on comes before that page. Media is made just in time for the
+   page that uses it: the images for page N are generated right before page
+   N's `generate_scene`, never as a batch for the whole course before its first
+   page exists.
 5. **`list_scenes`** to verify every page you settled is actually persisted.
 
 None of the planning steps is a place to stop: a turn ends when a page actually

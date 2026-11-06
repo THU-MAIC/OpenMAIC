@@ -10,6 +10,7 @@ import {
   collectUnresolvedMediaPlaceholders,
   filterKnownActions,
 } from '@/lib/server/agent-runtime/generation-tools';
+import { generateImagePromptBlock } from '@/lib/server/agent-runtime/generate-image';
 import type { Scene } from '@/lib/types/stage';
 
 function slide(id: string, order: number, title = id): Scene {
@@ -591,6 +592,51 @@ describe('generation and deck tools', () => {
     }
     expect(guidance).toContain('restate that same style in every slide design');
     expect(guidance).toContain('keep its established style');
+  });
+
+  it('treats the opening request of a new conversation as a request for a course', () => {
+    const guidance = DSL_TOOLS_PROMPT;
+    expect(guidance).toContain(
+      'the opening request of a new conversation is a request for a course by default: build one',
+    );
+    for (const exception of [
+      'a question about a course the conversation already refers to',
+      'a question about settings or how the product works',
+      'small talk',
+      'a change to an existing course',
+    ]) {
+      expect(guidance).toContain(exception);
+    }
+    expect(guidance).toContain(
+      'When you genuinely cannot tell whether the user wants a course, ask once with ask_user',
+    );
+    expect(guidance).toContain('instead of only answering in chat');
+  });
+
+  it('gets the first page persisted before any work it does not need', () => {
+    const guidance = DSL_TOOLS_PROMPT;
+    expect(guidance).toContain('get its first page persisted as early as possible');
+    expect(guidance).toContain('generate page 1 before any work that page does not need');
+    expect(guidance).toContain('Research the first page relies on still comes first');
+    expect(guidance).toContain('the images for page N right before generating page N');
+    expect(guidance).toContain(
+      'never generate a batch of images or videos for the whole course up front',
+    );
+    // The page-1 rule follows the stage-design pointer, so a new course still
+    // reads the build method first.
+    expect(guidance.indexOf('read the `stage-design` skill')).toBeLessThan(
+      guidance.indexOf('get its first page persisted'),
+    );
+  });
+
+  it('tells the image guidance to make images per page, just in time', () => {
+    const guidance = generateImagePromptBlock();
+    expect(guidance).toContain("obtain that page's real srcs right before generating it");
+    expect(guidance).toContain('Generate images one page at a time');
+    expect(guidance).toContain(
+      'never as a batch for the whole course before its first page exists',
+    );
+    expect(guidance).not.toContain('obtain every real src first');
   });
 
   it('validates widget params through the tool schema', () => {
