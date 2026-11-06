@@ -2900,6 +2900,7 @@
       "closeDetails": "收起任务详情",
       "milestoneSteps": "当前阶段的学习步骤",
       "enterStep": "进入{{step}}",
+      "enterMilestone": "进入下一阶段",
       "planArtifact": "计划保存在左侧 PLAN.md。阅读当前版本，并在对话中完成理解、审阅和确认。",
       "codeArtifact": "在左侧查看当前项目文件。结合实际实现完成审阅，保存修改后再继续。",
       "taskTitle": "当前任务",
