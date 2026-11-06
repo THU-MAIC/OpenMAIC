@@ -741,6 +741,7 @@ async function generateSlideContent(
       title: outline.title,
       description: outline.description,
       keyPoints: (outline.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join('\n'),
+      design: outline.design?.trim() || '',
       elements: '（根据要点自动生成）',
       assignedImages: assignedImagesText,
       teacherContext,

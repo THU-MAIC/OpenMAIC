@@ -99,6 +99,11 @@ Rules of the matrix:
   house style, so an edit that looks wrong is your value, not the tool's.
 - `edit_deck insert` creates an empty stub; fill it with `generate_scene` using
   that new page's explicit `type` and `brief`, or patch an already valid scene.
+- A slide that `generate_scene` writes or rewrites into an existing course
+  carries a `design` that restates the course's established style — its
+  background, palette, type scale, title placement and layout grammar, read
+  from the existing pages — so the page joins the deck instead of starting a
+  new one. Change the style only when the user asks for it.
 - `generate_scene` with `instruction` discards the page and regenerates it. That is
   a rewrite, not an edit: reserve it for the moment the user plainly wants a page
   rebuilt, never as a shortcut around careful editing.
