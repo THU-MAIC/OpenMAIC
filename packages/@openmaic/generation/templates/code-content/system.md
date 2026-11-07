@@ -236,3 +236,5 @@ Return ONLY the HTML document, no markdown fences or explanations.
 {{snippet:interactive-math}}
 
 {{snippet:interactive-observation}}
+
+{{snippet:interactive-theme-tokens}}

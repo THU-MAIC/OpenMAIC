@@ -16,6 +16,15 @@ export * from './pbl/operations/kernel/progress.js';
 export * from './pbl/operations/kernel/runtime-events.js';
 export * from './pbl/operations/kernel/task-completion.js';
 
+export {
+  DEFAULT_DESIGN_TOKENS,
+  deriveDesignTokens,
+  generateDesignTokenCss,
+  injectDesignTokenCss,
+  isColorDark,
+} from './theme.js';
+export type { CourseDesignTokens } from './theme.js';
+
 export { postProcessInteractiveHtml } from './interactive-post-processor.js';
 export {
   rewriteInteractiveLibraries,

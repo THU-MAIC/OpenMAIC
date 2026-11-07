@@ -49,6 +49,7 @@ import {
   formatWidgetVariables,
   resolveWidgetDesignIdea,
 } from './widget-outline-format.js';
+import { deriveDesignTokens, injectDesignTokenCss, type CourseDesignTokens } from './theme.js';
 import type {
   GeneratedInteractiveContent,
   GeneratedPBLContent,
@@ -124,6 +125,8 @@ export interface SceneContentOptions {
   baselineContent?: GeneratedSlideContent;
   /** Optional host fallback for the app-only loop planner. */
   pblLoopFallback?: (input: PBLPlannerV2Input) => Promise<PBLProject>;
+  design?: string;
+  tokens?: CourseDesignTokens;
   onFailure?: (failure: SceneContentFailure) => void;
   logger?: GenerationLogger;
 }
@@ -282,10 +285,20 @@ export async function generateSceneContent(
     }
 
     // Route to widget generation (handles all 5 types)
+    const tokens =
+      options.tokens ??
+      deriveDesignTokens(
+        (outline as { design?: string }).design ||
+          outline.widgetOutline?.designIdea ||
+          options.design,
+      );
+
     return generateWidgetContent(outline, aiCall, languageDirective, {
       allowProceduralSkill,
       logger: log,
       onFailure: options.onFailure,
+      design: options.design,
+      tokens,
     });
   }
 
@@ -1269,6 +1282,14 @@ function extractHtml(
 
 // ==================== Ultra Mode Widget Generation ====================
 
+export interface GenerateWidgetContentOptions {
+  allowProceduralSkill?: boolean;
+  logger?: GenerationLogger;
+  onFailure?: (failure: SceneContentFailure) => void;
+  design?: string;
+  tokens?: CourseDesignTokens;
+}
+
 /**
  * Generate widget content based on widget type (Ultra Mode)
  */
@@ -1276,11 +1297,7 @@ export async function generateWidgetContent(
   outline: SceneOutline,
   aiCall: AICallFn,
   languageDirective?: string,
-  options: {
-    allowProceduralSkill?: boolean;
-    logger?: GenerationLogger;
-    onFailure?: (failure: SceneContentFailure) => void;
-  } = {},
+  options: GenerateWidgetContentOptions = {},
 ): Promise<GeneratedInteractiveContent | null> {
   const log = options.logger ?? noopGenerationLogger;
   const widgetType = outline.widgetType;
@@ -1290,6 +1307,23 @@ export async function generateWidgetContent(
     log.warn(`Interactive outline missing widget config, falling back to standard interactive`);
     return null;
   }
+
+  const tokens =
+    options.tokens ??
+    deriveDesignTokens(
+      (outline as { design?: string }).design || widgetOutline.designIdea || options.design,
+    );
+  const themeVars = {
+    styleName: tokens.isDark ? 'Dark' : 'Light',
+    isLightStyle: !tokens.isDark,
+    themeBackground: tokens.background,
+    themeSurface: tokens.surface,
+    themeText: tokens.text,
+    themeMuted: tokens.mutedText,
+    themeBorder: tokens.border,
+    themeAccent: tokens.accent,
+    themeFont: tokens.font,
+  };
 
   // Select appropriate prompt based on widget type
   let promptId: PromptId;
@@ -1305,6 +1339,7 @@ export async function generateWidgetContent(
         variables: formatWidgetVariables(widgetOutline.keyVariables),
         designIdea: resolveWidgetDesignIdea(outline),
         languageDirective: languageDirective || '',
+        ...themeVars,
       };
       break;
 
@@ -1321,6 +1356,7 @@ export async function generateWidgetContent(
         hasNodeCount: typeof widgetOutline.nodeCount === 'number' && widgetOutline.nodeCount > 0,
         hasPrescribedNodes: prescribedNodes.length > 0,
         languageDirective: languageDirective || '',
+        ...themeVars,
       };
       break;
     }
@@ -1336,6 +1372,7 @@ export async function generateWidgetContent(
         testCases: '', // AI generates appropriate test cases based on challenge
         hints: '', // AI generates progressive hints based on challenge
         languageDirective: languageDirective || '',
+        ...themeVars,
       };
       break;
 
@@ -1348,6 +1385,7 @@ export async function generateWidgetContent(
         keyPoints: (outline.keyPoints || []).join('\n'),
         scoring: { correctPoints: 10, speedBonus: 5 },
         languageDirective: languageDirective || '',
+        ...themeVars,
       };
       break;
 
@@ -1361,6 +1399,7 @@ export async function generateWidgetContent(
         objects: widgetOutline.objects || [],
         interactions: widgetOutline.interactions || [],
         languageDirective: languageDirective || '',
+        ...themeVars,
       };
       break;
 
@@ -1381,6 +1420,7 @@ export async function generateWidgetContent(
         successCriteria: widgetOutline.successCriteria || [],
         errorConsequences: widgetOutline.errorConsequences || [],
         languageDirective: languageDirective || '',
+        ...themeVars,
       };
       break;
 
@@ -1421,8 +1461,11 @@ export async function generateWidgetContent(
   // Extract widget config from HTML if present
   const widgetConfig = extractWidgetConfig(html, widgetType);
 
+  const processedHtml = postProcessInteractiveHtml(html);
+  const themedHtml = injectDesignTokenCss(processedHtml, tokens);
+
   return {
-    html: postProcessInteractiveHtml(html),
+    html: themedHtml,
     widgetType,
     widgetConfig,
   };

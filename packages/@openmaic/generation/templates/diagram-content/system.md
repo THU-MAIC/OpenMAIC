@@ -20,7 +20,7 @@ Generate a self-contained HTML diagram with connected nodes.
 
 1. **SVG-based** with embedded JSON config
 2. **First node visible** on load
-3. **High contrast**: White nodes on dark background, light edge labels
+3. **Contrast & Theme**: Follow the course theme tokens (`--color-background`, `--color-surface`, `--color-text`, `--color-border`, `--color-accent`) to ensure high contrast between nodes, background, and edge labels
 4. **Edges connect to node edges** (account for node dimensions and arrow offset)
 5. **Mobile**: Sidebar/panel collapsible, doesn't block diagram
 6. **No jitter**: Never apply a CSS `transform` to an element that already carries an SVG `transform` attribute
@@ -199,3 +199,5 @@ Return exactly ONE complete HTML document. No markdown fences, no duplication.
 {{snippet:interactive-math}}
 
 {{snippet:interactive-observation}}
+
+{{snippet:interactive-theme-tokens}}
