@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import type { SlideBackground } from '@openmaic/dsl';
+import type { SlideBackground, SlideTheme } from '@openmaic/dsl';
+import { isColorDark } from '@/configs/theme';
 import { useMediaStageId } from '@/lib/contexts/media-stage-context';
 import { renderableMediaUrl, useResolvedMediaRef } from '@/lib/media/resolve-media-ref';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
@@ -9,7 +10,10 @@ import { useModelCapabilities } from '@/lib/model-settings/use-model-settings';
 /**
  * Convert slide background data to CSS styles
  */
-export function useSlideBackgroundStyle(background: SlideBackground | undefined) {
+export function useSlideBackgroundStyle(
+  background: SlideBackground | undefined,
+  theme?: SlideTheme,
+) {
   const stageId = useMediaStageId();
   const ref = background?.type === 'image' ? background.image?.src : undefined;
   const task = useMediaGenerationStore((state) => {
@@ -24,12 +28,18 @@ export function useSlideBackgroundStyle(background: SlideBackground | undefined)
   const resolution = useResolvedMediaRef(ref, task, imageGenerationDisabled);
   const resolvedSrc = renderableMediaUrl(resolution);
   const backgroundStyle = useMemo<React.CSSProperties>(() => {
-    if (!background) return { backgroundColor: '#fff' };
+    if (!background) return { backgroundColor: theme?.backgroundColor ?? '#fff' };
 
     const { type, color, image, gradient } = background;
 
     // Solid color background
-    if (type === 'solid') return { backgroundColor: color };
+    if (type === 'solid') {
+      const isThemeLight = !theme?.backgroundColor || !isColorDark(theme.backgroundColor);
+      if (isThemeLight && isColorDark(color)) {
+        return { backgroundColor: theme?.backgroundColor ?? '#ffffff' };
+      }
+      return { backgroundColor: color };
+    }
 
     // Image background mode
     // Includes: background image, background size, whether to repeat
@@ -65,7 +75,7 @@ export function useSlideBackgroundStyle(background: SlideBackground | undefined)
     }
 
     return { backgroundColor: '#fff' };
-  }, [background, resolvedSrc]);
+  }, [background, resolvedSrc, theme]);
 
   return {
     backgroundStyle,

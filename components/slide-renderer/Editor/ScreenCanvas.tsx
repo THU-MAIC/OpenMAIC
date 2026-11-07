@@ -11,7 +11,7 @@ import { useSyncCanvasViewportFromSlide } from '@/lib/store/sync-canvas-viewport
 import { useSceneSelector } from '@/lib/contexts/scene-context';
 import { findElementGeometry } from '@/lib/utils/geometry';
 import type { SlideContent } from '@/lib/types/stage';
-import type { PPTElement, SlideBackground } from '@openmaic/dsl';
+import type { PPTElement, SlideBackground, SlideTheme } from '@openmaic/dsl';
 import type { PercentageGeometry } from '@/lib/types/action';
 import { useViewportSize } from './Canvas/hooks/useViewportSize';
 import { useRef, useMemo } from 'react';
@@ -34,11 +34,14 @@ export function ScreenCanvas() {
   // Viewport size and positioning
   const { viewportStyles } = useViewportSize(canvasRef);
 
-  // Get background style
+  // Get background and theme style
   const background = useSceneSelector<SlideContent, SlideBackground | undefined>(
     (content) => content.canvas.background,
   );
-  const { backgroundStyle } = useSlideBackgroundStyle(background);
+  const theme = useSceneSelector<SlideContent, SlideTheme | undefined>(
+    (content) => content.canvas.theme,
+  );
+  const { backgroundStyle } = useSlideBackgroundStyle(background, theme);
 
   // Get visual effect state
   const laserElementId = useCanvasStore.use.laserElementId();

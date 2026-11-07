@@ -16,6 +16,7 @@ import { uniquifyMediaElementIds } from './outline-media.js';
 import type { ImageMapping, PdfImage, SceneOutline, UserRequirements } from './outline-types.js';
 import type { AICallFn, GenerationResult } from './pipeline-types.js';
 import { buildPrompt, PROMPT_IDS } from './prompts/index.js';
+import { resolveCourseTheme } from './theme.js';
 
 export const DEFAULT_LANGUAGE_DIRECTIVE =
   'Teach in the language that matches the user requirement.';
@@ -96,6 +97,9 @@ export function buildOutlinePrompt(
   const mediaEnabled = imageEnabled || videoEnabled;
   const hasSourceImages = (pdfImages?.length ?? 0) > 0;
 
+  const theme = resolveCourseTheme(requirements.style, { requirement: requirements.requirement });
+  const styleDirective = `## Visual Theme & Style\n\nCourse Style: **${theme.label}**\nDesign Tokens:\n- Background: ${theme.tokens.background}\n- Surface: ${theme.tokens.surface}\n- Text / Ink: ${theme.tokens.text}\n- Muted Text: ${theme.tokens.mutedText}\n- Border: ${theme.tokens.border}\n- Accent: ${theme.tokens.accent}\n- Primary Colors: ${theme.tokens.colors.join(', ')}\n${!theme.tokens.isDark ? '\nCRITICAL: The style is Light. NEVER specify or design dark or black backgrounds for any scene.' : ''}\nAll planned scenes must adhere strictly to these design tokens and style.`;
+
   const prompts = buildPrompt(PROMPT_IDS.REQUIREMENTS_TO_OUTLINES, {
     requirement: requirements.requirement,
     pdfContent: pdfText ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS) : 'None',
@@ -107,6 +111,16 @@ export function buildOutlinePrompt(
     mediaEnabled,
     researchContext: context.researchContext || 'None',
     teacherContext: context.teacherContext || '',
+    styleName: theme.label,
+    themeBackground: theme.tokens.background,
+    themeSurface: theme.tokens.surface,
+    themeText: theme.tokens.text,
+    themeMuted: theme.tokens.mutedText,
+    themeBorder: theme.tokens.border,
+    themeAccent: theme.tokens.accent,
+    themeColors: theme.tokens.colors.join(', '),
+    isLightStyle: !theme.tokens.isDark,
+    styleDirective,
   });
 
   if (!prompts) {

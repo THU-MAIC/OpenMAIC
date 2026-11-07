@@ -215,4 +215,21 @@ describe('SlideCanvas', () => {
       'none',
     );
   });
+
+  it('enforces strict light background when slide theme is light and solid color is dark', () => {
+    const darkBgSlide: Slide = {
+      ...slide,
+      theme: {
+        fontName: 'Arial',
+        fontColor: '#111111',
+        backgroundColor: '#ffffff',
+        themeColors: ['#111111'],
+      },
+      background: { type: 'solid', color: '#000000' },
+    };
+
+    const { container } = render(<SlideCanvas slide={darkBgSlide} scale={1} />);
+    const bgEl = container.querySelector<HTMLElement>('[data-slide-background]');
+    expect(bgEl?.style.backgroundColor).toBe('rgb(255, 255, 255)');
+  });
 });

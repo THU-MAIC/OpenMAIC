@@ -3,6 +3,7 @@
 import { useId, useRef, useEffect } from 'react';
 import type { InteractiveContent } from '@/lib/types/stage';
 import { useInteractiveIframePool } from '@/lib/store/interactive-iframe-pool';
+import { useStageStore } from '@/lib/store/stage';
 import { visibleClientRect } from '@/lib/edit/visible-client-rect';
 
 interface InteractiveRendererProps {
@@ -29,6 +30,7 @@ export function InteractiveRenderer({ content, sceneId }: InteractiveRendererPro
   const claim = useInteractiveIframePool((s) => s.claim);
   const release = useInteractiveIframePool((s) => s.release);
   const setActive = useInteractiveIframePool((s) => s.setActive);
+  const stageStyle = useStageStore((s) => s.stage?.style);
 
   // Register / activate / claim visibility while mounted; release (keep-alive) on
   // unmount. A content change re-runs this and rebuilds the iframe — the only
@@ -37,11 +39,12 @@ export function InteractiveRenderer({ content, sceneId }: InteractiveRendererPro
     mount(sceneId, {
       sourceHtml: content.html,
       src: content.html ? undefined : content.url,
+      style: stageStyle,
     });
     setActive(sceneId);
     claim(sceneId, owner);
     return () => release(sceneId, owner);
-  }, [sceneId, owner, content.html, content.url, mount, setActive, claim, release]);
+  }, [sceneId, owner, content.html, content.url, stageStyle, mount, setActive, claim, release]);
 
   // Track this slot's screen rect for the host. rAF loop mirrors useTrackedRect:
   // one getBoundingClientRect read resolves canvas scale, viewport offset and

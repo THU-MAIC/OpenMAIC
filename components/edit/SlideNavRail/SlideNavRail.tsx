@@ -204,7 +204,7 @@ export function SlideNavRail() {
     (insertIndex: number, type: EditableSceneType) => {
       if (!stage) return;
       const title = type === 'slide' ? t('edit.nav.untitledSlide') : t('edit.sceneType.quiz');
-      const scene = createBlankEditableScene(type, stage.id, title, insertIndex + 1);
+      const scene = createBlankEditableScene(type, stage.id, title, insertIndex + 1, stage.style);
       commitCourseEdit({}, () => {
         setScenes(insertSceneAtIndex(scenes, scene, insertIndex));
         setCurrentSceneId(scene.id);

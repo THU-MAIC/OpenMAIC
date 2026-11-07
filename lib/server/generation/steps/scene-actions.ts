@@ -44,6 +44,7 @@ export interface SceneActionsInput {
   previousSpeeches?: string[];
   userProfile?: string;
   languageDirective?: string;
+  style?: string;
   /** The scene-actions stage's model. */
   model: StepLanguageModel;
 }
@@ -169,7 +170,9 @@ export async function generateSceneActions(
   log.info(`Generated ${actions.length} actions for: "${outline.title}"`);
 
   // ── Build complete scene ──
-  const scene = buildCompleteScene(outline, generationContent, actions, stageId);
+  const scene = buildCompleteScene(outline, generationContent, actions, stageId, {
+    style: input.style,
+  });
 
   if (!scene) {
     log.error(`Failed to build scene: "${outline.title}"`);

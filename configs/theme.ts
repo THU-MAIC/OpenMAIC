@@ -1,5 +1,22 @@
 import type { PPTElementOutline, PPTElementShadow } from '@openmaic/dsl';
 
+export {
+  COURSE_STYLES,
+  DEFAULT_COURSE_STYLE,
+  VALID_COURSE_STYLE_IDS,
+  generateDesignTokenCss,
+  isColorDark,
+  isValidCourseStyle,
+  normalizeCourseStyle,
+  resolveCourseTheme,
+  resolveSubjectTheme,
+} from '@openmaic/generation';
+export type {
+  CourseDesignTokens,
+  CourseStyleId,
+  CourseTheme,
+} from '@openmaic/generation';
+
 export interface PresetTheme {
   background: string;
   fontColor: string;

@@ -23,6 +23,7 @@ describe('run input', () => {
       ok: true,
       value: {
         requirement: 'Teach fractions',
+        style: 'light',
         materialIds: [],
         interactive: false,
         taskEngine: false,
@@ -49,6 +50,7 @@ describe('run input', () => {
       ok: true,
       value: {
         requirement: 'Teach fractions',
+        style: 'light',
         materialIds: ['mat_00000000000000000000000000'],
         interactive: true,
         taskEngine: true,

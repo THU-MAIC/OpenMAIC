@@ -44,6 +44,7 @@ import {
 import type { PromptId } from './prompts/types.js';
 import { buildPrompt, PROMPT_IDS } from './prompts/index.js';
 import { buildSlideContentPrompt } from './scene-prompts.js';
+import { resolveCourseTheme, isColorDark, type CourseTheme } from './theme.js';
 import type {
   GeneratedInteractiveContent,
   GeneratedPBLContent,
@@ -119,6 +120,8 @@ export interface SceneContentOptions {
   baselineContent?: GeneratedSlideContent;
   /** Optional host fallback for the app-only loop planner. */
   pblLoopFallback?: (input: PBLPlannerV2Input) => Promise<PBLProject>;
+  style?: string;
+  theme?: CourseTheme;
   onFailure?: (failure: SceneContentFailure) => void;
   logger?: GenerationLogger;
 }
@@ -277,12 +280,28 @@ export async function generateSceneContent(
     }
 
     // Route to widget generation (handles all 5 types)
+    const resolvedTheme =
+      options.theme ??
+      resolveCourseTheme(options.style || options.userRequirements?.style, {
+        requirement: options.userRequirements?.requirement,
+        name: outline.title,
+      });
+
     return generateWidgetContent(outline, aiCall, languageDirective, {
       allowProceduralSkill,
       logger: log,
       onFailure: options.onFailure,
+      style: options.style,
+      theme: resolvedTheme,
     });
   }
+
+  const resolvedTheme =
+    options.theme ??
+    resolveCourseTheme(options.style || options.userRequirements?.style, {
+      requirement: options.userRequirements?.requirement,
+      name: outline.title,
+    });
 
   switch (outline.type) {
     case 'slide':
@@ -300,6 +319,7 @@ export async function generateSceneContent(
         baselineContent,
         log,
         options.onFailure,
+        resolvedTheme,
       );
     case 'quiz':
       return generateQuizContent(outline, aiCall, languageDirective, log, options.onFailure);
@@ -646,6 +666,7 @@ async function generateSlideContent(
   baselineContent?: GeneratedSlideContent,
   log: GenerationLogger = noopGenerationLogger,
   onFailure?: (failure: SceneContentFailure) => void,
+  theme?: CourseTheme,
 ): Promise<GeneratedSlideContent | null> {
   // Build assigned images description for the prompt
   let assignedImagesText = '无可用图片，禁止插入任何 image 元素';
@@ -745,6 +766,14 @@ async function generateSlideContent(
       assignedImages: assignedImagesText,
       teacherContext,
       languageDirective: languageDirective || '',
+      styleName: theme?.name || 'Light',
+      isLightStyle: theme ? theme.isLight : true,
+      themeBackground: theme?.tokens?.background || '#ffffff',
+      themeColors:
+        theme?.slideTheme?.themeColors?.join(', ') ||
+        theme?.tokens?.colors?.join(', ') ||
+        '#5b9bd5, #ed7d31',
+      themeAccent: theme?.tokens?.accent || '#2563eb',
     },
   );
 
@@ -872,13 +901,19 @@ async function generateSlideContent(
   let background: SlideBackground | undefined;
   if (generatedData.background) {
     if (generatedData.background.type === 'solid' && generatedData.background.color) {
-      background = { type: 'solid', color: generatedData.background.color };
+      let color = generatedData.background.color;
+      if (theme?.isLight && isColorDark(color)) {
+        color = theme.tokens.background;
+      }
+      background = { type: 'solid', color };
     } else if (generatedData.background.type === 'gradient' && generatedData.background.gradient) {
       background = {
         type: 'gradient',
         gradient: generatedData.background.gradient,
       };
     }
+  } else if (theme) {
+    background = { type: 'solid', color: theme.tokens.background };
   }
 
   return {
@@ -1264,6 +1299,14 @@ function extractHtml(
 
 // ==================== Ultra Mode Widget Generation ====================
 
+export interface GenerateWidgetContentOptions {
+  allowProceduralSkill?: boolean;
+  logger?: GenerationLogger;
+  onFailure?: (failure: SceneContentFailure) => void;
+  style?: string;
+  theme?: CourseTheme;
+}
+
 /**
  * Generate widget content based on widget type (Ultra Mode)
  */
@@ -1271,11 +1314,7 @@ export async function generateWidgetContent(
   outline: SceneOutline,
   aiCall: AICallFn,
   languageDirective?: string,
-  options: {
-    allowProceduralSkill?: boolean;
-    logger?: GenerationLogger;
-    onFailure?: (failure: SceneContentFailure) => void;
-  } = {},
+  options: GenerateWidgetContentOptions = {},
 ): Promise<GeneratedInteractiveContent | null> {
   const log = options.logger ?? noopGenerationLogger;
   const widgetType = outline.widgetType;
@@ -1285,6 +1324,23 @@ export async function generateWidgetContent(
     log.warn(`Interactive outline missing widget config, falling back to standard interactive`);
     return null;
   }
+
+  const theme =
+    options.theme ??
+    resolveCourseTheme(options.style, {
+      name: outline.title,
+    });
+  const themeVars = {
+    styleName: theme.name,
+    isLightStyle: theme.isLight,
+    themeBackground: theme.tokens.background,
+    themeSurface: theme.tokens.surface,
+    themeText: theme.tokens.text,
+    themeMuted: theme.tokens.mutedText,
+    themeBorder: theme.tokens.border,
+    themeAccent: theme.tokens.accent,
+    themeFont: theme.tokens.font,
+  };
 
   // Select appropriate prompt based on widget type
   let promptId: PromptId;
@@ -1300,6 +1356,7 @@ export async function generateWidgetContent(
         variables: widgetOutline.keyVariables?.join(', ') || '',
         designIdea: '',
         languageDirective: languageDirective || '',
+        ...themeVars,
       };
       break;
 
@@ -1316,6 +1373,7 @@ export async function generateWidgetContent(
         hasNodeCount: typeof widgetOutline.nodeCount === 'number' && widgetOutline.nodeCount > 0,
         hasPrescribedNodes: prescribedNodes.length > 0,
         languageDirective: languageDirective || '',
+        ...themeVars,
       };
       break;
     }
@@ -1331,6 +1389,7 @@ export async function generateWidgetContent(
         testCases: '', // AI generates appropriate test cases based on challenge
         hints: '', // AI generates progressive hints based on challenge
         languageDirective: languageDirective || '',
+        ...themeVars,
       };
       break;
 
@@ -1343,6 +1402,7 @@ export async function generateWidgetContent(
         keyPoints: (outline.keyPoints || []).join('\n'),
         scoring: { correctPoints: 10, speedBonus: 5 },
         languageDirective: languageDirective || '',
+        ...themeVars,
       };
       break;
 
@@ -1356,6 +1416,7 @@ export async function generateWidgetContent(
         objects: widgetOutline.objects || [],
         interactions: widgetOutline.interactions || [],
         languageDirective: languageDirective || '',
+        ...themeVars,
       };
       break;
 
@@ -1376,6 +1437,7 @@ export async function generateWidgetContent(
         successCriteria: widgetOutline.successCriteria || [],
         errorConsequences: widgetOutline.errorConsequences || [],
         languageDirective: languageDirective || '',
+        ...themeVars,
       };
       break;
 

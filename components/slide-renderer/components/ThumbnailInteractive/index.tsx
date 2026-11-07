@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, useEffect } from 'react';
 import type { InteractiveContent } from '@/lib/types/stage';
 import { patchHtmlForIframe } from '@/lib/utils/iframe';
+import { useStageStore } from '@/lib/store/stage';
 
 interface ThumbnailInteractiveProps {
   /** Interactive content to render */
@@ -47,9 +48,13 @@ export function ThumbnailInteractive({
   const scale = useMemo(() => size / viewportSize, [size, viewportSize]);
 
   // Patch HTML for iframe rendering (only when visible to save memory)
+  const stageStyle = useStageStore((s) => s.stage?.style);
   const patchedHtml = useMemo(
-    () => (isVisible && content.html ? patchHtmlForIframe(content.html) : undefined),
-    [isVisible, content.html],
+    () =>
+      isVisible && content.html
+        ? patchHtmlForIframe(content.html, undefined, { style: stageStyle })
+        : undefined,
+    [isVisible, content.html, stageStyle],
   );
 
   // Calculate thumbnail height (16:9 aspect ratio)

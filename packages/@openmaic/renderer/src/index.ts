@@ -19,7 +19,10 @@ export {
   type ZoomWrapperProps,
 } from './effects';
 
-export { useSlideBackgroundStyle } from './hooks/useSlideBackgroundStyle';
+export {
+  useSlideBackgroundStyle,
+  computeSlideBackgroundStyle,
+} from './hooks/useSlideBackgroundStyle';
 export {
   useViewportSize,
   type ViewportStyles,

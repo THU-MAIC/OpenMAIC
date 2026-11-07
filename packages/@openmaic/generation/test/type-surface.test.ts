@@ -29,6 +29,8 @@ type _SceneContentKeys = Assert<
     | 'editDirective'
     | 'baselineContent'
     | 'pblLoopFallback'
+    | 'style'
+    | 'theme'
     | 'onFailure'
     | 'logger'
   >
@@ -39,7 +41,7 @@ type _SceneActionKeys = Assert<
     'ctx' | 'agents' | 'userProfile' | 'languageDirective' | 'logger'
   >
 >;
-type _BuildKeys = Assert<Equal<keyof BuildCompleteSceneOptions, 'sceneId'>>;
+type _BuildKeys = Assert<Equal<keyof BuildCompleteSceneOptions, 'sceneId' | 'style' | 'theme'>>;
 type _PBLInputKeys = Assert<
   Equal<
     keyof PBLPlannerV2Input,

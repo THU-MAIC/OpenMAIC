@@ -33,7 +33,16 @@ import {
   X,
   Presentation,
   Loader2,
+  Palette,
 } from 'lucide-react';
+import { COURSE_STYLES, type CourseStyleId, normalizeCourseStyle } from '@/configs/theme';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import './home-mobile.css';
 import {
   DropdownMenu,
@@ -150,12 +159,14 @@ interface FormState {
   requirement: string;
   interactiveMode: boolean;
   vocationalTestMode: boolean;
+  style: CourseStyleId;
 }
 
 const initialFormState: FormState = {
   requirement: '',
   interactiveMode: false,
   vocationalTestMode: false,
+  style: 'light',
 };
 
 function HomePage() {
@@ -668,6 +679,7 @@ function HomePage() {
         interactive: form.vocationalTestMode ? true : form.interactiveMode,
         taskEngine: form.vocationalTestMode,
         capabilities,
+        style: form.style,
       });
       router.push(`/generation-preview?run=${encodeURIComponent(run.id)}`);
     } catch (err) {
@@ -1021,6 +1033,36 @@ function HomePage() {
                     {t('toolbar.interactiveModeHint')}
                   </TooltipContent>
                 </Tooltip>
+              )}
+
+              {!mobile && (
+                <div className="flex items-center">
+                  <Select
+                    value={form.style}
+                    onValueChange={(val) => updateForm('style', normalizeCourseStyle(val))}
+                  >
+                    <SelectTrigger
+                      data-testid="composer-style-select"
+                      className="h-8 rounded-full border border-zinc-200/80 bg-zinc-50/80 px-2.5 py-1 text-xs text-zinc-600 hover:border-zinc-300 hover:bg-zinc-100 hover:text-zinc-900 dark:border-zinc-700/80 dark:bg-zinc-800/80 dark:text-zinc-300 dark:hover:border-zinc-600 dark:hover:bg-zinc-750"
+                    >
+                      <Palette className="mr-1.5 size-3.5 text-zinc-500 dark:text-zinc-400" />
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent align="start" className="min-w-[150px]">
+                      {Object.entries(COURSE_STYLES).map(([id, info]) => (
+                        <SelectItem key={id} value={id} className="text-xs">
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className="inline-block size-2 rounded-full border border-black/10 dark:border-white/20"
+                              style={{ backgroundColor: info.tokens.background }}
+                            />
+                            <span>{info.label}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               )}
 
               {/* Keep the recorder mounted when text replaces its idle control. */}
@@ -1626,6 +1668,25 @@ function HomePage() {
                       label={t('toolbar.interactiveModeLabel')}
                       onPressedChange={(pressed) => updateForm('interactiveMode', pressed)}
                     />
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-sm text-zinc-600 dark:text-zinc-300">Style</span>
+                      <Select
+                        value={form.style}
+                        onValueChange={(val) => updateForm('style', normalizeCourseStyle(val))}
+                      >
+                        <SelectTrigger className="h-9 w-40 text-xs">
+                          <Palette className="mr-1.5 size-3.5" />
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent align="end">
+                          {Object.entries(COURSE_STYLES).map(([id, info]) => (
+                            <SelectItem key={id} value={id} className="text-xs">
+                              {info.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <button
                       type="button"
                       className="flex h-11 items-center gap-2 text-sm"

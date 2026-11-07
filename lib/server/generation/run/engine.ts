@@ -229,6 +229,7 @@ export function runRequirements(input: GenerationRunInput, webSearch: boolean): 
     ...(webSearch ? { webSearch: true } : {}),
     ...(input.interactive ? { interactiveMode: true } : {}),
     ...(input.taskEngine ? { taskEngineMode: true } : {}),
+    ...(input.style ? { style: input.style } : {}),
   };
 }
 
@@ -523,9 +524,11 @@ async function executeClaimedRun(
               requirements:
                 sceneIndex === 0
                   ? runRequirements(input, research?.webSearch === true)
-                  : taskEngineMode
-                    ? ({ taskEngineMode: true } as UserRequirements)
-                    : undefined,
+                  : {
+                      requirement: input.requirement,
+                      ...(taskEngineMode ? { taskEngineMode: true } : {}),
+                      ...(input.style ? { style: input.style } : {}),
+                    },
             },
             { log, signal: callSignal },
           ),
@@ -731,6 +734,7 @@ async function executeClaimedRun(
                   previousSpeeches: previousSpeechesFor(index),
                   ...(userProfile ? { userProfile } : {}),
                   languageDirective,
+                  ...(input.style ? { style: input.style } : {}),
                 },
                 { log, signal: callSignal },
               );
@@ -962,7 +966,7 @@ async function executeClaimedRun(
       id: output<MaterialOutput>('material-analysis')?.stageId ?? generateClassroomId(),
       name,
       description: '',
-      style: 'professional',
+      style: input.style || 'light',
       createdAt: now,
       updatedAt: now,
       interactiveMode: input.interactive,
