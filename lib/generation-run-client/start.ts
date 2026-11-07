@@ -71,6 +71,7 @@ export async function startClassicRun(input: {
   interactive: boolean;
   taskEngine: boolean;
   capabilities: ModelCapabilities;
+  style?: string;
 }): Promise<RunSnapshot> {
   const agents = await selectedRunAgents();
   const materialIds = [...input.materialIds];
@@ -92,6 +93,7 @@ export async function startClassicRun(input: {
     interactive: input.interactive,
     taskEngine: input.taskEngine,
     agents,
+    ...(input.style ? { style: input.style } : {}),
     ...(learnerProfile ? { learnerProfile } : {}),
     ...(voice ? { voice } : {}),
     // The learner who asked to always review outlines confirms each one; any

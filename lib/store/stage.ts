@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import {
   makeScene,
   type PBLContent,
+  type SlideContent,
   type Stage,
   type Scene,
   type SceneContent,
@@ -9,6 +10,8 @@ import {
   type StageMode,
   type GeneratedAgentConfig,
 } from '@/lib/types/stage';
+import { resolveCourseTheme, isColorDark } from '@openmaic/generation/browser';
+import { useInteractiveIframePool } from '@/lib/store/interactive-iframe-pool';
 import { createSelectors } from '@/lib/utils/create-selectors';
 import type { ChatSession } from '@/lib/types/chat';
 import type { SceneOutline } from '@/lib/types/generation';
@@ -624,6 +627,7 @@ interface StageState {
     configs: GeneratedAgentConfig[],
     options?: { readonly fromServer?: boolean; readonly agentIds?: string[] },
   ) => void;
+  setStageStyle: (style: string) => void;
   setOutlines: (outlines: SceneOutline[]) => void;
   setGenerationComplete: (complete: boolean) => void;
   /**
@@ -1077,6 +1081,71 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       ) {
         settings.setSelectedAgentIds(retained);
       }
+    }
+  },
+
+  setStageStyle: (style: string) => {
+    const currentStage = get().stage;
+    if (!currentStage) return;
+
+    const theme = resolveCourseTheme(style, {
+      name: currentStage.name,
+      id: currentStage.id,
+    });
+    const normalizedStyle = theme.id;
+    if (currentStage.style === normalizedStyle) return;
+
+    const prevTheme = resolveCourseTheme(currentStage.style);
+    const prevIsDark = !prevTheme.isLight;
+    const nextIsDark = !theme.isLight;
+
+    const updatedStage: Stage = { ...currentStage, style: normalizedStyle };
+    const changedSceneIds: string[] = [];
+
+    const updatedScenes = get().scenes.map((scene) => {
+      if (scene.content.type === 'slide') {
+        const slide = scene.content as SlideContent;
+        const canvas = slide.canvas;
+        changedSceneIds.push(scene.id);
+
+        const updatedElements = canvas.elements.map((el) => {
+          if (el.type === 'text' || el.type === 'shape') {
+            if (prevIsDark !== nextIsDark) {
+              const currentTextCol = (el as { defaultColor?: string }).defaultColor;
+              if (nextIsDark && (!currentTextCol || !isColorDark(currentTextCol))) {
+                return { ...el, defaultColor: theme.tokens.text };
+              } else if (!nextIsDark && (!currentTextCol || isColorDark(currentTextCol))) {
+                return { ...el, defaultColor: theme.tokens.text };
+              }
+            }
+          }
+          return el;
+        });
+
+        return makeScene(scene, {
+          ...slide,
+          canvas: {
+            ...canvas,
+            theme: theme.slideTheme,
+            background: { type: 'solid', color: theme.tokens.background },
+            elements: updatedElements,
+          },
+        });
+      }
+      return scene;
+    });
+
+    set({ stage: updatedStage, scenes: updatedScenes });
+    markPendingChanges(
+      currentStage.id,
+      { kind: 'stage' },
+      ...changedSceneIds.map((sceneId): PendingChange => ({ kind: 'scene', sceneId })),
+    );
+
+    try {
+      useInteractiveIframePool.getState().reset();
+    } catch {
+      // safe fallback if not running in DOM/browser
     }
   },
 

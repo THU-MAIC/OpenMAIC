@@ -7,6 +7,11 @@ import { capBodyStream } from '@/lib/server/capped-stream';
 import { normalizeSceneOutlines } from '@/lib/server/generation/outline-schema';
 import { MAX_CLASSROOM_MATERIALS } from '@/lib/server/classroom-materials';
 import { isMaterialId } from '@/lib/server/materials/material-id';
+import {
+  DEFAULT_COURSE_STYLE,
+  isValidCourseStyle,
+  normalizeCourseStyle,
+} from '@/configs/theme';
 import type { SceneOutline } from '@/lib/types/generation';
 
 import type { GenerationRunInput } from './types';
@@ -201,6 +206,18 @@ export function parseRunInput(raw: unknown): Parsed<GenerationRunInput> {
     };
   }
 
+  let style = DEFAULT_COURSE_STYLE;
+  if (body.style !== undefined) {
+    if (typeof body.style !== 'string' || !isValidCourseStyle(body.style)) {
+      return {
+        ok: false,
+        message:
+          'style must be one of "Light", "Dark", "Follow the subject", "Paper", "Graphite", "High-contrast"',
+      };
+    }
+    style = normalizeCourseStyle(body.style);
+  }
+
   return {
     ok: true,
     value: {
@@ -209,6 +226,7 @@ export function parseRunInput(raw: unknown): Parsed<GenerationRunInput> {
       interactive: interactive.value,
       taskEngine: taskEngine.value,
       agents,
+      style,
       ...(learnerProfile ? { learnerProfile } : {}),
       outlineReview,
       ...(voice ? { voice } : {}),

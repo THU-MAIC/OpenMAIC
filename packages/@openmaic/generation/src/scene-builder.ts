@@ -1,6 +1,7 @@
 import { nanoid } from 'nanoid';
 import type { Action, Slide, SlideTheme } from '@openmaic/dsl';
 import type { SceneOutline } from './outline-types.js';
+import { isColorDark, resolveCourseTheme } from './theme.js';
 import type {
   CompleteScene,
   GeneratedInteractiveContent,
@@ -16,6 +17,10 @@ export interface BuildCompleteSceneOptions {
    * The default remains a random `nanoid()` for drop-in compatibility.
    */
   sceneId?: string;
+  /** Course visual style (light, dark, paper, graphite, high-contrast, follow-subject). */
+  style?: string;
+  /** Explicit slide theme overriding default theme. */
+  theme?: SlideTheme;
 }
 
 /** Build a complete, store-independent scene from generated primitives. */
@@ -42,13 +47,23 @@ export function buildCompleteScene(
       outline: { color: '#d14424', width: 2, style: 'solid' },
       shadow: { h: 0, v: 0, blur: 10, color: '#000000' },
     };
+    const slideTheme = options.theme ?? (options.style ? resolveCourseTheme(options.style).slideTheme : defaultTheme);
+    let background = content.background;
+    if (!background) {
+      background = { type: 'solid', color: slideTheme.backgroundColor };
+    } else if (background.type === 'solid') {
+      const themeIsLight = !isColorDark(slideTheme.backgroundColor);
+      if (themeIsLight && background.color && isColorDark(background.color)) {
+        background = { ...background, color: slideTheme.backgroundColor };
+      }
+    }
     const canvas: Slide = {
       id: nanoid(),
       viewportSize: 1000,
       viewportRatio: 0.5625,
-      theme: defaultTheme,
+      theme: slideTheme,
       elements: content.elements,
-      background: content.background,
+      background,
     };
     return {
       id: sceneId,

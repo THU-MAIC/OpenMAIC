@@ -28,6 +28,7 @@ export interface UserRequirements {
   webSearch?: boolean;
   interactiveMode?: boolean;
   taskEngineMode?: boolean;
+  style?: string;
 }
 
 export interface WidgetOutline {

@@ -3,19 +3,22 @@
 import { useSceneSelector } from '@/lib/contexts/scene-context';
 import { useSlideBackgroundStyle } from '@/lib/hooks/use-slide-background-style';
 import type { SlideContent } from '@/lib/types/stage';
-import type { SlideBackground } from '@openmaic/dsl';
+import type { SlideBackground, SlideTheme } from '@openmaic/dsl';
 
 /**
  * Viewport background component using Scene Context
  * Renders the slide background from current scene data
  */
 export function ViewportBackground() {
-  // Subscribe only to background for performance
+  // Subscribe to background and theme for performance
   const background = useSceneSelector<SlideContent, SlideBackground | undefined>(
     (content) => content.canvas.background,
   );
+  const theme = useSceneSelector<SlideContent, SlideTheme | undefined>(
+    (content) => content.canvas.theme,
+  );
 
-  const { backgroundStyle: bgStyle } = useSlideBackgroundStyle(background);
+  const { backgroundStyle: bgStyle } = useSlideBackgroundStyle(background, theme);
 
   const backgroundStyle: React.CSSProperties = {
     ...bgStyle,

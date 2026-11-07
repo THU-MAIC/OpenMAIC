@@ -27,9 +27,10 @@ export function createBlankEditableScene(
   stageId: string,
   title: string,
   order: number,
+  style?: string,
 ): Scene {
   return type === 'slide'
-    ? createBlankSlideScene(stageId, title, order)
+    ? createBlankSlideScene(stageId, title, order, style)
     : createBlankQuizScene(stageId, title, order);
 }
 

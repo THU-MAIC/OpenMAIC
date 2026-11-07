@@ -24,6 +24,7 @@ import { Users } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { CanvasPager, type CanvasPagerProps } from '@/components/edit/EditShell/CanvasPager';
 import { RosterDialog } from '@/components/edit/AgentsView/RosterDialog';
+import { CourseStyleSelect } from '@/components/edit/CourseStyleSelect';
 import { ElementRefLassoButton } from './ElementRefLassoButton';
 
 /** The bar's own height, in px. The dock adds it to whatever the timeline is. */
@@ -64,6 +65,7 @@ export function DockEditBar({
             <Users className="size-3" />
             {t('edit.roster.shortTitle')}
           </button>
+          <CourseStyleSelect />
         </div>
 
         <div className="flex items-center justify-center">

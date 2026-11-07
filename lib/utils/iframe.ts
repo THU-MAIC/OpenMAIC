@@ -1,5 +1,10 @@
 import { mediaBridgeScript } from '@/lib/interactive/media-bridge';
-import { postProcessInteractiveHtml } from '@openmaic/generation/browser';
+import {
+  postProcessInteractiveHtml,
+  generateDesignTokenCss,
+  resolveCourseTheme,
+  type CourseDesignTokens,
+} from '@openmaic/generation/browser';
 import { injectIntoDocumentHead } from './html-document';
 import {
   withObservationResponder,
@@ -392,9 +397,18 @@ const ELEMENT_PICKER_SHIM = `<script data-iframe-element-picker-shim>
 export function patchHtmlForIframe(
   html: string,
   observation?: ObservationIdentity,
-  options?: { processed?: boolean; mediaId?: string },
+  options?: {
+    processed?: boolean;
+    mediaId?: string;
+    style?: string;
+    tokens?: CourseDesignTokens;
+  },
 ): string {
   if (!options?.processed) html = postProcessInteractiveHtml(html);
+  const tokens = options?.tokens ?? resolveCourseTheme(options?.style).tokens;
+  const tokenCss = generateDesignTokenCss(tokens);
+  const themeStyleTag = `<style data-openmaic-theme-tokens>\n${tokenCss}\n</style>`;
+
   const iframeCss = `<style data-iframe-patch>
   html, body {
     width: 100%;
@@ -410,6 +424,8 @@ export function patchHtmlForIframe(
 </style>`;
 
   const injection =
+    '\n' +
+    themeStyleTag +
     '\n' +
     ERROR_CAPTURE_SHIM +
     '\n' +

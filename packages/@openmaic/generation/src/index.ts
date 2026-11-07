@@ -16,6 +16,7 @@ export {
   resolveImageIds,
 } from './scene-generator.js';
 export type {
+  GenerateWidgetContentOptions,
   SceneActionsOptions,
   SceneContentFailure,
   SceneContentFailureCode,
@@ -29,6 +30,22 @@ export type {
 } from './scene-prompts.js';
 export { buildCompleteScene } from './scene-builder.js';
 export type { BuildCompleteSceneOptions } from './scene-builder.js';
+export {
+  COURSE_STYLES,
+  DEFAULT_COURSE_STYLE,
+  VALID_COURSE_STYLE_IDS,
+  generateDesignTokenCss,
+  isColorDark,
+  isValidCourseStyle,
+  normalizeCourseStyle,
+  resolveCourseTheme,
+  resolveSubjectTheme,
+} from './theme.js';
+export type {
+  CourseDesignTokens,
+  CourseStyleId,
+  CourseTheme,
+} from './theme.js';
 export {
   DEFAULT_MAX_DELAY_MS,
   isAbortError,

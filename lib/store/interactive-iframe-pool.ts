@@ -48,6 +48,7 @@ export interface IframePoolEntry {
   readonly sourceHtml?: string;
   /** URL for `src`, when the scene points at an external page. */
   readonly src?: string;
+  readonly style?: string;
   /** Full available slot rect. The host contain-fits one fixed logical viewport inside it. */
   readonly rect: IframeRect | null;
   /** Visible intersection of the slot with overflow ancestors. The host clips to this. */
@@ -70,6 +71,7 @@ interface MountInput {
   /** Authored HTML. The entry owns patching, so callers pass the source itself. */
   readonly sourceHtml?: string;
   readonly src?: string;
+  readonly style?: string;
 }
 
 interface InteractiveIframePoolState {
@@ -126,7 +128,12 @@ export const useInteractiveIframePool = create<InteractiveIframePoolState>((set)
       // the host never re-sets srcDoc (which would reload the iframe). Matching on
       // the authored source, not on the prepared document, is what makes a
       // placeholder remount with identical content hit this keep-alive path.
-      if (existing && existing.src === input.src && existing.sourceHtml === input.sourceHtml) {
+      if (
+        existing &&
+        existing.src === input.src &&
+        existing.sourceHtml === input.sourceHtml &&
+        existing.style === input.style
+      ) {
         const entries = { ...state.entries, [sceneId]: { ...existing, tick } };
         return { entries, tick };
       }
@@ -143,11 +150,13 @@ export const useInteractiveIframePool = create<InteractiveIframePoolState>((set)
               mediaId:
                 globalThis.crypto?.randomUUID?.() ??
                 `media-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+              style: input.style,
             })
           : undefined,
         observationIdentity,
         sourceHtml: input.sourceHtml,
         src: input.src,
+        style: input.style,
         rect: existing?.rect ?? null,
         clip: existing?.clip ?? null,
         owner: existing?.owner ?? null,

@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import type { EditorCommand } from '@/lib/edit/scene-editor-surface';
 import { useCourseHistory } from '@/lib/edit/use-course-history';
 import { classroomExitLabelKey, exitClassroom } from '@/lib/workbench/classroom-exit';
+import { CourseStyleSelect } from '@/components/edit/CourseStyleSelect';
 
 interface CommandBarProps {
   readonly title: string;
@@ -93,6 +94,7 @@ export function CommandBar({ title, commands, trailing }: CommandBarProps) {
             ))}
           </div>
         )}
+        <CourseStyleSelect />
         {trailing}
       </div>
     </header>

@@ -441,6 +441,7 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
           agents,
           languageDirective: doc.stage.languageDirective ?? '',
           allowProceduralSkill: true,
+          style: doc.stage.style,
           ...(assignedImages.length ? { assignedImages, imageMapping } : {}),
           ...(params.instruction ? { editDirective: params.instruction } : {}),
           ...(baseline ? { baselineContent: baseline } : {}),
@@ -502,6 +503,7 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
       );
       const built = buildCompleteScene(outline, content, actions, params.stageId, {
         sceneId: existing?.id ?? sceneIdFor(doc.scenes, params.order),
+        style: doc.stage.style,
       });
       if (!built) return result('Page assembly failed; nothing was written.', {}, true);
       const scene = built as Scene;

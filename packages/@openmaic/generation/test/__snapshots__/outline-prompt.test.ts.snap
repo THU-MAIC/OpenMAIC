@@ -417,6 +417,23 @@ None
 
 ---
 
+## Visual Theme & Style
+
+Course Style: **Light**
+Design Tokens:
+- Background: #ffffff
+- Surface: #f8fafc
+- Text / Ink: #0f172a
+- Muted Text: #64748b
+- Border: #e2e8f0
+- Accent: #2563eb
+- Primary Colors: #5b9bd5, #ed7d31, #a5a5a5, #ffc000, #4472c4, #70ad47
+
+CRITICAL: The style is Light. NEVER specify or design dark or black backgrounds for any scene.
+All planned scenes must adhere strictly to these design tokens and style.
+
+---
+
 ## Output Requirements
 
 Please automatically infer the following from user requirements:
@@ -971,6 +988,23 @@ Use a Socratic style.
 
 ---
 
+## Visual Theme & Style
+
+Course Style: **Light**
+Design Tokens:
+- Background: #ffffff
+- Surface: #f8fafc
+- Text / Ink: #0f172a
+- Muted Text: #64748b
+- Border: #e2e8f0
+- Accent: #2563eb
+- Primary Colors: #5b9bd5, #ed7d31, #a5a5a5, #ffc000, #4472c4, #70ad47
+
+CRITICAL: The style is Light. NEVER specify or design dark or black backgrounds for any scene.
+All planned scenes must adhere strictly to these design tokens and style.
+
+---
+
 ## Output Requirements
 
 Please automatically infer the following from user requirements:
@@ -1491,6 +1525,23 @@ None
 
 ---
 
+## Visual Theme & Style
+
+Course Style: **Light**
+Design Tokens:
+- Background: #ffffff
+- Surface: #f8fafc
+- Text / Ink: #0f172a
+- Muted Text: #64748b
+- Border: #e2e8f0
+- Accent: #2563eb
+- Primary Colors: #5b9bd5, #ed7d31, #a5a5a5, #ffc000, #4472c4, #70ad47
+
+CRITICAL: The style is Light. NEVER specify or design dark or black backgrounds for any scene.
+All planned scenes must adhere strictly to these design tokens and style.
+
+---
+
 ## Output Requirements
 
 Please automatically infer the following from user requirements:
@@ -1967,6 +2018,23 @@ None
 None
 
 
+
+---
+
+## Visual Theme & Style
+
+Course Style: **Light**
+Design Tokens:
+- Background: #ffffff
+- Surface: #f8fafc
+- Text / Ink: #0f172a
+- Muted Text: #64748b
+- Border: #e2e8f0
+- Accent: #2563eb
+- Primary Colors: #5b9bd5, #ed7d31, #a5a5a5, #ffc000, #4472c4, #70ad47
+
+CRITICAL: The style is Light. NEVER specify or design dark or black backgrounds for any scene.
+All planned scenes must adhere strictly to these design tokens and style.
 
 ---
 

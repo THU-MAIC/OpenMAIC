@@ -84,6 +84,8 @@ export interface GenerationRunInput {
   taskEngine: boolean;
   agents: GenerationRunAgents;
   learnerProfile?: { nickname?: string; bio?: string };
+  /** Course visual style / theme choice. */
+  style?: string;
   /**
    * How the outline is confirmed:
    * - `wait` holds the run for a `confirm-outline` command;

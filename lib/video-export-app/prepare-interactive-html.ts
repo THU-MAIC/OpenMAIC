@@ -27,6 +27,7 @@ export interface PrepareInteractiveHtmlOptions {
   baseUrl?: string;
   fetcher?: FetchAsset;
   maxHtmlBytes?: number;
+  style?: string;
 }
 
 function staticCaptureInjection(): string {
@@ -261,7 +262,7 @@ export async function prepareInteractiveHtmlScenes(
       }
 
       const packaged = injectIntoDocumentHead(
-        patchHtmlForIframe(sanitized, undefined, { processed: true }),
+        patchHtmlForIframe(sanitized, undefined, { processed: true, style: options.style }),
         staticCaptureInjection(),
       );
       const size = new TextEncoder().encode(packaged).byteLength;

@@ -424,7 +424,25 @@ updateReveal(); // Initial state, before any user action.
 // directly; each path renders and publishes its current state.
 \`\`\`
 
-If the activity has an apply/run step, capture the inputs a run actually used when it starts, and write them to \`rendered\` only after that run has successfully become the displayed result. A cancelled or superseded run must not update \`rendered\`, and a parameter edit alone must never advance it.",
+If the activity has an apply/run step, capture the inputs a run actually used when it starts, and write them to \`rendered\` only after that run has successfully become the displayed result. A cancelled or superseded run must not update \`rendered\`, and a parameter edit alone must never advance it.
+
+### Course Theme and Design Tokens
+
+The course style is **Light** (Light style: true).
+The runtime automatically injects design tokens as CSS variables on \`:root\`. Your interactive HTML and CSS MUST use these tokens instead of hardcoding page colors:
+
+- \`--color-background\`: Main container and page background (current: \`#ffffff\`).
+- \`--color-surface\`: Panel, card, or modal background (current: \`#f8fafc\`).
+- \`--color-text\`: Primary readable body and title text (current: \`#0f172a\`).
+- \`--color-muted\`: Secondary labels, hints, and muted text (current: \`#64748b\`).
+- \`--color-border\`: Borders, dividers, and card outlines (current: \`#e2e8f0\`).
+- \`--color-accent\`: Buttons, highlights, active states, and focal elements (current: \`#2563eb\`).
+- \`--font-family\`: Typography (current: \`system-ui, -apple-system, sans-serif\`).
+
+Rules:
+1. Use \`var(--color-background)\`, \`var(--color-surface)\`, \`var(--color-text)\`, etc. for styling.
+2. Do not define conflicting dark wrapper classes or arbitrary dark background styles when the style is Light.
+3. Strict Light guarantee: When the style is Light, the page and canvas backgrounds must be light and clean. Never output black or dark page backgrounds (\`#000\`, \`#0f172a\`, \`black\`, dark slate/gray full-bleed backgrounds).",
     "user": "Create a simulation widget for: Energy transfer
 
 ## Concept Overview

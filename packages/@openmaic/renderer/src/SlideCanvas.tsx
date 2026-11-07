@@ -136,7 +136,7 @@ export function SlideCanvas(props: SlideCanvasProps) {
   const canvasScale = scale ?? fitScale;
 
   const resolvedBackground = background ?? slide.background;
-  const { backgroundStyle } = useSlideBackgroundStyle(resolvedBackground);
+  const { backgroundStyle } = useSlideBackgroundStyle(resolvedBackground, slide.theme);
 
   // Plain derivations: when this package is consumed in a React Compiler build
   // these are auto-memoized; otherwise the cost (O(elements) lookups) is trivial.
@@ -199,6 +199,7 @@ export function SlideCanvas(props: SlideCanvasProps) {
         }}
       >
         <div
+          data-slide-background
           style={{
             width: '100%',
             height: '100%',

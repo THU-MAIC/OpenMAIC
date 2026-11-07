@@ -1,5 +1,6 @@
 import { nanoid } from 'nanoid';
 import type { Slide, SlideTheme, PPTElement } from '@openmaic/dsl';
+import { resolveCourseTheme } from '@/configs/theme';
 import type { Scene, SlideContent } from '@/lib/types/stage';
 import type { Action } from '@/lib/types/action';
 import { createElementIdMap } from '@/lib/utils/element';
@@ -25,14 +26,20 @@ const DEFAULT_THEME: SlideTheme = {
  * script timeline surfaces inline as a "fill me in" cue for the user / MAIC
  * Agent instead.
  */
-export function createBlankSlideScene(stageId: string, title: string, order: number): Scene {
+export function createBlankSlideScene(
+  stageId: string,
+  title: string,
+  order: number,
+  style?: string,
+): Scene {
+  const theme = style ? resolveCourseTheme(style).slideTheme : DEFAULT_THEME;
   const slide: Slide = {
     id: nanoid(),
     viewportSize: 1000,
     viewportRatio: 0.5625,
-    theme: DEFAULT_THEME,
+    theme,
     elements: [],
-    background: { type: 'solid', color: '#ffffff' },
+    background: { type: 'solid', color: theme.backgroundColor },
   };
 
   const content: SlideContent = {

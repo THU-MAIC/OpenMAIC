@@ -452,6 +452,7 @@ function prepareScene(
   media: StandaloneMediaResolution,
   resolver: MediaResolver,
   mediaId: string,
+  stageStyle?: string,
 ): ManifestScene {
   const actions = prepareStandaloneActions(scene.actions, media.playback?.audio, resolver);
   const rest: ManifestScene = {
@@ -485,7 +486,11 @@ function prepareScene(
       content: html
         ? {
             ...interactive,
-            html: patchHtmlForIframe(html, undefined, { processed: true, mediaId }),
+            html: patchHtmlForIframe(html, undefined, {
+              processed: true,
+              mediaId,
+              style: stageStyle,
+            }),
           }
         : { ...interactive, html: undefined },
     };
@@ -520,7 +525,7 @@ export function prepareStandaloneManifest(
     usePlaybackMedia: (path) => playbackMedia.add(path),
   };
   const scenes = orderManifestScenes(manifest.scenes).map((scene, index) =>
-    prepareScene(scene, media, resolver, `standalone-${index}`),
+    prepareScene(scene, media, resolver, `standalone-${index}`, manifest.stage.style),
   );
   const { videoManifest: _videoManifest, ...stage } = manifest.stage;
   return {

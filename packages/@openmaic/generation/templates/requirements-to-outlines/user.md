@@ -37,6 +37,10 @@ Infer the course language directive by applying the decision rules from the syst
 
 ---
 
+{{styleDirective}}
+
+---
+
 ## Output Requirements
 
 Please automatically infer the following from user requirements:
