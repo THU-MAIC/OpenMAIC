@@ -34,6 +34,7 @@ import type {
 import { DEFAULT_LANGUAGE_DIRECTIVE } from './outline-generator.js';
 import { postProcessInteractiveHtml } from './interactive-post-processor.js';
 import { findInteractiveScriptSyntaxFailure } from './interactive-script-validator.js';
+import { findInteractiveScriptRuntimeFailure } from './interactive-script-runtime-checker.js';
 import { parseActionsFromStructuredOutput } from './action-parser.js';
 import { parseJsonResponse } from './json-repair.js';
 import {
@@ -1406,6 +1407,19 @@ export async function generateWidgetContent(
   if (scriptSyntaxFailure) {
     log.error(
       `Generated ${widgetType} widget contains invalid inline JavaScript in script #${scriptSyntaxFailure.scriptIndex}: ${scriptSyntaxFailure.message}`,
+    );
+    options.onFailure?.({ code: 'invalid-model-output' });
+    return null;
+  }
+
+  // Reject widgets whose inline JavaScript compiles but throws at runtime
+  // (e.g. a ReferenceError on an undeclared element id, or a TypeError inside a
+  // slider handler). The syntax check above only compiles; this executes the
+  // script against a mock DOM and catches the white-screen class of bugs.
+  const scriptRuntimeFailure = findInteractiveScriptRuntimeFailure(html);
+  if (scriptRuntimeFailure) {
+    log.error(
+      `Generated ${widgetType} widget throws at runtime in script #${scriptRuntimeFailure.scriptIndex} (${scriptRuntimeFailure.phase}): ${scriptRuntimeFailure.message}`,
     );
     options.onFailure?.({ code: 'invalid-model-output' });
     return null;
