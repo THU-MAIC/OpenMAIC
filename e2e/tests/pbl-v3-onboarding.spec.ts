@@ -1861,12 +1861,27 @@ test('independent columns, narrow assistant and a single scrolling tab row', asy
     });
     await page.mouse.up();
   };
+  // Hero expansion and platform metrics can leave the tree near its 45% max.
+  // Start away from that constraint so shrinking the IDE tests pixel preservation.
+  const initial = await measure();
+  await drag(
+    page.getByRole('separator', { name: '调整文件目录宽度', exact: true }),
+    initial.ide.width * 0.24 - initial.files.width,
+  );
+  await expect
+    .poll(async () => {
+      const layout = await measure();
+      return layout.files.width / layout.ide.width;
+    })
+    .toBeCloseTo(0.24, 1);
   const before = await measure();
   await page.screenshot({ path: testInfo.outputPath('initial.png') });
   const dividers = page.getByRole('separator', { name: '调整工作区与助手宽度', exact: true });
   await drag(dividers.last(), 100);
   const outer = await measure();
   await page.screenshot({ path: testInfo.outputPath('outer-drag.png') });
+  // The tree must still fit below its max after the planned 60px IDE shrink.
+  expect(outer.files.width).toBeLessThan((outer.ide.width - 60) * 0.45 - 2);
   await drag(dividers.first(), -60);
   const inner = await measure();
   await page.screenshot({ path: testInfo.outputPath('inner-drag.png') });
