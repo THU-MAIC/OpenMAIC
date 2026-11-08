@@ -10,6 +10,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Sandbox: once a deployment enables sandboxes, any owner it admits may use them, including anonymous and shared-team owners; the `sandbox:use` role and the single-user requirement are gone, and `SANDBOX_FORBIDDEN` is no longer returned. Model calls were never gated by identity either. Each owner still reaches only its own sandboxes, files, previews and checkpoints. **On an anonymous public deployment this lets any visitor start billable sandboxes up to `maxActivePerOwner` and `maxActive`**: protect it with `ACCESS_CODE` or your own sign-in, keep the caps and lifetime low, and set a budget at the sandbox provider. See [SECURITY.md](SECURITY.md#deployment-assumptions).
 
+### Bug Fixes
+
+- Interactive pages: the page writer now receives the widget outline as written. Variables given as objects (name, range, unit) read as `angle (0–90, deg)` instead of `[object Object]`, the design idea is passed on instead of left empty, and outline fields with no slot of their own, such as controls or readouts, reach the prompt as additional design requirements. `@openmaic/generation` 0.3.30.
+- Interactive pages: a hosted library named with a version that does not exist on the hosted release line, such as `@tailwindcss/browser@4.11.18` for 4.1.18, now loads the hosted build instead of failing with a 404 and leaving the page unstyled or broken. This applies to both deployment-hosted `/vendor/interactive/` paths and public CDN URLs, including versions above the hosted one, at render time and in HTML/ZIP export. Unknown packages and other major versions (or other 0.x minors for pre-1.0 libraries) are left as written. `@openmaic/generation` 0.3.30.
+
 ## [1.4.1] - 2026-11-05
 
 1.4.1 is a regular patch release with no upgrade conditions over 1.4.0. Most of it stops edits and learner progress from being lost when a background sync crosses a save, makes courses open quickly again on slow connections, and fixes PBL v3 sandbox cleanup and tutoring. Upgrading from 1.3.x carries the conditions of [1.4.0](#140---2026-11-04), and the 1.4.0 **Known issues** still apply.
