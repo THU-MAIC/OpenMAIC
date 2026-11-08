@@ -43,15 +43,15 @@ describe('summarizeActivity', () => {
     });
   });
 
-  it('keeps a failure visible though the stretch went on, without a reason', () => {
+  it('counts a failure the stretch went on past, without a reason or an alarm', () => {
     const summary = summarizeActivity([failed('a'), done('b')]);
-    expect(summary).toMatchObject({ status: 'error', failedCount: 1 });
+    expect(summary).toMatchObject({ status: 'done', failedCount: 1 });
     expect(summary.failureReason).toBeUndefined();
   });
 
   it('gives the reason when the stretch stopped on the failure', () => {
     const summary = summarizeActivity([done('a'), failed('b')]);
-    expect(summary.status).toBe('error');
+    expect(summary.status).toBe('done');
     expect(summary.failureReason).toContain('语音没能合成');
   });
 
