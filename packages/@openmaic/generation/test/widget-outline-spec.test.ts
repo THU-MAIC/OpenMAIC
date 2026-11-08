@@ -35,6 +35,16 @@ function section(prompt: string, heading: string): string {
 }
 
 describe('simulation widget spec', () => {
+  test('keeps constraints such as step inside a structured range', async () => {
+    const prompt = await renderUserPrompt({
+      widgetOutline: {
+        concept: 'Projectile motion',
+        keyVariables: [{ name: 'speed', range: { min: 0, max: 100, step: 5 }, unit: 'm/s' }],
+      },
+    });
+    expect(section(prompt, 'Variables to Expose')).toBe('speed (0–100, step: 5, m/s)');
+  });
+
   test('formats object variables as readable text and keeps plain strings', async () => {
     const prompt = await renderUserPrompt({
       widgetOutline: {
