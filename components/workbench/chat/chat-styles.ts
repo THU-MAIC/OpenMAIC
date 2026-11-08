@@ -146,8 +146,8 @@ export const wbStyles = {
       'm-0 max-h-72 overflow-y-auto whitespace-pre-wrap break-words font-inherit text-[length:var(--wb-text-sm)] leading-relaxed text-[var(--wb-text-muted)]',
   },
   toolCard: {
-    box: 'group/tool m-0 overflow-hidden rounded-[var(--wb-radius-md)] border border-[var(--wb-line)] bg-[var(--wb-surface)] transition-colors duration-[var(--wb-duration-base)] data-[kind=skill]:border-[color-mix(in_srgb,var(--wb-accent)_40%,var(--wb-line))] data-[kind=skill]:bg-[var(--wb-accent-soft)] data-[status=failed]:border-[var(--wb-danger-line)] data-[stack=first]:rounded-none data-[stack=first]:border-0 data-[stack=middle]:rounded-none data-[stack=middle]:border-0 data-[stack=middle]:border-t data-[stack=middle]:border-[var(--wb-line)] data-[stack=last]:rounded-none data-[stack=last]:border-0 data-[stack=last]:border-t data-[stack=last]:border-[var(--wb-line)]',
-    head: 'flex min-h-[var(--wb-bar-min-h)] w-full cursor-pointer items-center gap-[var(--wb-bar-gap)] border-0 bg-transparent px-[var(--wb-bar-pad-x)] text-left text-[length:var(--wb-text-sm)] text-[var(--wb-text)] hover:not-disabled:bg-[var(--wb-surface-sunken)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus-ring)] disabled:cursor-default group-data-[open=true]/tool:bg-[var(--wb-surface-sunken)] group-data-[status=failed]/tool:bg-[var(--wb-danger-soft)]',
+    box: 'group/tool m-0 overflow-hidden rounded-[var(--wb-radius-md)] border border-[var(--wb-line)] bg-[var(--wb-surface)] transition-colors duration-[var(--wb-duration-base)] data-[kind=skill]:border-[color-mix(in_srgb,var(--wb-accent)_40%,var(--wb-line))] data-[kind=skill]:bg-[var(--wb-accent-soft)] data-[stack=first]:rounded-none data-[stack=first]:border-0 data-[stack=middle]:rounded-none data-[stack=middle]:border-0 data-[stack=middle]:border-t data-[stack=middle]:border-[var(--wb-line)] data-[stack=last]:rounded-none data-[stack=last]:border-0 data-[stack=last]:border-t data-[stack=last]:border-[var(--wb-line)]',
+    head: 'flex min-h-[var(--wb-bar-min-h)] w-full cursor-pointer items-center gap-[var(--wb-bar-gap)] border-0 bg-transparent px-[var(--wb-bar-pad-x)] text-left text-[length:var(--wb-text-sm)] text-[var(--wb-text)] hover:not-disabled:bg-[var(--wb-surface-sunken)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus-ring)] disabled:cursor-default group-data-[open=true]/tool:bg-[var(--wb-surface-sunken)]',
     status:
       'inline-flex shrink-0 items-center data-[status=ok]:text-[var(--wb-success)] data-[status=error]:text-[var(--wb-danger)]',
     icon: 'inline-flex shrink-0 items-center text-[var(--wb-text-faint)] group-data-[kind=skill]/tool:text-[var(--wb-accent)]',
@@ -287,16 +287,16 @@ export const wbStyles = {
   },
   toolGroup: {
     group:
-      'group/tool-group flex flex-col overflow-hidden rounded-[var(--wb-radius-md)] border border-[var(--wb-line)] bg-[var(--wb-surface)] data-[status=error]:border-[var(--wb-danger-line)]',
+      'group/tool-group flex flex-col overflow-hidden rounded-[var(--wb-radius-md)] border border-[var(--wb-line)] bg-[var(--wb-surface)]',
     head: 'flex h-8 w-full cursor-pointer select-none items-center gap-[var(--wb-bar-gap)] border-0 bg-transparent px-[var(--wb-bar-pad-x)] text-left text-[length:var(--wb-text-sm)] text-[var(--wb-text-muted)] hover:bg-[var(--wb-surface-sunken)] hover:text-[var(--wb-text)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus-ring)]',
     icon: 'inline-flex shrink-0 items-center text-[var(--wb-text-faint)]',
     title: 'min-w-0 truncate font-medium text-[var(--wb-text)]',
     meta: 'shrink-0 text-[var(--wb-text-faint)]',
     // The step under way, the only thing the line says while it runs.
     live: 'min-w-0 truncate font-medium text-[var(--wb-text)]',
-    failed: 'shrink-0 font-medium text-[var(--wb-danger)]',
+    failed: 'shrink-0 text-[var(--wb-text-faint)]',
     reason:
-      'min-w-0 flex-1 truncate pl-0.5 text-[length:var(--wb-text-xs)] text-[var(--wb-danger)]',
+      'min-w-0 flex-1 truncate pl-0.5 text-[length:var(--wb-text-xs)] text-[var(--wb-text-faint)]',
     time: 'shrink-0 pl-1 text-[length:var(--wb-text-xs)] tabular-nums text-[var(--wb-text-faint)]',
     car: 'inline-flex shrink-0 items-center text-[var(--wb-text-faint)] transition-transform duration-[var(--wb-duration-base)] group-data-[open=true]/tool-group:rotate-90',
     // The fold: one clipped grid row going 0fr → 1fr. `1fr` in an auto-height

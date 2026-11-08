@@ -82,7 +82,10 @@ export function summarizeActivity(
       : undefined;
   return {
     ...base,
-    status: failed.length > 0 ? 'error' : 'done',
+    // A tool erroring is routine inside an agent loop (the agent reads the error and
+    // goes on), so a settled stretch is never an alarm: the count and reason stay
+    // on the line as plain information.
+    status: 'done',
     durationMs,
     failureReason:
       last?.kind === 'tool' && isWorkbenchToolFailed(last)
