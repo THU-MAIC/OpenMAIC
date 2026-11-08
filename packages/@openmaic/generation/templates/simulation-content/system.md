@@ -10,7 +10,7 @@ Your output must be a complete HTML document with:
 2. **Embedded widget configuration** in a `<script type="application/json" id="widget-config">` tag
 3. **Interactive controls** for variables
 4. **Canvas or SVG visualization**
-5. **Layout that fills the frame** (see the frame and layout rules below)
+5. **Mobile-responsive design**
 6. **postMessage listener** for widget actions (REQUIRED)
 
 ## Widget Config Schema
@@ -109,10 +109,30 @@ To make highlight/annotation work, use consistent IDs for controls:
 
 ## CRITICAL Design Requirements
 
-### 1. Layout - NO OVERLAP
-- **Control panel MUST NOT overlap with the canvas**
-- Place the control panel beside or above/below the visualization so both share the frame (see the frame and layout rules below); a collapsible side drawer is fine if it never covers the simulation
-- Give the visualization the larger share of the space, and keep the control panel compact enough that nothing needs scrolling
+### 1. Mobile Layout - NO OVERLAP
+- **Control panel MUST NOT overlap with canvas on mobile**
+- Use one of these mobile-safe layouts:
+  - **Stacked layout**: Control panel on top, canvas below (with proper spacing)
+  - **Bottom sheet**: Control panel slides up from bottom on mobile
+  - **Side drawer**: Collapsible panel that doesn't block canvas
+- Test viewport widths: 320px, 375px, 414px, 768px
+- Use `min-height` for canvas to ensure it's visible on mobile
+- Control panel should be collapsible on mobile if large
+
+Example mobile-safe layout:
+```html
+<body class="flex flex-col min-h-screen md:flex-row">
+  <!-- Mobile: Full-width, collapsible control panel -->
+  <div id="controls" class="w-full md:w-80 shrink-0 overflow-auto max-h-[40vh] md:max-h-screen">
+    <!-- Controls here -->
+    <button onclick="toggleControls()" class="md:hidden">Hide Controls</button>
+  </div>
+  <!-- Canvas area gets remaining space -->
+  <div class="flex-1 min-h-[300px] relative">
+    <canvas id="canvas"></canvas>
+  </div>
+</body>
+```
 
 ### 2. Reset Button - MUST WORK CORRECTLY
 - **Reset button MUST return simulation to initial state**
@@ -174,7 +194,7 @@ function updateButton(text) {
 - Use `ResizeObserver` or window resize event
 - Canvas should fill available space but respect `max-height`
 - Don't use fixed pixel dimensions
-- Account for the control panel's size
+- Account for control panel height on mobile
 
 ### 6. Visual Feedback
 - Clear indication when simulation starts/pauses/ends
@@ -252,7 +272,7 @@ function updateButton(text) {
 | Bug | Cause | Solution |
 |-----|-------|----------|
 | Reset doesn't work | Button calls wrong function | Ensure reset function resets ALL state variables |
-| Canvas overlapped by controls | Fixed positioning | Use flex/grid so controls and canvas share the frame |
+| Canvas overlap on mobile | Fixed positioning | Use flex/grid with proper responsive classes |
 | Simulation stuck | Missing `ended` state | Track `ended` separately from `running` |
 | Button does nothing | State logic error | Clear state machine with defined transitions |
 | Touch issues | Small touch targets | Min 44px touch targets, larger sliders |
@@ -283,21 +303,19 @@ const objectY = baseY - BOTTOM_MARGIN - (value / maxValue) * playableHeight;
 
 ## Quality Checklist (verify before output)
 
-- [ ] Control panel does NOT overlap canvas, and the whole page fits the frame without scrolling
+- [ ] Control panel does NOT overlap canvas on mobile (test 320px width)
 - [ ] Reset button returns simulation to EXACT initial state
 - [ ] Button text matches button action correctly
 - [ ] Touch targets are at least 44px
 - [ ] Canvas resizes properly on window resize
 - [ ] State machine is clear (running/paused/ended)
 - [ ] All state variables reset on resetSimulation()
-- [ ] Layout adapts when the frame is wider or taller than 16:9
+- [ ] Works on both desktop and mobile browsers
 - [ ] **NO DUPLICATED HTML** - exactly ONE `<!DOCTYPE html>` tag
 - [ ] Simulation objects are visible and not hidden under UI overlays
 - [ ] **Visible animation: Objects visibly move/rotate when simulation runs**
 - [ ] **Animation is OBVIOUS, not subtle - user can tell simulation is running**
 
-
-{{snippet:interactive-viewport}}
 
 {{snippet:interactive-libraries}}
 
