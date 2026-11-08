@@ -233,17 +233,18 @@ export function reduceOwnerStreamSignal(
   };
 }
 
-export type SessionRowMarkKind = 'running' | 'awaiting' | 'failed';
+export type SessionRowMarkKind = 'running' | 'queued' | 'awaiting' | 'failed';
 
 /**
  * The one mark a rail chat row shows in place of its time, by precedence: a run
- * under way outranks a question waiting on the teacher, which outranks a
+ * waiting its turn (queued, a still clock) or under way (a spinner) outranks a question waiting on the teacher, which outranks a
  * failure (a question asked after a failed attempt is the newer fact). `null`
  * is the row at rest, which shows its relative time.
  */
 export function sessionRowMark(
   session: Pick<ProHomeSessionItem, 'status' | 'awaitingAnswer'>,
 ): SessionRowMarkKind | null {
+  if (session.status === 'queued') return 'queued';
   if (isLiveStatus(session.status)) return 'running';
   if (session.awaitingAnswer) return 'awaiting';
   if (session.status === 'failed') return 'failed';
