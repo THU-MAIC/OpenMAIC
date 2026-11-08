@@ -76,7 +76,8 @@ function quotaResponse(body: unknown): boolean {
   if (!isRecord(error)) return false;
   return (
     (typeof error.code === 'string' && QUOTA_CODES.has(error.code)) ||
-    error.type === 'insufficient_quota'
+    error.type === 'insufficient_quota' ||
+    error.type === 'insufficient_balance_error'
   );
 }
 

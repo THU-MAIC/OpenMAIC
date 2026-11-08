@@ -10,6 +10,8 @@
  * `register` must return before the server is ready, so nothing here may block
  * on I/O. Starting a timer does not.
  */
+const SCHEMA_RETIREMENT_TIMEOUT_MS = 30_000;
+
 export async function register(): Promise<void> {
   // Also invoked for the Edge runtime, which has neither `pg` nor timers we
   // want; the persistence stack is Node-only.
@@ -48,7 +50,8 @@ export async function register(): Promise<void> {
   // this release must not run against (upgraded by a newer release) stops the
   // process here rather than failing every request that touches the store
   // (lib/persistence/schema-boot-check.ts).
-  const { startSchemaBootCheck } = await import('@/lib/persistence/schema-boot-check');
+  const { startSchemaBootCheck, startRuntimeSchemaMonitor } =
+    await import('@/lib/persistence/schema-boot-check');
   void startSchemaBootCheck(process.env.DATABASE_URL ?? '');
 
   // Warn-only: the instance secret that seals keys saved in the model settings
@@ -68,6 +71,12 @@ export async function register(): Promise<void> {
   const { startAssetCollectorSchedule } =
     await import('@/lib/persistence/asset-collector-schedule');
   const assetSchedule = startAssetCollectorSchedule();
+  const { startCheckpointCollector } = await import('@/lib/server/sandbox/checkpoint-collector');
+  const checkpointSchedule = startCheckpointCollector();
+  const { startLearningLifecycle } = await import('@/lib/server/pbl-v3/lifecycle-schedule');
+  const learningLifecycle = startLearningLifecycle();
+  const { startTeachingExecutionWatchdog } = await import('@/lib/server/pbl-v3/execution-watchdog');
+  const teachingWatchdog = startTeachingExecutionWatchdog();
 
   // Warn-first boot-time validation of model routing config (MODEL_ROUTES,
   // DEFAULT_MODEL, <PREFIX>_MODELS). Cheap and non-throwing: broken config
@@ -91,6 +100,108 @@ export async function register(): Promise<void> {
   let materialExtractor:
     | import('@/lib/server/materials/extractor-wake').OwnerMaterialExtractorHandle
     | undefined;
+  let schemaMonitor: ReturnType<typeof startRuntimeSchemaMonitor> | undefined;
+  let shutdownPromise: Promise<void> | undefined;
+  const shutdown = (): Promise<void> => {
+    shutdownPromise ??= (async () => {
+      schemaMonitor?.stop();
+      // Stop every worker from claiming immediately, then await all parks before
+      // closing their shared pool. A busy extractor must not delay other stops.
+      const workers = [
+        ['Material extraction runner', extractionRunner],
+        ['Material extractor', materialExtractor],
+        ['Agent runner', runner],
+        ['Generation runner', generationRunner],
+      ] as const;
+      await Promise.all([
+        ...workers.map(async ([name, worker]) => {
+          try {
+            await worker?.stop();
+          } catch (error) {
+            console.error(`[instrumentation] ${name} drain failed`, error);
+          }
+        }),
+        (async () => {
+          try {
+            // Bounded: a provider call cannot be cancelled. A run still going
+            // when the pool closes cannot commit anything (every write of it
+            // checks its claim in a transaction of its own); its lease expires
+            // and another instance claims the source again.
+            const drained = await ownerExtractionRunner?.stop();
+            if (drained && !drained.drained) {
+              console.warn(
+                `[instrumentation] Owner extraction not drained: ${drained.running} run(s) still going`,
+              );
+            }
+          } catch (error) {
+            console.error('[instrumentation] Owner extraction runner drain failed', error);
+          }
+        })(),
+      ]);
+      try {
+        // Started at boot with the agent runtime, or on demand by the first
+        // stream that subscribes to it (a generation run's events).
+        await (
+          stopAgentEventNotifyBus ??
+          (await import('@/lib/server/agent-runtime/event-notify-bus')).stopAgentEventNotifyBus
+        )();
+      } catch (error) {
+        console.error('[instrumentation] Agent event notify bus drain failed', error);
+      }
+      try {
+        await legacyClassroomImport.stop();
+      } catch (error) {
+        console.error('[instrumentation] Legacy classroom import drain failed', error);
+      }
+      try {
+        await assetSchedule?.stop();
+      } catch (error) {
+        console.error('[instrumentation] Asset collector drain failed', error);
+      }
+      await checkpointSchedule?.stop();
+      await learningLifecycle?.stop();
+      await teachingWatchdog?.stop();
+      const connectionString = process.env.DATABASE_URL?.trim();
+      if (connectionString) {
+        try {
+          const { getServerPersistenceProvider } =
+            await import('@/lib/persistence/server-provider');
+          const { pool } = await getServerPersistenceProvider(connectionString);
+          await pool.end();
+        } catch (error) {
+          console.error('[instrumentation] Persistence pool shutdown failed', error);
+        }
+      }
+    })();
+    return shutdownPromise;
+  };
+  let schemaRetirement: Promise<void> | undefined;
+  const retireOnSchemaRefusal = (error: unknown): Promise<void> => {
+    schemaRetirement ??= (async () => {
+      let deadline: ReturnType<typeof setTimeout> | undefined;
+      const timedOut = new Promise<void>((resolve) => {
+        deadline = setTimeout(() => {
+          console.error(
+            `[instrumentation] Schema retirement timed out after ${SCHEMA_RETIREMENT_TIMEOUT_MS}ms; exiting with work still settling`,
+          );
+          resolve();
+        }, SCHEMA_RETIREMENT_TIMEOUT_MS);
+      });
+      try {
+        // Preserve normal parks and late-lease cleanup, but an incompatible
+        // process must still exit if a lock keeps pool.end() pending forever.
+        await Promise.race([shutdown(), timedOut]);
+      } catch (failure) {
+        console.error('[instrumentation] Schema retirement drain failed', failure);
+      } finally {
+        clearTimeout(deadline);
+      }
+      const { exitOnRuntimeSchemaRefusal } = await import('@/lib/server/boot-failure');
+      await exitOnRuntimeSchemaRefusal(error);
+    })();
+    return schemaRetirement;
+  };
+
   try {
     // Course generation runs on the server in every deployment (classic
     // generation is the default product), so its worker does not depend on
@@ -125,114 +236,47 @@ export async function register(): Promise<void> {
       // startAgentRunner only installs a timer. Store/schema initialization is
       // retained behind the store's lazy promise and never blocks register().
       const runtime = await import('@/lib/server/agent-runtime/runner');
-      runner = runtime.startAgentRunner();
+      runner = runtime.startAgentRunner({
+        onSchemaRefusal: retireOnSchemaRefusal,
+      });
       const extraction = await import('@/lib/server/material-extraction/runner');
-      extractionRunner = extraction.startMaterialExtractionRunner();
-      // Owner-level extraction of library sources (RFC #1716): what a
-      // conversation links is extracted once per owner, beside the session
-      // chain, which keeps serving copies made before links.
-      const ownerExtraction = await import('@/lib/server/material-extraction/owner-extraction');
-      ownerExtractionRunner = ownerExtraction.startOwnerExtractionRunner();
-      // Two bounded passes over old material objects, one per start each;
-      // neither blocks register() (see lib/server/materials/migrate-to-pool.ts).
-      const materialPasses = import('@/lib/server/materials/migrate-to-pool');
-      // Moving pre-pool material uploads into the asset pool is opt-in: it
-      // deletes their old objects, so an operator turns it on only once every
-      // instance runs this release.
-      if (process.env.MATERIALS_POOL_BACKFILL === '1') {
+      if (!shutdownPromise) extractionRunner = extraction.startMaterialExtractionRunner();
+      if (!shutdownPromise) {
+        // Owner-level extraction of library sources (RFC #1716): what a
+        // conversation links is extracted once per owner, beside the session
+        // chain, which keeps serving copies made before links.
+        const ownerExtraction = await import('@/lib/server/material-extraction/owner-extraction');
+        ownerExtractionRunner = ownerExtraction.startOwnerExtractionRunner();
+        // Two bounded passes over old material objects, one per start each;
+        // neither blocks register() (see lib/server/materials/migrate-to-pool.ts).
+        const materialPasses = import('@/lib/server/materials/migrate-to-pool');
+        // Moving pre-pool material uploads into the asset pool is opt-in: it
+        // deletes their old objects, so an operator turns it on only once every
+        // instance runs this release.
+        if (process.env.MATERIALS_POOL_BACKFILL === '1') {
+          void materialPasses
+            .then(({ migrateOwnerMaterialsToPool }) => migrateOwnerMaterialsToPool())
+            .then((report) => console.info('[material-backfill] pass finished', report))
+            .catch((error) => console.error('[material-backfill] pass failed', error));
+        }
+        // Old originals of deleted sources whose cleanup after deletion failed.
+        // No new read reaches a deleted row, and this only retries a cleanup
+        // the deletion already authorized, so it needs no flag.
         void materialPasses
-          .then(({ migrateOwnerMaterialsToPool }) => migrateOwnerMaterialsToPool())
-          .then((report) => console.info('[material-backfill] pass finished', report))
-          .catch((error) => console.error('[material-backfill] pass failed', error));
+          .then(({ removeDeletedOriginals }) => removeDeletedOriginals())
+          .then((report) => console.info('[material-delete] cleanup pass finished', report))
+          .catch((error) => console.error('[material-delete] cleanup pass failed', error));
       }
-      // Old originals of deleted sources whose cleanup after deletion failed.
-      // No new read reaches a deleted row, and this only retries a cleanup
-      // the deletion already authorized, so it needs no flag.
-      void materialPasses
-        .then(({ removeDeletedOriginals }) => removeDeletedOriginals())
-        .then((report) => console.info('[material-delete] cleanup pass finished', report))
-        .catch((error) => console.error('[material-delete] cleanup pass failed', error));
     }
   } catch (error) {
     console.error('[instrumentation] Agent runtime startup failed', error);
   }
 
-  let shutdownPromise: Promise<void> | undefined;
-  const shutdown = (): Promise<void> => {
-    shutdownPromise ??= (async () => {
-      // Park sessions before any pool they use is closed. This preserves the
-      // last durable entry-tree checkpoint for immediate takeover.
-      try {
-        await extractionRunner?.stop();
-      } catch (error) {
-        console.error('[instrumentation] Material extraction runner drain failed', error);
-      }
-      try {
-        // Bounded: a provider call cannot be cancelled. A run still going
-        // when the pool closes cannot commit anything (every write of it
-        // checks its claim in a transaction of its own); its lease expires
-        // and another instance claims the source again.
-        const drained = await ownerExtractionRunner?.stop();
-        if (drained && !drained.drained) {
-          console.warn(
-            `[instrumentation] Owner extraction not drained: ${drained.running} run(s) still going`,
-          );
-        }
-      } catch (error) {
-        console.error('[instrumentation] Owner extraction runner drain failed', error);
-      }
-      try {
-        await materialExtractor?.stop();
-      } catch (error) {
-        console.error('[instrumentation] Material extractor drain failed', error);
-      }
-      try {
-        await runner?.stop();
-      } catch (error) {
-        console.error('[instrumentation] Agent runner drain failed', error);
-      }
-      try {
-        await generationRunner?.stop();
-      } catch (error) {
-        console.error('[instrumentation] Generation runner drain failed', error);
-      }
-      try {
-        // Started at boot with the agent runtime, or on demand by the first
-        // stream that subscribes to it (a generation run's events).
-        await (
-          stopAgentEventNotifyBus ??
-          (await import('@/lib/server/agent-runtime/event-notify-bus')).stopAgentEventNotifyBus
-        )();
-      } catch (error) {
-        console.error('[instrumentation] Agent event notify bus drain failed', error);
-      }
-      try {
-        await legacyClassroomImport.stop();
-      } catch (error) {
-        console.error('[instrumentation] Legacy classroom import drain failed', error);
-      }
-      try {
-        await assetSchedule?.stop();
-      } catch (error) {
-        console.error('[instrumentation] Asset collector drain failed', error);
-      }
-      const connectionString = process.env.DATABASE_URL?.trim();
-      if (connectionString) {
-        try {
-          const { getServerPersistenceProvider } =
-            await import('@/lib/persistence/server-provider');
-          const { pool } = await getServerPersistenceProvider(connectionString);
-          await pool.end();
-        } catch (error) {
-          console.error('[instrumentation] Persistence pool shutdown failed', error);
-        }
-      }
-    })();
-    return shutdownPromise;
-  };
-
   process.once('SIGTERM', () => void shutdown());
   process.once('SIGINT', () => void shutdown());
+  // Generation and persistence remain active when the Agent feature is off.
+  // Start after all handles exist, and never revive monitoring during retirement.
+  if (!shutdownPromise) schemaMonitor = startRuntimeSchemaMonitor(retireOnSchemaRefusal);
 }
 
 /**
@@ -253,6 +297,10 @@ async function validateBootConfiguration(): Promise<void> {
   // `docker compose up` for a deployment).
   const { requireDatabaseUrl } = await import('@/lib/server/database-requirement');
   runConfigurationCheck(() => requireDatabaseUrl());
+  const { pblIdleTimeoutMs, pblArchiveFailureGraceMs } =
+    await import('@/lib/server/pbl-v3/lifecycle-config');
+  runConfigurationCheck(() => pblIdleTimeoutMs());
+  runConfigurationCheck(() => pblArchiveFailureGraceMs());
 
   // The deployment's model configuration: openmaic.yml (or the file named by
   // OPENMAIC_CONFIG), else the legacy provider variables translated. A

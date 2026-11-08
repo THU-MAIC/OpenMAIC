@@ -40,6 +40,14 @@ const roots: Root[] = [];
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
+// Load the rail once per file, outside any test's time budget: its first import
+// transforms a large module graph, which can take longer than the 5 s test
+// timeout on a loaded CI runner.
+let WorkspaceRail: typeof import('@/components/workbench/workspace/WorkspaceRail').WorkspaceRail;
+beforeAll(async () => {
+  ({ WorkspaceRail } = await import('@/components/workbench/workspace/WorkspaceRail'));
+}, 30_000);
+
 beforeAll(() => {
   if (!globalThis.PointerEvent) vi.stubGlobal('PointerEvent', MouseEvent);
   vi.stubGlobal(
@@ -67,7 +75,6 @@ const UNNAMED = 'session-unnamed';
 async function renderRail(
   courseFolder?: 'top' | 'folder',
 ): Promise<{ onRenameSession: ReturnType<typeof vi.fn>; moveCourse: ReturnType<typeof vi.fn> }> {
-  const { WorkspaceRail } = await import('@/components/workbench/workspace/WorkspaceRail');
   const onRenameSession = vi.fn(async () => null);
   const moveCourse = vi.fn();
   window.localStorage.setItem(RAIL_TAB_STORAGE_KEY, courseFolder ? 'courses' : 'sessions');

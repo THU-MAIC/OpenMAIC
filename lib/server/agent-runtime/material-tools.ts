@@ -389,18 +389,25 @@ function reportedExtraction(
   storedReasonCode: unknown,
   copy: MaterialModelCopy,
   context: 'library' | 'conversation' = 'library',
+  storedReasonValues?: unknown,
 ): ReportedExtraction {
   return {
     status,
     statusLabel: copy.statusLabel(status),
-    ...(status === 'failed' ? copy.failure(storedReasonCode, context) : {}),
+    ...(status === 'failed' ? copy.failure(storedReasonCode, context, storedReasonValues) : {}),
   };
 }
 
 /** The extraction state of a library source as the tools report it. */
 function ownerExtractionOf(entry: OwnerMaterialEntry, copy: MaterialModelCopy): ReportedExtraction {
   const status = libraryExtractionStatus(entry.extraction?.status);
-  return reportedExtraction(status, entry.extraction?.reasonCode, copy);
+  return reportedExtraction(
+    status,
+    entry.extraction?.reasonCode,
+    copy,
+    'library',
+    entry.extraction?.reasonValues,
+  );
 }
 
 /**

@@ -5,6 +5,8 @@
  * its leases and event log, the owner-bound document store, the asset pool
  * and the run API routes.
  */
+import { AudioProviderError } from '@/lib/audio/provider-error';
+import { QwenVoiceCloneError } from '@/lib/audio/qwen-voice-clone';
 import { createOpenAI } from '@ai-sdk/openai';
 import { NextRequest } from 'next/server';
 import { Pool } from 'pg';
@@ -274,6 +276,23 @@ function runInput(overrides: Partial<GenerationRunInput> = {}): GenerationRunInp
 
 async function claim(runId: string, workerId = 'worker-a', leaseTtlMs = 60_000) {
   return claimNextGenerationRun(workerId, { leaseTtlMs, maxTakeovers: 3, runId });
+}
+
+/**
+ * Take a run over once its lease is stale (`leaseTtlMs` 1). The claim skips a
+ * row another transaction has locked at that instant (`FOR UPDATE SKIP
+ * LOCKED`), and the dead worker can still hold it: a step call it abandoned
+ * when it stopped (a narration clip, an image) keeps running and writes
+ * through the lease fence, which locks the run row. Its lease stays stale, so
+ * a later claim takes the run over, as the runner's next scan would.
+ */
+async function takeOver(runId: string, workerId = 'worker-b') {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const claimed = await claim(runId, workerId, 1);
+    if (claimed) return claimed;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return null;
 }
 
 async function drive(runId: string, services: RunStepServices, workerId = 'worker-a') {
@@ -1045,7 +1064,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
 
     // Worker A stops heartbeating; once its lease is stale, B takes over.
     await new Promise((resolve) => setTimeout(resolve, 10));
-    const takeover = await claim(run.id, 'worker-b', 1);
+    const takeover = await takeOver(run.id);
     expect(takeover).toMatchObject({ takeover: true });
     expect(takeover!.lease.generation).toBe(claimA.lease.generation + 1);
     expect(takeover!.run.takeovers).toBe(1);
@@ -1550,6 +1569,25 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     // The clone failed once; that clip and every later one used the slot voice.
     expect(voices).toEqual([clone, 'Cherry', 'Cherry', 'Cherry']);
   });
+
+  it.each([
+    [new AudioProviderError('EXAMPLE_RECREATE', 409, 'voice-incompatible'), 1, 'EXAMPLE_RECREATE'],
+    [new QwenVoiceCloneError('QWEN_VC_RECLONE_REQUIRED', 409), 1, 'QWEN_VC_RECLONE_REQUIRED'],
+    [new QwenVoiceCloneError('QWEN_VC_TIMEOUT', 504), 3, 'INTERNAL_ERROR'],
+    [new QwenVoiceCloneError('QWEN_VC_HTTP_ERROR', 503), 3, 'INTERNAL_ERROR'],
+  ] as const)(
+    'preserves narration retry and public failure for $0.code',
+    async (error, attempts, errorCode) => {
+      const narrateClip = vi.fn().mockRejectedValue(error);
+      const { services } = fakeServices({ research: async () => null, narrateClip });
+      const run = await start(runInput({ outlineReview: 'auto' }));
+      expect(await drive(run.id, services)).toBe('paused');
+      expect(narrateClip).toHaveBeenCalledTimes(attempts);
+      const stored = (await readGenerationRun(run.id, OWNER))!;
+      expect(stored.error?.errorCode).toBe(errorCode);
+      expect(stored.progress.scenesCompleted).toBe(0);
+    },
+  );
 
   it('releases the clips of a narration attempt that failed', async () => {
     const base = fakeServices({ research: async () => null });
@@ -2571,12 +2609,12 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       abortA.abort();
       expect(await executionA).toBe('interrupted');
       await new Promise((resolve) => setTimeout(resolve, 10));
-      const takeover = (await claim(run.id, 'worker-b', 1))!;
+      const takeover = (await takeOver(run.id))!;
       expect(takeover).toMatchObject({ takeover: true });
 
       const resumed = mediaServices();
       expect(
-        await executeGenerationRun(takeover, {
+        await executeGenerationRun(takeover!, {
           services: resumed.services,
           signal: new AbortController().signal,
         }),
@@ -2639,7 +2677,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
         },
       });
       await new Promise((resolve) => setTimeout(resolve, 10));
-      const takeover = (await claim(run.id, 'worker-b', 1))!;
+      const takeover = (await takeOver(run.id))!;
       const resumed = mediaServices({
         mediaConnections: async () => ({ image: ready('seedream'), video: OFF }),
       });

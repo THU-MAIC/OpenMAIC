@@ -1,0 +1,898 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-23",
+  "issue": 1995,
+  "branch": "fix/1995-sandbox-lifecycle",
+  "baseBranch": "origin/integration/shared-sandbox",
+  "baseCommit": "8f737ad715647304156f6377e0bf5bdb3705faec",
+  "productCodeChanged": false,
+  "environment": {
+    "app": "Next.js 16.3.3 development server on local host",
+    "node": "22.23.1",
+    "sandbox": "Real configured E2B-compatible cloud provider",
+    "sandboxLeaseMs": 300000,
+    "checkpointStorage": "Local S3-compatible s3rver; no production object-storage network measured",
+    "model": "Paratera DeepSeek-V4.1-Flash",
+    "fixture": {
+      "id": "greeting-python-lab",
+      "version": "1.1.0",
+      "milestones": 2,
+      "stagesPerMilestone": 7,
+      "sourceFiles": ["PLAN.md", "src/greeting.py"],
+      "finalCheckpointBytes": 20480,
+      "thirdPartyDependencies": false
+    },
+    "concurrency": 1
+  },
+  "method": {
+    "operationTiming": "Host HTTP request wall time, except cleanup-provider uses SDK; operation labels denote included work",
+    "agentTiming": "Submission until role no longer busy, polled every 2 seconds; includes scheduling and tool operations",
+    "stageTiming": "Sum of timed command calls and Agent waits; includes stage exit next; excludes operator reading/thinking and most preliminary view/file GETs",
+    "manualSave": "Three changed PLAN.md saves, about 8.5 KiB, before final planning approval",
+    "limitations": [
+      "One small synthetic learning project, scripted learner answers, not a human lesson-duration estimate",
+      "First dev requests may include Next.js compilation",
+      "No concurrent load or CPU/memory utilization benchmark",
+      "Local object storage means cloud object storage archive/restore latency remains unmeasured",
+      "Generic save-and-release measured unchanged 10 KiB archive; PBL checkpoints additionally read sources and inspect prior command receipts"
+    ]
+  },
+  "stageResults": [
+    {
+      "milestone": "greeting",
+      "stageIndex": 0,
+      "stage": "teaching",
+      "measuredCommandAndAgentWaitMs": 106732,
+      "agentTurns": 3,
+      "agentWaitMs": 106235,
+      "includesStageExitCheckpoint": false,
+      "includesFinalCheckpoint": false
+    },
+    {
+      "milestone": "greeting",
+      "stageIndex": 1,
+      "stage": "decision",
+      "measuredCommandAndAgentWaitMs": 27541,
+      "agentTurns": 1,
+      "agentWaitMs": 25930,
+      "includesStageExitCheckpoint": false,
+      "includesFinalCheckpoint": false
+    },
+    {
+      "milestone": "greeting",
+      "stageIndex": 2,
+      "stage": "planning",
+      "measuredCommandAndAgentWaitMs": 118308,
+      "agentTurns": 3,
+      "agentWaitMs": 113621,
+      "includesStageExitCheckpoint": true,
+      "includesFinalCheckpoint": false
+    },
+    {
+      "milestone": "greeting",
+      "stageIndex": 3,
+      "stage": "coding",
+      "measuredCommandAndAgentWaitMs": 180644,
+      "agentTurns": 3,
+      "agentWaitMs": 167421,
+      "includesStageExitCheckpoint": true,
+      "includesFinalCheckpoint": false
+    },
+    {
+      "milestone": "greeting",
+      "stageIndex": 4,
+      "stage": "evaluation",
+      "measuredCommandAndAgentWaitMs": 12984,
+      "agentTurns": 0,
+      "agentWaitMs": 0,
+      "includesStageExitCheckpoint": false,
+      "includesFinalCheckpoint": false
+    },
+    {
+      "milestone": "greeting",
+      "stageIndex": 5,
+      "stage": "quiz",
+      "measuredCommandAndAgentWaitMs": 1189,
+      "agentTurns": 0,
+      "agentWaitMs": 0,
+      "includesStageExitCheckpoint": false,
+      "includesFinalCheckpoint": false
+    },
+    {
+      "milestone": "greeting",
+      "stageIndex": 6,
+      "stage": "recap",
+      "measuredCommandAndAgentWaitMs": 132152,
+      "agentTurns": 3,
+      "agentWaitMs": 128169,
+      "includesStageExitCheckpoint": true,
+      "includesFinalCheckpoint": false
+    },
+    {
+      "milestone": "normalize",
+      "stageIndex": 0,
+      "stage": "teaching",
+      "measuredCommandAndAgentWaitMs": 86555,
+      "agentTurns": 2,
+      "agentWaitMs": 86028,
+      "includesStageExitCheckpoint": false,
+      "includesFinalCheckpoint": false
+    },
+    {
+      "milestone": "normalize",
+      "stageIndex": 1,
+      "stage": "decision",
+      "measuredCommandAndAgentWaitMs": 22033,
+      "agentTurns": 1,
+      "agentWaitMs": 21514,
+      "includesStageExitCheckpoint": false,
+      "includesFinalCheckpoint": false
+    },
+    {
+      "milestone": "normalize",
+      "stageIndex": 2,
+      "stage": "planning",
+      "measuredCommandAndAgentWaitMs": 174156,
+      "agentTurns": 3,
+      "agentWaitMs": 161957,
+      "includesStageExitCheckpoint": true,
+      "includesFinalCheckpoint": false
+    },
+    {
+      "milestone": "normalize",
+      "stageIndex": 3,
+      "stage": "coding",
+      "measuredCommandAndAgentWaitMs": 122316,
+      "agentTurns": 2,
+      "agentWaitMs": 108325,
+      "includesStageExitCheckpoint": true,
+      "includesFinalCheckpoint": false
+    },
+    {
+      "milestone": "normalize",
+      "stageIndex": 4,
+      "stage": "evaluation",
+      "measuredCommandAndAgentWaitMs": 11618,
+      "agentTurns": 0,
+      "agentWaitMs": 0,
+      "includesStageExitCheckpoint": false,
+      "includesFinalCheckpoint": false
+    },
+    {
+      "milestone": "normalize",
+      "stageIndex": 5,
+      "stage": "quiz",
+      "measuredCommandAndAgentWaitMs": 1259,
+      "agentTurns": 0,
+      "agentWaitMs": 0,
+      "includesStageExitCheckpoint": false,
+      "includesFinalCheckpoint": false
+    },
+    {
+      "milestone": "normalize",
+      "stageIndex": 6,
+      "stage": "recap",
+      "measuredCommandAndAgentWaitMs": 125069,
+      "agentTurns": 3,
+      "agentWaitMs": 125069,
+      "includesStageExitCheckpoint": false,
+      "includesFinalCheckpoint": true
+    }
+  ],
+  "milestoneResults": [
+    {
+      "milestone": "greeting",
+      "measuredCommandAndAgentWaitMs": 579550,
+      "agentTurns": 13,
+      "observedWorkflowWallMs": 1288307
+    },
+    {
+      "milestone": "normalize",
+      "measuredCommandAndAgentWaitMs": 543006,
+      "agentTurns": 11,
+      "observedWorkflowWallMs": 1276807
+    }
+  ],
+  "observations": [
+    "Both milestones and all 14 stages completed; learning report available",
+    "Completed PBL still had a running cloud sandbox; no immediate release",
+    "Cloud sandbox later expired under the 5-minute provider lease; final checkpoint stayed at revision 6",
+    "Stored environment state stayed running until explicit reconcile consulted the provider",
+    "All six benchmark environment records confirmed destroyed at cleanup",
+    "Initial Agent failed due to provider balance; successful stage totals begin with retry using the supplied Paratera model",
+    "Manual save produced a new file version and required fresh plan review confirmation"
+  ],
+  "checkpoint": {
+    "pblFinalRevision": 6,
+    "pblFinalBytes": 20480,
+    "genericFinalRevision": 4,
+    "genericFinalBytes": 10240
+  },
+  "measurements": [
+    {
+      "label": "generic.create-and-initialize",
+      "elapsedMs": 3109,
+      "at": "2026-10-23T06:55:13.020Z"
+    },
+    {
+      "label": "generic.write-1",
+      "elapsedMs": 1860,
+      "at": "2026-10-23T06:55:14.883Z"
+    },
+    {
+      "label": "generic.read-1",
+      "elapsedMs": 867,
+      "at": "2026-10-23T06:55:15.752Z"
+    },
+    {
+      "label": "generic.write-2",
+      "elapsedMs": 583,
+      "at": "2026-10-23T06:55:16.336Z"
+    },
+    {
+      "label": "generic.read-2",
+      "elapsedMs": 961,
+      "at": "2026-10-23T06:55:17.298Z"
+    },
+    {
+      "label": "generic.write-3",
+      "elapsedMs": 655,
+      "at": "2026-10-23T06:55:17.954Z"
+    },
+    {
+      "label": "generic.read-3",
+      "elapsedMs": 983,
+      "at": "2026-10-23T06:55:18.938Z"
+    },
+    {
+      "label": "generic.checkpoint",
+      "elapsedMs": 1689,
+      "at": "2026-10-23T06:55:20.628Z"
+    },
+    {
+      "label": "generic.cleanup",
+      "elapsedMs": 584,
+      "at": "2026-10-23T06:56:22.402Z"
+    },
+    {
+      "label": "pbl.sample",
+      "elapsedMs": 96,
+      "at": "2026-10-23T06:56:33.538Z"
+    },
+    {
+      "label": "pbl.open",
+      "elapsedMs": 22,
+      "at": "2026-10-23T06:56:33.562Z"
+    },
+    {
+      "label": "pbl.prepare",
+      "elapsedMs": 6781,
+      "at": "2026-10-23T06:56:40.344Z"
+    },
+    {
+      "label": "pbl.view",
+      "elapsedMs": 799,
+      "at": "2026-10-23T06:56:49.586Z"
+    },
+    {
+      "label": "pbl.read-1",
+      "elapsedMs": 2804,
+      "at": "2026-10-23T06:57:35.091Z",
+      "fileBytes": 0
+    },
+    {
+      "label": "pbl.read-2",
+      "elapsedMs": 1325,
+      "at": "2026-10-23T06:57:36.419Z",
+      "fileBytes": 0
+    },
+    {
+      "label": "pbl.read-3",
+      "elapsedMs": 1099,
+      "at": "2026-10-23T06:57:37.518Z",
+      "fileBytes": 0
+    },
+    {
+      "label": "pbl.begin",
+      "elapsedMs": 3006,
+      "responseMs": 602,
+      "at": "2026-10-23T06:57:48.453Z",
+      "milestone": "greeting",
+      "stageIndex": 0,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 0,
+      "roleRun": "failed",
+      "failure": "model-provider-insufficient-balance",
+      "excludeFromSuccessfulStageTotals": true
+    },
+    {
+      "label": "pbl.prepare",
+      "elapsedMs": 6335,
+      "responseMs": 6335,
+      "at": "2026-10-23T07:04:54.244Z",
+      "milestone": "greeting",
+      "stageIndex": 0,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 0,
+      "roleRun": "failed"
+    },
+    {
+      "label": "pbl.retry",
+      "elapsedMs": 56799,
+      "responseMs": 491,
+      "at": "2026-10-23T07:06:18.271Z",
+      "milestone": "greeting",
+      "stageIndex": 0,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 0,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.chat",
+      "elapsedMs": 26041,
+      "responseMs": 666,
+      "at": "2026-10-23T07:07:49.286Z",
+      "milestone": "greeting",
+      "stageIndex": 0,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 0,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.chat",
+      "elapsedMs": 23395,
+      "responseMs": 526,
+      "at": "2026-10-23T07:08:24.680Z",
+      "milestone": "greeting",
+      "stageIndex": 0,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 0,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.next",
+      "elapsedMs": 497,
+      "responseMs": 497,
+      "at": "2026-10-23T07:08:36.813Z",
+      "milestone": "greeting",
+      "stageIndex": 0,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 1
+    },
+    {
+      "label": "pbl.begin",
+      "elapsedMs": 25930,
+      "responseMs": 554,
+      "at": "2026-10-23T07:09:36.458Z",
+      "milestone": "greeting",
+      "stageIndex": 1,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 1,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.decide",
+      "elapsedMs": 609,
+      "responseMs": 609,
+      "at": "2026-10-23T07:09:47.180Z",
+      "milestone": "greeting",
+      "stageIndex": 1,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 1,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.next",
+      "elapsedMs": 1002,
+      "responseMs": 1002,
+      "at": "2026-10-23T07:10:07.627Z",
+      "milestone": "greeting",
+      "stageIndex": 1,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 2
+    },
+    {
+      "label": "pbl.begin",
+      "elapsedMs": 42293,
+      "responseMs": 395,
+      "at": "2026-10-23T07:11:32.277Z",
+      "milestone": "greeting",
+      "stageIndex": 2,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 2,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.chat",
+      "elapsedMs": 35280,
+      "responseMs": 518,
+      "at": "2026-10-23T07:13:32.783Z",
+      "milestone": "greeting",
+      "stageIndex": 2,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 2,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.chat",
+      "elapsedMs": 36048,
+      "responseMs": 584,
+      "at": "2026-10-23T07:14:34.376Z",
+      "milestone": "greeting",
+      "stageIndex": 2,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 2,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.next",
+      "elapsedMs": 4687,
+      "responseMs": 4687,
+      "at": "2026-10-23T07:14:50.299Z",
+      "milestone": "greeting",
+      "stageIndex": 2,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 3
+    },
+    {
+      "label": "pbl.begin",
+      "elapsedMs": 65832,
+      "responseMs": 521,
+      "at": "2026-10-23T07:16:07.297Z",
+      "milestone": "greeting",
+      "stageIndex": 3,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 3,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.chat",
+      "elapsedMs": 52637,
+      "responseMs": 578,
+      "at": "2026-10-23T07:17:32.122Z",
+      "milestone": "greeting",
+      "stageIndex": 3,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 3,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.compile",
+      "elapsedMs": 3725,
+      "responseMs": 3724,
+      "at": "2026-10-23T07:18:09.685Z",
+      "milestone": "greeting",
+      "stageIndex": 3,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 3,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.collect",
+      "elapsedMs": 2769,
+      "responseMs": 2769,
+      "at": "2026-10-23T07:18:42.321Z",
+      "milestone": "greeting",
+      "stageIndex": 3,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 3,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.chat",
+      "elapsedMs": 48952,
+      "responseMs": 521,
+      "at": "2026-10-23T07:19:53.578Z",
+      "milestone": "greeting",
+      "stageIndex": 3,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 3,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.next",
+      "elapsedMs": 6729,
+      "responseMs": 6729,
+      "at": "2026-10-23T07:20:11.207Z",
+      "milestone": "greeting",
+      "stageIndex": 3,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 4
+    },
+    {
+      "label": "pbl.evaluate",
+      "elapsedMs": 5046,
+      "responseMs": 5046,
+      "at": "2026-10-23T07:20:33.751Z",
+      "milestone": "greeting",
+      "stageIndex": 4,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 4
+    },
+    {
+      "label": "pbl.collect",
+      "elapsedMs": 4566,
+      "responseMs": 4566,
+      "at": "2026-10-23T07:21:16.459Z",
+      "milestone": "greeting",
+      "stageIndex": 4,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 4
+    },
+    {
+      "label": "pbl.next",
+      "elapsedMs": 3372,
+      "responseMs": 3372,
+      "at": "2026-10-23T07:21:37.715Z",
+      "milestone": "greeting",
+      "stageIndex": 4,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 5
+    },
+    {
+      "label": "pbl.quiz",
+      "elapsedMs": 635,
+      "responseMs": 635,
+      "at": "2026-10-23T07:22:14.002Z",
+      "milestone": "greeting",
+      "stageIndex": 5,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 5
+    },
+    {
+      "label": "pbl.next",
+      "elapsedMs": 554,
+      "responseMs": 554,
+      "at": "2026-10-23T07:22:46.246Z",
+      "milestone": "greeting",
+      "stageIndex": 5,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 6
+    },
+    {
+      "label": "pbl.begin",
+      "elapsedMs": 50694,
+      "responseMs": 802,
+      "at": "2026-10-23T07:24:05.563Z",
+      "milestone": "greeting",
+      "stageIndex": 6,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 6,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.chat",
+      "elapsedMs": 42783,
+      "responseMs": 457,
+      "at": "2026-10-23T07:25:09.720Z",
+      "milestone": "greeting",
+      "stageIndex": 6,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 6,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.chat",
+      "elapsedMs": 34692,
+      "responseMs": 674,
+      "at": "2026-10-23T07:26:19.267Z",
+      "milestone": "greeting",
+      "stageIndex": 6,
+      "resultMilestone": "greeting",
+      "resultStageIndex": 6,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.next",
+      "elapsedMs": 3983,
+      "responseMs": 3983,
+      "at": "2026-10-23T07:26:49.779Z",
+      "milestone": "greeting",
+      "stageIndex": 6,
+      "resultMilestone": "normalize",
+      "resultStageIndex": 0
+    },
+    {
+      "label": "pbl.begin",
+      "elapsedMs": 59849,
+      "responseMs": 752,
+      "at": "2026-10-23T07:28:30.334Z",
+      "milestone": "normalize",
+      "stageIndex": 0,
+      "resultMilestone": "normalize",
+      "resultStageIndex": 0,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.chat",
+      "elapsedMs": 26179,
+      "responseMs": 374,
+      "at": "2026-10-23T07:29:09.533Z",
+      "milestone": "normalize",
+      "stageIndex": 0,
+      "resultMilestone": "normalize",
+      "resultStageIndex": 0,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.next",
+      "elapsedMs": 527,
+      "responseMs": 527,
+      "at": "2026-10-23T07:29:25.415Z",
+      "milestone": "normalize",
+      "stageIndex": 0,
+      "resultMilestone": "normalize",
+      "resultStageIndex": 1
+    },
+    {
+      "label": "pbl.begin",
+      "elapsedMs": 21514,
+      "responseMs": 547,
+      "at": "2026-10-23T07:30:24.186Z",
+      "milestone": "normalize",
+      "stageIndex": 1,
+      "resultMilestone": "normalize",
+      "resultStageIndex": 1,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.next",
+      "elapsedMs": 519,
+      "responseMs": 518,
+      "at": "2026-10-23T07:30:47.718Z",
+      "milestone": "normalize",
+      "stageIndex": 1,
+      "resultMilestone": "normalize",
+      "resultStageIndex": 2
+    },
+    {
+      "label": "pbl.begin",
+      "elapsedMs": 99499,
+      "responseMs": 562,
+      "at": "2026-10-23T07:32:49.029Z",
+      "milestone": "normalize",
+      "stageIndex": 2,
+      "resultMilestone": "normalize",
+      "resultStageIndex": 2,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.manual-save-1",
+      "elapsedMs": 2652,
+      "at": "2026-10-23T07:36:00.624Z",
+      "fileBytes": 8661
+    },
+    {
+      "label": "pbl.manual-save-2",
+      "elapsedMs": 1882,
+      "at": "2026-10-23T07:36:04.001Z",
+      "fileBytes": 8661
+    },
+    {
+      "label": "pbl.manual-save-3",
+      "elapsedMs": 1678,
+      "at": "2026-10-23T07:36:06.776Z",
+      "fileBytes": 8661
+    },
+    {
+      "label": "pbl.chat",
+      "elapsedMs": 20672,
+      "responseMs": 573,
+      "at": "2026-10-23T07:36:41.193Z",
+      "milestone": "normalize",
+      "stageIndex": 2,
+      "resultMilestone": "normalize",
+      "resultStageIndex": 2,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.chat",
+      "elapsedMs": 41786,
+      "responseMs": 594,
+      "at": "2026-10-23T07:37:34.292Z",
+      "milestone": "normalize",
+      "stageIndex": 2,
+      "resultMilestone": "normalize",
+      "resultStageIndex": 2,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.next",
+      "elapsedMs": 5987,
+      "responseMs": 5987,
+      "at": "2026-10-23T07:37:50.417Z",
+      "milestone": "normalize",
+      "stageIndex": 2,
+      "resultMilestone": "normalize",
+      "resultStageIndex": 3
+    },
+    {
+      "label": "pbl.begin",
+      "elapsedMs": 53549,
+      "responseMs": 679,
+      "at": "2026-10-23T07:38:55.001Z",
+      "milestone": "normalize",
+      "stageIndex": 3,
+      "resultMilestone": "normalize",
+      "resultStageIndex": 3,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.compile",
+      "elapsedMs": 4354,
+      "responseMs": 4353,
+      "at": "2026-10-23T07:39:29.069Z",
+      "milestone": "normalize",
+      "stageIndex": 3,
+      "resultMilestone": "normalize",
+      "resultStageIndex": 3,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.collect",
+      "elapsedMs": 2744,
+      "responseMs": 2744,
+      "at": "2026-10-23T07:40:02.090Z",
+      "milestone": "normalize",
+      "stageIndex": 3,
+      "resultMilestone": "normalize",
+      "resultStageIndex": 3,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.chat",
+      "elapsedMs": 54776,
+      "responseMs": 435,
+      "at": "2026-10-23T07:41:24.767Z",
+      "milestone": "normalize",
+      "stageIndex": 3,
+      "resultMilestone": "normalize",
+      "resultStageIndex": 3,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.next",
+      "elapsedMs": 6893,
+      "responseMs": 6893,
+      "at": "2026-10-23T07:41:48.366Z",
+      "milestone": "normalize",
+      "stageIndex": 3,
+      "resultMilestone": "normalize",
+      "resultStageIndex": 4
+    },
+    {
+      "label": "pbl.evaluate",
+      "elapsedMs": 4600,
+      "responseMs": 4600,
+      "at": "2026-10-23T07:42:20.075Z",
+      "milestone": "normalize",
+      "stageIndex": 4,
+      "resultMilestone": "normalize",
+      "resultStageIndex": 4
+    },
+    {
+      "label": "pbl.collect",
+      "elapsedMs": 4157,
+      "responseMs": 4157,
+      "at": "2026-10-23T07:42:37.236Z",
+      "milestone": "normalize",
+      "stageIndex": 4,
+      "resultMilestone": "normalize",
+      "resultStageIndex": 4
+    },
+    {
+      "label": "pbl.next",
+      "elapsedMs": 2861,
+      "responseMs": 2861,
+      "at": "2026-10-23T07:43:16.795Z",
+      "milestone": "normalize",
+      "stageIndex": 4,
+      "resultMilestone": "normalize",
+      "resultStageIndex": 5
+    },
+    {
+      "label": "pbl.quiz",
+      "elapsedMs": 545,
+      "responseMs": 545,
+      "at": "2026-10-23T07:43:53.056Z",
+      "milestone": "normalize",
+      "stageIndex": 5,
+      "resultMilestone": "normalize",
+      "resultStageIndex": 5
+    },
+    {
+      "label": "pbl.next",
+      "elapsedMs": 714,
+      "responseMs": 714,
+      "at": "2026-10-23T07:44:42.300Z",
+      "milestone": "normalize",
+      "stageIndex": 5,
+      "resultMilestone": "normalize",
+      "resultStageIndex": 6
+    },
+    {
+      "label": "pbl.begin",
+      "elapsedMs": 43385,
+      "responseMs": 355,
+      "at": "2026-10-23T07:45:53.498Z",
+      "milestone": "normalize",
+      "stageIndex": 6,
+      "resultMilestone": "normalize",
+      "resultStageIndex": 6,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.chat",
+      "elapsedMs": 42598,
+      "responseMs": 1035,
+      "at": "2026-10-23T07:47:07.490Z",
+      "milestone": "normalize",
+      "stageIndex": 6,
+      "resultMilestone": "normalize",
+      "resultStageIndex": 6,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.chat",
+      "elapsedMs": 39086,
+      "responseMs": 1326,
+      "at": "2026-10-23T07:48:06.586Z",
+      "milestone": "normalize",
+      "stageIndex": 6,
+      "resultMilestone": "normalize",
+      "resultStageIndex": 6,
+      "roleRun": "succeeded"
+    },
+    {
+      "label": "pbl.cleanup-provider",
+      "elapsedMs": 714,
+      "at": "2026-10-23T07:56:26.227Z",
+      "alreadyExpired": true
+    },
+    {
+      "label": "generic.restore-1",
+      "elapsedMs": 3644,
+      "at": "2026-10-23T07:57:58.963Z"
+    },
+    {
+      "label": "generic.restored-read-1",
+      "elapsedMs": 1839,
+      "at": "2026-10-23T07:58:00.805Z"
+    },
+    {
+      "label": "generic.save-and-release-1",
+      "elapsedMs": 957,
+      "at": "2026-10-23T07:58:02.979Z"
+    },
+    {
+      "label": "generic.restore-2",
+      "elapsedMs": 3415,
+      "at": "2026-10-23T07:58:06.420Z"
+    },
+    {
+      "label": "generic.restored-read-2",
+      "elapsedMs": 1031,
+      "at": "2026-10-23T07:58:07.453Z"
+    },
+    {
+      "label": "generic.save-and-release-2",
+      "elapsedMs": 1040,
+      "at": "2026-10-23T07:58:09.010Z"
+    },
+    {
+      "label": "generic.restore-3",
+      "elapsedMs": 3471,
+      "at": "2026-10-23T07:58:12.505Z"
+    },
+    {
+      "label": "generic.restored-read-3",
+      "elapsedMs": 1170,
+      "at": "2026-10-23T07:58:13.676Z"
+    },
+    {
+      "label": "generic.save-and-release-3",
+      "elapsedMs": 1093,
+      "at": "2026-10-23T07:58:15.404Z"
+    }
+  ]
+}

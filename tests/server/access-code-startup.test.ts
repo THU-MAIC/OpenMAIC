@@ -8,6 +8,15 @@ import {
 
 // register() starts the background workers. Real ones keep polling the
 // database after the file's tests end and log into a closing worker.
+vi.mock('@/lib/server/pbl-v3/lifecycle-schedule', () => ({
+  startLearningLifecycle: vi.fn(),
+}));
+vi.mock('@/lib/server/pbl-v3/execution-watchdog', () => ({
+  startTeachingExecutionWatchdog: vi.fn(),
+}));
+vi.mock('@/lib/server/sandbox/checkpoint-collector', () => ({
+  startCheckpointCollector: vi.fn(),
+}));
 vi.mock('@/lib/server/generation/run/runner', () => ({
   startGenerationRunner: () => ({ workerId: 'test', wake: () => {}, stop: async () => {} }),
 }));
@@ -19,13 +28,21 @@ vi.mock('@/lib/server/legacy-classroom-import', () => ({
 }));
 vi.mock('@/lib/persistence/asset-quota', () => ({ resolveAssetQuotaBytes: vi.fn() }));
 vi.mock('@/lib/persistence/asset-pending-ttl', () => ({ resolveAssetPendingTtlMs: vi.fn() }));
-vi.mock('@/lib/persistence/schema-boot-check', () => ({ startSchemaBootCheck: vi.fn() }));
+vi.mock('@/lib/persistence/schema-boot-check', () => ({
+  startSchemaBootCheck: vi.fn(),
+  startRuntimeSchemaMonitor: vi.fn(),
+}));
 vi.mock('@/lib/persistence/asset-collector-schedule', () => ({
   startAssetCollectorSchedule: vi.fn(),
 }));
 vi.mock('@/lib/server/config-validation', () => ({ validateServerConfig: vi.fn() }));
+// Model notices are covered by model-config/boot; only the access-code warning is observed here.
+vi.mock('@/lib/server/model-config/runtime', () => ({ deploymentConfig: vi.fn() }));
 vi.mock('@/lib/server/instance-secret-check', () => ({ warnAboutInstanceSecret: vi.fn() }));
-vi.mock('@/lib/config/feature-flags', () => ({ isAgentRuntimeConfigured: () => false }));
+vi.mock('@/lib/config/feature-flags', () => ({
+  isAgentRuntimeConfigured: () => false,
+  isServerPersistenceConfigured: () => false,
+}));
 
 beforeEach(() => {
   resetAccessCodeWarningForTests();

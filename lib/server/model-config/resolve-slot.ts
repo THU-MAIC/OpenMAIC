@@ -28,8 +28,8 @@ import {
   usesServerCredentials,
   selectsUpstreamModel,
 } from './model-authorization';
-import { PROVIDERS } from '@/lib/ai/providers';
-import { findModelById } from '@/lib/ai/model-aliases';
+import { getModelInfo } from '@/lib/ai/providers';
+import type { ProviderId } from '@/lib/types/provider';
 import { withoutThinkingEffort } from '@/lib/ai/thinking-config';
 import {
   getSlot,
@@ -279,15 +279,10 @@ export function checkRequirement(
     return { requirement, status: 'unknown' };
   }
   if (target.modelId === undefined) return { requirement, status: 'unknown' };
-  const registry = (PROVIDERS as Record<string, { models?: readonly ModelLike[] }>)[
-    target.registryId
-  ];
-  const model = findModelById(target.registryId, registry?.models, target.modelId);
+  const model = getModelInfo(target.registryId as ProviderId, target.modelId);
   const tools = model?.capabilities?.tools;
   return { requirement, status: tools === true ? 'met' : tools === false ? 'unmet' : 'unknown' };
 }
-
-type ModelLike = { id: string; capabilities?: { tools?: boolean } };
 
 /**
  * The providers whose preset this build retired (RETIRED_PRESETS), as the

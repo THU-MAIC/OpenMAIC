@@ -302,6 +302,14 @@ export interface ComposerMaterials {
    * the draft it was picked for. `clear` keeps such uploads.
    */
   startOver: () => void;
+  /**
+   * The composer now shows another conversation. What is staged stays (one
+   * staging list serves every conversation the pane shows), but an upload
+   * still in flight was picked for the conversation before: it finishes into
+   * the library without becoming a pill here, as after `startOver`. Failed
+   * uploads were that conversation's too, and go with it.
+   */
+  leaveUploads: () => void;
   /** True while any upload is in flight — submits should wait for it. */
   busy: boolean;
 }
@@ -506,6 +514,14 @@ export function useComposerMaterials(
       // A fresh ledger: uploads in flight settle into the old one.
       slotLedger.current = new MaterialSlotLedger(0);
       setMaterials([]);
+      setUploading([]);
+      setFailed([]);
+    },
+    leaveUploads: () => {
+      draft.current += 1;
+      // The staged pills keep their slots; the uploads leaving settle into
+      // the old ledger.
+      slotLedger.current = new MaterialSlotLedger(stagedObjects.current.size);
       setUploading([]);
       setFailed([]);
     },

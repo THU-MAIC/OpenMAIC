@@ -10,6 +10,7 @@ FROM node:22.22.2-bookworm-slim@sha256:f3a68cf41a855d227d1b0ab832bed9749469ef38c
 ARG CHROMIUM_VERSION=151.0.7922.71-1~deb12u1
 ARG FFMPEG_VERSION=7:5.1.9-0+deb12u1
 ARG IPTABLES_VERSION=1.8.9-2
+ARG TINI_VERSION=0.19.0-1+b3
 ARG CA_CERTIFICATES_VERSION=20230311+deb12u1
 ARG FONTS_LIBERATION_VERSION=1:1.07.4-11
 ARG FONTS_NOTO_CORE_VERSION=20201225-1
@@ -22,7 +23,10 @@ ENV PUPPETEER_SKIP_DOWNLOAD=true \
     NODE_ENV=production
 
 # chromium-headless-shell + ffmpeg + the fonts/libs a headless Chrome needs to
-# render text and composite frames. iptables lets the entrypoint lock down egress
+# render text and composite frames. tini runs as PID 1 and reaps the Chromium
+# processes that exit after their parent; without it every launch leaves zombies
+# until the container hits its pid limit and Chromium can no longer start.
+# iptables lets the entrypoint lock down egress
 # (block the untrusted Chromium from reaching the app); ca-certificates covers
 # TLS for any asset the composition might still reference before lockdown. All
 # apt indexes come from one dated, signed snapshot so exact versions remain
@@ -34,12 +38,13 @@ RUN printf '%s\n' \
      "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/${DEBIAN_SNAPSHOT} bookworm-security main" \
      > /etc/apt/sources.list \
   && rm -f /etc/apt/sources.list.d/debian.sources \
-  && apt-get update \
-  && apt-get install -y --no-install-recommends \
+  && apt-get -o Acquire::Retries=5 update \
+  && apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
      "chromium-common=${CHROMIUM_VERSION}" \
      "chromium-headless-shell=${CHROMIUM_VERSION}" \
      "ffmpeg=${FFMPEG_VERSION}" \
      "iptables=${IPTABLES_VERSION}" \
+     "tini=${TINI_VERSION}" \
      "ca-certificates=${CA_CERTIFICATES_VERSION}" \
      "fonts-liberation=${FONTS_LIBERATION_VERSION}" \
      "fonts-noto-core=${FONTS_NOTO_CORE_VERSION}" \
@@ -92,4 +97,4 @@ EXPOSE 9000
 # the TypeScript entry. NOTE: the entry is `main.ts`, not `server.ts`, because
 # @hyperframes/producer auto-starts its own bundled server when the process
 # entry path ends with `/src/server.ts` (or `/public-server.js`).
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]

@@ -1825,10 +1825,14 @@ export async function watcherStaleWaitScenario(h: ExtractionHarness): Promise<vo
     },
   }).find((tool) => tool.name === 'wait_for_materials')!;
   watcher.watch(['watch-source']);
+  // The budget runs while the first read is held below, through the watcher's
+  // own report: it must outlast both however slow the database is, or the wait
+  // times out before it reads again. The wait returns as soon as it reads the
+  // settled source, so a long budget costs nothing.
   const waiting = tool.execute('wait', {
     materialIds: ['watch-source'],
     scope: 'library',
-    timeoutSec: 1,
+    timeoutSec: 30,
   } as never);
   try {
     await queried;

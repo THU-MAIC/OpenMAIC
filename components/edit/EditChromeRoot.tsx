@@ -8,9 +8,10 @@ import { HeaderControls } from '@/components/stage/header-controls';
 import { isMaicEditorEnabled } from '@/lib/config/feature-flags';
 import { preloadEditor } from '@/lib/edit/preload-editor';
 import { sceneEditorRegistry } from '@/lib/edit/scene-editor-registry';
+import { useCourseTimelineShortcuts } from '@/lib/edit/use-course-history';
 import { getScenePagerState } from '@/lib/edit/scene-pager';
-import { useStageStore } from '@/lib/store/stage';
-import { useInWorkbenchPanel } from '@/lib/workbench/panel-context';
+import { flushStageSave, useStageStore } from '@/lib/store/stage';
+import { useWorkbenchPanelState } from '@/lib/workbench/panel-context';
 import { supportsNarrationTimeline } from './scene-timeline';
 import type { Scene } from '@/lib/types/stage';
 
@@ -41,7 +42,13 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChro
   // nowhere to toggle to) and the Edit-with-AI right rail (the workbench
   // conversation on the left is its successor — the agent it would talk to
   // is the one building this course).
-  const inWorkbenchPanel = useInWorkbenchPanel();
+  const {
+    hosted: inWorkbenchPanel,
+    editPinned: workbenchEditing,
+    historySlot,
+  } = useWorkbenchPanelState();
+
+  useCourseTimelineShortcuts(!inWorkbenchPanel || workbenchEditing);
 
   // Deck paging (‹ n/m ›). Same state source and setter the SlideNavRail
   // thumbnails use — `currentSceneId` / `setCurrentSceneId` — so flipping pages
@@ -78,7 +85,7 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChro
     };
   }, []);
 
-  // Safety net: the editor chunk (fonts + slide surface registration) is
+  // Safety net: the editor chunk (slide + quiz surface registration) is
   // normally preloaded by the Pro Switch handler in stage.tsx BEFORE mode
   // flips, so by the time we mount the surface is already registered and
   // EditShell resolves it immediately (no NOOP flash). This call is a
@@ -88,6 +95,18 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChro
   useEffect(() => {
     void preloadEditor();
   }, []);
+
+  // Leaving the editor (Done editing, the Learn tab, a route change) saves
+  // what is pending now rather than after the autosave's debounce, so the
+  // next screen, or a reload soon after, finds the edit on the server.
+  useEffect(
+    () => () => {
+      void flushStageSave().catch(() => {
+        // Logged by the save; the pending changes stay queued for retry.
+      });
+    },
+    [],
+  );
 
   // Whether this scene type has a registered canvas editor surface (slide/quiz).
   // Authoring surface is separate from narration timeline availability.
@@ -122,6 +141,9 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChro
       // form — otherwise those scenes would lose paging entirely.
       pager={timelineEnabled ? undefined : pager}
       hideCommandBar={inWorkbenchPanel}
+      // Gated on the pane's own mode, not on this root being mounted: the root
+      // outlives a switch to Learn by the length of its exit fade.
+      historySlot={workbenchEditing ? historySlot : null}
     />
   );
 }

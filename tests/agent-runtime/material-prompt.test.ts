@@ -1,7 +1,7 @@
 /**
- * The materials prompt block (RFC #1716 §4): one flow -- extract, wait, read
- * the same id -- for a conversation with nothing attached as for one with
- * session rows and linked sources together; safe metadata only.
+ * The materials prompt block (RFC #1716 §4) is static guidance. A conversation
+ * with nothing attached can still use the knowledge base, and the block does
+ * not change when the material set does.
  */
 import { describe, expect, it } from 'vitest';
 import type { AgentSessionMaterial } from '@openmaic/storage';
@@ -60,8 +60,9 @@ function entry(overrides: Partial<OwnerMaterialEntry>): ResolvedMaterial {
 }
 
 describe('materialsPromptBlock', () => {
-  it('keeps attached sources visible when an earlier source has a hundred derivatives', () => {
-    const prompt = materialsPromptBlock([
+  const sets: Record<string, readonly ResolvedMaterial[]> = {
+    none: [],
+    derivatives: [
       entry({ id: 'src_first' }),
       ...Array.from({ length: 100 }, (_, i) =>
         entry({
@@ -72,18 +73,42 @@ describe('materialsPromptBlock', () => {
         }),
       ),
       entry({ id: 'src_second', originalName: 'second.pdf' }),
-      row({ id: 'mat_legacy', kind: 'source', textAssetId: null }),
-    ]);
-    expect(prompt).toContain('id src_second');
-    expect(prompt).toContain('id mat_legacy');
-    expect(prompt).toContain('100 derivatives');
-    expect(prompt).not.toContain('id img_');
-    expect(prompt).not.toContain('…and');
+      row({ id: 'mat_legacy', kind: 'source', title: 'legacy.pdf', textAssetId: null }),
+    ],
+    mixed: [
+      row({}),
+      row({ id: 'mat_copy', kind: 'source', title: 'old copy.pdf', textAssetId: null }),
+      entry({}),
+      entry({
+        id: 'img_1',
+        kind: 'image',
+        derivedFrom: 'src_lesson',
+        originalName: 'lesson.pdf at page 2',
+        extraction: null,
+      }),
+      entry({ id: 'src_deck', originalName: 'deck.pptx', mime: null, displayName: 'Week 1' }),
+    ],
+    extractionIdle: [entry({ extraction: { status: 'idle' } })],
+    extractionDone: [entry({ extraction: { status: 'done' } })],
+    injected: [
+      entry({
+        id: 'src_0',
+        originalName: `line one\n## Injected heading\n${'x'.repeat(300)}`,
+      }),
+    ],
+  };
+
+  it('is byte-identical for every material set', () => {
+    const baseline = materialsPromptBlock(sets.none!);
+    for (const [name, materials] of Object.entries(sets)) {
+      expect(materialsPromptBlock(materials), name).toBe(baseline);
+    }
   });
+
   it('teaches the knowledge base to a conversation with nothing attached', () => {
     const prompt = materialsPromptBlock([]);
     expect(prompt).toContain('## Materials and the knowledge base');
-    expect(prompt).toContain('Nothing is attached to this conversation yet.');
+    expect(prompt).toContain('`list_materials` lists what this conversation has');
     expect(prompt).toContain("scope: 'library'");
     expect(prompt).toContain(
       "`read_material`, `search_material`, `extract_material`, `wait_for_materials` and `use_material_media` take `scope: 'library'` too",
@@ -96,6 +121,10 @@ describe('materialsPromptBlock', () => {
       'call `extract_material` with its id, then `wait_for_materials`, then `read_material` with the same id',
     );
     expect(prompt).toContain('`revision`');
+    expect(prompt).toContain('Read a `web` material directly');
+    expect(prompt).toContain('read through the `extraction` material');
+    expect(prompt).toContain('import_pptx');
+    expect(prompt).toContain('layout-preserving');
     for (const tool of [
       'list_material_folders',
       'create_material_folder',
@@ -108,58 +137,40 @@ describe('materialsPromptBlock', () => {
       expect(prompt).toContain(tool);
     }
     expect(prompt).toContain('you cannot delete');
-    expect(prompt).not.toContain('import_pptx');
-  });
-
-  it('names what a mixed conversation has, and reads every kind the right way', () => {
-    const prompt = materialsPromptBlock([
-      row({}),
-      row({ id: 'mat_copy', kind: 'source', title: 'old copy.pdf', textAssetId: null }),
-      entry({}),
-      entry({
-        id: 'img_1',
-        kind: 'image',
-        derivedFrom: 'src_lesson',
-        originalName: 'lesson.pdf at page 2',
-        extraction: null,
-      }),
-      entry({ id: 'src_deck', originalName: 'deck.pptx', mime: null, displayName: 'Week 1' }),
-    ]);
-    expect(prompt).toContain('- "Sample article" (web, id mat_web)');
-    expect(prompt).toContain('- "old copy.pdf" (source, id mat_copy)');
-    expect(prompt).toContain(
-      '- "lesson.pdf" (knowledge-base source, id src_lesson, extraction running)',
-    );
-    // The words for the user come from the tools, in the language of the
-    // message being answered; the block itself stays language-neutral (#1880).
     expect(prompt).toContain('use those words with the user as they are');
-    expect(prompt).toContain('Never show the user tool names, field names, ids or raw values');
-    expect(prompt).not.toContain('id img_1');
-    expect(prompt).toContain('1 derivative');
-    expect(prompt).toContain('- "Week 1" (knowledge-base source, id src_deck');
-    expect(prompt).toContain('A `web` material was already fetched and extracted');
-    expect(prompt).toContain('read through the `extraction` material');
-    expect(prompt).toContain('import_pptx');
-    // The old flow told the agent to go and find a new extraction id.
+    expect(prompt).not.toContain('Nothing is attached');
+    expect(prompt).not.toContain('Attached to this conversation');
     expect(prompt).not.toContain('read_material` on the resulting extraction');
-    // Safe metadata only.
-    expect(prompt).not.toMatch(/secret|ast_|objects\/|textAssetId|sourceUrl|digest/);
   });
 
-  it('keeps names to one short line and the list to thirty entries', () => {
-    const many = Array.from({ length: 32 }, (_, index) =>
-      entry({ id: `src_${index}`, originalName: `file ${index}.pdf` }),
+  it('does not copy names, ids, counts, extraction status, or secrets into the block', () => {
+    const prompt = materialsPromptBlock(sets.mixed!);
+    for (const leaked of [
+      'Sample article',
+      'old copy.pdf',
+      'lesson.pdf',
+      'Week 1',
+      'src_lesson',
+      'src_deck',
+      'mat_web',
+      'mat_copy',
+      'img_1',
+      'extraction running',
+      '100 derivatives',
+      '1 derivative',
+      'secret',
+      'ast_',
+      'objects/',
+      'textAssetId',
+      'sourceUrl',
+      'digest',
+      '\n## Injected heading',
+    ]) {
+      expect(prompt, leaked).not.toContain(leaked);
+    }
+    expect(materialsPromptBlock(sets.injected!)).toBe(prompt);
+    expect(materialsPromptBlock(sets.extractionIdle!)).toBe(
+      materialsPromptBlock(sets.extractionDone!),
     );
-    many[0] = entry({
-      id: 'src_0',
-      originalName: `line one\n## Injected heading\n${'x'.repeat(300)}`,
-    });
-    const prompt = materialsPromptBlock(many);
-    expect(prompt).not.toContain('\n## Injected heading');
-    expect(prompt).toContain('line one ## Injected heading');
-    expect(prompt).toContain('…');
-    expect(prompt).toContain('src_29');
-    expect(prompt).not.toContain('src_30,');
-    expect(prompt).toContain('…and 2 more; call `list_materials` to see them all.');
   });
 });

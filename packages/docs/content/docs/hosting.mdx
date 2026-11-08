@@ -886,7 +886,8 @@ configurePersistenceHooks({
     },
   },
   // Upload admission (req.operation: 'create' | 'replace'), before any byte
-  // is stored or counted.
+  // is stored or counted. Also asked before a classroom import stores its PBL
+  // project packages; a refusal fails that import.
   async beforeAssetAllocate(principal, req) {
     const exhausted = await uploadBudgetExhausted(principal.ownerId, req.headers); // host code
     return exhausted
@@ -908,7 +909,7 @@ configureAssetByteStore({
 | `authorizeCreate(tx, actor, stageId)` | Once per created course, inside its transaction, after the course rows are written | Resolve `{ allow: true }` or `{ allow: false, message? }`. A refusal rolls everything back and answers `403 CREATE_REFUSED` (on `/api/persistence` and `POST /api/stages`). |
 | `onCreate(tx, actor, stageId)` | Right after `authorizeCreate` allowed it, same transaction | Statements on `tx` commit with the course; a throw rolls the whole create back. |
 | `library.list({ principal, queryable, ownedStageIds })` | `GET /api/stages` | Resolve at most 5000 stage ids (more is a `500`). The route lists them in that order as the usual items, without duplicates, and drops every id the read path would refuse (deleted, unclaimed, or not addressable at all, such as `..` or one containing NUL). `folderId` is shown only on the principal's own courses. |
-| `beforeAssetAllocate(principal, req)` | Every upload over `/api/persistence/assets`: `POST /assets` (`req.operation: 'create'`) and `PUT /assets/{id}/content` (`'replace'`, with the decoded `req.assetId`), after the owner is resolved and before the body is read | Resolve `undefined` to proceed or a `Response` to answer with it; nothing is stored and no quota is counted. Decide on `operation` / `assetId`, which are the storage handler's own routing; `url` is the request as received. Media an agent run generates on the server is not an HTTP upload and does not pass this hook; the per-owner quota still bounds it. |
+| `beforeAssetAllocate(principal, req)` | Every upload over `/api/persistence/assets`: `POST /assets` (`req.operation: 'create'`) and `PUT /assets/{id}/content` (`'replace'`, with the decoded `req.assetId`), after the owner is resolved and before the body is read. Also every project package install over `POST /api/pbl/v3/packages` (`req.operation: 'create'`), once per request, after the body is read and validated and before any package is stored | Resolve `undefined` to proceed or a `Response` to answer with it; nothing is stored and no quota is counted. Refusing a package install fails the whole classroom import that sent it, because the import stops before it writes the course. Decide on `operation` / `assetId`, which are the storage handler's own routing; `url` is the request as received. Media an agent run generates on the server is not an HTTP upload and does not pass this hook; the per-owner quota still bounds it. |
 | `configureAssetByteStore({ name, create, signsReadUrls? })` | Lazily, by the persistence route and by the asset collector | `create({ queryable })` returns an `AssetByteStore` (`@openmaic/storage`) that keeps bytes outside the registry database and declares it with `writesOutsideRegistryDatabase: true`. The flag is trusted: a store that sets it but writes through the registry database can deadlock. Replaces the `ASSET_S3_BUCKET` switch; setting both stops the server. |
 
 **What counts as a create.** A course is created by the transaction that

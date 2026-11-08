@@ -250,14 +250,23 @@ test.describe('Generation runs', () => {
     page,
     mockApi,
   }) => {
-    const run = await mockApi.setupGenerationMocks();
+    let release!: () => void;
+    const afterFirstScene = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const run = await mockApi.setupGenerationMocks({ afterFirstScene });
     await startFromHome(page);
     const preview = new GenerationPreviewPage(page);
     await preview.waitForRedirectToClassroom();
     const scenes = page.locator('[data-testid="scene-item"]');
     await expect(scenes.first()).toBeVisible({ timeout: 15_000 });
     // Generating: the Pro switch shows, disabled.
-    await expect(page.getByRole('switch')).toBeDisabled();
+    try {
+      expect(run.snapshot().state).toBe('generating');
+      await expect(page.getByRole('switch')).toBeDisabled();
+    } finally {
+      release();
+    }
     // The second scene arrives while the classroom is open.
     await expect(scenes).toHaveCount(2, { timeout: 15_000 });
     // Completed: editable.

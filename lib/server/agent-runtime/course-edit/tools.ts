@@ -99,13 +99,22 @@ export function renumberCourseOrders(
   return { scenes: numbered, outline: { ...outline, outlines } };
 }
 
+export function generateTtsPromptBlock(): string {
+  return 'Use generate_tts after narration edits.';
+}
+
 export function buildCourseAudioAndDeckTools(deps: CourseToolDeps): AgentTool<never, never>[] {
-  const generateTts: AgentTool<typeof GenerateTtsParams> = {
+  const generateTts: AgentTool<typeof GenerateTtsParams> & {
+    capability: 'tts';
+    promptBlock: string;
+  } = {
     name: 'generate_tts',
     label: 'Generate narration audio',
     description:
       'Synthesize narration for one persisted page. By default only speech actions without audio are filled; force regenerates all speech audio.',
     parameters: GenerateTtsParams,
+    capability: 'tts',
+    promptBlock: generateTtsPromptBlock(),
     async execute(_callId, params, signal) {
       const doc = await deps.store.loadDocument(params.stageId);
       const scene = resolveScene(doc?.scenes ?? [], params);

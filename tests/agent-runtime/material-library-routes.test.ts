@@ -21,7 +21,7 @@ import { randomUUID } from 'node:crypto';
 
 import { PGlite } from '@electric-sql/pglite';
 import { NextRequest } from 'next/server';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   runtimeConfigured: true,
@@ -124,14 +124,39 @@ const params = (id: string) => ({ params: Promise.resolve({ id }) });
 
 describe('material library routes and tools (PGlite)', () => {
   let db: PGlite | undefined;
+  /**
+   * The data directory of a database with the whole schema, booted once for
+   * the file. Starting a PGlite instance from nothing (initdb inside its WASM
+   * build) was most of every test's time, about 1.2 s each in CI next to the
+   * rest of the suite, and one of them now and then ran out the 5 s test
+   * timeout. Each test still gets a database of its own, loaded from this
+   * directory, at about a third of the cost.
+   */
+  let schemaDir: File | Blob | undefined;
 
-  async function boot(): Promise<LibraryHarness> {
+  async function harnessOn(database: PGlite): Promise<LibraryHarness> {
     vi.stubEnv('ASSET_S3_BUCKET', '');
     const databaseUrl = `postgres://library-routes-${randomUUID()}`;
     vi.stubEnv('DATABASE_URL', databaseUrl);
-    db = new PGlite();
-    await db.waitReady;
-    return bootLibraryHarness(new PGlitePool(db), databaseUrl);
+    return bootLibraryHarness(new PGlitePool(database), databaseUrl);
+  }
+
+  beforeAll(async () => {
+    const template = await PGlite.create();
+    try {
+      await harnessOn(template);
+      schemaDir = await template.dumpDataDir('none');
+    } finally {
+      vi.unstubAllEnvs();
+      await template.close();
+    }
+  });
+
+  async function boot(): Promise<LibraryHarness> {
+    db = await PGlite.create({ loadDataDir: schemaDir! });
+    // Bootstraps again for this test's provider: on the loaded schema that
+    // only confirms what is there.
+    return harnessOn(db);
   }
 
   afterEach(async () => {
@@ -941,15 +966,37 @@ describe('material library routes and tools (PGlite)', () => {
   it('returns only whitelisted extraction codes on all owner HTTP projections', async () => {
     const h = await boot();
     await seedLinkedConversation(h);
-    for (const [status, code, expected] of [
+    const counts = { pages: 461, maxPages: 200 };
+    for (const [status, code, expected, reasonValues] of [
       ['failed', 'storage_full', { status: 'failed', reasonCode: 'storage_full' }],
       ['failed', 'future_code', { status: 'failed' }],
       ['failed', undefined, { status: 'failed' }],
       ['pending', 'storage_full', { status: 'pending' }],
+      [
+        'failed',
+        'too_many_pages',
+        { status: 'failed', reasonCode: 'too_many_pages', reasonValues: counts },
+        { ...counts, note: 'PRIVATE_UPSTREAM_BODY' },
+      ],
+      [
+        'failed',
+        'too_many_pages',
+        { status: 'failed', reasonCode: 'too_many_pages' },
+        { pages: '461', maxPages: -1 },
+      ],
+      ['failed', 'storage_full', { status: 'failed', reasonCode: 'storage_full' }, counts],
+      ['pending', 'too_many_pages', { status: 'pending' }, counts],
     ] as const) {
       await h.pool.query(
         `UPDATE owner_material SET extraction = $1::jsonb, extraction_error = 'PRIVATE_UPSTREAM_BODY' WHERE id = 'src-a'`,
-        [JSON.stringify({ status, reasonCode: code, reason: 'PRIVATE_UPSTREAM_BODY' })],
+        [
+          JSON.stringify({
+            status,
+            reasonCode: code,
+            reason: 'PRIVATE_UPSTREAM_BODY',
+            ...(reasonValues ? { reasonValues } : {}),
+          }),
+        ],
       );
       const library = await libraryRoute(request('GET', '/api/materials/library'));
       const session = await sessionMaterialsRoute(request('GET', '/api/materials?sessionId=ses-1'));

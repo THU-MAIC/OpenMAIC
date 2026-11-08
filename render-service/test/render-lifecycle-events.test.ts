@@ -13,6 +13,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { RenderEvent } from '../src/events.js';
 import { RenderCoordinator } from '../src/render-coordinator.js';
 import type { RenderExecutor } from '../src/render-executor.js';
+import { PreviewTimeoutError } from '../src/preview-renderer.js';
 import { Semaphore } from '../src/semaphore.js';
 import type { RenderExecutionResult, RenderJobRecord } from '../src/types.js';
 import type { JobStore } from '../src/job-store.js';
@@ -396,6 +397,92 @@ describe('admission and preview route events', () => {
 
     expect(emitted.find((event) => event.event === 'preview_request')).toMatchObject({
       status: 400,
+    });
+  });
+
+  it('records a fixed error code, not the message, when a preview fails with 500', async () => {
+    const emitted = captureEmitted();
+    const jobs = createMemoryJobStore();
+    const artifacts = createMemoryArtifactStore().store;
+    const app = createApp({
+      jobs,
+      artifacts,
+      coordinator: new RenderCoordinator(
+        executor(async () => ({ status: 'succeeded', outputPath: 'out.mp4' })),
+        jobs,
+        artifacts,
+      ),
+      extractionGate: new Semaphore(1),
+      previewRenderer: {
+        render: async () => {
+          throw new Error('Failed to launch the browser process! <scene secret>');
+        },
+      },
+      onEvent: (event) => emitted.push(event),
+    });
+
+    const response = await app.fetch(previewRequest());
+    expect(response.status).toBe(500);
+    // The caller still gets the message; the log line only the code.
+    await expect(response.json()).resolves.toMatchObject({
+      error: expect.stringContaining('Failed to launch'),
+    });
+
+    const preview = emitted.find((event) => event.event === 'preview_request');
+    expect(preview).toMatchObject({ status: 500, errorCode: 'browser_launch_failed' });
+    expect(JSON.stringify(preview)).not.toContain('scene secret');
+  });
+
+  it('records resource_mode_unsupported when resource mode refuses every preview', async () => {
+    const emitted = captureEmitted();
+    const jobs = createMemoryJobStore();
+    const artifacts = createMemoryArtifactStore().store;
+    const app = createApp({
+      jobs,
+      artifacts,
+      coordinator: new RenderCoordinator(
+        executor(async () => ({ status: 'succeeded', outputPath: 'out.mp4' })),
+        jobs,
+        artifacts,
+      ),
+      extractionGate: new Semaphore(1),
+      previewRenderer: { render: async () => new Uint8Array([1]) },
+      resourceMode: true,
+      onEvent: (event) => emitted.push(event),
+    });
+
+    expect((await app.fetch(previewRequest())).status).toBe(503);
+    expect(emitted.find((event) => event.event === 'preview_request')).toMatchObject({
+      status: 503,
+      errorCode: 'resource_mode_unsupported',
+    });
+  });
+
+  it('records deadline_exceeded on a preview that overran its deadline', async () => {
+    const emitted = captureEmitted();
+    const jobs = createMemoryJobStore();
+    const artifacts = createMemoryArtifactStore().store;
+    const app = createApp({
+      jobs,
+      artifacts,
+      coordinator: new RenderCoordinator(
+        executor(async () => ({ status: 'succeeded', outputPath: 'out.mp4' })),
+        jobs,
+        artifacts,
+      ),
+      extractionGate: new Semaphore(1),
+      previewRenderer: {
+        render: async () => {
+          throw new PreviewTimeoutError('Preview exceeded the deadline');
+        },
+      },
+      onEvent: (event) => emitted.push(event),
+    });
+
+    expect((await app.fetch(previewRequest())).status).toBe(504);
+    expect(emitted.find((event) => event.event === 'preview_request')).toMatchObject({
+      status: 504,
+      errorCode: 'deadline_exceeded',
     });
   });
 

@@ -11,6 +11,9 @@ import {
   type CourseStore,
 } from '@/lib/server/agent-runtime/course-tools';
 import {
+  AFTER_IMPORT_NEXT_STEP,
+  AFTER_IMPORT_NEXT_STEP_NO_TTS,
+  afterImportNextStep,
   IMPORT_PPTX_TOOL_NAME,
   MAX_IMPORT_BYTES,
   MAX_IMPORT_SLIDES,
@@ -26,6 +29,10 @@ import {
 } from '@/lib/server/agent-runtime/import-pptx';
 import { installNodeXmlHttpRequest, NodeXMLHttpRequest } from '@/lib/server/agent-runtime/node-xhr';
 import { materialsPromptBlock } from '@/lib/server/agent-runtime/material-prompt';
+import {
+  createCapabilityMap,
+  type ResolvedCapabilityMap,
+} from '@/lib/server/agent-runtime/capability-tools';
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
 import type { Scene } from '@/lib/types/stage';
 import type { PPTTextElement } from '@openmaic/dsl';
@@ -152,6 +159,7 @@ async function runImport(
     bytes?: Buffer;
     mime?: string;
     parsePptx?: (buffer: ArrayBuffer, options?: ParsePptxOptions) => Promise<Slide[]>;
+    capabilities?: ResolvedCapabilityMap;
   },
 ) {
   const checkpoints: { tool: string; detail: string }[] = [];
@@ -160,6 +168,7 @@ async function runImport(
     stageAccess: async () => ({ kind: 'owned' as const }),
     store,
     sessionId: 'ses_1',
+    capabilities: args.capabilities,
     onCheckpoint: (info) => checkpoints.push({ tool: info.tool, detail: info.detail }),
     getMaterial: async () => args.record ?? null,
     readMaterialBytes: async (record) => ({
@@ -204,6 +213,13 @@ describe('import_pptx helpers', () => {
     expect(content?.type).toBe('slide');
     if (content?.type !== 'slide') throw new Error('expected imported slide');
     expect((content.canvas.elements[0] as PPTTextElement).content).toBe(html);
+  });
+
+  it('afterImportNextStep returns appropriate hint based on TTS availability', () => {
+    expect(afterImportNextStep(true)).toBe(AFTER_IMPORT_NEXT_STEP);
+    expect(afterImportNextStep(false)).toBe(AFTER_IMPORT_NEXT_STEP_NO_TTS);
+    expect(afterImportNextStep(false)).not.toContain('generate_tts');
+    expect(afterImportNextStep(false)).toContain('patch_stage');
   });
 
   it('numbers appended scenes from firstOrder and keeps outline ids on the stage-wide sequence', () => {
@@ -275,6 +291,71 @@ describe('import_pptx tool', () => {
     expect(text).toContain('pro-editing');
     expect(text).toContain('patch_stage');
     expect(text).toMatch(/Do not patch actions or generate_tts before inspection/);
+  });
+
+  it('omits generate_tts from next-step hint when TTS capability is unavailable', async () => {
+    const store = stageStore();
+    const bytes = Buffer.from('fake-pptx');
+    const capabilities = createCapabilityMap({ tts: false });
+    const { result } = await runImport(store, {
+      params: { materialId: 'mat_ppt' },
+      record: sourceRecord(),
+      bytes,
+      slides: [textSlide('s1', '<p>封面</p>')],
+      capabilities,
+    });
+    expect(result.isError).toBeUndefined();
+    const text = String(
+      result.content[0] && 'text' in result.content[0] ? result.content[0].text : '',
+    );
+    expect(text).toContain(AFTER_IMPORT_NEXT_STEP_NO_TTS);
+    expect(text).not.toContain('generate_tts');
+    expect(text).toMatch(/Do not patch actions before inspection/);
+  });
+
+  it('omits generate_tts from idempotent duplicate import hint when TTS capability is unavailable', async () => {
+    const store = stageStore();
+    const bytes = Buffer.from('fake-pptx');
+    const capabilities = createCapabilityMap({ tts: false });
+    await runImport(store, {
+      params: { materialId: 'mat_ppt' },
+      record: sourceRecord(),
+      bytes,
+      slides: [textSlide('s1', '<p>封面</p>')],
+      capabilities,
+    });
+    const { result } = await runImport(store, {
+      params: { materialId: 'mat_ppt' },
+      record: sourceRecord(),
+      bytes,
+      slides: [textSlide('s1', '<p>重试</p>')],
+      capabilities,
+    });
+    expect(result.details).toMatchObject({ reused: true });
+    const text = String(
+      result.content[0] && 'text' in result.content[0] ? result.content[0].text : '',
+    );
+    expect(text).toContain(AFTER_IMPORT_NEXT_STEP_NO_TTS);
+    expect(text).not.toContain('generate_tts');
+  });
+
+  it('preserves generate_tts in next-step hint when TTS capability is enabled', async () => {
+    const store = stageStore();
+    const bytes = Buffer.from('fake-pptx');
+    const capabilities = createCapabilityMap({ tts: true });
+    const { result } = await runImport(store, {
+      params: { materialId: 'mat_ppt' },
+      record: sourceRecord(),
+      bytes,
+      slides: [textSlide('s1', '<p>封面</p>')],
+      capabilities,
+    });
+    expect(result.isError).toBeUndefined();
+    const text = String(
+      result.content[0] && 'text' in result.content[0] ? result.content[0].text : '',
+    );
+    expect(text).toContain(AFTER_IMPORT_NEXT_STEP);
+    expect(text).toContain('generate_tts');
   });
 
   it('is idempotent for the same material: returns the existing receipt, never appends again', async () => {
@@ -620,7 +701,7 @@ describe('import_pptx tool', () => {
 });
 
 describe('session material prompt', () => {
-  it('mentions import_pptx only when a pptx is attached', () => {
+  it('keeps import_pptx guidance whether or not a pptx is attached', () => {
     const pdf = materialsPromptBlock([
       {
         origin: 'session',
@@ -639,8 +720,6 @@ describe('session material prompt', () => {
         },
       },
     ]);
-    expect(pdf).not.toContain('import_pptx');
-
     const pptx = materialsPromptBlock([
       {
         origin: 'session',
@@ -659,8 +738,14 @@ describe('session material prompt', () => {
         },
       },
     ]);
-    expect(pptx).toContain('import_pptx');
-    expect(pptx).toContain('layout-preserving');
+    const none = materialsPromptBlock([]);
+    expect(pdf).toBe(none);
+    expect(pptx).toBe(none);
+    expect(none).toContain('import_pptx');
+    expect(none).toContain('layout-preserving');
+    expect(none).not.toContain('lecture.pdf');
+    expect(none).not.toContain('deck.pptx');
+    expect(none).not.toContain('mat_ppt');
   });
 });
 

@@ -520,6 +520,20 @@ export function assertPptxMediaReferenceParity(
   }
 }
 
+/**
+ * A QR code cannot hold an arbitrarily long url — `uqr` rejects anything past
+ * its byte capacity. The code is a convenience; the hyperlink is the content,
+ * so a failed encode drops the image instead of aborting the whole export.
+ */
+async function qrDataUrlFor(url: string): Promise<string | undefined> {
+  try {
+    return await qrPngDataUrl(url);
+  } catch (err) {
+    log.warn(`Skipping QR code for a ${url.length}-char url:`, err);
+    return undefined;
+  }
+}
+
 // Exported for the round-trip integration test harness — the test wires its
 // own slides + ratios in and inspects the resulting PPTX bytes via JSZip.
 // The hook below is still the only intended runtime caller.
@@ -579,7 +593,7 @@ export async function buildPptxBlob(
         placeholderStyle,
         { viewportSize, viewportRatio },
         { ratioPx2Inch, ratioPx2Pt },
-        onlineUrl ? await qrPngDataUrl(onlineUrl) : undefined,
+        onlineUrl ? await qrDataUrlFor(onlineUrl) : undefined,
       );
       continue;
     }

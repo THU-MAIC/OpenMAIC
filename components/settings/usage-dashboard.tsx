@@ -9,6 +9,7 @@ import { Loader2, RefreshCw, BarChart3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useTheme } from '@/lib/hooks/use-theme';
+import { formatUsageNumber } from '@/lib/utils/usage-number';
 
 echarts.use([LineChart, GridComponent, TooltipComponent, SVGRenderer]);
 
@@ -29,12 +30,6 @@ interface UsageResponse {
   byModel: Bucket[];
   byDay: Bucket[];
   byKind: Bucket[];
-}
-
-function fmtNum(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(Math.round(n));
 }
 
 const KIND_LABEL_KEY: Record<UsageKind, string> = {
@@ -86,7 +81,7 @@ export function UsageDashboard() {
   /** A single usage figure with its unit, for a model/kind bucket. */
   const usageValue = (b: Bucket): number => (b.kind === 'llm' ? b.totalTokens : b.quantity);
   const usageDisplay = (b: Bucket): string =>
-    `${fmtNum(usageValue(b))} ${t(UNIT_LABEL_KEY[b.kind === 'llm' ? 'token' : b.unit])}`;
+    `${formatUsageNumber(usageValue(b))} ${t(UNIT_LABEL_KEY[b.kind === 'llm' ? 'token' : b.unit])}`;
 
   // Group models by modality, in display order, dropping empty modalities.
   const sections = useMemo(() => {

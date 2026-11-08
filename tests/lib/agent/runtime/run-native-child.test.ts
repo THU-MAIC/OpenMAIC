@@ -146,7 +146,6 @@ function run(options: Partial<Parameters<typeof runNativeChild>[0]> = {}) {
     tools: [tool],
     allowedToolNames: new Set(['demo']),
     timeoutMs: 1_000,
-    maxProviderTransports: 5,
     ...options,
   });
 }
@@ -326,6 +325,69 @@ describe('runNativeChild', () => {
       providerTransportCount: 2,
     });
     expect(execute).toHaveBeenCalledTimes(5);
+  });
+
+  it('completes after more than five provider requests with a corrective tool call', async () => {
+    const execute = vi.fn(async () => ({
+      content: [{ type: 'text' as const, text: 'ok' }],
+      details: {},
+    }));
+    const result = await run({
+      streamFn: scriptedStream([
+        ...Array.from({ length: 9 }, (_, index) =>
+          call(`read-${index + 1}`, 'demo', { value: index + 1 }),
+        ),
+        call('invalid-corrective', 'demo', { value: 'bad' }),
+        call('retry-corrective', 'demo', { value: 10 }),
+        text('Completed after the corrective read.'),
+      ]),
+      tools: [demoTool(execute)],
+    });
+
+    expect(result).toMatchObject({
+      status: 'completed',
+      visibleOutput: 'Completed after the corrective read.',
+      attemptCount: 11,
+      executionCount: 10,
+      providerTransportCount: 12,
+    });
+    expect(execute).toHaveBeenCalledTimes(10);
+  });
+
+  it('stops a runaway child when the caller cancels', async () => {
+    const controller = new AbortController();
+    let transportIndex = 0;
+    const execute = vi.fn(async () => {
+      if (execute.mock.calls.length === 3) controller.abort('request cancelled');
+      return {
+        content: [{ type: 'text' as const, text: 'ok' }],
+        details: {},
+      };
+    });
+    const runaway: StreamFn = (() => {
+      const stream = createAssistantMessageEventStream();
+      const index = ++transportIndex;
+      queueMicrotask(() => {
+        if (index >= 50) {
+          const message = text('runaway completed');
+          stream.push({ type: 'done', reason: 'stop', message });
+          return;
+        }
+        const message = call(`runaway-${index}`, 'demo', { value: index });
+        stream.push({ type: 'done', reason: 'toolUse', message });
+      });
+      return stream;
+    }) as StreamFn;
+
+    const result = await run({
+      streamFn: runaway,
+      tools: [demoTool(execute)],
+      abortSignal: controller.signal,
+    });
+
+    expect(result).toMatchObject({ status: 'cancelled', stopReason: 'aborted' });
+    expect(result.providerTransportCount).toBeLessThan(50);
+    expect(execute.mock.calls.length).toBeLessThanOrEqual(4);
   });
 
   it('settles a never-resolving transport at the internal deadline', async () => {

@@ -28,6 +28,7 @@ async function captureInjectedRequestBody(
   modelId: string,
   thinkingConfig?: Record<string, unknown>,
   baseUrl?: string,
+  request: { providerType?: 'openai'; messages?: Array<Record<string, unknown>> } = {},
 ) {
   const originalFetch = globalThis.fetch;
   const globalRecord = globalThis as Record<string, unknown>;
@@ -50,6 +51,7 @@ async function captureInjectedRequestBody(
       modelId,
       apiKey: 'sk-test',
       baseUrl,
+      providerType: request.providerType,
     });
 
     const lastCall = openAiMock.createOpenAI.mock.calls.at(-1);
@@ -59,7 +61,7 @@ async function captureInjectedRequestBody(
       method: 'POST',
       body: JSON.stringify({
         model: modelId,
-        messages: [{ role: 'user', content: 'hi' }],
+        messages: request.messages ?? [{ role: 'user', content: 'hi' }],
       }),
     });
 
@@ -593,6 +595,13 @@ describe('OpenAI provider defaults', () => {
   });
 
   it.each([
+    ['deepseek', 'deepseek-chat', { mode: 'disabled' }, { thinking: { type: 'disabled' } }],
+    [
+      'deepseek',
+      'deepseek-chat',
+      { mode: 'disabled', effort: 'low' },
+      { thinking: { type: 'disabled' } },
+    ],
     ['kimi', 'kimi-k3', { mode: 'enabled', effort: 'high' }, { reasoning_effort: 'high' }],
     ['grok', 'grok-4.6', { mode: 'enabled', effort: 'xhigh' }, { reasoning_effort: 'xhigh' }],
     ['grok', 'grok-4.5', { mode: 'enabled', effort: 'medium' }, { reasoning_effort: 'medium' }],
@@ -716,6 +725,100 @@ describe('OpenAI provider defaults', () => {
     expect(body).not.toHaveProperty('enable_thinking');
   });
 
+  describe('generic thinking toggle for uncatalogued models', () => {
+    const selfHosted = {
+      providerId: 'acme-vllm' as ProviderId,
+      modelId: 'qwen3-32b-instruct-local',
+      baseUrl: 'https://vllm.example/v1',
+    };
+    const capture = (thinkingConfig?: Record<string, unknown>) =>
+      captureInjectedRequestBody(
+        selfHosted.providerId,
+        selfHosted.modelId,
+        thinkingConfig,
+        selfHosted.baseUrl,
+        { providerType: 'openai' },
+      );
+
+    it('sends enable_thinking=false when thinking is explicitly disabled', async () => {
+      const body = await capture({ enabled: false });
+      expect(body.chat_template_kwargs).toEqual({ enable_thinking: false });
+    });
+
+    it('sends enable_thinking=true with a positive budget when thinking is enabled', async () => {
+      const body = await capture({ mode: 'enabled', budgetTokens: 2048 });
+      expect(body.chat_template_kwargs).toEqual({ enable_thinking: true, thinking_budget: 2048 });
+    });
+
+    it('omits a non-positive budget when thinking is enabled', async () => {
+      const body = await capture({ enabled: true, budgetTokens: 0 });
+      expect(body.chat_template_kwargs).toEqual({ enable_thinking: true });
+    });
+
+    it('leaves the request unchanged when no thinking mode is configured', async () => {
+      expect(await capture(undefined)).toEqual({
+        model: selfHosted.modelId,
+        messages: [{ role: 'user', content: 'hi' }],
+      });
+      expect(await capture({ effort: 'high' })).not.toHaveProperty('chat_template_kwargs');
+      expect(await capture({ mode: 'auto' })).not.toHaveProperty('chat_template_kwargs');
+    });
+
+    it('does not retry the reasoning pass-back when the toggle disables thinking', async () => {
+      const originalFetch = globalThis.fetch;
+      const globalRecord = globalThis as Record<string, unknown>;
+      const originalThinkingContext = globalRecord.__thinkingContext;
+      const bodies: Array<Record<string, unknown>> = [];
+      globalThis.fetch = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+        bodies.push(JSON.parse(init?.body as string));
+        return new Response(
+          JSON.stringify({
+            error: { message: 'The `reasoning_content` in the thinking mode must be passed back.' },
+          }),
+          { status: 400, headers: { 'content-type': 'application/json' } },
+        );
+      }) as typeof fetch;
+      try {
+        globalRecord.__thinkingContext = { getStore: () => ({ mode: 'disabled' }) };
+        getModel({ ...selfHosted, providerType: 'openai', apiKey: 'sk-test' });
+        const options = openAiMock.createOpenAI.mock.calls.at(-1)?.[0] as
+          | { fetch?: typeof fetch }
+          | undefined;
+        await options!.fetch!('https://example.test/v1/chat/completions', {
+          method: 'POST',
+          body: JSON.stringify({
+            model: selfHosted.modelId,
+            messages: [
+              { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function' }] },
+            ],
+          }),
+        });
+      } finally {
+        globalThis.fetch = originalFetch;
+        if (originalThinkingContext === undefined) delete globalRecord.__thinkingContext;
+        else globalRecord.__thinkingContext = originalThinkingContext;
+      }
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0]).toMatchObject({ chat_template_kwargs: { enable_thinking: false } });
+    });
+
+    it('keeps catalogued adapters unchanged', async () => {
+      const qwen = await captureInjectedRequestBody('qwen', 'qwen3.6-plus', { mode: 'disabled' });
+      expect(qwen).toMatchObject({ enable_thinking: false });
+      expect(qwen).not.toHaveProperty('chat_template_kwargs');
+    });
+
+    it('sends nothing for catalogued models whose thinking is not controllable', async () => {
+      const body = await captureInjectedRequestBody('grok', 'grok-4.20-reasoning', {
+        mode: 'disabled',
+      });
+      expect(body).toEqual({
+        model: 'grok-4.20-reasoning',
+        messages: [{ role: 'user', content: 'hi' }],
+      });
+    });
+  });
+
   it('recovers reasoning_content from a custom OpenAI gateway stream', async () => {
     const originalFetch = globalThis.fetch;
     const fetchMock = vi.fn(async () => {
@@ -750,6 +853,190 @@ describe('OpenAI provider defaults', () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  describe('reasoning_content pass-back retry on uncatalogued thinking models', () => {
+    // The shape a leading skill handle produces: a synthesized assistant
+    // tool call (no reasoning) followed by its tool result.
+    const skillPreloadMessages = () => [
+      { role: 'user', content: '/deep-research topic' },
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [
+          {
+            id: 'call-skill',
+            type: 'function',
+            function: { name: 'read', arguments: '{"path":"SKILL.md"}' },
+          },
+        ],
+      },
+      { role: 'tool', tool_call_id: 'call-skill', content: 'skill body' },
+      { role: 'assistant', content: 'Earlier plain answer.' },
+      { role: 'user', content: 'go on' },
+    ];
+
+    const passBackError = () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            message: 'The `reasoning_content` in the thinking mode must be passed back to the API.',
+            type: 'invalid_request_error',
+            code: 'invalid_request_error',
+          },
+        }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
+      );
+    const success = () =>
+      new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+
+    async function sendThroughCompat(
+      target: {
+        providerId: ProviderId;
+        modelId: string;
+        providerType?: 'openai';
+        baseUrl?: string;
+      },
+      responses: Array<() => Response>,
+      thinkingConfig?: Record<string, unknown>,
+    ) {
+      const originalFetch = globalThis.fetch;
+      const globalRecord = globalThis as Record<string, unknown>;
+      const originalThinkingContext = globalRecord.__thinkingContext;
+      const bodies: Array<Record<string, unknown>> = [];
+      const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+        bodies.push(JSON.parse(init?.body as string));
+        const next = responses[bodies.length - 1] ?? responses.at(-1)!;
+        return next();
+      });
+      try {
+        globalThis.fetch = fetchMock as typeof fetch;
+        globalRecord.__thinkingContext = { getStore: () => thinkingConfig };
+        getModel({ ...target, apiKey: 'sk-test' });
+        const options = openAiMock.createOpenAI.mock.calls.at(-1)?.[0] as
+          | { fetch?: typeof fetch }
+          | undefined;
+        const response = await options!.fetch!('https://example.test/v1/chat/completions', {
+          method: 'POST',
+          body: JSON.stringify({
+            model: target.modelId,
+            stream: true,
+            messages: skillPreloadMessages(),
+          }),
+        });
+        return { bodies, response };
+      } finally {
+        globalThis.fetch = originalFetch;
+        if (originalThinkingContext === undefined) {
+          delete globalRecord.__thinkingContext;
+        } else {
+          globalRecord.__thinkingContext = originalThinkingContext;
+        }
+      }
+    }
+
+    const customGateway = {
+      providerId: 'acme-gateway' as ProviderId,
+      providerType: 'openai' as const,
+      modelId: 'deepseek-v4-pro',
+      baseUrl: 'https://gateway.example/v1',
+    };
+
+    function assistants(body: Record<string, unknown>) {
+      return (body.messages as Array<Record<string, unknown>>).filter(
+        (message) => message.role === 'assistant',
+      );
+    }
+
+    it('sends the request unchanged when the provider accepts it', async () => {
+      const { bodies, response } = await sendThroughCompat(customGateway, [success]);
+
+      expect(bodies).toHaveLength(1);
+      expect(response.status).toBe(200);
+      for (const message of assistants(bodies[0]!)) {
+        expect(message).not.toHaveProperty('reasoning_content');
+      }
+    });
+
+    it('retries once with an empty reasoning_content on tool-call turns', async () => {
+      const { bodies, response } = await sendThroughCompat(customGateway, [passBackError, success]);
+
+      expect(bodies).toHaveLength(2);
+      expect(response.status).toBe(200);
+      const [toolCallTurn, plainTurn] = assistants(bodies[1]!);
+      expect(toolCallTurn).toMatchObject({
+        reasoning_content: '',
+        tool_calls: [{ id: 'call-skill' }],
+      });
+      expect(plainTurn).not.toHaveProperty('reasoning_content');
+      expect({ ...bodies[1], messages: undefined }).toEqual({ ...bodies[0], messages: undefined });
+    });
+
+    it('surfaces the retry error without retrying again', async () => {
+      const { bodies, response } = await sendThroughCompat(customGateway, [passBackError]);
+
+      expect(bodies).toHaveLength(2);
+      expect(response.status).toBe(400);
+      expect(await response.text()).toContain('passed back');
+    });
+
+    it('does not retry an unrelated 400', async () => {
+      const unrelated = () =>
+        new Response(
+          JSON.stringify({
+            error: {
+              message: 'Invalid value for messages[1].content',
+              type: 'invalid_request_error',
+            },
+          }),
+          { status: 400, headers: { 'content-type': 'application/json' } },
+        );
+      const { bodies, response } = await sendThroughCompat(customGateway, [unrelated, success]);
+
+      expect(bodies).toHaveLength(1);
+      expect(response.status).toBe(400);
+      expect(await response.text()).toContain('Invalid value');
+    });
+
+    it('does not retry when the wire disables thinking', async () => {
+      const { bodies, response } = await sendThroughCompat(
+        {
+          providerId: 'openai',
+          modelId: 'deepseek-v4-flash-vision-exp',
+          baseUrl: 'https://gateway.example/v1',
+        },
+        [passBackError, success],
+        { enabled: false },
+      );
+
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0]).toMatchObject({ chat_template_kwargs: { thinking: false } });
+      expect(response.status).toBe(400);
+    });
+
+    it('keeps the catalogued DeepSeek fill and never retries catalogued models', async () => {
+      const deepseek = await sendThroughCompat(
+        { providerId: 'deepseek', modelId: 'deepseek-v4-pro' },
+        [success],
+      );
+      expect(deepseek.bodies).toHaveLength(1);
+      for (const message of assistants(deepseek.bodies[0]!)) {
+        expect(message).toMatchObject({ reasoning_content: '' });
+      }
+
+      const qwen = await sendThroughCompat({ providerId: 'qwen', modelId: 'qwen3.7-max' }, [
+        passBackError,
+        success,
+      ]);
+      expect(qwen.bodies).toHaveLength(1);
+      expect(qwen.response.status).toBe(400);
+      for (const message of assistants(qwen.bodies[0]!)) {
+        expect(message).not.toHaveProperty('reasoning_content');
+      }
+    });
   });
 
   it('omits a zero SiliconFlow thinking budget when thinking is disabled', async () => {

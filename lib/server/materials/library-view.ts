@@ -7,7 +7,9 @@ import { libraryExtractionStatus } from '@/lib/persistence/material-extraction-f
  */
 import {
   extractionReasonCodeOf,
+  extractionReasonValuesOf,
   type MaterialExtractionReasonCode,
+  type MaterialExtractionReasonValues,
 } from '@/lib/types/material-extraction-failure';
 import { assetPrincipalForOwner } from '@/lib/persistence/owner-assets';
 import { ownerLibraryUsage } from '@/lib/persistence/material-library';
@@ -38,7 +40,12 @@ export interface LibraryMaterialView {
   pageNumber?: number;
   timeMs?: number;
   /** Only stable public reasons leave the server; diagnostic text stays private. */
-  extraction?: { status: string; reasonCode?: MaterialExtractionReasonCode };
+  extraction?: {
+    status: string;
+    reasonCode?: MaterialExtractionReasonCode;
+    /** Counts the reason's explanation states (`too_many_pages`), never provider text. */
+    reasonValues?: MaterialExtractionReasonValues;
+  };
   createdAt: string;
 }
 
@@ -49,6 +56,7 @@ export function libraryMaterialView(
   const status = libraryExtractionStatus(entry.extraction?.status);
   const reasonCode =
     status === 'failed' ? extractionReasonCodeOf(entry.extraction?.reasonCode) : undefined;
+  const reasonValues = extractionReasonValuesOf(reasonCode, entry.extraction?.reasonValues);
   const folderName = entry.folderId ? context.folderNames?.get(entry.folderId) : undefined;
   return {
     materialId: entry.id,
@@ -68,6 +76,7 @@ export function libraryMaterialView(
           extraction: {
             status,
             ...(reasonCode ? { reasonCode } : {}),
+            ...(reasonValues ? { reasonValues } : {}),
           },
         }
       : {}),

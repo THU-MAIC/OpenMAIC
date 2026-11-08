@@ -83,13 +83,6 @@ export interface EditorHint {
 // SurfaceState — what the surface's hook returns to the shell each render.
 // ---------------------------------------------------------------------------
 
-export interface SurfaceHistory {
-  canUndo: boolean;
-  canRedo: boolean;
-  undo: () => void;
-  redo: () => void;
-}
-
 /**
  * **Maintenance note:** any new field added here that the chrome reads
  * must also be added to `surfaceStateEqual` in
@@ -103,13 +96,6 @@ export interface SurfaceState<TContent extends SceneContent = SceneContent, TSel
   selection: TSelection;
   /** True when the surface considers selection non-empty (drives floating bar). */
   hasSelection: boolean;
-
-  /**
-   * Editable surfaces expose undo/redo here. Read-only surfaces (e.g. the
-   * NOOP fallback used for unregistered scene types) omit it; the shell
-   * hides undo/redo controls when undefined.
-   */
-  history?: SurfaceHistory;
 
   insertItems: InsertPaletteItem[];
   floatingActions: FloatingAction[];

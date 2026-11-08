@@ -1,5 +1,5 @@
 import type { Node, NodeType, ResolvedPos, Mark, MarkType, Schema } from 'prosemirror-model';
-import type { EditorState, Selection } from 'prosemirror-state';
+import { TextSelection, type Command, type EditorState, type Selection } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import { selectAll } from 'prosemirror-commands';
 
@@ -7,9 +7,21 @@ export const isList = (node: Node, schema: Schema) => {
   return node.type === schema.nodes.bullet_list || node.type === schema.nodes.ordered_list;
 };
 
+export const selectAllText: Command = (state, dispatch) => {
+  const { doc, schema } = state;
+  if (doc.childCount !== 1 || doc.firstChild?.type !== schema.nodes.text_container) {
+    return selectAll(state, dispatch);
+  }
+  // Select the label's text without replacing its imported inset container.
+  dispatch?.(
+    state.tr.setSelection(TextSelection.between(doc.resolve(1), doc.resolve(doc.content.size - 1))),
+  );
+  return true;
+};
+
 export const autoSelectAll = (view: EditorView) => {
   const { empty } = view.state.selection;
-  if (empty) selectAll(view.state, view.dispatch);
+  if (empty) selectAllText(view.state, view.dispatch);
 };
 
 export const addMark = (

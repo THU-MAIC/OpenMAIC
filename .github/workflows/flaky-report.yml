@@ -1,0 +1,55 @@
+name: Flaky CI Report
+
+# Once a week, list workflow attempts from the last 7 days that failed and then
+# passed on the same commit (a re-run, or a later run of the same workflow),
+# with the failing jobs, steps and Vitest tests. The report goes to the job
+# summary and to a single tracking issue labelled `flaky-report`, which is
+# updated in place. Logic and tests live in .github/scripts/flaky-report.mjs.
+#
+# Manual runs are dry runs (job summary only) unless dry_run is unchecked.
+
+on:
+  schedule:
+    - cron: '23 2 * * 1'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Only write the job summary; do not update the tracking issue'
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: flaky-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    if: github.repository == 'THU-MAIC/OpenMAIC'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Build the flaky CI report
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          DRY_RUN_INPUT: ${{ inputs.dry_run }}
+        with:
+          script: |
+            const { pathToFileURL } = require('node:url');
+            const flaky = await import(pathToFileURL(`${process.cwd()}/.github/scripts/flaky-report.mjs`));
+            const dryRun = flaky.isDryRun(context.eventName, process.env.DRY_RUN_INPUT);
+            const result = await flaky.run({ client: github, repo: context.repo, dryRun, log: core.info });
+            const issue = result.issue
+              ? `Tracking issue ${result.issue.action}: ${result.issue.url}`
+              : 'Dry run: the tracking issue was not changed.';
+            await core.summary.addRaw(`${issue}\n\n`).addRaw(result.body).write();

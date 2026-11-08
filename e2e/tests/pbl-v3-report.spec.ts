@@ -1,0 +1,494 @@
+import { expect } from '@playwright/test';
+import { test } from '../fixtures/pbl-learning-events';
+import { seedServerDocument, uniqueStageId } from '../fixtures/server-seed';
+import { createSettingsStorage } from '../fixtures/test-data/settings';
+import { defaultTheme } from '../fixtures/test-data/slide-theme';
+import type { LearningView } from '@/lib/pbl/v3/types';
+import type { LearningReport } from '@/lib/pbl/v3/report';
+
+test('completed project reports stay discoverable, show facts before analysis, and reopen a read-only workbench', async ({
+  page,
+  learningEvents,
+}) => {
+  test.setTimeout(120000);
+  await page.addInitScript(
+    (settings) => {
+      localStorage.setItem('locale', 'en-US');
+      localStorage.setItem('theme', 'dark');
+      localStorage.setItem('maic:account:settings-storage', settings);
+    },
+    createSettingsStorage({ sidebarCollapsed: false }),
+  );
+  const stageId = uniqueStageId('pbl-report');
+  await seedServerDocument(page, {
+    stage: { id: stageId, name: 'Report acceptance', createdAt: Date.now(), updatedAt: Date.now() },
+    scenes: [
+      {
+        id: 'overview',
+        stageId,
+        type: 'slide',
+        title: 'Course overview',
+        order: 0,
+        content: {
+          type: 'slide',
+          canvas: {
+            id: 'intro-slide',
+            viewportSize: 1000,
+            viewportRatio: 0.5625,
+            theme: defaultTheme,
+            elements: [],
+          },
+        },
+      },
+      {
+        id: 'project',
+        stageId,
+        type: 'pbl',
+        title: 'Todo project',
+        order: 1,
+        content: { type: 'pbl', projectV3: { id: 'greeting-python-lab', version: '1.2.0' } },
+        actions: [],
+      },
+    ],
+    outline: {
+      outlines: [],
+      generationComplete: true,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    },
+  });
+  const steps = ['teaching', 'dialogue', 'plan', 'code', 'tests', 'quiz', 'recap'];
+  const view = {
+    onboardingCompleted: true,
+    id: 'report-study',
+    revision: 19,
+    activitySequence: 20,
+    title: 'Build a small todo application',
+    reportAvailable: true,
+    environmentId: 'report-environment',
+    environment: { state: 'destroyed', ready: false },
+    completedFilesAvailable: true,
+    recovery: null,
+    state: {
+      status: 'completed',
+      position: { milestoneIndex: 0, milestoneId: 'todo', stageIndex: 6 },
+      milestones: [
+        { milestoneId: 'todo', status: 'completed', completedStageIndexes: [0, 1, 2, 3, 4, 5, 6] },
+      ],
+      collected: { todo: { decisions: [], recapCompleted: true } },
+      decisionRevisions: {},
+      lastSequence: 40,
+    },
+    stage: {
+      kind: 'mentor_say',
+      agent: 'mentor',
+      say: 'Reflect',
+      skill: 'recap',
+      studentActions: [],
+    },
+    milestones: [{ id: 'todo', title: 'A working todo list', optional: false, stages: steps }],
+    role: 'mentor',
+    actions: [],
+    files: ['PLAN.md', 'src/todo.py'],
+    busy: false,
+    messages: [],
+    roleRun: null,
+    decisions: [],
+    questions: [],
+    evaluation: null,
+    conversation: [
+      {
+        id: 'final-completion',
+        speaker: 'mentor',
+        parts: [
+          {
+            kind: 'tool',
+            id: 'final-completion-tool',
+            action: 'complete',
+            status: 'succeeded',
+            projectCompleted: true,
+          },
+        ],
+      },
+    ],
+    conversationHistory: [{ sessionId: 'completed-mentor', through: 99, role: 'mentor' }],
+  } as unknown as LearningView;
+  const base: LearningReport = {
+    formatVersion: 2,
+    studyId: view.id,
+    project: { id: 'todo', version: '1.4.2', title: view.title },
+    revision: 19,
+    requiredComplete: true,
+    milestones: [
+      {
+        id: 'todo',
+        title: 'A working todo list',
+        goal: 'Add and delete items from a numbered list.',
+        optional: false,
+        status: 'completed',
+        stages: steps,
+        decisions: [
+          {
+            id: 'placement',
+            question: 'Where should a new task go?',
+            answer: 'Place it at the top.',
+            rationale: 'New tasks should be easy to find.',
+          },
+        ],
+      },
+    ],
+    outcomes: [
+      {
+        milestoneId: 'todo',
+        tests: 'passed',
+        quiz: { score: 4, total: 4, attempt: 1 },
+        reflected: true,
+      },
+    ],
+    counts: {},
+    facts: {
+      learnerTurns: 14,
+      assistantTurns: 18,
+      decisions: 2,
+      decisionChanges: 1,
+      testRuns: 2,
+      quizAttempts: 1,
+      fileEdits: 5,
+      interruptedRuns: 0,
+    },
+    summary: {
+      completedMilestones: 1,
+      totalMilestones: 1,
+      completedSteps: 7,
+      totalSteps: 7,
+      concepts: ['Lists', 'Numbering', 'Input validation', 'Return values'],
+      skills: [
+        { id: 'decisions', milestoneIds: ['todo'] },
+        { id: 'planReview', milestoneIds: ['todo'] },
+        { id: 'codeReview', milestoneIds: ['todo'] },
+        { id: 'verification', milestoneIds: ['todo'] },
+        { id: 'reflection', milestoneIds: ['todo'] },
+      ],
+    },
+    evidence: [
+      {
+        sequence: 9,
+        at: 2,
+        milestoneId: 'todo',
+        kind: 'evaluation.recorded',
+        detail: 'All nine behavior checks passed.',
+      },
+    ],
+    conversations: [
+      {
+        role: 'mentor',
+        milestone: 'todo',
+        messages: [
+          {
+            sequence: 2,
+            at: 1,
+            role: 'user',
+            text: 'I checked the number before deleting. ' + 'X'.repeat(2000),
+          },
+        ],
+        truncated: false,
+      },
+    ],
+    truncated: false,
+    analysis: { status: 'not_generated', findings: [], omitted: false, canRetry: true },
+  };
+  let generated = false,
+    generations = 0,
+    opens = 0;
+  const commands: string[] = [];
+  let finish!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const ready = {
+    ...base,
+    analysis: {
+      status: 'ready' as const,
+      findings: [
+        {
+          category: 'strength' as const,
+          title: 'You connected a boundary to behavior',
+          detail: 'Your validation decision preserved the list for invalid numbers.',
+          evidence: ['turn:0:2'],
+          quote: 'I checked the number before deleting.',
+        },
+      ],
+      omitted: false,
+      canRetry: false,
+    },
+  };
+  await page.route('**/api/pbl/v3**', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.get('project') === '1')
+      return route.fulfill({
+        json: {
+          hero: {
+            title: view.title,
+            description: 'Review your saved project.',
+            gains: ['Make decisions', 'Verify behavior'],
+            instructorName: 'Project tutor',
+            milestoneCount: 1,
+            taskCount: 7,
+          },
+          started: true,
+          studyId: view.id,
+          reportAvailable: true,
+        },
+      });
+    if (url.pathname.endsWith('/report')) {
+      if (route.request().method() === 'POST') {
+        generations++;
+        if (generations === 1) return route.fulfill({ status: 524, body: '' });
+        // Generation is acknowledged before the server finishes its model call.
+        void gate.then(() => {
+          generated = true;
+        });
+        return route.fulfill({
+          status: 202,
+          json: { ...base, analysis: { ...base.analysis!, status: 'generating' } },
+        });
+      }
+      return route.fulfill({ json: generated ? ready : base });
+    }
+    if (url.pathname.endsWith('/history'))
+      return route.fulfill({
+        json: {
+          through: 99,
+          nextBefore: null,
+          conversation: [
+            {
+              id: 'history-file',
+              speaker: 'mentor',
+              parts: [
+                {
+                  kind: 'text',
+                  id: 'history-file-text',
+                  text: 'Review [src/todo.py:1–2](#pbl-file=src%2Ftodo.py&line=1&end=2). [Unavailable history file](#pbl-file=private%2Frubric.md). [Earlier task](#pbl-task).',
+                },
+              ],
+            },
+            {
+              id: 'history-complete',
+              speaker: 'mentor',
+              parts: [
+                {
+                  kind: 'tool',
+                  id: 'history-complete-tool',
+                  action: 'complete',
+                  status: 'succeeded',
+                  projectCompleted: true,
+                },
+              ],
+            },
+          ],
+        },
+      });
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON();
+      if (body.action === 'open') opens++;
+      if (body.command) {
+        commands.push(body.command.type);
+        throw Error('A completed report must not execute or advance a project');
+      }
+    }
+    if (url.searchParams.has('file'))
+      return route.fulfill({
+        json: { text: '# Saved plan\nCheck the number, then delete.', hash: 'a'.repeat(64) },
+      });
+    return route.fulfill({ json: view });
+  });
+  await learningEvents(() => ({
+    view,
+    workbench: {
+      environmentId: view.environmentId!,
+      revision: view.revision,
+      epoch: 0,
+      canEdit: false,
+      canManageFiles: false,
+      canRun: false,
+      planning: false,
+      commands: [],
+      terminals: [],
+    },
+  }));
+  await page.goto(`/classroom/${stageId}`);
+  await page.getByTestId('scene-title').filter({ hasText: 'Todo project' }).click();
+  const heroReport = page.getByRole('button', {
+    name: 'Project completed · Learning report',
+    exact: true,
+  });
+  await expect(heroReport).toBeVisible();
+  await heroReport.click();
+  const report = page.getByTestId('pbl-project-report');
+  await expect(report.getByText('7/7', { exact: true })).toBeVisible();
+  await expect(report.getByText('Concepts practiced', { exact: true }).first()).toBeVisible();
+  const results = report.getByRole('region', { name: 'What you built' });
+  await expect(results.getByText('A working todo list', { exact: true })).toBeVisible();
+  await expect(results.getByText('Add and delete items from a numbered list.')).toBeVisible();
+  const journey = report.getByRole('region', { name: 'Your project journey' });
+  await expect(journey.getByText('How you worked')).toBeVisible();
+  await expect(journey.getByText(/Reviewing a plan/)).toBeVisible();
+  await expect(journey.getByText('Your decision', { exact: true })).toBeVisible();
+  await expect(journey.getByText('Place it at the top.', { exact: true })).toBeVisible();
+  const rationale = journey.getByText('New tasks should be easy to find.', { exact: true });
+  const reasonToggle = journey.getByText('Your rationale', { exact: true });
+  await expect(rationale).toBeHidden();
+  await reasonToggle.click();
+  await expect(rationale).toBeVisible();
+  await reasonToggle.click();
+  await expect(rationale).toBeHidden();
+  await expect.poll(() => generations).toBe(1);
+  const failure = report.getByText(
+    'The analysis could not be generated. Your learning records are saved; you can retry.',
+    { exact: true },
+  );
+  await expect(failure).toBeVisible();
+  await expect(report).not.toContainText('Unexpected end of JSON');
+  await report.getByRole('button', { name: 'Generate report / retry', exact: true }).click();
+  await expect.poll(() => generations).toBe(2);
+  await expect(report.getByText('Preparing your project report…', { exact: true })).toBeVisible();
+  await expect(failure).toHaveCount(0);
+  expect(opens).toBe(0);
+  expect(commands).toEqual([]);
+  // Sharing uses facts independently of the report analysis and never starts another generation.
+  const shareTrigger = report.getByRole('button', { name: 'Create sharing image', exact: true });
+  await shareTrigger.focus();
+  await page.keyboard.press('Space');
+  const share = page.getByRole('dialog', { name: 'Share your achievement', exact: true });
+  const poster = share.getByRole('img', { name: 'Your OpenMAIC achievement image' });
+  await expect(share.getByRole('group')).toHaveCount(0);
+  await expect(share.getByRole('button', { name: /^(Light|Dark)$/ })).toHaveCount(0);
+  await expect(poster).toBeVisible();
+  await expect(share.getByRole('link', { name: 'Save image', exact: true })).toBeVisible();
+  const factsPoster = await poster.getAttribute('src');
+  expect(generations).toBe(2);
+  finish();
+  await expect(
+    report.getByText('You connected a boundary to behavior', { exact: true }),
+  ).toBeVisible();
+  await expect(poster).toHaveAttribute('src', factsPoster!);
+  await page.keyboard.press('ArrowRight');
+  await expect(share).toBeVisible();
+  const save = share.getByRole('link', { name: 'Save image', exact: true });
+  await expect(save).toBeVisible();
+  // Viewport resizing scales the preview without changing the theme-following poster or its pixels.
+  await expect
+    .poll(() => poster.evaluate((img) => (img as HTMLImageElement).naturalWidth))
+    .toBe(1200);
+  const shareViewport = page.viewportSize()!;
+  const imageBeforeResize = await poster.getAttribute('src');
+  for (const width of [420, 800, 1600]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await expect(poster).toHaveAttribute('src', imageBeforeResize!);
+    expect(
+      await poster.evaluate((img) => [
+        (img as HTMLImageElement).naturalWidth,
+        (img as HTMLImageElement).naturalHeight,
+      ]),
+    ).toEqual([1200, 1500]);
+  }
+  await page.setViewportSize(shareViewport);
+  const downloading = page.waitForEvent('download');
+  await save.click();
+  expect((await downloading).suggestedFilename()).toBe('OpenMAIC-dark.png');
+  await page.keyboard.press('Escape');
+  await expect(share).toHaveCount(0);
+  await expect(report).toBeVisible();
+  await expect(shareTrigger).toBeFocused();
+  await shareTrigger.click();
+  await share.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(share).toHaveCount(0);
+  await expect(shareTrigger).toBeFocused();
+  expect(generations).toBe(2);
+  await expect(
+    report.getByText('You connected a boundary to behavior', { exact: true }),
+  ).toBeVisible();
+  await report.screenshot({ path: 'test-results/pbl-v3-report-desktop.png' });
+  const records = report.getByTestId('pbl-report-records');
+  await expect(records).not.toHaveAttribute('open', '');
+  await report.getByRole('button', { name: 'Evidence 1', exact: true }).click();
+  await expect(records).toHaveAttribute('open', '');
+  await expect(records.locator('details[open]')).toContainText(
+    'I checked the number before deleting.',
+  );
+  // An expanded citation must stay inside the report, even with an unbroken token.
+  const priorViewport = page.viewportSize()!;
+  await page.setViewportSize({ width: 520, height: 900 });
+  await expect.poll(() => report.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThan(3);
+  await page.setViewportSize(priorViewport);
+  await report.getByRole('button', { name: 'View read-only workbench', exact: true }).click();
+  const workspace = page.getByTestId('pbl-v3-workspace');
+  await expect(workspace.getByTestId('pbl-project-completed')).toBeVisible();
+  await expect(workspace.getByTestId('pbl-project-completed').getByRole('button')).toHaveCount(0);
+  await expect(workspace.getByRole('button', { name: 'Learning report', exact: true })).toHaveCount(
+    2,
+  );
+  await workspace
+    .locator('.pbl-topbar')
+    .getByRole('button', { name: 'Learning report', exact: true })
+    .click();
+  await expect(report).toBeVisible();
+  // Closing a sharing preview returns keyboard ownership to the report.
+  await shareTrigger.click();
+  await page.keyboard.press('Escape');
+  await expect(shareTrigger).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(report).toHaveCount(0);
+  await expect(page.locator('.monaco-editor .view-lines')).toContainText('Saved plan');
+  await expect(page.locator('.monaco-editor textarea').first()).not.toBeEditable();
+  const historyTrigger = workspace.getByRole('button', {
+    name: 'Conversation history',
+    exact: true,
+  });
+  const history = page.getByRole('dialog', { name: 'Conversation history' });
+  await historyTrigger.click();
+  await history.getByRole('link', { name: 'Unavailable history file', exact: true }).click();
+  await expect(history).toBeVisible();
+  await history.getByRole('link', { name: 'Earlier task', exact: true }).click();
+  await expect(history).toBeVisible();
+  await expect(workspace.getByRole('button', { name: 'Current task', exact: true })).toHaveCount(0);
+  await history.getByRole('link', { name: 'src/todo.py:1–2', exact: true }).click();
+  await expect(history).not.toBeVisible();
+  await expect(workspace.getByRole('tab', { name: 'todo.py', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect.poll(() => page.locator('.monaco-editor .selected-text').count()).toBeGreaterThan(0);
+  await expect(page.locator('.monaco-editor textarea').first()).not.toBeEditable();
+  await historyTrigger.click();
+  await page.keyboard.press('Escape');
+  await expect(history).not.toBeVisible();
+  await expect(historyTrigger).toBeFocused();
+  await historyTrigger.click();
+  await history.getByRole('button', { name: 'Learning report', exact: true }).click();
+  await expect(history).not.toBeVisible();
+  await expect(report).toBeVisible();
+  await expect.poll(() => report.evaluate((el) => el.contains(document.activeElement))).toBe(true);
+  await report.getByRole('button', { name: 'Close report', exact: true }).click();
+  await workspace
+    .getByTestId('pbl-agent-turn')
+    .getByRole('button', { name: 'Learning report', exact: true })
+    .click();
+  await expect(
+    report.getByText('You connected a boundary to behavior', { exact: true }),
+  ).toBeVisible();
+  expect(generations).toBe(2);
+  await report.getByRole('button', { name: 'Close report', exact: true }).click();
+  await workspace.getByRole('button', { name: 'Back to project overview', exact: true }).click();
+  await page.getByTestId('scene-title').filter({ hasText: 'Course overview' }).click();
+  await page.getByTestId('scene-title').filter({ hasText: 'Todo project' }).click();
+  await expect(heroReport).toBeVisible();
+  await heroReport.click();
+  await expect(report.getByText('7/7', { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 520, height: 850 });
+  await expect(report).toBeVisible();
+  expect(await report.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+  await report.screenshot({ path: 'test-results/pbl-v3-report-mobile.png' });
+  expect(generations).toBe(2);
+  expect(commands).toEqual([]);
+});

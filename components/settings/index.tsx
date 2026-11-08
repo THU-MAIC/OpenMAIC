@@ -9,6 +9,8 @@ import { useAgentRuntimeAvailable } from '@/lib/hooks/use-agent-runtime-availabl
 import { settingsSections } from '@/lib/model-settings/shape';
 import { useModelSettingsView } from '@/lib/model-settings/use-model-settings';
 import { cn } from '@/lib/utils';
+import { sandboxRequest } from '@/components/sandbox/client';
+import { SandboxSettings } from './sandbox-settings';
 import { GeneralSettings } from './general-settings';
 import { SkillSettings } from './skill-settings';
 import { TokenPlanSettings } from './token-plan-settings';
@@ -36,6 +38,7 @@ const NAV: { id: SettingsSection; icon: typeof Settings; label: string }[] = [
   { id: 'model-services', icon: Boxes, label: 'settings.modelServices.nav' },
   { id: 'course-models', icon: GraduationCap, label: 'settings.courseModels.nav' },
   { id: 'skills', icon: Sparkles, label: 'settings.skills.nav' },
+  { id: 'sandbox', icon: Boxes, label: 'sandbox.settings.title' },
   { id: 'general', icon: Settings, label: 'settings.systemSettings' },
 ];
 
@@ -56,6 +59,23 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   // available. Until then — and on a deployment without it — the item is
   // hidden, and a request to open it lands on the first section instead.
   const skillsAvailable = useAgentRuntimeAvailable();
+  const [sandboxSettingsAvailable, setSandboxSettingsAvailable] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    let current = true;
+    // The same server-side deployment/admin gate protects both discovery and writes.
+    sandboxRequest('/api/sandbox/settings').then(
+      () => {
+        if (current) setSandboxSettingsAvailable(true);
+      },
+      () => {
+        if (current) setSandboxSettingsAvailable(false);
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [open]);
   // Until the model settings are read, every section is listed; each one
   // shows its own loading state.
   const modelView = useModelSettingsView();
@@ -64,13 +84,15 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
     ? SERVICE_TABS.filter((tab) => sections.modelServices.includes(TAB_CAPABILITY[tab]))
     : SERVICE_TABS;
   const listed = (id: SettingsSection) =>
-    id === 'skills'
-      ? skillsAvailable
-      : id === 'token-plan'
-        ? !sections || sections.tokenPlan
-        : id === 'model-services'
-          ? serviceTabs.length > 0
-          : true;
+    id === 'sandbox'
+      ? sandboxSettingsAvailable
+      : id === 'skills'
+        ? skillsAvailable
+        : id === 'token-plan'
+          ? !sections || sections.tokenPlan
+          : id === 'model-services'
+            ? serviceTabs.length > 0
+            : true;
   const nav = NAV.filter(({ id }) => listed(id));
   // A section that is not listed (asked for, or the default) lands on the first one.
   const activeSection = listed(requestedSection) ? requestedSection : nav[0].id;
@@ -151,6 +173,8 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
         );
       case 'course-models':
         return <h2 className="text-lg font-semibold">{t('settings.courseModels.nav')}</h2>;
+      case 'sandbox':
+        return <h2 className="text-lg font-semibold">{t('sandbox.settings.title')}</h2>;
       case 'general':
         return <h2 className="text-lg font-semibold">{t('settings.systemSettings')}</h2>;
       case 'skills':
@@ -172,7 +196,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="h-[85vh] p-0 gap-0 block max-sm:h-[100dvh] max-sm:max-w-none max-sm:rounded-none"
+        className="home-settings-dialog h-[85vh] p-0 gap-0 block max-sm:h-[100dvh] max-sm:max-w-none max-sm:rounded-none"
         showCloseButton={false}
       >
         <DialogTitle className="sr-only">{t('settings.title')}</DialogTitle>
@@ -216,7 +240,12 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             <div className="flex items-center justify-between gap-3 border-b p-4 sm:p-5">
               <div className="flex items-center gap-3">{getHeaderContent()}</div>
               <div className="flex items-center gap-2">
-                <Button variant="ghost" size="icon" onClick={() => onOpenChange(false)}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={t('common.close')}
+                  onClick={() => onOpenChange(false)}
+                >
                   <X className="h-4 w-4" />
                 </Button>
               </div>
@@ -230,6 +259,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
               )}
             >
               {activeSection === 'general' && <GeneralSettings />}
+              {activeSection === 'sandbox' && <SandboxSettings />}
 
               {activeSection === 'skills' && <SkillSettings />}
 

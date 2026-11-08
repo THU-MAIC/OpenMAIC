@@ -177,7 +177,7 @@ export function buildMilestoneEvalPrompt(
     if (summary.closingQuality) {
       const cq = summary.closingQuality;
       let ans = trimmedPBLText(summary.closingAnswer);
-      if (ans.length > 140) ans = ans.slice(0, 140) + '…';
+      if (ans.length > 140) ans = sliceCodeUnits(ans, 140) + '…';
       teleLines.push(`- closing check: quality=${cq}, answer="${ans}"`);
     }
     if (teleLines.length) {
@@ -315,12 +315,30 @@ export function formatProjectEngagementRollup(project: PBLProjectV2): string {
   );
 }
 
+/** The first `maxLength` UTF-16 code units of `text`, one fewer when the cut
+ *  would split a surrogate pair, so an emoji is dropped whole instead of
+ *  leaving a lone surrogate in the prompt. */
+function sliceCodeUnits(text: string, maxLength: number): string {
+  const code = text.charCodeAt(maxLength - 1);
+  const end = code >= 0xd800 && code <= 0xdbff ? maxLength - 1 : maxLength;
+  return text.slice(0, end);
+}
+
+/** The last `maxLength` UTF-16 code units of `text`, one fewer when the cut
+ *  would split a surrogate pair, so the kept tail never starts with a lone
+ *  low surrogate. */
+function lastCodeUnits(text: string, maxLength: number): string {
+  const start = text.length - maxLength;
+  const code = text.charCodeAt(start);
+  return text.slice(code >= 0xdc00 && code <= 0xdfff ? start + 1 : start);
+}
+
 function promptText(value: unknown, maxLength = 700): string {
   const text = String(value ?? '')
     .replace(/\s+/g, ' ')
     .trim();
   if (!text) return '';
-  return text.length > maxLength ? text.slice(0, maxLength) + '…' : text;
+  return text.length > maxLength ? sliceCodeUnits(text, maxLength) + '…' : text;
 }
 
 function lastMicrotaskInMilestone(milestone: PBLMilestone): PBLMicrotask | undefined {
@@ -434,7 +452,7 @@ export function formatScenarioTranscript(project: PBLProjectV2): string {
     .filter((l): l is string => !!l);
   let text = lines.join('\n');
   if (text.length > SCENARIO_TRANSCRIPT_BUDGET) {
-    text = '…(earlier exchanges trimmed)…\n' + text.slice(text.length - SCENARIO_TRANSCRIPT_BUDGET);
+    text = '…(earlier exchanges trimmed)…\n' + lastCodeUnits(text, SCENARIO_TRANSCRIPT_BUDGET);
   }
   return text;
 }
@@ -549,7 +567,7 @@ export function buildFinalEvalPrompt(
       const learned = last.strengths.slice(0, 4).join(', ') || '(no bullets)';
       const starsStr = typeof last.stars === 'number' ? `${last.stars}★` : '(unrated)';
       const feedback = trimmedPBLText(last.feedback);
-      const prose = feedback.slice(0, 280) + (feedback.length > 280 ? '…' : '');
+      const prose = feedback.length > 280 ? sliceCodeUnits(feedback, 280) + '…' : feedback;
       msSummaries.push(`- ${ms.title} [${starsStr}]\n  learned: ${learned}\n  prose: ${prose}`);
     } else {
       msSummaries.push(`- ${ms.title}: (no milestone evaluation recorded)`);

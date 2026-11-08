@@ -12,6 +12,11 @@ vi.mock('@/lib/web-search', async (importOriginal) => {
 });
 
 import { buildCallAgentTool } from '@/lib/chat/pi/tools/call-agent';
+import {
+  AGENT_TOOL_TIMEOUT_ENV,
+  AgentToolTimeoutError,
+  withAgentToolTimeout,
+} from '@/lib/agent/runtime/tool-timeout';
 
 const ZERO_USAGE = {
   inputTokens: 0,
@@ -73,6 +78,16 @@ function resultFrom(parts: Array<Record<string, unknown>>) {
   return {
     fullStream: (async function* () {
       for (const part of parts) yield part;
+    })(),
+    usage: new Promise(() => {}),
+  };
+}
+
+function resultFromThenHang(parts: Array<Record<string, unknown>>) {
+  return {
+    fullStream: (async function* () {
+      for (const part of parts) yield part;
+      await new Promise(() => {});
     })(),
     usage: new Promise(() => {}),
   };
@@ -195,7 +210,7 @@ function makeHarness(
       elementIds: readonly string[];
     };
     body?: StatelessChatRequest;
-    maxActionsPerAgent?: number;
+
     abortController?: AbortController;
   } = {},
 ) {
@@ -217,11 +232,10 @@ function makeHarness(
     thinkingConfig: { mode: 'disabled', enabled: false },
     maxOutputTokens: 384,
     abortSignal: options.abortController?.signal ?? new AbortController().signal,
-    maxAgentTurns: 3,
-    getAgentTurnCount: () => summaries.length,
+
     getAgentResponses: () => summaries,
     getWhiteboardLedger: () => [],
-    maxActionsPerAgent: options.maxActionsPerAgent ?? 8,
+
     enableWhiteboardTools: true,
     childRuntimeMode: 'native',
     enableNativeChildSpotlight: options.spotlightEnabled ?? true,
@@ -493,32 +507,33 @@ describe('Native Child production consumer', () => {
     });
   });
 
-  it('does not use the Legacy action limit as a Native execution budget', async () => {
+  it('executes nine Native actions in the same Child', async () => {
     useResponses([
-      [spotlightCall('current-element', 'spotlight-1'), finish('tool-calls')],
-      [spotlightCall('current-element', 'spotlight-2'), finish('tool-calls')],
-      [{ type: 'text-delta', text: 'Both pointers were accepted.' }, finish('stop')],
+      [
+        ...Array.from({ length: 9 }, (_, i) => spotlightCall('current-element', `spotlight-${i}`)),
+        finish('tool-calls'),
+      ],
+      [{ type: 'text-delta', text: 'All pointers were accepted.' }, finish('stop')],
     ]);
     const harness = makeHarness({
       evidence: sceneEvidence(),
-      maxActionsPerAgent: 1,
     });
 
     const result = await execute(harness);
 
-    expect(mocks.streamLLM).toHaveBeenCalledTimes(3);
-    expect(harness.events.filter((event) => event.type === 'action')).toHaveLength(2);
-    expect(harness.onActionDone).toHaveBeenCalledTimes(2);
+    expect(mocks.streamLLM).toHaveBeenCalledTimes(2);
+    expect(harness.events.filter((event) => event.type === 'action')).toHaveLength(9);
+    expect(harness.onActionDone).toHaveBeenCalledTimes(9);
     expect(result).not.toHaveProperty('isError');
     expect(result).toMatchObject({
       details: {
-        text: 'Both pointers were accepted.',
+        text: 'All pointers were accepted.',
         nativeChildRun: {
           status: 'completed',
-          attemptCount: 2,
-          executionCount: 2,
-          dispatchedActionCount: 2,
-          providerTransportCount: 3,
+          attemptCount: 9,
+          executionCount: 9,
+          dispatchedActionCount: 9,
+          providerTransportCount: 2,
         },
       },
     });
@@ -930,6 +945,73 @@ describe('Native Child production consumer', () => {
         },
       },
     });
+  });
+
+  it('finalizes a timed-out native child before propagating the timeout', async () => {
+    vi.useFakeTimers();
+    const previousTimeout = process.env[AGENT_TOOL_TIMEOUT_ENV];
+    process.env[AGENT_TOOL_TIMEOUT_ENV] = '5000';
+    try {
+      mocks.streamLLM.mockImplementation(() =>
+        resultFromThenHang([{ type: 'text-delta', text: 'Partial explanation' }]),
+      );
+      const harness = makeHarness();
+      const tool = withAgentToolTimeout(harness.tool);
+      const promise = tool.execute('delegate-timeout', {
+        agentId: teacher.id,
+        instruction: 'Explain briefly.',
+      });
+      const settled = expect(promise).rejects.toBeInstanceOf(AgentToolTimeoutError);
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      await settled;
+
+      expect(harness.events.filter((event) => event.type === 'agent_start')).toHaveLength(1);
+      expect(harness.events.filter((event) => event.type === 'agent_end')).toHaveLength(1);
+      expect(
+        harness.events
+          .filter((event) => event.type === 'text_delta')
+          .map((event) => event.data.content)
+          .join(''),
+      ).toBe('Partial explanation');
+      expect(harness.summaries).toEqual([
+        expect.objectContaining({
+          agentId: teacher.id,
+          contentPreview: 'Partial explanation',
+          actionCount: 0,
+        }),
+      ]);
+      expect(harness.onActionDone).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(harness.events.filter((event) => event.type === 'agent_end')).toHaveLength(1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      if (previousTimeout === undefined) delete process.env[AGENT_TOOL_TIMEOUT_ENV];
+      else process.env[AGENT_TOOL_TIMEOUT_ENV] = previousTimeout;
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not finalize a partially streamed native child on caller cancellation', async () => {
+    const abortController = new AbortController();
+    mocks.streamLLM.mockImplementation(() =>
+      resultFromThenHang([{ type: 'text-delta', text: 'Partial before cancellation' }]),
+    );
+    const harness = makeHarness({ abortController });
+    const pending = execute(harness);
+    await vi.waitFor(() =>
+      expect(harness.events.some((event) => event.type === 'text_delta')).toBe(true),
+    );
+
+    abortController.abort(new DOMException('request cancelled', 'AbortError'));
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(harness.events.filter((event) => event.type === 'agent_start')).toHaveLength(1);
+    expect(harness.events.filter((event) => event.type === 'agent_end')).toHaveLength(0);
+    expect(harness.summaries).toEqual([]);
+    expect(harness.onActionDone).not.toHaveBeenCalled();
   });
 
   it('performs zero Child transport and zero search request when already aborted', async () => {

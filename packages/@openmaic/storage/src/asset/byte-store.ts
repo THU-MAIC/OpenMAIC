@@ -53,6 +53,14 @@ export interface AssetSignedReadHeaders {
 
 export interface AssetByteStore {
   /**
+   * Optional isolated object namespace, outside the course asset registry.
+   * The returned store must never read, write or delete keys in another prefix.
+   * Its consumer owns metadata, retention and collection. Never emulate this
+   * by passing a path as a ContentHash to the course store.
+   */
+  withPrefix?(prefix: string): AssetByteStore;
+
+  /**
    * Store bytes under their content hash.
    *
    * Unconditional and idempotent: writing bytes that are already stored MUST
@@ -61,7 +69,8 @@ export interface AssetByteStore {
    * implementation must not read first, and must not return anything that
    * varies with prior presence.
    */
-  write(hash: ContentHash, bytes: Uint8Array): Promise<void>;
+  /** External adapters should cancel their I/O when the optional signal aborts. */
+  write(hash: ContentHash, bytes: Uint8Array, options?: { signal?: AbortSignal }): Promise<void>;
 
   /**
    * Read the bytes stored under a hash, or `null` if there are none.
@@ -124,6 +133,11 @@ export interface AssetByteStore {
    * deadlock. Object stores and other layers whose bytes genuinely live
    * outside the registry's database set it; the in-registry PostgreSQL byte
    * column does not.
+   *
+   * A layer that sets it (and has no `writeWith`) is written and read with no
+   * registry transaction open: the registry stages its writes behind a pin
+   * instead (see `PgAssetStore.stageBytes`), so a slow upload or download
+   * holds no pooled connection and no lock.
    */
   readonly writesOutsideRegistryDatabase?: true;
 }

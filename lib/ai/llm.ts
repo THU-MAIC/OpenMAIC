@@ -348,7 +348,7 @@ export async function callLLM<T extends GenerateTextParams>(
   source: string,
   retryOptions?: LLMRetryOptions,
   thinking?: ThinkingConfig,
-  fallbackOptions?: { enabled?: boolean; serverManaged?: boolean },
+  fallbackOptions?: { enabled?: boolean; serverManaged?: boolean; preserveAbortSignal?: boolean },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<GenerateTextResult<any, any>> {
   const maxAttempts = (retryOptions?.retries ?? 0) + 1;
@@ -494,11 +494,15 @@ export async function callLLM<T extends GenerateTextParams>(
       logFallbackFired(source, fallbackCause, primary || '?', fallback.modelString);
       // The fallback round is the LAST attempt: run it with no SDK-internal
       // retries on top (a 503 on both models must not cost 3+3 upstream
-      // calls), and do not reuse the caller's abort signal — an
-      // AbortSignal.timeout that already fired would make the fallback round
-      // impossible to run.
+      // calls). Usually a fallback receives a fresh signal; callers with an
+      // explicit shared deadline (reports) retain their cancellation boundary.
       const round = await runRound(
-        { ...params, model: fallback.model, maxRetries: 0, abortSignal: undefined } as T,
+        {
+          ...params,
+          model: fallback.model,
+          maxRetries: 0,
+          abortSignal: fallbackOptions?.preserveAbortSignal ? params.abortSignal : undefined,
+        } as T,
         'fallback',
       );
       if (round.ok) return round.result;

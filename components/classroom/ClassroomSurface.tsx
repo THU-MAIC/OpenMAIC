@@ -45,10 +45,11 @@ import {
   resolveClassroomSurfaceView,
 } from '@/lib/classroom/progressive-load-policy';
 import { useClassroomSession } from '@/lib/classroom/use-classroom-session';
+import { useEditModeFreshness } from '@/lib/classroom/use-edit-mode-freshness';
 import { applySceneDeepLink } from '@/lib/classroom/scene-deep-link';
 import { useRunCourse } from '@/lib/generation-run-client/use-run-course';
 import { pendingSceneFailureKey } from '@/lib/generation-run-client/failure-message';
-import { CourseGeneratingPlaceholder } from './CourseGeneratingPlaceholder';
+import { PblActivityProvider } from '@/components/scene-renderers/pbl/v3/activity-provider';
 
 const log = createLogger('Classroom');
 
@@ -58,7 +59,15 @@ const LOAD_UNAVAILABLE_ERROR = 'load-unavailable';
 // stage_link can become visible shortly before its document. Probe only that
 // explicit availability gap, with a small bounded backoff; media conversion
 // and ordinary failures never enter this schedule.
-export function ClassroomSurface({
+export function ClassroomSurface(props: { classroomId: string; variant?: 'page' | 'pane' }) {
+  return (
+    <PblActivityProvider classroomId={props.classroomId}>
+      <ClassroomSurfaceContent {...props} />
+    </PblActivityProvider>
+  );
+}
+
+function ClassroomSurfaceContent({
   classroomId,
   variant = 'page',
 }: {
@@ -85,6 +94,7 @@ export function ClassroomSurface({
   const loadEpochRef = useRef(0);
 
   const { mayGenerate, refreshOwnership } = useClassroomSession({ classroomId, variant });
+  useEditModeFreshness(classroomId, variant);
 
   const loadClassroom = useCallback(
     async (isEffectCurrent: () => boolean): Promise<ClassroomLoadOutcome> => {
@@ -364,15 +374,6 @@ export function ClassroomSurface({
                 </button>
               </div>
             </div>
-          ) : variant === 'pane' && runCourse.generation ? (
-            // The pane is edit-locked and a course being generated is
-            // read-only until its run completes: say so rather than show an
-            // edit chrome that cannot resolve. The run completing clears
-            // `generation` and the course mounts here by itself.
-            <CourseGeneratingPlaceholder
-              status={runCourse.generation.status}
-              href={runCourse.generation.href}
-            />
           ) : (
             <Stage
               classroomId={classroomId}

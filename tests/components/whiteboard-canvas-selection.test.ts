@@ -640,10 +640,13 @@ describe('WhiteboardCanvas selection and interaction contract', () => {
     });
     // Canvas pan was triggered on viewport, preventing default
     expect(shapePointerDown.defaultPrevented).toBe(true);
+    expect(selection?.toString()).toBe('');
 
     // Test D: Hit test on empty canvas space (x: 500, y: 400)
     const emptyCanvasHitTarget = realisticHitTest(500, 400);
     expect(emptyCanvasHitTarget).toBe(viewport);
+    selection?.addRange(codeRange);
+    expect(selection?.toString()).toContain('const x = 42;');
 
     const canvasPointerDown = new PointerEvent('pointerdown', {
       bubbles: true,
@@ -656,6 +659,7 @@ describe('WhiteboardCanvas selection and interaction contract', () => {
       emptyCanvasHitTarget.dispatchEvent(canvasPointerDown);
     });
     expect(canvasPointerDown.defaultPrevented).toBe(true);
+    expect(selection?.toString()).toBe('');
 
     await act(async () => root.unmount());
   });

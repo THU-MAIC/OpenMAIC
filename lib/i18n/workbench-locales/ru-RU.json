@@ -21,7 +21,8 @@
     "stop": "Остановить эту сборку",
     "waiting": "Обработка",
     "emptyTitle": "Начните новый разговор",
-    "emptyHint": "Опишите нужное изменение или укажите класс через @"
+    "emptyHint": "Опишите нужное изменение или укажите класс через @",
+    "copyReply": "Copy Agent reply"
   },
   "question": {
     "waiting": "Ожидает вашего ответа",
@@ -35,6 +36,7 @@
     "submit": "Отправить",
     "dismiss": "Отклонить",
     "inFormBelow": "Ответьте в форме ниже",
+    "inPreview": "Ответьте в превью",
     "multiAnswerSeparator": ", "
   },
   "material": {
@@ -98,6 +100,21 @@
       "vocational": "Профессиональная подготовка",
       "workshop-style": "Интерактивный воркшоп"
     }
+  },
+  "preview": {
+    "eyebrow": "В работе",
+    "understanding": "Разбираем ваш запрос",
+    "understandingDesc": "Читаем, что вы попросили и что для этого нужно…",
+    "asking": "Короткий вопрос",
+    "askingDesc": "Агент продолжит после вашего ответа.",
+    "assembling": "Готовим класс",
+    "assemblingDesc": "Создаём курс и подбираем преподавателя и одноклассников…",
+    "opening": "Открываем класс",
+    "page": "Страница {{order}}",
+    "pageCaption": "Страница {{order}} · {{title}}",
+    "skills": "Подключённые навыки",
+    "resting": "Здесь появится ваш курс",
+    "restingDesc": "Продолжайте разговор; когда курс будет создан, он откроется в этой вкладке."
   },
   "thinking": {
     "active": "Думает…",
@@ -190,6 +207,15 @@
       "createStage": "Создать класс",
       "renameStage": "Переименовать класс",
       "readStageOutline": "Прочитать план класса",
+      "writeFile": "Write file",
+      "listFiles": "List project files",
+      "manageFile": "Manage project file",
+      "runBuild": "Run build",
+      "collectBuild": "Collect build result",
+      "readTeachingSkill": "Read teaching section",
+      "requestReview": "Ask for review",
+      "completeTeachingStage": "Complete teaching step",
+      "respondToLearner": "Answer your question",
       "listMaterialFolders": "Проверить папки базы знаний",
       "createMaterialFolder": "Создать папку в базе знаний",
       "renameMaterialFolder": "Переименовать папку базы знаний",
@@ -282,6 +308,7 @@
       "renameStage": "Не удалось переименовать класс",
       "readStageOutline": "Не удалось прочитать план класса",
       "generic": "Вызов инструмента не удался",
+      "interrupted": "Tool call interrupted",
       "listMaterialFolders": "Не удалось проверить папки базы знаний",
       "createMaterialFolder": "Не удалось создать папку базы знаний",
       "renameMaterialFolder": "Не удалось переименовать папку базы знаний",

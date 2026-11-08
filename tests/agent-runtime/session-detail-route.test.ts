@@ -128,3 +128,15 @@ describe('PATCH agent session title', () => {
     expect(response.headers.get('set-cookie')).toContain('anonymous_id=test');
   });
 });
+
+it('hides teaching sessions from generic detail and title APIs', async () => {
+  const id = 'pbl-role-owned';
+  const response = await GET(new NextRequest(`http://localhost/api/agent/sessions/${id}`), {
+    params: Promise.resolve({ id }),
+  });
+  expect(response.status).toBe(404);
+  expect(response.headers.get('set-cookie')).toContain('anonymous_id=test');
+  expect((await patch(JSON.stringify({ title: 'Bypass' }), id)).status).toBe(404);
+  expect(mocks.getSession).not.toHaveBeenCalled();
+  expect(mocks.setManualSessionTitle).not.toHaveBeenCalled();
+});

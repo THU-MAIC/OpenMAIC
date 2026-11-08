@@ -8,7 +8,7 @@ interface Workflow {
   jobs: Record<string, { steps: Array<{ name?: string; run?: string }> }>;
 }
 
-it('runs every tracked app PostgreSQL suite in the database-backed CI step', () => {
+it('runs every tracked app PostgreSQL suite with bounded file parallelism in the database-backed CI step', () => {
   const root = process.cwd();
   const workflow = load(
     readFileSync(resolve(root, '.github/workflows/storage-pg-contract.yml'), 'utf8'),
@@ -23,6 +23,7 @@ it('runs every tracked app PostgreSQL suite in the database-backed CI step', () 
     .trim()
     .split(/\s+/);
   expect(command.slice(0, 4)).toEqual(['pnpm', 'exec', 'vitest', 'run']);
+  expect(command[4]).toBe('--maxWorkers=2');
 
   const suites = execFileSync('git', ['ls-files', '-z', '--', 'tests/**/*.pg.test.ts'], {
     cwd: root,
@@ -32,5 +33,9 @@ it('runs every tracked app PostgreSQL suite in the database-backed CI step', () 
     .filter(Boolean)
     .sort();
   expect(suites.length).toBeGreaterThan(0);
-  expect(command.slice(4).sort()).toEqual(suites);
+  // Only the timeout options may accompany the suite paths; any other option
+  // (such as --exclude) stays in the list and fails the comparison.
+  const timeoutOption = /^--(testTimeout|hookTimeout)=\d+$/;
+  const listed = command.slice(5).filter((arg) => !timeoutOption.test(arg));
+  expect(listed.sort()).toEqual(suites);
 });

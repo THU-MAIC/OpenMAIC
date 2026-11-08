@@ -1,3 +1,5 @@
+import { AudioProviderError } from '@/lib/audio/provider-error';
+import { QwenVoiceCloneError } from '@/lib/audio/qwen-voice-clone';
 import { APICallError, RetryError } from 'ai';
 import { describe, expect, it } from 'vitest';
 
@@ -17,6 +19,31 @@ function providerError(statusCode: number, body?: unknown) {
 }
 
 describe('run failure codes', () => {
+  it('preserves adapter-owned incompatibility codes without knowing the vendor', () => {
+    expect(
+      runFailureCode(new AudioProviderError('EXAMPLE_RECREATE', 409, 'voice-incompatible')),
+    ).toEqual({ errorCode: 'EXAMPLE_RECREATE', statusCode: 409 });
+    expect(runFailureCode(new AudioProviderError('EXAMPLE_TIMEOUT', 504, 'timeout'))).toEqual(
+      runFailureCode(new QwenVoiceCloneError('QWEN_VC_TIMEOUT', 504)),
+    );
+    expect(
+      runFailureCode(
+        Object.assign(new Error('untrusted'), {
+          code: 'EXAMPLE_RECREATE',
+          audioFailureKind: 'voice-incompatible',
+          httpStatus: 409,
+        }),
+      ),
+    ).not.toHaveProperty('errorCode', 'EXAMPLE_RECREATE');
+  });
+
+  it('preserves the actionable reclone code instead of classifying it as a generic upstream error', () => {
+    expect(runFailureCode(new QwenVoiceCloneError('QWEN_VC_RECLONE_REQUIRED', 409))).toEqual({
+      errorCode: 'QWEN_VC_RECLONE_REQUIRED',
+      statusCode: 409,
+    });
+  });
+
   it.each([
     'insufficient_quota',
     'credit_balance_exhausted',
