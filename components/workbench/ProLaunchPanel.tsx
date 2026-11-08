@@ -53,7 +53,11 @@ import {
 import { insertSkillHandle, seedSlashQuery } from '@/lib/workbench/composer-skills';
 import { takePromptSeed, type PromptSeed } from '@/lib/workbench/prompt-seed';
 import { resolveComposerMenu } from '@/lib/workbench/composer-menus';
-import { ComposerInput, type ComposerInputHandle } from '@/components/workbench/composer-input';
+import {
+  ComposerInput,
+  focusComposerWhenShown,
+  type ComposerInputHandle,
+} from '@/components/workbench/composer-input';
 import { useInlineMentions } from '@/components/workbench/use-inline-mentions';
 import {
   expandMentions,
@@ -142,24 +146,7 @@ export function ProLaunchPanel({
   const [mentionDismissed, setMentionDismissed] = useState<string | null>(null);
   const inputRef = useRef<ComposerInputHandle | null>(null);
 
-  /**
-   * Focus the box once it can take focus. A new conversation started from an
-   * open one asks while the home face is still hidden or mounting, and focusing
-   * an element that is not rendered is a silent no-op, so try again on the next
-   * frames until the box is on screen (or give up quietly).
-   */
-  const focusWhenShown = useCallback(() => {
-    let frames = 0;
-    let handle = 0;
-    const attempt = () => {
-      inputRef.current?.focus();
-      if (document.activeElement?.closest(`[data-testid="${PROMPT_TEST_ID}"]`)) return;
-      frames += 1;
-      if (frames < 30) handle = requestAnimationFrame(attempt);
-    };
-    attempt();
-    return () => cancelAnimationFrame(handle);
-  }, []);
+  const focusWhenShown = useCallback(() => focusComposerWhenShown(inputRef, PROMPT_TEST_ID), []);
 
   useEffect(() => {
     if (autoFocus) return focusWhenShown();

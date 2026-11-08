@@ -501,3 +501,25 @@ export function ComposerInput({
 
   return <div ref={mountRef} />;
 }
+
+/**
+ * Focus a composer once it can take focus. A request that arrives while its
+ * pane is still hidden or mounting (a new chat started from an open one) would
+ * otherwise be a silent no-op, so retry on the next frames until the box whose
+ * test id is given actually holds focus. Returns a cancel function.
+ */
+export function focusComposerWhenShown(
+  ref: { readonly current: ComposerInputHandle | null },
+  testId: string,
+): () => void {
+  let frames = 0;
+  let handle = 0;
+  const attempt = () => {
+    ref.current?.focus();
+    if (document.activeElement?.closest(`[data-testid="${testId}"]`)) return;
+    frames += 1;
+    if (frames < 60) handle = requestAnimationFrame(attempt);
+  };
+  attempt();
+  return () => cancelAnimationFrame(handle);
+}
