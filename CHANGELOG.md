@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Bug Fixes
 
-- Interactive pages: the page writer now receives the widget outline as written. Variables given as objects (name, range, unit) read as `angle (0–90, deg)` instead of `[object Object]`, with range constraints such as `step` kept, the design idea is passed on instead of left empty, and outline fields with no slot of their own, such as controls or readouts, reach the prompt as additional design requirements. `@openmaic/generation` 0.3.30.
+- Interactive pages: the page writer now receives the widget outline as written. Variables given as objects (name, range, unit) read as `angle (0–90, deg)` instead of `[object Object]`, with range constraints such as `step` kept, the design idea is passed on instead of left empty, and outline fields with no slot of their own, such as controls or readouts, reach the prompt as additional design requirements. `@openmaic/generation` 0.3.30; range constraints kept in 0.3.31.
 - Interactive pages: a hosted library named with a version that does not exist on the hosted release line, such as `@tailwindcss/browser@4.11.18` for 4.1.18, now loads the hosted build instead of failing with a 404 and leaving the page unstyled or broken. This applies to both deployment-hosted `/vendor/interactive/` paths and public CDN URLs, including versions above the hosted one, at render time and in HTML/ZIP export. Unknown packages and other major versions (or other 0.x minors for pre-1.0 libraries) are left as written. `@openmaic/generation` 0.3.30.
 
 ## [1.4.1] - 2026-11-05
