@@ -49,7 +49,11 @@ function formatRange(range: unknown): string | null {
     return `${range[0]}–${range[1]}`;
   }
   if (isRecord(range) && isPrimitive(range.min) && isPrimitive(range.max)) {
-    return `${range.min}–${range.max}`;
+    // Keep other constraints (step, default, ...) next to the bounds.
+    const extras = Object.entries(range)
+      .filter(([key, value]) => key !== 'min' && key !== 'max' && !isBlank(value))
+      .map(([key, value]) => `${key}: ${compactValue(value)}`);
+    return [`${range.min}–${range.max}`, ...extras].join(', ');
   }
   return null;
 }
