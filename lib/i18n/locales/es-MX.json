@@ -2430,7 +2430,8 @@
       "running": "Running",
       "succeeded": "Ready",
       "failed": "Needs attention",
-      "cancelled": "Stopped"
+      "cancelled": "Stopped",
+      "awaitingAnswer": "Esperando tu respuesta"
     },
     "backToWorkspace": "Back to workspace",
     "searchEmpty": "No matches",

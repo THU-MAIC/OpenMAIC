@@ -453,6 +453,12 @@
   color: var(--ws-fail);
 }
 
+/* The agent is waiting on the teacher's answer: the accent, not an alarm. */
+.ws-row-ask {
+  display: inline-flex;
+  color: var(--ws-accent);
+}
+
 .ws-dot-fail {
   background: var(--ws-fail);
 }

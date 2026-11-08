@@ -2430,7 +2430,8 @@
       "running": "進行中",
       "succeeded": "已就緒",
       "failed": "需處理",
-      "cancelled": "已停止"
+      "cancelled": "已停止",
+      "awaitingAnswer": "等待你的回答"
     },
     "backToWorkspace": "返回工作區",
     "searchEmpty": "沒有符合的內容",

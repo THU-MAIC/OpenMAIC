@@ -68,6 +68,7 @@ const UNNAMED = 'session-unnamed';
 
 async function renderRail(
   statuses: Partial<Record<string, string>> = {},
+  awaiting: Partial<Record<string, boolean>> = {},
 ): Promise<{ onRenameSession: ReturnType<typeof vi.fn> }> {
   const onRenameSession = vi.fn(async () => null);
 
@@ -86,6 +87,7 @@ async function renderRail(
             prompt: '帮我做一节课',
             title: '期末复习课',
             status: (statuses[NAMED] ?? 'succeeded') as 'succeeded',
+            ...(awaiting[NAMED] ? { awaitingAnswer: true } : {}),
             createdAt: 1,
             updatedAt: 2,
           },
@@ -94,6 +96,7 @@ async function renderRail(
             stageId: 'stage-2',
             prompt: '再来一节',
             status: (statuses[UNNAMED] ?? 'succeeded') as 'succeeded',
+            ...(awaiting[UNNAMED] ? { awaitingAnswer: true } : {}),
             createdAt: 1,
             updatedAt: 1,
           },
@@ -236,6 +239,52 @@ describe('the rail is a chat list', () => {
     const failed = byTestId(`pro-nav-session-failed-${UNNAMED}`)!;
     expect(failed.getAttribute('title')).toBe('workspace.sessionStatus.failed');
     expect(byTestId(`pro-nav-session-running-${UNNAMED}`)).toBeNull();
+  });
+
+  it('marks a failed chat with an alert in place of its time, and nothing else', async () => {
+    await renderRail({ [UNNAMED]: 'failed' });
+    await vi.waitFor(() => expect(byTestId(`pro-nav-session-${UNNAMED}`)).not.toBeNull());
+    const failed = byTestId(`pro-nav-session-failed-${UNNAMED}`)!;
+    expect(failed.getAttribute('role')).toBe('img');
+    expect(failed.getAttribute('aria-label')).toBe('workspace.sessionStatus.failed');
+    expect(failed.classList.contains('ws-row-fail')).toBe(true);
+    const row = byTestId(`pro-nav-session-${UNNAMED}`)!;
+    // The mark is the row's only metadata: the time gives way to it.
+    expect(row.querySelectorAll('.ws-row-meta')).toHaveLength(1);
+    expect(row.querySelectorAll('.ws-row-status')).toHaveLength(1);
+    expect(byTestId(`pro-nav-session-awaiting-${UNNAMED}`)).toBeNull();
+    // The neighbour at rest keeps its time and shows no mark.
+    const rest = byTestId(`pro-nav-session-${NAMED}`)!;
+    expect(rest.querySelector('.ws-row-status')).toBeNull();
+    expect(rest.querySelector('.ws-row-meta')?.textContent).not.toBe('');
+  });
+
+  it('marks a chat waiting on the teacher’s answer with a labelled question mark', async () => {
+    await renderRail({}, { [NAMED]: true });
+    await vi.waitFor(() => expect(byTestId(`pro-nav-session-${NAMED}`)).not.toBeNull());
+    const awaiting = byTestId(`pro-nav-session-awaiting-${NAMED}`)!;
+    expect(awaiting).not.toBeNull();
+    expect(awaiting.getAttribute('role')).toBe('img');
+    expect(awaiting.getAttribute('aria-label')).toBe('workspace.sessionStatus.awaitingAnswer');
+    expect(awaiting.getAttribute('title')).toBe('workspace.sessionStatus.awaitingAnswer');
+    expect(awaiting.classList.contains('ws-row-ask')).toBe(true);
+    const row = byTestId(`pro-nav-session-${NAMED}`)!;
+    // The mark is the row's only metadata: the time gives way to it.
+    expect(row.querySelectorAll('.ws-row-meta')).toHaveLength(1);
+    expect(row.querySelectorAll('.ws-row-status')).toHaveLength(1);
+    expect(byTestId(`pro-nav-session-awaiting-${UNNAMED}`)).toBeNull();
+  });
+
+  it('shows one mark by precedence: running over awaiting, awaiting over failed', async () => {
+    await renderRail(
+      { [NAMED]: 'running', [UNNAMED]: 'failed' },
+      { [NAMED]: true, [UNNAMED]: true },
+    );
+    await vi.waitFor(() => expect(byTestId(`pro-nav-session-${NAMED}`)).not.toBeNull());
+    expect(byTestId(`pro-nav-session-running-${NAMED}`)).not.toBeNull();
+    expect(byTestId(`pro-nav-session-awaiting-${NAMED}`)).toBeNull();
+    expect(byTestId(`pro-nav-session-awaiting-${UNNAMED}`)).not.toBeNull();
+    expect(byTestId(`pro-nav-session-failed-${UNNAMED}`)).toBeNull();
   });
 
   it('shows a chat row as its title and relative time, with no status mark', async () => {
