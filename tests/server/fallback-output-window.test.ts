@@ -161,6 +161,75 @@ describe('fallback output window at the provider boundary', () => {
       ]);
     },
   );
+
+  it.each([
+    ['omitted', undefined, 4096],
+    ['explicit', 200000, 262144],
+  ] as const)(
+    'preserves an %s limit on a compatible endpoint with an OpenAI model name',
+    async (_case, requested, endpointLimit) => {
+      vi.stubEnv('OPENAI_COMPAT_USE_STREAMING_CHAT', 'true');
+      const defaultTransport = transport.getMockImplementation()!;
+      transport.mockImplementation(async (input, init) => {
+        if (!String(input).startsWith('https://compat.example.test/')) {
+          return defaultTransport(input, init);
+        }
+        const body = JSON.parse(String(init?.body));
+        requests.push({ primary: false, maxOutputTokens: body.max_completion_tokens });
+        if (body.max_completion_tokens > endpointLimit) {
+          return Response.json(
+            { error: { message: "Output limit exceeds this endpoint's capacity" } },
+            { status: 400 },
+          );
+        }
+        const result = {
+          id: 'chatcmpl-compat',
+          object: body.stream ? 'chat.completion.chunk' : 'chat.completion',
+          created: 1,
+          model: 'gpt-5.6',
+          choices: [
+            {
+              index: 0,
+              [body.stream ? 'delta' : 'message']: { role: 'assistant', content: outlineText },
+              finish_reason: 'stop',
+            },
+          ],
+        };
+        return body.stream
+          ? new Response(`data: ${JSON.stringify(result)}\n\ndata: [DONE]\n\n`, {
+              headers: { 'content-type': 'text/event-stream' },
+            })
+          : Response.json(result);
+      });
+      const resolution = lookupFromLayers('agent', {
+        workspace: null,
+        deployment: {
+          source: 'deployment',
+          config: {
+            providers: {
+              primary: { preset: 'openai', apiKey: 'test-key' },
+              backup: { preset: 'openai-compatible', baseUrl: 'https://compat.example.test/v1' },
+            },
+            slots: { agent: { model: 'primary:gpt-5.4', fallback: 'backup:gpt-5.6' } },
+          },
+        },
+      });
+      if (resolution.status !== 'assigned') throw new Error('Test slot must be assigned');
+      const primary = await slotLanguageModel(resolution);
+      const result = await callLLM(
+        { model: primary.model, prompt: 'hello', maxOutputTokens: requested },
+        'pbl-learning-report',
+      );
+      expect(result.text).toBe(outlineText);
+      expect(await streamed(primary.model, requested)).toBe(outlineText);
+      expect(requests).toEqual([
+        { primary: true, maxOutputTokens: requested },
+        { primary: false, maxOutputTokens: requested },
+        { primary: true, maxOutputTokens: requested },
+        { primary: false, maxOutputTokens: requested },
+      ]);
+    },
+  );
 });
 
 describe('model identity probes', () => {

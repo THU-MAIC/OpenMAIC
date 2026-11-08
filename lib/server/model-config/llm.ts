@@ -177,7 +177,7 @@ export async function slotLanguageModel(
     return {
       model: built.model,
       modelString: built.modelString,
-      outputWindow: built.modelInfo?.outputWindow,
+      outputWindow: fallback.catalogue === false ? undefined : built.modelInfo?.outputWindow,
     };
   });
   return { ...resolved, resolution };
