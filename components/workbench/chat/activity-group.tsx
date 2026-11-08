@@ -86,7 +86,9 @@ export function ActivityGroup({
         ) : (
           <>
             <span className={styles.toolGroup.title}>{counts}</span>
-            <span className={styles.toolGroup.meta}>· {t('workbench.tool.group.done')}</span>
+            {failed ? null : (
+              <span className={styles.toolGroup.meta}>· {t('workbench.tool.group.done')}</span>
+            )}
           </>
         )}
         {failed ? (
