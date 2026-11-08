@@ -80,6 +80,9 @@ export type { PromptSeed } from '@/lib/workbench/prompt-seed';
 /** Stable identity, so the `@` memo does not re-run on every parentless render. */
 const NO_COURSE_OPTIONS: readonly CourseMentionSource[] = [];
 
+/** The composer's editable box, by the test id it already carries. */
+const PROMPT_TEST_ID = 'pro-launch-prompt';
+
 export function ProLaunchPanel({
   autoFocus = false,
   focusSignal = 0,
@@ -139,9 +142,28 @@ export function ProLaunchPanel({
   const [mentionDismissed, setMentionDismissed] = useState<string | null>(null);
   const inputRef = useRef<ComposerInputHandle | null>(null);
 
+  /**
+   * Focus the box once it can take focus. A new conversation started from an
+   * open one asks while the home face is still hidden or mounting, and focusing
+   * an element that is not rendered is a silent no-op, so try again on the next
+   * frames until the box is on screen (or give up quietly).
+   */
+  const focusWhenShown = useCallback(() => {
+    let frames = 0;
+    let handle = 0;
+    const attempt = () => {
+      inputRef.current?.focus();
+      if (document.activeElement?.closest(`[data-testid="${PROMPT_TEST_ID}"]`)) return;
+      frames += 1;
+      if (frames < 30) handle = requestAnimationFrame(attempt);
+    };
+    attempt();
+    return () => cancelAnimationFrame(handle);
+  }, []);
+
   useEffect(() => {
-    if (autoFocus) inputRef.current?.focus();
-  }, [autoFocus]);
+    if (autoFocus) return focusWhenShown();
+  }, [autoFocus, focusWhenShown]);
 
   useLayoutEffect(() => {
     left.current = false;
@@ -379,7 +401,8 @@ export function ProLaunchPanel({
     // Both dismissal memories go with the draft they named.
     setSlashDismissed(null);
     materials.clear();
-    inputRef.current?.focus();
+    const cancelFocus = focusWhenShown();
+    return cancelFocus;
     // `materials.clear` is intentionally event-like; depending on its fresh
     // object identity would rerun this reset after every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -542,7 +565,7 @@ export function ProLaunchPanel({
         ) : null}
         <ComposerInput
           inputRef={inputRef}
-          testId="pro-launch-prompt"
+          testId={PROMPT_TEST_ID}
           value={prompt}
           readOnly={submitting}
           onCaretChange={reportCaret}
