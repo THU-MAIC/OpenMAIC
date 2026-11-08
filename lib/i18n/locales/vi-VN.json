@@ -112,6 +112,7 @@
       "emptyClassroom": "Lớp học này không có cảnh nào.",
       "unsupportedScene": "Cảnh này không có trong bản xuất ngoại tuyến.",
       "interactiveTitle": "Cảnh tương tác",
+      "interactiveMoreBelow": "Còn nội dung bên dưới",
       "videoUnavailable": "Bản xuất ngoại tuyến không bao gồm video",
       "quizSubmit": "Nộp bài",
       "quizRetry": "Làm lại",
@@ -268,6 +269,7 @@
       "title": "Tương tác này không chạy được",
       "dismiss": "Đóng"
     },
+    "interactiveMoreBelow": "Còn nội dung bên dưới",
     "tabs": {
       "lecture": "Ghi chú",
       "chat": "Trò chuyện"
@@ -2430,7 +2432,8 @@
       "running": "Running",
       "succeeded": "Ready",
       "failed": "Needs attention",
-      "cancelled": "Stopped"
+      "cancelled": "Stopped",
+      "awaitingAnswer": "Đang chờ câu trả lời của bạn"
     },
     "backToWorkspace": "Back to workspace",
     "searchEmpty": "No matches",

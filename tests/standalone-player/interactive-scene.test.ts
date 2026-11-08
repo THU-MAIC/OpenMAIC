@@ -54,4 +54,54 @@ describe('standalone InteractiveScene', () => {
     expect(iframe.style.transform).toBe('scale(0.5)');
     act(() => root.unmount());
   });
+  it('shrinks a page whose content outgrows the frame and cues what is left below', () => {
+    vi.stubGlobal('ResizeObserver', StubResizeObserver);
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(640);
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(360);
+    const widgets = { attach: vi.fn(), markLoaded: vi.fn() } as unknown as WidgetChannel;
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => {
+      root.render(
+        createElement(InteractiveScene, { html: '<p>x</p>', title: 'T', strings, widgets }),
+      );
+    });
+    const iframe = container.querySelector('iframe')!;
+    const send = (height: number, scrollRemaining: number) =>
+      act(() => {
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            source: iframe.contentWindow,
+            data: {
+              __maicInteractive: true,
+              kind: 'content-extent',
+              viewportWidth: Number.parseFloat(iframe.style.width),
+              viewportHeight: Number.parseFloat(iframe.style.height),
+              contentWidth: 1280,
+              contentHeight: height,
+              scrollRemaining,
+            },
+          }),
+        );
+      });
+
+    expect(iframe.style.transform).toBe('scale(0.5)');
+    send(900, 180);
+    expect(iframe.style.transform).toBe('scale(0.4)');
+    expect(container.querySelector('[data-testid="interactive-more-below"]')).toBeNull();
+
+    // The page reflowed and fits; then a section opens with more than the floor allows.
+    send(900, 0);
+    send(1600, 700);
+    expect(iframe.style.transform).toBe('scale(0.375)');
+    expect(container.querySelector('[data-testid="interactive-more-below"]')).toBeNull();
+    send(1600, 640);
+    expect(
+      container.querySelector('[data-testid="interactive-more-below"]')?.textContent,
+    ).toContain('[interactiveMoreBelow]');
+    send(1600, 0);
+    expect(container.querySelector('[data-testid="interactive-more-below"]')).toBeNull();
+    act(() => root.unmount());
+  });
 });

@@ -16,8 +16,9 @@
  *    whole library (folders, import, filing, rename, delete, generating
  *    courses), so the rail is navigation and nothing else;
  *  - a chat row is its title and its relative time; only a state worth a mark
- *    replaces the time — a quiet spinner while it runs, a small alert when it
- *    failed. A finished run goes back to rest, with no "unread" dot;
+ *    replaces the time — a quiet spinner while it runs, a question mark when
+ *    the agent asked something and is waiting for the answer, a small alert
+ *    when it failed. A finished run goes back to rest, with no "unread" dot;
  *  - long lists reveal one page at a time (`workspace-paging`), because this
  *    account can hold hundreds of chats and "reveal everything" is not a
  *    navigation;
@@ -62,6 +63,7 @@ import {
   BookOpen,
   Library,
   LoaderCircle,
+  MessageCircleQuestion,
   MessagesSquare,
   RefreshCw,
   Search,
@@ -72,7 +74,12 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { useBrand } from '@/lib/brand/brand-context';
 import type { HomeDiscoveryState } from '@/lib/hooks/use-home-discovery';
 import { cn } from '@/lib/utils/cn';
-import { relativeBucket, type ProHomeSessionItem } from '@/lib/workbench/pro-home-data';
+import {
+  relativeBucket,
+  sessionRowMark,
+  type ProHomeSessionItem,
+  type SessionRowMarkKind,
+} from '@/lib/workbench/pro-home-data';
 import {
   EMPTY_PAGES,
   nextPage,
@@ -423,6 +430,7 @@ export function WorkspaceRail({
         />
       );
     }
+    const mark = sessionRowMark(session);
     return (
       <RailRow
         key={session.id}
@@ -445,34 +453,13 @@ export function WorkspaceRail({
             delta,
           )
         }
-        // A chat at rest shows when it last moved. A running one shows a quiet
-        // spinner there instead, and a failed one a small alert; a run that
-        // finished while the teacher was elsewhere simply returns to rest.
-        meta={
-          sessionRunning(session.status) || session.status === 'failed'
-            ? null
-            : relativeLabel(session.updatedAt || session.createdAt, t)
-        }
-        statusMark={
-          sessionRunning(session.status) ? (
-            <LoaderCircle
-              role="img"
-              aria-label={t(`workspace.sessionStatus.${session.status}`)}
-              data-testid={`pro-nav-session-running-${session.id}`}
-              className="ws-spin-live"
-            />
-          ) : session.status === 'failed' ? (
-            <span
-              role="img"
-              aria-label={t('workspace.sessionStatus.failed')}
-              title={t('workspace.sessionStatus.failed')}
-              data-testid={`pro-nav-session-failed-${session.id}`}
-              className="ws-row-fail"
-            >
-              <AlertCircle className="size-3.5" aria-hidden="true" />
-            </span>
-          ) : null
-        }
+        // A chat at rest shows when it last moved. Only a state the teacher
+        // has to notice replaces the time, one at a time: a quiet spinner
+        // while it runs, a question mark while the agent waits on their
+        // answer, an alert when it failed. A run that finished while the
+        // teacher was elsewhere simply returns to rest.
+        meta={mark === null ? relativeLabel(session.updatedAt || session.createdAt, t) : null}
+        statusMark={mark === null ? null : <SessionRowMark session={session} mark={mark} />}
         onClick={() => onOpenSession(session.id)}
         trailing={
           <WorkspaceRowMenu
@@ -963,9 +950,49 @@ function writeStoredOrder(key: string, order: readonly string[]): void {
   writeStored(key, serializeOrder(order));
 }
 
-/** A chat whose run is under way (the owner list's live statuses). */
-function sessionRunning(status: ProHomeSessionItem['status']): boolean {
-  return status === 'running' || status === 'queued';
+function SessionRowMark({
+  session,
+  mark,
+}: {
+  readonly session: ProHomeSessionItem;
+  readonly mark: SessionRowMarkKind;
+}) {
+  const { t } = useI18n();
+  switch (mark) {
+    case 'running':
+      return (
+        <LoaderCircle
+          role="img"
+          aria-label={t(`workspace.sessionStatus.${session.status}`)}
+          data-testid={`pro-nav-session-running-${session.id}`}
+          className="ws-spin-live"
+        />
+      );
+    case 'awaiting':
+      return (
+        <span
+          role="img"
+          aria-label={t('workspace.sessionStatus.awaitingAnswer')}
+          title={t('workspace.sessionStatus.awaitingAnswer')}
+          data-testid={`pro-nav-session-awaiting-${session.id}`}
+          className="ws-row-ask"
+        >
+          <MessageCircleQuestion className="size-3.5" aria-hidden="true" />
+        </span>
+      );
+    case 'failed':
+      return (
+        <span
+          role="img"
+          aria-label={t('workspace.sessionStatus.failed')}
+          title={t('workspace.sessionStatus.failed')}
+          data-testid={`pro-nav-session-failed-${session.id}`}
+          className="ws-row-fail"
+        >
+          <AlertCircle className="size-3.5" aria-hidden="true" />
+        </span>
+      );
+  }
 }
 
 /** Bucket → locale copy. The bucketing itself lives in `pro-home-data`, tested. */

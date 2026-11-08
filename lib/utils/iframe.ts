@@ -6,6 +6,7 @@ import {
   type ObservationIdentity,
 } from '@/lib/interactive/observation-bridge';
 import { INTERACTIVE_REFERENCE_EXCLUDED_TAG_NAMES } from '@/lib/interactive/element-reference-policy';
+import { CONTENT_FIT_BASE_CSS, CONTENT_FIT_SHIM } from '@/lib/interactive/content-fit-shim';
 
 const INTERACTIVE_REFERENCE_EXCLUDED_TAG_LOOKUP = Object.fromEntries(
   INTERACTIVE_REFERENCE_EXCLUDED_TAG_NAMES.map((tagName) => [tagName, 1]),
@@ -407,6 +408,8 @@ export function patchHtmlForIframe(
   /* Fix min-h-screen: in iframes 100vh is the iframe height, which is correct,
      but ensure body actually fills it */
   body { min-height: 100vh; }
+  /* Zero-specificity media defaults; authored rules still win. */
+  ${CONTENT_FIT_BASE_CSS}
 </style>`;
 
   const injection =
@@ -414,6 +417,8 @@ export function patchHtmlForIframe(
     ERROR_CAPTURE_SHIM +
     '\n' +
     ELEMENT_PICKER_SHIM +
+    '\n' +
+    CONTENT_FIT_SHIM +
     '\n' +
     STORAGE_SHIM +
     '\n' +

@@ -112,6 +112,7 @@
       "emptyClassroom": "该课堂没有任何场景。",
       "unsupportedScene": "离线导出暂不支持此场景。",
       "interactiveTitle": "互动场景",
+      "interactiveMoreBelow": "下方还有内容",
       "videoUnavailable": "离线导出不包含视频",
       "quizSubmit": "提交",
       "quizRetry": "重新作答",
@@ -268,6 +269,7 @@
       "title": "这个互动未能运行",
       "dismiss": "关闭"
     },
+    "interactiveMoreBelow": "下方还有内容",
     "tabs": {
       "lecture": "笔记",
       "chat": "对话"
@@ -2430,7 +2432,8 @@
       "running": "进行中",
       "succeeded": "已就绪",
       "failed": "需处理",
-      "cancelled": "已停止"
+      "cancelled": "已停止",
+      "awaitingAnswer": "等待你的回答"
     },
     "backToWorkspace": "返回工作区",
     "searchEmpty": "没有匹配的内容",
