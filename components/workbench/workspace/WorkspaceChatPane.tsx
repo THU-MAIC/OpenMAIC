@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { LoaderCircle } from 'lucide-react';
+import { Clock3, LoaderCircle } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils/cn';
 import { WorkbenchChat } from '@/components/workbench/WorkbenchChat';
@@ -218,6 +218,9 @@ export function WorkspaceChatPane({
             session, no status. */}
         {draftConversation || !presentation ? null : presentation.tone === 'live' ? (
           <LoaderCircle aria-hidden="true" className="ws-spin-live" />
+        ) : presentation.tone === 'waiting' ? (
+          // Queued: accepted, not started. A spinner would claim work is under way.
+          <Clock3 aria-hidden="true" className="ws-queued-mark" />
         ) : (
           <span
             aria-hidden="true"

@@ -62,6 +62,7 @@ import {
   AlertCircle,
   BookOpen,
   Library,
+  Clock3,
   LoaderCircle,
   MessageCircleQuestion,
   MessagesSquare,
@@ -967,6 +968,18 @@ function SessionRowMark({
           data-testid={`pro-nav-session-running-${session.id}`}
           className="ws-spin-live"
         />
+      );
+    case 'queued':
+      return (
+        <span
+          role="img"
+          aria-label={t('workspace.sessionStatus.queued')}
+          title={t('workspace.sessionStatus.queued')}
+          data-testid={`pro-nav-session-queued-${session.id}`}
+          className="ws-row-queued"
+        >
+          <Clock3 className="size-3.5" aria-hidden="true" />
+        </span>
       );
     case 'awaiting':
       return (

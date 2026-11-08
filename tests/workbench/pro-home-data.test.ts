@@ -478,7 +478,7 @@ describe('awaiting an answer', () => {
 
   it('orders the row mark: running, then awaiting, then failed, then the time', () => {
     expect(sessionRowMark({ status: 'running', awaitingAnswer: true })).toBe('running');
-    expect(sessionRowMark({ status: 'queued' })).toBe('running');
+    expect(sessionRowMark({ status: 'queued' })).toBe('queued');
     expect(sessionRowMark({ status: 'failed', awaitingAnswer: true })).toBe('awaiting');
     expect(sessionRowMark({ status: 'cancelled', awaitingAnswer: true })).toBe('awaiting');
     expect(sessionRowMark({ status: 'failed' })).toBe('failed');
