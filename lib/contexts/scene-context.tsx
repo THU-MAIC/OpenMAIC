@@ -13,11 +13,21 @@ import { useStageStore } from '@/lib/store/stage';
 import type { Scene } from '@/lib/types/stage';
 import { produce } from 'immer';
 
+/** How a change to the scene's data came about. */
+export interface SceneDataUpdateOptions {
+  /**
+   * The canvas measured its own layout; nobody changed the scene. The result is
+   * kept for this tab and goes out with its next real edit, but does not save
+   * by itself: see `updateSceneMeasurement` of the stage store.
+   */
+  readonly measurement?: boolean;
+}
+
 interface SceneContextValue<T = unknown> {
   sceneId: string;
   sceneType: Scene['type'];
   sceneData: T;
-  updateSceneData: (updater: (draft: T) => void) => void;
+  updateSceneData: (updater: (draft: T) => void, options?: SceneDataUpdateOptions) => void;
   // Internal: subscribe to scene data changes
   subscribe: (callback: () => void) => () => void;
   getSnapshot: () => T;
@@ -26,18 +36,17 @@ interface SceneContextValue<T = unknown> {
 const SceneContext = createContext<SceneContextValue | null>(null);
 
 /**
- * Controlled data source for `SceneProvider`. Edit surfaces own a private
- * SlideEditHistory (undo/redo, op stream, autosave) and must NOT write
- * edits straight back into the live stage store; they pass a controller so
- * the unmodified slide renderer reads/writes the surface's staged content
- * instead. Omitting `controller` keeps the original stage-store-backed
+ * Controlled data source for `SceneProvider`. Edit surfaces route writes
+ * through their edit session, which puts them on the course timeline, so they
+ * pass a controller and the unmodified slide renderer writes through it.
+ * Omitting `controller` keeps the original stage-store-backed
  * behavior unchanged for the playback path.
  */
 export interface SceneDataController<T = unknown> {
   sceneId: string;
   sceneType: Scene['type'];
   getSnapshot: () => T;
-  updateSceneData: (updater: (draft: T) => void) => void;
+  updateSceneData: (updater: (draft: T) => void, options?: SceneDataUpdateOptions) => void;
 }
 
 /**
@@ -45,7 +54,7 @@ export interface SceneDataController<T = unknown> {
  * Provides current scene data and update methods to child components.
  * Uncontrolled (default): syncs changes back to stageStore.
  * Controlled (`controller` prop): reads/writes a caller-owned data source
- * (used by edit surfaces that stage edits in their own history).
+ * (used by edit surfaces, whose edits belong on the course timeline).
  *
  * Usage:
  * <SceneProvider>
@@ -66,6 +75,7 @@ export function SceneProvider({
   });
 
   const updateScene = useStageStore((state) => state.updateScene);
+  const updateSceneMeasurement = useStageStore((state) => state.updateSceneMeasurement);
 
   const sceneId = controller ? controller.sceneId : currentScene?.id || '';
   const sceneType = controller ? controller.sceneType : currentScene?.type || 'slide';
@@ -94,19 +104,26 @@ export function SceneProvider({
 
   // Update scene data with Immer (uncontrolled: write back to stage store)
   const storeUpdateSceneData = useCallback(
-    (updater: (draft: unknown) => void) => {
+    (updater: (draft: unknown) => void, options?: SceneDataUpdateOptions) => {
       if (!currentScene) return;
 
       const newContent = produce(currentScene.content, updater);
+      if (options?.measurement) {
+        updateSceneMeasurement(currentScene.id, newContent);
+        return;
+      }
       updateScene(currentScene.id, {
         content: newContent,
       });
     },
-    [currentScene, updateScene],
+    [currentScene, updateScene, updateSceneMeasurement],
   );
 
   const updateSceneData = controller
-    ? (controller.updateSceneData as (updater: (draft: unknown) => void) => void)
+    ? (controller.updateSceneData as (
+        updater: (draft: unknown) => void,
+        options?: SceneDataUpdateOptions,
+      ) => void)
     : storeUpdateSceneData;
 
   const value = useMemo(

@@ -19,6 +19,8 @@ export interface WorkbenchPanelState {
   readonly learning: boolean;
   /** Editing intent after applying visibility, playback and course access gates. */
   readonly editPinned: boolean;
+  /** The pane header's element that hosts the editor's undo/redo buttons. */
+  readonly historySlot: HTMLElement | null;
 }
 
 const OUTSIDE_WORKBENCH: WorkbenchPanelState = {
@@ -27,6 +29,7 @@ const OUTSIDE_WORKBENCH: WorkbenchPanelState = {
   playback: false,
   editPinned: false,
   learning: false,
+  historySlot: null,
 };
 
 const WorkbenchPanelContext = createContext<WorkbenchPanelState>(OUTSIDE_WORKBENCH);
@@ -36,11 +39,13 @@ export function WorkbenchPanelProvider({
   visible = true,
   playback = false,
   learning = playback,
+  historySlot = null,
 }: {
   readonly children: ReactNode;
   readonly visible?: boolean;
   readonly playback?: boolean;
   readonly learning?: boolean;
+  readonly historySlot?: HTMLElement | null;
 }) {
   const value = useMemo<WorkbenchPanelState>(
     () => ({
@@ -49,8 +54,9 @@ export function WorkbenchPanelProvider({
       playback,
       learning,
       editPinned: visible && !playback && !learning,
+      historySlot,
     }),
-    [playback, visible, learning],
+    [playback, visible, learning, historySlot],
   );
   return <WorkbenchPanelContext.Provider value={value}>{children}</WorkbenchPanelContext.Provider>;
 }

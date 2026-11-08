@@ -1,6 +1,8 @@
 import type { ProjectDefinition } from './domain/project/project-schema';
 import type { PblSessionState } from './domain/orchestration/types';
-import type { LearningReport } from './report';
+import { reportTextExcerpt, type LearningReport } from './report';
+import { stageStep } from './presentation';
+import { decisionResponseLabel } from './domain/orchestration/decisions';
 
 /** Completion receipts support participation claims, not inferred expertise or rankings. */
 export function projectReportSummary(
@@ -44,4 +46,41 @@ export function projectReportSummary(
         : [];
     }),
   };
+}
+
+/** Derive authored milestones and their latest actual choices without reading analysis or sampled events. */
+export function projectReportMilestones(
+  project: ProjectDefinition,
+  state: PblSessionState,
+): LearningReport['milestones'] {
+  const excerpt = (value: string) =>
+    value.length > 480 ? reportTextExcerpt(value, 479) + '…' : value;
+  const definitions = new Map(project.decisions.map((decision) => [decision.id, decision]));
+  return project.milestones.map((milestone) => ({
+    id: milestone.id,
+    title: milestone.title,
+    ...(milestone.goal ? { goal: excerpt(milestone.goal) } : {}),
+    ...(milestone.shareResult ? { shareResult: milestone.shareResult } : {}),
+    optional: !!milestone.optional,
+    status:
+      state.milestones.find((progress) => progress.milestoneId === milestone.id)?.status ??
+      'pending',
+    stages: milestone.stages.map(stageStep),
+    decisions: (state.collected[milestone.id]?.decisions ?? []).flatMap((record) => {
+      const decision = definitions.get(record.id);
+      if (!decision) return [];
+      const option =
+        decision.responseType === 'text'
+          ? undefined
+          : decision.options.find((item) => item.id === record.chosen);
+      return [
+        {
+          id: record.id,
+          question: excerpt(decision.desc),
+          answer: excerpt(option?.previewLabel ?? decisionResponseLabel(decision, record.chosen)),
+          ...(record.rationale?.trim() ? { rationale: excerpt(record.rationale) } : {}),
+        },
+      ];
+    }),
+  }));
 }

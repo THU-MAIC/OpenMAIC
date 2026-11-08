@@ -3,18 +3,14 @@ import type { QuizContent, QuizQuestion } from '@/lib/types/stage';
 import {
   addOption,
   addQuestion,
-  commitQuizContent,
   createBlankQuestion,
-  createQuizEditHistory,
   deleteOption,
   deleteQuestion,
   MAX_OPTIONS,
-  redoQuiz,
   reorderOptions,
   reorderQuestions,
   setQuestionType,
   toggleCorrect,
-  undoQuiz,
   updateOptionLabel,
   updateQuestion,
 } from '@/components/edit/surfaces/quiz/quiz-edit-ops';
@@ -38,41 +34,6 @@ function choiceQuestion(over: Partial<QuizQuestion> = {}): QuizQuestion {
 function content(...questions: QuizQuestion[]): QuizContent {
   return { type: 'quiz', questions };
 }
-
-describe('quiz history primitive', () => {
-  it('commit pushes a fresh undo step and clears redo', () => {
-    const a = content(choiceQuestion());
-    const b = content(choiceQuestion({ question: 'changed' }));
-    let h = createQuizEditHistory(a);
-    h = commitQuizContent(h, b);
-    expect(h.present).toBe(b);
-    expect(h.past).toEqual([a]);
-    expect(h.future).toEqual([]);
-  });
-
-  it('committing the same reference is a no-op (no empty undo step)', () => {
-    const a = content(choiceQuestion());
-    const h = createQuizEditHistory(a);
-    expect(commitQuizContent(h, a)).toBe(h);
-  });
-
-  it('undo / redo walk the timeline', () => {
-    const a = content(choiceQuestion({ question: 'a' }));
-    const b = content(choiceQuestion({ question: 'b' }));
-    let h = commitQuizContent(createQuizEditHistory(a), b);
-    h = undoQuiz(h);
-    expect(h.present).toBe(a);
-    expect(h.future).toEqual([b]);
-    h = redoQuiz(h);
-    expect(h.present).toBe(b);
-  });
-
-  it('undo / redo at the ends are no-ops', () => {
-    const h = createQuizEditHistory(content());
-    expect(undoQuiz(h)).toBe(h);
-    expect(redoQuiz(h)).toBe(h);
-  });
-});
 
 describe('question factories + list ops', () => {
   it('createBlankQuestion seeds two options for choice, none for short_answer', () => {

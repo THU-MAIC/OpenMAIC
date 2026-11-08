@@ -14,6 +14,9 @@ afterEach(() => {
 });
 
 function syntheticCanvas() {
+  let offsetX = 0;
+  let offsetY = 0;
+  let scale = 1;
   const drawn: {
     value: string;
     direction: string;
@@ -24,6 +27,7 @@ function syntheticCanvas() {
     maxWidth?: number;
   }[] = [];
   const assets: string[] = [];
+  const boxes: { y: number; height: number; radius: number }[] = [];
   const context = {
     direction: 'inherit',
     textAlign: 'start',
@@ -32,13 +36,24 @@ function syntheticCanvas() {
     createLinearGradient: () => ({ addColorStop() {} }),
     fillRect() {},
     beginPath() {},
-    roundRect() {},
+    roundRect(_x: number, y: number, _w: number, height: number, radius: number) {
+      boxes.push({ y: offsetY + scale * y, height: scale * height, radius });
+    },
     fill() {},
     drawImage() {},
     save() {},
-    translate() {},
+    translate(x: number, y: number) {
+      offsetX = x;
+      offsetY = y;
+    },
+    scale(x: number) {
+      scale = x;
+    },
     rotate() {},
-    restore() {},
+    restore() {
+      offsetX = offsetY = 0;
+      scale = 1;
+    },
     moveTo() {},
     lineTo() {},
     quadraticCurveTo() {},
@@ -49,8 +64,8 @@ function syntheticCanvas() {
     fillText(value: string, x: number, y: number, maxWidth?: number) {
       drawn.push({
         value,
-        x,
-        y,
+        x: offsetX + scale * x,
+        y: offsetY + scale * y,
         direction: this.direction,
         align: this.textAlign,
         font: this.font,
@@ -79,12 +94,13 @@ function syntheticCanvas() {
     fonts: { load: async () => [] },
     createElement: () => canvas,
   });
-  return { drawn, canvas, context, assets };
+  return { drawn, canvas, context, assets, boxes };
 }
 
 const content = reportShareContent({
   project: { title: 'مشروع تجريبي' },
   requiredComplete: true,
+  milestones: [{ id: 'one', title: 'أضفت محادثة إلى التطبيق', status: 'completed' }],
   summary: {
     completedMilestones: 1,
     totalMilestones: 1,
@@ -154,8 +170,7 @@ it.each([true, false])(
     expect(text).not.toContain(
       completed ? zh.pblV3.share.achievement : zh.pblV3.reportCopy.congratulations,
     );
-    expect(text).toContain(zh.pblV3.share.skillsSection);
-    expect(text).not.toContain(zh.pblV3.reportCopy.skills);
+    expect(text).toContain(zh.pblV3.reportCopy.projectResults);
   },
 );
 
@@ -174,8 +189,7 @@ it.each([undefined, { skills: [], concepts: [] }])(
       'ar-SA',
     );
     const values = drawn.map((item) => item.value);
-    expect(values).not.toContain(ar.pblV3.share.skillsSection);
-    expect(values).not.toContain(ar.pblV3.share.skillsMetric);
+    expect(values).not.toContain(ar.pblV3.reportCopy.projectResults);
     expect(values).not.toContain(ar.pblV3.share.conceptsLabel);
     expect(values.join(' ')).not.toContain('0/0');
   },
@@ -269,4 +283,73 @@ it('places the approved workshop, factual results and final invitation in order'
   expect(drawn.map((item) => item.value).join(' ')).not.toMatch(
     /OpenMAIC · Vibe Coding|示例|上线前替换/,
   );
+});
+
+it.each(['', 'https://workshop.example/intro'])(
+  'shows authored results, recorded workflow and the complete long concept before the footer (%s)',
+  async (url) => {
+    reportShareCampaign.url = url;
+    const { drawn } = syntheticCanvas();
+    const t = (key: string) => {
+      let value: unknown = zh;
+      for (const part of key.split('.')) value = (value as Record<string, unknown>)[part];
+      return String(value);
+    };
+    const concept = '人设说明与当前问题一起成为模型输入'.repeat(10);
+    const result = {
+      title: '我的 Agent 会回复啦！',
+      description: '发出问题，就能收到模型的回答。',
+    };
+    await renderReportShareImage(
+      { ...content, results: Array(6).fill(result), concepts: [concept] },
+      'dark',
+      t,
+      'zh-CN',
+    );
+    const at = (value: string) => drawn.find((item) => item.value === value)!;
+    expect(at(result.title).y).toBeLessThan(at(result.description).y);
+    expect(at(result.description).y).toBeLessThan(at(zh.pblV3.reportCopy.workflow).y);
+    expect(at(zh.pblV3.reportCopy.skillLabels.planReview).y).toBeGreaterThan(
+      at(zh.pblV3.reportCopy.workflow).y,
+    );
+    const lines = drawn.filter((item) =>
+      /^([人设说明与当前问题一起成为模型输入])+$/u.test(item.value),
+    );
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines.map((line) => line.value).join('')).toBe(concept);
+    expect(lines.at(-1)!.y).toBeLessThan(at(zh.pblV3.share.testsPassed).y);
+  },
+);
+
+it('centers outcome text in equally sized cards with room for wrapped descriptions', async () => {
+  const { drawn, boxes } = syntheticCanvas();
+  const short = '一段简短的说明';
+  const long = '人设说明与当前问题一起成为模型输入'.repeat(4);
+  await renderReportShareImage(
+    {
+      ...content,
+      results: [
+        { title: '问答接通', description: short },
+        { title: '应用人设', description: long },
+      ],
+      workflow: [],
+    },
+    'light',
+    translate,
+    'zh-CN',
+  );
+  const [first, second] = boxes.filter((box) => box.radius === 20);
+  expect(first).toEqual(second);
+  for (const [index, title] of ['问答接通', '应用人设'].entries()) {
+    const titleY = drawn.find((item) => item.value === title)!.y;
+    const description =
+      index === 0
+        ? drawn.filter((item) => item.value === short)
+        : drawn.filter((item) => /人设说明与当前问题/u.test(item.value));
+    expect(description).toHaveLength(index + 1);
+    const lastY = description.at(-1)!.y;
+    // With the synthetic font fallback, the first and last baselines sit 0.8em and 0.2em from the ink edges.
+    expect(titleY - 29 * 0.8 - first.y).toBeCloseTo(first.y + first.height - lastY - 21 * 0.2);
+    expect(description[0].y - 21 * 0.8 - (titleY + 29 * 0.2)).toBeCloseTo(22);
+  }
 });

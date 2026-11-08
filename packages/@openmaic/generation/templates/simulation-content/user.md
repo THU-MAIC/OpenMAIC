@@ -16,7 +16,11 @@ Create a simulation widget for: {{conceptName}}
 
 {{designIdea}}
 
-## Language
+{{#if additionalRequirements}}## Additional Design Requirements
+
+{{additionalRequirements}}
+
+{{/if}}## Language
 
 {{languageDirective}}
 

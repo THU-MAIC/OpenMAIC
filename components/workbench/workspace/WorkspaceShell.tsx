@@ -141,6 +141,7 @@ import { PaneTab } from './PaneTab';
 import { ResizeHandle } from './ResizeHandle';
 import { MaterialLibraryPage } from './MaterialLibraryPage';
 import type { MaterialSeed, MaterialSeedTarget } from '@/components/workbench/compose-extras';
+import { FetchEventSource } from '@/lib/utils/fetch-event-source';
 
 const EMPTY_SESSIONS: ProHomeSessionItem[] = [];
 
@@ -494,7 +495,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   useEffect(() => {
     const client = new OwnerSessionClient({
       fetchSessions,
-      createEventSource: (url) => new EventSource(url),
+      createEventSource: (url) => new FetchEventSource(url),
       onSessions: publishOwnerSessions,
       onSessionTitle: syncAttachedSessionTitle,
       onState: setSessionState,

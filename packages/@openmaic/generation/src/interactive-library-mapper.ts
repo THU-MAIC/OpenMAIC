@@ -9,7 +9,14 @@ import {
   interactiveLibraryUrl,
 } from './interactive-libraries.js';
 
-/** Versions without a lower bound (unversioned/latest) intentionally select our pin. */
+/**
+ * Whether a requested version is on the hosted release line: the same major
+ * (or the same 0.minor for pre-1.0 libraries with the `minor` policy).
+ * Unversioned/latest requests intentionally select our pin. Any concrete
+ * version on the line maps to the hosted one, higher or lower: generated
+ * pages often name a version that does not exist (e.g. `4.11.18` for
+ * `4.1.18`), and loading the hosted build beats a 404 that breaks the page.
+ */
 function compatible(requested: string, version: string, policy: string): boolean {
   if (!requested || requested === 'latest') return true;
   // Accept exact, partial, wildcard, caret and tilde forms only; reject arbitrary ranges/tags.
@@ -18,12 +25,27 @@ function compatible(requested: string, version: string, policy: string): boolean
   const hosted = version.split('.').map(Number);
   if (Number(match[1]) !== hosted[0]) return false;
   if (policy === 'minor' && match[2] !== String(hosted[1])) return false;
-  // Never downgrade a concrete requested minimum to an older hosted version.
-  const minimum = [Number(match[1]), Number(match[2]) || 0, Number(match[3]) || 0];
-  for (let i = 0; i < 3; i++) {
-    if (minimum[i] !== hosted[i]) return minimum[i]! < hosted[i]!;
-  }
   return true;
+}
+
+/**
+ * Rebase a self-hosted `<base>/<package>@<version>/<file>` path onto `baseUrl`,
+ * correcting the version of a hosted package to the hosted one when it is on
+ * the same release line. Other paths are rebased verbatim.
+ */
+function mapSelfHostedPath(rest: string, baseUrl: string): string {
+  const base = baseUrl.replace(/\/$/, '');
+  const match = /^\/(@[^/]+\/[^/@]+|[^/@]+)@([^/]+)(\/.*)?$/.exec(rest);
+  const library = match && INTERACTIVE_LIBRARIES.find((entry) => entry.package === match[1]);
+  if (
+    match &&
+    library &&
+    match[2] !== library.version &&
+    compatible(match[2]!, library.version, library.compatibility)
+  ) {
+    return `${base}/${library.package}@${library.version}${match[3] ?? ''}`;
+  }
+  return base + rest;
 }
 
 export function mapInteractiveLibraryUrl(
@@ -32,9 +54,9 @@ export function mapInteractiveLibraryUrl(
 ): string | undefined {
   const localBase = interactiveAssetBaseUrl().replace(/\/$/, '');
   if (input.startsWith(`${INTERACTIVE_ASSET_PATH}/`))
-    return baseUrl.replace(/\/$/, '') + input.slice(INTERACTIVE_ASSET_PATH.length);
+    return mapSelfHostedPath(input.slice(INTERACTIVE_ASSET_PATH.length), baseUrl);
   if (localBase.startsWith('/') && input.startsWith(`${localBase}/`))
-    return baseUrl.replace(/\/$/, '') + input.slice(localBase.length);
+    return mapSelfHostedPath(input.slice(localBase.length), baseUrl);
   let url: URL;
   try {
     url = new URL(input.startsWith('//') ? `https:${input}` : input);

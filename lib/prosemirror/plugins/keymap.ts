@@ -24,6 +24,7 @@ export const buildKeymap = (schema: Schema) => {
   bind('Alt-ArrowDown', joinDown);
   bind('Mod-z', undo);
   bind('Mod-y', redo);
+  bind('Shift-Mod-z', redo);
   bind('Mod-a', selectAllText);
   bind('Backspace', undoInputRule);
   bind('Escape', selectParentNode);

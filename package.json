@@ -1,6 +1,6 @@
 {
   "name": "openmaic",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "private": true,
   "license": "MIT",
   "engines": {
@@ -191,7 +191,7 @@
     "@electric-sql/pglite": "^0.3.16",
     "@fontsource/noto-sans": "5.3.0",
     "@fontsource/noto-sans-arabic": "5.3.0",
-    "@playwright/test": "^1.58.2",
+    "@playwright/test": "^1.61.0",
     "@rollup/plugin-commonjs": "^28.0.1",
     "@rollup/plugin-node-resolve": "^16.0.1",
     "@tailwindcss/postcss": "^4",

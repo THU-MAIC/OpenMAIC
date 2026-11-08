@@ -19,6 +19,16 @@ const report = {
   studyId: 'private-study',
   project: { id: 'any-project', version: '1', title: 'My project' },
   requiredComplete: true,
+  milestones: [
+    {
+      id: 'one',
+      title: 'Connect the dialogue',
+      goal: 'Send a question and show the answer.',
+      status: 'completed',
+      decisions: [{ id: 'choice', question: 'PRIVATE QUESTION', answer: 'PRIVATE ANSWER' }],
+    },
+    { id: 'two', title: 'Optional next step', status: 'pending' },
+  ],
   summary: {
     completedMilestones: 1,
     totalMilestones: 1,
@@ -54,7 +64,11 @@ it('projects identical facts regardless of analysis state, private findings or r
     expect(projected).toEqual(facts);
     expect(JSON.stringify(projected)).not.toMatch(/PRIVATE|private-study|evidence|quote/);
   }
-  expect(facts.metrics).toContainEqual(['skills', '1']);
+  expect(facts.results).toEqual([
+    { title: 'Connect the dialogue', description: 'Send a question and show the answer.' },
+  ]);
+  expect(facts.workflow).toEqual(['verification']);
+  expect(facts.metrics.some(([key]) => key === 'skills')).toBe(false);
   expect(facts).not.toHaveProperty('waiting');
   expect(facts).not.toHaveProperty('highlights');
 });
@@ -118,9 +132,16 @@ it('omits missing summary fields rather than inventing counts or rendering undef
     summary: { completedSteps: 3, totalSteps: 7 } as LearningReport['summary'],
   });
   expect(content.metrics).toEqual([['completedSteps', '3/7']]);
-  expect(content.skills).toEqual([]);
+  expect(content.results[0].title).toBe('Connect the dialogue');
+  expect(content.workflow).toEqual([]);
   expect(content.concepts).toEqual([]);
   expect(JSON.stringify(content)).not.toContain('undefined');
+});
+
+it('uses authored share copy for achieved milestones only', () => {
+  const shareResult = { title: 'My agent can reply!', description: 'Try it from the chat page.' };
+  const milestones = report.milestones.map((milestone) => ({ ...milestone, shareResult }));
+  expect(reportShareContent({ ...report, milestones }).results).toEqual([shareResult]);
 });
 
 it('never exports private titles accepted by the real report validator, including other chat excerpts', () => {

@@ -5,18 +5,30 @@ import {
 } from '@/components/edit/surfaces/slide/use-slide-surface';
 import { useSlideEditSession } from '@/components/edit/surfaces/slide/slide-edit-session';
 
+import { useStageStore } from '@/lib/store/stage';
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
-function seedEmpty() {
-  useSlideEditSession.setState({
-    sceneId: null,
-    history: {
-      past: [],
-      present: { type: 'slide', canvas: { id: 's', elements: [] } } as any,
-      future: [],
-    },
-  } as any);
+function seedSlide(elements: unknown[]) {
+  useStageStore.setState({
+    stage: { id: 'stage-test', name: 'Course' } as any,
+    scenes: [
+      {
+        id: 'scene-test',
+        stageId: 'stage-test',
+        type: 'slide',
+        title: 'Page',
+        order: 1,
+        content: { type: 'slide', schemaVersion: 1, canvas: { id: 's', elements } },
+      } as any,
+    ],
+    currentSceneId: 'scene-test',
+  });
+  useSlideEditSession.setState({ sceneId: 'scene-test' });
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
+function seedEmpty() {
+  seedSlide([]);
+}
 
 describe('slide background', () => {
   beforeEach(seedEmpty);

@@ -1,6 +1,9 @@
 import 'server-only';
 import { MAX_COMMAND_BYTES } from '@/lib/sandbox/types';
 import { sandboxInvalid } from '@/lib/sandbox/errors';
+import { safeProjectPath } from '@/lib/pbl/v3/package-policy';
+
+export const JAVA_APPLICATION_CLASSES = '/tmp/pbl-project-build';
 
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 function checkedCommand(command: string) {
@@ -10,7 +13,38 @@ function checkedCommand(command: string) {
     );
   return command;
 }
-export function applicationLaunchCommand(argv: string[]) {
+export function applicationLaunchCommand(argv: string[], javaSources?: readonly string[]) {
+  if (argv[0] === 'java') {
+    if (
+      argv[1] !== '-cp' ||
+      argv[2] !== JAVA_APPLICATION_CLASSES ||
+      !/^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/.test(argv[3] ?? '') ||
+      !javaSources?.length ||
+      javaSources.some((name) => !safeProjectPath(name) || !name.endsWith('.java')) ||
+      !javaSources.some(
+        (name) =>
+          name === argv[3].replaceAll('.', '/') + '.java' ||
+          name.endsWith('/' + argv[3].replaceAll('.', '/') + '.java'),
+      )
+    )
+      throw sandboxInvalid(
+        'Java applications require declared sources and a main class in the fixed build directory.',
+      );
+    const data = Buffer.from(
+      JSON.stringify({ argv, sources: [...new Set(javaSources)].sort() }),
+    ).toString('base64');
+    const script = `import base64,json,os,shutil,subprocess,sys,tempfile
+c=json.loads(base64.b64decode('${data}'))
+if not shutil.which('javac') or not shutil.which('java'):
+ sys.exit('Java preview requires a JDK with java and javac in the sandbox template.')
+classes=os.path.join(tempfile.gettempdir(),'pbl-java-preview')
+if os.path.exists(classes): shutil.rmtree(classes)
+os.mkdir(classes)
+subprocess.run(['javac','-encoding','UTF-8','-classpath',classes,'-d',classes,*['./'+p for p in c['sources']]],check=True)
+c['argv'][2]=classes
+os.execvp('java',c['argv'])`;
+    return checkedCommand(`exec python3 -I -B -c ${quote(script)}`);
+  }
   return checkedCommand(`exec ${argv.map(quote).join(' ')}`);
 }
 
