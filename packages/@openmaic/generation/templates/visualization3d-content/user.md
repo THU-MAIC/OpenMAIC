@@ -20,7 +20,11 @@ Create a 3D visualization widget for: {{title}}
 
 {{interactions}}
 
-## Language
+{{#if additionalRequirements}}## Additional Design Requirements
+
+{{additionalRequirements}}
+
+{{/if}}## Language
 
 {{languageDirective}}
 
