@@ -21,7 +21,7 @@ describe('library URL compatibility', () => {
       );
     },
   );
-  it.each(['0.15.6', '0.17.0', '^0.17', '0.16.99', 'next', '>=0.16', '0'])(
+  it.each(['0.15.6', '0.17.0', '^0.17', 'next', '>=0.16', '0'])(
     'leaves incompatible or ambiguous version %s',
     (version) => {
       expect(
@@ -40,6 +40,23 @@ describe('library URL compatibility', () => {
     'https://cdn.jsdelivr.net/npm/chart.js@4?module',
     'https://cdn.tailwindcss.com',
   ])('preserves unknown URL %s', (url) => expect(mapInteractiveLibraryUrl(url)).toBeUndefined());
+  it.each([
+    ['https://unpkg.com/katex@0.16.99/dist/katex.min.js', katex],
+    [
+      'https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.11.18/dist/index.global.js',
+      interactiveLibraryUrl('@tailwindcss/browser'),
+    ],
+    [
+      'https://cdn.jsdelivr.net/npm/chart.js@4.9.1/dist/chart.umd.min.js',
+      interactiveLibraryUrl('chart.js'),
+    ],
+    [
+      'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.9/three.module.min.js',
+      interactiveLibraryUrl('three', 'build/three.module.min.js'),
+    ],
+  ])('maps a same-line version above the hosted one: %s', (input, expected) => {
+    expect(mapInteractiveLibraryUrl(input)).toBe(expected);
+  });
   it('maps package defaults, cdnjs aliases, scoped packages and protocol-relative URLs', () => {
     expect(mapInteractiveLibraryUrl('https://unpkg.com/chart.js@^4.0')).toBe(
       interactiveLibraryUrl('chart.js'),
@@ -53,6 +70,55 @@ describe('library URL compatibility', () => {
       interactiveLibraryUrl('@tailwindcss/browser'),
     );
     expect(mapInteractiveLibraryUrl('//unpkg.com/katex@0.16.9/dist/katex.min.js')).toBe(katex);
+  });
+});
+
+describe('self-hosted library paths', () => {
+  const tailwind = interactiveLibraryUrl('@tailwindcss/browser');
+  it.each([
+    ['/vendor/interactive/@tailwindcss/browser@4.11.18/dist/index.global.js', tailwind],
+    ['/vendor/interactive/@tailwindcss/browser@4.0.0/dist/index.global.js', tailwind],
+    ['/vendor/interactive/chart.js@4.5.0/dist/chart.umd.js', interactiveLibraryUrl('chart.js')],
+    [
+      '/vendor/interactive/katex@0.16.9/dist/katex.min.css',
+      interactiveLibraryUrl('katex', 'dist/katex.min.css'),
+    ],
+    [
+      '/vendor/interactive/three@0.160.1/examples/jsm/',
+      interactiveLibraryUrl('three', 'examples/jsm/'),
+    ],
+  ])('corrects a same-line version in %s', (input, expected) => {
+    expect(mapInteractiveLibraryUrl(input)).toBe(expected);
+  });
+  it.each([
+    tailwind,
+    interactiveLibraryUrl('three', 'examples/jsm/controls/OrbitControls.js'),
+    '/vendor/interactive/@tailwindcss/browser@3.4.1/dist/index.global.js',
+    '/vendor/interactive/three@0.159.0/build/three.module.js',
+    '/vendor/interactive/katex@0.17.0/dist/katex.min.js',
+    '/vendor/interactive/chart.js@4.4.8-beta/dist/chart.umd.js',
+    '/vendor/interactive/unknown-lib@1.2.3/index.js',
+    '/vendor/interactive/maic-importer/index.js',
+  ])('leaves %s as authored', (input) => {
+    expect(mapInteractiveLibraryUrl(input)).toBe(input);
+  });
+  it('rebases a corrected path onto a configured base', () => {
+    expect(
+      mapInteractiveLibraryUrl(
+        '/vendor/interactive/@tailwindcss/browser@4.11.18/dist/index.global.js',
+        'https://classroom.test/vendor/interactive',
+      ),
+    ).toBe(
+      'https://classroom.test/vendor/interactive/@tailwindcss/browser@4.1.18/dist/index.global.js',
+    );
+  });
+  it('fixes a mistyped version in page HTML and leaves a correct page unchanged', () => {
+    const correct = `<script src="${tailwind}"></script><script type="importmap">{"imports":{"three":"${interactiveLibraryUrl('three')}"}}</script>`;
+    expect(rewriteInteractiveLibraries(correct).html).toBe(correct);
+    const typo = correct
+      .replace('browser@4.1.18', 'browser@4.11.18')
+      .replace('three@0.160.0', 'three@0.160.2');
+    expect(rewriteInteractiveLibraries(typo).html).toBe(correct);
   });
 });
 
