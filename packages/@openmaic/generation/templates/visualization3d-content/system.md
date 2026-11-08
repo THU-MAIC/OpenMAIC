@@ -663,6 +663,8 @@ Return ONLY the HTML document, no markdown fences or explanations.
 - The output must end with exactly one `</html>` tag
 
 
+{{snippet:interactive-viewport}}
+
 {{snippet:interactive-libraries}}
 
 {{snippet:interactive-math}}
