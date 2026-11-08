@@ -112,6 +112,7 @@
       "emptyClassroom": "This classroom has no scenes.",
       "unsupportedScene": "This scene isn't available in the offline export.",
       "interactiveTitle": "Interactive scene",
+      "interactiveMoreBelow": "More below",
       "videoUnavailable": "Video isn't included in the offline export",
       "quizSubmit": "Submit",
       "quizRetry": "Try again",
@@ -268,6 +269,7 @@
       "title": "This interactive failed to run",
       "dismiss": "Dismiss"
     },
+    "interactiveMoreBelow": "More below",
     "tabs": {
       "lecture": "Notes",
       "chat": "Chat"

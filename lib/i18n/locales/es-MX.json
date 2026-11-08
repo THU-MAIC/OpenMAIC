@@ -112,6 +112,7 @@
       "emptyClassroom": "Esta clase no tiene escenas.",
       "unsupportedScene": "Esta escena no está disponible en la exportación sin conexión.",
       "interactiveTitle": "Escena interactiva",
+      "interactiveMoreBelow": "Hay más abajo",
       "videoUnavailable": "El video no se incluye en la exportación sin conexión",
       "quizSubmit": "Enviar",
       "quizRetry": "Intentar de nuevo",
@@ -268,6 +269,7 @@
       "title": "Esta actividad interactiva no se pudo ejecutar",
       "dismiss": "Cerrar"
     },
+    "interactiveMoreBelow": "Hay más abajo",
     "tabs": {
       "lecture": "Notas",
       "chat": "Chat"

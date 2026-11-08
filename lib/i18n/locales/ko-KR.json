@@ -112,6 +112,7 @@
       "emptyClassroom": "이 강의에는 장면이 없습니다.",
       "unsupportedScene": "이 장면은 오프라인 내보내기에서 사용할 수 없습니다.",
       "interactiveTitle": "인터랙티브 장면",
+      "interactiveMoreBelow": "아래에 내용이 더 있습니다",
       "videoUnavailable": "오프라인 내보내기에는 동영상이 포함되지 않습니다",
       "quizSubmit": "제출",
       "quizRetry": "다시 풀기",
@@ -268,6 +269,7 @@
       "title": "이 인터랙티브를 실행하지 못했습니다",
       "dismiss": "닫기"
     },
+    "interactiveMoreBelow": "아래에 내용이 더 있습니다",
     "tabs": {
       "lecture": "노트",
       "chat": "채팅"

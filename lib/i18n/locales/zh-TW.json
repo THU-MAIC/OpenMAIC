@@ -112,6 +112,7 @@
       "emptyClassroom": "此課堂沒有任何場景。",
       "unsupportedScene": "離線匯出暫不支援此場景。",
       "interactiveTitle": "互動場景",
+      "interactiveMoreBelow": "下方還有內容",
       "videoUnavailable": "離線匯出不包含影片",
       "quizSubmit": "提交",
       "quizRetry": "重新作答",
@@ -268,6 +269,7 @@
       "title": "這個互動未能執行",
       "dismiss": "關閉"
     },
+    "interactiveMoreBelow": "下方還有內容",
     "tabs": {
       "lecture": "筆記",
       "chat": "對話"

@@ -112,6 +112,7 @@
       "emptyClassroom": "Dieser Kurs enthält keine Szenen.",
       "unsupportedScene": "Diese Szene ist im Offline-Export nicht verfügbar.",
       "interactiveTitle": "Interaktive Szene",
+      "interactiveMoreBelow": "Weiter unten geht es weiter",
       "videoUnavailable": "Videos sind im Offline-Export nicht enthalten",
       "quizSubmit": "Absenden",
       "quizRetry": "Erneut versuchen",
@@ -268,6 +269,7 @@
       "title": "Diese Interaktion konnte nicht ausgeführt werden",
       "dismiss": "Schließen"
     },
+    "interactiveMoreBelow": "Weiter unten geht es weiter",
     "tabs": {
       "lecture": "Notizen",
       "chat": "Chat"

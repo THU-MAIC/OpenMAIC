@@ -112,6 +112,7 @@
       "emptyClassroom": "Ce cours ne contient aucune scène.",
       "unsupportedScene": "Cette scène n'est pas disponible dans l'export hors ligne.",
       "interactiveTitle": "Scène interactive",
+      "interactiveMoreBelow": "Suite plus bas",
       "videoUnavailable": "La vidéo n'est pas incluse dans l'export hors ligne",
       "quizSubmit": "Valider",
       "quizRetry": "Réessayer",
@@ -268,6 +269,7 @@
       "title": "Cette activité interactive n'a pas pu s'exécuter",
       "dismiss": "Fermer"
     },
+    "interactiveMoreBelow": "Suite plus bas",
     "tabs": {
       "lecture": "Notes",
       "chat": "Discussion"

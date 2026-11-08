@@ -109,6 +109,7 @@
       "emptyClassroom": "لا يحتوي هذا الفصل على أي مشاهد.",
       "unsupportedScene": "هذا المشهد غير متاح في التصدير دون اتصال.",
       "interactiveTitle": "مشهد تفاعلي",
+      "interactiveMoreBelow": "يوجد المزيد بالأسفل",
       "videoUnavailable": "الفيديو غير مضمّن في التصدير دون اتصال",
       "quizSubmit": "إرسال",
       "quizRetry": "حاول مجددًا",
@@ -268,6 +269,7 @@
       "title": "تعذر تشغيل هذا التفاعل",
       "dismiss": "إغلاق"
     },
+    "interactiveMoreBelow": "يوجد المزيد بالأسفل",
     "tabs": {
       "lecture": "الملاحظات",
       "chat": "المحادثة"

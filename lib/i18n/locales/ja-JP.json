@@ -112,6 +112,7 @@
       "emptyClassroom": "このクラスにはシーンがありません。",
       "unsupportedScene": "このシーンはオフライン版では利用できません。",
       "interactiveTitle": "インタラクティブシーン",
+      "interactiveMoreBelow": "下に続きがあります",
       "videoUnavailable": "オフライン版には動画は含まれません",
       "quizSubmit": "提出",
       "quizRetry": "もう一度",
@@ -268,6 +269,7 @@
       "title": "このインタラクティブは実行できませんでした",
       "dismiss": "閉じる"
     },
+    "interactiveMoreBelow": "下に続きがあります",
     "tabs": {
       "lecture": "ノート",
       "chat": "チャット"
