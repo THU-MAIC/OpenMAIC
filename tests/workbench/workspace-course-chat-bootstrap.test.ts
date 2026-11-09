@@ -22,6 +22,7 @@ interface MockSessionRow {
   readonly title?: string | null;
   readonly prompt?: string;
   readonly status?: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+  readonly existingCourse?: boolean;
 }
 
 const mocks = vi.hoisted(() => ({
@@ -82,6 +83,7 @@ const mocks = vi.hoisted(() => ({
     waitingKey: null as string | null,
     waitingArmed: false,
     stageId: null as string | null,
+    existingCourse: false as boolean | null,
     libraryRevision: 0,
     stageLinkStageIds: [] as readonly string[],
     touchedStageIds: [] as readonly string[],
@@ -365,6 +367,7 @@ beforeEach(() => {
   mocks.store.pages = {};
   mocks.store.sessionId = null;
   mocks.store.stageId = null;
+  mocks.store.existingCourse = false;
   mocks.store.status = 'succeeded';
   mocks.store.sessionTitle = null;
   mocks.store.sessionPrompt = null;
@@ -1653,7 +1656,7 @@ describe('the knowledge base page', () => {
       expect(libraryShown()).toBe(true);
     });
 
-    it('retires the preview of a finished course-producing request reopened without tab memory', async () => {
+    it('opens the course of a finished course-producing request reopened without tab memory, with no preview', async () => {
       const { createInitialSessionState, foldEvent } = await vi.importActual<
         typeof import('@/lib/workbench/session-store')
       >('@/lib/workbench/session-store');
@@ -1688,16 +1691,19 @@ describe('the knowledge base page', () => {
       });
       // Reopened later: replayed, finished, no course tab remembered.
       Object.assign(mocks.store, folded, {
+        existingCourse: false,
         sessionId: 'session-1',
         status: 'succeeded',
         replaying: false,
         replayedStageLinkCount: 1,
       });
       await render();
+      // Its course is what the conversation is working on: the pane shows it,
+      // straight away, with no preview standing in for a course that exists.
+      expect(container?.querySelector('[data-testid="workspace-request-activity"]')).toBeNull();
+      expect(window.location.search).toBe('?session=session-1&course=stage-1');
       await render();
       expect(container?.querySelector('[data-testid="workspace-request-activity"]')).toBeNull();
-      // Historical links still do not navigate.
-      expect(window.location.search).toBe('?session=session-1');
     });
 
     it('shows no placeholder for a follow-up question answered after the course exists', async () => {
@@ -1742,6 +1748,7 @@ describe('the knowledge base page', () => {
       });
       // Opened fresh (no course tab memory) while the follow-up runs.
       Object.assign(mocks.store, folded, {
+        existingCourse: false,
         sessionId: 'session-1',
         status: 'running',
         replaying: false,
@@ -1750,7 +1757,10 @@ describe('the knowledge base page', () => {
       await render();
       await render();
       expect(container?.querySelector('[data-testid="workspace-request-activity"]')).toBeNull();
-      expect(window.location.search).toBe('?session=session-1');
+      // The pane is the course the follow-up works on.
+      expect(window.location.search).toBe('?session=session-1&course=stage-1');
+      // Shown in place of the URL it was opened at, not as a step of its own.
+      expect(mocks.routerPush).not.toHaveBeenCalled();
     });
 
     it('gives a new course its placeholder when the request only read an existing one', async () => {
@@ -1774,9 +1784,8 @@ describe('the knowledge base page', () => {
       expect(container?.querySelector('[data-testid="workspace-request-activity"]')).not.toBeNull();
     });
 
-    describe('a run that ends while its course is being read', () => {
-      /** `firstManifest` answers the first manifest read: a read taken before the page landed. */
-      const build = async ({ firstManifest }: { firstManifest?: unknown } = {}) => {
+    describe('a run that ends right after its first page', () => {
+      const build = async () => {
         const { createInitialSessionState, foldEvent } = await vi.importActual<
           typeof import('@/lib/workbench/session-store')
         >('@/lib/workbench/session-store');
@@ -1810,35 +1819,6 @@ describe('the knowledge base page', () => {
             replaying: false,
             replayedStageLinkCount: 1,
           });
-        // Every readiness read waits until the test releases it.
-        const held: Array<() => void> = [];
-        let manifestReads = 0;
-        vi.mocked(fetch).mockImplementation((input) => {
-          const manifestRead = String(input).includes('/manifest');
-          const stale = manifestRead && (manifestReads += 1) === 1 && firstManifest !== undefined;
-          return new Promise((resolve) => {
-            held.push(() =>
-              resolve({
-                ok: true,
-                status: 200,
-                json: async () =>
-                  stale
-                    ? firstManifest
-                    : manifestRead
-                      ? { rev: 1, scenes: [{ id: 'first', order: 0, rev: 1 }] }
-                      : { scenes: [{ id: 'first', stageId: 'stage-1' }] },
-              } as Response),
-            );
-          });
-        });
-        const release = async () => {
-          for (let round = 0; round < 4; round += 1) {
-            await act(async () => {
-              held.splice(0).forEach((done) => done());
-              await new Promise((done) => setTimeout(done, 0));
-            });
-          }
-        };
         // Attached mid-run: the course's link is already in the replay baseline.
         attach('running');
         await render();
@@ -1846,78 +1826,55 @@ describe('the knowledge base page', () => {
         expect(
           container?.querySelector('[data-testid="workspace-request-activity"]'),
         ).not.toBeNull();
-        expect(held.length).toBeGreaterThan(0);
-        // The page lands and the run ends before the read answers.
-        event('checkpoint', {
-          tool: 'generate_scene',
-          stageId: 'stage-1',
-          order: 1,
-          sceneId: 'first',
-        });
-        event('tool_execution_end', {
-          toolCallId: 'scene',
-          toolName: 'generate_scene',
-          result: {},
-        });
-        event('agent_end');
-        event('session_end', { status: 'succeeded' });
-        attach('succeeded');
-        await render();
-        await render();
-        return { release, held };
+        // The page lands and the run ends in the same batch.
+        const finish = async () => {
+          event('checkpoint', {
+            tool: 'generate_scene',
+            stageId: 'stage-1',
+            order: 1,
+            sceneId: 'first',
+          });
+          event('tool_execution_end', {
+            toolCallId: 'scene',
+            toolName: 'generate_scene',
+            result: {},
+          });
+          event('agent_end');
+          event('session_end', { status: 'succeeded' });
+          attach('succeeded');
+          await render();
+          await render();
+        };
+        return { finish };
       };
 
-      it('still opens the course once the read answers, and retires the preview then', async () => {
-        const { release } = await build();
-        // The placeholder waits for the handoff rather than vanishing first.
-        expect(
-          container?.querySelector('[data-testid="workspace-request-activity"]'),
-        ).not.toBeNull();
-        await release();
-        await render();
+      it('still turns the preview into the course', async () => {
+        const { finish } = await build();
+        await finish();
         expect(window.location.search).toBe('?session=session-1&course=stage-1');
         expect(container?.querySelector('[data-testid="workspace-request-activity"]')).toBeNull();
-      });
-
-      it('reads again after a read taken before the page landed answers empty', async () => {
-        const { release } = await build({ firstManifest: { rev: 0, scenes: [] } });
-        await release();
-        await render();
-        expect(window.location.search).toBe('?session=session-1&course=stage-1');
-        expect(container?.querySelector('[data-testid="workspace-request-activity"]')).toBeNull();
-      });
-
-      it('keeps a closed course closed after a read taken before the page landed', async () => {
-        const { release } = await build({ firstManifest: { rev: 0, scenes: [] } });
-        localStorage.setItem(
-          COURSE_TABS_STORAGE_KEY,
-          JSON.stringify({ courseIds: [], closedCourseIds: ['stage-1'], activeCourseId: null }),
-        );
-        await render();
-        await release();
-        await render();
-        expect(window.location.search).toBe('?session=session-1');
-      });
-
-      it('reads nothing more once the shell unmounts during a read taken before the page landed', async () => {
-        const { release, held } = await build({ firstManifest: { rev: 0, scenes: [] } });
-        await act(async () => root?.unmount());
-        root = null;
-        const reads = vi.mocked(fetch).mock.calls.length;
-        await release();
-        expect(vi.mocked(fetch).mock.calls.length).toBe(reads);
-        expect(held).toHaveLength(0);
       });
 
       it('does not open a course whose tab the user closed meanwhile', async () => {
-        const { release } = await build();
+        const { finish } = await build();
         localStorage.setItem(
           COURSE_TABS_STORAGE_KEY,
           JSON.stringify({ courseIds: [], closedCourseIds: ['stage-1'], activeCourseId: null }),
         );
+        await finish();
+        expect(window.location.search).toBe('?session=session-1');
+        expect(container?.querySelector('[data-testid="workspace-request-activity"]')).toBeNull();
+      });
+
+      it('does not open the course when the preview was closed for this request', async () => {
+        const { finish } = await build();
+        const close = container?.querySelector<HTMLButtonElement>(
+          '[data-testid="workspace-course-tab-close-request-preview"]',
+        );
+        await act(async () => close?.click());
         await render();
-        await release();
-        await render();
+        expect(container?.querySelector('[data-testid="workspace-request-activity"]')).toBeNull();
+        await finish();
         expect(window.location.search).toBe('?session=session-1');
       });
     });
@@ -1956,6 +1913,7 @@ describe('the knowledge base page', () => {
       // Reloaded mid-run: both links are in the replay baseline.
       const attach = () =>
         Object.assign(mocks.store, folded, {
+          existingCourse: false,
           sessionId: 'session-1',
           status: 'running',
           replaying: false,
@@ -2014,350 +1972,104 @@ describe('the knowledge base page', () => {
       expect(tabs.activeCourseId).toBe('stage-1');
     });
 
-    it('accumulates tabs safely when multiple first-scene probes resolve in the same tick (#2070)', async () => {
-      const { createInitialSessionState, foldEvent } = await vi.importActual<
-        typeof import('@/lib/workbench/session-store')
-      >('@/lib/workbench/session-store');
-      let id = 0;
-      let folded: import('@/lib/workbench/session-store').WorkbenchFold =
-        createInitialSessionState();
-      const event = (type: string, data: unknown = {}) => {
-        folded = foldEvent(folded, { id: ++id, ts: id, attempt: 1, type, data });
-      };
-      event('session_start', { prompt: 'Make a two-unit series' });
-      for (const stageId of ['stage-1', 'stage-2']) {
-        event('tool_execution_start', {
-          toolCallId: `create-${stageId}`,
-          toolName: 'create_stage',
-          args: { title: stageId },
-        });
-        event('stage_link', { stageId });
-        event('tool_execution_end', {
-          toolCallId: `create-${stageId}`,
-          toolName: 'create_stage',
-          result: { content: [], details: { stageId, title: stageId } },
-        });
-      }
-      mocks.courses = {
-        ...mocks.courses!,
-        classrooms: [
-          { ...classroom('stage-1'), sceneCount: 0 },
-          { ...classroom('stage-2'), sceneCount: 0 },
-        ],
-      };
-      const attach = () =>
-        Object.assign(mocks.store, folded, {
-          sessionId: 'session-1',
-          status: 'running',
-          replaying: false,
-          replayedStageLinkCount: 2,
-        });
-      attach();
-
-      const ready = new Set<string>(['stage-1', 'stage-2']);
-      vi.mocked(fetch).mockImplementation(async (input) => {
-        const url = String(input);
-        const stageId = url.includes('stage-2') ? 'stage-2' : 'stage-1';
-        return {
-          ok: true,
-          status: 200,
-          json: async () =>
-            url.includes('/manifest')
-              ? {
-                  rev: 1,
-                  scenes: ready.has(stageId) ? [{ id: `first-${stageId}`, order: 0, rev: 1 }] : [],
-                }
-              : { scenes: [{ id: `first-${stageId}`, stageId }] },
-        } as Response;
-      });
-
-      await render();
-      await render();
-
-      const tabs = mocks.classroomProps?.browser as {
-        tabs: readonly { id: string }[];
-        activeCourseId: string;
-      };
-      expect(tabs.tabs.map((tab) => tab.id)).toEqual(['stage-1', 'stage-2']);
-      expect(tabs.activeCourseId).toBe('stage-1');
-    });
-
-    it('preserves creation order and initial focus when stage-2 probe resolves before stage-1 (#2070)', async () => {
-      const { createInitialSessionState, foldEvent } = await vi.importActual<
-        typeof import('@/lib/workbench/session-store')
-      >('@/lib/workbench/session-store');
-      let id = 0;
-      let folded: import('@/lib/workbench/session-store').WorkbenchFold =
-        createInitialSessionState();
-      const event = (type: string, data: unknown = {}) => {
-        folded = foldEvent(folded, { id: ++id, ts: id, attempt: 1, type, data });
-      };
-      event('session_start', { prompt: 'Make a two-unit series' });
-      for (const stageId of ['stage-1', 'stage-2']) {
-        event('tool_execution_start', {
-          toolCallId: `create-${stageId}`,
-          toolName: 'create_stage',
-          args: { title: stageId },
-        });
-        event('stage_link', { stageId });
-        event('tool_execution_end', {
-          toolCallId: `create-${stageId}`,
-          toolName: 'create_stage',
-          result: { content: [], details: { stageId, title: stageId } },
-        });
-      }
-      mocks.courses = {
-        ...mocks.courses!,
-        classrooms: [
-          { ...classroom('stage-1'), sceneCount: 0 },
-          { ...classroom('stage-2'), sceneCount: 0 },
-        ],
-      };
-      const attach = () =>
-        Object.assign(mocks.store, folded, {
-          sessionId: 'session-1',
-          status: 'running',
-          replaying: false,
-          replayedStageLinkCount: 2,
-        });
-      attach();
-
-      let resolveStage1: (() => void) | null = null;
-      const stage1Gate = new Promise<void>((resolve) => {
-        resolveStage1 = resolve;
-      });
-
-      vi.mocked(fetch).mockImplementation(async (input) => {
-        const url = String(input);
-        const stageId = url.includes('stage-2') ? 'stage-2' : 'stage-1';
-        if (stageId === 'stage-1') {
-          await stage1Gate;
-        }
-        return {
-          ok: true,
-          status: 200,
-          json: async () =>
-            url.includes('/manifest')
-              ? {
-                  rev: 1,
-                  scenes: [{ id: `first-${stageId}`, order: 0, rev: 1 }],
-                }
-              : { scenes: [{ id: `first-${stageId}`, stageId }] },
-        } as Response;
-      });
-
-      await render();
-      await render();
-
-      const intermediateTabs = mocks.classroomProps?.browser as {
-        tabs: readonly { id: string }[];
-        activeCourseId: string;
-      };
-      expect(intermediateTabs.tabs.map((tab) => tab.id)).toEqual(['stage-2']);
-      expect(intermediateTabs.activeCourseId).toBe('stage-2');
-
-      resolveStage1!();
-      await render();
-      await render();
-
-      const tabs = mocks.classroomProps?.browser as {
-        tabs: readonly { id: string }[];
-        activeCourseId: string;
-      };
-      expect(tabs.tabs.map((tab) => tab.id)).toEqual(['stage-1', 'stage-2']);
-      expect(tabs.activeCourseId).toBe('stage-1');
-    });
-
-    it('preserves explicit tab selection on stage-2 after switching away and back when stage-1 resolves (#2070)', async () => {
-      const { createInitialSessionState, foldEvent } = await vi.importActual<
-        typeof import('@/lib/workbench/session-store')
-      >('@/lib/workbench/session-store');
-      let id = 0;
-      let folded: import('@/lib/workbench/session-store').WorkbenchFold =
-        createInitialSessionState();
-      const event = (type: string, data: unknown = {}) => {
-        folded = foldEvent(folded, { id: ++id, ts: id, attempt: 1, type, data });
-      };
-      event('session_start', { prompt: 'Make a two-unit series' });
-      for (const stageId of ['stage-1', 'stage-2']) {
-        event('tool_execution_start', {
-          toolCallId: `create-${stageId}`,
-          toolName: 'create_stage',
-          args: { title: stageId },
-        });
-        event('stage_link', { stageId });
-        event('tool_execution_end', {
-          toolCallId: `create-${stageId}`,
-          toolName: 'create_stage',
-          result: { content: [], details: { stageId, title: stageId } },
-        });
-      }
-      mocks.courses = {
-        ...mocks.courses!,
-        classrooms: [
-          { ...classroom('stage-1'), sceneCount: 0 },
-          { ...classroom('stage-2'), sceneCount: 0 },
-          classroom('stage-other'),
-        ],
-      };
-      const attach = () =>
-        Object.assign(mocks.store, folded, {
-          sessionId: 'session-1',
-          status: 'running',
-          replaying: false,
-          replayedStageLinkCount: 2,
-        });
-      attach();
-
-      let resolveStage1: (() => void) | null = null;
-      const stage1Gate = new Promise<void>((resolve) => {
-        resolveStage1 = resolve;
-      });
-
-      vi.mocked(fetch).mockImplementation(async (input) => {
-        const url = String(input);
-        const stageId = url.includes('stage-2') ? 'stage-2' : 'stage-1';
-        if (stageId === 'stage-1') {
-          await stage1Gate;
-        }
-        return {
-          ok: true,
-          status: 200,
-          json: async () =>
-            url.includes('/manifest')
-              ? {
-                  rev: 1,
-                  scenes: [{ id: `first-${stageId}`, order: 0, rev: 1 }],
-                }
-              : { scenes: [{ id: `first-${stageId}`, stageId }] },
-        } as Response;
-      });
-
-      await render();
-      await render();
-
-      const browser = () =>
-        mocks.classroomProps?.browser as {
-          tabs: readonly { id: string }[];
-          activeCourseId: string;
-          onActivateCourse: (id: string) => void;
+    describe('a series whose pages land as durable receipts', () => {
+      const build = async () => {
+        const { createInitialSessionState, foldEvent } = await vi.importActual<
+          typeof import('@/lib/workbench/session-store')
+        >('@/lib/workbench/session-store');
+        let id = 0;
+        let folded: import('@/lib/workbench/session-store').WorkbenchFold =
+          createInitialSessionState();
+        const event = (type: string, data: unknown = {}) => {
+          folded = foldEvent(folded, { id: ++id, ts: id, attempt: 1, type, data });
         };
-      expect(browser().tabs.map((tab) => tab.id)).toEqual(['stage-2']);
-      expect(browser().activeCourseId).toBe('stage-2');
-
-      // Explicitly switch away using openCourse and back to stage-2 in the tab strip
-      const coursesPage = await openMyCourses();
-      await act(async () => {
-        (coursesPage.onOpenCourse as (id: string) => void)('stage-other');
-      });
-      await render();
-      expect(browser().activeCourseId).toBe('stage-other');
-
-      await act(async () => {
-        browser().onActivateCourse('stage-2');
-      });
-      await render();
-      expect(browser().activeCourseId).toBe('stage-2');
-
-      // Also switch away and back within the strip
-      await act(async () => {
-        browser().onActivateCourse('stage-other');
-      });
-      await render();
-      expect(browser().activeCourseId).toBe('stage-other');
-
-      await act(async () => {
-        browser().onActivateCourse('stage-2');
-      });
-      await render();
-      expect(browser().activeCourseId).toBe('stage-2');
-
-      resolveStage1!();
-      await render();
-      await render();
-
-      expect(browser().activeCourseId).toBe('stage-2');
-      expect(browser().tabs.map((tab) => tab.id)).toEqual(['stage-1', 'stage-2', 'stage-other']);
-    });
-
-    it('does not return to transient stage-2 URL on one browser Back after corrective focus (#2070)', async () => {
-      const { createInitialSessionState, foldEvent } = await vi.importActual<
-        typeof import('@/lib/workbench/session-store')
-      >('@/lib/workbench/session-store');
-      let id = 0;
-      let folded: import('@/lib/workbench/session-store').WorkbenchFold =
-        createInitialSessionState();
-      const event = (type: string, data: unknown = {}) => {
-        folded = foldEvent(folded, { id: ++id, ts: id, attempt: 1, type, data });
-      };
-      event('session_start', { prompt: 'Make a two-unit series' });
-      for (const stageId of ['stage-1', 'stage-2']) {
-        event('tool_execution_start', {
-          toolCallId: `create-${stageId}`,
-          toolName: 'create_stage',
-          args: { title: stageId },
-        });
-        event('stage_link', { stageId });
-        event('tool_execution_end', {
-          toolCallId: `create-${stageId}`,
-          toolName: 'create_stage',
-          result: { content: [], details: { stageId, title: stageId } },
-        });
-      }
-      mocks.courses = {
-        ...mocks.courses!,
-        classrooms: [
-          { ...classroom('stage-1'), sceneCount: 0 },
-          { ...classroom('stage-2'), sceneCount: 0 },
-        ],
-      };
-      const attach = () =>
-        Object.assign(mocks.store, folded, {
-          sessionId: 'session-1',
-          status: 'running',
-          replaying: false,
-          replayedStageLinkCount: 2,
-        });
-      attach();
-
-      let resolveStage1: (() => void) | null = null;
-      const stage1Gate = new Promise<void>((resolve) => {
-        resolveStage1 = resolve;
-      });
-
-      vi.mocked(fetch).mockImplementation(async (input) => {
-        const url = String(input);
-        const stageId = url.includes('stage-2') ? 'stage-2' : 'stage-1';
-        if (stageId === 'stage-1') {
-          await stage1Gate;
+        event('session_start', { prompt: 'Make a two-unit series' });
+        for (const stageId of ['stage-1', 'stage-2']) {
+          event('tool_execution_start', {
+            toolCallId: `create-${stageId}`,
+            toolName: 'create_stage',
+            args: { title: stageId },
+          });
+          event('stage_link', { stageId });
+          event('tool_execution_end', {
+            toolCallId: `create-${stageId}`,
+            toolName: 'create_stage',
+            result: { content: [], details: { stageId, title: stageId } },
+          });
         }
-        return {
-          ok: true,
-          status: 200,
-          json: async () =>
-            url.includes('/manifest')
-              ? {
-                  rev: 1,
-                  scenes: [{ id: `first-${stageId}`, order: 0, rev: 1 }],
-                }
-              : { scenes: [{ id: `first-${stageId}`, stageId }] },
-        } as Response;
+        const page = (stageId: string) => {
+          event('tool_execution_start', {
+            toolCallId: `scene-${stageId}`,
+            toolName: 'generate_scene',
+            args: { stageId, order: 1, type: 'slide' },
+          });
+          event('checkpoint', { stageId, order: 0, sceneId: `first-${stageId}` });
+          event('tool_execution_end', {
+            toolCallId: `scene-${stageId}`,
+            toolName: 'generate_scene',
+            result: {},
+          });
+        };
+        mocks.courses = {
+          ...mocks.courses!,
+          classrooms: [
+            { ...classroom('stage-1'), sceneCount: 0 },
+            { ...classroom('stage-2'), sceneCount: 0 },
+          ],
+        };
+        const attach = () =>
+          Object.assign(mocks.store, folded, {
+            sessionId: 'session-1',
+            status: 'running',
+            replaying: false,
+            replayedStageLinkCount: 2,
+          });
+        const tabs = () =>
+          mocks.classroomProps?.browser as {
+            tabs: readonly { id: string }[];
+            activeCourseId: string;
+          };
+        return { page, attach, tabs };
+      };
+
+      it('opens a series already paged in the log in one transition, its first page on screen', async () => {
+        const { page, attach, tabs } = await build();
+        page('stage-1');
+        page('stage-2');
+        attach();
+        await render();
+        await render();
+        expect(tabs().tabs.map((tab) => tab.id)).toEqual(['stage-1', 'stage-2']);
+        expect(tabs().activeCourseId).toBe('stage-1');
+        expect(mocks.routerPush).toHaveBeenCalledTimes(1);
+        // No readiness reads: the page receipt is the fact.
+        expect(
+          vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('/manifest')),
+        ).toHaveLength(0);
       });
 
-      await render();
-      await render();
-
-      expect(window.location.search).toBe('?session=session-1&course=stage-2');
-
-      resolveStage1!();
-      await render();
-      await render();
-
-      expect(window.location.search).toBe('?session=session-1&course=stage-1');
-
-      await travel('back');
-      expect(window.location.search).not.toContain('stage-2');
-      expect(window.location.search).toBe('?session=session-1');
+      it('turns the preview into the course whose page landed first; a later one joins behind it', async () => {
+        const { page, attach, tabs } = await build();
+        attach();
+        await render();
+        await render();
+        expect(
+          container?.querySelector('[data-testid="workspace-request-activity"]'),
+        ).not.toBeNull();
+        page('stage-2');
+        attach();
+        await render();
+        await render();
+        expect(window.location.search).toBe('?session=session-1&course=stage-2');
+        expect(container?.querySelector('[data-testid="workspace-request-activity"]')).toBeNull();
+        page('stage-1');
+        attach();
+        await render();
+        await render();
+        expect(tabs().tabs.map((tab) => tab.id)).toEqual(['stage-2', 'stage-1']);
+        expect(tabs().activeCourseId).toBe('stage-2');
+        expect(window.location.search).toBe('?session=session-1&course=stage-2');
+      });
     });
 
     it('keeps a course created before a question with its request, and hands off after the answer', async () => {
@@ -2407,6 +2119,7 @@ describe('the knowledge base page', () => {
       });
       // Attached late (a reload after the answer): every link so far is replayed.
       Object.assign(mocks.store, folded, {
+        existingCourse: false,
         sessionId: 'session-1',
         status: 'running',
         replaying: false,
@@ -2431,6 +2144,7 @@ describe('the knowledge base page', () => {
       ready = true;
       event('checkpoint', { stageId: 'stage-1', order: 0, sceneId: 'first' });
       Object.assign(mocks.store, folded, {
+        existingCourse: false,
         sessionId: 'session-1',
         status: 'running',
         replaying: false,
@@ -2463,36 +2177,27 @@ describe('the knowledge base page', () => {
         result: { content: [], details: { stageId: 'stage-1', title: 'Course' } },
       });
       Object.assign(mocks.store, folded, {
+        existingCourse: false,
         sessionId: 'session-1',
         replaying: false,
         replayedStageLinkCount: 1,
       });
-      let ready = false;
-      vi.mocked(fetch).mockImplementation(
-        async (input) =>
-          ({
-            ok: true,
-            status: 200,
-            json: async () =>
-              String(input).includes('/manifest')
-                ? { rev: 1, scenes: ready ? [{ id: 'first', order: 0, rev: 1 }] : [] }
-                : { scenes: [{ id: 'first', stageId: 'stage-1' }] },
-          }) as Response,
-      );
       await render();
       expect(window.location.search).toBe('?session=session-1');
-      const probes = () =>
-        vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('/manifest')).length;
-      const initialProbes = probes();
       mocks.store.chat = [
         ...folded.chat,
         { key: 'text', kind: 'assistant', text: 'Generating', streaming: true },
       ];
       await render();
-      expect(probes()).toBe(initialProbes);
-      ready = true;
+      expect(window.location.search).toBe('?session=session-1');
+      event('tool_execution_start', {
+        toolCallId: 'scene',
+        toolName: 'generate_scene',
+        args: { stageId: 'stage-1', order: 1, type: 'slide' },
+      });
       event('checkpoint', { stageId: 'stage-1', order: 0, sceneId: 'first' });
       Object.assign(mocks.store, folded, {
+        existingCourse: false,
         sessionId: 'session-1',
         replaying: false,
         replayedStageLinkCount: 1,
@@ -2577,24 +2282,22 @@ describe('the knowledge base page', () => {
           toolState: 'done',
           toolDetails: { stageId: 'stage-1', reused: true },
         },
+        {
+          key: 'page',
+          kind: 'tool',
+          text: '',
+          toolName: 'generate_scene',
+          toolState: 'done',
+          toolArgs: { stageId: 'stage-1', order: 1 },
+          sceneId: 'first',
+        },
       ];
-      vi.mocked(fetch).mockImplementation(
-        async (input) =>
-          ({
-            ok: true,
-            status: 200,
-            json: async () =>
-              String(input).includes('/manifest')
-                ? { rev: 1, scenes: [{ id: 'first', order: 0, rev: 1 }] }
-                : { scenes: [{ id: 'first', stageId: 'stage-1' }] },
-          }) as Response,
-      );
       await render();
       expect(window.location.search).toBe('?session=session-1&course=stage-1');
       expect(mocks.routerPush).toHaveBeenCalledTimes(1);
     });
 
-    it('stays out of the way while a request only talks', async () => {
+    it('opens the preview as soon as a new request is sent, before any tool call', async () => {
       await render();
       mocks.store.status = 'running';
       mocks.store.chat = [
@@ -2602,9 +2305,11 @@ describe('the knowledge base page', () => {
         { key: 'a', kind: 'assistant', text: 'Light bends because…', streaming: true },
       ];
       await render();
-      expect(container?.querySelector('[data-testid="workspace-request-activity"]')).toBeNull();
-      expect(mocks.chatPaneProps?.fill).toBe(true);
-      expect(mocks.railProps?.collapsed).toBe(false);
+      await render();
+      const pane = container?.querySelector('[data-testid="workspace-request-activity"]');
+      expect(pane?.getAttribute('data-scene')).toBe('understanding');
+      expect(pane?.getAttribute('aria-hidden')).toBeNull();
+      expect(mocks.chatPaneProps?.fill).toBe(false);
     });
 
     it('gives the main column back to the conversation once the activity settles', async () => {
@@ -2745,6 +2450,112 @@ describe('the knowledge base page', () => {
       expect(previewPane()).toBeNull();
     });
 
+    it('closes for its own request only: the next request opens it again, and fold only folds', async () => {
+      await previewRun();
+      const close = previewPane()?.querySelector<HTMLButtonElement>(
+        '[data-testid="workspace-course-tab-close-request-preview"]',
+      );
+      await act(async () => close?.click());
+      await render();
+      expect(previewPane()).toBeNull();
+      // Later events of the same request do not bring it back.
+      mocks.store.chat = [
+        ...mocks.store.chat,
+        { key: 't2', kind: 'tool', text: '', toolName: 'web_search', toolState: 'running' },
+      ];
+      await render();
+      expect(previewPane()).toBeNull();
+      // The next request starts fresh.
+      mocks.store.chat = [
+        ...mocks.store.chat,
+        { key: 'u2', kind: 'user', text: 'Try again, shorter' },
+        { key: 't3', kind: 'tool', text: '', toolName: 'web_search', toolState: 'running' },
+      ];
+      await render();
+      await render();
+      expect(previewPane()).not.toBeNull();
+      expect(previewPane()?.getAttribute('aria-hidden')).toBeNull();
+      // Folding hides the pane but keeps the tab and its run.
+      await act(async () =>
+        previewPane()
+          ?.querySelector<HTMLButtonElement>('[data-testid="workspace-preview-fold"]')
+          ?.click(),
+      );
+      await render();
+      expect(previewPane()?.getAttribute('aria-hidden')).toBe('true');
+    });
+
+    it('opens for a new request whose agent looked through the library and is asking', async () => {
+      // Every session row carries a stage id (a new one's is where its course
+      // will be created); looking through the library does not make it one
+      // working on existing courses.
+      mocks.sessionRows = [{ id: 'session-1', stageId: 'stage-1', updatedAt: 9 }];
+      mocks.store.stageId = 'stage-1';
+      mocks.store.status = 'succeeded';
+      mocks.store.chat = [
+        { key: 'u', kind: 'user', text: 'Pictures and text' },
+        { key: 'l', kind: 'tool', text: '', toolName: 'list_folder_stages', toolState: 'done' },
+        {
+          key: 'q',
+          kind: 'question',
+          text: 'Which grade is it for?',
+          questionOptions: [{ id: 'a', label: 'Grade 5' }],
+        },
+      ];
+      await render();
+      await render();
+      expect(previewPane()?.getAttribute('data-scene')).toBe('asking');
+    });
+
+    it('shows the course a conversation was started beside in an empty pane, never a preview', async () => {
+      mocks.sessionRows = [
+        { id: 'session-1', stageId: 'stage-1', updatedAt: 9, existingCourse: true },
+      ];
+      mocks.store.stageId = 'stage-1';
+      mocks.store.existingCourse = true;
+      mocks.store.status = 'running';
+      mocks.store.chat = [
+        { key: 'u', kind: 'user', text: 'Shorten the title of page 2' },
+        { key: 'l', kind: 'tool', text: '', toolName: 'list_folder_stages', toolState: 'done' },
+        { key: 't', kind: 'tool', text: '', toolName: 'web_search', toolState: 'running' },
+      ];
+      await render();
+      await render();
+      expect(previewPane()).toBeNull();
+      expect(window.location.search).toBe('?session=session-1&course=stage-1');
+      expect(mocks.routerPush).not.toHaveBeenCalled();
+    });
+
+    it('does not bring back the course of a conversation whose tab the user closed', async () => {
+      mocks.store.existingCourse = true;
+      mocks.store.stageId = 'stage-1';
+      localStorage.setItem(
+        COURSE_TABS_STORAGE_KEY,
+        JSON.stringify({ courseIds: [], activeCourseId: null, closedCourseIds: ['stage-1'] }),
+      );
+      await render();
+      await render();
+      expect(window.location.search).toBe('?session=session-1');
+    });
+
+    it('waits for the session flag before deciding anything', async () => {
+      mocks.store.existingCourse = null;
+      mocks.store.stageId = 'stage-1';
+      mocks.store.status = 'running';
+      mocks.store.chat = [
+        { key: 'u', kind: 'user', text: 'Make a course' },
+        { key: 't', kind: 'tool', text: '', toolName: 'web_search', toolState: 'running' },
+      ];
+      await render();
+      await render();
+      expect(previewPane()).toBeNull();
+      expect(window.location.search).toBe('?session=session-1');
+      mocks.store.existingCourse = false;
+      await render();
+      await render();
+      expect(previewPane()?.getAttribute('data-scene')).toBe('researching');
+    });
+
     it('is named like the conversation: its first request, then its title, never a follow-up', async () => {
       await previewRun();
       const name = () =>
@@ -2833,7 +2644,8 @@ describe('the knowledge base page', () => {
         { key: 'w', kind: 'waiting', text: '' },
       ];
       await render();
-      expect(pane()?.getAttribute('data-scene')).toBe('resting');
+      // Sent, before any tool call: the request is being understood.
+      expect(pane()?.getAttribute('data-scene')).toBe('understanding');
       mocks.store.chat = [
         ...mocks.store.chat.slice(0, -1),
         { key: 'cs', kind: 'tool', text: '', toolName: 'create_stage', toolState: 'running' },
@@ -2977,17 +2789,6 @@ describe('the knowledge base page', () => {
       });
 
       it('is replaced at its position by the conversation course at the first scene', async () => {
-        vi.mocked(fetch).mockImplementation(
-          async (input) =>
-            ({
-              ok: true,
-              status: 200,
-              json: async () =>
-                String(input).includes('/manifest')
-                  ? { rev: 1, scenes: [{ id: 'first', order: 0, rev: 1 }] }
-                  : { scenes: [{ id: 'first', stageId: 'stage-1' }] },
-            }) as Response,
-        );
         mocks.store.status = 'running';
         mocks.store.chat = [
           { key: 'u', kind: 'user', text: 'Make a course' },
@@ -3006,16 +2807,32 @@ describe('the knowledge base page', () => {
         expect(browser().tabs.map((tab) => tab.id)).toEqual(['stage-other', 'request-preview']);
         mocks.store.stageLinkStageIds = ['stage-1'];
         await render();
-        await act(async () => {});
+        // The link alone opens nothing: a stage link names an empty shell.
+        expect(browser().tabs.map((tab) => tab.id)).toEqual(['stage-other', 'request-preview']);
+        // The first page is persisted: the preview tab becomes the course, in place.
+        mocks.store.chat = [
+          ...mocks.store.chat.slice(0, 2),
+          {
+            key: 'g',
+            kind: 'tool',
+            text: '',
+            toolName: 'generate_scene',
+            toolState: 'running',
+            toolArgs: { stageId: 'stage-1', order: 1 },
+            sceneId: 'first',
+          },
+        ];
+        await render();
         await render();
         expect(window.location.search).toBe('?session=session-1&course=stage-1');
         expect(browser().tabs.map((tab) => tab.id)).toEqual(['stage-other', 'stage-1']);
         expect(pane()).toBeNull();
       });
 
-      it('opens on the first search of a real research-then-build run beside a bound course', async () => {
-        // A real session's event order (anonymised): started beside the open
-        // course, so bound to it; seventeen research calls before create_stage.
+      it('opens on the first search of a real research-then-build run of a new conversation', async () => {
+        // A real session's event order (anonymised), here as a new
+        // conversation with a course tab open: seventeen research calls
+        // before create_stage.
         const frames = (
           await import('./fixtures/request-preview-beside-course-stream.json', {
             with: { type: 'json' },
@@ -3040,6 +2857,7 @@ describe('the knowledge base page', () => {
             (data as { toolName?: string }).toolName === 'web_search',
         );
         Object.assign(mocks.store, firstSearch, {
+          existingCourse: false,
           sessionId: 'session-1',
           stageId: 'stage-other',
           status: 'running',
@@ -3055,6 +2873,7 @@ describe('the knowledge base page', () => {
         // Through to create_stage and its link: still the placeholder, no early tab.
         const linked = foldUntil((type) => type === 'stage_link');
         Object.assign(mocks.store, linked, {
+          existingCourse: false,
           sessionId: 'session-1',
           stageId: 'stage-other',
           status: 'running',
@@ -3066,9 +2885,59 @@ describe('the knowledge base page', () => {
         expect(window.location.search).toBe('?session=session-1&course=stage-other');
       });
 
+      it('waits for create_stage in the same real run when it was started beside the course', async () => {
+        // The same run, from a conversation started beside the open course:
+        // research about that course is working on it (no preview); the
+        // course the run then creates is new, and gets the preview.
+        const frames = (
+          await import('./fixtures/request-preview-beside-course-stream.json', {
+            with: { type: 'json' },
+          })
+        ).default as [number, string, unknown][];
+        const { createInitialSessionState, foldEvent } = await vi.importActual<
+          typeof import('@/lib/workbench/session-store')
+        >('@/lib/workbench/session-store');
+        const foldUntil = (predicate: (type: string, data: unknown) => boolean) => {
+          let folded: import('@/lib/workbench/session-store').WorkbenchFold =
+            createInitialSessionState();
+          for (const [index, [ts, type, data]] of frames.entries()) {
+            folded = foldEvent(folded, { id: index + 1, ts: 1_000 + ts, attempt: 1, type, data });
+            if (predicate(type, data)) break;
+          }
+          return folded;
+        };
+        mocks.sessionRows = [
+          { id: 'session-1', stageId: 'stage-other', updatedAt: 9, existingCourse: true },
+        ];
+        const at = (predicate: (type: string, data: unknown) => boolean) =>
+          Object.assign(mocks.store, foldUntil(predicate), {
+            existingCourse: true,
+            sessionId: 'session-1',
+            stageId: 'stage-other',
+            status: 'running',
+            replaying: false,
+          });
+        const toolStart = (name: string) => (type: string, data: unknown) =>
+          type === 'tool_execution_start' && (data as { toolName?: string }).toolName === name;
+        at(toolStart('web_search'));
+        await render();
+        await render();
+        expect(pane()).toBeNull();
+        expect(browser().tabs.map((tab) => tab.id)).toEqual(['stage-other']);
+        at(toolStart('create_stage'));
+        await render();
+        await render();
+        expect(browser().tabs.map((tab) => tab.id)).toEqual(['stage-other', 'request-preview']);
+        expect(browser().selectedTabId).toBe('request-preview');
+        expect(window.location.search).toBe('?session=session-1&course=stage-other');
+      });
+
       it('a conversation that works on the course it was started beside gets no placeholder', async () => {
-        mocks.sessionRows = [{ id: 'session-1', stageId: 'stage-other', updatedAt: 9 }];
+        mocks.sessionRows = [
+          { id: 'session-1', stageId: 'stage-other', updatedAt: 9, existingCourse: true },
+        ];
         mocks.store.stageId = 'stage-other';
+        mocks.store.existingCourse = true;
         mocks.store.status = 'running';
         mocks.store.chat = [
           { key: 'u', kind: 'user', text: 'Tighten page 2 of this course' },
@@ -3091,8 +2960,11 @@ describe('the knowledge base page', () => {
       it('a conversation started beside a course that looks through existing courses gets none (real run)', async () => {
         // A real edit request beside an open course: the agent listed the
         // courses and asked which one, naming none.
-        mocks.sessionRows = [{ id: 'session-1', stageId: 'stage-other', updatedAt: 9 }];
+        mocks.sessionRows = [
+          { id: 'session-1', stageId: 'stage-other', updatedAt: 9, existingCourse: true },
+        ];
         mocks.store.stageId = 'stage-other';
+        mocks.store.existingCourse = true;
         mocks.store.status = 'succeeded';
         mocks.store.chat = [
           { key: 'u', kind: 'user', text: 'Shorten the title of page 2' },
@@ -3106,10 +2978,12 @@ describe('the knowledge base page', () => {
       });
 
       it('a conversation opened beside a course gets the placeholder once it creates its own', async () => {
-        // Bound to the open course as context, the way a conversation started
-        // beside it is; that course has scenes.
-        mocks.sessionRows = [{ id: 'session-1', stageId: 'stage-other', updatedAt: 9 }];
+        // Started beside the open course, which has scenes.
+        mocks.sessionRows = [
+          { id: 'session-1', stageId: 'stage-other', updatedAt: 9, existingCourse: true },
+        ];
         mocks.store.stageId = 'stage-other';
+        mocks.store.existingCourse = true;
         vi.mocked(fetch).mockImplementation(
           async (input) =>
             ({
@@ -3200,18 +3074,13 @@ describe('the knowledge base page', () => {
       useQuestionHost.getState().setAnswer(null);
     });
 
-    it.each(['linked', 'touched', 'edited', 'generated'] as const)(
-      'adds no panel once this conversation has a course with scenes (%s)',
+    it.each(['existing-course', 'generated'] as const)(
+      'adds no panel once this conversation has its course (%s)',
       async (how) => {
-        if (how === 'linked') {
-          mocks.store.stageLinkStageIds = ['stage-1'];
-          mocks.store.replayedStageLinkCount = 1;
-        }
-        if (how === 'touched') mocks.store.touchedStageIds = ['stage-1'];
-        // Bound as context AND worked on by this conversation's own calls.
-        if (how === 'edited') mocks.store.stageId = 'stage-1';
-        // An unbound home session's list row is not refreshed per page, so it
-        // can still say 0 scenes; the stream's checkpointed card is the fact.
+        // Started beside a course: the session's own flag says so.
+        if (how === 'existing-course') mocks.store.existingCourse = true;
+        // An earlier request persisted a page: the stream's checkpointed card
+        // is the fact, whatever the list row still says about its scenes.
         if (how === 'generated') {
           mocks.courses = {
             ...mocks.courses!,
@@ -3236,14 +3105,8 @@ describe('the knowledge base page', () => {
               ] as ChatNode[])
             : []),
           { key: 'u', kind: 'user', text: 'A follow-up question' },
-          {
-            key: 't',
-            kind: 'tool',
-            text: '',
-            toolName: how === 'edited' ? 'read_stage' : 'web_search',
-            toolState: 'running',
-            ...(how === 'edited' ? { toolArgs: { stageId: 'stage-1' } } : {}),
-          },
+          { key: 'l', kind: 'tool', text: '', toolName: 'list_folder_stages', toolState: 'done' },
+          { key: 't', kind: 'tool', text: '', toolName: 'web_search', toolState: 'running' },
         ];
         await render();
         expect(container?.querySelector('[data-testid="workspace-request-activity"]')).toBeNull();
@@ -3268,17 +3131,6 @@ describe('the knowledge base page', () => {
     });
 
     it("does not bring the panel back after this request's course was handed off and closed", async () => {
-      vi.mocked(fetch).mockImplementation(
-        async (input) =>
-          ({
-            ok: true,
-            status: 200,
-            json: async () =>
-              String(input).includes('/manifest')
-                ? { rev: 1, scenes: [{ id: 'first', order: 0, rev: 1 }] }
-                : { scenes: [{ id: 'first', stageId: 'stage-1' }] },
-          }) as Response,
-      );
       mocks.store.status = 'running';
       mocks.store.chat = [
         { key: 'u', kind: 'user', text: 'Make a course' },
@@ -3294,6 +3146,19 @@ describe('the knowledge base page', () => {
       ];
       await render();
       mocks.store.stageLinkStageIds = ['stage-1'];
+      // Its first page is persisted: the preview becomes the course.
+      mocks.store.chat = [
+        ...mocks.store.chat.slice(0, 2),
+        {
+          key: 'scene',
+          kind: 'tool',
+          text: '',
+          toolName: 'generate_scene',
+          toolState: 'running',
+          toolArgs: { stageId: 'stage-1', order: 1 },
+          sceneId: 'first',
+        },
+      ];
       await render();
       expect(window.location.search).toBe('?session=session-1&course=stage-1');
       const browser = mocks.classroomProps?.browser as { onCloseCourse: (id: string) => void };
@@ -3324,6 +3189,7 @@ describe('the knowledge base page', () => {
       event('tool_execution_start', { toolCallId: 'page', toolName: 'generate_scene', args: {} });
       event('checkpoint', { stageId: 'stage-1', order: 0, sceneId: 'first' });
       Object.assign(mocks.store, folded, {
+        existingCourse: false,
         sessionId: 'session-1',
         replaying: false,
         replayedStageLinkCount: 1,
@@ -3340,7 +3206,7 @@ describe('the knowledge base page', () => {
       expect(container?.querySelector('[data-testid="workspace-request-activity"]')).toBeNull();
     });
 
-    it('opens a later course on its link, as before, once the conversation has one', async () => {
+    it("gives a later request's new course the preview, then its tab at its first page", async () => {
       mocks.courses = {
         ...mocks.courses!,
         classrooms: [classroom('stage-1'), { ...classroom('stage-2'), sceneCount: 0 }],
@@ -3348,10 +3214,31 @@ describe('the knowledge base page', () => {
       mocks.store.status = 'running';
       mocks.store.stageLinkStageIds = ['stage-1'];
       mocks.store.replayedStageLinkCount = 1;
+      const earlier: ChatNode[] = [
+        { key: 'u1', kind: 'user', text: 'Make a course' },
+        {
+          key: 'c1',
+          kind: 'tool',
+          text: '',
+          toolName: 'create_stage',
+          toolState: 'done',
+          toolDetails: { stageId: 'stage-1' },
+        },
+        {
+          key: 'p1',
+          kind: 'tool',
+          text: '',
+          toolName: 'generate_scene',
+          toolState: 'done',
+          toolArgs: { stageId: 'stage-1', order: 1 },
+          sceneId: 'first-1',
+        },
+      ];
       await render();
       vi.mocked(fetch).mockClear();
       mocks.store.stageLinkStageIds = ['stage-1', 'stage-2'];
       mocks.store.chat = [
+        ...earlier,
         { key: 'u', kind: 'user', text: 'Make a second course' },
         {
           key: 'created',
@@ -3363,7 +3250,26 @@ describe('the knowledge base page', () => {
         },
       ];
       await render();
+      await render();
+      // A new course in the making: the preview, and no early tab on its link.
+      expect(container?.querySelector('[data-testid="workspace-request-activity"]')).not.toBeNull();
+      expect(window.location.search).toBe('?session=session-1');
+      mocks.store.chat = [
+        ...mocks.store.chat,
+        {
+          key: 'p2',
+          kind: 'tool',
+          text: '',
+          toolName: 'generate_scene',
+          toolState: 'running',
+          toolArgs: { stageId: 'stage-2', order: 1 },
+          sceneId: 'first-2',
+        },
+      ];
+      await render();
+      await render();
       expect(window.location.search).toBe('?session=session-1&course=stage-2');
+      expect(container?.querySelector('[data-testid="workspace-request-activity"]')).toBeNull();
       expect(
         vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('/manifest')),
       ).toHaveLength(0);

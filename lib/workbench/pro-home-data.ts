@@ -14,6 +14,8 @@ export interface ProHomeSessionItem {
    */
   readonly title?: string | null;
   readonly status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+  /** Started beside an existing course (the session's durable flag); absent on older rows. */
+  readonly existingCourse?: boolean;
   /**
    * The agent asked the user a question (`ask_user`) that nothing has answered
    * yet, and no run is in flight. Derived server-side from the event log (see
