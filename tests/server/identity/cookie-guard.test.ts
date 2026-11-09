@@ -19,7 +19,7 @@ const SCANNED = [
   'app',
   'lib',
   'components',
-  'middleware.ts',
+  'proxy.ts',
   'instrumentation.ts',
   ...packageSourceDirs(),
 ];
