@@ -1,3 +1,4 @@
+import type { WhiteboardPreview } from '@/lib/chat/pi/whiteboard-preview';
 import { convertToLlm, type AgentTool } from '@earendil-works/pi-agent-core';
 import type { LanguageModel } from 'ai';
 import { buildAgent } from '@/lib/agent/runtime/build-agent';
@@ -8,6 +9,7 @@ import type { StatelessChatRequest, StatelessEvent } from '@/lib/types/chat';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { buildDirectorPrompt, buildUserPrompt, toHistoryMessages } from './prompts';
 import { createDirectorCompactionRuntime } from './director-compaction';
+import { createDirectorTailStateTransform } from './director-tail-state';
 import type { DirectorToolTraceEntry, PiStreamFnFactory, SendEvent } from './types';
 import type { ChildRuntimeMode } from './child-runtime';
 import { createAbortableSend } from './send';
@@ -35,6 +37,8 @@ export async function runPiDirectorLoop(opts: {
   agentConfigs: AgentConfig[];
   send: SendEvent;
   languageModel: LanguageModel;
+  supportsToolImages?: boolean;
+  whiteboardPreview?: WhiteboardPreview;
   streamFnFactory?: PiStreamFnFactory;
   thinkingConfig: ThinkingConfig;
   maxOutputTokens?: number;
@@ -150,6 +154,8 @@ export async function runPiDirectorLoop(opts: {
       agentConfigs: opts.agentConfigs,
       send,
       languageModel: opts.languageModel,
+      supportsToolImages: opts.supportsToolImages,
+      whiteboardPreview: opts.whiteboardPreview,
       streamFnFactory: opts.streamFnFactory,
       onAgentDone: (summary, outcome) => {
         if (outcome?.completed !== false) totalAgents += 1;
@@ -222,11 +228,27 @@ export async function runPiDirectorLoop(opts: {
 
   const director = buildAgent({
     streamFn,
-    systemPrompt: buildDirectorPrompt(opts.body, opts.agentConfigs),
+    systemPrompt: buildDirectorPrompt(
+      opts.body,
+      opts.agentConfigs,
+      opts.childRuntimeMode === 'native',
+    ),
     tools,
     allowedToolNames: new Set(tools.map((tool) => tool.name)),
     history: toHistoryMessages(opts.body.messages, null),
-    transformContext: compactionRuntime.transformContext,
+    transformContext:
+      opts.childRuntimeMode === 'native'
+        ? createDirectorTailStateTransform({
+            body: opts.body,
+            service: opts.nativeWhiteboardService,
+            stageId: opts.nativeWhiteboardStageId,
+            getAgentResponses: () => [
+              ...(opts.body.directorState?.agentResponses ?? []),
+              ...piAgentResponses,
+            ],
+            compaction: compactionRuntime,
+          })
+        : compactionRuntime.transformContext,
     convertToLlm,
     afterToolCall: (context) => {
       directorToolCalls += 1;

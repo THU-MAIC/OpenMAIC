@@ -67,7 +67,11 @@ function buildThinChildContext(body: StatelessChatRequest): string {
   ].join('\n');
 }
 
-export function buildDirectorPrompt(body: StatelessChatRequest, agents: AgentConfig[]): string {
+export function buildDirectorPrompt(
+  body: StatelessChatRequest,
+  agents: AgentConfig[],
+  native = false,
+): string {
   const agentList = agents
     .map(
       (agent) =>
@@ -138,14 +142,19 @@ export function buildDirectorPrompt(body: StatelessChatRequest, agents: AgentCon
     'You may read multiple relevant scenes before one delegation. Call `read_scene` again before a later child if that child also needs scene evidence.',
     '',
     `Session type: ${body.config.sessionType ?? 'qa'}`,
-    `Current scene: ${currentScene?.title ?? currentScene?.id ?? 'none'}`,
-    `Whiteboard open: ${body.storeState.whiteboardOpen ? 'yes' : 'no'}`,
+    ...(native
+      ? [
+          'Current board state and request-start scene/panel context are in the final state-data message. A hidden panel does not mean drawing tools are unavailable.',
+        ]
+      : [
+          `Current scene: ${currentScene?.title ?? currentScene?.id ?? 'none'}`,
+          `Whiteboard open: ${body.storeState.whiteboardOpen ? 'yes' : 'no'}`,
+        ]),
     '',
     '# Course Outline',
     buildDirectorCourseOutline(body),
     '',
-    'Agents who already spoke before this Pi loop:',
-    respondedList,
+    ...(native ? [] : ['Agents who already spoke before this Pi loop:', respondedList]),
     '',
     'Available agents:',
     agentList || '(none)',
@@ -245,6 +254,8 @@ export function buildNativeChildPrompt(
     '',
     '# Native response contract (CRITICAL)',
     '- Speak naturally as yourself. Never emit the Legacy JSON action array.',
+    '- Every visible text segment, including text before a tool call, is read aloud to the learner. Speak teaching content directly; do not narrate checking, drawing, or repairing the board, or read internal IDs, tool names, or mutation sequence numbers aloud.',
+    "- Respond in the same language as the learner, using expressions they can understand. For this reply, the learner's language takes precedence over the course language. A Chinese question needs a Chinese answer; do not switch to English because tools or instructions use English.",
     '- Visible speech must not imitate tool syntax or claim an effect succeeded before its tool result.',
     '- Use only tools in the exact inventory below. If the inventory is empty, respond with speech only.',
     '- Tool dispatch acceptance is best-effort server-side acceptance, not proof of Browser receipt or rendering.',

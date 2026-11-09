@@ -212,6 +212,24 @@ describe('Pi director prompt closure routing', () => {
     expect(prompt).toContain('preserve its sceneId, revision, and source provenance');
   });
 
+  it.each([
+    ['teacher', 70],
+    ['assistant', 60],
+    ['student', 40],
+  ] as const)(
+    'keeps the existing %s total speech limit alongside read-aloud and learner-language rules',
+    (role, limit) => {
+      const body = makeBody();
+      body.storeState.stage!.languageDirective = 'Deliver the course in English.';
+      const prompt = buildNativeChildPrompt(body, { ...agents[0], role }, [], ['read']);
+      expect(prompt).toContain(`TOTAL visible speech around ${limit} Chinese characters`);
+      expect(prompt).toContain('including text before a tool call');
+      expect(prompt).toContain("learner's language takes precedence over the course language");
+      expect(prompt).toContain('internal IDs, tool names');
+      expect(prompt).not.toContain('Start with one short, substantive answer');
+    },
+  );
+
   it('keeps the Native prompt tool-native and evidence-bound', () => {
     const system = buildNativeChildPrompt(makeBody(), agents[0], [], ['spotlight']);
     const turn = buildNativeChildTurnPrompt('Explain the current element.', 'teacher', {

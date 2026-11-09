@@ -2218,3 +2218,71 @@ describe('Native whiteboard rotation and custom geometry', () => {
     }
   });
 });
+
+describe('Native whiteboard plain text', () => {
+  it.each([
+    ['普通中文', '普通中文'],
+    ['>', '&gt;'],
+    ['&gt;', '&gt;'],
+    ['&', '&amp;'],
+    ['&#62; &#x3e;', '&gt; &gt;'],
+    ['<b>word</b>', '&lt;b&gt;word&lt;/b&gt;'],
+    ['&lt;script&gt;alert(1)&lt;/script&gt;', '&lt;script&gt;alert(1)&lt;/script&gt;'],
+    ['&unknown;', '&amp;unknown;'],
+    ['&amp;gt;', '&amp;gt;'],
+    ['literal\\ntext', 'literal\\ntext'],
+  ])('safely normalizes %s', async (content, expected) => {
+    const runtime = service();
+    const draw = build(runtime).tools.find((t) => t.name === 'wb_draw_text')!;
+    const result = await draw.execute('plain', { expectedLastSeq: null, content, x: 0, y: 0 });
+    expect(result).not.toHaveProperty('isError', true);
+    const input = vi.mocked(runtime.append).mock.calls[0]![0];
+    expect(input.payload.operation).toMatchObject({
+      kind: 'element_added',
+      element: { content: `<p style="font-size: 18px;">${expected}</p>` },
+    });
+  });
+});
+
+describe('Optional post-commit previews', () => {
+  it.each([false, true])(
+    'keeps a confirmed write successful when preview rejects=%s',
+    async (rejects) => {
+      const runtime = service();
+      const preview = vi.fn(async (_state: unknown, _signal?: AbortSignal) => {
+        if (rejects) throw new Error('render unavailable');
+        return {
+          image: { type: 'image' as const, data: 'png', mimeType: 'image/png' },
+          bytes: 3,
+          notes: [],
+        };
+      });
+      const tools = buildNativeWhiteboardTools({
+        agent: teacher,
+        messageId: 'preview-test',
+        send: vi.fn(),
+        service: runtime,
+        stageId: 'stage-1',
+        learnerKey: 'learner',
+        requestStartManualVisibilityRevision: 0,
+        preview,
+      });
+      const result = await tools
+        .find((t) => t.name === 'wb_draw_text')!
+        .execute('draw', { expectedLastSeq: null, content: 'Label', x: 0, y: 0 });
+      expect(runtime.append).toHaveBeenCalledTimes(1);
+      expect(result).not.toHaveProperty('isError', true);
+      expect(result.details).toMatchObject({
+        committedSeq: 0,
+        lastSeq: 0,
+        dispatchedAction: true,
+        preview: { status: rejects ? 'unavailable' : 'ok', lastSeq: 0 },
+      });
+      expect(preview.mock.calls[0]![0]).toMatchObject({
+        lastSeq: 0,
+        whiteboard: { elements: [expect.objectContaining({ type: 'text' })] },
+      });
+      expect(result.content.filter((c) => c.type === 'image')).toHaveLength(rejects ? 0 : 1);
+    },
+  );
+});

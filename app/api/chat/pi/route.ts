@@ -18,6 +18,7 @@ import {
 } from '@/lib/config/feature-flags';
 import { createLogger } from '@/lib/logger';
 import { resolveAgentConfigs } from '@/lib/chat/pi/config';
+import { createWhiteboardPreview } from '@/lib/chat/pi/whiteboard-preview';
 import { runPiDirectorLoop } from '@/lib/chat/pi/director-loop';
 import type { SendEvent } from '@/lib/chat/pi/types';
 import { requestWorkspaceId } from '@/lib/server/model-config/runtime';
@@ -292,6 +293,11 @@ async function chat(req: NextRequest, principal: OwnerPrincipal): Promise<Respon
           agentConfigs,
           send,
           languageModel,
+          supportsToolImages: modelInfo?.capabilities?.vision === true,
+          whiteboardPreview:
+            nativeWhiteboardService && validRequestStartStageId
+              ? createWhiteboardPreview(principal.ownerId, validRequestStartStageId)
+              : undefined,
           thinkingConfig,
           maxOutputTokens: modelInfo?.outputWindow,
           contextWindow: modelInfo?.contextWindow,

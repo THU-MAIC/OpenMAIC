@@ -36,6 +36,8 @@ import {
   type WhiteboardRuntimeOperationV1,
   type WhiteboardRuntimePayloadV1,
 } from '@/lib/whiteboard/runtime/types';
+import { decodeHtmlEntities } from '@/lib/export/pptx-rich-text';
+import type { WhiteboardPreview } from '../whiteboard-preview';
 import { queryWhiteboardVisibility } from '../whiteboard-visibility';
 import type { SendEvent } from '../types';
 
@@ -49,7 +51,11 @@ const ExpectedLastSeq = Type.Unsafe<number | null>({
 const NativeWhiteboardDrawTextParams = Type.Object(
   {
     expectedLastSeq: ExpectedLastSeq,
-    content: Type.String({ minLength: 1, pattern: '\\S' }),
+    content: Type.String({
+      minLength: 1,
+      pattern: '\\S',
+      description: 'Plain text, not HTML markup or HTML entities.',
+    }),
     x: Type.Number(),
     y: Type.Number(),
     width: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
@@ -464,7 +470,7 @@ function escapeText(value: string): string {
 }
 
 function paragraphHtml(content: string, fontSize: number): string {
-  return `<p style="font-size: ${fontSize}px;">${escapeText(content).replace(/\r\n|\r|\n/gu, '<br>')}</p>`;
+  return `<p style="font-size: ${fontSize}px;">${escapeText(decodeHtmlEntities(content)).replace(/\r\n|\r|\n/gu, '<br>')}</p>`;
 }
 
 function logicalInvocationDigest(messageId: string, toolCallId: string): string {
@@ -519,6 +525,7 @@ type NativeWhiteboardToolOptions = {
   stageId: string;
   learnerKey: string;
   requestStartManualVisibilityRevision: number;
+  preview?: WhiteboardPreview;
 };
 
 type ElementMutationParams = { expectedLastSeq: number | null };
@@ -561,7 +568,55 @@ async function settleWhiteboardMutation(
       replayed,
       affected,
     };
-    return textResult(JSON.stringify(result), { ...result, dispatchedAction: true });
+    const receipt = textResult(JSON.stringify(result), { ...result, dispatchedAction: true });
+    if (!opts.preview) return receipt;
+    // Preview is an observation of this returned snapshot, not a second write.
+    // Its failure must never change the successful commit into a retryable error.
+    const started = performance.now();
+    try {
+      const preview = await opts.preview(state, signal);
+      return {
+        ...receipt,
+        content: [
+          ...receipt.content,
+          {
+            type: 'text',
+            text: `Whiteboard preview at lastSeq=${state.lastSeq}. ${preview.notes.join(' ')}`,
+          },
+          preview.image,
+        ],
+        details: {
+          ...result,
+          dispatchedAction: true,
+          preview: {
+            status: 'ok',
+            lastSeq: state.lastSeq,
+            bytes: preview.bytes,
+            durationMs: performance.now() - started,
+          },
+        },
+      };
+    } catch {
+      return {
+        ...receipt,
+        content: [
+          ...receipt.content,
+          {
+            type: 'text',
+            text: 'The whiteboard write succeeded. Preview unavailable; use the text state. Do not repeat the write to retry the preview.',
+          },
+        ],
+        details: {
+          ...result,
+          dispatchedAction: true,
+          preview: {
+            status: 'unavailable',
+            lastSeq: state.lastSeq,
+            durationMs: performance.now() - started,
+          },
+        },
+      };
+    }
   };
 
   try {
@@ -827,7 +882,7 @@ export function buildNativeWhiteboardTools(opts: NativeWhiteboardToolOptions): A
         name: 'wb_draw_text',
         label: 'Draw whiteboard text',
         description:
-          'Append one text element to the authoritative learner whiteboard using nextMutation.expectedLastSeq from the latest wb_read result.',
+          'Append one plain-text element to the authoritative learner whiteboard using nextMutation.expectedLastSeq from the latest wb_read result. Supply plain text, not HTML markup or HTML entities.',
         parameters: NativeWhiteboardDrawTextParams,
         prepare: (args) =>
           strictArguments<NativeWhiteboardDrawTextParams>(

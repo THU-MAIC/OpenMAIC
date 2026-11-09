@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { streamText } from 'ai';
+import { createOpenAI } from '@ai-sdk/openai';
 import type { NextRequest } from 'next/server';
 import type { RuntimeRecord } from '@openmaic/dsl';
 import { BrowserRuntimeStore } from '@openmaic/storage';
@@ -14,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   searchWeb: vi.fn(),
   getServerPersistenceProvider: vi.fn(),
   stageMetaQuery: vi.fn(),
+  previewFetch: vi.fn(),
 }));
 
 vi.mock('@/lib/server/resolve-model', () => ({ resolveModel: mocks.resolveModel }));
@@ -23,6 +26,7 @@ vi.mock('@/lib/server/model-config/runtime', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/server/model-config/runtime')>()),
   requestWorkspaceId: async () => null,
 }));
+vi.mock('@/lib/server/proxy-fetch', () => ({ proxyFetch: mocks.previewFetch }));
 vi.mock('@/lib/ai/llm', () => ({ streamLLM: mocks.streamLLM }));
 vi.mock('@/lib/web-search', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/web-search')>();
@@ -52,6 +56,7 @@ const envNames = [
   'TAVILY_API_KEY',
   'TAVILY_BASE_URL',
   'DATABASE_URL',
+  'RENDER_SERVICE_URL',
 ] as const;
 
 /** The owner the route requests resolve to; its id is the runtime learner key. */
@@ -174,6 +179,8 @@ describe('PR2 Native Child route production wiring', () => {
     process.env.OPENMAIC_ENABLE_PI_NATIVE_CHILD_SPOTLIGHT = 'true';
     delete process.env.TAVILY_API_KEY;
     delete process.env.TAVILY_BASE_URL;
+    delete process.env.RENDER_SERVICE_URL;
+    mocks.previewFetch.mockReset();
     mocks.resolveModel.mockReset();
     mocks.streamLLM.mockReset();
     mocks.searchWeb.mockReset();
@@ -208,6 +215,134 @@ describe('PR2 Native Child route production wiring', () => {
     vi.unstubAllGlobals();
     vi.resetModules();
   });
+
+  it.each([true, false, undefined])(
+    'sends committed board PNGs through the real provider adapter only for vision=%s',
+    async (vision) => {
+      process.env.DATABASE_URL = 'postgres://shared-provider-test';
+      process.env.RENDER_SERVICE_URL = 'http://render.test';
+      const png =
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1cAAAAASUVORK5CYII=';
+      const snapshots: Array<{ elements: Array<{ content: string }> }> = [];
+      mocks.previewFetch.mockImplementation(async (_url, init) => {
+        snapshots.push(JSON.parse(init.body).scene.content.canvas);
+        return new Response(Buffer.from(png, 'base64'), {
+          headers: { 'Content-Type': 'image/png' },
+        });
+      });
+      const childWire: Array<{ messages: Array<{ role: string; content: unknown }> }> = [];
+      const directorWire: typeof childWire = [];
+      const director = [
+        {
+          name: 'call_agent',
+          arguments: { agentId: 'teacher-1', instruction: 'Add two concise labels.' },
+        },
+        { name: 'cue_user', arguments: { prompt: 'Continue?' } },
+      ];
+      const child = [
+        {
+          name: 'wb_draw_text',
+          arguments: { expectedLastSeq: null, content: 'First > label', x: 80, y: 100 },
+        },
+        {
+          name: 'wb_draw_text',
+          arguments: { expectedLastSeq: 0, content: 'Second label', x: 80, y: 180 },
+        },
+      ];
+      const model = createOpenAI({
+        apiKey: 'offline-test',
+        fetch: async (_url, init) => {
+          const wire = JSON.parse(String(init?.body));
+          const isChild = wire.tools.some(
+            (tool: { function: { name: string } }) => tool.function.name === 'wb_draw_text',
+          );
+          (isChild ? childWire : directorWire).push(wire);
+          const call = (isChild ? child : director).shift();
+          const chunk = (delta: unknown, finishReason: string | null) => ({
+            id: 'offline',
+            object: 'chat.completion.chunk',
+            created: 0,
+            model: 'test',
+            choices: [{ index: 0, delta, finish_reason: finishReason }],
+          });
+          const chunks = call
+            ? [
+                chunk(
+                  {
+                    tool_calls: [
+                      {
+                        index: 0,
+                        id: `call-${isChild ? 'child' : 'director'}-${isChild ? childWire.length : directorWire.length}`,
+                        type: 'function',
+                        function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                      },
+                    ],
+                  },
+                  null,
+                ),
+                chunk({}, 'tool_calls'),
+              ]
+            : [chunk({ content: 'Done.' }, null), chunk({}, 'stop')];
+          return new Response(
+            chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join('') + 'data: [DONE]\n\n',
+            { headers: { 'Content-Type': 'text/event-stream' } },
+          );
+        },
+      }).chat('test');
+      mocks.resolveModel.mockResolvedValue({
+        model,
+        apiKey: 'offline-test',
+        providerId: 'openai',
+        modelInfo: { outputWindow: 512, contextWindow: 16000, capabilities: { vision } },
+        thinkingConfig: { mode: 'disabled', enabled: false },
+      });
+      mocks.streamLLM.mockImplementation((options) => streamText({ ...options, maxRetries: 0 }));
+      const { POST } = await import('@/app/api/chat/pi/route');
+      const response = await POST(
+        makeRequest({
+          config: {
+            agentIds: ['teacher-1'],
+            piEnableWhiteboardTools: true,
+            agentConfigs: [
+              {
+                id: 'teacher-1',
+                name: 'Teacher',
+                role: 'teacher',
+                persona: 'Explain.',
+                avatar: '',
+                color: '#3366ff',
+                allowedActions: ['wb_draw_text'],
+                priority: 10,
+              },
+            ],
+          },
+        }),
+      );
+      const events = await readSseEvents(response);
+      expect(events.find((event) => event.type === 'done')).toMatchObject({
+        data: { totalActions: 2 },
+      });
+      expect(snapshots.map((s) => s.elements.length)).toEqual([1, 2]);
+      expect(snapshots[0].elements[0].content).toContain('First &gt; label');
+      expect(childWire).toHaveLength(3);
+      const imageCounts = childWire.map(
+        (w) =>
+          w.messages
+            .flatMap((m) => (Array.isArray(m.content) ? m.content : []))
+            .filter((b) => b.type === 'image_url').length,
+      );
+      expect(imageCounts).toEqual(vision ? [0, 1, 2] : [0, 0, 0]);
+      for (const wire of childWire) {
+        const text = JSON.stringify(wire.messages);
+        expect(text.split('Child whiteboard state data').length - 1).toBe(1);
+        expect(JSON.stringify(wire.messages.at(-1))).toContain('Child whiteboard state data');
+      }
+      expect(JSON.stringify(childWire[2].messages.at(-1))).toContain('lastSeq\\\":1');
+      expect(JSON.stringify(directorWire.at(-1)!.messages.at(-1))).toContain('lastSeq\\\":1');
+      expect(mocks.previewFetch).toHaveBeenCalledTimes(2);
+    },
+    15000,
+  );
 
   it('executes read_scene → valid call_agent → Native Spotlight → same-Child continuation', async () => {
     const directorResponses = [
