@@ -154,6 +154,7 @@ import { isMacPlatform, isNewChatShortcut, isSearchShortcut } from '@/lib/workbe
 import type { LibraryMaterial } from '@/lib/workbench/material-library-client';
 import { hostPageItems, useWorkbenchShellExtensions } from '@/lib/workbench/shell-extensions';
 import type { MaterialSeed, MaterialSeedTarget } from '@/components/workbench/compose-extras';
+import { pendingQuestion } from '@/components/workbench/chat/question-card-state';
 import { FetchEventSource } from '@/lib/utils/fetch-event-source';
 
 const EMPTY_SESSIONS: ProHomeSessionItem[] = [];
@@ -1099,6 +1100,12 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const attachedSessionPendingWork = useWorkbenchStore(
     (s) => s.generationOpen || s.waitingKey !== null || s.waitingArmed,
   );
+  // The open question card the chat shows, as the rail's "waiting for your
+  // answer" mark. Undefined while the backlog replays: a half-replayed log can
+  // hold a question whose answer has not been folded in yet.
+  const attachedSessionAwaitingAnswer = useWorkbenchStore((s) =>
+    s.replaying ? undefined : pendingQuestion(s.chat) !== null,
+  );
   const sessionStageId = useWorkbenchStore((s) => s.stageId);
   // How many stage/folder writes this run has made — the trigger that puts an
   // agent-created course or folder in the left rail without a page reload.
@@ -1496,8 +1503,10 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
         status: attachedSessionStatus,
         connected: attachedSessionConnected,
         pendingWork: attachedSessionPendingWork,
+        awaitingAnswer: attachedSessionAwaitingAnswer,
       }),
     [
+      attachedSessionAwaitingAnswer,
       attachedSessionConnected,
       attachedSessionId,
       attachedSessionPendingWork,
@@ -1517,10 +1526,12 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
         status: attachedSessionStatus,
         connected: attachedSessionConnected,
         pendingWork: attachedSessionPendingWork,
+        awaitingAnswer: attachedSessionAwaitingAnswer,
       });
       return reconciled;
     });
   }, [
+    attachedSessionAwaitingAnswer,
     attachedSessionConnected,
     attachedSessionId,
     attachedSessionPendingWork,

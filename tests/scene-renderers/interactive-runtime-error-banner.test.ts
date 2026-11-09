@@ -94,6 +94,35 @@ describe('interactive runtime error banner', () => {
     expect(banner?.textContent).not.toContain('idle only');
   });
 
+  it('fills a taller-than-16:9 slot with a grown logical viewport and keeps the banner unscaled', async () => {
+    const slot = { left: 40, top: 60, width: 960, height: 800 };
+    useInteractiveIframePool.setState({
+      entries: { 'scene-active': { ...poolEntry('<div>Tall</div>'), rect: slot, clip: slot } },
+      activeSceneId: 'scene-active',
+      tick: 1,
+    });
+    await renderHost();
+
+    const iframe = document.querySelector<HTMLIFrameElement>('iframe');
+    const wrap = iframe?.parentElement;
+    expect(wrap?.style.left).toBe('40px');
+    expect(wrap?.style.top).toBe('60px');
+    expect(wrap?.style.width).toBe('960px');
+    expect(wrap?.style.height).toBe('800px');
+    expect(iframe?.style.left).toBe('0px');
+    expect(iframe?.style.top).toBe('0px');
+    expect(iframe?.style.width).toBe('1280px');
+    expect(Number.parseFloat(iframe?.style.height ?? '')).toBeCloseTo(800 / 0.75);
+    expect(iframe?.style.transform).toBe('scale(0.75)');
+
+    await act(async () => {
+      useSceneRuntimeErrors.getState().addError('scene-active', '[error] tall failure');
+    });
+    const banner = document.querySelector('[data-testid="interactive-runtime-error"]');
+    expect(banner?.parentElement).toBe(wrap);
+    expect(banner?.textContent).toContain('tall failure');
+  });
+
   it('hides the banner on dismiss and shows it again when a new error arrives', async () => {
     useInteractiveIframePool.setState({
       entries: { 'scene-active': poolEntry('<div>Active</div>') },

@@ -112,6 +112,7 @@
       "emptyClassroom": "Esta aula não tem cenas.",
       "unsupportedScene": "Esta cena não está disponível na exportação offline.",
       "interactiveTitle": "Cena interativa",
+      "interactiveMoreBelow": "Há mais abaixo",
       "videoUnavailable": "O vídeo não está incluído na exportação offline",
       "quizSubmit": "Enviar",
       "quizRetry": "Tentar novamente",
@@ -268,6 +269,7 @@
       "title": "Esta atividade interativa não pôde ser executada",
       "dismiss": "Fechar"
     },
+    "interactiveMoreBelow": "Há mais abaixo",
     "tabs": {
       "lecture": "Anotações",
       "chat": "Conversa"
@@ -2430,7 +2432,8 @@
       "running": "Running",
       "succeeded": "Ready",
       "failed": "Needs attention",
-      "cancelled": "Stopped"
+      "cancelled": "Stopped",
+      "awaitingAnswer": "Aguardando sua resposta"
     },
     "backToWorkspace": "Back to workspace",
     "searchEmpty": "No matches",

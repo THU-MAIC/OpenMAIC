@@ -51,7 +51,7 @@ import {
   useWorkbenchCourseNavigation,
   useWorkbenchDraftConversation,
 } from '@/lib/workbench/panel-context';
-import { ComposerInput, type ComposerInputHandle } from './composer-input';
+import { ComposerInput, focusComposerWhenShown, type ComposerInputHandle } from './composer-input';
 import { ComposerPillRow } from './composer-pill';
 import { ElementRefPills } from './element-ref-pills';
 import { CourseMentionMenu } from './course-mention-menu';
@@ -478,6 +478,8 @@ export function WorkbenchChat({
     if (newConversation === shownNewConversation.current) return;
     shownNewConversation.current = newConversation;
     leaveConversation();
+    // A new chat is for typing: the box takes focus once it is on screen.
+    return focusComposerWhenShown(composerRef, 'workbench-chat-composer');
     // Once per request; the helpers are read as they are then.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newConversation]);

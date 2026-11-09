@@ -446,11 +446,32 @@
 .ws-row-status {
   display: inline-flex;
   align-items: center;
+  /* Flush right in the time's slot, so a mark ends where a timestamp ends. */
+  justify-content: flex-end;
+}
+
+/* Queued: waiting its turn, not working — a still, muted clock. */
+.ws-row-queued {
+  display: inline-flex;
+  color: var(--ws-ink-mute);
+}
+
+.ws-queued-mark {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  color: var(--ws-ink-mute);
 }
 
 .ws-row-fail {
   display: inline-flex;
   color: var(--ws-fail);
+}
+
+/* The agent is waiting on the teacher's answer: the accent, not an alarm. */
+.ws-row-ask {
+  display: inline-flex;
+  color: var(--ws-accent);
 }
 
 .ws-dot-fail {

@@ -53,7 +53,11 @@ import {
 import { insertSkillHandle, seedSlashQuery } from '@/lib/workbench/composer-skills';
 import { takePromptSeed, type PromptSeed } from '@/lib/workbench/prompt-seed';
 import { resolveComposerMenu } from '@/lib/workbench/composer-menus';
-import { ComposerInput, type ComposerInputHandle } from '@/components/workbench/composer-input';
+import {
+  ComposerInput,
+  focusComposerWhenShown,
+  type ComposerInputHandle,
+} from '@/components/workbench/composer-input';
 import { useInlineMentions } from '@/components/workbench/use-inline-mentions';
 import {
   expandMentions,
@@ -79,6 +83,9 @@ export type { PromptSeed } from '@/lib/workbench/prompt-seed';
 
 /** Stable identity, so the `@` memo does not re-run on every parentless render. */
 const NO_COURSE_OPTIONS: readonly CourseMentionSource[] = [];
+
+/** The composer's editable box, by the test id it already carries. */
+const PROMPT_TEST_ID = 'pro-launch-prompt';
 
 export function ProLaunchPanel({
   autoFocus = false,
@@ -139,9 +146,11 @@ export function ProLaunchPanel({
   const [mentionDismissed, setMentionDismissed] = useState<string | null>(null);
   const inputRef = useRef<ComposerInputHandle | null>(null);
 
+  const focusWhenShown = useCallback(() => focusComposerWhenShown(inputRef, PROMPT_TEST_ID), []);
+
   useEffect(() => {
-    if (autoFocus) inputRef.current?.focus();
-  }, [autoFocus]);
+    if (autoFocus) return focusWhenShown();
+  }, [autoFocus, focusWhenShown]);
 
   useLayoutEffect(() => {
     left.current = false;
@@ -379,7 +388,8 @@ export function ProLaunchPanel({
     // Both dismissal memories go with the draft they named.
     setSlashDismissed(null);
     materials.clear();
-    inputRef.current?.focus();
+    const cancelFocus = focusWhenShown();
+    return cancelFocus;
     // `materials.clear` is intentionally event-like; depending on its fresh
     // object identity would rerun this reset after every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -542,7 +552,7 @@ export function ProLaunchPanel({
         ) : null}
         <ComposerInput
           inputRef={inputRef}
-          testId="pro-launch-prompt"
+          testId={PROMPT_TEST_ID}
           value={prompt}
           readOnly={submitting}
           onCaretChange={reportCaret}

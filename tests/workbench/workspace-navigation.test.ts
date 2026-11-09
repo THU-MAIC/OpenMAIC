@@ -17,7 +17,7 @@ describe('workspace navigation projection', () => {
     });
     expect(presentWorkspaceSession('queued')).toEqual({
       labelKey: 'workspace.sessionStatus.queued',
-      tone: 'live',
+      tone: 'waiting',
     });
     expect(presentWorkspaceSession('failed')).toEqual({
       labelKey: 'workspace.sessionStatus.failed',
