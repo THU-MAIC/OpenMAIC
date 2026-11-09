@@ -37,6 +37,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - PBL v3: after a recap that leads to another milestone, the task bar says "Enter next milestone". [#2199](https://github.com/THU-MAIC/OpenMAIC/pull/2199) (by @Irisdai517)
 - PBL v3: quiz options in the task drawer are aligned cards with letter badges, a clear selected state and a visible keyboard focus, on native radio inputs. [#2193](https://github.com/THU-MAIC/OpenMAIC/pull/2193) (by @Irisdai517)
 - PBL v3: entering Tests or Quiz with the conversation at the bottom keeps following the tutor's output. [#2196](https://github.com/THU-MAIC/OpenMAIC/pull/2196) (by @Irisdai517)
+- PBL v3: dragging a workbench divider no longer resizes unrelated columns, IDE file tabs stay on one scrolling row that reveals the active tab, and the expanded assistant can be narrower. [#2212](https://github.com/THU-MAIC/OpenMAIC/pull/2212) (by @Irisdai517)
 
 ### Packages
 
