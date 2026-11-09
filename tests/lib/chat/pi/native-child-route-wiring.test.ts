@@ -216,6 +216,65 @@ describe('PR2 Native Child route production wiring', () => {
     vi.resetModules();
   });
 
+  it('does not advance the sequence of sibling writes in one Child reply', async () => {
+    process.env.DATABASE_URL = 'postgres://shared-provider-test';
+    const directorResponses = [
+      [
+        toolCall('delegate', 'call_agent', { agentId: 'teacher-1', instruction: 'Draw labels.' }),
+        finish('tool-calls'),
+      ],
+      [finish('stop')],
+    ];
+    const childResponses = [
+      [toolCall('read', 'wb_read', {}), finish('tool-calls')],
+      [
+        toolCall('a', 'wb_draw_text', { expectedLastSeq: null, content: 'A', x: 0, y: 0 }),
+        toolCall('b', 'wb_draw_text', { expectedLastSeq: null, content: 'B', x: 0, y: 50 }),
+        finish('tool-calls'),
+      ],
+      [{ type: 'text-delta', text: 'One label was added.' }, finish('stop')],
+    ];
+    const childPayloads: unknown[] = [];
+    mocks.streamLLM.mockImplementation((options, source) => {
+      if (source === 'pi-chat-native-child') childPayloads.push(options.messages);
+      return resultFrom(
+        (source === 'pi-chat-native-child' ? childResponses : directorResponses).shift() ?? [
+          finish('stop'),
+        ],
+      );
+    });
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(
+      makeRequest({
+        config: {
+          agentIds: ['teacher-1'],
+          piEnableWhiteboardTools: true,
+          agentConfigs: [
+            {
+              id: 'teacher-1',
+              name: 'Teacher',
+              role: 'teacher',
+              persona: 'Teach clearly.',
+              avatar: '',
+              color: '#3366ff',
+              allowedActions: ['wb_draw_text'],
+              priority: 10,
+            },
+          ],
+        },
+      }),
+    );
+    const events = await readSseEvents(response);
+    expect(events.find((e) => e.type === 'done')).toMatchObject({ data: { totalActions: 1 } });
+    const feedback = JSON.stringify(childPayloads.at(-1));
+    expect(feedback).toContain('Whiteboard state changed.');
+    expect(feedback).toContain('Call wb_read');
+    const provider = await mocks.getServerPersistenceProvider.mock.results[0]?.value;
+    const sessions = await provider.runtimeStore.listSessions('stage-1', LEARNER_KEY);
+    const records = await provider.runtimeStore.listRecords(sessions[0].id);
+    expect(records).toHaveLength(1);
+  }, 15000);
+
   it.each([true, false, undefined])(
     'sends committed board PNGs through the real provider adapter only for vision=%s',
     async (vision) => {
@@ -322,8 +381,8 @@ describe('PR2 Native Child route production wiring', () => {
       expect(events.find((event) => event.type === 'done')).toMatchObject({
         data: { totalActions: 2 },
       });
-      expect(snapshots.map((s) => s.elements.length)).toEqual([1, 2]);
-      expect(snapshots[0].elements[0].content).toContain('First &gt; label');
+      expect(snapshots.map((s) => s.elements.length)).toEqual(vision ? [1, 2] : []);
+      if (vision) expect(snapshots[0].elements[0].content).toContain('First &gt; label');
       expect(childWire).toHaveLength(3);
       const imageCounts = childWire.map(
         (w) =>
@@ -339,7 +398,7 @@ describe('PR2 Native Child route production wiring', () => {
       }
       expect(JSON.stringify(childWire[2].messages.at(-1))).toContain('lastSeq\\\":1');
       expect(JSON.stringify(directorWire.at(-1)!.messages.at(-1))).toContain('lastSeq\\\":1');
-      expect(mocks.previewFetch).toHaveBeenCalledTimes(2);
+      expect(mocks.previewFetch).toHaveBeenCalledTimes(vision ? 2 : 0);
     },
     15000,
   );

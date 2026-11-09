@@ -295,13 +295,20 @@ describe('Pi director prompt closure routing', () => {
     expect(system).not.toContain('- wb_edit_code');
     expect(system).toContain('# Native whiteboard behavior');
     expect(system).toContain(
+      'Before each model request, a fresh whiteboard state is appended as data at the end of the context',
+    );
+    expect(system).toContain(
+      'The tail contains `whiteboard.lastSeq`, not a `nextMutation` receipt',
+    );
+    expect(system).not.toContain('read again between successful mutations');
+    expect(system).toContain(
       'visibility result of `closed` means the Browser whiteboard is currently hidden',
     );
     expect(system).toContain('it does not mean whiteboard tools are unavailable');
     expect(system).toContain(
-      'copy `nextMutation.expectedLastSeq` from the latest `wb_read` result exactly into `expectedLastSeq`',
+      'copy `nextMutation.expectedLastSeq` exactly from the latest successful `wb_read` or mutation result',
     );
-    expect(system).toContain('use `null` only when that value itself is `null`');
+    expect(system).toContain('use `null` only when that value is `null`');
     expect(system).toContain('A `closed` visibility must not stop the requested mutation');
     expect(system).toContain('call `wb_open` before the first mutation');
     expect(system).toContain('even when you have not observed the current visibility');

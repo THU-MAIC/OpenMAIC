@@ -208,6 +208,7 @@ async function chat(req: NextRequest, principal: OwnerPrincipal): Promise<Respon
       enabled: false,
     };
 
+    const supportsToolImages = modelInfo?.capabilities?.vision === true;
     const enableWhiteboardTools = body.config.piEnableWhiteboardTools === true;
     const childRuntimeMode = isPiNativeChildRuntimeEnabled() ? 'native' : 'legacy';
     const enableNativeChildSpotlight = isPiNativeChildSpotlightEnabled();
@@ -293,9 +294,9 @@ async function chat(req: NextRequest, principal: OwnerPrincipal): Promise<Respon
           agentConfigs,
           send,
           languageModel,
-          supportsToolImages: modelInfo?.capabilities?.vision === true,
+          supportsToolImages,
           whiteboardPreview:
-            nativeWhiteboardService && validRequestStartStageId
+            supportsToolImages && nativeWhiteboardService && validRequestStartStageId
               ? createWhiteboardPreview(principal.ownerId, validRequestStartStageId)
               : undefined,
           thinkingConfig,
