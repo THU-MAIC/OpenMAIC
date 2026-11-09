@@ -37,9 +37,9 @@ export function conversationTargetStageIds(chat: readonly ChatNode[]): string[] 
 }
 
 /**
- * A conversation bound to an existing course (started beside it) whose calls
- * look through existing courses and that has created none: it is working on
- * existing courses, not producing one. Durable facts only — the binding and
+ * A conversation that has created no course and either `@`-names an existing
+ * course, or is bound to one (started beside it) and whose calls look through
+ * existing courses: it is working on existing courses, not producing one. Durable facts only — the binding and
  * the calls the agent made — never the wording of the request.
  *
  * Every conversation carries a stage id, a new one included: there it is the
@@ -52,12 +52,16 @@ export function worksOnExistingCourses(
   boundStageId: string | null,
   isExistingCourse: (stageId: string) => boolean = () => true,
 ): boolean {
-  if (!boundStageId || !isExistingCourse(boundStageId)) return false;
+  const bound = !!boundStageId && isExistingCourse(boundStageId);
   let looked = false;
+  let named = false;
   for (const node of chat) {
+    // A course the teacher `@`-named is one they asked about by name: the
+    // conversation is working on it, whatever the conversation is bound to.
+    if (node.courseRefs?.some((ref) => isExistingCourse(ref.stageId))) named = true;
     if (node.kind !== 'tool' || !node.toolName) continue;
     if (node.toolName === 'create_stage') return false;
     if (COURSE_LIBRARY_TOOLS.has(node.toolName)) looked = true;
   }
-  return looked;
+  return named || (bound && looked);
 }

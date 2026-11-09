@@ -85,4 +85,27 @@ describe('a conversation working on existing courses', () => {
     expect(worksOnExistingCourses(lookThrough, 'stage-new', exists)).toBe(false);
     expect(worksOnExistingCourses(lookThrough, 'stage-a', exists)).toBe(true);
   });
+  it('is one that @-names an existing course, whatever it is bound to', () => {
+    // "@my course summarise it" from a fresh conversation: its own stage id
+    // names nothing, but the teacher pointed at a course by name.
+    const library = new Set(['stage-a']);
+    const exists = (id: string) => library.has(id);
+    const named: ChatNode = {
+      key: 'u2',
+      kind: 'user',
+      text: 'summarise it',
+      courseRefs: [{ kind: 'course', stageId: 'stage-a', title: 'A' }],
+    };
+    expect(worksOnExistingCourses([named], 'stage-new', exists)).toBe(true);
+    expect(
+      worksOnExistingCourses(
+        [{ ...named, courseRefs: [{ kind: 'course', stageId: 'stage-gone', title: 'G' }] }],
+        'stage-new',
+        exists,
+      ),
+    ).toBe(false);
+    expect(worksOnExistingCourses([named, tool('c', 'create_stage')], 'stage-new', exists)).toBe(
+      false,
+    );
+  });
 });
