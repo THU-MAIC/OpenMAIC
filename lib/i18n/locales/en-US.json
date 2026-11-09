@@ -246,7 +246,9 @@
       "toolCallingRequired": "Classroom chat requires a model that supports tool calling. Select one for the classroom slot in Settings → Course Model Config, or contact your administrator if this setting is managed.",
       "geminiNativeRequired": "Gemini classroom interaction requires Google native. Add Google (google preset) in Settings → Model Services, then select it for “Classroom” in Course Model Config. If this configuration is managed, contact your administrator.",
       "emptyAgentResponses": "Agents returned empty responses; discussion stopped. Try again or check your model settings.",
-      "streamInterrupted": "Stream ended unexpectedly; discussion didn't complete. Please try again."
+      "streamInterrupted": "Stream ended unexpectedly; discussion didn't complete. Please try again.",
+      "teacherNoResponse": "The teacher didn't respond. Please try again.",
+      "teacherIncomplete": "The teacher couldn't finish responding. Please try again."
     },
     "elementReference": {
       "whiteboardChanged": "The referenced whiteboard element has changed or is no longer available. Select it again or remove the reference before sending.",
