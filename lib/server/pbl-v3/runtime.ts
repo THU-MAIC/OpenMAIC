@@ -877,6 +877,8 @@ export async function commandStudy(
       let testedWorkspace: EngineTransition = { state: row.state, events: [] };
       if (testCommand && row.evaluation?.isolatedSources !== true) await fileSnapshot(service, row);
       if (!testCommand) {
+        const milestoneId = row.state.position.milestoneId!;
+        const collected = row.state.collected[milestoneId]!;
         const isolatedSources = !row.evaluation && !!project.application?.frontendPath;
         const snapshot = await fileSnapshot(service, row, undefined, {
           allowApplications: isolatedSources,
@@ -884,9 +886,9 @@ export async function commandStudy(
         testCommand = evaluationCommand(
           evaluationFor(
             project,
-            row.state.position.milestoneId!,
+            milestoneId,
             row.evaluation ? [] : Object.keys(snapshot.files),
-            row.state.collected[row.state.position.milestoneId!]?.decisions,
+            collected.decisions,
           ),
           command.id,
           isolatedSources ? snapshot.files : undefined,
@@ -899,7 +901,6 @@ export async function commandStudy(
           evaluationCommand: testCommand,
           ...(isolatedSources ? { isolatedSources: true as const } : {}),
         };
-        const collected = row.state.collected[milestone.id]!;
         const planText = snapshot.files['PLAN.md'];
         if (collected.remediation && collected.plan && planText !== undefined) {
           const contentHash = digest(planText);
@@ -913,7 +914,7 @@ export async function commandStudy(
               {
                 kind: 'plan',
                 id: randomUUID(),
-                milestoneId: milestone.id,
+                milestoneId,
                 revision: collected.plan.revision + 1,
                 contentHash,
                 contentLength: planText.length,
