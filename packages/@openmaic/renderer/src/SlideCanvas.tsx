@@ -253,26 +253,18 @@ export function SlideCanvas(props: SlideCanvasProps) {
           measurementKey={visibleElements}
         />
 
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            pointerEvents: 'none',
-            padding: '5%',
-          }}
-        >
-          <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-            <AnimatePresence>
-              {effects?.laser && laserGeometry && (
-                <LaserOverlay
-                  key={`laser-${effects.laser.elementId}`}
-                  geometry={laserGeometry}
-                  color={effects.laser.color}
-                  duration={effects.laser.duration}
-                />
-              )}
-            </AnimatePresence>
-          </div>
+        {/* Laser coords are percentages of the full slide frame, like zoom. */}
+        <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+          <AnimatePresence>
+            {effects?.laser && laserGeometry && (
+              <LaserOverlay
+                key={`laser-${effects.laser.elementId}`}
+                geometry={laserGeometry}
+                color={effects.laser.color}
+                duration={effects.laser.duration}
+              />
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </div>
