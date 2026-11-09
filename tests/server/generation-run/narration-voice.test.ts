@@ -68,15 +68,53 @@ describe('run narration voices', () => {
     expect(beforeRetry?.voice.voiceId).toBe(stale.voiceId);
 
     // After the retry: the voice override updated input.voice to the re-cloned
-    // voice. clipVoice derives the slot voice from the new preference, so
-    // narration uses the updated clone and succeeds.
+    // voice. With the explicit retry-after-voice-failure signal, clipVoice
+    // derives the slot voice from the new preference, so narration uses the
+    // updated clone and succeeds.
     const afterRetry = clipVoice({
       target: qwen,
       preference: updated,
       bound: stale,
       unavailable: new Set(),
+      retryAfterVoiceFailure: true,
     });
     expect(afterRetry?.voice.voiceId).toBe(updated.voiceId);
+  });
+
+  it("a normal run continues to use the teacher's bound voice even when global preference differs", () => {
+    // Normal runs with a global preference different from the teacher's bound
+    // voice must keep using the teacher's bound voice unless resuming after a
+    // voice failure.
+    const bound = { providerId: 'qwen-tts' as const, voiceId: 'Ethan' };
+    const globalPreference = { providerId: 'qwen-tts' as const, voiceId: 'Cherry' };
+    const chosen = clipVoice({
+      target: qwen,
+      preference: globalPreference,
+      bound,
+      unavailable: new Set(),
+    });
+    expect(chosen?.voice.voiceId).toBe('Ethan');
+  });
+
+  it('recognizes operator-defined voices in configured catalogue on retry after voice failure', () => {
+    const operatorVoiceId = 'operator-custom-voice';
+    const targetWithOperatorVoice: RunNarrationTarget = {
+      ...qwen,
+      connection: {
+        ...qwen.connection,
+        voices: [{ id: operatorVoiceId, name: 'Operator Voice' }],
+      },
+    };
+    const operatorVoice = { providerId: 'qwen-tts' as const, voiceId: operatorVoiceId };
+    const stale = { providerId: 'qwen-tts' as const, voiceId: 'qwen-tts-vc-clone-1' };
+    const chosen = clipVoice({
+      target: targetWithOperatorVoice,
+      preference: operatorVoice,
+      bound: stale,
+      unavailable: new Set(),
+      retryAfterVoiceFailure: true,
+    });
+    expect(chosen?.voice.voiceId).toBe(operatorVoiceId);
   });
 
   it('prefers the bound teacher voice until this run found it unusable', () => {

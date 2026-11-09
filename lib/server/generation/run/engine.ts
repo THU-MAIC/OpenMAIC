@@ -1019,6 +1019,7 @@ async function executeClaimedRun(
         bound,
         unavailable: unavailableBindings,
         override,
+        retryAfterVoiceFailure: input.retryAfterVoiceFailure,
       });
       // A voice of a provider the slot does not name stays unvoiced.
       if (!chosen) return null;

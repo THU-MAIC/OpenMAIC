@@ -62,9 +62,11 @@ export async function retryPausedRun(
   voice?: GenerationRunInput['voice'],
 ): Promise<number> {
   const key = `${view.runId}:retry:${view.error?.step ?? ''}:${view.failedSeq}`;
+  const isVoiceFailure = view.error?.step?.endsWith(':narration') ?? false;
   const result = (await retryRun(view.runId, {
     commandId: commandIdFor(key, 'retry'),
     ...(voice ? { voice } : {}),
+    ...(voice && isVoiceFailure ? { retryAfterVoiceFailure: true } : {}),
   })) as { seq?: unknown };
   return typeof result.seq === 'number' ? result.seq : view.failedSeq;
 }

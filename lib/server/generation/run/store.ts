@@ -1561,6 +1561,8 @@ export async function retryGenerationRun(
      * `input.voice` the run paused with. A media Retry ignores it.
      */
     voice?: { providerId: string; voiceId: string; speed?: number };
+    /** Explicit signal that this retry is resuming after a voice failure. */
+    retryAfterVoiceFailure?: boolean;
   },
   /**
    * A step Retry makes a paused run active again: it counts toward the limit
@@ -1599,11 +1601,22 @@ export async function retryGenerationRun(
       const state = run.step
         ? stateForRetry(run.step)
         : (run.error?.resumeState ?? (run.outline ? 'generating' : 'preparing'));
+      const isVoiceFailure = !!(
+        run.step?.endsWith(':narration') || run.error?.step?.endsWith(':narration')
+      );
+      const retryAfterVoiceFailure =
+        command.retryAfterVoiceFailure ?? (command.voice !== undefined && isVoiceFailure);
       // A voice override replaces the run's saved narrator voice so the
       // resumed narration speaks with the learner's new selection (or the
       // re-cloned voice) instead of the one the run paused with.
       const input =
-        command.voice !== undefined ? { ...run.input, voice: command.voice } : undefined;
+        command.voice !== undefined
+          ? {
+              ...run.input,
+              voice: command.voice,
+              ...(retryAfterVoiceFailure ? { retryAfterVoiceFailure: true } : {}),
+            }
+          : undefined;
       const updated = await applyPatch(
         tx,
         runId,

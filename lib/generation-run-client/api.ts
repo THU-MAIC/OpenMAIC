@@ -141,6 +141,7 @@ export function retryRun(
     commandId: string;
     media?: { elementId: string };
     voice?: { providerId: string; voiceId: string; speed?: number };
+    retryAfterVoiceFailure?: boolean;
   },
 ): Promise<{ state: string }> {
   return postJson(

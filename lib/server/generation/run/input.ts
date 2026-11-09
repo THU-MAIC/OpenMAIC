@@ -286,6 +286,8 @@ export interface RetryCommand {
    * with. A media Retry ignores it (it generates one element, not narration).
    */
   voice?: { providerId: string; voiceId: string; speed?: number };
+  /** Explicit signal that this retry is resuming after a voice failure. */
+  retryAfterVoiceFailure?: boolean;
 }
 
 const MAX_ELEMENT_ID_CHARS = 128;
@@ -344,8 +346,20 @@ export function parseRetry(raw: unknown): Parsed<RetryCommand> {
     if (!parsed.ok) return parsed;
     voice = parsed.value;
   }
+  let retryAfterVoiceFailure: boolean | undefined;
+  if (body.retryAfterVoiceFailure !== undefined) {
+    if (typeof body.retryAfterVoiceFailure !== 'boolean') {
+      return { ok: false, message: 'retryAfterVoiceFailure must be a boolean' };
+    }
+    retryAfterVoiceFailure = body.retryAfterVoiceFailure;
+  }
   return {
     ok: true,
-    value: { commandId: commandId.value, ...(media ? { media } : {}), ...(voice ? { voice } : {}) },
+    value: {
+      commandId: commandId.value,
+      ...(media ? { media } : {}),
+      ...(voice ? { voice } : {}),
+      ...(retryAfterVoiceFailure !== undefined ? { retryAfterVoiceFailure } : {}),
+    },
   };
 }

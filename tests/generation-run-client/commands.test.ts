@@ -97,7 +97,11 @@ describe('run commands', () => {
     await retryPausedRun(view, updatedVoice);
     const [retry] = bodies();
     expect(retry!.url).toBe('/api/generation-runs/run-AAAAAAAAAAAAAAAA/retry');
-    expect(retry!.body).toEqual({ commandId: retry!.body.commandId, voice: updatedVoice });
+    expect(retry!.body).toEqual({
+      commandId: retry!.body.commandId,
+      voice: updatedVoice,
+      retryAfterVoiceFailure: true,
+    });
 
     // A Retry without a voice sends no voice field (backward-compatible).
     await retryPausedRun(view);

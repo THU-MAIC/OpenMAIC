@@ -100,6 +100,8 @@ export interface GenerationRunInput {
   voice?: { providerId: string; voiceId: string; speed?: number };
   /** Accepted for older clients; successful uploads are retained regardless. */
   releaseMaterials?: boolean;
+  /** Resuming after a voice failure: narration uses updated voice preference over stale binding. */
+  retryAfterVoiceFailure?: boolean;
 }
 
 /** The outline a run generated, as last confirmed or edited. */

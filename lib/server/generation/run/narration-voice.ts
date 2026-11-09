@@ -180,6 +180,8 @@ export function clipVoice(input: {
   unavailable: ReadonlySet<string>;
   /** An explicit voice a retry uses instead. */
   override?: ResolvedVoice;
+  /** When resuming after a voice failure, an updated voice preference overrides the teacher binding. */
+  retryAfterVoiceFailure?: boolean;
 }): { voice: ResolvedVoice; globalVoice: ResolvedVoice } | null {
   const { target, bound } = input;
   const configs = providersConfig(target);
@@ -188,19 +190,30 @@ export function clipVoice(input: {
     ...(target.connection.modelId ? { modelId: target.connection.modelId } : {}),
     voiceId: slotVoice(target, input.preference).voice,
   };
-  const hasPreference =
+  const hasCompatiblePreference =
     input.preference?.providerId === target.providerId &&
     !!input.preference.voiceId &&
-    voiceServesModel(target.providerId, input.preference.voiceId, target.modelId);
+    voiceAllowedByConfiguredCatalogue(
+      target.providerId,
+      input.preference.voiceId,
+      target.connection.voices,
+    ) &&
+    voiceServesModel(
+      target.providerId,
+      input.preference.voiceId,
+      target.modelId,
+      target.connection.voices,
+    );
   let voice =
     input.override ??
-    (hasPreference
+    (input.retryAfterVoiceFailure && hasCompatiblePreference
       ? {
           ...globalVoice,
           modelId: resolveTTSModelForVoice(
             globalVoice.providerId,
             globalVoice.voiceId,
             globalVoice.modelId,
+            target.connection.voices,
           ),
         }
       : resolveNarratorVoiceBinding(
