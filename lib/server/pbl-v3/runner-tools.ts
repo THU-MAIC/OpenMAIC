@@ -1,4 +1,5 @@
 import { applicationChoices } from '@/lib/pbl/v3/application-choices';
+import { projectEditAccess } from '@/lib/pbl/v3/edit-access';
 import { changedLineRanges } from './file-changes';
 import { readProjectFileExcerpt } from './file-read';
 import { fileReferenceHref } from '@/lib/pbl/v3/file-reference';
@@ -463,11 +464,22 @@ export async function teachingRunnerConfig(input: {
           expectedHash: Type.String({ pattern: '^[a-f0-9]{64}$' }),
         }),
         async (current, p, _callId, signal) => {
-          if (bound.role === 'planner' ? p.path !== 'PLAN.md' : p.path === 'PLAN.md')
-            throw sandboxConflict('This role cannot write that file.');
-          assertProjectSource(project, p.path);
           if (current.evaluation)
             throw sandboxConflict('Collect the running build or test before editing files.');
+          const access = projectEditAccess({
+            state: current.state,
+            stage,
+            actions: transitions.allowedStudentActions(project.definition, current.state),
+            busy: false,
+            evaluation: current.evaluation,
+          });
+          if (
+            bound.role === 'planner'
+              ? p.path !== 'PLAN.md'
+              : p.path === 'PLAN.md' && access.mode !== 'repair'
+          )
+            throw sandboxConflict('This role cannot write that file.');
+          assertProjectSource(project, p.path);
           if (guided) review.assertWritable();
           if (p.path === 'PLAN.md') await assertLearningPlan(store, current, p.text);
           const previousText = observedText.get(p.path);
