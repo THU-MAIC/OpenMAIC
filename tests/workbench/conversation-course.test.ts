@@ -218,3 +218,26 @@ describe('rule 5: the next request starts fresh', () => {
     expect(requestCourse(chat, false)).toEqual({ kind: 'new', ready: [] });
   });
 });
+
+describe('rule 5: a conversation that @-names an existing course', () => {
+  const named = (key: string, stageId: string): ChatNode => ({
+    key,
+    kind: 'user',
+    text: 'summarise it',
+    courseRefs: [{ kind: 'course', stageId, title: 'A' }],
+  });
+  it('works on the named course from then on: no preview, every later request included', () => {
+    expect(requestCourse([user('u1'), named('u2', 'stage-a')], false)).toEqual({
+      kind: 'course',
+      courseId: 'stage-a',
+    });
+    expect(
+      requestCourse([named('u1', 'stage-a'), tool('r', 'read_stage'), user('u2')], false),
+    ).toEqual({ kind: 'course', courseId: 'stage-a' });
+  });
+  it('still makes a new course through the preview when a request calls create_stage', () => {
+    expect(
+      requestCourse([named('u1', 'stage-a'), user('u2'), created('c', 'stage-new')], false),
+    ).toEqual({ kind: 'new', ready: [] });
+  });
+});

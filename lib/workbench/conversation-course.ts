@@ -19,8 +19,12 @@ import type { ChatNode } from './session-store';
  * - Any request that calls `create_stage` is making a new course, whatever
  *   came before, and that course goes through the preview like the first.
  *
- * Durable facts only: the session's own flag and the calls in its event log —
- * never the wording of the request, nor what the agent looked at.
+ * - A conversation whose teacher `@`-names an existing course works on that
+ *   course from then on, like one started beside it.
+ *
+ * Durable facts only: the session's own flag, the courses its messages name
+ * and the calls in its event log — never the wording of the request, nor what
+ * the agent looked at.
  */
 export type RequestCourse =
   /**
@@ -45,6 +49,12 @@ function createdStageId(node: ChatNode): string | null {
   // so it still names the course this call created.
   const stageId = (node.toolDetails as { stageId?: unknown } | undefined)?.stageId;
   return typeof stageId === 'string' && stageId ? stageId : null;
+}
+
+/** The last course a user message `@`-named, if any (the server resolved it to a course). */
+function namedCourseId(node: ChatNode): string | null {
+  if (node.kind !== 'user' || !node.courseRefs?.length) return null;
+  return node.courseRefs.at(-1)?.stageId || null;
 }
 
 /** Whether this card persisted a page (the fold stamps it at the page's checkpoint). */
@@ -79,17 +89,24 @@ export function requestCourse(
     (node) => node.kind === 'tool' && node.toolName === 'create_stage',
   );
   const creates = createIndex >= 0;
+  // A course the teacher `@`-named is one they asked about by name: from then
+  // on the conversation is working on it, as if started beside it.
+  const namesCourse = chat.some((node) => namedCourseId(node) !== null);
   const hasCourse =
-    existingCourse !== false || chat.slice(0, start).some((node) => persistedPage(node));
+    existingCourse !== false ||
+    namesCourse ||
+    chat.slice(0, start).some((node) => persistedPage(node));
   if (hasCourse && !creates) {
     if (existingCourse === null) return { kind: 'course', courseId: null };
-    // The course the conversation's latest persisted page went to — the one a
-    // conversation started beside a course went on to create, included —
-    // else the course it was started beside.
+    // The course the conversation last worked on: its latest persisted page's
+    // (the one a conversation started beside a course went on to create,
+    // included) or the course it last named, whichever came later — else the
+    // course it was started beside.
     let courseId: string | null = null;
     let lastCreated: string | null = null;
     for (const node of chat) {
       lastCreated = createdStageId(node) ?? lastCreated;
+      courseId = namedCourseId(node) ?? courseId;
       if (persistedPage(node)) courseId = pageStageId(node) ?? lastCreated ?? courseId;
     }
     return { kind: 'course', courseId: courseId ?? (existingCourse ? boundStageId || null : null) };
