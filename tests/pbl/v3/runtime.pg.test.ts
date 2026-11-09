@@ -7619,7 +7619,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             '-c',
             'from pathlib import Path; print("pass" if "CHOICE = format" in Path("PLAN.md").read_text() else "missing")',
           ],
-          stdout: 'pass',
+          stdout: 'pass\n',
         },
       ],
     };
