@@ -27,6 +27,13 @@ order:
    each page with its `title`, `type` (`slide` / `quiz` / `interactive` /
    `pbl`) and `brief` (this page's teaching intent and content outline, the
    same information a planned outline slot used to carry) — in page order.
+   Settle one design style for the whole course in the same plan: background
+   treatment, palette with a role for each colour (title, accent, panels,
+   text), type scale (title, heading and body sizes), where the title sits,
+   and the recurring layout grammar (panel and card treatment, column
+   patterns, spacing). Every slide is generated on its own and sees only its
+   own call, so this style is what makes the pages one deck: decide it once,
+   keep it fixed, and let only each page's layout vary with its content.
    Settle the plan with the user through `ask_user` before creating anything:
    there is no outline tool to plan with, so the plan is your words and their
    sign-off. Skip that confirmation round when the user already gave a complete
@@ -49,12 +56,26 @@ order:
 4. **`generate_scene` for EACH settled page, in ascending order** — one
    page per call, never more. Pass the page's settled `title`, `type` and
    `brief` (plus `materialFacts` when the page's content comes from attached
-   material); no planned outline is needed. A `pbl` page is generated the same
+   material); no planned outline is needed. For a `slide`, also pass `design`:
+   the course style restated in full, then this page's own layout — what the
+   learner must see at a glance, the regions with rough proportions, and which
+   content sits where in what form (table, steps, cards, diagram, chart,
+   formula). Keep content and look apart: `brief` and `materialFacts` carry
+   what the page says, `design` only how it looks, referring to the content by
+   role instead of repeating it. A `pbl` page is generated the same
    way and lands as a full PBL project (`projectV2`) from its brief; a failed
    generation reports an error and writes nothing. Each call is the durable
    checkpoint for its page: the page survives an interruption only once the
    call has returned. As soon as a page's `generate_scene` succeeds, call
    `generate_tts` on that page, then go on to the next page.
+
+   **First page first.** The user is waiting to see the classroom take shape,
+   so get page 1 persisted as early as possible: once the stage and roster
+   exist, generate page 1 before any work that page does not need. Research
+   a page relies on comes before that page. Media is made just in time for the
+   page that uses it: the images for page N are generated right before page
+   N's `generate_scene`, never as a batch for the whole course before its first
+   page exists.
 5. **`list_scenes`** to verify every page you settled is actually persisted.
 
 None of the planning steps is a place to stop: a turn ends when a page actually
