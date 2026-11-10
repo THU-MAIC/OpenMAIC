@@ -134,6 +134,7 @@ export async function runPiDirectorLoop(opts: {
     maxOutputTokens: opts.maxOutputTokens,
     thinkingConfig: opts.thinkingConfig,
     source: 'pi-chat-director',
+    includeUserImages: opts.childRuntimeMode === 'native' && opts.supportsToolImages === true,
     abortSignal: signal,
   });
   const compactionRuntime = createDirectorCompactionRuntime({
@@ -232,6 +233,7 @@ export async function runPiDirectorLoop(opts: {
       opts.body,
       opts.agentConfigs,
       opts.childRuntimeMode === 'native',
+      Boolean(opts.nativeWhiteboardService),
     ),
     tools,
     allowedToolNames: new Set(tools.map((tool) => tool.name)),
@@ -239,6 +241,7 @@ export async function runPiDirectorLoop(opts: {
     transformContext:
       opts.childRuntimeMode === 'native'
         ? createDirectorTailStateTransform({
+            preview: opts.whiteboardPreview,
             body: opts.body,
             service: opts.nativeWhiteboardService,
             stageId: opts.nativeWhiteboardStageId,

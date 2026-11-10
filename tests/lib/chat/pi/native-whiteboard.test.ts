@@ -2230,6 +2230,8 @@ describe('Native whiteboard plain text', () => {
     ['<b>word</b>', '&lt;b&gt;word&lt;/b&gt;'],
     ['&lt;script&gt;alert(1)&lt;/script&gt;', '&lt;script&gt;alert(1)&lt;/script&gt;'],
     ['&unknown;', '&amp;unknown;'],
+    ['A&#0;B&#x7f;C&#8;D&#11;E&#12;F&#31;G', 'ABCDEFG'],
+    ['A&#9;B&#10;C&#13;D', 'A\tB<br>C<br>D'],
     ['&amp;gt;', '&amp;gt;'],
     ['literal\\ntext', 'literal\\ntext'],
   ])('safely normalizes %s', async (content, expected) => {
@@ -2245,47 +2247,25 @@ describe('Native whiteboard plain text', () => {
   });
 });
 
-describe('Optional post-commit previews', () => {
-  it.each([false, true])(
-    'keeps a confirmed write successful when preview rejects=%s',
-    async (rejects) => {
-      const runtime = service();
-      const preview = vi.fn(async (_state: unknown, _signal?: AbortSignal) => {
-        if (rejects) throw new Error('render unavailable');
-        return {
-          image: { type: 'image' as const, data: 'png', mimeType: 'image/png' },
-          bytes: 3,
-          notes: [],
-        };
-      });
-      const tools = buildNativeWhiteboardTools({
-        agent: teacher,
-        messageId: 'preview-test',
-        send: vi.fn(),
-        service: runtime,
-        stageId: 'stage-1',
-        learnerKey: 'learner',
-        requestStartManualVisibilityRevision: 0,
-        preview,
-      });
-      const result = await tools
-        .find((t) => t.name === 'wb_draw_text')!
-        .execute('draw', { expectedLastSeq: null, content: 'Label', x: 0, y: 0 });
-      expect(runtime.append).toHaveBeenCalledTimes(1);
-      expect(result).not.toHaveProperty('isError', true);
-      expect(result.details).toMatchObject({
-        committedSeq: 0,
-        lastSeq: 0,
-        dispatchedAction: true,
-        preview: { status: rejects ? 'unavailable' : 'ok', lastSeq: 0 },
-      });
-      expect(preview.mock.calls[0]![0]).toMatchObject({
-        lastSeq: 0,
-        whiteboard: { elements: [expect.objectContaining({ type: 'text' })] },
-      });
-      expect(result.content.filter((c) => c.type === 'image')).toHaveLength(rejects ? 0 : 1);
-    },
-  );
+it('returns only the successful text receipt for a write', async () => {
+  const runtime = service();
+  const tool = build(runtime).tools.find((t) => t.name === 'wb_draw_text')!;
+  const result = await tool.execute('draw', {
+    expectedLastSeq: null,
+    content: 'Label',
+    x: 0,
+    y: 0,
+  });
+  expect(runtime.append).toHaveBeenCalledTimes(1);
+  expect(result).not.toHaveProperty('isError', true);
+  expect(result.details).toMatchObject({
+    committedSeq: 0,
+    nextMutation: { expectedLastSeq: 0 },
+    dispatchedAction: true,
+  });
+  expect(result.content).toHaveLength(1);
+  expect(result.content[0].type).toBe('text');
+  expect(result.details).not.toHaveProperty('preview');
 });
 
 describe('Mutation receipts as sequence sources', () => {
@@ -2433,87 +2413,4 @@ describe('Mutation receipts as sequence sources', () => {
       );
     }
   });
-});
-
-it.each([
-  [new DOMException('https://secret.invalid/token', 'TimeoutError'), 'timeout'],
-  [new DOMException('https://secret.invalid/token', 'AbortError'), 'aborted'],
-  [new Error('Preview HTTP 503'), 'http_error'],
-  [
-    Object.assign(new Error('https://secret.invalid/token'), {
-      name: 'https://secret.invalid/name',
-    }),
-    'render_failed',
-  ],
-])('logs only safe preview failure categories', async (error, category) => {
-  vi.stubEnv('LOG_LEVEL', 'warn');
-  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-  try {
-    const runtime = service();
-    const tool = buildNativeWhiteboardTools({
-      agent: teacher,
-      messageId: 'log-test',
-      send: vi.fn(),
-      service: runtime,
-      stageId: 'stage-1',
-      learnerKey: 'learner-1',
-      requestStartManualVisibilityRevision: 0,
-      preview: async () => {
-        throw error;
-      },
-    }).find((t) => t.name === 'wb_draw_text')!;
-    const result = await tool.execute('draw', { expectedLastSeq: null, content: 'A', x: 0, y: 0 });
-    expect(result).not.toHaveProperty('isError', true);
-    expect(runtime.append).toHaveBeenCalledTimes(1);
-    expect(warn).toHaveBeenCalledTimes(1);
-    const logged = String(warn.mock.calls[0][0]);
-    expect(logged).toContain('whiteboard_preview_failed');
-    expect(logged).toContain(category);
-    expect(logged).toContain('durationMs');
-    expect(logged).not.toContain('secret.invalid');
-    expect(logged).not.toContain('Error:');
-  } finally {
-    warn.mockRestore();
-    vi.unstubAllEnvs();
-  }
-});
-
-it('keeps a committed write successful without warning when the caller cancels its preview', async () => {
-  vi.stubEnv('LOG_LEVEL', 'warn');
-  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-  const controller = new AbortController();
-  try {
-    const runtime = service();
-    const tool = buildNativeWhiteboardTools({
-      agent: teacher,
-      messageId: 'cancel-preview',
-      send: vi.fn(),
-      service: runtime,
-      stageId: 'stage-1',
-      learnerKey: 'learner-1',
-      requestStartManualVisibilityRevision: 0,
-      preview: async (_state, signal) => {
-        controller.abort();
-        signal!.throwIfAborted();
-        throw new Error('Expected caller cancellation');
-      },
-    }).find((t) => t.name === 'wb_draw_text')!;
-    const result = await tool.execute(
-      'draw',
-      {
-        expectedLastSeq: null,
-        content: 'A',
-        x: 0,
-        y: 0,
-      },
-      controller.signal,
-    );
-    expect(result).not.toHaveProperty('isError', true);
-    expect(result).toMatchObject({ details: { preview: { status: 'unavailable' } } });
-    expect(runtime.append).toHaveBeenCalledTimes(1);
-    expect(warn).not.toHaveBeenCalled();
-  } finally {
-    warn.mockRestore();
-    vi.unstubAllEnvs();
-  }
 });

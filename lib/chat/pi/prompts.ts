@@ -71,6 +71,7 @@ export function buildDirectorPrompt(
   body: StatelessChatRequest,
   agents: AgentConfig[],
   native = false,
+  hasWhiteboardService = false,
 ): string {
   const agentList = agents
     .map(
@@ -144,7 +145,10 @@ export function buildDirectorPrompt(
     `Session type: ${body.config.sessionType ?? 'qa'}`,
     ...(native
       ? [
-          'Current board state and request-start scene/panel context are in the final state-data message. A hidden panel does not mean drawing tools are unavailable.',
+          'Current board state and request-start scene/panel context are in the final state-data message.',
+          ...(hasWhiteboardService
+            ? ['A hidden panel does not mean drawing tools are unavailable.']
+            : []),
         ]
       : [
           `Current scene: ${currentScene?.title ?? currentScene?.id ?? 'none'}`,

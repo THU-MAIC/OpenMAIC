@@ -979,3 +979,12 @@ describe('Pi history keeps the human turn distinct from agent turns (#511)', () 
     expect(buildUserPrompt(makeBody({ messages }))).toContain(`Latest user message: ${challenge}`);
   });
 });
+
+it('only claims hidden board tools are available when a board service exists', () => {
+  const without = buildDirectorPrompt(makeBody(), agents, true, false);
+  expect(without).toContain('request-start scene/panel context');
+  expect(without).not.toContain('A hidden panel');
+  expect(buildDirectorPrompt(makeBody(), agents, true, true)).toContain(
+    'A hidden panel does not mean drawing tools are unavailable.',
+  );
+});

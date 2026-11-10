@@ -755,7 +755,6 @@ export function buildCallAgentTool(opts: {
                   messageId,
                   send,
                   service: opts.nativeWhiteboardService,
-                  preview: opts.whiteboardPreview,
                   stageId: opts.nativeWhiteboardStageId,
                   learnerKey: opts.nativeWhiteboardLearnerKey,
                   requestStartManualVisibilityRevision:
@@ -772,6 +771,7 @@ export function buildCallAgentTool(opts: {
                 languageModel: opts.languageModel,
                 source: 'pi-chat-native-child',
                 supportsToolImages: opts.supportsToolImages,
+                includeUserImages: opts.supportsToolImages === true,
                 thinkingConfig: opts.thinkingConfig,
                 maxOutputTokens: opts.maxOutputTokens,
                 abortSignal: childAbort.signal,
@@ -796,6 +796,7 @@ export function buildCallAgentTool(opts: {
             tools: nativeTools,
             transformContext: availableToolNames.includes('wb_read')
               ? createChildTailStateTransform({
+                  preview: opts.whiteboardPreview,
                   service: opts.nativeWhiteboardService,
                   stageId: opts.nativeWhiteboardStageId,
                 })

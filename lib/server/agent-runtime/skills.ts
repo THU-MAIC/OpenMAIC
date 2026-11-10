@@ -273,7 +273,7 @@ let classroomCache: LoadedSkill[] | null = null;
 
 /** Classroom guidance uses the shared discovery/read protocol, outside the authoring catalog. */
 export async function listClassroomSkills(): Promise<LoadedSkill[]> {
-  return (classroomCache ??= await loadBuiltinSkills(join(process.cwd(), 'skills/classroom')));
+  return (classroomCache ??= await loadBuiltinSkills(agentRuntimeConfig.classroomSkillsDir));
 }
 
 /** Builtins plus the current owner's user-authored skills. */

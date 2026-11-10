@@ -20,31 +20,41 @@ and panel information remains explicitly labeled as a request-start snapshot.
 
 ## Optional board images
 
-`whiteboard-preview.ts` adapts the snapshot returned by a successful mutation to
-the existing scene-preview protocol. It reuses the self-hostable service in
-`render-service/`, `prepareScenePreview`, owner-scoped asset resolution, and
-`POST /preview`. Set the existing runtime `RENDER_SERVICE_URL` to enable it.
-Without configuration, writes retain their existing text feedback. An
-unreachable, refusing, or incompatible preview service leaves the write
-successful and returns a text notice. There is no rendering retry or second
-write. The service's per-task execution mode currently refuses previews; use a
-mode that supports its existing `/preview` endpoint.
+`whiteboard-preview.ts` renders the snapshot read for the current tail through
+`prepareScenePreview`, owner-scoped asset resolution, and the self-hostable
+`render-service/` endpoint `POST /preview`. Enable it explicitly with
+`OPENMAIC_ENABLE_PI_NATIVE_WHITEBOARD_PREVIEW=true` and `RENDER_SERVICE_URL`.
+The Native classroom must have a whiteboard service, and the resolved model must
+explicitly support vision. Otherwise requests retain text-only state.
 
-Each successful mutation with preview enabled adds a PNG of the whole logical
-board to its tool result, labeled with the snapshot's `lastSeq`. Preview details
-record bytes and preparation/render duration. The shared `toModelMessages`
-conversion preserves paired tool receipts and moves tool images into an
-observation message; the provider adapter then encodes the image. Only models
-whose resolved capability explicitly declares vision receive image blocks.
+Director and Child tails contain at most one whole-board PNG alongside the text
+state. A nonempty existing board is visible on the first model round. Empty
+boards (`lastSeq` is null or there are no elements) send no image. Mutation tool
+results remain text-only, including `nextMutation.expectedLastSeq`; images are
+not saved in tool history. User image transport is opt-in for this classroom
+path and leaves authoring callers unchanged.
 
-Snapshots are rendered without rereading mutable state, so a delayed preview
-still describes its labeled sequence. Concurrent writes may make that snapshot
-older than the board by the time it is consumed. Existing optimistic mutation
-checks remain responsible for conflicts; no locks or queues are added here.
-Images accumulate with tool history: two writes produce two images, and later
-requests resend both. Board-edge overflow and live browser animation/visibility
-are not represented by a fixed logical-board screenshot. Model fallback uses
-the primary request's existing capability decision.
+One chat HTTP request shares a single latest render cache and failure state
+across its Director and Children. The cache key includes stage, session, board,
+and `lastSeq`; unchanged snapshots reuse the image or pending render. Nothing
+is cached across HTTP requests. A cleared board never reuses an old image.
+Each render has a 5-second deadline and respects the caller's cancellation,
+including a Child's enclosing tool deadline. The first preview failure disables
+further previews for this HTTP request, while text state and successful writes
+remain intact. Failed renders never fall back to an older image. Only a fixed
+error category and elapsed time are logged; caller cancellation does not warn.
+Cancellation before the preview deadline clears the pending cache without
+disabling previews for subsequent callers in the same HTTP request.
+The service's per-task execution mode refuses previews; use a mode supporting
+its existing `/preview` endpoint.
+
+The image and text describe the same read snapshot, labeled with its `lastSeq`.
+An external write during rendering can make it older than the live board; no
+locks or queues are added. The screenshot represents the logical board, not
+live browser animation or panel visibility. It does not guarantee that the
+model will recognize or correct an error. Director compaction continues to
+budget the transient tail with Pi's estimator, including its image estimate;
+this is not a measurement of provider billing.
 
 ## Classroom skills and speech
 

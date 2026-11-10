@@ -36,13 +36,9 @@ import {
   type WhiteboardRuntimeOperationV1,
   type WhiteboardRuntimePayloadV1,
 } from '@/lib/whiteboard/runtime/types';
-import { createLogger } from '@/lib/logger';
 import { decodeHtmlEntities } from '@/lib/export/pptx-rich-text';
-import type { WhiteboardPreview } from '../whiteboard-preview';
 import { queryWhiteboardVisibility } from '../whiteboard-visibility';
 import type { SendEvent } from '../types';
-
-const log = createLogger('NativeWhiteboard');
 
 const EmptyParams = Type.Object({}, { additionalProperties: false });
 const ExpectedLastSeq = Type.Unsafe<number | null>({
@@ -473,7 +469,12 @@ function escapeText(value: string): string {
 }
 
 function paragraphHtml(content: string, fontSize: number): string {
-  return `<p style="font-size: ${fontSize}px;">${escapeText(decodeHtmlEntities(content)).replace(/\r\n|\r|\n/gu, '<br>')}</p>`;
+  // Drop C0 controls except tab/newlines, plus DEL, after decoding numeric entities.
+  const plain = decodeHtmlEntities(content).replace(
+    /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu,
+    '',
+  );
+  return `<p style="font-size: ${fontSize}px;">${escapeText(plain).replace(/\r\n|\r|\n/gu, '<br>')}</p>`;
 }
 
 function logicalInvocationDigest(messageId: string, toolCallId: string): string {
@@ -528,7 +529,6 @@ type NativeWhiteboardToolOptions = {
   stageId: string;
   learnerKey: string;
   requestStartManualVisibilityRevision: number;
-  preview?: WhiteboardPreview;
 };
 
 type ElementMutationParams = { expectedLastSeq: number | null };
@@ -572,69 +572,7 @@ async function settleWhiteboardMutation(
       replayed,
       affected,
     };
-    const receipt = textResult(JSON.stringify(result), { ...result, dispatchedAction: true });
-    if (!opts.preview) return receipt;
-    // Preview is an observation of this returned snapshot, not a second write.
-    // Its failure must never change the successful commit into a retryable error.
-    const started = performance.now();
-    try {
-      const preview = await opts.preview(state, signal);
-      return {
-        ...receipt,
-        content: [
-          ...receipt.content,
-          {
-            type: 'text',
-            text: `Whiteboard preview at lastSeq=${state.lastSeq}. ${preview.notes.join(' ')}`,
-          },
-          preview.image,
-        ],
-        details: {
-          ...result,
-          dispatchedAction: true,
-          preview: {
-            status: 'ok',
-            lastSeq: state.lastSeq,
-            bytes: preview.bytes,
-            durationMs: performance.now() - started,
-          },
-        },
-      };
-    } catch (error) {
-      const durationMs = performance.now() - started;
-      // Only fixed categories: exception text and names may contain private URLs.
-      const category =
-        error instanceof Error && error.name === 'TimeoutError'
-          ? 'timeout'
-          : error instanceof Error && error.name === 'AbortError'
-            ? 'aborted'
-            : error instanceof Error && /^Preview HTTP [1-5][0-9]{2}$/.test(error.message)
-              ? 'http_error'
-              : 'render_failed';
-      // Caller cancellation is not a renderer failure.
-      if (!signal?.aborted) {
-        log.warn({ event: 'whiteboard_preview_failed', category, durationMs });
-      }
-      return {
-        ...receipt,
-        content: [
-          ...receipt.content,
-          {
-            type: 'text',
-            text: 'The whiteboard write succeeded. Preview unavailable; use the text state. Do not repeat the write to retry the preview.',
-          },
-        ],
-        details: {
-          ...result,
-          dispatchedAction: true,
-          preview: {
-            status: 'unavailable',
-            lastSeq: state.lastSeq,
-            durationMs,
-          },
-        },
-      };
-    }
+    return textResult(JSON.stringify(result), { ...result, dispatchedAction: true });
   };
 
   try {

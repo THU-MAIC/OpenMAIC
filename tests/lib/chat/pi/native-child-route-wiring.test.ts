@@ -57,6 +57,7 @@ const envNames = [
   'TAVILY_BASE_URL',
   'DATABASE_URL',
   'RENDER_SERVICE_URL',
+  'OPENMAIC_ENABLE_PI_NATIVE_WHITEBOARD_PREVIEW',
 ] as const;
 
 /** The owner the route requests resolve to; its id is the runtime learner key. */
@@ -180,6 +181,7 @@ describe('PR2 Native Child route production wiring', () => {
     delete process.env.TAVILY_API_KEY;
     delete process.env.TAVILY_BASE_URL;
     delete process.env.RENDER_SERVICE_URL;
+    delete process.env.OPENMAIC_ENABLE_PI_NATIVE_WHITEBOARD_PREVIEW;
     mocks.previewFetch.mockReset();
     mocks.resolveModel.mockReset();
     mocks.streamLLM.mockReset();
@@ -275,19 +277,50 @@ describe('PR2 Native Child route production wiring', () => {
     expect(records).toHaveLength(1);
   }, 15000);
 
-  it.each([true, false, undefined])(
-    'sends committed board PNGs through the real provider adapter only for vision=%s',
-    async (vision) => {
+  it.each([
+    { vision: true, enabled: true, configured: true },
+    { vision: false, enabled: true, configured: true },
+    { vision: undefined, enabled: true, configured: true },
+    { vision: true, enabled: false, configured: true },
+    { vision: true, enabled: true, configured: false },
+  ])(
+    'sends only the latest tail PNG through the provider adapter ($vision/$enabled/$configured)',
+    async ({ vision, enabled, configured }) => {
+      const imagesEnabled = vision === true && enabled && configured;
+      if (enabled) process.env.OPENMAIC_ENABLE_PI_NATIVE_WHITEBOARD_PREVIEW = 'true';
       process.env.DATABASE_URL = 'postgres://shared-provider-test';
-      process.env.RENDER_SERVICE_URL = 'http://render.test';
+      if (configured) process.env.RENDER_SERVICE_URL = 'http://render.test';
+      const { createWhiteboardRuntimeService } = await import('@/lib/whiteboard/runtime/store');
+      const { buildNativeWhiteboardTools } = await import('@/lib/chat/pi/tools/native-whiteboard');
+      const provider = await mocks.getServerPersistenceProvider();
+      const service = createWhiteboardRuntimeService({
+        store: provider.runtimeStore,
+        resolveLearnerKey: () => LEARNER_KEY,
+        withMaintenanceLock: (work) => work(),
+      });
+      const tools = buildNativeWhiteboardTools({
+        agent: { allowedActions: ['wb_draw_text'] } as never,
+        messageId: 'seed',
+        send: async () => {},
+        service,
+        stageId: 'stage-1',
+        learnerKey: LEARNER_KEY,
+        requestStartManualVisibilityRevision: 0,
+      });
+      await tools
+        .find((t) => t.name === 'wb_draw_text')!
+        .execute('seed', { expectedLastSeq: null, content: 'Existing label', x: 20, y: 20 });
       const png =
         'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1cAAAAASUVORK5CYII=';
       const snapshots: Array<{ elements: Array<{ content: string }> }> = [];
       mocks.previewFetch.mockImplementation(async (_url, init) => {
         snapshots.push(JSON.parse(init.body).scene.content.canvas);
-        return new Response(Buffer.from(png, 'base64'), {
-          headers: { 'Content-Type': 'image/png' },
-        });
+        return new Response(
+          Buffer.concat([Buffer.from(png, 'base64'), Buffer.from(String(snapshots.length))]),
+          {
+            headers: { 'Content-Type': 'image/png' },
+          },
+        );
       });
       const childWire: Array<{ messages: Array<{ role: string; content: unknown }> }> = [];
       const directorWire: typeof childWire = [];
@@ -296,16 +329,20 @@ describe('PR2 Native Child route production wiring', () => {
           name: 'call_agent',
           arguments: { agentId: 'teacher-1', instruction: 'Add two concise labels.' },
         },
+        {
+          name: 'call_agent',
+          arguments: { agentId: 'teacher-1', instruction: 'Check the existing board.' },
+        },
         { name: 'cue_user', arguments: { prompt: 'Continue?' } },
       ];
       const child = [
         {
           name: 'wb_draw_text',
-          arguments: { expectedLastSeq: null, content: 'First > label', x: 80, y: 100 },
+          arguments: { expectedLastSeq: 0, content: 'First > label', x: 80, y: 100 },
         },
         {
           name: 'wb_draw_text',
-          arguments: { expectedLastSeq: 0, content: 'Second label', x: 80, y: 180 },
+          arguments: { expectedLastSeq: 1, content: 'Second label', x: 80, y: 180 },
         },
       ];
       const model = createOpenAI({
@@ -381,24 +418,53 @@ describe('PR2 Native Child route production wiring', () => {
       expect(events.find((event) => event.type === 'done')).toMatchObject({
         data: { totalActions: 2 },
       });
-      expect(snapshots.map((s) => s.elements.length)).toEqual(vision ? [1, 2] : []);
-      if (vision) expect(snapshots[0].elements[0].content).toContain('First &gt; label');
-      expect(childWire).toHaveLength(3);
-      const imageCounts = childWire.map(
-        (w) =>
-          w.messages
-            .flatMap((m) => (Array.isArray(m.content) ? m.content : []))
-            .filter((b) => b.type === 'image_url').length,
+      expect(snapshots.map((s) => s.elements.length)).toEqual(imagesEnabled ? [1, 2, 3] : []);
+      if (imagesEnabled) expect(snapshots[1].elements[1].content).toContain('First &gt; label');
+      expect(childWire).toHaveLength(4);
+      const imageParts = (wire: (typeof childWire)[number]) =>
+        wire.messages
+          .flatMap((m) => (Array.isArray(m.content) ? m.content : []))
+          .filter((part) => part.type === 'image_url');
+      expect(childWire.map((wire) => imageParts(wire).length)).toEqual(
+        imagesEnabled ? [1, 1, 1, 1] : [0, 0, 0, 0],
       );
-      expect(imageCounts).toEqual(vision ? [0, 1, 2] : [0, 0, 0]);
-      for (const wire of childWire) {
-        const text = JSON.stringify(wire.messages);
-        expect(text.split('Child whiteboard state data').length - 1).toBe(1);
-        expect(JSON.stringify(wire.messages.at(-1))).toContain('Child whiteboard state data');
+      expect(directorWire.map((wire) => imageParts(wire).length)).toEqual(
+        imagesEnabled ? [1, 1, 1] : [0, 0, 0],
+      );
+      for (const wire of [...childWire, ...directorWire]) {
+        const tail = wire.messages.at(-1)!;
+        expect(JSON.stringify(tail)).toContain('state data');
+        expect(
+          wire.messages
+            .slice(0, -1)
+            .flatMap((m) => (Array.isArray(m.content) ? m.content : []))
+            .filter((part) => part.type === 'image_url'),
+        ).toHaveLength(0);
+        expect(JSON.stringify(wire.messages.filter((m) => m.role === 'tool'))).not.toContain(
+          'image_url',
+        );
       }
-      expect(JSON.stringify(childWire[2].messages.at(-1))).toContain('lastSeq\\\":1');
-      expect(JSON.stringify(directorWire.at(-1)!.messages.at(-1))).toContain('lastSeq\\\":1');
-      expect(mocks.previewFetch).toHaveBeenCalledTimes(vision ? 2 : 0);
+      if (imagesEnabled) {
+        const imageFor = (number: number) =>
+          'data:image/png;base64,' +
+          Buffer.concat([Buffer.from(png, 'base64'), Buffer.from(String(number))]).toString(
+            'base64',
+          );
+        expect(childWire.map((wire) => imageParts(wire)[0].image_url.url)).toEqual([
+          imageFor(1),
+          imageFor(2),
+          imageFor(3),
+          imageFor(3),
+        ]);
+        expect(directorWire.map((wire) => imageParts(wire)[0].image_url.url)).toEqual([
+          imageFor(1),
+          imageFor(3),
+          imageFor(3),
+        ]);
+      }
+      expect(JSON.stringify(childWire[2].messages.at(-1))).toContain('lastSeq');
+      // No writes in the second Child: it and both later Director rounds reuse the same render.
+      expect(mocks.previewFetch).toHaveBeenCalledTimes(imagesEnabled ? 3 : 0);
     },
     15000,
   );
