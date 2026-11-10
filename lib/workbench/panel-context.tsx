@@ -142,6 +142,12 @@ export interface WorkbenchDraftConversation {
     readonly materials: readonly WorkbenchMaterial[];
     readonly elementRefs: readonly ElementRef[];
     readonly courseRefs: readonly CourseRef[];
+    /**
+     * The course the composer named when it opened (`course` below), when its
+     * mention is still in the message: the conversation is about that course.
+     * Absent, the first message starts an ordinary new conversation.
+     */
+    readonly boundCourseId?: string;
     /** Called once the session exists, before its first message is delivered. */
     readonly onCreated?: (sessionId: string) => void;
   }) => Promise<{
@@ -150,11 +156,11 @@ export interface WorkbenchDraftConversation {
     readonly courseRefsAccepted: boolean;
   }>;
   /**
-   * What the empty conversation says instead of the default placeholder, for a
-   * draft whose first message does something other than continue the course
-   * beside it (the built-in guide course: a message there starts a new one).
+   * The course this empty conversation was opened for: the composer starts
+   * with it named as an `@` mention, which is the conversation's whole binding
+   * to it (`boundCourseId`).
    */
-  readonly emptyState?: { readonly title: string; readonly hint: string };
+  readonly course?: { readonly stageId: string; readonly title: string };
 }
 
 const WorkbenchDraftConversationContext = createContext<WorkbenchDraftConversation | null>(null);

@@ -67,7 +67,7 @@ import { resolveCourseChatBootstrap } from '@/lib/workbench/course-chat-bootstra
 import { startConversationWithFirstMessage } from '@/lib/workbench/first-message-session';
 import { createdCourseTabsToOpen } from '@/lib/workbench/created-course-tabs';
 import { isCourseReadOnly } from '@/lib/workbench/course-read-only';
-import { findGuideCourse, isGuideCourseId, seedGuideCourse } from '@/lib/workbench/guide-course';
+import { findGuideCourse, seedGuideCourse } from '@/lib/workbench/guide-course';
 import {
   markOnboardingSeen,
   resetOnboarding,
@@ -258,6 +258,14 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    * Forward (a history entry says on its own what was beside the course).
    */
   const [newConversationRequested, setNewConversationRequested] = useState(false);
+  /**
+   * The empty conversation was opened FOR the course beside it ("Edit with
+   * AI", the folded column's unfold, the tour's guide course): its composer
+   * starts with that course named as an `@` mention. The mention is the whole
+   * binding — sent with it, the conversation is about that course; removed,
+   * it is an ordinary new conversation. New chat names nothing.
+   */
+  const [draftNamesCourse, setDraftNamesCourse] = useState(false);
   /**
    * "Chat with this material" from the knowledge base: the material on its
    * way to the one composer it names. Any navigation the teacher makes after
@@ -638,6 +646,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       collapse.expandClassroom();
       setMaterialSeed(null);
       setNewConversationRequested(startConversation);
+      setDraftNamesCourse(startConversation);
       if (startConversation) {
         draftVisit.current += 1;
         collapse.expandChat();
@@ -1049,6 +1058,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const startNewConversation = () => {
     draftVisit.current += 1;
     setNewConversationRequested(true);
+    setDraftNamesCourse(false);
     collapse.expandChat();
     setMaterialSeed(null);
     // The teacher's own choice, so it also leaves the knowledge base page.
@@ -1084,6 +1094,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    */
   const talkAboutCourse = () => {
     startNewConversation();
+    setDraftNamesCourse(true);
     setNarrowFocus('chat');
   };
   // Stable for the memoised classroom pane; always runs the latest render's.
@@ -1465,13 +1476,15 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       draftCourseId
         ? {
             ownerKey: `draft:${draftCourseId}`,
-            // Beside the guide course, which no conversation made, the empty
-            // chat says what it is for: changing that course.
-            ...(isGuideCourseId(draftCourseId)
+            // Opened for this course: its composer names it (see
+            // `draftNamesCourse`).
+            ...(draftNamesCourse
               ? {
-                  emptyState: {
-                    title: t('workspace.guide.chatTitle'),
-                    hint: t('workspace.guide.chatHint'),
+                  course: {
+                    stageId: draftCourseId,
+                    title:
+                      courses.classrooms.find((course) => course.id === draftCourseId)?.name ||
+                      t('workspace.untitledCourse'),
                   },
                 }
               : {}),
@@ -1480,12 +1493,16 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
               readonly materials: readonly WorkbenchMaterial[];
               readonly elementRefs: readonly ElementRef[];
               readonly courseRefs: readonly CourseRef[];
+              readonly boundCourseId?: string;
               readonly onCreated?: (sessionId: string) => void;
             }) => {
               const visitAtSend = draftVisit.current;
+              // The course mention the composer opened with, if still there,
+              // is the conversation's course; without it, an ordinary one.
+              const { boundCourseId, ...rest } = message;
               const started = await startConversationWithFirstMessage({
-                stageId: draftCourseId,
-                ...message,
+                ...(boundCourseId ? { stageId: boundCourseId } : {}),
+                ...rest,
               });
               // The rail should show the conversation that just came into being,
               // and the URL is what attaches it.
@@ -1514,7 +1531,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
             },
           }
         : null,
-    [draftCourseId, loadSessions, navigateInBackground, t],
+    [courses.classrooms, draftCourseId, draftNamesCourse, loadSessions, navigateInBackground, t],
   );
 
   // The owner list stream and attached conversation stream have independent

@@ -13,7 +13,12 @@
  */
 
 import { act, createElement, type ReactNode } from 'react';
-import { COMPOSER_INPUT, composerText, setComposerText } from './_composer-driver';
+import {
+  appendComposerText,
+  COMPOSER_INPUT,
+  composerText,
+  setComposerText,
+} from './_composer-driver';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -270,6 +275,7 @@ vi.mock('@/components/workbench/workspace/MaterialLibraryPage', () => ({
 vi.mock('@/components/workbench/workspace/ResizeHandle', () => ({ ResizeHandle: () => null }));
 
 import { WorkspaceShell } from '@/components/workbench/workspace/WorkspaceShell';
+import { COURSE_TABS_STORAGE_KEY } from '@/lib/workbench/workspace-course-tabs';
 
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
@@ -1140,5 +1146,104 @@ describe('a request still on its way when the teacher switches conversation', ()
     await act(async () => cancelAnswers[0].resolve(new Response(null, { status: 202 })));
     expect(stopButton()!.hasAttribute('disabled')).toBe(false);
     expect(stopButton()!.getAttribute('data-stopping')).toBeNull();
+  });
+});
+
+/**
+ * "Edit with AI" on a browsed course opens an empty conversation whose
+ * composer already names the course, as an `@` pick would. That mention is
+ * the conversation's whole binding to the course.
+ */
+describe('an empty conversation opened for a course', () => {
+  const textarea = () => container!.querySelector<HTMLElement>(COMPOSER_INPUT)!;
+  const sendButton = () =>
+    container!.querySelector<HTMLButtonElement>('[data-testid="workbench-send"]');
+  const send = () => act(async () => sendButton()!.click());
+  const talkAboutCourse = () =>
+    act(async () => (mocks.classroomProps!.onTalkAboutCourse as () => void)());
+  const sentWith = () => mocks.startFirstMessage.mock.calls.at(-1)![0] as Record<string, unknown>;
+
+  beforeEach(() => {
+    serve();
+    mocks.courses = {
+      ...mocks.courses!,
+      classrooms: [classroom('stage-1'), classroom('stage-2')],
+    };
+  });
+
+  it('starts with the course as a mention, the caret after it', async () => {
+    await render();
+    await talkAboutCourse();
+    await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+
+    expect(composerText(textarea())).toBe('@stage-1 name ');
+    expect(document.activeElement?.closest(COMPOSER_INPUT)).not.toBeNull();
+    // Only words of the user's own can be sent.
+    expect(sendButton()!.disabled).toBe(true);
+  });
+
+  it('sent with the mention: a conversation about that course', async () => {
+    await render();
+    await talkAboutCourse();
+    await act(async () => {
+      appendComposerText(textarea(), 'make page 2 simpler');
+    });
+    await send();
+
+    expect(sentWith()).toMatchObject({
+      text: '@stage-1 name make page 2 simpler',
+      stageId: 'stage-1',
+      courseRefs: [expect.objectContaining({ stageId: 'stage-1' })],
+    });
+  });
+
+  it('with the mention removed: an ordinary new conversation, nothing bound', async () => {
+    await render();
+    await talkAboutCourse();
+    await type(textarea(), 'a lesson about tides');
+    await send();
+
+    const sent = sentWith();
+    expect(sent.text).toBe('a lesson about tides');
+    expect(sent).not.toHaveProperty('stageId');
+    expect(sent.courseRefs).toEqual([]);
+  });
+
+  it('switching course tabs before typing names the new course instead', async () => {
+    localStorage.setItem(
+      COURSE_TABS_STORAGE_KEY,
+      JSON.stringify({ courseIds: ['stage-1', 'stage-2'], activeCourseId: 'stage-1' }),
+    );
+    await render();
+    await talkAboutCourse();
+    expect(composerText(textarea())).toBe('@stage-1 name ');
+
+    await act(async () =>
+      (
+        mocks.classroomProps!.browser as { onActivateCourse: (id: string) => void }
+      ).onActivateCourse('stage-2'),
+    );
+    await act(async () => {});
+    expect(composerText(textarea())).toBe('@stage-2 name ');
+
+    // Once typed, the user's mentions are left as they are.
+    await act(async () => {
+      appendComposerText(textarea(), 'compare');
+    });
+    await act(async () =>
+      (
+        mocks.classroomProps!.browser as { onActivateCourse: (id: string) => void }
+      ).onActivateCourse('stage-1'),
+    );
+    await act(async () => {});
+    expect(composerText(textarea())).toBe('@stage-2 name compare');
+    await send();
+    expect(sentWith()).toMatchObject({ stageId: 'stage-2' });
+  });
+
+  it('New chat names no course', async () => {
+    await render();
+    await act(async () => (mocks.railProps!.onNewSession as () => void)());
+    expect(composerText(textarea())).toBe('');
   });
 });

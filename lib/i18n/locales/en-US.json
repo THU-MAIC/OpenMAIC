@@ -2546,10 +2546,6 @@
       "expand": "Full screen",
       "collapse": "Exit full screen (Esc)"
     },
-    "guide": {
-      "chatTitle": "Want to change this class? Say it here",
-      "chatHint": "Like “make page 2 simpler”. For a new class, use New chat."
-    },
     "onboarding": {
       "paneTitle": "Learn or edit",
       "paneLearn": "Learn: the AI teacher takes you through the class. Ask anytime.",

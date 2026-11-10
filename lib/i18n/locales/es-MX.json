@@ -2546,10 +2546,6 @@
       "expand": "Pantalla completa",
       "collapse": "Salir de pantalla completa (Esc)"
     },
-    "guide": {
-      "chatTitle": "¿Quieres cambiar esta clase? Dilo aquí",
-      "chatHint": "Por ejemplo «haz más sencilla la página 2». Para una clase nueva, usa «Nuevo chat»."
-    },
     "onboarding": {
       "paneTitle": "Aprender o editar",
       "paneLearn": "Aprender: el profesor de IA te guía por la clase; pregunta cuando quieras.",

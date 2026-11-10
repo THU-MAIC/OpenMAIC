@@ -2546,10 +2546,6 @@
       "expand": "Tela cheia",
       "collapse": "Sair da tela cheia (Esc)"
     },
-    "guide": {
-      "chatTitle": "Quer mudar esta aula? Diga aqui",
-      "chatHint": "Por exemplo “deixe a página 2 mais simples”. Para uma aula nova, use “Nova conversa”."
-    },
     "onboarding": {
       "paneTitle": "Aprender ou editar",
       "paneLearn": "Aprender: o professor de IA conduz a aula; pergunte quando quiser.",

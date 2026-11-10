@@ -64,16 +64,13 @@ export function shouldRetainTranscript(input: {
 
 export function WorkbenchChatEmptyState({
   t = defaultWorkbenchTranslator,
-  copy,
 }: {
   t?: WorkbenchTranslator;
-  /** Replaces the default title and hint (see `WorkbenchDraftConversation.emptyState`). */
-  copy?: { readonly title: string; readonly hint: string };
 } = {}) {
   return (
     <div className={styles.emptyState.root} data-testid="workbench-chat-empty">
-      <p className={styles.emptyState.text}>{copy?.title ?? t('workbench.chat.emptyTitle')}</p>
-      <p className={styles.emptyState.text}>{copy?.hint ?? t('workbench.chat.emptyHint')}</p>
+      <p className={styles.emptyState.text}>{t('workbench.chat.emptyTitle')}</p>
+      <p className={styles.emptyState.text}>{t('workbench.chat.emptyHint')}</p>
     </div>
   );
 }

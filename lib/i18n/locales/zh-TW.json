@@ -2546,10 +2546,6 @@
       "expand": "全螢幕",
       "collapse": "結束全螢幕（Esc）"
     },
-    "guide": {
-      "chatTitle": "想改這堂課？在這裡說一句",
-      "chatHint": "例如「第 2 頁講得更簡單」。想做一堂新課，點「新建對話」。"
-    },
     "onboarding": {
       "paneTitle": "學習，或者編輯",
       "paneLearn": "「學習」：AI 老師帶你上課，隨時可以提問。",

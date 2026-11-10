@@ -2546,10 +2546,6 @@
       "expand": "Toàn màn hình",
       "collapse": "Thoát toàn màn hình (Esc)"
     },
-    "guide": {
-      "chatTitle": "Muốn sửa bài học này? Hãy nói ở đây",
-      "chatHint": "Ví dụ «làm trang 2 đơn giản hơn». Muốn bài mới, bấm «Cuộc trò chuyện mới»."
-    },
     "onboarding": {
       "paneTitle": "Học hay chỉnh sửa",
       "paneLearn": "«Học»: giáo viên AI dẫn bạn qua bài học, hỏi bất cứ lúc nào.",

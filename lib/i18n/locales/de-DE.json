@@ -2546,10 +2546,6 @@
       "expand": "Vollbild",
       "collapse": "Vollbild beenden (Esc)"
     },
-    "guide": {
-      "chatTitle": "Diesen Kurs ändern? Sag es hier",
-      "chatHint": "Etwa „mach Seite 2 einfacher“. Für einen neuen Kurs: „Neuer Chat“."
-    },
     "onboarding": {
       "paneTitle": "Lernen oder bearbeiten",
       "paneLearn": "Lernen: Die KI-Lehrkraft führt durch den Kurs, frag jederzeit.",

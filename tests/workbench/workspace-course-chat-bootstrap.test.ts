@@ -340,7 +340,9 @@ const draft = () =>
       materials: readonly unknown[];
       elementRefs: readonly unknown[];
       courseRefs: readonly unknown[];
+      boundCourseId?: string;
     }) => Promise<unknown>;
+    course?: { stageId: string; title: string };
   } | null;
 
 beforeEach(() => {
@@ -498,7 +500,10 @@ describe('a course opened without a conversation', () => {
     expect(mocks.routerPush).not.toHaveBeenCalled();
     expect(container?.querySelector('[data-testid="chat-pane"]')).not.toBeNull();
     expect(mocks.chatPaneProps?.hidden).toBe(false);
-    expect(draft()).toMatchObject({ ownerKey: 'draft:stage-1' });
+    expect(draft()).toMatchObject({
+      ownerKey: 'draft:stage-1',
+      course: { stageId: 'stage-1', title: 'stage-1 name' },
+    });
     // Once the conversation is there, the header's offer goes away.
     expect(mocks.classroomProps?.onTalkAboutCourse).toBeUndefined();
     expect(mocks.startFirstMessage).not.toHaveBeenCalled();
@@ -525,6 +530,8 @@ describe('a course opened without a conversation', () => {
         materials: [],
         elementRefs: [],
         courseRefs: [courseRef],
+        // The composer's opening mention of the course, still in the message.
+        boundCourseId: 'stage-1',
       });
     });
 

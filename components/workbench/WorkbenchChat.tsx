@@ -557,6 +557,65 @@ export function WorkbenchChat({
     // Once per owner change; the mentions and options are read as they are then.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [composerOwnerId]);
+  /**
+   * An empty conversation opened FOR a course (`draftConversation.course`)
+   * starts with that course named, exactly as an `@` pick would name it: one
+   * mention in the text, one course reference beside it, the caret after it.
+   * That mention is the conversation's whole binding to the course
+   * (`boundCourseId` at send); deleting it leaves an ordinary new conversation.
+   *
+   * Asked again (the same button, or another course's tab while the draft is
+   * open), the named course is swapped only while the composer still holds
+   * nothing but what was written here: once the user has typed, their mentions
+   * are theirs.
+   */
+  const seedCourse = sessionId ? null : (draftConversation?.course ?? null);
+  const seededCourse = useRef<{ readonly stageId: string; readonly text: string } | null>(null);
+  useEffect(() => {
+    if (!seedCourse) {
+      // Nothing named any more (a conversation now, or New chat): nothing
+      // bound, and a mention that is all the composer holds goes with it.
+      const seeded = seededCourse.current;
+      seededCourse.current = null;
+      if (seeded && draft === seeded.text) {
+        const courses = useCourseRefsStore.getState();
+        if (courses.ownerSessionId === composerOwnerId) courses.remove(seeded.stageId);
+        inlineMentions.reset();
+        replaceDraft('');
+      }
+      return;
+    }
+    const seeded = seededCourse.current;
+    const untouched =
+      draft === '' ||
+      (seeded !== null &&
+        draft === seeded.text &&
+        inlineMentions.mentions.every((m) => m.kind === 'course' && m.id === seeded.stageId));
+    if (!untouched) return;
+    const ref = makeCourseRef(seedCourse.stageId, seedCourse.title);
+    if (!ref) return;
+    const courses = useCourseRefsStore.getState();
+    if (courses.ownerSessionId !== composerOwnerId) return;
+    if (seeded) courses.remove(seeded.stageId);
+    inlineMentions.reset();
+    courses.add(ref);
+    const written = inlineMentions.add('', 0, 0, {
+      kind: 'course',
+      id: ref.stageId,
+      name: ref.title,
+    });
+    if (!written) return;
+    seededCourse.current = { stageId: ref.stageId, text: written.draft };
+    pendingCaret.current = written.caret;
+    setCaret(written.caret);
+    setDraft(written.draft);
+    // The mention just written must not open the menu it would come from.
+    setMentionDismissed(written.draft);
+    setSlashDismissed(written.draft);
+    return focusComposerWhenShown(composerRef, 'workbench-chat-composer');
+    // Once per ask and per course: the draft and mentions are read as they are then.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedCourse?.stageId, composerOwnerId, newConversation]);
   const refreshedCreateCalls = useRef(new Set<string>());
 
   // The durable completed tool node is the source of truth: replay and a live
@@ -1007,6 +1066,12 @@ export function WorkbenchChat({
               materials: attachments,
               elementRefs: refs,
               courseRefs: courses,
+              // The course the composer opened naming, while its mention is
+              // still in this message.
+              ...(seededCourse.current &&
+              courses.some((course) => course.stageId === seededCourse.current?.stageId)
+                ? { boundCourseId: seededCourse.current.stageId }
+                : {}),
               onCreated: (createdId) => {
                 if (!superseded()) createdHere.current = createdId;
               },
@@ -1254,10 +1319,7 @@ export function WorkbenchChat({
                     t={t}
                   />
                 ) : showEmptyState ? (
-                  <WorkbenchChatEmptyState
-                    t={t}
-                    copy={sessionId ? undefined : draftConversation?.emptyState}
-                  />
+                  <WorkbenchChatEmptyState t={t} />
                 ) : null}
               </div>
             </div>

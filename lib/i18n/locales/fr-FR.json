@@ -2546,10 +2546,6 @@
       "expand": "Plein écran",
       "collapse": "Quitter le plein écran (Échap)"
     },
-    "guide": {
-      "chatTitle": "Modifier ce cours ? Dites-le ici",
-      "chatHint": "Par exemple « simplifie la page 2 ». Pour un nouveau cours, « Nouvelle discussion »."
-    },
     "onboarding": {
       "paneTitle": "Apprendre ou modifier",
       "paneLearn": "Apprendre : l’enseignant IA vous guide, posez vos questions à tout moment.",
