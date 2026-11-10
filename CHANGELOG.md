@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Pro workbench: when the scene-content model accepts images, `generate_scene` now sends the page's `media` to it as images, as classic generation already does. Before, the model saw only a one-line text description of each figure. Each image adds input tokens (roughly 400–1,100 for a typical textbook figure) and is read from the owner's asset storage before the call; a model without image input keeps the text-only behavior.
+
 ## [1.5.0-rc.1] - 2026-11-10
 
 1.5.0-rc.1 is the first release candidate for 1.5.0: **a brand-new home, redesigned end to end.** With the workbench enabled, the home page is the workbench. A request shows a live preview beside the conversation from the moment it is sent, and the preview becomes the course once its first page is saved. A rail without a top bar holds **My courses** (folders, pinning, thumbnails), the knowledge base and a chat list that shows what is running, waiting for an answer or failed. One full-screen classroom handles both learning and editing, and the agent settles one style per course and briefs each slide's design apart from its content. The workbench stays off by default (`NEXT_PUBLIC_WORKBENCH_ENABLED`), and without it the classic home page is unchanged. Some classroom changes apply to every deployment: interactive pages fill the classroom pane and shrink to fit instead of scrolling, a course ends on a closing card instead of an extra completion page, and the dock under the stage can be resized and folded. Read **Breaking Changes** before upgrading: the workbench flag is renamed, and deployments that run the agent runtime get a one-way schema migration.
@@ -110,10 +114,6 @@ All of these are part of the workbench and appear only where it is enabled.
 
 - The 1.4.0 known issues still apply, except [#2122](https://github.com/THU-MAIC/OpenMAIC/issues/2122), which [#2144](https://github.com/THU-MAIC/OpenMAIC/pull/2144) resolves.
 - Undo history lives in the tab's memory: it clears on reload and is not shared between tabs.
-
-### Bug Fixes
-
-- Pro workbench: when the scene-content model accepts images, `generate_scene` now sends the page's `media` to it as images, as classic generation already does. Before, the model saw only a one-line text description of each figure. Each image adds input tokens (roughly 400–1,100 for a typical textbook figure) and is read from the owner's asset storage before the call; a model without image input keeps the text-only behavior.
 
 ## [1.4.1] - 2026-11-05
 
