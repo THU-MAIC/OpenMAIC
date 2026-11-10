@@ -65,16 +65,13 @@ function ApplicationPreviewContent({
   const { t } = useI18n();
   const { pending, observation, expired, disabled } = preview;
   const standalone = preview.standaloneFrontend;
+  const mounted = !!preview.document;
   const frame = useRef<HTMLIFrameElement | null>(null);
   const candidate = useRef<HTMLIFrameElement | null>(null);
   const panel = useRef<HTMLElement | null>(null);
   const lastHostFocus = useRef<HTMLElement | null>(null);
+  const url = preview.document?.url;
   const [displayed, setDisplayed] = useState<{ url: string; version: number } | null>(null);
-  // A static preview grant can arrive before Java. Mount the first document
-  // only after the health probe; keep an already displayed one during rebuilds.
-  const waitingForFirstRun = standalone && !displayed && observation?.state !== 'running';
-  const url = waitingForFirstRun ? undefined : preview.document?.url;
-  const mounted = !!url;
   const current = url ? { url, version: preview.frameVersion } : null;
   const currentReady =
     !!current && displayed?.url === current.url && displayed.version === current.version;

@@ -211,8 +211,15 @@ export function useApplicationPreview(
   const frontendStudy = view?.id;
   const frontendEnvironment = workbench?.environmentId;
   const frontendEpoch = workbench?.epoch;
+  // Issue the first grant when the app can use it. A grant renewed before its
+  // first mount would keep the expired bootstrap fragment in the document URL.
   const needsFrontend =
-    standaloneFrontend && currentBinding && open && !unavailable && !frontendState;
+    standaloneFrontend &&
+    currentBinding &&
+    open &&
+    !unavailable &&
+    observation?.state === 'running' &&
+    !frontendState;
   useEffect(() => {
     if (!needsFrontend || !frontendStudy || !frontendEnvironment || frontendEpoch === undefined)
       return;
@@ -489,6 +496,8 @@ export function useApplicationPreview(
           ) {
             observedRevision.current = view.revision;
             setObservation((current) => ({ ...status, preview: current?.preview }));
+            if (standaloneFrontend && status.state === 'starting')
+              setError(t('pblV3.application.unavailable'));
             return;
           }
           if (['running', 'starting'].includes(status.state) && status.sourceChanged)
