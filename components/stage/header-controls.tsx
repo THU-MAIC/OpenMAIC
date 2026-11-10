@@ -571,15 +571,16 @@ export function HeaderControls({
       ) : null}
 
       {/* Copy to my courses — for non-owners only */}
-      {!isOwner && stage?.id && showCourseActions && (
+      {!isOwner && stage?.id && showCourseActions && mode !== 'edit' && (
         <button
           type="button"
+          data-testid="classroom-copy-course"
           onClick={handleCopyCourse}
           disabled={copying}
           className={cn(
-            'shrink-0 inline-flex items-center gap-2 rounded-full border shadow-sm transition-all',
+            'shrink-0 inline-flex items-center gap-1.5 sm:gap-2 rounded-full border shadow-sm transition-all',
             'bg-white/60 dark:bg-gray-800/60 backdrop-blur-md',
-            compact ? 'h-8 px-3 text-xs' : 'h-9 px-3.5 text-xs font-medium',
+            compact ? 'h-8 px-2 sm:px-3 text-xs' : 'h-9 px-2.5 sm:px-3.5 text-xs font-medium',
             copying
               ? 'opacity-60 cursor-not-allowed border-gray-200 dark:border-gray-700 text-gray-400'
               : 'border-gray-100/50 dark:border-gray-700/50 text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-700 hover:border-violet-300 dark:hover:border-violet-600',
@@ -588,11 +589,13 @@ export function HeaderControls({
           aria-label={copying ? t('classroom.copying') : t('classroom.copyToMyCourses')}
         >
           {copying ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-500" />
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-500 shrink-0" />
           ) : (
-            <Copy className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
+            <Copy className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400 shrink-0" />
           )}
-          <span>{copying ? t('classroom.copying') : t('classroom.copyToMyCourses')}</span>
+          <span className="hidden sm:inline whitespace-nowrap">
+            {copying ? t('classroom.copying') : t('classroom.copyToMyCourses')}
+          </span>
         </button>
       )}
 

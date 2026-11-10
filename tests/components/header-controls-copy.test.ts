@@ -139,6 +139,17 @@ describe('HeaderControls Copy to my courses UI', () => {
     expect(button).toBeNull();
   });
 
+  it('does NOT render Copy to my courses button in edit mode', () => {
+    mocks.stageState.isOwner = false;
+
+    act(() => {
+      root.render(createElement(HeaderControls, { showCourseActions: true, mode: 'edit' }));
+    });
+
+    const button = container.querySelector('button[title="Copy to my courses"]');
+    expect(button).toBeNull();
+  });
+
   it('does NOT render Copy to my courses button when showCourseActions is false', () => {
     mocks.stageState.isOwner = false;
 
