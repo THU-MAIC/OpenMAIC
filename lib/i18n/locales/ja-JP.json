@@ -1090,6 +1090,12 @@
     "notReady": "生成完了後に利用できます"
   },
   "classroom": {
+    "copyToMyCourses": "マイコースにコピー",
+    "copying": "コピー中...",
+    "copySuccess": "コースをマイコースにコピーしました",
+    "copyFailed": "コースのコピーに失敗しました",
+    "copyQuotaRefused": "ストレージ容量が上限に達しました",
+    "copyPblV3Unsupported": "PBL v3プロジェクトを含むコースはコピーできません",
     "recentClassrooms": "最近の教室",
     "today": "今日",
     "yesterday": "昨日",

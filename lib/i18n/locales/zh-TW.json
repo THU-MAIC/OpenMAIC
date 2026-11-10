@@ -1090,6 +1090,12 @@
     "notReady": "生成完成後可分享"
   },
   "classroom": {
+    "copyToMyCourses": "複製到我的課程",
+    "copying": "正在複製...",
+    "copySuccess": "課程已複製到我的課程",
+    "copyFailed": "複製課程失敗",
+    "copyQuotaRefused": "儲存配額已滿",
+    "copyPblV3Unsupported": "包含 PBL v3 專案的課程無法複製",
     "recentClassrooms": "近期教室",
     "today": "今天",
     "yesterday": "昨天",
