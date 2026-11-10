@@ -10,7 +10,8 @@ import { slideOutline } from './scene-fixtures.js';
 describe('scene generator LaTeX JSON escape validation and recovery', () => {
   it('never accepts raw, incorrectly escaped LaTeX such as \\frac as successfully generated content', async () => {
     // In raw JSON, "\frac{1}{2}" uses a single backslash before 'f' (\f = form feed)
-    const rawJson = '{"elements":[{"id":"latex_1","type":"latex","left":100,"top":100,"width":300,"height":100,"latex":"\\frac{1}{2}"}]}';
+    const rawJson =
+      '{"elements":[{"id":"latex_1","type":"latex","left":100,"top":100,"width":300,"height":100,"latex":"\\frac{1}{2}"}]}';
     const aiCall: AICallFn = vi.fn(async () => rawJson);
     const failures: SceneContentFailure[] = [];
 
@@ -29,7 +30,8 @@ describe('scene generator LaTeX JSON escape validation and recovery', () => {
 
   it('never accepts raw, incorrectly escaped LaTeX such as \\times as successfully generated content', async () => {
     // In raw JSON, "\times 4" uses a single backslash before 't' (\t = tab)
-    const rawJson = '{"elements":[{"id":"latex_1","type":"latex","left":100,"top":100,"width":300,"height":100,"latex":"\\times 4"}]}';
+    const rawJson =
+      '{"elements":[{"id":"latex_1","type":"latex","left":100,"top":100,"width":300,"height":100,"latex":"\\times 4"}]}';
     const aiCall: AICallFn = vi.fn(async () => rawJson);
     const failures: SceneContentFailure[] = [];
 
@@ -48,7 +50,8 @@ describe('scene generator LaTeX JSON escape validation and recovery', () => {
 
   it('rejects raw, incorrectly escaped \\nu and \\beta commands', async () => {
     // \nu corrupts into newline (\n), \beta corrupts into backspace (\b)
-    const rawJson = '{"elements":[{"id":"latex_1","type":"latex","left":100,"top":100,"width":300,"height":100,"latex":"\\nu + \\beta"}]}';
+    const rawJson =
+      '{"elements":[{"id":"latex_1","type":"latex","left":100,"top":100,"width":300,"height":100,"latex":"\\nu + \\beta"}]}';
     const aiCall: AICallFn = vi.fn(async () => rawJson);
     const failures: SceneContentFailure[] = [];
 

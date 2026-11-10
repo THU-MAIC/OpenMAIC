@@ -963,7 +963,9 @@ export function findMalformedLatex(
       return `Malformed LaTeX at latex[${index}]: contains tab character decoded from unescaped LaTeX \\t command`;
     }
 
-    if (/\n(?:u|eq|abla|eg|otin|earrow|warrow|atural|exists|ot|ormalsize|ewcommand|i)\b/i.test(latex)) {
+    if (
+      /\n(?:u|eq|abla|eg|otin|earrow|warrow|atural|exists|ot|ormalsize|ewcommand|i)\b/i.test(latex)
+    ) {
       return `Malformed LaTeX at latex[${index}]: contains newline decoded from unescaped LaTeX \\n command`;
     }
   }
