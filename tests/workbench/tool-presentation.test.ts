@@ -16,6 +16,10 @@ import { ROSTER_TOOL_NAMES } from '@/lib/server/agent-runtime/roster-tools';
 import { VOICE_CLONE_TOOL_NAMES } from '@/lib/server/agent-runtime/voice-clone-tools';
 import { RENDER_SCENE_PREVIEW_TOOL_NAME } from '@/lib/server/agent-runtime/scene-preview';
 import { SKILL_EDIT_TOOL_NAMES } from '@/lib/server/agent-runtime/skill-edit-tools';
+import { GENERATE_IMAGE_TOOL_NAME } from '@/lib/server/agent-runtime/generate-image';
+import { GENERATE_VIDEO_TOOL_NAME } from '@/lib/server/agent-runtime/generate-video';
+import { IMPORT_PPTX_TOOL_NAME } from '@/lib/server/agent-runtime/import-pptx';
+import { PERSONAL_HISTORY_TOOL_NAMES } from '@/lib/server/agent-runtime/personal-history-tools';
 import { createWorkbenchTranslator } from '@/lib/i18n/workbench';
 import { supportedLocales } from '@/lib/i18n/locales';
 import type { ChatNode } from '@/lib/workbench/session-store';
@@ -605,6 +609,11 @@ describe('allowlist ↔ presentation reconciliation', () => {
     ...ROSTER_TOOL_NAMES,
     ...VOICE_CLONE_TOOL_NAMES,
     ...SKILL_EDIT_TOOL_NAMES,
+    // Registered on their own, each under its exported name.
+    GENERATE_IMAGE_TOOL_NAME,
+    GENERATE_VIDEO_TOOL_NAME,
+    IMPORT_PPTX_TOOL_NAME,
+    ...PERSONAL_HISTORY_TOOL_NAMES,
     'create_skill',
     // ask_user is the runner's minimal agent latch; web_search and fetch_url are
     // capability-gated; `read` is Pi's native skill read, registered whenever

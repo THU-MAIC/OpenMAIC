@@ -10,6 +10,7 @@
  * modules afresh (React included, so the hooks share one copy).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { COMPOSER_INPUT, setComposerText } from './_composer-driver';
 
 vi.mock('@/lib/hooks/use-i18n', () => ({
   useI18n: () => ({ locale: 'en-US', t: (key: string) => key }),
@@ -98,17 +99,13 @@ async function load() {
     await act(async () => root.render(node as never));
     await settle();
   };
-  const type = async (textarea: HTMLTextAreaElement, text: string) => {
+  const type = async (textarea: HTMLElement, text: string) => {
     await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(
-        textarea,
-        text,
-      );
-      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      setComposerText(textarea, text);
     });
   };
   /** Try both ways of sending: the button, and the keyboard. */
-  const trySend = async (button: HTMLButtonElement, textarea: HTMLTextAreaElement) => {
+  const trySend = async (button: HTMLButtonElement, textarea: HTMLElement) => {
     await act(async () => button.click());
     await act(async () => {
       textarea.dispatchEvent(
@@ -152,7 +149,7 @@ describe('a hand-over that arrives before the materials gate answers', () => {
         onMaterialSeedConsumed: consumed,
       }),
     );
-    const textarea = view.container.querySelector('textarea')!;
+    const textarea = view.container.querySelector<HTMLElement>(COMPOSER_INPUT)!;
     const start = () =>
       view.container.querySelector<HTMLButtonElement>('[data-testid="pro-launch-start"]')!;
     await view.type(textarea, 'Explain this source');
@@ -195,7 +192,7 @@ describe('a hand-over that arrives before the materials gate answers', () => {
         ),
       ),
     );
-    const textarea = view.container.querySelector<HTMLTextAreaElement>(
+    const textarea = view.container.querySelector<HTMLElement>(
       '[data-testid="workbench-chat-composer"]',
     )!;
     const send = () =>
@@ -221,7 +218,7 @@ describe('a hand-over that arrives before the materials gate answers', () => {
         materialSeed: seed({ kind: 'chat', ownerKey: 'draft:stage-1' }) as never,
       }),
     );
-    const textarea = view.container.querySelector('textarea')!;
+    const textarea = view.container.querySelector<HTMLElement>(COMPOSER_INPUT)!;
     await view.type(textarea, 'Plain message');
     expect(
       view.container.querySelector<HTMLButtonElement>('[data-testid="pro-launch-start"]')!.disabled,
@@ -241,7 +238,7 @@ describe('a hand-over that arrives before the materials gate answers', () => {
     await view.gateSays(false);
     expect(consumed).toHaveBeenCalledWith(1);
 
-    const textarea = view.container.querySelector('textarea')!;
+    const textarea = view.container.querySelector<HTMLElement>(COMPOSER_INPUT)!;
     await view.type(textarea, 'Plain message');
     const start = view.container.querySelector<HTMLButtonElement>(
       '[data-testid="pro-launch-start"]',

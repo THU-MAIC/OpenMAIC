@@ -55,6 +55,17 @@ export function shouldSendComposerKey(event: ComposerKeyEvent): boolean {
   return true;
 }
 
+/** A native keydown in the shape this rule reads (the input is not a React element). */
+export function composerKeyEventOf(event: KeyboardEvent): ComposerKeyEvent {
+  return {
+    key: event.key,
+    shiftKey: event.shiftKey,
+    metaKey: event.metaKey,
+    ctrlKey: event.ctrlKey,
+    nativeEvent: { isComposing: event.isComposing, keyCode: event.keyCode },
+  };
+}
+
 /**
  * The send key for `aria-keyshortcuts`, whose grammar is a space-separated list
  * of `+`-joined key names (WAI-ARIA 1.2). Only the primary key is announced —

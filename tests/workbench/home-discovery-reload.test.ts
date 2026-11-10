@@ -42,7 +42,6 @@ vi.mock('@/lib/utils/folder-name-validation', () => ({
   displayNameWidth: (value: string) => value.length,
   FOLDER_NAME_MAX_WIDTH: 30,
 }));
-vi.mock('@/components/discovery/folder-dialogs', () => ({ NewFolderDialog: () => null }));
 vi.mock('@/lib/import/use-import-classroom', () => ({
   useImportClassroom: () => ({
     importing: false,

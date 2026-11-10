@@ -405,6 +405,44 @@ describe('PgAgentSessionStore with PGlite', () => {
     await expect(titles.setManualSessionTitle('session-1', 'owner-a', 'Gone')).resolves.toBeNull();
   });
 
+  test('backfills an unanswered question onto sessions written before the column existed', async () => {
+    for (const id of ['asked', 'answered', 'material-only', 'running', 'never-asked']) {
+      await store.createSession(makeAgentSessionInput({ id, stageId: `stage-${id}` }));
+    }
+    const insert = (sessionId: string, seq: number, type: string, data: unknown) =>
+      db.query(
+        `INSERT INTO agent_session_events (session_id, seq, ts, attempt, type, data)
+         VALUES ($1, $2, $3, 0, $4, $5::jsonb)`,
+        [sessionId, seq, seq, type, JSON.stringify(data)],
+      );
+    for (const id of ['asked', 'answered', 'material-only', 'running']) {
+      await insert(id, 1, AGENT_SESSION_LIFECYCLE.userQuestion, { question: 'Which one?' });
+    }
+    await insert('answered', 2, AGENT_SESSION_LIFECYCLE.userMessage, { text: 'The first' });
+    await insert('material-only', 2, AGENT_SESSION_LIFECYCLE.userMessage, { text: '  ' });
+    await db.query(
+      `UPDATE agent_sessions SET status = CASE WHEN id = 'running' THEN 'running' ELSE 'succeeded' END`,
+    );
+    // Simulate a database from before version 4: no column, no recorded version.
+    await db.query(`ALTER TABLE agent_sessions DROP COLUMN open_question_seq`);
+    await db.query(
+      `DELETE FROM openmaic_schema_migrations WHERE store = 'agent-session' AND version = 4`,
+    );
+
+    await ensureAgentSessionSchema(db);
+
+    const awaiting = Object.fromEntries(
+      (await store.listSessionsByOwner('owner-a')).map((s) => [s.id, s.awaitingAnswer ?? false]),
+    );
+    expect(awaiting).toEqual({
+      asked: true,
+      answered: false,
+      'material-only': true,
+      running: false,
+      'never-asked': false,
+    });
+  });
+
   test('upgrades an old session schema with existing data intact', async () => {
     const legacyTables = { sessions: 'legacy_sessions' };
     await db.query(`

@@ -37,7 +37,7 @@ export function TableElement({ elementInfo, selectElement }: TableElementProps) 
         style={{ transform: `rotate(${elementInfo.rotate}deg)` }}
       >
         <div
-          className={`element-content relative w-full h-full overflow-hidden ${
+          className={`element-content relative w-full h-full ${
             elementInfo.lock ? 'cursor-default' : 'cursor-move'
           }`}
           onMouseDown={handleSelectElement}
