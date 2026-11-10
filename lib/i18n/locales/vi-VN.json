@@ -2450,6 +2450,8 @@
     "expandNavInto": "Expand navigation · {{section}}",
     "collapseChat": "Collapse conversation",
     "expandChat": "Conversation",
+    "talkAboutCourse": "Sửa cùng AI",
+    "talkAboutCourseHint": "Mở cuộc trò chuyện mới về bài học này",
     "collapseClassroom": "Collapse classroom",
     "expandClassroom": "Classroom",
     "readOnlyBadge": "Read-only",

@@ -242,6 +242,14 @@ vi.mock('@/components/workbench/workspace/WorkspaceClassroomPane', async () => {
   };
 });
 vi.mock('@/components/workbench/workspace/PaneTab', () => ({ PaneTab: () => null }));
+// The conversation's own course cards are what open a course here; the pane is
+// tested on its own.
+vi.mock('@/components/workbench/workspace/WorkspaceChatPane', () => ({
+  WorkspaceChatPane: (props: Record<string, unknown>) => {
+    mocks.chatPaneProps = props;
+    return null;
+  },
+}));
 vi.mock('@/components/workbench/workspace/WorkspaceRequestActivity', async () => {
   const { useEffect } = await vi.importActual<typeof import('react')>('react');
   const actual = await vi.importActual<
@@ -277,12 +285,6 @@ vi.mock('@/components/workbench/workspace/WorkspaceCoursesPage', () => ({
     return createElement('main', { 'data-testid': 'workspace-courses-page' });
   },
 }));
-/** Open My courses from the rail and hand back the page's props. */
-const openMyCourses = async (): Promise<Record<string, unknown>> => {
-  await act(async () => (mocks.railProps!.onOpenView as (view: string) => void)('courses'));
-  expect(mocks.coursesPageProps).not.toBeNull();
-  return mocks.coursesPageProps!;
-};
 vi.mock('@/components/workbench/workspace/MaterialLibraryPage', () => ({
   MaterialLibraryPage: (props: Record<string, unknown>) => {
     mocks.libraryProps = props;
@@ -420,8 +422,10 @@ describe('opening a course while a request preview is the active tab', () => {
     await render();
     expect(mocks.previewHidden).toBe(false);
 
-    const page = await openMyCourses();
-    await act(async () => (page.onOpenCourse as (id: string) => void)('stage-1'));
+    // A course card in the conversation (browsing would set the conversation,
+    // and its preview, aside).
+    const navigation = mocks.chatPaneProps?.navigation as { openCourse: (id: string) => void };
+    await act(async () => navigation.openCourse('stage-1'));
     mocks.searchParams = new URLSearchParams('session=ses-1&course=stage-1');
     await render();
 
@@ -430,7 +434,7 @@ describe('opening a course while a request preview is the active tab', () => {
     expect(container!.querySelector('[data-testid="request-preview"]')).not.toBeNull();
   });
 
-  it('lets the preview of a conversation carried over beside an opened course take focus once, like any request', async () => {
+  it('lets the preview of a conversation reloaded beside its course take focus once, like any request', async () => {
     vi.stubGlobal(
       'ResizeObserver',
       class {
@@ -439,16 +443,14 @@ describe('opening a course while a request preview is the active tab', () => {
         disconnect() {}
       },
     );
-    // A course opened with no conversation: the most recent one is carried over.
-    mocks.searchParams = new URLSearchParams('course=stage-1');
-    mocks.sessionRows = [{ id: 'ses-1', stageId: 'stage-new', updatedAt: 1 }];
-    await render();
+    // A `?course=&session=` URL: the conversation stays beside the course.
     mocks.searchParams = new URLSearchParams('session=ses-1&course=stage-1');
+    mocks.sessionRows = [{ id: 'ses-1', stageId: 'stage-new', updatedAt: 1 }];
     mocks.store.sessionId = 'ses-1';
     mocks.store.status = 'running';
     await render();
-    // No carried-over exception: the request's preview takes focus once, and
-    // the opened course stays mounted behind it, one tab away.
+    // The request's preview takes focus once, and the opened course stays
+    // mounted behind it, one tab away.
     expect(mocks.classroomProps?.hidden).toBe(true);
     expect(mocks.previewHidden).toBe(false);
     const browser = mocks.classroomProps?.browser as { onActivateCourse: (id: string) => void };

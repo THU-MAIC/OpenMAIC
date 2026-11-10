@@ -2450,6 +2450,8 @@
     "expandNavInto": "Expand navigation · {{section}}",
     "collapseChat": "Collapse conversation",
     "expandChat": "Conversation",
+    "talkAboutCourse": "حرّر مع الذكاء الاصطناعي",
+    "talkAboutCourseHint": "ابدأ محادثة جديدة حول هذا الدرس",
     "collapseClassroom": "Collapse classroom",
     "expandClassroom": "Classroom",
     "readOnlyBadge": "Read-only",

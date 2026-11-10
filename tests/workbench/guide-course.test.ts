@@ -106,15 +106,15 @@ describe('the seeded guide course', () => {
     expect(mocks.saved).toHaveLength(0);
   });
 
-  it('gets an empty conversation beside it rather than the latest one', () => {
+  it('opened on its own, is shown alone like any browsed course', () => {
+    // No conversation is carried beside it; the tour asks for an empty one.
     const id = guideCourseIdFor('learner-1');
+    expect(resolveCourseChatBootstrap({ courseId: id, sessionId: null })).toEqual({
+      kind: 'browse',
+      courseId: id,
+    });
     expect(
-      resolveCourseChatBootstrap({
-        courseId: id,
-        sessionId: null,
-        sessions: [{ id: 'recent', updatedAt: 1 }],
-        sessionsLoaded: true,
-      }),
+      resolveCourseChatBootstrap({ courseId: id, sessionId: null, newConversationRequested: true }),
     ).toEqual({ kind: 'draft', courseId: id });
   });
 });

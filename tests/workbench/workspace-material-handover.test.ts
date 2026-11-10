@@ -773,6 +773,9 @@ describe('a request still on its way when the teacher switches conversation', ()
       });
       input.dispatchEvent(new Event('change', { bubbles: true }));
     });
+  /** A browsed course shows alone: "Edit with AI" puts a draft beside it. */
+  const talkAboutCourse = () =>
+    act(async () => (mocks.classroomProps!.onTalkAboutCourse as () => void)());
   /** The store follows the panes, as the real one does once it attaches. */
   const followPanes = async () => {
     await act(async () => {});
@@ -857,6 +860,7 @@ describe('a request still on its way when the teacher switches conversation', ()
   async function sendAboutA(start: (input: StartInput) => Promise<Started>) {
     mocks.startFirstMessage.mockImplementationOnce(start);
     await render();
+    await talkAboutCourse();
     await pick('a-notes.pdf');
     await act(async () => uploads.get('a-notes.pdf')!.resolve(material('A-doc', 'a-notes.pdf')));
     expect(container!.textContent).toContain('a-notes.pdf');
@@ -1056,6 +1060,7 @@ describe('a request still on its way when the teacher switches conversation', ()
 
   it("a late upload is kept in the library but never joins B's attachments", async () => {
     await render();
+    await talkAboutCourse();
     await pick('a-upload.pdf');
     expect(uploads.has('a-upload.pdf')).toBe(true);
     await openB();
@@ -1105,6 +1110,7 @@ describe('a request still on its way when the teacher switches conversation', ()
 
   it('a failed upload stays with the conversation it was picked in', async () => {
     await render();
+    await talkAboutCourse();
     await pick('a-broken.pdf');
     await act(async () =>
       uploads.get('a-broken.pdf')!.resolve(Response.json({ error: 'nope' }, { status: 400 })),

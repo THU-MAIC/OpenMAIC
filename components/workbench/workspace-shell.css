@@ -2515,6 +2515,41 @@
   background: rgba(255, 255, 255, 0.08);
 }
 
+/* A browsed course's way to a conversation about it: a labelled header
+   button, so it reads as an action rather than another icon. */
+.ws-head-chat {
+  display: inline-flex;
+  height: 30px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  margin-right: 6px;
+  padding: 0 10px;
+  border-radius: 9px;
+  border: 1px solid var(--ws-accent-thread);
+  color: var(--ws-accent);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background-color 160ms var(--ws-ease),
+    border-color 160ms var(--ws-ease);
+}
+
+.ws-head-chat:hover {
+  background: rgba(124, 58, 237, 0.08);
+  border-color: var(--ws-accent);
+}
+
+.dark .ws-head-chat:hover {
+  background: rgba(167, 139, 250, 0.12);
+}
+
+.ws-head-chat:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ws-accent-thread);
+}
+
 /* ── Full-screen classroom ── */
 .ws-root .ws-classroom-fullscreen {
   background: linear-gradient(180deg, #f7f7fb, #f3f2f9);

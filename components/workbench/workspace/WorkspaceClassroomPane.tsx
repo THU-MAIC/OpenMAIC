@@ -23,7 +23,7 @@
  * course, at either size, is a perfectly legitimate thing to do with one.
  */
 
-import { CircleHelp, Eye, Maximize, Minimize2 } from 'lucide-react';
+import { CircleHelp, Eye, Maximize, MessagesSquare, Minimize2 } from 'lucide-react';
 import { memo, useEffect, useLayoutEffect, useState } from 'react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
@@ -60,6 +60,7 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
   fullscreen,
   hidden,
   onCollapse,
+  onTalkAboutCourse,
 }: {
   /**
    * The tab strip's state and callbacks. The pane owns no tab state: the
@@ -105,6 +106,11 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
    * for why it is not a grip on the seam any more.
    */
   readonly onCollapse?: () => void;
+  /**
+   * The course was browsed, so no conversation is beside it: the header offers
+   * one about it ("Edit with AI"). Absent otherwise.
+   */
+  readonly onTalkAboutCourse?: () => void;
 }) {
   const courseId = browser.activeCourseId;
   const { t } = useI18n();
@@ -285,6 +291,18 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
             className="flex shrink-0 items-center gap-0.5 empty:hidden"
           />
           {editGuideButton}
+          {onTalkAboutCourse ? (
+            <button
+              type="button"
+              data-testid="workspace-talk-about-course"
+              onClick={onTalkAboutCourse}
+              title={t('workspace.talkAboutCourseHint')}
+              className="ws-head-chat"
+            >
+              <MessagesSquare className="size-4" aria-hidden="true" />
+              <span>{t('workspace.talkAboutCourse')}</span>
+            </button>
+          ) : null}
           {modeSwitch}
           <span className="ws-vsep" aria-hidden="true" />
           <button

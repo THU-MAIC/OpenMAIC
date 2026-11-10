@@ -250,11 +250,12 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   /**
    * The user asked for a NEW conversation and a classroom is open beside it.
    *
-   * Needed because dropping `?session=` is not by itself a request for a new
-   * chat: `resolveCourseChatBootstrap` would adopt the most recent conversation,
-   * which is the one just left, and the button would read as doing nothing. Set
-   * by the new-chat action, cleared by anything that explicitly puts a
-   * conversation back in the column.
+   * Needed because dropping `?session=` is not by itself a request for a
+   * chat: a course with no conversation beside it was BROWSED, and shows with
+   * the chat column folded (`resolveCourseChatBootstrap`). Set by New chat and
+   * by the classroom's "Edit with AI"; cleared by anything that puts a
+   * conversation back in the column, by browsing to a course, and by Back /
+   * Forward (a history entry says on its own what was beside the course).
    */
   const [newConversationRequested, setNewConversationRequested] = useState(false);
   /**
@@ -267,7 +268,10 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   // workspace raises `popstate` itself, so this is never the hand-over's own
   // navigation (a push) or a background change (a replace).
   useEffect(() => {
-    const dropMaterialSeed = () => setMaterialSeed(null);
+    const dropMaterialSeed = () => {
+      setMaterialSeed(null);
+      setNewConversationRequested(false);
+    };
     window.addEventListener('popstate', dropMaterialSeed);
     return () => window.removeEventListener('popstate', dropMaterialSeed);
   }, []);
@@ -373,24 +377,14 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   // therefore feeds the layout.
   const attachedSessionId = useWorkbenchStore((s) => s.sessionId);
 
-  /* ── A course opened on its own gets its conversation ──────────────────
-     `?course=` with no `?session=` used to be "nav + classroom": a Pro editing
-     bench with no agent beside it. Then it minted a conversation on arrival,
-     which produced a fresh empty session every time the user opened a course —
-     open, close the chat, open again, three rows in the rail.
-
-     Now NOTHING is created here. A conversation already in the middle column is
-     used as-is; otherwise the user's most recent conversation is carried over;
-     and a user with no conversations at all gets an empty composer whose first
-     message mints the session (`draftConversation`, further down, is that
-     composer's creation path). Two consequences worth naming: there is no POST to
-     coalesce or remember any more, so both idempotence guards are gone, and there
-     is nothing for the server to refuse, so the refusal bookkeeping is gone with
-     them.
-
-     It still does NOT hunt for "the session that owns this course": the two
-     columns are independent, and an agent is pointed at a classroom by being
-     told (an `@course` mention), not by a stage id matching.
+  /* ── What sits beside an open course ─────────────────────────────────
+     A course opened FROM a conversation keeps that conversation in the URL
+     beside it. A course opened by BROWSING (My courses, the search palette, a
+     pasted or reloaded `?course=` link) has none: it fills the right side, the
+     chat column folded as a view state of this open (the remembered fold is
+     not written), and the classroom header offers "Edit with AI" — an empty
+     conversation about this course, created by its first message. Nothing is
+     minted on arrival and nothing unrelated is carried over.
      See `lib/workbench/course-chat-bootstrap.ts`.
 
      The classroom keeps rendering throughout. Its own load and the manifest
@@ -400,20 +394,12 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       resolveCourseChatBootstrap({
         courseId: panes.courseId,
         sessionId: panes.sessionId,
-        attachedSessionId,
         newConversationRequested,
-        sessions,
-        sessionsLoaded: sessionState === 'ready',
       }),
-    [
-      attachedSessionId,
-      newConversationRequested,
-      panes.courseId,
-      panes.sessionId,
-      sessions,
-      sessionState,
-    ],
+    [newConversationRequested, panes.courseId, panes.sessionId],
   );
+  /** The course was browsed: shown alone, the chat column folded. */
+  const browsingCourse = courseChatBootstrap.kind === 'browse';
   /** The course an empty, not-yet-created conversation is sitting beside. */
   const draftCourseId = courseChatBootstrap.kind === 'draft' ? courseChatBootstrap.courseId : null;
 
@@ -441,7 +427,12 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const exclusive = narrow && render.chat && render.classroom;
   const chatOpen = exclusive ? narrowFocus === 'chat' : render.chat;
   const classroomOpen = exclusive ? narrowFocus === 'classroom' : render.classroom;
-  const chatTab = render.chatTab || (exclusive && narrowFocus !== 'chat');
+  // A browsed course has no conversation to fold, but the column's way back is
+  // offered all the same: it opens an empty conversation about this course.
+  const chatTab =
+    render.chatTab ||
+    (exclusive && narrowFocus !== 'chat') ||
+    (browsingCourse && render.classroom && !playbackOn);
   const classroomTab = render.classroomTab || (exclusive && narrowFocus !== 'classroom');
   /**
    * Who may fold, and what the seam is for.
@@ -455,13 +446,6 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    */
   const bothPanesOnScreen = chatOpen && classroomOpen;
 
-  const focusChat = () => {
-    // The strip is the folded conversation's ONE way back, and it must work
-    // whichever reason folded it: a narrow window's exclusivity, or the user's
-    // own fold on the seam.
-    collapse.expandChat();
-    setNarrowFocus('chat');
-  };
   const focusClassroom = () => {
     setNarrowFocus('classroom');
     collapse.expandClassroom();
@@ -633,6 +617,32 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       collapse.expandClassroom();
       setMaterialSeed(null);
       goTo(withView(withCourse(panes, next.activeCourseId), null));
+    },
+    [collapse, courseTabs, goTo, panes, persistCourseTabs],
+  );
+
+  /**
+   * Open a course by BROWSING — My courses, the search palette — rather than
+   * from a conversation: the conversation in the middle column is left (it
+   * stays in the rail), and the course shows alone, the chat column folded
+   * (`resolveCourseChatBootstrap`'s `browse`). `startConversation` instead
+   * puts an empty conversation about the course beside it (the tour's guide
+   * course, whose next steps show that conversation).
+   */
+  const browseCourse = useCallback(
+    (courseId: string, startConversation = false) => {
+      unfocusPreview.current();
+      const next = openCourseTab(courseTabs, courseId);
+      setCourseTabs(next);
+      persistCourseTabs(next);
+      collapse.expandClassroom();
+      setMaterialSeed(null);
+      setNewConversationRequested(startConversation);
+      if (startConversation) {
+        draftVisit.current += 1;
+        collapse.expandChat();
+      }
+      goTo(withView(withCourse(withSession(panes, null), next.activeCourseId), null));
     },
     [collapse, courseTabs, goTo, panes, persistCourseTabs],
   );
@@ -1005,7 +1015,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       if (render.view !== WORKSPACE_COURSES_VIEW) openView(WORKSPACE_COURSES_VIEW);
     } else if (view === 'classroom') {
       if (guideCourseId && (panes.courseId !== guideCourseId || render.view))
-        openCourse(guideCourseId);
+        browseCourse(guideCourseId, true);
     } else if (!render.home) {
       leaveTourCourse();
     }
@@ -1016,7 +1026,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     setTourRunning(false);
     markOnboardingSeen('home');
     if (how === 'guide' && guideCourseId) {
-      openCourse(guideCourseId);
+      browseCourse(guideCourseId, true);
       return;
     }
     if (!render.home) leaveTourCourse();
@@ -1053,6 +1063,35 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     }
     setComposerReset((value) => value + 1);
   };
+
+  const focusChat = () => {
+    // The strip is the folded conversation's ONE way back, and it must work
+    // whichever reason folded it: a narrow window's exclusivity, the user's
+    // own fold on the seam, or a browsed course (which has no conversation
+    // yet: the strip starts one about it, as "Edit with AI" does).
+    if (browsingCourse) {
+      talkAboutCourse();
+      return;
+    }
+    collapse.expandChat();
+    setNarrowFocus('chat');
+  };
+  /**
+   * "Edit with AI" on a browsed course: an empty conversation beside it,
+   * created by its first message (started beside an existing course, so no
+   * new-course preview). The conversation that was open before stays in the
+   * rail.
+   */
+  const talkAboutCourse = () => {
+    startNewConversation();
+    setNarrowFocus('chat');
+  };
+  // Stable for the memoised classroom pane; always runs the latest render's.
+  const talkAboutCourseRef = useRef(talkAboutCourse);
+  useLayoutEffect(() => {
+    talkAboutCourseRef.current = talkAboutCourse;
+  });
+  const [talkAboutCourseStable] = useState(() => () => talkAboutCourseRef.current());
 
   // ⌘J / Ctrl+J: a new chat from anywhere, exactly as the rail's button.
   const startNewConversationRef = useRef(startNewConversation);
@@ -1412,20 +1451,6 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
 
   useWorkbenchStream(panes.sessionId);
 
-  useEffect(() => {
-    if (courseChatBootstrap.kind !== 'adopt') return;
-    // Carrying an existing conversation over is pure navigation: no request, and
-    // idempotent by construction — the URL it writes makes this branch settle.
-    navigateInBackground(
-      (current) => ({
-        ...current,
-        sessionId: courseChatBootstrap.sessionId,
-        courseId: courseChatBootstrap.courseId,
-      }),
-      'replace',
-    );
-  }, [courseChatBootstrap, navigateInBackground]);
-
   /**
    * The empty conversation: a composer with no session behind it yet.
    *
@@ -1781,7 +1806,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           courses={courses.classrooms}
           folders={courses.folders}
           onOpenSession={openSession}
-          onOpenCourse={openCourse}
+          onOpenCourse={browseCourse}
           onOpenMaterial={openMaterial}
           onNewSession={startNewConversation}
           onOpenView={openView}
@@ -1908,6 +1933,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           // panes are on screen (the last visible pane cannot fold — see
           // `resolveWorkspaceRender`). Its button lives in the pane's own header.
           onCollapse={bothPanesOnScreen ? collapse.collapseClassroom : undefined}
+          onTalkAboutCourse={browsingCourse && !readOnlyCourse ? talkAboutCourseStable : undefined}
         />
       ) : null}
 
@@ -1950,7 +1976,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           courses={courses}
           courseRuns={courseRuns}
           pendingRuns={pendingRuns}
-          onOpenCourse={openCourse}
+          onOpenCourse={browseCourse}
           onDeleteCourse={handleCourseDeleted}
           onMakeCourse={goHome}
           onDiscardRun={discardPendingRun}

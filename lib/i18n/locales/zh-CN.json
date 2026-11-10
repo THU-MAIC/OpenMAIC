@@ -2450,6 +2450,8 @@
     "expandNavInto": "展开导航 · {{section}}",
     "collapseChat": "收起对话",
     "expandChat": "对话",
+    "talkAboutCourse": "和 AI 一起改",
+    "talkAboutCourseHint": "开一个新对话，和 AI 一起修改这节课",
     "collapseClassroom": "收起课堂",
     "expandClassroom": "课堂",
     "readOnlyBadge": "只读",
