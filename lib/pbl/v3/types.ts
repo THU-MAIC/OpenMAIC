@@ -52,7 +52,12 @@ export interface LearningView {
   files: string[];
   busy: boolean;
   conversation?: import('./conversation').LearningConversationEntry[];
-  conversationHistory?: { sessionId: string; through: number; role: AgentRole }[];
+  conversationHistory?: {
+    sessionId: string;
+    through: number;
+    role: AgentRole;
+    milestoneId?: string;
+  }[];
   activitySequence?: number;
   task?: { title: string; goal: string };
   messages: { role: 'user' | 'assistant'; text: string }[];

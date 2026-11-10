@@ -8,7 +8,11 @@ import {
   latestMessagePartIds,
 } from './conversation';
 import { executionFailureCode } from '@/lib/agent/runtime/request-failure';
-import { readConversationHistory, CONVERSATION_BYTES } from './conversation-history';
+import {
+  readConversationHistory,
+  readConversationSources,
+  CONVERSATION_BYTES,
+} from './conversation-history';
 import 'server-only';
 import { isTeachingLocale } from './communication';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
@@ -1031,7 +1035,15 @@ export async function learningView(
     }
   > = [];
   let conversation: LearningView['conversation'] = [];
-  const conversationHistory: NonNullable<LearningView['conversationHistory']> = [];
+  const conversationHistory = await readConversationSources(
+    store.pool,
+    id,
+    principal.ownerId,
+    binding?.session_id,
+  );
+  const historyThrough = new Map(
+    conversationHistory.map(({ sessionId, through }) => [sessionId, through]),
+  );
   let activitySequence = 0;
   let roleRun: LearningView['roleRun'] = null;
   let latestUserSeq: number | undefined;
@@ -1065,13 +1077,7 @@ export async function learningView(
           : null,
     };
     // Bounded transcript projection; durable role history remains in the runner's entry tree.
-    const last = await agents.lastEventSeq(binding.session_id);
-    if (last)
-      conversationHistory.push({
-        sessionId: binding.session_id,
-        through: last,
-        role: binding.role,
-      });
+    const last = historyThrough.get(binding.session_id) ?? 0;
     activitySequence = last;
     const events = await readConversationHistory(store.pool, binding.session_id, last, 1000);
     conversation = projectConversation(
@@ -1141,9 +1147,8 @@ export async function learningView(
       }
     }
   }
-  // At most the current milestone's three roles and the project mentor. Keep the
-  // host event log authoritative; no second chat store or subscription protocol.
-  const agents = await getAgentSessionStore();
+  // The live transcript covers the current milestone and the project mentor.
+  // Older milestones are loaded only through the history dialog.
   conversation = conversation.map((entry) => ({
     ...entry,
     id: `${binding?.session_id}:${entry.id}`,
@@ -1156,13 +1161,8 @@ export async function learningView(
       item.session_id !== binding?.session_id &&
       (item.context_key === milestone.id || item.context_key === 'project'),
   )) {
-    const last = await agents.lastEventSeq(previous.session_id);
-    if (last)
-      conversationHistory.push({
-        sessionId: previous.session_id,
-        through: last,
-        role: previous.role,
-      });
+    const last = historyThrough.get(previous.session_id);
+    if (!last) continue;
     activitySequence += last;
     const events = await readConversationHistory(store.pool, previous.session_id, last, 500, false);
     conversation.push(

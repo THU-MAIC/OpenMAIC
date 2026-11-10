@@ -4801,6 +4801,61 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     15_000,
   );
 
+  it('opens earlier milestone history without mixing it into the live transcript', async () => {
+    const lab = installedProject({ id: 'greeting-python-lab', version: '1.2.0' });
+    const study = await unpreparedStudy(lab);
+    const [first, second] = lab.definition.milestones;
+    const position = { milestoneId: second.id, milestoneIndex: 1, stageIndex: 0 };
+    await pool.query(
+      "UPDATE pbl_v3_studies SET state=jsonb_set(state,'{position}',$2::jsonb) WHERE id=$1",
+      [study.id, JSON.stringify(position)],
+    );
+    const addDiscussion = async (milestoneId: string, text: string) => {
+      const sessionId = `history-${randomUUID()}`;
+      await agents.createSession({
+        id: sessionId,
+        ownerId: principal.ownerId,
+        stageId: 'classroom',
+        prompt: 'Teaching history',
+        status: 'succeeded',
+      });
+      await pool.query(
+        `INSERT INTO pbl_v3_roles(session_id,study_id,role,context_key,stage_key)
+         VALUES($1,$2,'discussion',$3,$4)`,
+        [sessionId, study.id, milestoneId, `${milestoneId}:0`],
+      );
+      await agents.appendControlEvent(sessionId, {
+        ts: Date.now(),
+        type: 'user_message',
+        data: { text },
+      });
+      return {
+        sessionId,
+        milestoneId,
+        role: 'discussion',
+        through: await agents.lastEventSeq(sessionId),
+      };
+    };
+    const older = await addDiscussion(first.id, 'Earlier learner message');
+    const current = await addDiscussion(second.id, 'Current learner message');
+    const view = await learningView(principal, study.id, { passive: true });
+    expect(view.conversationHistory).toEqual([current, older]);
+    expect(JSON.stringify(view.conversation)).toContain('Current learner message');
+    expect(JSON.stringify(view.conversation)).not.toContain('Earlier learner message');
+
+    const { conversationPage } = await import('@/lib/server/pbl-v3/conversation-page');
+    const page = await conversationPage(
+      principal,
+      new URLSearchParams({
+        id: study.id,
+        sessionId: older.sessionId,
+        through: String(older.through),
+      }),
+    );
+    expect(JSON.stringify(page.conversation)).toContain('Earlier learner message');
+    expect((await store.get(study.id, principal.ownerId)).state.position).toEqual(position);
+  });
+
   it('bounds a multi-call turn and pages every saved message without replaying snapshots', async () => {
     const study = await freshStudy();
     onTestFinished(async () => {
@@ -4879,6 +4934,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       sessionId: queued.sessionId,
       through,
       role: 'discussion',
+      milestoneId: view.state.position.milestoneId,
     });
 
     // New updates must not move the frozen history window or change its cursors.
