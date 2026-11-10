@@ -419,6 +419,15 @@ When splitting a derivation across multiple LaTeX elements (one per line), simpl
 
 - `\text{}` can render English text. For Chinese labels, use a separate TextElement.
 
+**JSON Escape Rule for LaTeX (CRITICAL)**:
+In JSON string values, every LaTeX backslash MUST be double-escaped with `\\`. For example:
+- `"latex": "\\frac{a}{b}"` (never `"\frac{a}{b}"`)
+- `"latex": "\\times"` (never `"\times"`)
+- `"latex": "\\nu"` (never `"\nu"`)
+- `"latex": "\\beta"` (never `"\beta"`)
+- `"latex": "\\sqrt{x}"` (never `"\sqrt{x}"`)
+Never output unescaped single backslashes in JSON strings: in JSON specification, `\f` is form feed, `\t` is horizontal tab, `\n` is line feed, and `\b` is backspace, which silently corrupts LaTeX commands.
+
 **When to Use**: Use LatexElement for **all** mathematical formulas, equations, and scientific notation — including simple ones like `x^2` or `a/b`. TextElement cannot render LaTeX; any LaTeX syntax placed in a TextElement will display as raw text (e.g., "\frac{1}{2}" appears literally). For plain text that happens to contain numbers (e.g., "Chapter 3", "Score: 95"), use TextElement.
 
 ---
@@ -917,6 +926,7 @@ Before outputting JSON, verify:
 - ✓ [latex-width] LatexElement width is appropriate for the formula category (standalone fractions: 30-80, NOT 200+; inline equations: 200-400). Check the LaTeX width guide table above.
 - ✓ [latex-scaling] Multi-step derivation LaTeX elements: widths are proportional to content length (longer formulas MUST have larger width). Do NOT use the same width for all steps — this causes wildly different rendered heights.
 - ✓ [no-latex-in-text] No LaTeX syntax in TextElement content: scan all text `content` fields for `\frac`, `\lim`, `\int`, `\sum`, `\sqrt`, `\alpha`, `^{`, `_{` etc. Any math expression must be a separate LatexElement.
+- ✓ [latex-json-escape] In JSON strings, all LaTeX backslashes MUST be escaped as `\\` (e.g. `\\frac`, `\\times`, `\\nu`, `\\beta`, `\\sqrt`). Never output unescaped backslashes in JSON.
 - ✓ [line-stroke] LineElement `width` is stroke thickness (2-6), NOT line length. Check: no LineElement has `width` > 6. If width equals the distance between start and end, it is WRONG — you confused stroke thickness with line span.
 - ✓ [concise-text] **Slide text is concise and impersonal**: Every text element uses keywords, short phrases, or bullet points — no conversational sentences, no lecture-script-style paragraphs. No teacher name or identity appears on any slide (no "Teacher X's tips/wishes/comments"). If a text reads like spoken language or a personal message, rewrite it as a neutral bullet point.
 

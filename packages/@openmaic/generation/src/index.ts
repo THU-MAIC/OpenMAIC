@@ -9,6 +9,7 @@ export type {
 export {
   extractInteractiveElements,
   extractWidgetConfig,
+  findMalformedLatex,
   generateSceneActions,
   generateSceneContent,
   generateWidgetContent,

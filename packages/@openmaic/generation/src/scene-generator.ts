@@ -812,6 +812,13 @@ async function generateSlideContent(
     return null;
   }
 
+  const malformedLatex = findMalformedLatex(generatedData.elements, response);
+  if (malformedLatex) {
+    log.error(malformedLatex);
+    onFailure?.({ code: 'invalid-model-output', message: malformedLatex });
+    return null;
+  }
+
   log.debug(`Got ${generatedData.elements.length} elements for: ${outline.title}`);
 
   // Debug: Log image elements before resolution
@@ -905,6 +912,62 @@ function findInvalidShapeRotation(elements: GeneratedSlideData['elements']): str
     const received = typeof rotate === 'number' ? String(rotate) : JSON.stringify(rotate);
     return `Invalid shape rotation at shape[${index}].rotate: expected a finite number in degrees or null, received ${received}`;
   }
+  return undefined;
+}
+
+/**
+ * Detect malformed LaTeX in generated slide elements or raw JSON response.
+ *
+ * Plain `JSON.parse` silently decodes raw LaTeX backslashes as valid JSON escapes:
+ * - `\frac` -> `\f` (ASCII 0x0c, Form Feed) + `rac`
+ * - `\times` -> `\t` (ASCII 0x09, Tab) + `imes`
+ * - `\nu` -> `\n` (ASCII 0x0a, Newline) + `u`
+ * - `\beta` -> `\b` (ASCII 0x08, Backspace) + `eta`
+ * - `\rho` -> `\r` (ASCII 0x0d, Carriage Return) + `ho`
+ *
+ * This function validates that LaTeX output was not corrupted by raw JSON escapes,
+ * rejecting suspicious malformed LaTeX so generation can be retried.
+ */
+export function findMalformedLatex(
+  elements: GeneratedSlideData['elements'],
+  rawResponse?: string,
+): string | undefined {
+  if (rawResponse) {
+    const latexPropertyRegex = /"latex"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+    for (const match of rawResponse.matchAll(latexPropertyRegex)) {
+      const rawContent = match[1];
+      const withoutUnicode = rawContent.replace(/(?:^|[^\\])(?:\\\\)*\\u[0-9a-fA-F]{4}/g, '');
+      const unescapedRegex = /(?:^|[^\\])(?:\\\\)*\\([a-zA-Z]+)/g;
+      const cmdMatch = unescapedRegex.exec(withoutUnicode);
+      if (cmdMatch) {
+        return `Malformed LaTeX in JSON: raw unescaped LaTeX command \\${cmdMatch[1]} in "latex" property`;
+      }
+    }
+  }
+
+  for (const [index, element] of elements.entries()) {
+    if (!element || typeof element !== 'object' || element.type !== 'latex') {
+      continue;
+    }
+
+    const latex = element.latex;
+    if (typeof latex !== 'string') {
+      return `Invalid latex element at latex[${index}]: expected string, received ${typeof latex}`;
+    }
+
+    if (/[\x08\x0c\r]/.test(latex)) {
+      return `Malformed LaTeX at latex[${index}]: contains control characters decoded from unescaped LaTeX backslash`;
+    }
+
+    if (/\t/.test(latex)) {
+      return `Malformed LaTeX at latex[${index}]: contains tab character decoded from unescaped LaTeX \\t command`;
+    }
+
+    if (/\n(?:u|eq|abla|eg|otin|earrow|warrow|atural|exists|ot|ormalsize|ewcommand|i)\b/i.test(latex)) {
+      return `Malformed LaTeX at latex[${index}]: contains newline decoded from unescaped LaTeX \\n command`;
+    }
+  }
+
   return undefined;
 }
 
