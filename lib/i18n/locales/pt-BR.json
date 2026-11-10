@@ -1098,6 +1098,7 @@
     "rename": "Renomear",
     "renamePlaceholder": "Digite o nome da sala",
     "renameFailed": "Falha ao renomear a sala",
+    "saveRefused": "Suas alterações não foram salvas: você não tem permissão para editar esta aula.",
     "searchPlaceholder": "Pesquisar cursos...",
     "searchAriaLabel": "Pesquisar cursos",
     "clearSearch": "Limpar",

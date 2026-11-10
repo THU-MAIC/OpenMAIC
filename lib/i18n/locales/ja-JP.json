@@ -1098,6 +1098,7 @@
     "rename": "名前を変更",
     "renamePlaceholder": "教室名を入力",
     "renameFailed": "教室名の変更に失敗しました",
+    "saveRefused": "変更は保存されませんでした：このコースを編集する権限がありません。",
     "searchPlaceholder": "コースを検索...",
     "searchAriaLabel": "コースを検索",
     "clearSearch": "クリア",

@@ -1098,6 +1098,7 @@
     "rename": "Đổi tên",
     "renamePlaceholder": "Nhập tên lớp học",
     "renameFailed": "Không đổi được tên lớp học",
+    "saveRefused": "Thay đổi chưa được lưu: bạn không có quyền chỉnh sửa bài học này.",
     "searchPlaceholder": "Tìm bài học…",
     "searchAriaLabel": "Tìm bài học",
     "clearSearch": "Xóa",

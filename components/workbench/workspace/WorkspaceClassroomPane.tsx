@@ -57,6 +57,7 @@ import { PaneFoldButton } from './PaneFoldButton';
 export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
   browser,
   readOnly,
+  readOnlyKnown = true,
   fullscreen,
   hidden,
   onCollapse,
@@ -85,6 +86,11 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
     readonly onCloseCourse: (courseId: string) => void;
   };
   readonly readOnly: boolean;
+  /**
+   * Whether the viewer's access is known yet. A course whose access is still
+   * being asked about is read-only, but is not labelled so until it is.
+   */
+  readonly readOnlyKnown?: boolean;
   /**
    * Full screen: the pane is the whole window (the rail and the conversation
    * step aside), with a header of its own — leave the course on the left, the
@@ -216,8 +222,11 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
         <CircleHelp className="size-4" aria-hidden="true" />
       </button>
     ) : null;
+  // The Learn / Edit hint is for a course the viewer can edit: on a read-only
+  // one (someone else's, or not yet known to be theirs) there is no Edit.
   const showHint =
     hintPending &&
+    !readOnly &&
     learning &&
     !tourActive &&
     !fullscreen &&
@@ -281,7 +290,7 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
             onClose={browser.onCloseCourse}
           />
           <span className="ws-ctabs-rule" aria-hidden="true" />
-          {readOnly ? <ReadOnlyBadge /> : null}
+          {readOnly && readOnlyKnown ? <ReadOnlyBadge /> : null}
           {/* The editor portals its undo/redo here while editing; empty, it
               takes no space. It sits with the other editing control (the
               tour's ?) just before Learn | Edit. */}
@@ -336,7 +345,7 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
               {scene?.title || courseName}
             </div>
           </div>
-          {readOnly ? <ReadOnlyBadge /> : null}
+          {readOnly && readOnlyKnown ? <ReadOnlyBadge /> : null}
           {/* Export and sharing, which the split view leaves to this size. */}
           <HeaderControls variant="compact" showGlobalControls={false} showCourseActions />
           {/* The editor portals its undo/redo here while editing; empty, it

@@ -1098,6 +1098,7 @@
     "rename": "Rename",
     "renamePlaceholder": "Enter classroom name",
     "renameFailed": "Failed to rename classroom",
+    "saveRefused": "Your changes weren't saved: you don't have permission to edit this course.",
     "searchPlaceholder": "Search courses...",
     "searchAriaLabel": "Search courses",
     "clearSearch": "Clear",

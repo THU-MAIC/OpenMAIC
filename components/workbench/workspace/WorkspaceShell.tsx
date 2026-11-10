@@ -66,7 +66,13 @@ import { OwnerSessionClient } from '@/lib/workbench/owner-session-client';
 import { resolveCourseChatBootstrap } from '@/lib/workbench/course-chat-bootstrap';
 import { startConversationWithFirstMessage } from '@/lib/workbench/first-message-session';
 import { createdCourseTabsToOpen } from '@/lib/workbench/created-course-tabs';
-import { isCourseReadOnly } from '@/lib/workbench/course-read-only';
+import {
+  classroomHref,
+  isCourseReadOnly,
+  resolveCourseAccess,
+} from '@/lib/workbench/course-read-only';
+import { fetchStageMeta, type StageMetaResult } from '@/lib/classroom/stage-meta-client';
+import { useRouter } from 'next/navigation';
 import { findGuideCourse, seedGuideCourse } from '@/lib/workbench/guide-course';
 import {
   markOnboardingSeen,
@@ -1080,7 +1086,14 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     // own fold on the seam, or a browsed course (which has no conversation
     // yet: the strip starts one about it, as "Edit with AI" does).
     if (browsingCourse) {
-      talkAboutCourse();
+      // A course the viewer cannot change gets no conversation about it: the
+      // strip opens an ordinary new one, naming nothing.
+      if (readOnlyCourse) {
+        startNewConversation();
+        setNarrowFocus('chat');
+      } else {
+        talkAboutCourse();
+      }
       return;
     }
     collapse.expandChat();
@@ -1601,17 +1614,78 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   }, [panes.courseId, playbackOn, setPlaybackOn]);
 
   // ── Read-only ─────────────────────────────────────────────────────────
-  // See `isCourseReadOnly`: the course list's `isOwner` (false for a course
-  // saved from Discover) and a generation run still producing the course.
-  const courseIsOwner = useMemo(
-    () => courses.classrooms.find((course) => course.id === panes.courseId)?.isOwner,
+  // See `resolveCourseAccess` / `isCourseReadOnly`: the course list says whose
+  // a listed course is (a course saved from Discover is not the viewer's); a
+  // course NOT in the list (a link someone else copied) is asked about through
+  // the stage-meta sidecar, as the standalone classroom page does, and is
+  // read-only until it answers. A generation run still producing the course
+  // keeps it read-only too.
+  const listedCourse = useMemo(
+    () => courses.classrooms.find((course) => course.id === panes.courseId),
     [courses.classrooms, panes.courseId],
   );
+  // Listed: the list's own answer (a listed course with no flag is the viewer's).
+  const courseIsOwner = listedCourse ? listedCourse.isOwner !== false : undefined;
+  const [courseMeta, setCourseMeta] = useState<{
+    readonly courseId: string;
+    readonly meta: StageMetaResult;
+  } | null>(null);
+  const courseListed = courseIsOwner !== undefined;
+  useEffect(() => {
+    const courseId = panes.courseId;
+    if (!courseId || courseListed) return;
+    let current = true;
+    void fetchStageMeta(courseId).then((meta) => {
+      if (current) setCourseMeta({ courseId, meta });
+    });
+    return () => {
+      current = false;
+    };
+  }, [courseListed, panes.courseId]);
+  const activeCourseMeta =
+    courseMeta && courseMeta.courseId === panes.courseId ? courseMeta.meta : null;
+  const courseAccess = resolveCourseAccess({
+    listedIsOwner: courseIsOwner,
+    meta: activeCourseMeta,
+  });
+  // The workbench is for a course's owner. Someone else's course reached here
+  // (a `/workspace?course=` link copied from its owner's address bar) goes to
+  // its classroom page instead, replacing this entry so Back does not bounce
+  // between the two. Only a course the server answered for: one that does not
+  // exist keeps the classroom's own not-found, and one in the viewer's own list
+  // (saved from Discover) stays, read-only, where they put it. Read-only above
+  // is the safety net while the answer is on its way.
+  const router = useRouter();
+  const strangerCourseId =
+    !courseListed &&
+    panes.courseId &&
+    activeCourseMeta?.outcome === 'found' &&
+    !activeCourseMeta.meta.isOwner
+      ? panes.courseId
+      : null;
+  useEffect(() => {
+    if (!strangerCourseId) return;
+    router.replace(classroomHref(strangerCourseId));
+  }, [router, strangerCourseId]);
   const courseGenerating = useStageStore((s) => s.courseGenerating);
   const readOnlyCourse = isCourseReadOnly({
-    isOwner: courseIsOwner,
+    access: courseAccess,
     generating: courseGenerating,
   });
+  // The names of courses that are not in the list (someone else's), as their
+  // documents loaded here: a tab says what it is, not "untitled".
+  const loadedStageId = useStageStore((s) => s.stage?.id ?? null);
+  const loadedStageName = useStageStore((s) => s.stage?.name ?? '');
+  const [loadedCourseNames, setLoadedCourseNames] = useState<ReadonlyMap<string, string>>(
+    () => new Map(),
+  );
+  if (
+    loadedStageId &&
+    loadedStageName &&
+    loadedCourseNames.get(loadedStageId) !== loadedStageName
+  ) {
+    setLoadedCourseNames((names) => new Map(names).set(loadedStageId, loadedStageName));
+  }
 
   /* ── What a course is CALLED ───────────────────────────────────────────
      Tabs and in-chat links both need a name and a page count for an id, and
@@ -1635,9 +1709,11 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
         };
       if (courseId === sessionStageId && courseTitle)
         return { id: courseId, name: courseTitle, pageCount: null };
+      const loadedName = loadedCourseNames.get(courseId);
+      if (loadedName) return { id: courseId, name: loadedName, pageCount: null };
       return null;
     },
-    [courses.classrooms, courseTitle, sessionStageId],
+    [courses.classrooms, courseTitle, loadedCourseNames, sessionStageId],
   );
 
   /**
@@ -1945,6 +2021,8 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           browser={classroomBrowser}
           hidden={!classroomOpen || previewShowing}
           readOnly={readOnlyCourse}
+          // Not known yet is read-only too, but says nothing until it is known.
+          readOnlyKnown={courseAccess !== 'unknown'}
           fullscreen={playbackOn}
           // Symmetric with the conversation's fold: offered only while both
           // panes are on screen (the last visible pane cannot fold — see

@@ -340,8 +340,14 @@ export function Stage({
   // and, once the workspace is known to be reachable, the collapse glyph that
   // opens this course in it.
   const chromeToggleHandler = hosted ? undefined : toggleHandler;
-  const workbenchControls = !hosted && proWorkbenchFlag;
-  const openInWorkspace = !hosted && proWorkbenchEntry ? handleEnterWorkbench : undefined;
+  // The workbench's controls are the owner's: a visitor's header is the plain
+  // classroom one, as it was before the workspace (`openInWorkspace` below).
+  const workbenchControls = !hosted && proWorkbenchFlag && isOwner;
+  // The workspace is for the course's owner: a visitor (a shared link, a
+  // public course) gets the plain classroom, with no way into the workbench —
+  // as the classroom route had before the workspace took over Pro mode.
+  const openInWorkspace =
+    !hosted && proWorkbenchEntry && isOwner ? handleEnterWorkbench : undefined;
 
   // Mode swap choreography — a clean opacity cross-fade. Both roots layer
   // via `absolute inset-0` so they coexist for the ~280ms window without

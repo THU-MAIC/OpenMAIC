@@ -1098,6 +1098,7 @@
     "rename": "Renommer",
     "renamePlaceholder": "Saisissez le nom de la classe",
     "renameFailed": "Échec du renommage de la classe",
+    "saveRefused": "Vos modifications n’ont pas été enregistrées : vous n’avez pas le droit de modifier ce cours.",
     "searchPlaceholder": "Rechercher un cours…",
     "searchAriaLabel": "Rechercher un cours",
     "clearSearch": "Effacer",

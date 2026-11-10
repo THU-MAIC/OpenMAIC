@@ -152,6 +152,13 @@ function nextSaveDelayMs(): number {
   return Math.min(SAVE_DEBOUNCE_MS * 2 ** consecutiveFlushFailures, SAVE_BACKOFF_MAX_MS);
 }
 
+/** A refused write is said out loud, once per course (`save-refusal-notice`). */
+function noticeIfRefused(stageId: string, error: unknown): void {
+  void import('@/lib/store/save-refusal-notice')
+    .then((module) => module.noticeRefusedSave(stageId, error))
+    .catch(() => undefined);
+}
+
 function recordFlushOutcome(failed: boolean): void {
   consecutiveFlushFailures = failed ? consecutiveFlushFailures + 1 : 0;
 }
@@ -1208,6 +1215,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         return true;
       } catch (error) {
         log.error('Failed to save to storage:', error);
+        noticeIfRefused(stage.id, error);
         return false;
       }
     };
@@ -1510,6 +1518,7 @@ function startFlushRound(): FlushRound | null {
       return failedKeys;
     } catch (error) {
       log.error(`Failed to flush pending stage changes for ${stageId}:`, error);
+      noticeIfRefused(stageId, error);
       recordFlushOutcome(true);
       throw error;
     } finally {

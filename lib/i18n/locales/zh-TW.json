@@ -1098,6 +1098,7 @@
     "rename": "重新命名",
     "renamePlaceholder": "輸入新名稱...",
     "renameFailed": "重新命名失敗",
+    "saveRefused": "變更沒有儲存：你沒有編輯這堂課的權限。",
     "searchPlaceholder": "搜尋教室...",
     "searchAriaLabel": "搜尋教室",
     "clearSearch": "清除搜尋",

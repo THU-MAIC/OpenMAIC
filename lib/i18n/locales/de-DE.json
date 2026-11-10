@@ -1098,6 +1098,7 @@
     "rename": "Umbenennen",
     "renamePlaceholder": "Kursnamen eingeben",
     "renameFailed": "Kurs konnte nicht umbenannt werden",
+    "saveRefused": "Deine Änderungen wurden nicht gespeichert: Du darfst diesen Kurs nicht bearbeiten.",
     "searchPlaceholder": "Kurse durchsuchen...",
     "searchAriaLabel": "Kurse durchsuchen",
     "clearSearch": "Suchfeld leeren",

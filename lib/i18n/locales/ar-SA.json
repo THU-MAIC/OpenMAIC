@@ -1098,6 +1098,7 @@
     "rename": "إعادة تسمية",
     "renamePlaceholder": "أدخل اسم الفصل",
     "renameFailed": "فشلت إعادة تسمية الفصل",
+    "saveRefused": "لم تُحفظ تغييراتك: ليست لديك صلاحية تعديل هذا الدرس.",
     "searchPlaceholder": "البحث عن الدروس...",
     "searchAriaLabel": "البحث عن الدروس",
     "clearSearch": "مسح",

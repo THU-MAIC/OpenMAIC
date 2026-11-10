@@ -1098,6 +1098,7 @@
     "rename": "Renombrar",
     "renamePlaceholder": "Escribe el nombre del aula",
     "renameFailed": "Error al renombrar el aula",
+    "saveRefused": "Tus cambios no se guardaron: no tienes permiso para editar esta clase.",
     "searchPlaceholder": "Buscar cursos...",
     "searchAriaLabel": "Buscar cursos",
     "clearSearch": "Borrar",

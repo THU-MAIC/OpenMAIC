@@ -114,11 +114,13 @@ describe('the standalone classroom with the workbench', () => {
     expect(probe.playbackProps!.onOpenInWorkspace).toBeUndefined();
   });
 
-  it('offers no edit control to someone who does not own the course', async () => {
-    useStageStore.setState({ isOwner: false });
+  it('gives someone who does not own the course the plain classroom: no way into the workspace', async () => {
+    useStageStore.setState({ isOwner: false, readOnly: true });
     await render();
+    // The workbench is for the course's owner (a shared link, a public course).
     expect(probe.playbackProps!.onEnterProMode).toBeUndefined();
-    expect(probe.playbackProps!.onOpenInWorkspace).toBeTypeOf('function');
+    expect(probe.playbackProps!.onOpenInWorkspace).toBeUndefined();
+    expect(probe.playbackProps!.workbenchControls).toBe(false);
   });
 });
 

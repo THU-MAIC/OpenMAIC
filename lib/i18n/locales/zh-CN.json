@@ -1098,6 +1098,7 @@
     "rename": "重命名",
     "renamePlaceholder": "输入课堂名称",
     "renameFailed": "重命名失败",
+    "saveRefused": "改动没有保存：你没有编辑这节课的权限。",
     "searchPlaceholder": "搜索课程...",
     "searchAriaLabel": "搜索课程",
     "clearSearch": "清空",

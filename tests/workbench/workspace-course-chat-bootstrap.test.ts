@@ -98,6 +98,7 @@ const mocks = vi.hoisted(() => ({
   },
   setSessionTitle: vi.fn(),
   paneTabs: new Map<string, Record<string, unknown>>(),
+  loadedStage: null as { id: string; name: string } | null,
 }));
 
 vi.mock('next/navigation', () => ({
@@ -128,7 +129,7 @@ vi.mock('@/lib/workbench/session-store', () => {
 });
 vi.mock('@/lib/store/stage', () => ({
   useStageStore: (selector: (state: Record<string, unknown>) => unknown) =>
-    selector({ isOwner: true }),
+    selector({ isOwner: true, stage: mocks.loadedStage }),
 }));
 vi.mock('@/lib/workbench/use-workbench-session', () => ({
   useStageFreshnessSync: vi.fn(),
@@ -366,6 +367,7 @@ beforeEach(() => {
   mocks.classroomProps = null;
   mocks.classroomMounts = 0;
   mocks.paneTabs.clear();
+  mocks.loadedStage = null;
   mocks.chatPaneProps = null;
   mocks.railProps = null;
   mocks.coursesPageProps = null;
@@ -776,6 +778,114 @@ describe('a course opened by browsing', () => {
     expect(mocks.routerPush).toHaveBeenLastCalledWith(
       '/workspace?session=session-a&course=stage-1',
     );
+  });
+});
+
+/**
+ * A course NOT in the viewer's list — a `/workspace?course=` link somebody else
+ * copied from their address bar — used to count as editable. Its access is
+ * asked of the stage-meta sidecar now, as the standalone classroom page asks,
+ * and it is read-only until the answer says otherwise.
+ */
+describe('a course that is not in the viewer’s list', () => {
+  const answerStageMeta = (answer: () => Promise<Response>) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input).startsWith('/api/stage-meta/')
+          ? answer()
+          : ({ ok: true, json: async () => [] } as unknown as Response),
+      ),
+    );
+  };
+  const meta = (isOwner: boolean) =>
+    Response.json({ isOwner, isPublic: false, publishedAt: null, generationComplete: true });
+
+  beforeEach(() => {
+    mocks.searchParams = new URLSearchParams('course=stage-other');
+  });
+
+  it('is read-only, and says nothing, until its access is known', async () => {
+    answerStageMeta(() => new Promise<Response>(() => {}));
+    await render();
+
+    expect(fetch).toHaveBeenCalledWith('/api/stage-meta/stage-other', expect.anything());
+    expect(mocks.classroomProps).toMatchObject({ readOnly: true, readOnlyKnown: false });
+    expect(mocks.classroomProps?.onTalkAboutCourse).toBeUndefined();
+  });
+
+  it('sends someone else’s course to its classroom page, replacing the entry', async () => {
+    answerStageMeta(async () => meta(false));
+    await render();
+    await act(async () => {});
+
+    // The workbench is for the course's owner.
+    expect(mocks.routerReplace).toHaveBeenCalledWith('/classroom/stage-other');
+    expect(mocks.routerPush).not.toHaveBeenCalled();
+  });
+
+  it('keeps a course that does not exist where it is, for the classroom’s not-found', async () => {
+    answerStageMeta(async () => new Response('Not found', { status: 404 }));
+    await render();
+    await act(async () => {});
+
+    expect(mocks.routerReplace).not.toHaveBeenCalledWith('/classroom/stage-other');
+    expect(mocks.classroomProps).toMatchObject({ readOnly: true, readOnlyKnown: true });
+  });
+
+  it('keeps a course saved from Discover (in the list, not the viewer’s) in the workbench', async () => {
+    mocks.courses = {
+      ...mocks.courses!,
+      classrooms: [{ ...classroom('stage-saved'), isOwner: false }],
+    };
+    mocks.searchParams = new URLSearchParams('course=stage-saved');
+    await render();
+    await act(async () => {});
+
+    expect(mocks.routerReplace).not.toHaveBeenCalled();
+    expect(mocks.classroomProps).toMatchObject({ readOnly: true });
+  });
+
+  it('is read-only while someone else’s course is on its way out', async () => {
+    answerStageMeta(async () => meta(false));
+    await render();
+    await act(async () => {});
+
+    expect(mocks.classroomProps).toMatchObject({ readOnly: true, readOnlyKnown: true });
+    expect(mocks.classroomProps?.onTalkAboutCourse).toBeUndefined();
+    // The folded column's strip opens an ordinary new conversation: no course named.
+    await act(async () => (mocks.paneTabs.get('workspace-chat-reopen')!.onClick as () => void)());
+    expect(draft()).not.toHaveProperty('course');
+  });
+
+  it('is editable when the server says it is the viewer’s', async () => {
+    answerStageMeta(async () => meta(true));
+    await render();
+    await act(async () => {});
+
+    expect(mocks.classroomProps).toMatchObject({ readOnly: false });
+    expect(mocks.classroomProps?.onTalkAboutCourse).toBeTypeOf('function');
+  });
+
+  it('a course in the list is the list’s to answer: nothing is asked', async () => {
+    answerStageMeta(async () => meta(false));
+    mocks.searchParams = new URLSearchParams('course=stage-1');
+    await render();
+    await act(async () => {});
+
+    expect(fetch).not.toHaveBeenCalledWith('/api/stage-meta/stage-1', expect.anything());
+    expect(mocks.classroomProps).toMatchObject({ readOnly: false });
+  });
+
+  it('its tab is named by its document once it has loaded', async () => {
+    answerStageMeta(async () => meta(false));
+    mocks.loadedStage = { id: 'stage-other', name: 'Photosynthesis' };
+    await render();
+    await act(async () => {});
+
+    expect(
+      (mocks.classroomProps?.browser as { tabs: { id: string; name: string }[] }).tabs,
+    ).toContainEqual({ id: 'stage-other', name: 'Photosynthesis' });
   });
 });
 
