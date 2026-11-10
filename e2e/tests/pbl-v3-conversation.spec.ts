@@ -755,7 +755,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await expect(task.getByRole('button', { name: /^Current task$/ })).toHaveCount(0);
   await expect(details).toHaveCount(0);
   const originalStage = view.stage;
-  const enterDecisions = task.getByRole('button', {
+  const enterDecisions = task.getByTestId('pbl-advance-bar').getByRole('button', {
     name: 'Continue to Make your decisions',
     exact: true,
   });
@@ -779,11 +779,11 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await expect(enterDecisions).toHaveAttribute('data-state', 'ready');
   await expect(enterDecisions).toBeEnabled();
   const readyColor = () => enterDecisions.evaluate((el) => getComputedStyle(el).backgroundColor);
-  const greens = ['rgb(11, 122, 82)', 'rgb(59, 240, 164)'];
-  expect(greens).toContain(await readyColor());
+  const advanceColors = ['rgb(100, 64, 188)', 'rgb(186, 164, 255)'];
+  expect(advanceColors).toContain(await readyColor());
   const initialColor = await readyColor();
   await page.getByRole('button', { name: 'Switch color theme', exact: true }).click();
-  await expect.poll(readyColor).toBe(greens.find((color) => color !== initialColor));
+  await expect.poll(readyColor).toBe(advanceColors.find((color) => color !== initialColor));
   await page.getByRole('button', { name: 'Switch color theme', exact: true }).click();
   await expect.poll(readyColor).toBe(initialColor);
   await page.getByLabel('Your message', { exact: true }).fill('What should I do next?');
@@ -1320,9 +1320,10 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await expect(summary).toHaveAttribute('data-state', 'idle');
   await expect(runTests).toBeEnabled();
   await page.mouse.move(0, 0);
+  const runTestColors = ['rgb(11, 122, 82)', 'rgb(59, 240, 164)'];
   await expect
     .poll(async () =>
-      greens.includes(await runTests.evaluate((el) => getComputedStyle(el).backgroundColor)),
+      runTestColors.includes(await runTests.evaluate((el) => getComputedStyle(el).backgroundColor)),
     )
     .toBe(true);
   let releaseEvaluate = () => {};
@@ -1427,7 +1428,9 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await page.mouse.move(0, 0);
   await expect
     .poll(async () =>
-      greens.includes(await enterQuiz.evaluate((el) => getComputedStyle(el).backgroundColor)),
+      advanceColors.includes(
+        await enterQuiz.evaluate((el) => getComputedStyle(el).backgroundColor),
+      ),
     )
     .toBe(true);
   await task.getByRole('button', { name: /^Current task$/ }).click();
