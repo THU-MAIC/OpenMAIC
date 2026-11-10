@@ -114,13 +114,30 @@ describe('the standalone classroom with the workbench', () => {
     expect(probe.playbackProps!.onOpenInWorkspace).toBeUndefined();
   });
 
-  it('gives someone who does not own the course the plain classroom: no way into the workspace', async () => {
+  it('gives someone who does not own the course the same chrome, minus the owner’s controls', async () => {
     useStageStore.setState({ isOwner: false, readOnly: true });
     await render();
-    // The workbench is for the course's owner (a shared link, a public course).
-    expect(probe.playbackProps!.onEnterProMode).toBeUndefined();
-    expect(probe.playbackProps!.onOpenInWorkspace).toBeUndefined();
-    expect(probe.playbackProps!.workbenchControls).toBe(false);
+    const props = probe.playbackProps!;
+    // The workbench's classroom chrome, as the owner gets it…
+    expect(props.workbenchControls).toBe(true);
+    expect(props.hideHeader).toBe(false);
+    // …without Learn | Edit or the way into this course in the workspace…
+    expect(props.onEnterProMode).toBeUndefined();
+    expect(props.onOpenInWorkspace).toBeUndefined();
+    // …and with the way into a workbench of their own.
+    expect(props.makeOwnCourseHref).toBe('/');
+  });
+
+  it('does not offer the owner a course of their own: they are in it', async () => {
+    await render();
+    expect(probe.playbackProps!.makeOwnCourseHref).toBeUndefined();
+  });
+
+  it('offers a visitor nothing to go to while the workspace is unreachable', async () => {
+    runtime(false);
+    useStageStore.setState({ isOwner: false, readOnly: true });
+    await render();
+    expect(probe.playbackProps!.makeOwnCourseHref).toBeUndefined();
   });
 });
 
@@ -132,6 +149,16 @@ describe('the standalone classroom without the workbench', () => {
     expect(props.workbenchControls).toBe(false);
     expect(props.onOpenInWorkspace).toBeUndefined();
     expect(props.onEnterProMode).toBeTypeOf('function');
+  });
+
+  it('keeps the classic page for a visitor too: nothing about the workbench', async () => {
+    probe.workbench = false;
+    useStageStore.setState({ isOwner: false, readOnly: true });
+    await render();
+    const props = probe.playbackProps!;
+    expect(props.workbenchControls).toBe(false);
+    expect(props.onOpenInWorkspace).toBeUndefined();
+    expect(props.makeOwnCourseHref).toBeUndefined();
   });
 });
 

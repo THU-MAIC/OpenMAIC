@@ -357,6 +357,8 @@
     "editToggle": "تحرير",
     "openInWorkspace": "فتح في مساحة العمل",
     "openInWorkspaceHint": "افتح في مساحة العمل لمتابعة العمل على هذه الدورة في محادثة",
+    "makeOwnCourse": "أنشئ درسك",
+    "makeOwnCourseHint": "أنشئ درسك الخاص في مساحة العمل",
     "dock": {
       "collapse": "طي الشريط",
       "expand": "توسيع الشريط",

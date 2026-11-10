@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import type { StageMode } from '@/lib/types/stage';
 import { classroomExitLabelKey, exitClassroom } from '@/lib/workbench/classroom-exit';
 import { HeaderControls } from './stage/header-controls';
+import { ClassroomFullHeader } from '@/components/workbench/ClassroomFullHeader';
+import { useStageStore } from '@/lib/store';
 
 interface HeaderProps {
   readonly currentSceneTitle: string;
@@ -15,11 +17,20 @@ interface HeaderProps {
   /** See `HeaderControls`: Learn | Edit and the way into the workspace. */
   readonly workbenchControls?: boolean;
   readonly onOpenInWorkspace?: () => void;
+  readonly makeOwnCourseHref?: string;
 }
 
 /**
  * The standalone classroom's header (`/classroom/[id]`). A classroom hosted
  * in the workspace has no header of its own: the pane draws one around it.
+ *
+ * Where the workbench is part of the build (`workbenchControls`), the page is
+ * the workspace's full-screen classroom entered from outside, and wears its
+ * header (`ClassroomFullHeader`): the course and page, the scene's title, then
+ * the export control and — for the owner — Learn | Edit and the way into the
+ * workspace; for a viewer, the way to a course of their own instead. The
+ * language / theme / settings pill is not part of it: the workbench keeps
+ * those in its account menu. Without the workbench, the classic header below.
  */
 export function Header({
   currentSceneTitle,
@@ -28,11 +39,43 @@ export function Header({
   onToggleEditMode,
   workbenchControls,
   onOpenInWorkspace,
+  makeOwnCourseHref,
 }: HeaderProps) {
   const { t } = useI18n();
   const router = useRouter();
   const searchParams = useSearchParams();
   const exitLabel = t(classroomExitLabelKey(searchParams));
+  const courseName = useStageStore((s) => s.stage?.name) || t('workspace.untitledCourse');
+  const sceneCount = useStageStore((s) => s.scenes.length);
+  const sceneIndex = useStageStore((s) =>
+    s.scenes.findIndex((scene) => scene.id === s.currentSceneId),
+  );
+
+  if (workbenchControls) {
+    return (
+      <ClassroomFullHeader
+        testId="classroom-full-header"
+        className="px-3 sm:pl-6 sm:pr-5"
+        courseName={courseName}
+        sceneTitle={currentSceneTitle}
+        sceneIndex={sceneIndex}
+        sceneCount={sceneCount}
+        actions={
+          <HeaderControls
+            variant="compact"
+            showGlobalControls={false}
+            showCourseActions
+            mode={mode}
+            canEdit={canEdit}
+            onToggleEditMode={onToggleEditMode}
+            workbenchControls
+            onOpenInWorkspace={onOpenInWorkspace}
+            makeOwnCourseHref={makeOwnCourseHref}
+          />
+        }
+      />
+    );
+  }
 
   return (
     <>
@@ -77,6 +120,7 @@ export function Header({
           onToggleEditMode={onToggleEditMode}
           workbenchControls={workbenchControls}
           onOpenInWorkspace={onOpenInWorkspace}
+          makeOwnCourseHref={makeOwnCourseHref}
         />
       </header>
     </>

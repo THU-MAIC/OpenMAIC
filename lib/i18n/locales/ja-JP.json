@@ -357,6 +357,8 @@
     "editToggle": "編集",
     "openInWorkspace": "ワークスペースで開く",
     "openInWorkspaceHint": "ワークスペースで開き、会話しながらこのコースの作業を続ける",
+    "makeOwnCourse": "自分のコースを作る",
+    "makeOwnCourseHint": "ワークベンチで自分のコースを作る",
     "dock": {
       "collapse": "下部バーを折りたたむ",
       "expand": "下部バーを展開",

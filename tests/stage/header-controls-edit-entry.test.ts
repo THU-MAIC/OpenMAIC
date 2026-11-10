@@ -34,15 +34,18 @@ function render(
     readonly onOpenInWorkspace?: () => void;
     readonly mode?: 'playback' | 'edit';
     readonly canEdit?: boolean;
+    readonly onToggleEditMode?: (() => void) | null;
+    readonly makeOwnCourseHref?: string;
   } = {},
 ) {
   return renderToStaticMarkup(
     createElement(HeaderControls, {
       mode: props.mode ?? 'playback',
       canEdit: props.canEdit ?? true,
-      onToggleEditMode: vi.fn(),
+      onToggleEditMode: props.onToggleEditMode === null ? undefined : vi.fn(),
       workbenchControls: props.workbenchControls,
       onOpenInWorkspace: props.onOpenInWorkspace,
+      makeOwnCourseHref: props.makeOwnCourseHref,
     }),
   );
 }
@@ -81,5 +84,26 @@ describe('classroom header edit entry', () => {
     expect(html).toContain('stage.editToggle');
     expect(html).not.toContain('workbench-mode-learning');
     expect(html).not.toContain('classroom-open-in-workspace');
+  });
+});
+
+describe('classroom header for someone who does not own the course', () => {
+  it('has no Learn | Edit and no way into the workspace, and offers a course of their own', () => {
+    const html = render({
+      workbenchControls: true,
+      onToggleEditMode: null,
+      makeOwnCourseHref: '/',
+    });
+    expect(html).not.toContain('workbench-mode-learning');
+    expect(html).not.toContain('classroom-open-in-workspace');
+    expect(html).not.toContain('classroom-workbench-controls');
+    expect(html).toContain('data-testid="classroom-make-own-course"');
+    expect(html).toContain('href="/"');
+    expect(html).toContain('stage.makeOwnCourse');
+  });
+
+  it('is not offered to the owner', () => {
+    const html = render({ workbenchControls: true, onOpenInWorkspace: vi.fn() });
+    expect(html).not.toContain('classroom-make-own-course');
   });
 });

@@ -142,6 +142,8 @@ interface PlaybackChromeRootProps {
    */
   readonly workbenchControls?: boolean;
   readonly onOpenInWorkspace?: () => void;
+  /** A visitor's way into their own workbench (see `HeaderControls`). */
+  readonly makeOwnCourseHref?: string;
   /** The workspace pane draws its own header around a hosted classroom. */
   readonly hideHeader?: boolean;
   readonly onInteractivePickerChange?: (state: PlaybackInteractivePickerState | null) => void;
@@ -163,6 +165,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       onEnterProMode,
       workbenchControls,
       onOpenInWorkspace,
+      makeOwnCourseHref,
       hideHeader,
       onInteractivePickerChange,
     },
@@ -1889,6 +1892,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               onToggleEditMode={onEnterProMode}
               workbenchControls={workbenchControls}
               onOpenInWorkspace={onOpenInWorkspace}
+              makeOwnCourseHref={makeOwnCourseHref}
             />
           )}
 

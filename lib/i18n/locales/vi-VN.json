@@ -357,6 +357,8 @@
     "editToggle": "Sửa",
     "openInWorkspace": "Mở trong không gian làm việc",
     "openInWorkspaceHint": "Mở trong không gian làm việc để tiếp tục khóa học này qua trò chuyện",
+    "makeOwnCourse": "Tạo bài học của bạn",
+    "makeOwnCourseHint": "Tạo bài học của riêng bạn trong không gian làm việc",
     "dock": {
       "collapse": "Thu gọn thanh dưới",
       "expand": "Mở rộng thanh dưới",

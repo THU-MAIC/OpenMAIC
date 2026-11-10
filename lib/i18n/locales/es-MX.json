@@ -357,6 +357,8 @@
     "editToggle": "Editar",
     "openInWorkspace": "Abrir en el espacio de trabajo",
     "openInWorkspaceHint": "Abrir en el espacio de trabajo para seguir con este curso en una conversación",
+    "makeOwnCourse": "Crear mi clase",
+    "makeOwnCourseHint": "Crea tu propia clase en el espacio de trabajo",
     "dock": {
       "collapse": "Contraer la barra",
       "expand": "Expandir la barra",

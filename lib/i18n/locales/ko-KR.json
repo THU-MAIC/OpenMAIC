@@ -357,6 +357,8 @@
     "editToggle": "편집",
     "openInWorkspace": "작업 공간에서 열기",
     "openInWorkspaceHint": "작업 공간에서 열어 대화로 이 코스 작업을 이어가기",
+    "makeOwnCourse": "내 수업 만들기",
+    "makeOwnCourseHint": "워크벤치에서 내 수업 만들기",
     "dock": {
       "collapse": "하단 막대 접기",
       "expand": "하단 막대 펼치기",

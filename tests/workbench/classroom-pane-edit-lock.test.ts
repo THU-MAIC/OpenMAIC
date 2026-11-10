@@ -217,7 +217,9 @@ describe('the full-screen classroom', () => {
     // The collapse sits where the split view's maximize sits: the last control.
     const header = q('workbench-fullscreen-header')!;
     // The title block leads, where the leave button used to be.
-    expect(header.firstElementChild?.querySelector('.ws-full-crumb')).not.toBeNull();
+    expect(
+      header.firstElementChild?.querySelector('[data-testid="workbench-fullscreen-title"]'),
+    ).not.toBeNull();
     expect(header.lastElementChild?.getAttribute('data-testid')).toBe('workbench-exit-fullscreen');
   });
 

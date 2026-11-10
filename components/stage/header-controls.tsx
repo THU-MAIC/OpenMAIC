@@ -14,8 +14,10 @@ import {
   NotebookText,
   Package,
   Settings,
+  Sparkles,
   Sun,
 } from 'lucide-react';
+import Link from 'next/link';
 import { Switch } from '@/components/ui/switch';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useTheme } from '@/lib/hooks/use-theme';
@@ -97,6 +99,12 @@ interface HeaderControlsProps {
    */
   readonly workbenchControls?: boolean;
   readonly onOpenInWorkspace?: () => void;
+  /**
+   * Someone viewing a course they do not own: where to make a course of their
+   * own (the workbench). Shown before the export control, in the accent; an
+   * icon alone on a narrow screen, so the course title keeps its room.
+   */
+  readonly makeOwnCourseHref?: string;
   readonly showGlobalControls?: boolean;
   readonly showCourseActions?: boolean;
   /**
@@ -127,6 +135,7 @@ export function HeaderControls({
   onToggleEditMode,
   workbenchControls = false,
   onOpenInWorkspace,
+  makeOwnCourseHref,
   showGlobalControls = true,
   showCourseActions = true,
   variant = 'default',
@@ -173,40 +182,41 @@ export function HeaderControls({
   const editDisabled = !canEdit && mode !== 'edit';
   // The workbench's form of the edit control: Learn | Edit, then the way into
   // the workspace. Both act on this page; the switch flips its own editor.
-  const workbenchCluster = workbenchControls ? (
-    <div className="flex shrink-0 items-center gap-2" data-testid="classroom-workbench-controls">
-      {onToggleEditMode ? (
-        <ClassroomModeSwitch
-          learning={!editChecked}
-          editingAllowed={!editDisabled}
-          editingHint={editDisabled ? t('stage.editDisabledHint') : undefined}
-          onLearn={() => {
-            if (editChecked) onToggleEditMode();
-          }}
-          onEdit={() => {
-            if (!editChecked && !editDisabled) onToggleEditMode();
-          }}
-        />
-      ) : null}
-      {onOpenInWorkspace ? (
-        <button
-          type="button"
-          data-testid="classroom-open-in-workspace"
-          onClick={onOpenInWorkspace}
-          aria-label={t('stage.openInWorkspace')}
-          title={t('stage.openInWorkspaceHint')}
-          className={cn(
-            'inline-flex shrink-0 items-center justify-center rounded-lg border shadow-sm transition-colors',
-            'bg-white/80 dark:bg-gray-800/70 border-gray-200/70 dark:border-gray-700/60',
-            'text-violet-600 dark:text-violet-300 hover:border-violet-300 dark:hover:border-violet-500/50',
-            compact ? 'size-8' : 'size-9',
-          )}
-        >
-          <Minimize2 className="size-4" aria-hidden="true" />
-        </button>
-      ) : null}
-    </div>
-  ) : null;
+  const workbenchCluster =
+    workbenchControls && (onToggleEditMode || onOpenInWorkspace) ? (
+      <div className="flex shrink-0 items-center gap-2" data-testid="classroom-workbench-controls">
+        {onToggleEditMode ? (
+          <ClassroomModeSwitch
+            learning={!editChecked}
+            editingAllowed={!editDisabled}
+            editingHint={editDisabled ? t('stage.editDisabledHint') : undefined}
+            onLearn={() => {
+              if (editChecked) onToggleEditMode();
+            }}
+            onEdit={() => {
+              if (!editChecked && !editDisabled) onToggleEditMode();
+            }}
+          />
+        ) : null}
+        {onOpenInWorkspace ? (
+          <button
+            type="button"
+            data-testid="classroom-open-in-workspace"
+            onClick={onOpenInWorkspace}
+            aria-label={t('stage.openInWorkspace')}
+            title={t('stage.openInWorkspaceHint')}
+            className={cn(
+              'inline-flex shrink-0 items-center justify-center rounded-lg border shadow-sm transition-colors',
+              'bg-white/80 dark:bg-gray-800/70 border-gray-200/70 dark:border-gray-700/60',
+              'text-violet-600 dark:text-violet-300 hover:border-violet-300 dark:hover:border-violet-500/50',
+              compact ? 'size-8' : 'size-9',
+            )}
+          >
+            <Minimize2 className="size-4" aria-hidden="true" />
+          </button>
+        ) : null}
+      </div>
+    ) : null;
 
   // Export / Download. Not a settings function, so not inside the settings
   // pill: a sibling to the right of the edit switch — or, with the workbench
@@ -428,7 +438,7 @@ export function HeaderControls({
   // the cluster pixel-stable; both hosts pad to `px-8`, so the right edge
   // anchors identically too.
   return (
-    <div className="flex items-center gap-4">
+    <div className={cn('flex items-center', compact ? 'gap-2 sm:gap-3' : 'gap-4')}>
       {showGlobalControls ? (
         <div
           className={cn(
@@ -511,6 +521,23 @@ export function HeaderControls({
           widths, so morphing made the pill visibly drift). Where the
           workbench is part of the build, the control is its Learn | Edit
           switch instead, followed by the way into the workspace. */}
+      {makeOwnCourseHref ? (
+        <Link
+          href={makeOwnCourseHref}
+          data-testid="classroom-make-own-course"
+          title={t('stage.makeOwnCourseHint')}
+          aria-label={t('stage.makeOwnCourse')}
+          className={cn(
+            'inline-flex shrink-0 items-center gap-1.5 rounded-lg border text-[13px] font-medium transition-colors',
+            'border-violet-300/70 dark:border-violet-500/40 text-violet-600 dark:text-violet-300',
+            'hover:bg-violet-50 dark:hover:bg-violet-500/10 hover:border-violet-400 dark:hover:border-violet-400/70',
+            compact ? 'h-8 px-2 sm:px-2.5' : 'h-9 px-2 sm:px-3',
+          )}
+        >
+          <Sparkles className="size-4 shrink-0" aria-hidden="true" />
+          <span className="hidden sm:inline whitespace-nowrap">{t('stage.makeOwnCourse')}</span>
+        </Link>
+      ) : null}
       {workbenchControls ? exportMenu : null}
       {workbenchCluster}
       {onToggleEditMode && !workbenchControls && (

@@ -357,6 +357,8 @@
     "editToggle": "Edit",
     "openInWorkspace": "Open in workspace",
     "openInWorkspaceHint": "Open in the workspace, to keep working on this course in a conversation",
+    "makeOwnCourse": "Make your own course",
+    "makeOwnCourseHint": "Start your own course in the workbench",
     "dock": {
       "collapse": "Collapse the dock",
       "expand": "Expand the dock",

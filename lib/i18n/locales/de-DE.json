@@ -357,6 +357,8 @@
     "editToggle": "Bearbeiten",
     "openInWorkspace": "Im Arbeitsbereich öffnen",
     "openInWorkspaceHint": "Im Arbeitsbereich öffnen, um im Gespräch an diesem Kurs weiterzuarbeiten",
+    "makeOwnCourse": "Eigenen Kurs erstellen",
+    "makeOwnCourseHint": "Im Arbeitsbereich einen eigenen Kurs erstellen",
     "dock": {
       "collapse": "Leiste einklappen",
       "expand": "Leiste ausklappen",

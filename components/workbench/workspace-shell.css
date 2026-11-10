@@ -2559,25 +2559,6 @@
   background: linear-gradient(180deg, #0b1020, #0f172a);
 }
 
-.ws-full-head {
-  height: 56px;
-  position: relative;
-  z-index: 5;
-}
-
-.ws-full-crumb {
-  font-size: 11.5px;
-  letter-spacing: 0.02em;
-  color: var(--ws-ink-mute);
-}
-
-.ws-full-title {
-  margin-top: 1px;
-  font-size: 15.5px;
-  font-weight: 650;
-  color: var(--ws-ink);
-}
-
 /* ── Home ── */
 .ws-gh-pill {
   display: inline-flex;

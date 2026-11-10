@@ -357,6 +357,8 @@
     "editToggle": "編輯",
     "openInWorkspace": "在工作台中開啟",
     "openInWorkspaceHint": "在工作台中開啟，可以繼續對話修改這門課",
+    "makeOwnCourse": "做一堂自己的課",
+    "makeOwnCourseHint": "到工作台做一堂自己的課",
     "dock": {
       "collapse": "收合底欄",
       "expand": "展開底欄",

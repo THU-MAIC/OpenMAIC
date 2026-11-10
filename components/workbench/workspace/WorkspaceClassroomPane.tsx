@@ -53,6 +53,7 @@ import { EDIT_TOUR_STEPS } from './edit-tour-steps';
 
 const noop = () => {};
 import { PaneFoldButton } from './PaneFoldButton';
+import { ClassroomFullHeader } from '@/components/workbench/ClassroomFullHeader';
 
 export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
   browser,
@@ -327,49 +328,40 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
           </button>
         </header>
       ) : (
-        <header
-          data-testid="workbench-fullscreen-header"
-          className="ws-full-head flex shrink-0 items-center gap-3 pl-4 pr-3"
-        >
-          <div className="min-w-0 flex-1">
-            <div className="ws-full-crumb truncate">
-              {courseName}
-              {scene ? (
-                <>
-                  <span aria-hidden="true"> · </span>
-                  {t('workspace.pagePosition', { index: sceneIndex + 1, total: scenes.length })}
-                </>
-              ) : null}
-            </div>
-            <div className="ws-full-title truncate" data-testid="workbench-fullscreen-title">
-              {scene?.title || courseName}
-            </div>
-          </div>
-          {readOnly && readOnlyKnown ? <ReadOnlyBadge /> : null}
-          {/* Export and sharing, which the split view leaves to this size. */}
-          <HeaderControls variant="compact" showGlobalControls={false} showCourseActions />
-          {/* The editor portals its undo/redo here while editing; empty, it
+        <ClassroomFullHeader
+          courseName={courseName}
+          sceneTitle={scene?.title}
+          sceneIndex={sceneIndex}
+          sceneCount={scenes.length}
+          actions={
+            <>
+              {readOnly && readOnlyKnown ? <ReadOnlyBadge /> : null}
+              {/* Export and sharing, which the split view leaves to this size. */}
+              <HeaderControls variant="compact" showGlobalControls={false} showCourseActions />
+              {/* The editor portals its undo/redo here while editing; empty, it
               takes no space. It sits with the other editing control (the
               tour's ?) just before Learn | Edit. */}
-          <div
-            ref={setHistorySlot}
-            data-testid="workspace-history-slot-fullscreen"
-            className="flex shrink-0 items-center gap-0.5 empty:hidden"
-          />
-          {editGuideButton}
-          {modeSwitch}
-          <span className="ws-vsep" aria-hidden="true" />
-          <button
-            type="button"
-            data-testid="workbench-exit-fullscreen"
-            onClick={() => setFullscreen(false)}
-            aria-label={t('workspace.fullscreen.collapse')}
-            title={t('workspace.fullscreen.collapse')}
-            className="ws-head-icon ws-head-icon-on"
-          >
-            <Minimize2 className="size-4" aria-hidden="true" />
-          </button>
-        </header>
+              <div
+                ref={setHistorySlot}
+                data-testid="workspace-history-slot-fullscreen"
+                className="flex shrink-0 items-center gap-0.5 empty:hidden"
+              />
+              {editGuideButton}
+              {modeSwitch}
+              <span className="ws-vsep" aria-hidden="true" />
+              <button
+                type="button"
+                data-testid="workbench-exit-fullscreen"
+                onClick={() => setFullscreen(false)}
+                aria-label={t('workspace.fullscreen.collapse')}
+                title={t('workspace.fullscreen.collapse')}
+                className="ws-head-icon ws-head-icon-on"
+              >
+                <Minimize2 className="size-4" aria-hidden="true" />
+              </button>
+            </>
+          }
+        />
       )}
 
       {showHint ? <PaneHint /> : null}
