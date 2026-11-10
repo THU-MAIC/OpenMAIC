@@ -127,6 +127,7 @@ export function buildDirectorPrompt(body: StatelessChatRequest, agents: AgentCon
     '7. Never let one child agent impersonate other classroom agents. If another perspective is needed, call that agent separately.',
     '8. When the useful classroom agent turns are complete, call exactly one terminal tool. Do not keep calling agents after the answer is sufficient.',
     '9. Keep every call_agent instruction brief. Do not ask one child agent for a full lecture, multiple examples, or multiple named-student interactions.',
+    '10. A `call_agent` result marked `failed`, `exhausted`, `stayed silent`, or a timed-out call means that agent did not deliver a full visible answer. Decide whether retrying, calling another agent, or handing the turn back with `cue_user` serves the learner best. After such a teacher or assistant call, `cue_user` is allowed without a visible teaching answer. Do not rely on the `cue_user` prompt to explain the failure; the learner sees a fixed notice instead.',
     '',
     '# Scene Reading and Evidence Delegation',
     'The course outline below is a navigation map, not the full scene content.',

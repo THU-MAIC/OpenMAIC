@@ -349,6 +349,47 @@ async function libraryWrite(url: string, method: string, body: unknown): Promise
   return response.json().catch(() => ({}));
 }
 
+/** Where one source's extraction stands, as a composer pill follows it. */
+export interface MaterialExtractionState {
+  readonly status: MaterialExtractionStatus;
+  readonly reasonCode?: MaterialExtractionReasonCode;
+  readonly reasonValues?: MaterialExtractionReasonValues;
+}
+
+/**
+ * One of the owner's sources' extraction, read again (`GET
+ * /api/materials/[id]`); `null` once the source is gone.
+ */
+export async function fetchMaterialExtractionState(
+  materialId: string,
+  signal?: AbortSignal,
+): Promise<MaterialExtractionState | null> {
+  const response = await fetch(`/api/materials/${encodeURIComponent(materialId)}`, {
+    cache: 'no-store',
+    ...(signal ? { signal } : {}),
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw await materialLibraryErrorOf(response);
+  const body = (await response.json()) as { material?: { extraction?: Record<string, unknown> } };
+  const extraction = body.material?.extraction ?? {};
+  // The classic worker's names for the same states.
+  const raw =
+    extraction.status === 'extracting'
+      ? 'running'
+      : extraction.status === 'ready'
+        ? 'done'
+        : extraction.status;
+  const status = extractionStatusOf(raw);
+  const reasonCode =
+    status === 'failed' ? extractionReasonCodeOf(extraction.reasonCode) : undefined;
+  const reasonValues = extractionReasonValuesOf(reasonCode, extraction.reasonValues);
+  return {
+    status,
+    ...(reasonCode ? { reasonCode } : {}),
+    ...(reasonValues ? { reasonValues } : {}),
+  };
+}
+
 /** Queue a source idempotently; the page re-reads the authoritative state. */
 export async function parseLibraryMaterial(materialId: string): Promise<void> {
   await libraryWrite(`/api/materials/${encodeURIComponent(materialId)}/extraction`, 'POST', {});

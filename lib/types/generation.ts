@@ -109,8 +109,14 @@ export interface WidgetOutline {
   // Common field
   concept?: string;
 
+  // Free-text description of the intended interactions and layout
+  designIdea?: string;
+
   // Type-specific fields
-  keyVariables?: string[]; // simulation
+  // simulation - plain names or records such as { name, range, unit }
+  keyVariables?: Array<
+    string | { name?: string; range?: unknown; unit?: string; [key: string]: unknown }
+  >;
   diagramType?: 'flowchart' | 'mindmap' | 'hierarchy' | 'system'; // diagram
   language?: 'python' | 'javascript' | 'typescript' | 'java' | 'cpp'; // code
   gameType?: 'quiz' | 'puzzle' | 'strategy' | 'card' | 'action'; // game
@@ -134,6 +140,9 @@ export interface WidgetOutline {
     details?: string;
   }>; // diagram - prescribed nodes and optional hierarchy
   challengeType?: string; // code - type of coding challenge
+  // Producers send open objects; extra fields (controls, readouts, ...) reach
+  // the widget prompt as additional design requirements.
+  [key: string]: unknown;
 }
 
 /**
@@ -146,6 +155,8 @@ export interface SceneOutline {
   title: string;
   description: string; // 1-2 sentences describing the purpose
   keyPoints: string[]; // 3-5 core key points
+  /** Slide only: a designer brief for the page's look, never page text. */
+  design?: string;
   teachingObjective?: string;
   estimatedDuration?: number; // seconds
   order: number;

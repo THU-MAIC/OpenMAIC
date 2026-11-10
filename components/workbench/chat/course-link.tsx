@@ -4,8 +4,9 @@
  * The in-chat course link — how a course gets onto the screen.
  *
  * The agent talks about a course; this is the thing you click to look at it.
- * It is the primary way the right pane is filled, so it is deliberately LIGHT:
- * no thumbnail, no media card, no preview. A glyph, a name, and how many pages.
+ * It is the primary way the right pane is filled, so it is a CARD with a clear
+ * "this opens" meaning: the course's cover (its first page, as the course
+ * library shows it), its name, how many pages, and "Open →" at the far edge.
  *
  * ALWAYS PRESSABLE, AND ALWAYS THE SAME PRESS. The card used to end in a state
  * cue — open-in-side-pane / switch-to-tab / now-showing — driven by the pane's open set and its
@@ -22,11 +23,12 @@
  *            with the page count at the far edge. One exchange's set of these
  *            sits at the tail of that answer (see `SessionCourseLink` below).
  *   inline — the course is named mid-sentence, by the agent's own prose
- *            (`text-block.tsx` upgrades a `/classroom/<id>` anchor). A pill, so a
- *            paragraph that mentions three courses does not become a wall of
- *            cards. It is INDEPENDENT of the per-exchange rule: prose is prose,
- *            and a sentence naming a classroom is not a receipt for one. Its
- *            press does exactly what the block form's does.
+ *            (`text-block.tsx` upgrades a `/classroom/<id>` anchor). Just a
+ *            link in the sentence, so the paragraph keeps its rhythm; the
+ *            block card for it stands right under that paragraph (one per
+ *            course per answer, none for a course already carded at the
+ *            answer's tail -- `segmentCourseMentions`). Its press does exactly
+ *            what the block form's does.
  *
  * Every visual decision lives in ONE place, `wbStyles.courseLink` — degrading
  * the block form to a plain underlined link is a change to that table and
@@ -38,14 +40,53 @@
  * set, which is view state and nothing more.
  */
 
-import { useState } from 'react';
-import { BookOpen, MoreHorizontal } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ArrowRight, BookOpen, MoreHorizontal } from 'lucide-react';
+import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { useCourseThumbnails } from '@/lib/hooks/use-course-thumbnails';
 import { cn } from '@/lib/utils/cn';
 import { useWorkbenchCourseNavigation } from '@/lib/workbench/panel-context';
 import { useWorkbenchStore } from '@/lib/workbench/session-store';
 import { splitRunCourseCards } from '@/lib/workbench/course-link';
 import { wbStyles as styles } from './chat-styles';
+
+/** The cover's width in CSS pixels (`styles.courseLink.thumb` is `w-16`). */
+const COVER_WIDTH = 64;
+
+/**
+ * The course's cover: its first page, from the same cache the course library
+ * reads, at the version the workspace knows (`updatedAt`). A course the
+ * workspace cannot date yet, or one without a page, shows the book glyph.
+ */
+function CourseCover({
+  courseId,
+  version,
+}: {
+  readonly courseId: string;
+  readonly version: number | null;
+}) {
+  const { thumbnails, requestThumbnail } = useCourseThumbnails();
+  useEffect(() => {
+    if (version === null) return;
+    return requestThumbnail(courseId, version);
+  }, [courseId, version, requestThumbnail]);
+  const slide = version === null ? null : thumbnails[courseId];
+  return (
+    <span className={styles.courseLink.thumb} aria-hidden="true">
+      {slide ? (
+        <SlideThumbnail
+          slide={slide}
+          size={COVER_WIDTH}
+          viewportSize={slide.viewportSize ?? 1000}
+          viewportRatio={slide.viewportRatio ?? 0.5625}
+        />
+      ) : (
+        <BookOpen className={styles.courseLink.glyph} />
+      )}
+    </span>
+  );
+}
 
 export function CourseLink({
   courseId,
@@ -56,9 +97,10 @@ export function CourseLink({
   readonly courseId: string;
   readonly variant: 'block' | 'inline';
   /**
-   * What the agent called it, when the agent wrote the link itself. The
-   * workspace's own name for the course wins when it has one — the rail, the
-   * tab and this link must not disagree about what a course is called.
+   * What the agent called it, when the agent wrote the link itself. In the
+   * sentence it stays the agent's words; on the card the workspace's own name
+   * wins when it has one — the rail, the tab and the card must not disagree
+   * about what a course is called.
    */
   readonly label?: React.ReactNode;
   /**
@@ -75,7 +117,11 @@ export function CourseLink({
 
   const summary = navigation.lookupCourse(courseId);
   const fallbackName = t('workspace.untitledCourse');
-  const name = summary?.name || label || fallbackName;
+  // The sentence keeps the agent's own words; the card says what the course is.
+  const name =
+    variant === 'inline'
+      ? (label ?? summary?.name ?? fallbackName)
+      : summary?.name || label || fallbackName;
   const pageCount = summary?.pageCount ?? null;
   // One sentence, whatever the pane is currently showing — the press is the
   // same in every case, so describing it three ways only invited the reader to
@@ -88,29 +134,46 @@ export function CourseLink({
       ? undefined
       : t('workspace.courseLinkHint', { name: summary?.name || label || fallbackName });
 
+  if (variant === 'inline') {
+    return (
+      <button
+        type="button"
+        data-testid={`workbench-course-link-${courseId}`}
+        data-variant="inline"
+        title={hint}
+        className={styles.courseLink.inline}
+        onClick={() => navigation.openCourse(courseId)}
+      >
+        {name}
+      </button>
+    );
+  }
+
   return (
     <button
       type="button"
       data-testid={`workbench-course-link-${courseId}`}
-      data-variant={variant}
+      data-variant="block"
       title={hint}
       aria-label={hint}
-      className={cn(styles.courseLink.base, variant === 'block' && styles.courseLink.block)}
+      className={cn(styles.courseLink.base, styles.courseLink.block)}
       onClick={() => navigation.openCourse(courseId)}
     >
-      <BookOpen className={styles.courseLink.glyph} aria-hidden="true" />
-      <span className={styles.courseLink.name}>{name}</span>
-      {variant === 'block' ? (
-        // The page count is a FACT about the course, so it stays where the cue
-        // used to end the row — at the far edge, one step quieter.
-        // No page count rather than a fabricated 0: a deck the agent is still
-        // writing has no honest number yet.
-        pageCount === null ? null : (
+      <CourseCover courseId={courseId} version={summary?.updatedAt ?? null} />
+      <span className={styles.courseLink.body}>
+        <span className={styles.courseLink.name}>{name}</span>
+        {/* No page count rather than a fabricated 0: a deck the agent is still
+            writing has no honest number yet. */}
+        {pageCount === null ? null : (
           <span className={styles.courseLink.pages}>
             {t('workspace.sceneCount', { count: pageCount })}
           </span>
-        )
-      ) : null}
+        )}
+      </span>
+      <span className={styles.courseLink.open} aria-hidden="true">
+        {t('workspace.courseLinkOpen')}
+        <ArrowRight className="size-3" />
+      </span>
     </button>
   );
 }

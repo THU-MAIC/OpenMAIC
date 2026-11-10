@@ -317,7 +317,9 @@ function ClassroomSurfaceContent({
               : 'h-screen flex flex-col overflow-hidden'
           }
         >
-          {view === 'loading' ? (
+          {view === 'loading' && variant === 'pane' ? (
+            <PaneLoadingSurface label={t('common.loadingClassroom')} />
+          ) : view === 'loading' ? (
             <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900">
               <div className="flex flex-col items-center gap-3 text-muted-foreground">
                 <Loader2 className="h-8 w-8 animate-spin" />
@@ -384,5 +386,25 @@ function ClassroomSurfaceContent({
         </div>
       </MediaStageProvider>
     </ThemeProvider>
+  );
+}
+
+/**
+ * A pane's classroom while its document loads: the ground and the dock where they
+ * are about to be, so switching course tabs swaps the content in place rather than
+ * flashing a different layout for the moment a load takes. The spinner comes in only
+ * if the load turns out to be a real wait.
+ */
+function PaneLoadingSurface({ label }: { readonly label: string }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col" data-testid="classroom-pane-loading">
+      <div className="flex min-h-0 flex-1 items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <div className="ws-load-late flex flex-col items-center gap-3 text-muted-foreground">
+          <Loader2 className="h-8 w-8 animate-spin" />
+          <p>{label}</p>
+        </div>
+      </div>
+      <div className="h-[192px] shrink-0 border-t border-gray-100 bg-white/60 dark:border-gray-800 dark:bg-gray-800/60" />
+    </div>
   );
 }

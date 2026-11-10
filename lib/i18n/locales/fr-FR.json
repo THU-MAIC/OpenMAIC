@@ -26,7 +26,6 @@
     "examplesLabel": "Exemples de sujets",
     "examplePython": "Apprendre Python de zéro",
     "exampleFourier": "Comprendre la transformée de Fourier par des exemples",
-    "desktopOnly": "Utilisez un ordinateur pour l’éditeur et le mode Pro.",
     "slogan": "L’apprentissage génératif en classe interactive multi-agents",
     "greetingWithName": "Bonjour, {{name}}"
   },
@@ -89,6 +88,7 @@
     "exportFailed": "Échec de l’export",
     "classroomZip": "Exporter la classe en ZIP",
     "classroomZipDesc": "Structure du cours + fichiers média",
+    "viewerCopyHint": "Envie d’une copie modifiable ? Téléchargez-la avec « {{zip}} », puis utilisez « {{importLabel}} » dans {{courses}}.",
     "html": "Exporter en HTML",
     "htmlDesc": "Fichier unique hors ligne qui se lit tout seul",
     "htmlWithNarration": "Avec narration et vidéos",
@@ -113,6 +113,7 @@
       "emptyClassroom": "Ce cours ne contient aucune scène.",
       "unsupportedScene": "Cette scène n'est pas disponible dans l'export hors ligne.",
       "interactiveTitle": "Scène interactive",
+      "interactiveMoreBelow": "Suite plus bas",
       "videoUnavailable": "La vidéo n'est pas incluse dans l'export hors ligne",
       "quizSubmit": "Valider",
       "quizRetry": "Réessayer",
@@ -246,7 +247,9 @@
       "toolCallingRequired": "Le chat de la classe nécessite un modèle prenant en charge les appels d’outils. Sélectionnez-en un pour « Classe » dans Paramètres → Configuration des modèles de cours, ou contactez votre administrateur si ce paramètre est géré par celui-ci.",
       "geminiNativeRequired": "L’interaction avec Gemini nécessite Google natif. Ajoutez Google (préréglage google) dans Paramètres → Services de modèles, puis sélectionnez-le pour « Classe » dans Configuration des modèles de cours. Si la configuration est gérée, contactez votre administrateur.",
       "emptyAgentResponses": "Les agents n’ont renvoyé aucune réponse ; la discussion s’est arrêtée. Réessayez ou vérifiez les paramètres de votre modèle.",
-      "streamInterrupted": "Le flux s’est interrompu de façon inattendue ; la discussion n’a pas abouti. Veuillez réessayer."
+      "streamInterrupted": "Le flux s’est interrompu de façon inattendue ; la discussion n’a pas abouti. Veuillez réessayer.",
+      "teacherNoResponse": "L’enseignant n’a pas répondu. Veuillez réessayer.",
+      "teacherIncomplete": "L’enseignant n’a pas pu terminer sa réponse. Veuillez réessayer."
     },
     "elementReference": {
       "whiteboardChanged": "L’élément du tableau blanc a changé ou n’est plus disponible. Sélectionnez-le à nouveau ou retirez la référence avant d’envoyer.",
@@ -269,6 +272,7 @@
       "title": "Cette activité interactive n'a pas pu s'exécuter",
       "dismiss": "Fermer"
     },
+    "interactiveMoreBelow": "Suite plus bas",
     "tabs": {
       "lecture": "Notes",
       "chat": "Discussion"
@@ -345,15 +349,27 @@
     "confirmSwitchTitle": "Changer de scène",
     "confirmSwitchMessage": "Un sujet est en cours. Changer de scène mettra fin au sujet actuel. Confirmez-vous ?",
     "generatingNextPage": "La scène est en cours de génération, veuillez patienter…",
-    "courseComplete": "Cours terminé",
     "fullscreen": "Plein écran",
     "exitFullscreen": "Quitter le plein écran",
     "editCourse": "Modifier le cours",
     "doneEditing": "Terminer les modifications",
-    "proModeDisabledHint": "L’édition n’est pas disponible sur cette page. Ouvrez une diapositive de cours pour la modifier en mode Pro."
+    "editDisabledHint": "L’édition n’est pas disponible sur cette page. Ouvrez une diapositive de cours pour la modifier.",
+    "editToggle": "Modifier",
+    "openInWorkspace": "Ouvrir dans l’espace de travail",
+    "openInWorkspaceHint": "Ouvrir dans l’espace de travail pour continuer ce cours en conversation",
+    "makeOwnCourse": "Créer mon cours",
+    "makeOwnCourseHint": "Créer votre propre cours dans l’espace de travail",
+    "dock": {
+      "collapse": "Replier la barre",
+      "expand": "Déplier la barre",
+      "resize": "Redimensionner la barre"
+    },
+    "chatPanel": {
+      "expand": "Afficher le panneau de discussion",
+      "collapse": "Masquer le panneau de discussion"
+    }
   },
   "edit": {
-    "proMode": "Pro",
     "undo": "Annuler",
     "redo": "Rétablir",
     "courseHistory": {
@@ -581,7 +597,19 @@
       "whiteboardLatex": "Formule",
       "whiteboardTable": "Tableau",
       "action": "Action",
-      "discussion": "Discussion"
+      "discussion": "Discussion",
+      "playVideo": "Lire la vidéo",
+      "whiteboardChart": "Graphique",
+      "whiteboardLine": "Tracer une ligne",
+      "whiteboardClear": "Effacer le tableau",
+      "whiteboardDelete": "Retirer l’élément",
+      "whiteboardClose": "Fermer le tableau",
+      "whiteboardCode": "Bloc de code",
+      "whiteboardEditCode": "Modifier le code",
+      "widgetHighlight": "Surligner dans l’activité",
+      "widgetSetState": "Définir l’état de l’activité",
+      "widgetAnnotation": "Annoter l’activité",
+      "widgetReveal": "Afficher dans l’activité"
     },
     "element": {
       "toolbar": "Barre d’élément",
@@ -646,12 +674,6 @@
     "timeline": {
       "title": "Texte de narration",
       "regenAllTts": "Régénérer toutes les voix off",
-      "voiceAll": "Tout sonoriser",
-      "counts": "{{speech}} narrations · {{cue}} repères",
-      "panLeft": "Défiler vers la gauche",
-      "panRight": "Défiler vers la droite",
-      "collapseAxis": "Réduire à l’axe",
-      "expandTrack": "Déplier la piste",
       "emptyHint": "Faites glisser des actions sur l’axe pour commencer, ou laissez l’agent MAIC générer la narration.",
       "speechPlaceholder": "Saisissez cette réplique de narration…",
       "reorder": "Faire glisser pour réordonner",
@@ -663,13 +685,15 @@
       "fieldElement": "Élément",
       "fieldContent": "Contenu",
       "addDiscussionExists": "Une seule discussion par scène",
-      "discussionTerminal": "FIN",
       "discussionTerminalHint": "Une discussion reste à la fin de la scène (une seule par scène)",
-      "discussionTopicPlaceholder": "Sujet de la discussion (obligatoire)",
-      "discussionPromptPlaceholder": "Consigne d’orientation (facultative)",
+      "discussionTopicPlaceholder": "Obligatoire",
+      "discussionPromptPlaceholder": "Facultative",
+      "discussionTopicLabel": "Sujet de la discussion",
+      "discussionPromptLabel": "Consigne d’orientation",
       "discussionAgent": "Initiateur",
       "discussionAgentUnset": "Non précisé",
-      "addAction": "Ajouter une action"
+      "addAction": "Ajouter une action",
+      "fieldState": "État"
     },
     "picker": {
       "title": "Insérer une action",
@@ -753,8 +777,7 @@
       "moveDown": "Descendre",
       "removeFromClass": "Retirer de la classe",
       "aiClassmates": "Camarades IA · {{count}}",
-      "addRole": "Ajouter un rôle",
-      "shortTitle": "Distribution"
+      "addRole": "Ajouter un rôle"
     },
     "elementRef": {
       "remove": "移除引用 {{label}}",
@@ -765,21 +788,6 @@
     "dock": {
       "elementRefHint": "Références d’éléments — choisissez les éléments à joindre au prochain message",
       "globalTools": "Outils globaux"
-    }
-  },
-  "classroomComplete": {
-    "title": "Cours terminé",
-    "trailLabels": {
-      "slide": "pages",
-      "quiz": "quiz",
-      "interactive": "activités interactives",
-      "pbl": "projets"
-    },
-    "quizScoreLabel": "{{correct}} / {{total}} bonnes réponses",
-    "encouragement": {
-      "high": "Remarquable, vous maîtrisez le sujet.",
-      "mid": "Du bon travail, continuez ainsi.",
-      "low": "Un bon début. Revoyez le cours et retentez."
     }
   },
   "whiteboard": {
@@ -1093,6 +1101,7 @@
     "rename": "Renommer",
     "renamePlaceholder": "Saisissez le nom de la classe",
     "renameFailed": "Échec du renommage de la classe",
+    "saveRefused": "Vos modifications n’ont pas été enregistrées : vous n’avez pas le droit de modifier ce cours.",
     "searchPlaceholder": "Rechercher un cours…",
     "searchAriaLabel": "Rechercher un cours",
     "clearSearch": "Effacer",
@@ -2367,6 +2376,7 @@
     "sceneCount_one": "{{count}} 页",
     "sceneCount_other": "{{count}} 页",
     "courseLinkHint": "在右侧打开《{{name}}》",
+    "courseLinkOpen": "Ouvrir",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
       "search": "Rechercher des classes et des documents",
@@ -2398,7 +2408,6 @@
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
     "newSession": "New chat",
     "sections": {
-      "courses": "Courses",
       "sessions": "Chats"
     },
     "coursesEmpty": "No courses yet",
@@ -2408,7 +2417,6 @@
     "retry": "Retry",
     "untitledSession": "Untitled chat",
     "pagePosition": "Page {{index}} of {{total}}",
-    "exitPro": "Exit Pro",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
@@ -2417,7 +2425,7 @@
     "learningMode": "Apprendre",
     "editingMode": "Modifier",
     "editingUnavailableGenerating": "La modification est indisponible pendant la génération du cours.",
-    "fullscreenLearning": "Apprendre en plein écran",
+    "editGuide": "Guide d’édition",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2430,11 +2438,10 @@
       "running": "Running",
       "succeeded": "Ready",
       "failed": "Needs attention",
-      "cancelled": "Stopped"
+      "cancelled": "Stopped",
+      "awaitingAnswer": "En attente de votre réponse"
     },
     "backToWorkspace": "Back to workspace",
-    "searchPlaceholder": "Filter by name",
-    "searchAria": "Search {{section}}",
     "searchEmpty": "No matches",
     "showMore": "Show {{count}} more",
     "showLess": "Show less",
@@ -2447,6 +2454,8 @@
     "expandNavInto": "Expand navigation · {{section}}",
     "collapseChat": "Collapse conversation",
     "expandChat": "Conversation",
+    "talkAboutCourse": "Modifier avec l’IA",
+    "talkAboutCourseHint": "Ouvrir une nouvelle conversation sur ce cours",
     "collapseClassroom": "Collapse classroom",
     "expandClassroom": "Classroom",
     "readOnlyBadge": "Read-only",
@@ -2456,7 +2465,6 @@
     "coursePausedDesc": "Une page n'a pas pu être générée. Relancez-la dans la classe ; le cours s'ouvrira ici à la fin de la génération.",
     "viewGenerationProgress": "Voir la progression",
     "openToRetry": "Ouvrir pour relancer",
-    "courseGeneratingRowHint": "Disponible à la fin de la génération",
     "noCourseTitle": "No course open",
     "noCourseHint": "Open one from a course link in the conversation, or pick one from the list on the left — the conversation stays put",
     "resizeChatAria": "Drag to resize the conversation pane",
@@ -2465,7 +2473,6 @@
     "autoSaved": "Enregistré",
     "collapsedTitle": "Both panes are collapsed",
     "collapsedHint": "Use the tabs on the left to bring the conversation or the classroom back",
-    "moreUtilities": "More",
     "rowMore": "Plus d’actions pour {{name}}",
     "folderDeleteHint": "Les cours qu’il contient retournent au niveau supérieur. Rien n’est supprimé.",
     "dropToUnfile": "Déposez ici pour sortir du dossier",
@@ -2479,11 +2486,178 @@
     "confirmDelete": "Confirmer la suppression",
     "deleting": "Suppression…",
     "deleteFailed": "Suppression impossible. Réessayez.",
-    "tabsAria": "Chats and courses",
     "courseTabsAria": "Open courses",
     "courseTabClose": "Close tab: {{name}}",
     "courseTabRunning": "Generating",
-    "foldersUnavailable": "Les dossiers ne sont pas disponibles dans cette version"
+    "foldersUnavailable": "Les dossiers ne sont pas disponibles dans cette version",
+    "composer": {
+      "attach": "Joindre un support",
+      "mentionCourse": "引用课堂",
+      "mentionCourseOrMaterial": "Mentionner une classe ou un document de la base de connaissances",
+      "loadSkill": "加载 skill",
+      "skillMenuTitle": "选择课程设计技能",
+      "skillsLoading": "正在加载 skill…",
+      "noSkillsAvailable": "暂无可用 skill",
+      "userSkillsGroup": "我的 Skill",
+      "builtinSkillsGroup": "内置 Skill",
+      "skillsLoadFailed": "Skill 加载失败，点击重试",
+      "retrySkills": "重试",
+      "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+      "launchPlaceholder": "Décrivez l'expérience d'apprentissage que vous souhaitez créer",
+      "launchSend": "Lancer la création"
+    },
+    "nav": {
+      "search": "Rechercher",
+      "myCourses": "Mes cours"
+    },
+    "search": {
+      "placeholder": "Rechercher des discussions, des cours et des documents",
+      "recentChats": "Discussions récentes",
+      "recentCourses": "Cours récents",
+      "courses": "Cours",
+      "materials": "Documents",
+      "actions": "Actions rapides",
+      "searching": "Recherche…",
+      "empty": "Aucun résultat pour « {{query}} »",
+      "materialsFailed": "Impossible de rechercher dans la base de connaissances",
+      "themeAction": "Thème : {{name}}",
+      "languageAction": "Langue : {{name}}"
+    },
+    "account": {
+      "signIn": "Se connecter",
+      "menu": "Compte et paramètres",
+      "profileSaved": "Enregistré",
+      "language": "Langue",
+      "about": "À propos d’OpenMAIC",
+      "aboutBody": "Une plateforme open source qui transforme n’importe quel sujet en classe interactive, avec des enseignants et des camarades IA. Publiée sous licence MIT.",
+      "viewOnGithub": "Voir sur GitHub",
+      "docs": "Documentation",
+      "signOut": "Se déconnecter",
+      "onboarding": "Prise en main"
+    },
+    "coursesPage": {
+      "subtitle": "Les cours que vous avez créés ou importés, et les dossiers où vous les rangez",
+      "searchPlaceholder": "Rechercher dans mes cours",
+      "results": "Résultats",
+      "allCourses": "Tous les cours",
+      "emptyHint": "Décrivez un sujet sur l’accueil et votre premier cours apparaîtra ici.",
+      "makeCourse": "Créer un cours",
+      "pin": "Épingler en haut",
+      "unpin": "Désépingler",
+      "pinned": "Épinglé"
+    },
+    "fullscreen": {
+      "expand": "Plein écran",
+      "collapse": "Quitter le plein écran (Échap)"
+    },
+    "onboarding": {
+      "paneTitle": "Apprendre ou modifier",
+      "paneLearn": "Apprendre : l’enseignant IA vous guide, posez vos questions à tout moment.",
+      "paneEdit": "Modifier : changez les pages directement.",
+      "paneChat": "Ou demandez dans la discussion, par exemple « simplifie la page 2 ».",
+      "gotIt": "Compris"
+    },
+    "tour": {
+      "skip": "Passer",
+      "prev": "Retour",
+      "next": "Suivant",
+      "done": "Écrire moi-même",
+      "count": "{{index}} / {{total}}",
+      "openGuide": "Suivre le cours d’essai",
+      "welcome": {
+        "title": "Bienvenue sur OpenMAIC",
+        "body": "Dites ce que vous voulez apprendre : OpenMAIC en fait un cours interactif avec un enseignant IA et des camarades."
+      },
+      "start": {
+        "title": "Pour commencer",
+        "body": "« Nouvelle discussion » lance un nouveau cours. La recherche (⌘K) trouve cours, discussions et documents."
+      },
+      "courses": {
+        "title": "Le cours d’essai",
+        "body": "Ce cours de 5 minutes a lui aussi été fait avec OpenMAIC. Ouvrez-le pour voir où se passe un cours."
+      },
+      "library": {
+        "title": "Base de connaissances",
+        "body": "Importez supports et PDF une fois, puis citez-les dans n’importe quel cours."
+      },
+      "conversations": {
+        "title": "Discussions",
+        "body": "Chaque cours naît d’une discussion. Pour le modifier, revenez-y et demandez."
+      },
+      "mode": {
+        "title": "Apprendre ou modifier",
+        "body": "Apprendre : suivre le cours avec l’enseignant IA. Modifier : page par page."
+      },
+      "dock": {
+        "title": "La salle de classe",
+        "body": "Lecture, pages, questions à l’enseignant IA à tout moment ; les camarades participent."
+      },
+      "chat": {
+        "title": "Modifier en discutant",
+        "body": "Dites simplement « simplifie la page 2 » dans la discussion à côté, et l’IA modifie le cours."
+      },
+      "account": {
+        "title": "Compte et paramètres",
+        "body": "Profil, paramètres, langue et thème sont ici, ainsi que ce guide."
+      },
+      "try": {
+        "title": "Essayez maintenant",
+        "body": "Tapez un sujet ou choisissez un exemple pour commencer tout de suite.",
+        "attach": "Document : importez un support comme base du cours",
+        "mention": "Référence : @ un cours ou un document de la base",
+        "skill": "Compétences : choisissez un style, par exemple Interaction approfondie"
+      },
+      "examples": {
+        "sky": {
+          "label": "Pourquoi le ciel est-il bleu ?",
+          "prompt": "Pourquoi le ciel est-il bleu ? Explique-le avec des choses du quotidien"
+        },
+        "interest": {
+          "label": "Les intérêts composés",
+          "prompt": "Explique les intérêts composés avec des exemples du quotidien"
+        },
+        "teach": {
+          "label": "Enseigner : Pythagore, 4e",
+          "prompt": "Un cours sur le théorème de Pythagore pour des élèves de 4e, avec un petit quiz à la fin"
+        }
+      },
+      "coursesNav": {
+        "title": "Mes cours",
+        "body": "Vos cours terminés sont ici. Cliquez pour voir."
+      },
+      "openLook": "L’ouvrir",
+      "edit": {
+        "canvas": {
+          "title": "La page",
+          "body": "Cliquez sur un texte, une image ou une forme pour la modifier ; faites glisser pour déplacer ou redimensionner."
+        },
+        "pages": {
+          "title": "Les pages",
+          "body": "Ouvrez ici la liste des pages : ajouter, glisser pour réordonner, supprimer."
+        },
+        "bar": {
+          "title": "La barre de contrôle",
+          "body": "Ajouter une action, enregistrer la narration, changer et ajouter des pages, choisir l’enseignant et les camarades ; à droite, entourer des éléments pour l’IA."
+        },
+        "timeline": {
+          "title": "La piste d’actions",
+          "body": "Chaque carte est une action : explication, projecteur, discussion. Glissez pour réordonner, cliquez pour modifier."
+        },
+        "dock": {
+          "title": "Le dock",
+          "body": "Glissez son bord supérieur pour le redimensionner, ou repliez-le pour agrandir la page."
+        },
+        "learn": {
+          "title": "Aperçu",
+          "body": "Revenez à « Apprendre » pour voir le cours comme un élève."
+        },
+        "chat": {
+          "title": "Demander à l’IA",
+          "body": "Pas envie de le faire à la main ? Dites-le dans la discussion, par exemple « ajoute un exercice page 2 »."
+        }
+      },
+      "editDone": "Commencer"
+    }
   },
   "profile": {
     "title": "Profil",
@@ -2515,25 +2689,6 @@
     "placeholder": "Code d’accès",
     "error": "Code d’accès invalide. Veuillez réessayer."
   },
-  "proMode": {
-    "attach": "Joindre un support",
-    "mentionCourse": "引用课堂",
-    "loadSkill": "加载 skill",
-    "skillMenuTitle": "选择课程设计技能",
-    "skillsLoading": "正在加载 skill…",
-    "noSkillsAvailable": "暂无可用 skill",
-    "userSkillsGroup": "我的 Skill",
-    "builtinSkillsGroup": "内置 Skill",
-    "skillsLoadFailed": "Skill 加载失败，点击重试",
-    "retrySkills": "重试",
-    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
-    "badgeAria": "Mode Pro",
-    "badgeEnter": "Mode Pro",
-    "badgeExit": "Revenir au mode classique",
-    "launchPlaceholder": "Décrivez l'expérience d'apprentissage que vous souhaitez créer",
-    "launchSend": "Lancer la création",
-    "mentionCourseOrMaterial": "Mentionner une classe ou un document de la base de connaissances"
-  },
   "workbench": {
     "tool": {
       "label": {
@@ -2543,6 +2698,16 @@
       "error": {
         "materialExtraction": null
       }
+    }
+  },
+  "classroomEnd": {
+    "close": "Revenir à la dernière page",
+    "learned": "{{count}} pages terminées",
+    "result": "{{correct}} / {{total}} correctes",
+    "actions": {
+      "reviewWrong": "Voir les erreurs",
+      "doQuiz": "Faire le quiz",
+      "restart": "Recommencer"
     }
   },
   "sandbox": {
@@ -3086,10 +3251,10 @@
       "discussion": "This step is for discussing decisions. File editing opens during planning and coding.",
       "quiz": "This is the understanding quiz. Project files are read-only.",
       "recap": "This is the reflection step. Project files are read-only.",
-      "assessment": "This is the test step. Files are read-only; a recorded failure opens code repair.",
+      "assessment": "This is the test step. Files are read-only until a failure opens repair.",
       "stage": "Project files are read-only in this step.",
       "planOnly": "Planning allows edits to PLAN.md only. Source files are read-only.",
-      "planLocked": "PLAN.md is approved and read-only during coding or test repair.",
+      "planLocked": "PLAN.md is approved and read-only during coding.",
       "planEditable": "You can edit PLAN.md. Changes are saved automatically.",
       "codeEditable": "You can edit source files. Changes are saved automatically.",
       "stale": "The environment or file changed. Your draft is kept; copy it or reload before editing.",

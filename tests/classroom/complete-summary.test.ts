@@ -1,10 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import {
-  completeSummaryForScenes,
-  pendingCompleteSummary,
-  readSceneQuizAnswers,
-  summarizeScenes,
-} from '@/lib/classroom/complete-summary';
+import { readSceneQuizAnswers, summarizeScenes } from '@/lib/classroom/complete-summary';
 import type { Scene, QuizQuestion } from '@/lib/types/stage';
 
 function slide(id: string, order: number): Scene {
@@ -62,29 +57,6 @@ describe('summarizeScenes', () => {
     expect(load).not.toHaveBeenCalled();
   });
 
-  it('shows the new classroom baseline while its async summary is pending', () => {
-    const previousScenes = [quizScene('old', 0, [choiceQ('old-q', ['a'])])];
-    const nextScenes = [slide('new-1', 0), slide('new-2', 1)];
-    const previous = {
-      scenes: previousScenes,
-      summary: { countsByType: { quiz: 1 }, quiz: { correct: 1, total: 1, pct: 100 } },
-    };
-
-    expect(completeSummaryForScenes(nextScenes, previous)).toEqual({
-      countsByType: { slide: 2 },
-      quiz: null,
-    });
-  });
-
-  it('seeds a new completion page with its synchronous scene-count baseline', () => {
-    const scenes = [slide('new-1', 0), slide('new-2', 1), interactive('new-3', 2)];
-
-    expect(pendingCompleteSummary(scenes)).toEqual({
-      countsByType: { slide: 2, interactive: 1 },
-      quiz: null,
-    });
-  });
-
   it('counts scenes by type and omits zeros', async () => {
     const scenes = [slide('s1', 0), slide('s2', 1), interactive('i1', 2)];
     const result = await summarizeScenes(scenes, async () => ({}));
@@ -126,10 +98,38 @@ describe('summarizeScenes', () => {
     expect(result.countsByType.quiz).toBe(1);
   });
 
-  it('treats missing answers as incorrect (not skipped)', async () => {
+  it('does not count a quiz nobody handed in as wrong', async () => {
     const scenes = [quizScene('q1', 0, [choiceQ('qa', ['a']), choiceQ('qb', ['b'])])];
-    const result = await summarizeScenes(scenes, async () => ({}));
-    expect(result.quiz).toEqual({ correct: 0, total: 2, pct: 0 });
+    const result = await summarizeScenes(scenes, async () => null);
+    expect(result.quiz).toBeNull();
+    expect(result.unattemptedQuizIds).toEqual(['q1']);
+    expect(result.firstWrongQuizId).toBeNull();
+  });
+
+  it('reads a draft as not attempted, and a reviewed attempt as graded', async () => {
+    const load = (phase: string) => async () => ({ state: { phase, answers: { a: 'x' } } });
+    const scene = { id: 'q', stageId: 's' };
+    await expect(readSceneQuizAnswers(scene, load('draft'))).resolves.toBeNull();
+    await expect(readSceneQuizAnswers(scene, load('reviewed'))).resolves.toEqual({ a: 'x' });
+    await expect(
+      readSceneQuizAnswers(scene, async () => ({ state: undefined })),
+    ).resolves.toBeNull();
+  });
+
+  it('points at the first quiz page with a wrong answer', async () => {
+    const scenes = [
+      quizScene('q1', 0, [choiceQ('qa', ['a'])]),
+      quizScene('q2', 1, [choiceQ('qb', ['b'])]),
+      quizScene('q3', 2, [choiceQ('qc', ['c'])]),
+    ];
+    const answers: Record<string, Record<string, string>> = {
+      q1: { qa: 'a' },
+      q2: { qb: 'x' },
+      q3: { qc: 'x' },
+    };
+    const result = await summarizeScenes(scenes, async (id) => answers[id]);
+    expect(result.quiz).toEqual({ correct: 1, total: 3, pct: 33 });
+    expect(result.firstWrongQuizId).toBe('q2');
   });
 
   it('omits quiz scenes whose authoritative answers are unavailable', async () => {

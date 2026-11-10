@@ -71,6 +71,7 @@ export interface DoneItem {
   totalActions: number;
   totalAgents: number;
   agentHadContent?: boolean;
+  teachingAgentFailedOrEmpty?: boolean;
   cueUserReceived?: boolean;
   sessionClosed?: boolean;
   endReason?: string;
@@ -125,6 +126,7 @@ export interface StreamBufferCallbacks {
     totalActions: number;
     totalAgents: number;
     agentHadContent?: boolean;
+    teachingAgentFailedOrEmpty?: boolean;
     cueUserReceived?: boolean;
     sessionClosed?: boolean;
     endReason?: string;
@@ -280,6 +282,7 @@ export class StreamBuffer {
     totalActions: number;
     totalAgents: number;
     agentHadContent?: boolean;
+    teachingAgentFailedOrEmpty?: boolean;
     cueUserReceived?: boolean;
     sessionClosed?: boolean;
     endReason?: string;

@@ -55,7 +55,13 @@ function requestEditorFonts(): void {
   });
 }
 
-export function preloadEditor(): Promise<void> {
+/**
+ * Only the surfaces, for a caller ahead of the page's own loading: a course
+ * remembered in Edit, while its document is still on the way. The font
+ * stylesheets would compete with that document for connections, so they wait for
+ * the {@link preloadEditor} that the actual entry into the editor makes.
+ */
+export function preloadEditorSurfaces(): Promise<void> {
   if (!editorReady) {
     const attempt = Promise.all([
       import('@/components/edit/surfaces/slide'),
@@ -73,8 +79,13 @@ export function preloadEditor(): Promise<void> {
       if (editorReady === attempt) editorReady = null;
     });
   }
+  return editorReady;
+}
+
+export function preloadEditor(): Promise<void> {
+  const surfaces = preloadEditorSurfaces();
   // After the surfaces, so their chunks are never queued behind the font
   // stylesheets; not part of what callers wait for.
-  editorReady.then(requestEditorFonts, requestEditorFonts);
-  return editorReady;
+  surfaces.then(requestEditorFonts, requestEditorFonts);
+  return surfaces;
 }

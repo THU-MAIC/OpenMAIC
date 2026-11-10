@@ -51,6 +51,7 @@
  */
 import {
   AudioLines,
+  Clapperboard,
   BookOpen,
   Copy,
   FileSearch,
@@ -534,6 +535,42 @@ export function presentTool(
         hidePayload: true,
         ...(failed
           ? { errorText: errorLine(t('workbench.tool.error.listVoices'), node.toolResultText) }
+          : {}),
+      };
+
+    // ── Page media ───────────────────────────────────────────────────────────
+    // The subject is the agent's own prompt: what is being drawn or filmed.
+    case 'generate_image':
+      return {
+        icon: ImageIcon,
+        label: t('workbench.tool.label.generateImage'),
+        subject: str(args.prompt),
+        chips,
+        ...(failed
+          ? { errorText: errorLine(t('workbench.tool.error.generateImage'), node.toolResultText) }
+          : {}),
+      };
+
+    case 'generate_video':
+      return {
+        icon: Clapperboard,
+        label: t('workbench.tool.label.generateVideo'),
+        subject: str(args.prompt),
+        chips,
+        ...(failed
+          ? { errorText: errorLine(t('workbench.tool.error.generateVideo'), node.toolResultText) }
+          : {}),
+      };
+
+    // Its one argument is a material id, nothing a person reads.
+    case 'import_pptx':
+      return {
+        icon: Presentation,
+        label: t('workbench.tool.label.importPptx'),
+        chips,
+        hidePayload: true,
+        ...(failed
+          ? { errorText: errorLine(t('workbench.tool.error.importPptx'), node.toolResultText) }
           : {}),
       };
 

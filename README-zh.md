@@ -43,12 +43,14 @@
 
 ## 🗞️ 动态
 
-- **2026-11-05** — [v1.4.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.4.1)：**后台同步不再丢失编辑和学习进度。** 后台同步不再丢掉未保存的编辑、清空 PBL v2 项目或删掉 agent 刚添加的页面；慢速网络下课程重新能快速打开；PBL v3 删除课程后会释放其沙箱。从 1.4.0 升级无额外条件。
-- **2026-11-04** — [v1.4.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.4.0)：**项目式学习 PBL v3 上线，用 PBL 解锁 Vibe Coding 的全新打开方式：把作品做出来，把原理学明白。** 边学边练，把知识点变成实操任务，亲自动手让项目运行起来；AI 导师全程引导，一起拆解需求、讨论方案、逐步实现，疑惑随时提问；分阶段反馈，按里程碑完成挑战，获得阶段反馈和个性化学习报告；学习成果和进度保留，按自己的节奏学，下次回来接着做。开启方式：[配置沙箱服务](packages/docs/content/docs/configuration.mdx#sandbox-execution-experimental)和检查点存储后打开 `/pbl-v3`（[配置指南](lib/pbl/v3/README.md#try-the-sample)），未配置时保持关闭。升级不可逆（先停掉所有 1.3.x 实例，回滚需要恢复数据库；此后数据库被新版本迁移时，旧副本会退出），升级前请先阅读该版本的 **Breaking Changes**。
-- **2026-11-02** — [v1.3.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.3.1)：**DeepSeek Token Plan 与稳定性修复。** 一个 DeepSeek key 即可开通对话、联网搜索和网页抓取。上传资源不再在慢速对象存储上长期占用数据库连接，离开页面前的编辑也不再丢失。升级有发布条件（先停掉所有 1.3.0 实例，回滚需要恢复数据库），升级前请先阅读该版本的 **Breaking Changes**。
-- **2026-10-29** — [v1.3.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.3.0)：**知识库与 Pro 工作台升级。** 上传的文件都会保存在知识库里，直到手动删除；支持文件夹，每个文件只解析一次、所有会话共用；输入框可以用 `@` 引用，agent 也能读取、搜索和整理资料。Pro 工作台中，发出请求后在第一页生成之前就能看到 agent 的工作预览，课堂标签页可以在学习和编辑之间切换。升级有发布条件（先停掉所有旧实例，不能回滚到 1.3.0 之前），升级前请先阅读 [changelog](CHANGELOG.md)。
-- **2026-10-18** — [v1.2.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.1)：**联网调研。** 新增 Kimi、DeepSeek、Firecrawl 联网搜索；新增 `webFetch` 网页抓取槽位，agent 可以通过托管的阅读服务（DeepSeek、Kimi 或 Firecrawl）读取网页，不再只能用内置读取，均需手动开启。课堂聊天支持建议回复；内置模型目录移除了已下线的模型。课堂聊天现在固定走 Pi，Classroom 模型需要支持工具调用，升级前请先阅读该版本的 **Breaking Changes**。
-- **2026-10-16** — [v1.2.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.0)：**服务端优先正式发布。** 生成在服务端运行，关页面、重启都不中断；模型在 `openmaic.yml` 里统一配置（默认值、锁定、可禁止用户自带密钥）；资料添加即解析；网页端和 API 共用同一条流水线。新增[课堂导出](packages/docs/content/docs/getting-started.zh-cn.mdx#导出课堂)：导出保留全部场景的 PPTX，或一个能离线播放整堂课的 HTML 文件。需要 PostgreSQL 和常驻的 Node 服务，Vercel 部署请继续使用 1.1.x。升级前请先阅读[从 1.1.x 升级](packages/docs/content/docs/deployment.zh-cn.mdx#从-11x-升级)。
+- **2026-11-10** — [v1.5.0-rc.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.5.0-rc.1)：**全新首页，体验全面升级**（候选版本）——首页就是工作台：课程在对话旁边长出来，我的课程支持文件夹和置顶，一个全屏课堂里既能学也能改。默认不开启（`NEXT_PUBLIC_WORKBENCH_ENABLED`）。
+- **2026-11-09** — [v1.4.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.4.2)：**课程级撤销**，覆盖手动编辑和 agent 修改；沙箱对所有准入用户开放。
+- **2026-11-05** — [v1.4.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.4.1)：后台同步不再丢失编辑和学习进度；慢速网络下课程打开更快。
+- **2026-11-04** — [v1.4.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.4.0)：**PBL v3**——在 AI 导师带领下按里程碑做出一个能跑的项目。升级不可回退。
+- **2026-11-02** — [v1.3.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.3.1)：DeepSeek Token Plan（一个 key 开通对话、联网搜索和网页抓取）与稳定性修复。
+- **2026-10-29** — [v1.3.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.3.0)：**知识库**——上传的资料长期保存、可建文件夹、可用 `@` 引用；升级不可回退。
+- **2026-10-18** — [v1.2.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.1)：联网调研——Kimi、DeepSeek、Firecrawl 搜索，以及托管的 `webFetch` 网页读取。
+- **2026-10-16** — [v1.2.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.0)：**服务端优先正式发布**——关页面不中断生成，模型统一在 `openmaic.yml` 配置，课堂可导出为 PPTX 和 HTML。
 
 <details>
 <summary>更早版本</summary>

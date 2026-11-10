@@ -3,7 +3,8 @@ import type { SessionStatus } from './session-store';
 export interface WorkspaceSessionPresentation {
   /** i18n key under `workspace.sessionStatus.*` — the copy stays in the locale files. */
   readonly labelKey: string;
-  readonly tone: 'live' | 'error' | 'idle';
+  /** `waiting`: accepted but not started (queued) — still, not spinning. */
+  readonly tone: 'live' | 'waiting' | 'error' | 'idle';
 }
 
 /**
@@ -22,7 +23,7 @@ export function presentWorkspaceSession(
     case 'connecting':
       return { labelKey: 'workspace.sessionStatus.connecting', tone: 'live' };
     case 'queued':
-      return { labelKey: 'workspace.sessionStatus.queued', tone: 'live' };
+      return { labelKey: 'workspace.sessionStatus.queued', tone: 'waiting' };
     case 'running':
       return { labelKey: 'workspace.sessionStatus.running', tone: 'live' };
     case 'succeeded':
@@ -48,7 +49,7 @@ export function currentPageIndex(
    stale or hand-edited value must never be able to render the rail unusable
    or push the canvas off screen. */
 
-export const RAIL_WIDTH_DEFAULT = 252;
+export const RAIL_WIDTH_DEFAULT = 280;
 export const RAIL_WIDTH_MIN = 200;
 export const RAIL_WIDTH_MAX = 360;
 export const RAIL_WIDTH_STORAGE_KEY = 'openmaic:workspace:rail-width';

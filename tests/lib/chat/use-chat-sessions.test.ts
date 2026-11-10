@@ -13,6 +13,8 @@ import {
   resumeSoftClosingSessionForFollowUp,
   resumeSoftClosingSessionWithoutMessage,
   runPiSingleRequest,
+  isVisibleAgentOutput,
+  doneHadAgentContent,
   shouldAwaitPresentationAction,
   lectureActionPersistParams,
   withPiInclassWhiteboardTools,
@@ -24,6 +26,8 @@ import { useStageStore } from '@/lib/store/stage';
 import type { ChatRequestTemplate } from '@/components/chat/use-chat-sessions';
 import type { UIMessage } from 'ai';
 import type { ChatMessageMetadata } from '@/lib/types/chat';
+import type { StatelessEvent } from '@/lib/types/chat';
+import { toast } from 'sonner';
 
 function makeSession(overrides: Partial<ChatSession> = {}): ChatSession {
   return {
@@ -244,7 +248,7 @@ describe('getPiSingleRequestOutcome', () => {
     ).toEqual({ type: 'cue_user', directorState });
   });
 
-  it('treats empty Pi child output as a stream error even if fallback cue_user fired', () => {
+  it('shows the fixed no-response notice for empty Pi output even if fallback cue_user fired', () => {
     const directorState = {
       turnCount: 0,
       agentResponses: [],
@@ -259,7 +263,54 @@ describe('getPiSingleRequestOutcome', () => {
         cueUserReceived: true,
         sessionClosed: false,
       }),
-    ).toEqual({ type: 'error', messageKey: 'chat.error.streamInterrupted' });
+    ).toEqual({ type: 'error', messageKey: 'chat.error.teacherNoResponse' });
+  });
+
+  it('keeps the stream error for a response that ended without done', () => {
+    expect(getPiSingleRequestOutcome(null)).toEqual({
+      type: 'error',
+      messageKey: 'chat.error.streamInterrupted',
+    });
+  });
+
+  it('keeps partial output from a timed-out child that was not counted as a turn', () => {
+    expect(
+      getPiSingleRequestOutcome({
+        directorState: undefined,
+        totalAgents: 0,
+        agentHadContent: true,
+        teachingAgentFailedOrEmpty: true,
+        cueUserReceived: true,
+        sessionClosed: false,
+      }),
+    ).toEqual({ type: 'cue_user', directorState: undefined, teachingAgentFailed: true });
+  });
+
+  it('flags a cued turn whose teacher failed while another agent spoke', () => {
+    expect(
+      getPiSingleRequestOutcome({
+        directorState: undefined,
+        totalAgents: 2,
+        agentHadContent: true,
+        teachingAgentFailedOrEmpty: true,
+        cueUserReceived: true,
+        sessionClosed: false,
+      }),
+    ).toEqual({ type: 'cue_user', directorState: undefined, teachingAgentFailed: true });
+  });
+
+  it('keeps close_session handling unchanged after a teaching failure', () => {
+    expect(
+      getPiSingleRequestOutcome({
+        directorState: undefined,
+        totalAgents: 2,
+        agentHadContent: true,
+        teachingAgentFailedOrEmpty: true,
+        cueUserReceived: false,
+        sessionClosed: true,
+        endReason: 'user_done',
+      }),
+    ).toEqual({ type: 'soft_closing', endReason: 'user_done', directorState: undefined });
   });
 });
 
@@ -875,5 +926,177 @@ describe('classroom chat requests carry no provider data', () => {
     for (const field of ['apiKey', 'baseUrl', 'model', 'providerType', 'webSearchProviderId']) {
       expect(sent).not.toHaveProperty(field);
     }
+  });
+});
+
+describe('runPiSingleRequest fixed notices', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  function sse(events: StatelessEvent[]) {
+    const encoder = new TextEncoder();
+    return new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const event of events) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        }
+        controller.close();
+      },
+    });
+  }
+
+  async function request(
+    events: StatelessEvent[],
+    consumer: {
+      onEvent: (event: StatelessEvent) => void;
+      onIterationEnd: () => Promise<unknown>;
+    },
+  ) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(sse(events), { status: 200 })),
+    );
+    const clearAfterError = vi.fn();
+    const storeDirectorState = vi.fn();
+    await runPiSingleRequest(
+      'session-1',
+      {
+        messages: [],
+        storeState: {},
+        config: { agentIds: ['teacher-1'] },
+      } as unknown as Parameters<typeof runPiSingleRequest>[1],
+      new AbortController(),
+      'qa',
+      () => consumer as never,
+      clearAfterError,
+      vi.fn(),
+      vi.fn(),
+      storeDirectorState,
+      { current: vi.fn() },
+      (key) => key,
+    );
+    return { clearAfterError, storeDirectorState };
+  }
+
+  const start: StatelessEvent = {
+    type: 'agent_start',
+    data: { messageId: 'm1', agentId: 'teacher-1', agentName: 'Teacher' },
+  };
+
+  it('replaces a server error before any classroom output with the fixed notice', async () => {
+    const onEvent = vi.fn();
+    const { clearAfterError } = await request(
+      [start, { type: 'error', data: { message: 'raw provider failure' } }],
+      { onEvent, onIterationEnd: vi.fn(async () => null) },
+    );
+    expect(clearAfterError).toHaveBeenCalledWith('session-1', 'chat.error.teacherNoResponse');
+    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
+  });
+
+  it('keeps the existing error path once classroom output was shown', async () => {
+    const onEvent = vi.fn((event: StatelessEvent) => {
+      if (event.type === 'error') throw new Error(event.data.message);
+    });
+    await expect(
+      request(
+        [
+          start,
+          { type: 'text_delta', data: { content: 'Partial answer', messageId: 'm1' } },
+          { type: 'error', data: { message: 'raw provider failure' } },
+        ],
+        { onEvent, onIterationEnd: vi.fn(async () => null) },
+      ),
+    ).rejects.toThrow('raw provider failure');
+  });
+
+  it.each([
+    [
+      'Legacy wb_open',
+      {
+        type: 'action',
+        data: { actionId: 'a1', actionName: 'wb_open', params: {}, agentId: 'teacher-1' },
+      },
+    ],
+    [
+      'Legacy wb_close',
+      {
+        type: 'action',
+        data: { actionId: 'a1', actionName: 'wb_close', params: {}, agentId: 'teacher-1' },
+      },
+    ],
+    [
+      'Native whiteboard open',
+      {
+        type: 'whiteboard',
+        data: { kind: 'open', stageId: 'stage-1', manualVisibilityRevision: 1 },
+      },
+    ],
+  ] as Array<[string, StatelessEvent]>)(
+    'treats a %s followed by an error as no classroom output',
+    async (_label, toggle) => {
+      const onEvent = vi.fn();
+      const { clearAfterError } = await request(
+        [start, toggle, { type: 'error', data: { message: 'raw provider failure' } }],
+        { onEvent, onIterationEnd: vi.fn(async () => null) },
+      );
+      expect(clearAfterError).toHaveBeenCalledWith('session-1', 'chat.error.teacherNoResponse');
+    },
+  );
+
+  it('counts drawing as output in both runtimes', () => {
+    expect(
+      isVisibleAgentOutput({
+        type: 'action',
+        data: { actionId: 'a1', actionName: 'wb_draw_text', params: {}, agentId: 'teacher-1' },
+      }),
+    ).toBe(true);
+    expect(
+      isVisibleAgentOutput({
+        type: 'whiteboard',
+        data: { kind: 'projection', stageId: 'stage-1', lastSeq: 3 },
+      }),
+    ).toBe(true);
+  });
+
+  it('keeps the totalAgents fallback only when done omits agentHadContent', () => {
+    expect(doneHadAgentContent({ totalAgents: 0 })).toBe(false);
+    expect(doneHadAgentContent({ totalAgents: 2 })).toBe(true);
+    expect(doneHadAgentContent({ totalAgents: 0, agentHadContent: true })).toBe(true);
+    expect(doneHadAgentContent({ totalAgents: 3, agentHadContent: false })).toBe(false);
+  });
+
+  it('shows the fixed partial notice once when a teaching call failed before the cue', async () => {
+    const warning = vi.spyOn(toast, 'warning');
+    const directorState = { turnCount: 1, agentResponses: [], whiteboardLedger: [] };
+    const { clearAfterError, storeDirectorState } = await request(
+      [
+        {
+          type: 'done',
+          data: {
+            totalActions: 0,
+            totalAgents: 2,
+            agentHadContent: true,
+            teachingAgentFailedOrEmpty: true,
+            cueUserReceived: true,
+          },
+        },
+      ],
+      {
+        onEvent: vi.fn(),
+        onIterationEnd: vi.fn(async () => ({
+          directorState,
+          totalAgents: 2,
+          agentHadContent: true,
+          teachingAgentFailedOrEmpty: true,
+          cueUserReceived: true,
+        })),
+      },
+    );
+    expect(warning).toHaveBeenCalledOnce();
+    expect(warning).toHaveBeenCalledWith('chat.error.teacherIncomplete');
+    expect(clearAfterError).not.toHaveBeenCalled();
+    expect(storeDirectorState).toHaveBeenCalledWith('session-1', directorState);
   });
 });

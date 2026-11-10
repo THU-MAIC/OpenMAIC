@@ -48,7 +48,9 @@
     "fileTooLargeWithLimit": "파일이 너무 큽니다. {{limit}} MB 이하의 파일을 선택해 주세요.",
     "unsupportedType": "지원하지 않는 파일 형식입니다. 지원되는 파일을 선택해 주세요.",
     "quotaExceeded": "자료 업로드 한도에 도달했습니다.",
-    "storageFull": "저장 공간이 한도에 도달해 이 자료를 업로드할 수 없습니다."
+    "storageFull": "저장 공간이 한도에 도달해 이 자료를 업로드할 수 없습니다.",
+    "uploadFailedShort": "업로드 실패",
+    "retryFailed": "다시 분석을 시작하지 못했습니다. 다시 시도해 주세요."
   },
   "skill": {
     "listFailed": "스킬 목록을 불러오지 못했습니다",
@@ -139,9 +141,7 @@
     "listSeparator": ", ",
     "group": {
       "tools": "도구 호출 {{count}}건",
-      "skills": "스킬 {{count}}개",
-      "running": "실행 중",
-      "error": "오류 있음",
+      "failed": "{{count}}개 실패",
       "done": "완료"
     },
     "section": {

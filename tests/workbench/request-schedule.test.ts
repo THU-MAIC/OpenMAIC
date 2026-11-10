@@ -93,10 +93,33 @@ describe('every action maps onto five scenes', () => {
 });
 
 describe('scenes follow the stream', () => {
-  it('stays quiet while the request only talks', () => {
-    const frames = [start(0, 'why does light bend?'), ...reply(500, 'Because…')];
-    expect(view(frames, 1000).mode).toBe('quiet');
-    expect(view([...frames, ...end(900)], 5000).mode).toBe('quiet');
+  it('shows understanding from the moment the request is sent, before any tool call', () => {
+    const sent = [start(0, 'the history of Disney, richly illustrated')];
+    expect(view(sent, 0, 'running')).toMatchObject({ mode: 'scene', scene: 'understanding' });
+    // The agent only thinking or replying is still that scene.
+    const thinking = [...sent, ...reply(500, 'Let me plan this course.')];
+    expect(view(thinking, 1000, 'running')).toMatchObject({
+      mode: 'scene',
+      scene: 'understanding',
+    });
+  });
+
+  it('shows a just-created session still waiting in the queue on understanding', () => {
+    const track = requestTrack([], 'queued', false, 'Make a course');
+    expect(track).not.toBeNull();
+    expect(scheduleRequestPreview(track!, 0, OPTS)).toMatchObject({
+      mode: 'scene',
+      scene: 'understanding',
+      nextChangeAt: null,
+    });
+  });
+
+  it('folds a request that ended only talking, once its scene has been held', () => {
+    const frames = [start(0, 'why does light bend?'), ...reply(500, 'Because…'), ...end(900)];
+    // Held for its two seconds first, then folded.
+    expect(view(frames, 1000)).toMatchObject({ mode: 'scene', nextChangeAt: OPTS.holdMs });
+    expect(view(frames, OPTS.holdMs).mode).toBe('collapsed');
+    expect(view(frames, 5000).mode).toBe('collapsed');
   });
 
   it('a skill read shows understanding; it never earns a scene of its own', () => {

@@ -123,8 +123,8 @@ Amazon Bedrock（`preset: bedrock`）使用伺服器端的 AWS 憑證鏈（環�
 | `course.content.pbl` | chat | `course.content` | 專題式學習（PBL）場景 |
 | `course.actions` | chat | `llm` | 場景動作（智慧體在每個場景說什麼、做什麼） |
 | `classroom` | chat | `llm` | 課堂對話、測驗評分和 PBL 執行階段 |
-| `agent` | chat | `llm` | Pro 工作台智慧體。**需要工具呼叫能力。** 另外支援 `api` 和 `contextWindow` |
-| `agent.title` | chat | `agent` | Pro 工作階段標題。只能在 `openmaic.yml` 中設定，模型設定中不顯示 |
+| `agent` | chat | `llm` | 工作台智慧體。**需要工具呼叫能力。** 另外支援 `api` 和 `contextWindow` |
+| `agent.title` | chat | `agent` | 工作台的工作階段標題。只能在 `openmaic.yml` 中設定，模型設定中不顯示 |
 | `tts` | tts | — | 語音合成 |
 | `asr` | asr | — | 語音辨識（語音輸入、影音逐字稿） |
 | `image` | image | — | 圖像生成 |
@@ -313,7 +313,7 @@ slots:
   webSearch: tavily
 ```
 
-之後刪除 `DEFAULT_MODEL` 和 `MODEL_FALLBACK`。供應商變數可以保留，作為 `${VAR}` 引用的來源。`<PREFIX>_BASE_URL` 對應供應商的 `baseUrl`（`OPENAI_BASE_URL` → `openai` 下的 `baseUrl`；直接寫 URL，或在變數仍然設定時寫 `${OPENAI_BASE_URL}`），`<PREFIX>_MODELS` 對應它的 `models` 清單。與轉換得到的 `DEFAULT_MODEL` 一樣，這裡寫出的 `llm` 是工作區可以修改的伺服器端預設值；如需對所有人固定，請加上 `lock: [llm]`。與轉換結果不同，`agent` 現在會沿用 `llm`：如需維持 Pro 智慧體關閉，請寫 `agent: null`。
+之後刪除 `DEFAULT_MODEL` 和 `MODEL_FALLBACK`。供應商變數可以保留，作為 `${VAR}` 引用的來源。`<PREFIX>_BASE_URL` 對應供應商的 `baseUrl`（`OPENAI_BASE_URL` → `openai` 下的 `baseUrl`；直接寫 URL，或在變數仍然設定時寫 `${OPENAI_BASE_URL}`），`<PREFIX>_MODELS` 對應它的 `models` 清單。與轉換得到的 `DEFAULT_MODEL` 一樣，這裡寫出的 `llm` 是工作區可以修改的伺服器端預設值；如需對所有人固定，請加上 `lock: [llm]`。與轉換結果不同，`agent` 現在會沿用 `llm`：如需維持工作台智慧體關閉，請寫 `agent: null`。
 
 **server-providers.yml。** 遷移前：
 
@@ -437,7 +437,7 @@ ACCESS_CODE=your-secret-code
 功能開關的值可設為 `true` 或 `1`；除非另有說明，其他值都視為關閉。`NEXT_PUBLIC_*` 開關會在建置時編譯至用戶端，修改後需要重新建置：
 
 ```bash
-# MAIC Editor（Pro 模式）
+# MAIC Editor（課堂編輯器）
 NEXT_PUBLIC_MAIC_EDITOR_ENABLED=true
 
 # Pi 播放態中的 PPT 與互動頁課件引用（建置時開關；不影響編輯態引用）
@@ -454,6 +454,9 @@ NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
 
 # 顯示實驗性 PPTX 匯入入口
 NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
+
+# 帳戶選單「文件」開啟的文件站網址（預設同源 /docs）
+NEXT_PUBLIC_DOCS_URL=https://docs.example.com
 ```
 
 課堂對話固定由 Pi 執行，需要支援工具／函式呼叫的模型：在**課程模型配置**中為**課堂互動**選擇這樣的模型，或在 `openmaic.yml` 中設定 `classroom` 槽位（或它繼承的 `llm` 槽位）。Gemini 請使用原生 `google` 預設，不要使用 Google 的 OpenAI 相容端點。 內建模型目錄標明不支援工具呼叫的模型會在推理前被拒絕，回傳 `400 MODEL_CONFIG_INVALID`（`reason: tool_calling_required`），**課程模型配置**也會在課堂互動插槽上註明這項要求。

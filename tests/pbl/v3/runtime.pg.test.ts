@@ -5296,14 +5296,9 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     await expect(command('next')).rejects.toThrow('not available');
     await runTools('Please help me fix the failed greeting test.', async (config) => {
       expect(config.systemPrompt).toContain('observed test failure');
+      expect(config.systemPrompt).toContain('repair the permitted source directly');
+      expect(config.systemPrompt).toContain('Do not require a PLAN.md edit');
       const current = await service.readText(environmentId, 'greeting.py');
-      await expect(
-        invoke(config, 'write_file', {
-          path: 'PLAN.md',
-          text: 'overwrite',
-          expectedHash: digest(''),
-        }),
-      ).rejects.toThrow('cannot write');
       await invoke(config, 'write_file', {
         path: 'greeting.py',
         text: code + '\n# repaired\n',
@@ -7577,6 +7572,105 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(await service.readText(row.environment_id!, 'greeting.py')).toBe(
       original + '# learner repair\n',
     );
+  });
+  it('retests a learner-amended plan and restores its passing checkpoint', async () => {
+    const previousStudyId = studyId;
+    const previousEvaluation = project.evaluations.greeting!;
+    onTestFinished(() => {
+      studyId = previousStudyId;
+      project.evaluations.greeting = previousEvaluation;
+    });
+    studyId = (await freshStudy()).id;
+    const row = await store.get(studyId, principal.ownerId);
+    const environmentId = row.environment_id!;
+    const service = await SandboxService.forOwner(principal);
+    const originalPlan = await service.readText(environmentId, 'PLAN.md');
+    const originalCode = await service.readText(environmentId, 'greeting.py');
+    const originalPlanId = randomUUID();
+    const collected = row.state.collected.greeting!;
+    row.state.position.stageIndex = 4;
+    row.state.milestones[0]!.stageIndex = 4;
+    collected.plan = {
+      kind: 'plan',
+      id: originalPlanId,
+      milestoneId: 'greeting',
+      revision: 0,
+      contentHash: digest(originalPlan),
+      contentLength: originalPlan.length,
+    };
+    collected.planReviewCompleted = true;
+    collected.code = {
+      kind: 'code',
+      id: randomUUID(),
+      milestoneId: 'greeting',
+      revision: 0,
+      workspaceRevisionId: 'before-repair',
+      value: 'Reviewed sandbox files',
+    };
+    await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+    project.evaluations.greeting = {
+      ...previousEvaluation,
+      cases: [
+        {
+          id: 'plan-record',
+          label: 'Plan record',
+          argv: [
+            'python3',
+            '-c',
+            'from pathlib import Path; print("pass" if "CHOICE = format" in Path("PLAN.md").read_text() else "missing")',
+          ],
+          stdout: 'pass\n',
+        },
+      ],
+    };
+    const save = (text: string, expectedHash: string) =>
+      command('save', { path: 'PLAN.md', text, expectedHash });
+    await expect(save('Early plan edit', digest(originalPlan))).rejects.toThrow('not available');
+    await command('evaluate');
+    await command('collect');
+    expect((await learningView(principal, studyId)).state.collected.greeting!.tests?.status).toBe(
+      'failed',
+    );
+    const learnerEdit = originalPlan + '\nClarify the chosen formatting approach.\n';
+    await save(learnerEdit, digest(originalPlan));
+    await expect(save('Stale plan edit', digest(originalPlan))).rejects.toThrow('changed');
+    const amendedPlan = learnerEdit + '\nCHOICE = format\n';
+    await runTools('Please add my selected format record to PLAN.md.', async (config) => {
+      await invoke(config, 'read_file', { path: 'PLAN.md' });
+      await invoke(config, 'write_file', {
+        path: 'PLAN.md',
+        text: amendedPlan,
+        expectedHash: digest(learnerEdit),
+      });
+    });
+    await command('evaluate');
+    await expect(save('Edit during evaluation', digest(amendedPlan))).rejects.toMatchObject({
+      reason: 'WORKBENCH_ACCESS_DENIED',
+    });
+    await command('collect');
+    const tested = (await learningView(principal, studyId)).state.collected.greeting!;
+    expect(tested.plan).toMatchObject({ contentHash: digest(amendedPlan), revision: 1 });
+    expect(tested.plan!.id).not.toBe(originalPlanId);
+    expect(tested.tests).toMatchObject({ status: 'passed', planArtifactId: tested.plan!.id });
+    expect(tested.planReviewCompleted).toBe(false);
+    expect(await service.readText(environmentId, 'greeting.py')).toBe(originalCode);
+    expect(
+      (
+        await pool.query(
+          "SELECT actor FROM pbl_v3_evidence WHERE study_id=$1 AND kind='file-edit' AND detail->>'path'='PLAN.md' ORDER BY id",
+          [studyId],
+        )
+      ).rows,
+    ).toEqual([{ actor: 'learner' }, { actor: 'coder' }]);
+    await expect(save('Late plan edit', digest(amendedPlan))).rejects.toThrow('not available');
+    await command('next');
+    mocked.missing.add(environmentId);
+    await rm(join(mocked.root, environmentId), { recursive: true });
+    await command('prepare');
+    const restored = await store.get(studyId, principal.ownerId);
+    expect(restored.state.position.stageIndex).toBe(5);
+    expect(restored.state.collected.greeting!.tests?.id).toBe(tested.tests!.id);
+    expect(await service.readText(restored.environment_id!, 'PLAN.md')).toBe(amendedPlan);
   });
   it('integrates scoped files, command evidence, terminal controls and recovery without project previews', async () => {
     const fresh = await freshStudy();

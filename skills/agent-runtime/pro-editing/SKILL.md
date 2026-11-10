@@ -99,6 +99,11 @@ Rules of the matrix:
   house style, so an edit that looks wrong is your value, not the tool's.
 - `edit_deck insert` creates an empty stub; fill it with `generate_scene` using
   that new page's explicit `type` and `brief`, or patch an already valid scene.
+- A slide that `generate_scene` writes or rewrites into an existing course
+  carries a `design` that restates the course's established style — its
+  background, palette, type scale, title placement and layout grammar, read
+  from the existing pages — so the page joins the deck instead of starting a
+  new one. Change the style only when the user asks for it.
 - `generate_scene` with `instruction` discards the page and regenerates it. That is
   a rewrite, not an edit: reserve it for the moment the user plainly wants a page
   rebuilt, never as a shortcut around careful editing.
@@ -169,6 +174,11 @@ course as shared ground:
   automatically as it lands; a sequence of small writes loses less to a
   conflict than one sweeping rewrite. Never accumulate a batch "prepared but
   not written" — write as you go.
+- **Keep interactive HTML usable after every call.** Never clear `/content/html`
+  or replace it with a placeholder or partial document before filling it in
+  through later calls. Edit exact anchors, or submit the complete replacement
+  in one `patch_stage` batch. Each call persists independently; stopping between
+  calls must not leave the page broken.
 - **Yield when the user is editing.** If the user says they are changing the
   same page, or a fresh read shows content you did not write, stop, re-read,
   and reconcile before writing again. Never overwrite a human's fresher

@@ -40,6 +40,9 @@ const MAX_GENERATE_SCENE_MEDIA = 8;
 const SUPPORTED_SCENE_TYPES = new Set(['slide', 'quiz', 'interactive', 'pbl']);
 const log = createLogger('AgentGenerationTools');
 
+export const SLIDE_DESIGN_DESCRIPTION =
+  'Slide pages only: the designer brief for how this page looks, written the way a designer hands a layout to a production artist. Say (1) what the page must make obvious at a glance; (2) the visual style: background, palette with its roles (title, accent, panels), tone and density; (3) the layout: the regions with rough proportions (for example a title band across the top 15%, then a 60/40 split) and which piece of content sits in each region and in what form (table, numbered steps, cards, diagram, chart, formula, image). Refer to the content by role ("the comparison table", "the three steps"); do not restate it: the words on the page come from brief and materialFacts, and this text is never written onto the page. Write it for every slide you generate; leave it out only to let the generator design the page freely.';
+
 const SceneParams = Type.Object({
   stageId: Type.String({ description: COURSE_STAGE_ID_DESCRIPTION }),
   order: Type.Integer({ minimum: 1 }),
@@ -80,13 +83,18 @@ const SceneParams = Type.Object({
   brief: Type.String({
     minLength: 1,
     description:
-      'The teaching intent of this one page: what the learner should take away and how the page gets there. The generator reads it as the page description and may turn its wording into page text, so it carries content intent only, not layout, styling or narration-delivery rules. For pbl, the project description.',
+      'The teaching intent of this one page: what the learner should take away and how the page gets there. The generator reads it as the page description and may turn its wording into page text, so it carries content intent only, not layout, styling or narration-delivery rules (for a slide, the look goes in design). For pbl, the project description.',
   }),
   instruction: Type.Optional(Type.String()),
   materialFacts: Type.Optional(
     Type.Array(Type.String(), {
       description:
-        'The content points the page must present; the generator writes each of them onto the page. Only content meant for learners belongs here; style, layout and narration constraints do not. For pbl, the target skills.',
+        'The content points the page must present; the generator writes each of them onto the page. Only content meant for learners belongs here; style and layout go in design, and narration constraints do not belong here. For pbl, the target skills.',
+    }),
+  ),
+  design: Type.Optional(
+    Type.String({
+      description: SLIDE_DESIGN_DESCRIPTION,
     }),
   ),
   media: Type.Optional(
@@ -283,7 +291,7 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
     name: 'generate_scene',
     label: 'Generate page',
     description:
-      'Generate and durably persist one page from an explicit title, type, and brief. Reusing an order replaces that page. Interactive pages accept widgetType (simulation/diagram/code/game/visualization3d) plus a matching widgetOutline object; both are rejected for other page types.',
+      'Generate and durably persist one page from an explicit title, type, and brief. Reusing an order replaces that page. Content and look are separate inputs: brief and materialFacts say what the page teaches; for a slide, design says how it looks (style and layout) and is rejected for other page types. Interactive pages accept widgetType (simulation/diagram/code/game/visualization3d) plus a matching widgetOutline object; both are rejected for other page types.',
     parameters: SceneParams,
     async execute(_callId, params, signal) {
       if (!Number.isInteger(params.order) || params.order < 1) {
@@ -352,6 +360,14 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
           true,
         );
       }
+      const design = params.design?.trim();
+      if (params.design !== undefined && params.type !== 'slide') {
+        return result(
+          'generate_scene only accepts design for slide pages.',
+          { error: 'design-requires-slide', type: params.type },
+          true,
+        );
+      }
       const requestedMedia = params.media ?? [];
       if (requestedMedia.length > MAX_GENERATE_SCENE_MEDIA) {
         return result(
@@ -367,6 +383,7 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
         type: params.type,
         description: brief,
         keyPoints: params.materialFacts ?? [],
+        ...(design ? { design } : {}),
         ...(params.type === 'interactive' &&
         (params.widgetType !== undefined || params.widgetOutline !== undefined)
           ? {

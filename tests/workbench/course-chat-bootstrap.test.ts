@@ -1,102 +1,61 @@
 /**
- * Opening a course must not create a conversation.
+ * What sits beside an open course.
  *
- * The regression this file exists for: the resolver used to answer `create`, and
- * the shell POSTed on arrival — so opening a course, closing the chat and opening
- * the course again left an empty session in the rail per visit. Nothing is minted
- * here now; the first message does it.
+ * Two regressions this file exists for: the resolver once answered `create`
+ * and the shell POSTed on arrival (an empty session in the rail per visit), and
+ * it once carried the most recent conversation over, so browsing to an
+ * unrelated course put that conversation's chat beside it as if it were
+ * editing the course. Nothing is minted and nothing is carried over now: a
+ * browsed course is shown alone, and a conversation about it starts empty.
  */
 import { describe, expect, it } from 'vitest';
 
-import {
-  mostRecentSession,
-  resolveCourseChatBootstrap,
-} from '@/lib/workbench/course-chat-bootstrap';
-
-const session = (id: string, updatedAt: number, createdAt = updatedAt) => ({
-  id,
-  updatedAt,
-  createdAt,
-});
+import { resolveCourseChatBootstrap } from '@/lib/workbench/course-chat-bootstrap';
 
 const base = {
   courseId: 'course-a' as string | null,
   sessionId: null as string | null,
-  sessions: [] as ReturnType<typeof session>[],
-  sessionsLoaded: true,
 };
 
 describe('resolveCourseChatBootstrap', () => {
   it('does nothing with no course open', () => {
     expect(resolveCourseChatBootstrap({ ...base, courseId: null })).toEqual({ kind: 'settled' });
+    expect(
+      resolveCourseChatBootstrap({ ...base, courseId: null, newConversationRequested: true }),
+    ).toEqual({ kind: 'settled' });
   });
 
-  it('leaves an open conversation alone — including one about another course', () => {
-    // It never hunts for "the session that owns this course", and never swaps out
-    // the conversation the user is reading.
+  it('leaves a conversation in the URL beside the course — whatever it is about', () => {
+    // Opened from a conversation (a course card, the preview's handoff, an
+    // agent link), or a `?course=&session=` URL reloaded: the pairing stays.
+    expect(resolveCourseChatBootstrap({ ...base, sessionId: 'session-other' })).toEqual({
+      kind: 'settled',
+    });
+  });
+
+  it('shows a browsed course alone, minting nothing and carrying nothing over', () => {
+    expect(resolveCourseChatBootstrap(base)).toEqual({ kind: 'browse', courseId: 'course-a' });
+  });
+
+  it('offers an empty conversation about the course once asked for', () => {
+    expect(resolveCourseChatBootstrap({ ...base, newConversationRequested: true })).toEqual({
+      kind: 'draft',
+      courseId: 'course-a',
+    });
+  });
+
+  it('a conversation in the URL outranks the ask: the draft has become it', () => {
+    // The draft's first message attaches the session it created.
     expect(
       resolveCourseChatBootstrap({
         ...base,
-        sessionId: 'session-other',
-        sessions: [session('session-recent', 5)],
+        sessionId: 'created',
+        newConversationRequested: true,
       }),
     ).toEqual({ kind: 'settled' });
   });
 
-  it('treats the attached store session as a conversation too', () => {
-    // The window during navigation where the URL has dropped `?session=` but the
-    // store has not detached yet must not read as "there is no conversation".
-    expect(resolveCourseChatBootstrap({ ...base, attachedSessionId: 'session-attached' })).toEqual({
-      kind: 'settled',
-    });
-  });
-
-  it('carries the most recent conversation over rather than minting one', () => {
-    expect(
-      resolveCourseChatBootstrap({
-        ...base,
-        sessions: [session('session-old', 1), session('session-recent', 9)],
-      }),
-    ).toEqual({ kind: 'adopt', sessionId: 'session-recent', courseId: 'course-a' });
-  });
-
-  it('offers an empty conversation — and NO mint — when the user has none at all', () => {
-    expect(resolveCourseChatBootstrap(base)).toEqual({ kind: 'draft', courseId: 'course-a' });
-  });
-
-  it('waits for the session list before deciding either branch', () => {
-    // Deciding 'draft' early would flash an empty composer at a user who has
-    // fifty conversations.
-    expect(resolveCourseChatBootstrap({ ...base, sessionsLoaded: false })).toEqual({
-      kind: 'settled',
-    });
-  });
-
-  it('is stable across repeated visits to the same course', () => {
-    const input = { ...base, sessions: [session('session-recent', 9)] };
-    expect(resolveCourseChatBootstrap(input)).toEqual(resolveCourseChatBootstrap(input));
-    // And once the adoption has reached the URL, it settles instead of adopting again.
-    expect(resolveCourseChatBootstrap({ ...input, sessionId: 'session-recent' })).toEqual({
-      kind: 'settled',
-    });
-  });
-});
-
-describe('mostRecentSession', () => {
-  it('prefers the most recently active over the most recently created', () => {
-    expect(mostRecentSession([session('a', 10, 1), session('b', 2, 9)])?.id).toBe('a');
-  });
-
-  it('falls back to createdAt for a session never updated', () => {
-    expect(mostRecentSession([session('a', 0, 5), session('b', 0, 3)])?.id).toBe('a');
-  });
-
-  it('breaks ties deterministically instead of depending on list order', () => {
-    expect(mostRecentSession([session('a', 5), session('b', 5)])?.id).toBe('b');
-    expect(mostRecentSession([session('b', 5), session('a', 5)])?.id).toBe('b');
-  });
-
-  it('has nothing to offer for an empty list', () => {
-    expect(mostRecentSession([])).toBeNull();
+  it('is the same answer for every visit to the same course', () => {
+    expect(resolveCourseChatBootstrap(base)).toEqual(resolveCourseChatBootstrap(base));
   });
 });
