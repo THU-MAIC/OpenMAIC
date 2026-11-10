@@ -26,7 +26,6 @@
     "examplesLabel": "试试这些主题",
     "examplePython": "零基础学习 Python",
     "exampleFourier": "用直观的例子讲解傅里叶变换",
-    "desktopOnly": "编辑器和专业模式请在电脑上使用。",
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
     "greetingWithName": "嗨，{{name}}"
   },
@@ -89,6 +88,7 @@
     "exportFailed": "导出失败",
     "classroomZip": "导出课堂 ZIP",
     "classroomZipDesc": "课程结构 + 媒体文件",
+    "viewerCopyHint": "想要一份能编辑的副本？先「{{zip}}」，再到「{{courses}}」里「{{importLabel}}」。",
     "html": "导出为 HTML",
     "htmlDesc": "单个离线文件，可自动播放",
     "htmlWithNarration": "包含旁白和视频",
@@ -113,6 +113,7 @@
       "emptyClassroom": "该课堂没有任何场景。",
       "unsupportedScene": "离线导出暂不支持此场景。",
       "interactiveTitle": "互动场景",
+      "interactiveMoreBelow": "下方还有内容",
       "videoUnavailable": "离线导出不包含视频",
       "quizSubmit": "提交",
       "quizRetry": "重新作答",
@@ -246,7 +247,9 @@
       "toolCallingRequired": "课堂聊天需要支持工具调用的模型。请在设置 → 课程模型配置中为「课堂互动」选择此类模型；如果该设置由管理员管理，请联系管理员。",
       "geminiNativeRequired": "Gemini 课堂互动需要使用 Google 原生路线。请在设置 → 模型服务中添加 Google（google 预设），再在课程模型配置中为「课堂互动」选择该模型；如果配置由管理员管理，请联系管理员。",
       "emptyAgentResponses": "智能体连续无响应,讨论已停止。请重新尝试或检查模型配置。",
-      "streamInterrupted": "数据流意外中断,讨论未能完成。请重新尝试。"
+      "streamInterrupted": "数据流意外中断,讨论未能完成。请重新尝试。",
+      "teacherNoResponse": "老师没有回应，请重试。",
+      "teacherIncomplete": "老师未能完成回应，请重试。"
     },
     "elementReference": {
       "whiteboardChanged": "引用的白板元素已变化或不可用，请重新选择或移除引用后再发送。",
@@ -269,6 +272,7 @@
       "title": "这个互动未能运行",
       "dismiss": "关闭"
     },
+    "interactiveMoreBelow": "下方还有内容",
     "tabs": {
       "lecture": "笔记",
       "chat": "对话"
@@ -345,17 +349,32 @@
     "confirmSwitchTitle": "切换页面",
     "confirmSwitchMessage": "当前话题正在进行中，切换页面将结束当前话题。确定要切换吗？",
     "generatingNextPage": "场景正在生成，请稍候...",
-    "courseComplete": "课程完成",
     "fullscreen": "全屏",
     "exitFullscreen": "退出全屏",
     "editCourse": "编辑课程",
     "doneEditing": "完成编辑",
-    "proModeDisabledHint": "本页不支持编辑——打开任意课程页即可使用 Pro 模式编辑。"
+    "editDisabledHint": "本页不支持编辑——打开任意课程页即可编辑。",
+    "editToggle": "编辑",
+    "openInWorkspace": "在工作台中打开",
+    "openInWorkspaceHint": "在工作台中打开，可以继续对话修改这门课",
+    "makeOwnCourse": "做一节自己的课",
+    "makeOwnCourseHint": "去工作台做一节自己的课",
+    "dock": {
+      "collapse": "收起底栏",
+      "expand": "展开底栏",
+      "resize": "调整底栏高度"
+    },
+    "chatPanel": {
+      "expand": "展开会话区",
+      "collapse": "收起会话区"
+    }
   },
   "edit": {
-    "proMode": "专业模式",
     "undo": "撤销",
     "redo": "重做",
+    "courseHistory": {
+      "stepExpired": "该步骤已无法撤销"
+    },
     "delete": "删除",
     "title": "编辑 · {{type}}",
     "unsupportedScene": "{{type}}暂不支持编辑",
@@ -481,8 +500,6 @@
       "addSlide": "新增幻灯片",
       "duplicate": "复制",
       "delete": "删除",
-      "deleted": "已删除",
-      "undo": "撤销",
       "copySuffix": "（副本）",
       "untitledSlide": "未命名幻灯片",
       "collapse": "收起",
@@ -580,7 +597,19 @@
       "whiteboardLatex": "公式",
       "whiteboardTable": "表格",
       "action": "动作",
-      "discussion": "讨论"
+      "discussion": "讨论",
+      "playVideo": "播放视频",
+      "whiteboardChart": "图表",
+      "whiteboardLine": "画线",
+      "whiteboardClear": "清空画板",
+      "whiteboardDelete": "擦除元素",
+      "whiteboardClose": "关闭画板",
+      "whiteboardCode": "代码块",
+      "whiteboardEditCode": "修改代码",
+      "widgetHighlight": "高亮互动元素",
+      "widgetSetState": "设置互动状态",
+      "widgetAnnotation": "标注互动元素",
+      "widgetReveal": "显示互动元素"
     },
     "element": {
       "toolbar": "元素工具栏",
@@ -645,12 +674,6 @@
     "timeline": {
       "title": "讲解脚本",
       "regenAllTts": "重新生成全部配音",
-      "voiceAll": "全部配音",
-      "counts": "{{speech}} 讲解 · {{cue}} 动作",
-      "panLeft": "左移视口",
-      "panRight": "右移视口",
-      "collapseAxis": "收起为轴线",
-      "expandTrack": "展开轨道",
       "emptyHint": "把上方的动作拖到轴上开始编排，或让 MAIC Agent 生成讲解。",
       "speechPlaceholder": "输入这一句讲解…",
       "reorder": "拖动重排",
@@ -662,13 +685,15 @@
       "fieldElement": "元素",
       "fieldContent": "内容",
       "addDiscussionExists": "每个场景仅支持一个讨论",
-      "discussionTerminal": "末尾",
       "discussionTerminalHint": "讨论固定在场景末尾，每个场景仅一个",
-      "discussionTopicPlaceholder": "讨论主题（必填）",
-      "discussionPromptPlaceholder": "引导语（可选）",
-      "discussionAgent": "发起",
+      "discussionTopicPlaceholder": "必填",
+      "discussionPromptPlaceholder": "可选",
+      "discussionTopicLabel": "讨论主题",
+      "discussionPromptLabel": "引导语",
+      "discussionAgent": "发起人",
       "discussionAgentUnset": "不指定",
-      "addAction": "添加动作"
+      "addAction": "添加动作",
+      "fieldState": "状态"
     },
     "picker": {
       "title": "插入动作",
@@ -752,8 +777,7 @@
       "moveDown": "下移",
       "removeFromClass": "移出课堂",
       "aiClassmates": "AI 同学 · {{count}}",
-      "addRole": "添加角色",
-      "shortTitle": "阵容"
+      "addRole": "添加角色"
     },
     "elementRef": {
       "remove": "移除引用 {{label}}",
@@ -764,21 +788,6 @@
     "dock": {
       "elementRefHint": "元素引用 —— 选中元素随下一条消息发给 Agent",
       "globalTools": "全局工具"
-    }
-  },
-  "classroomComplete": {
-    "title": "课程完成",
-    "trailLabels": {
-      "slide": "页",
-      "quiz": "小测",
-      "interactive": "互动",
-      "pbl": "项目"
-    },
-    "quizScoreLabel": "答对 {{correct}} / {{total}}",
-    "encouragement": {
-      "high": "太棒了，完美发挥！",
-      "mid": "表现不错，继续加油！",
-      "low": "万事开头难，回去再练练吧。"
     }
   },
   "whiteboard": {
@@ -1092,6 +1101,7 @@
     "rename": "重命名",
     "renamePlaceholder": "输入课堂名称",
     "renameFailed": "重命名失败",
+    "saveRefused": "改动没有保存：你没有编辑这节课的权限。",
     "searchPlaceholder": "搜索课程...",
     "searchAriaLabel": "搜索课程",
     "clearSearch": "清空",
@@ -2366,6 +2376,7 @@
     "sceneCount_one": "{{count}} 页",
     "sceneCount_other": "{{count}} 页",
     "courseLinkHint": "在右侧打开《{{name}}》",
+    "courseLinkOpen": "打开",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
       "search": "搜索课堂和资料",
@@ -2397,7 +2408,6 @@
     "heroSubtitle": "说出你的想法，把它变成一段可以亲历的学习旅程",
     "newSession": "新建对话",
     "sections": {
-      "courses": "课程",
       "sessions": "对话"
     },
     "coursesEmpty": "还没有课程",
@@ -2407,7 +2417,6 @@
     "retry": "重试",
     "untitledSession": "未命名对话",
     "pagePosition": "第 {{index}} / {{total}} 页",
-    "exitPro": "退出 Pro",
     "navAria": "工作区导航",
     "homeAria": "返回首页",
     "currentSession": "当前对话",
@@ -2416,7 +2425,7 @@
     "learningMode": "学习",
     "editingMode": "编辑",
     "editingUnavailableGenerating": "课程生成期间无法编辑。",
-    "fullscreenLearning": "全屏学习",
+    "editGuide": "编辑引导",
     "time": {
       "justNow": "刚刚",
       "minutesAgo": "{{count}} 分钟前",
@@ -2429,11 +2438,10 @@
       "running": "进行中",
       "succeeded": "已就绪",
       "failed": "需处理",
-      "cancelled": "已停止"
+      "cancelled": "已停止",
+      "awaitingAnswer": "等待你的回答"
     },
     "backToWorkspace": "返回工作区",
-    "searchPlaceholder": "按名称筛选",
-    "searchAria": "在{{section}}中搜索",
     "searchEmpty": "没有匹配的内容",
     "showMore": "展示更多 {{count}}",
     "showLess": "收起",
@@ -2446,6 +2454,8 @@
     "expandNavInto": "展开导航 · {{section}}",
     "collapseChat": "收起对话",
     "expandChat": "对话",
+    "talkAboutCourse": "和 AI 一起改",
+    "talkAboutCourseHint": "开一个新对话，和 AI 一起修改这节课",
     "collapseClassroom": "收起课堂",
     "expandClassroom": "课堂",
     "readOnlyBadge": "只读",
@@ -2455,7 +2465,6 @@
     "coursePausedDesc": "有一页生成失败。请在课堂中重试，生成完成后课程会在这里打开。",
     "viewGenerationProgress": "查看生成进度",
     "openToRetry": "前往重试",
-    "courseGeneratingRowHint": "生成完成后可打开",
     "noCourseTitle": "还没有打开课堂",
     "noCourseHint": "点对话里的课堂链接打开，或在左侧列表里选一节；对话会一直在这儿",
     "resizeChatAria": "拖动调整对话栏宽度",
@@ -2464,7 +2473,6 @@
     "autoSaved": "已保存",
     "collapsedTitle": "两侧面板都收起了",
     "collapsedHint": "点左边的标签，把对话或课堂展开",
-    "moreUtilities": "更多",
     "rowMore": "{{name}}的更多操作",
     "folderDeleteHint": "文件夹里的课堂会回到列表顶层，不会被删除。",
     "dropToUnfile": "放到这里移出文件夹",
@@ -2478,11 +2486,178 @@
     "confirmDelete": "确认删除",
     "deleting": "删除中…",
     "deleteFailed": "删除失败，请重试",
-    "tabsAria": "对话与课程",
     "courseTabsAria": "右栏标签页",
     "courseTabClose": "关闭标签页《{{name}}》",
     "courseTabRunning": "生成中",
-    "foldersUnavailable": "此版本不支持文件夹"
+    "foldersUnavailable": "此版本不支持文件夹",
+    "composer": {
+      "attach": "添加材料",
+      "mentionCourse": "引用课堂",
+      "mentionCourseOrMaterial": "引用课堂或知识库材料",
+      "loadSkill": "加载 skill",
+      "skillMenuTitle": "选择课程设计技能",
+      "skillsLoading": "正在加载 skill…",
+      "noSkillsAvailable": "暂无可用 skill",
+      "userSkillsGroup": "我的 Skill",
+      "builtinSkillsGroup": "内置 Skill",
+      "skillsLoadFailed": "Skill 加载失败，点击重试",
+      "retrySkills": "重试",
+      "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+      "launchPlaceholder": "描述你想创造的学习体验",
+      "launchSend": "开始构建"
+    },
+    "nav": {
+      "search": "搜索",
+      "myCourses": "我的课程"
+    },
+    "search": {
+      "placeholder": "搜索对话、课程和资料",
+      "recentChats": "最近对话",
+      "recentCourses": "最近课程",
+      "courses": "课程",
+      "materials": "资料",
+      "actions": "快捷操作",
+      "searching": "正在搜索…",
+      "empty": "没有与“{{query}}”匹配的结果",
+      "materialsFailed": "知识库搜索失败",
+      "themeAction": "主题：{{name}}",
+      "languageAction": "语言：{{name}}"
+    },
+    "account": {
+      "signIn": "登录",
+      "menu": "账号与设置",
+      "profileSaved": "已保存",
+      "language": "语言",
+      "about": "关于 OpenMAIC",
+      "aboutBody": "开源的多智能体互动课堂平台：输入任何主题，AI 老师和同学陪你一起学。基于 MIT 许可证发布。",
+      "viewOnGithub": "在 GitHub 上查看",
+      "docs": "文档",
+      "signOut": "退出登录",
+      "onboarding": "新手引导"
+    },
+    "coursesPage": {
+      "subtitle": "你生成或导入的课程，以及整理它们的文件夹",
+      "searchPlaceholder": "搜索我的课程",
+      "results": "搜索结果",
+      "allCourses": "全部课程",
+      "emptyHint": "在首页说一句想学的内容，第一节课就会出现在这里。",
+      "makeCourse": "做一节课",
+      "pin": "置顶",
+      "unpin": "取消置顶",
+      "pinned": "已置顶"
+    },
+    "fullscreen": {
+      "expand": "全屏",
+      "collapse": "退出全屏（Esc）"
+    },
+    "onboarding": {
+      "paneTitle": "学习，或者编辑",
+      "paneLearn": "「学习」：AI 老师带你上课，随时可以提问。",
+      "paneEdit": "「编辑」：直接修改页面。",
+      "paneChat": "也可以在对话里说「把第 2 页讲得更简单」，让 AI 帮你改。",
+      "gotIt": "知道了"
+    },
+    "tour": {
+      "skip": "跳过",
+      "prev": "上一步",
+      "next": "下一步",
+      "done": "自己输入",
+      "count": "{{index}} / {{total}}",
+      "openGuide": "去上体验课",
+      "welcome": {
+        "title": "欢迎来到 OpenMAIC",
+        "body": "说一句想学什么，OpenMAIC 就生成一节有 AI 老师和同学陪你上的互动课。"
+      },
+      "start": {
+        "title": "从这里开始",
+        "body": "「新建对话」开始一节新课；「搜索」（⌘K）找课程、对话和资料。"
+      },
+      "courses": {
+        "title": "体验课",
+        "body": "这节 5 分钟的课也是 OpenMAIC 做的。打开它，看看上课的地方。"
+      },
+      "library": {
+        "title": "知识库",
+        "body": "讲义、PDF 上传一次，之后做课时都能引用。"
+      },
+      "conversations": {
+        "title": "对话",
+        "body": "每节课都是在一段对话里做出来的。想改课，回到那段对话里说。"
+      },
+      "mode": {
+        "title": "学习，或者编辑",
+        "body": "「学习」跟着 AI 老师上课；「编辑」逐页修改。"
+      },
+      "dock": {
+        "title": "上课的地方",
+        "body": "播放、翻页，随时向 AI 老师提问，同学们也会一起讨论。"
+      },
+      "chat": {
+        "title": "用对话改课",
+        "body": "在旁边的对话里直接说「第 2 页讲简单点」，AI 会帮你改。"
+      },
+      "account": {
+        "title": "账号与设置",
+        "body": "个人资料、设置、语言和主题都在这里，也能从这里重看这份引导。"
+      },
+      "try": {
+        "title": "现在试一节",
+        "body": "在输入框写一个主题，或者点一个例子马上开始。",
+        "attach": "材料：上传讲义，照着它做课",
+        "mention": "引用：@ 一节课或知识库里的资料",
+        "skill": "技能：选一种教学方式，比如深度交互"
+      },
+      "examples": {
+        "sky": {
+          "label": "为什么天空是蓝色的？",
+          "prompt": "为什么天空是蓝色的？用生活里能看到的现象讲清楚"
+        },
+        "interest": {
+          "label": "复利是怎么回事",
+          "prompt": "用生活里的例子，讲懂复利是怎么回事"
+        },
+        "teach": {
+          "label": "备课：初二勾股定理",
+          "prompt": "给初二学生上一节勾股定理课，最后带一个小测验"
+        }
+      },
+      "coursesNav": {
+        "title": "我的课程",
+        "body": "做好的课都在这里，点一下看看。"
+      },
+      "openLook": "打开看看",
+      "edit": {
+        "canvas": {
+          "title": "页面",
+          "body": "直接点页面上的文字、图片、形状来改，拖动调整位置和大小。"
+        },
+        "pages": {
+          "title": "页面列表",
+          "body": "点这里展开页面列表：加页、拖动排序、删除页面。"
+        },
+        "bar": {
+          "title": "控制栏",
+          "body": "加动作、配旁白语音、翻页和加页、设置老师和同学；最右边可以圈选元素交给 AI 改。"
+        },
+        "timeline": {
+          "title": "动作轨道",
+          "body": "每张卡片是一个动作：讲解、聚光、讨论。拖动排序，点开修改。"
+        },
+        "dock": {
+          "title": "底栏",
+          "body": "拖动上边缘调整高度，或者收起来给页面更多空间。"
+        },
+        "learn": {
+          "title": "预览",
+          "body": "切回「学习」，看看学生上课时的样子。"
+        },
+        "chat": {
+          "title": "让 AI 帮你改",
+          "body": "不想手动改？在对话里直接说，比如「第 2 页加一道练习」。"
+        }
+      },
+      "editDone": "开始编辑"
+    }
   },
   "profile": {
     "title": "个人资料",
@@ -2514,25 +2689,6 @@
     "placeholder": "访问码",
     "error": "访问码错误，请重试。"
   },
-  "proMode": {
-    "attach": "添加材料",
-    "mentionCourse": "引用课堂",
-    "loadSkill": "加载 skill",
-    "skillMenuTitle": "选择课程设计技能",
-    "skillsLoading": "正在加载 skill…",
-    "noSkillsAvailable": "暂无可用 skill",
-    "userSkillsGroup": "我的 Skill",
-    "builtinSkillsGroup": "内置 Skill",
-    "skillsLoadFailed": "Skill 加载失败，点击重试",
-    "retrySkills": "重试",
-    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
-    "badgeAria": "专业模式",
-    "badgeEnter": "专业模式",
-    "badgeExit": "返回普通模式",
-    "launchPlaceholder": "描述你想创造的学习体验",
-    "launchSend": "开始构建",
-    "mentionCourseOrMaterial": "引用课堂或知识库材料"
-  },
   "workbench": {
     "tool": {
       "label": {
@@ -2542,6 +2698,16 @@
       "error": {
         "materialExtraction": null
       }
+    }
+  },
+  "classroomEnd": {
+    "close": "回到最后一页",
+    "learned": "已学完 {{count}} 页",
+    "result": "答对 {{correct}} / {{total}} 题",
+    "actions": {
+      "reviewWrong": "查看错题",
+      "doQuiz": "去做小测",
+      "restart": "重新学习"
     }
   },
   "sandbox": {
@@ -2900,6 +3066,7 @@
       "closeDetails": "收起任务详情",
       "milestoneSteps": "当前阶段的学习步骤",
       "enterStep": "进入{{step}}",
+      "enterMilestone": "进入下一阶段",
       "planArtifact": "计划保存在左侧 PLAN.md。阅读当前版本，并在对话中完成理解、审阅和确认。",
       "codeArtifact": "在左侧查看当前项目文件。结合实际实现完成审阅，保存修改后再继续。",
       "taskTitle": "当前任务",
@@ -3025,8 +3192,11 @@
       "completedMilestones": "完成阶段",
       "completedSteps": "完成环节",
       "concepts": "实践概念",
-      "skills": "这次实践的能力",
-      "practiceNotice": "这些记录说明你参与了哪些实践，不代表已经完全掌握。",
+      "projectResults": "你做成了什么",
+      "workflow": "实践流程",
+      "decisionQuestion": "决策问题",
+      "decisionChoice": "你的决策",
+      "decisionReason": "你的理由",
       "viewWorkbench": "查看只读工作台",
       "completedTitle": "项目已完成",
       "completionHint": "作品与学习记录已保存。查看学习报告，也可以随时回到工作台回顾。",
@@ -3081,10 +3251,10 @@
       "discussion": "当前正在讨论决策，进入计划或编码环节后才能编辑文件。",
       "quiz": "当前是理解检验环节，项目文件只读。",
       "recap": "当前是复盘环节，项目文件只读。",
-      "assessment": "当前是测试环节，文件只读；记录到测试失败后会开放源码修复。",
+      "assessment": "当前是测试环节，文件只读；记录到测试失败后会开放修复。",
       "stage": "当前环节的项目文件只读。",
       "planOnly": "计划环节只可编辑 PLAN.md，源码暂时只读。",
-      "planLocked": "PLAN.md 已经审阅，编码与测试修复期间只读。",
+      "planLocked": "PLAN.md 已经审阅，编码期间只读。",
       "planEditable": "可以编辑 PLAN.md，修改会自动保存。",
       "codeEditable": "可以编辑源码，修改会自动保存。",
       "stale": "环境或文件已变更，草稿已保留；请先复制草稿或重新读取文件。",
@@ -3174,16 +3344,7 @@
       "testsPassed": "行为测试已通过",
       "decisionsLabel": "实现选择",
       "quizLabel": "测验",
-      "skillsMetric": "实践技能",
-      "skillsSection": "完成的挑战",
       "conceptsLabel": "解锁的知识点",
-      "skillLabels": {
-        "decisions": "选择实现方式",
-        "planReview": "审阅实施计划",
-        "codeReview": "核对代码实现",
-        "verification": "验证实际效果",
-        "reflection": "回顾实践过程"
-      },
       "workshop": "Vibe Coding 工作坊",
       "entryLabel": "Vibe Coding 工作坊前置课入口"
     },

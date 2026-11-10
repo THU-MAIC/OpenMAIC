@@ -40,6 +40,7 @@ export async function renderReportShareImage(
   const heading = t(
     content.completed ? 'pblV3.reportCopy.congratulations' : 'pblV3.share.achievement',
   );
+  const workflow = content.workflow.map((id) => t(`pblV3.reportCopy.skillLabels.${id}`));
   let font = primaryFont;
   if (document.fonts) {
     try {
@@ -53,9 +54,10 @@ export async function renderReportShareImage(
           heading,
           t('pblV3.share.workshop'),
           t('pblV3.share.entryLabel'),
-          ...content.skills.map((id) => t(`pblV3.share.skillLabels.${id}`)),
-          t('pblV3.share.skillsMetric'),
-          t('pblV3.share.skillsSection'),
+          ...content.results.flatMap(({ title, description }) => [title, description]),
+          ...workflow,
+          t('pblV3.reportCopy.workflow'),
+          t('pblV3.reportCopy.projectResults'),
           t('pblV3.share.conceptsLabel'),
           t('pblV3.share.invite'),
           t('pblV3.share.tagline'),
@@ -118,14 +120,11 @@ export async function renderReportShareImage(
     else ctx!.fillText(value, x, y, maxWidth);
   }
   // Fixed text slots fit built-in copy; authored long titles remain bounded with an ellipsis.
-  function paragraph(
+  function layoutParagraph(
     value: string,
-    x: number,
-    y: number,
     w: number,
     size: number,
     maxLines: number,
-    color = ink,
     weight = 400,
     fit = false,
     flow: CanvasDirection = direction,
@@ -142,11 +141,20 @@ export async function renderReportShareImage(
     const visible = lines.slice(0, maxLines);
     if (lines.length > maxLines)
       visible[maxLines - 1] = ellipsizeShareText(visible[maxLines - 1] ?? '', w, measure);
-    visible.forEach((s, i) =>
+    return { lines: visible, size, weight, flow, lineHeight: size * 1.45 };
+  }
+  function drawParagraph(
+    { lines, size, weight, flow, lineHeight }: ReturnType<typeof layoutParagraph>,
+    x: number,
+    y: number,
+    w: number,
+    color: string,
+  ) {
+    lines.forEach((s, i) =>
       text(
         s,
         flow === 'rtl' ? x + w : x,
-        y + i * size * 1.45,
+        y + i * lineHeight,
         size,
         color,
         weight,
@@ -154,7 +162,27 @@ export async function renderReportShareImage(
         flow === 'rtl' ? 'right' : 'left',
       ),
     );
-    return y + Math.max(0, visible.length - 1) * size * 1.45;
+    return y + Math.max(0, lines.length - 1) * lineHeight;
+  }
+  function paragraph(
+    value: string,
+    x: number,
+    y: number,
+    w: number,
+    size: number,
+    maxLines: number,
+    color = ink,
+    weight = 400,
+    fit = false,
+    flow: CanvasDirection = direction,
+  ) {
+    return drawParagraph(
+      layoutParagraph(value, w, size, maxLines, weight, fit, flow),
+      x,
+      y,
+      w,
+      color,
+    );
   }
   // Use the supplied official wordmark intact; no platform-font imitation.
   ctx.drawImage(logo, 64, 56, 344, 344 * (logo.naturalHeight / logo.naturalWidth));
@@ -194,124 +222,272 @@ export async function renderReportShareImage(
   const headingEnd = paragraph(heading, 64, 254, width - 128, 54, 1, ink, 700, true);
   const titleEnd = paragraph(content.title, 64, headingEnd + 70, width - 128, 34, 2, muted, 500);
 
-  // Results lead the image. A configured invitation always stays at the bottom.
-  const resultsY = destination ? 1108 : 1360;
-  // Existing factual sections retain their content and flow only when data exists.
+  const margin = 64;
+  const bodyWidth = width - 2 * margin;
+  const rtl = direction === 'rtl';
   const panel = dark ? '#ffffff0c' : '#ffffffa8';
-  let y = titleEnd + 62;
-  const metricStride = destination ? 128 : 156;
-  const metricHeight = metricStride - 16;
-  if (content.metrics.length) {
-    const cardWidth = (width - 136) / 2;
-    content.metrics.forEach(([key, value], i) => {
-      const x = 64 + (i % 2) * (cardWidth + 8);
-      const top = y + Math.floor(i / 2) * metricStride;
-      box(x, top, cardWidth, metricHeight, panel);
-      text(
-        value,
-        direction === 'rtl' ? x + cardWidth - 24 : x + 24,
-        top + (destination ? 48 : 60),
-        42,
-        accent,
-        700,
-        'ltr',
-        direction === 'rtl' ? 'right' : 'left',
-      );
-      paragraph(
-        t(
-          key === 'skills'
-            ? 'pblV3.share.skillsMetric'
-            : key === 'concepts'
-              ? 'pblV3.share.conceptsLabel'
-              : `pblV3.reportCopy.${key}`,
-        ),
-        x + 24,
-        top + (destination ? 84 : 104),
-        cardWidth - 48,
-        20,
-        1,
-        muted,
-        500,
-        true,
-      );
-    });
-    y += Math.ceil(content.metrics.length / 2) * metricStride;
-  }
-  // Size chips first so longer authored concepts can wrap without covering the checklist.
-  const chipHeight = 50,
-    gap = 14;
-  const chips: { text: string; x: number; row: number; width: number }[] = [];
-  let chipX = direction === 'rtl' ? width - 64 : 64,
-    chipRow = 0;
-  content.concepts.forEach((concept) => {
-    ctx.font = `500 22px ${font}`;
-    const chipWidth = Math.min(348, ctx.measureText(concept).width + 40);
-    if (direction === 'rtl' ? chipX - chipWidth < 64 : chipX + chipWidth > width - 64) {
-      chipX = direction === 'rtl' ? width - 64 : 64;
-      chipRow++;
-    }
-    const left = direction === 'rtl' ? chipX - chipWidth : chipX;
-    chips.push({ text: concept, x: left, row: chipRow, width: chipWidth });
-    chipX = direction === 'rtl' ? left - gap : left + chipWidth + gap;
-  });
-  const conceptHeight = chips.length ? (chipRow + 1) * (chipHeight + gap) - gap : 0;
-  const conceptsY = resultsY - 88 - conceptHeight;
-  const lowerTop = y + 24;
+  const tint = dark ? '#c3a5ff12' : '#722ed10a';
   const rule = dark ? '#ffffff16' : '#211c3812';
-  if (content.skills.length) {
-    paragraph(
-      t('pblV3.share.skillsSection'),
-      64,
-      lowerTop + 40,
-      width - 128,
-      24,
-      1,
-      muted,
-      600,
-      true,
-    );
-    const rows = Math.ceil(content.skills.length / 2);
-    const bodyTop = lowerTop + 70;
-    const rowHeight = Math.min(
-      destination ? 66 : 104,
-      ((chips.length ? conceptsY - 40 : resultsY - 40) - bodyTop) / rows,
-    );
-    const columnWidth = (width - 164) / 2;
-    content.skills.forEach((id, i) => {
-      const column = direction === 'rtl' ? 1 - (i % 2) : i % 2;
-      const x = 64 + column * (columnWidth + 36);
-      const center = bodyTop + (Math.floor(i / 2) + 0.5) * rowHeight;
-      const markerX = direction === 'rtl' ? x + columnWidth - 20 : x + 20;
-      ctx.strokeStyle = accent;
-      ctx.lineWidth = 2.4;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.beginPath();
-      ctx.moveTo(markerX - 6, center);
-      ctx.lineTo(markerX - 1, center + 5);
-      ctx.lineTo(markerX + 8, center - 6);
-      ctx.stroke();
-      paragraph(
-        t(`pblV3.share.skillLabels.${id}`),
-        direction === 'rtl' ? x + 12 : x + 52,
-        center + 9,
-        columnWidth - 64,
-        rowHeight < 40 ? 22 : 26,
-        1,
-        ink,
-        500,
-        true,
-      );
+  const resultsY = destination ? 1108 : 1360;
+  const sections: { height: number; draw: (top: number) => void }[] = [];
+  const mirror = (x: number, w: number) => (rtl ? width - x - w : x);
+
+  if (content.metrics.length) {
+    const metricHeight = 108;
+    sections.push({
+      height: metricHeight,
+      draw(top) {
+        const w = (bodyWidth - 14 * (content.metrics.length - 1)) / content.metrics.length;
+        content.metrics.forEach(([key, value], i) => {
+          const x = mirror(margin + i * (w + 14), w);
+          box(x, top, w, metricHeight, panel);
+          text(
+            value,
+            rtl ? x + w - 24 : x + 24,
+            top + 51,
+            41,
+            accent,
+            700,
+            'ltr',
+            rtl ? 'right' : 'left',
+          );
+          paragraph(
+            t(key === 'concepts' ? 'pblV3.share.conceptsLabel' : `pblV3.reportCopy.${key}`),
+            x + 24,
+            top + 83,
+            w - 48,
+            20,
+            1,
+            muted,
+            500,
+            true,
+          );
+        });
+      },
     });
   }
-  if (chips.length) {
-    paragraph(t('pblV3.share.conceptsLabel'), 64, conceptsY, width - 128, 24, 1, muted, 600, true);
-    chips.forEach((chip) => {
-      const top = conceptsY + 24 + chip.row * (chipHeight + gap);
-      box(chip.x, top, chip.width, chipHeight, dark ? '#ffffff0a' : '#ffffff80', 14);
-      paragraph(chip.text, chip.x + 20, top + 33, chip.width - 40, 22, 1, ink, 500);
+
+  if (content.results.length) {
+    const columns = Math.min(2, content.results.length);
+    const gap = 16;
+    const w = (bodyWidth - gap * (columns - 1)) / columns;
+    const textGap = 22;
+    function measureParagraph(layout: ReturnType<typeof layoutParagraph>) {
+      const { lines, size, weight, flow, lineHeight } = layout;
+      ctx!.font = `${weight} ${size}px ${font}`;
+      ctx!.direction = flow;
+      const first = ctx!.measureText(lines[0] ?? '');
+      const last = ctx!.measureText(lines.at(-1) ?? '');
+      const ascent = first.actualBoundingBoxAscent ?? size * 0.8;
+      const descent = last.actualBoundingBoxDescent ?? size * 0.2;
+      return { layout, ascent, height: ascent + (lines.length - 1) * lineHeight + descent };
+    }
+    const cards = content.results.map(({ title, description }) => {
+      const heading = measureParagraph(layoutParagraph(title, w - 84, 29, 2, 700, true));
+      const body = description
+        ? measureParagraph(layoutParagraph(description, w - 48, 21, 2, 500, true))
+        : null;
+      return { heading, body, contentHeight: heading.height + (body ? textGap + body.height : 0) };
+    });
+    const rows = Array.from({ length: Math.ceil(cards.length / columns) }, (_, index) => {
+      const items = cards.slice(index * columns, (index + 1) * columns);
+      return {
+        items,
+        height: Math.max(132, ...items.map(({ contentHeight }) => contentHeight + 60)),
+      };
+    });
+    sections.push({
+      height: 42 + rows.reduce((height, row) => height + row.height + gap, -gap),
+      draw(top) {
+        paragraph(
+          t('pblV3.reportCopy.projectResults'),
+          margin,
+          top + 24,
+          bodyWidth,
+          25,
+          1,
+          muted,
+          600,
+          true,
+        );
+        let y = top + 42;
+        for (const { items, height } of rows) {
+          items.forEach(({ heading, body, contentHeight }, column) => {
+            const x = mirror(margin + column * (w + gap), w);
+            box(x, y, w, height, panel, 20);
+            const contentTop = y + (height - contentHeight) / 2;
+            const marker = rtl ? x + w - 48 : x + 24;
+            const markerY = contentTop + (heading.layout.size - 24) / 2;
+            box(marker, markerY, 24, 24, tint, 8);
+            ctx.strokeStyle = accent;
+            ctx.lineWidth = 2.4;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.beginPath();
+            ctx.moveTo(marker + 6, markerY + 12);
+            ctx.lineTo(marker + 10, markerY + 16);
+            ctx.lineTo(marker + 18, markerY + 8);
+            ctx.stroke();
+            drawParagraph(
+              heading.layout,
+              rtl ? x + 24 : x + 60,
+              contentTop + heading.ascent,
+              w - 84,
+              ink,
+            );
+            if (body) {
+              drawParagraph(
+                body.layout,
+                x + 24,
+                contentTop + heading.height + textGap + body.ascent,
+                w - 48,
+                muted,
+              );
+            }
+          });
+          y += height + gap;
+        }
+      },
     });
   }
+
+  if (workflow.length) {
+    const w = bodyWidth / workflow.length;
+    ctx.font = `600 20px ${font}`;
+    ctx.direction = direction;
+    const labels = workflow.map((label) =>
+      wrapShareText(label, w - 32, (value) => ctx.measureText(value).width).map((line) => ({
+        line,
+        width: ctx.measureText(line).width,
+      })),
+    );
+    const h = Math.max(120, 80 + 24 * Math.max(...labels.map((lines) => lines.length)));
+    sections.push({
+      height: 42 + h,
+      draw(top) {
+        paragraph(
+          t('pblV3.reportCopy.workflow'),
+          margin,
+          top + 24,
+          bodyWidth,
+          25,
+          1,
+          muted,
+          600,
+          true,
+        );
+        const y = top + 42;
+        box(margin, y, bodyWidth, h, tint, 20);
+        const centerY = y + 36;
+        ctx.strokeStyle = dark ? '#c3a5ff30' : '#722ed12c';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(margin + w / 2, centerY);
+        ctx.lineTo(width - margin - w / 2, centerY);
+        ctx.stroke();
+        labels.forEach((lines, i) => {
+          const x = mirror(margin + i * w, w);
+          const center = x + w / 2;
+          box(center - 17, centerY - 17, 34, 34, dark ? '#493667' : '#e2d1fa', 17);
+          text(
+            String(i + 1).padStart(2, '0'),
+            center,
+            centerY + 5,
+            15,
+            accent,
+            700,
+            'ltr',
+            'center',
+          );
+          lines.forEach(({ line, width: lineWidth }, row) =>
+            text(
+              line,
+              center + (rtl ? lineWidth : -lineWidth) / 2,
+              y + 80 + row * 24,
+              20,
+              ink,
+              600,
+              direction,
+              rtl ? 'right' : 'left',
+            ),
+          );
+        });
+      },
+    });
+  }
+
+  if (content.concepts.length) {
+    const gap = 12;
+    let x = margin;
+    let y = 42;
+    let rowHeight = 0;
+    ctx.font = `500 22px ${font}`;
+    ctx.direction = direction;
+    const measure = (value: string) => ctx.measureText(value).width;
+    const chips = content.concepts.map((concept) => {
+      const w = Math.min(bodyWidth, Math.ceil(measure(concept)) + 40);
+      const lines = wrapShareText(concept, w - 40, measure);
+      const h = 44 + Math.max(0, lines.length - 1) * 28;
+      if (x + w > width - margin) {
+        x = margin;
+        y += rowHeight + gap;
+        rowHeight = 0;
+      }
+      const chip = { x: mirror(x, w), y, w, h, lines };
+      x += w + gap;
+      rowHeight = Math.max(rowHeight, h);
+      return chip;
+    });
+    sections.push({
+      height: y + rowHeight,
+      draw(top) {
+        paragraph(
+          t('pblV3.share.conceptsLabel'),
+          margin,
+          top + 24,
+          bodyWidth,
+          25,
+          1,
+          muted,
+          600,
+          true,
+        );
+        for (const chip of chips) {
+          box(chip.x, top + chip.y, chip.w, chip.h, panel, 14);
+          chip.lines.forEach((line, i) =>
+            text(
+              line,
+              rtl ? chip.x + chip.w - 20 : chip.x + 20,
+              top + chip.y + 29 + i * 28,
+              22,
+              ink,
+              500,
+              direction,
+              rtl ? 'right' : 'left',
+            ),
+          );
+        }
+      },
+    });
+  }
+
+  // Keep the footer and campaign hit area fixed while fitting dense authored content above.
+  const top = titleEnd + 56;
+  const available = resultsY - top - 40;
+  const sectionHeight = sections.reduce((height, section) => height + section.height, 0);
+  const gaps = Math.max(0, sections.length - 1);
+  const gap = Math.min(80, Math.max(26, (available - sectionHeight) / Math.max(1, gaps)));
+  const scale = Math.min(1, available / (sectionHeight + gaps * gap));
+  ctx.save();
+  ctx.translate(((1 - scale) * width) / 2, top);
+  ctx.scale(scale, scale);
+  let offset = 0;
+  for (const section of sections) {
+    section.draw(offset);
+    offset += section.height + gap;
+  }
+  ctx.restore();
+
   const { passed, tested, quizScore, quizTotal, decisions } = content.verification;
   const number = (value: string | number) =>
     direction === 'rtl' ? `\u2066${value}\u2069` : String(value);

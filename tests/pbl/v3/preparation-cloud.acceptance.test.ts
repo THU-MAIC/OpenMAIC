@@ -28,7 +28,7 @@ const principal: OwnerPrincipal = {
   ownerId: scope,
   kind: 'user',
   assurance: 'verified',
-  roles: new Set(['sandbox:use']),
+  roles: new Set(),
 };
 const owned = new Set<string>();
 const evidence: Record<string, unknown> = { scope, checks: [], cleanup: [] };

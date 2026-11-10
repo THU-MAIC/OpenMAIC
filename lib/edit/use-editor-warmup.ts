@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect } from 'react';
-import { isEditorPreloaded, preloadEditor } from '@/lib/edit/preload-editor';
+import { isEditorPreloaded, preloadEditor, preloadEditorSurfaces } from '@/lib/edit/preload-editor';
 
 /** Upper bound on the idle wait, so a busy main thread cannot starve the warm-up. */
 const IDLE_TIMEOUT_MS = 3000;
@@ -16,6 +16,13 @@ const FALLBACK_DELAY_MS = 1000;
  */
 export function warmEditor(): void {
   preloadEditor().catch((error: unknown) => {
+    console.warn('[edit] editor warm-up failed; the next Edit switch retries', error);
+  });
+}
+
+/** {@link warmEditor} without the font stylesheets, while a document is still loading. */
+export function warmEditorSurfaces(): void {
+  preloadEditorSurfaces().catch((error: unknown) => {
     console.warn('[edit] editor warm-up failed; the next Edit switch retries', error);
   });
 }

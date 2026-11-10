@@ -8,7 +8,7 @@ import type { StatelessChatRequest, StatelessEvent } from '@/lib/types/chat';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { buildDirectorPrompt, buildUserPrompt, toHistoryMessages } from './prompts';
 import { createDirectorCompactionRuntime } from './director-compaction';
-import type { DirectorToolTraceEntry, SendEvent } from './types';
+import type { DirectorToolTraceEntry, PiStreamFnFactory, SendEvent } from './types';
 import type { ChildRuntimeMode } from './child-runtime';
 import { createAbortableSend } from './send';
 import { buildCallAgentTool } from './tools/call-agent';
@@ -35,6 +35,7 @@ export async function runPiDirectorLoop(opts: {
   agentConfigs: AgentConfig[];
   send: SendEvent;
   languageModel: LanguageModel;
+  streamFnFactory?: PiStreamFnFactory;
   thinkingConfig: ThinkingConfig;
   maxOutputTokens?: number;
   contextWindow?: number;
@@ -55,6 +56,9 @@ export async function runPiDirectorLoop(opts: {
   let totalAgents = 0;
   let totalActions = 0;
   let agentHadContent = false;
+  // A teacher/assistant call failed or stayed empty. It only widens cue_user and
+  // drives a fixed client notice; it never stops the Director.
+  let teachingAgentFailedOrEmpty = false;
   let userCued = false;
   let sessionClosed = false;
   let endReason: string | undefined;
@@ -93,21 +97,19 @@ export async function runPiDirectorLoop(opts: {
     });
   })();
   const getAgentTurnCount = (): number => piAgentResponses.length;
-  const isTeachingSubstantiveTurn = (summary: AgentTurnSummary): boolean => {
-    const agent = opts.agentConfigs.find((candidate) => candidate.id === summary.agentId);
-    return (
-      (agent?.role === 'teacher' || agent?.role === 'assistant') &&
-      (summary.contentPreview.trim().length > 0 || summary.actionCount > 0)
-    );
+  const isTeachingAgent = (agentId: string): boolean => {
+    const role = opts.agentConfigs.find((candidate) => candidate.id === agentId)?.role;
+    return role === 'teacher' || role === 'assistant';
   };
+  const hasSubstance = (summary: AgentTurnSummary): boolean =>
+    summary.contentPreview.trim().length > 0 || summary.actionCount > 0;
+  const isTeachingSubstantiveTurn = (summary: AgentTurnSummary): boolean =>
+    isTeachingAgent(summary.agentId) && hasSubstance(summary);
   const hasTeachingSubstantiveTurn = (): boolean =>
     piAgentResponses.some(isTeachingSubstantiveTurn);
   const hasVisibleAgentTurn = (): boolean =>
     piAgentResponses.some((summary) => summary.contentPreview.trim().length > 0);
-  const hasAgentContent = (): boolean =>
-    piAgentResponses.some(
-      (summary) => summary.contentPreview.trim().length > 0 || summary.actionCount > 0,
-    );
+  const hasAgentContent = (): boolean => piAgentResponses.some(hasSubstance);
   const cueUser = async (
     data: Extract<StatelessEvent, { type: 'cue_user' }>['data'],
   ): Promise<boolean> => {
@@ -123,7 +125,7 @@ export async function runPiDirectorLoop(opts: {
     return true;
   };
 
-  const streamFn = createCallLlmStreamFn({
+  const streamFn = (opts.streamFnFactory ?? createCallLlmStreamFn)({
     languageModel: opts.languageModel,
     maxOutputTokens: opts.maxOutputTokens,
     thinkingConfig: opts.thinkingConfig,
@@ -148,9 +150,13 @@ export async function runPiDirectorLoop(opts: {
       agentConfigs: opts.agentConfigs,
       send,
       languageModel: opts.languageModel,
+      streamFnFactory: opts.streamFnFactory,
       onAgentDone: (summary, outcome) => {
         if (outcome?.completed !== false) totalAgents += 1;
         if (summary.contentPreview || summary.actionCount > 0) agentHadContent = true;
+        if (isTeachingAgent(summary.agentId) && (outcome?.failed || !hasSubstance(summary))) {
+          teachingAgentFailedOrEmpty = true;
+        }
         piAgentResponses.push(summary);
       },
       onActionDone: (record) => {
@@ -206,7 +212,9 @@ export async function runPiDirectorLoop(opts: {
     buildCueUserTool({
       cueUser,
       getLastAgentId: () => piAgentResponses.at(-1)?.agentId,
-      canCueUser: hasTeachingSubstantiveTurn,
+      // After a failed or empty teaching call the Director may hand the turn
+      // back instead of re-calling an agent only to satisfy this check.
+      canCueUser: () => hasTeachingSubstantiveTurn() || teachingAgentFailedOrEmpty,
       cueUserSkipReason: 'no_substantive_teaching_turn',
       isSessionClosed: () => sessionClosed,
     }),
@@ -274,6 +282,7 @@ export async function runPiDirectorLoop(opts: {
         totalActions,
         totalAgents,
         agentHadContent,
+        teachingAgentFailedOrEmpty,
         cueUserReceived: userCued,
         sessionClosed,
         endReason,

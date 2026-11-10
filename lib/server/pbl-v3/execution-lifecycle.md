@@ -68,6 +68,16 @@ the later of the two windows plus the scan cadence. Existing collection,
 terminal shutdown, checkpoint and writer fences still apply; `failed` does not
 authorize destroying a live writer.
 
+Course deletion withdraws the pinned project resources and leaves the study and
+environment bindings available to background maintenance. When maintenance observes
+a deleted course, it waits for learner inactivity and applies the existing Agent,
+command, application and terminal cleanup gates. It then releases the bound compute
+without resolving the withdrawn package or taking a final checkpoint. This path
+preserves the previous checkpoint and teaching state. The normal release fence and
+owner/workspace binding checks still apply, and uncertain deletion retries the
+same environment identity. This maintenance path grants no access to the deleted
+course or its resources.
+
 Release and replacement preparation never write `agent_sessions` or role
 bindings: the same session ids keep their status and error. A `failed` or
 `cancelled` turn remains retryable after the learner returns and `prepare`

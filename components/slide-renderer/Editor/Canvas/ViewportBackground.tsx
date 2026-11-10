@@ -26,5 +26,5 @@ export function ViewportBackground() {
     pointerEvents: 'none', // Don't block mouse events
   };
 
-  return <div className="viewport-background" style={backgroundStyle} />;
+  return <div className="viewport-background rounded-lg" style={backgroundStyle} />;
 }

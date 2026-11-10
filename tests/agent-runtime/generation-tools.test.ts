@@ -3,12 +3,14 @@ import { Value } from 'typebox/value';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 
 import type { CourseDocument, CourseStore } from '@/lib/server/agent-runtime/course-tools';
-import { buildDslCourseToolset } from '@/lib/server/agent-runtime/course-tools';
+import { buildDslCourseToolset, DSL_TOOLS_PROMPT } from '@/lib/server/agent-runtime/course-tools';
 import {
   buildGenerationTools,
+  SLIDE_DESIGN_DESCRIPTION,
   collectUnresolvedMediaPlaceholders,
   filterKnownActions,
 } from '@/lib/server/agent-runtime/generation-tools';
+import { generateImagePromptBlock } from '@/lib/server/agent-runtime/generate-image';
 import type { Scene } from '@/lib/types/stage';
 
 function slide(id: string, order: number, title = id): Scene {
@@ -487,6 +489,156 @@ describe('generation and deck tools', () => {
     expect(prompts[2]).toContain('Entropy of mixing');
   });
 
+  it('declares design as an optional slide-only look brief, apart from the content fields', () => {
+    const generate = find(buildGenerationTools(deps(state(document([])).store)), 'generate_scene');
+    const schema = generate.parameters as unknown as {
+      required?: string[];
+      properties: Record<string, { type?: string; description?: string }>;
+    };
+    expect(schema.required ?? []).not.toContain('design');
+    expect(schema.properties.design).toMatchObject({
+      type: 'string',
+      description: SLIDE_DESIGN_DESCRIPTION,
+    });
+    const design = schema.properties.design.description ?? '';
+    expect(design).toMatch(/^Slide pages only/);
+    for (const part of ['at a glance', 'visual style', 'palette', 'layout', 'proportions']) {
+      expect(design).toContain(part);
+    }
+    expect(design).toContain('never written onto the page');
+    // Content stays in brief/materialFacts, and both say the look goes elsewhere.
+    expect(schema.properties.brief.description).toContain('content intent only');
+    expect(schema.properties.brief.description).toContain('design');
+    expect(schema.properties.materialFacts.description).toContain('style and layout go in design');
+    expect(generate.description).toContain('design says how it looks');
+    const base = { stageId: 'stage-test', order: 1, title: 'T', type: 'slide', brief: 'B' };
+    expect(Value.Check(generate.parameters, { ...base, design: 'Navy title band' })).toBe(true);
+    expect(Value.Check(generate.parameters, { ...base, design: 42 })).toBe(false);
+  });
+
+  it('threads a slide design into the content prompt as its own section', async () => {
+    const current = state(document([]));
+    const users: string[] = [];
+    let calls = 0;
+    const aiCall = vi.fn(async (_system: string, user: string) => {
+      calls += 1;
+      users.push(user);
+      return calls === 1 ? JSON.stringify({ elements: [], background: null }) : '[]';
+    });
+    const generate = find(buildGenerationTools(deps(current.store, { aiCall })), 'generate_scene');
+    const response = await generate.execute('call', {
+      stageId: 'stage-test',
+      order: 1,
+      title: 'Special angles',
+      type: 'slide',
+      brief: 'Find the trig values of the special angles at a glance',
+      materialFacts: ['sin 30 = 1/2'],
+      design: '  DESIGN-SENTINEL: white page, navy title band, table left 60%  ',
+    } as never);
+    expect(response).not.toMatchObject({ isError: true });
+    const prompt = users[0] ?? '';
+    expect(prompt).toContain('## Design Brief');
+    expect(prompt).toContain('DESIGN-SENTINEL: white page, navy title band, table left 60%\n');
+    expect(prompt).toContain(
+      '- **Description**: Find the trig values of the special angles at a glance',
+    );
+    expect(prompt).toContain('1. sin 30 = 1/2');
+  });
+
+  it('generates a slide without the design section when no design is given', async () => {
+    const current = state(document([]));
+    const users: string[] = [];
+    let calls = 0;
+    const aiCall = vi.fn(async (_system: string, user: string) => {
+      calls += 1;
+      users.push(user);
+      return calls === 1 ? JSON.stringify({ elements: [], background: null }) : '[]';
+    });
+    const generate = find(buildGenerationTools(deps(current.store, { aiCall })), 'generate_scene');
+    await generate.execute('call', {
+      stageId: 'stage-test',
+      order: 1,
+      title: 'Plain',
+      type: 'slide',
+      brief: 'A plain slide',
+    } as never);
+    expect(users[0]).toBeDefined();
+    expect(users[0]).not.toContain('Design Brief');
+  });
+
+  it('rejects design on non-slide pages without writing anything', async () => {
+    const current = state(document([]));
+    const aiCall = vi.fn();
+    const generate = find(buildGenerationTools(deps(current.store, { aiCall })), 'generate_scene');
+    const response = await generate.execute('call', {
+      stageId: 'stage-test',
+      order: 1,
+      title: 'Check',
+      type: 'quiz',
+      brief: 'Check understanding',
+      design: 'Two columns',
+    } as never);
+    expect(response).toMatchObject({ isError: true, details: { error: 'design-requires-slide' } });
+    expect(aiCall).not.toHaveBeenCalled();
+    expect(current.get()?.scenes).toHaveLength(0);
+  });
+
+  it('tells the agent to keep one course-wide design style across slide designs', () => {
+    const guidance = DSL_TOOLS_PROMPT;
+    expect(guidance).toContain('pass design (how the page looks)');
+    expect(guidance).toContain('settle one design style for the whole course');
+    for (const part of ['palette', 'type scale', 'title placement', 'layout grammar']) {
+      expect(guidance).toContain(part);
+    }
+    expect(guidance).toContain('restate that same style in every slide design');
+    expect(guidance).toContain('keep its established style');
+  });
+
+  it('treats the opening request of a new conversation as a request for a course', () => {
+    const guidance = DSL_TOOLS_PROMPT;
+    expect(guidance).toContain(
+      'the opening request of a new conversation is a request for a course by default: build one',
+    );
+    for (const exception of [
+      'a question about a course the conversation already refers to',
+      'a question about settings or how the product works',
+      'small talk',
+      'a change to an existing course',
+    ]) {
+      expect(guidance).toContain(exception);
+    }
+    expect(guidance).toContain(
+      'When you genuinely cannot tell whether the user wants a course, ask once with ask_user',
+    );
+    expect(guidance).toContain('instead of only answering in chat');
+  });
+
+  it('gets the first page persisted before any work it does not need', () => {
+    const guidance = DSL_TOOLS_PROMPT;
+    expect(guidance).toContain('get its first page persisted as early as possible');
+    expect(guidance).toContain('generate page 1 before any work that page does not need');
+    expect(guidance).toContain('Research the first page relies on still comes first');
+    expect(guidance).toContain('the images for page N right before generating page N');
+    expect(guidance).toContain(
+      'never generate a batch of images or videos for the whole course up front',
+    );
+    // The page-1 rule follows the stage-design pointer, so a new course still
+    // reads the build method first.
+    expect(guidance.indexOf('read the `stage-design` skill')).toBeLessThan(
+      guidance.indexOf('get its first page persisted'),
+    );
+  });
+
+  it('tells the image guidance to make images per page, just in time', () => {
+    const guidance = generateImagePromptBlock();
+    expect(guidance).toContain("obtain that page's real srcs right before generating it");
+    expect(guidance).toContain('Generate images one page at a time');
+    expect(guidance).toContain(
+      'never as a batch for the whole course before its first page exists',
+    );
+    expect(guidance).not.toContain('obtain every real src first');
+  });
+
   it('validates widget params through the tool schema', () => {
     const generate = find(buildGenerationTools(deps(state(document([])).store)), 'generate_scene');
     const base = {
@@ -503,6 +655,71 @@ describe('generation and deck tools', () => {
       false,
     );
     expect(Value.Check(generate.parameters, { ...base, widgetType: 'hologram' })).toBe(false);
+  });
+
+  it('declares generate_scene widgetOutline as an object that accepts extra keys', async () => {
+    const current = state(document([]));
+    let calls = 0;
+    const aiCall = vi.fn(async () => {
+      calls += 1;
+      return calls === 1 ? '<!DOCTYPE html><html><body><div id="loop"></div></body></html>' : '[]';
+    });
+    const generate = find(buildGenerationTools(deps(current.store, { aiCall })), 'generate_scene');
+    const widgetOutline = (
+      generate.parameters as unknown as {
+        properties: {
+          widgetOutline: {
+            type?: unknown;
+            additionalProperties?: unknown;
+            description?: unknown;
+          };
+        };
+      }
+    ).properties.widgetOutline;
+    const description =
+      'Interactive pages only: widget configuration object matching widgetType (e.g. { concept, keyVariables } for simulation, { diagramType, nodes } for diagram, { language } for code, { gameType, challenge } for game, { visualizationType, objects } for visualization3d). Must be a plain object. Defaults to { concept: title } when widgetType is set; when only widgetOutline is set, widgetType defaults to simulation.';
+
+    // The model-facing schema is this JSON Schema. Type.Unknown omits `type`,
+    // so providers do not require an object and models send a JSON string.
+    expect(widgetOutline.type).toBe('object');
+    expect(widgetOutline.additionalProperties).not.toBe(false);
+    expect(widgetOutline.description).toBe(description);
+    expect((generate.parameters as { required?: string[] }).required ?? []).not.toContain(
+      'widgetOutline',
+    );
+
+    const base = {
+      stageId: 'stage-test',
+      order: 1,
+      title: 'For loops',
+      type: 'interactive',
+      brief: 'Practice Python for loops',
+    };
+    expect(
+      Value.Check(generate.parameters, {
+        ...base,
+        widgetType: 'code',
+        widgetOutline: { language: 'python', concept: 'for loop', extra: true },
+      }),
+    ).toBe(true);
+    expect(
+      Value.Check(generate.parameters, {
+        ...base,
+        widgetType: 'code',
+        widgetOutline: '{"language":"python","concept":"for loop"}',
+      }),
+    ).toBe(false);
+
+    const response = await generate.execute('call', {
+      ...base,
+      widgetType: 'code',
+      widgetOutline: { language: 'python', concept: 'for loop' },
+    } as never);
+    expect(response).not.toMatchObject({
+      isError: true,
+      details: { error: 'invalid-widget-outline' },
+    });
+    expect(current.get()?.scenes[0]?.content).toMatchObject({ widgetType: 'code' });
   });
 
   it('detects slide media placeholders without returning page bodies', () => {

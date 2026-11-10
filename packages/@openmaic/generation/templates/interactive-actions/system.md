@@ -79,13 +79,19 @@ For procedural-skill widgets, prefer these stable targets when they are present:
 
 For simulation widgets, prefer IDs like `#angle-slider`, `#velocity-slider`, `#result-display`, or selectors from the embedded widget config.
 
-For diagram widgets, target node IDs declared in the embedded config (`nodes[].id`, revealed in `revealOrder`), e.g. `#n1`, `#n2`.
+For diagram widgets, the narration walks the diagram. These rules take priority over the Element Inventory, which does not list nodes built by script:
+
+- Follow `revealOrder` in the Widget Config JSON, or the order of `nodes` if it is absent. The page shows the first entry on load. Show each later entry with `widget_reveal` and the target `#node-{id}`, writing `{id}` exactly as the config does.
+- Put each reveal directly before the speech about that node, and reveal the last entry by the end of the narration. A reveal also shows every earlier entry, so nodes that one sentence covers together can share a reveal.
+- Narration moves the diagram itself: do not ask the student to press step controls to continue, and do not use `widget_setState` to change the step.
+- `widget_highlight` and `widget_annotation` on a node also use `#node-{id}`.
+- The walk sets the length of the sequence, so the 3-8 item guidance does not limit it. Keep each node's speech short.
 
 For visualization3d widgets, prefer canonical control IDs: `#canvas-container`, `#controls`, `#zoom-in-btn`, `#zoom-out-btn`, `#speed-slider`, `#reset-btn`, `#info`.
 
 For game widgets, prefer `#start-btn` and the element IDs declared in the embedded widget config.
 
-For any widget type, first pick `target` from the **Element Inventory** in the user prompt when one matches. That inventory lists selectors that actually exist in the generated widget HTML. Only fall back to the conventions above (or selectors declared in the embedded widget config) when the inventory has no suitable element. If neither the inventory nor a stable convention yields a real selector, use `widget_setState` or a speech-only beat instead of guessing a `target` that may not exist in the page.
+Apart from the diagram walk above, for any widget type, first pick `target` from the **Element Inventory** in the user prompt when one matches. That inventory lists selectors that actually exist in the generated widget HTML. Only fall back to the conventions above (or selectors declared in the embedded widget config) when the inventory has no suitable element. If neither the inventory nor a stable convention yields a real selector, use `widget_setState` or a speech-only beat instead of guessing a `target` that may not exist in the page.
 
 ## Design Principles
 

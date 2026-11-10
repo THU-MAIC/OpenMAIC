@@ -18,6 +18,7 @@ const renderI18nText = (text: string) =>
 const renderWorkspaceText = (
   text: string,
   lookupCourse: WorkbenchCourseNavigation['lookupCourse'] = () => null,
+  excludeCourseCards?: ReadonlySet<string>,
 ) => {
   const providerProps: React.ComponentProps<typeof WorkbenchCourseNavigationProvider> = {
     navigation: {
@@ -26,7 +27,7 @@ const renderWorkspaceText = (
       lookupCourse,
       openCourse: () => undefined,
     },
-    children: createElement(TextBlock, { text }),
+    children: createElement(TextBlock, { text, excludeCourseCards }),
   };
   return renderToStaticMarkup(
     createElement(
@@ -146,18 +147,65 @@ $$`,
     expect(link?.getAttribute('title')).toBeNull();
   });
 
-  it('keeps the workspace course name ahead of a rich link label', () => {
+  it('keeps the agent words in the sentence and the workspace name on the card', () => {
     const html = renderWorkspaceText('[Solving $x^2$](/classroom/stage-1)', () => ({
       id: 'stage-1',
       name: 'Limits course',
       pageCount: 3,
     }));
     const document = parseHTML(html).document;
-    const link = document.querySelector('[data-testid="workbench-course-link-stage-1"]');
+    const inline = document.querySelector('[data-variant="inline"]');
+    const card = document.querySelector('[data-variant="block"]');
 
-    expect(link?.textContent).toContain('Limits course');
-    expect(link?.querySelector('.katex')).toBeNull();
-    expect(link?.getAttribute('aria-label')).toContain('Limits course');
+    expect(inline?.querySelector('.katex')).not.toBeNull();
+    expect(card?.textContent).toContain('Limits course');
+    expect(card?.querySelector('.katex')).toBeNull();
+    expect(card?.getAttribute('aria-label')).toContain('Limits course');
+  });
+
+  it('puts one card per course right after the paragraph that first names it', () => {
+    const lookup: WorkbenchCourseNavigation['lookupCourse'] = (id) => ({
+      id,
+      name: `Course ${id}`,
+      pageCount: 2,
+    });
+    const html = renderWorkspaceText(
+      [
+        'First [A](/classroom/a) here.',
+        'Then [B](/classroom/b) and [A again](/classroom/a).',
+        'Done.',
+      ].join('\n\n'),
+      lookup,
+    );
+    const document = parseHTML(html).document;
+    const prose = document.querySelector('.wb-prose')!;
+    const order = [...prose.children].map((child) =>
+      child.getAttribute('data-testid') === 'workbench-course-mention-cards'
+        ? `cards:${[...child.querySelectorAll('[data-variant="block"]')]
+            .map((card) => card.getAttribute('data-testid')!.replace('workbench-course-link-', ''))
+            .join(',')}`
+        : `text:${child.textContent!.trim()}`,
+    );
+    expect(order).toEqual([
+      'text:First A here.',
+      'cards:a',
+      'text:Then B and A again.',
+      'cards:b',
+      'text:Done.',
+    ]);
+    // Every mention stays a link in its sentence.
+    expect(document.querySelectorAll('[data-variant="inline"]')).toHaveLength(3);
+  });
+
+  it('draws no card for a course the answer already cards', () => {
+    const html = renderWorkspaceText(
+      'See [A](/classroom/a).',
+      (id) => ({ id, name: 'A', pageCount: 1 }),
+      new Set(['a']),
+    );
+    const document = parseHTML(html).document;
+    expect(document.querySelector('[data-variant="inline"]')).not.toBeNull();
+    expect(document.querySelector('[data-variant="block"]')).toBeNull();
   });
 
   it('preserves escaped currency next to single-dollar math', () => {

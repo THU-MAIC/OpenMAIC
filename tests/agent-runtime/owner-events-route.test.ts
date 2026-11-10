@@ -115,6 +115,31 @@ describe('GET owner session events', () => {
     );
     await reader.cancel();
   });
+  it('forwards a status summary’s awaiting-answer verdict to the rail', async () => {
+    mocks.readOwnerSessionEventMaxId.mockResolvedValue(BigInt(1));
+    mocks.readOwnerSessionEventsAfter.mockResolvedValueOnce([
+      {
+        id: '1',
+        sessionId: 'asked-session',
+        type: 'session_status',
+        status: 'succeeded',
+        attempt: 0,
+        awaitingAnswer: true,
+        ownerId: 'user:mine',
+        ts: 1,
+      },
+    ]);
+    const reader = (await call()).body!.getReader();
+    const frame = await readChunk(reader);
+    const data = JSON.parse(frame.split('\ndata: ')[1]!.trim()) as Record<string, unknown>;
+    expect(data).toMatchObject({
+      type: 'session_status',
+      sessionId: 'asked-session',
+      status: 'succeeded',
+      awaitingAnswer: true,
+    });
+    await reader.cancel();
+  });
   it('preserves an anonymous owner cookie on the SSE response', async () => {
     mocks.resolveRequestOwnerId.mockImplementationOnce((_request, responseHeaders: Headers) => {
       responseHeaders.set('Set-Cookie', 'anonymous_id=test; Path=/; HttpOnly');

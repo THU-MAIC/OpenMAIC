@@ -48,7 +48,9 @@
     "fileTooLargeWithLimit": "O arquivo é muito grande. Selecione um arquivo de no máximo {{limit}} MB.",
     "unsupportedType": "Tipo de arquivo não compatível. Selecione um arquivo compatível.",
     "quotaExceeded": "Limite de upload de materiais atingido.",
-    "storageFull": "O armazenamento está cheio. Não foi possível enviar este material."
+    "storageFull": "O armazenamento está cheio. Não foi possível enviar este material.",
+    "uploadFailedShort": "Falha no envio",
+    "retryFailed": "Não foi possível analisar novamente. Tente de novo."
   },
   "skill": {
     "listFailed": "Não foi possível carregar a lista de skills",
@@ -139,9 +141,7 @@
     "listSeparator": ", ",
     "group": {
       "tools": "{{count}} chamadas de tool",
-      "skills": "{{count}} skills",
-      "running": "Em execução",
-      "error": "Com erros",
+      "failed": "{{count}} com falha",
       "done": "Concluído"
     },
     "section": {

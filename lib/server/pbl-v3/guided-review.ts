@@ -44,6 +44,8 @@ export const guidedSkillStateSchema = z
   })
   .strict();
 export type GuidedSkillState = z.infer<typeof guidedSkillStateSchema>;
+export type GuidedFeedbackSource = 'pending_review_reply' | 'verified_feedback';
+
 interface StudentMessage {
   seq: number;
   text: string;
@@ -147,6 +149,21 @@ export class GuidedSkillReview {
     return this.messages.filter((message) => message.seq > after && message.text.trim());
   }
 
+  /** This describes available learner evidence. Tools still validate the artifact digest. */
+  feedbackSource(): GuidedFeedbackSource | null {
+    if (!this.eligible || this.ended) return null;
+    if (this.state.pending) return this.studentResponses().length ? 'pending_review_reply' : null;
+    return this.verifiedCoverage() ? 'verified_feedback' : null;
+  }
+
+  private verifiedCoverage() {
+    const coverage = this.state.coverage;
+    return coverage?.stageKey === this.stageKey &&
+      this.messages.some((message) => message.seq === coverage.studentSeq && message.text.trim())
+      ? coverage
+      : undefined;
+  }
+
   assertWritable(): void {
     if (!this.state.activeFile || this.ended)
       throw new Error('先读取当前段协议；提交学生审查任务后必须结束本轮');
@@ -159,33 +176,40 @@ export class GuidedSkillReview {
     this.ended = true;
   }
 
-  private assertFeedback(feedback: string | undefined, digest: string): void {
+  /** Check protocol evidence before a tool performs remote file reads. */
+  assertFeedbackSource(feedback: string | undefined, reuseFeedback = false): void {
+    if (reuseFeedback) {
+      if (this.state.pending || !this.eligible || !this.verifiedCoverage())
+        throw new Error(
+          '只能沿用当前环节、当前版本已验证的真实学生回复；新问题和文件变化仍需重新确认。' +
+            'For a new reply to the pending review, omit reuseFeedback.',
+        );
+      if (!feedback?.trim()) throw new Error('请说明已有学生回复如何覆盖当前段的目标');
+      return;
+    }
     const pending = this.state.pending;
     if (!pending || pending.runId === this.runId || !this.eligible)
-      throw new Error('当前段必须先提交审查任务并等待新的学生回复');
-    if (pending.artifactDigest !== digest)
-      throw new Error('计划或代码已变化，请复查受影响部分并重新提交当前版本的审查任务');
+      throw new Error(
+        '当前段必须先提交审查任务并等待新的学生回复。' +
+          'When feedbackSource is verified_feedback, use reuseFeedback: true.',
+      );
     if (!this.studentResponses().length)
       throw new Error('当前审查任务尚无新的学生回复；不能用助手自查或旧对话代替');
-    // The Skill assesses meaning across the actual replies. Formatting or paraphrasing
-    // this assessment cannot establish (or invalidate) the existence of a student reply.
     if (!feedback?.trim()) throw new Error('请说明学生回复如何回答了当前审查任务');
   }
 
+  private assertFeedback(feedback: string | undefined, digest: string): void {
+    this.assertFeedbackSource(feedback);
+    if (this.state.pending!.artifactDigest !== digest)
+      throw new Error('计划或代码已变化，请复查受影响部分并重新提交当前版本的审查任务');
+  }
+
   private assertCovered(feedback: string | undefined, digest: string): void {
-    const coverage = this.state.coverage;
-    if (
-      this.state.pending ||
-      !this.eligible ||
-      !coverage ||
-      coverage.stageKey !== this.stageKey ||
-      coverage.artifactDigest !== digest ||
-      !this.messages.some((message) => message.seq === coverage.studentSeq && message.text.trim())
-    )
+    this.assertFeedbackSource(feedback, true);
+    if (this.verifiedCoverage()!.artifactDigest !== digest)
       throw new Error(
         '只能沿用当前环节、当前版本已验证的真实学生回复；新问题和文件变化仍需重新确认',
       );
-    if (!feedback?.trim()) throw new Error('请说明已有学生回复如何覆盖当前段的目标');
   }
 
   startTeaching(feedback: string | undefined, digest: string): void {

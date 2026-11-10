@@ -691,6 +691,48 @@ describe('inlineHtmlAssets — importmap integration', () => {
   });
 });
 
+describe('inlineHtmlAssets — hosted library versions', () => {
+  const hosted =
+    'https://classroom.test/vendor/interactive/@tailwindcss/browser@4.1.18/dist/index.global.js';
+  const fetchImpl = (async (url: string) =>
+    String(url) === hosted
+      ? new Response('/* tailwind */', {
+          status: 200,
+          headers: { 'content-type': 'text/javascript' },
+        })
+      : new Response('', { status: 404 })) as unknown as typeof fetch;
+
+  it('inlines the hosted build when a self-hosted path names a non-existent same-major version', async () => {
+    const { html: out, report } = await inlineHtmlAssets(
+      '<script src="/vendor/interactive/@tailwindcss/browser@4.11.18/dist/index.global.js"></script>',
+      { fetchImpl, baseUrl: 'https://classroom.test' },
+    );
+    expect(report.failed).toEqual([]);
+    expect(report.inlined).toEqual([hosted]);
+    expect(out).toContain('data:text/javascript;base64,');
+  });
+
+  it('inlines the hosted build for a public CDN URL with a same-major version above it', async () => {
+    const { report } = await inlineHtmlAssets(
+      '<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.11.18"></script>',
+      { fetchImpl, baseUrl: 'https://classroom.test' },
+    );
+    expect(report.failed).toEqual([]);
+    expect(report.inlined).toEqual([hosted]);
+  });
+
+  it('leaves a different major version pointing at its authored URL', async () => {
+    const { report } = await inlineHtmlAssets(
+      '<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@3.4.1"></script>',
+      { fetchImpl, baseUrl: 'https://classroom.test' },
+    );
+    expect(report.inlined).toEqual([]);
+    expect(report.failed.map((failure) => failure.url)).toEqual([
+      'https://cdn.jsdelivr.net/npm/@tailwindcss/browser@3.4.1',
+    ]);
+  });
+});
+
 function fetchFromMap(map: Record<string, { body: string; ct: string }>): typeof fetch {
   return (async (url: string) => {
     const hit = map[String(url)];

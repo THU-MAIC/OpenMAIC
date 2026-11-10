@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import {
   EMPTY_STATE_HINT,
   EMPTY_STATE_TITLE,
+  shouldRetainTranscript,
   shouldShowWorkbenchEmptyState,
   WorkbenchChatEmptyState,
 } from '@/components/workbench/chat/empty-state';
@@ -14,6 +15,28 @@ import { supportedLocales } from '@/lib/i18n/locales';
 function userMessage(key = 'u1'): ChatNode {
   return { key, kind: 'user', text: '改一下' };
 }
+
+describe('shouldRetainTranscript', () => {
+  const input = {
+    catchingUp: true,
+    settledSessionId: 'a',
+    sessionId: 'b',
+    graceOver: false,
+  };
+
+  it('keeps another conversation only for the grace period', () => {
+    expect(shouldRetainTranscript(input)).toBe(true);
+    expect(shouldRetainTranscript({ ...input, graceOver: true })).toBe(false);
+  });
+
+  it('keeps the same conversation for as long as it takes', () => {
+    expect(shouldRetainTranscript({ ...input, sessionId: 'a', graceOver: true })).toBe(true);
+  });
+
+  it('has nothing to retain once caught up', () => {
+    expect(shouldRetainTranscript({ ...input, catchingUp: false })).toBe(false);
+  });
+});
 
 describe('shouldShowWorkbenchEmptyState', () => {
   it('shows the placeholder on an empty, idle conversation', () => {

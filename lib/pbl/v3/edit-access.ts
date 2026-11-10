@@ -28,7 +28,7 @@ export function projectEditAccess(
   path?: string,
 ): {
   canEdit: boolean;
-  mode: 'plan' | 'code' | null;
+  mode: 'plan' | 'code' | 'repair' | null;
   reason: EditBlockReason | null;
 } {
   const { state, stage, actions, busy, evaluation } = context;
@@ -48,6 +48,9 @@ export function projectEditAccess(
     if (stage.kind === 'check') return blocked(stage.checker === 'quiz' ? 'quiz' : 'assessment');
     return blocked('stage');
   }
+  // The engine only grants edit in a test step after recording a repair.
+  if (stage.kind === 'check' && stage.checker === 'tests')
+    return { canEdit: true, mode: 'repair', reason: null };
   const mode = stage.kind === 'produce' && stage.writes === 'plan' ? 'plan' : 'code';
   if (path && (mode === 'plan' ? path !== 'PLAN.md' : path === 'PLAN.md'))
     return blocked(mode === 'plan' ? 'planOnly' : 'planLocked');

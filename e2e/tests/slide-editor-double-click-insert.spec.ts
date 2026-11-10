@@ -4,7 +4,9 @@ import { GenerationPreviewPage } from '../pages/generation-preview.page';
 import { ClassroomPage } from '../pages/classroom.page';
 import { createSettingsStorage } from '../fixtures/test-data/settings';
 
-const SETTINGS_STORAGE = createSettingsStorage({ sidebarCollapsed: false });
+const SETTINGS_STORAGE = createSettingsStorage({
+  sidebarCollapsed: false,
+});
 
 /**
  * Double-click text insertion on slide canvas (#1310).

@@ -51,9 +51,9 @@
   font-size: var(--wb-text-base);
 }
 
-/* The shared scroller reserves a second gutter on the left by default. */
+/* Reserve one gutter so the conversation does not shift as it grows. */
 .pbl-workbench .pbl-conversation-scroll {
-  scrollbar-gutter: stable !important;
+  scrollbar-gutter: stable;
 }
 
 /* Activity cards stay compact; prose retains extra breathing room on either side. */

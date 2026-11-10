@@ -96,11 +96,39 @@ describe('learner-facing actions', () => {
     ).toBe(true);
   });
 
-  it('retains generic navigation at milestone boundaries and tolerates older views without stage labels', () => {
+  it('keeps the final milestone and older views on the generic action', () => {
     const input = fixture(6);
     const t = (key: string) => key;
     expect(continueActionLabel({ state: input.workspace!.state }, t)).toBe('pblV3.next');
     expect(visibleProductLabels('unknown').continue).toBe(visibleProductLabels('en-US').continue);
+  });
+
+  it('names the next milestone in the recap action, ready hint, and Agent context', async () => {
+    const zh = JSON.parse(readFileSync('lib/i18n/locales/zh-CN.json', 'utf8'));
+    const i18n = createInstance();
+    await i18n.init({ lng: 'zh-CN', resources: { 'zh-CN': { translation: zh } } });
+    const input = fixture(6);
+    const second = { ...input.milestone, id: 'second', title: 'Second milestone' };
+    const milestones = [input.milestone, second];
+    const view = {
+      state: input.workspace!.state,
+      milestones: milestones.map((milestone) => ({
+        ...milestone,
+        stages: ['teaching', 'dialogue', 'plan', 'code', 'tests', 'quiz', 'recap'],
+      })),
+    };
+    const action = continueActionLabel(view, i18n.t);
+    expect(action).toBe('进入下一阶段');
+    expect(i18n.t('pblV3.journey.ready', { action })).toBe(
+      '本环节已就绪，准备好后点击“进入下一阶段”。',
+    );
+    const context = teachingProductContext({
+      ...input,
+      definition: { ...input.definition, milestones },
+      uiLocale: 'zh-CN',
+    });
+    expect(context.visibleLabels.continue).toBe(action);
+    expect(context.labels.continue).toEqual({ en: 'Enter next milestone', zh: action });
   });
 
   it('keeps existing locale fallbacks structurally compatible with dynamic action names', async () => {

@@ -7,14 +7,17 @@ export function applicationChoices(
   state: PblSessionState,
   ids: readonly string[] = [],
 ) {
+  const milestone = definition.milestones[state.position.milestoneIndex];
+  if (!milestone) return [];
+  const records = state.collected[milestone.id]?.decisions ?? [];
   return ids.flatMap((id) => {
+    if (!milestone.decisions.includes(id)) return [];
     const decision = definition.decisions.find((item) => item.id === id);
     if (!decision || decision.responseType === 'text') return [];
-    const record = definition.milestones
-      .slice(0, state.position.milestoneIndex + 1)
-      .flatMap((item) => state.collected[item.id]?.decisions ?? [])
-      .findLast((item) => item.id === id);
+    const record = records.findLast((item) => item.id === id);
     const option = decision.options.find((item) => item.id === record?.chosen);
-    return option ? [{ id, label: decision.desc, choice: option.label }] : [];
+    return option
+      ? [{ id, label: decision.desc, choice: option.previewLabel ?? option.label }]
+      : [];
   });
 }

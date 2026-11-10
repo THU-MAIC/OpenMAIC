@@ -22,7 +22,7 @@ import { RendererEditorCanvas } from './RendererEditorCanvas';
 
 /** Switches between the preserved legacy editor and the renderer editor. */
 export function SlideCanvas() {
-  const { controller, gestureProps } = useSlideCanvasController();
+  const { controller } = useSlideCanvasController();
   const useRendererEditor = isEditorRendererEnabled();
   const requestedEditingElementId = useCanvasStore.use.editingElementId();
   const editingElementId = useEditingTextElementId(
@@ -42,9 +42,12 @@ export function SlideCanvas() {
   }, []);
 
   return (
-    <div className="relative h-full w-full" {...gestureProps}>
+    <div className="relative h-full w-full">
       <SceneProvider controller={controller}>
-        {useRendererEditor ? <RendererEditorCanvas /> : <Canvas />}
+        {/* Keyed by page: the legacy canvas copies its elements into state in an effect, so a
+            page switch would mount the next page's elements with the previous page's
+            content first, and a text editor would take that into its history. */}
+        {useRendererEditor ? <RendererEditorCanvas /> : <Canvas key={controller.sceneId} />}
         <SpotlightOverlay domIdPrefix={EDITABLE_ELEMENT_ID_PREFIX} />
         <LaserPointerOverlay domIdPrefix={EDITABLE_ELEMENT_ID_PREFIX} />
       </SceneProvider>

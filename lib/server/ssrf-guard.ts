@@ -36,6 +36,21 @@ const LOCAL_NETWORK_BLOCK_MESSAGE =
 const CLIENT_SUPPLIED_LOCAL_NETWORK_BLOCK_MESSAGE =
   'Local/private network URLs are not allowed for a client-supplied endpoint. ALLOW_LOCAL_NETWORKS does not apply to this path. The endpoint must be a provider configured by the operator in openmaic.yml.';
 
+/**
+ * The 198.18.0.0/15 benchmarking block (RFC 2544). TUN/fake-ip proxies such as
+ * Clash, Surge and Shadowrocket answer DNS for public hostnames with addresses
+ * from this block and forward the connection themselves, so a refusal here
+ * usually means a proxy on the host, not an internal target.
+ */
+const FAKE_IP_RANGE = ipaddr.IPv4.parseCIDR('198.18.0.0/15');
+
+const FAKE_IP_BLOCK_MESSAGE =
+  'The target resolved to 198.18.0.0/15, which usually means a TUN/fake-ip proxy (Clash, Surge, Shadowrocket, ...) answered the DNS lookup. Exclude the provider domain from fake-ip (for example fake-ip-filter or always-real-ip), or set ALLOW_LOCAL_NETWORKS=true to allow this range for server-configured providers.';
+
+/** Fake-ip refusal when the caller forced the strict public policy. */
+const CLIENT_SUPPLIED_FAKE_IP_BLOCK_MESSAGE =
+  'The target resolved to 198.18.0.0/15, which usually means a TUN/fake-ip proxy (Clash, Surge, Shadowrocket, ...) answered the DNS lookup. Exclude the provider domain from fake-ip (for example fake-ip-filter or always-real-ip). ALLOW_LOCAL_NETWORKS does not apply to a client-supplied endpoint.';
+
 export class UnsafeNetworkTargetError extends Error {
   constructor(message: string) {
     super(message);
@@ -169,12 +184,25 @@ function isCloudMetadataAddress(value: string): boolean {
 }
 
 /**
+ * True when an IP literal (URL host or DNS answer) is in the fake-ip block
+ * 198.18.0.0/15, directly or as IPv4-mapped IPv6. See {@link FAKE_IP_RANGE}.
+ */
+function isFakeIpRange(value: string): boolean {
+  const canonical = canonicalizeIp(value);
+  if (canonical === null) return false;
+  const address = ipaddr.parse(canonical);
+  return address.kind() === 'ipv4' && address.match(FAKE_IP_RANGE);
+}
+
+/**
  * Ranges that are never valid outbound proxy targets, with or without
  * `ALLOW_LOCAL_NETWORKS`: IANA reserved and special-use blocks (240.0.0.0/4,
- * 198.18.0.0/15, the TEST-NET blocks, 192.0.0.0/24, ...), multicast and
- * broadcast. Private, loopback, link-local and carrier-grade NAT ranges are
- * deliberately excluded because allowing those is the whole point of the
- * opt-in (see {@link isOptInGovernedRange}).
+ * the TEST-NET blocks, 192.0.0.0/24, ...), multicast and broadcast. Private,
+ * loopback, link-local and carrier-grade NAT ranges are deliberately excluded
+ * because allowing those is the whole point of the opt-in (see
+ * {@link isOptInGovernedRange}). The fake-ip block 198.18.0.0/15 is excluded
+ * too: it is governed by the opt-in with its own refusal message (see
+ * {@link isFakeIpRange}).
  *
  * Both `validateUrlForSSRF` and `connectionAddressBlockReason` apply this, so an
  * IP-literal URL (for which Node never runs `connect.lookup`) and a hostname
@@ -183,6 +211,7 @@ function isCloudMetadataAddress(value: string): boolean {
 function isNeverAllowedRange(value: string): boolean {
   const canonical = canonicalizeIp(value);
   if (canonical === null) return false;
+  if (isFakeIpRange(canonical)) return false;
   const range = ipaddr.parse(canonical).range();
   return range === 'reserved' || range === 'multicast' || range === 'broadcast';
 }
@@ -247,6 +276,9 @@ export function assertSafeIp(value: string): void {
  * Used by the pinned dispatcher so the address the socket connects to is
  * judged by the same policy as the address the URL-layer guard saw, while the
  * connection itself can only use an answer this check approved.
+ *
+ * The fake-ip block 198.18.0.0/15 follows the opt-in like the private ranges,
+ * but is refused with its own message.
  */
 export function connectionAddressBlockReason(
   value: string,
@@ -268,6 +300,9 @@ export function connectionAddressBlockReason(
   }
   if (allowLocalNetworks) {
     return null;
+  }
+  if (isFakeIpRange(canonical)) {
+    return FAKE_IP_BLOCK_MESSAGE;
   }
   if (isOptInGovernedRange(canonical)) {
     return LOCAL_NETWORK_BLOCK_MESSAGE;
@@ -481,6 +516,8 @@ export interface SsrfValidationPolicy {
  * refused under every policy, including `allowLocalNetworks: true`.
  * Opt-in-governed targets (loopback, private, link-local, CGNAT, `.local`) use
  * the flag guidance unless `clientSupplied` selects the strict-public wording.
+ * The fake-ip block 198.18.0.0/15 is opt-in-governed as well, with a message
+ * that points at the proxy instead.
  */
 export async function validateUrlForSSRFWithPolicy(
   url: string,
@@ -498,14 +535,18 @@ export async function validateUrlForSSRFWithPolicy(
   }
 
   // Self-hosted deployments can set ALLOW_LOCAL_NETWORKS=true to allow private,
-  // loopback, link-local and CGNAT targets. Cloud instance metadata endpoints
-  // and IANA reserved/multicast/broadcast ranges stay blocked either way.
+  // loopback, link-local, CGNAT and fake-ip (198.18.0.0/15) targets. Cloud
+  // instance metadata endpoints and the other IANA reserved/multicast/broadcast
+  // ranges stay blocked either way.
   const allowLocal = policy.allowLocalNetworks;
   // The flag guidance stays the default. A caller that forced the strict public
   // policy (client-supplied BYOK) must not promise that setting the flag helps.
   const optInGovernedBlockMessage = policy.clientSupplied
     ? CLIENT_SUPPLIED_LOCAL_NETWORK_BLOCK_MESSAGE
     : LOCAL_NETWORK_BLOCK_MESSAGE;
+  const fakeIpBlockMessage = policy.clientSupplied
+    ? CLIENT_SUPPLIED_FAKE_IP_BLOCK_MESSAGE
+    : FAKE_IP_BLOCK_MESSAGE;
   const hostname = normalizeAddress(parsed.hostname);
 
   // Cloud metadata endpoints are never allowed, with or without the flag.
@@ -523,7 +564,8 @@ export async function validateUrlForSSRFWithPolicy(
 
   if (allowLocal) {
     // The flag is for loopback/RFC1918/.local and CGNAT/overlay targets (local
-    // Ollama, compose networks, Tailscale, split-horizon DNS).
+    // Ollama, compose networks, Tailscale, split-horizon DNS), and for the
+    // fake-ip block a TUN proxy on the host answers DNS with.
     if (isIP(hostname)) {
       return null;
     }
@@ -545,6 +587,10 @@ export async function validateUrlForSSRFWithPolicy(
       return LOCAL_NETWORK_BLOCK_MESSAGE;
     }
     return null;
+  }
+
+  if (isFakeIpRange(hostname)) {
+    return fakeIpBlockMessage;
   }
 
   if (
@@ -582,6 +628,10 @@ export async function validateUrlForSSRFWithPolicy(
   // opt-in-governed.
   if (resolvedAddresses.some(({ address }) => isNeverAllowedRange(address))) {
     return LOCAL_NETWORK_BLOCK_MESSAGE;
+  }
+
+  if (resolvedAddresses.some(({ address }) => isFakeIpRange(address))) {
+    return fakeIpBlockMessage;
   }
 
   if (resolvedAddresses.some(({ address }) => isOptInGovernedRange(address))) {
