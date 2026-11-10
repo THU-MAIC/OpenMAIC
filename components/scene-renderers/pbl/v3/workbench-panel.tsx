@@ -108,6 +108,23 @@ export function LearningWorkbenchPanel({
     { enabled: !disabled && !!work?.canEdit, canEdit },
   );
   const { path, buffer, stale } = editor;
+  const tabList = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const rail = tabList.current;
+    if (!rail) return;
+    const revealActiveTab = () => {
+      const tab = rail.querySelector('[aria-selected="true"]')?.parentElement;
+      if (!tab) return;
+      const bounds = rail.getBoundingClientRect();
+      const active = tab.getBoundingClientRect();
+      if (active.left < bounds.left) rail.scrollLeft += active.left - bounds.left;
+      else if (active.right > bounds.right) rail.scrollLeft += active.right - bounds.right;
+    };
+    revealActiveTab();
+    const observer = new ResizeObserver(revealActiveTab);
+    observer.observe(rail);
+    return () => observer.disconnect();
+  }, [path, editor.tabs.length]);
   const selectedTarget = useRef<number | null>(null);
   const selectFile = useRef(editor.select);
   selectFile.current = editor.select;
@@ -304,6 +321,7 @@ export function LearningWorkbenchPanel({
         <Group orientation="horizontal">
           <Panel
             id="files"
+            groupResizeBehavior="preserve-pixel-size"
             panelRef={explorer}
             defaultSize="24%"
             minSize="15%"
@@ -355,9 +373,10 @@ export function LearningWorkbenchPanel({
                 </button>
               )}
               <div
+                ref={tabList}
                 role="tablist"
                 aria-label={t('pblV3.ide.openFiles')}
-                className="flex max-h-28 min-w-0 flex-1 flex-wrap overflow-y-auto"
+                className="flex min-w-0 flex-1 flex-nowrap overflow-x-auto overflow-y-hidden"
               >
                 {editor.tabs.map((p) => (
                   <div key={p} className="flex shrink-0 items-center border-r">

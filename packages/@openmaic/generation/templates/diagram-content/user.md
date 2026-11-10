@@ -28,7 +28,11 @@ Create an interactive diagram for: {{title}}
 - Derive hierarchy edges from `parentId` when it is present.
 {{/if}}
 
-## Language
+{{#if additionalRequirements}}## Additional Design Requirements
+
+{{additionalRequirements}}
+
+{{/if}}## Language
 {{languageDirective}}
 
 ---

@@ -32,7 +32,11 @@ Create a procedural skill widget for: {{title}}
 
 {{errorConsequences}}
 
-## Language
+{{#if additionalRequirements}}## Additional Design Requirements
+
+{{additionalRequirements}}
+
+{{/if}}## Language
 
 {{languageDirective}}
 

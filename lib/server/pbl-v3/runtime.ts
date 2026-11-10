@@ -814,10 +814,6 @@ export async function commandStudy(
       if (!command.path || command.text === undefined || typeof command.expectedHash !== 'string')
         throw sandboxInvalid('A project file, text and observed file hash are required.');
       assertProjectSource(project, command.path);
-      if (stage.kind === 'produce' && stage.writes === 'plan' && command.path !== 'PLAN.md')
-        throw sandboxConflict('Only PLAN.md can be edited during planning.');
-      if (command.path === 'PLAN.md' && !(stage.kind === 'produce' && stage.writes === 'plan'))
-        throw sandboxConflict('The approved plan is read-only during coding.');
       if (command.path === 'PLAN.md') await assertLearningPlan(store, row, command.text);
       const changed = await service.compareAndWriteText(
         requireEnvironment(row),
@@ -878,8 +874,11 @@ export async function commandStudy(
       if (row.evaluation && row.evaluation.id !== command.id)
         throw sandboxConflict('Collect the existing test result before starting another run.');
       let testCommand = row.evaluation?.evaluationCommand;
+      let testedWorkspace: EngineTransition = { state: row.state, events: [] };
       if (testCommand && row.evaluation?.isolatedSources !== true) await fileSnapshot(service, row);
       if (!testCommand) {
+        const milestoneId = row.state.position.milestoneId!;
+        const collected = row.state.collected[milestoneId]!;
         const isolatedSources = !row.evaluation && !!project.application?.frontendPath;
         const snapshot = await fileSnapshot(service, row, undefined, {
           allowApplications: isolatedSources,
@@ -887,9 +886,9 @@ export async function commandStudy(
         testCommand = evaluationCommand(
           evaluationFor(
             project,
-            row.state.position.milestoneId!,
+            milestoneId,
             row.evaluation ? [] : Object.keys(snapshot.files),
-            row.state.collected[row.state.position.milestoneId!]?.decisions,
+            collected.decisions,
           ),
           command.id,
           isolatedSources ? snapshot.files : undefined,
@@ -902,15 +901,36 @@ export async function commandStudy(
           evaluationCommand: testCommand,
           ...(isolatedSources ? { isolatedSources: true as const } : {}),
         };
+        const planText = snapshot.files['PLAN.md'];
+        if (collected.remediation && collected.plan && planText !== undefined) {
+          const contentHash = digest(planText);
+          if (contentHash !== collected.plan.contentHash) {
+            await assertLearningPlan(store, row, planText);
+            // The test receipt must refer to the amended plan, while the original
+            // reviewed version stays in the event history.
+            testedWorkspace = transitions.recordArtifact(
+              definition,
+              row.state,
+              {
+                kind: 'plan',
+                id: randomUUID(),
+                milestoneId,
+                revision: collected.plan.revision + 1,
+                contentHash,
+                contentLength: planText.length,
+                workspaceRevisionId: snapshot.fingerprint,
+              },
+              { allowPlanFileUpdate: true, evidence: { content: planText } },
+            );
+          }
+        }
       }
       if (Buffer.byteLength(testCommand) > MAX_COMMAND_BYTES)
         throw sandboxInvalid(
           'Current evaluation sources exceed the sandbox 32 KiB command limit.',
           'PBL_SOURCE_SIZE',
         );
-      row = await store.transaction((db) =>
-        store.commit(db, row, { state: row.state, events: [] }),
-      );
+      row = await store.transaction((db) => store.commit(db, row, testedWorkspace));
       result = await service.startCommand(requireEnvironment(row), {
         requestId: command.id,
         command: testCommand,
@@ -940,6 +960,7 @@ export async function commandStudy(
       // using the same managed-writer fence as periodic backups.
       const allowApplications = !endingMilestone && !!project.application?.frontendPath;
       let verifiedSnapshot: Awaited<ReturnType<typeof fileSnapshot>> | undefined;
+      let keepRepairedPlan = false;
       if (stage.kind === 'produce' || (stage.kind === 'check' && stage.checker === 'tests')) {
         verifiedSnapshot = await fileSnapshot(service, row, undefined, {
           allowApplications,
@@ -955,8 +976,10 @@ export async function commandStudy(
           );
         if (stage.kind === 'produce' && stage.writes === 'plan')
           await assertLearningPlan(store, row, verifiedSnapshot.files['PLAN.md']!, true);
+        if (stage.kind === 'check')
+          keepRepairedPlan = !!collected.plan && !collected.planReviewCompleted;
       }
-      if (stage.kind === 'produce' || endingMilestone) {
+      if (stage.kind === 'produce' || endingMilestone || keepRepairedPlan) {
         // Establish a durable artifact before acknowledging the student's stage confirmation.
         await saveStudyCheckpoint(service, row, verifiedSnapshot, allowApplications);
       }

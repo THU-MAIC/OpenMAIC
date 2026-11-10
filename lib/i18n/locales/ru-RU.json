@@ -246,7 +246,9 @@
       "toolCallingRequired": "Для чата класса нужна модель с поддержкой вызова инструментов. Выберите такую модель для слота класса в разделе Настройки → Настройка моделей курса. Если этим параметром управляет администратор, обратитесь к нему.",
       "geminiNativeRequired": "Для общения с Gemini нужен нативный Google. Добавьте Google (пресет google) в Настройки → Сервисы моделей, затем выберите его для «Класс» в разделе «Настройка моделей курса». Если конфигурацией управляет администратор, обратитесь к нему.",
       "emptyAgentResponses": "Агенты вернули пустые ответы; обсуждение остановлено. Попробуйте ещё раз или проверьте настройки модели.",
-      "streamInterrupted": "Поток данных неожиданно прервался; обсуждение не завершено. Попробуйте ещё раз."
+      "streamInterrupted": "Поток данных неожиданно прервался; обсуждение не завершено. Попробуйте ещё раз.",
+      "teacherNoResponse": "Преподаватель не ответил. Попробуйте ещё раз.",
+      "teacherIncomplete": "Преподаватель не смог завершить ответ. Попробуйте ещё раз."
     },
     "elementReference": {
       "whiteboardChanged": "Элемент доски изменился или больше недоступен. Выберите его заново или удалите ссылку перед отправкой.",
@@ -3244,10 +3246,10 @@
       "discussion": "This step is for discussing decisions. File editing opens during planning and coding.",
       "quiz": "This is the understanding quiz. Project files are read-only.",
       "recap": "This is the reflection step. Project files are read-only.",
-      "assessment": "This is the test step. Files are read-only; a recorded failure opens code repair.",
+      "assessment": "This is the test step. Files are read-only until a failure opens repair.",
       "stage": "Project files are read-only in this step.",
       "planOnly": "Planning allows edits to PLAN.md only. Source files are read-only.",
-      "planLocked": "PLAN.md is approved and read-only during coding or test repair.",
+      "planLocked": "PLAN.md is approved and read-only during coding.",
       "planEditable": "You can edit PLAN.md. Changes are saved automatically.",
       "codeEditable": "You can edit source files. Changes are saved automatically.",
       "stale": "The environment or file changed. Your draft is kept; copy it or reload before editing.",

@@ -30,9 +30,31 @@ export interface UserRequirements {
   taskEngineMode?: boolean;
 }
 
+/**
+ * A controllable simulation variable. Outlines may list plain names or records
+ * such as `{ name: 'angle', range: [0, 90], unit: 'deg' }`.
+ */
+export interface WidgetVariable {
+  name?: string;
+  label?: string;
+  range?: unknown;
+  min?: number;
+  max?: number;
+  unit?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Widget configuration for an interactive scene. Producers (outline prompts,
+ * agent tools) send open objects, so fields beyond the ones listed here, such
+ * as controls or readouts, are expected and are passed to the widget prompt as
+ * additional design requirements.
+ */
 export interface WidgetOutline {
   concept?: string;
-  keyVariables?: string[];
+  keyVariables?: Array<string | WidgetVariable>;
+  /** Free-text description of the intended interactions and layout. */
+  designIdea?: string;
   diagramType?: 'flowchart' | 'mindmap' | 'hierarchy' | 'system';
   language?: 'python' | 'javascript' | 'typescript' | 'java' | 'cpp';
   gameType?: 'quiz' | 'puzzle' | 'strategy' | 'card' | 'action';
@@ -56,6 +78,7 @@ export interface WidgetOutline {
     details?: string;
   }>;
   challengeType?: string;
+  [key: string]: unknown;
 }
 
 export interface MediaGenerationRequest {

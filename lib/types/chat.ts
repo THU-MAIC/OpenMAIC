@@ -495,6 +495,8 @@ export type StatelessEvent =
         totalActions: number;
         totalAgents: number;
         agentHadContent?: boolean;
+        /** A teacher or assistant call this request failed or produced nothing visible. */
+        teachingAgentFailedOrEmpty?: boolean;
         cueUserReceived?: boolean;
         sessionClosed?: boolean;
         endReason?: string;

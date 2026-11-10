@@ -246,7 +246,9 @@
       "toolCallingRequired": "تحتاج دردشة الصف إلى نموذج يدعم استدعاء الأدوات. اختر نموذجًا مناسبًا لـ «الصف» في الإعدادات ← إعداد نماذج المقرر، أو تواصل مع المسؤول إذا كان هو من يدير هذا الإعداد.",
       "geminiNativeRequired": "يتطلب التفاعل مع Gemini استخدام Google الأصلي. أضف Google (الإعداد المسبق google) في الإعدادات ← خدمات النماذج، ثم اختره لـ «الصف» في «إعداد نماذج المقرر». إذا كان المسؤول يدير هذه الإعدادات، فتواصل معه.",
       "emptyAgentResponses": "أعاد الوكلاء استجابات فارغة; توقف النقاش. حاول مرة أخرى أو راجع إعدادات النموذج.",
-      "streamInterrupted": "انتهى تدفق البيانات بشكل غير متوقع; لم يكتمل النقاش. يرجى المحاولة مرة أخرى."
+      "streamInterrupted": "انتهى تدفق البيانات بشكل غير متوقع; لم يكتمل النقاش. يرجى المحاولة مرة أخرى.",
+      "teacherNoResponse": "لم يرد المعلم. يُرجى المحاولة مرة أخرى.",
+      "teacherIncomplete": "لم يتمكن المعلم من إكمال الرد. يُرجى المحاولة مرة أخرى."
     },
     "elementReference": {
       "whiteboardChanged": "تغيّر عنصر السبورة المشار إليه أو لم يعد متاحًا. اختره مجددًا أو أزل الإشارة قبل الإرسال.",
@@ -3244,10 +3246,10 @@
       "discussion": "This step is for discussing decisions. File editing opens during planning and coding.",
       "quiz": "This is the understanding quiz. Project files are read-only.",
       "recap": "This is the reflection step. Project files are read-only.",
-      "assessment": "This is the test step. Files are read-only; a recorded failure opens code repair.",
+      "assessment": "This is the test step. Files are read-only until a failure opens repair.",
       "stage": "Project files are read-only in this step.",
       "planOnly": "Planning allows edits to PLAN.md only. Source files are read-only.",
-      "planLocked": "PLAN.md is approved and read-only during coding or test repair.",
+      "planLocked": "PLAN.md is approved and read-only during coding.",
       "planEditable": "You can edit PLAN.md. Changes are saved automatically.",
       "codeEditable": "You can edit source files. Changes are saved automatically.",
       "stale": "The environment or file changed. Your draft is kept; copy it or reload before editing.",
