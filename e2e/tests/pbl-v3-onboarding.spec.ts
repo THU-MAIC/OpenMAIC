@@ -270,6 +270,54 @@ async function project(
 
 const tour = (page: Page) => page.locator('[data-pbl-onboarding="card"]');
 const next = (page: Page) => tour(page).locator('footer button').last();
+
+test('opens the project overview after the guide and links back to it from the opening reply', async ({
+  page,
+  learningEvents,
+}) => {
+  const fixture = await project(page, learningEvents, {
+    application: false,
+    openingText: 'Welcome. First, we will work through the opening concepts together.',
+  });
+  const overview = page.locator('#pbl-project-overview');
+  await expect(tour(page)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(tour(page)).toHaveCount(0);
+  await expect(overview).toHaveAttribute('data-mode', 'summary');
+  await expect(overview).toContainText('A synthetic project for the workspace guide.');
+  const opening = page.getByTestId('pbl-agent-turn').first();
+  const overviewBox = await overview.boundingBox();
+  const openingBox = await opening.boundingBox();
+  expect(overviewBox && openingBox && overviewBox.y + overviewBox.height <= openingBox.y).toBe(
+    true,
+  );
+  await overview.getByRole('button', { name: 'Close project overview' }).click();
+  await expect(overview).toHaveAttribute('data-mode', 'closed');
+  fixture.view.revision++;
+  await fixture.publish();
+  await opening.getByRole('link', { name: 'Project overview' }).click();
+  await expect(overview).toHaveAttribute('data-mode', 'details');
+  await expect(overview.getByRole('list', { name: 'Project Roadmap' })).toContainText('Greeting');
+  expect(fixture.commands).toEqual([]);
+});
+
+test('highlights the existing next action only when progression is available', async ({
+  page,
+  learningEvents,
+}) => {
+  const fixture = await project(page, learningEvents, { started: true, application: false });
+  const advance = page.getByTestId('pbl-advance-bar');
+  await expect(advance).toHaveCount(0);
+  await expect(page.locator('#pbl-project-overview')).toHaveAttribute('data-mode', 'closed');
+  fixture.view.actions = ['chat', 'next'];
+  fixture.view.revision++;
+  await fixture.publish();
+  await expect(advance).toContainText('Learn before deciding · Complete');
+  expect(fixture.commands).toEqual([]);
+  await advance.getByRole('button', { name: 'Continue to Make your decisions' }).click();
+  await expect.poll(() => fixture.commands).toEqual(['next']);
+});
+
 async function finish(page: Page) {
   while (await tour(page).count()) {
     const last = (await tour(page).getAttribute('data-step')) === 'replay';
@@ -1088,10 +1136,11 @@ test('hides Latest during the guide and restores the working control after dismi
     .toBeGreaterThan(8);
   const latest = page.getByTestId('pbl-conversation-scroll-button');
   await expect(latest).toHaveCount(0);
-  const height = await viewport.evaluate((el) => el.clientHeight);
   await page.keyboard.press('Escape');
   await expect(tour(page)).toHaveCount(0);
+  await expect(page.locator('#pbl-project-overview')).toHaveAttribute('data-mode', 'summary');
   await expect(latest).toBeVisible();
+  const height = await viewport.evaluate((el) => el.clientHeight);
   await latest.click();
   await expect
     .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))

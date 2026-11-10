@@ -3022,7 +3022,14 @@
       "file-edit": "File edit",
       "workspace-run": "Workspace run"
     },
+    "overview": {
+      "title": "Aperçu du projet",
+      "close": "Fermer l’aperçu du projet",
+      "currentGoal": "Objectif actuel",
+      "view": "Voir les étapes ({{count}})"
+    },
     "journey": {
+      "stepComplete": "{{step}} · Terminé",
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",

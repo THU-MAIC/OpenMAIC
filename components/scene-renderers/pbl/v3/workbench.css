@@ -19,6 +19,8 @@
   --accent: #e5f3ed;
   --accent-foreground: #135d43;
   --ring: #0b7a52;
+  --pbl-guidance: #6440bc;
+  --pbl-guidance-foreground: #ffffff;
   --pbl-assistant-bubble: #f0f4f8;
   --pbl-chrome: #f8fafc;
 }
@@ -40,6 +42,8 @@
   --accent: #153b30;
   --accent-foreground: #63f5ba;
   --ring: #3bf0a4;
+  --pbl-guidance: #baa4ff;
+  --pbl-guidance-foreground: #20123d;
   --pbl-assistant-bubble: #202b3d;
   --pbl-chrome: #151d2b;
 }
@@ -195,6 +199,41 @@
 .pbl-workbench .pbl-task-area {
   /* This flex area excludes the actual toolbar, notices and composer height. */
   container-type: size;
+}
+.pbl-workbench :is(.pbl-project-overview, .pbl-advance-bar) {
+  --primary: var(--pbl-guidance);
+  --primary-foreground: var(--pbl-guidance-foreground);
+  --ring: var(--pbl-guidance);
+}
+.pbl-workbench .pbl-project-overview:not([data-mode='closed']) {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
+  background-color: color-mix(in srgb, var(--primary) 5%, var(--card));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 12%, transparent);
+}
+.pbl-workbench .pbl-overview-content {
+  max-height: min(18rem, 36cqh);
+  overflow-wrap: anywhere;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pbl-workbench .pbl-project-overview[data-mode='summary'] {
+    animation: pbl-task-open 250ms ease-out;
+  }
+  .pbl-workbench .pbl-advance-bar {
+    animation: pbl-advance-highlight 650ms ease-out;
+  }
+}
+@keyframes pbl-advance-highlight {
+  from {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 30%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+@container (max-width: 360px) {
+  .pbl-workbench .pbl-advance-bar .pbl-stage-action {
+    width: 100%;
+  }
 }
 .pbl-workbench .pbl-task-drawer {
   /* Keep its close control inside the chat area, even in a short scene. */

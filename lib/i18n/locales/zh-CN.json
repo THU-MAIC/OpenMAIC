@@ -3022,7 +3022,14 @@
       "file-edit": "文件修改",
       "workspace-run": "工作区运行"
     },
+    "overview": {
+      "title": "项目总览",
+      "close": "收起项目总览",
+      "currentGoal": "当前目标",
+      "view": "查看大纲（{{count}} 个阶段）"
+    },
     "journey": {
+      "stepComplete": "{{step}} · 已完成",
       "completionHandoff": "本环节已完成。下一步操作请看学习助手底部的任务栏。",
       "startConversation": "学习环境就绪后，助手会主动开始当前环节。",
       "latest": "回到最新消息",

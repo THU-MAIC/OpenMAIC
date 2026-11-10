@@ -8,7 +8,7 @@ import {
   type ReactNode,
   type Ref,
 } from 'react';
-import { ChevronUp, Settings, X } from 'lucide-react';
+import { CheckCircle2, ChevronUp, Settings, X } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
   continueActionLabel,
@@ -51,7 +51,8 @@ export function TaskDock({
   const progress = learningProgress(view);
   const step = learningStep(view);
   const running = view.busy || working;
-  const ready = view.actions.includes('next') && !running;
+  const canAdvance = view.actions.includes('next');
+  const ready = canAdvance && !running;
   useImperativeHandle(
     ref,
     () => ({
@@ -71,7 +72,7 @@ export function TaskDock({
       ? 'pblV3.completed'
       : view.busy
         ? 'pblV3.thinking'
-        : view.actions.includes('next')
+        : canAdvance
           ? 'pblV3.journey.ready'
           : `pblV3.journey.hints.${step}`,
     { action: continueActionLabel(view, t) },
@@ -97,12 +98,14 @@ export function TaskDock({
         className={`h-1.5 w-1.5 shrink-0 rounded-full ${running ? 'animate-pulse bg-primary' : ready ? 'bg-primary' : 'bg-muted-foreground'}`}
       />
       <strong className="pbl-task-step min-w-0 truncate">{t(`pblV3.journey.steps.${step}`)}</strong>
-      <span
-        className={`${summary ? 'order-last basis-full' : 'pbl-task-hint flex-1'} min-w-0 truncate text-muted-foreground`}
-        title={hint}
-      >
-        {summary ?? hint}
-      </span>
+      {(summary || !ready) && (
+        <span
+          className={`${summary ? 'order-last basis-full' : 'pbl-task-hint flex-1'} min-w-0 truncate text-muted-foreground`}
+          title={hint}
+        >
+          {summary ?? hint}
+        </span>
+      )}
     </>
   );
   return (
@@ -219,8 +222,23 @@ export function TaskDock({
         ) : (
           <div className="flex min-w-0 flex-1 items-center gap-2 text-xs">{copy}</div>
         )}
-        {action}
+        {!canAdvance && action}
       </div>
+      {canAdvance && action && (
+        <div
+          data-testid="pbl-advance-bar"
+          className="pbl-advance-bar mx-2 mb-2 flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded-xl border border-primary/30 bg-primary/10 px-2.5 py-2"
+        >
+          <p
+            className="flex min-w-0 items-center gap-1.5 text-xs font-semibold text-foreground"
+            role="status"
+          >
+            <CheckCircle2 size={15} className="shrink-0 text-primary" aria-hidden="true" />
+            {t('pblV3.journey.stepComplete', { step: t(`pblV3.journey.steps.${step}`) })}
+          </p>
+          {action}
+        </div>
+      )}
     </section>
   );
 }

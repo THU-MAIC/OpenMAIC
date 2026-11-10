@@ -17,6 +17,7 @@ import { WaitingBar } from '@/components/workbench/chat/waiting-bar';
 import { ToolActivity } from './tool-activity';
 import { ConversationHistory } from './conversation-history';
 import { ConversationViewport } from './conversation-scroll';
+import { PROJECT_OVERVIEW_ID } from './project-overview';
 import { UserBubble } from '@/components/workbench/chat/user-bubble';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { LearningView } from '@/lib/pbl/v3/types';
@@ -54,9 +55,11 @@ function groupParts(parts: Part[]) {
 function AgentTurn({
   entry,
   onOpenReport,
+  onOpenOverview,
 }: {
   entry: LearningConversationEntry;
   onOpenReport?: () => void;
+  onOpenOverview?: () => void;
 }) {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
@@ -145,6 +148,18 @@ function AgentTurn({
           </p>
         )}
       </div>
+      {onOpenOverview && entry.status !== 'running' && (
+        <a
+          href={`#${PROJECT_OVERVIEW_ID}`}
+          className="block w-fit rounded-sm px-1 text-xs font-semibold text-[color:var(--pbl-guidance)] underline underline-offset-2"
+          onClick={(event) => {
+            event.preventDefault();
+            onOpenOverview();
+          }}
+        >
+          {t('pblV3.overview.title')}
+        </a>
+      )}
       {copyText && (
         <button
           type="button"
@@ -166,9 +181,11 @@ function AgentTurn({
 function ConversationEntry({
   entry,
   onOpenReport,
+  onOpenOverview,
 }: {
   entry: LearningConversationEntry;
   onOpenReport?: () => void;
+  onOpenOverview?: () => void;
 }) {
   const { t } = useI18n();
   return entry.boundary ? (
@@ -193,7 +210,12 @@ function ConversationEntry({
       text={entry.parts.flatMap((p) => (p.kind === 'text' ? [p.text] : [])).join('\n')}
     />
   ) : (
-    <AgentTurn key={entry.id} entry={entry} onOpenReport={onOpenReport} />
+    <AgentTurn
+      key={entry.id}
+      entry={entry}
+      onOpenReport={onOpenReport}
+      onOpenOverview={onOpenOverview}
+    />
   );
 }
 export function LearningConversation({
@@ -205,11 +227,13 @@ export function LearningConversation({
   onOpenFile,
   onOpenReport,
   onOpenTask,
+  onOpenOverview,
 }: {
   view: LearningView;
   onOpenReport?: () => void;
   onOpenFile?: (reference: FileReference) => void;
   onOpenTask?: () => void;
+  onOpenOverview?: () => void;
   sent: number;
   requesting?: boolean;
   modalActive?: boolean;
@@ -223,6 +247,14 @@ export function LearningConversation({
       speaker: m.role === 'user' ? 'user' : (view.role ?? 'mentor'),
       parts: [{ kind: 'text', id: `${i}`, text: m.text }],
     }));
+  const openingReply = onOpenOverview
+    ? entries.find(
+        (entry) =>
+          !entry.boundary &&
+          entry.speaker !== 'user' &&
+          entry.parts.some((part) => part.kind === 'text' && part.text.trim()),
+      )
+    : undefined;
   const openReference = (event: MouseEvent<HTMLElement>, dismiss?: () => void) => {
     const anchor = (event.target as Element).closest('a');
     const href = anchor?.getAttribute('href') ?? '';
@@ -283,7 +315,12 @@ export function LearningConversation({
         <p className="text-sm text-muted-foreground">{t('pblV3.journey.startConversation')}</p>
       )}
       {entries.map((entry) => (
-        <ConversationEntry key={entry.id} entry={entry} onOpenReport={onOpenReport} />
+        <ConversationEntry
+          key={entry.id}
+          entry={entry}
+          onOpenReport={onOpenReport}
+          onOpenOverview={entry === openingReply ? onOpenOverview : undefined}
+        />
       ))}
       {pendingMessage && <ConversationEntry entry={pendingMessage} />}
       {placeholder && (

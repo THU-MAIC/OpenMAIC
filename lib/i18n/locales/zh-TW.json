@@ -3022,7 +3022,14 @@
       "file-edit": "File edit",
       "workspace-run": "Workspace run"
     },
+    "overview": {
+      "title": "專案總覽",
+      "close": "收起專案總覽",
+      "currentGoal": "目前目標",
+      "view": "查看大綱（{{count}} 個階段）"
+    },
     "journey": {
+      "stepComplete": "{{step}} · 已完成",
       "completionHandoff": "本環節已完成。下一步操作請看學習助手底部的任務列。",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",

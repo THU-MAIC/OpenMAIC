@@ -32,6 +32,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useStageStore } from '@/lib/store/stage';
 import type { LearningView } from '@/lib/pbl/v3/types';
+import type { ProjectHeroDetails } from '@/lib/pbl/project-hero';
 import { LearningWorkbenchPanel } from './workbench-panel';
 import type { FileSaveReceipt } from './use-project-editor';
 import { ProjectReport } from './project-report';
@@ -43,6 +44,7 @@ import { TestEvaluation } from './test-evaluation';
 import { TeachingRunNotice } from './teaching-run-notice';
 import { PendingAction } from './pending-action';
 import { TaskDock } from './task-dock';
+import { ProjectOverview, type ProjectOverviewMode } from './project-overview';
 import { ProductionContext } from './production-context';
 import { useWorkbenchOnboarding } from './use-workbench-onboarding';
 import { WorkbenchOnboarding } from './workbench-onboarding';
@@ -54,6 +56,7 @@ import { SandboxRequestError } from '@/components/sandbox/client';
 
 interface WorkspaceProps {
   sceneId: string;
+  projectHero?: ProjectHeroDetails;
   onReturnToHero?: () => void;
   autoOnboarding?: boolean;
   initialEntry?: boolean;
@@ -64,6 +67,7 @@ interface WorkspaceProps {
 
 function PBLV3WorkspaceContent({
   sceneId,
+  projectHero,
   onReturnToHero,
   autoOnboarding = false,
   initialEntry = false,
@@ -77,6 +81,8 @@ function PBLV3WorkspaceContent({
     stageId = useStageStore((state) => state.stage?.id);
   const { view, workbench, latestView, updateView, receive, openView } = useLearningObservation();
   const [reportOpen, setReportOpen] = useState(false);
+  const [overview, setOverview] = useState<{ studyId: string; mode: ProjectOverviewMode }>();
+  const overviewTrigger = useRef<HTMLButtonElement>(null);
   const workspaceRoot = useRef<HTMLElement>(null);
   const [fileTarget, setFileTarget] = useState<
     (FileReference & { studyId: string; requestId: number }) | null
@@ -405,6 +411,20 @@ function PBLV3WorkspaceContent({
       quizAnswers.values.some((answer) => answer !== null) ||
       Object.values(decisionDrafts).some((draft) => !!draft.chosen || !!draft.rationale),
   });
+  const overviewMode = overview && overview.studyId === view?.id ? overview.mode : 'closed';
+  const atProjectStart =
+    view?.state.position.milestoneIndex === 0 && view.state.position.stageIndex === 0;
+  if (
+    view &&
+    initialEntry &&
+    atProjectStart &&
+    onboardingReady &&
+    !entryLoading &&
+    !onboarding.active &&
+    overview?.studyId !== view.id
+  ) {
+    setOverview({ studyId: view.id, mode: 'summary' });
+  }
   useEffect(() => {
     onOnboardingChange?.(onboarding.active || entryLoading);
     return () => onOnboardingChange?.(false);
@@ -803,6 +823,18 @@ function PBLV3WorkspaceContent({
                 />
 
                 <div className="pbl-task-area flex min-h-0 flex-1 flex-col">
+                  <div className="shrink-0" hidden={onboarding.active || entryLoading}>
+                    <ProjectOverview
+                      view={view}
+                      hero={projectHero}
+                      mode={overviewMode}
+                      triggerRef={overviewTrigger}
+                      onChange={(mode) => {
+                        setOverview({ studyId: view.id, mode });
+                        overviewTrigger.current?.focus({ preventScroll: true });
+                      }}
+                    />
+                  </div>
                   <LearningConversation
                     modalActive={onboarding.active || entryLoading}
                     view={view}
@@ -818,6 +850,14 @@ function PBLV3WorkspaceContent({
                       view.reportAvailable && !view.busy ? () => setReportOpen(true) : undefined
                     }
                     onOpenTask={() => taskDock.current?.open()}
+                    onOpenOverview={
+                      atProjectStart
+                        ? () => {
+                            setOverview({ studyId: view.id, mode: 'details' });
+                            overviewTrigger.current?.focus({ preventScroll: true });
+                          }
+                        : undefined
+                    }
                     sent={sent}
                     pendingMessage={pendingMessage}
                     requesting={['chat', 'begin', 'retry'].includes(pendingAction ?? '')}
@@ -898,14 +938,14 @@ function PBLV3WorkspaceContent({
                       ) : (
                         view.actions.includes('next') && (
                           <button
-                            className="pbl-stage-action inline-flex h-7 min-w-0 max-w-[220px] shrink-0 items-center justify-center truncate rounded-md border px-3 text-xs font-semibold transition-colors disabled:cursor-not-allowed"
+                            className="pbl-stage-action inline-flex min-h-9 min-w-0 items-center justify-center gap-1.5 rounded-lg border px-3 py-1.5 text-center text-xs font-semibold break-words transition-colors disabled:cursor-not-allowed"
                             data-state={disabled ? 'disabled' : 'ready'}
                             disabled={disabled}
                             aria-busy={pendingAction === 'next'}
                             onClick={() => void command('next')}
                           >
                             {pendingAction === 'next' && (
-                              <LoaderCircle size={13} className="mr-1 animate-spin" />
+                              <LoaderCircle size={13} className="shrink-0 animate-spin" />
                             )}
                             {continueActionLabel(view, t)}
                           </button>

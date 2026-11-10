@@ -3022,7 +3022,14 @@
       "file-edit": "File edit",
       "workspace-run": "Workspace run"
     },
+    "overview": {
+      "title": "プロジェクト概要",
+      "close": "プロジェクト概要を閉じる",
+      "currentGoal": "現在の目標",
+      "view": "全体の流れを見る（{{count}}）"
+    },
     "journey": {
+      "stepComplete": "{{step}} · 完了",
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",
