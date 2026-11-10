@@ -29,6 +29,7 @@ import { classroomHasPlaybackMedia, useExportHtml } from '@/lib/export/use-expor
 import { isScriptExportReady, useExportScript } from '@/lib/export/use-export-script';
 import { isVideoExportEnabled } from '@/lib/config/feature-flags';
 import { showViewerCopyHint } from '@/lib/export/copy-hint';
+import { isWorkbenchEnabled } from '@/lib/config/feature-flags';
 import { useVideoRenderStore } from '@/lib/store/video-render';
 import { CircularProgress } from '@/components/ui/circular-progress';
 import { VideoExportDialog } from './video-export-dialog';
@@ -396,7 +397,7 @@ export function HeaderControls({
             description={t('export.videoDesc')}
           />
         )}
-        {showViewerCopyHint({ isOwner, scenes }) ? (
+        {showViewerCopyHint({ isOwner, workbench: isWorkbenchEnabled(), scenes }) ? (
           // Someone else's course: how to make an editable copy of their own.
           <p
             data-testid="export-viewer-copy-hint"
