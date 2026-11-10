@@ -51,6 +51,14 @@ import { cn } from '@/lib/utils';
 import type { StageMode } from '@/lib/types/stage';
 import { ClassroomModeSwitch } from '@/components/workbench/ClassroomModeSwitch';
 
+function useSafeRouter() {
+  try {
+    return useRouter();
+  } catch {
+    return null;
+  }
+}
+
 interface ExportMenuItemProps {
   readonly icon: ReactNode;
   readonly label: ReactNode;
@@ -146,7 +154,7 @@ export function HeaderControls({
 }: HeaderControlsProps) {
   const { t } = useI18n();
   const { theme, setTheme } = useTheme();
-  const router = useRouter();
+  const router = useSafeRouter();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [videoDialogOpen, setVideoDialogOpen] = useState(false);
   const [copying, setCopying] = useState(false);
@@ -182,7 +190,11 @@ export function HeaderControls({
       }
       const data = (await res.json()) as { id: string };
       toast.success(t('classroom.copySuccess'));
-      router.push(`/classroom/${data.id}`);
+      if (router) {
+        router.push(`/classroom/${data.id}`);
+      } else if (typeof window !== 'undefined') {
+        window.location.assign(`/classroom/${data.id}`);
+      }
     } catch {
       toast.error(t('classroom.copyFailed'));
     } finally {

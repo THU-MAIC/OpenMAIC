@@ -50,6 +50,7 @@ import { resolveOwnedAsset } from '@/lib/persistence/resolve-server-asset';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { getOwnerScopedDocumentStore } from '@/lib/server/agent-runtime/owner-scoped-documents';
 import { ownerApiError, ownerJson, ownerNotFound } from '@/lib/server/agent-runtime/route-response';
+import type { ApiErrorCode } from '@/lib/server/api-response';
 import { STAGE_NAME_MAX_LENGTH } from '@/lib/server/agent-runtime/stage-limits';
 import { generateClassroomId, saveCompletedClassroom } from '@/lib/server/classroom-persistence';
 import { CLASSROOMS_DIR, classroomMediaMimeType } from '@/lib/server/classroom-storage';
@@ -165,7 +166,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
   if (!isSameOriginJsonRequest(req)) {
     return ownerApiError(
-      'CROSS_ORIGIN_REFUSED',
+      'CROSS_ORIGIN_REFUSED' as unknown as ApiErrorCode,
       403,
       'Copy requests must be same-origin JSON requests.',
       new Headers(),
@@ -178,7 +179,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     // Concurrency limit: 1 copy in flight per owner.
     if (inFlightCopies.has(ownerId)) {
       return ownerApiError(
-        'CONCURRENT_COPY_LIMIT',
+        'CONCURRENT_COPY_LIMIT' as unknown as ApiErrorCode,
         429,
         'A copy operation is already in progress for this account.',
         responseHeaders,
@@ -288,9 +289,9 @@ export async function POST(req: NextRequest, { params }: Params) {
       };
 
       // Clear non-copied properties: folder, public/publish state.
-      delete (newStage as Record<string, unknown>).folderId;
-      delete (newStage as Record<string, unknown>).isPublic;
-      delete (newStage as Record<string, unknown>).publishedAt;
+      delete (newStage as unknown as Record<string, unknown>).folderId;
+      delete (newStage as unknown as Record<string, unknown>).isPublic;
+      delete (newStage as unknown as Record<string, unknown>).publishedAt;
 
       // Rewrite scenes and their agent references.
       const newScenes: Scene[] = sourceDocument.scenes.map((scene) => {
@@ -319,8 +320,9 @@ export async function POST(req: NextRequest, { params }: Params) {
       });
 
       // Rewrite outlines.
-      const newOutlines: SceneOutline[] = (sourceDocument.outline?.outlines ?? []).map(
-        (outline) => ({
+      const sourceOutline = sourceDocument.outline as { outlines?: SceneOutline[] } | undefined;
+      const newOutlines: SceneOutline[] = (sourceOutline?.outlines ?? []).map(
+        (outline: SceneOutline) => ({
           ...structuredClone(outline),
           id: sceneIdMap.get(outline.id) ?? outline.id,
         }),

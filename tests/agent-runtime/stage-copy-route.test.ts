@@ -7,7 +7,7 @@ import { NextRequest } from 'next/server';
 import { DocumentWriteRefusedError } from '@openmaic/storage';
 import type { PPTImageElement, SlideContent } from '@openmaic/dsl';
 import type { AppDocument } from '@/lib/document-store/persistence-types';
-import type { AppScene, GeneratedAgentConfig } from '@/lib/types/stage';
+import type { AppScene, GeneratedAgentConfig, PBLContent, Stage } from '@/lib/types/stage';
 import type { DiscussionAction, SpeechAction } from '@/lib/types/action';
 import { CREATE_REFUSED } from '@/lib/persistence/owner-bound-document-store';
 
@@ -98,6 +98,20 @@ function slideElements(scene: AppScene): PPTImageElement[] {
   return ((scene.content as SlideContent).canvas.elements ?? []) as PPTImageElement[];
 }
 
+function makeImageElement(id: string, src: string): PPTImageElement {
+  return {
+    id,
+    type: 'image',
+    src,
+    width: 100,
+    height: 100,
+    left: 0,
+    top: 0,
+    fixedRatio: true,
+    rotate: 0,
+  };
+}
+
 function createSourceDocument(stageId = SOURCE_STAGE_ID): AppDocument {
   const scene1 = makeSlideScene('scene-src-1', stageId, 1, 'Intro');
   scene1.multiAgent = {
@@ -105,60 +119,52 @@ function createSourceDocument(stageId = SOURCE_STAGE_ID): AppDocument {
     agentIds: ['agent-teacher-1', 'agent-student-1'],
     directorPrompt: 'Engage discussion',
   };
-  const speech1: SpeechAction = {
+  const speech1: SpeechAction & { agentId?: string } = {
+    id: 'act-speech-1',
     type: 'speech',
     text: 'Welcome to this lesson!',
     agentId: 'agent-teacher-1',
     audioId: 'ast_source_audio_1',
   };
   scene1.actions = [speech1];
-  (scene1.content as SlideContent).canvas.elements.push({
-    id: 'el-img-1',
-    type: 'image',
-    src: 'ast_source_img_1',
-    width: 100,
-    height: 100,
-    left: 0,
-    top: 0,
-  });
+  (scene1.content as SlideContent).canvas.elements.push(
+    makeImageElement('el-img-1', 'ast_source_img_1'),
+  );
 
   const scene2 = makeSlideScene('scene-src-2', stageId, 2, 'Deep Dive');
   const discussion2: DiscussionAction = {
+    id: 'act-disc-2',
     type: 'discussion',
     topic: 'Questions?',
     agentId: 'agent-student-1',
   };
   scene2.actions = [discussion2];
   // Repeated reference to ast_source_img_1 to test deduplication
-  (scene2.content as SlideContent).canvas.elements.push({
-    id: 'el-img-2',
-    type: 'image',
-    src: 'ast_source_img_1',
-    width: 100,
-    height: 100,
-    left: 0,
-    top: 0,
-  });
+  (scene2.content as SlideContent).canvas.elements.push(
+    makeImageElement('el-img-2', 'ast_source_img_1'),
+  );
   // External media reference
-  (scene2.content as SlideContent).canvas.elements.push({
-    id: 'el-img-ext',
-    type: 'image',
-    src: 'https://cdn.example.com/external-photo.png',
-    width: 100,
-    height: 100,
-    left: 0,
-    top: 0,
-  });
+  (scene2.content as SlideContent).canvas.elements.push(
+    makeImageElement('el-img-ext', 'https://cdn.example.com/external-photo.png'),
+  );
 
   const teacherConfig: GeneratedAgentConfig = {
     id: 'agent-teacher-1',
     name: 'Dr. Smith',
     role: 'teacher',
+    persona: 'Professor',
+    avatar: '👨‍🏫',
+    color: '#3b82f6',
+    priority: 1,
   };
   const studentConfig: GeneratedAgentConfig = {
     id: 'agent-student-1',
     name: 'Alice',
     role: 'student',
+    persona: 'Student',
+    avatar: '👩‍🎓',
+    color: '#10b981',
+    priority: 2,
   };
 
   return {
@@ -170,7 +176,9 @@ function createSourceDocument(stageId = SOURCE_STAGE_ID): AppDocument {
       agentIds: ['agent-teacher-1', 'agent-student-1'],
       generatedAgentConfigs: [teacherConfig, studentConfig],
       videoManifest: {
-        ast_source_video_1: { prompt: 'Wave animation' } as unknown as Stage['videoManifest'],
+        ast_source_video_1: { prompt: 'Wave animation' } as unknown as NonNullable<
+          Stage['videoManifest']
+        >[string],
       },
     },
     scenes: [scene1, scene2],
@@ -281,7 +289,8 @@ describe('POST /api/stages/[id]/copy', () => {
     const stored = mocks.fakeStore!.docs.get(newStageId);
     expect(stored).toBeDefined();
     expect(stored!.stage.name).toBe('Introduction to Physics (copy)');
-    expect(stored!.outline.generationComplete).toBe(true);
+    const outline = stored!.outline as { generationComplete?: boolean; outlines: { id: string }[] };
+    expect(outline.generationComplete).toBe(true);
 
     // Verify agent IDs were minted fresh and consistently rewritten
     const newAgentIds = stored!.stage.agentIds!;
@@ -299,7 +308,7 @@ describe('POST /api/stages/[id]/copy', () => {
     expect(newScene1.stageId).toBe(newStageId);
     expect(newScene1.id).not.toBe('scene-src-1');
     expect(newScene1.multiAgent?.agentIds).toEqual([teacherConfig.id, studentConfig.id]);
-    const speech1 = newScene1.actions![0] as SpeechAction;
+    const speech1 = newScene1.actions![0] as SpeechAction & { agentId?: string };
     expect(speech1.agentId).toBe(teacherConfig.id);
 
     // Scene 2 agent references
@@ -310,8 +319,8 @@ describe('POST /api/stages/[id]/copy', () => {
     expect(discussion2.agentId).toBe(studentConfig.id);
 
     // Outlines rewritten with new scene IDs
-    expect(stored!.outline.outlines[0]!.id).toBe(newScene1.id);
-    expect(stored!.outline.outlines[1]!.id).toBe(newScene2.id);
+    expect(outline.outlines[0]!.id).toBe(newScene1.id);
+    expect(outline.outlines[1]!.id).toBe(newScene2.id);
   });
 
   it('deduplicates repeated media references and copies them independently', async () => {
@@ -369,16 +378,11 @@ describe('POST /api/stages/[id]/copy', () => {
 
     // Add legacy media references to source document
     const sourceDoc = mocks.fakeStore!.docs.get(SOURCE_STAGE_ID)!;
-    slideElements(sourceDoc.scenes[0]!).push({
-      id: 'legacy-img-el',
-      type: 'image',
-      src: `/api/classroom-media/${SOURCE_STAGE_ID}/media/chart.png`,
-      width: 100,
-      height: 100,
-      left: 0,
-      top: 0,
-    });
+    slideElements(sourceDoc.scenes[0]!).push(
+      makeImageElement('legacy-img-el', `/api/classroom-media/${SOURCE_STAGE_ID}/media/chart.png`),
+    );
     const legacySpeech: SpeechAction & { audioUrl?: string } = {
+      id: 'legacy-speech-1',
       type: 'speech',
       text: 'Legacy speech',
       audioUrl: `/api/classroom-media/${SOURCE_STAGE_ID}/audio/voice.mp3`,
@@ -416,7 +420,7 @@ describe('POST /api/stages/[id]/copy', () => {
       content: {
         type: 'pbl',
         projectV3: { id: 'greeting-python', version: '1.0.0' },
-      } as unknown as AppScene['content'],
+      } as unknown as PBLContent,
     });
 
     const res = await callCopy(SOURCE_STAGE_ID);
