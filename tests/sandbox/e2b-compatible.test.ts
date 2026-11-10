@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from 'node:fs';
+import {
+  existsSync,
+  readFileSync,
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  realpathSync,
+} from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 vi.mock('server-only', () => ({}));
@@ -23,6 +32,8 @@ import { WORKSPACE_EXCLUDES } from '@/lib/server/sandbox/workspace-archive';
 import { isProjectSource, projectFiles } from '@/lib/server/pbl-v3/workspace-files';
 import { installedProject } from '@/lib/server/pbl-v3/catalog';
 import type { SandboxService } from '@/lib/server/sandbox/service';
+import { evaluationCommand, evaluationPassed } from '@/lib/server/pbl-v3/evaluation';
+import { MAX_COMMAND_BYTES } from '@/lib/sandbox/types';
 
 function archiveFixture() {
   sdk.getInfo.mockResolvedValue({
@@ -75,6 +86,112 @@ beforeEach(() => {
   vi.stubEnv('OPENMAIC_SANDBOX_API_KEY', 'test-key');
 });
 afterEach(() => vi.unstubAllEnvs());
+
+describe('assessment file transport', () => {
+  it('cleans a partially uploaded file without starting a command', async () => {
+    const { provider, sandbox, run, remove } = archiveFixture();
+    const write = vi.fn().mockRejectedValue(new Error('upload failed'));
+    sdk.connect.mockResolvedValue({ ...sandbox, files: { ...sandbox.files, write } });
+    await expect(
+      provider.prepareAssessmentCommand('resource', 'op', {
+        id: randomUUID(),
+        command: 'echo assessment',
+        timeoutMs: 2000,
+      }),
+    ).rejects.toThrow('upload failed');
+    expect(remove.mock.calls[0]?.[0]).toBe(write.mock.calls[0]?.[0]);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it.each(['success', 'tampered', 'cancelled'] as const)(
+    'uses the existing supervisor and removes the staged file (%s)',
+    async (scenario) => {
+      const { provider, sandbox, run } = archiveFixture();
+      const id = randomUUID();
+      const cwd = mkdtempSync(join(tmpdir(), 'assessment-source-'));
+      const receipt = `/tmp/openmaic-commands/${id}/status.json`;
+      const staged: string[] = [];
+      const disconnect = vi.fn();
+      const runCommand = (command: string) => execFileSync('/bin/sh', ['-c', command], { cwd });
+      sdk.connect.mockResolvedValue({
+        ...sandbox,
+        files: {
+          ...sandbox.files,
+          makeDir: async (path: string) => mkdirSync(path, { recursive: true }),
+          write: async (path: string, content: string) => {
+            if (path.endsWith('.sh')) staged.push(path);
+            writeFileSync(path, content);
+          },
+        },
+        commands: {
+          run: async (command: string, options: { background?: boolean }) => {
+            await run(command);
+            if (scenario === 'cancelled' && options.background)
+              throw new Error('lost acknowledgement');
+            runCommand(command);
+            return { disconnect };
+          },
+        },
+      });
+      try {
+        const files = Object.fromEntries(
+          Array.from({ length: 80 }, (_, index) => [
+            createHash('sha256')
+              .update('path:' + index)
+              .digest('hex') + '.txt',
+            'test',
+          ]),
+        );
+        for (const [name, content] of Object.entries(files))
+          writeFileSync(join(cwd, name), content);
+        const fixture = Buffer.concat(
+          Array.from({ length: 576 }, (_, index) =>
+            createHash('sha256').update(String(index)).digest(),
+          ),
+        ).toString('base64');
+        const assessment = {
+          resources: { 'tests/fixture.txt': fixture },
+          cases: [
+            { id: 'case', argv: ['python3', '-c', 'print("evaluated")'], stdout: 'evaluated\n' },
+          ],
+        };
+        const command = evaluationCommand(assessment, id, files);
+        expect(Buffer.byteLength(command)).toBeGreaterThan(MAX_COMMAND_BYTES);
+        const start = await provider.prepareAssessmentCommand('resource', 'op', {
+          id,
+          command,
+          cwd,
+          timeoutMs: 2000,
+        });
+        expect(staged).toHaveLength(1);
+        const path = staged[0]!;
+        expect(run).not.toHaveBeenCalled();
+        if (scenario === 'tampered') writeFileSync(path, 'echo compromised');
+        if (scenario === 'cancelled') {
+          await expect(start()).rejects.toThrow('lost acknowledgement');
+          expect(existsSync(path)).toBe(true);
+          await provider.cancelCommand('resource', 'op', id);
+          // A late start sees the same command ID already claimed by cancellation.
+          runCommand(run.mock.calls[0]![0]);
+        } else {
+          await start();
+          expect(disconnect).toHaveBeenCalledOnce();
+        }
+        expect(existsSync(path)).toBe(false);
+        const result = JSON.parse(readFileSync(receipt, 'utf8'));
+        expect(result.state).toBe(scenario === 'cancelled' ? 'cancelled' : 'exited');
+        expect(result.exitCode).toBe(
+          scenario === 'success' ? 0 : scenario === 'cancelled' ? null : 1,
+        );
+        expect(evaluationPassed(assessment, id, result.stdout)).toBe(scenario === 'success');
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+        rmSync(dirname(receipt), { recursive: true, force: true });
+        for (const path of staged) rmSync(path, { force: true });
+      }
+    },
+  );
+});
 
 it('keeps actual provider enumeration and PBL source access aligned on excluded directories', async () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'workspace-list-')));

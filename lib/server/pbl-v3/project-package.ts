@@ -10,7 +10,7 @@ import {
 } from '@/lib/pbl/v3/domain/project/project-schema';
 import { SandboxError } from '@/lib/sandbox/errors';
 import { PROJECT_LIMITS, safeProjectPath } from '@/lib/pbl/v3/package-policy';
-import { MAX_COMMAND_BYTES } from '@/lib/sandbox/types';
+import { MAX_ASSESSMENT_SCRIPT_BYTES, MAX_COMMAND_BYTES } from '@/lib/sandbox/types';
 import type { InstalledProject } from './catalog';
 import { evaluationCommand } from './evaluation';
 import { stageSkill } from './skills';
@@ -397,9 +397,13 @@ export function validateProjectPackage(
           '00000000-0000-0000-0000-000000000000',
           application?.frontendPath ? files : undefined,
         ),
-      ) > MAX_COMMAND_BYTES
+      ) > (application?.frontendPath ? MAX_ASSESSMENT_SCRIPT_BYTES : MAX_COMMAND_BYTES)
     )
-      return invalid(`Evaluation exceeds the sandbox 32 KiB command limit: ${name}`);
+      return invalid(
+        application?.frontendPath
+          ? `Evaluation exceeds the sandbox assessment file transport budget: ${name}`
+          : `Evaluation exceeds the sandbox 32 KiB command limit: ${name}`,
+      );
   }
   for (const root of config.runtime.sourceRoots)
     if (Object.keys(files).some((name) => root === name || root.startsWith(`${name}/`)))
