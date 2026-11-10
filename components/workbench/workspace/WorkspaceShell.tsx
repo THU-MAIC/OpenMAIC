@@ -142,7 +142,7 @@ import {
   type PreviewTabState,
 } from './WorkspaceRequestActivity';
 import { isPreviewClosed, rememberPreviewClosed } from '@/lib/workbench/preview-tab';
-import { requestEpisodeStart } from '@/lib/workbench/request-activity';
+import { QUEUED_REQUEST_KEY, requestEpisodeStart } from '@/lib/workbench/request-activity';
 import { requestCourse, type RequestCourse } from '@/lib/workbench/conversation-course';
 import { PaneTab } from './PaneTab';
 import { ResizeHandle } from './ResizeHandle';
@@ -1162,7 +1162,9 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     [requestCourseJson],
   );
   // Names the request, as the preview's own track does (`requestTrack`).
-  const requestKey = useWorkbenchStore((s) => s.chat[requestEpisodeStart(s.chat)]?.key ?? 'queued');
+  const requestKey = useWorkbenchStore(
+    (s) => s.chat[requestEpisodeStart(s.chat)]?.key ?? QUEUED_REQUEST_KEY,
+  );
   const requestLive = ['running', 'queued', 'connecting'].includes(attachedSessionStatus);
   const pagedCourses = thisRequestCourse.kind === 'new' ? thisRequestCourse.ready : [];
   const workingCourseId = thisRequestCourse.kind === 'course' ? thisRequestCourse.courseId : null;
@@ -1709,9 +1711,19 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     !homeRequest.used &&
     (homeRequest.requestKey === null ||
       homeRequest.requestKey === previewTab.requestKey ||
+      (homeRequest.requestKey === QUEUED_REQUEST_KEY && previewTab.requestKey !== null) ||
       handedOffOnScreen);
-  if (homePreview && previewPaneOpen && homeRequest.requestKey === null && previewTab.requestKey) {
+  if (
+    homePreview &&
+    previewPaneOpen &&
+    previewTab.requestKey &&
+    (homeRequest.requestKey === null ||
+      (homeRequest.requestKey === QUEUED_REQUEST_KEY &&
+        previewTab.requestKey !== QUEUED_REQUEST_KEY))
+  ) {
     // The home request's preview is on screen: this is the one it folds for.
+    // A request first shown while queued is renamed by its opening bubble a
+    // moment later; it is the same request, and the fold follows it.
     setHomeRequest({ ...homeRequest, requestKey: previewTab.requestKey });
   }
   if (homeRequest.requestKey !== null && !homeRequest.used && !(homePreview && homeSurfaceOpen)) {
