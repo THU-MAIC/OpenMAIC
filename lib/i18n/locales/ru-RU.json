@@ -88,6 +88,7 @@
     "exportFailed": "Ошибка экспорта",
     "classroomZip": "Экспорт ZIP класса",
     "classroomZipDesc": "Структура курса + медиафайлы",
+    "viewerCopyHint": "Нужна копия для редактирования? Скачайте её через «{{zip}}», затем в разделе «{{courses}}» нажмите «{{importLabel}}».",
     "html": "Экспорт в HTML",
     "htmlDesc": "Один офлайн-файл, который воспроизводится сам",
     "htmlWithNarration": "С озвучкой и видео",

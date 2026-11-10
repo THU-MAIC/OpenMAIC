@@ -88,6 +88,7 @@
     "exportFailed": "내보내기 실패",
     "classroomZip": "교실 ZIP 내보내기",
     "classroomZipDesc": "강좌 구조 + 미디어 파일",
+    "viewerCopyHint": "편집할 수 있는 사본이 필요하면 “{{zip}}”로 내려받은 뒤 “{{courses}}”에서 “{{importLabel}}”을 사용하세요.",
     "html": "HTML로 내보내기",
     "htmlDesc": "스스로 재생되는 오프라인 단일 파일",
     "htmlWithNarration": "내레이션 및 동영상 포함",

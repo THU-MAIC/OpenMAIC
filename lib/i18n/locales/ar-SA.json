@@ -85,6 +85,7 @@
     "packSlidesOnly": "PPTX بالشرائح فقط + صفحات تفاعلية",
     "classroomZip": "تصدير ملف الفصل ZIP",
     "classroomZipDesc": "هيكل المقرر + ملفات الوسائط",
+    "viewerCopyHint": "هل تريد نسخة قابلة للتعديل؟ نزّلها عبر «{{zip}}»، ثم استخدم «{{importLabel}}» في {{courses}}.",
     "html": "تصدير بتنسيق HTML",
     "htmlDesc": "ملف واحد للاستخدام دون اتصال يُشغَّل تلقائيًا",
     "htmlWithNarration": "مع التعليق الصوتي والفيديو",

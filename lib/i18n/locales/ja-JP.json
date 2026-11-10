@@ -88,6 +88,7 @@
     "exportFailed": "エクスポートに失敗しました",
     "classroomZip": "教室ZIPをエクスポート",
     "classroomZipDesc": "コース構造 + メディアファイル",
+    "viewerCopyHint": "編集できるコピーが欲しい場合は、「{{zip}}」でダウンロードし、「{{courses}}」で「{{importLabel}}」してください。",
     "html": "HTML としてエクスポート",
     "htmlDesc": "単体で再生できるオフラインファイル",
     "htmlWithNarration": "ナレーションと動画を含める",

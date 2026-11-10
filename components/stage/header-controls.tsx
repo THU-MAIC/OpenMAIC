@@ -26,6 +26,7 @@ import { useExportClassroom } from '@/lib/export/use-export-classroom';
 import { classroomHasPlaybackMedia, useExportHtml } from '@/lib/export/use-export-html';
 import { isScriptExportReady, useExportScript } from '@/lib/export/use-export-script';
 import { isVideoExportEnabled } from '@/lib/config/feature-flags';
+import { showViewerCopyHint } from '@/lib/export/copy-hint';
 import { useVideoRenderStore } from '@/lib/store/video-render';
 import { CircularProgress } from '@/components/ui/circular-progress';
 import { VideoExportDialog } from './video-export-dialog';
@@ -143,6 +144,7 @@ export function HeaderControls({
   const scenes = useStageStore((s) => s.scenes);
   const generatingOutlines = useStageStore((s) => s.generatingOutlines);
   const failedOutlines = useStageStore((s) => s.failedOutlines);
+  const isOwner = useStageStore((s) => s.isOwner);
   const mediaTasks = useMediaGenerationStore((s) => s.tasks);
   const { exporting: isExporting, exportPPTX, exportResourcePack } = useExportPPTX();
   const { exporting: isExportingZip, exportClassroomZip } = useExportClassroom();
@@ -384,6 +386,19 @@ export function HeaderControls({
             description={t('export.videoDesc')}
           />
         )}
+        {showViewerCopyHint({ isOwner, scenes }) ? (
+          // Someone else's course: how to make an editable copy of their own.
+          <p
+            data-testid="export-viewer-copy-hint"
+            className="mx-2 mt-1 mb-1 max-w-[260px] border-t border-gray-200 pt-2 text-[11px] leading-snug text-gray-400 dark:border-gray-700 dark:text-gray-500"
+          >
+            {t('export.viewerCopyHint', {
+              zip: t('export.classroomZip'),
+              courses: t('workspace.nav.myCourses'),
+              importLabel: t('import.classroom'),
+            })}
+          </p>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   ) : null;

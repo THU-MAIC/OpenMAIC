@@ -88,6 +88,7 @@
     "exportFailed": "Xuất không thành công",
     "classroomZip": "Xuất lớp học dạng ZIP",
     "classroomZipDesc": "Cấu trúc bài học + tệp phương tiện",
+    "viewerCopyHint": "Muốn có bản sao để chỉnh sửa? Tải về bằng “{{zip}}”, rồi dùng “{{importLabel}}” trong {{courses}}.",
     "html": "Xuất dưới dạng HTML",
     "htmlDesc": "Một tệp ngoại tuyến tự phát",
     "htmlWithNarration": "Có lời dẫn và video",

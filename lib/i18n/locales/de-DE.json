@@ -88,6 +88,7 @@
     "exportFailed": "Export fehlgeschlagen",
     "classroomZip": "Kurs-ZIP exportieren",
     "classroomZipDesc": "Kursstruktur + Mediendateien",
+    "viewerCopyHint": "Eine bearbeitbare Kopie? Mit „{{zip}}“ herunterladen und dann unter „{{courses}}“ über „{{importLabel}}“ importieren.",
     "html": "Als HTML exportieren",
     "htmlDesc": "Eine Offline-Datei, die von selbst abspielt",
     "htmlWithNarration": "Mit Sprecherton und Videos",

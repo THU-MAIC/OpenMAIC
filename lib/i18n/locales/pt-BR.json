@@ -88,6 +88,7 @@
     "exportFailed": "Falha na exportação",
     "classroomZip": "Exportar ZIP da Sala",
     "classroomZipDesc": "Estrutura do curso + arquivos de mídia",
+    "viewerCopyHint": "Quer uma cópia editável? Baixe com “{{zip}}” e depois use “{{importLabel}}” em {{courses}}.",
     "html": "Exportar como HTML",
     "htmlDesc": "Arquivo único offline que se reproduz sozinho",
     "htmlWithNarration": "Com narração e vídeos",

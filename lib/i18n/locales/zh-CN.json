@@ -88,6 +88,7 @@
     "exportFailed": "导出失败",
     "classroomZip": "导出课堂 ZIP",
     "classroomZipDesc": "课程结构 + 媒体文件",
+    "viewerCopyHint": "想要一份能编辑的副本？先「{{zip}}」，再到「{{courses}}」里「{{importLabel}}」。",
     "html": "导出为 HTML",
     "htmlDesc": "单个离线文件，可自动播放",
     "htmlWithNarration": "包含旁白和视频",
