@@ -927,8 +927,8 @@ export async function commandStudy(
       }
       if (Buffer.byteLength(testCommand) > MAX_COMMAND_BYTES)
         throw sandboxInvalid(
-          'Current evaluation sources exceed the sandbox 32 KiB command limit.',
-          'PBL_SOURCE_SIZE',
+          'The generated assessment command exceeds the sandbox 32 KiB command limit.',
+          'PBL_COMMAND_SIZE',
         );
       row = await store.transaction((db) => store.commit(db, row, testedWorkspace));
       result = await service.startCommand(requireEnvironment(row), {
