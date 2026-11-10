@@ -1819,3 +1819,95 @@ for (const checker of ['tests', 'quiz'] as const) {
     await expect.poll(distance).toBeLessThanOrEqual(1);
   });
 }
+
+test('independent columns, narrow assistant and a single scrolling tab row', async ({
+  page,
+  learningEvents,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 850 });
+  const f = await project(page, learningEvents, { started: true, locale: 'zh-CN' });
+  await expect(page.locator('[data-pbl-tour="replay"]')).toBeEnabled();
+  const names = [
+    'PLAN.md',
+    'DialogueService.java',
+    'CourseChoices.java',
+    'ChatEndpoint.java',
+    'Json.java',
+    'Application.java',
+  ];
+  f.view.files = names;
+  f.view.revision++;
+  await f.publish();
+  const ide = page.getByTestId('pbl-ide');
+  await expect(ide.locator('.monaco-editor')).toBeVisible();
+  const tabs = ide.getByRole('tablist');
+  for (const name of names.slice(1)) await ide.getByRole('button', { name, exact: true }).click();
+  await expect(tabs.getByRole('tab', { name: 'Application.java', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  const measure = async () => ({
+    ide: (await ide.boundingBox())!,
+    files: (await ide.getByRole('navigation', { name: '项目文件', exact: true }).boundingBox())!,
+    app: (await page.getByTestId('pbl-application-panel').boundingBox())!,
+    assistant: (await page.getByTestId('pbl-assistant').boundingBox())!,
+  });
+  const drag = async (separator: ReturnType<Page['getByRole']>, delta: number) => {
+    const b = (await separator.boundingBox())!;
+    await page.mouse.move(b.x + b.width / 2, b.y + Math.min(120, b.height / 2));
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width / 2 + delta, b.y + Math.min(120, b.height / 2), {
+      steps: 14,
+    });
+    await page.mouse.up();
+  };
+  // Hero expansion and platform metrics can leave the tree near its 45% max.
+  // Start away from that constraint so shrinking the IDE tests pixel preservation.
+  const initial = await measure();
+  await drag(
+    page.getByRole('separator', { name: '调整文件目录宽度', exact: true }),
+    initial.ide.width * 0.24 - initial.files.width,
+  );
+  await expect
+    .poll(async () => {
+      const layout = await measure();
+      return layout.files.width / layout.ide.width;
+    })
+    .toBeCloseTo(0.24, 1);
+  const before = await measure();
+  await page.screenshot({ path: testInfo.outputPath('initial.png') });
+  const dividers = page.getByRole('separator', { name: '调整工作区与助手宽度', exact: true });
+  await drag(dividers.last(), 100);
+  const outer = await measure();
+  await page.screenshot({ path: testInfo.outputPath('outer-drag.png') });
+  // The tree must still fit below its max after the planned 60px IDE shrink.
+  expect(outer.files.width).toBeLessThan((outer.ide.width - 60) * 0.45 - 2);
+  await drag(dividers.first(), -60);
+  const inner = await measure();
+  await page.screenshot({ path: testInfo.outputPath('inner-drag.png') });
+  await ide.screenshot({ path: testInfo.outputPath('tabs.png') });
+  const tabRows = await tabs
+    .getByRole('tab')
+    .evaluateAll(
+      (elements) => new Set(elements.map((e) => Math.round(e.getBoundingClientRect().y))).size,
+    );
+  const tabOverflow = await tabs.evaluate((e) => ({ scroll: e.scrollWidth, width: e.clientWidth }));
+  {
+    expect(Math.abs(outer.ide.width - before.ide.width)).toBeLessThanOrEqual(2);
+    expect(Math.abs(outer.files.width - before.files.width)).toBeLessThanOrEqual(2);
+    expect(Math.abs(inner.assistant.width - outer.assistant.width)).toBeLessThanOrEqual(2);
+    expect(Math.abs(inner.files.width - outer.files.width)).toBeLessThanOrEqual(2);
+    expect(tabRows).toBe(1);
+    expect(tabOverflow.scroll).toBeGreaterThan(tabOverflow.width);
+    await tabs.evaluate((e) => (e.scrollLeft = 0));
+    await tabs.getByRole('tab', { name: 'PLAN.md', exact: true }).click();
+    await ide.getByRole('button', { name: 'Application.java', exact: true }).click();
+    await expect.poll(() => tabs.evaluate((e) => e.scrollLeft)).toBeGreaterThan(0);
+  }
+  const width = await page.getByTestId('pbl-workbench-split').evaluate((e) => e.clientWidth);
+  await drag(dividers.last(), inner.assistant.width - width * 0.22);
+  const narrow = await measure();
+  await page.screenshot({ path: testInfo.outputPath('narrow.png') });
+  expect(narrow.assistant.width).toBeGreaterThan(200);
+  expect(narrow.assistant.width / width).toBeLessThan(0.23);
+});

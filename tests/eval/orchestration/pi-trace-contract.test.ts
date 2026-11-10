@@ -5,9 +5,9 @@ import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
 // The scoring contract of the Pi orchestration evals rests on what the real
 // director loop records. These tests run the real runPiDirectorLoop, buildAgent
 // and agent SDK; only the model StreamFn is scripted (no network, no model).
-// They pin two observation limits of the director tool trace:
+// They pin the scoring contract of the director tool trace:
 //   - a call_agent attempt rejected by the tool schema is not recorded;
-//   - a legacy child whose provider fails after partial text is not marked failed.
+//   - a Legacy child provider failure is marked failed even when partial text exists.
 
 type ScriptedMessage = { content: unknown[]; stopReason: 'toolUse' | 'stop' | 'error' };
 
@@ -153,22 +153,24 @@ describe('Pi trace contract: schema-rejected call_agent attempts are not recorde
   });
 });
 
-describe('Pi trace contract: legacy child provider failures are not exposed', () => {
-  it('judges the partial text of a teacher child whose provider failed', async () => {
+describe('Pi trace contract: Legacy child provider failures are exposed', () => {
+  it('does not score a failed teacher call as a successful reply even with partial text', async () => {
     h.child = { text: 'The answer is', fail: true };
     h.director = [validTeacher()];
     const [sample] = await content.sampleScenario(contentScenario, evalModel, judgeModel, 1);
 
     expect(h.childCalls).toBe(1);
-    expect(sample.noReply).toBeUndefined();
+    expect(sample.noReply).toBe('first teacher call failed');
     expect(sample.error).toBeUndefined();
-    expect(h.judgeAnswer).toHaveBeenCalledOnce();
-    expect(h.judgeAnswer.mock.calls[0][3]).toBe('The answer is');
-    expect(h.judgeAnswer.mock.calls[0][4]).toBe('The answer is');
+    expect(h.judgeAnswer).not.toHaveBeenCalled();
 
-    // The routing classification is unaffected and carries no failure note.
+    // Routing still credits choosing the teacher, while recording the reply failure.
     h.director = [validTeacher()];
     const [routed] = await answering.sampleScenario(answeringScenario, evalModel, 1);
-    expect(routed).toEqual({ classification: 'TEACHER', rawAgentId: 'teacher' });
+    expect(routed).toEqual({
+      classification: 'TEACHER',
+      rawAgentId: 'teacher',
+      note: 'agent reply failed',
+    });
   });
 });

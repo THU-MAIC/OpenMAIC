@@ -246,7 +246,9 @@
       "toolCallingRequired": "教室チャットにはツール呼び出しに対応したモデルが必要です。設定 → コースモデル設定で教室スロットに対応モデルを選択してください。管理者が設定を管理している場合は、管理者にお問い合わせください。",
       "geminiNativeRequired": "Gemini の教室チャットには Google ネイティブが必要です。設定 → モデルサービスで Google（google プリセット）を追加し、コースモデル設定の「教室」で選択してください。管理された設定の場合は管理者にお問い合わせください。",
       "emptyAgentResponses": "エージェントが空の応答を返したため、ディスカッションを停止しました。再試行するかモデル設定をご確認ください。",
-      "streamInterrupted": "ストリームが予期せず終了し、ディスカッションが完了しませんでした。再度お試しください。"
+      "streamInterrupted": "ストリームが予期せず終了し、ディスカッションが完了しませんでした。再度お試しください。",
+      "teacherNoResponse": "先生から応答がありませんでした。もう一度お試しください。",
+      "teacherIncomplete": "先生の応答が完了しませんでした。もう一度お試しください。"
     },
     "elementReference": {
       "whiteboardChanged": "参照したホワイトボードの要素が変更されたか、利用できません。再選択するか、参照を削除してから送信してください。",
@@ -3086,10 +3088,10 @@
       "discussion": "This step is for discussing decisions. File editing opens during planning and coding.",
       "quiz": "This is the understanding quiz. Project files are read-only.",
       "recap": "This is the reflection step. Project files are read-only.",
-      "assessment": "This is the test step. Files are read-only; a recorded failure opens code repair.",
+      "assessment": "This is the test step. Files are read-only until a failure opens repair.",
       "stage": "Project files are read-only in this step.",
       "planOnly": "Planning allows edits to PLAN.md only. Source files are read-only.",
-      "planLocked": "PLAN.md is approved and read-only during coding or test repair.",
+      "planLocked": "PLAN.md is approved and read-only during coding.",
       "planEditable": "You can edit PLAN.md. Changes are saved automatically.",
       "codeEditable": "You can edit source files. Changes are saved automatically.",
       "stale": "The environment or file changed. Your draft is kept; copy it or reload before editing.",
