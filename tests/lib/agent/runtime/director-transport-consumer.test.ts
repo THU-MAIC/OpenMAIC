@@ -176,8 +176,7 @@ describe('Director shared Pi transport consumer', () => {
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: abortController.signal,
       signal: abortController.signal,
-      maxAgentTurns: 2,
-      maxActionsPerAgent: 1,
+
       enableWhiteboardTools: false,
     });
 
@@ -217,8 +216,7 @@ describe('Director shared Pi transport consumer', () => {
       maxOutputTokens: 640,
       abortSignal: abortController.signal,
       signal: abortController.signal,
-      maxAgentTurns: 2,
-      maxActionsPerAgent: 1,
+
       enableWhiteboardTools: false,
     });
 
@@ -283,8 +281,7 @@ describe('Director shared Pi transport consumer', () => {
       maxOutputTokens: 640,
       abortSignal: abortController.signal,
       signal: abortController.signal,
-      maxAgentTurns: 2,
-      maxActionsPerAgent: 1,
+
       enableWhiteboardTools: false,
     });
 

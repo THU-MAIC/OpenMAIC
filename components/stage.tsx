@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'motion/react';
 import { useStageStore, useCanvasStore } from '@/lib/store';
+import { settlePendingStageSave } from '@/lib/store/stage';
 import {
   isCurrentSceneEditable,
   isHostedSceneEditable,
@@ -282,10 +283,14 @@ export function Stage({
   // before it unmounts.
   const handleToggleEditMode = useCallback(async () => {
     if (mode === 'edit') {
-      setMode('playback');
+      // Done editing: the edits reach the server before the editor goes away.
+      await settlePendingStageSave();
+      // The wait can take a moment; act on the mode as it is now, not as it
+      // was when the switch was flipped.
+      if (useStageStore.getState().mode === 'edit') setMode('playback');
       return;
     }
-    // Load the editor chunk (fonts + slide surface) BEFORE flipping mode,
+    // Load the editor chunk (slide + quiz surfaces) BEFORE flipping mode,
     // so the edit chrome animates in with its content already present and
     // the slide surface registered — no mid-animation pop-in / NOOP flash.
     // Runs concurrently with teardown; the import is promise-cached so it's
@@ -447,10 +452,10 @@ export function Stage({
   return (
     <div className="relative flex flex-1 overflow-hidden">
       {/* The edit-mode guard has been removed (#1961 decision change 2026-08-23): a
-          new agent version directly replaces the canvas; the user's typed data is
-          protected by the write-path veto/retry channel (see lib/store/stage.ts),
-          and there is no longer an "agent modified this page" banner or a manual
-          reload entry. */}
+          new agent version directly replaces the canvas, except a scene with an
+          edit not yet saved, which the freshness sync leaves alone until it is
+          (see useStageFreshnessSync). There is no longer an "agent modified this
+          page" banner or a manual reload entry. */}
       {classroomChrome}
       {/* Full-screen playback steps the workspace aside; the return to the
           conversation lives in the classroom header's left slot (passed as

@@ -33,6 +33,7 @@
  * driven by the same `hover` state, which is why the panel still works with the
  * all-elements outlining gone.
  */
+import { commitCourseEdit } from '@/lib/edit/course-edit';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, GripHorizontal, MousePointerClick } from 'lucide-react';
 import { useCanvasStore } from '@/lib/store/canvas';
@@ -201,9 +202,11 @@ export function ElementPickLayer() {
       }
       const sc = stageState.scenes.find((s) => s.id === pt.sceneId);
       if (sc) {
-        useStageStore.getState().updateScene(pt.sceneId, {
-          actions: setElementIdById(sc.actions ?? [], pt.actionId, elementId),
-        });
+        commitCourseEdit({}, () =>
+          useStageStore.getState().updateScene(pt.sceneId, {
+            actions: setElementIdById(sc.actions ?? [], pt.actionId, elementId),
+          }),
+        );
       }
       finish();
     },

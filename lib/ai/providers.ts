@@ -1698,6 +1698,52 @@ function withEmptyToolCallReasoning(requestBody: string): string | undefined {
   }
 }
 
+/** Warn once per model and mode, not on every request. */
+const uncataloguedThinkingWarned = new Set<string>();
+
+/**
+ * Thinking params for a model with no catalog thinking capability (a custom
+ * provider or an unlisted model behind an OpenAI-compatible server).
+ *
+ * Self-hosted servers such as vLLM and sglang render Qwen3-style chat
+ * templates with thinking on by default, so the reasoning lands in the content
+ * field unless the request toggles it off. When the thinking mode is stated
+ * explicitly, send the generic `chat_template_kwargs` switch those servers
+ * understand. With no explicit mode nothing is sent, so unconfigured requests
+ * are unchanged.
+ */
+function getUncataloguedThinkingBodyParams(
+  providerId: ProviderId,
+  modelId: string,
+  config: ThinkingConfig,
+  mode: ReturnType<typeof getThinkingMode>,
+): { params: Record<string, unknown>; disablesThinking: boolean } | undefined {
+  if (mode !== 'enabled' && mode !== 'disabled') return undefined;
+
+  const thinkingEnabled = mode === 'enabled';
+  const chatTemplateKwargs: Record<string, unknown> = { enable_thinking: thinkingEnabled };
+  if (
+    thinkingEnabled &&
+    typeof config.budgetTokens === 'number' &&
+    Number.isFinite(config.budgetTokens) &&
+    config.budgetTokens > 0
+  ) {
+    chatTemplateKwargs.thinking_budget = Math.round(config.budgetTokens);
+  }
+  const warnKey = `${providerId}:${modelId}:${mode}`;
+  if (!uncataloguedThinkingWarned.has(warnKey)) {
+    uncataloguedThinkingWarned.add(warnKey);
+    log.warn(
+      `Model ${providerId}:${modelId} has no catalog thinking capability; ` +
+        `applying generic chat_template_kwargs.enable_thinking=${thinkingEnabled}`,
+    );
+  }
+  return {
+    params: { chat_template_kwargs: chatTemplateKwargs },
+    disablesThinking: !thinkingEnabled,
+  };
+}
+
 function getCompatThinkingBodyParams(
   providerId: ProviderId,
   modelId: string,
@@ -1718,8 +1764,19 @@ function getCompatThinkingBodyParams(
     };
   }
 
+  // Explicit modes also apply to provider aliases absent from the local catalogue.
+  if (providerId === 'deepseek') {
+    if (mode === 'disabled' || config.effort === 'none')
+      return { params: { thinking: { type: 'disabled' } }, disablesThinking: true };
+    if (config.effort === 'low')
+      return {
+        params: { thinking: { type: 'enabled' }, reasoning_effort: 'low' },
+        disablesThinking: false,
+      };
+  }
   const capability = getCatalogThinkingCapability(providerId, modelId);
-  if (!capability || capability.control === 'none') return undefined;
+  if (!capability) return getUncataloguedThinkingBodyParams(providerId, modelId, config, mode);
+  if (capability.control === 'none') return undefined;
 
   const budget = pickThinkingBudget(capability, config);
 
@@ -1778,14 +1835,17 @@ function getCompatThinkingBodyParams(
       if (mode === 'disabled' || config.effort === 'none') {
         return { params: { thinking: { type: 'disabled' } }, disablesThinking: true };
       }
-      // A tool-carrying request may never set reasoning_effort (the transport
-      // rejects function tools combined with it), so the toggle goes alone;
-      // every other request keeps the historical effort (explicit value, else
-      // the default).
-      if (options.hasTools) {
+      // Current DeepSeek endpoints accept explicit low effort with tools.
+      // Preserve the existing toggle-only path for other tool requests.
+      if (options.hasTools && config.effort !== 'low') {
         return { params: { thinking: { type: 'enabled' } }, disablesThinking: false };
       }
-      const effort = config.effort === 'max' || config.effort === 'xhigh' ? 'max' : 'high';
+      const effort =
+        config.effort === 'low'
+          ? 'low'
+          : config.effort === 'max' || config.effort === 'xhigh'
+            ? 'max'
+            : 'high';
       return {
         params: {
           thinking: { type: 'enabled' },
@@ -2072,10 +2132,29 @@ function openAIStreamErrorStatus(error: Record<string, unknown>): number {
  */
 export const LLM_FETCH_TIMEOUT_MS = 15 * 60 * 1000;
 
+/** V3 conversations opt out per call; other model requests keep their policy. */
+export function llmFetchTimeoutMs(): number {
+  const context = (
+    globalThis as typeof globalThis & {
+      __llmExecutionContext?: { getStore(): { unbounded: boolean } | undefined };
+    }
+  ).__llmExecutionContext;
+  return context?.getStore()?.unbounded ? 0 : LLM_FETCH_TIMEOUT_MS;
+}
+let unboundedDispatcherPromise: Promise<unknown> | undefined;
 let llmDispatcherPromise: Promise<unknown> | undefined;
 let warnedLlmDispatcherFailure = false;
 
 function getLlmDispatcher(): Promise<unknown> {
+  if (llmFetchTimeoutMs() === 0) {
+    unboundedDispatcherPromise ??= import(/* webpackIgnore: true */ 'undici')
+      .then(({ Agent }) => new Agent({ headersTimeout: 0, bodyTimeout: 0 }))
+      .catch((error: unknown) => {
+        unboundedDispatcherPromise = undefined;
+        throw error;
+      });
+    return unboundedDispatcherPromise;
+  }
   // `??=` caches whatever promise this produces — including a rejected one.
   // Drop the cache on failure so a single transient undici import (or Agent
   // construction) error can't brick every transportFetch call for the life
@@ -2627,7 +2706,7 @@ export function getModel(config: ModelConfig): ModelWithInfo {
       };
       if (config.proxy) {
         const proxy = config.proxy;
-        let agent: unknown;
+        const agents = new Map<number, unknown>();
         googleOptions.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
           const { ProxyAgent, fetch: undiciFetch } = (await import(
             /* webpackIgnore: true */ 'undici'
@@ -2642,11 +2721,12 @@ export function getModel(config: ModelConfig): ModelWithInfo {
           // LLM request whose headers may only arrive after minutes of thinking.
           // (http/https proxies only — undici's Socks5ProxyAgent drops these
           // options, so socks5:// proxies keep undici's default 300 s cap.)
-          agent ??= new ProxyAgent({
-            uri: proxy,
-            headersTimeout: LLM_FETCH_TIMEOUT_MS,
-            bodyTimeout: LLM_FETCH_TIMEOUT_MS,
-          });
+          const timeout = llmFetchTimeoutMs();
+          let agent = agents.get(timeout);
+          if (!agent) {
+            agent = new ProxyAgent({ uri: proxy, headersTimeout: timeout, bodyTimeout: timeout });
+            agents.set(timeout, agent);
+          }
           const response = await undiciFetch(input, {
             ...(init as Record<string, unknown>),
             dispatcher: agent,

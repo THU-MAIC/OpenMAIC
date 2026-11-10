@@ -14,10 +14,11 @@
 import type enUS from '@/lib/i18n/locales/en-US.json';
 import type { Locale } from '@/lib/i18n/types';
 import {
+  extractionFailureDescription,
   extractionReasonCodeOf,
+  extractionReasonValuesOf,
   type MaterialExtractionReasonCode,
 } from '@/lib/types/material-extraction-failure';
-import { MEDIA_MAX_DURATION_SEC } from '@/lib/types/media-limits';
 
 type PageCopy = (typeof enUS)['workspace']['knowledgeBase'];
 
@@ -61,8 +62,15 @@ export interface MaterialFailureForModel {
 export interface MaterialModelCopy {
   /** A parse state as the page names it. */
   statusLabel(status: string): string;
-  /** Why a parse failed; an unknown or legacy code reads as the generic failure. */
-  failure(code: unknown, context?: 'library' | 'conversation'): MaterialFailureForModel;
+  /**
+   * Why a parse failed; an unknown or legacy code reads as the generic
+   * failure. `values` are the stored counts its explanation states.
+   */
+  failure(
+    code: unknown,
+    context?: 'library' | 'conversation',
+    values?: unknown,
+  ): MaterialFailureForModel;
   error(key: keyof PageCopy['error'], values?: Record<string, number>): string;
   /** The page's name for "not in a folder". */
   readonly topLevel: string;
@@ -89,17 +97,21 @@ export async function materialModelCopy(locale: Locale): Promise<MaterialModelCo
         String(values?.[name] ?? ''),
       );
     },
-    failure(code, context = 'library') {
+    failure(code, context = 'library', storedValues) {
       const reasonCode = extractionReasonCodeOf(code);
       if (!reasonCode) return { reason: page.status.failed };
-      const copy = page.failure[reasonCode];
+      const copy: Record<string, string> = page.failure[reasonCode];
+      const { key, values } = extractionFailureDescription(
+        reasonCode,
+        extractionReasonValuesOf(reasonCode, storedValues),
+      );
       return {
         reasonCode,
         reason: copy.label,
         guidance: (context === 'conversation' && reasonCode === 'service_unavailable'
           ? page.conversationFailure.serviceUnavailable
-          : copy.description
-        ).replace('{{minutes}}', String(MEDIA_MAX_DURATION_SEC / 60)),
+          : copy[key]
+        ).replace(/{{(\w+)}}/g, (_, name: string) => String(values[name] ?? '')),
       };
     },
     topLevel: page.topLevel,

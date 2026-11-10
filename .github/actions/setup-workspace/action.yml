@@ -111,7 +111,7 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        tail='&& node scripts/sync-maic-importer.mjs && node scripts/sync-interactive-assets.mjs'
+        tail='&& node scripts/sync-maic-importer.mjs && node scripts/sync-interactive-assets.mjs && node scripts/prepare-code-editor.mjs'
         if ! node -e 'process.exit(require("./package.json").scripts["build:packages"].endsWith(process.argv[1]) ? 0 : 1)' "$tail"; then
           echo "::error::build:packages no longer ends with: ${tail#&& }"
           echo "Update .github/actions/setup-workspace so a cache hit reproduces its uncached steps."
@@ -124,3 +124,4 @@ runs:
       run: |
         node scripts/sync-maic-importer.mjs
         node scripts/sync-interactive-assets.mjs
+        node scripts/prepare-code-editor.mjs

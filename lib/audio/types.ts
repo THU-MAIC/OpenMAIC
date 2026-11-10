@@ -70,6 +70,8 @@
  *    providerElevenLabsTTS: 'ElevenLabs TTS' / 'ElevenLabs Text-to-Speech'
  */
 
+import type { VoiceDesign } from '@/lib/audio/voice-design';
+
 // ============================================================================
 // TTS (Text-to-Speech) Types
 // ============================================================================
@@ -89,6 +91,7 @@ export type BuiltInTTSProviderId =
   | 'doubao-tts'
   | 'elevenlabs-tts'
   | 'minimax-tts'
+  | 'xiaomi-tts'
   | 'google-tts'
   | 'lemonade-tts'
   | 'browser-native-tts';
@@ -140,6 +143,12 @@ export interface TTSProviderConfig {
   defaultModelId: string;
   voices: TTSVoiceInfo[];
   supportedFormats: string[]; // ['mp3', 'wav', 'opus', etc.]
+  /**
+   * The request path under `defaultBaseUrl` the provider posts to, shown in
+   * the settings request-URL hint. Omitted when there is no single fixed
+   * path.
+   */
+  endpointPath?: string;
   speedRange?: {
     min: number;
     max: number;
@@ -151,6 +160,14 @@ export interface TTSProviderConfig {
    * `speedRange` does not imply the opposite.
    */
   supportsSpeed?: boolean;
+}
+
+/** A speaking agent, as a provider that designs voices may read it. */
+export interface TTSSpeaker {
+  name?: string;
+  role?: string;
+  persona?: string;
+  voiceDesign?: VoiceDesign;
 }
 
 /**
@@ -167,6 +184,12 @@ export interface TTSModelConfig {
   speed?: number;
   format?: string;
   providerOptions?: Record<string, unknown>;
+  /**
+   * Who is speaking, for a provider that designs a voice from a description
+   * when no voice of its own was chosen. The browser sends that description in
+   * `providerOptions`; a server-side caller passes the speaker instead.
+   */
+  speaker?: TTSSpeaker;
   /**
    * Cancel the provider request(s) when this signal aborts. The agent runtime
    * threads the session cancel signal here so an in-flight synthesis fetch is
@@ -208,7 +231,8 @@ export type BuiltInASRProviderId =
   | 'qwen-asr'
   | 'funasr-asr'
   | 'lemonade-asr'
-  | 'azure-asr';
+  | 'azure-asr'
+  | 'xiaomi-asr';
 
 export type ASRProviderId = BuiltInASRProviderId | `custom-asr-${string}`;
 
@@ -225,6 +249,19 @@ export interface ASRProviderConfig {
   defaultModelId: string;
   supportedLanguages: string[];
   supportedFormats: string[];
+  /**
+   * The request path under `defaultBaseUrl` the provider posts to, shown in
+   * the settings request-URL hint. Omitted when there is no single fixed
+   * path.
+   */
+  endpointPath?: string;
+  /**
+   * The maximum ASR chunk duration (seconds) for server-side material
+   * extraction. Providers without a limit omit this and use the generic
+   * default. A provider whose input cap is a base64-encoded payload (e.g.
+   * Xiaomi MiMo's 10 MB input_audio limit) declares a lower bound here.
+   */
+  maxChunkSeconds?: number;
 }
 
 /**

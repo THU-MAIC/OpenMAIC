@@ -448,6 +448,11 @@ const MIN_EXCERPT_SCORE = 0.3;
 /** Diagnostic suffix for an anchor that does not occur in `text`. */
 export function anchorNotFoundHint(text: string, anchor: string): string {
   const hints: string[] = [];
+  if (anchor.includes('\\n') && text.includes(anchor.replaceAll('\\n', '\n'))) {
+    hints.push(
+      'the anchor uses literal backslash+n where the stored value has actual newlines; use the decoded string value from read_stage detail:"source", not its JSON-escaped representation; no automatic conversion was applied',
+    );
+  }
   const visibleAnchor = anchor.replace(/\s+/g, ' ').trim();
   if (visibleAnchor && /<[^>]+>/.test(text) && stripTags(text).includes(visibleAnchor)) {
     hints.push(

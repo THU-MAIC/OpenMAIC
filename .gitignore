@@ -99,5 +99,11 @@ e2e/__screenshots-619/
 # Temporary render-service sources extracted by the mixed-pool regression test
 render-service/.owner-bound-parent-*/
 
+# Generated, self-hosted Monaco assets
+/public/code-editor/
+
 # Generated interactive libraries
 /public/vendor/interactive
+
+# Local forced-child eval results
+eval/orchestration/results-child-failure/

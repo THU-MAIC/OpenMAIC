@@ -398,10 +398,6 @@ export interface StatelessChatRequest {
       isGenerated?: boolean;
       boundStageId?: string;
     }>;
-    /** Pi PoC: max child agent turns in one server-side loop. */
-    piMaxAgentTurns?: number;
-    /** Pi PoC: max emitted actions per child agent turn. */
-    piMaxActionsPerAgent?: number;
     /** Pi PoC: opt in to whiteboard tools; defaults off to keep the first A/B pass comparable. */
     piEnableWhiteboardTools?: boolean;
   };
@@ -499,6 +495,8 @@ export type StatelessEvent =
         totalActions: number;
         totalAgents: number;
         agentHadContent?: boolean;
+        /** A teacher or assistant call this request failed or produced nothing visible. */
+        teachingAgentFailedOrEmpty?: boolean;
         cueUserReceived?: boolean;
         sessionClosed?: boolean;
         endReason?: string;

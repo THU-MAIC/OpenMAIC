@@ -54,6 +54,109 @@ function alternatingUiHistory() {
 }
 
 describe('Pi Director compaction runtime', () => {
+  it('isolates concurrent connectors and keeps another runtime usable after disposal', async () => {
+    const firstStream = vi.fn<StreamFn>(async (...args) =>
+      summaryStream('FIRST_CONNECTOR_SUMMARY', () => {})(...args),
+    );
+    const secondStream = vi.fn<StreamFn>(async (...args) =>
+      summaryStream('SECOND_CONNECTOR_SUMMARY', () => {})(...args),
+    );
+    const options = {
+      contextWindow: 600,
+      settings: { enabled: true, reserveTokens: 160, keepRecentTokens: 120 },
+    };
+    const first = createDirectorCompactionRuntime({ ...options, streamFn: firstStream });
+    const second = createDirectorCompactionRuntime({ ...options, streamFn: secondStream });
+    try {
+      await Promise.all([
+        first.transformContext(longHistory()),
+        second.transformContext(longHistory()),
+      ]);
+      expect(first.getTrace().events[0]?.summary).toContain('FIRST_CONNECTOR_SUMMARY');
+      expect(second.getTrace().events[0]?.summary).toContain('SECOND_CONNECTOR_SUMMARY');
+      expect(first.getTrace().failures).toEqual([]);
+      expect(second.getTrace().failures).toEqual([]);
+      expect(firstStream).toHaveBeenCalledTimes(1);
+      expect(secondStream).toHaveBeenCalledTimes(1);
+
+      first.dispose();
+      const history = longHistory();
+      expect(await first.transformContext(history)).toBe(history);
+      await second.transformContext(longHistory());
+      expect(firstStream).toHaveBeenCalledTimes(1);
+      expect(secondStream).toHaveBeenCalledTimes(2);
+      expect(second.getTrace().failures).toEqual([]);
+      expect(second.getTrace().events[1]?.summary).toContain('SECOND_CONNECTOR_SUMMARY');
+    } finally {
+      first.dispose();
+      second.dispose();
+    }
+  });
+
+  it('forwards cancellation to the connector without persisting an aborted summary', async () => {
+    const controller = new AbortController();
+    const streamFn = vi.fn<StreamFn>((model, _context, options) => {
+      const stream = createAssistantMessageEventStream();
+      options?.signal?.addEventListener('abort', () => {
+        stream.push({
+          type: 'error',
+          reason: 'aborted',
+          error: {
+            role: 'assistant',
+            content: [],
+            api: model.api,
+            provider: model.provider,
+            model: model.id,
+            usage: EMPTY_USAGE,
+            stopReason: 'aborted',
+            errorMessage: 'Compaction cancelled',
+            timestamp: Date.now(),
+          },
+        });
+      });
+      return stream;
+    });
+    const runtime = createDirectorCompactionRuntime({
+      streamFn,
+      contextWindow: 600,
+      settings: { enabled: true, reserveTokens: 160, keepRecentTokens: 120 },
+    });
+    try {
+      const history = longHistory();
+      const pending = runtime.transformContext(history, controller.signal);
+      await vi.waitFor(() => expect(streamFn).toHaveBeenCalledTimes(1));
+      expect(streamFn.mock.calls[0]?.[2]?.signal).toBe(controller.signal);
+      controller.abort();
+
+      expect(await pending).toEqual(history);
+      expect(runtime.getTrace()).toMatchObject({ triggerCount: 0, events: [] });
+      expect(runtime.getTrace().failures).toEqual([expect.stringContaining('cancelled')]);
+    } finally {
+      controller.abort();
+      runtime.dispose();
+    }
+  });
+
+  it('retains history when asynchronous connector setup fails', async () => {
+    const runtime = createDirectorCompactionRuntime({
+      streamFn: async () => {
+        throw new Error('Connector unavailable');
+      },
+      contextWindow: 600,
+      settings: { enabled: true, reserveTokens: 160, keepRecentTokens: 120 },
+    });
+    try {
+      const history = longHistory();
+      expect(await runtime.transformContext(history)).toEqual(history);
+      expect(runtime.getTrace()).toMatchObject({ triggerCount: 0, events: [] });
+      expect(runtime.getTrace().failures).toEqual([
+        expect.stringContaining('Connector unavailable'),
+      ]);
+    } finally {
+      runtime.dispose();
+    }
+  });
+
   it('uses Pi session preparation and compaction, then retains new messages', async () => {
     const onSummaryCall = vi.fn();
     const runtime = createDirectorCompactionRuntime({

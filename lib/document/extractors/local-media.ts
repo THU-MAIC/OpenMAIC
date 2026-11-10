@@ -1,12 +1,12 @@
 import { execFile } from 'node:child_process';
-import { AsyncLocalStorage } from 'node:async_hooks';
 import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, delimiter, extname, join, resolve as resolvePath } from 'node:path';
 
 import { transcribeAudio, type ASRTranscriptionResult } from '@/lib/audio/asr-providers';
-import type { ASRModelConfig } from '@/lib/audio/types';
+import { ASR_PROVIDERS } from '@/lib/audio/constants';
+import type { ASRModelConfig, BuiltInASRProviderId } from '@/lib/audio/types';
 
 import { MEDIA_MAX_DURATION_SEC } from '@/lib/types/media-limits';
 
@@ -25,8 +25,20 @@ import {
 } from '../../server/material-extraction/errors';
 import { MAX_DERIVED_IMAGES, prepareDerivedImage } from './images';
 import { getMediaExtractorManifestEntry } from './manifest';
+import { asrFetchSignal } from '@/lib/audio/asr-fetch-signal';
 
 export const MEDIA_ASR_CHUNK_SEC = 600;
+
+/**
+ * The ASR chunk duration for a provider: its declared `maxChunkSeconds`
+ * (see `ASRProviderConfig`) when the provider bounds its input payload,
+ * otherwise the generic default. The provider registry is neutral — no
+ * vendor ids are named here.
+ */
+export function mediaASRChunkSec(providerId?: string): number {
+  const config = providerId ? ASR_PROVIDERS[providerId as BuiltInASRProviderId] : undefined;
+  return config?.maxChunkSeconds || MEDIA_ASR_CHUNK_SEC;
+}
 const MEDIA_COMMAND_TIMEOUT_MS = 20 * 60 * 1000;
 const FFPROBE_TIMEOUT_MS = 30_000;
 const MEDIA_JOB_TIMEOUT_MS = 45 * 60 * 1000;
@@ -35,7 +47,6 @@ const COMMAND_MAX_BUFFER = 8 * 1024 * 1024;
 const MAX_KEYFRAME_CANDIDATES = 50_000;
 const KEYFRAME_END_SAFETY_MS = 1500;
 const MEDIA_MIME_SET = new Set<string>(LOCAL_FFMPEG_MEDIA_MIMES);
-const asrFetchSignal = new AsyncLocalStorage<AbortSignal>();
 let abortableFetchInstalled = false;
 
 export type MediaExtractionStage = 'probing' | 'audio' | 'asr' | 'keyframes';
@@ -326,12 +337,15 @@ export interface MediaChunkWindow {
   endMs: number;
 }
 
-export function mediaChunkWindows(durationSec: number): MediaChunkWindow[] {
-  const count = Math.max(1, Math.ceil(durationSec / MEDIA_ASR_CHUNK_SEC));
+export function mediaChunkWindows(
+  durationSec: number,
+  chunkSec: number = MEDIA_ASR_CHUNK_SEC,
+): MediaChunkWindow[] {
+  const count = Math.max(1, Math.ceil(durationSec / chunkSec));
   return Array.from({ length: count }, (_, index) => ({
     index,
-    startMs: index * MEDIA_ASR_CHUNK_SEC * 1000,
-    endMs: Math.min(durationSec * 1000, (index + 1) * MEDIA_ASR_CHUNK_SEC * 1000),
+    startMs: index * chunkSec * 1000,
+    endMs: Math.min(durationSec * 1000, (index + 1) * chunkSec * 1000),
   }));
 }
 
@@ -673,10 +687,14 @@ export async function extractMediaMaterial(
       }
 
       const chunkPattern = join(sessionDir, 'chunk-%03d.wav');
+      const asr = dependencies.resolveASRConfig?.() ?? configuredASR(input.config);
+      const asrChunkSec = mediaASRChunkSec(asr.providerId);
       try {
         await runMediaCommand(
           commands,
           ffmpeg,
+          // The ASR provider decides how long a chunk may be: its resolved
+          // config exists before the split because -segment_time must match.
           [
             '-hide_banner',
             '-loglevel',
@@ -694,7 +712,7 @@ export async function extractMediaMaterial(
             '-f',
             'segment',
             '-segment_time',
-            String(MEDIA_ASR_CHUNK_SEC),
+            String(asrChunkSec),
             '-reset_timestamps',
             '1',
             chunkPattern,
@@ -712,7 +730,7 @@ export async function extractMediaMaterial(
       if (chunkPaths.length === 0) {
         throw new MaterialExtractionError('ffmpeg produced no ASR audio chunks', false);
       }
-      const windows = mediaChunkWindows(transcriptDurationSec);
+      const windows = mediaChunkWindows(transcriptDurationSec, asrChunkSec);
       if (chunkPaths.length !== windows.length) {
         throw new MaterialExtractionError(
           `ffmpeg produced ${chunkPaths.length} ASR chunks; expected ${windows.length} for ${transcriptDurationSec} seconds`,
@@ -720,7 +738,6 @@ export async function extractMediaMaterial(
         );
       }
       asrChunks = chunkPaths.length;
-      const asr = dependencies.resolveASRConfig?.() ?? configuredASR(input.config);
       segments = await deadline.beforeAwait(() =>
         transcribeChunks(chunkPaths, windows, asr, transcribe, deadline),
       );

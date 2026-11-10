@@ -1,0 +1,16 @@
+/** Observations are not formal test results or learner approvals. */
+export interface ApplicationObservation {
+  observedAt: string;
+  state: 'stopped' | 'starting' | 'running' | 'failed' | 'unknown';
+  commandState?: string;
+  exitCode?: number | null;
+  httpStatus?: number;
+  sourceChanged?: boolean;
+  runId?: string;
+  output?: string;
+  preview?: { url: string; expiresAt: number };
+}
+
+export const APPLICATION_CAPABILITY = 'pbl-v3-application@1';
+export const STANDALONE_FRONTEND_CAPABILITY = 'pbl-v3-standalone-frontend@1';
+export const JAVA_APPLICATION_CAPABILITY = 'pbl-v3-java-application@1';

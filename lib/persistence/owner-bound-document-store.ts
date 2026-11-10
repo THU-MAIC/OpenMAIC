@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
-import type { Scene, Stage } from '@openmaic/dsl';
+import { DSL_VERSION_KEY, migrate, type Scene, type Stage } from '@openmaic/dsl';
 import {
   PgDocumentStore,
   type Queryable,
@@ -263,6 +263,19 @@ export interface CreateOnlyDocumentStore<TScene extends SceneLike, TStage extend
 }
 
 /**
+ * The stage row alone: a read that needs the course's own fields (its roster,
+ * say) and none of its scenes. Same read gate as `loadDocument`; a missing,
+ * unclaimed or retired course answers null.
+ */
+export interface StageRowStore<TStage extends Stage> {
+  loadStage(stageId: string): Promise<TStage | null>;
+}
+
+/** A NUL or an unpaired surrogate: no stored row can carry such a key. */
+const UNSTORABLE_KEY =
+  /\u0000|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+/**
  * Runs on a scene mutation's transaction once it decided, before COMMIT:
  * whatever it writes commits or rolls back with the scene. `wrote` says
  * whether the scene was written.
@@ -287,7 +300,8 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
   implements
     DocumentStore<TScene, TStage>,
     DocumentFolderStore,
-    CreateOnlyDocumentStore<TScene, TStage>
+    CreateOnlyDocumentStore<TScene, TStage>,
+    StageRowStore<TStage>
 {
   constructor(
     private readonly inner: PgDocumentStore<TScene, TStage>,
@@ -479,6 +493,34 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
     return scene && sanitizeSceneContent(scene);
   }
 
+  /**
+   * {@link loadDocument}'s stage, read from the stage row alone: no scene or
+   * outline rows. Migrated and sanitized exactly as the full read would be.
+   */
+  async loadStage(stageId: string): Promise<TStage | null> {
+    if (UNSTORABLE_KEY.test(stageId)) return null;
+    const stage = await this.readGated(stageId, () =>
+      this.runTransaction(async (queryable) => {
+        const result = await queryable.query<{ data: unknown }>(
+          'SELECT data FROM document_stages WHERE id = $1',
+          [stageId],
+        );
+        const row = result.rows[0];
+        if (!row) return null;
+        const data: unknown = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+        if (!data || typeof data !== 'object' || Array.isArray(data)) {
+          throw new Error(`corrupt stored stage row for ${JSON.stringify(stageId)}`);
+        }
+        const { [DSL_VERSION_KEY]: dslVersion, ...fields } = data as Record<string, unknown>;
+        // The document migration ladder, over a document without scenes: the
+        // stage comes out the way `loadDocument` would hand it over.
+        const migrated = migrate({ stage: fields, scenes: [], [DSL_VERSION_KEY]: dslVersion });
+        return (migrated as { stage: TStage }).stage;
+      }),
+    );
+    return stage && sanitizeSceneContent(stage);
+  }
+
   /** The trigger-maintained freshness manifest is a read: capability-by-id. */
   async readFreshnessManifest(stageId: string) {
     return this.readGated(stageId, () => this.inner.readFreshnessManifest(stageId));
@@ -539,7 +581,10 @@ export function createOwnerBoundDocumentStore<
   TStage extends Stage = Stage,
 >(
   options: OwnerBoundDocumentStoreOptions,
-): DocumentStore<TScene, TStage> & DocumentFolderStore & CreateOnlyDocumentStore<TScene, TStage> {
+): DocumentStore<TScene, TStage> &
+  DocumentFolderStore &
+  CreateOnlyDocumentStore<TScene, TStage> &
+  StageRowStore<TStage> {
   const operations = new OperationScope();
   if (options.principal && options.principal.ownerId !== options.ownerId) {
     throw new Error('createOwnerBoundDocumentStore: principal does not match ownerId');
@@ -619,6 +664,10 @@ export function createOwnerBoundDocumentStore<
         }
 
         const result = await body(queryable);
+        if (operation?.content && operation.stageId) {
+          const { assertDocumentProjectsInstalled } = await import('./pbl-projects');
+          await assertDocumentProjectsInstalled(queryable, operation.stageId, options.ownerId);
+        }
         if (operation?.mode === 'create') {
           // "Created" means exactly this: the transaction that inserts the
           // ownership row. A save of a course the owner already holds -- found

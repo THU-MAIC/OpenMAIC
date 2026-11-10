@@ -21,9 +21,11 @@ import path from 'path';
 import yaml from 'js-yaml';
 import { createLogger } from '@/lib/logger';
 import {
-  DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL,
+  DEFAULT_QWEN_VOICE_CLONE_TARGET,
+  QWEN_VOICE_CLONE_GROUP_ID,
   isQwenCatalogVoice,
   isQwenVoiceCloneModel,
+  isVoiceCloneGroupId,
   TTS_PROVIDERS,
 } from '@/lib/audio/constants';
 
@@ -105,6 +107,7 @@ const TTS_ENV_MAP: Record<string, string> = {
   TTS_DOUBAO: 'doubao-tts',
   TTS_ELEVENLABS: 'elevenlabs-tts',
   TTS_MINIMAX: 'minimax-tts',
+  TTS_XIAOMI: 'xiaomi-tts',
   TTS_GOOGLE: 'google-tts',
   TTS_LEMONADE: 'lemonade-tts',
 };
@@ -115,6 +118,7 @@ const ASR_ENV_MAP: Record<string, string> = {
   ASR_AZURE: 'azure-asr',
   ASR_FUNASR: 'funasr-asr',
   ASR_LEMONADE: 'lemonade-asr',
+  ASR_XIAOMI: 'xiaomi-asr',
 };
 
 const PDF_ENV_MAP: Record<string, string> = {
@@ -775,7 +779,10 @@ export function resolveTTSBaseUrl(providerId: string, clientBaseUrl?: string): s
 
 /** Resolve the server-only Qwen VC model override without exposing env values to clients. */
 export function resolveQwenVoiceCloneModel(): string {
-  return process.env.TTS_QWEN_VOICE_CLONE_MODEL?.trim() || DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL;
+  const configured = process.env.TTS_QWEN_VOICE_CLONE_MODEL?.trim();
+  return !configured || configured === QWEN_VOICE_CLONE_GROUP_ID
+    ? DEFAULT_QWEN_VOICE_CLONE_TARGET
+    : configured;
 }
 
 export class TTSModelNotAllowedError extends Error {
@@ -810,7 +817,12 @@ export function resolveTTSModel(
   voiceId?: string,
   configuredVoices?: readonly { id: string }[],
 ): string | undefined {
-  const requested = resolveManagedMediaModel('tts', providerId, clientModel);
+  // Saved clone groups do not name upstream models. Resolve those before authorization;
+  // explicit model requests and the final wire model both still need authorization.
+  const requestedModel = isVoiceCloneGroupId(providerId, clientModel?.trim())
+    ? ttsModelFor(providerId, [], clientModel?.trim(), voiceId, configuredVoices)
+    : clientModel;
+  const requested = resolveManagedMediaModel('tts', providerId, requestedModel);
   const model = ttsModelFor(providerId, [], requested, voiceId, configuredVoices);
   // Voice compatibility may change the wire model; it still needs authorization.
   return resolveManagedMediaModel('tts', providerId, model);

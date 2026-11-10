@@ -23,6 +23,9 @@ import { LEGACY_CLASSROOM_IMPORT_MIGRATIONS } from './legacy-classroom-imports';
 import { LEGACY_IMPORT_BINDING_MIGRATIONS } from './legacy-import-bindings';
 import { OWNER_MATERIAL_MIGRATIONS } from './owner-materials';
 import { OWNER_MERGE_MIGRATIONS } from './owner-merges';
+import { SANDBOX_ENVIRONMENT_MIGRATIONS } from './sandbox-environments';
+import { PBL_PROJECT_MIGRATIONS } from './pbl-projects';
+import { PBL_MIGRATIONS } from './pbl-studies';
 import { SESSION_MATERIAL_LINK_MIGRATIONS } from './session-material-links';
 import { STAGE_META_MIGRATIONS } from './stage-meta';
 import { WORKSPACE_MODEL_CONFIG_MIGRATIONS } from './workspace-model-config';
@@ -43,4 +46,7 @@ export const APP_SCHEMA_STORES: readonly SchemaMigrationSet[] = [
   SESSION_MATERIAL_LINK_MIGRATIONS,
   USER_SKILL_PG_MIGRATIONS,
   GENERATION_RUN_MIGRATIONS,
+  SANDBOX_ENVIRONMENT_MIGRATIONS,
+  PBL_PROJECT_MIGRATIONS,
+  PBL_MIGRATIONS,
 ];

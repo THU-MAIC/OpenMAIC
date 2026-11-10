@@ -96,6 +96,7 @@ import {
   withCourse,
   withLibrary,
   withSession,
+  type WorkspaceCourseTabs,
   type WorkspacePanes,
 } from '@/lib/workbench/workspace-panes';
 import { useWorkspacePaneNavigation } from '@/lib/workbench/use-workspace-pane-navigation';
@@ -140,6 +141,7 @@ import { PaneTab } from './PaneTab';
 import { ResizeHandle } from './ResizeHandle';
 import { MaterialLibraryPage } from './MaterialLibraryPage';
 import type { MaterialSeed, MaterialSeedTarget } from '@/components/workbench/compose-extras';
+import { FetchEventSource } from '@/lib/utils/fetch-event-source';
 
 const EMPTY_SESSIONS: ProHomeSessionItem[] = [];
 
@@ -348,6 +350,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   useLayoutEffect(() => {
     courseTabsRef.current = courseTabs;
   }, [courseTabs]);
+  const previewHandedOffCourseIdRef = useRef<string | null>(null);
   const narrow = useMediaQuery(WORKSPACE_NARROW_QUERY);
   // Which of the two content panes has the column, on a window too narrow for
   // both. Not persisted: it is a consequence of the window, not a preference.
@@ -492,7 +495,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   useEffect(() => {
     const client = new OwnerSessionClient({
       fetchSessions,
-      createEventSource: (url) => new EventSource(url),
+      createEventSource: (url) => new FetchEventSource(url),
       onSessions: publishOwnerSessions,
       onSessionTitle: syncAttachedSessionTitle,
       onState: setSessionState,
@@ -604,6 +607,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
 
   const openCourse = useCallback(
     (courseId: string) => {
+      previewHandedOffCourseIdRef.current = null;
       const next = openCourseTab(courseTabs, courseId);
       setCourseTabs(next);
       persistCourseTabs(next);
@@ -938,6 +942,10 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const libraryRevision = useWorkbenchStore((s) => s.libraryRevision);
   // Course links in first-seen order — each stage opens at most once per session.
   const stageLinkStageIds = useWorkbenchStore((s) => s.stageLinkStageIds);
+  const stageLinkStageIdsRef = useRef(stageLinkStageIds);
+  useLayoutEffect(() => {
+    stageLinkStageIdsRef.current = stageLinkStageIds;
+  }, [stageLinkStageIds]);
   const attachedSessionReplaying = useWorkbenchStore((s) => s.replaying);
   const replayedStageLinkCount = useWorkbenchStore((s) => s.replayedStageLinkCount);
   // Serialize only provenance ids: streaming text changes must not restart the
@@ -1087,27 +1095,85 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   }
   /** The preview is the tab on screen: it is active, or there is no course tab to show. */
   const previewShowing = previewTabOpen && (previewFocus.active || !panes.courseId);
+  useLayoutEffect(() => {
+    if (previewShowing) {
+      previewHandedOffCourseIdRef.current = null;
+    }
+  }, [previewShowing]);
+  useEffect(() => {
+    previewHandedOffCourseIdRef.current = null;
+  }, [attachedSessionId]);
   /**
-   * The conversation's first course replaces its preview tab. The preview is
-   * always the strip's last tab and a new course tab joins at the end, so the
-   * course lands where the preview was. It takes focus if the preview had it
-   * (or nothing else is open); a teacher on another course tab stays there.
+   * The conversation's course replaces its preview tab, inserted in
+   * `stage_link` creation order. The earliest-created course keeps initial
+   * preview focus regardless of which probe resolves first. A teacher on
+   * another course tab stays there.
    */
   const handOffPreview = useCallback(
     (courseId: string) => {
-      const opened = openCourseTabs(courseTabs, [courseId]);
-      const focus = previewShowing || !courseTabs.activeCourseId;
-      const next = focus
-        ? activateCourseTab(opened, courseId)
-        : activateCourseTab(opened, courseTabs.activeCourseId as string);
+      const current = courseTabsRef.current;
+      if (
+        current.courseIds.includes(courseId) ||
+        (current.closedCourseIds ?? []).includes(courseId)
+      ) {
+        return;
+      }
+      const stageLinks = stageLinkStageIdsRef.current;
+      const targetIndex = stageLinks.indexOf(courseId);
+      let nextCourseIds: readonly string[];
+      if (targetIndex >= 0) {
+        const insertBeforeIndex = current.courseIds.findIndex((id) => {
+          const idx = stageLinks.indexOf(id);
+          return idx > targetIndex;
+        });
+        if (insertBeforeIndex >= 0) {
+          nextCourseIds = [
+            ...current.courseIds.slice(0, insertBeforeIndex),
+            courseId,
+            ...current.courseIds.slice(insertBeforeIndex),
+          ];
+        } else {
+          nextCourseIds = [...current.courseIds, courseId];
+        }
+      } else {
+        nextCourseIds = [...current.courseIds, courseId];
+      }
+
+      const isInitialPreview =
+        previewHandedOffCourseIdRef.current === null && (previewShowing || !current.activeCourseId);
+      const activeCourseId = current.activeCourseId;
+      const handedOffCourseId = previewHandedOffCourseIdRef.current;
+      const handedOffIndex = handedOffCourseId ? stageLinks.indexOf(handedOffCourseId) : -1;
+      const isEarlierThanHandedOff =
+        handedOffCourseId !== null &&
+        activeCourseId === handedOffCourseId &&
+        targetIndex >= 0 &&
+        handedOffIndex >= 0 &&
+        targetIndex < handedOffIndex;
+
+      const focus = isInitialPreview || isEarlierThanHandedOff || !activeCourseId;
+      if (focus) {
+        previewHandedOffCourseIdRef.current = courseId;
+      }
+      const closedCourseIds = (current.closedCourseIds ?? []).filter((id) => id !== courseId);
+      const opened: WorkspaceCourseTabs = {
+        courseIds: nextCourseIds,
+        activeCourseId: current.activeCourseId,
+        ...(closedCourseIds.length > 0 ? { closedCourseIds } : {}),
+      };
+      const next = focus ? activateCourseTab(opened, courseId) : opened;
+      courseTabsRef.current = next;
       setCourseTabs(next);
       persistCourseTabs(next);
       if (focus) {
         collapse.expandClassroom();
-        navigateInBackground((current) => withCourse(current, courseId), 'push');
+        navigateInBackground(
+          (panesNow) => withCourse(panesNow, courseId),
+          isEarlierThanHandedOff ? 'replace' : 'push',
+        );
       }
     },
-    [collapse, courseTabs, navigateInBackground, persistCourseTabs, previewShowing],
+    [collapse, navigateInBackground, persistCourseTabs, previewShowing],
   );
   // The readiness reads outlive a render; they hand off through the latest
   // handoff, and skip a course the user has reconciled meanwhile.
@@ -1122,6 +1188,9 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     };
   });
   const firstSceneWatchers = useRef(new Map<string, () => void>());
+  // Courses a trigger reached while their read was in flight: that read may
+  // predate the trigger, so one more follows when it settles without a scene.
+  const firstSceneRereads = useRef(new Set<string>());
 
   // Request keys come from per-session event sequences and collide across
   // conversations, so the close is remembered with the conversation it was for.
@@ -1196,6 +1265,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       if (!unreconciled(id)) {
         cancel();
         firstSceneWatchers.current.delete(id);
+        firstSceneRereads.current.delete(id);
       }
     }
     const eligibleLinks = stageLinkStageIds.filter(
@@ -1227,18 +1297,27 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     // Each waiting course has one readiness read in flight at most. It is not
     // cancelled when this effect re-runs (the run ending is one such change):
     // only a conversation switch, unmount or the course being reconciled stops
-    // it. A read that settles without a scene frees the slot for the next
-    // trigger (a checkpoint, the course list).
-    for (const id of open) {
-      if (firstSceneWatchers.current.has(id)) continue;
+    // it. A trigger (a checkpoint, the run ending, the course list) that
+    // arrives meanwhile is kept, not dropped: the in-flight read may predate
+    // it, so a read that settles without a scene starts one more.
+    const watch = (id: string) => {
       const cancel = watchFirstScene(
         [id],
-        (courseId) => handOffRef.current(courseId),
+        (courseId) => {
+          firstSceneRereads.current.delete(id);
+          handOffRef.current(courseId);
+        },
         () => {
-          if (firstSceneWatchers.current.get(id) === cancel) firstSceneWatchers.current.delete(id);
+          if (firstSceneWatchers.current.get(id) !== cancel) return;
+          firstSceneWatchers.current.delete(id);
+          if (firstSceneRereads.current.delete(id)) watch(id);
         },
       );
       firstSceneWatchers.current.set(id, cancel);
+    };
+    for (const id of open) {
+      if (firstSceneWatchers.current.has(id)) firstSceneRereads.current.add(id);
+      else watch(id);
     }
   }, [
     attachedSessionId,
@@ -1267,9 +1346,11 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   // The readiness reads belong to the attached conversation.
   useEffect(() => {
     const watchers = firstSceneWatchers.current;
+    const rereads = firstSceneRereads.current;
     return () => {
       for (const cancel of watchers.values()) cancel();
       watchers.clear();
+      rereads.clear();
     };
   }, [attachedSessionId]);
 
@@ -1510,6 +1591,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   /** A course tab chosen in the strip: the preview, if it was on screen, steps back. */
   const activateCourseFromStrip = useCallback(
     (courseId: string) => {
+      previewHandedOffCourseIdRef.current = null;
       if (courseId === PREVIEW_TAB_ID) {
         setPreviewFocus((current) => ({ ...current, active: true }));
         return;

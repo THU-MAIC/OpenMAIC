@@ -1,8 +1,31 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, afterEach } from 'vitest';
+vi.mock('server-only', () => ({}));
 import { PGlite } from '@electric-sql/pglite';
 import { PgAssetStore, ensureAssetSchema, type Queryable } from '@openmaic/storage/asset/pg';
 
-import { lazyAssetByteStore } from '@/lib/persistence/asset-byte-store';
+import {
+  lazyAssetByteStore,
+  configuredLazyAssetByteStore,
+} from '@/lib/persistence/asset-byte-store';
+import {
+  configureAssetByteStore,
+  resetPersistenceHooksForTests,
+} from '@/lib/server/persistence-hooks/registry';
+
+const remote = vi.hoisted(() => ({
+  write: vi.fn(async (_hash: string, _bytes: Uint8Array, options?: { signal?: AbortSignal }) => {
+    options?.signal?.throwIfAborted();
+  }),
+  read: vi.fn(async () => null),
+  delete: vi.fn(async () => {}),
+  writesOutsideRegistryDatabase: true as const,
+}));
+vi.mock('@openmaic/storage/asset/s3-bytes', () => ({ loadS3AssetByteStore: async () => remote }));
+afterEach(() => {
+  resetPersistenceHooksForTests();
+  vi.unstubAllEnvs();
+  vi.clearAllMocks();
+});
 
 /**
  * The registry's own duck-type predicate for a transaction-pinned byte writer
@@ -34,6 +57,33 @@ function recordingQueryable(queryable: Queryable, statements: string[]): Queryab
 }
 
 describe('lazyAssetByteStore transactional capability', () => {
+  it.each(['built-in', 'host'] as const)(
+    'forwards cancellation through the lazy %s byte store',
+    async (kind) => {
+      const db = new PGlite();
+      try {
+        resetPersistenceHooksForTests();
+        if (kind === 'host')
+          configureAssetByteStore({ name: 'test-byte-store', create: () => remote });
+        vi.stubEnv('ASSET_S3_BUCKET', 'valid-bucket-name');
+        const bytes =
+          kind === 'host'
+            ? configuredLazyAssetByteStore(db)
+            : lazyAssetByteStore('valid-bucket-name', db);
+        const controller = new AbortController();
+        controller.abort();
+        const hash = 'sha256-fixture' as Parameters<typeof bytes.write>[0];
+        await expect(
+          bytes.write(hash, new Uint8Array([1]), { signal: controller.signal }),
+        ).rejects.toMatchObject({ name: 'AbortError' });
+        expect(remote.write).toHaveBeenCalledWith(hash, new Uint8Array([1]), {
+          signal: controller.signal,
+        });
+      } finally {
+        await db.close();
+      }
+    },
+  );
   it('preserves the no-bucket layer transaction-pinned byte methods (the deadlock fix)', async () => {
     const db = new PGlite();
     await db.waitReady;
@@ -75,19 +125,22 @@ describe('lazyAssetByteStore transactional capability', () => {
     });
 
     const id = await store.put(PRINCIPAL, blob('routed bytes'));
-    // The write transaction's statements: the lock-wait budget, the blob-row
-    // claim, the byte write via the forwarded writeWith (an UPDATE on the
-    // transaction-pinned queryable, not an INSERT issued from the byte store's
-    // own connection), then the entry. This is the shape that used to be an
+    // The write transaction's statements: the lock-wait budget, the savepoint
+    // the write body runs under, the blob-row claim, the byte write via the
+    // forwarded writeWith (an UPDATE on the transaction-pinned queryable, not
+    // an INSERT issued from the byte store's own connection), the entry, and
+    // the savepoint's release. This is the shape that used to be an
     // INSERT-on-a-second-connection (the deadlock) before the wrapper
     // forwarded writeWith.
     expect(statements.map((sql) => sql.split(' ')[0])).toEqual([
       'SET',
+      'SAVEPOINT',
       'INSERT',
       'UPDATE',
       'INSERT',
+      'RELEASE',
     ]);
-    expect(statements[2]).toContain('UPDATE asset_blobs');
+    expect(statements[3]).toContain('UPDATE asset_blobs');
 
     statements.length = 0;
     const asset = await store.resolve(PRINCIPAL, id);

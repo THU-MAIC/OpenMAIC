@@ -595,6 +595,13 @@ describe('OpenAI provider defaults', () => {
   });
 
   it.each([
+    ['deepseek', 'deepseek-chat', { mode: 'disabled' }, { thinking: { type: 'disabled' } }],
+    [
+      'deepseek',
+      'deepseek-chat',
+      { mode: 'disabled', effort: 'low' },
+      { thinking: { type: 'disabled' } },
+    ],
     ['kimi', 'kimi-k3', { mode: 'enabled', effort: 'high' }, { reasoning_effort: 'high' }],
     ['grok', 'grok-4.6', { mode: 'enabled', effort: 'xhigh' }, { reasoning_effort: 'xhigh' }],
     ['grok', 'grok-4.5', { mode: 'enabled', effort: 'medium' }, { reasoning_effort: 'medium' }],
@@ -716,6 +723,100 @@ describe('OpenAI provider defaults', () => {
     });
     expect(body).not.toHaveProperty('reasoning_effort');
     expect(body).not.toHaveProperty('enable_thinking');
+  });
+
+  describe('generic thinking toggle for uncatalogued models', () => {
+    const selfHosted = {
+      providerId: 'acme-vllm' as ProviderId,
+      modelId: 'qwen3-32b-instruct-local',
+      baseUrl: 'https://vllm.example/v1',
+    };
+    const capture = (thinkingConfig?: Record<string, unknown>) =>
+      captureInjectedRequestBody(
+        selfHosted.providerId,
+        selfHosted.modelId,
+        thinkingConfig,
+        selfHosted.baseUrl,
+        { providerType: 'openai' },
+      );
+
+    it('sends enable_thinking=false when thinking is explicitly disabled', async () => {
+      const body = await capture({ enabled: false });
+      expect(body.chat_template_kwargs).toEqual({ enable_thinking: false });
+    });
+
+    it('sends enable_thinking=true with a positive budget when thinking is enabled', async () => {
+      const body = await capture({ mode: 'enabled', budgetTokens: 2048 });
+      expect(body.chat_template_kwargs).toEqual({ enable_thinking: true, thinking_budget: 2048 });
+    });
+
+    it('omits a non-positive budget when thinking is enabled', async () => {
+      const body = await capture({ enabled: true, budgetTokens: 0 });
+      expect(body.chat_template_kwargs).toEqual({ enable_thinking: true });
+    });
+
+    it('leaves the request unchanged when no thinking mode is configured', async () => {
+      expect(await capture(undefined)).toEqual({
+        model: selfHosted.modelId,
+        messages: [{ role: 'user', content: 'hi' }],
+      });
+      expect(await capture({ effort: 'high' })).not.toHaveProperty('chat_template_kwargs');
+      expect(await capture({ mode: 'auto' })).not.toHaveProperty('chat_template_kwargs');
+    });
+
+    it('does not retry the reasoning pass-back when the toggle disables thinking', async () => {
+      const originalFetch = globalThis.fetch;
+      const globalRecord = globalThis as Record<string, unknown>;
+      const originalThinkingContext = globalRecord.__thinkingContext;
+      const bodies: Array<Record<string, unknown>> = [];
+      globalThis.fetch = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+        bodies.push(JSON.parse(init?.body as string));
+        return new Response(
+          JSON.stringify({
+            error: { message: 'The `reasoning_content` in the thinking mode must be passed back.' },
+          }),
+          { status: 400, headers: { 'content-type': 'application/json' } },
+        );
+      }) as typeof fetch;
+      try {
+        globalRecord.__thinkingContext = { getStore: () => ({ mode: 'disabled' }) };
+        getModel({ ...selfHosted, providerType: 'openai', apiKey: 'sk-test' });
+        const options = openAiMock.createOpenAI.mock.calls.at(-1)?.[0] as
+          | { fetch?: typeof fetch }
+          | undefined;
+        await options!.fetch!('https://example.test/v1/chat/completions', {
+          method: 'POST',
+          body: JSON.stringify({
+            model: selfHosted.modelId,
+            messages: [
+              { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function' }] },
+            ],
+          }),
+        });
+      } finally {
+        globalThis.fetch = originalFetch;
+        if (originalThinkingContext === undefined) delete globalRecord.__thinkingContext;
+        else globalRecord.__thinkingContext = originalThinkingContext;
+      }
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0]).toMatchObject({ chat_template_kwargs: { enable_thinking: false } });
+    });
+
+    it('keeps catalogued adapters unchanged', async () => {
+      const qwen = await captureInjectedRequestBody('qwen', 'qwen3.6-plus', { mode: 'disabled' });
+      expect(qwen).toMatchObject({ enable_thinking: false });
+      expect(qwen).not.toHaveProperty('chat_template_kwargs');
+    });
+
+    it('sends nothing for catalogued models whose thinking is not controllable', async () => {
+      const body = await captureInjectedRequestBody('grok', 'grok-4.20-reasoning', {
+        mode: 'disabled',
+      });
+      expect(body).toEqual({
+        model: 'grok-4.20-reasoning',
+        messages: [{ role: 'user', content: 'hi' }],
+      });
+    });
   });
 
   it('recovers reasoning_content from a custom OpenAI gateway stream', async () => {

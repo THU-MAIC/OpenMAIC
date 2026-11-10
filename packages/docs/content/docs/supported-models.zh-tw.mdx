@@ -19,8 +19,11 @@ description: 開源版 OpenMAIC 的內建模型與 provider 清單。
 | `tokendance` | TokenDance | 對話、圖像、影片、TTS、網路搜尋 |
 | `volcengine-ark` | 火山方舟 Agent Plan | 對話、圖像、影片、TTS、網路搜尋 |
 | `kimi-coding-plan` | Kimi 程式設計方案 | 對話、網路搜尋、網頁擷取 |
+| `deepseek-token-plan` | DeepSeek | 對話、網路搜尋、網頁擷取 |
 
 在**設定 → Token Plan** 中連接 Kimi Coding Plan，會同時推薦對話、網路搜尋和網頁擷取，共用方案金鑰和 `https://api.kimi.com/coding/v1`。如果網頁擷取僅使用隱含的內建預設值，連接會直接指定 Kimi，不顯示衝突確認，即使選擇保留目前設定也是如此。工作區的明確選擇（包括 `null`）以及部署設定的非內建讀取器或 `null` 仍按現有衝突選項處理。中斷連接會移除方案的指定值，恢復伺服器預設值（未設定讀取器時為內建讀取器），不會恢復先前工作區的明確選擇。鎖定的欄位保持不變，未宣告網頁擷取的方案不會修改該欄位。
+
+在**設定 → Token Plan** 中連接 DeepSeek，會同時推薦對話（預設 `deepseek-flash`）、網路搜尋和網頁擷取，共用一把 DeepSeek API 金鑰和 `https://api.deepseek.com/v1`。它與 `deepseek` 範本是同一個按量計費帳號和位址；方案使用獨立的 `deepseek-token-plan` 範本，中斷連接只會移除方案自己的供應商和指定值，不影響另外設定的 `deepseek` 供應商。
 
 首次設定精靈會將網頁擷取保留為內建讀取器；只有透過 Token Plan 設定頁面連接方案，才會套用方案的擷取建議設定。
 
@@ -31,12 +34,12 @@ description: 開源版 OpenMAIC 的內建模型與 provider 清單。
 | 能力 | 範本 |
 | --- | --- |
 | 對話 | `openai`、`azure`、`atlascloud`、`anthropic`、`bedrock`、`google`、`glm`、`qwen`、`deepseek`、`kimi`、`siliconflow`、`doubao`、`openrouter`、`grok`、`tencent-hunyuan`、`xiaomi`、`ollama`、`lemonade`、`openai-compatible`，以及各 Token Plan |
-| TTS | `openai-tts`、`azure-tts`、`glm-tts`、`qwen-tts`、`minimax-tts`、`voxcpm-tts`、`doubao-tts`、`elevenlabs-tts`、`google-tts`、`browser-native-tts`、`lemonade-tts` |
-| ASR | `openai-whisper`、`qwen-asr`、`azure-asr`、`browser-native`、`funasr-asr`、`lemonade-asr` |
+| TTS | `openai-tts`、`azure-tts`、`glm-tts`、`qwen-tts`、`minimax-tts`、`xiaomi-tts`、`voxcpm-tts`、`doubao-tts`、`elevenlabs-tts`、`google-tts`、`browser-native-tts`、`lemonade-tts` |
+| ASR | `openai-whisper`、`qwen-asr`、`azure-asr`、`browser-native`、`funasr-asr`、`lemonade-asr`、`xiaomi-asr` |
 | 圖像 | `seedream`、`openai-image`、`qwen-image`、`nano-banana`、`minimax-image`、`grok-image`、`comfyui-image`、`lemonade-image`、`openrouter-image` |
 | 影片 | `seedance`、`kling`、`minimax-video`、`grok-video`、`happyhorse`、`openrouter-video` |
-| 網路搜尋 | `tavily`、`exa`、`firecrawl`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`deepseek`、`kimi`、`kimi-coding-plan`、`searxng` |
-| 網頁擷取 | `builtin`、`deepseek`、`firecrawl`、`kimi`、`kimi-coding-plan` |
+| 網路搜尋 | `tavily`、`exa`、`firecrawl`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`deepseek`、`deepseek-token-plan`、`kimi`、`kimi-coding-plan`、`searxng` |
+| 網頁擷取 | `builtin`、`deepseek`、`deepseek-token-plan`、`firecrawl`、`kimi`、`kimi-coding-plan` |
 | 文件解析 | `unpdf`、`mineru`、`mineru-cloud`、`alidocmind` |
 
 `azure`、`openai-compatible`、`searxng` 和 `mineru` 需要 `baseUrl`；`alidocmind` 使用 `credentials`（金鑰對）驗證。自架的 TTS、ASR、圖像、搜尋和文件範本、金鑰對範本以及 Bedrock 只能在 `openmaic.yml` 中設定，請見[設定說明](./configuration.mdx)。
@@ -103,16 +106,29 @@ description: 開源版 OpenMAIC 的內建模型與 provider 清單。
 | OpenAI TTS     | `openai-tts`         | GPT-4o Mini TTS (`gpt-4o-mini-tts`)<br />TTS-1 (`tts-1`)<br />TTS-1 HD (`tts-1-hd`)                                                                                                                                                    |
 | Azure TTS      | `azure-tts`          | 無模型選擇器，使用已設定的 Azure Neural Voices。                                                                                                                                                                                       |
 | GLM TTS        | `glm-tts`            | GLM TTS (`glm-tts`)                                                                                                                                                                                                                    |
-| Qwen TTS       | `qwen-tts`           | Qwen3 TTS Flash (`qwen3-tts-flash`)<br />Qwen3 TTS Voice Clone (`qwen3-tts-vc-2026-01-22`)<br />Voice Clone is a legacy grouping ID for saved voices; the retired model cannot register or synthesize cloned voices. |
+| Qwen TTS       | `qwen-tts`           | Qwen3 TTS Flash (`qwen3-tts-flash`)<br />CosyVoice Voice Clone (`cosyvoice-v3.5-plus`)<br />Cloned voices keep the legacy `qwen3-tts-vc-2026-01-22` grouping ID. Re-clone retired Qwen voices from their reference audio. Allow the CosyVoice target in the provider models list; the API key needs both voice-enrollment and target-model permissions. |
 | MiniMax TTS    | `minimax-tts`        | Speech 2.8 HD (`speech-2.8-hd`)<br />Speech 2.8 Turbo (`speech-2.8-turbo`)<br />Speech 2.6 HD (`speech-2.6-hd`)<br />Speech 2.6 Turbo (`speech-2.6-turbo`)<br />Speech 02 HD (`speech-02-hd`)<br />Speech 02 Turbo (`speech-02-turbo`) |
 | VoxCPM2        | `voxcpm-tts`         | VoxCPM2 (`voxcpm2`)<br />後端：vLLM-Omni、Python API、Nano-vLLM                                                                                                                                                                        |
 | Lemonade TTS   | `lemonade-tts`       | Kokoro v1 (`kokoro-v1`)                                                                                                                                                                                                                |
+| 小米 MiMo TTS   | `xiaomi-tts`        | MiMo V2.5 TTS (`mimo-v2.5-tts`) — 預設音色：冰糖 / 茉莉 / 蘇打 / 白樺 / Mia / Chloe / Milo / Dean；語速透過風格指令調節，為風格提示、不精確 |
 | Doubao TTS 2.0 | `doubao-tts`         | 無模型選擇器，使用 Doubao TTS 2.0 音色 ID。                                                                                                                                                                                            |
 | ElevenLabs TTS | `elevenlabs-tts`     | Multilingual v2 (`eleven_multilingual_v2`)<br />Flash v2.5 (`eleven_flash_v2_5`)<br />Flash v2 (`eleven_flash_v2`)                                                                                                                     |
 | Google Gemini TTS | `google-tts`         | Gemini 3.8 Flash-Lite TTS (`gemini-3.8-flash-lite-tts`)<br />Gemini 3.8 Flash TTS (`gemini-3.8-flash-tts`)<br />Gemini 3.1 Flash TTS Preview (`gemini-3.1-flash-tts-preview`)<br />Gemini 2.5 Flash Preview TTS (`gemini-2.5-flash-preview-tts`)<br />Gemini 2.5 Pro Preview TTS (`gemini-2.5-pro-preview-tts`)                                        |
 | 瀏覽器原生 TTS | `browser-native-tts` | 無模型選擇器，使用瀏覽器和作業系統提供的音色清單。                                                                                                                                                                                     |
 
 Google TTS 預設使用 `gemini-3.8-flash-lite-tts`，已明確選取的模型保持不變。Google 列出的上述三個預覽模型的[最早下線日期](https://ai.google.dev/gemini-api/docs/deprecations)為 **2026 年 11 月 17 日**。請在下線前切換至 3.8 模型；使用部署託管憑證時，也須更新 `openmaic.yml` 中的 `tts` 槽位或供應商的 `models` 允許清單。Gemini 3.8 回傳的 WAV 會原樣保留，舊模型回傳的 PCM 仍會轉換為 WAV 供播放。
+
+### Qwen 複刻音色
+
+音色註冊使用參考音訊，無需填寫逐字稿。
+
+本整合使用 CosyVoice 非即時 HTTP 合成介面，目前文件列出的適用地域是**北京**，請使用北京地域的端點和 API Key。新加坡支援為 `cosyvoice-v3-plus`、`cosyvoice-v3-flash` 建立音色，但[非即時合成支援清單](https://www.alibabacloud.com/help/en/model-studio/non-realtime-tts-user-guide#supported-models)未列出新加坡的 CosyVoice；僅切換模型無法使本整合支援新加坡播放。另見[音色複刻地域](https://www.alibabacloud.com/help/en/model-studio/voice-cloning-user-guide#supported-models)和 [CosyVoice HTTP API](https://www.alibabacloud.com/help/en/model-studio/cosyvoice-tts-http-api)。
+
+預設目標模型為 `cosyvoice-v3.5-plus`。`TTS_QWEN_VOICE_CLONE_MODEL` 同時作用於伺服器託管和 BYOK 的註冊及播放；空值或精確的舊值 `qwen3-tts-vc-2026-01-22` 使用預設模型。其他明確覆寫值保持不變，仍須取得模型授權。系統不依 API Key 推斷地域，模型覆寫也不會改變合成協定。
+
+託管部署必須在複刻目標之外保留 `qwen3-tts-flash`，例如設定 `TTS_QWEN_MODELS=qwen3-tts-flash,cosyvoice-v3.5-plus`，或在 `openmaic.yml` 的供應商 `models` 允許清單中同時列出兩者。只設定複刻目標會取代原本隱含的目錄模型授權，導致目錄音色回傳 HTTP 403。已使用的其他模型也應繼續保留授權。
+
+舊音色資料及其參考樣本會保留，但沒有一鍵重用樣本的遷移介面。需要重建不相容音色時，請在音色設定中重新上傳原始參考音訊並建立新音色。樣本應清晰且包含至少五秒語音；不足五秒的舊樣本需要更換為更長的錄音。資料中存有樣本不代表系統會自動重新註冊。
 
 ## ASR 模型
 
@@ -123,6 +139,7 @@ Google TTS 預設使用 `gemini-3.8-flash-lite-tts`，已明確選取的模型�
 | Azure STT      | `azure-asr`      | 無模型選擇器，使用 Azure Speech to Text。                                                                                                                                                                                                      |
 | FunASR         | `funasr-asr`     | SenseVoiceSmall (`sensevoice`)<br />Paraformer (`paraformer`)<br />Fun-ASR-Nano (`fun-asr-nano`) |
 | Lemonade ASR   | `lemonade-asr`   | Whisper Base (`Whisper-Base`)<br />Whisper Large v3 (`Whisper-Large-v3`)<br />Whisper Large v3 Turbo (`Whisper-Large-v3-Turbo`)<br />Whisper Medium (`Whisper-Medium`)<br />Whisper Small (`Whisper-Small`)<br />Whisper Tiny (`Whisper-Tiny`) |
+| 小米 MiMo ASR   | `xiaomi-asr`        | MiMo V2.5 ASR (`mimo-v2.5-asr`) — wav/mp3，auto/zh/en |
 | 瀏覽器原生 ASR | `browser-native` | 無模型選擇器，使用瀏覽器 Web Speech API。                                                                                                                                                                                                      |
 
 ## 文件解析供應商
@@ -209,5 +226,6 @@ These IDs belong to the plan endpoint, independently of the direct provider cata
 | `volcengine-ark` | video | `doubao-seedance-2.0-mini`, `doubao-seedance-2.0` |
 | `volcengine-ark` | tts | `seed-tts-2.0` |
 | `kimi-coding-plan` | llm | `k3`, `k3-256k`, `kimi-for-coding`, `kimi-for-coding-highspeed` |
+| `deepseek-token-plan` | llm | `deepseek-flash`, `deepseek-v4-pro` |
 
 Ark migration targets follow the [supported model list](https://docs.volcengine.com/docs/ark/agent-plan-personal-plan-overview?lang=zh) and [retirement notice](https://docs.volcengine.com/docs/ark/agent-plan-personal-model-deprecation-announcement?lang=zh). Kimi K3 requires Medium or higher; Kimi K2.8 Preview is the Small-tier replacement for Kimi K2.7 Code.

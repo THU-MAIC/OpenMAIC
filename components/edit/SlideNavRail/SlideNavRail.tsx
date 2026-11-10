@@ -4,13 +4,12 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, Reorder, motion, useReducedMotion } from 'motion/react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useBrand, useIsDesktop } from '@/lib/brand/brand-context';
 import { useStageStore } from '@/lib/store';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { useDeletedSceneRecycle } from '@/lib/edit/deleted-scene-recycle';
+import { commitCourseEdit } from '@/lib/edit/course-edit';
 import { duplicateSlideScene } from '@/lib/edit/slide-defaults';
 import {
   createBlankEditableScene,
@@ -186,7 +185,7 @@ export function SlideNavRail() {
         .filter((s): s is Scene => Boolean(s));
       if (next.length !== scenes.length) return;
       const rebalanced = next.map((s, i) => (s.order === i + 1 ? s : { ...s, order: i + 1 }));
-      setScenes(rebalanced);
+      commitCourseEdit({ coalesceKey: 'page-reorder' }, () => setScenes(rebalanced));
     },
     [scenes, setScenes],
   );
@@ -206,8 +205,10 @@ export function SlideNavRail() {
       if (!stage) return;
       const title = type === 'slide' ? t('edit.nav.untitledSlide') : t('edit.sceneType.quiz');
       const scene = createBlankEditableScene(type, stage.id, title, insertIndex + 1);
-      setScenes(insertSceneAtIndex(scenes, scene, insertIndex));
-      setCurrentSceneId(scene.id);
+      commitCourseEdit({}, () => {
+        setScenes(insertSceneAtIndex(scenes, scene, insertIndex));
+        setCurrentSceneId(scene.id);
+      });
     },
     [scenes, setCurrentSceneId, setScenes, stage, t],
   );
@@ -231,8 +232,10 @@ export function SlideNavRail() {
               createdAt: Date.now(),
               updatedAt: Date.now(),
             };
-      insertSceneAfter(sceneId, copy);
-      setCurrentSceneId(copy.id);
+      commitCourseEdit({}, () => {
+        insertSceneAfter(sceneId, copy);
+        setCurrentSceneId(copy.id);
+      });
     },
     [insertSceneAfter, scenes, setCurrentSceneId, t],
   );
@@ -244,48 +247,9 @@ export function SlideNavRail() {
       // Hold deck-empty guard at the rail layer; the store doesn't enforce.
       if (source.type === 'slide' && slideCount <= 1) return;
       if (totalScenes <= 1) return;
-      const index = scenes.findIndex((s) => s.id === sceneId);
-      useDeletedSceneRecycle.getState().capture(source, index);
-      deleteScene(sceneId);
-      toast(t('edit.nav.deleted'), {
-        description: source.title,
-        duration: 5000,
-        action: {
-          label: t('edit.nav.undo'),
-          onClick: () => {
-            const entry = useDeletedSceneRecycle.getState().consume();
-            if (!entry) return;
-            // Stage-scope guard: if the user has navigated to a
-            // different stage while the toast was up, the recycle
-            // entry belongs to the previous stage and `insertSceneAfter`
-            // would reject it on stage-id mismatch (silently losing the
-            // deleted scene). Drop the undo when stages don't match
-            // rather than blasting the entry into the wrong deck.
-            const currentStage = useStageStore.getState().stage;
-            if (!currentStage || currentStage.id !== entry.stageId) return;
-            const live = useStageStore.getState().scenes;
-            // Prepend path — `insertSceneAfter` requires an anchor, but
-            // restoring index 0 (the previously-first slide) has no
-            // predecessor to anchor on. Clamping `entry.index - 1` to 0
-            // and inserting after `live[0]` would land the entry at
-            // position 1 instead of 0. setScenes-with-rebalance
-            // preserves the original "first slide" semantics.
-            if (entry.index === 0 || live.length === 0) {
-              useStageStore.getState().setScenes([entry.scene, ...live]);
-              useStageStore.getState().setCurrentSceneId(entry.scene.id);
-              return;
-            }
-            const anchorIndex = Math.min(entry.index - 1, live.length - 1);
-            const anchor = live[anchorIndex];
-            useStageStore.getState().insertSceneAfter(anchor.id, entry.scene);
-            useStageStore.getState().setCurrentSceneId(entry.scene.id);
-          },
-        },
-        onDismiss: () => useDeletedSceneRecycle.getState().clear(),
-        onAutoClose: () => useDeletedSceneRecycle.getState().clear(),
-      });
+      commitCourseEdit({}, () => deleteScene(sceneId));
     },
-    [deleteScene, scenes, slideCount, totalScenes, t],
+    [deleteScene, scenes, slideCount, totalScenes],
   );
 
   const canDeleteAny = totalScenes > 1;

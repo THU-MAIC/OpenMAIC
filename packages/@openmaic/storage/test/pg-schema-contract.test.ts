@@ -708,6 +708,21 @@ const EXPECTED_ASSET_PG_SCHEMA: readonly string[] = [
      ON asset_root_refs (asset_id)`,
   `ALTER TABLE asset_reference_tracking
      ADD COLUMN IF NOT EXISTS rule_version INTEGER NOT NULL DEFAULT 1`,
+  `CREATE TABLE IF NOT EXISTS asset_blob_stages (
+     id TEXT PRIMARY KEY,
+     content_hash TEXT NOT NULL REFERENCES asset_blobs(content_hash) ON DELETE CASCADE,
+     expires_at TIMESTAMPTZ NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS asset_blob_stages_content_hash_idx
+     ON asset_blob_stages (content_hash)`,
+  `CREATE INDEX IF NOT EXISTS asset_blob_stages_expires_idx
+     ON asset_blob_stages (expires_at)`,
+];
+
+const EXPECTED_RETAINED_ASSETS_UPGRADE = [
+  'ALTER TABLE document_asset_refs DROP CONSTRAINT document_asset_refs_scope_check',
+  `ALTER TABLE document_asset_refs ADD CONSTRAINT document_asset_refs_scope_check
+ CHECK (scope IN ('stage', 'scene', 'retained'))`,
 ];
 
 describe('ASSET_PG_SCHEMA is a pinned contract', () => {
@@ -715,7 +730,10 @@ describe('ASSET_PG_SCHEMA is a pinned contract', () => {
     const { statements, queryable } = recordingQueryable();
     await ensureAssetSchema(queryable);
 
-    expect(schemaStatements(statements)).toEqual([...EXPECTED_ASSET_PG_SCHEMA]);
+    expect(schemaStatements(statements)).toEqual([
+      ...EXPECTED_ASSET_PG_SCHEMA,
+      ...EXPECTED_RETAINED_ASSETS_UPGRADE,
+    ]);
   });
 
   it('reissues the same statements where no version is recorded', async () => {
@@ -725,7 +743,9 @@ describe('ASSET_PG_SCHEMA is a pinned contract', () => {
 
     expect(schemaStatements(statements)).toEqual([
       ...EXPECTED_ASSET_PG_SCHEMA,
+      ...EXPECTED_RETAINED_ASSETS_UPGRADE,
       ...EXPECTED_ASSET_PG_SCHEMA,
+      ...EXPECTED_RETAINED_ASSETS_UPGRADE,
     ]);
   });
 

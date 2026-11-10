@@ -11,6 +11,7 @@ import {
   applyJsonPointerEdit,
   applySlideEdit,
   applyStrReplace,
+  anchorNotFoundHint,
   closestExcerpt,
   collectStringFields,
   describeStringFieldsNear,
@@ -81,7 +82,8 @@ const PATCH_OP_SCHEMA = Type.Object({
   oldText: Type.Optional(
     Type.String({
       minLength: 1,
-      description: 'For str_replace: exact text to find within the string field value at path.',
+      description:
+        'For str_replace: exact text in the decoded string field, not its JSON-escaped representation. Preserve actual newlines versus literal backslash+n and keep HTML tags exactly as stored.',
     }),
   ),
   newText: Type.Optional(
@@ -664,14 +666,22 @@ function listPointers(paths: string[]): string {
 /** Closest text across every string field, for an anchor found nowhere. */
 function closestInScene(scene: Scene, anchor: string): string {
   let best: { path: string; excerpt: string; score: number } | null = null;
+  const hints: string[] = [];
   for (const field of textViewFields(scene)) {
     if (field.value.startsWith('data:')) continue;
+    if (anchor.includes('\\n') && field.value.includes(anchor.replaceAll('\\n', '\n'))) {
+      hints.push(
+        `; possible newline escaping mismatch in ${field.path}${anchorNotFoundHint(field.value, anchor)}`,
+      );
+    }
     const found = closestExcerpt(field.value, anchor);
     if (found && (!best || found.score > best.score)) best = { path: field.path, ...found };
   }
-  return best && best.score >= 0.3
-    ? `; closest stored text is in ${best.path}: ${JSON.stringify(best.excerpt)}`
-    : '';
+  return hints.length
+    ? hints.join('')
+    : best && best.score >= 0.3
+      ? `; closest stored text is in ${best.path}: ${JSON.stringify(best.excerpt)}`
+      : '';
 }
 
 function applyStrReplaceOp(scene: Scene, op: ResolvedPatchOp): PatchOpResult {
@@ -1165,6 +1175,26 @@ export function buildDslCourseTools(deps: CourseToolDeps): AgentTool<never, neve
           { intent: params.intent, failedOp: params.ops.length },
           true,
         );
+      }
+      if (
+        resolved.scene.content.type === 'interactive' &&
+        next.content.type === 'interactive' &&
+        resolved.scene.content.html?.trim() &&
+        next.content.html !== resolved.scene.content.html
+      ) {
+        const html = next.content.html?.trim() ?? '';
+        // Inspect the final batch, so temporary markers within one atomic edit are allowed.
+        if (
+          (!html && !next.content.url?.trim()) ||
+          /^__[A-Za-z0-9_]+__$/.test(html) ||
+          /^<!doctype\s+html\s*>$/i.test(html)
+        ) {
+          return toolResult(
+            'patch_stage rejected: do not replace an existing interactive page with an empty value, placeholder, or DOCTYPE alone. Submit the complete replacement in one patch_stage call, or edit exact anchors in the existing HTML. The original page was unchanged.',
+            { intent: params.intent, failedOp: params.ops.length },
+            true,
+          );
+        }
       }
       try {
         await runStageMutation(signal, () =>

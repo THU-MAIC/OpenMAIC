@@ -31,6 +31,7 @@ import { useStageStore } from '@/lib/store/stage';
 import { useWorkbenchStore } from '@/lib/workbench/session-store';
 import { WorkbenchPanelProvider } from '@/lib/workbench/panel-context';
 import { useWorkbenchProEditing } from '@/lib/workbench/use-workbench-pro-edit';
+import { useEditorWarmup } from '@/lib/edit/use-editor-warmup';
 import { WorkspaceCourseTabs, type WorkspaceCourseTabItem } from './WorkspaceCourseTabs';
 import { PaneFoldButton } from './PaneFoldButton';
 
@@ -90,6 +91,7 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
   const isOwner = useStageStore((s) => s.isOwner);
   const stageReadOnly = useStageStore((s) => s.readOnly);
   const [preferences, setPreferences] = useState<Record<string, ClassroomMode>>({});
+  const [historySlot, setHistorySlot] = useState<HTMLDivElement | null>(null);
 
   useLayoutEffect(() => {
     // Apply browser memory before paint. A different course never inherits an
@@ -107,6 +109,9 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
     !courseGenerating &&
     scenes.length > 0;
   const learning = playback || !editingAllowed || preferences[courseId] !== 'editing';
+  // Load the editor while the course is shown in Learn mode, so the first switch
+  // to Edit does not wait on its download. Only where the switch is offered.
+  const warmEditorNow = useEditorWarmup(editingAllowed && learning && !hidden && !playback);
 
   const rememberMode = (mode: ClassroomMode) => {
     setPreferences((previous) => ({ ...previous, [courseId]: mode }));
@@ -171,6 +176,8 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
               {t('workspace.readOnlyBadge')}
             </span>
           ) : null}
+          {/* The editor portals its undo/redo here; empty, it takes no space. */}
+          <div ref={setHistorySlot} className="flex shrink-0 items-center gap-0.5 empty:hidden" />
           <div
             role="group"
             aria-label={t('workspace.classroomMode')}
@@ -198,6 +205,8 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
               data-testid="workbench-mode-editing"
               aria-pressed={!learning}
               disabled={!editingAllowed}
+              onPointerEnter={warmEditorNow}
+              onFocus={warmEditorNow}
               onClick={() => {
                 if (editingAllowed) rememberMode('editing');
               }}
@@ -230,7 +239,12 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
       {/* One course surface for both modes. Generation and access gates override
           remembered editing without overwriting the course's preference. */}
       <div className="ws-classroom-body relative flex min-h-0 flex-1">
-        <WorkbenchPanelProvider visible={!hidden} playback={playback} learning={learning}>
+        <WorkbenchPanelProvider
+          visible={!hidden}
+          playback={playback}
+          learning={learning}
+          historySlot={historySlot}
+        >
           <ClassroomSurface classroomId={courseId} variant="pane" />
         </WorkbenchPanelProvider>
       </div>

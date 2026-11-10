@@ -57,6 +57,9 @@ const PACKAGE_EXPORT_SOURCES = [
  * places where concrete provider knowledge belongs.
  */
 const PROVIDER_NEUTRAL_FILES = [
+  'lib/server/generation/run/engine.ts',
+  'lib/server/generation/run/failure-code.ts',
+  'lib/server/agent-runtime/scene-tts.ts',
   // LLM stage routing and agent driver
   'lib/server/model-routes.ts',
   'lib/server/resolve-model.ts',
@@ -99,6 +102,20 @@ const PROVIDER_NEUTRAL_FILES = [
  * another use of an already-allowed vendor therefore still fails the guard.
  */
 const TEMPORARY_ALLOWLIST: readonly AllowedLeak[] = [
+  {
+    file: 'lib/server/generation/run/engine.ts',
+    vendor: 'pg',
+    token: "'@openmaic/storage/document/pg'",
+    count: 1,
+    reason: 'Existing storage Queryable type import; not audio provider policy.',
+  },
+  {
+    file: 'lib/server/generation/run/engine.ts',
+    vendor: 'qwen',
+    token: "'QWEN_VC_VOICE_NOT_FOUND'",
+    count: 1,
+    reason: 'Existing main missing-clone fallback; incompatible-voice policy must remain neutral.',
+  },
   {
     file: 'lib/server/resolve-model.ts',
     vendor: 'bedrock',
@@ -171,7 +188,8 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
     'lib/server/provider-config.ts',
     'Temporary: provider configuration is still a mixed catalog and resolver composition root.',
     [
-      ['qwen', 20],
+      // Includes the retired grouping sentinel import and exact migration comparison.
+      ['qwen', 22],
       ['openai', 24],
       ['azure', 6],
       ['atlascloud', 2],
@@ -187,7 +205,8 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['grok', 6],
       ['tencent', 4],
       ['hunyuan', 3],
-      ['xiaomi', 3],
+      // TTS_XIAOMI/ASR_XIAOMI in the provider-config env maps (#1432 follow-up).
+      ['xiaomi', 7],
       ['tokendance', 2],
       ['ollama', 3],
       ['lemonade', 12],
@@ -230,7 +249,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
     'lib/server/generation/steps/narration.ts',
     'Temporary: TTS request preparation has not moved behind adapters.',
     [
-      ['qwen', 7],
+      ['qwen', 5],
       ['voxcpm', 11],
       ['browser-native-tts', 2],
       ['browser-native', 2],

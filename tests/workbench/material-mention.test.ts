@@ -132,6 +132,34 @@ describe('material mention candidates', () => {
     const many = Array.from({ length: MATERIAL_MENTION_LIMIT + 5 }, (_, i) => listing(`m${i}`));
     expect(materialMentionCandidates(many, new Set())).toHaveLength(MATERIAL_MENTION_LIMIT);
   });
+
+  it('keeps the counts of a page-limit refusal, and only those', () => {
+    const [long, other] = materialMentionCandidates(
+      [
+        listing('long', {
+          extraction: {
+            status: 'failed',
+            reasonCode: 'too_many_pages',
+            reasonValues: { pages: 461, maxPages: 200, note: 'x' },
+          },
+        }),
+        listing('other', {
+          extraction: {
+            status: 'failed',
+            reasonCode: 'storage_full',
+            reasonValues: { pages: 461 },
+          },
+        }),
+      ],
+      new Set(),
+    );
+    expect(long).toMatchObject({
+      reasonCode: 'too_many_pages',
+      reasonValues: { pages: 461, maxPages: 200 },
+    });
+    expect(long!.reasonValues).toEqual({ pages: 461, maxPages: 200 });
+    expect(other).not.toHaveProperty('reasonValues');
+  });
 });
 
 describe('staging a picked material', () => {
@@ -687,13 +715,20 @@ describe('the @ menu with the knowledge base', () => {
         'media_too_long',
         'source_unavailable',
         'no_text_extracted',
+        'too_many_pages',
       ] as const;
       const mounted = await renderMenu({
         candidates: [],
         ...(searchable ? { search: { query: '', onChange: () => undefined } } : {}),
         materials: [
           ...reasons.map((reasonCode) =>
-            material(reasonCode, { extractionStatus: 'failed', reasonCode }),
+            material(reasonCode, {
+              extractionStatus: 'failed',
+              reasonCode,
+              ...(reasonCode === 'too_many_pages'
+                ? { reasonValues: { pages: 461, maxPages: 200 } }
+                : {}),
+            }),
           ),
           material('unknown', { extractionStatus: 'failed' }),
         ],
@@ -719,6 +754,11 @@ describe('the @ menu with the knowledge base', () => {
           expect(label).toMatch(locale === 'zh-CN' ? /管理员/ : /administrator/i);
         if (reason === 'no_text_extracted')
           expect(label).toMatch(locale === 'zh-CN' ? /其他文件/ : /another file/i);
+        if (reason === 'too_many_pages') {
+          expect(label).toContain('461');
+          expect(label).toContain('200');
+          expect(label).toMatch(locale === 'zh-CN' ? /拆分/ : /split/i);
+        }
       }
       const unknown = mounted.container
         .querySelector('[data-testid="workbench-material-option-unknown"]')!

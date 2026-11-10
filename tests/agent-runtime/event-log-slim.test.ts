@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { slimEventDataForLog } from '@/lib/server/agent-runtime/runner';
+import { slimEventDataForLog, snapshotEventDataForLog } from '@/lib/server/agent-runtime/runner';
 
 describe('runner event-log payload slimming', () => {
   it('keeps only the terminal metadata needed from agent_end', () => {
@@ -138,6 +138,26 @@ describe('runner event-log payload slimming', () => {
       messageCount: 1,
       lastMessageContentLength: 15,
       messages: [{ role: 'user' }],
+    });
+  });
+
+  it('snapshots complete PBL tool progress without changing ordinary event slimming', () => {
+    const source = {
+      toolName: 'run_build',
+      toolCallId: 'build',
+      args: { path: 'src/main.py' },
+      partialResult: { text: 'Compiling', percent: 30, data: { files: ['src/main.py'] } },
+    };
+    const saved = snapshotEventDataForLog('tool_execution_update', source, true);
+    source.partialResult.text = 'Finished';
+    source.partialResult.data.files.push('src/later.py');
+    expect(saved).toMatchObject({
+      args: { path: 'src/main.py' },
+      partialResult: { text: 'Compiling', percent: 30, data: { files: ['src/main.py'] } },
+    });
+    expect(snapshotEventDataForLog('tool_execution_update', source)).toEqual({
+      toolName: 'run_build',
+      toolCallId: 'build',
     });
   });
 

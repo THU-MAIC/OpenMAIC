@@ -69,6 +69,40 @@ const assistantMessage = (parts: { type: string; text?: string; thinking?: strin
 const contentOf = (state: WorkbenchFold) => state.chat.filter((n) => n.kind !== 'waiting');
 
 describe('lifecycle events', () => {
+  it('silently clears a deleted Skill binding without changing the conversation or course', () => {
+    const initial = foldAll([
+      ev('session_start', { prompt: 'Keep this conversation' }),
+      ev('tool_execution_start', {
+        toolCallId: 'skill-read',
+        toolName: 'read',
+        args: { path: 'skill://usk_deleted/SKILL.md' },
+      }),
+      ev('tool_execution_end', {
+        toolCallId: 'skill-read',
+        toolName: 'read',
+        isError: false,
+        result: {
+          content: [{ type: 'text', text: 'Original Skill instructions' }],
+          details: { skill: 'usk_deleted' },
+        },
+      }),
+    ]);
+    initial.skillId = 'usk_deleted';
+    initial.stageId = 'saved-course';
+    const receipt = ev('skill_detached', {});
+    const next = foldEvent(initial, receipt);
+    expect(next.skillId).toBeNull();
+    expect(next.stageId).toBe('saved-course');
+    expect(next.status).toBe('running');
+    expect(next.chat).toContainEqual(
+      expect.objectContaining({ kind: 'user', text: 'Keep this conversation' }),
+    );
+    expect(next.chat).toEqual(initial.chat);
+    expect(next.chat).toContainEqual(
+      expect.objectContaining({ kind: 'tool', toolName: 'read', toolState: 'done' }),
+    );
+    expect(foldEvent(next, receipt)).toEqual(next);
+  });
   it('session_start opens the run with the user prompt and nothing else', () => {
     const state = foldAll([ev('session_start', { prompt: '给我讲讲光的折射', workerId: 'w1' })]);
     expect(state.status).toBe('running');

@@ -2078,11 +2078,14 @@ describe('public extraction failure explanations', () => {
       });
       await settle();
       const dialog = document.querySelector('[role="dialog"]')!;
-      // The duration limit is the extractor's own number, passed in.
+      // The duration limit is the extractor's own number, passed in; a page
+      // refusal that stated no numbers has wording without them.
       expect(dialog.textContent).toBe(
-        `workspace.knowledgeBase.failure.${reasonCode}.description${
-          reasonCode === 'media_too_long' ? '{"minutes":90}' : ''
-        }`,
+        reasonCode === 'too_many_pages'
+          ? 'workspace.knowledgeBase.failure.too_many_pages.descriptionWithoutLimit'
+          : `workspace.knowledgeBase.failure.${reasonCode}.description${
+              reasonCode === 'media_too_long' ? '{"minutes":90}' : ''
+            }`,
       );
       expect(document.body.innerHTML).not.toContain('PRIVATE_RAW_DETAIL');
       await act(async () => {
@@ -2452,6 +2455,63 @@ it('keeps multiple successful uploads visible while the listing reply is pending
   await settle();
   for (const id of ['one.pdf', 'two.pdf'])
     expect(page.container.querySelectorAll(`[data-testid="kb-material-${id}"]`)).toHaveLength(1);
+  await page.dispose();
+});
+
+it.each([
+  [{ pages: 461, maxPages: 200 }, 'description{"pages":461,"maxPages":200}'],
+  [{ maxPages: 200 }, 'descriptionWithoutCount{"maxPages":200}'],
+  // A count the limit does not exceed is no count to state.
+  [{ pages: 200, maxPages: 200 }, 'descriptionWithoutCount{"maxPages":200}'],
+  [{ pages: 461 }, 'descriptionWithoutLimit'],
+  [{ pages: '461', maxPages: -1 }, 'descriptionWithoutLimit'],
+])(
+  'explains a PDF refused for too many pages with the counts it carried (%o)',
+  async (reasonValues, description) => {
+    library = () =>
+      json({
+        materials: [
+          source('long', {
+            extraction: { status: 'failed', reasonCode: 'too_many_pages', reasonValues },
+          }),
+        ],
+        limits: LIMITS,
+      });
+    const page = await openPage();
+    const status = page.query('kb-status-long')!;
+    expect(status.textContent).toBe('workspace.knowledgeBase.failure.too_many_pages.label');
+    await act(async () => {
+      status.querySelector('button')!.click();
+    });
+    await settle();
+    expect(document.querySelector('[role="dialog"]')!.textContent).toBe(
+      `workspace.knowledgeBase.failure.too_many_pages.${description}`,
+    );
+    await page.dispose();
+  },
+);
+
+it('does not lead with Parse again for a PDF refused for too many pages', async () => {
+  library = () =>
+    json({
+      materials: [
+        source('a', {
+          extraction: {
+            status: 'failed',
+            reasonCode: 'too_many_pages',
+            reasonValues: { pages: 461, maxPages: 200 },
+          },
+        }),
+      ],
+      limits: LIMITS,
+    });
+  const page = await openPage();
+  await openMenu('kb-material-menu-a');
+  const items = [...document.querySelectorAll('[role="menuitem"]')];
+  expect(items[0]?.textContent).not.toContain('workspace.knowledgeBase.actions.reparse');
+  expect(items.at(-2)?.textContent).toContain('workspace.knowledgeBase.actions.reparse');
+  expect(items.at(-1)?.textContent).toContain('workspace.knowledgeBase.actions.delete');
+  await press(document.activeElement!, 'Escape');
   await page.dispose();
 });
 

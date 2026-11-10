@@ -27,8 +27,11 @@ import {
   ANON,
   bootExtractionHarness,
   failureReasonScenario,
+  failedImageDownloadScenario,
+  cancelledImageDownloadScenario,
   documentFallbackScenario,
   documentServiceUnavailableScenario,
+  tooManyPagesScenario,
   cacheCollectorOrderScenario,
   claimIntoSameContentScenario,
   sameKeyConcurrentSourcesScenario,
@@ -166,6 +169,10 @@ describe.skipIf(!contractUrl)('owner-level material extraction on PostgreSQL', (
     await documentFallbackScenario(await boot());
   });
 
+  it('ends a PDF refused for too many pages at the refusal, with its counts', async () => {
+    await tooManyPagesScenario(await boot());
+  });
+
   it('keeps public failure reasons on current terminal claims only', async () => {
     await failureReasonScenario(await boot());
   });
@@ -232,6 +239,14 @@ describe.skipIf(!contractUrl)('owner-level material extraction on PostgreSQL', (
 
   it('reuses a document fallback s earlier result when the provider ahead of it fails', async () => {
     await fallbackReuseScenario(await boot());
+  });
+
+  it('never reuses a result whose image downloads failed', async () => {
+    await failedImageDownloadScenario(await boot());
+  });
+
+  it('stops a run cancelled while an image download stalls, settling nothing', async () => {
+    await cancelledImageDownloadScenario(await boot());
   });
 
   it('does not reuse a done donor that no longer roots its result', async () => {

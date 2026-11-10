@@ -5,6 +5,8 @@
  * its leases and event log, the owner-bound document store, the asset pool
  * and the run API routes.
  */
+import { AudioProviderError } from '@/lib/audio/provider-error';
+import { QwenVoiceCloneError } from '@/lib/audio/qwen-voice-clone';
 import { createOpenAI } from '@ai-sdk/openai';
 import { NextRequest } from 'next/server';
 import { Pool } from 'pg';
@@ -1568,6 +1570,25 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     expect(voices).toEqual([clone, 'Cherry', 'Cherry', 'Cherry']);
   });
 
+  it.each([
+    [new AudioProviderError('EXAMPLE_RECREATE', 409, 'voice-incompatible'), 1, 'EXAMPLE_RECREATE'],
+    [new QwenVoiceCloneError('QWEN_VC_RECLONE_REQUIRED', 409), 1, 'QWEN_VC_RECLONE_REQUIRED'],
+    [new QwenVoiceCloneError('QWEN_VC_TIMEOUT', 504), 3, 'INTERNAL_ERROR'],
+    [new QwenVoiceCloneError('QWEN_VC_HTTP_ERROR', 503), 3, 'INTERNAL_ERROR'],
+  ] as const)(
+    'preserves narration retry and public failure for $0.code',
+    async (error, attempts, errorCode) => {
+      const narrateClip = vi.fn().mockRejectedValue(error);
+      const { services } = fakeServices({ research: async () => null, narrateClip });
+      const run = await start(runInput({ outlineReview: 'auto' }));
+      expect(await drive(run.id, services)).toBe('paused');
+      expect(narrateClip).toHaveBeenCalledTimes(attempts);
+      const stored = (await readGenerationRun(run.id, OWNER))!;
+      expect(stored.error?.errorCode).toBe(errorCode);
+      expect(stored.progress.scenesCompleted).toBe(0);
+    },
+  );
+
   it('releases the clips of a narration attempt that failed', async () => {
     const base = fakeServices({ research: async () => null });
     let clips = 0;
@@ -2593,7 +2614,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
 
       const resumed = mediaServices();
       expect(
-        await executeGenerationRun(takeover, {
+        await executeGenerationRun(takeover!, {
           services: resumed.services,
           signal: new AbortController().signal,
         }),

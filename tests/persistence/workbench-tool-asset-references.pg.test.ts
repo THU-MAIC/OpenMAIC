@@ -81,7 +81,7 @@ describe.skipIf(!contractUrl)('workbench tool media through the asset pool', () 
 
   beforeEach(async () => {
     await pool.query(
-      'TRUNCATE asset_root_refs, document_asset_refs, document_asset_withdrawals, asset_entries, asset_blobs, ' +
+      'TRUNCATE asset_root_refs, document_asset_refs, document_asset_withdrawals, asset_entries, asset_blob_stages, asset_blobs, ' +
         'stage_meta, document_stages CASCADE',
     );
   });

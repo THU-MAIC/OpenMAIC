@@ -45,8 +45,11 @@ import {
   X,
 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import type { MaterialExtractionReasonCode } from '@/lib/types/material-extraction-failure';
-import { MEDIA_MAX_DURATION_SEC } from '@/lib/types/media-limits';
+import {
+  extractionFailureDescription,
+  type MaterialExtractionReasonCode,
+  type MaterialExtractionReasonValues,
+} from '@/lib/types/material-extraction-failure';
 import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils/cn';
@@ -195,37 +198,22 @@ function FolderIcon({ open }: { readonly open?: boolean }) {
   );
 }
 
-const failureCopy: Record<
-  MaterialExtractionReasonCode,
-  { label: string; description: string; values?: Record<string, unknown> }
-> = {
-  storage_full: {
-    label: 'workspace.knowledgeBase.failure.storage_full.label',
-    description: 'workspace.knowledgeBase.failure.storage_full.description',
-  },
-  source_unavailable: {
-    label: 'workspace.knowledgeBase.failure.source_unavailable.label',
-    description: 'workspace.knowledgeBase.failure.source_unavailable.description',
-  },
-  service_unavailable: {
-    label: 'workspace.knowledgeBase.failure.service_unavailable.label',
-    description: 'workspace.knowledgeBase.failure.service_unavailable.description',
-  },
-  media_too_long: {
-    label: 'workspace.knowledgeBase.failure.media_too_long.label',
-    description: 'workspace.knowledgeBase.failure.media_too_long.description',
-    // The extractor's own limit, so the explanation cannot drift from it.
-    values: { minutes: MEDIA_MAX_DURATION_SEC / 60 },
-  },
-  no_text_extracted: {
-    label: 'workspace.knowledgeBase.failure.no_text_extracted.label',
-    description: 'workspace.knowledgeBase.failure.no_text_extracted.description',
-  },
-  processing_interrupted: {
-    label: 'workspace.knowledgeBase.failure.processing_interrupted.label',
-    description: 'workspace.knowledgeBase.failure.processing_interrupted.description',
-  },
-};
+/**
+ * A known reason's label and explanation; the explanation states the numbers
+ * the refusal carried (or the extractor's own limit), and drops a number the
+ * service did not say.
+ */
+function failureCopyOf(
+  reasonCode: MaterialExtractionReasonCode,
+  reasonValues?: MaterialExtractionReasonValues,
+): { label: string; description: string; values?: Record<string, number> } {
+  const { key, values } = extractionFailureDescription(reasonCode, reasonValues);
+  return {
+    label: `workspace.knowledgeBase.failure.${reasonCode}.label`,
+    description: `workspace.knowledgeBase.failure.${reasonCode}.${key}`,
+    ...(Object.keys(values).length ? { values } : {}),
+  };
+}
 
 /** Only known reasons get a user explanation; diagnostic text never enters the row. */
 const STATUS_TONE = {
@@ -260,7 +248,10 @@ function StatusLabel({
   readonly compact?: boolean;
 }) {
   const { status, reasonCode } = material.extraction;
-  const failure = status === 'failed' && reasonCode ? failureCopy[reasonCode] : undefined;
+  const failure =
+    status === 'failed' && reasonCode
+      ? failureCopyOf(reasonCode, material.extraction.reasonValues)
+      : undefined;
   const tone =
     STATUS_TONE[
       parsing(status)
@@ -1267,7 +1258,13 @@ export function MaterialLibraryPage({
         onSelect: openFrom(() => setDeleting({ kind: 'material', material })),
       },
     ];
-    if (material.extraction.reasonCode === 'service_unavailable' && items[0]?.id === 'parse') {
+    // Parsing again cannot fix these until something else changes (a parser
+    // is configured; the PDF is split), so it is not the first action.
+    if (
+      (material.extraction.reasonCode === 'service_unavailable' ||
+        material.extraction.reasonCode === 'too_many_pages') &&
+      items[0]?.id === 'parse'
+    ) {
       const parse = items.shift()!;
       items.splice(items.length - 1, 0, parse);
     }
