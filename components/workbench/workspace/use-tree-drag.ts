@@ -77,6 +77,40 @@ const outsideZone = (
   return at < start + margin || at > start + length - margin;
 };
 
+/**
+ * How far (CSS px) a grid gap reaches: a pointer in the gutter between cards,
+ * or between two rows of cards, belongs to the nearest card within this
+ * distance, so the insertion line it would draw does not vanish exactly where
+ * a person aims to drop.
+ */
+const GRID_GAP_REACH_PX = 48;
+
+/** The nearest reorderable row of `kind` owned by `owner`, other than `skipId`, within reach. */
+const nearestGridRow = (
+  point: { readonly x: number; readonly y: number },
+  kind: string,
+  owner: string,
+  skipId: string,
+  within: HTMLElement | null | undefined,
+): HTMLElement | null => {
+  const scope = within ?? document;
+  let best: HTMLElement | null = null;
+  let bestDistance = GRID_GAP_REACH_PX;
+  for (const row of scope.querySelectorAll<HTMLElement>(`[data-ws-drop-kind="${kind}"]`)) {
+    if (row.dataset.wsDragOwner !== owner || row.dataset.wsDropId === skipId) continue;
+    const rect = row.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) continue;
+    const dx = Math.max(rect.left - point.x, 0, point.x - rect.right);
+    const dy = Math.max(rect.top - point.y, 0, point.y - rect.bottom);
+    const distance = Math.hypot(dx, dy);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = row;
+    }
+  }
+  return best;
+};
+
 export type DragKind = 'course' | 'session' | 'material';
 
 /** Where the insertion hairline is drawn right now. */
@@ -201,7 +235,11 @@ export function useTreeDrag({
       }
       hover(null);
       const row = callbacks.current.onReorder
-        ? under?.closest<HTMLElement>(`[data-ws-drop-kind="${g.kind}"]`)
+        ? (under?.closest<HTMLElement>(`[data-ws-drop-kind="${g.kind}"]`) ??
+          // A grid's gutters are part of the drop: the nearest card takes them.
+          (axis === 'horizontal' && (!scrollRef || under)
+            ? nearestGridRow(point, g.kind, owner, g.id, scrollRef?.current)
+            : null))
         : null;
       const rowId = row?.dataset.wsDropId;
       if (!row || row.dataset.wsDragOwner !== owner || !rowId || rowId === g.id) {

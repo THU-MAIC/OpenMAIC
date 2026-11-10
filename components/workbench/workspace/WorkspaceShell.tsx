@@ -1693,21 +1693,33 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   // folds the navigation, once, as a view state: the teacher's saved rail
   // preference is never written for it. See `homeRequest`.
   const previewPaneOpen = previewShowing && !collapse.value.classroom;
+  // The preview became its course's tab, in place: the same thing being built
+  // is still what is on screen, so the fold holds through the handoff instead
+  // of the rail springing open when the first page lands.
+  const handedOffOnScreen =
+    homeRequest.requestKey !== null &&
+    previewCourseId !== null &&
+    panes.courseId === previewCourseId &&
+    classroomOpen &&
+    !collapse.value.classroom;
+  const homeSurfaceOpen = previewPaneOpen || handedOffOnScreen;
   const homePreview =
     homeRequest.sessionId !== null &&
     homeRequest.sessionId === attachedSessionId &&
     !homeRequest.used &&
-    (homeRequest.requestKey === null || homeRequest.requestKey === previewTab.requestKey);
+    (homeRequest.requestKey === null ||
+      homeRequest.requestKey === previewTab.requestKey ||
+      handedOffOnScreen);
   if (homePreview && previewPaneOpen && homeRequest.requestKey === null && previewTab.requestKey) {
     // The home request's preview is on screen: this is the one it folds for.
     setHomeRequest({ ...homeRequest, requestKey: previewTab.requestKey });
   }
-  if (homeRequest.requestKey !== null && !homeRequest.used && !(homePreview && previewPaneOpen)) {
+  if (homeRequest.requestKey !== null && !homeRequest.used && !(homePreview && homeSurfaceOpen)) {
     // It left the screen (another tab, a fold, the next request, another
     // conversation): the fold is spent, and showing it again leaves the rail be.
     setHomeRequest({ ...homeRequest, used: true });
   }
-  const autoFold = homePreview && previewPaneOpen && homeRequest.requestKey !== null;
+  const autoFold = homePreview && homeSurfaceOpen && homeRequest.requestKey !== null;
   const paneSteady = usePaneSteady(previewPaneOpen || (Boolean(panes.courseId) && classroomOpen));
   const [navReopenedForPreview, setNavReopenedForPreview] = useState(false);
   if (!autoFold && navReopenedForPreview) setNavReopenedForPreview(false);
