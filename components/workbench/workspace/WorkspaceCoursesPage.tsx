@@ -17,11 +17,27 @@
  * default, selected; a rename turns the name into that field. Enter or leaving
  * the field saves, Escape cancels.
  *
- * Courses are dragged, the classic home's way and with the rail's gesture
- * (`use-tree-drag`): onto a folder card to file them, onto "All courses" (or
- * the drop zone that appears) to take them out of the folder on screen, and
- * between two cards to reorder. The manual order is a per-browser preference
- * (`workspace-order`); with none, the most recently edited come first.
+ * The top level is ONE list of folders and courses (`library-order`): most
+ * recent activity first, a folder's activity being its newest course's. A
+ * search lists matching folders and courses the same way; a folder's view
+ * lists its courses. Runs whose course does not exist yet come right after
+ * the pinned items: they are the newest activity, but have nothing to pin and
+ * no place in the manual order.
+ *
+ * Cards are dragged, the classic home's way and with the rail's gesture
+ * (`use-tree-drag`): a course onto the middle of a folder card to file it,
+ * onto "All courses" (or the drop zone that appears) to take it out of the
+ * folder on screen, and any card beside another to reorder — folders and
+ * courses among each other. The manual order is a per-browser preference
+ * (`workspace-order`, typed keys; an older course-only order still orders the
+ * courses).
+ *
+ * A card's ⋯ also pins it, folder or course (per browser too): pinned items
+ * come first in every view, most recently pinned first, and the seeded guide
+ * course is pinned until the user unpins it. The pinned block is ordered by
+ * pin time, not by dragging: a pinned card is neither moved by a reorder nor
+ * a place to drop one (a pinned course can still be filed, and a pinned folder
+ * still takes courses), so a drag only ever reorders the unpinned items.
  *
  * Opening a course opens it in the classroom pane.
  */
@@ -40,6 +56,8 @@ import {
   ChevronRight,
   FolderInput,
   FolderPlus,
+  Pin,
+  PinOff,
   Plus,
   Search,
   Upload,
@@ -74,6 +92,7 @@ import {
 } from '@/lib/utils/folder-name-validation';
 import { MoveToFolderMenu } from '@/components/discovery/move-to-folder-menu';
 import {
+  DropdownMenuItem,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -97,13 +116,25 @@ import { WorkspaceRowMenu } from './workspace-row-controls';
 import { InlineName, newFolderName, type CommitCause } from './inline-name';
 import { useTreeDrag, type DragKind } from './use-tree-drag';
 import {
-  applyCustomOrder,
   COURSE_ORDER_STORAGE_KEY,
-  parseOrder,
   reorderIds,
   serializeOrder,
   type DropTarget,
 } from '@/lib/workbench/workspace-order';
+import {
+  LIBRARY_PINS_STORAGE_KEY,
+  NO_PINS,
+  orderLibrary,
+  parseKey,
+  parseLibraryOrder,
+  parsePins,
+  pinItem,
+  pinnedIds,
+  prunePins,
+  serializePins,
+  unpinItem,
+  type LibraryPins,
+} from '@/lib/workbench/library-order';
 import { cn } from '@/lib/utils/cn';
 
 type Discovery = ReturnType<typeof useHomeDiscovery>;
@@ -372,30 +403,56 @@ export function WorkspaceCoursesPage({
     () => new Set(courses.folders.map((item) => item.id)),
     [courses.folders],
   );
-  // ── Manual order ─────────────────────────────────────────────────────
-  // Read once on the client (storage does not exist during SSR), applied over
-  // newest-first before anything filters, so every view inherits it.
-  const [courseOrder, setCourseOrder] = useState<readonly string[]>(NO_ORDER);
+  // ── Order: folders and courses as one list ───────────────────────
+  // The manual order and the pins are read once on the client (storage does
+  // not exist during SSR) and applied over most-recent-activity-first before
+  // anything filters, so every view inherits them (`library-order`).
+  const [libraryOrder, setLibraryOrder] = useState<readonly string[]>(NO_ORDER);
+  const [pins, setPins] = useState<LibraryPins>(NO_PINS);
   useEffect(() => {
-    setCourseOrder(parseOrder(readStored(COURSE_ORDER_STORAGE_KEY)));
+    setLibraryOrder(parseLibraryOrder(readStored(COURSE_ORDER_STORAGE_KEY)));
+    setPins(parsePins(readStored(LIBRARY_PINS_STORAGE_KEY)));
   }, []);
+  const updatePins = useCallback((change: (current: LibraryPins) => LibraryPins) => {
+    setPins((current) => {
+      const next = change(current);
+      if (next !== current) writeStored(LIBRARY_PINS_STORAGE_KEY, serializePins(next));
+      return next;
+    });
+  }, []);
+  const libraryFolders = foldersAvailable ? courses.folders : NO_FOLDERS;
   const ordered = useMemo(
-    () =>
-      applyCustomOrder(
-        [...courses.classrooms].sort((a, b) => b.updatedAt - a.updatedAt),
-        courseOrder,
-      ),
-    [courses.classrooms, courseOrder],
+    () => orderLibrary(courses.classrooms, libraryFolders, libraryOrder, pins),
+    [courses.classrooms, libraryFolders, libraryOrder, pins],
   );
+  const orderedKeys = useMemo(() => ordered.map((entry) => entry.id), [ordered]);
+  // A deleted item's pin goes with it — only once the list is authoritative,
+  // never against the empty list of a first load.
+  useEffect(() => {
+    if (courses.state !== 'ready') return;
+    updatePins((current) => prunePins(current, orderedKeys));
+  }, [courses.state, orderedKeys, updatePins]);
+  const pinned = useMemo(() => new Set(pinnedIds(pins, orderedKeys)), [orderedKeys, pins]);
+  const togglePin = (key: string) =>
+    updatePins((current) => (pinned.has(key) ? unpinItem(current, key) : pinItem(current, key)));
 
   const visible = useMemo(() => {
-    const newest = ordered;
-    // A search looks through the whole library: a folder is a place, not a filter.
-    if (searching) return filterByName(newest, query);
-    if (activeFolderId) return newest.filter((course) => course.folderId === activeFolderId);
-    // The top level: the folders' cards, then the courses in no folder (one
-    // whose folder is gone counts as in none).
-    return newest.filter((course) => !course.folderId || !knownFolders.has(course.folderId));
+    // A search looks through the whole library, folders and courses alike: a
+    // folder is a place, not a filter.
+    if (searching) return filterByName(ordered, query);
+    if (activeFolderId) {
+      return ordered.filter(
+        (entry) => entry.kind === 'course' && entry.course.folderId === activeFolderId,
+      );
+    }
+    // The top level: the folders and the courses in no folder (one whose
+    // folder is gone counts as in none), as one list.
+    return ordered.filter(
+      (entry) =>
+        entry.kind === 'folder' ||
+        !entry.course.folderId ||
+        !knownFolders.has(entry.course.folderId),
+    );
   }, [activeFolderId, knownFolders, ordered, query, searching]);
 
   /**
@@ -428,7 +485,13 @@ export function WorkspaceCoursesPage({
   const pageKey = `${activeFolderId ?? ''}\u0000${searching ? query : ''}`;
   const [paging, setPaging] = useState({ key: pageKey, count: COURSE_PAGE_SIZE });
   const shownCount = paging.key === pageKey ? paging.count : COURSE_PAGE_SIZE;
-  const shownCourses = visible.length > shownCount ? visible.slice(0, shownCount) : visible;
+  const shownEntries = visible.length > shownCount ? visible.slice(0, shownCount) : visible;
+  // Runs whose course does not exist yet sit right after the pinned items:
+  // they are the most recent activity there is, but have no place in the
+  // manual order and nothing to pin.
+  let pinnedShown = 0;
+  while (pinnedShown < shownEntries.length && pinned.has(shownEntries[pinnedShown].id))
+    pinnedShown += 1;
   const hasMore = visible.length > shownCount;
   const moreSentinel = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -449,26 +512,43 @@ export function WorkspaceCoursesPage({
   }, [hasMore, pageKey, shownCount]);
 
   // ── Drag: file into a folder, out of one, or reorder ────────────────
+  // Every card is a row of one kind, keyed by its typed key, so folders and
+  // courses reorder among each other. A folder card is also where a course is
+  // filed: its middle files, its edges place the course beside it.
   const drag = useTreeDrag({
     axis: 'horizontal',
+    fileZone: FOLDER_FILE_ZONE,
     onReorder: (_kind: DragKind, dragId: string, target: DropTarget) => {
-      const next = reorderIds(
-        ordered.map((course) => course.id),
-        dragId,
-        target,
-      );
-      setCourseOrder(next);
+      // The pinned block is ordered by pin time; only the rest is dragged.
+      const anchor = 'before' in target ? target.before : target.after;
+      if (pinned.has(dragId) || pinned.has(anchor)) return;
+      const next = reorderIds(orderedKeys, dragId, target);
+      if (next === orderedKeys) return;
+      setLibraryOrder(next);
       writeStored(COURSE_ORDER_STORAGE_KEY, serializeOrder(next));
     },
-    onMoveToFolder: (courseId: string, target: string | undefined) => {
+    onMoveToFolder: (dragKey: string, target: string | undefined) => {
+      const { kind, id: courseId } = parseKey(dragKey);
+      if (kind !== 'course') return;
       const current = courses.classrooms.find((course) => course.id === courseId)?.folderId;
       // Onto the folder it is in, or out of none: not a move.
       if ((current ?? undefined) === target) return;
       void courses.moveCourse(courseId, target);
     },
   });
+  /** What is being carried, if anything. */
+  const carrying = drag.dragId ? parseKey(drag.dragId).kind : null;
+  /** The drop props of a card: pinned cards are not a place to reorder to. */
+  const cardDragProps = (key: string) =>
+    pinned.has(key)
+      ? { ...drag.rowProps('course', key), 'data-ws-drop-kind': undefined }
+      : drag.rowProps('course', key);
+  const cardDropEdge = (key: string) =>
+    drag.dragId && !pinned.has(drag.dragId) && drag.indicator?.rowId === key
+      ? drag.indicator.edge
+      : null;
   /** A course from the folder on screen is in flight: it can be taken out. */
-  const carryingOut = drag.dragKind === 'course' && !!activeFolderId && !searching;
+  const carryingOut = carrying === 'course' && !!activeFolderId && !searching;
 
   useEffect(() => {
     retainThumbnails(new Set(courses.classrooms.map((course) => course.id)));
@@ -476,9 +556,106 @@ export function WorkspaceCoursesPage({
 
   const showPending = atTop && pendingRuns.length > 0;
   const empty =
-    visible.length === 0 &&
-    !showPending &&
-    !(showFolders && (courses.folders.length > 0 || edit?.kind === 'newFolder'));
+    visible.length === 0 && !showPending && !(showFolders && edit?.kind === 'newFolder');
+
+  /** One card of the grid: a folder or a course. */
+  const renderEntry = (entry: (typeof ordered)[number]) => {
+    if (entry.kind === 'folder') {
+      const item = entry.folder;
+      const covers = folderCovers.get(item.id);
+      const renaming = edit?.kind === 'folder' && edit.targetId === item.id;
+      const isPinned = pinned.has(entry.id);
+      return (
+        <FolderTile
+          key={entry.id}
+          testId={`workspace-courses-folder-card-${item.id}`}
+          openTestId={`workspace-courses-folder-${item.id}`}
+          name={item.name}
+          courseCount={counts.get(item.id) ?? 0}
+          covers={covers?.slides ?? NO_COVERS}
+          candidates={covers?.candidates}
+          requestThumbnail={requestThumbnail}
+          onOpen={() => {
+            // From a search result: the folder is a place to go to.
+            setQuery('');
+            setFolderId(item.id);
+          }}
+          pinned={isPinned}
+          dropProps={{
+            ...cardDragProps(entry.id),
+            // A folder is not filed into a folder.
+            ...(carrying === 'folder' ? {} : (drag.folderProps(item.id) as Record<string, string>)),
+          }}
+          dropActive={carrying === 'course' && drag.folderTarget === item.id}
+          dragging={drag.dragId === entry.id}
+          dropEdge={cardDropEdge(entry.id)}
+          nameField={
+            renaming
+              ? nameField(
+                  edit,
+                  `workspace-courses-folder-rename-${item.id}`,
+                  t('classroom.folderNameLabel'),
+                )
+              : null
+          }
+          menu={
+            renaming ? null : (
+              <WorkspaceRowMenu
+                testId={`workspace-courses-folder-more-${item.id}`}
+                label={item.name}
+                triggerClassName="ws-card-more-btn"
+                onRename={() => startEdit('folder', item.id, item.name)}
+                extraItems={
+                  <PinMenuItem
+                    testId={`workspace-courses-folder-more-${item.id}`}
+                    pinned={isPinned}
+                    onToggle={() => togglePin(entry.id)}
+                  />
+                }
+                // Asked as a question rather than confirmed in the menu: this
+                // delete moves courses, and that needs a sentence.
+                onDelete={() => setFolderToDelete(item)}
+                deleteAsksElsewhere
+              />
+            )
+          }
+        />
+      );
+    }
+    const course = entry.course;
+    return (
+      <CourseCard
+        key={entry.id}
+        course={course}
+        run={courseRuns.get(course.id)}
+        slide={thumbnails[course.id]}
+        requestThumbnail={requestThumbnail}
+        onOpen={() => onOpenCourse(course.id)}
+        folders={foldersAvailable ? courses.folders : null}
+        onMove={(target) => void courses.moveCourse(course.id, target)}
+        onCreateAndMove={() => startNewFolder(course.id)}
+        nameField={
+          edit?.kind === 'course' && edit.targetId === course.id
+            ? nameField(edit, `workspace-courses-rename-${course.id}`, t('classroom.rename'))
+            : null
+        }
+        // While its name is a field, or a folder is being drafted for
+        // it, the card's ⋯ steps aside: the menu handing the focus back
+        // to its button would end the edit.
+        busyWithEdit={
+          (edit?.kind === 'course' && edit.targetId === course.id) ||
+          edit?.moveCourseId === course.id
+        }
+        onStartRename={() => startEdit('course', course.id, course.name)}
+        onDelete={() => onDeleteCourse(course.id)}
+        pinned={pinned.has(entry.id)}
+        onTogglePin={() => togglePin(entry.id)}
+        dragProps={cardDragProps(entry.id)}
+        dragging={drag.dragId === entry.id}
+        dropEdge={cardDropEdge(entry.id)}
+      />
+    );
+  };
 
   return (
     <main
@@ -636,90 +813,13 @@ export function WorkspaceCoursesPage({
                 )}
               />
             ) : null}
-            {showFolders
-              ? courses.folders.map((item) => {
-                  const covers = folderCovers.get(item.id);
-                  const renaming = edit?.kind === 'folder' && edit.targetId === item.id;
-                  return (
-                    <FolderTile
-                      key={item.id}
-                      testId={`workspace-courses-folder-card-${item.id}`}
-                      openTestId={`workspace-courses-folder-${item.id}`}
-                      name={item.name}
-                      courseCount={counts.get(item.id) ?? 0}
-                      covers={covers?.slides ?? NO_COVERS}
-                      candidates={covers?.candidates}
-                      requestThumbnail={requestThumbnail}
-                      onOpen={() => setFolderId(item.id)}
-                      dropProps={drag.folderProps(item.id) as Record<string, string>}
-                      dropActive={drag.dragKind === 'course' && drag.folderTarget === item.id}
-                      nameField={
-                        renaming
-                          ? nameField(
-                              edit,
-                              `workspace-courses-folder-rename-${item.id}`,
-                              t('classroom.folderNameLabel'),
-                            )
-                          : null
-                      }
-                      menu={
-                        renaming ? null : (
-                          <WorkspaceRowMenu
-                            testId={`workspace-courses-folder-more-${item.id}`}
-                            label={item.name}
-                            triggerClassName="ws-card-more-btn"
-                            onRename={() => startEdit('folder', item.id, item.name)}
-                            // Asked as a question rather than confirmed in the
-                            // menu: this delete moves courses, and that needs a
-                            // sentence.
-                            onDelete={() => setFolderToDelete(item)}
-                            deleteAsksElsewhere
-                          />
-                        )
-                      }
-                    />
-                  );
-                })
-              : null}
+            {shownEntries.slice(0, pinnedShown).map(renderEntry)}
             {showPending
               ? pendingRuns.map((run) => (
                   <PendingRunCard key={run.id} run={run} onDiscard={onDiscardRun} />
                 ))
               : null}
-            {shownCourses.map((course) => (
-              <CourseCard
-                key={course.id}
-                course={course}
-                run={courseRuns.get(course.id)}
-                slide={thumbnails[course.id]}
-                requestThumbnail={requestThumbnail}
-                onOpen={() => onOpenCourse(course.id)}
-                folders={foldersAvailable ? courses.folders : null}
-                onMove={(target) => void courses.moveCourse(course.id, target)}
-                onCreateAndMove={() => startNewFolder(course.id)}
-                nameField={
-                  edit?.kind === 'course' && edit.targetId === course.id
-                    ? nameField(
-                        edit,
-                        `workspace-courses-rename-${course.id}`,
-                        t('classroom.rename'),
-                      )
-                    : null
-                }
-                // While its name is a field, or a folder is being drafted for
-                // it, the card's ⋯ steps aside: the menu handing the focus back
-                // to its button would end the edit.
-                busyWithEdit={
-                  (edit?.kind === 'course' && edit.targetId === course.id) ||
-                  edit?.moveCourseId === course.id
-                }
-                onStartRename={() => startEdit('course', course.id, course.name)}
-                onDelete={() => onDeleteCourse(course.id)}
-                dragProps={drag.rowProps('course', course.id)}
-                dragging={drag.dragId === course.id}
-                dropEdge={drag.indicator?.rowId === course.id ? drag.indicator.edge : null}
-              />
-            ))}
+            {shownEntries.slice(pinnedShown).map(renderEntry)}
           </div>
         )}
         {hasMore ? (
@@ -776,6 +876,45 @@ export function WorkspaceCoursesPage({
 const COURSE_PAGE_SIZE = 24;
 const NO_COVERS: Slide[] = [];
 const NO_ORDER: readonly string[] = [];
+const NO_FOLDERS: Discovery['folders'] = [];
+/** The middle share of a folder card that files a course into it. */
+const FOLDER_FILE_ZONE = 0.5;
+
+/** "Pin to top" / "Unpin", shared by the course and folder cards' ⋯. */
+function PinMenuItem({
+  testId,
+  pinned,
+  onToggle,
+}: {
+  readonly testId: string;
+  readonly pinned: boolean;
+  readonly onToggle: () => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <DropdownMenuItem data-testid={`${testId}-${pinned ? 'unpin' : 'pin'}`} onSelect={onToggle}>
+      {pinned ? (
+        <PinOff className="size-3.5" aria-hidden="true" />
+      ) : (
+        <Pin className="size-3.5" aria-hidden="true" />
+      )}
+      {pinned ? t('workspace.coursesPage.unpin') : t('workspace.coursesPage.pin')}
+    </DropdownMenuItem>
+  );
+}
+
+/** The small pin before a pinned card's name. */
+function PinnedMark({ testId }: { readonly testId: string }) {
+  const { t } = useI18n();
+  return (
+    <Pin
+      data-testid={testId}
+      className="size-3.5 shrink-0 rotate-45 text-[color:var(--ws-ink-mute)]"
+      aria-label={t('workspace.coursesPage.pinned')}
+      role="img"
+    />
+  );
+}
 
 function readStored(key: string): string | null {
   try {
@@ -813,11 +952,21 @@ function FolderTile({
   menu,
   dropProps,
   dropActive = false,
+  pinned = false,
+  dragging = false,
+  dropEdge = null,
 }: {
   readonly testId: string;
   readonly openTestId?: string;
-  /** `use-tree-drag`'s container hooks: a course dropped here is filed in. */
-  readonly dropProps?: Record<string, string>;
+  /**
+   * `use-tree-drag`'s hooks: the card as a row (dragged and reordered with the
+   * courses) and as a container (a course dropped on it is filed in).
+   */
+  readonly dropProps?: Record<string, unknown>;
+  readonly pinned?: boolean;
+  readonly dragging?: boolean;
+  /** The side of this card a dragged item will land on. */
+  readonly dropEdge?: 'before' | 'after' | null;
   /** A course is over this card right now. */
   readonly dropActive?: boolean;
   readonly name: string;
@@ -874,8 +1023,13 @@ function FolderTile({
   return (
     <div
       data-testid={testId}
-      {...(nameField ? {} : dropProps)}
-      className="ws-card-wrap group relative min-w-0"
+      {...(nameField ? {} : (dropProps as ComponentProps<'div'> | undefined))}
+      className={cn(
+        'ws-card-wrap group relative min-w-0',
+        dragging && 'ws-card-dragging',
+        dropEdge === 'before' && 'ws-card-drop-before',
+        dropEdge === 'after' && 'ws-card-drop-after',
+      )}
     >
       {nameField ? (
         <>
@@ -889,6 +1043,8 @@ function FolderTile({
         <button
           type="button"
           data-testid={openTestId}
+          draggable={false}
+          data-pinned={pinned ? 'true' : undefined}
           onClick={onOpen}
           title={name}
           className="block w-full text-left"
@@ -896,6 +1052,7 @@ function FolderTile({
           {frame}
           <div className="mt-2.5 flex items-center gap-2 px-1">
             {badge}
+            {pinned ? <PinnedMark testId={`${testId}-pinned`} /> : null}
             <span className="ws-course-card-name mt-0! min-w-0 truncate">{name}</span>
           </div>
         </button>
@@ -922,6 +1079,8 @@ function CourseCard({
   busyWithEdit,
   onStartRename,
   onDelete,
+  pinned,
+  onTogglePin,
   dragProps,
   dragging = false,
   dropEdge = null,
@@ -940,6 +1099,9 @@ function CourseCard({
   readonly nameField: ReactNode;
   readonly busyWithEdit: boolean;
   readonly onStartRename: () => void;
+  /** Pinned to the top of My courses (`course-pins`). */
+  readonly pinned: boolean;
+  readonly onTogglePin: () => void;
   /** `use-tree-drag`'s row hooks; a course its run still produces is not dragged. */
   readonly dragProps?: Record<string, unknown>;
   readonly dragging?: boolean;
@@ -990,6 +1152,7 @@ function CourseCard({
         draggable={false}
         data-testid={`workspace-courses-card-${course.id}`}
         data-generating={status ? 'true' : undefined}
+        data-pinned={pinned ? 'true' : undefined}
         onClick={open}
         aria-disabled={open ? undefined : true}
         className="ws-course-card w-full text-left"
@@ -1014,7 +1177,12 @@ function CourseCard({
             </span>
           ) : null}
         </div>
-        {nameField ? null : <div className="ws-course-card-name">{name}</div>}
+        {nameField ? null : (
+          <div className="ws-course-card-name flex min-w-0 items-center gap-1.5">
+            {pinned ? <PinnedMark testId={`workspace-courses-pinned-${course.id}`} /> : null}
+            <span className="min-w-0 truncate">{name}</span>
+          </div>
+        )}
         {nameField ? null : (
           <div className="ws-course-card-meta">
             {t('workspace.sceneCount', { count: course.sceneCount })}
@@ -1032,27 +1200,36 @@ function CourseCard({
             triggerClassName="ws-card-more-btn"
             onRename={onStartRename}
             extraItems={
-              folders ? (
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger data-testid={`workspace-courses-more-${course.id}-move`}>
-                    <FolderInput className="size-3.5" aria-hidden="true" />
-                    {t('classroom.moveToFolder')}
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent className="pro-popover w-52">
-                    <MoveToFolderMenu
-                      variant="items"
-                      folders={folders}
-                      currentFolderId={
-                        folders.some((folder) => folder.id === course.folderId)
-                          ? course.folderId
-                          : undefined
-                      }
-                      onMove={onMove}
-                      onCreateAndMove={onCreateAndMove}
-                    />
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-              ) : null
+              <>
+                <PinMenuItem
+                  testId={`workspace-courses-more-${course.id}`}
+                  pinned={pinned}
+                  onToggle={onTogglePin}
+                />
+                {folders ? (
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger
+                      data-testid={`workspace-courses-more-${course.id}-move`}
+                    >
+                      <FolderInput className="size-3.5" aria-hidden="true" />
+                      {t('classroom.moveToFolder')}
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="pro-popover w-52">
+                      <MoveToFolderMenu
+                        variant="items"
+                        folders={folders}
+                        currentFolderId={
+                          folders.some((folder) => folder.id === course.folderId)
+                            ? course.folderId
+                            : undefined
+                        }
+                        onMove={onMove}
+                        onCreateAndMove={onCreateAndMove}
+                      />
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                ) : null}
+              </>
             }
             onDelete={onDelete}
           />

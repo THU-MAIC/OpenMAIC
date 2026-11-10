@@ -2535,7 +2535,10 @@
       "results": "Résultats",
       "allCourses": "Tous les cours",
       "emptyHint": "Décrivez un sujet sur l’accueil et votre premier cours apparaîtra ici.",
-      "makeCourse": "Créer un cours"
+      "makeCourse": "Créer un cours",
+      "pin": "Épingler en haut",
+      "unpin": "Désépingler",
+      "pinned": "Épinglé"
     },
     "fullscreen": {
       "expand": "Plein écran",

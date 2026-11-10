@@ -11,7 +11,7 @@
 
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 vi.mock('@/lib/hooks/use-i18n', () => ({
   useI18n: () => ({ t: (key: string) => key }),
@@ -149,9 +149,10 @@ describe('folders as cards', () => {
       ),
     ].map((card) => card.dataset.testid);
 
-  it('lead the one course grid, with the courses in no folder after them', async () => {
+  it('share one grid with the courses in no folder, most recent activity first', async () => {
     await renderPage();
-    expect(gridIds()).toEqual(['workspace-courses-folder-card-f1', 'workspace-courses-card-c1']);
+    // The folder's activity is its newest course's (c2, older than c1).
+    expect(gridIds()).toEqual(['workspace-courses-card-c1', 'workspace-courses-folder-card-f1']);
     const card = byTestId('workspace-courses-folder-card-f1')!;
     expect(card.textContent).toContain('Math');
     expect(card.textContent).toContain('classroom.folderBadge');
@@ -165,7 +166,7 @@ describe('folders as cards', () => {
     expect(byTestId('workspace-courses-folder-title')?.textContent).toBe('Math');
     expect(gridIds()).toEqual(['workspace-courses-card-c2']);
     await act(async () => byTestId('workspace-courses-back')!.click());
-    expect(gridIds()).toEqual(['workspace-courses-folder-card-f1', 'workspace-courses-card-c1']);
+    expect(gridIds()).toEqual(['workspace-courses-card-c1', 'workspace-courses-folder-card-f1']);
   });
 
   it('take a draft card at the head of the grid for a new folder', async () => {
@@ -354,11 +355,211 @@ describe('dragging courses', () => {
     await carry('c1', byTestId('workspace-courses-card-c3')!.parentElement!);
     expect(order()).toEqual(['workspace-courses-card-c3', 'workspace-courses-card-c1']);
     expect(moveCourse).not.toHaveBeenCalled();
-    // The whole library's sequence: the filed course keeps its place in it.
+    // The whole library's sequence, as typed keys: the folder and the filed
+    // course keep their places in it.
     expect(JSON.parse(window.localStorage.getItem('openmaic:workspace:course-order')!)).toEqual([
-      'c2',
-      'c3',
-      'c1',
+      'folder:f1',
+      'course:c2',
+      'course:c3',
+      'course:c1',
     ]);
+  });
+});
+
+describe('pinned courses', () => {
+  const GUIDE = 'stage-guide-0123456789abcdef';
+  const guide = { id: GUIDE, name: 'Getting started', sceneCount: 4, createdAt: 0, updatedAt: 0 };
+  const geometry = { id: 'c3', name: 'Geometry', sceneCount: 2, createdAt: 1, updatedAt: 1 };
+  const order = () =>
+    [...document.querySelectorAll<HTMLElement>('[data-testid^="workspace-courses-card-"]')].map(
+      (card) => card.dataset.testid!.replace('workspace-courses-card-', ''),
+    );
+  const stored = () => window.localStorage.getItem('openmaic:workspace:course-pins');
+
+  it('puts the guide course first by default, marked, without writing anything', async () => {
+    await renderPage([guide, geometry]);
+    expect(order()).toEqual([GUIDE, 'c1', 'c3']);
+    expect(byTestId(`workspace-courses-pinned-${GUIDE}`)).not.toBeNull();
+    expect(byTestId('workspace-courses-pinned-c1')).toBeNull();
+    expect(stored()).toBeNull();
+  });
+
+  it('pins from the card’s ⋯, most recently pinned first, and remembers it', async () => {
+    await renderPage([guide, geometry]);
+    await openMenu('workspace-courses-more-c3');
+    await act(async () => byTestId('workspace-courses-more-c3-pin')!.click());
+    expect(order()).toEqual(['c3', GUIDE, 'c1']);
+    expect(byTestId('workspace-courses-pinned-c3')).not.toBeNull();
+    expect(JSON.parse(stored()!)).toEqual({ pinned: ['course:c3'], unpinned: [] });
+  });
+
+  it('remembers that the guide course was unpinned', async () => {
+    await renderPage([guide, geometry]);
+    await openMenu(`workspace-courses-more-${GUIDE}`);
+    await act(async () => byTestId(`workspace-courses-more-${GUIDE}-unpin`)!.click());
+    expect(order()).toEqual(['c1', 'c3', GUIDE]);
+    expect(byTestId(`workspace-courses-pinned-${GUIDE}`)).toBeNull();
+    expect(JSON.parse(stored()!)).toEqual({ pinned: [], unpinned: [`course:${GUIDE}`] });
+  });
+
+  it('reads stored pins and prunes the ones whose course is gone', async () => {
+    window.localStorage.setItem(
+      'openmaic:workspace:course-pins',
+      JSON.stringify({ pinned: ['gone', 'c3'], unpinned: [GUIDE] }),
+    );
+    await renderPage([guide, geometry]);
+    expect(order()).toEqual(['c3', 'c1', GUIDE]);
+    // Read in the earlier bare-id shape, written back as typed keys.
+    expect(JSON.parse(stored()!)).toEqual({
+      pinned: ['course:c3'],
+      unpinned: [`course:${GUIDE}`],
+    });
+  });
+
+  it('keeps pinned courses first inside a folder', async () => {
+    window.localStorage.setItem(
+      'openmaic:workspace:course-pins',
+      JSON.stringify({ pinned: ['c4'], unpinned: [] }),
+    );
+    await renderPage([
+      { id: 'c4', name: 'Sonnets', sceneCount: 1, createdAt: 0, updatedAt: 0, folderId: 'f1' },
+    ]);
+    await act(async () => byTestId('workspace-courses-folder-f1')!.click());
+    expect(order()).toEqual(['c4', 'c2']);
+  });
+
+  it('keeps matching pinned courses first in search results', async () => {
+    window.localStorage.setItem(
+      'openmaic:workspace:course-pins',
+      JSON.stringify({ pinned: ['c4'], unpinned: [] }),
+    );
+    await renderPage([
+      { id: 'c4', name: 'Fractions II', sceneCount: 1, createdAt: 0, updatedAt: 0 },
+    ]);
+    await typeInto(byTestId('workspace-courses-search') as HTMLInputElement, 'fractions');
+    expect(order()).toEqual(['c4', 'c1']);
+  });
+
+  it('does not take a reorder onto a pinned card', async () => {
+    await renderPage([guide, geometry]);
+    const card = byTestId(`workspace-courses-card-${GUIDE}`)!.parentElement!;
+    expect(card.dataset.wsDropKind).toBeUndefined();
+    expect(byTestId('workspace-courses-card-c1')!.parentElement!.dataset.wsDropKind).toBe('course');
+  });
+});
+
+describe('folders and courses as one list', () => {
+  const GUIDE = 'stage-guide-0123456789abcdef';
+  const keyOf = (card: HTMLElement) => card.dataset.testid!;
+  const gridIds = () =>
+    [
+      ...byTestId('workspace-courses-grid')!.querySelectorAll<HTMLElement>(
+        '[data-testid^="workspace-courses-card-"], [data-testid^="workspace-courses-folder-card-"]:not([data-testid$="-pinned"])',
+      ),
+    ].map((card) => keyOf(card).replace('workspace-courses-', ''));
+  const storedOrder = () =>
+    JSON.parse(window.localStorage.getItem('openmaic:workspace:course-order') ?? 'null');
+
+  /** Drag `from` and release at `clientX` over `target` (whose box is stubbed). */
+  async function dragTo(from: HTMLElement, target: HTMLElement, clientX: number) {
+    const original = document.elementFromPoint;
+    document.elementFromPoint = () => target;
+    try {
+      await act(async () => {
+        from.dispatchEvent(
+          new PointerEvent('pointerdown', { bubbles: true, button: 0, clientX: 0, clientY: 0 }),
+        );
+        window.dispatchEvent(new PointerEvent('pointermove', { clientX, clientY: 20 }));
+      });
+      await act(async () => {
+        window.dispatchEvent(new PointerEvent('pointerup', { clientX, clientY: 20 }));
+      });
+    } finally {
+      document.elementFromPoint = original;
+    }
+  }
+  const stubBox = (element: HTMLElement) => {
+    element.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 200, height: 160, right: 200, bottom: 160 }) as DOMRect;
+  };
+
+  it('pins a folder from its ⋯, ahead of the guide course', async () => {
+    await renderPage([
+      { id: GUIDE, name: 'Getting started', sceneCount: 4, createdAt: 0, updatedAt: 0 },
+    ]);
+    expect(gridIds()).toEqual(['card-' + GUIDE, 'card-c1', 'folder-card-f1']);
+    await openMenu('workspace-courses-folder-more-f1');
+    await act(async () => byTestId('workspace-courses-folder-more-f1-pin')!.click());
+    expect(gridIds()).toEqual(['folder-card-f1', 'card-' + GUIDE, 'card-c1']);
+    expect(byTestId('workspace-courses-folder-card-f1-pinned')).not.toBeNull();
+    expect(JSON.parse(window.localStorage.getItem('openmaic:workspace:course-pins')!)).toEqual({
+      pinned: ['folder:f1'],
+      unpinned: [],
+    });
+
+    await openMenu('workspace-courses-folder-more-f1');
+    await act(async () => byTestId('workspace-courses-folder-more-f1-unpin')!.click());
+    expect(gridIds()).toEqual(['card-' + GUIDE, 'card-c1', 'folder-card-f1']);
+    expect(byTestId('workspace-courses-folder-card-f1-pinned')).toBeNull();
+  });
+
+  it('lists matching folders and courses together in a search', async () => {
+    await renderPage([
+      { id: 'c4', name: 'Math drills', sceneCount: 1, createdAt: 0, updatedAt: 0 },
+    ]);
+    await typeInto(byTestId('workspace-courses-search') as HTMLInputElement, 'math');
+    expect(gridIds()).toEqual(['folder-card-f1', 'card-c4']);
+  });
+
+  it('reorders a folder beside a course', async () => {
+    await renderPage([{ id: 'c3', name: 'Geometry', sceneCount: 2, createdAt: 1, updatedAt: 0 }]);
+    expect(gridIds()).toEqual(['card-c1', 'folder-card-f1', 'card-c3']);
+    const folderCard = byTestId('workspace-courses-folder-card-f1')!;
+    const c3 = byTestId('workspace-courses-card-c3')!;
+    stubBox(c3.parentElement!);
+    await dragTo(folderCard, c3, 190);
+    expect(gridIds()).toEqual(['card-c1', 'card-c3', 'folder-card-f1']);
+    expect(storedOrder()).toEqual(['course:c1', 'course:c2', 'course:c3', 'folder:f1']);
+  });
+
+  it('places a course beside a folder from the card’s edge, files it from the middle', async () => {
+    const { moveCourse } = await renderPage([
+      { id: 'c3', name: 'Geometry', sceneCount: 2, createdAt: 1, updatedAt: 0 },
+    ]);
+    const c3 = byTestId('workspace-courses-card-c3')!;
+    const folderCard = byTestId('workspace-courses-folder-card-f1')!;
+    stubBox(folderCard);
+    await dragTo(c3, byTestId('workspace-courses-folder-f1')!, 10);
+    expect(moveCourse).not.toHaveBeenCalled();
+    expect(gridIds()).toEqual(['card-c1', 'card-c3', 'folder-card-f1']);
+
+    await dragTo(c3, byTestId('workspace-courses-folder-f1')!, 100);
+    expect(moveCourse).toHaveBeenCalledExactlyOnceWith('c3', 'f1');
+  });
+
+  it('never files a folder into a folder', async () => {
+    await renderPage();
+    const folderCard = byTestId('workspace-courses-folder-card-f1')!;
+    const original = document.elementFromPoint;
+    document.elementFromPoint = () => null;
+    onTestFinished(() => {
+      document.elementFromPoint = original;
+    });
+    await act(async () => {
+      folderCard.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0, clientX: 0, clientY: 0 }),
+      );
+      window.dispatchEvent(new PointerEvent('pointermove', { clientX: 30, clientY: 30 }));
+    });
+    expect(folderCard.dataset.wsDropFolder).toBeUndefined();
+    await act(async () => window.dispatchEvent(new PointerEvent('pointercancel')));
+    expect(folderCard.dataset.wsDropFolder).toBe('f1');
+  });
+
+  it('still applies an older course-only order to the courses', async () => {
+    window.localStorage.setItem('openmaic:workspace:course-order', JSON.stringify(['c3', 'c1']));
+    await renderPage([{ id: 'c3', name: 'Geometry', sceneCount: 2, createdAt: 1, updatedAt: 0 }]);
+    // The folder is new to that order, so it leads, as anything new does.
+    expect(gridIds()).toEqual(['folder-card-f1', 'card-c3', 'card-c1']);
   });
 });

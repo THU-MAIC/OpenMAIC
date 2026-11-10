@@ -2535,7 +2535,10 @@
       "results": "Resultados",
       "allCourses": "Todos los cursos",
       "emptyHint": "Describe un tema en la página de inicio y tu primera clase aparecerá aquí.",
-      "makeCourse": "Crear una clase"
+      "makeCourse": "Crear una clase",
+      "pin": "Fijar arriba",
+      "unpin": "Dejar de fijar",
+      "pinned": "Fijado"
     },
     "fullscreen": {
       "expand": "Pantalla completa",

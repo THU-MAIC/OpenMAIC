@@ -2535,7 +2535,10 @@
       "results": "Kết quả tìm kiếm",
       "allCourses": "Tất cả khóa học",
       "emptyHint": "Mô tả một chủ đề ở trang chủ, bài học đầu tiên của bạn sẽ xuất hiện ở đây.",
-      "makeCourse": "Tạo bài học"
+      "makeCourse": "Tạo bài học",
+      "pin": "Ghim lên đầu",
+      "unpin": "Bỏ ghim",
+      "pinned": "Đã ghim"
     },
     "fullscreen": {
       "expand": "Toàn màn hình",

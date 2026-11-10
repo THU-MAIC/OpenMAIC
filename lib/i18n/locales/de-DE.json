@@ -2535,7 +2535,10 @@
       "results": "Suchergebnisse",
       "allCourses": "Alle Kurse",
       "emptyHint": "Beschreibe auf der Startseite ein Thema, dann erscheint hier dein erster Kurs.",
-      "makeCourse": "Kurs erstellen"
+      "makeCourse": "Kurs erstellen",
+      "pin": "Oben anheften",
+      "unpin": "Lösen",
+      "pinned": "Angeheftet"
     },
     "fullscreen": {
       "expand": "Vollbild",

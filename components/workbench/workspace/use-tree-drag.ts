@@ -26,6 +26,10 @@
  *     the same gesture. The workspace rail files into folder rows only — its
  *     tree keeps unfiled courses as plain top-level rows.
  *
+ * A container can be a reorderable row too (a folder card in a grid that mixes
+ * folders and courses): with `fileZone`, only the middle of such a card files
+ * the course into it, and its two outer edges place the course beside it.
+ *
  * Escape cancels mid-drag, and a pointercancel (a system gesture taking over)
  * is a cancel too — never a silent commit to wherever the pointer happened to
  * be.
@@ -58,6 +62,21 @@ const edgeFor = (
       ? 'before'
       : 'after';
 
+/** Whether the point lies outside the centred `share` of the rect along `axis`. */
+const outsideZone = (
+  point: { readonly x: number; readonly y: number },
+  rect: Pick<DOMRect, 'top' | 'height' | 'left' | 'width'>,
+  axis: 'vertical' | 'horizontal',
+  share: number,
+) => {
+  const [at, start, length] =
+    axis === 'horizontal' ? [point.x, rect.left, rect.width] : [point.y, rect.top, rect.height];
+  // No layout (nothing measured yet): the whole card files, as it always did.
+  if (length <= 0) return false;
+  const margin = (length * (1 - share)) / 2;
+  return at < start + margin || at > start + length - margin;
+};
+
 export type DragKind = 'course' | 'session' | 'material';
 
 /** Where the insertion hairline is drawn right now. */
@@ -87,6 +106,7 @@ export function useTreeDrag({
   onHoverFolder,
   scrollRef,
   axis = 'vertical',
+  fileZone,
 }: {
   readonly onReorder?: (kind: DragKind, dragId: string, target: DropTarget) => void;
   readonly onMoveToFolder: (id: string, folderId: string | undefined) => void;
@@ -96,6 +116,12 @@ export function useTreeDrag({
   readonly scrollRef?: RefObject<HTMLElement | null>;
   /** How rows are laid out: a list (the default) splits rows top/bottom, a grid left/right. */
   readonly axis?: 'vertical' | 'horizontal';
+  /**
+   * For a container that is also a row of the dragged kind: the share of its
+   * length, centred, that files into it (0–1). Outside it, the drop reorders
+   * beside the container. Omitted, a container always files.
+   */
+  readonly fileZone?: number;
 }): TreeDrag {
   const owner = useId();
   const [dragId, setDragId] = useState<string | null>(null);
@@ -157,7 +183,15 @@ export function useTreeDrag({
       const under = scrollRef && !scrollRef.current?.contains(hit) ? null : hit;
       const folderRow =
         g.kind !== 'session' ? under?.closest<HTMLElement>('[data-ws-drop-folder]') : null;
-      if (folderRow?.dataset.wsDragOwner === owner) {
+      const folderAsRow =
+        fileZone !== undefined && folderRow
+          ? folderRow.closest<HTMLElement>(`[data-ws-drop-kind="${g.kind}"]`)
+          : null;
+      const onFolderEdge =
+        !!folderAsRow &&
+        folderAsRow.dataset.wsDropId !== g.id &&
+        outsideZone(point, folderAsRow.getBoundingClientRect(), axis, fileZone!);
+      if (folderRow?.dataset.wsDragOwner === owner && !onFolderEdge) {
         const folderId = folderRow.dataset.wsDropFolder ?? '';
         g.drop = { kind: 'folder', folderId: folderId || undefined };
         setFolderTarget(folderId);
@@ -276,7 +310,7 @@ export function useTreeDrag({
       window.removeEventListener('keydown', onKey);
       document.documentElement.removeAttribute('data-ws-dragging');
     };
-  }, [scrollRef, reset, owner, axis]);
+  }, [scrollRef, reset, owner, axis, fileZone]);
 
   const rowProps = useCallback(
     (kind: DragKind, id: string) => ({

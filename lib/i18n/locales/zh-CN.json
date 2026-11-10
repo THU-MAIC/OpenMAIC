@@ -2535,7 +2535,10 @@
       "results": "搜索结果",
       "allCourses": "全部课程",
       "emptyHint": "在首页说一句想学的内容，第一节课就会出现在这里。",
-      "makeCourse": "做一节课"
+      "makeCourse": "做一节课",
+      "pin": "置顶",
+      "unpin": "取消置顶",
+      "pinned": "已置顶"
     },
     "fullscreen": {
       "expand": "全屏",

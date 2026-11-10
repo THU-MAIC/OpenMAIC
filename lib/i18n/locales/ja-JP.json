@@ -2535,7 +2535,10 @@
       "results": "検索結果",
       "allCourses": "すべてのコース",
       "emptyHint": "ホームでテーマを書くと、最初のクラスがここに表示されます。",
-      "makeCourse": "クラスを作る"
+      "makeCourse": "クラスを作る",
+      "pin": "トップに固定",
+      "unpin": "固定を解除",
+      "pinned": "固定済み"
     },
     "fullscreen": {
       "expand": "全画面",

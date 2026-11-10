@@ -2535,7 +2535,10 @@
       "results": "Search results",
       "allCourses": "All courses",
       "emptyHint": "Describe a topic on the home page and your first class appears here.",
-      "makeCourse": "Make a class"
+      "makeCourse": "Make a class",
+      "pin": "Pin to top",
+      "unpin": "Unpin",
+      "pinned": "Pinned"
     },
     "fullscreen": {
       "expand": "Full screen",

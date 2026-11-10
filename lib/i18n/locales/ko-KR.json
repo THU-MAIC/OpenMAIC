@@ -2535,7 +2535,10 @@
       "results": "검색 결과",
       "allCourses": "전체 코스",
       "emptyHint": "홈에서 주제를 적으면 첫 수업이 여기에 나타납니다.",
-      "makeCourse": "수업 만들기"
+      "makeCourse": "수업 만들기",
+      "pin": "맨 위에 고정",
+      "unpin": "고정 해제",
+      "pinned": "고정됨"
     },
     "fullscreen": {
       "expand": "전체 화면",

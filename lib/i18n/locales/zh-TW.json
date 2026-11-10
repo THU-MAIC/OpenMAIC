@@ -2535,7 +2535,10 @@
       "results": "搜尋結果",
       "allCourses": "全部課程",
       "emptyHint": "在首頁說一句想學的內容，第一堂課就會出現在這裡。",
-      "makeCourse": "做一堂課"
+      "makeCourse": "做一堂課",
+      "pin": "置頂",
+      "unpin": "取消置頂",
+      "pinned": "已置頂"
     },
     "fullscreen": {
       "expand": "全螢幕",
