@@ -8,7 +8,7 @@ vi.mock('@/lib/server/identity/with-owner', () => ({
         kind: 'user',
         ownerId: 'owner',
         assurance: 'verified',
-        roles: new Set(state.admin ? ['admin'] : ['sandbox:use']),
+        roles: new Set<string>(state.admin ? ['admin'] : []),
       },
       new Headers(),
     ),

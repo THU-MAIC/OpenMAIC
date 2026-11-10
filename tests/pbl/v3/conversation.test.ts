@@ -9,10 +9,18 @@ import {
   learningRunFailure,
   boundConversation,
 } from '@/lib/server/pbl-v3/conversation';
-import { mergeConversationHistory } from '@/lib/pbl/v3/conversation';
+import {
+  mergeConversationHistory,
+  markRecoveredTeachingTools,
+  type LearningConversationEntry,
+} from '@/lib/pbl/v3/conversation';
 import { stageSkill, interactionRules } from '@/lib/server/pbl-v3/skills';
 import { installedProject } from '@/lib/server/pbl-v3/catalog';
-import { renderTeachingPrompt, teachingSection } from '@/lib/server/pbl-v3/teaching-prompt';
+import {
+  renderTeachingPrompt,
+  teachingLiveContext,
+  teachingSection,
+} from '@/lib/server/pbl-v3/teaching-prompt';
 import { isFinalProjectRecap } from '@/lib/server/pbl-v3/stage-progress';
 import {
   startOrchestration,
@@ -736,6 +744,170 @@ describe('student conversation projection', () => {
     expect(JSON.stringify(output)).toContain('INTERNAL');
     expect(JSON.stringify(output)).toContain('PROTOCOL');
   });
+  it('marks only later-recovered teaching tools while retaining original errors and file failures', () => {
+    const result = { content: [{ type: 'text', text: 'Protocol guard rejected the call' }] };
+    const entries = projectConversation(
+      [
+        event(1, 'user_message', { text: 'I understand, finish the recap.' }),
+        event(2, 'tool_execution_end', {
+          toolName: 'complete_stage',
+          toolCallId: 'failed',
+          isError: true,
+          result,
+        }),
+        event(3, 'tool_execution_end', {
+          toolName: 'read_file',
+          toolCallId: 'file-failed',
+          isError: true,
+          result,
+        }),
+        event(4, 'tool_execution_end', {
+          toolName: 'complete_stage',
+          toolCallId: 'success',
+          result: { content: [] },
+        }),
+        event(5, 'tool_execution_end', {
+          toolName: 'request_skill_review',
+          toolCallId: 'unresolved',
+          isError: true,
+          result,
+        }),
+        event(6, 'session_end', { status: 'succeeded' }),
+      ],
+      'mentor',
+      false,
+    );
+    const tools = entries.flatMap((entry) => entry.parts).filter((part) => part.kind === 'tool');
+    expect(tools[0]).toMatchObject({ status: 'failed', recovered: true, result });
+    expect(tools[1]).toMatchObject({ status: 'failed', recovered: false });
+    expect(tools[2]).toMatchObject({ status: 'succeeded', recovered: false });
+    expect(tools[3]).toMatchObject({ status: 'failed', recovered: false });
+  });
+
+  it('recomputes recovery across history pages without crossing learner inputs or role sessions', () => {
+    const failure: LearningConversationEntry = {
+      id: 'pbl-role-first:turn-1',
+      inputId: 5,
+      speaker: 'mentor',
+      parts: [
+        {
+          id: 'failed',
+          kind: 'tool',
+          action: 'skill',
+          name: 'read_next_skill',
+          args: { studentFeedback: 'The learner has answered the current question.' },
+          status: 'failed',
+        },
+      ],
+    };
+    const success: LearningConversationEntry = {
+      ...failure,
+      id: 'pbl-role-first:turn-2',
+      parts: [
+        { ...failure.parts[0], id: 'success', kind: 'tool', action: 'skill', status: 'succeeded' },
+      ],
+    };
+    const before = structuredClone(failure);
+    for (const changed of [
+      { ...success, inputId: 6 },
+      { ...success, id: 'pbl-role-second:turn-2' },
+      { ...success, inputId: undefined },
+      { ...success, parts: [{ ...success.parts[0], args: undefined }] },
+      { ...success, parts: [{ ...success.parts[0], args: {} }] },
+    ])
+      expect(markRecoveredTeachingTools([failure, changed])[0].parts[0]).toMatchObject({
+        recovered: false,
+      });
+    expect(markRecoveredTeachingTools([success, failure])[1].parts[0]).toMatchObject({
+      recovered: false,
+    });
+    const merged = mergeConversationHistory([[failure], [success]]);
+    expect(merged[0].parts[0]).toMatchObject({ recovered: true });
+    expect(failure).toEqual(before);
+  });
+
+  it('keeps a failed skill advancement visible after a successful reread in live and paginated history', () => {
+    const events = [
+      event(1, 'user_message', { text: 'I understand, continue.' }),
+      event(2, 'tool_execution_end', {
+        toolName: 'read_next_skill',
+        toolCallId: 'advance-failed',
+        args: { studentFeedback: 'The learner understood the current goal.' },
+        isError: true,
+        result: { error: 'File access is temporarily unavailable.' },
+      }),
+      event(3, 'tool_execution_end', {
+        toolName: 'read_next_skill',
+        toolCallId: 'reread',
+        args: {},
+        result: { content: [] },
+      }),
+    ];
+    const live = projectConversation(events, 'mentor', false);
+    const tools = live.flatMap((entry) => entry.parts).filter((part) => part.kind === 'tool');
+    expect(tools[0]).toMatchObject({ status: 'failed', recovered: false });
+    const pages = [
+      live.map((entry) => ({ ...entry, parts: entry.parts.slice(0, 1) })),
+      live.map((entry) => ({ ...entry, parts: entry.parts.slice(1) })),
+    ];
+    expect(mergeConversationHistory(pages).flatMap((entry) => entry.parts)[1]).toMatchObject({
+      status: 'failed',
+      recovered: false,
+    });
+    const recovered = projectConversation(
+      [
+        ...events,
+        event(4, 'tool_execution_end', {
+          toolName: 'read_next_skill',
+          toolCallId: 'advance-succeeded',
+          args: { studentFeedback: 'The learner understood the current goal.' },
+          result: { content: [] },
+        }),
+      ],
+      'mentor',
+      false,
+    );
+    expect(
+      recovered.flatMap((entry) => entry.parts).find((part) => part.id === tools[0].id),
+    ).toMatchObject({ status: 'failed', recovered: true });
+  });
+
+  it.each([null, false, 0, true, 1, [], {}].map((studentFeedback) => ({ studentFeedback })))(
+    'does not infer skill recovery from non-string feedback $studentFeedback',
+    ({ studentFeedback }) => {
+      for (const laterArgs of [{}, { studentFeedback: 'The learner understood.' }]) {
+        const events = [
+          event(1, 'user_message', { text: 'Continue.' }),
+          event(2, 'tool_execution_end', {
+            toolName: 'read_next_skill',
+            toolCallId: 'failed',
+            args: { studentFeedback },
+            isError: true,
+          }),
+          event(3, 'tool_execution_end', {
+            toolName: 'read_next_skill',
+            toolCallId: 'later-success',
+            args: laterArgs,
+          }),
+        ];
+        const live = projectConversation(events, 'mentor', false);
+        const failure = live
+          .flatMap((entry) => entry.parts)
+          .find((part) => part.kind === 'tool' && part.status === 'failed');
+        expect(failure).toMatchObject({ status: 'failed', recovered: false });
+        const pages = [
+          live.map((entry) => ({ ...entry, parts: entry.parts.slice(0, 1) })),
+          live.map((entry) => ({ ...entry, parts: entry.parts.slice(1) })),
+        ];
+        expect(
+          mergeConversationHistory(pages)
+            .flatMap((entry) => entry.parts)
+            .find((part) => part.kind === 'tool' && part.status === 'failed'),
+        ).toMatchObject({ status: 'failed', recovered: false });
+      }
+    },
+  );
+
   it('settles partial thinking and tool activity when the worker is interrupted', () => {
     const output = projectConversation(
       [
@@ -840,11 +1012,15 @@ describe('general teaching protocols', () => {
     expect(pending).toContain('Do not teach concepts');
     expect(pending).not.toContain('LESSON_RESOURCE_SENTINEL');
     const opening = teachingSection(input, skill.progression[1]!);
-    expect(opening.referenceMaterials).toEqual([]);
     expect(JSON.stringify(opening)).not.toContain('LESSON_RESOURCE_SENTINEL');
-    expect(
-      JSON.stringify(teachingSection({ ...input, welcome: 'ready' }, skill.progression[1]!)),
-    ).toContain('LESSON_RESOURCE_SENTINEL');
+    expect(teachingLiveContext(input, true)).not.toContain('LESSON_RESOURCE_SENTINEL');
+    const ready = { ...input, welcome: 'ready' as const, activeSection: skill.progression[1]! };
+    expect(teachingLiveContext(ready, true)).toContain('LESSON_RESOURCE_SENTINEL');
+    expect(teachingLiveContext(ready)).not.toContain('LESSON_RESOURCE_SENTINEL');
+    expect(renderTeachingPrompt(ready).systemPrompt).toContain('LESSON_RESOURCE_SENTINEL');
+    expect(JSON.stringify(teachingSection(ready, ready.activeSection))).not.toContain(
+      'LESSON_RESOURCE_SENTINEL',
+    );
     expect(renderTeachingPrompt(input).sectionBytes).toBeGreaterThan(0);
   });
   it.each([0, 1])(

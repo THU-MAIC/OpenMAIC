@@ -117,9 +117,12 @@ export const ProsemirrorEditor = forwardRef<ProsemirrorEditorRef, ProsemirrorEdi
 
     // Handle blur
     const handleBlur = useCallback(() => {
+      // Commit what was typed now: a click that took focus (undo, say) must not
+      // find the last keystrokes still waiting in the debounce.
+      handleInput.flush();
       setDisableHotkeysState(false);
       onBlur?.();
-    }, [setDisableHotkeysState, onBlur]);
+    }, [handleInput, setDisableHotkeysState, onBlur]);
 
     // Handle click
     // eslint-disable-next-line react-hooks/exhaustive-deps -- debounce returns a stable function reference

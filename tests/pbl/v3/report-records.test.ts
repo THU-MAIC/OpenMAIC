@@ -106,6 +106,42 @@ it('keeps the long source lists collapsed behind one learning-records entry', as
   expect(fetch).toHaveBeenCalledTimes(1);
 });
 
+it('labels questions and decisions and only offers collapsed reasons when recorded', async () => {
+  const rationale = '新任务需要优先看到。\n已有事项仍然保留原来的顺序。';
+  const decisions = [
+    { id: 'position', question: '新任务放在哪里？', answer: '放在最前面', rationale },
+    { id: 'order', question: '怎么处理已有事项？', answer: '保持原来的顺序' },
+  ];
+  vi.mocked(fetch).mockResolvedValueOnce(
+    new Response(
+      JSON.stringify({ ...report, milestones: [{ ...report.milestones[0], decisions }] }),
+    ),
+  );
+  await render();
+  const journey = host.querySelector('section[aria-label="你走过的项目过程"]')!;
+  expect([...journey.querySelectorAll('dt')].map((label) => label.textContent)).toEqual([
+    '决策问题',
+    '你的决策',
+    '决策问题',
+    '你的决策',
+  ]);
+  expect([...journey.querySelectorAll('dd')].map((value) => value.textContent)).toEqual(
+    decisions.flatMap(({ question, answer }) => [question, answer]),
+  );
+  const reasons = journey.querySelectorAll('details');
+  expect(reasons).toHaveLength(1);
+  const reason = reasons[0];
+  const toggle = reason.querySelector('summary')!;
+  expect(toggle.textContent).toBe('你的理由');
+  expect(reason.open).toBe(false);
+  toggle.click();
+  expect(reason.open).toBe(true);
+  expect(reason.querySelector('p')?.textContent).toBe(rationale);
+  toggle.click();
+  expect(reason.open).toBe(false);
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
 it.each([
   ['event-3', 0],
   ['turn-0-4', 1],

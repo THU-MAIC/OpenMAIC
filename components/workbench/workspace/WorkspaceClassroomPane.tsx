@@ -91,6 +91,7 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
   const isOwner = useStageStore((s) => s.isOwner);
   const stageReadOnly = useStageStore((s) => s.readOnly);
   const [preferences, setPreferences] = useState<Record<string, ClassroomMode>>({});
+  const [historySlot, setHistorySlot] = useState<HTMLDivElement | null>(null);
 
   useLayoutEffect(() => {
     // Apply browser memory before paint. A different course never inherits an
@@ -175,6 +176,8 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
               {t('workspace.readOnlyBadge')}
             </span>
           ) : null}
+          {/* The editor portals its undo/redo here; empty, it takes no space. */}
+          <div ref={setHistorySlot} className="flex shrink-0 items-center gap-0.5 empty:hidden" />
           <div
             role="group"
             aria-label={t('workspace.classroomMode')}
@@ -236,7 +239,12 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
       {/* One course surface for both modes. Generation and access gates override
           remembered editing without overwriting the course's preference. */}
       <div className="ws-classroom-body relative flex min-h-0 flex-1">
-        <WorkbenchPanelProvider visible={!hidden} playback={playback} learning={learning}>
+        <WorkbenchPanelProvider
+          visible={!hidden}
+          playback={playback}
+          learning={learning}
+          historySlot={historySlot}
+        >
           <ClassroomSurface classroomId={courseId} variant="pane" />
         </WorkbenchPanelProvider>
       </div>

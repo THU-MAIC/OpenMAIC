@@ -162,11 +162,9 @@ async function fetchSceneChunk(stageId: string, ids: readonly string[]): Promise
  * memoize on `scenes` do not re-render a deck the agent did not touch.
  *
  * Removed ids are dropped; fetched scenes replace by id; the result is sorted
- * by `order` exactly like the full document read. There is no edit-state
- * protection anymore (#1961 decision change 2026-08-23): the agent's fresh version
- * replaces the local scene outright — the user's typed data is guarded on the
- * WRITE side instead (a veto retains the dirt and retries; see
- * `lib/store/stage.ts`), not by freezing the read side.
+ * by `order` exactly like the full document read. A fetched scene replaces the
+ * local one outright, so the caller leaves out any scene with an unsaved edit
+ * (see `useStageFreshnessSync` in `use-workbench-session.ts`).
  *
  * Returns `{scenes, changed}` where `changed` is `false` (and `scenes` the
  * input array) when nothing would be different.
@@ -198,6 +196,20 @@ export function mergeFetchedScenes(input: {
     if (before.id !== after.id || before !== after) return { scenes: merged, changed: true };
   }
   return { scenes: input.current, changed: false };
+}
+
+/**
+ * Fetched scenes as they go into a store whose own scene list has not been saved
+ * yet: a scene it holds keeps its local position, and a scene new to it goes after
+ * all of them.
+ */
+export function withLocalSceneOrder(current: readonly Scene[], fetched: readonly Scene[]): Scene[] {
+  const orderById = new Map(current.map((scene) => [scene.id, scene.order]));
+  let nextOrder = Math.max(0, ...current.map((scene) => scene.order));
+  return fetched.map((scene) => {
+    const order = orderById.get(scene.id) ?? ++nextOrder;
+    return scene.order === order ? scene : { ...scene, order };
+  });
 }
 
 /** True when every requested id has a matching entry — used by the tests. */
@@ -268,7 +280,7 @@ export function sameStageRoster(left: StageRoster, right: StageRoster): boolean 
 }
 
 /** Deep equality of two JSON values, regardless of object member order. */
-function sameJsonValue(left: unknown, right: unknown): boolean {
+export function sameJsonValue(left: unknown, right: unknown): boolean {
   if (left === right) return true;
   if (Array.isArray(left) || Array.isArray(right)) {
     if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {

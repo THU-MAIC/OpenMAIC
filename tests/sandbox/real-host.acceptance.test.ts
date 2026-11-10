@@ -20,7 +20,7 @@ const principal = (ownerId: string): OwnerPrincipal => ({
   ownerId,
   kind: 'user',
   assurance: 'verified',
-  roles: new Set(['sandbox:use']),
+  roles: new Set(),
 });
 const a = principal(scope + '-a'),
   b = principal(scope + '-b');

@@ -7,12 +7,12 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
-import type { EditorCommand, SurfaceHistory } from '@/lib/edit/scene-editor-surface';
+import type { EditorCommand } from '@/lib/edit/scene-editor-surface';
+import { useCourseHistory } from '@/lib/edit/use-course-history';
 import { classroomExitLabelKey, exitClassroom } from '@/lib/workbench/classroom-exit';
 
 interface CommandBarProps {
   readonly title: string;
-  readonly history?: SurfaceHistory;
   readonly commands?: readonly EditorCommand[];
   /**
    * Right-edge slot owned by Stage. In Pro mode it carries the
@@ -24,17 +24,18 @@ interface CommandBarProps {
 
 /**
  * Top bar of the Pro mode chrome. Undo/redo + title on the left, insert
- * primitives in the center, surface commands on the right. History /
- * insertItems / commands are all optional so the bar renders cleanly when
- * no surface is registered for the current scene type.
+ * primitives in the center, surface commands on the right. Undo and redo walk
+ * the whole course's timeline, so they are there for every scene type; the
+ * surface's commands are optional.
  *
  * Exiting Pro mode is handled by the global Pro Switch in the playback
  * Header (which stays mounted above this bar) — Pro mode is a toggle,
  * not a one-way state, so we deliberately do *not* place a "Done" pill
  * here that would compete with the Switch's affordance.
  */
-export function CommandBar({ title, history, commands, trailing }: CommandBarProps) {
+export function CommandBar({ title, commands, trailing }: CommandBarProps) {
   const { t } = useI18n();
+  const history = useCourseHistory();
   const router = useRouter();
   const searchParams = useSearchParams();
   const exitLabel = t(classroomExitLabelKey(searchParams));
@@ -51,16 +52,24 @@ export function CommandBar({ title, history, commands, trailing }: CommandBarPro
         >
           <ArrowLeft className="h-4 w-4" />
         </IconButton>
-        {history && (
-          <>
-            <IconButton title={t('edit.undo')} disabled={!history.canUndo} onClick={history.undo}>
-              <Undo2 className="h-4 w-4" />
-            </IconButton>
-            <IconButton title={t('edit.redo')} disabled={!history.canRedo} onClick={history.redo}>
-              <Redo2 className="h-4 w-4" />
-            </IconButton>
-          </>
-        )}
+        <IconButton
+          title={t('edit.undo')}
+          aria-label={t('edit.undo')}
+          data-testid="edit-undo"
+          disabled={!history.canUndo}
+          onClick={history.undo}
+        >
+          <Undo2 className="h-4 w-4" />
+        </IconButton>
+        <IconButton
+          title={t('edit.redo')}
+          aria-label={t('edit.redo')}
+          data-testid="edit-redo"
+          disabled={!history.canRedo}
+          onClick={history.redo}
+        >
+          <Redo2 className="h-4 w-4" />
+        </IconButton>
         <span
           className={cn('ml-2 truncate text-sm font-semibold text-zinc-700 dark:text-zinc-200')}
           title={title}

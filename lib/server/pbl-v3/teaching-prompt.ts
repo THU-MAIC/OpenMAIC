@@ -12,7 +12,8 @@ import {
   buildSystemPrompt,
   quotedDecisionContext,
 } from '@/lib/pbl/v3/domain/orchestration/prompts';
-import { isFinalProjectRecap } from './stage-progress';
+import { isFinalProjectRecap, requiresArtifactApproval } from './stage-progress';
+import type { GuidedFeedbackSource } from './guided-review';
 import { stageStep } from '@/lib/pbl/v3/presentation';
 import {
   teachingProductContext,
@@ -53,6 +54,7 @@ export interface TeachingPromptInput {
   stageIndex?: number;
   automaticEntry?: boolean;
   reviewedSectionCount?: number;
+  feedbackSource?: GuidedFeedbackSource | null;
   priorArtifactApproval?: { studentSeq: number; revalidateCurrentVersion: true } | null;
   pendingReview?: {
     question: string;
@@ -63,6 +65,12 @@ export interface TeachingPromptInput {
   workspace?: TeachingWorkspaceFacts;
   communication?: { uiLocale: string; responseLanguage: ResponseLanguage | null };
 }
+
+const feedbackRules =
+  'Use the current feedbackSource and section positions to choose the next action. For pending_review_reply, explain how the new reply answers the recorded question in studentFeedback and omit reuseFeedback. For verified_feedback, set reuseFeedback: true only if the previously verified same-version learner reply covers the current goal, and explain that coverage concretely. The presence of verified_feedback alone does not mean a new goal is answered. New unanswered goals require one request_skill_review and real new feedback. Do not add another example or boundary question merely to prolong review. Explicit confident understanding is sufficient absent unresolved errors or questions; it does not replace required artifact approval. Quotes and summaries of actual learner replies are allowed. The host rechecks the current version. After delivering the active section, if feedbackSource is null, record one necessary question with request_skill_review and wait before advancing.';
+
+const artifactApprovalRules =
+  'Actual current-version plan/code approval is still required. When requesting approval before the final section, set request_skill_review.approval. For a real reply that explicitly accepts the unchanged version, set artifactApproved when advancing or completing. Mere understanding does not count as approval. Clarify mixed acceptance and requests for changes. The final artifact section requests approval automatically. Reuse priorArtifactApproval if it covers the unchanged version, which the host revalidates.';
 
 /** The same course section representation is validated and returned by read_next_skill. */
 export function teachingSection(
@@ -82,7 +90,6 @@ export function teachingSection(
       section,
       welcomePresented: welcomePresented ?? false,
       instruction: projectWelcomeRules,
-      referenceMaterials: [],
       project: { title: definition?.title, overview: definition?.intro.say },
       milestone: { title: milestone.title, goal: milestone.goal ?? milestone.title },
       steps: milestone.stages.map(stageStep),
@@ -93,7 +100,6 @@ export function teachingSection(
     section,
     instruction: skill.content[section],
     ...(section === skill.progression[1] ? { teaching: milestone.teaching } : {}),
-    referenceMaterials: skill.documents,
     delivery:
       (stage.kind === 'mentor_say' &&
       stage.agent === 'discussion' &&
@@ -101,7 +107,10 @@ export function teachingSection(
         ? stageOpeningRules + '\n'
         : '') +
       (stage.kind === 'produce' && stage.writes === 'plan' ? planPresentationRules + '\n' : '') +
-      'Platform product/assistance policy overrides course UI instructions: reference materials are Agent references, not automatically learner files or controls. Platform pacing policy takes precedence over any course instruction to repeat a covered question. Check earlier learner replies before asking. If this section is already satisfied by verified same-version feedback, use reuseFeedback with a concrete explanation to continue without another question. Otherwise record one necessary question with request_skill_review and wait for a real reply. Explicit confident understanding is sufficient absent unresolved errors; never invent learner feedback.',
+      'Platform product/assistance policy overrides course UI instructions. Reference materials are Agent references, not automatically learner files or controls. Credit feedback already given instead of asking a repeated question. Reuse verified same-version learner feedback only when it covers the current goal. New unanswered goals require one request_skill_review and real new feedback. Do not add another example or boundary question merely to prolong review. Explicit confident understanding is sufficient absent unresolved errors or questions; it does not replace required artifact approval. ' +
+      (section === skill.progression.at(-1)
+        ? 'This is the final section. If the goal is covered by available feedback and any required artifact approval is satisfied, use complete_stage. If a necessary question remains, record it with request_skill_review and wait.'
+        : 'When the current goal is covered by available feedback, use read_next_skill to open the next section. Otherwise record one necessary question with request_skill_review and wait.'),
     goal: milestone.goal ?? milestone.title,
     stage: stage.kind === 'mentor_say' ? stage.say : stage.kind === 'produce' ? stage.writes : '',
   };
@@ -125,6 +134,7 @@ function buildTeachingPrompt({
   stageIndex = milestone.stages.indexOf(stage),
   automaticEntry = false,
   reviewedSectionCount = 0,
+  feedbackSource = null,
   priorArtifactApproval = null,
   pendingReview,
   pendingRun = null,
@@ -138,6 +148,7 @@ function buildTeachingPrompt({
       : finalRecap
         ? 'Only a successful final recap complete_stage receipt completes the project and reveals the report in the top toolbar, final completion message and project overview. The completion banner only shows status. Before that receipt, do not claim completion or say a report is already available. Refer to the actual productContext.visibleLabels.report text when giving directions. The report links back to the read-only workbench and remains discoverable after revisiting the PBL scene. Do not ask for another Continue click or append another milestone.'
         : 'After the current completion gates succeed and productContext allows Continue, the learner uses the task bar at the bottom of the Learning Assistant pane to enter the next step. Quote productContext.visibleLabels.continue exactly when naming that button.';
+  const artifactApprovalRequired = requiresArtifactApproval(stage);
   const guided = stage.kind === 'produce' || stage.kind === 'mentor_say';
   const repairing = stage.kind === 'check' && stage.checker === 'tests' && !!collected.remediation;
   const recapping =
@@ -199,7 +210,9 @@ function buildTeachingPrompt({
                 completionRecorded,
                 welcome,
                 welcomePresented,
-                priorArtifactApproval,
+                artifactApprovalRequired,
+                ...(artifactApprovalRequired ? { priorArtifactApproval } : {}),
+                feedbackSource,
                 activeSection: activeSection || null,
                 nextSection:
                   welcome === 'pending' && activeSection
@@ -300,7 +313,10 @@ function buildTeachingPrompt({
       ? '\nThe current stage is ALREADY complete for the recorded evidence. Answer any follow-up directly. Do not restart teaching, invent a new required question, or require complete_stage again just because the learner sent another message. Actual artifact changes invalidate the affected review and require reviewing that new version before completion.'
       : '') +
     (guided
-      ? '\nThe current teachingContext is authoritative. Earlier stages do not complete this stage. If completionRecorded is true, answer follow-ups without reopening the review. While welcome is pending, deliver only the welcome and readiness discussion; request_skill_review can record readiness directly without read_next_skill first. A later explicit readiness reply opens A via read_next_skill with studentFeedback, without changing the step. For normal teaching, when activeSection is null, read_next_skill first, then read sections in order. Assistance-only turns use respond_to_learner without opening or advancing a section. New unanswered goals require one request_skill_review and real new feedback; already satisfied goals may reuse verified same-version learner feedback using reuseFeedback, including answers that anticipated the next section. State exactly what prior reply covers the goal; never reuse assistant reasoning as learner evidence. A correct answer or clear confident understanding suffices when no error or question remains. Do not add another example or boundary question merely to prolong review. Actual current-version plan/code approval is still required. When requesting that approval before the final section, set request_skill_review.approval; a substantive reply that explicitly accepts the unchanged current version can also supply approval: set artifactApproved on read_next_skill when advancing past that reply. Approval is semantic, not a required word; “我认可当前版本”, “looks good, no changes”, and agreement to proceed can qualify. Mere understanding does not. If the message both accepts and requests changes, clarify before progressing. Do not ask again just because the earlier question was not marked approval. The final plan/code section requests approval automatically. teachingContext.priorArtifactApproval identifies an actual earlier approval; the host revalidates its version before completion. Reuse it when unchanged instead of requesting a ceremonial approval at the final section. An already explicit same-version approval need not be repeated. If a required build is blocked and learner input is genuinely needed, request_learner_help hands control back without recording review or approval. Only complete_stage records completion; then follow learningRoadmap.confirmation. ' +
+      ? '\nThe current teachingContext is authoritative. If completionRecorded is true, answer follow-ups without reopening the review. While welcome is pending, deliver only the welcome and readiness discussion. request_skill_review can record readiness directly without read_next_skill first. A later explicit readiness reply opens A via read_next_skill with studentFeedback, without changing the step. For normal teaching, when activeSection is null, open the first section with read_next_skill without studentFeedback. Read sections in order. Assistance-only turns use respond_to_learner without opening or advancing a section. ' +
+        feedbackRules +
+        ' Use complete_stage only after reading finalSection and satisfying its goal. Only complete_stage records completion. Artifact approval applies only when artifactApprovalRequired is true. ' +
+        (artifactApprovalRequired ? artifactApprovalRules + ' ' : '') +
         confirmation
       : repairing
         ? '\nHelp the learner diagnose the observed test failure. Read the current code and approved plan before making a focused repair. Distinguish an implementation that departed from the learner plan from a learner proposal whose behavior failed the project goal. If fixing the latter changes a recorded decision, explain the evidence and obtain actual learner confirmation of the revised rule before changing its behavior; do not silently replace the proposal with your preferred answer. Preserve the original decision and record any learner-confirmed amendment using the current course artifacts and allowed tools. Do not claim to have updated a formal decision or approved plan through unavailable controls. Then make the focused repair and ask the learner to run tests again using the project controls. Never claim the repair passed without a new test result.'
@@ -324,7 +340,11 @@ function teachingReview(review: TeachingPromptInput['pendingReview']) {
 }
 
 /** Only changing state is repeated; the product guide is already in the system prompt. */
-export function teachingLiveContext(input: TeachingPromptInput): string {
+export function teachingLiveContext(
+  input: TeachingPromptInput,
+  startedWithWelcome = false,
+): string {
+  const artifactApprovalRequired = requiresArtifactApproval(input.stage);
   const guided = input.stage.kind === 'mentor_say' || input.stage.kind === 'produce';
   const repair =
     input.stage.kind === 'check' &&
@@ -342,6 +362,11 @@ export function teachingLiveContext(input: TeachingPromptInput): string {
   return JSON.stringify({
     productContext: { current: teachingProductContext(input).current },
     communication: input.communication ?? { uiLocale: 'en-US', responseLanguage: null },
+    // The static prompt intentionally hides lesson references during the welcome.
+    // Make them available on the same run once the learner starts the lesson.
+    ...(startedWithWelcome && input.welcome === 'ready'
+      ? { referenceMaterials: input.skill.documents }
+      : {}),
     stageKey: input.stageKey,
     completionRecorded: input.completionRecorded ?? false,
     // Builds also run during planning/coding; their existing ID must survive
@@ -382,18 +407,16 @@ export function teachingLiveContext(input: TeachingPromptInput): string {
       ? {
           welcome: input.welcome,
           welcomePresented: input.welcomePresented,
-          priorArtifactApproval: input.priorArtifactApproval ?? null,
+          artifactApprovalRequired,
+          ...(artifactApprovalRequired
+            ? { priorArtifactApproval: input.priorArtifactApproval ?? null }
+            : {}),
+          feedbackSource: input.feedbackSource ?? null,
           activeSection: input.activeSection || null,
           // The active section may otherwise exist only in an old tool result.
           // Restore its exact instructions after any history projection.
           activeInstruction: input.activeSection
-            ? (() => {
-                const { referenceMaterials: _references, ...section } = teachingSection(
-                  input,
-                  input.activeSection!,
-                );
-                return section;
-              })()
+            ? teachingSection(input, input.activeSection)
             : null,
           nextSection:
             (input.welcome === 'pending' && input.activeSection

@@ -432,15 +432,25 @@ export function validateProjectPackage(
     return invalid('Application decision labels must name distinct declared choice decisions.');
   if (
     application &&
-    (config.runtime.profile !== 'python3' ||
-      application.argv[0] !== 'python3' ||
+    config.runtime.profile === 'python3' &&
+    (application.argv[0] !== 'python3' ||
       !safeProjectPath(application.argv[1]) ||
       !application.argv[1].endsWith('.py') ||
       !Object.hasOwn(files, application.argv[1]))
   )
-    return invalid('Applications require a Python starter entrypoint and the python3 profile.');
+    return invalid(
+      'Python applications require a Python starter entrypoint and the python3 profile.',
+    );
+  if (application && config.runtime.profile === 'java' && application.argv[0] !== 'java')
+    return invalid('Java applications must launch the declared Java main class.');
   if (application) {
-    applicationLaunchCommand(application.argv);
+    applicationLaunchCommand(
+      application.argv,
+      config.runtime.profile === 'java'
+        ? (config.runtime.buildSources ??
+            Object.keys(files).filter((name) => name.endsWith('.java')))
+        : undefined,
+    );
     applicationProbeCommand(Object.keys(files).sort(), application.port, application.healthPath);
   }
   const buildSources = config.runtime.buildSources;

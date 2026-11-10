@@ -505,6 +505,71 @@ describe('generation and deck tools', () => {
     expect(Value.Check(generate.parameters, { ...base, widgetType: 'hologram' })).toBe(false);
   });
 
+  it('declares generate_scene widgetOutline as an object that accepts extra keys', async () => {
+    const current = state(document([]));
+    let calls = 0;
+    const aiCall = vi.fn(async () => {
+      calls += 1;
+      return calls === 1 ? '<!DOCTYPE html><html><body><div id="loop"></div></body></html>' : '[]';
+    });
+    const generate = find(buildGenerationTools(deps(current.store, { aiCall })), 'generate_scene');
+    const widgetOutline = (
+      generate.parameters as unknown as {
+        properties: {
+          widgetOutline: {
+            type?: unknown;
+            additionalProperties?: unknown;
+            description?: unknown;
+          };
+        };
+      }
+    ).properties.widgetOutline;
+    const description =
+      'Interactive pages only: widget configuration object matching widgetType (e.g. { concept, keyVariables } for simulation, { diagramType, nodes } for diagram, { language } for code, { gameType, challenge } for game, { visualizationType, objects } for visualization3d). Must be a plain object. Defaults to { concept: title } when widgetType is set; when only widgetOutline is set, widgetType defaults to simulation.';
+
+    // The model-facing schema is this JSON Schema. Type.Unknown omits `type`,
+    // so providers do not require an object and models send a JSON string.
+    expect(widgetOutline.type).toBe('object');
+    expect(widgetOutline.additionalProperties).not.toBe(false);
+    expect(widgetOutline.description).toBe(description);
+    expect((generate.parameters as { required?: string[] }).required ?? []).not.toContain(
+      'widgetOutline',
+    );
+
+    const base = {
+      stageId: 'stage-test',
+      order: 1,
+      title: 'For loops',
+      type: 'interactive',
+      brief: 'Practice Python for loops',
+    };
+    expect(
+      Value.Check(generate.parameters, {
+        ...base,
+        widgetType: 'code',
+        widgetOutline: { language: 'python', concept: 'for loop', extra: true },
+      }),
+    ).toBe(true);
+    expect(
+      Value.Check(generate.parameters, {
+        ...base,
+        widgetType: 'code',
+        widgetOutline: '{"language":"python","concept":"for loop"}',
+      }),
+    ).toBe(false);
+
+    const response = await generate.execute('call', {
+      ...base,
+      widgetType: 'code',
+      widgetOutline: { language: 'python', concept: 'for loop' },
+    } as never);
+    expect(response).not.toMatchObject({
+      isError: true,
+      details: { error: 'invalid-widget-outline' },
+    });
+    expect(current.get()?.scenes[0]?.content).toMatchObject({ widgetType: 'code' });
+  });
+
   it('detects slide media placeholders without returning page bodies', () => {
     const scene = slide('media', 1);
     (scene.content as Extract<Scene['content'], { type: 'slide' }>).canvas.elements = [

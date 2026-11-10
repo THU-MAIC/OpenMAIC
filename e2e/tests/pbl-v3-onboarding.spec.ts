@@ -281,15 +281,34 @@ async function finish(page: Page) {
   }
 }
 async function correctSpotlight(page: Page, selector: string) {
-  const spotlight = page.locator('[data-pbl-onboarding="spotlight"]').first();
+  const spotlights = page.locator('[data-pbl-onboarding="spotlight"]');
   // A hidden/off-screen region may have no spotlight, but never an unrelated one.
-  if (!(await spotlight.count())) return;
-  const anchor = (await page.locator(selector).boundingBox())!;
-  const box = (await spotlight.boundingBox())!;
-  expect(box.x + box.width).toBeGreaterThan(anchor.x);
-  expect(box.x).toBeLessThan(anchor.x + anchor.width);
-  expect(box.y + box.height).toBeGreaterThan(anchor.y);
-  expect(box.y).toBeLessThan(anchor.y + anchor.height);
+  if (!(await spotlights.count())) return;
+  await expect
+    .poll(async () => {
+      const anchors = await Promise.all(
+        (await page.locator(selector).all()).map((anchor) => anchor.boundingBox()),
+      );
+      const boxes = await Promise.all(
+        (await spotlights.all()).map((spotlight) => spotlight.boundingBox()),
+      );
+      return (
+        boxes.length > 0 &&
+        boxes.every(
+          (box) =>
+            box &&
+            anchors.some(
+              (anchor) =>
+                anchor &&
+                box.x + box.width > anchor.x &&
+                box.x < anchor.x + anchor.width &&
+                box.y + box.height > anchor.y &&
+                box.y < anchor.y + anchor.height,
+            ),
+        )
+      );
+    })
+    .toBe(true);
 }
 
 test('blocks pointer and keyboard interaction during preparation, then opens the first real region', async ({
@@ -472,7 +491,7 @@ test('uses the current progress anchor after a live stage transition', async ({
   await fixture.publish();
   await expect(page.locator('[data-pbl-tour="progress"]')).toContainText('2/7');
   await expect(page.locator('[data-pbl-onboarding="spotlight"]')).toBeVisible();
-  await correctSpotlight(page, '[data-pbl-tour="progress"]');
+  await correctSpotlight(page, '[data-pbl-tour="task"]');
 });
 
 test('completed projects replay basic UI without claiming a current learning step', async ({
@@ -814,6 +833,8 @@ test('narrow conversation jump control stays centered without widening either me
   await fixture.publish();
   const assistant = page.getByTestId('pbl-assistant');
   const scroll = assistant.getByTestId('pbl-conversation-scroll-button');
+  await assistant.locator('.pbl-conversation-scroll').hover();
+  await page.mouse.wheel(0, -180);
   await expect(scroll).toBeVisible();
   const control = (await scroll.boundingBox())!;
   const viewport = await assistant
@@ -852,10 +873,10 @@ for (const [width, height, locale, docked] of [
     if (docked) await page.getByTestId('pbl-workspace-size').click();
     await page.locator('[data-pbl-tour="replay"]').click();
     const selectors = [
-      '[data-pbl-tour="progress"]',
+      '[data-pbl-tour="task"]',
       '[data-pbl-tour="conversation"]',
       '[data-testid="pbl-ide"]',
-      '[data-testid="pbl-application-open"]',
+      '[data-testid="pbl-application-panel"], [data-testid="pbl-application-open"]',
       '[data-pbl-tour="replay"]',
     ];
     for (let i = 0; i < 5; i++) {
@@ -1056,6 +1077,11 @@ test('hides Latest during the guide and restores the working control after dismi
   await project(page, learningEvents, { openingText: 'A long welcome.\n\n'.repeat(80) });
   await expect(tour(page)).toBeVisible();
   const viewport = page.locator('.pbl-conversation-scroll');
+  await next(page).click();
+  await expect(tour(page)).toHaveAttribute('data-step', 'discussion');
+  const readingBox = (await viewport.boundingBox())!;
+  await page.mouse.move(readingBox.x + readingBox.width / 2, readingBox.y + readingBox.height / 2);
+  await page.mouse.wheel(0, -180);
   await expect
     .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
     .toBeGreaterThan(8);
@@ -1188,12 +1214,10 @@ for (const [width, height] of [
     await fixture.publish();
     const viewport = page.locator('.pbl-conversation-scroll');
     const latest = page.getByTestId('pbl-conversation-scroll-button');
-    await expect(latest).toBeVisible();
     const before = await viewport.evaluate((el) => el.clientHeight);
-    await latest.click();
     await expect
       .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
-      .toBeLessThanOrEqual(8);
+      .toBeLessThanOrEqual(1);
     await expect(latest).toHaveCount(0);
     expect(await viewport.evaluate((el) => el.clientHeight)).toBe(before);
     for (let chunk = 0; chunk < 3; chunk++) {
@@ -1205,6 +1229,12 @@ for (const [width, height] of [
         .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
         .toBeLessThanOrEqual(8);
     }
+    // The shared Pro viewport anchor also follows changes outside the transcript.
+    await page.setViewportSize({ width, height: height - 80 });
+    await expect
+      .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
+      .toBeLessThanOrEqual(8);
+    await page.setViewportSize({ width, height });
     // Deliberate upward reading still escapes follow mode.
     const following = await viewport.evaluate((el) => el.scrollTop);
     await viewport.hover();
@@ -1523,3 +1553,269 @@ test('live and historical turns share regular spacing and body-size handoffs in 
     await page.keyboard.press('Escape');
   }
 });
+
+const readingParagraphs = () =>
+  Array.from(
+    { length: 100 },
+    (_, index) =>
+      `Reading passage ${index + 1}. This distinct paragraph wraps as the conversation pane changes width. Keep this passage visible while reading earlier output.`,
+  ).join('\n\n');
+
+async function readPassage(page: Page, number: number) {
+  const viewport = page.locator('.pbl-conversation-scroll');
+  const paragraph = viewport.locator('p').filter({ hasText: `Reading passage ${number}.` });
+  await expect
+    .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
+    .toBeLessThanOrEqual(1);
+  await expect(page.locator('[data-pbl-tour="replay"]')).toBeEnabled();
+  await page.evaluate(() => document.fonts.ready);
+  await viewport.hover();
+  await page.mouse.wheel(0, -200);
+  await expect
+    .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
+    .toBeGreaterThan(100);
+  await paragraph.evaluate((element) =>
+    element.scrollIntoView({ block: 'start', behavior: 'instant' }),
+  );
+  const offset = () =>
+    paragraph.evaluate(
+      (element) =>
+        element.getBoundingClientRect().top -
+        element.closest('.pbl-conversation-scroll')!.getBoundingClientRect().top,
+    );
+  await expect.poll(async () => Math.abs(await offset())).toBeLessThanOrEqual(2);
+  return { viewport, paragraph, offset };
+}
+
+test('paused reading keeps the same passage through divider reflow and a delayed image', async ({
+  page,
+  learningEvents,
+}) => {
+  await page.setViewportSize({ width: 1365, height: 900 });
+  let loadImage!: () => void;
+  const imageGate = new Promise<void>((resolve) => (loadImage = resolve));
+  await page.route('https://pbl-reading.test/delayed.svg', async (route) => {
+    await imageGate;
+    await route.fulfill({
+      contentType: 'image/svg+xml',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="300" height="300" fill="lightblue"/></svg>',
+    });
+  });
+  await project(page, learningEvents, {
+    started: true,
+    openingText:
+      '![Delayed illustration](https://pbl-reading.test/delayed.svg)\n\n' + readingParagraphs(),
+  });
+  const { viewport, offset } = await readPassage(page, 60);
+  const readingOffset = await offset();
+  const beforeWidth = await viewport.evaluate((element) => element.clientWidth);
+  const divider = page.getByRole('separator', { name: 'Resize workspace and assistant' }).last();
+  const handle = (await divider.boundingBox())!;
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2 + 100, handle.y + handle.height / 2, {
+    steps: 10,
+  });
+  await page.mouse.up();
+  await expect
+    .poll(() => viewport.evaluate((element) => element.clientWidth))
+    .toBeLessThan(beforeWidth - 70);
+  await expect.poll(async () => Math.abs((await offset()) - readingOffset)).toBeLessThanOrEqual(2);
+  loadImage();
+  await expect
+    .poll(() => viewport.locator('img').evaluate((image) => image.naturalHeight))
+    .toBe(300);
+  await expect.poll(async () => Math.abs((await offset()) - readingOffset)).toBeLessThanOrEqual(2);
+});
+
+test('a failure notice preserves paused reading after a small upward scroll and more output', async ({
+  page,
+  learningEvents,
+}) => {
+  const fixture = await project(page, learningEvents, {
+    started: true,
+    openingText: readingParagraphs(),
+  });
+  const viewport = page.locator('.pbl-conversation-scroll');
+  const distance = () =>
+    viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
+  await expect.poll(distance).toBeLessThanOrEqual(1);
+  await viewport.hover();
+  await page.mouse.wheel(0, -50);
+  await expect.poll(distance).toBeGreaterThan(40);
+  await expect.poll(distance).toBeLessThan(80);
+  const reading = await viewport.evaluate((element) => element.scrollTop);
+  fixture.view.messages[0].text +=
+    '\n\n' + 'Additional output below the selected passage.\n\n'.repeat(20);
+  fixture.view.activitySequence!++;
+  await fixture.publish();
+  await expect(viewport).toContainText('Additional output below the selected passage.');
+  await expect.poll(distance).toBeGreaterThan(300);
+  const height = await viewport.evaluate((element) => element.clientHeight);
+  fixture.view.roleRun = { status: 'failed', failure: 'timeout', canRetry: true };
+  fixture.view.revision++;
+  await fixture.publish();
+  await expect(page.getByTestId('pbl-assistant').getByRole('alert')).toBeVisible();
+  await expect
+    .poll(() => viewport.evaluate((element) => element.clientHeight))
+    .toBeLessThan(height);
+  await expect
+    .poll(() => viewport.evaluate((element) => element.scrollTop))
+    .toBeCloseTo(reading, 0);
+});
+
+test.describe('native mobile touch reading', () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+
+  test('mobile touch reading survives task details and resumes after returning to the tail', async ({
+    page,
+    learningEvents,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const fixture = await project(page, learningEvents, {
+      started: true,
+      openingText: readingParagraphs(),
+    });
+    fixture.view.stage = {
+      kind: 'dialogue',
+      agent: 'discussion',
+      studentActions: ['chat', 'decide'],
+    } as LearningView['stage'];
+    fixture.view.state.position.stageIndex = 1;
+    fixture.view.decisions = [
+      {
+        id: 'choice',
+        prompt: 'Choose a direction',
+        options: [{ id: 'a', label: 'First direction' }],
+      },
+    ];
+    fixture.view.revision++;
+    await fixture.publish();
+    const viewport = page.locator('.pbl-conversation-scroll');
+    const distance = () =>
+      viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
+    await expect.poll(distance).toBeLessThanOrEqual(1);
+    await viewport.scrollIntoViewIfNeeded();
+    const box = (await viewport.boundingBox())!;
+    const touch = await page.context().newCDPSession(page);
+    const x = box.x + box.width / 2,
+      y = box.y + 10;
+    // Keep the finger inside the short mobile conversation viewport. Dispatch
+    // native touch events: Chromium's synthesized scroll gesture is a no-op on
+    // the Linux CI runner even with a touch-enabled browser context.
+    await touch.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ x, y }],
+    });
+    for (let step = 1; step <= 10; step++) {
+      await touch.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [{ x, y: y + ((box.height - 20) * step) / 10 }],
+      });
+      await page.waitForTimeout(20);
+    }
+    // Lift after a stationary hold so inertial scrolling cannot race the
+    // reading-position assertion that follows.
+    await page.waitForTimeout(150);
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await expect.poll(distance).toBeGreaterThan(80);
+    const reading = await viewport.evaluate((element) => element.scrollTop);
+    fixture.view.messages[0].text += '\n\n' + 'More output after a touch gesture.\n\n'.repeat(15);
+    fixture.view.activitySequence!++;
+    await fixture.publish();
+    await expect(viewport).toContainText('More output after a touch gesture.');
+    await page.locator('[data-pbl-tour="task-trigger"]').click();
+    await expect(page.getByRole('region', { name: 'Current task details' })).toBeVisible();
+    await expect
+      .poll(() => viewport.evaluate((element) => element.scrollTop))
+      .toBeCloseTo(reading, 0);
+    await page.getByRole('button', { name: 'Close task details' }).click();
+    await viewport.hover();
+    await page.mouse.wheel(0, 100000);
+    await expect.poll(distance).toBeLessThanOrEqual(1);
+    fixture.view.messages[0].text += '\n\nFollowing again after manual return.';
+    fixture.view.activitySequence!++;
+    await fixture.publish();
+    await expect(viewport).toContainText('Following again after manual return.');
+    await expect.poll(distance).toBeLessThanOrEqual(8);
+    await touch.detach();
+  });
+});
+
+for (const checker of ['tests', 'quiz'] as const) {
+  test(`keeps following the conversation when entering the ${checker} check without a composer`, async ({
+    page,
+    learningEvents,
+  }) => {
+    const fixture = await project(page, learningEvents, {
+      started: true,
+      application: false,
+      openingText: readingParagraphs(),
+    });
+    await expect(page.locator('[data-pbl-tour="replay"]')).toBeEnabled();
+    const viewport = page.locator('.pbl-conversation-scroll');
+    const composer = page.locator('[data-pbl-tour="composer"]');
+    const distance = () =>
+      viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
+    await expect(composer).toBeVisible();
+    await expect.poll(distance).toBeLessThanOrEqual(1);
+    const height = await viewport.evaluate((el) => el.clientHeight);
+
+    fixture.view.stage = { kind: 'check', checker } as LearningView['stage'];
+    fixture.view.state.position.stageIndex = checker === 'tests' ? 4 : 5;
+    fixture.view.actions = checker === 'tests' ? ['evaluate'] : ['quiz'];
+    if (checker === 'quiz')
+      fixture.view.questions = [{ q: 'What did you build?', options: ['A list', 'A timer'] }];
+    fixture.view.revision++;
+    await fixture.publish();
+    await expect(composer).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Current task', exact: true })).toBeVisible();
+    await expect.poll(() => viewport.evaluate((el) => el.clientHeight)).toBeGreaterThan(height);
+    await expect.poll(distance).toBeLessThanOrEqual(1);
+
+    const reply = {
+      id: 'check-reply',
+      speaker: 'mentor' as const,
+      status: 'running' as const,
+      parts: [{ kind: 'text' as const, id: 'body', text: '', streaming: true }],
+    };
+    fixture.view.conversation = [
+      {
+        id: '0',
+        speaker: 'discussion',
+        status: 'succeeded',
+        parts: [{ kind: 'text', id: '0', text: fixture.view.messages[0].text }],
+      },
+      reply,
+    ];
+    fixture.view.busy = true;
+    const append = async (paragraph: string) => {
+      reply.parts[0].text += `\n\n${paragraph}\n\n` + 'The check is progressing.\n\n'.repeat(8);
+      fixture.view.revision++;
+      await fixture.publish();
+      await expect(viewport).toContainText(paragraph);
+    };
+    await append('Check output starts.');
+    await expect.poll(distance).toBeLessThanOrEqual(1);
+    await append('Check output continues.');
+    await expect.poll(distance).toBeLessThanOrEqual(1);
+
+    const following = await viewport.evaluate((el) => el.scrollTop);
+    await viewport.hover();
+    await page.mouse.wheel(0, -180);
+    await expect
+      .poll(() => viewport.evaluate((el) => el.scrollTop))
+      .toBeCloseTo(following - 180, 0);
+    const latest = page.getByTestId('pbl-conversation-scroll-button');
+    await expect(latest).toBeVisible();
+    const reading = await viewport.evaluate((el) => el.scrollTop);
+    await append('More output while reading.');
+    await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeCloseTo(reading, 0);
+
+    await page.mouse.wheel(0, (await distance()) - 40);
+    await expect.poll(distance).toBeCloseTo(40, 0);
+    await expect(latest).toHaveCount(0);
+    await append('More output after returning near the bottom.');
+    await expect.poll(distance).toBeLessThanOrEqual(1);
+  });
+}
