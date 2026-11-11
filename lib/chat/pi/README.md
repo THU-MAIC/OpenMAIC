@@ -23,9 +23,10 @@ and panel information remains explicitly labeled as a request-start snapshot.
 `whiteboard-preview.ts` renders the snapshot read for the current tail through
 `prepareScenePreview`, owner-scoped asset resolution, and the self-hostable
 `render-service/` endpoint `POST /preview`. It is enabled when
-`RENDER_SERVICE_URL` is configured, the Native classroom has a whiteboard
-service, and the resolved model explicitly supports vision. Otherwise requests
-retain text-only state.
+`RENDER_SERVICE_URL` is configured and passes the same `GET /health` check as
+`render_scene_preview`, the Native classroom has a whiteboard service, and the
+resolved model explicitly supports vision. The check runs once per chat request,
+only when the other conditions hold. Otherwise requests retain text-only state.
 
 Director and Child tails contain at most one whole-board PNG alongside the text
 state. A nonempty existing board is visible on the first model round. Empty
