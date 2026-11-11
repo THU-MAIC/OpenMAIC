@@ -3024,9 +3024,18 @@
     },
     "overview": {
       "title": "نظرة عامة على المشروع",
-      "close": "إغلاق نظرة عامة على المشروع",
-      "currentGoal": "الهدف الحالي",
-      "view": "عرض الخطة ({{count}})"
+      "expand": "توسيع",
+      "collapse": "طي النظرة العامة",
+      "projectGoal": "هدف المشروع",
+      "finishedWork": "تطبيقك المكتمل",
+      "roadmap": "خطة المشروع",
+      "goalAndResult": "الهدف والنتيجة",
+      "goal": "الهدف",
+      "result": "النتيجة",
+      "eachStage": "خطوات كل مرحلة",
+      "yourRole": "أنت تتخذ القرارات وتراجع؛ ويساعدك الذكاء الاصطناعي في كتابة الخطة والكود.",
+      "preview": "جرّب تطبيقك في منطقة المعاينة وتحقق مما بنيته.",
+      "advance": "عند اكتمال الخطوة، تابع بالزر البنفسجي فوق حقل الإدخال."
     },
     "journey": {
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",

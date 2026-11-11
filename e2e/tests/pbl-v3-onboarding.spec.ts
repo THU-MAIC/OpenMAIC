@@ -271,7 +271,7 @@ async function project(
 const tour = (page: Page) => page.locator('[data-pbl-onboarding="card"]');
 const next = (page: Page) => tour(page).locator('footer button').last();
 
-test('opens the project overview after the guide and links back to it from the opening reply', async ({
+test('keeps an authored project overview collapsed in the transcript until opened', async ({
   page,
   learningEvents,
 }) => {
@@ -279,25 +279,50 @@ test('opens the project overview after the guide and links back to it from the o
     application: false,
     openingText: 'Welcome. First, we will work through the opening concepts together.',
   });
+  fixture.view.milestones![0].goal = 'Connect a name to a greeting.';
+  fixture.view.milestones![0].outcome = 'A working greeting application.';
+  fixture.view.revision++;
+  await fixture.publish();
   const overview = page.locator('#pbl-project-overview');
   await expect(tour(page)).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(tour(page)).toHaveCount(0);
-  await expect(overview).toHaveAttribute('data-mode', 'summary');
+  await expect(overview).toHaveAttribute('data-mode', 'closed');
+  await overview.getByRole('button').first().click();
+  await expect(overview).toHaveAttribute('data-mode', 'details');
   await expect(overview).toContainText('A synthetic project for the workspace guide.');
+  await expect(overview).toContainText('Connect a name to a greeting.');
+  await expect(overview).toContainText('A working greeting application.');
+  await expect(overview.getByRole('list', { name: 'Project roadmap' })).toContainText('Greeting');
+  await expect(overview).not.toContainText('Current learning step');
+  await expect(overview).not.toContainText('Current goal');
   const opening = page.getByTestId('pbl-agent-turn').first();
-  const overviewBox = await overview.boundingBox();
-  const openingBox = await opening.boundingBox();
-  expect(overviewBox && openingBox && overviewBox.y + overviewBox.height <= openingBox.y).toBe(
-    true,
-  );
-  await overview.getByRole('button', { name: 'Close project overview' }).click();
+  await expect(opening.getByRole('link', { name: 'Project overview' })).toHaveCount(0);
+  const geometry = await overview.evaluate((el) => {
+    const viewport = el.closest('.pbl-conversation-scroll');
+    const content = el.querySelector('.pbl-overview-content');
+    const outer = viewport!.getBoundingClientRect(),
+      card = el.getBoundingClientRect();
+    return {
+      left: card.left - outer.left,
+      right: outer.right - card.right,
+      overflow: getComputedStyle(content!).overflowY,
+      maxHeight: getComputedStyle(content!).maxHeight,
+    };
+  });
+  expect(geometry.left).toBeGreaterThanOrEqual(16);
+  expect(geometry.right).toBeGreaterThanOrEqual(16);
+  expect(geometry.overflow).toBe('visible');
+  expect(geometry.maxHeight).toBe('none');
+  await overview.getByRole('button', { name: 'Collapse overview', exact: true }).click();
+  await expect(overview).toHaveAttribute('data-mode', 'closed');
+  await overview.getByRole('button').first().click();
+  await expect(overview).toHaveAttribute('data-mode', 'details');
+  await overview.getByRole('button').first().click();
   await expect(overview).toHaveAttribute('data-mode', 'closed');
   fixture.view.revision++;
   await fixture.publish();
-  await opening.getByRole('link', { name: 'Project overview' }).click();
-  await expect(overview).toHaveAttribute('data-mode', 'details');
-  await expect(overview.getByRole('list', { name: 'Project Roadmap' })).toContainText('Greeting');
+  await expect(overview).toHaveAttribute('data-mode', 'closed');
   expect(fixture.commands).toEqual([]);
 });
 
@@ -1175,7 +1200,7 @@ test('hides Latest during the guide and restores the working control after dismi
   await expect(latest).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(tour(page)).toHaveCount(0);
-  await expect(page.locator('#pbl-project-overview')).toHaveAttribute('data-mode', 'summary');
+  await expect(page.locator('#pbl-project-overview')).toHaveAttribute('data-mode', 'closed');
   await expect(latest).toBeVisible();
   const height = await viewport.evaluate((el) => el.clientHeight);
   await latest.click();

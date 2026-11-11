@@ -11,12 +11,14 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 /** Use the same follow/release/re-follow mechanism as the Pro workbench. */
 export function ConversationViewport({
   children,
+  header,
   sent,
   generating,
   hidden = false,
   onClick,
 }: {
   children?: ReactNode;
+  header?: ReactNode;
   sent: number;
   generating: boolean;
   hidden?: boolean;
@@ -52,6 +54,11 @@ export function ConversationViewport({
         className="pbl-conversation-scroll min-h-0 flex-1 overflow-y-auto"
       >
         <div ref={contentRef} className="flex flex-col gap-5 p-4" onClick={onClick}>
+          {header && (
+            <div onPointerDownCapture={stick.stopScroll} onKeyDownCapture={stick.stopScroll}>
+              {header}
+            </div>
+          )}
           {children}
         </div>
       </div>

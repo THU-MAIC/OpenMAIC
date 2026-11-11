@@ -3024,9 +3024,18 @@
     },
     "overview": {
       "title": "Projektübersicht",
-      "close": "Projektübersicht schließen",
-      "currentGoal": "Aktuelles Ziel",
-      "view": "Ablauf ansehen ({{count}})"
+      "expand": "Aufklappen",
+      "collapse": "Übersicht zuklappen",
+      "projectGoal": "Projektziel",
+      "finishedWork": "Ihre fertige Anwendung",
+      "roadmap": "Projektübersicht",
+      "goalAndResult": "Ziel und Ergebnis",
+      "goal": "Ziel",
+      "result": "Ergebnis",
+      "eachStage": "Ablauf jeder Phase",
+      "yourRole": "Sie entscheiden und prüfen; KI hilft beim Planen und Programmieren.",
+      "preview": "Probieren Sie die Anwendung in der Vorschau aus und prüfen Sie das Ergebnis.",
+      "advance": "Sobald ein Schritt fertig ist, geht es über die violette Schaltfläche über dem Eingabefeld weiter."
     },
     "journey": {
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",

@@ -1,7 +1,7 @@
 'use client';
 import { parseFileReference, type FileReference } from '@/lib/pbl/v3/file-reference';
 import { hasTaskDrawer, TASK_DRAWER_LINK } from '@/lib/pbl/v3/presentation';
-import { useState, type MouseEvent } from 'react';
+import { useState, type MouseEvent, type ReactNode } from 'react';
 import {
   Check,
   Copy,
@@ -17,7 +17,6 @@ import { WaitingBar } from '@/components/workbench/chat/waiting-bar';
 import { ToolActivity } from './tool-activity';
 import { ConversationHistory } from './conversation-history';
 import { ConversationViewport } from './conversation-scroll';
-import { PROJECT_OVERVIEW_ID } from './project-overview';
 import { UserBubble } from '@/components/workbench/chat/user-bubble';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { LearningView } from '@/lib/pbl/v3/types';
@@ -55,11 +54,9 @@ function groupParts(parts: Part[]) {
 function AgentTurn({
   entry,
   onOpenReport,
-  onOpenOverview,
 }: {
   entry: LearningConversationEntry;
   onOpenReport?: () => void;
-  onOpenOverview?: () => void;
 }) {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
@@ -148,18 +145,6 @@ function AgentTurn({
           </p>
         )}
       </div>
-      {onOpenOverview && entry.status !== 'running' && (
-        <a
-          href={`#${PROJECT_OVERVIEW_ID}`}
-          className="block w-fit rounded-sm px-1 text-xs font-semibold text-[color:var(--pbl-guidance)] underline underline-offset-2"
-          onClick={(event) => {
-            event.preventDefault();
-            onOpenOverview();
-          }}
-        >
-          {t('pblV3.overview.title')}
-        </a>
-      )}
       {copyText && (
         <button
           type="button"
@@ -181,11 +166,9 @@ function AgentTurn({
 function ConversationEntry({
   entry,
   onOpenReport,
-  onOpenOverview,
 }: {
   entry: LearningConversationEntry;
   onOpenReport?: () => void;
-  onOpenOverview?: () => void;
 }) {
   const { t } = useI18n();
   return entry.boundary ? (
@@ -210,12 +193,7 @@ function ConversationEntry({
       text={entry.parts.flatMap((p) => (p.kind === 'text' ? [p.text] : [])).join('\n')}
     />
   ) : (
-    <AgentTurn
-      key={entry.id}
-      entry={entry}
-      onOpenReport={onOpenReport}
-      onOpenOverview={onOpenOverview}
-    />
+    <AgentTurn key={entry.id} entry={entry} onOpenReport={onOpenReport} />
   );
 }
 export function LearningConversation({
@@ -227,13 +205,13 @@ export function LearningConversation({
   onOpenFile,
   onOpenReport,
   onOpenTask,
-  onOpenOverview,
+  overview,
 }: {
   view: LearningView;
   onOpenReport?: () => void;
   onOpenFile?: (reference: FileReference) => void;
   onOpenTask?: () => void;
-  onOpenOverview?: () => void;
+  overview?: ReactNode;
   sent: number;
   requesting?: boolean;
   modalActive?: boolean;
@@ -247,14 +225,6 @@ export function LearningConversation({
       speaker: m.role === 'user' ? 'user' : (view.role ?? 'mentor'),
       parts: [{ kind: 'text', id: `${i}`, text: m.text }],
     }));
-  const openingReply = onOpenOverview
-    ? entries.find(
-        (entry) =>
-          !entry.boundary &&
-          entry.speaker !== 'user' &&
-          entry.parts.some((part) => part.kind === 'text' && part.text.trim()),
-      )
-    : undefined;
   const openReference = (event: MouseEvent<HTMLElement>, dismiss?: () => void) => {
     const anchor = (event.target as Element).closest('a');
     const href = anchor?.getAttribute('href') ?? '';
@@ -282,6 +252,7 @@ export function LearningConversation({
   return (
     <ConversationViewport
       key={view.id}
+      header={overview}
       sent={sent}
       hidden={modalActive}
       generating={requesting || view.busy || entries.some((entry) => entry.status === 'running')}
@@ -315,12 +286,7 @@ export function LearningConversation({
         <p className="text-sm text-muted-foreground">{t('pblV3.journey.startConversation')}</p>
       )}
       {entries.map((entry) => (
-        <ConversationEntry
-          key={entry.id}
-          entry={entry}
-          onOpenReport={onOpenReport}
-          onOpenOverview={entry === openingReply ? onOpenOverview : undefined}
-        />
+        <ConversationEntry key={entry.id} entry={entry} onOpenReport={onOpenReport} />
       ))}
       {pendingMessage && <ConversationEntry entry={pendingMessage} />}
       {placeholder && (

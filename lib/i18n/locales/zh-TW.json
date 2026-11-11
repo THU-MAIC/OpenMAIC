@@ -3024,9 +3024,18 @@
     },
     "overview": {
       "title": "專案總覽",
-      "close": "收起專案總覽",
-      "currentGoal": "目前目標",
-      "view": "查看大綱（{{count}} 個階段）"
+      "expand": "展開",
+      "collapse": "收起總覽",
+      "projectGoal": "專案目標",
+      "finishedWork": "完成後的作品",
+      "roadmap": "專案大綱",
+      "goalAndResult": "目標與成果",
+      "goal": "目標",
+      "result": "成果",
+      "eachStage": "每個階段怎麼走",
+      "yourRole": "由你做決策和審閱，AI 協助撰寫計畫和程式碼。",
+      "preview": "在作品預覽區使用自己的產品，檢查做出的效果。",
+      "advance": "環節完成後，點擊輸入框上方的紫色操作列繼續。"
     },
     "journey": {
       "completionHandoff": "本環節已完成。下一步操作請看學習助手底部的任務列。",

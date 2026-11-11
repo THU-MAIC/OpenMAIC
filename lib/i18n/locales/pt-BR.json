@@ -3024,9 +3024,18 @@
     },
     "overview": {
       "title": "Visão geral do projeto",
-      "close": "Fechar visão geral do projeto",
-      "currentGoal": "Objetivo atual",
-      "view": "Ver etapas ({{count}})"
+      "expand": "Expandir",
+      "collapse": "Recolher visão geral",
+      "projectGoal": "Objetivo do projeto",
+      "finishedWork": "Seu aplicativo pronto",
+      "roadmap": "Roteiro do projeto",
+      "goalAndResult": "Objetivo e resultado",
+      "goal": "Objetivo",
+      "result": "Resultado",
+      "eachStage": "Como seguir cada etapa",
+      "yourRole": "Você decide e revisa; a IA ajuda a escrever o plano e o código.",
+      "preview": "Use seu aplicativo na prévia e confira o que foi construído.",
+      "advance": "Quando um passo terminar, continue pelo botão roxo acima do campo de entrada."
     },
     "journey": {
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",

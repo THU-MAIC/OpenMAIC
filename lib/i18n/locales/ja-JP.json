@@ -3024,9 +3024,18 @@
     },
     "overview": {
       "title": "プロジェクト概要",
-      "close": "プロジェクト概要を閉じる",
-      "currentGoal": "現在の目標",
-      "view": "全体の流れを見る（{{count}}）"
+      "expand": "開く",
+      "collapse": "概要を閉じる",
+      "projectGoal": "プロジェクトの目標",
+      "finishedWork": "完成するアプリ",
+      "roadmap": "プロジェクトの流れ",
+      "goalAndResult": "目標と成果",
+      "goal": "目標",
+      "result": "成果",
+      "eachStage": "各段階の進め方",
+      "yourRole": "判断とレビューはあなたが行い、計画とコードの作成は AI が支援します。",
+      "preview": "プレビューでアプリを使い、作成した機能を確かめましょう。",
+      "advance": "ステップが完了したら、入力欄の上にある紫色のボタンで進みます。"
     },
     "journey": {
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",

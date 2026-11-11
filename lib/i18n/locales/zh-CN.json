@@ -3024,9 +3024,18 @@
     },
     "overview": {
       "title": "项目总览",
-      "close": "收起项目总览",
-      "currentGoal": "当前目标",
-      "view": "查看大纲（{{count}} 个阶段）"
+      "expand": "展开",
+      "collapse": "收起总览",
+      "projectGoal": "项目目标",
+      "finishedWork": "完成后的作品",
+      "roadmap": "项目大纲",
+      "goalAndResult": "目标与成果",
+      "goal": "目标",
+      "result": "成果",
+      "eachStage": "每个阶段怎么走",
+      "yourRole": "你来做决策和审阅，AI 协助写计划和代码。",
+      "preview": "在作品预览区使用自己的产品，检查做出的效果。",
+      "advance": "环节完成后，点击输入框上方的紫色执行条继续。"
     },
     "journey": {
       "completionHandoff": "本环节已完成。下一步操作请看学习助手底部的任务栏。",

@@ -3024,9 +3024,18 @@
     },
     "overview": {
       "title": "Tổng quan dự án",
-      "close": "Đóng tổng quan dự án",
-      "currentGoal": "Mục tiêu hiện tại",
-      "view": "Xem lộ trình ({{count}})"
+      "expand": "Mở rộng",
+      "collapse": "Thu gọn tổng quan",
+      "projectGoal": "Mục tiêu dự án",
+      "finishedWork": "Ứng dụng khi hoàn thành",
+      "roadmap": "Lộ trình dự án",
+      "goalAndResult": "Mục tiêu và kết quả",
+      "goal": "Mục tiêu",
+      "result": "Kết quả",
+      "eachStage": "Quy trình mỗi giai đoạn",
+      "yourRole": "Bạn quyết định và rà soát; AI hỗ trợ viết kế hoạch và mã.",
+      "preview": "Dùng ứng dụng trong vùng xem trước để kiểm tra kết quả.",
+      "advance": "Khi xong một bước, dùng nút màu tím phía trên ô nhập để tiếp tục."
     },
     "journey": {
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",

@@ -3024,9 +3024,18 @@
     },
     "overview": {
       "title": "Обзор проекта",
-      "close": "Закрыть обзор проекта",
-      "currentGoal": "Текущая цель",
-      "view": "Смотреть план ({{count}})"
+      "expand": "Развернуть",
+      "collapse": "Свернуть обзор",
+      "projectGoal": "Цель проекта",
+      "finishedWork": "Готовое приложение",
+      "roadmap": "План проекта",
+      "goalAndResult": "Цель и результат",
+      "goal": "Цель",
+      "result": "Результат",
+      "eachStage": "Порядок каждой стадии",
+      "yourRole": "Вы принимаете решения и проверяете; ИИ помогает написать план и код.",
+      "preview": "Испытайте приложение в области предпросмотра и проверьте результат.",
+      "advance": "Завершив шаг, продолжите с помощью фиолетовой кнопки над полем ввода."
     },
     "journey": {
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",

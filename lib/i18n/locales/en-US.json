@@ -3024,9 +3024,18 @@
     },
     "overview": {
       "title": "Project overview",
-      "close": "Close project overview",
-      "currentGoal": "Current goal",
-      "view": "View roadmap ({{count}})"
+      "expand": "Expand",
+      "collapse": "Collapse overview",
+      "projectGoal": "Project goal",
+      "finishedWork": "Your finished application",
+      "roadmap": "Project roadmap",
+      "goalAndResult": "Goal and result",
+      "goal": "Goal",
+      "result": "Result",
+      "eachStage": "In each stage",
+      "yourRole": "You make decisions and review; AI helps write the plan and code.",
+      "preview": "Try your application in the preview pane and check what you built.",
+      "advance": "When a step is ready, use the purple action above the input to continue."
     },
     "journey": {
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",

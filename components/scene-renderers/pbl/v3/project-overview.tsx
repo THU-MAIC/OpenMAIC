@@ -1,13 +1,12 @@
 'use client';
 
-import { ArrowDownRight, ChevronDown, Map, X } from 'lucide-react';
+import { ChevronDown, Compass, Map, Monitor, Route } from 'lucide-react';
 import { useId, type Ref } from 'react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { ProjectHeroDetails } from '@/lib/pbl/project-hero';
-import { learningStep } from '@/lib/pbl/v3/presentation';
 import type { LearningView } from '@/lib/pbl/v3/types';
 
-export type ProjectOverviewMode = 'closed' | 'summary' | 'details';
+export type ProjectOverviewMode = 'closed' | 'details';
 export const PROJECT_OVERVIEW_ID = 'pbl-project-overview';
 
 export function ProjectOverview({
@@ -26,132 +25,156 @@ export function ProjectOverview({
   const { t } = useI18n();
   const contentId = useId();
   const titleId = useId();
-  const open = mode !== 'closed';
-  const details = mode === 'details';
+  const open = mode === 'details';
   const milestones = view.milestones ?? [];
-  const goal = view.task?.goal;
-  const description = hero?.description;
-  const gains = hero?.gains ?? [];
-  const title = t('pblV3.overview.title');
+  const outcome = hero?.learningObjective || milestones.at(-1)?.outcome;
+  const steps = milestones[0]?.stages ?? [];
+  const toggle = () => onChange(open ? 'closed' : 'details');
 
   return (
     <section
       id={PROJECT_OVERVIEW_ID}
       aria-labelledby={titleId}
       data-mode={mode}
-      className="pbl-project-overview mx-3 mb-1 shrink-0 rounded-xl border bg-card"
+      className="pbl-project-overview relative min-w-0 rounded-2xl border"
     >
-      <header className="flex min-w-0 items-center gap-1 px-2 py-1">
-        <button
-          ref={triggerRef}
-          type="button"
-          aria-expanded={open}
-          aria-controls={contentId}
-          onClick={() => onChange(open ? 'closed' : 'details')}
-          className="flex min-h-8 min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-start text-xs font-semibold hover:bg-primary/10"
-        >
-          <Map size={15} className="shrink-0 text-primary" aria-hidden="true" />
-          <span id={titleId} className="min-w-0 flex-1 break-words">
-            {title}
-          </span>
-          {!open && <ChevronDown size={15} className="shrink-0" aria-hidden="true" />}
-        </button>
-        {open && (
-          <button
-            type="button"
-            aria-label={t('pblV3.overview.close')}
-            onClick={() => onChange('closed')}
-            className="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-foreground"
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-expanded={open}
+        aria-controls={contentId}
+        onClick={toggle}
+        className="pbl-overview-trigger relative flex w-full min-w-0 items-center gap-3 rounded-2xl p-4 text-start"
+      >
+        <span className="pbl-overview-icon grid size-9 shrink-0 place-items-center rounded-xl border">
+          <Map size={18} aria-hidden="true" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span
+            id={titleId}
+            className="pbl-overview-accent block text-[11px] font-semibold tracking-wide"
           >
-            <X size={15} aria-hidden="true" />
-          </button>
-        )}
-      </header>
+            {t('pblV3.overview.title')}
+          </span>
+          <span className="mt-1 block break-words text-sm font-semibold leading-snug">
+            {hero?.title || view.title}
+          </span>
+        </span>
+        <span className="pbl-overview-accent flex shrink-0 items-center gap-1 text-xs font-medium">
+          {t(open ? 'pblV3.overview.collapse' : 'pblV3.overview.expand')}
+          <ChevronDown size={15} className={open ? 'rotate-180' : ''} aria-hidden="true" />
+        </span>
+      </button>
       <div id={contentId} hidden={!open}>
         {open && (
-          <div className="pbl-overview-content space-y-2.5 overflow-y-auto px-3 pb-3 text-xs">
-            <div>
-              <h4 className="font-semibold">{hero?.title || view.title}</h4>
-              {description && (
-                <p
-                  className={
-                    details
-                      ? 'mt-1 text-muted-foreground'
-                      : 'mt-1 line-clamp-2 text-muted-foreground'
-                  }
-                >
-                  {description}
-                </p>
-              )}
-            </div>
-            {view.state.status !== 'completed' && (
-              <div className="space-y-1 rounded-lg border border-primary/20 bg-primary/8 px-2.5 py-2 leading-relaxed">
-                <p>
-                  <span className="me-1.5 text-muted-foreground">
-                    {t('pblV3.journey.currentTask')}
-                  </span>
-                  <strong className="font-semibold text-primary">
-                    {t(`pblV3.journey.steps.${learningStep(view)}`)}
-                  </strong>
-                </p>
-                {goal && (
-                  <p className={details ? undefined : 'line-clamp-2'}>
-                    <span className="me-1.5 text-muted-foreground">
-                      {t('pblV3.overview.currentGoal')}
-                    </span>
-                    {goal}
-                  </p>
-                )}
-              </div>
-            )}
-            {details && milestones.length > 0 && (
-              <ol aria-label={t('pbl.v2.sidebar.title')} className="space-y-1.5">
-                {milestones.map((milestone, index) => {
-                  const current =
-                    milestone.id === view.state.position.milestoneId &&
-                    view.state.status !== 'completed';
-                  return (
-                    <li
-                      key={milestone.id}
-                      aria-current={current ? 'step' : undefined}
-                      className="flex items-start gap-2 rounded-lg bg-muted/50 px-2.5 py-1.5 aria-[current=step]:bg-primary/10 aria-[current=step]:font-semibold"
-                    >
-                      <span className="shrink-0 tabular-nums text-primary">{index + 1}</span>
-                      <span className="min-w-0 break-words">{milestone.title}</span>
-                      {milestone.optional && (
-                        <span className="ms-auto text-muted-foreground">{t('pblV3.optional')}</span>
-                      )}
-                    </li>
-                  );
-                })}
-              </ol>
-            )}
-            {details && gains.length > 0 && (
+          <div className="pbl-overview-content relative space-y-4 px-4 pb-4 text-[13px] leading-relaxed">
+            {hero?.description && (
               <div>
-                <h4 className="font-semibold">{t('pbl.v2.hero.youWillLearn')}</h4>
-                <ul className="mt-1 list-disc space-y-1 ps-4 text-muted-foreground">
-                  {gains.map((gain) => (
-                    <li key={gain}>{gain}</li>
-                  ))}
-                </ul>
+                <h4 className="pbl-overview-label">{t('pblV3.overview.projectGoal')}</h4>
+                <p className="mt-1.5">{hero.description}</p>
               </div>
             )}
-            {!details && (
+            {outcome && (
+              <div className="pbl-overview-result rounded-xl border p-3">
+                <h4 className="pbl-overview-accent text-xs font-semibold">
+                  {t('pblV3.overview.finishedWork')}
+                </h4>
+                <p className="mt-1.5 font-medium">{outcome}</p>
+              </div>
+            )}
+            {milestones.length > 0 && (
+              <div>
+                <h4 className="pbl-overview-label">{t('pblV3.overview.roadmap')}</h4>
+                <ol aria-label={t('pblV3.overview.roadmap')} className="mt-2 space-y-2">
+                  {milestones.map((milestone, index) => {
+                    const combined = milestone.goal === milestone.outcome;
+                    return (
+                      <li
+                        key={milestone.id}
+                        className="pbl-overview-milestone flex gap-3 rounded-xl border p-3"
+                      >
+                        <span className="pbl-overview-icon grid size-6 shrink-0 place-items-center rounded-full text-xs font-semibold tabular-nums">
+                          {index + 1}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <h5 className="font-semibold">
+                            {milestone.title}
+                            {milestone.optional && (
+                              <span className="ms-2 text-xs font-normal">
+                                {t('pblV3.optional')}
+                              </span>
+                            )}
+                          </h5>
+                          {milestone.goal && (
+                            <p className="mt-1.5">
+                              <span className="pbl-overview-label me-2">
+                                {t(
+                                  combined ? 'pblV3.overview.goalAndResult' : 'pblV3.overview.goal',
+                                )}
+                              </span>
+                              {milestone.goal}
+                            </p>
+                          )}
+                          {milestone.outcome && !combined && (
+                            <p className="mt-1.5">
+                              <span className="pbl-overview-label me-2">
+                                {t('pblV3.overview.result')}
+                              </span>
+                              {milestone.outcome}
+                            </p>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </div>
+            )}
+            <div className="pbl-overview-guide space-y-3 border-t pt-3">
+              {steps.length > 0 && (
+                <div>
+                  <h4 className="pbl-overview-label">{t('pblV3.overview.eachStage')}</h4>
+                  <ol className="mt-2 flex flex-wrap gap-x-2 gap-y-1.5 text-xs">
+                    {steps.map((step, index) => (
+                      <li key={`${index}:${step}`} className="flex items-center gap-1.5">
+                        <span className="pbl-overview-accent tabular-nums">{index + 1}</span>
+                        {t(`pblV3.journey.steps.${step}`)}
+                        {index < steps.length - 1 && (
+                          <span className="pbl-overview-label ms-0.5" aria-hidden="true">
+                            ›
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+              <ul className="space-y-2 text-xs">
+                {(
+                  [
+                    [Compass, 'yourRole'],
+                    [Monitor, 'preview'],
+                    [Route, 'advance'],
+                  ] as const
+                ).map(([Icon, key]) => (
+                  <li key={key} className="flex items-start gap-2">
+                    <Icon
+                      size={14}
+                      className="pbl-overview-accent mt-0.5 shrink-0"
+                      aria-hidden="true"
+                    />
+                    <span>{t(`pblV3.overview.${key}`)}</span>
+                  </li>
+                ))}
+              </ul>
               <button
                 type="button"
-                onClick={() => onChange('details')}
-                className="inline-flex min-h-7 max-w-full items-center gap-1.5 rounded-md font-semibold text-primary hover:underline"
+                onClick={() => onChange('closed')}
+                className="pbl-overview-accent rounded-md text-xs font-semibold underline-offset-4 hover:underline"
               >
-                <ArrowDownRight
-                  size={14}
-                  className="shrink-0 rtl:-scale-x-100"
-                  aria-hidden="true"
-                />
-                {t('pblV3.overview.view', {
-                  count: milestones.length || hero?.milestoneCount || 1,
-                })}
+                {t('pblV3.overview.collapse')}
               </button>
-            )}
+            </div>
           </div>
         )}
       </div>

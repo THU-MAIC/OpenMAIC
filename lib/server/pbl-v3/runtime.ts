@@ -1350,6 +1350,8 @@ export async function learningView(
     milestones: project.definition.milestones.map((m) => ({
       id: m.id,
       title: m.title,
+      goal: m.goal ?? m.teaching?.targetOutcome,
+      outcome: m.shareResult?.description,
       optional: !!m.optional,
       stages: m.stages.map(stageStep),
     })),

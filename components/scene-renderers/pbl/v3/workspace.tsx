@@ -413,19 +413,6 @@ function PBLV3WorkspaceContent({
       Object.values(decisionDrafts).some((draft) => !!draft.chosen || !!draft.rationale),
   });
   const overviewMode = overview && overview.studyId === view?.id ? overview.mode : 'closed';
-  const atProjectStart =
-    view?.state.position.milestoneIndex === 0 && view.state.position.stageIndex === 0;
-  if (
-    view &&
-    initialEntry &&
-    atProjectStart &&
-    onboardingReady &&
-    !entryLoading &&
-    !onboarding.active &&
-    overview?.studyId !== view.id
-  ) {
-    setOverview({ studyId: view.id, mode: 'summary' });
-  }
   useEffect(() => {
     onOnboardingChange?.(onboarding.active || entryLoading);
     return () => onOnboardingChange?.(false);
@@ -824,19 +811,21 @@ function PBLV3WorkspaceContent({
                 />
 
                 <div className="pbl-task-area flex min-h-0 flex-1 flex-col">
-                  <div className="shrink-0" hidden={onboarding.active || entryLoading}>
-                    <ProjectOverview
-                      view={view}
-                      hero={projectHero}
-                      mode={overviewMode}
-                      triggerRef={overviewTrigger}
-                      onChange={(mode) => {
-                        setOverview({ studyId: view.id, mode });
-                        overviewTrigger.current?.focus({ preventScroll: true });
-                      }}
-                    />
-                  </div>
                   <LearningConversation
+                    overview={
+                      !onboarding.active && !entryLoading ? (
+                        <ProjectOverview
+                          view={view}
+                          hero={projectHero}
+                          mode={overviewMode}
+                          triggerRef={overviewTrigger}
+                          onChange={(mode) => {
+                            setOverview({ studyId: view.id, mode });
+                            overviewTrigger.current?.focus({ preventScroll: true });
+                          }}
+                        />
+                      ) : undefined
+                    }
                     modalActive={onboarding.active || entryLoading}
                     view={view}
                     onOpenFile={(reference) => {
@@ -851,14 +840,6 @@ function PBLV3WorkspaceContent({
                       view.reportAvailable && !view.busy ? () => setReportOpen(true) : undefined
                     }
                     onOpenTask={() => taskDock.current?.open()}
-                    onOpenOverview={
-                      atProjectStart
-                        ? () => {
-                            setOverview({ studyId: view.id, mode: 'details' });
-                            overviewTrigger.current?.focus({ preventScroll: true });
-                          }
-                        : undefined
-                    }
                     sent={sent}
                     pendingMessage={pendingMessage}
                     requesting={['chat', 'begin', 'retry'].includes(pendingAction ?? '')}

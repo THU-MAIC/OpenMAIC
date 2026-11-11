@@ -3024,9 +3024,18 @@
     },
     "overview": {
       "title": "프로젝트 개요",
-      "close": "프로젝트 개요 닫기",
-      "currentGoal": "현재 목표",
-      "view": "전체 단계 보기 ({{count}})"
+      "expand": "펼치기",
+      "collapse": "개요 접기",
+      "projectGoal": "프로젝트 목표",
+      "finishedWork": "완성할 앱",
+      "roadmap": "프로젝트 개요",
+      "goalAndResult": "목표와 결과",
+      "goal": "목표",
+      "result": "결과",
+      "eachStage": "각 단계의 진행 순서",
+      "yourRole": "직접 결정하고 검토하며, AI는 계획과 코드 작성을 돕습니다.",
+      "preview": "미리보기에서 앱을 사용해 구현한 기능을 확인하세요.",
+      "advance": "단계가 완료되면 입력창 위의 보라색 버튼으로 계속하세요."
     },
     "journey": {
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",

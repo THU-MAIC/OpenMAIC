@@ -205,19 +205,79 @@
   --primary-foreground: var(--pbl-guidance-foreground);
   --ring: var(--pbl-guidance);
 }
-.pbl-workbench .pbl-project-overview:not([data-mode='closed']) {
-  border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
-  background-color: color-mix(in srgb, var(--primary) 5%, var(--card));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 12%, transparent);
-}
-.pbl-workbench .pbl-overview-content {
-  max-height: min(18rem, 36cqh);
+.pbl-workbench .pbl-project-overview {
+  --pbl-overview-ink: #302a48;
+  --pbl-overview-muted: #6d6383;
+  --pbl-overview-accent: #7045bd;
   overflow-wrap: anywhere;
+  color: var(--pbl-overview-ink);
+  border-color: rgb(167 139 250 / 0.35);
+  background: linear-gradient(
+    135deg,
+    rgb(248 245 255 / 0.97),
+    rgb(240 243 255 / 0.95) 55%,
+    rgb(233 249 252 / 0.92)
+  );
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.85),
+    0 8px 26px rgb(91 55 140 / 0.09);
 }
-@media (prefers-reduced-motion: no-preference) {
-  .pbl-workbench .pbl-project-overview[data-mode='summary'] {
-    animation: pbl-task-open 250ms ease-out;
-  }
+.pbl-workbench .pbl-project-overview::before {
+  content: '';
+  position: absolute;
+  inset: 0 12px auto;
+  height: 2px;
+  border-radius: 0 0 4px 4px;
+  background: linear-gradient(90deg, #9668ec, #8b83ee 60%, #62c7dc);
+  pointer-events: none;
+}
+.dark .pbl-workbench .pbl-project-overview {
+  --pbl-overview-ink: #eee9fb;
+  --pbl-overview-muted: #b5aacb;
+  --pbl-overview-accent: #c6acff;
+  border-color: rgb(180 150 244 / 0.28);
+  background: linear-gradient(
+    135deg,
+    rgb(91 62 130 / 0.3),
+    rgb(49 49 89 / 0.6) 55%,
+    rgb(41 86 104 / 0.27)
+  );
+  box-shadow:
+    inset 0 1px 0 rgb(225 210 255 / 0.08),
+    0 10px 30px rgb(6 10 26 / 0.18);
+}
+.pbl-workbench .pbl-overview-accent {
+  color: var(--pbl-overview-accent);
+}
+.pbl-workbench .pbl-overview-label {
+  color: var(--pbl-overview-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+.pbl-workbench .pbl-overview-icon,
+.pbl-workbench .pbl-overview-result {
+  color: var(--pbl-overview-accent);
+  border-color: color-mix(in srgb, var(--pbl-overview-accent) 20%, transparent);
+  background: color-mix(in srgb, var(--pbl-overview-accent) 7%, transparent);
+}
+.pbl-workbench .pbl-overview-result p {
+  color: var(--pbl-overview-ink);
+}
+.pbl-workbench .pbl-overview-milestone {
+  border-color: color-mix(in srgb, var(--pbl-overview-accent) 14%, transparent);
+  background: rgb(255 255 255 / 0.28);
+}
+.dark .pbl-workbench .pbl-overview-milestone {
+  background: rgb(255 255 255 / 0.025);
+}
+.pbl-workbench .pbl-overview-guide {
+  border-color: color-mix(in srgb, var(--pbl-overview-accent) 18%, transparent);
+}
+.pbl-workbench .pbl-overview-trigger:hover {
+  background: color-mix(in srgb, var(--pbl-overview-accent) 4%, transparent);
+}
+.pbl-workbench .pbl-project-overview button:focus-visible {
+  outline-color: var(--pbl-overview-accent);
 }
 .pbl-workbench .pbl-task-drawer {
   /* Keep its close control inside the chat area, even in a short scene. */
