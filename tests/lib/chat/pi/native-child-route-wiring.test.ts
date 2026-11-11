@@ -276,14 +276,17 @@ describe('PR2 Native Child route production wiring', () => {
   }, 15000);
 
   it.each([
-    { vision: true, configured: true },
-    { vision: false, configured: true },
-    { vision: undefined, configured: true },
-    { vision: true, configured: false },
+    { vision: true, configured: true, healthy: true },
+    { vision: true, configured: true, healthy: false },
+    { vision: false, configured: true, healthy: true },
+    { vision: undefined, configured: true, healthy: true },
+    { vision: true, configured: false, healthy: true },
   ])(
-    'sends only the latest tail PNG through the provider adapter ($vision/$configured)',
-    async ({ vision, configured }) => {
-      const imagesEnabled = vision === true && configured;
+    'sends only the latest tail PNG through the provider adapter ($vision/$configured/$healthy)',
+    async ({ vision, configured, healthy }) => {
+      // The health probe runs only when an image could otherwise be sent.
+      const probed = vision === true && configured;
+      const imagesEnabled = probed && healthy;
       process.env.DATABASE_URL = 'postgres://shared-provider-test';
       if (configured) process.env.RENDER_SERVICE_URL = 'http://render.test';
       const { createWhiteboardRuntimeService } = await import('@/lib/whiteboard/runtime/store');
@@ -309,7 +312,14 @@ describe('PR2 Native Child route production wiring', () => {
       const png =
         'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1cAAAAASUVORK5CYII=';
       const snapshots: Array<{ elements: Array<{ content: string }> }> = [];
-      mocks.previewFetch.mockImplementation(async (_url, init) => {
+      const healthProbes: string[] = [];
+      mocks.previewFetch.mockImplementation(async (url, init) => {
+        if (String(url).endsWith('/health')) {
+          healthProbes.push(String(url));
+          return healthy
+            ? Response.json({}, { headers: { 'x-openmaic-render-owner-bound': '1' } })
+            : new Response(null, { status: 503 });
+        }
         snapshots.push(JSON.parse(init.body).scene.content.canvas);
         return new Response(
           Buffer.concat([Buffer.from(png, 'base64'), Buffer.from(String(snapshots.length))]),
@@ -460,7 +470,8 @@ describe('PR2 Native Child route production wiring', () => {
       }
       expect(JSON.stringify(childWire[2].messages.at(-1))).toContain('lastSeq');
       // No writes in the second Child: it and both later Director rounds reuse the same render.
-      expect(mocks.previewFetch).toHaveBeenCalledTimes(imagesEnabled ? 3 : 0);
+      expect(healthProbes).toEqual(probed ? ['http://render.test/health'] : []);
+      expect(mocks.previewFetch).toHaveBeenCalledTimes((probed ? 1 : 0) + (imagesEnabled ? 3 : 0));
     },
     15000,
   );
