@@ -134,6 +134,7 @@ export function WorkspaceRail({
   activeView,
   onOpenView,
   resizeHandle,
+  miniResizeHandle,
 }: {
   readonly sessions: readonly ProHomeSessionItem[];
   readonly sessionState: HomeDiscoveryState;
@@ -173,6 +174,8 @@ export function WorkspaceRail({
   readonly onOpenView: (view: string) => void;
   /** The width drag, owned by the shell (it writes the CSS variable on the root). */
   readonly resizeHandle: ReactNode;
+  /** The folded rail's edge: dragging it outward unfolds the rail. */
+  readonly miniResizeHandle?: ReactNode;
 }) {
   const { t } = useI18n();
   const brand = useBrand();
@@ -403,6 +406,7 @@ export function WorkspaceRail({
         >
           <WorkspaceAccountBlock mini onOpenSettings={onOpenSettings} onOpenGuide={onOpenGuide} />
         </div>
+        {miniResizeHandle}
       </nav>
     );
   }

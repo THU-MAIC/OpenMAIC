@@ -549,6 +549,12 @@
   animation: ws-fade 500ms var(--ws-ease) both;
 }
 
+/* Folded and unfolded mid-drag (drag-to-collapse), the rail swaps under the
+   pointer: no entrance fade then, it is the same gesture continuing. */
+[data-ws-resizing] .ws-enter-rail {
+  animation: none;
+}
+
 /* The right pane opening: it comes in from the right edge, a beat after the
    conversation starts to narrow beside it (see `WorkspaceChatPane`), on the
    split's own curve. Full screen
@@ -1086,14 +1092,6 @@
   width: 2px;
   background: var(--ws-accent);
   box-shadow: 0 0 0 3px var(--ws-accent-wash);
-}
-
-/* Pulled far enough past its minimum that letting go will fold the pane
-   (drag-to-collapse): the pane's contents fade so the release is not a
-   surprise, and moving back out restores them. The seam itself stays lit. */
-:has(> .ws-resize[data-ws-collapse-armed='true']) > :not(.ws-resize) {
-  opacity: 0.4;
-  transition: opacity 120ms var(--ws-ease);
 }
 
 /* While dragging, the cursor must not flicker as the pointer crosses elements
@@ -1789,8 +1787,7 @@
   }
 
   .ws-resize-thread,
-  .ws-resize-thread::after,
-  :has(> .ws-resize[data-ws-collapse-armed='true']) > :not(.ws-resize) {
+  .ws-resize-thread::after {
     transition: none;
   }
 }

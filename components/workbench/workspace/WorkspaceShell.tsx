@@ -1869,11 +1869,27 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       setNavReopenedForPreview(false);
     }
   }, [autoFold, collapse, navCollapsed]);
-  // Dragging the rail's edge far enough inward folds it, through the same
-  // toggle as its fold button (so the preference is remembered the same way).
-  const collapseRail = useCallback(() => {
-    if (!navCollapsed) toggleRail();
+  // Dragging the rail's edge far enough inward folds it mid-drag, and the same
+  // drag carried back out unfolds it, through the same toggle as its fold
+  // button (so the preference is remembered the same way). The drag outlives
+  // the render that started it (the rail swaps under the pointer), so these
+  // read the rail's state through refs rather than a captured closure.
+  const railFold = useRef({ navCollapsed, toggleRail });
+  useEffect(() => {
+    railFold.current = { navCollapsed, toggleRail };
   }, [navCollapsed, toggleRail]);
+  const collapseRail = useCallback(() => {
+    const fold = railFold.current;
+    if (fold.navCollapsed) return;
+    fold.navCollapsed = true;
+    fold.toggleRail();
+  }, []);
+  const expandRail = useCallback(() => {
+    const fold = railFold.current;
+    if (!fold.navCollapsed) return;
+    fold.navCollapsed = false;
+    fold.toggleRail();
+  }, []);
 
   return (
     <div
@@ -1950,6 +1966,23 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
               onReset={railWidth.reset}
               collapseBelow={RAIL_COLLAPSE_THRESHOLD}
               onCollapse={collapseRail}
+              onExpand={expandRail}
+            />
+          }
+          miniResizeHandle={
+            <ResizeHandle
+              testId="pro-rail-mini-resize-handle"
+              label={t('workspace.expandNav')}
+              edge="right"
+              current={railWidth.current}
+              clamp={clampRailWidth}
+              onPreview={railWidth.preview}
+              onCommit={railWidth.commit}
+              onReset={() => {}}
+              folded
+              collapseBelow={RAIL_COLLAPSE_THRESHOLD}
+              onCollapse={collapseRail}
+              onExpand={expandRail}
             />
           }
         />

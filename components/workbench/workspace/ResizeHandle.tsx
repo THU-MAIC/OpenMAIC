@@ -20,28 +20,33 @@
  * without moving does nothing. Every seam on the surface now means exactly one
  * thing.
  *
- * A seam may still opt into drag-to-collapse (`collapseBelow` + `onCollapse`),
- * the way editors and sidebars commonly behave: pulling the edge well past the
- * pane's minimum width folds it on release. This is the same drag gesture
- * carried further, not a second control on the seam. While the pointer is past
- * the threshold the width holds at its minimum and `data-ws-collapse-armed`
- * marks the handle, so the pane can show that letting go will fold it; moving
- * back out disarms it. The fold happens on release rather than live because
- * the folded pane has no seam of its own: folding mid-drag would unmount this
- * handle under the captured pointer. On a fold, the width is put back to what
- * it was before the drag, so unfolding opens the pane at its remembered width.
+ * A seam may opt into drag-to-collapse (`collapseBelow` + `onCollapse` +
+ * `onExpand`), the way editors commonly behave, live and within one gesture:
+ * pulling the edge inward until the unclamped width passes `collapseBelow`
+ * folds the pane at once, mid-drag; carrying the same drag back outward past
+ * the threshold (plus a small hysteresis, so the boundary does not flicker)
+ * unfolds it and the edge follows the pointer again. A folded pane's own edge
+ * (`folded`) starts the same gesture from the other side. The remembered
+ * width is never touched by a fold: folding puts back the width the pane had
+ * before the drag. A cancelled pointer leaves things as they are.
+ *
+ * Because folding swaps the pane (and this handle with it) mid-drag, the drag
+ * is tracked on the window from pointerdown on, not on the handle: the handle
+ * may unmount under the pointer and the gesture carries on.
  *
  * The active state is keyed off `data-ws-drag` ON THIS HANDLE rather than the
  * document flag: `data-ws-resizing` is shared by every seam on the page, and
  * lighting all of them while one is moving misreports what is happening.
  *
- * The pointer is CAPTURED, so a fast drag that outruns the cursor still
- * tracks; `data-ws-resizing` on the document element is what stops the cursor
+ * `data-ws-resizing` on the document element is what stops the cursor
  * flickering and text selecting as the pointer travels over other elements.
  */
 
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils/cn';
+
+/** How far past the collapse threshold a folded drag must come back to unfold. */
+export const RESIZE_FOLD_HYSTERESIS = 8;
 
 export function ResizeHandle({
   testId,
@@ -54,88 +59,98 @@ export function ResizeHandle({
   onReset,
   collapseBelow,
   onCollapse,
+  onExpand,
+  folded = false,
 }: {
   readonly testId: string;
   readonly label: string;
   /** Which edge of the pane the strip sits on. */
   readonly edge: 'left' | 'right';
+  /** The pane's (remembered) width. */
   readonly current: () => number;
   readonly clamp: (width: number) => number;
   readonly onPreview: (width: number) => void;
   readonly onCommit: (width: number) => void;
   readonly onReset: () => void;
   /**
-   * Opt-in drag-to-collapse: an unclamped width below this many pixels arms a
-   * fold, and releasing while armed calls `onCollapse` instead of `onCommit`.
+   * Opt-in drag-to-collapse: an unclamped width below this many pixels folds
+   * the pane mid-drag (`onCollapse`); coming back past it unfolds (`onExpand`).
    */
   readonly collapseBelow?: number;
   readonly onCollapse?: () => void;
+  readonly onExpand?: () => void;
+  /** This is the folded pane's edge: the gesture starts folded. */
+  readonly folded?: boolean;
 }) {
-  const dragRef = useRef<{
-    startX: number;
-    startY: number;
-    startWidth: number;
-    latest: number;
-    moved: boolean;
-    armed: boolean;
-  } | null>(null);
+  // The latest callbacks, read by the window listeners of a drag that may
+  // outlive this render (and this handle).
+  const props = useRef({ clamp, onPreview, onCommit, onCollapse, onExpand });
+  useEffect(() => {
+    props.current = { clamp, onPreview, onCommit, onCollapse, onExpand };
+  });
 
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     // Ignore secondary buttons: a right-click drag is not a resize.
     if (event.button !== 0) return;
     event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    event.currentTarget.setAttribute('data-ws-drag', 'true');
-    const start = current();
-    dragRef.current = {
+    const handle = event.currentTarget;
+    const pointerId = event.pointerId;
+    const canFold =
+      collapseBelow !== undefined && onCollapse !== undefined && onExpand !== undefined;
+    const remembered = current();
+    // A folded pane's edge starts from the folded pane's own width.
+    const startWidth = folded
+      ? (handle.parentElement?.getBoundingClientRect().width ?? 0)
+      : remembered;
+    const drag = {
       startX: event.clientX,
       startY: event.clientY,
-      startWidth: start,
-      latest: start,
+      latest: remembered,
       moved: false,
-      armed: false,
+      isFolded: folded,
+      startedFolded: folded,
     };
+    handle.setAttribute('data-ws-drag', 'true');
     document.documentElement.setAttribute('data-ws-resizing', 'true');
-  };
 
-  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
-    if (!drag) return;
-    if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) >= 3) {
-      drag.moved = true;
-    }
-    const delta = edge === 'right' ? event.clientX - drag.startX : drag.startX - event.clientX;
-    const raw = drag.startWidth + delta;
-    drag.latest = clamp(raw);
-    const armed = collapseBelow !== undefined && onCollapse !== undefined && raw < collapseBelow;
-    if (armed !== drag.armed) {
-      drag.armed = armed;
-      if (armed) event.currentTarget.setAttribute('data-ws-collapse-armed', 'true');
-      else event.currentTarget.removeAttribute('data-ws-collapse-armed');
-    }
-    onPreview(drag.latest);
-  };
-
-  const endDrag = (event: React.PointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
-    if (!drag) return;
-    dragRef.current = null;
-    event.currentTarget.removeAttribute('data-ws-drag');
-    event.currentTarget.removeAttribute('data-ws-collapse-armed');
-    document.documentElement.removeAttribute('data-ws-resizing');
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    if (drag.armed) {
-      // Put back the width the pane had before the drag (nothing was persisted
-      // mid-drag), so unfolding it later does not open it at the minimum.
-      onPreview(drag.startWidth);
-      // A cancelled pointer (the OS took it) is not the user letting go.
-      if (event.type !== 'pointercancel') onCollapse?.();
-      return;
-    }
-    // A press that never moved is not a resize, and it is not a fold either.
-    if (drag.moved) onCommit(drag.latest);
+    const move = (e: PointerEvent) => {
+      if (e.pointerId !== pointerId) return;
+      if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) >= 3) drag.moved = true;
+      const delta = edge === 'right' ? e.clientX - drag.startX : drag.startX - e.clientX;
+      const raw = startWidth + delta;
+      const p = props.current;
+      if (canFold && collapseBelow !== undefined) {
+        if (!drag.isFolded && raw < collapseBelow) {
+          drag.isFolded = true;
+          // The remembered width stays what it was before the drag.
+          p.onPreview(remembered);
+          drag.latest = remembered;
+          p.onCollapse?.();
+          return;
+        }
+        if (drag.isFolded && raw >= collapseBelow + RESIZE_FOLD_HYSTERESIS) {
+          drag.isFolded = false;
+          p.onExpand?.();
+        }
+        if (drag.isFolded) return;
+      }
+      drag.latest = p.clamp(raw);
+      p.onPreview(drag.latest);
+    };
+    const end = (e: PointerEvent) => {
+      if (e.pointerId !== pointerId) return;
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+      handle.removeAttribute('data-ws-drag');
+      document.documentElement.removeAttribute('data-ws-resizing');
+      // Open at the end of a drag that moved: the width it reached is the new
+      // one (a cancelled pointer keeps it too). Folded: nothing to commit.
+      if (!drag.isFolded && drag.moved) props.current.onCommit(drag.latest);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
   };
 
   return (
@@ -146,9 +161,6 @@ export function ResizeHandle({
       aria-label={label}
       title={label}
       onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={endDrag}
-      onPointerCancel={endDrag}
       onDoubleClick={onReset}
       className={cn(
         'ws-resize absolute inset-y-0 z-20 w-1.5 cursor-col-resize',
