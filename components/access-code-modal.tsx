@@ -118,7 +118,7 @@ export function AccessCodeModal({ open, onSuccess }: AccessCodeModalProps) {
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.25, duration: 0.4 }}
               >
-                OpenMAIC
+                Case Method for Financial Planning
               </motion.p>
 
               {/* Form */}

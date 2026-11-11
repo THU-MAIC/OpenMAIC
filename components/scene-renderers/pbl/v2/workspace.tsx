@@ -443,7 +443,7 @@ function WorkspaceTopBar({
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-violet-200/25 bg-violet-100/[0.08] shadow-[0_0_24px_rgba(157,140,255,0.18)]">
           <Image
             src="/openmaic-mark.png"
-            alt="OpenMAIC"
+            alt="Case Method for Financial Planning"
             width={28}
             height={28}
             className="h-6 w-6"
