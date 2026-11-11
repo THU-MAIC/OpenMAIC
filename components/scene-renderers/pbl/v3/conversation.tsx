@@ -253,6 +253,15 @@ export function LearningConversation({
     <ConversationViewport
       key={view.id}
       header={overview}
+      startAtOverview={
+        view.state.position.milestoneIndex === 0 &&
+        view.state.position.stageIndex === 0 &&
+        view.state.status !== 'completed' &&
+        (!entries.length || view.needsOpening) &&
+        !pendingMessage &&
+        !entries.some((entry) => entry.speaker === 'user') &&
+        !view.conversationHistory?.length
+      }
       sent={sent}
       hidden={modalActive}
       generating={requesting || view.busy || entries.some((entry) => entry.status === 'running')}

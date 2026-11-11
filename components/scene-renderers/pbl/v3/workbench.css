@@ -271,6 +271,14 @@
   background: var(--pbl-overview-surface);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.15);
 }
+.pbl-workbench .pbl-overview-result {
+  background: #e4d8fa;
+  border-color: #bca0df;
+}
+.dark .pbl-workbench .pbl-overview-result {
+  background: #55416f;
+  border-color: #9b7cba;
+}
 .pbl-workbench .pbl-overview-guide {
   border-color: color-mix(in srgb, var(--pbl-overview-accent) 18%, transparent);
 }
@@ -337,8 +345,20 @@
 }
 /* The whole strip is the action. Its decorative layers never intercept input. */
 .pbl-workbench .pbl-advance-bar {
+  --pbl-advance-start: #e4d6fc;
+  --pbl-advance-middle: #d5dafa;
+  --pbl-advance-end: #cce8f3;
+  --pbl-advance-ink: #382453;
+  --pbl-advance-edge: #ae8adf;
   position: relative;
   isolation: isolate;
+}
+.dark .pbl-workbench .pbl-advance-bar {
+  --pbl-advance-start: #655885;
+  --pbl-advance-middle: #555f84;
+  --pbl-advance-end: #426878;
+  --pbl-advance-ink: #f5f0ff;
+  --pbl-advance-edge: #b9a0eb;
 }
 .pbl-workbench .pbl-advance-bar::before {
   content: '';
@@ -352,24 +372,24 @@
   opacity: 0;
   transition: opacity 200ms ease-out;
 }
-.pbl-workbench .pbl-advance-bar[data-attention='true']::before {
+.pbl-workbench .pbl-advance-bar[data-ready='true']::before {
   opacity: 0.35;
 }
 .pbl-workbench .pbl-advance-bar .pbl-stage-action:not(:disabled) {
   position: relative;
   overflow: hidden;
-  border-color: color-mix(in srgb, var(--primary) 76%, white);
-  background-color: var(--primary);
-  background-image: linear-gradient(
+  color: var(--pbl-advance-ink);
+  border-color: var(--pbl-advance-edge);
+  background: linear-gradient(
     110deg,
-    color-mix(in srgb, var(--primary) 88%, white),
-    var(--primary) 52%,
-    color-mix(in srgb, var(--primary) 92%, black)
+    var(--pbl-advance-start),
+    var(--pbl-advance-middle) 55%,
+    var(--pbl-advance-end)
   );
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.2),
-    0 2px 4px rgb(27 15 58 / 0.12),
-    0 4px 12px color-mix(in srgb, var(--primary) 18%, transparent);
+    inset 0 1px 0 rgb(255 255 255 / 0.35),
+    0 0 8px rgb(168 127 239 / 0.4),
+    0 0 20px rgb(155 119 228 / 0.28);
   transition:
     filter 160ms ease-out,
     box-shadow 160ms ease-out;
@@ -377,9 +397,9 @@
 .pbl-workbench .pbl-advance-bar .pbl-stage-action:hover:not(:disabled) {
   filter: brightness(1.06);
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.24),
-    0 2px 4px rgb(27 15 58 / 0.12),
-    0 5px 16px color-mix(in srgb, var(--primary) 26%, transparent);
+    inset 0 1px 0 rgb(255 255 255 / 0.4),
+    0 0 10px rgb(168 127 239 / 0.5),
+    0 0 24px rgb(155 119 228 / 0.35);
 }
 .pbl-workbench .pbl-advance-bar .pbl-stage-action:active:not(:disabled) {
   filter: brightness(0.97);

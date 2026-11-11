@@ -52,6 +52,7 @@ export function TaskDock({
   const open = hasDrawer && openKey === key;
   const progress = learningProgress(view);
   const step = learningStep(view);
+  const milestone = view.milestones?.find((item) => item.id === view.state.position.milestoneId);
   const running = view.busy || working;
   const canAdvance = view.actions.includes('next');
   const ready = canAdvance && !running;
@@ -161,6 +162,33 @@ export function TaskDock({
             </button>
           </header>
           <div className="grid min-h-0 content-start gap-3 overflow-y-auto p-3 leading-[1.5]">
+            {milestone && (
+              <section
+                data-testid="pbl-current-milestone-summary"
+                aria-label={milestone.title}
+                className="rounded-xl border border-primary/20 bg-primary/5 p-3"
+              >
+                <h4 className="font-semibold">{milestone.title}</h4>
+                <dl className="mt-2 space-y-2">
+                  {milestone.goal && (
+                    <div>
+                      <dt className="text-xs font-medium text-muted-foreground">
+                        {t('pblV3.overview.goal')}
+                      </dt>
+                      <dd className="mt-0.5">{milestone.goal}</dd>
+                    </div>
+                  )}
+                  {milestone.outcome && (
+                    <div>
+                      <dt className="text-xs font-medium text-muted-foreground">
+                        {t('pblV3.overview.result')}
+                      </dt>
+                      <dd className="mt-0.5">{milestone.outcome}</dd>
+                    </div>
+                  )}
+                </dl>
+              </section>
+            )}
             <div className="grid gap-0.5">
               <strong className="font-semibold">{t(`pblV3.journey.steps.${step}`)}</strong>
               <p className="text-xs text-muted-foreground">{t(`pblV3.journey.hints.${step}`)}</p>
@@ -253,6 +281,7 @@ export function TaskDock({
         <div
           data-testid="pbl-advance-bar"
           data-attention={attention ? 'true' : 'false'}
+          data-ready={ready && !actionDisabled ? 'true' : 'false'}
           className="pbl-advance-bar mx-3 mb-2 min-w-0 rounded-lg"
           onPointerEnter={() => setAttentionDismissed(true)}
           onFocusCapture={() => setAttentionDismissed(true)}

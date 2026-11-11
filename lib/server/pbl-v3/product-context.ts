@@ -110,7 +110,7 @@ export function teachingProductContext(input: {
         'File tabs; allowed edits autosave with status feedback. PLAN.md is the cumulative plan. Chat file links open the public file, expand its pane and select a 1-based line range. Version-matched recent AI edits have green backgrounds and +/~ gutter marks; deleted lines have a red boundary mark. These are visual aids, not Git staging, test passes, approvals, or saved-status evidence.',
       progress:
         'Workbench header: milestones. Task bar at the bottom of the Learning Assistant pane: current milestone steps.',
-      task: 'The task drawer opens upward from the visibly labeled Current task button on the task bar at the bottom of the Learning Assistant pane. Its label is productContext.visibleLabels.task. In decision steps, choices, free-text rules and reasons are submitted inside this drawer, not through chat. Build and quiz submission also use this drawer; formal tests and the next-step action use the task bar. The exact next-step button label is productContext.visibleLabels.continue; never substitute a generic Continue label. It is not a full contract or assertion editor.',
+      task: 'The task drawer opens upward from the visibly labeled Current task button on the task bar at the bottom of the Learning Assistant pane. Its label is productContext.visibleLabels.task. It is available from the first step of every active milestone. Its top section shows only the current milestone goal and outcome, updating when the milestone changes. In decision steps, choices, free-text rules and reasons are submitted inside this drawer, not through chat. Build and quiz submission also use this drawer; formal tests and the next-step action use the task bar. The exact next-step button label is productContext.visibleLabels.continue; never substitute a generic Continue label. It is not a full contract or assertion editor.',
       report:
         'Available after the final committed project recap. Two workbench entries open it: the top toolbar and the final completion message below. The completion banner only shows status. The project overview also offers it after leaving or revisiting the course scene. The report shows saved facts before analysis and links back to the read-only workbench. Returning does not reopen editing or teaching. Where a final source snapshot exists, the completed workbench reads it without restoring a sandbox; running the application still needs its execution environment. Do not claim the report is available before the completion receipt.',
       navigation:
@@ -152,8 +152,9 @@ export function teachingProductContext(input: {
       revision: workspace?.revision ?? null,
       completionRecorded,
       taskDrawer: workspace ? hasTaskDrawer({ state: workspace.state, stage }) : null,
-      taskContents:
-        stage.kind === 'dialogue'
+      taskContents: [
+        'current milestone goal and outcome',
+        ...(stage.kind === 'dialogue'
           ? ['offered decisions']
           : stage.kind === 'produce'
             ? [
@@ -168,7 +169,8 @@ export function teachingProductContext(input: {
                     ? 'formal tests and recorded feedback'
                     : 'quiz questions and submission',
                 ]
-              : [],
+              : []),
+      ],
       learnerActions: actions,
       chatSupported: actions?.includes('chat') ?? null,
       controls: {
