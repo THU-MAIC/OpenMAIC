@@ -1088,6 +1088,14 @@
   box-shadow: 0 0 0 3px var(--ws-accent-wash);
 }
 
+/* Pulled far enough past its minimum that letting go will fold the pane
+   (drag-to-collapse): the pane's contents fade so the release is not a
+   surprise, and moving back out restores them. The seam itself stays lit. */
+:has(> .ws-resize[data-ws-collapse-armed='true']) > :not(.ws-resize) {
+  opacity: 0.4;
+  transition: opacity 120ms var(--ws-ease);
+}
+
 /* While dragging, the cursor must not flicker as the pointer crosses elements
    and nothing may select under it — both are set on the document, because the
    pointer is captured and can travel far outside the handle. */
@@ -1781,7 +1789,8 @@
   }
 
   .ws-resize-thread,
-  .ws-resize-thread::after {
+  .ws-resize-thread::after,
+  :has(> .ws-resize[data-ws-collapse-armed='true']) > :not(.ws-resize) {
     transition: none;
   }
 }

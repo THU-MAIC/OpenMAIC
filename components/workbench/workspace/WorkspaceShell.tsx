@@ -85,6 +85,7 @@ import { TOUR_STEPS, type TourView } from './tour-steps';
 import {
   clampRailWidth,
   parseRailWidth,
+  RAIL_COLLAPSE_THRESHOLD,
   RAIL_WIDTH_DEFAULT,
   RAIL_WIDTH_STORAGE_KEY,
 } from '@/lib/workbench/workspace-navigation';
@@ -1868,6 +1869,11 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       setNavReopenedForPreview(false);
     }
   }, [autoFold, collapse, navCollapsed]);
+  // Dragging the rail's edge far enough inward folds it, through the same
+  // toggle as its fold button (so the preference is remembered the same way).
+  const collapseRail = useCallback(() => {
+    if (!navCollapsed) toggleRail();
+  }, [navCollapsed, toggleRail]);
 
   return (
     <div
@@ -1942,6 +1948,8 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
               onPreview={railWidth.preview}
               onCommit={railWidth.commit}
               onReset={railWidth.reset}
+              collapseBelow={RAIL_COLLAPSE_THRESHOLD}
+              onCollapse={collapseRail}
             />
           }
         />

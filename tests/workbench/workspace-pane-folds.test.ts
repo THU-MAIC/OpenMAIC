@@ -148,6 +148,124 @@ describe('the pane seam', () => {
   });
 });
 
+describe('drag-to-collapse on a seam', () => {
+  async function renderCollapsibleSeam() {
+    const calls = { commit: [] as number[], preview: [] as number[], collapse: 0 };
+    const host = mount();
+    await act(async () => {
+      root?.render(
+        createElement(ResizeHandle, {
+          testId: 'rail-seam',
+          label: 'resize the rail',
+          edge: 'right',
+          current: () => 280,
+          clamp: (width: number) => Math.max(200, width),
+          onPreview: (width: number) => calls.preview.push(width),
+          onCommit: (width: number) => calls.commit.push(width),
+          onReset: () => undefined,
+          collapseBelow: 120,
+          onCollapse: () => {
+            calls.collapse += 1;
+          },
+        }),
+      );
+    });
+    const seam = host.querySelector('[data-testid="rail-seam"]') as HTMLElement;
+    return { seam, calls };
+  }
+
+  it('folds on release past the threshold and puts the pre-drag width back', async () => {
+    const { seam, calls } = await renderCollapsibleSeam();
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointerdown', { clientX: 280, clientY: 50 }));
+      // 280 - 200 = 80px: past the 120px threshold, so armed; the width holds at min.
+      seam.dispatchEvent(pointerEvent('pointermove', { clientX: 80, clientY: 50 }));
+    });
+    expect(seam.getAttribute('data-ws-collapse-armed')).toBe('true');
+    expect(calls.preview.at(-1)).toBe(200);
+
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointerup', { clientX: 80, clientY: 50 }));
+    });
+    expect(calls.collapse).toBe(1);
+    expect(calls.commit).toEqual([]);
+    // The remembered width is the one from before the drag, not the minimum.
+    expect(calls.preview.at(-1)).toBe(280);
+    expect(seam.hasAttribute('data-ws-collapse-armed')).toBe(false);
+  });
+
+  it('only stops at the minimum when the drag overshoots it by less than the threshold', async () => {
+    const { seam, calls } = await renderCollapsibleSeam();
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointerdown', { clientX: 280, clientY: 50 }));
+      seam.dispatchEvent(pointerEvent('pointermove', { clientX: 150, clientY: 50 }));
+      seam.dispatchEvent(pointerEvent('pointerup', { clientX: 150, clientY: 50 }));
+    });
+    expect(calls.collapse).toBe(0);
+    expect(calls.commit).toEqual([200]);
+  });
+
+  it('disarms when the drag comes back out before release', async () => {
+    const { seam, calls } = await renderCollapsibleSeam();
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointerdown', { clientX: 280, clientY: 50 }));
+      seam.dispatchEvent(pointerEvent('pointermove', { clientX: 60, clientY: 50 }));
+    });
+    expect(seam.getAttribute('data-ws-collapse-armed')).toBe('true');
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointermove', { clientX: 250, clientY: 50 }));
+    });
+    expect(seam.hasAttribute('data-ws-collapse-armed')).toBe(false);
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointerup', { clientX: 250, clientY: 50 }));
+    });
+    expect(calls.collapse).toBe(0);
+    expect(calls.commit).toEqual([250]);
+  });
+
+  it('does not fold when the pointer is cancelled while armed', async () => {
+    const { seam, calls } = await renderCollapsibleSeam();
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointerdown', { clientX: 280, clientY: 50 }));
+      seam.dispatchEvent(pointerEvent('pointermove', { clientX: 40, clientY: 50 }));
+      seam.dispatchEvent(pointerEvent('pointercancel', { clientX: 40, clientY: 50 }));
+    });
+    expect(calls.collapse).toBe(0);
+    expect(calls.commit).toEqual([]);
+    expect(calls.preview.at(-1)).toBe(280);
+  });
+
+  it('never arms a seam that did not opt in', async () => {
+    const { host, calls } = await renderSeam();
+    const seam = host.querySelector('[data-testid="seam"]') as HTMLElement;
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointerdown', { clientX: 400, clientY: 50 }));
+      seam.dispatchEvent(pointerEvent('pointermove', { clientX: 0, clientY: 50 }));
+    });
+    expect(seam.hasAttribute('data-ws-collapse-armed')).toBe(false);
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointerup', { clientX: 0, clientY: 50 }));
+    });
+    expect(calls.commit).toBe(1);
+  });
+
+  it('is wired on the rail seam only, folding through the rail’s own toggle', () => {
+    const shell = readFileSync(
+      resolve(process.cwd(), 'components/workbench/workspace/WorkspaceShell.tsx'),
+      'utf8',
+    );
+    const railSeam = shell.slice(shell.indexOf('pro-rail-resize-handle'));
+    const railProps = railSeam.slice(0, railSeam.indexOf('/>'));
+    expect(railProps).toContain('collapseBelow={RAIL_COLLAPSE_THRESHOLD}');
+    expect(railProps).toContain('onCollapse={collapseRail}');
+    expect(shell).toMatch(
+      /const collapseRail = useCallback\(\(\) => \{\s*if \(!navCollapsed\) toggleRail\(\);/,
+    );
+    // The chat seam stays a pure resize.
+    expect(shell.match(/collapseBelow=/g)).toHaveLength(1);
+  });
+});
+
 describe('a pane’s own fold button', () => {
   it('is one labelled control pointing the way the pane leaves', async () => {
     let folded = 0;
