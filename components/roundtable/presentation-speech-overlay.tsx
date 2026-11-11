@@ -11,7 +11,7 @@ import type { Participant } from '@/lib/types/roundtable';
 import { cn } from '@/lib/utils';
 import { DEFAULT_TEACHER_AVATAR, DEFAULT_STUDENT_AVATAR } from '@/components/roundtable/constants';
 
-const PRESENTATION_BUBBLE_WIDTH = 'w-[min(420px,calc(100vw-3rem))]';
+const PRESENTATION_BUBBLE_WIDTH = 'w-[min(420px,calc(100cqw-3rem))]';
 
 interface PresentationSpeechOverlayProps {
   readonly playbackView: PlaybackView;
@@ -468,7 +468,8 @@ export function PresentationSpeechOverlay({
               animate={{ opacity: 1, x: 0, y: 0 }}
               exit={{ opacity: 0, y: 8 }}
               transition={{ duration: 0.22, ease: [0.21, 1, 0.36, 1] }}
-              className="absolute bottom-6 left-6 z-30 pointer-events-auto"
+              // On a stage too narrow for it beside the right-hand stack, it sits above that.
+              className="absolute bottom-6 left-6 z-30 pointer-events-auto @max-[36rem]:bottom-[4.75rem] @max-[36rem]:left-3"
             >
               {renderContent(bubble)}
             </motion.div>

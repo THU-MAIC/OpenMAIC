@@ -1,0 +1,2090 @@
+{
+  "dslVersion": "0.3.0",
+  "stage": {
+    "id": "guide-openmaic-en",
+    "name": "OpenMAIC in 5 Minutes",
+    "agentIds": ["gen-yy7QeLrg", "gen--S25ynUT", "gen-Qk7aavax"],
+    "createdAt": 1793880000000,
+    "updatedAt": 1793880000000,
+    "description": "A light, friendly first look at OpenMAIC for new students and teachers.",
+    "generatedAgentConfigs": [
+      {
+        "id": "gen-yy7QeLrg",
+        "name": "Ms. Lane",
+        "role": "teacher",
+        "color": "#3b82f6",
+        "avatar": "/avatars/assist.png",
+        "persona": "Ms. Lane is a warm, patient teacher who explains things in short plain sentences and always checks that nothing feels confusing yet. She likes small everyday examples and never makes anyone feel silly for asking a basic question. She keeps the pace calm and cheerful, like a friendly first-day guide.",
+        "priority": 10,
+        "voiceConfig": {
+          "voiceId": "voxcpm:auto",
+          "providerId": "voxcpm-tts"
+        },
+        "voiceDesign": {
+          "gender": "female",
+          "texture": "warm, clear, gently upbeat",
+          "delivery": "calm measured encouraging",
+          "identity": "middle-aged female teacher"
+        }
+      },
+      {
+        "id": "gen--S25ynUT",
+        "name": "Mia",
+        "role": "student",
+        "color": "#10b981",
+        "avatar": "/avatars/teacher-2.png",
+        "persona": "Mia is a curious classmate who asks the very question you were about to ask. She likes to try buttons first and figure things out by clicking around. She says short, friendly things and is happy to be wrong out loud.",
+        "priority": 5,
+        "voiceConfig": {
+          "voiceId": "voxcpm:auto",
+          "providerId": "voxcpm-tts"
+        },
+        "voiceDesign": {
+          "gender": "female",
+          "texture": "bright, light, youthful",
+          "delivery": "curious quick friendly",
+          "identity": "young female student"
+        }
+      },
+      {
+        "id": "gen-Qk7aavax",
+        "name": "Leo",
+        "role": "student",
+        "color": "#f59e0b",
+        "avatar": "/avatars/curious.png",
+        "persona": "Leo is an easy-going classmate who sums things up in plain words after a page. He asks practical questions about what to click next. He is a bit cautious and likes knowing he cannot break anything.",
+        "priority": 4,
+        "voiceConfig": {
+          "voiceId": "voxcpm:auto",
+          "providerId": "voxcpm-tts"
+        },
+        "voiceDesign": {
+          "gender": "male",
+          "texture": "relaxed, soft, low",
+          "delivery": "easy reassuring slightly slow",
+          "identity": "young male student"
+        }
+      }
+    ]
+  },
+  "scenes": [
+    {
+      "id": "scene-p1",
+      "type": "slide",
+      "order": 1,
+      "title": "What is OpenMAIC?",
+      "stageId": "guide-openmaic-en",
+      "createdAt": 1793880000000,
+      "updatedAt": 1793880000000,
+      "outlineId": "p1",
+      "actions": [
+        {
+          "id": "a1_1",
+          "type": "spotlight",
+          "elementId": "p1_sub",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s1_1",
+          "type": "speech",
+          "text": "Hi there, I'm Ms. Lane, your teacher. With OpenMAIC, you type a topic you want to learn, and a few minutes later you have a whole class.",
+          "audioId": "/guide-course/en/audio/s1_1.mp3",
+          "audioUrl": "/guide-course/en/audio/s1_1.mp3"
+        },
+        {
+          "id": "a1_2",
+          "type": "spotlight",
+          "elementId": "p1_chips_bg",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s1_2",
+          "type": "speech",
+          "text": "It comes with slides, a teacher who explains them, classmates who learn with you, quiz questions and pages you can click.",
+          "audioId": "/guide-course/en/audio/s1_2.mp3",
+          "audioUrl": "/guide-course/en/audio/s1_2.mp3"
+        },
+        {
+          "id": "a1_3",
+          "type": "spotlight",
+          "elementId": "p1_note",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s1_3",
+          "type": "speech",
+          "text": "And this class? It was made exactly that way.",
+          "audioId": "/guide-course/en/audio/s1_3.mp3",
+          "audioUrl": "/guide-course/en/audio/s1_3.mp3"
+        }
+      ],
+      "content": {
+        "type": "slide",
+        "canvas": {
+          "id": "slide-p1",
+          "viewportSize": 1000,
+          "viewportRatio": 0.5625,
+          "theme": {
+            "backgroundColor": "#FBF8F2",
+            "themeColors": ["#6D28D9", "#7C3AED", "#10B981", "#F59E7B", "#1F2340"],
+            "fontColor": "#1F2340",
+            "fontName": "Arial"
+          },
+          "background": {
+            "type": "solid",
+            "color": "#FBF8F2"
+          },
+          "elements": [
+            {
+              "id": "p1_badge",
+              "type": "shape",
+              "left": 60,
+              "top": 58,
+              "width": 250,
+              "height": 34,
+              "rotate": 0,
+              "viewBox": [250, 34],
+              "path": "M 17 0 L 233 0 Q 250 0 250 17 L 250 17 Q 250 34 233 34 L 17 34 Q 0 34 0 17 L 0 17 Q 0 0 17 0 Z",
+              "fixedRatio": false,
+              "fill": "#EDE9FE",
+              "text": {
+                "content": "<p style=\"font-size:15px;color:#6D28D9;font-weight:bold;text-align:center;\">Getting started · 5 min</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p1_title",
+              "type": "text",
+              "left": 60,
+              "top": 104,
+              "width": 470,
+              "height": 64,
+              "rotate": 0,
+              "content": "<p style=\"font-size:40px;color:#1F2340;font-weight:bold;text-align:left;\">What is OpenMAIC?</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p1_sub",
+              "type": "text",
+              "left": 60,
+              "top": 172,
+              "width": 480,
+              "height": 90,
+              "rotate": 0,
+              "content": "<p style=\"font-size:25px;color:#3F4366;text-align:left;\">Type a topic. A few minutes later,<br>you have a whole class.</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p1_chips_bg",
+              "type": "shape",
+              "left": 48,
+              "top": 272,
+              "width": 494,
+              "height": 132,
+              "rotate": 0,
+              "viewBox": [494, 132],
+              "path": "M 20 0 L 474 0 Q 494 0 494 20 L 494 112 Q 494 132 474 132 L 20 132 Q 0 132 0 112 L 0 20 Q 0 0 20 0 Z",
+              "fixedRatio": false,
+              "fill": "rgba(255,255,255,0)"
+            },
+            {
+              "id": "p1_chip0",
+              "type": "shape",
+              "left": 60,
+              "top": 284,
+              "width": 228,
+              "height": 46,
+              "rotate": 0,
+              "viewBox": [228, 46],
+              "path": "M 23 0 L 205 0 Q 228 0 228 23 L 228 23 Q 228 46 205 46 L 23 46 Q 0 46 0 23 L 0 23 Q 0 0 23 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#E7E2F3"
+              },
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              },
+              "text": {
+                "content": "<p style=\"font-size:15px;color:#1F2340;font-weight:bold;text-align:center;\">📑 Slides, page by page</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p1_chip1",
+              "type": "shape",
+              "left": 300,
+              "top": 284,
+              "width": 228,
+              "height": 46,
+              "rotate": 0,
+              "viewBox": [228, 46],
+              "path": "M 23 0 L 205 0 Q 228 0 228 23 L 228 23 Q 228 46 205 46 L 23 46 Q 0 46 0 23 L 0 23 Q 0 0 23 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#E7E2F3"
+              },
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              },
+              "text": {
+                "content": "<p style=\"font-size:15px;color:#1F2340;font-weight:bold;text-align:center;\">👩‍🏫 An AI teacher</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p1_chip2",
+              "type": "shape",
+              "left": 60,
+              "top": 340,
+              "width": 228,
+              "height": 46,
+              "rotate": 0,
+              "viewBox": [228, 46],
+              "path": "M 23 0 L 205 0 Q 228 0 228 23 L 228 23 Q 228 46 205 46 L 23 46 Q 0 46 0 23 L 0 23 Q 0 0 23 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#E7E2F3"
+              },
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              },
+              "text": {
+                "content": "<p style=\"font-size:15px;color:#1F2340;font-weight:bold;text-align:center;\">🙋 AI classmates</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p1_chip3",
+              "type": "shape",
+              "left": 300,
+              "top": 340,
+              "width": 228,
+              "height": 46,
+              "rotate": 0,
+              "viewBox": [228, 46],
+              "path": "M 23 0 L 205 0 Q 228 0 228 23 L 228 23 Q 228 46 205 46 L 23 46 Q 0 46 0 23 L 0 23 Q 0 0 23 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#E7E2F3"
+              },
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              },
+              "text": {
+                "content": "<p style=\"font-size:15px;color:#1F2340;font-weight:bold;text-align:center;\">✅ Quizzes & hands-on</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p1_note",
+              "type": "text",
+              "left": 60,
+              "top": 428,
+              "width": 880,
+              "height": 40,
+              "rotate": 0,
+              "content": "<p style=\"font-size:21px;color:#6D28D9;font-weight:bold;text-align:left;\">The class you are in right now was made this way.</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p1_img_card",
+              "type": "shape",
+              "left": 556,
+              "top": 82,
+              "width": 404,
+              "height": 308,
+              "rotate": 0,
+              "viewBox": [404, 308],
+              "path": "M 28 0 L 376 0 Q 404 0 404 28 L 404 280 Q 404 308 376 308 L 28 308 Q 0 308 0 280 L 0 28 Q 0 0 28 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              }
+            },
+            {
+              "id": "p1_img",
+              "type": "image",
+              "left": 566,
+              "top": 92,
+              "width": 384,
+              "height": 288,
+              "rotate": 0,
+              "fixedRatio": true,
+              "src": "/guide-course/img/cover.webp",
+              "clip": {
+                "shape": "roundRect",
+                "range": [
+                  [0, 0],
+                  [100, 100]
+                ]
+              },
+              "radius": 22
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "scene-p2",
+      "type": "slide",
+      "order": 2,
+      "title": "What to type first",
+      "stageId": "guide-openmaic-en",
+      "createdAt": 1793880000000,
+      "updatedAt": 1793880000000,
+      "outlineId": "p2",
+      "actions": [
+        {
+          "id": "a2_1",
+          "type": "spotlight",
+          "elementId": "p2_input",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s2_1",
+          "type": "speech",
+          "text": "So what do you type first? A short topic is enough, like photosynthesis.",
+          "audioId": "/guide-course/en/audio/s2_1.mp3",
+          "audioUrl": "/guide-course/en/audio/s2_1.mp3"
+        },
+        {
+          "id": "a2_2",
+          "type": "spotlight",
+          "elementId": "p2_examples",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s2_2",
+          "type": "speech",
+          "text": "A learner could write: help me understand compound interest with everyday examples. A teacher might say: a fifteen-minute lesson on the Pythagorean theorem for 8th graders, with one practice question.",
+          "audioId": "/guide-course/en/audio/s2_2.mp3",
+          "audioUrl": "/guide-course/en/audio/s2_2.mp3"
+        },
+        {
+          "id": "a2_3",
+          "type": "laser",
+          "elementId": "p2_clip",
+          "color": "#7C3AED"
+        },
+        {
+          "id": "a2_4",
+          "type": "spotlight",
+          "elementId": "p2_callout",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s2_3",
+          "type": "speech",
+          "text": "Already have a handout? Click the paperclip at the bottom left of the input box, upload it, and say: turn this handout into a class.",
+          "audioId": "/guide-course/en/audio/s2_3.mp3",
+          "audioUrl": "/guide-course/en/audio/s2_3.mp3"
+        }
+      ],
+      "content": {
+        "type": "slide",
+        "canvas": {
+          "id": "slide-p2",
+          "viewportSize": 1000,
+          "viewportRatio": 0.5625,
+          "theme": {
+            "backgroundColor": "#FBF8F2",
+            "themeColors": ["#6D28D9", "#7C3AED", "#10B981", "#F59E7B", "#1F2340"],
+            "fontColor": "#1F2340",
+            "fontName": "Arial"
+          },
+          "background": {
+            "type": "solid",
+            "color": "#FBF8F2"
+          },
+          "elements": [
+            {
+              "id": "p2_title",
+              "type": "text",
+              "left": 60,
+              "top": 40,
+              "width": 880,
+              "height": 56,
+              "rotate": 0,
+              "content": "<p style=\"font-size:34px;color:#1F2340;font-weight:bold;text-align:left;\">What to type first</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p2_sub",
+              "type": "text",
+              "left": 60,
+              "top": 96,
+              "width": 880,
+              "height": 36,
+              "rotate": 0,
+              "content": "<p style=\"font-size:19px;color:#6B6F86;text-align:left;\">A short topic is enough to start</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p2_input",
+              "type": "shape",
+              "left": 60,
+              "top": 150,
+              "width": 560,
+              "height": 150,
+              "rotate": 0,
+              "viewBox": [560, 150],
+              "path": "M 22 0 L 538 0 Q 560 0 560 22 L 560 128 Q 560 150 538 150 L 22 150 Q 0 150 0 128 L 0 22 Q 0 0 22 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "outline": {
+                "style": "solid",
+                "width": 2,
+                "color": "#DDD6FE"
+              },
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              }
+            },
+            {
+              "id": "p2_typed",
+              "type": "text",
+              "left": 84,
+              "top": 168,
+              "width": 500,
+              "height": 50,
+              "rotate": 0,
+              "content": "<p style=\"font-size:28px;color:#1F2340;font-weight:bold;text-align:left;\">photosynthesis<span style=\"color:#7C3AED\">｜</span></p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p2_hint",
+              "type": "text",
+              "left": 84,
+              "top": 214,
+              "width": 500,
+              "height": 30,
+              "rotate": 0,
+              "content": "<p style=\"font-size:16px;color:#A3A6B8;text-align:left;\">Describe what you want to learn…</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p2_clip",
+              "type": "shape",
+              "left": 80,
+              "top": 248,
+              "width": 36,
+              "height": 36,
+              "rotate": 0,
+              "viewBox": [36, 36],
+              "path": "M 18.0 0 L 18.0 0 Q 36 0 36 18.0 L 36 18.0 Q 36 36 18.0 36 L 18.0 36 Q 0 36 0 18.0 L 0 18.0 Q 0 0 18.0 0 Z",
+              "fixedRatio": false,
+              "fill": "#EDE9FE",
+              "text": {
+                "content": "<p style=\"font-size:17px;color:#6D28D9;text-align:center;\">📎</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p2_send",
+              "type": "shape",
+              "left": 562,
+              "top": 248,
+              "width": 38,
+              "height": 38,
+              "rotate": 0,
+              "viewBox": [38, 38],
+              "path": "M 19.0 0 L 19.0 0 Q 38 0 38 19.0 L 38 19.0 Q 38 38 19.0 38 L 19.0 38 Q 0 38 0 19.0 L 0 19.0 Q 0 0 19.0 0 Z",
+              "fixedRatio": false,
+              "fill": "#7C3AED",
+              "text": {
+                "content": "<p style=\"font-size:20px;color:#FFFFFF;font-weight:bold;text-align:center;\">↑</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p2_arrow",
+              "type": "line",
+              "left": 116,
+              "top": 284,
+              "width": 2,
+              "start": [0, 0],
+              "end": [44, 46],
+              "style": "dashed",
+              "color": "#7C3AED",
+              "points": ["", "arrow"]
+            },
+            {
+              "id": "p2_callout",
+              "type": "shape",
+              "left": 160,
+              "top": 316,
+              "width": 460,
+              "height": 66,
+              "rotate": 0,
+              "viewBox": [460, 66],
+              "path": "M 16 0 L 444 0 Q 460 0 460 16 L 460 50 Q 460 66 444 66 L 16 66 Q 0 66 0 50 L 0 16 Q 0 0 16 0 Z",
+              "fixedRatio": false,
+              "fill": "#F5F3FF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#DDD6FE"
+              },
+              "text": {
+                "content": "<p style=\"font-size:19px;color:#6D28D9;font-weight:bold;text-align:left;\">Upload a PDF, handout or slides</p><p style=\"font-size:16px;color:#4B4F6B;text-align:left;\">then say \"Turn this handout into a class\"</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p2_examples",
+              "type": "shape",
+              "left": 646,
+              "top": 146,
+              "width": 304,
+              "height": 340,
+              "rotate": 0,
+              "viewBox": [304, 340],
+              "path": "M 20 0 L 284 0 Q 304 0 304 20 L 304 320 Q 304 340 284 340 L 20 340 Q 0 340 0 320 L 0 20 Q 0 0 20 0 Z",
+              "fixedRatio": false,
+              "fill": "rgba(255,255,255,0)"
+            },
+            {
+              "id": "p2_learner",
+              "type": "shape",
+              "left": 652,
+              "top": 150,
+              "width": 292,
+              "height": 150,
+              "rotate": 0,
+              "viewBox": [292, 150],
+              "path": "M 20 0 L 272 0 Q 292 0 292 20 L 292 130 Q 292 150 272 150 L 20 150 Q 0 150 0 130 L 0 20 Q 0 0 20 0 Z",
+              "fixedRatio": false,
+              "fill": "#D1FAE5",
+              "text": {
+                "content": "<p style=\"font-size:16px;color:#047857;font-weight:bold;text-align:left;\">A learner</p><p style=\"font-size:16px;color:#1F2340;font-weight:bold;text-align:left;\">\"Help me understand compound interest with everyday examples\"</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p2_teacher",
+              "type": "shape",
+              "left": 652,
+              "top": 316,
+              "width": 292,
+              "height": 166,
+              "rotate": 0,
+              "viewBox": [292, 166],
+              "path": "M 20 0 L 272 0 Q 292 0 292 20 L 292 146 Q 292 166 272 166 L 20 166 Q 0 166 0 146 L 0 20 Q 0 0 20 0 Z",
+              "fixedRatio": false,
+              "fill": "#FDE7DC",
+              "text": {
+                "content": "<p style=\"font-size:16px;color:#C2410C;font-weight:bold;text-align:left;\">A teacher</p><p style=\"font-size:16px;color:#1F2340;font-weight:bold;text-align:left;\">\"A 15-minute lesson on the Pythagorean theorem for 8th graders, with one practice question\"</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "scene-p3",
+      "type": "slide",
+      "order": 3,
+      "title": "What happens after you send",
+      "stageId": "guide-openmaic-en",
+      "createdAt": 1793880000000,
+      "updatedAt": 1793880000000,
+      "outlineId": "p3",
+      "actions": [
+        {
+          "id": "a3_1",
+          "type": "spotlight",
+          "elementId": "p3_step0",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s3_1",
+          "type": "speech",
+          "text": "After you send, you usually get a page-by-page plan first. Confirm it, or ask for more or fewer pages.",
+          "audioId": "/guide-course/en/audio/s3_1.mp3",
+          "audioUrl": "/guide-course/en/audio/s3_1.mp3"
+        },
+        {
+          "id": "a3_2",
+          "type": "spotlight",
+          "elementId": "p3_step1",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s3_2",
+          "type": "speech",
+          "text": "Making the class takes anywhere from a few minutes to about fifteen.",
+          "audioId": "/guide-course/en/audio/s3_2.mp3",
+          "audioUrl": "/guide-course/en/audio/s3_2.mp3"
+        },
+        {
+          "id": "a3_3",
+          "type": "spotlight",
+          "elementId": "p3_bar",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s3_3",
+          "type": "speech",
+          "text": "A course card shows up in the chat. Click Open, and you can start page one as soon as it's ready.",
+          "audioId": "/guide-course/en/audio/s3_3.mp3",
+          "audioUrl": "/guide-course/en/audio/s3_3.mp3"
+        }
+      ],
+      "content": {
+        "type": "slide",
+        "canvas": {
+          "id": "slide-p3",
+          "viewportSize": 1000,
+          "viewportRatio": 0.5625,
+          "theme": {
+            "backgroundColor": "#FBF8F2",
+            "themeColors": ["#6D28D9", "#7C3AED", "#10B981", "#F59E7B", "#1F2340"],
+            "fontColor": "#1F2340",
+            "fontName": "Arial"
+          },
+          "background": {
+            "type": "solid",
+            "color": "#FBF8F2"
+          },
+          "elements": [
+            {
+              "id": "p3_title",
+              "type": "text",
+              "left": 60,
+              "top": 40,
+              "width": 880,
+              "height": 56,
+              "rotate": 0,
+              "content": "<p style=\"font-size:34px;color:#1F2340;font-weight:bold;text-align:left;\">What happens after you send</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p3_sub",
+              "type": "text",
+              "left": 60,
+              "top": 96,
+              "width": 880,
+              "height": 36,
+              "rotate": 0,
+              "content": "<p style=\"font-size:19px;color:#6B6F86;text-align:left;\">Usually a few minutes, sometimes up to about fifteen</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p3_img_card",
+              "type": "shape",
+              "left": 60,
+              "top": 150,
+              "width": 380,
+              "height": 223,
+              "rotate": 0,
+              "viewBox": [380, 223],
+              "path": "M 24 0 L 356 0 Q 380 0 380 24 L 380 199 Q 380 223 356 223 L 24 223 Q 0 223 0 199 L 0 24 Q 0 0 24 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              }
+            },
+            {
+              "id": "p3_img",
+              "type": "image",
+              "left": 70,
+              "top": 160,
+              "width": 360,
+              "height": 203,
+              "rotate": 0,
+              "fixedRatio": true,
+              "src": "/guide-course/img/flow.webp",
+              "clip": {
+                "shape": "roundRect",
+                "range": [
+                  [0, 0],
+                  [100, 100]
+                ]
+              },
+              "radius": 18
+            },
+            {
+              "id": "p3_step0",
+              "type": "shape",
+              "left": 466,
+              "top": 146,
+              "width": 484,
+              "height": 66,
+              "rotate": 0,
+              "viewBox": [484, 66],
+              "path": "M 18 0 L 466 0 Q 484 0 484 18 L 484 48 Q 484 66 466 66 L 18 66 Q 0 66 0 48 L 0 18 Q 0 0 18 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#E7E2F3"
+              },
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              }
+            },
+            {
+              "id": "p3_num0",
+              "type": "shape",
+              "left": 480,
+              "top": 159,
+              "width": 40,
+              "height": 40,
+              "rotate": 0,
+              "viewBox": [40, 40],
+              "path": "M 20.0 0 L 20.0 0 Q 40 0 40 20.0 L 40 20.0 Q 40 40 20.0 40 L 20.0 40 Q 0 40 0 20.0 L 0 20.0 Q 0 0 20.0 0 Z",
+              "fixedRatio": false,
+              "fill": "#7C3AED",
+              "text": {
+                "content": "<p style=\"font-size:18px;color:#FFFFFF;font-weight:bold;text-align:center;\">1</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p3_h0",
+              "type": "text",
+              "left": 532,
+              "top": 152,
+              "width": 410,
+              "height": 30,
+              "rotate": 0,
+              "content": "<p style=\"font-size:18px;color:#1F2340;font-weight:bold;text-align:left;\">You get a page-by-page plan</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p3_d0",
+              "type": "text",
+              "left": 532,
+              "top": 181,
+              "width": 410,
+              "height": 26,
+              "rotate": 0,
+              "content": "<p style=\"font-size:15px;color:#6B6F86;text-align:left;\">Confirm it, or ask for more or fewer pages</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p3_step1",
+              "type": "shape",
+              "left": 466,
+              "top": 222,
+              "width": 484,
+              "height": 66,
+              "rotate": 0,
+              "viewBox": [484, 66],
+              "path": "M 18 0 L 466 0 Q 484 0 484 18 L 484 48 Q 484 66 466 66 L 18 66 Q 0 66 0 48 L 0 18 Q 0 0 18 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#E7E2F3"
+              },
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              }
+            },
+            {
+              "id": "p3_num1",
+              "type": "shape",
+              "left": 480,
+              "top": 235,
+              "width": 40,
+              "height": 40,
+              "rotate": 0,
+              "viewBox": [40, 40],
+              "path": "M 20.0 0 L 20.0 0 Q 40 0 40 20.0 L 40 20.0 Q 40 40 20.0 40 L 20.0 40 Q 0 40 0 20.0 L 0 20.0 Q 0 0 20.0 0 Z",
+              "fixedRatio": false,
+              "fill": "#7C3AED",
+              "text": {
+                "content": "<p style=\"font-size:18px;color:#FFFFFF;font-weight:bold;text-align:center;\">2</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p3_h1",
+              "type": "text",
+              "left": 532,
+              "top": 228,
+              "width": 410,
+              "height": 30,
+              "rotate": 0,
+              "content": "<p style=\"font-size:18px;color:#1F2340;font-weight:bold;text-align:left;\">The class gets made</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p3_d1",
+              "type": "text",
+              "left": 532,
+              "top": 257,
+              "width": 410,
+              "height": 26,
+              "rotate": 0,
+              "content": "<p style=\"font-size:15px;color:#6B6F86;text-align:left;\">A few minutes to about fifteen, page by page</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p3_step2",
+              "type": "shape",
+              "left": 466,
+              "top": 298,
+              "width": 484,
+              "height": 66,
+              "rotate": 0,
+              "viewBox": [484, 66],
+              "path": "M 18 0 L 466 0 Q 484 0 484 18 L 484 48 Q 484 66 466 66 L 18 66 Q 0 66 0 48 L 0 18 Q 0 0 18 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#E7E2F3"
+              },
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              }
+            },
+            {
+              "id": "p3_num2",
+              "type": "shape",
+              "left": 480,
+              "top": 311,
+              "width": 40,
+              "height": 40,
+              "rotate": 0,
+              "viewBox": [40, 40],
+              "path": "M 20.0 0 L 20.0 0 Q 40 0 40 20.0 L 40 20.0 Q 40 40 20.0 40 L 20.0 40 Q 0 40 0 20.0 L 0 20.0 Q 0 0 20.0 0 Z",
+              "fixedRatio": false,
+              "fill": "#7C3AED",
+              "text": {
+                "content": "<p style=\"font-size:18px;color:#FFFFFF;font-weight:bold;text-align:center;\">3</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p3_h2",
+              "type": "text",
+              "left": 532,
+              "top": 304,
+              "width": 410,
+              "height": 30,
+              "rotate": 0,
+              "content": "<p style=\"font-size:18px;color:#1F2340;font-weight:bold;text-align:left;\">Click Open on the course card</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p3_d2",
+              "type": "text",
+              "left": 532,
+              "top": 333,
+              "width": 410,
+              "height": 26,
+              "rotate": 0,
+              "content": "<p style=\"font-size:15px;color:#6B6F86;text-align:left;\">The card shows up in the chat</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p3_bar",
+              "type": "shape",
+              "left": 60,
+              "top": 392,
+              "width": 890,
+              "height": 112,
+              "rotate": 0,
+              "viewBox": [890, 112],
+              "path": "M 22 0 L 868 0 Q 890 0 890 22 L 890 90 Q 890 112 868 112 L 22 112 Q 0 112 0 90 L 0 22 Q 0 0 22 0 Z",
+              "fixedRatio": false,
+              "fill": "#6D28D9"
+            },
+            {
+              "id": "p3_bar_t",
+              "type": "text",
+              "left": 84,
+              "top": 404,
+              "width": 840,
+              "height": 40,
+              "rotate": 0,
+              "content": "<p style=\"font-size:22px;color:#FFFFFF;font-weight:bold;text-align:left;\">✨ Start page 1 as soon as it's ready. No waiting for the rest.</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p3_pg0",
+              "type": "shape",
+              "left": 90,
+              "top": 448,
+              "width": 100,
+              "height": 42,
+              "rotate": 0,
+              "viewBox": [100, 42],
+              "path": "M 12 0 L 88 0 Q 100 0 100 12 L 100 30 Q 100 42 88 42 L 12 42 Q 0 42 0 30 L 0 12 Q 0 0 12 0 Z",
+              "fixedRatio": false,
+              "fill": "#10B981",
+              "text": {
+                "content": "<p style=\"font-size:15px;color:#FFFFFF;font-weight:bold;text-align:center;\">✓ Ready</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p3_pg1",
+              "type": "shape",
+              "left": 208,
+              "top": 448,
+              "width": 100,
+              "height": 42,
+              "rotate": 0,
+              "viewBox": [100, 42],
+              "path": "M 12 0 L 88 0 Q 100 0 100 12 L 100 30 Q 100 42 88 42 L 12 42 Q 0 42 0 30 L 0 12 Q 0 0 12 0 Z",
+              "fixedRatio": false,
+              "fill": "rgba(255,255,255,0.18)",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "rgba(255,255,255,0.45)"
+              },
+              "text": {
+                "content": "<p style=\"font-size:15px;color:#FFFFFF;text-align:center;\">2 · Making</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p3_pg2",
+              "type": "shape",
+              "left": 326,
+              "top": 448,
+              "width": 100,
+              "height": 42,
+              "rotate": 0,
+              "viewBox": [100, 42],
+              "path": "M 12 0 L 88 0 Q 100 0 100 12 L 100 30 Q 100 42 88 42 L 12 42 Q 0 42 0 30 L 0 12 Q 0 0 12 0 Z",
+              "fixedRatio": false,
+              "fill": "rgba(255,255,255,0.18)",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "rgba(255,255,255,0.45)"
+              },
+              "text": {
+                "content": "<p style=\"font-size:15px;color:#FFFFFF;text-align:center;\">3 · Making</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p3_pg3",
+              "type": "shape",
+              "left": 444,
+              "top": 448,
+              "width": 100,
+              "height": 42,
+              "rotate": 0,
+              "viewBox": [100, 42],
+              "path": "M 12 0 L 88 0 Q 100 0 100 12 L 100 30 Q 100 42 88 42 L 12 42 Q 0 42 0 30 L 0 12 Q 0 0 12 0 Z",
+              "fixedRatio": false,
+              "fill": "rgba(255,255,255,0.18)",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "rgba(255,255,255,0.45)"
+              },
+              "text": {
+                "content": "<p style=\"font-size:15px;color:#FFFFFF;text-align:center;\">4 · Making</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p3_pg4",
+              "type": "shape",
+              "left": 562,
+              "top": 448,
+              "width": 100,
+              "height": 42,
+              "rotate": 0,
+              "viewBox": [100, 42],
+              "path": "M 12 0 L 88 0 Q 100 0 100 12 L 100 30 Q 100 42 88 42 L 12 42 Q 0 42 0 30 L 0 12 Q 0 0 12 0 Z",
+              "fixedRatio": false,
+              "fill": "rgba(255,255,255,0.18)",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "rgba(255,255,255,0.45)"
+              },
+              "text": {
+                "content": "<p style=\"font-size:15px;color:#FFFFFF;text-align:center;\">5 · Making</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p3_pg5",
+              "type": "shape",
+              "left": 680,
+              "top": 448,
+              "width": 100,
+              "height": 42,
+              "rotate": 0,
+              "viewBox": [100, 42],
+              "path": "M 12 0 L 88 0 Q 100 0 100 12 L 100 30 Q 100 42 88 42 L 12 42 Q 0 42 0 30 L 0 12 Q 0 0 12 0 Z",
+              "fixedRatio": false,
+              "fill": "rgba(255,255,255,0.18)",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "rgba(255,255,255,0.45)"
+              },
+              "text": {
+                "content": "<p style=\"font-size:15px;color:#FFFFFF;text-align:center;\">6 · Making</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p3_pg6",
+              "type": "shape",
+              "left": 798,
+              "top": 448,
+              "width": 100,
+              "height": 42,
+              "rotate": 0,
+              "viewBox": [100, 42],
+              "path": "M 12 0 L 88 0 Q 100 0 100 12 L 100 30 Q 100 42 88 42 L 12 42 Q 0 42 0 30 L 0 12 Q 0 0 12 0 Z",
+              "fixedRatio": false,
+              "fill": "rgba(255,255,255,0.18)",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "rgba(255,255,255,0.45)"
+              },
+              "text": {
+                "content": "<p style=\"font-size:15px;color:#FFFFFF;text-align:center;\">7 · Making</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "scene-p4",
+      "type": "interactive",
+      "order": 4,
+      "title": "How a class works: try the buttons",
+      "stageId": "guide-openmaic-en",
+      "createdAt": 1793880000000,
+      "updatedAt": 1793880000000,
+      "outlineId": "p4",
+      "actions": [
+        {
+          "id": "s4_1",
+          "type": "speech",
+          "text": "Most of the buttons you need sit in the bar under the slide.",
+          "audioId": "/guide-course/en/audio/s4_1.mp3",
+          "audioUrl": "/guide-course/en/audio/s4_1.mp3"
+        },
+        {
+          "id": "a4_hl1",
+          "type": "widget_highlight",
+          "target": "#bar",
+          "content": "Back, play, speed and Notes all live in this bar."
+        },
+        {
+          "id": "s4_2",
+          "type": "speech",
+          "text": "Back, play and speed are in the middle, and the speech-bubble icon on the right opens Notes. To ask a question, use Say it or Type it at the bottom right.",
+          "audioId": "/guide-course/en/audio/s4_2.mp3",
+          "audioUrl": "/guide-course/en/audio/s4_2.mp3"
+        },
+        {
+          "id": "a4_hl2",
+          "type": "widget_highlight",
+          "target": "#ask",
+          "content": "Got a question? Ask here."
+        },
+        {
+          "id": "s4_3",
+          "type": "speech",
+          "text": "Now try each one yourself.",
+          "audioId": "/guide-course/en/audio/s4_3.mp3",
+          "audioUrl": "/guide-course/en/audio/s4_3.mp3"
+        }
+      ],
+      "content": {
+        "type": "interactive",
+        "url": "",
+        "html": "<!doctype html>\n<html lang='en'>\n<head>\n<meta charset='utf-8'>\n<meta name='viewport' content='width=device-width,initial-scale=1'>\n<style>\n*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}\nhtml,body{height:100%;margin:0}\nbody{font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;background:#FBF8F2;color:#1f2430;overflow:hidden}\n.wrap{height:100%;display:flex;flex-direction:column;padding:2vmin 2.6vmin 1.6vmin;gap:1.4vmin}\n.top{display:flex;align-items:center;justify-content:space-between;gap:2vmin}\n.title{font-size:4.93vmin;font-weight:800}\n.count{font-size:3.33vmin;font-weight:700;color:#5b21b6;background:#ede9fe;border-radius:999px;padding:.7vmin 1.8vmin;white-space:nowrap}\n.room{flex:1;min-height:0;display:flex;gap:1.4vmin}\n.main{flex:1;min-width:0;display:flex;flex-direction:column;gap:1vmin}\n.slide{flex:1;min-height:0;background:#fff;border-radius:2vmin;box-shadow:0 4px 14px rgba(76,29,149,.10);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1vmin;position:relative}\n.slide .pg{font-size:6.09vmin;font-weight:800;color:#6d28d9}\n.slide .st{font-size:3.33vmin;color:#64748b}\n.slide .state{position:absolute;top:1.2vmin;right:1.6vmin;font-size:2.9vmin;font-weight:700;color:#7c3aed}\n.bar{display:flex;align-items:center;justify-content:center;gap:.8vmin;background:#fff;border-radius:999px;padding:.8vmin 1.4vmin;box-shadow:0 4px 14px rgba(76,29,149,.10);position:relative}\n.bar .pages{position:absolute;left:2vmin;font-size:2.9vmin;color:#64748b}\n.btn{border:0;background:#f3f4f6;border-radius:1.4vmin;padding:.8vmin 1.4vmin;display:flex;align-items:center;gap:.6vmin;cursor:pointer;font-family:inherit;font-size:3.04vmin;font-weight:700;color:#374151;transition:background .15s,transform .1s}\n.btn .ico{font-size:3.77vmin;line-height:1}\n.btn:active{transform:scale(.96)}\n.btn.on{background:#7C3AED;color:#fff}\n.btn.done:not(.on){background:#ede9fe}\n.sep{width:1px;height:3vmin;background:#e5e7eb;margin:0 .6vmin}\n.talk{display:flex;align-items:center;gap:1.4vmin;background:#fff;border-radius:2vmin;padding:1.2vmin 1.6vmin;box-shadow:0 4px 14px rgba(76,29,149,.10)}\n.av{width:8vmin;height:8vmin;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:4.93vmin;flex:0 0 auto}\n.who{font-size:2.75vmin;font-weight:800;color:#7c3aed}\n.say{font-size:3.48vmin;line-height:1.4}\n.side{width:27%;display:flex;flex-direction:column;gap:1vmin;background:#fff;border-radius:2vmin;padding:1.4vmin;box-shadow:0 4px 14px rgba(76,29,149,.10)}\n.side .lab{font-size:2.75vmin;color:#64748b;font-weight:700}\n.mates{display:flex;gap:.8vmin}\n.side .btn{justify-content:center}\n.panel{flex:1;min-height:0;background:#f8fafc;border-radius:1.4vmin;padding:1vmin 1.2vmin;font-size:2.75vmin;color:#475569;line-height:1.45;overflow:hidden}\n.panel b{color:#1f2430}\n.tip{background:#4C1D95;color:#fff;border-radius:2vmin;padding:1.4vmin 2.4vmin;display:flex;gap:2vmin;align-items:center;min-height:15vmin}\n.tip .t{font-size:3.92vmin;font-weight:800}\n.tip .w{font-size:2.9vmin;color:#c4b5fd;margin-top:.3vmin}\n.tip .d{font-size:3.33vmin;color:#e5e7eb;margin-top:.5vmin;line-height:1.4}\n.pulse{animation:pulse 1.1s ease-in-out 3;outline:3px solid rgba(124,58,237,.75);outline-offset:3px;border-radius:2vmin}\n@keyframes pulse{0%,100%{outline-color:rgba(124,58,237,.75)}50%{outline-color:rgba(124,58,237,.15)}}\n.askbox{display:flex;flex-direction:column;gap:1vmin;padding:.4vmin;border-radius:1.6vmin}\n</style>\n</head>\n<body>\n<div class='wrap'>\n  <div class='top'>\n    <div class='title'>Try it: the buttons in a class</div>\n    <div class='count' id='count'>Tried 0 / 7</div>\n  </div>\n  <div class='room'>\n    <div class='main'>\n      <div class='slide'>\n        <div class='state' id='state'>Class is on</div>\n        <div class='pg'>Page <span id='pg'>1</span> / 7</div>\n        <div class='st'>This is the slide the teacher talks you through</div>\n      </div>\n      <div class='bar' id='bar'>\n        <span class='pages'>Bottom bar</span>\n        <button class='btn' id='btn-prev' data-k='prev'><span class='ico'>‹</span>Back</button>\n        <button class='btn' id='btn-play' data-k='play'><span class='ico' id='playIco'>⏸</span><span id='playLab'>Pause</span></button>\n        <button class='btn' id='btn-next' data-k='next'><span class='ico'>›</span>Next</button>\n        <button class='btn' id='btn-speed' data-k='speed'><span id='spd'>1x</span></button>\n        <span class='sep'></span>\n        <button class='btn' id='btn-note' data-k='note'><span class='ico'>🗒</span>Notes</button>\n      </div>\n      <div class='talk'>\n        <div class='av' style='background:#dbeafe'>👩‍🏫</div>\n        <div><div class='who' id='who'>Ms. Lane</div><div class='say' id='say'>Hi everyone, let's go page by page.</div></div>\n      </div>\n    </div>\n    <div class='side'>\n      <div class='lab'>Classmates</div>\n      <div class='mates'><div class='av' style='background:#fef3c7'>🙋‍♀️</div><div class='av' style='background:#d1fae5'>🙋‍♂️</div></div>\n      <div class='lab'>Got a question?</div>\n      <div class='askbox' id='ask'><button class='btn' id='btn-mic' data-k='mic'><span class='ico'>🎤</span>Say it</button>\n      <button class='btn' id='btn-chat' data-k='chat'><span class='ico'>💬</span>Type it</button></div>\n      <div class='panel' id='panel'>Click the buttons to see what each one does.</div>\n    </div>\n  </div>\n  <div class='tip'>\n    <div>\n      <div class='t' id='tt'>Click every button once</div>\n      <div class='w' id='tw'>In a real class they sit in the same places</div>\n      <div class='d' id='td'>Whatever you click, this box tells you what it does.</div>\n    </div>\n  </div>\n</div>\n<script>\nvar info={\n prev:{t:'Back',w:'Middle of the bottom bar',d:'Go back to the last page and look again.',who:'Mia',say:'I missed that, going back for a sec.'},\n play:{t:'Play / Pause',w:'Middle of the bottom bar',d:'Let the teacher keep going, or stop to think. With the sound off, the teacher\\'s words show up line by line below.',who:'Ms. Lane',say:''},\n next:{t:'Next',w:'Middle of the bottom bar',d:'Ready? Move on to the next page.',who:'Ms. Lane',say:'Got it? Let\\'s keep going.'},\n speed:{t:'Speed',w:'The 1x button in the bottom bar',d:'Each click changes the speed. Back at 1x is normal speed.',who:'Leo',say:''},\n note:{t:'Notes',w:'Right side of the bottom bar, the speech-bubble icon',d:'Opens the side panel: Notes has everything the teacher said, page by page; Chat has the questions you asked.',who:'Mia',say:'Forgot what she said? It\\'s all in Notes.'},\n mic:{t:'Say it',w:'Bottom right, under your classmates',d:'Click once and speak, click again when you\\'re done. The teacher stops and answers you.',who:'Ms. Lane',say:'Go ahead, I\\'m listening.'},\n chat:{t:'Type it',w:'Bottom right, under the microphone',d:'Rather not talk? Type your question. The teacher answers, and classmates sometimes chime in.',who:'Leo',say:'I wanted to ask that too!'}\n};\nvar page=1,playing=true,speeds=['1x','1.5x','2x'],si=0,tried={};\nfunction $(id){return document.getElementById(id);}\nvar btns=document.querySelectorAll('.btn');\nfunction pick(k,el){\n var b=info[k];if(!b)return;\n for(var i=0;i<btns.length;i++){btns[i].classList.remove('on');}\n el.classList.add('on');tried[k]=1;el.classList.add('done');\n var n=Object.keys(tried).length;$('count').textContent='Tried '+n+' / 7';\n $('tt').textContent=b.t;$('tw').textContent=b.w;$('td').textContent=b.d;\n var who=b.who,say=b.say,panel='';\n if(k==='prev'){page=Math.max(1,page-1);$('pg').textContent=page;}\n if(k==='next'){page=Math.min(7,page+1);$('pg').textContent=page;}\n if(k==='play'){playing=!playing;$('playIco').textContent=playing?'⏸':'▶';$('playLab').textContent=playing?'Pause':'Play';$('state').textContent=playing?'Class is on':'Paused';say=playing?'Okay, let\\'s carry on.':'Sure, take a moment. Click Play when you\\'re ready.';}\n if(k==='speed'){si=(si+1)%speeds.length;$('spd').textContent=speeds[si];say='Nice, trying '+speeds[si]+' now.';}\n if(k==='note'){panel='<b>Notes</b> · Page '+page+'<br>Ms. Lane: Hi everyone, let\\'s go page by page.';}\n if(k==='mic'){panel='🎤 Listening…';$('state').textContent='The teacher is listening';}\n if(k==='chat'){panel='<b>You</b>: Could you give another example?<br><b>Ms. Lane</b>: Sure, here\\'s one from everyday life.';say='I wanted to ask that too!';}\n if(k!=='mic'&&k!=='play'){$('state').textContent=playing?'Class is on':'Paused';}\n if(panel)$('panel').innerHTML=panel;\n $('who').textContent=who;$('say').textContent=say;\n if(n===7){$('tt').textContent='You tried them all!';$('tw').textContent='';$('td').textContent='These are the buttons you will use in every class. Click Next in the bottom bar to keep going.';}\n}\nfor(var i=0;i<btns.length;i++){(function(el){el.addEventListener('click',function(){pick(el.getAttribute('data-k'),el);});})(btns[i]);}\n\nwindow.addEventListener('message',function(e){\n var d=e.data||{};\n if(d.type==='HIGHLIGHT_ELEMENT'||d.type==='ANNOTATE_ELEMENT'||d.type==='REVEAL_ELEMENT'){\n  var el=d.target?document.querySelector(d.target):null;\n  if(el){el.classList.remove('pulse');void el.offsetWidth;el.classList.add('pulse');setTimeout(function(){el.classList.remove('pulse');},3400);}\n  if(d.content){$('td').textContent=d.content;}\n }\n});\n</script>\n</body>\n</html>\n"
+      }
+    },
+    {
+      "id": "scene-p5",
+      "type": "slide",
+      "order": 5,
+      "title": "Want changes? Just ask",
+      "stageId": "guide-openmaic-en",
+      "createdAt": 1793880000000,
+      "updatedAt": 1793880000000,
+      "outlineId": "p5",
+      "actions": [
+        {
+          "id": "a5_1",
+          "type": "spotlight",
+          "elementId": "p5_chat",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s5_1",
+          "type": "speech",
+          "text": "Want to change something? Just say it in the chat on the left.",
+          "audioId": "/guide-course/en/audio/s5_1.mp3",
+          "audioUrl": "/guide-course/en/audio/s5_1.mp3"
+        },
+        {
+          "id": "a5_2",
+          "type": "laser",
+          "elementId": "p5_b1",
+          "color": "#7C3AED"
+        },
+        {
+          "id": "s5_2",
+          "type": "speech",
+          "text": "Like: the text is too small. Add a practice question to page 3. Explain it more simply.",
+          "audioId": "/guide-course/en/audio/s5_2.mp3",
+          "audioUrl": "/guide-course/en/audio/s5_2.mp3"
+        },
+        {
+          "id": "a5_3",
+          "type": "spotlight",
+          "elementId": "p5_toggle_bg",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s5_3",
+          "type": "speech",
+          "text": "At the top right, Learn is for taking the class, and Edit lets you change the text, the pictures and what I say yourself.",
+          "audioId": "/guide-course/en/audio/s5_3.mp3",
+          "audioUrl": "/guide-course/en/audio/s5_3.mp3"
+        }
+      ],
+      "content": {
+        "type": "slide",
+        "canvas": {
+          "id": "slide-p5",
+          "viewportSize": 1000,
+          "viewportRatio": 0.5625,
+          "theme": {
+            "backgroundColor": "#FBF8F2",
+            "themeColors": ["#6D28D9", "#7C3AED", "#10B981", "#F59E7B", "#1F2340"],
+            "fontColor": "#1F2340",
+            "fontName": "Arial"
+          },
+          "background": {
+            "type": "solid",
+            "color": "#FBF8F2"
+          },
+          "elements": [
+            {
+              "id": "p5_title",
+              "type": "text",
+              "left": 60,
+              "top": 40,
+              "width": 880,
+              "height": 56,
+              "rotate": 0,
+              "content": "<p style=\"font-size:34px;color:#1F2340;font-weight:bold;text-align:left;\">Want changes? Just ask</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p5_sub",
+              "type": "text",
+              "left": 60,
+              "top": 96,
+              "width": 880,
+              "height": 36,
+              "rotate": 0,
+              "content": "<p style=\"font-size:19px;color:#6B6F86;text-align:left;\">Say it in plain words in the chat on the left</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p5_img_card",
+              "type": "shape",
+              "left": 60,
+              "top": 148,
+              "width": 300,
+              "height": 230,
+              "rotate": 0,
+              "viewBox": [300, 230],
+              "path": "M 24 0 L 276 0 Q 300 0 300 24 L 300 206 Q 300 230 276 230 L 24 230 Q 0 230 0 206 L 0 24 Q 0 0 24 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              }
+            },
+            {
+              "id": "p5_img",
+              "type": "image",
+              "left": 70,
+              "top": 158,
+              "width": 280,
+              "height": 210,
+              "rotate": 0,
+              "fixedRatio": true,
+              "src": "/guide-course/img/tweak.webp",
+              "clip": {
+                "shape": "roundRect",
+                "range": [
+                  [0, 0],
+                  [100, 100]
+                ]
+              },
+              "radius": 18
+            },
+            {
+              "id": "p5_chat",
+              "type": "shape",
+              "left": 384,
+              "top": 146,
+              "width": 566,
+              "height": 214,
+              "rotate": 0,
+              "viewBox": [566, 214],
+              "path": "M 22 0 L 544 0 Q 566 0 566 22 L 566 192 Q 566 214 544 214 L 22 214 Q 0 214 0 192 L 0 22 Q 0 0 22 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#E7E2F3"
+              },
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              }
+            },
+            {
+              "id": "p5_b0",
+              "type": "shape",
+              "left": 672,
+              "top": 162,
+              "width": 258,
+              "height": 42,
+              "rotate": 0,
+              "viewBox": [258, 42],
+              "path": "M 21 0 L 237 0 Q 258 0 258 21 L 258 21 Q 258 42 237 42 L 21 42 Q 0 42 0 21 L 0 21 Q 0 0 21 0 Z",
+              "fixedRatio": false,
+              "fill": "#7C3AED",
+              "text": {
+                "content": "<p style=\"font-size:18px;color:#FFFFFF;font-weight:bold;text-align:center;\">The text is too small</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p5_b1",
+              "type": "shape",
+              "left": 552,
+              "top": 214,
+              "width": 378,
+              "height": 42,
+              "rotate": 0,
+              "viewBox": [378, 42],
+              "path": "M 21 0 L 357 0 Q 378 0 378 21 L 378 21 Q 378 42 357 42 L 21 42 Q 0 42 0 21 L 0 21 Q 0 0 21 0 Z",
+              "fixedRatio": false,
+              "fill": "#7C3AED",
+              "text": {
+                "content": "<p style=\"font-size:18px;color:#FFFFFF;font-weight:bold;text-align:center;\">Add a practice question to page 3</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p5_b2",
+              "type": "shape",
+              "left": 662,
+              "top": 266,
+              "width": 268,
+              "height": 42,
+              "rotate": 0,
+              "viewBox": [268, 42],
+              "path": "M 21 0 L 247 0 Q 268 0 268 21 L 268 21 Q 268 42 247 42 L 21 42 Q 0 42 0 21 L 0 21 Q 0 0 21 0 Z",
+              "fixedRatio": false,
+              "fill": "#7C3AED",
+              "text": {
+                "content": "<p style=\"font-size:18px;color:#FFFFFF;font-weight:bold;text-align:center;\">Explain it more simply</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p5_done",
+              "type": "text",
+              "left": 404,
+              "top": 318,
+              "width": 520,
+              "height": 30,
+              "rotate": 0,
+              "content": "<p style=\"font-size:17px;color:#047857;font-weight:bold;text-align:left;\">✓ The class gets updated, and you keep going</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p5_toggle_bg",
+              "type": "shape",
+              "left": 60,
+              "top": 392,
+              "width": 890,
+              "height": 112,
+              "rotate": 0,
+              "viewBox": [890, 112],
+              "path": "M 22 0 L 868 0 Q 890 0 890 22 L 890 90 Q 890 112 868 112 L 22 112 Q 0 112 0 90 L 0 22 Q 0 0 22 0 Z",
+              "fixedRatio": false,
+              "fill": "#F5F3FF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#DDD6FE"
+              }
+            },
+            {
+              "id": "p5_toggle_t",
+              "type": "text",
+              "left": 84,
+              "top": 404,
+              "width": 300,
+              "height": 30,
+              "rotate": 0,
+              "content": "<p style=\"font-size:16px;color:#6B6F86;font-weight:bold;text-align:left;\">The two buttons at the top right</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p5_learn",
+              "type": "shape",
+              "left": 84,
+              "top": 438,
+              "width": 150,
+              "height": 46,
+              "rotate": 0,
+              "viewBox": [150, 46],
+              "path": "M 23 0 L 127 0 Q 150 0 150 23 L 150 23 Q 150 46 127 46 L 23 46 Q 0 46 0 23 L 0 23 Q 0 0 23 0 Z",
+              "fixedRatio": false,
+              "fill": "#1F2340",
+              "text": {
+                "content": "<p style=\"font-size:18px;color:#FFFFFF;font-weight:bold;text-align:center;\">📖 Learn</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p5_learn_d",
+              "type": "text",
+              "left": 246,
+              "top": 442,
+              "width": 230,
+              "height": 40,
+              "rotate": 0,
+              "content": "<p style=\"font-size:17px;color:#1F2340;text-align:left;\">Take the class: watch, listen, ask</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "middle"
+            },
+            {
+              "id": "p5_edit",
+              "type": "shape",
+              "left": 500,
+              "top": 438,
+              "width": 150,
+              "height": 46,
+              "rotate": 0,
+              "viewBox": [150, 46],
+              "path": "M 23 0 L 127 0 Q 150 0 150 23 L 150 23 Q 150 46 127 46 L 23 46 Q 0 46 0 23 L 0 23 Q 0 0 23 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#E7E2F3"
+              },
+              "text": {
+                "content": "<p style=\"font-size:18px;color:#1F2340;font-weight:bold;text-align:center;\">✏️ Edit</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p5_edit_d",
+              "type": "text",
+              "left": 662,
+              "top": 442,
+              "width": 280,
+              "height": 40,
+              "rotate": 0,
+              "content": "<p style=\"font-size:17px;color:#1F2340;text-align:left;\">Change the text, pictures and what the teacher says</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "middle"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "scene-p6",
+      "type": "slide",
+      "order": 6,
+      "title": "Where your classes live",
+      "stageId": "guide-openmaic-en",
+      "createdAt": 1793880000000,
+      "updatedAt": 1793880000000,
+      "outlineId": "p6",
+      "actions": [
+        {
+          "id": "a6_1",
+          "type": "spotlight",
+          "elementId": "p6_row0",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s6_1",
+          "type": "speech",
+          "text": "Every class you make lives in My courses, in the left sidebar. You can search them and sort them into folders.",
+          "audioId": "/guide-course/en/audio/s6_1.mp3",
+          "audioUrl": "/guide-course/en/audio/s6_1.mp3"
+        },
+        {
+          "id": "a6_2",
+          "type": "spotlight",
+          "elementId": "p6_row1",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s6_2",
+          "type": "speech",
+          "text": "The chat list takes you back to the conversation where you made a class, so you can keep changing it.",
+          "audioId": "/guide-course/en/audio/s6_2.mp3",
+          "audioUrl": "/guide-course/en/audio/s6_2.mp3"
+        },
+        {
+          "id": "a6_3",
+          "type": "spotlight",
+          "elementId": "p6_row2",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s6_3",
+          "type": "speech",
+          "text": "To share, click Full screen at the top right, then the download button, and export a PPT or a web page.",
+          "audioId": "/guide-course/en/audio/s6_3.mp3",
+          "audioUrl": "/guide-course/en/audio/s6_3.mp3"
+        }
+      ],
+      "content": {
+        "type": "slide",
+        "canvas": {
+          "id": "slide-p6",
+          "viewportSize": 1000,
+          "viewportRatio": 0.5625,
+          "theme": {
+            "backgroundColor": "#FBF8F2",
+            "themeColors": ["#6D28D9", "#7C3AED", "#10B981", "#F59E7B", "#1F2340"],
+            "fontColor": "#1F2340",
+            "fontName": "Arial"
+          },
+          "background": {
+            "type": "solid",
+            "color": "#FBF8F2"
+          },
+          "elements": [
+            {
+              "id": "p6_title",
+              "type": "text",
+              "left": 60,
+              "top": 40,
+              "width": 880,
+              "height": 56,
+              "rotate": 0,
+              "content": "<p style=\"font-size:34px;color:#1F2340;font-weight:bold;text-align:left;\">Where your classes live</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p6_sub",
+              "type": "text",
+              "left": 60,
+              "top": 96,
+              "width": 880,
+              "height": 36,
+              "rotate": 0,
+              "content": "<p style=\"font-size:19px;color:#6B6F86;text-align:left;\">Every class you make is kept for you</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p6_img_card",
+              "type": "shape",
+              "left": 650,
+              "top": 146,
+              "width": 300,
+              "height": 230,
+              "rotate": 0,
+              "viewBox": [300, 230],
+              "path": "M 24 0 L 276 0 Q 300 0 300 24 L 300 206 Q 300 230 276 230 L 24 230 Q 0 230 0 206 L 0 24 Q 0 0 24 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              }
+            },
+            {
+              "id": "p6_img",
+              "type": "image",
+              "left": 660,
+              "top": 156,
+              "width": 280,
+              "height": 210,
+              "rotate": 0,
+              "fixedRatio": true,
+              "src": "/guide-course/img/library.webp",
+              "clip": {
+                "shape": "roundRect",
+                "range": [
+                  [0, 0],
+                  [100, 100]
+                ]
+              },
+              "radius": 18
+            },
+            {
+              "id": "p6_row0",
+              "type": "shape",
+              "left": 60,
+              "top": 146,
+              "width": 566,
+              "height": 72,
+              "rotate": 0,
+              "viewBox": [566, 72],
+              "path": "M 18 0 L 548 0 Q 566 0 566 18 L 566 54 Q 566 72 548 72 L 18 72 Q 0 72 0 54 L 0 18 Q 0 0 18 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#E7E2F3"
+              },
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              }
+            },
+            {
+              "id": "p6_ic0",
+              "type": "shape",
+              "left": 74,
+              "top": 158,
+              "width": 48,
+              "height": 48,
+              "rotate": 0,
+              "viewBox": [48, 48],
+              "path": "M 24.0 0 L 24.0 0 Q 48 0 48 24.0 L 48 24.0 Q 48 48 24.0 48 L 24.0 48 Q 0 48 0 24.0 L 0 24.0 Q 0 0 24.0 0 Z",
+              "fixedRatio": false,
+              "fill": "#EDE9FE",
+              "text": {
+                "content": "<p style=\"font-size:22px;color:#6D28D9;text-align:center;\">📚</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p6_h0",
+              "type": "text",
+              "left": 136,
+              "top": 151,
+              "width": 470,
+              "height": 30,
+              "rotate": 0,
+              "content": "<p style=\"font-size:20px;color:#1F2340;font-weight:bold;text-align:left;\">My courses</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p6_d0",
+              "type": "text",
+              "left": 136,
+              "top": 182,
+              "width": 480,
+              "height": 30,
+              "rotate": 0,
+              "content": "<p style=\"font-size:15px;color:#6B6F86;text-align:left;\">In the left sidebar. Search them, sort them into folders</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p6_row1",
+              "type": "shape",
+              "left": 60,
+              "top": 228,
+              "width": 566,
+              "height": 72,
+              "rotate": 0,
+              "viewBox": [566, 72],
+              "path": "M 18 0 L 548 0 Q 566 0 566 18 L 566 54 Q 566 72 548 72 L 18 72 Q 0 72 0 54 L 0 18 Q 0 0 18 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#E7E2F3"
+              },
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              }
+            },
+            {
+              "id": "p6_ic1",
+              "type": "shape",
+              "left": 74,
+              "top": 240,
+              "width": 48,
+              "height": 48,
+              "rotate": 0,
+              "viewBox": [48, 48],
+              "path": "M 24.0 0 L 24.0 0 Q 48 0 48 24.0 L 48 24.0 Q 48 48 24.0 48 L 24.0 48 Q 0 48 0 24.0 L 0 24.0 Q 0 0 24.0 0 Z",
+              "fixedRatio": false,
+              "fill": "#EDE9FE",
+              "text": {
+                "content": "<p style=\"font-size:22px;color:#6D28D9;text-align:center;\">💬</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p6_h1",
+              "type": "text",
+              "left": 136,
+              "top": 233,
+              "width": 470,
+              "height": 30,
+              "rotate": 0,
+              "content": "<p style=\"font-size:20px;color:#1F2340;font-weight:bold;text-align:left;\">Chat list</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p6_d1",
+              "type": "text",
+              "left": 136,
+              "top": 264,
+              "width": 480,
+              "height": 30,
+              "rotate": 0,
+              "content": "<p style=\"font-size:15px;color:#6B6F86;text-align:left;\">Go back to the conversation where you made a class</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p6_row2",
+              "type": "shape",
+              "left": 60,
+              "top": 310,
+              "width": 566,
+              "height": 72,
+              "rotate": 0,
+              "viewBox": [566, 72],
+              "path": "M 18 0 L 548 0 Q 566 0 566 18 L 566 54 Q 566 72 548 72 L 18 72 Q 0 72 0 54 L 0 18 Q 0 0 18 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#E7E2F3"
+              },
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              }
+            },
+            {
+              "id": "p6_ic2",
+              "type": "shape",
+              "left": 74,
+              "top": 322,
+              "width": 48,
+              "height": 48,
+              "rotate": 0,
+              "viewBox": [48, 48],
+              "path": "M 24.0 0 L 24.0 0 Q 48 0 48 24.0 L 48 24.0 Q 48 48 24.0 48 L 24.0 48 Q 0 48 0 24.0 L 0 24.0 Q 0 0 24.0 0 Z",
+              "fixedRatio": false,
+              "fill": "#EDE9FE",
+              "text": {
+                "content": "<p style=\"font-size:22px;color:#6D28D9;text-align:center;\">⬇️</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p6_h2",
+              "type": "text",
+              "left": 136,
+              "top": 315,
+              "width": 470,
+              "height": 30,
+              "rotate": 0,
+              "content": "<p style=\"font-size:20px;color:#1F2340;font-weight:bold;text-align:left;\">Share</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p6_d2",
+              "type": "text",
+              "left": 136,
+              "top": 346,
+              "width": 480,
+              "height": 30,
+              "rotate": 0,
+              "content": "<p style=\"font-size:15px;color:#6B6F86;text-align:left;\">Click Full screen at the top right, then download: PPT or web page</p>",
+              "defaultFontName": "Arial",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p6_bar",
+              "type": "shape",
+              "left": 60,
+              "top": 410,
+              "width": 890,
+              "height": 74,
+              "rotate": 0,
+              "viewBox": [890, 74],
+              "path": "M 22 0 L 868 0 Q 890 0 890 22 L 890 52 Q 890 74 868 74 L 22 74 Q 0 74 0 52 L 0 22 Q 0 0 22 0 Z",
+              "fixedRatio": false,
+              "fill": "#6D28D9",
+              "text": {
+                "content": "<p style=\"font-size:22px;color:#FFFFFF;font-weight:bold;text-align:center;\">Come back any time and pick up where you left off</p>",
+                "defaultFontName": "Arial",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "scene-p7",
+      "type": "quiz",
+      "order": 7,
+      "title": "Quick check",
+      "actions": [
+        {
+          "id": "s7_1",
+          "type": "speech",
+          "text": "Let's do a quick check on what we just saw. Take your time; each answer comes with a short explanation.",
+          "audioId": "/guide-course/en/audio/s7_1.mp3",
+          "audioUrl": "/guide-course/en/audio/s7_1.mp3"
+        }
+      ],
+      "content": {
+        "type": "quiz",
+        "questions": [
+          {
+            "id": "q1",
+            "type": "single",
+            "answer": ["A"],
+            "points": 10,
+            "options": [
+              {
+                "label": "A short topic is enough",
+                "value": "A"
+              },
+              {
+                "label": "A whole page of careful instructions",
+                "value": "B"
+              },
+              {
+                "label": "Nothing at all",
+                "value": "C"
+              },
+              {
+                "label": "You must provide the full textbook",
+                "value": "D"
+              }
+            ],
+            "analysis": "A short topic like photosynthesis is enough to start.",
+            "question": "How much do you need to type to start a class?",
+            "hasAnswer": true
+          },
+          {
+            "id": "q2",
+            "type": "single",
+            "answer": ["C"],
+            "points": 10,
+            "options": [
+              {
+                "label": "Wait until every page is ready",
+                "value": "A"
+              },
+              {
+                "label": "Ask for the class to be made again",
+                "value": "B"
+              },
+              {
+                "label": "Start learning page 1 now",
+                "value": "C"
+              },
+              {
+                "label": "Delete the class and start over",
+                "value": "D"
+              }
+            ],
+            "analysis": "Page 1 can be learned as soon as it is ready, so you do not wait for the rest.",
+            "question": "Page 1 of your new class is ready, but later pages are still being made. What can you do?",
+            "hasAnswer": true
+          },
+          {
+            "id": "q3",
+            "type": "single",
+            "answer": ["C"],
+            "points": 10,
+            "options": [
+              {
+                "label": "Press Learn and take the class again",
+                "value": "A"
+              },
+              {
+                "label": "Press Edit and rewrite every page yourself",
+                "value": "B"
+              },
+              {
+                "label": "Ask in the chat, \"The text is too small\"",
+                "value": "C"
+              },
+              {
+                "label": "Refresh the page until it changes",
+                "value": "D"
+              }
+            ],
+            "analysis": "Asking in the chat updates the class for you. Learn is for taking a class, Edit is for changing it yourself.",
+            "question": "You want the text bigger in a class you made. What is the quickest way?",
+            "hasAnswer": true
+          }
+        ]
+      },
+      "stageId": "guide-openmaic-en",
+      "createdAt": 1793880000000,
+      "outlineId": "p7",
+      "updatedAt": 1793880000000
+    }
+  ],
+  "outline": {
+    "outlines": [],
+    "requirement": "OpenMAIC in 5 Minutes",
+    "generationComplete": true
+  }
+}

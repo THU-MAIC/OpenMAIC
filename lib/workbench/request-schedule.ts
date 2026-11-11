@@ -25,9 +25,13 @@
  *     sooner wait; at the switch the next scene in order is shown, unless the
  *     screen has fallen more than `maxLagMs` behind — then the newest. Once the
  *     roster exists, assembling also holds until its cards have flipped.
- *  3. A request that only talks stays quiet (the conversation shows it); one
- *     that ends without a page folds once its scene has been held; the first
- *     persisted page hands over to the classroom.
+ *  3. A request shows from the moment it is sent, on understanding, before it
+ *     calls a tool or asks anything: while it waits in the queue, while the
+ *     agent only thinks. One that ends without a page (it turned out to be
+ *     talk, or stopped early) folds once its scene has been held — to the
+ *     resting tab, or away entirely while the conversation has only talked
+ *     (the preview decides) — and the first persisted page hands over to the
+ *     classroom.
  *
  * No timers here: a live caller passes `Date.now()` (never earlier than the
  * track's newest timestamp) and re-renders at `nextChangeAt`.
@@ -104,8 +108,6 @@ export function sceneOfTool(tool: string): RequestSceneId {
 }
 
 export type RequestPreviewMode =
-  /** The request has only talked so far: the conversation shows that. */
-  | 'quiet'
   /** A scene is on screen. */
   | 'scene'
   /** The request ended without a page: the panel folds away. */
@@ -375,10 +377,6 @@ export function scheduleRequestPreview(
 
   if (track.firstSceneAt !== null && track.firstSceneAt <= now) {
     return { ...base, mode: 'classroom', nextChangeAt: null };
-  }
-  // ── Only talking so far ──────────────────────────────────────────────────
-  if (visibleSteps.length === 0 && !track.questions.some((asked) => asked.ts <= now)) {
-    return { ...base, mode: 'quiet', nextChangeAt };
   }
   // ── The request ended without a page ─────────────────────────────────────
   let mode: RequestPreviewMode = 'scene';

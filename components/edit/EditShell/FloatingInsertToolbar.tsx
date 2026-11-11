@@ -127,7 +127,7 @@ export function FloatingInsertToolbar({ items, x, y, collapsed, onToggleCollapse
     >
       <div
         ref={constraintsRef}
-        className="pointer-events-none absolute inset-2 flex items-center justify-start"
+        className="pointer-events-none absolute inset-1 flex items-center justify-start"
       >
         <motion.div
           ref={toolbarRef}

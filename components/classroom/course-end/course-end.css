@@ -1,0 +1,331 @@
+/* The course-end state. Its own tokens, since it also shows outside the workspace. */
+.ce-root {
+  --ce-ink: #0f172a;
+  --ce-mute: #64748b;
+  --ce-line: rgba(15, 23, 42, 0.1);
+  --ce-tint: rgba(124, 58, 237, 0.06);
+  --ce-raised: #fff;
+  --ce-accent: #7c3aed;
+  --ce-pri: linear-gradient(180deg, #8143ef, #6d28d9);
+  --ce-scrim: rgba(30, 20, 60, 0.26);
+  --ce-card-sh: 0 1px 2px rgba(15, 23, 42, 0.05), 0 24px 56px -16px rgba(76, 29, 149, 0.34);
+  --ce-medal-shadow: rgba(49, 16, 102, 0.34);
+  container-type: inline-size;
+  position: absolute;
+  inset: 0;
+  z-index: 130;
+  display: flex;
+  overflow-y: auto;
+  padding: 72px 16px 16px;
+  background: var(--ce-scrim);
+  animation: ce-fade 0.4s ease-out both;
+}
+.ce-blur {
+  backdrop-filter: blur(3px);
+}
+.dark .ce-root {
+  --ce-ink: #f8fafc;
+  --ce-mute: #94a3b8;
+  --ce-line: rgba(255, 255, 255, 0.12);
+  --ce-tint: rgba(167, 139, 250, 0.09);
+  --ce-raised: #1b2336;
+  --ce-accent: #a78bfa;
+  --ce-pri: linear-gradient(180deg, #8b5cf6, #7c3aed);
+  --ce-scrim: rgba(5, 6, 20, 0.7);
+  --ce-card-sh:
+    0 1px 2px rgba(0, 0, 0, 0.3), 0 28px 64px -16px rgba(0, 0, 0, 0.72),
+    0 0 0 1px rgba(167, 139, 250, 0.08);
+  --ce-medal-shadow: rgba(0, 0, 0, 0.6);
+}
+@keyframes ce-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.ce-card {
+  position: relative;
+  margin: auto;
+  width: 100%;
+  max-width: 420px;
+  padding: 66px 24px 24px;
+  border-radius: 18px;
+  background: var(--ce-raised);
+  border: 1px solid var(--ce-line);
+  box-shadow: var(--ce-card-sh);
+  text-align: center;
+  animation: ce-card-in 0.45s 0.12s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+@keyframes ce-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.985);
+  }
+}
+
+.ce-x {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  z-index: 1;
+  display: flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  color: var(--ce-mute);
+  cursor: pointer;
+}
+.ce-x:hover {
+  background: var(--ce-tint);
+  color: var(--ce-ink);
+}
+
+/* The medal, half over the card's edge. */
+.ce-medal {
+  position: absolute;
+  left: 50%;
+  top: -50px;
+  width: 100px;
+  height: 100px;
+  margin-left: -50px;
+  perspective: 520px;
+}
+.ce-drop {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  animation: ce-soft 0.6s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+@keyframes ce-soft {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.94);
+  }
+}
+.ce-tilt {
+  position: absolute;
+  inset: 0;
+  transform: rotateX(var(--ce-rx, 0deg)) rotateY(var(--ce-ry, 0deg));
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+.ce-shadow {
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  bottom: -7px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ce-medal-shadow);
+  filter: blur(7px);
+}
+.ce-coin {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 50%;
+  box-shadow:
+    0 1px 1px rgba(255, 255, 255, 0.35) inset,
+    0 -1px 1px rgba(0, 0, 0, 0.2) inset,
+    0 6px 16px -6px rgba(49, 16, 102, 0.45);
+}
+.ce-rim {
+  border-radius: 0;
+  box-shadow: none;
+}
+.ce-rim {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--ce-rim);
+}
+.ce-mill {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: repeating-conic-gradient(
+    rgba(255, 255, 255, 0.28) 0 1.2deg,
+    rgba(40, 10, 90, 0.22) 1.2deg 2.4deg
+  );
+  -webkit-mask: radial-gradient(closest-side, transparent 92%, #000 93%);
+  mask: radial-gradient(closest-side, transparent 92%, #000 93%);
+}
+.ce-disc {
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  background: var(--ce-disc);
+  box-shadow:
+    0 1px 2px rgba(255, 255, 255, 0.55) inset,
+    0 -1px 2px rgba(40, 10, 90, 0.32) inset,
+    0 0 0 1px rgba(40, 10, 90, 0.14);
+}
+.ce-groove {
+  position: absolute;
+  inset: 14.5%;
+  border-radius: 50%;
+  border: 1px solid rgba(40, 10, 90, 0.2);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 1px 0 rgba(40, 10, 90, 0.1);
+}
+.ce-sheen {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at var(--ce-sx, 35%) var(--ce-sy, 28%),
+    rgba(255, 255, 255, 0.62),
+    rgba(255, 255, 255, 0) 58%
+  );
+  mix-blend-mode: soft-light;
+}
+.ce-glyph {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ce-ink);
+}
+.ce-glyph svg {
+  filter: drop-shadow(0 1px 0 var(--ce-hi)) drop-shadow(0 -1px 0 var(--ce-lo));
+}
+.ce-up {
+  animation: ce-up 0.42s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+  animation-delay: var(--ce-d, 0s);
+}
+@keyframes ce-up {
+  from {
+    opacity: 0;
+    transform: translateY(9px);
+  }
+}
+.ce-title-wrap {
+  position: relative;
+  overflow: hidden;
+}
+.ce-title {
+  padding: 0 8px;
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 30px;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+  color: var(--ce-ink);
+  animation: ce-reveal 0.5s 0.62s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+@keyframes ce-reveal {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+.ce-meta {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0 8px;
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ce-mute);
+}
+.ce-meta i {
+  font-style: normal;
+}
+.ce-meta b {
+  font-weight: 600;
+  color: var(--ce-accent);
+}
+
+/* The buttons are the card's bottom edge. */
+.ce-actions {
+  position: relative;
+  display: flex;
+  margin: 26px -24px -24px;
+  overflow: hidden;
+  border-top: 1px solid var(--ce-line);
+  border-radius: 0 0 17px 17px;
+}
+.ce-btn {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  height: 52px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: transparent;
+  color: var(--ce-accent);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+/* Rounded with the card, so that a focus ring follows its corner instead of being cut. */
+.ce-btn:first-child {
+  border-end-start-radius: 17px;
+}
+.ce-btn:last-child {
+  border-end-end-radius: 17px;
+}
+.ce-btn:hover {
+  background: var(--ce-tint);
+}
+.ce-btn-primary {
+  background: var(--ce-pri);
+  color: #fff;
+}
+.ce-btn-primary:hover {
+  background: var(--ce-pri);
+  filter: brightness(1.07);
+}
+.ce-btn:focus-visible {
+  outline: 2px solid var(--ce-accent);
+  outline-offset: -3px;
+}
+.ce-btn-primary:focus-visible {
+  outline-color: #fff;
+}
+.ce-x:focus-visible {
+  outline: 2px solid var(--ce-accent);
+  outline-offset: 2px;
+}
+
+/* Too narrow for an icon beside the longer labels, or a line that keeps its separator. */
+@container (max-width: 300px) {
+  .ce-btn svg {
+    display: none;
+  }
+  .ce-meta {
+    flex-direction: column;
+  }
+  .ce-meta i {
+    display: none;
+  }
+}
+
+/* Skipped, and settled: everything at its end. */
+.ce-root[data-skip] *,
+.ce-root[data-skip] {
+  animation-duration: 0.001s !important;
+  animation-delay: 0s !important;
+}
+/* Reduced motion: a crossfade, nothing else. */
+@media (prefers-reduced-motion: reduce) {
+  .ce-root {
+    animation: ce-fade 0.22s ease-out both;
+  }
+  .ce-root * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

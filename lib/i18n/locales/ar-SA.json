@@ -26,7 +26,6 @@
     "examplesLabel": "جرّب موضوعًا",
     "examplePython": "تعلم Python من الصفر",
     "exampleFourier": "شرح تحويل فورييه بأمثلة مبسطة",
-    "desktopOnly": "استخدم الكمبيوتر للمحرر ووضع Pro.",
     "slogan": "التعلّم التوليدي في فصل تفاعلي متعدد الوكلاء",
     "greetingWithName": "مرحبًا، {{name}}"
   },
@@ -86,6 +85,7 @@
     "packSlidesOnly": "PPTX بالشرائح فقط + صفحات تفاعلية",
     "classroomZip": "تصدير ملف الفصل ZIP",
     "classroomZipDesc": "هيكل المقرر + ملفات الوسائط",
+    "viewerCopyHint": "هل تريد نسخة قابلة للتعديل؟ نزّلها عبر «{{zip}}»، ثم استخدم «{{importLabel}}» في {{courses}}.",
     "html": "تصدير بتنسيق HTML",
     "htmlDesc": "ملف واحد للاستخدام دون اتصال يُشغَّل تلقائيًا",
     "htmlWithNarration": "مع التعليق الصوتي والفيديو",
@@ -110,6 +110,7 @@
       "emptyClassroom": "لا يحتوي هذا الفصل على أي مشاهد.",
       "unsupportedScene": "هذا المشهد غير متاح في التصدير دون اتصال.",
       "interactiveTitle": "مشهد تفاعلي",
+      "interactiveMoreBelow": "يوجد المزيد بالأسفل",
       "videoUnavailable": "الفيديو غير مضمّن في التصدير دون اتصال",
       "quizSubmit": "إرسال",
       "quizRetry": "حاول مجددًا",
@@ -271,6 +272,7 @@
       "title": "تعذر تشغيل هذا التفاعل",
       "dismiss": "إغلاق"
     },
+    "interactiveMoreBelow": "يوجد المزيد بالأسفل",
     "tabs": {
       "lecture": "الملاحظات",
       "chat": "المحادثة"
@@ -347,15 +349,27 @@
     "confirmSwitchTitle": "تبديل المشهد",
     "confirmSwitchMessage": "يوجد موضوع قيد التقدم حاليًا. سيؤدي تبديل المشهد إلى إنهاء الموضوع الحالي. هل أنت متأكد؟",
     "generatingNextPage": "جارٍ توليد المشهد، يرجى الانتظار...",
-    "courseComplete": "اكتملت الدورة",
     "fullscreen": "ملء الشاشة",
     "exitFullscreen": "الخروج من ملء الشاشة",
     "editCourse": "تحرير الدورة",
     "doneEditing": "إنهاء التحرير",
-    "proModeDisabledHint": "التحرير غير متاح في هذه الصفحة — افتح شريحة من الدورة للتحرير باستخدام وضع Pro."
+    "editDisabledHint": "التحرير غير متاح في هذه الصفحة — افتح شريحة من الدورة لتحريرها.",
+    "editToggle": "تحرير",
+    "openInWorkspace": "فتح في مساحة العمل",
+    "openInWorkspaceHint": "افتح في مساحة العمل لمتابعة العمل على هذه الدورة في محادثة",
+    "makeOwnCourse": "أنشئ درسك",
+    "makeOwnCourseHint": "أنشئ درسك الخاص في مساحة العمل",
+    "dock": {
+      "collapse": "طي الشريط",
+      "expand": "توسيع الشريط",
+      "resize": "تغيير ارتفاع الشريط"
+    },
+    "chatPanel": {
+      "expand": "إظهار لوحة المحادثة",
+      "collapse": "إخفاء لوحة المحادثة"
+    }
   },
   "edit": {
-    "proMode": "احترافي",
     "undo": "تراجع",
     "redo": "إعادة",
     "courseHistory": {
@@ -583,7 +597,19 @@
       "whiteboardLatex": "صيغة",
       "whiteboardTable": "جدول",
       "action": "إجراء",
-      "discussion": "مناقشة"
+      "discussion": "مناقشة",
+      "playVideo": "تشغيل الفيديو",
+      "whiteboardChart": "مخطط",
+      "whiteboardLine": "رسم خط",
+      "whiteboardClear": "مسح اللوحة",
+      "whiteboardDelete": "إزالة عنصر",
+      "whiteboardClose": "إغلاق اللوحة",
+      "whiteboardCode": "كتلة شيفرة",
+      "whiteboardEditCode": "تعديل الشيفرة",
+      "widgetHighlight": "تمييز في النشاط",
+      "widgetSetState": "ضبط حالة النشاط",
+      "widgetAnnotation": "إضافة تعليق في النشاط",
+      "widgetReveal": "إظهار في النشاط"
     },
     "element": {
       "toolbar": "شريط أدوات العنصر",
@@ -648,12 +674,6 @@
     "timeline": {
       "title": "نص السرد",
       "regenAllTts": "إعادة توليد كل التعليق الصوتي",
-      "voiceAll": "صوّت الكل",
-      "counts": "{{speech}} سرد · {{cue}} إجراءات",
-      "panLeft": "تحريك لليسار",
-      "panRight": "تحريك لليمين",
-      "collapseAxis": "طي إلى المحور",
-      "expandTrack": "توسيع المسار",
       "emptyHint": "اسحب الإجراءات إلى المحور للبدء، أو دع MAIC Agent يولّد السرد.",
       "speechPlaceholder": "أدخل سطر السرد هذا…",
       "reorder": "اسحب لإعادة الترتيب",
@@ -665,13 +685,15 @@
       "fieldElement": "عنصر",
       "fieldContent": "المحتوى",
       "addDiscussionExists": "مناقشة واحدة فقط لكل مشهد",
-      "discussionTerminal": "النهاية",
       "discussionTerminalHint": "تبقى المناقشة في نهاية المشهد (واحدة لكل مشهد)",
-      "discussionTopicPlaceholder": "موضوع المناقشة (مطلوب)",
-      "discussionPromptPlaceholder": "توجيه (اختياري)",
+      "discussionTopicPlaceholder": "مطلوب",
+      "discussionPromptPlaceholder": "اختياري",
+      "discussionTopicLabel": "موضوع المناقشة",
+      "discussionPromptLabel": "توجيه",
       "discussionAgent": "المُبادر",
       "discussionAgentUnset": "غير محدد",
-      "addAction": "إضافة إجراء"
+      "addAction": "إضافة إجراء",
+      "fieldState": "الحالة"
     },
     "picker": {
       "title": "إدراج إجراء",
@@ -755,8 +777,7 @@
       "moveDown": "نقل لأسفل",
       "removeFromClass": "إزالة من الفصل",
       "aiClassmates": "زملاء AI · {{count}}",
-      "addRole": "إضافة دور",
-      "shortTitle": "التشكيلة"
+      "addRole": "إضافة دور"
     },
     "elementRef": {
       "remove": "移除引用 {{label}}",
@@ -767,21 +788,6 @@
     "dock": {
       "elementRefHint": "مراجع العناصر — اختر عناصر لإرسالها مع رسالتك التالية",
       "globalTools": "أدوات عامة"
-    }
-  },
-  "classroomComplete": {
-    "title": "اكتملت الدورة",
-    "trailLabels": {
-      "slide": "صفحات",
-      "quiz": "اختبارات",
-      "interactive": "تفاعلات",
-      "pbl": "مشاريع"
-    },
-    "quizScoreLabel": "{{correct}} / {{total}} صحيحة",
-    "encouragement": {
-      "high": "ممتاز — أبدعت!",
-      "mid": "عمل جيد — استمر.",
-      "low": "بداية جيدة — راجع وحاول مجددًا."
     }
   },
   "whiteboard": {
@@ -1095,6 +1101,7 @@
     "rename": "إعادة تسمية",
     "renamePlaceholder": "أدخل اسم الفصل",
     "renameFailed": "فشلت إعادة تسمية الفصل",
+    "saveRefused": "لم تُحفظ تغييراتك: ليست لديك صلاحية تعديل هذا الدرس.",
     "searchPlaceholder": "البحث عن الدروس...",
     "searchAriaLabel": "البحث عن الدروس",
     "clearSearch": "مسح",
@@ -2369,6 +2376,7 @@
     "sceneCount_one": "{{count}} 页",
     "sceneCount_other": "{{count}} 页",
     "courseLinkHint": "在右侧打开《{{name}}》",
+    "courseLinkOpen": "فتح",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
       "search": "البحث عن الفصول والمواد",
@@ -2400,7 +2408,6 @@
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
     "newSession": "New chat",
     "sections": {
-      "courses": "Courses",
       "sessions": "Chats"
     },
     "coursesEmpty": "No courses yet",
@@ -2410,7 +2417,6 @@
     "retry": "Retry",
     "untitledSession": "Untitled chat",
     "pagePosition": "Page {{index}} of {{total}}",
-    "exitPro": "Exit Pro",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
@@ -2419,7 +2425,7 @@
     "learningMode": "تعلّم",
     "editingMode": "تحرير",
     "editingUnavailableGenerating": "التحرير غير متاح أثناء إنشاء الدورة.",
-    "fullscreenLearning": "التعلّم بملء الشاشة",
+    "editGuide": "دليل التحرير",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2432,11 +2438,10 @@
       "running": "Running",
       "succeeded": "Ready",
       "failed": "Needs attention",
-      "cancelled": "Stopped"
+      "cancelled": "Stopped",
+      "awaitingAnswer": "بانتظار إجابتك"
     },
     "backToWorkspace": "Back to workspace",
-    "searchPlaceholder": "Filter by name",
-    "searchAria": "Search {{section}}",
     "searchEmpty": "No matches",
     "showMore": "Show {{count}} more",
     "showLess": "Show less",
@@ -2449,6 +2454,8 @@
     "expandNavInto": "Expand navigation · {{section}}",
     "collapseChat": "Collapse conversation",
     "expandChat": "Conversation",
+    "talkAboutCourse": "حرّر مع الذكاء الاصطناعي",
+    "talkAboutCourseHint": "ابدأ محادثة جديدة حول هذا الدرس",
     "collapseClassroom": "Collapse classroom",
     "expandClassroom": "Classroom",
     "readOnlyBadge": "Read-only",
@@ -2458,7 +2465,6 @@
     "coursePausedDesc": "تعذّر إنشاء إحدى الصفحات. أعد المحاولة في الفصل؛ سيُفتح المقرر هنا عند اكتمال الإنشاء.",
     "viewGenerationProgress": "عرض تقدّم الإنشاء",
     "openToRetry": "افتح لإعادة المحاولة",
-    "courseGeneratingRowHint": "متاح عند اكتمال الإنشاء",
     "noCourseTitle": "No course open",
     "noCourseHint": "افتحها من رابط دورة في المحادثة، أو اختر واحدة من القائمة على اليسار — تبقى المحادثة كما هي",
     "resizeChatAria": "Drag to resize the conversation pane",
@@ -2467,7 +2473,6 @@
     "autoSaved": "تم الحفظ",
     "collapsedTitle": "Both panes are collapsed",
     "collapsedHint": "Use the tabs on the left to bring the conversation or the classroom back",
-    "moreUtilities": "More",
     "rowMore": "إجراءات أخرى لـ {{name}}",
     "folderDeleteHint": "ستعود الدورات داخله إلى المستوى الأعلى، ولن يُحذف شيء.",
     "dropToUnfile": "أفلِت هنا لإخراجه من المجلد",
@@ -2481,11 +2486,178 @@
     "confirmDelete": "تأكيد الحذف",
     "deleting": "جارٍ الحذف…",
     "deleteFailed": "تعذر الحذف. حاول مرة أخرى.",
-    "tabsAria": "Chats and courses",
     "courseTabsAria": "الدورات المفتوحة",
     "courseTabClose": "إغلاق التبويب: {{name}}",
     "courseTabRunning": "قيد التوليد",
-    "foldersUnavailable": "المجلدات غير متوفرة في هذا الإصدار"
+    "foldersUnavailable": "المجلدات غير متوفرة في هذا الإصدار",
+    "composer": {
+      "attach": "إرفاق مواد",
+      "mentionCourse": "引用课堂",
+      "mentionCourseOrMaterial": "الإشارة إلى فصل أو مادة من قاعدة المعرفة",
+      "loadSkill": "加载 skill",
+      "skillMenuTitle": "选择课程设计技能",
+      "skillsLoading": "正在加载 skill…",
+      "noSkillsAvailable": "暂无可用 skill",
+      "userSkillsGroup": "我的 Skill",
+      "builtinSkillsGroup": "内置 Skill",
+      "skillsLoadFailed": "Skill 加载失败，点击重试",
+      "retrySkills": "重试",
+      "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+      "launchPlaceholder": "صِف تجربة التعلم التي تريد إنشاءها",
+      "launchSend": "بدء الإنشاء"
+    },
+    "nav": {
+      "search": "بحث",
+      "myCourses": "دوراتي"
+    },
+    "search": {
+      "placeholder": "ابحث في المحادثات والدورات والمواد",
+      "recentChats": "المحادثات الأخيرة",
+      "recentCourses": "الدورات الأخيرة",
+      "courses": "الدورات",
+      "materials": "المواد",
+      "actions": "إجراءات سريعة",
+      "searching": "جارٍ البحث…",
+      "empty": "لا توجد نتائج تطابق “{{query}}”",
+      "materialsFailed": "تعذّر البحث في قاعدة المعرفة",
+      "themeAction": "المظهر: {{name}}",
+      "languageAction": "اللغة: {{name}}"
+    },
+    "account": {
+      "signIn": "تسجيل الدخول",
+      "menu": "الحساب والإعدادات",
+      "profileSaved": "تم الحفظ",
+      "language": "اللغة",
+      "about": "حول OpenMAIC",
+      "aboutBody": "منصة مفتوحة المصدر تحوّل أي موضوع إلى فصل دراسي تفاعلي مع معلمين وزملاء بالذكاء الاصطناعي. صادرة بموجب ترخيص MIT.",
+      "viewOnGithub": "عرض على GitHub",
+      "docs": "الوثائق",
+      "signOut": "تسجيل الخروج",
+      "onboarding": "دليل البدء"
+    },
+    "coursesPage": {
+      "subtitle": "الدورات التي أنشأتها أو استوردتها، والمجلدات التي تنظمها فيها",
+      "searchPlaceholder": "البحث في دوراتي",
+      "results": "نتائج البحث",
+      "allCourses": "كل الدورات",
+      "emptyHint": "صف موضوعًا في الصفحة الرئيسية وسيظهر درسك الأول هنا.",
+      "makeCourse": "أنشئ درسًا",
+      "pin": "تثبيت في الأعلى",
+      "unpin": "إلغاء التثبيت",
+      "pinned": "مثبّت"
+    },
+    "fullscreen": {
+      "expand": "ملء الشاشة",
+      "collapse": "الخروج من ملء الشاشة (Esc)"
+    },
+    "onboarding": {
+      "paneTitle": "تعلّم أو تحرير",
+      "paneLearn": "«تعلّم»: يقودك معلم الذكاء الاصطناعي في الدرس، واسأل في أي وقت.",
+      "paneEdit": "«تحرير»: عدّل الصفحات مباشرة.",
+      "paneChat": "أو اطلب في المحادثة، مثل «اجعل الصفحة 2 أبسط».",
+      "gotIt": "حسنًا"
+    },
+    "tour": {
+      "skip": "تخطٍّ",
+      "prev": "السابق",
+      "next": "التالي",
+      "done": "سأكتب بنفسي",
+      "count": "{{index}} / {{total}}",
+      "openGuide": "ابدأ الدرس التجريبي",
+      "welcome": {
+        "title": "مرحبًا بك في OpenMAIC",
+        "body": "قل ما تريد تعلّمه، وسيصنع OpenMAIC درسًا تفاعليًا مع معلم ذكاء اصطناعي وزملاء."
+      },
+      "start": {
+        "title": "ابدأ من هنا",
+        "body": "«محادثة جديدة» تبدأ درسًا جديدًا، والبحث (⌘K) يجد الدروس والمحادثات والمواد."
+      },
+      "courses": {
+        "title": "الدرس التجريبي",
+        "body": "هذا الدرس ذو الدقائق الخمس صُنع أيضًا بـ OpenMAIC. افتحه لترى أين يجري الدرس."
+      },
+      "library": {
+        "title": "قاعدة المعرفة",
+        "body": "ارفع الملفات وملفات PDF مرة واحدة واستخدمها في أي درس."
+      },
+      "conversations": {
+        "title": "المحادثات",
+        "body": "كل درس يُصنع داخل محادثة. لتعديله، عد إلى محادثته واطلب ذلك."
+      },
+      "mode": {
+        "title": "تعلّم أو تحرير",
+        "body": "«تعلّم» مع معلم الذكاء الاصطناعي، و«تحرير» صفحةً صفحة."
+      },
+      "dock": {
+        "title": "الفصل",
+        "body": "شغّل وقلّب الصفحات واسأل المعلم في أي وقت، ويشارك الزملاء في النقاش."
+      },
+      "chat": {
+        "title": "عدّل بالمحادثة",
+        "body": "قل في المحادثة المجاورة «اجعل الصفحة 2 أبسط» وسيعدّل الذكاء الاصطناعي الدرس."
+      },
+      "account": {
+        "title": "الحساب والإعدادات",
+        "body": "الملف الشخصي والإعدادات واللغة والمظهر هنا، وهذا الدليل أيضًا."
+      },
+      "try": {
+        "title": "جرّب الآن",
+        "body": "اكتب موضوعًا أو اختر مثالًا لتبدأ فورًا.",
+        "attach": "مادة: ارفع ملفًا ليُبنى عليه الدرس",
+        "mention": "إشارة: @ درسًا أو مادة من قاعدة المعرفة",
+        "skill": "المهارات: اختر أسلوب تدريس مثل التفاعل العميق"
+      },
+      "examples": {
+        "sky": {
+          "label": "لماذا السماء زرقاء؟",
+          "prompt": "لماذا السماء زرقاء؟ اشرح ذلك بظواهر أراها كل يوم"
+        },
+        "interest": {
+          "label": "كيف تعمل الفائدة المركبة",
+          "prompt": "اشرح كيف تعمل الفائدة المركبة بأمثلة من الحياة اليومية"
+        },
+        "teach": {
+          "label": "درّس: فيثاغورس، الصف الثامن",
+          "prompt": "درس عن نظرية فيثاغورس لطلاب الصف الثامن مع اختبار قصير في النهاية"
+        }
+      },
+      "coursesNav": {
+        "title": "دوراتي",
+        "body": "دروسك المكتملة هنا. انقر لتلقي نظرة."
+      },
+      "openLook": "افتحه",
+      "edit": {
+        "canvas": {
+          "title": "الصفحة",
+          "body": "انقر على أي نص أو صورة أو شكل لتعديله، واسحب للتحريك أو تغيير الحجم."
+        },
+        "pages": {
+          "title": "الصفحات",
+          "body": "افتح قائمة الصفحات من هنا: أضف واسحب لإعادة الترتيب واحذف."
+        },
+        "bar": {
+          "title": "شريط التحكم",
+          "body": "أضف إجراءً، وسجّل الشرح، وقلّب الصفحات وأضفها، واختر المعلم والزملاء؛ وعلى اليمين حدّد عناصر ليعدّلها الذكاء الاصطناعي."
+        },
+        "timeline": {
+          "title": "مسار الإجراءات",
+          "body": "كل بطاقة إجراء واحد: شرح أو تسليط ضوء أو نقاش. اسحب لإعادة الترتيب، وانقر للتعديل."
+        },
+        "dock": {
+          "title": "الشريط السفلي",
+          "body": "اسحب حافته العليا لتغيير الارتفاع، أو اطوه لإفساح المجال للصفحة."
+        },
+        "learn": {
+          "title": "معاينة",
+          "body": "ارجع إلى «تعلّم» لترى الدرس كما يراه الطالب."
+        },
+        "chat": {
+          "title": "اطلب من الذكاء الاصطناعي",
+          "body": "لا تريد التعديل يدويًا؟ قلها في المحادثة، مثل «أضف تمرينًا إلى الصفحة 2»."
+        }
+      },
+      "editDone": "ابدأ التحرير"
+    }
   },
   "profile": {
     "title": "الملف الشخصي",
@@ -2517,25 +2689,6 @@
     "placeholder": "رمز الوصول",
     "error": "رمز الوصول غير صالح. يرجى المحاولة مرة أخرى."
   },
-  "proMode": {
-    "attach": "إرفاق مواد",
-    "mentionCourse": "引用课堂",
-    "loadSkill": "加载 skill",
-    "skillMenuTitle": "选择课程设计技能",
-    "skillsLoading": "正在加载 skill…",
-    "noSkillsAvailable": "暂无可用 skill",
-    "userSkillsGroup": "我的 Skill",
-    "builtinSkillsGroup": "内置 Skill",
-    "skillsLoadFailed": "Skill 加载失败，点击重试",
-    "retrySkills": "重试",
-    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
-    "badgeAria": "وضع Pro",
-    "badgeEnter": "وضع Pro",
-    "badgeExit": "العودة إلى الوضع العادي",
-    "launchPlaceholder": "صِف تجربة التعلم التي تريد إنشاءها",
-    "launchSend": "بدء الإنشاء",
-    "mentionCourseOrMaterial": "الإشارة إلى فصل أو مادة من قاعدة المعرفة"
-  },
   "workbench": {
     "tool": {
       "label": {
@@ -2545,6 +2698,16 @@
       "error": {
         "materialExtraction": null
       }
+    }
+  },
+  "classroomEnd": {
+    "close": "العودة إلى الصفحة الأخيرة",
+    "learned": "اكتملت {{count}} صفحة",
+    "result": "{{correct}} / {{total}} صحيحة",
+    "actions": {
+      "reviewWrong": "مراجعة الأخطاء",
+      "doQuiz": "إلى الاختبار",
+      "restart": "البدء من جديد"
     }
   },
   "sandbox": {

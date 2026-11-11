@@ -284,6 +284,48 @@ describe('owner session client', () => {
     expect.soft(compareDecimalCursor('00042', '42')).toBe(0);
   });
 
+  it('carries the awaiting-answer flag from the list and keeps it live through status events', async () => {
+    const fetchSessions = vi
+      .fn<() => Promise<ProHomeSessionItem[]>>()
+      .mockResolvedValueOnce([{ ...row('succeeded', 150), awaitingAnswer: true }]);
+    const sources: FakeEventSource[] = [];
+    const updates: (readonly ProHomeSessionItem[])[] = [];
+    const client = new OwnerSessionClient({
+      fetchSessions,
+      createEventSource: () => {
+        const source = new FakeEventSource();
+        sources.push(source);
+        return source;
+      },
+      onSessions: (sessions) => updates.push(sessions),
+      onState: vi.fn(),
+    });
+
+    client.start();
+    await flushPromises();
+    expect(updates.at(-1)?.[0]?.awaitingAnswer).toBe(true);
+
+    const status = (id: string, ts: number, value: string, extra: object = {}) =>
+      sources[0]!.emit('session_status', {
+        id,
+        sessionId: 'session-1',
+        ts,
+        phase: 'live',
+        type: 'session_status',
+        status: value,
+        attempt: 0,
+        ...extra,
+      });
+    // The answer requeues the session: the mark goes with it.
+    status('50', 500, 'queued');
+    expect(updates.at(-1)?.[0]).toMatchObject({ status: 'queued' });
+    expect(updates.at(-1)?.[0]).not.toHaveProperty('awaitingAnswer');
+    // The next run ends on another question.
+    status('51', 600, 'succeeded', { awaitingAnswer: true });
+    expect(updates.at(-1)?.[0]).toMatchObject({ status: 'succeeded', awaitingAnswer: true });
+    client.stop();
+  });
+
   it('reapplies events newer than the fetch cursor over a slow full snapshot', async () => {
     const slowReconciliation = deferred<ProHomeSessionItem[]>();
     const fetchSessions = vi

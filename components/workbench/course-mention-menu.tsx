@@ -223,7 +223,9 @@ export function CourseMentionMenu({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      const textarea = menuRef.current?.parentElement?.querySelector('textarea');
+      const textarea = menuRef.current?.parentElement?.querySelector(
+        'textarea, [data-composer-input]',
+      );
       const onTextarea = event.target === textarea;
       if (event.isComposing) return;
 
