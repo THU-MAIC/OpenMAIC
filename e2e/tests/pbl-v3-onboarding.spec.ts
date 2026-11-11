@@ -312,9 +312,20 @@ test('highlights the existing next action only when progression is available', a
   fixture.view.actions = ['chat', 'next'];
   fixture.view.revision++;
   await fixture.publish();
-  await expect(advance).toContainText('Learn before deciding · Complete');
+  const advanceButton = advance.getByRole('button', { name: 'Continue to Make your decisions' });
+  await expect(advanceButton).toBeEnabled();
+  const barBox = (await advance.boundingBox())!;
+  const buttonBox = (await advanceButton.boundingBox())!;
+  const composerBox = (await page
+    .locator('[data-pbl-tour="composer"] textarea')
+    .locator('..')
+    .boundingBox())!;
+  expect(buttonBox.height).toBe(40);
+  expect(buttonBox.width).toBeCloseTo(barBox.width, 0);
+  expect(buttonBox.x).toBeCloseTo(composerBox.x, 0);
+  expect(buttonBox.width).toBeCloseTo(composerBox.width, 0);
   expect(fixture.commands).toEqual([]);
-  await advance.getByRole('button', { name: 'Continue to Make your decisions' }).click();
+  await advanceButton.click({ position: { x: 4, y: 20 } });
   await expect.poll(() => fixture.commands).toEqual(['next']);
 });
 

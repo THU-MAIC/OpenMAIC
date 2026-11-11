@@ -230,11 +230,6 @@
     box-shadow: 0 0 0 0 transparent;
   }
 }
-@container (max-width: 360px) {
-  .pbl-workbench .pbl-advance-bar .pbl-stage-action {
-    width: 100%;
-  }
-}
 .pbl-workbench .pbl-task-drawer {
   /* Keep its close control inside the chat area, even in a short scene. */
   max-height: min(560px, max(0px, calc(100cqh - 64px)));

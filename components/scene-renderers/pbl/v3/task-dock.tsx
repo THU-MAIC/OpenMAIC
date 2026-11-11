@@ -8,7 +8,7 @@ import {
   type ReactNode,
   type Ref,
 } from 'react';
-import { CheckCircle2, ChevronUp, Settings, X } from 'lucide-react';
+import { ChevronUp, Settings, X } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
   continueActionLabel,
@@ -225,17 +225,7 @@ export function TaskDock({
         {!canAdvance && action}
       </div>
       {canAdvance && action && (
-        <div
-          data-testid="pbl-advance-bar"
-          className="pbl-advance-bar mx-2 mb-2 flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded-xl border border-primary/30 bg-primary/10 px-2.5 py-2"
-        >
-          <p
-            className="flex min-w-0 items-center gap-1.5 text-xs font-semibold text-foreground"
-            role="status"
-          >
-            <CheckCircle2 size={15} className="shrink-0 text-primary" aria-hidden="true" />
-            {t('pblV3.journey.stepComplete', { step: t(`pblV3.journey.steps.${step}`) })}
-          </p>
+        <div data-testid="pbl-advance-bar" className="pbl-advance-bar mx-3 mb-2 min-w-0 rounded-lg">
           {action}
         </div>
       )}

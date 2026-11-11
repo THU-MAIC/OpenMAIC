@@ -7,6 +7,7 @@ import { useApplicationPreview } from './use-application-preview';
 import { usePblActivityGeneration } from './activity-provider';
 import {
   ArrowUp,
+  ArrowRight,
   ArrowLeft,
   Square,
   MessageSquareText,
@@ -938,7 +939,7 @@ function PBLV3WorkspaceContent({
                       ) : (
                         view.actions.includes('next') && (
                           <button
-                            className="pbl-stage-action inline-flex min-h-9 min-w-0 items-center justify-center gap-1.5 rounded-lg border px-3 py-1.5 text-center text-xs font-semibold break-words transition-colors disabled:cursor-not-allowed"
+                            className="pbl-stage-action flex h-10 w-full min-w-0 items-center justify-center gap-2 rounded-lg border px-3 text-center text-xs font-semibold transition-colors disabled:cursor-not-allowed"
                             data-state={disabled ? 'disabled' : 'ready'}
                             disabled={disabled}
                             aria-busy={pendingAction === 'next'}
@@ -947,7 +948,14 @@ function PBLV3WorkspaceContent({
                             {pendingAction === 'next' && (
                               <LoaderCircle size={13} className="shrink-0 animate-spin" />
                             )}
-                            {continueActionLabel(view, t)}
+                            <span className="line-clamp-2 min-w-0 break-words leading-4">
+                              {continueActionLabel(view, t)}
+                            </span>
+                            <ArrowRight
+                              size={15}
+                              className="shrink-0 rtl:-scale-x-100"
+                              aria-hidden="true"
+                            />
                           </button>
                         )
                       )
