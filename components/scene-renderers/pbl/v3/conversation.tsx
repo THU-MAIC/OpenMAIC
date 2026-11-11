@@ -258,6 +258,7 @@ export function LearningConversation({
       <ConversationHistory
         id={view.id}
         sources={view.conversationHistory ?? []}
+        milestones={view.milestones}
         renderEntry={(entry, dismiss) => (
           <div onClick={(event) => openReference(event, dismiss)}>
             <ConversationEntry

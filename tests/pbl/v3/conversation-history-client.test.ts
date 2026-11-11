@@ -59,7 +59,14 @@ it('loads only on demand, freezes the cursor across SSE changes and preserves ea
     root.render(
       createElement(ConversationHistory, {
         id: 'study',
-        sources: [{ sessionId: 'coder', through, role: 'coder' }],
+        sources: [
+          { sessionId: 'coder', through, role: 'coder', milestoneId: 'current' },
+          { sessionId: 'earlier-coder', through: 17, role: 'coder', milestoneId: 'earlier' },
+        ],
+        milestones: [
+          { id: 'earlier', title: 'Earlier milestone' },
+          { id: 'current', title: 'Current milestone' },
+        ],
         renderEntry: (entry) => createElement('p', null, entry.id),
       }),
     );
@@ -126,6 +133,15 @@ it('loads only on demand, freezes the cursor across SSE changes and preserves ea
       ),
     );
     expect(container.textContent).not.toContain('late');
+    await click('pblV3.history.title');
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Earlier milestone"] button')!
+        .click(),
+    );
+    expect(requests[4].signal.aborted).toBe(true);
+    expect(requests[5].url.searchParams.get('sessionId')).toBe('earlier-coder');
+    expect(requests[5].url.searchParams.get('through')).toBe('17');
   } finally {
     await act(async () => root.unmount());
   }
