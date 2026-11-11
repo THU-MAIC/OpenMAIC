@@ -109,8 +109,9 @@ import { FolderCard } from '@/components/discovery/folder-card';
 import { NewFolderDialog } from '@/components/discovery/folder-dialogs';
 import { MoveToFolderMenu } from '@/components/discovery/move-to-folder-menu';
 import { LibrarySkeleton } from '@/components/discovery/library-skeleton';
+import { InteractiveCover } from '@/components/discovery/interactive-cover';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
-import type { Slide } from '@openmaic/dsl';
+import type { CourseThumbnail } from '@/lib/utils/course-cover';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -510,23 +511,23 @@ function HomePage() {
     }
     return counts;
   }, [classrooms]);
-  // Up to 3 member course covers (first-slide thumbnails) per folder, for the
-  // folder tile's cover stack. Members are ordered by updatedAt desc so the
-  // frontmost cover is the most recently touched course. The members that
-  // fill (or, not loaded yet, may fill) those 3 slots are the tile's cover
-  // candidates: it loads their thumbnails while it is near the viewport, and a
-  // member without a slide gives its slot to the next one.
+  // Up to 3 member course covers per folder, for the folder tile's cover
+  // stack. Members are ordered by updatedAt desc so the frontmost cover is
+  // the most recently touched course. The members that fill (or, not loaded
+  // yet, may fill) those 3 slots are the tile's cover candidates: it loads
+  // their thumbnails while it is near the viewport, and a member without a
+  // cover gives its slot to the next one.
   const folderCovers = useMemo(() => {
-    const byFolder = new Map<string, { slides: Slide[]; candidates: StageListItem[] }>();
+    const byFolder = new Map<string, { covers: CourseThumbnail[]; candidates: StageListItem[] }>();
     for (const c of [...classrooms].sort((a, b) => b.updatedAt - a.updatedAt)) {
       if (!c.folderId) continue;
-      const covers = byFolder.get(c.folderId) ?? { slides: [], candidates: [] };
-      byFolder.set(c.folderId, covers);
-      if (covers.candidates.length >= 3) continue;
-      const slide = thumbnails[c.id];
-      if (slide === null) continue;
-      covers.candidates.push(c);
-      if (slide) covers.slides.push(slide);
+      const entry = byFolder.get(c.folderId) ?? { covers: [], candidates: [] };
+      byFolder.set(c.folderId, entry);
+      if (entry.candidates.length >= 3) continue;
+      const cover = thumbnails[c.id];
+      if (cover === null) continue;
+      entry.candidates.push(c);
+      if (cover) entry.covers.push(cover);
     }
     return byFolder;
   }, [classrooms, thumbnails]);
@@ -1379,7 +1380,7 @@ function HomePage() {
                               mobile={mobile}
                               folder={folder}
                               courseCount={courseCountByFolder.get(folder.id) ?? 0}
-                              coverSlides={folderCovers.get(folder.id)?.slides ?? []}
+                              covers={folderCovers.get(folder.id)?.covers ?? []}
                               coverCandidates={folderCovers.get(folder.id)?.candidates ?? []}
                               requestThumbnail={requestThumbnail}
                               onOpen={() => setCurrentFolderId(folder.id)}
@@ -1429,7 +1430,7 @@ function HomePage() {
                           <ClassroomCard
                             mobile={mobile}
                             classroom={classroom}
-                            slide={thumbnails[classroom.id]}
+                            cover={thumbnails[classroom.id]}
                             requestThumbnail={requestThumbnail}
                             formatDate={formatDate}
                             runStatus={(() => {
@@ -1923,7 +1924,7 @@ function pendingRunListItem(run: RunSnapshot): StageListItem {
 function ClassroomCard({
   mobile = false,
   classroom,
-  slide,
+  cover,
   requestThumbnail,
   formatDate,
   runStatus = null,
@@ -1938,8 +1939,8 @@ function ClassroomCard({
 }: {
   mobile?: boolean;
   classroom: StageListItem;
-  /** The first slide; null when the course has none, undefined until loaded. */
-  slide?: Slide | null;
+  /** The course's cover; null when it has none, undefined until loaded. */
+  cover?: CourseThumbnail | null;
   /** Loads the thumbnail while the card is near the viewport (absent: nothing to load). */
   requestThumbnail?: (stageId: string, version: number) => () => void;
   formatDate: (ts: number) => string;
@@ -2038,23 +2039,27 @@ function ClassroomCard({
         ref={thumbRef}
         className="home-course-thumbnail relative w-full aspect-[16/9] rounded-2xl bg-slate-100 dark:bg-slate-800/80 overflow-hidden transition-transform duration-200 group-hover:scale-[1.02]"
       >
-        {slide && thumbWidth > 0 ? (
-          <SlideThumbnail
-            slide={slide}
-            size={thumbWidth}
-            viewportSize={slide.viewportSize ?? 1000}
-            viewportRatio={slide.viewportRatio ?? 0.5625}
-          />
-        ) : slide || (slide === undefined && requestThumbnail) ? (
+        {cover && (cover.kind === 'interactive' || thumbWidth > 0) ? (
+          cover.kind === 'slide' ? (
+            <SlideThumbnail
+              slide={cover.slide}
+              size={thumbWidth}
+              viewportSize={cover.slide.viewportSize ?? 1000}
+              viewportRatio={cover.slide.viewportRatio ?? 0.5625}
+            />
+          ) : (
+            <InteractiveCover cover={cover.cover} />
+          )
+        ) : cover || (cover === undefined && requestThumbnail) ? (
           // Still loading, or loaded and waiting for the card's width.
           <ThumbnailSkeleton />
-        ) : !slide ? (
+        ) : (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="size-12 rounded-2xl bg-gradient-to-br from-violet-100 to-blue-100 dark:from-violet-900/30 dark:to-blue-900/30 flex items-center justify-center">
               <span className="text-xl opacity-50">📄</span>
             </div>
           </div>
-        ) : null}
+        )}
 
         {showModeBadge && (
           <Tooltip>

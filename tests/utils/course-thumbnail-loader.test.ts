@@ -1,38 +1,42 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Slide } from '@openmaic/dsl';
+import type { CourseThumbnail } from '@/lib/utils/course-cover';
 import { CourseThumbnailLoader } from '@/lib/utils/course-thumbnail-loader';
 
-function slide(id: string): Slide {
-  return { id, viewportSize: 1000, viewportRatio: 0.5625, elements: [] } as unknown as Slide;
+function cover(id: string): CourseThumbnail {
+  return {
+    kind: 'slide',
+    slide: { id, viewportSize: 1000, viewportRatio: 0.5625, elements: [] } as unknown as Slide,
+  };
 }
 
 interface Pending {
   readonly stageId: string;
   readonly signal: AbortSignal;
-  resolve(value: Slide | null): void;
+  resolve(value: CourseThumbnail | null): void;
   reject(error: unknown): void;
 }
 
 /** A loader whose loads settle only when the test says so. */
 function harness(concurrency = 2) {
   const pending: Pending[] = [];
-  const released: Slide[] = [];
+  const released: CourseThumbnail[] = [];
   const onChange = vi.fn();
   const onError = vi.fn();
   const load = vi.fn(
     (stageId: string, _version: number, signal: AbortSignal) =>
-      new Promise<Slide | null>((resolve, reject) => {
+      new Promise<CourseThumbnail | null>((resolve, reject) => {
         pending.push({ stageId, signal, resolve, reject });
       }),
   );
   const loader = new CourseThumbnailLoader({
     load,
-    release: (s) => released.push(s),
+    release: (c) => released.push(c),
     concurrency,
     onChange,
     onError,
   });
-  const settle = async (stageId: string, value: Slide | null | Error) => {
+  const settle = async (stageId: string, value: CourseThumbnail | null | Error) => {
     const index = pending.findIndex((p) => p.stageId === stageId);
     if (index === -1) throw new Error(`no pending load for ${stageId}`);
     const [p] = pending.splice(index, 1);
@@ -51,15 +55,29 @@ describe('CourseThumbnailLoader', () => {
 
     expect(h.load.mock.calls.map(([id]) => id)).toEqual(['a', 'b']);
 
-    await h.settle('a', slide('a'));
+    await h.settle('a', cover('a'));
     expect(h.load.mock.calls.map(([id]) => id)).toEqual(['a', 'b', 'c']);
-    expect(h.loader.snapshot()).toEqual({ a: slide('a') });
+    expect(h.loader.snapshot()).toEqual({ a: cover('a') });
 
     await h.settle('b', null);
-    await h.settle('c', slide('c'));
-    await h.settle('d', slide('d'));
+    await h.settle('c', cover('c'));
+    await h.settle('d', cover('d'));
     expect(h.load).toHaveBeenCalledTimes(4);
-    expect(h.loader.snapshot()).toEqual({ a: slide('a'), b: null, c: slide('c'), d: slide('d') });
+    expect(h.loader.snapshot()).toEqual({ a: cover('a'), b: null, c: cover('c'), d: cover('d') });
+  });
+
+  it('carries an interactive cover like a slide one', async () => {
+    const h = harness(1);
+    const interactive = {
+      kind: 'interactive' as const,
+      cover: { title: 'Orbit simulator', widgetType: 'simulation' as const },
+    };
+    h.loader.request('a', 1);
+    await h.settle('a', interactive);
+    expect(h.loader.snapshot()).toEqual({ a: interactive });
+
+    h.loader.dispose();
+    expect(h.released).toEqual([interactive]);
   });
 
   it('drops a queued load once every requester withdrew, but finishes one in flight', async () => {
@@ -71,13 +89,13 @@ describe('CourseThumbnailLoader', () => {
 
     withdrawA();
     withdrawB();
-    await h.settle('a', slide('a'));
+    await h.settle('a', cover('a'));
     // `b` still has one requester.
     expect(h.load.mock.calls.map(([id]) => id)).toEqual(['a', 'b']);
-    expect(h.loader.snapshot()).toEqual({ a: slide('a') });
+    expect(h.loader.snapshot()).toEqual({ a: cover('a') });
 
     withdrawB2();
-    await h.settle('b', slide('b'));
+    await h.settle('b', cover('b'));
     expect(h.load.mock.calls.map(([id]) => id)).toEqual(['a', 'b', 'c']);
   });
 
@@ -85,7 +103,7 @@ describe('CourseThumbnailLoader', () => {
     const h = harness(1);
     h.loader.request('a', 1);
     h.loader.request('b', 1)();
-    await h.settle('a', slide('a'));
+    await h.settle('a', cover('a'));
     expect(h.load.mock.calls.map(([id]) => id)).toEqual(['a']);
   });
 
@@ -93,7 +111,7 @@ describe('CourseThumbnailLoader', () => {
     const h = harness(2);
     h.loader.request('a', 1);
     h.loader.request('a', 1);
-    await h.settle('a', slide('a1'));
+    await h.settle('a', cover('a1'));
     h.loader.request('a', 1);
     expect(h.load).toHaveBeenCalledTimes(1);
 
@@ -104,23 +122,23 @@ describe('CourseThumbnailLoader', () => {
       ['a', 1],
       ['a', 2],
     ]);
-    expect(h.loader.snapshot()).toEqual({ a: slide('a1') });
+    expect(h.loader.snapshot()).toEqual({ a: cover('a1') });
     expect(h.released).toEqual([]);
 
-    await h.settle('a', slide('a2'));
-    expect(h.loader.snapshot()).toEqual({ a: slide('a2') });
-    expect(h.released).toEqual([slide('a1')]);
+    await h.settle('a', cover('a2'));
+    expect(h.loader.snapshot()).toEqual({ a: cover('a2') });
+    expect(h.released).toEqual([cover('a1')]);
   });
 
   it('keeps the previous thumbnail when a reload fails, and reports the failure', async () => {
     const h = harness(1);
     h.loader.request('a', 1);
-    await h.settle('a', slide('a1'));
+    await h.settle('a', cover('a1'));
     h.loader.request('a', 2);
     await h.settle('a', new Error('offline'));
 
     expect(h.onError).toHaveBeenCalledWith('a', expect.any(Error));
-    expect(h.loader.snapshot()).toEqual({ a: slide('a1') });
+    expect(h.loader.snapshot()).toEqual({ a: cover('a1') });
     expect(h.released).toEqual([]);
     // The failed version is not retried until the course changes again.
     h.loader.request('a', 2);
@@ -137,7 +155,7 @@ describe('CourseThumbnailLoader', () => {
   it('dispose drops the queue, aborts loads in flight, and releases everything', async () => {
     const h = harness(1);
     h.loader.request('a', 1);
-    await h.settle('a', slide('a'));
+    await h.settle('a', cover('a'));
     h.loader.request('b', 1);
     h.loader.request('c', 1);
     const inFlight = h.pending[0]!;
@@ -146,12 +164,12 @@ describe('CourseThumbnailLoader', () => {
     h.loader.dispose();
 
     expect(inFlight.signal.aborted).toBe(true);
-    expect(h.released).toEqual([slide('a')]);
+    expect(h.released).toEqual([cover('a')]);
     expect(h.loader.snapshot()).toEqual({});
     // The aborted load settling late is discarded and released, and the
     // queued course never starts.
-    await h.settle('b', slide('b'));
-    expect(h.released).toEqual([slide('a'), slide('b')]);
+    await h.settle('b', cover('b'));
+    expect(h.released).toEqual([cover('a'), cover('b')]);
     expect(h.load).toHaveBeenCalledTimes(2);
     expect(h.onChange).not.toHaveBeenCalled();
     expect(h.onError).not.toHaveBeenCalled();
@@ -164,13 +182,13 @@ describe('CourseThumbnailLoader', () => {
     const h = harness(2);
     h.loader.request('a', 1);
     h.loader.request('b', 1);
-    await h.settle('a', slide('a'));
-    await h.settle('b', slide('b'));
+    await h.settle('a', cover('a'));
+    await h.settle('b', cover('b'));
 
     h.loader.retain(new Set(['b']));
 
-    expect(h.loader.snapshot()).toEqual({ b: slide('b') });
-    expect(h.released).toEqual([slide('a')]);
+    expect(h.loader.snapshot()).toEqual({ b: cover('b') });
+    expect(h.released).toEqual([cover('a')]);
   });
 
   it('rejects a non-positive concurrency', () => {

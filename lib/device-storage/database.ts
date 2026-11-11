@@ -26,7 +26,7 @@
  */
 import Dexie, { type EntityTable, type Table } from 'dexie';
 
-import type { Slide } from '@openmaic/dsl';
+import type { CourseThumbnail } from '@/lib/utils/course-cover';
 
 import type { Scene } from '@/lib/types/stage';
 
@@ -107,9 +107,10 @@ export interface AutoVoiceCacheRecord {
 }
 
 /**
- * A course's home-library thumbnail, derived from the course's first slide.
- * Keyed by the owner it was read as and the course; valid only for the
- * course version (`updatedAt`) it was derived from.
+ * A course's home-library thumbnail, derived from the course's cover (its
+ * first slide, or the static cover of its first interactive page). Keyed by
+ * the owner it was read as and the course; valid only for the course version
+ * (`updatedAt`) it was derived from.
  */
 export interface CourseThumbnailRecord {
   /** One-way digest of the owner the thumbnail was read as (never the owner id itself). */
@@ -122,8 +123,8 @@ export interface CourseThumbnailRecord {
    * another format (or none: written before formats) is read as a miss.
    */
   format?: number;
-  /** The first slide with its media slots that held bytes emptied, or null: the course has none. */
-  slide: Slide | null;
+  /** The cover, with a slide's media slots that held bytes emptied, or null: the course has no cover. */
+  cover: CourseThumbnail | null;
   /** The bytes of those media slots, by slot index (`slideMediaReferenceSlots` order). */
   media: Array<{ slot: number; blob: Blob }>;
   /** Total media bytes, for the cache's size bound. */
