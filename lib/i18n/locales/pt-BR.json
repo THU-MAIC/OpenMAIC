@@ -3035,7 +3035,7 @@
       "eachStage": "Como seguir cada etapa",
       "yourRole": "Você decide e revisa; a IA ajuda a escrever o plano e o código.",
       "preview": "Use seu aplicativo na prévia e confira o que foi construído.",
-      "advance": "Quando um passo terminar, continue pelo botão roxo acima do campo de entrada."
+      "advance": "O botão roxo acima do campo de entrada só aparece quando a etapa atual permite avançar. Quando aparecer, clique nele para continuar."
     },
     "journey": {
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",

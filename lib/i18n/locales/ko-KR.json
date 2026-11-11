@@ -3035,7 +3035,7 @@
       "eachStage": "각 단계의 진행 순서",
       "yourRole": "직접 결정하고 검토하며, AI는 계획과 코드 작성을 돕습니다.",
       "preview": "미리보기에서 앱을 사용해 구현한 기능을 확인하세요.",
-      "advance": "단계가 완료되면 입력창 위의 보라색 버튼으로 계속하세요."
+      "advance": "현재 단계를 진행할 수 있을 때만 입력창 위에 보라색 버튼이 나타납니다. 버튼이 보이면 눌러서 계속하세요."
     },
     "journey": {
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",

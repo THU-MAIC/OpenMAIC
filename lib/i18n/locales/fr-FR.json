@@ -3035,7 +3035,7 @@
       "eachStage": "Déroulement de chaque étape",
       "yourRole": "Vous prenez les décisions et vérifiez ; l’IA aide à écrire le plan et le code.",
       "preview": "Essayez votre application dans l’aperçu et vérifiez le résultat.",
-      "advance": "Quand une étape est terminée, continuez avec le bouton violet au-dessus de la saisie."
+      "advance": "Le bouton violet au-dessus de la saisie apparaît uniquement lorsque vous pouvez avancer. Cliquez dessus pour continuer."
     },
     "journey": {
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",

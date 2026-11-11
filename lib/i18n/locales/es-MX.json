@@ -3035,7 +3035,7 @@
       "eachStage": "Pasos de cada etapa",
       "yourRole": "Tú decides y revisas; la IA ayuda a escribir el plan y el código.",
       "preview": "Prueba tu aplicación en la vista previa y comprueba lo que construiste.",
-      "advance": "Al terminar un paso, continúa con el botón morado sobre el campo de entrada."
+      "advance": "El botón morado sobre el campo de entrada aparece solo cuando puedes avanzar desde el paso actual. Cuando aparezca, haz clic para continuar."
     },
     "journey": {
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",
