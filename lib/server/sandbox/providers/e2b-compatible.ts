@@ -341,16 +341,29 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
     // Leave the file in place on an ambiguous start response. The launched
     // process consumes it, or cancellation removes it if no process claims it.
     return () =>
-      this.runSupervisedCommand(sandbox, {
-        ...input,
-        command: `exec python3 -c ${shellQuote(ASSESSMENT_FILE_RUNNER)} ${shellQuote(path)} ${shellQuote(digest)}`,
-      });
+      this.runSupervisedCommand(
+        sandbox,
+        {
+          ...input,
+          command: `exec python3 -c ${shellQuote(ASSESSMENT_FILE_RUNNER)} ${shellQuote(path)} ${shellQuote(digest)}`,
+        },
+        path,
+      );
   }
 
-  private async runSupervisedCommand(sandbox: Sandbox, input: SandboxCommandInput) {
+  private async runSupervisedCommand(
+    sandbox: Sandbox,
+    input: SandboxCommandInput,
+    assessmentPath?: string,
+  ) {
     const spec = Buffer.from(JSON.stringify(input)).toString('base64');
+    // Cancellation may have finished before an in-flight upload completes.
+    // Clean that late file before the supervisor exits on its existing claim.
+    const cleanup = assessmentPath
+      ? `if [ -e ${shellQuote(`/tmp/openmaic-commands/${input.id}/cancel`)} ]; then rm -f -- ${shellQuote(assessmentPath)}; fi; `
+      : '';
     const handle = await sandbox.commands.run(
-      `python3 -u -c ${shellQuote(COMMAND_RUNNER)} ${shellQuote(spec)}`,
+      `${cleanup}python3 -u -c ${shellQuote(COMMAND_RUNNER)} ${shellQuote(spec)}`,
       {
         background: true,
         timeoutMs: Math.min(input.timeoutMs + 15_000, 3_600_000),

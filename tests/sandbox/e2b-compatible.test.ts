@@ -33,7 +33,7 @@ import { isProjectSource, projectFiles } from '@/lib/server/pbl-v3/workspace-fil
 import { installedProject } from '@/lib/server/pbl-v3/catalog';
 import type { SandboxService } from '@/lib/server/sandbox/service';
 import { evaluationCommand, evaluationPassed } from '@/lib/server/pbl-v3/evaluation';
-import { MAX_COMMAND_BYTES } from '@/lib/sandbox/types';
+import { MAX_ASSESSMENT_SCRIPT_BYTES, MAX_COMMAND_BYTES } from '@/lib/sandbox/types';
 
 function archiveFixture() {
   sdk.getInfo.mockResolvedValue({
@@ -103,7 +103,7 @@ describe('assessment file transport', () => {
     expect(run).not.toHaveBeenCalled();
   });
 
-  it.each(['success', 'tampered', 'cancelled'] as const)(
+  it.each(['success', 'large-source', 'tampered', 'cancelled'] as const)(
     'uses the existing supervisor and removes the staged file (%s)',
     async (scenario) => {
       const { provider, sandbox, run } = archiveFixture();
@@ -135,15 +135,17 @@ describe('assessment file transport', () => {
       });
       try {
         const files = Object.fromEntries(
-          Array.from({ length: 80 }, (_, index) => [
-            createHash('sha256')
-              .update('path:' + index)
-              .digest('hex') + '.txt',
+          Array.from({ length: scenario === 'large-source' ? 242 : 80 }, (_, index) => [
+            Array.from({ length: scenario === 'large-source' ? 12 : 1 }, (_, part) =>
+              createHash('sha256').update(`path:${index}:${part}`).digest('hex'),
+            ).join('/') + '.txt',
             'test',
           ]),
         );
-        for (const [name, content] of Object.entries(files))
+        for (const [name, content] of Object.entries(files)) {
+          mkdirSync(dirname(join(cwd, name)), { recursive: true });
           writeFileSync(join(cwd, name), content);
+        }
         const fixture = Buffer.concat(
           Array.from({ length: 576 }, (_, index) =>
             createHash('sha256').update(String(index)).digest(),
@@ -157,6 +159,9 @@ describe('assessment file transport', () => {
         };
         const command = evaluationCommand(assessment, id, files);
         expect(Buffer.byteLength(command)).toBeGreaterThan(MAX_COMMAND_BYTES);
+        expect(Buffer.byteLength(command)).toBeLessThanOrEqual(MAX_ASSESSMENT_SCRIPT_BYTES);
+        // Linux rejects a single argv string above 128 KiB, even in an uploaded shell script.
+        if (scenario === 'large-source') expect(Buffer.byteLength(command)).toBeGreaterThan(131072);
         const start = await provider.prepareAssessmentCommand('resource', 'op', {
           id,
           command,
@@ -180,12 +185,85 @@ describe('assessment file transport', () => {
         expect(existsSync(path)).toBe(false);
         const result = JSON.parse(readFileSync(receipt, 'utf8'));
         expect(result.state).toBe(scenario === 'cancelled' ? 'cancelled' : 'exited');
-        expect(result.exitCode).toBe(
-          scenario === 'success' ? 0 : scenario === 'cancelled' ? null : 1,
-        );
-        expect(evaluationPassed(assessment, id, result.stdout)).toBe(scenario === 'success');
+        const successful = scenario === 'success' || scenario === 'large-source';
+        expect(result.exitCode).toBe(successful ? 0 : scenario === 'cancelled' ? null : 1);
+        expect(evaluationPassed(assessment, id, result.stdout)).toBe(successful);
       } finally {
         rmSync(cwd, { recursive: true, force: true });
+        rmSync(dirname(receipt), { recursive: true, force: true });
+        for (const path of staged) rmSync(path, { force: true });
+      }
+    },
+  );
+
+  it.each(['connection', 'upload'] as const)(
+    'cleans a late assessment upload when cancellation completes during %s',
+    async (stage) => {
+      const { provider, sandbox } = archiveFixture();
+      const id = randomUUID();
+      const receipt = `/tmp/openmaic-commands/${id}/status.json`;
+      const staged: string[] = [];
+      let resume!: () => void;
+      let reached!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        resume = resolve;
+      });
+      const paused = new Promise<void>((resolve) => {
+        reached = resolve;
+      });
+      const pause = async () => {
+        reached();
+        await pending;
+      };
+      const command = 'printf "assessment must not run"';
+      const connection = {
+        ...sandbox,
+        files: {
+          ...sandbox.files,
+          makeDir: async (path: string) => mkdirSync(path, { recursive: true }),
+          write: async (path: string, content: string) => {
+            if (path.endsWith('.sh')) {
+              staged.push(path);
+              if (stage === 'upload') await pause();
+            }
+            writeFileSync(path, content);
+          },
+        },
+        commands: {
+          run: async (text: string) => {
+            execFileSync('/bin/sh', ['-c', text]);
+            return { disconnect: async () => {} };
+          },
+        },
+      };
+      sdk.connect.mockResolvedValue(connection);
+      if (stage === 'connection')
+        sdk.connect.mockImplementationOnce(async () => {
+          await pause();
+          return connection;
+        });
+      const preparation = provider.prepareAssessmentCommand('resource', 'op', {
+        id,
+        command,
+        timeoutMs: 2000,
+      });
+      try {
+        await paused;
+        await provider.cancelCommand('resource', 'op', id);
+        const cancelled = JSON.parse(readFileSync(receipt, 'utf8'));
+        expect(cancelled.state).toBe('cancelled');
+        resume();
+        const start = await preparation;
+        expect(staged).toHaveLength(1);
+        expect(existsSync(staged[0]!)).toBe(true);
+        await start();
+        expect(existsSync(staged[0]!)).toBe(false);
+        expect(JSON.parse(readFileSync(receipt, 'utf8'))).toEqual(cancelled);
+        await start();
+        expect(JSON.parse(readFileSync(receipt, 'utf8'))).toEqual(cancelled);
+      } finally {
+        resume();
+        await preparation.catch(() => {});
         rmSync(dirname(receipt), { recursive: true, force: true });
         for (const path of staged) rmSync(path, { force: true });
       }

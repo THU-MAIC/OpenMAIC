@@ -218,7 +218,12 @@ ${
  except OSError: build=False; buildReason='environment'
 print('PBL_RESULT:'+cfg['requestId']+':'+json.dumps({'build':build,'buildReason':buildReason,'checks':results,'locations':locations[:8]},separators=(',',':')))
 `;
-    return `python3 -c ${quote(script)}`;
+    const inline = `python3 -c ${quote(script)}`;
+    // A staged shell script must not put the Python program back into argv:
+    // Linux also limits the size of each individual process argument.
+    return compressed && Buffer.byteLength(inline) > MAX_COMMAND_BYTES
+      ? `python3 <<'OPENMAIC_ASSESSMENT_PROGRAM'\n${script}OPENMAIC_ASSESSMENT_PROGRAM\n`
+      : inline;
   };
   const command = render(payload);
   // The isolated runner adds source paths and verification code to the authored
