@@ -209,6 +209,8 @@
   --pbl-overview-ink: #302a48;
   --pbl-overview-muted: #6d6383;
   --pbl-overview-accent: #7045bd;
+  --pbl-overview-surface: #e9e3f5;
+  --pbl-overview-surface-border: #d4c7eb;
   overflow-wrap: anywhere;
   color: var(--pbl-overview-ink);
   border-color: rgb(167 139 250 / 0.35);
@@ -235,6 +237,8 @@
   --pbl-overview-ink: #eee9fb;
   --pbl-overview-muted: #b5aacb;
   --pbl-overview-accent: #c6acff;
+  --pbl-overview-surface: #39314f;
+  --pbl-overview-surface-border: #59496f;
   border-color: rgb(180 150 244 / 0.28);
   background: linear-gradient(
     135deg,
@@ -251,11 +255,10 @@
 }
 .pbl-workbench .pbl-overview-label {
   color: var(--pbl-overview-muted);
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
 }
-.pbl-workbench .pbl-overview-icon,
-.pbl-workbench .pbl-overview-result {
+.pbl-workbench .pbl-overview-icon {
   color: var(--pbl-overview-accent);
   border-color: color-mix(in srgb, var(--pbl-overview-accent) 20%, transparent);
   background: color-mix(in srgb, var(--pbl-overview-accent) 7%, transparent);
@@ -263,20 +266,19 @@
 .pbl-workbench .pbl-overview-result p {
   color: var(--pbl-overview-ink);
 }
+.pbl-workbench .pbl-overview-result,
 .pbl-workbench .pbl-overview-milestone {
-  border-color: color-mix(in srgb, var(--pbl-overview-accent) 14%, transparent);
-  background: rgb(255 255 255 / 0.28);
-}
-.dark .pbl-workbench .pbl-overview-milestone {
-  background: rgb(255 255 255 / 0.025);
+  border-color: var(--pbl-overview-surface-border);
+  background: var(--pbl-overview-surface);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.15);
 }
 .pbl-workbench .pbl-overview-guide {
   border-color: color-mix(in srgb, var(--pbl-overview-accent) 18%, transparent);
 }
-.pbl-workbench .pbl-overview-trigger:hover {
+.pbl-workbench .pbl-overview-guide summary:hover {
   background: color-mix(in srgb, var(--pbl-overview-accent) 4%, transparent);
 }
-.pbl-workbench .pbl-project-overview button:focus-visible {
+.pbl-workbench .pbl-overview-guide summary:focus-visible {
   outline-color: var(--pbl-overview-accent);
 }
 .pbl-workbench .pbl-task-drawer {

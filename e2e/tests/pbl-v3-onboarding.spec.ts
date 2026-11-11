@@ -271,7 +271,7 @@ async function project(
 const tour = (page: Page) => page.locator('[data-pbl-onboarding="card"]');
 const next = (page: Page) => tour(page).locator('footer button').last();
 
-test('keeps an authored project overview collapsed in the transcript until opened', async ({
+test('keeps the authored overview visible while its workbench guide toggles independently', async ({
   page,
   learningEvents,
 }) => {
@@ -287,9 +287,10 @@ test('keeps an authored project overview collapsed in the transcript until opene
   await expect(tour(page)).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(tour(page)).toHaveCount(0);
-  await expect(overview).toHaveAttribute('data-mode', 'closed');
-  await overview.getByRole('button').first().click();
-  await expect(overview).toHaveAttribute('data-mode', 'details');
+  const guideDetails = overview.locator('details');
+  const guideToggle = guideDetails.locator('summary');
+  await expect(guideDetails).not.toHaveAttribute('open');
+  await expect(overview.getByRole('heading', { level: 3 })).toBeVisible();
   await expect(overview).toContainText('A synthetic project for the workspace guide.');
   await expect(overview).toContainText('Connect a name to a greeting.');
   await expect(overview).toContainText('A working greeting application.');
@@ -314,15 +315,21 @@ test('keeps an authored project overview collapsed in the transcript until opene
   expect(geometry.right).toBeGreaterThanOrEqual(16);
   expect(geometry.overflow).toBe('visible');
   expect(geometry.maxHeight).toBe('none');
-  await overview.getByRole('button', { name: 'Collapse overview', exact: true }).click();
-  await expect(overview).toHaveAttribute('data-mode', 'closed');
-  await overview.getByRole('button').first().click();
-  await expect(overview).toHaveAttribute('data-mode', 'details');
-  await overview.getByRole('button').first().click();
-  await expect(overview).toHaveAttribute('data-mode', 'closed');
+  await guideToggle.click();
+  await expect(guideDetails).toHaveAttribute('open');
+  await expect(guideDetails.locator('ol')).toBeVisible();
+  await expect(overview).toContainText('Connect a name to a greeting.');
+  // Server updates do not close a guide the learner is reading.
   fixture.view.revision++;
   await fixture.publish();
-  await expect(overview).toHaveAttribute('data-mode', 'closed');
+  await expect(guideDetails).toHaveAttribute('open');
+  await guideToggle.focus();
+  await page.keyboard.press('Enter');
+  await expect(guideDetails).not.toHaveAttribute('open');
+  await expect(guideToggle).toBeFocused();
+  await expect(guideDetails.locator('ol')).not.toBeVisible();
+  await expect(overview.getByRole('list', { name: 'Project roadmap' })).toBeVisible();
+  await expect(overview).toContainText('A working greeting application.');
   expect(fixture.commands).toEqual([]);
 });
 
@@ -333,7 +340,7 @@ test('highlights the existing next action only when progression is available', a
   const fixture = await project(page, learningEvents, { started: true, application: false });
   const advance = page.getByTestId('pbl-advance-bar');
   await expect(advance).toHaveCount(0);
-  await expect(page.locator('#pbl-project-overview')).toHaveAttribute('data-mode', 'closed');
+  await expect(page.locator('#pbl-project-overview details')).not.toHaveAttribute('open');
   fixture.view.actions = ['chat', 'next'];
   fixture.view.revision++;
   await fixture.publish();
@@ -1200,7 +1207,7 @@ test('hides Latest during the guide and restores the working control after dismi
   await expect(latest).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(tour(page)).toHaveCount(0);
-  await expect(page.locator('#pbl-project-overview')).toHaveAttribute('data-mode', 'closed');
+  await expect(page.locator('#pbl-project-overview details')).not.toHaveAttribute('open');
   await expect(latest).toBeVisible();
   const height = await viewport.evaluate((el) => el.clientHeight);
   await latest.click();

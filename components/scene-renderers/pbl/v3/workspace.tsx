@@ -45,7 +45,7 @@ import { TestEvaluation } from './test-evaluation';
 import { TeachingRunNotice } from './teaching-run-notice';
 import { PendingAction } from './pending-action';
 import { TaskDock } from './task-dock';
-import { ProjectOverview, type ProjectOverviewMode } from './project-overview';
+import { ProjectOverview } from './project-overview';
 import { ProductionContext } from './production-context';
 import { useWorkbenchOnboarding } from './use-workbench-onboarding';
 import { WorkbenchOnboarding } from './workbench-onboarding';
@@ -82,8 +82,6 @@ function PBLV3WorkspaceContent({
     stageId = useStageStore((state) => state.stage?.id);
   const { view, workbench, latestView, updateView, receive, openView } = useLearningObservation();
   const [reportOpen, setReportOpen] = useState(false);
-  const [overview, setOverview] = useState<{ studyId: string; mode: ProjectOverviewMode }>();
-  const overviewTrigger = useRef<HTMLButtonElement>(null);
   const workspaceRoot = useRef<HTMLElement>(null);
   const [fileTarget, setFileTarget] = useState<
     (FileReference & { studyId: string; requestId: number }) | null
@@ -412,7 +410,6 @@ function PBLV3WorkspaceContent({
       quizAnswers.values.some((answer) => answer !== null) ||
       Object.values(decisionDrafts).some((draft) => !!draft.chosen || !!draft.rationale),
   });
-  const overviewMode = overview && overview.studyId === view?.id ? overview.mode : 'closed';
   useEffect(() => {
     onOnboardingChange?.(onboarding.active || entryLoading);
     return () => onOnboardingChange?.(false);
@@ -814,16 +811,7 @@ function PBLV3WorkspaceContent({
                   <LearningConversation
                     overview={
                       !onboarding.active && !entryLoading ? (
-                        <ProjectOverview
-                          view={view}
-                          hero={projectHero}
-                          mode={overviewMode}
-                          triggerRef={overviewTrigger}
-                          onChange={(mode) => {
-                            setOverview({ studyId: view.id, mode });
-                            overviewTrigger.current?.focus({ preventScroll: true });
-                          }}
-                        />
+                        <ProjectOverview key={view.id} view={view} hero={projectHero} />
                       ) : undefined
                     }
                     modalActive={onboarding.active || entryLoading}
