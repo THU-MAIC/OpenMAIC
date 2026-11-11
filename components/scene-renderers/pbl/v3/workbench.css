@@ -218,17 +218,6 @@
   .pbl-workbench .pbl-project-overview[data-mode='summary'] {
     animation: pbl-task-open 250ms ease-out;
   }
-  .pbl-workbench .pbl-advance-bar {
-    animation: pbl-advance-highlight 650ms ease-out;
-  }
-}
-@keyframes pbl-advance-highlight {
-  from {
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 30%, transparent);
-  }
-  to {
-    box-shadow: 0 0 0 0 transparent;
-  }
 }
 .pbl-workbench .pbl-task-drawer {
   /* Keep its close control inside the chat area, even in a short scene. */
@@ -274,6 +263,104 @@
   background: transparent;
   color: var(--muted-foreground);
   box-shadow: none;
+}
+/* The whole strip is the action. Its decorative layers never intercept input. */
+.pbl-workbench .pbl-advance-bar {
+  position: relative;
+  isolation: isolate;
+}
+.pbl-workbench .pbl-advance-bar::before {
+  content: '';
+  position: absolute;
+  inset: 2px 8px -2px;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+  background: var(--primary);
+  filter: blur(10px);
+  opacity: 0;
+  transition: opacity 200ms ease-out;
+}
+.pbl-workbench .pbl-advance-bar[data-attention='true']::before {
+  opacity: 0.35;
+}
+.pbl-workbench .pbl-advance-bar .pbl-stage-action:not(:disabled) {
+  position: relative;
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--primary) 76%, white);
+  background-color: var(--primary);
+  background-image: linear-gradient(
+    110deg,
+    color-mix(in srgb, var(--primary) 88%, white),
+    var(--primary) 52%,
+    color-mix(in srgb, var(--primary) 92%, black)
+  );
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.2),
+    0 2px 4px rgb(27 15 58 / 0.12),
+    0 4px 12px color-mix(in srgb, var(--primary) 18%, transparent);
+  transition:
+    filter 160ms ease-out,
+    box-shadow 160ms ease-out;
+}
+.pbl-workbench .pbl-advance-bar .pbl-stage-action:hover:not(:disabled) {
+  filter: brightness(1.06);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.24),
+    0 2px 4px rgb(27 15 58 / 0.12),
+    0 5px 16px color-mix(in srgb, var(--primary) 26%, transparent);
+}
+.pbl-workbench .pbl-advance-bar .pbl-stage-action:active:not(:disabled) {
+  filter: brightness(0.97);
+}
+.pbl-workbench .pbl-advance-bar .pbl-stage-action::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 38%;
+  pointer-events: none;
+  background: linear-gradient(100deg, transparent, rgb(255 255 255 / 0.18), transparent);
+  transform: translateX(-150%) skewX(-18deg);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pbl-workbench .pbl-advance-bar[data-attention='true'] {
+    animation: pbl-advance-float 2.8s ease-in-out infinite;
+  }
+  .pbl-workbench .pbl-advance-bar[data-attention='true']::before {
+    animation: pbl-advance-glow 2.8s ease-in-out infinite;
+  }
+  .pbl-workbench .pbl-advance-bar[data-attention='true'] .pbl-stage-action::after {
+    animation: pbl-advance-sheen 3.8s ease-in-out infinite;
+  }
+}
+@keyframes pbl-advance-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+@keyframes pbl-advance-glow {
+  0%,
+  100% {
+    opacity: 0.22;
+  }
+  50% {
+    opacity: 0.46;
+  }
+}
+@keyframes pbl-advance-sheen {
+  0%,
+  12% {
+    transform: translateX(-150%) skewX(-18deg);
+  }
+  58%,
+  100% {
+    transform: translateX(420%) skewX(-18deg);
+  }
 }
 .pbl-workbench button:focus-visible {
   outline: 2px solid var(--ring);

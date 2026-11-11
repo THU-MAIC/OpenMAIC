@@ -864,6 +864,7 @@ function PBLV3WorkspaceContent({
                     requesting={['chat', 'begin', 'retry'].includes(pendingAction ?? '')}
                   />
                   <TaskDock
+                    actionDisabled={disabled}
                     modalActive={onboarding.active || entryLoading}
                     key={`${view.id}:${view.state.position.milestoneIndex}:${view.state.position.stageIndex}`}
                     view={view}

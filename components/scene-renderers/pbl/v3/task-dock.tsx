@@ -30,6 +30,7 @@ export function TaskDock({
   summary,
   working = false,
   modalActive = false,
+  actionDisabled = false,
   ref,
 }: {
   view: LearningView;
@@ -38,6 +39,7 @@ export function TaskDock({
   summary?: ReactNode;
   working?: boolean;
   modalActive?: boolean;
+  actionDisabled?: boolean;
   ref?: Ref<TaskDockHandle>;
 }) {
   const { t } = useI18n();
@@ -53,6 +55,13 @@ export function TaskDock({
   const running = view.busy || working;
   const canAdvance = view.actions.includes('next');
   const ready = canAdvance && !running;
+  const [attentionDismissed, setAttentionDismissed] = useState(false);
+  const attention = ready && !actionDisabled && !modalActive && !attentionDismissed;
+  useEffect(() => {
+    if (!attention) return;
+    const timeout = window.setTimeout(() => setAttentionDismissed(true), 8_000);
+    return () => window.clearTimeout(timeout);
+  }, [attention]);
   useImperativeHandle(
     ref,
     () => ({
@@ -160,7 +169,9 @@ export function TaskDock({
           </div>
         </div>
       )}
-      <div className={`flex ${summary ? 'min-h-12' : 'h-10'} items-center gap-2 px-3 py-2`}>
+      <div
+        className={`flex ${canAdvance ? 'min-h-8' : summary ? 'min-h-12' : 'h-10'} items-center gap-2 px-3 ${canAdvance ? 'py-1' : 'py-2'}`}
+      >
         <details
           className="relative shrink-0 text-xs"
           onKeyDown={(event) => {
@@ -199,6 +210,9 @@ export function TaskDock({
             ))}
           </ol>
         </details>
+        {canAdvance && (
+          <div className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{summary}</div>
+        )}
         {hasDrawer ? (
           <button
             data-pbl-tour="task-trigger"
@@ -207,25 +221,43 @@ export function TaskDock({
             aria-expanded={open}
             aria-controls={id}
             aria-label={t('pblV3.journey.taskTitle')}
-            className={`pbl-task-trigger flex min-w-0 flex-1 rounded-md px-2 py-1 hover:bg-accent ${summary ? 'flex-wrap gap-x-2 gap-y-0.5' : 'gap-2'} items-center text-left text-xs`}
+            className={`pbl-task-trigger flex min-w-0 rounded-md px-2 py-1 hover:bg-accent ${canAdvance ? 'shrink-0 gap-1.5 text-muted-foreground' : summary ? 'flex-1 flex-wrap gap-x-2 gap-y-0.5' : 'flex-1 gap-2'} items-center text-left text-xs`}
             onClick={() => setOpenKey(open ? null : key)}
           >
-            <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 font-semibold text-primary">
-              {t('pblV3.journey.taskTitle')}
-            </span>
-            {copy}
+            {canAdvance ? (
+              <>
+                <Settings size={12} aria-hidden="true" />
+                <span>{t('pblV3.journey.reviewDetails')}</span>
+              </>
+            ) : (
+              <>
+                <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 font-semibold text-primary">
+                  {t('pblV3.journey.taskTitle')}
+                </span>
+                {copy}
+              </>
+            )}
             <ChevronUp
               size={13}
-              className={`shrink-0 text-primary transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
+              className={`shrink-0 ${canAdvance ? 'text-muted-foreground' : 'text-primary'} transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
             />
           </button>
         ) : (
-          <div className="flex min-w-0 flex-1 items-center gap-2 text-xs">{copy}</div>
+          !canAdvance && (
+            <div className="flex min-w-0 flex-1 items-center gap-2 text-xs">{copy}</div>
+          )
         )}
         {!canAdvance && action}
       </div>
       {canAdvance && action && (
-        <div data-testid="pbl-advance-bar" className="pbl-advance-bar mx-3 mb-2 min-w-0 rounded-lg">
+        <div
+          data-testid="pbl-advance-bar"
+          data-attention={attention ? 'true' : 'false'}
+          className="pbl-advance-bar mx-3 mb-2 min-w-0 rounded-lg"
+          onPointerEnter={() => setAttentionDismissed(true)}
+          onFocusCapture={() => setAttentionDismissed(true)}
+          onPointerDownCapture={() => setAttentionDismissed(true)}
+        >
           {action}
         </div>
       )}

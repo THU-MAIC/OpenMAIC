@@ -314,6 +314,13 @@ test('highlights the existing next action only when progression is available', a
   await fixture.publish();
   const advanceButton = advance.getByRole('button', { name: 'Continue to Make your decisions' });
   await expect(advanceButton).toBeEnabled();
+  await expect(advance).toHaveAttribute('data-attention', 'true');
+  await advanceButton.hover();
+  await expect(advance).toHaveAttribute('data-attention', 'false');
+  await page.mouse.move(0, 0);
+  fixture.view.revision++;
+  await fixture.publish();
+  await expect(advance).toHaveAttribute('data-attention', 'false');
   const barBox = (await advance.boundingBox())!;
   const buttonBox = (await advanceButton.boundingBox())!;
   const composerBox = (await page
@@ -327,6 +334,25 @@ test('highlights the existing next action only when progression is available', a
   expect(fixture.commands).toEqual([]);
   await advanceButton.click({ position: { x: 4, y: 20 } });
   await expect.poll(() => fixture.commands).toEqual(['next']);
+});
+
+test('stops next-step attention after eight seconds and respects reduced motion', async ({
+  page,
+  learningEvents,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const fixture = await project(page, learningEvents, { started: true, application: false });
+  await page.clock.install();
+  fixture.view.actions = ['chat', 'next'];
+  fixture.view.revision++;
+  await fixture.publish();
+  const advance = page.getByTestId('pbl-advance-bar');
+  await expect(advance).toHaveAttribute('data-attention', 'true');
+  await expect(advance).toHaveCSS('animation-name', 'none');
+  await page.clock.fastForward(8_001);
+  await expect(advance).toHaveAttribute('data-attention', 'false');
+  await expect(advance.getByRole('button')).toBeEnabled();
+  expect(fixture.commands).toEqual([]);
 });
 
 async function finish(page: Page) {

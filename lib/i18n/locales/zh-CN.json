@@ -3070,6 +3070,7 @@
       "notReflected": "尚未记录复盘",
       "taskDetails": "当前任务详情",
       "closeDetails": "收起任务详情",
+      "reviewDetails": "回看详情",
       "milestoneSteps": "当前阶段的学习步骤",
       "enterStep": "进入{{step}}",
       "enterMilestone": "进入下一阶段",
