@@ -1,5 +1,7 @@
 'use client';
 
+import { commitCourseEdit } from '@/lib/edit/course-edit';
+import { useCourseTimeline } from '@/lib/edit/course-timeline';
 import { memo, useCallback, useRef, useState } from 'react';
 import { Reorder } from 'motion/react';
 import { MoreHorizontal } from 'lucide-react';
@@ -74,7 +76,7 @@ function ThumbItemComponent({
   const commitRename = useCallback(() => {
     const trimmed = draft.trim();
     if (trimmed && trimmed !== scene.title) {
-      updateScene(scene.id, { title: trimmed });
+      commitCourseEdit({}, () => updateScene(scene.id, { title: trimmed }));
     }
     setRenaming(false);
   }, [draft, scene.id, scene.title, updateScene]);
@@ -90,6 +92,8 @@ function ThumbItemComponent({
     <Reorder.Item
       ref={ref}
       value={scene.id}
+      // One drag is one step, however many slots it crossed.
+      onDragEnd={() => useCourseTimeline.getState().sealBurst(scene.stageId)}
       // `layout="position"` restricts the implicit layout animation to
       // y-axis position changes (what reorder needs). Width changes from
       // rail-resize don't fire layout animations because vertical
@@ -133,25 +137,9 @@ function ThumbItemComponent({
             : 'hover:bg-zinc-50/80 dark:hover:bg-zinc-800/50',
         )}
       >
-        {/* Page-level "incomplete content" dot — surfaces a scene with any
-            content issue (blank narration / no actions / unbound cue …) so the
-            user can spot it in the rail without opening every page. */}
-        {issues.length > 0 && (
-          <span
-            role="img"
-            title={issueLabel}
-            aria-label={issueLabel}
-            data-testid="scene-issue-marker"
-            data-severity={hasError ? 'error' : 'warning'}
-            className={cn(
-              'absolute right-1 top-1 z-10 size-2 rounded-full shadow-sm ring-2 ring-white dark:ring-slate-900',
-              hasError ? 'bg-red-500' : 'bg-amber-400',
-            )}
-          />
-        )}
         {/* Scene header — index badge + title. Title doubles as the
             inline rename surface when `renaming` is true. */}
-        <div className="flex items-center justify-between gap-1 px-2 pt-0.5">
+        <div className="relative mt-0.5 flex items-center justify-between gap-1 px-2">
           <div className="flex min-w-0 items-center gap-2">
             <span
               className={cn(
@@ -222,7 +210,7 @@ function ThumbItemComponent({
                   aria-label={t('edit.nav.moreActions')}
                   data-testid="slide-nav-more"
                   className={cn(
-                    'shrink-0 rounded p-0.5 text-zinc-400 transition-opacity',
+                    'mr-0.5 shrink-0 rounded p-0.5 text-zinc-400 transition-opacity',
                     'opacity-0 group-hover/thumb:opacity-100 data-[state=open]:opacity-100',
                     'hover:bg-zinc-200/80 hover:text-zinc-700',
                     'dark:hover:bg-zinc-700 dark:hover:text-zinc-200',
@@ -248,6 +236,25 @@ function ThumbItemComponent({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+          )}
+
+          {/* Page-level "incomplete content" dot — surfaces a scene with any content
+              issue (blank narration / no actions / unbound cue …) so the user can spot
+              it in the rail without opening every page. On the header's line, with its
+              right edge on the thumbnail's, past the menu rather than over it. Hidden
+              during inline rename with the menu, for the same reason. */}
+          {issues.length > 0 && !renaming && (
+            <span
+              role="img"
+              title={issueLabel}
+              aria-label={issueLabel}
+              data-testid="scene-issue-marker"
+              data-severity={hasError ? 'error' : 'warning'}
+              className={cn(
+                'absolute right-0 top-1/2 size-2 -translate-y-1/2 rounded-full',
+                hasError ? 'bg-red-500' : 'bg-amber-400',
+              )}
+            />
           )}
         </div>
 

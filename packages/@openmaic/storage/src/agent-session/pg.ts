@@ -300,6 +300,35 @@ $agent_session_owner_event_type_validation$;
 `;
 
 /**
+ * Version 4: the event seq of the session's unanswered `user_question`, kept
+ * on the session row so the owner list can say "waiting for your answer"
+ * without reading any event log. Maintained by every event append (see
+ * `insertEvent`); this backfill derives it once from the existing logs with the
+ * same rule `postUserMessage` uses for an outstanding ask: the newest question
+ * that no later non-blank user message follows.
+ */
+const AGENT_SESSION_PG_OPEN_QUESTION_V4 = `
+ALTER TABLE agent_sessions ADD COLUMN IF NOT EXISTS open_question_seq INTEGER;
+
+UPDATE agent_sessions s
+SET open_question_seq = pending.seq
+FROM (
+  SELECT question.session_id, max(question.seq) AS seq
+  FROM agent_session_events question
+  WHERE question.type = 'user_question'
+    AND NOT EXISTS (
+      SELECT 1 FROM agent_session_events answer
+      WHERE answer.session_id = question.session_id
+        AND answer.seq > question.seq
+        AND answer.type = 'user_message'
+        AND length(btrim(COALESCE(answer.data->>'text', ''))) > 0
+    )
+  GROUP BY question.session_id
+) pending
+WHERE s.id = pending.session_id AND s.open_question_seq IS NULL;
+`;
+
+/**
  * The agent-session backend's migrations, for the default table names
  * (recorded under the store `agent-session`). Both run outside a transaction:
  * each constraint install must release its ACCESS EXCLUSIVE lock before the
@@ -320,6 +349,12 @@ export const AGENT_SESSION_PG_MIGRATIONS: SchemaMigrationSet = {
       version: 3,
       name: 'locale',
       up: `ALTER TABLE agent_sessions ADD COLUMN IF NOT EXISTS locale TEXT;`,
+      transaction: true,
+    },
+    {
+      version: 4,
+      name: 'open_question_seq',
+      up: AGENT_SESSION_PG_OPEN_QUESTION_V4,
       transaction: true,
     },
   ],
@@ -444,13 +479,26 @@ interface SessionRow extends Record<string, unknown> {
   lease_worker_pid: number | null;
   lease_heartbeat_at: number | string | null;
   error: string | null;
+  open_question_seq: number | null;
   created_at: Date | string;
   updated_at: Date | string;
 }
 
 const SESSION_COLUMNS = `id, owner_id, prompt, title, stage_id, skill_id, origin, locale,
   existing_course, status, attempt, delivered_user_message_seq, lease_worker_id, lease_worker_pid,
-  lease_heartbeat_at, error, created_at, updated_at`;
+  lease_heartbeat_at, error, open_question_seq, created_at, updated_at`;
+
+/**
+ * A session awaits an answer when its newest question is unanswered and no run
+ * is in flight. A queued or running session is already acting on the
+ * conversation, so "waiting for you" would be wrong there whatever the log says.
+ */
+function awaitsAnswer(
+  status: AgentSessionMeta['status'],
+  openQuestionSeq: number | string | null | undefined,
+): boolean {
+  return openQuestionSeq != null && status !== 'queued' && status !== 'running';
+}
 
 function epoch(value: Date | string): number {
   return value instanceof Date ? value.getTime() : new Date(value).getTime();
@@ -491,6 +539,7 @@ function sessionMeta(row: SessionRow): AgentSessionMeta {
         }
       : {}),
     ...(row.error ? { error: row.error } : {}),
+    ...(awaitsAnswer(row.status, row.open_question_seq) ? { awaitingAnswer: true } : {}),
   };
 }
 
@@ -1021,6 +1070,7 @@ export class PgAgentSessionStore
       [sessionId, event.ts, event.attempt, event.type, encodeJson(event.data, 'event data')],
     );
     const seq = Number(result.rows[0]!.seq);
+    await this.trackOpenQuestion(tx, sessionId, event, seq);
     // Transactional wakeup: the host queues a lossy NOTIFY on the SAME
     // transaction, so the SSE tail and the runner wake exactly when this row
     // commits. PG delivers NOTIFY only at commit, so no reader can observe
@@ -1034,6 +1084,36 @@ export class PgAgentSessionStore
       attempt: event.attempt,
     });
     return seq;
+  }
+
+  /**
+   * Keep `open_question_seq` in step with the log, in the append's own
+   * transaction: a question opens it, and non-blank user text closes it —
+   * the same "any later message answers" rule the chat fold and
+   * `postUserMessage` apply, since `ask_user` has no answer-correlation id. A
+   * textless message (an attached material) is not an answer.
+   */
+  private async trackOpenQuestion(
+    tx: Queryable,
+    sessionId: string,
+    event: NewAgentSessionEvent,
+    seq: number,
+  ): Promise<void> {
+    if (event.type === AGENT_SESSION_LIFECYCLE.userQuestion) {
+      await tx.query(`UPDATE ${this.table('sessions')} SET open_question_seq = $2 WHERE id = $1`, [
+        sessionId,
+        seq,
+      ]);
+      return;
+    }
+    if (event.type !== AGENT_SESSION_LIFECYCLE.userMessage) return;
+    const text = (event.data as { text?: unknown } | null)?.text;
+    if (typeof text !== 'string' || !text.trim()) return;
+    await tx.query(
+      `UPDATE ${this.table('sessions')} SET open_question_seq = NULL
+       WHERE id = $1 AND open_question_seq IS NOT NULL`,
+      [sessionId],
+    );
   }
 
   async appendRunEvent(
@@ -1571,8 +1651,12 @@ export class PgAgentSessionStore
     const savepoint = `agent_session_projection_${(savepointSerial += 1)}`;
     try {
       await transaction.query(`SAVEPOINT ${savepoint}`);
-      const locked = await transaction.query<{ owner_id: string }>(
-        `SELECT owner_id FROM ${this.table('sessions')} WHERE id = $1 FOR UPDATE`,
+      const locked = await transaction.query<{
+        owner_id: string;
+        open_question_seq: number | null;
+      }>(
+        `SELECT owner_id, open_question_seq FROM ${this.table('sessions')}
+         WHERE id = $1 FOR UPDATE`,
         [event.sessionId],
       );
       const session = locked.rows[0];
@@ -1591,7 +1675,29 @@ export class PgAgentSessionStore
       if (!counter) throw new Error(`cannot allocate owner event id for ${session.owner_id}`);
       const status = 'status' in event ? event.status : null;
       const attempt = 'attempt' in event ? event.attempt : null;
-      const data = event.type === 'session_title' ? { title: event.title } : {};
+      // A status summary carries the store's own awaiting-answer verdict for
+      // the status it records, read under the row lock in the same
+      // transaction. Whatever the caller passed is ignored: the fact belongs
+      // to the event log, not to the writer of the status.
+      const projected: NewOwnerSessionEvent =
+        event.type === 'session_created' || event.type === 'session_status'
+          ? {
+              type: event.type,
+              sessionId: event.sessionId,
+              ts: event.ts,
+              status: event.status,
+              attempt: event.attempt,
+              ...(awaitsAnswer(event.status, session.open_question_seq)
+                ? { awaitingAnswer: true }
+                : {}),
+            }
+          : event;
+      const data =
+        projected.type === 'session_title'
+          ? { title: projected.title }
+          : 'awaitingAnswer' in projected && projected.awaitingAnswer
+            ? { awaitingAnswer: true }
+            : {};
       await transaction.query(
         `INSERT INTO ${this.table('ownerEvents')}
           (owner_id, id, ts, session_id, type, status, attempt, data)
@@ -1611,7 +1717,7 @@ export class PgAgentSessionStore
       // NOTIFY is emitted only when the outer mutation commits, and a failed
       // projection rolls it back with the owner row.
       await this.ownerEventHook?.(transaction, {
-        ...event,
+        ...projected,
         id: String(counter.n),
         ownerId: session.owner_id,
       });
@@ -1666,6 +1772,7 @@ export class PgAgentSessionStore
           type: row.type,
           status: row.status!,
           attempt: Number(row.attempt ?? 0),
+          ...(decodedObject(row.data).awaitingAnswer === true ? { awaitingAnswer: true } : {}),
         };
       }
       if (row.type === 'session_title') {

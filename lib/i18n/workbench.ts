@@ -87,6 +87,8 @@ export const workbenchEn = {
     unsupportedType: 'Unsupported file type. Please choose a supported file.',
     quotaExceeded: 'Material upload limit reached.',
     storageFull: 'Storage is full. This material could not be uploaded.',
+    uploadFailedShort: 'Upload failed',
+    retryFailed: 'Could not start parsing again. Please try again.',
   },
   /**
    * The installed skills, as the product names them.
@@ -204,9 +206,7 @@ export const workbenchEn = {
     listSeparator: ', ',
     group: {
       tools: '{{count}} tool calls',
-      skills: '{{count}} skills',
-      running: 'Running',
-      error: 'Has errors',
+      failed: '{{count}} failed',
       done: 'Completed',
     },
     section: {
@@ -459,6 +459,8 @@ export const workbenchZh = {
     unsupportedType: '不支持此文件类型，请选择受支持的文件。',
     quotaExceeded: '已达到材料上传限额。',
     storageFull: '存储空间已达上限，无法上传这份资料。',
+    uploadFailedShort: '上传失败',
+    retryFailed: '无法重新解析，请稍后再试。',
   },
   skill: {
     listFailed: 'Skill 列表加载失败',
@@ -557,9 +559,7 @@ export const workbenchZh = {
     listSeparator: '、',
     group: {
       tools: '{{count}} 个工具调用',
-      skills: '{{count}} 个 skill',
-      running: '执行中',
-      error: '有错误',
+      failed: '{{count}} 个失败',
       done: '已完成',
     },
     section: {

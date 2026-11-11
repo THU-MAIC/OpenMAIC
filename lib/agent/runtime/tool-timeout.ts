@@ -83,7 +83,7 @@ export class AgentToolTimeoutError extends Error {
   constructor(toolName: string, timeoutMs: number) {
     super(
       `Tool "${toolName}" exceeded its ${timeoutMs}ms execution budget and was aborted; ` +
-        'the call did not complete. Retry the call or proceed without its result.',
+        'the call did not complete and its result is unavailable.',
     );
     this.name = 'AgentToolTimeoutError';
     this.toolName = toolName;

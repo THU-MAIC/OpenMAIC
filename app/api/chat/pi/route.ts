@@ -18,6 +18,7 @@ import {
 } from '@/lib/config/feature-flags';
 import { createLogger } from '@/lib/logger';
 import { resolveAgentConfigs } from '@/lib/chat/pi/config';
+import { createWhiteboardPreview } from '@/lib/chat/pi/whiteboard-preview';
 import { runPiDirectorLoop } from '@/lib/chat/pi/director-loop';
 import type { SendEvent } from '@/lib/chat/pi/types';
 import { requestWorkspaceId } from '@/lib/server/model-config/runtime';
@@ -207,6 +208,7 @@ async function chat(req: NextRequest, principal: OwnerPrincipal): Promise<Respon
       enabled: false,
     };
 
+    const supportsToolImages = modelInfo?.capabilities?.vision === true;
     const enableWhiteboardTools = body.config.piEnableWhiteboardTools === true;
     const childRuntimeMode = isPiNativeChildRuntimeEnabled() ? 'native' : 'legacy';
     const enableNativeChildSpotlight = isPiNativeChildSpotlightEnabled();
@@ -292,6 +294,11 @@ async function chat(req: NextRequest, principal: OwnerPrincipal): Promise<Respon
           agentConfigs,
           send,
           languageModel,
+          supportsToolImages,
+          whiteboardPreview:
+            supportsToolImages && nativeWhiteboardService && validRequestStartStageId
+              ? createWhiteboardPreview(principal.ownerId, validRequestStartStageId)
+              : undefined,
           thinkingConfig,
           maxOutputTokens: modelInfo?.outputWindow,
           contextWindow: modelInfo?.contextWindow,

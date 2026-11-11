@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Roundtable } from '@/components/roundtable';
 import { computePlaybackView } from '@/lib/playback/derived-state';
+import { useSettingsStore } from '@/lib/store/settings';
 
 vi.mock('@/lib/hooks/use-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock('@/lib/hooks/use-audio-recorder', () => ({
@@ -212,9 +213,79 @@ describe('Roundtable suggested replies', () => {
       expect(container.querySelector('[data-bubble-role]')).toBeNull();
       if (!isPresenting) {
         expect(
-          container.querySelector('[data-testid="roundtable-region"]')?.getAttribute('class'),
-        ).toContain('h-[192px]');
+          container.querySelector<HTMLElement>('[data-testid="roundtable-region"]')?.style.height,
+        ).toBe('192px');
       }
     },
   );
+
+  describe('with the dock folded', () => {
+    const layer = () => container.querySelector('[data-testid="roundtable-speech-layer"]');
+    const lecture = computePlaybackView({
+      engineMode: 'playing',
+      lectureSpeech: 'The lecture goes on',
+      liveSpeech: null,
+      speakingAgentId: null,
+      thinkingState: null,
+      isCueUser: false,
+      isTopicPending: false,
+      chatIsStreaming: false,
+      discussionTrigger: null,
+      playbackCompleted: false,
+      idleText: null,
+      speakingStudent: false,
+      sessionType: null,
+    });
+    const folded = (extra: Partial<ComponentProps<typeof Roundtable>> = {}) =>
+      render({ playbackView: lecture, isCueUser: false, sessionType: undefined, ...extra });
+    beforeEach(() => useSettingsStore.setState({ dockCollapsed: true }));
+    afterEach(() => useSettingsStore.setState({ dockCollapsed: false }));
+
+    it('puts the speech layer beside the dock, anchored to the stage and not the window', async () => {
+      await folded();
+      const region = container.querySelector('[data-testid="roundtable-region"]');
+      expect(region).not.toBeNull();
+      expect(layer()).not.toBeNull();
+      // Inside the dock's backdrop-filter the bubble's own blur would see nothing.
+      expect(region?.contains(layer())).toBe(false);
+      expect(layer()?.querySelector('.fixed')).toBeNull();
+      expect(layer()?.textContent).toContain('The lecture goes on');
+    });
+
+    it('offers the same ways to speak as full-screen, without a second input', async () => {
+      await folded();
+      expect(layer()?.querySelector('[aria-label="roundtable.textInput"]')).not.toBeNull();
+      expect(layer()?.querySelector('[aria-label="roundtable.voiceInputDisabled"]')).not.toBeNull();
+      const textInput = layer()?.querySelector<HTMLButtonElement>(
+        '[aria-label="roundtable.textInput"]',
+      );
+      await act(async () => textInput?.click());
+      expect(container.querySelectorAll('textarea')).toHaveLength(1);
+      expect(layer()?.querySelector('textarea')).not.toBeNull();
+    });
+
+    it('moves the suggested replies over the stage rather than doubling them', async () => {
+      await render({ cueUserOptions: ['Show an example'] });
+      expect(container.querySelectorAll('[data-testid="cue-user-options"]')).toHaveLength(1);
+      expect(layer()?.querySelector('[data-testid="cue-user-options"]')).not.toBeNull();
+    });
+
+    it('leaves the stage to the course end', async () => {
+      await folded({ courseEndOpen: true });
+      expect(layer()).toBeNull();
+    });
+
+    it('goes back into the dock once it unfolds', async () => {
+      await folded();
+      expect(layer()).not.toBeNull();
+      await act(async () => useSettingsStore.setState({ dockCollapsed: false }));
+      expect(layer()).toBeNull();
+    });
+
+    it('keeps full-screen pinned to the window, with the toolbar in the layer', async () => {
+      await folded({ isPresenting: true });
+      expect(container.querySelector('[data-testid="roundtable-region"]')).toBeNull();
+      expect(layer()?.querySelector('.fixed')).not.toBeNull();
+    });
+  });
 });

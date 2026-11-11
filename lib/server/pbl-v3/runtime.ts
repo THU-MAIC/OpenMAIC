@@ -8,7 +8,11 @@ import {
   latestMessagePartIds,
 } from './conversation';
 import { executionFailureCode } from '@/lib/agent/runtime/request-failure';
-import { readConversationHistory, CONVERSATION_BYTES } from './conversation-history';
+import {
+  readConversationHistory,
+  readConversationSources,
+  CONVERSATION_BYTES,
+} from './conversation-history';
 import 'server-only';
 import { isTeachingLocale } from './communication';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
@@ -123,9 +127,9 @@ export async function readFiles(
   const result: Record<string, string> = {};
   const environmentId = requireEnvironment(row);
   // Durable evidence uses a quiesced snapshot by default. Read-only teaching
-  // version observations and the periodic fallback backup may leave applications
-  // running; final approval, assessments, stage checkpoints and idle release
-  // retain the strict default.
+  // version observations, detached assessments and the periodic fallback
+  // backup may leave applications running. Durable evidence and release retain
+  // the strict default.
   await service.assertWorkspaceIdle(environmentId, signal, options);
   let bytes = 0;
   const paths = await checkpointIO(
@@ -160,6 +164,7 @@ export async function saveStudyCheckpoint(
   row: Study,
   // A strict snapshot already taken by this operation under the same study lock.
   snapshotForTransition?: Awaited<ReturnType<typeof fileSnapshot>>,
+  allowApplications = false,
 ) {
   const signal = AbortSignal.timeout(CHECKPOINT_TIMEOUT_MS);
   const { pool } = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
@@ -181,15 +186,27 @@ export async function saveStudyCheckpoint(
   );
   const snapshot = await checkpointStep('snapshot', async () => {
     if (renew) await service.renewForCheckpoint(requireEnvironment(row), signal);
-    return snapshotForTransition ?? fileSnapshot(service, row, signal);
+    return snapshotForTransition ?? fileSnapshot(service, row, signal, { allowApplications });
   });
   const previous = await service.checkpoint(requireEnvironment(row));
   const prepared = await checkpointStep('archive', () =>
     service.prepareWorkspaceCheckpoint(requireEnvironment(row), previous?.revision ?? 0, signal, {
       renew: false,
+      allowApplications,
     }),
   );
   try {
+    if (allowApplications) {
+      // The study lock excludes teaching writes. Recheck the exact evidence
+      // before publishing an archive captured with the application still live.
+      const current = await fileSnapshot(service, row, signal, { allowApplications });
+      if (current.fingerprint !== snapshot.fingerprint)
+        throw new SandboxError(
+          'CHECKPOINT_CHANGED',
+          409,
+          'Source files changed during checkpoint.',
+        );
+    }
     await prepared.commit(async (db) => {
       const valid = await db.query(
         `SELECT id FROM pbl_v3_studies WHERE id=$1 AND owner_id=$2 AND environment_id=$3
@@ -237,7 +254,7 @@ export async function openStudy(principal: OwnerPrincipal, stageId: string, scen
   const studies = await LearningStore.open();
   const existing = await studies.findForScene(principal.ownerId, stageId, sceneId);
   // Owned final snapshots need no execution provider. Active/new studies still
-  // require an eligible identity and configuration before learning can proceed.
+  // require an enabled sandbox configuration before learning can proceed.
   if (existing?.state.status === 'completed') return existing;
   await SandboxService.forOwner(principal);
   if (existing) return existing;
@@ -801,10 +818,6 @@ export async function commandStudy(
       if (!command.path || command.text === undefined || typeof command.expectedHash !== 'string')
         throw sandboxInvalid('A project file, text and observed file hash are required.');
       assertProjectSource(project, command.path);
-      if (stage.kind === 'produce' && stage.writes === 'plan' && command.path !== 'PLAN.md')
-        throw sandboxConflict('Only PLAN.md can be edited during planning.');
-      if (command.path === 'PLAN.md' && !(stage.kind === 'produce' && stage.writes === 'plan'))
-        throw sandboxConflict('The approved plan is read-only during coding.');
       if (command.path === 'PLAN.md') await assertLearningPlan(store, row, command.text);
       const changed = await service.compareAndWriteText(
         requireEnvironment(row),
@@ -864,33 +877,64 @@ export async function commandStudy(
       check('evaluate');
       if (row.evaluation && row.evaluation.id !== command.id)
         throw sandboxConflict('Collect the existing test result before starting another run.');
-      const snapshot = await fileSnapshot(service, row);
-      const testCommand =
-        row.evaluation?.evaluationCommand ??
-        evaluationCommand(
+      let testCommand = row.evaluation?.evaluationCommand;
+      let testedWorkspace: EngineTransition = { state: row.state, events: [] };
+      if (testCommand && row.evaluation?.isolatedSources !== true) await fileSnapshot(service, row);
+      if (!testCommand) {
+        const milestoneId = row.state.position.milestoneId!;
+        const collected = row.state.collected[milestoneId]!;
+        const isolatedSources = !row.evaluation && !!project.application?.frontendPath;
+        const snapshot = await fileSnapshot(service, row, undefined, {
+          allowApplications: isolatedSources,
+        });
+        testCommand = evaluationCommand(
           evaluationFor(
             project,
-            row.state.position.milestoneId!,
+            milestoneId,
             row.evaluation ? [] : Object.keys(snapshot.files),
-            row.state.collected[row.state.position.milestoneId!]?.decisions,
+            collected.decisions,
           ),
           command.id,
+          isolatedSources ? snapshot.files : undefined,
         );
+        row.evaluation ??= {
+          id: command.id,
+          fingerprint: snapshot.fingerprint,
+          stageKey: stageKey(row),
+          startedAt: new Date().toISOString(),
+          evaluationCommand: testCommand,
+          ...(isolatedSources ? { isolatedSources: true as const } : {}),
+        };
+        const planText = snapshot.files['PLAN.md'];
+        if (collected.remediation && collected.plan && planText !== undefined) {
+          const contentHash = digest(planText);
+          if (contentHash !== collected.plan.contentHash) {
+            await assertLearningPlan(store, row, planText);
+            // The test receipt must refer to the amended plan, while the original
+            // reviewed version stays in the event history.
+            testedWorkspace = transitions.recordArtifact(
+              definition,
+              row.state,
+              {
+                kind: 'plan',
+                id: randomUUID(),
+                milestoneId,
+                revision: collected.plan.revision + 1,
+                contentHash,
+                contentLength: planText.length,
+                workspaceRevisionId: snapshot.fingerprint,
+              },
+              { allowPlanFileUpdate: true, evidence: { content: planText } },
+            );
+          }
+        }
+      }
       if (Buffer.byteLength(testCommand) > MAX_COMMAND_BYTES)
         throw sandboxInvalid(
           'Current evaluation sources exceed the sandbox 32 KiB command limit.',
           'PBL_SOURCE_SIZE',
         );
-      row.evaluation ??= {
-        id: command.id,
-        fingerprint: snapshot.fingerprint,
-        stageKey: stageKey(row),
-        startedAt: new Date().toISOString(),
-        evaluationCommand: testCommand,
-      };
-      row = await store.transaction((db) =>
-        store.commit(db, row, { state: row.state, events: [] }),
-      );
+      row = await store.transaction((db) => store.commit(db, row, testedWorkspace));
       result = await service.startCommand(requireEnvironment(row), {
         requestId: command.id,
         command: testCommand,
@@ -913,9 +957,18 @@ export async function commandStudy(
         if (!hasStageCompletion(row, stage, binding))
           throw sandboxConflict('Complete the current teaching interaction first.');
       }
+      const endingMilestone =
+        row.state.position.stageIndex ===
+        currentMilestone(definition, row.state)!.stages.length - 1;
+      // Standalone apps can remain live during a read-only stage confirmation,
+      // using the same managed-writer fence as periodic backups.
+      const allowApplications = !endingMilestone && !!project.application?.frontendPath;
       let verifiedSnapshot: Awaited<ReturnType<typeof fileSnapshot>> | undefined;
+      let keepRepairedPlan = false;
       if (stage.kind === 'produce' || (stage.kind === 'check' && stage.checker === 'tests')) {
-        verifiedSnapshot = await fileSnapshot(service, row);
+        verifiedSnapshot = await fileSnapshot(service, row, undefined, {
+          allowApplications,
+        });
         const collected = row.state.collected[row.state.position.milestoneId!]!;
         const expected =
           stage.kind === 'check'
@@ -927,13 +980,12 @@ export async function commandStudy(
           );
         if (stage.kind === 'produce' && stage.writes === 'plan')
           await assertLearningPlan(store, row, verifiedSnapshot.files['PLAN.md']!, true);
+        if (stage.kind === 'check')
+          keepRepairedPlan = !!collected.plan && !collected.planReviewCompleted;
       }
-      const endingMilestone =
-        row.state.position.stageIndex ===
-        currentMilestone(definition, row.state)!.stages.length - 1;
-      if (stage.kind === 'produce' || endingMilestone) {
+      if (stage.kind === 'produce' || endingMilestone || keepRepairedPlan) {
         // Establish a durable artifact before acknowledging the student's stage confirmation.
-        await saveStudyCheckpoint(service, row, verifiedSnapshot);
+        await saveStudyCheckpoint(service, row, verifiedSnapshot, allowApplications);
       }
       transition = transitions.completeCurrentStage(definition, row.state);
     } else throw sandboxInvalid('Unknown learning action.');
@@ -983,7 +1035,15 @@ export async function learningView(
     }
   > = [];
   let conversation: LearningView['conversation'] = [];
-  const conversationHistory: NonNullable<LearningView['conversationHistory']> = [];
+  const conversationHistory = await readConversationSources(
+    store.pool,
+    id,
+    principal.ownerId,
+    binding?.session_id,
+  );
+  const historyThrough = new Map(
+    conversationHistory.map(({ sessionId, through }) => [sessionId, through]),
+  );
   let activitySequence = 0;
   let roleRun: LearningView['roleRun'] = null;
   let latestUserSeq: number | undefined;
@@ -1017,13 +1077,7 @@ export async function learningView(
           : null,
     };
     // Bounded transcript projection; durable role history remains in the runner's entry tree.
-    const last = await agents.lastEventSeq(binding.session_id);
-    if (last)
-      conversationHistory.push({
-        sessionId: binding.session_id,
-        through: last,
-        role: binding.role,
-      });
+    const last = historyThrough.get(binding.session_id) ?? 0;
     activitySequence = last;
     const events = await readConversationHistory(store.pool, binding.session_id, last, 1000);
     conversation = projectConversation(
@@ -1093,9 +1147,8 @@ export async function learningView(
       }
     }
   }
-  // At most the current milestone's three roles and the project mentor. Keep the
-  // host event log authoritative; no second chat store or subscription protocol.
-  const agents = await getAgentSessionStore();
+  // The live transcript covers the current milestone and the project mentor.
+  // Older milestones are loaded only through the history dialog.
   conversation = conversation.map((entry) => ({
     ...entry,
     id: `${binding?.session_id}:${entry.id}`,
@@ -1108,13 +1161,8 @@ export async function learningView(
       item.session_id !== binding?.session_id &&
       (item.context_key === milestone.id || item.context_key === 'project'),
   )) {
-    const last = await agents.lastEventSeq(previous.session_id);
-    if (last)
-      conversationHistory.push({
-        sessionId: previous.session_id,
-        through: last,
-        role: previous.role,
-      });
+    const last = historyThrough.get(previous.session_id);
+    if (!last) continue;
     activitySequence += last;
     const events = await readConversationHistory(store.pool, previous.session_id, last, 500, false);
     conversation.push(
@@ -1235,6 +1283,7 @@ export async function learningView(
           id: observed.id,
           state: observed.state,
           ...(row.evaluation.purpose ? { purpose: row.evaluation.purpose } : {}),
+          ...(row.evaluation.isolatedSources ? { isolatedSources: true as const } : {}),
           stdout: row.evaluation.purpose === 'compile' ? observed.stdout.slice(0, 8000) : '',
           stderr: row.evaluation.purpose === 'compile' ? observed.stderr.slice(0, 8000) : '',
         };
@@ -1245,6 +1294,7 @@ export async function learningView(
         stdout: '',
         stderr: '',
         ...(row.evaluation.purpose ? { purpose: row.evaluation.purpose } : {}),
+        ...(row.evaluation.isolatedSources ? { isolatedSources: true as const } : {}),
       };
       // A missing command observation does not contradict the workspace health probe.
       // Keep the execution lock until collection confirms that its writer has stopped.

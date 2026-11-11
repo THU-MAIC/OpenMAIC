@@ -1231,11 +1231,12 @@ export class AssetCollector {
     let candidates;
     try {
       candidates = await this.queryable.query<EntryCandidateRow>(
-        `SELECT id
-           FROM asset_entries
-          WHERE (expires_at IS NOT NULL AND expires_at < $1::timestamptz)
-             OR (unreferenced_at IS NOT NULL AND unreferenced_at < $2::timestamptz)
-          ORDER BY COALESCE(expires_at, unreferenced_at) ASC, id ASC
+        `SELECT entries.id
+           FROM asset_entries AS entries
+          WHERE ((entries.expires_at IS NOT NULL AND entries.expires_at < $1::timestamptz)
+             OR (entries.unreferenced_at IS NOT NULL AND entries.unreferenced_at < $2::timestamptz))
+            AND ${ENTRY_UNREFERENCED_SQL}
+          ORDER BY COALESCE(entries.expires_at, entries.unreferenced_at) ASC, entries.id ASC
           LIMIT $3`,
         [now, cutoff, this.batchSize],
       );

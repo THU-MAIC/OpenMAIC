@@ -42,27 +42,32 @@
 
 ## 🗞️ News
 
-- **2026-11-02** — [v1.3.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.3.1): **DeepSeek Token Plan and reliability fixes.** One DeepSeek key now lights up chat, web search and web fetch. Asset uploads no longer hold database connections across slow object stores, and edits made just before leaving a page are kept. The upgrade has a release condition (stop all 1.3.0 instances first; rollback needs a database restore), so read the release's **Breaking Changes** before upgrading.
-- **2026-10-29** — [v1.3.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.3.0): **knowledge base and Pro workbench upgrade.** Every upload is kept in its owner's knowledge base until deleted, organized in folders and parsed once for every conversation; the composer offers it through `@`, and the agent can read, search and organize it. In the Pro workbench, a request shows a preview of the agent's work before the first page exists, and classroom tabs switch between Learn and Edit. The upgrade has release conditions (stop all old instances first; no rollback below 1.3.0), so read the [changelog](CHANGELOG.md) before upgrading.
-- **2026-10-18** — [v1.2.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.1): **web research.** Kimi, DeepSeek and Firecrawl join as web-search providers, and a new `webFetch` slot lets the agent read pages through a hosted reader (DeepSeek, Kimi or Firecrawl) instead of the built-in one; each is opt-in. Classroom chat can offer suggested replies, and retired models are removed from the built-in catalogs. Classroom chat now always runs on Pi and needs a classroom model with tool calling; read the release's **Breaking Changes** before upgrading.
-- **2026-10-16** — [v1.2.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.0): **server-first is stable.** Generation runs on the server and survives closed tabs and restarts, models are configured once in `openmaic.yml` (defaults, locks, and an option to forbid user keys), materials are parsed as soon as they are attached, and the web app and the API share one pipeline. New: [classroom export](packages/docs/content/docs/getting-started.mdx#export-a-classroom), as a PPTX that keeps every scene or as one offline HTML file that plays the lesson. It needs PostgreSQL and a long-running server; Vercel deployments stay on [1.1.x](#vercel-deployment-up-to-11x). Read [Upgrading from 1.1.x](packages/docs/content/docs/deployment.mdx#upgrading-from-11x) before upgrading.
+- **2026-11-10** — [v1.5.0-rc.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.5.0-rc.1): **A brand-new home, redesigned end to end** (release candidate) — the home page becomes the workbench: the course grows beside the conversation, My courses gets folders and pinning, and one full-screen classroom handles learning and editing. Off by default (`NEXT_PUBLIC_WORKBENCH_ENABLED`).
+- **2026-11-09** — [v1.4.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.4.2): **course-level undo** for manual edits and agent runs; sandboxes open to every admitted owner.
+- **2026-11-05** — [v1.4.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.4.1): edits and learner progress kept through background syncs; faster loading on slow connections.
+- **2026-11-04** — [v1.4.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.4.0): **PBL v3** — build a working project with an AI tutor, milestone by milestone. One-way upgrade.
+- **2026-11-02** — [v1.3.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.3.1): DeepSeek Token Plan (one key for chat, web search and web fetch) and reliability fixes.
+- **2026-10-29** — [v1.3.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.3.0): **knowledge base** — uploads kept, foldered and `@`-mentionable; one-way upgrade.
+- **2026-10-18** — [v1.2.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.1): web research — Kimi, DeepSeek and Firecrawl search, and a hosted `webFetch` reader.
+- **2026-10-16** — [v1.2.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.0): **server-first is stable** — generation survives closed tabs, models live in `openmaic.yml`, classroom export to PPTX and HTML.
+
+<details>
+<summary>Earlier releases</summary>
+
+- **2026-10-05** — [v1.1.3](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.3): security — course documents served by `/api/persistence` carry only sanitized slide HTML ([GHSA-6c52-8h4v-5xvg](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-6c52-8h4v-5xvg)).
 - **2026-09-28** — [v1.1.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.2): security — provider requests connect only to validated addresses and refuse redirects ([GHSA-g87c-cm4q-cw5x](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-g87c-cm4q-cw5x)).
 - **2026-09-27** — [v1.1.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.1): security — hardened MinerU Cloud parsing ([GHSA-cpjc-vgjh-c5jp](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-cpjc-vgjh-c5jp)).
 - **2026-09-24** — [v1.1.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.0): agentic classroom chat (ask about any slide element, interactive, or whiteboard drawing); settings rebuilt around the course workflow; Token Plan connections.
 - **2026-09-15** — [v1.0.3](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.0.3): security — access-code tokens expire, render-service network policy, pinned audio connections, Next.js RCE patch.
 - **2026-09-14** — [v1.0.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.0.2): security — SSRF and DNS-rebinding fixes, classroom overwrite fix.
 - **2026-09-06** — [v1.0.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.0.1): security and stability; tightens two defaults.
-- **2026-08-27** — **v1.0.0**: agent workbench, durable sessions, reusable skills, session materials, provider-neutral capabilities.
-
-<details>
-<summary>Earlier releases</summary>
-
+- **2026-08-27** — [v1.0.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.0.0): agent workbench, durable sessions, reusable skills, session materials, provider-neutral capabilities.
 - **2026-08-14** — [v0.3.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.3.2): video export hardening, server-backed persistence and asset registry, `@openmaic/generation`, four new locales, FunASR.
 - **2026-07-21** — [v0.3.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.3.1): one-click MP4 export, direct slide editing, smarter "Edit with AI", expanded document parsing.
 - **2026-06-28** — [v0.3.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.3.0): PBL v2, "Edit with AI" editor agent, `@openmaic/*` SDKs on npm, relicensed to MIT.
 - **2026-06-02** — [v0.2.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.2.2): MAIC Editor Pro Mode, editable outlines, offline classroom export.
 - **2026-04-26** — [v0.2.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.2.1): VoxCPM2 TTS with voice cloning, per-model thinking config, course completion page.
-- **2026-04-20** — **v0.2.0**: Deep Interactive Mode — 3D, simulations, games, mind maps, online programming.
+- **2026-04-20** — [v0.2.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.2.0): Deep Interactive Mode — 3D, simulations, games, mind maps, online programming.
 - **2026-04-14** — [v0.1.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.1.1): language inference, ACCESS_CODE, classroom ZIP export/import, Ollama.
 - **2026-03-26** — [v0.1.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.1.0): discussion TTS, immersive mode, keyboard shortcuts.
 
@@ -371,10 +376,10 @@ Use a long random value, at least 16 characters from a random generator: it is t
 
 ### Optional: Agent workbench and runtime
 
-The Pro workbench, a course-building surface entered from the home page, is off by default. Turn on its build-time entry point and the server runtime; it uses the same PostgreSQL as the rest of the app:
+The workbench, a course-building surface entered from the home page, is off by default. Turn on its build-time entry point and the server runtime; it uses the same PostgreSQL as the rest of the app:
 
 ```env
-NEXT_PUBLIC_PRO_WORKBENCH_ENABLED=true
+NEXT_PUBLIC_WORKBENCH_ENABLED=true
 OPENMAIC_AGENT_RUNTIME_ENABLED=true
 DATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic
 ```
@@ -533,18 +538,21 @@ Without `openmaic.yml`, the legacy `TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
 
 ## ✨ Features
 
-### Agent Workbench and Pro Mode (v1.0.0)
+### Agent Workbench (v1.0.0)
 
 The workbench adds a conversational course-building agent to OpenMAIC.
 Its durable sessions can be resumed after a worker restart, accept follow-up
 instructions while running, and stream a replayable event history to the chat
 surface.
 
-Open it from the Pro control on the home page. The workspace combines a
-transient, collapsible folders/conversations rail with a chat pane and a
-classroom pane whose open courses stay in tabs. Workspace controls return to
-classic mode, and either entry remains gated by the public workbench flag plus
-the configured server runtime.
+Where it is enabled, the workbench is the home page (`/`, also at
+`/workspace`). Its rail carries search, My courses, the knowledge base, the
+conversation and course lists, and an account menu with the language, theme,
+model settings and project links; beside it sit a chat pane and a classroom
+pane whose open courses stay in tabs. A classroom opens full screen with
+Learn | Edit, and a standalone classroom page opens in the workspace from its
+collapse button. Every entry remains gated by the public workbench flag plus
+the configured server runtime; with it off, the classic home page is unchanged.
 
 The agent works through explicit, validated tools rather than editing opaque
 blobs:
@@ -966,7 +974,7 @@ OpenMAIC/
 │   │   └── components/element/ #     Element renderers (text, image, shape, table, chart …)
 │   ├── scene-renderers/        #   Quiz, Interactive, PBL scene renderers
 │   ├── generation/             #   Lesson generation toolbar & progress
-│   ├── workbench/              #   Pro workbench conversation and course-reference UI
+│   ├── workbench/              #   Workbench conversation and course-reference UI
 │   ├── chat/                   #   Chat area & session management
 │   ├── settings/               #   Settings panel (providers, TTS, ASR, media …)
 │   ├── whiteboard/             #   SVG-based whiteboard drawing

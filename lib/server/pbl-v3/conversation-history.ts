@@ -1,8 +1,36 @@
 import 'server-only';
 import type { Queryable } from '@openmaic/storage/agent-session/pg';
 import type { PersistedAgentSessionEvent } from '@openmaic/storage';
+import type { LearningView } from '@/lib/pbl/v3/types';
 
 export const CONVERSATION_BYTES = 512 * 1024;
+
+type HistorySource = NonNullable<LearningView['conversationHistory']>[number];
+
+/** List saved conversations for the whole study without loading their messages. */
+export async function readConversationSources(
+  db: Queryable,
+  studyId: string,
+  ownerId: string,
+  activeSessionId?: string,
+): Promise<HistorySource[]> {
+  const { rows } = await db.query<Omit<HistorySource, 'milestoneId'> & { contextKey: string }>(
+    `SELECT r.session_id AS "sessionId", r.role, r.context_key AS "contextKey", e.seq AS through
+     FROM pbl_v3_roles r JOIN agent_sessions a ON a.id=r.session_id
+     CROSS JOIN LATERAL (
+       SELECT seq FROM agent_session_events WHERE session_id=a.id ORDER BY seq DESC LIMIT 1
+     ) e
+     WHERE r.study_id=$1 AND a.owner_id=$2 AND a.deleted_at IS NULL
+     ORDER BY (r.session_id=$3) DESC NULLS LAST, r.context_key DESC,
+       CASE r.role WHEN 'discussion' THEN 1 WHEN 'planner' THEN 2 WHEN 'coder' THEN 3 ELSE 4 END`,
+    [studyId, ownerId, activeSessionId ?? null],
+  );
+  return rows.map(({ contextKey, through, ...source }) => ({
+    ...source,
+    through: Number(through),
+    ...(contextKey === 'project' ? {} : { milestoneId: contextKey }),
+  }));
+}
 
 // Local empty stops and tool-call-only frames have no learner-visible model content.
 const visibleContent = (alias: string) => `${alias}.data->'message'->'content' @?

@@ -122,7 +122,12 @@ const decisionDefinitionSchema = z.object({
   responseType: z.enum(['choice', 'text']).optional(),
   requiresRationale: z.boolean().optional(),
   options: z.array(
-    z.object({ id: nonEmptyString, label: nonEmptyString, summary: nonEmptyString }),
+    z.object({
+      id: nonEmptyString,
+      label: nonEmptyString,
+      summary: nonEmptyString,
+      previewLabel: z.string().trim().min(1).max(80).optional(),
+    }),
   ),
   rubricAnchor: nonEmptyString,
   gatesGlobs: z.array(nonEmptyString),
@@ -206,6 +211,13 @@ const milestoneSchema = z
     optional: z.literal(false).default(false),
     title: nonEmptyString,
     goal: nonEmptyString.optional(),
+    shareResult: z
+      .object({
+        title: nonEmptyString.max(80),
+        description: nonEmptyString.max(160),
+      })
+      .strict()
+      .optional(),
     teaching: z
       .object({
         projectContext: nonEmptyString.optional(),

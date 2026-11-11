@@ -14,6 +14,8 @@ import { PgAssetStore, ensureAssetSchema } from '@openmaic/storage/asset/pg';
 import { PgAssetByteStore } from '@openmaic/storage/asset/pg-bytes';
 import { PgDocumentStore, ensureDocumentSchema } from '@openmaic/storage/document/pg';
 import { ensureStageMetaSchema, claimStageMeta } from '@/lib/persistence/stage-meta';
+import { createOwnerBoundDocumentStore } from '@/lib/persistence/owner-bound-document-store';
+import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import { ensurePBLProjectSchema } from '@/lib/persistence/pbl-projects';
 import { installProjectPackage } from '@/lib/server/pbl-v3/project-resolver';
 import {
@@ -394,9 +396,11 @@ const principal: OwnerPrincipal = {
   ownerId: 'learner-a',
   kind: 'user',
   assurance: 'verified',
-  roles: new Set(['sandbox:use']),
+  roles: new Set(),
 };
 const project = installedProject({ id: 'greeting-python', version: '1.0.0' });
+// Other scenarios mutate the catalog project; deletion probes need an independent package.
+const deletionPackageFixture = packageBuiltin(project);
 let studyId: string;
 async function command(type: string, payload: Record<string, unknown> = {}) {
   const row = await store.get(studyId, principal.ownerId);
@@ -1534,6 +1538,10 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             );
             await invoke(config, 'request_skill_review', { question: 'Ready to begin?' });
           });
+        const finalRecap =
+          stage.kind === 'mentor_say' &&
+          stage.skill === 'recap' &&
+          position.milestoneIndex === selected.definition.milestones.length - 1;
         const parts = stage.kind === 'produce' ? 4 : 3;
         for (let part = 0; part < parts; part++)
           await roleTurn(
@@ -1543,6 +1551,30 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
                 ? 'Ready, please begin teaching.'
                 : 'Please begin.',
             async (config) => {
+              const finishRecap = finalRecap && part === parts - 1;
+              if (finishRecap) {
+                expect(JSON.parse(await config.liveContext())).toMatchObject({
+                  artifactApprovalRequired: false,
+                  feedbackSource: 'pending_review_reply',
+                });
+                const reads = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'readText');
+                try {
+                  await expect(
+                    invoke(config, 'complete_stage', {
+                      studentFeedback: 'The learner is ready to finish.',
+                    }),
+                  ).rejects.toThrow('必须完成各段');
+                  await expect(
+                    invoke(config, 'read_next_skill', {
+                      studentFeedback: 'The learner reflected on this work.',
+                      reuseFeedback: true,
+                    }),
+                  ).rejects.toThrow('只能沿用');
+                  expect(reads).not.toHaveBeenCalled();
+                } finally {
+                  reads.mockRestore();
+                }
+              }
               const section = await invoke(
                 config,
                 'read_next_skill',
@@ -1553,6 +1585,19 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
                     : {},
               );
               expect(JSON.stringify(section)).not.toContain('PBL_RESULT');
+              if (finishRecap) {
+                expect(JSON.stringify(section)).toContain('verified_feedback');
+                expect(JSON.parse(await config.liveContext())).toMatchObject({
+                  nextSection: null,
+                  feedbackSource: 'verified_feedback',
+                });
+                await invoke(config, 'complete_stage', {
+                  studentFeedback: 'The learner confirmed understanding of the completed work.',
+                  reuseFeedback: true,
+                });
+                expect(config.isTurnComplete()).toBe(true);
+                return;
+              }
               if (part === 0 && write && !repairEmptyPlan) {
                 const row = await store.get(id, principal.ownerId);
                 const current = await (
@@ -1582,6 +1627,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
               expect(config.isTurnComplete()).toBe(true);
             },
           );
+        if (finalRecap) return;
         if (repairEmptyPlan && write)
           await roleTurn('I checked this part and approve the current version.', async (config) => {
             await expect(
@@ -4755,6 +4801,61 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     15_000,
   );
 
+  it('opens earlier milestone history without mixing it into the live transcript', async () => {
+    const lab = installedProject({ id: 'greeting-python-lab', version: '1.2.0' });
+    const study = await unpreparedStudy(lab);
+    const [first, second] = lab.definition.milestones;
+    const position = { milestoneId: second.id, milestoneIndex: 1, stageIndex: 0 };
+    await pool.query(
+      "UPDATE pbl_v3_studies SET state=jsonb_set(state,'{position}',$2::jsonb) WHERE id=$1",
+      [study.id, JSON.stringify(position)],
+    );
+    const addDiscussion = async (milestoneId: string, text: string) => {
+      const sessionId = `history-${randomUUID()}`;
+      await agents.createSession({
+        id: sessionId,
+        ownerId: principal.ownerId,
+        stageId: 'classroom',
+        prompt: 'Teaching history',
+        status: 'succeeded',
+      });
+      await pool.query(
+        `INSERT INTO pbl_v3_roles(session_id,study_id,role,context_key,stage_key)
+         VALUES($1,$2,'discussion',$3,$4)`,
+        [sessionId, study.id, milestoneId, `${milestoneId}:0`],
+      );
+      await agents.appendControlEvent(sessionId, {
+        ts: Date.now(),
+        type: 'user_message',
+        data: { text },
+      });
+      return {
+        sessionId,
+        milestoneId,
+        role: 'discussion',
+        through: await agents.lastEventSeq(sessionId),
+      };
+    };
+    const older = await addDiscussion(first.id, 'Earlier learner message');
+    const current = await addDiscussion(second.id, 'Current learner message');
+    const view = await learningView(principal, study.id, { passive: true });
+    expect(view.conversationHistory).toEqual([current, older]);
+    expect(JSON.stringify(view.conversation)).toContain('Current learner message');
+    expect(JSON.stringify(view.conversation)).not.toContain('Earlier learner message');
+
+    const { conversationPage } = await import('@/lib/server/pbl-v3/conversation-page');
+    const page = await conversationPage(
+      principal,
+      new URLSearchParams({
+        id: study.id,
+        sessionId: older.sessionId,
+        through: String(older.through),
+      }),
+    );
+    expect(JSON.stringify(page.conversation)).toContain('Earlier learner message');
+    expect((await store.get(study.id, principal.ownerId)).state.position).toEqual(position);
+  });
+
   it('bounds a multi-call turn and pages every saved message without replaying snapshots', async () => {
     const study = await freshStudy();
     onTestFinished(async () => {
@@ -4833,6 +4934,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       sessionId: queued.sessionId,
       through,
       role: 'discussion',
+      milestoneId: view.state.position.milestoneId,
     });
 
     // New updates must not move the frozen history window or change its cursors.
@@ -5250,14 +5352,9 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     await expect(command('next')).rejects.toThrow('not available');
     await runTools('Please help me fix the failed greeting test.', async (config) => {
       expect(config.systemPrompt).toContain('observed test failure');
+      expect(config.systemPrompt).toContain('repair the permitted source directly');
+      expect(config.systemPrompt).toContain('Do not require a PLAN.md edit');
       const current = await service.readText(environmentId, 'greeting.py');
-      await expect(
-        invoke(config, 'write_file', {
-          path: 'PLAN.md',
-          text: 'overwrite',
-          expectedHash: digest(''),
-        }),
-      ).rejects.toThrow('cannot write');
       await invoke(config, 'write_file', {
         path: 'greeting.py',
         text: code + '\n# repaired\n',
@@ -7532,6 +7629,105 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       original + '# learner repair\n',
     );
   });
+  it('retests a learner-amended plan and restores its passing checkpoint', async () => {
+    const previousStudyId = studyId;
+    const previousEvaluation = project.evaluations.greeting!;
+    onTestFinished(() => {
+      studyId = previousStudyId;
+      project.evaluations.greeting = previousEvaluation;
+    });
+    studyId = (await freshStudy()).id;
+    const row = await store.get(studyId, principal.ownerId);
+    const environmentId = row.environment_id!;
+    const service = await SandboxService.forOwner(principal);
+    const originalPlan = await service.readText(environmentId, 'PLAN.md');
+    const originalCode = await service.readText(environmentId, 'greeting.py');
+    const originalPlanId = randomUUID();
+    const collected = row.state.collected.greeting!;
+    row.state.position.stageIndex = 4;
+    row.state.milestones[0]!.stageIndex = 4;
+    collected.plan = {
+      kind: 'plan',
+      id: originalPlanId,
+      milestoneId: 'greeting',
+      revision: 0,
+      contentHash: digest(originalPlan),
+      contentLength: originalPlan.length,
+    };
+    collected.planReviewCompleted = true;
+    collected.code = {
+      kind: 'code',
+      id: randomUUID(),
+      milestoneId: 'greeting',
+      revision: 0,
+      workspaceRevisionId: 'before-repair',
+      value: 'Reviewed sandbox files',
+    };
+    await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+    project.evaluations.greeting = {
+      ...previousEvaluation,
+      cases: [
+        {
+          id: 'plan-record',
+          label: 'Plan record',
+          argv: [
+            'python3',
+            '-c',
+            'from pathlib import Path; print("pass" if "CHOICE = format" in Path("PLAN.md").read_text() else "missing")',
+          ],
+          stdout: 'pass\n',
+        },
+      ],
+    };
+    const save = (text: string, expectedHash: string) =>
+      command('save', { path: 'PLAN.md', text, expectedHash });
+    await expect(save('Early plan edit', digest(originalPlan))).rejects.toThrow('not available');
+    await command('evaluate');
+    await command('collect');
+    expect((await learningView(principal, studyId)).state.collected.greeting!.tests?.status).toBe(
+      'failed',
+    );
+    const learnerEdit = originalPlan + '\nClarify the chosen formatting approach.\n';
+    await save(learnerEdit, digest(originalPlan));
+    await expect(save('Stale plan edit', digest(originalPlan))).rejects.toThrow('changed');
+    const amendedPlan = learnerEdit + '\nCHOICE = format\n';
+    await runTools('Please add my selected format record to PLAN.md.', async (config) => {
+      await invoke(config, 'read_file', { path: 'PLAN.md' });
+      await invoke(config, 'write_file', {
+        path: 'PLAN.md',
+        text: amendedPlan,
+        expectedHash: digest(learnerEdit),
+      });
+    });
+    await command('evaluate');
+    await expect(save('Edit during evaluation', digest(amendedPlan))).rejects.toMatchObject({
+      reason: 'WORKBENCH_ACCESS_DENIED',
+    });
+    await command('collect');
+    const tested = (await learningView(principal, studyId)).state.collected.greeting!;
+    expect(tested.plan).toMatchObject({ contentHash: digest(amendedPlan), revision: 1 });
+    expect(tested.plan!.id).not.toBe(originalPlanId);
+    expect(tested.tests).toMatchObject({ status: 'passed', planArtifactId: tested.plan!.id });
+    expect(tested.planReviewCompleted).toBe(false);
+    expect(await service.readText(environmentId, 'greeting.py')).toBe(originalCode);
+    expect(
+      (
+        await pool.query(
+          "SELECT actor FROM pbl_v3_evidence WHERE study_id=$1 AND kind='file-edit' AND detail->>'path'='PLAN.md' ORDER BY id",
+          [studyId],
+        )
+      ).rows,
+    ).toEqual([{ actor: 'learner' }, { actor: 'coder' }]);
+    await expect(save('Late plan edit', digest(amendedPlan))).rejects.toThrow('not available');
+    await command('next');
+    mocked.missing.add(environmentId);
+    await rm(join(mocked.root, environmentId), { recursive: true });
+    await command('prepare');
+    const restored = await store.get(studyId, principal.ownerId);
+    expect(restored.state.position.stageIndex).toBe(5);
+    expect(restored.state.collected.greeting!.tests?.id).toBe(tested.tests!.id);
+    expect(await service.readText(restored.environment_id!, 'PLAN.md')).toBe(amendedPlan);
+  });
   it('integrates scoped files, command evidence, terminal controls and recovery without project previews', async () => {
     const fresh = await freshStudy();
     let row = await store.get(fresh.id, principal.ownerId);
@@ -7800,6 +7996,14 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           bundle.files[document] = `PACKAGED REFERENCE ${binding.stage}`;
       }
       const java = descriptor.runtime.profile === 'java';
+      if (java)
+        descriptor.runtime.application = {
+          title: 'Java preview',
+          description: 'Exercise the imported Java launcher.',
+          argv: ['java', '-cp', '/tmp/pbl-project-build', 'Greeting', 'Ada'],
+          port: 8000,
+          healthPath: '/',
+        };
       bundle.files['rubric/expected.txt'] = 'Hello, Ada!\nHello, Lin!\n';
       bundle.files['tests/private.py'] = java
         ? 'import subprocess,sys\nfor name in ["  Ada  ","Lin"]: print(subprocess.run(["java","-cp",sys.argv[1],"Greeting",name],check=True,text=True,stdout=subprocess.PIPE).stdout.strip())\n'
@@ -7950,6 +8154,35 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       expect(await service.listFiles(environmentId)).not.toEqual(
         expect.arrayContaining([expect.objectContaining({ path: 'tests/private.py' })]),
       );
+      if (java) {
+        vi.stubEnv('OPENMAIC_SECRET_KEY', 'local-secret-'.repeat(4));
+        vi.stubEnv('OPENMAIC_PREVIEW_GATEWAY_KEY', 'local-gateway-'.repeat(4));
+        vi.stubEnv('OPENMAIC_APP_ORIGIN', 'https://app.example.com');
+        vi.stubEnv('OPENMAIC_SANDBOX_PREVIEW_ORIGIN', 'https://{id}.preview-example.net');
+        const row = await store.get(created.id, principal.ownerId);
+        const request = {
+          studyId: row.id,
+          id: randomUUID(),
+          environmentId,
+          revision: row.revision,
+          epoch: await service.workspaceEpoch(environmentId),
+          action: 'open',
+        };
+        const success = { state: 'stopped', commandState: 'exited', exitCode: 0 };
+        expect(await applicationRequest(principal, request)).toMatchObject(success);
+        const extra = join(mocked.root, environmentId, 'src/Added.java');
+        try {
+          // A new launch sees the added source. Replaying the same ID retains
+          // the earlier command fingerprint instead of rebuilding its arguments.
+          await writeFile(extra, 'class Added { invalid Java }');
+          expect(await applicationRequest(principal, request)).toMatchObject(success);
+          expect(
+            await applicationRequest(principal, { ...request, id: randomUUID() }),
+          ).toMatchObject({ state: 'failed', output: expect.stringContaining('Added.java') });
+        } finally {
+          await rm(extra, { force: true });
+        }
+      }
       let evaluations = 0;
       while ((await store.get(created.id, principal.ownerId)).state.status !== 'completed') {
         const row = await store.get(created.id, principal.ownerId),
@@ -7979,6 +8212,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
               const opening = JSON.stringify(await invoke(config, 'read_next_skill'));
               expect(opening).not.toContain(`PACKAGED SKILL ${key}`);
               expect(config.systemPrompt).not.toContain(`PACKAGED REFERENCE ${key}`);
+              expect(await config.liveContext()).not.toContain(`PACKAGED REFERENCE ${key}`);
               await invoke(config, 'request_skill_review', { question: 'Ready to begin?' });
             });
           for (let part = 0; part < teaching.sections.length; part++) {
@@ -8005,9 +8239,15 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
                       : {}),
                 });
                 expect(JSON.stringify(section)).toContain(`PACKAGED SKILL ${key}`);
-                if (welcome && part === 0)
-                  expect(JSON.stringify(section)).toContain(`PACKAGED REFERENCE ${key}`);
-                else expect(config.systemPrompt).toContain(`PACKAGED REFERENCE ${key}`);
+                expect(JSON.stringify(section)).not.toContain(`PACKAGED REFERENCE ${key}`);
+                const liveContext = await config.liveContext();
+                if (welcome && part === 0) {
+                  expect(config.systemPrompt).not.toContain(`PACKAGED REFERENCE ${key}`);
+                  expect(liveContext).toContain(`PACKAGED REFERENCE ${key}`);
+                } else {
+                  expect(config.systemPrompt).toContain(`PACKAGED REFERENCE ${key}`);
+                  expect(liveContext).not.toContain(`PACKAGED REFERENCE ${key}`);
+                }
                 if (part === 0 && stage.kind === 'produce') {
                   const path =
                     stage.writes === 'plan'
@@ -8112,6 +8352,438 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       [id, pblIdleTimeoutMs() + pblArchiveFailureGraceMs()],
     );
   }
+
+  async function packagedStudyForDeletion() {
+    const bundle = structuredClone(deletionPackageFixture);
+    const descriptor: ProjectDescriptor = JSON.parse(bundle.files['project.json']);
+    descriptor.id = descriptor.definition.id = `deleted-course-${randomUUID()}`;
+    bundle.files['project.json'] = JSON.stringify(descriptor);
+    const ref = await installProjectPackage(
+      principal.ownerId,
+      indexProjectFiles(descriptor.id, descriptor.version, bundle.files),
+    );
+    const stageId = randomUUID();
+    const documents = createOwnerBoundDocumentStore<
+      import('@/lib/types/stage').Scene,
+      import('@/lib/types/stage').Stage
+    >({
+      pool,
+      ownerId: principal.ownerId,
+      validateScene: validateAppScene,
+      validateStage: validateAppStage,
+    });
+    await documents.saveDocument({
+      stage: { id: stageId, name: 'Deleted course', createdAt: 1, updatedAt: 1 },
+      scenes: [
+        {
+          id: 'project',
+          stageId,
+          type: 'pbl',
+          title: 'Project',
+          order: 0,
+          content: { type: 'pbl', projectV3: ref },
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    });
+    const created = await store.create(
+      {
+        ownerId: principal.ownerId,
+        stageId,
+        sceneId: 'project',
+        projectId: ref.id,
+        version: ref.version,
+        projectRef: ref,
+      },
+      startOrchestration(descriptor.definition),
+    );
+    onTestFinished(() => releasePreparationFixtures([created.id]));
+    await commandStudy(principal, created.id, {
+      id: randomUUID(),
+      revision: created.revision,
+      type: 'prepare',
+    });
+    await commandStudy(principal, created.id, {
+      id: randomUUID(),
+      revision: (await store.get(created.id, principal.ownerId)).revision,
+      type: 'checkpoint',
+    });
+    return { row: await store.get(created.id, principal.ownerId), documents, ref };
+  }
+
+  it('keeps a deleted built-in sandbox leased while a command is still protected', async () => {
+    const priorLifetime = mocked.lifetimeMs;
+    mocked.lifetimeMs = 60_000;
+    onTestFinished(() => {
+      mocked.lifetimeMs = priorLifetime;
+    });
+    const fresh = await freshStudy();
+    onTestFinished(() => releasePreparationFixtures([fresh.id]));
+    const row = await store.get(fresh.id, principal.ownerId);
+    const environmentId = row.environment_id!;
+    const documents = createOwnerBoundDocumentStore<
+      import('@/lib/types/stage').Scene,
+      import('@/lib/types/stage').Stage
+    >({
+      pool,
+      ownerId: principal.ownerId,
+      validateScene: validateAppScene,
+      validateStage: validateAppStage,
+    });
+    await documents.saveDocument({
+      stage: { id: row.stage_id, name: 'Deleted built-in course', createdAt: 1, updatedAt: 1 },
+      scenes: [
+        {
+          id: row.scene_id,
+          stageId: row.stage_id,
+          type: 'pbl',
+          title: 'Project',
+          order: 0,
+          content: { type: 'pbl', projectV3: project.ref },
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    });
+    const commandId = randomUUID();
+    const running = { id: commandId, state: 'running', stdout: '', stderr: '', exitCode: null };
+    await writeFile(
+      join(mocked.root, environmentId, `.command-${commandId}`),
+      JSON.stringify(running),
+    );
+    await pool.query(
+      `INSERT INTO sandbox_commands(environment_id,id,request_fingerprint,result_json)
+       VALUES($1,$2,'fixture',$3)`,
+      [environmentId, commandId, JSON.stringify(running)],
+    );
+    // A command admitted near the previous renewal still needs the next maintenance
+    // pass to extend a short provider lease, even though learner inactivity is longer.
+    let elapsed = 25_000,
+      expiresAt = 40_000;
+    const originalInspect = E2BCompatibleSandboxProvider.prototype.inspect;
+    const inspect = vi
+      .spyOn(E2BCompatibleSandboxProvider.prototype, 'inspect')
+      .mockImplementation(async function (this: E2BCompatibleSandboxProvider, ...args) {
+        if (args[0] === environmentId && elapsed >= expiresAt) return null;
+        return originalInspect.apply(this, args);
+      });
+    const originalRenew = E2BCompatibleSandboxProvider.prototype.renew;
+    const renew = vi
+      .spyOn(E2BCompatibleSandboxProvider.prototype, 'renew')
+      .mockImplementation(async function (this: E2BCompatibleSandboxProvider, ...args) {
+        await originalRenew.apply(this, args);
+        if (args[0] === environmentId) expiresAt = Math.max(expiresAt, elapsed + args[2]);
+      });
+    onTestFinished(() => {
+      inspect.mockRestore();
+      renew.mockRestore();
+    });
+    await documents.deleteDocument(row.stage_id);
+    await maintainStudy(store, row.id, principal.ownerId);
+    elapsed = 45_000;
+    expect(
+      await (await SandboxService.forOwner(principal)).reconcile(environmentId, false),
+    ).toMatchObject({ state: 'running' });
+  });
+
+  it('reclaims a deleted packaged course with an admitted evaluation without collecting it', async () => {
+    const { row, documents } = await packagedStudyForDeletion();
+    row.state.position.stageIndex = 4;
+    row.state.milestones[0]!.stageIndex = 4;
+    const testing = await store.transaction((db) =>
+      store.commit(db, row, { state: row.state, events: [] }),
+    );
+    await commandStudy(principal, row.id, {
+      id: randomUUID(),
+      revision: testing.revision,
+      type: 'evaluate',
+    });
+    const admitted = await store.get(row.id, principal.ownerId);
+    expect(admitted.evaluation).not.toBeNull();
+    const service = await SandboxService.forOwner(principal);
+    const checkpoint = await service.checkpoint(row.environment_id!);
+    await documents.deleteDocument(row.stage_id);
+    await ageStudy(row.id);
+    await maintainLearningEnvironments();
+    expect(await service.get(row.environment_id!)).toMatchObject({ state: 'destroyed' });
+    const retired = (await pool.query('SELECT * FROM pbl_v3_studies WHERE id=$1', [row.id]))
+      .rows[0];
+    expect(retired.evaluation).toEqual(admitted.evaluation);
+    expect(retired.state).toEqual(admitted.state);
+    expect(retired.revision).toBe(admitted.revision);
+    expect(await service.checkpoint(row.environment_id!)).toEqual(checkpoint);
+  });
+
+  it.each(['retained', 'withdrawn', 'removed'] as const)(
+    'reclaims deleted packaged-course sandboxes with package references %s',
+    async (references) => {
+      const { row, documents, ref } = await packagedStudyForDeletion();
+      const environmentId = row.environment_id!;
+      const service = await SandboxService.forOwner(principal);
+      const checkpoint = await service.checkpoint(environmentId);
+      expect(checkpoint).not.toBeNull();
+      await writeFile(
+        join(mocked.root, environmentId, 'unsaved.txt'),
+        'After the last checkpoint.',
+      );
+      await pool.query('UPDATE pbl_v3_studies SET workspace_dirty_at=now() WHERE id=$1', [row.id]);
+      if (references === 'retained') {
+        // Cover a tombstone even before the course's assets have been withdrawn.
+        await pool.query('UPDATE stage_meta SET deleted_at=now() WHERE stage_id=$1', [
+          row.stage_id,
+        ]);
+      } else {
+        await documents.deleteDocument(row.stage_id);
+        expect(
+          (await pool.query('SELECT 1 FROM document_asset_refs WHERE stage_id=$1', [row.stage_id]))
+            .rows,
+        ).toHaveLength(0);
+        if (references === 'removed')
+          await pool.query('DELETE FROM asset_entries WHERE id=$1', [ref.assetId]);
+      }
+      await expect(store.get(row.id, principal.ownerId)).rejects.toMatchObject({
+        code: 'PBL_PROJECT_UNAVAILABLE',
+      });
+      await ageStudy(row.id);
+      await maintainLearningEnvironments();
+      expect(await service.get(environmentId)).toMatchObject({ state: 'destroyed' });
+      expect(mocked.missing.has(environmentId)).toBe(true);
+      expect(await service.checkpoint(environmentId)).toEqual(checkpoint);
+      const retired = (await pool.query('SELECT * FROM pbl_v3_studies WHERE id=$1', [row.id]))
+        .rows[0];
+      expect(retired.state).toEqual(row.state);
+      expect(retired.revision).toBe(row.revision);
+      expect(retired.environment_recovery).toEqual(row.environment_recovery);
+      expect(retired.idle_turn_cleanup).toMatchObject({ environmentId, releasing: true });
+      const creates = mocked.creates.length;
+      await expect(learningView(principal, row.id)).rejects.toMatchObject({
+        code: 'PBL_PROJECT_UNAVAILABLE',
+      });
+      await expect(
+        commandStudy(principal, row.id, {
+          id: randomUUID(),
+          revision: row.revision,
+          type: 'prepare',
+        }),
+      ).rejects.toMatchObject({ code: 'PBL_PROJECT_UNAVAILABLE' });
+      await maintainStudy(store, row.id, principal.ownerId);
+      expect(mocked.creates).toHaveLength(creates);
+    },
+  );
+
+  it('protects recent use and active Agent work before reclaiming a deleted course sandbox', async () => {
+    const { row, documents } = await packagedStudyForDeletion();
+    const queued = (await commandStudy(principal, row.id, {
+      id: randomUUID(),
+      revision: row.revision,
+      type: 'chat',
+      text: 'Help me start.',
+    })) as { sessionId: string };
+    const claim = await agents.claimNextSession('deleted-course-worker', process.pid, {
+      sessionId: queued.sessionId,
+      leaseTtlMs: 10_000,
+      maxAttempts: 5,
+    });
+    await documents.deleteDocument(row.stage_id);
+    await ageStudy(row.id);
+    const service = await SandboxService.forOwner(principal);
+    await maintainStudy(store, row.id, principal.ownerId);
+    expect(await service.get(row.environment_id!)).toMatchObject({ state: 'running' });
+    expect((await agents.getSession(queued.sessionId))?.status).toBe('running');
+    await agents.finishSession(queued.sessionId, 'deleted-course-worker', {
+      status: 'failed',
+      expectedAttempt: claim!.attempt,
+    });
+    await store.recordActivity(row.id, principal.ownerId);
+    await maintainStudy(store, row.id, principal.ownerId);
+    expect(await service.get(row.environment_id!)).toMatchObject({ state: 'running' });
+    await ageStudy(row.id);
+    await maintainStudy(store, row.id, principal.ownerId);
+    expect(await service.get(row.environment_id!)).toMatchObject({ state: 'destroyed' });
+    expect((await agents.getSession(queued.sessionId))?.status).toBe('failed');
+  });
+
+  it('retries a deleted course sandbox deletion by its original identity after a lost acknowledgement', async () => {
+    const { row, documents } = await packagedStudyForDeletion();
+    await documents.deleteDocument(row.stage_id);
+    await ageStudy(row.id);
+    const destroy = vi
+      .spyOn(E2BCompatibleSandboxProvider.prototype, 'destroy')
+      .mockImplementationOnce(async (id) => {
+        mocked.missing.add(id);
+        throw new Error('Delete acknowledgement lost');
+      });
+    onTestFinished(() => destroy.mockRestore());
+    await maintainStudy(store, row.id, principal.ownerId);
+    const service = await SandboxService.forOwner(principal);
+    expect(await service.get(row.environment_id!)).toMatchObject({ state: 'destroying' });
+    await maintainStudy(store, row.id, principal.ownerId);
+    expect(await service.get(row.environment_id!)).toMatchObject({ state: 'destroyed' });
+    expect(destroy.mock.calls).toEqual([
+      [row.environment_id, row.environment_id],
+      [row.environment_id, row.environment_id],
+    ]);
+  });
+
+  it('keeps deleted-course cleanup scoped to the study owner and bound environment', async () => {
+    const { row, documents } = await packagedStudyForDeletion();
+    const other = await freshStudy();
+    const otherRow = await store.get(other.id, principal.ownerId);
+    await documents.deleteDocument(row.stage_id);
+    await ageStudy(row.id);
+    await expect(maintainStudy(store, row.id, 'another-owner')).rejects.toMatchObject({
+      code: 'PBL_NOT_FOUND',
+    });
+    await expect(
+      maintainStudy(store, row.id, principal.ownerId, otherRow.environment_id!),
+    ).rejects.toMatchObject({ code: 'SANDBOX_NOT_FOUND' });
+    const service = await SandboxService.forOwner(principal);
+    expect(await service.get(otherRow.environment_id!)).toMatchObject({ state: 'running' });
+    expect(await service.get(row.environment_id!)).toMatchObject({ state: 'running' });
+    await maintainStudy(store, row.id, principal.ownerId);
+    expect(await service.get(row.environment_id!)).toMatchObject({ state: 'destroyed' });
+    expect(await service.get(otherRow.environment_id!)).toMatchObject({ state: 'running' });
+  });
+
+  it('reclaims a pending replacement after its packaged course is deleted', async () => {
+    const { row, documents } = await packagedStudyForDeletion();
+    mocked.missing.add(row.environment_id!);
+    mocked.loseCreateAck = mocked.hideDiscovery = true;
+    try {
+      await expect(
+        commandStudy(principal, row.id, {
+          id: randomUUID(),
+          revision: row.revision,
+          type: 'prepare',
+        }),
+      ).rejects.toThrow();
+    } finally {
+      mocked.loseCreateAck = mocked.hideDiscovery = false;
+    }
+    const pending = await store.get(row.id, principal.ownerId);
+    const replacement = pending.environment_recovery!.requestId;
+    expect(replacement).not.toBe(row.environment_id);
+    await documents.deleteDocument(row.stage_id);
+    await ageStudy(row.id);
+    const creates = mocked.creates.length;
+    await maintainStudy(store, row.id, principal.ownerId, replacement);
+    const service = await SandboxService.forOwner(principal);
+    expect(await service.get(replacement)).toMatchObject({ state: 'destroyed' });
+    expect(mocked.creates).toHaveLength(creates);
+    expect(
+      (await pool.query('SELECT environment_id FROM pbl_v3_studies WHERE id=$1', [row.id])).rows[0]
+        .environment_id,
+    ).toBe(row.environment_id);
+  });
+
+  it('waits for a live workbench command before releasing a deleted course sandbox', async () => {
+    const previousIdle = process.env.OPENMAIC_PBL_IDLE_TIMEOUT_MS;
+    vi.stubEnv('OPENMAIC_PBL_IDLE_TIMEOUT_MS', '60000');
+    onTestFinished(() => {
+      vi.stubEnv('OPENMAIC_PBL_IDLE_TIMEOUT_MS', previousIdle);
+    });
+    const { row, documents } = await packagedStudyForDeletion();
+    const commandId = randomUUID();
+    const result = { id: commandId, state: 'running', stdout: '', stderr: '', exitCode: null };
+    const commandPath = join(mocked.root, row.environment_id!, `.command-${commandId}`);
+    await writeFile(commandPath, JSON.stringify(result));
+    await pool.query(
+      `INSERT INTO sandbox_commands(environment_id,id,request_fingerprint,result_json,created_at)
+       VALUES($1,$2,'fixture',$3,now()-interval '61 seconds')`,
+      [row.environment_id, commandId, JSON.stringify(result)],
+    );
+    await documents.deleteDocument(row.stage_id);
+    await pool.query(
+      "UPDATE pbl_v3_studies SET last_used_at=now()-interval '61 seconds' WHERE id=$1",
+      [row.id],
+    );
+    const service = await SandboxService.forOwner(principal);
+    await maintainStudy(store, row.id, principal.ownerId);
+    expect(await service.get(row.environment_id!)).toMatchObject({ state: 'running' });
+    await writeFile(commandPath, JSON.stringify({ ...result, state: 'exited', exitCode: 0 }));
+    await maintainStudy(store, row.id, principal.ownerId);
+    expect(await service.get(row.environment_id!)).toMatchObject({ state: 'destroyed' });
+  });
+
+  it('bounds retention for an unacknowledged application on a deleted course', async () => {
+    const { row, documents } = await packagedStudyForDeletion();
+    const service = await SandboxService.forOwner(principal);
+    const environmentId = row.environment_id!;
+    const scope = {
+      ownerId: principal.ownerId,
+      workspaceId: learningWorkspaceId(row.id),
+      environmentIds: () => [environmentId],
+      operations: ['preview', 'command'] as const,
+    };
+    const commandId = randomUUID();
+    const start = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'startCommand');
+    onTestFinished(() => start.mockRestore());
+    const dispatch = await withLearningWorkspaceAccess(scope, () =>
+      service.prepareApplicationCommand(environmentId, { requestId: commandId, command: ':' }, 0),
+    );
+    await documents.deleteDocument(row.stage_id);
+    await ageStudy(row.id);
+    await maintainStudy(store, row.id, principal.ownerId);
+    expect(await service.get(environmentId)).toMatchObject({ state: 'running' });
+    await expireArchiveGrace(row.id);
+    await maintainStudy(store, row.id, principal.ownerId);
+    expect(await service.get(environmentId)).toMatchObject({ state: 'destroyed' });
+    await expect(withLearningWorkspaceAccess(scope, dispatch)).rejects.toMatchObject({
+      code: 'SANDBOX_CONFLICT',
+    });
+    expect(await service.command(environmentId, commandId)).toMatchObject({ state: 'cancelled' });
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it('gives terminal cleanup a fresh grace after execution settles on a deleted course', async () => {
+    const { row, documents } = await packagedStudyForDeletion();
+    row.state.position.stageIndex = 3;
+    row.state.milestones[0]!.stageIndex = 3;
+    const editing = await store.transaction((db) =>
+      store.commit(db, row, { state: row.state, events: [] }),
+    );
+    const service = await SandboxService.forOwner(principal);
+    const environmentId = row.environment_id!;
+    const terminal = (await workbenchCommand(principal, row.id, {
+      id: randomUUID(),
+      revision: editing.revision,
+      environmentId,
+      epoch: await service.workspaceEpoch(environmentId),
+      action: 'terminal',
+    })) as { id: string; state: string };
+    expect(terminal.state).toBe('running');
+    onTestFinished(() => {
+      mocked.terminals.delete(terminal.id);
+    });
+    await ageStudy(row.id);
+    const idle = await store.get(row.id, principal.ownerId);
+    await store.recordCheckpointFailure(idle, {
+      environmentId,
+      reason: 'execution-unsettled',
+      stage: 'execution',
+      retryable: true,
+      firstIdleFailureAt: new Date(Date.now() - pblArchiveFailureGraceMs() - 60_000).toISOString(),
+      dirtyAt: idle.workspace_dirty_at?.toISOString() ?? null,
+    });
+    await documents.deleteDocument(row.stage_id);
+    const close = vi
+      .spyOn(E2BCompatibleSandboxProvider.prototype, 'closeTerminal')
+      .mockRejectedValueOnce(new Error('Close acknowledgement lost'));
+    onTestFinished(() => close.mockRestore());
+    await maintainStudy(store, row.id, principal.ownerId);
+    expect(await service.get(environmentId)).toMatchObject({ state: 'running' });
+    const failure = (
+      await pool.query('SELECT checkpoint_failure FROM pbl_v3_studies WHERE id=$1', [row.id])
+    ).rows[0].checkpoint_failure;
+    expect(failure).toMatchObject({ stage: 'terminal', reason: 'execution-unsettled' });
+    expect(Date.parse(failure.firstIdleFailureAt)).toBeGreaterThan(
+      Date.now() - pblArchiveFailureGraceMs(),
+    );
+    await maintainStudy(store, row.id, principal.ownerId);
+    expect(await service.get(environmentId)).toMatchObject({ state: 'destroyed' });
+    expect(close).toHaveBeenCalledTimes(2);
+  });
   // Explicit lifecycle-release intent fixture. Healthy inactivity never creates this intent.
   async function stageExplicitCleanup(id: string, expired = false) {
     await pool.query(
@@ -11089,6 +11761,144 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         [environmentId, [applicationId, writerId]],
       );
       await releasePreparationFixtures([row.id]);
+    }
+  });
+
+  it('does not dispatch an application reservation cancelled before provider startup', async () => {
+    const fresh = await freshStudy();
+    const row = await store.get(fresh.id, principal.ownerId);
+    const environmentId = row.environment_id!;
+    const appId = randomUUID();
+    const service = await SandboxService.forOwner(principal);
+    const scope = {
+      ownerId: principal.ownerId,
+      workspaceId: learningWorkspaceId(row.id),
+      environmentIds: () => [environmentId],
+      operations: ['preview', 'command'] as const,
+    };
+    const start = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'startCommand');
+    try {
+      const dispatch = await withLearningWorkspaceAccess(scope, () =>
+        service.prepareApplicationCommand(environmentId, { requestId: appId, command: ':' }, 0),
+      );
+      expect(
+        (await service.listCommands(environmentId)).find((entry) => entry.id === appId),
+      ).toMatchObject({ purpose: 'application', state: 'unknown' });
+      expect(start).not.toHaveBeenCalled();
+      const cancelled = {
+        id: appId,
+        state: 'cancelled',
+        stdout: '',
+        stderr: '',
+        exitCode: null,
+        truncated: false,
+      };
+      await pool.query(
+        'UPDATE sandbox_commands SET result_json=$3 WHERE environment_id=$1 AND id=$2',
+        [environmentId, appId, JSON.stringify(cancelled)],
+      );
+      await expect(withLearningWorkspaceAccess(scope, dispatch)).resolves.toEqual(cancelled);
+      expect(start).not.toHaveBeenCalled();
+    } finally {
+      start.mockRestore();
+      await releasePreparationFixtures([fresh.id]);
+    }
+  }, 15000);
+
+  it('keeps a standalone application running through a real assessment and quiz entry', async () => {
+    const originalApplication = project.application;
+    const originalEvaluation = project.evaluations.greeting!;
+    project.application = {
+      title: 'Learner application',
+      description: 'A pinned frontend.',
+      argv: ['python3', 'greeting.py'],
+      frontendPath: 'greeting.py',
+      port: 8000,
+      healthPath: '/',
+    };
+    project.evaluations.greeting = {
+      cases: [
+        {
+          id: 'source-check',
+          argv: [
+            'python3',
+            '-c',
+            "from pathlib import Path; p=Path('greeting.py'); assert p.read_bytes(); p.write_text('private test change'); print('ok')",
+          ],
+          stdout: 'ok\n',
+        },
+      ],
+    };
+    const fresh = await freshStudy();
+    const row = await store.get(fresh.id, principal.ownerId);
+    const environmentId = row.environment_id!;
+    const applicationId = randomUUID();
+    const app = {
+      id: applicationId,
+      state: 'running',
+      stdout: '',
+      stderr: '',
+      exitCode: null,
+      truncated: false,
+    };
+    const service = await SandboxService.forOwner(principal);
+    const initialSource = await service.readText(environmentId, 'greeting.py');
+    try {
+      row.state.position.stageIndex = 4;
+      row.state.milestones[0]!.stageIndex = 4;
+      await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+      await writeFile(
+        join(mocked.root, environmentId, `.command-${applicationId}`),
+        JSON.stringify(app),
+      );
+      await pool.query(
+        "INSERT INTO sandbox_commands(environment_id,id,request_fingerprint,purpose,result_json) VALUES ($1,$2,'fixture','application',$3)",
+        [environmentId, applicationId, JSON.stringify(app)],
+      );
+      const before = await service.checkpoint(environmentId);
+      await store.exclusive(row.id, () =>
+        withLearningWorkspaceAccess(
+          {
+            ownerId: row.owner_id,
+            workspaceId: learningWorkspaceId(row.id),
+            environmentIds: () => [environmentId],
+            operations: ['checkpoint'],
+          },
+          () => saveStudyCheckpoint(service, row, undefined, true),
+        ),
+      );
+      expect((await service.checkpoint(environmentId))?.revision).toBe((before?.revision ?? 0) + 1);
+      expect(await service.command(environmentId, applicationId)).toEqual(app);
+      await fresh.send('evaluate');
+      expect((await learningView(principal, fresh.id)).evaluation).toMatchObject({
+        isolatedSources: true,
+      });
+      await fresh.send('collect');
+      expect(
+        (await store.get(fresh.id, principal.ownerId)).state.collected.greeting!.tests?.status,
+      ).toBe('passed');
+      const sourcePath = join(mocked.root, environmentId, 'greeting.py');
+      await writeFile(sourcePath, initialSource + '\n# changed after the assessment\n');
+      await expect(fresh.send('next')).rejects.toThrow('Files changed after review or testing');
+      await writeFile(sourcePath, initialSource);
+      await fresh.send('next');
+      expect((await store.get(fresh.id, principal.ownerId)).state.position.stageIndex).toBe(5);
+      await commandStudy(principal, fresh.id, {
+        id: randomUUID(),
+        revision: (await store.get(fresh.id, principal.ownerId)).revision,
+        type: 'quiz',
+        answers: project.definition.milestones[0]!.quiz.map((question) => question.answer),
+      });
+      expect(await service.command(environmentId, applicationId)).toEqual(app);
+      expect(await service.readText(environmentId, 'greeting.py')).toBe(initialSource);
+    } finally {
+      project.application = originalApplication;
+      project.evaluations.greeting = originalEvaluation;
+      await pool.query('DELETE FROM sandbox_commands WHERE environment_id=$1 AND id=$2', [
+        environmentId,
+        applicationId,
+      ]);
+      await releasePreparationFixtures([fresh.id]);
     }
   });
 

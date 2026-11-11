@@ -22,7 +22,9 @@ Use the application's existing configuration:
 - PostgreSQL through `DATABASE_URL`.
 - `OPENMAIC_AGENT_RUNTIME_ENABLED=true` and a configured `agent` model slot.
 - A configured shared sandbox provider and durable checkpoint storage.
-- Explicit single-user installation mode, or a host-verified user with `sandbox:use`.
+- Nothing per learner: any owner the deployment admits may start a project. See
+  [sandbox authorization](../../server/sandbox/README.md#authorization-and-limits) for the
+  caps that bound spend on a public deployment.
 
 Open `/pbl-v3` and choose a Java or Python sample. The classroom first shows the
 existing project Hero; Start/Continue uses the same web-fullscreen reveal as v2,

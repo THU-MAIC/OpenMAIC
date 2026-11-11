@@ -24,11 +24,27 @@ export function stageStep(stage: LearningView['stage']): string {
   return stage.kind;
 }
 
-/** Same-milestone destination; milestone boundaries retain the generic next action. */
+/** The next step within the current milestone. */
 export function nextLearningStep(view: Pick<LearningView, 'state' | 'milestones'>) {
   return view.milestones?.[view.state.position.milestoneIndex]?.stages[
     view.state.position.stageIndex + 1
   ];
+}
+
+/** A milestone handoff requires a real current step and a following milestone. */
+export function continuesToNextMilestone(
+  {
+    milestoneIndex,
+    stageIndex,
+  }: Pick<LearningView['state']['position'], 'milestoneIndex' | 'stageIndex'>,
+  milestones: readonly { stages: readonly unknown[] }[] | undefined,
+): boolean {
+  const current = milestones?.[milestoneIndex];
+  return (
+    stageIndex >= 0 &&
+    stageIndex === (current?.stages.length ?? 0) - 1 &&
+    !!milestones?.[milestoneIndex + 1]
+  );
 }
 
 export function continueActionLabel(
@@ -36,9 +52,12 @@ export function continueActionLabel(
   t: (key: string, options?: Record<string, unknown>) => string,
 ) {
   const step = nextLearningStep(view);
-  return step
-    ? t('pblV3.journey.enterStep', { step: t(`pblV3.journey.steps.${step}`) })
-    : t('pblV3.next');
+  if (step) return t('pblV3.journey.enterStep', { step: t(`pblV3.journey.steps.${step}`) });
+  return t(
+    continuesToNextMilestone(view.state.position, view.milestones)
+      ? 'pblV3.journey.enterMilestone'
+      : 'pblV3.next',
+  );
 }
 
 /** Introduction is part of the first installed teaching step. */

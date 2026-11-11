@@ -62,7 +62,7 @@ lock-reason footer consumes editor height. These rules follow the existing OpenP
 | Planning, assistant idle | PLAN.md only; source remains read-only |
 | Coding, assistant idle | Source files; approved PLAN.md remains read-only |
 | Formal tests or result collection | Read-only to preserve the tested version |
-| Recorded test failure or unreliable evaluation, coder idle and workspace healthy | Source editable in the same test step; chat/build/retest remain available |
+| Recorded test failure or unreliable evaluation, coder idle and workspace healthy | Source files and PLAN.md are editable in the same test step; chat/build/retest remain available |
 | Understanding quiz and reflection | Read-only |
 | Assistant queued/running | Read-only until the assistant finishes |
 | Build or build-result collection | Read-only until collection finishes |
@@ -81,6 +81,9 @@ also block editing with distinct explanations. Direct API writes cannot bypass a
 pending test/build. Agent file-write and file-management tools obey that evaluation
 lock too. Passing tests ends repair access; failure does not move back to a different
 stage or skip the existing repair/retest cycle.
+Source repairs can proceed with the existing plan. If the learner amends the plan
+in the test step, the edit is recorded and the next run references the amended
+version. Incremental plans still preserve previously approved chapters.
 
 Create, rename/move and delete files only inside trusted source directories. Keep
 PLAN.md; refuse stale hashes, traversal, symlinks and nonregular files. All changes

@@ -1698,6 +1698,52 @@ function withEmptyToolCallReasoning(requestBody: string): string | undefined {
   }
 }
 
+/** Warn once per model and mode, not on every request. */
+const uncataloguedThinkingWarned = new Set<string>();
+
+/**
+ * Thinking params for a model with no catalog thinking capability (a custom
+ * provider or an unlisted model behind an OpenAI-compatible server).
+ *
+ * Self-hosted servers such as vLLM and sglang render Qwen3-style chat
+ * templates with thinking on by default, so the reasoning lands in the content
+ * field unless the request toggles it off. When the thinking mode is stated
+ * explicitly, send the generic `chat_template_kwargs` switch those servers
+ * understand. With no explicit mode nothing is sent, so unconfigured requests
+ * are unchanged.
+ */
+function getUncataloguedThinkingBodyParams(
+  providerId: ProviderId,
+  modelId: string,
+  config: ThinkingConfig,
+  mode: ReturnType<typeof getThinkingMode>,
+): { params: Record<string, unknown>; disablesThinking: boolean } | undefined {
+  if (mode !== 'enabled' && mode !== 'disabled') return undefined;
+
+  const thinkingEnabled = mode === 'enabled';
+  const chatTemplateKwargs: Record<string, unknown> = { enable_thinking: thinkingEnabled };
+  if (
+    thinkingEnabled &&
+    typeof config.budgetTokens === 'number' &&
+    Number.isFinite(config.budgetTokens) &&
+    config.budgetTokens > 0
+  ) {
+    chatTemplateKwargs.thinking_budget = Math.round(config.budgetTokens);
+  }
+  const warnKey = `${providerId}:${modelId}:${mode}`;
+  if (!uncataloguedThinkingWarned.has(warnKey)) {
+    uncataloguedThinkingWarned.add(warnKey);
+    log.warn(
+      `Model ${providerId}:${modelId} has no catalog thinking capability; ` +
+        `applying generic chat_template_kwargs.enable_thinking=${thinkingEnabled}`,
+    );
+  }
+  return {
+    params: { chat_template_kwargs: chatTemplateKwargs },
+    disablesThinking: !thinkingEnabled,
+  };
+}
+
 function getCompatThinkingBodyParams(
   providerId: ProviderId,
   modelId: string,
@@ -1729,7 +1775,8 @@ function getCompatThinkingBodyParams(
       };
   }
   const capability = getCatalogThinkingCapability(providerId, modelId);
-  if (!capability || capability.control === 'none') return undefined;
+  if (!capability) return getUncataloguedThinkingBodyParams(providerId, modelId, config, mode);
+  if (capability.control === 'none') return undefined;
 
   const budget = pickThinkingBudget(capability, config);
 

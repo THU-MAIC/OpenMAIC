@@ -98,6 +98,13 @@ export interface AgentSessionMeta {
   updatedAt: number;
   lease?: AgentSessionLease;
   error?: string;
+  /**
+   * Present (and true) when the session is waiting for the user's answer: its
+   * newest `user_question` event has no later non-blank user message, and no
+   * run is queued or running. Derived by the store from the event log, never
+   * written by a caller; absent means "not waiting".
+   */
+  awaitingAnswer?: true;
 }
 
 export interface CreateAgentSessionInput {
@@ -481,6 +488,12 @@ export type NewOwnerSessionEvent =
       type: 'session_created' | 'session_status';
       status: AgentSessionStatus;
       attempt: number;
+      /**
+       * Whether the session awaits an answer in the recorded status (see
+       * {@link AgentSessionMeta.awaitingAnswer}). The projection derives it
+       * itself when the event is appended; a caller-supplied value is ignored.
+       */
+      awaitingAnswer?: true;
     })
   | (OwnerSessionEventBase & { type: 'session_deleted' | 'session_cancel_requested' })
   | (OwnerSessionEventBase & { type: 'session_title'; title: string | null });

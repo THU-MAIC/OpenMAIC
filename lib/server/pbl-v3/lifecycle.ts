@@ -39,6 +39,19 @@ async function activeStudyTurns(store: LearningStore, id: string, ownerId: strin
   );
 }
 
+async function maintenanceStudy(store: LearningStore, id: string, ownerId: string) {
+  // Course deletion withdraws package references. Only maintenance of an explicit
+  // tombstone may load the study without resolving those inaccessible resources.
+  const deleted = (
+    await store.pool.query<Study>(
+      `SELECT s.* FROM pbl_v3_studies s JOIN stage_meta m ON m.stage_id=s.stage_id
+       WHERE s.id=$1 AND s.owner_id=$2 AND m.deleted_at IS NOT NULL`,
+      [id, ownerId],
+    )
+  ).rows[0];
+  return { row: deleted ?? (await store.get(id, ownerId)), deleted: !!deleted };
+}
+
 async function renewForMaintenance(
   store: LearningStore,
   service: SandboxService,
@@ -98,7 +111,7 @@ async function renewDeferredStudy(
   ownerId: string,
   environmentId: string,
 ) {
-  const row = await store.get(id, ownerId);
+  const { row } = await maintenanceStudy(store, id, ownerId);
   const now = await store.now();
   if (
     row.archive_discard?.environmentId === environmentId ||
@@ -230,7 +243,9 @@ export async function maintainStudy(
     return;
   }
   const maintain = async () => {
-    let row = await store.get(id, ownerId);
+    const loaded = await maintenanceStudy(store, id, ownerId);
+    const { deleted } = loaded;
+    let { row } = loaded;
     const environmentId =
       pendingEnvironmentId ?? row.environment_id ?? row.environment_recovery?.requestId;
     if (!environmentId) return;
@@ -269,6 +284,13 @@ export async function maintainStudy(
           // Cover collection/export with a fresh provider lease, even after the last tab closes.
           if (!archiveGraceExpired(row, await store.now()))
             await renewForMaintenance(store, service, id, environmentId);
+          // A deleted course still protects its current writers until the inactivity
+          // deadline. Renew their provider lease before skipping package-dependent work.
+          if (
+            deleted &&
+            (await store.now()).getTime() - row.last_used_at.getTime() < pblIdleTimeoutMs()
+          )
+            return;
           const agents = await activeStudyTurns(store, id, ownerId);
           // Idle release quiesces applications. A periodic backup must instead
           // leave an active application running: stopping it discards in-memory work.
@@ -331,9 +353,9 @@ export async function maintainStudy(
           // Agent turns end their protection only; they do not start another idle interval.
           if (!row.idle_turn_cleanup && row.checkpoint_failure?.stage === 'execution') {
             await store.clearCheckpointFailure(row, 'execution');
-            row = await store.get(id, ownerId);
+            row = (await maintenanceStudy(store, id, ownerId)).row;
           }
-          if (row.evaluation) {
+          if (row.evaluation && !deleted) {
             if (archiveGraceExpired(row, await store.now())) {
               await releaseWithoutArchive(store, row, service);
               return;
@@ -395,6 +417,12 @@ export async function maintainStudy(
                 await handleUnsettledWriter(store, row, service, 'terminal');
                 return;
               }
+            }
+            if (deleted) {
+              // Keep the last checkpoint and teaching state. All writer cleanup above
+              // still applies, but a withdrawn course cannot supply a final archive.
+              if (idle && (await store.claimIdleRelease(row))) await service.destroy(environmentId);
+              return;
             }
             const failure =
               row.checkpoint_failure?.environmentId === environmentId

@@ -87,6 +87,7 @@ export const STANDALONE_PLAYER_STRING_KEYS = [
   'emptyClassroom',
   'unsupportedScene',
   'interactiveTitle',
+  'interactiveMoreBelow',
   'videoUnavailable',
   'quizSubmit',
   'quizRetry',

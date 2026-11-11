@@ -3,7 +3,7 @@
 import { useRef, useState, useEffect } from 'react';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useSyncCanvasViewportFromSlide } from '@/lib/store/sync-canvas-viewport';
-import { useSceneSelector } from '@/lib/contexts/scene-context';
+import { useSceneData, useSceneSelector } from '@/lib/contexts/scene-context';
 import { useKeyboardStore } from '@/lib/store/keyboard';
 import { useViewportSize } from './hooks/useViewportSize';
 import { useSelectElement } from './hooks/useSelectElement';
@@ -68,6 +68,9 @@ export function Canvas(_props: CanvasProps) {
   useSyncCanvasViewportFromSlide();
 
   // Subscribe to specific parts for performance optimization
+  // Part of each element's key: an element id can repeat across pages, and a text
+  // editor kept across a page switch would keep writing to the page it started on.
+  const { sceneId } = useSceneData();
   const elements = useSceneSelector<SlideContent, PPTElement[]>(
     (content) => content.canvas.elements,
   );
@@ -246,7 +249,7 @@ export function Canvas(_props: CanvasProps) {
     <ContextMenu>
       <ContextMenuTrigger>
         <div
-          className="canvas relative h-full w-full overflow-hidden bg-gray-100 select-none"
+          className="canvas relative h-full w-full overflow-hidden select-none"
           ref={canvasRef}
           onMouseDown={handleClickBlankArea}
           onDoubleClick={handleDblClick}
@@ -267,7 +270,7 @@ export function Canvas(_props: CanvasProps) {
 
           {/* Viewport wrapper */}
           <div
-            className="viewport-wrapper absolute shadow-[0_0_0_1px_rgba(0,0,0,0.01),0_0_12px_0_rgba(0,0,0,0.1)]"
+            className="viewport-wrapper absolute rounded-lg shadow-[0_0_0_1px_rgba(0,0,0,0.01),0_0_12px_0_rgba(0,0,0,0.1)]"
             style={{
               width: `${viewportStyles.width * canvasScale}px`,
               height: `${viewportStyles.height * canvasScale}px`,
@@ -301,7 +304,7 @@ export function Canvas(_props: CanvasProps) {
                 (element: PPTElement) =>
                   !hiddenElementIdList.includes(element.id) && (
                     <Operate
-                      key={element.id}
+                      key={`${sceneId}:${element.id}`}
                       elementInfo={element}
                       isSelected={activeElementIdList.includes(element.id)}
                       isActive={handleElementId === element.id}
@@ -348,7 +351,7 @@ export function Canvas(_props: CanvasProps) {
               {elementList.map((element: PPTElement, index: number) =>
                 !hiddenElementIdList.includes(element.id) ? (
                   <EditableElement
-                    key={element.id}
+                    key={`${sceneId}:${element.id}`}
                     elementInfo={element}
                     elementIndex={index + 1}
                     isMultiSelect={activeElementIdList.length > 1}

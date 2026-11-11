@@ -123,8 +123,8 @@ allowUserKeys: false               # يختار المستخدمون من بين
 | `course.content.pbl` | chat | `course.content` | مشاهد التعلم القائم على المشاريع (PBL) |
 | `course.actions` | chat | `llm` | إجراءات المشاهد (ما يقوله الوكلاء ويفعلونه في كل مشهد) |
 | `classroom` | chat | `llm` | محادثة الصف وتصحيح الاختبارات وبيئة تشغيل PBL |
-| `agent` | chat | `llm` | وكيل Pro workbench. **يتطلب استدعاء الأدوات.** ويقبل أيضًا `api` و`contextWindow` |
-| `agent.title` | chat | `agent` | عناوين جلسات Pro. تُضبط في `openmaic.yml` فقط ولا تظهر في إعدادات النماذج |
+| `agent` | chat | `llm` | وكيل workbench. **يتطلب استدعاء الأدوات.** ويقبل أيضًا `api` و`contextWindow` |
+| `agent.title` | chat | `agent` | عناوين جلسات workbench. تُضبط في `openmaic.yml` فقط ولا تظهر في إعدادات النماذج |
 | `tts` | tts | — | تحويل النص إلى كلام |
 | `asr` | asr | — | التعرف على الكلام (الإدخال الصوتي وتفريغ الصوت والفيديو) |
 | `image` | image | — | توليد الصور |
@@ -313,7 +313,7 @@ slots:
   webSearch: tavily
 ```
 
-احذف بعد ذلك `DEFAULT_MODEL` و`MODEL_FALLBACK`. يمكن إبقاء متغيرات المزودين مصدرًا لإشارات `${VAR}`. يصبح `<PREFIX>_BASE_URL` قيمة `baseUrl` للمزود (`OPENAI_BASE_URL` ← `baseUrl` تحت `openai`؛ اكتب العنوان، أو `${OPENAI_BASE_URL}` ما دام المتغير مضبوطًا)، ويصبح `<PREFIX>_MODELS` قائمة `models` الخاصة به. ومثل `DEFAULT_MODEL` المحوَّل، فإن `llm` المكتوب هنا قيمة افتراضية للخادم يمكن لمساحات العمل تغييرها؛ أضف `lock: [llm]` لتثبيته للجميع. وعلى خلاف التحويل، أصبحت `agent` تتبع `llm`: اكتب `agent: null` لإبقاء وكيل Pro موقوفًا.
+احذف بعد ذلك `DEFAULT_MODEL` و`MODEL_FALLBACK`. يمكن إبقاء متغيرات المزودين مصدرًا لإشارات `${VAR}`. يصبح `<PREFIX>_BASE_URL` قيمة `baseUrl` للمزود (`OPENAI_BASE_URL` ← `baseUrl` تحت `openai`؛ اكتب العنوان، أو `${OPENAI_BASE_URL}` ما دام المتغير مضبوطًا)، ويصبح `<PREFIX>_MODELS` قائمة `models` الخاصة به. ومثل `DEFAULT_MODEL` المحوَّل، فإن `llm` المكتوب هنا قيمة افتراضية للخادم يمكن لمساحات العمل تغييرها؛ أضف `lock: [llm]` لتثبيته للجميع. وعلى خلاف التحويل، أصبحت `agent` تتبع `llm`: اكتب `agent: null` لإبقاء وكيل workbench موقوفًا.
 
 **server-providers.yml.** قبل:
 
@@ -437,7 +437,7 @@ ACCESS_CODE=your-secret-code
 تُعتبر القيم `true` أو `1` مفعلة، وما لم يُذكر خلاف ذلك تُعد أي قيمة أخرى معطلة. تُحقن متغيرات `NEXT_PUBLIC_*` في وقت البناء للعميل، ويجب إعادة البناء بعد تعديلها:
 
 ```bash
-# محرر MAIC (وضع Pro)
+# محرر MAIC (محرر الدرس)
 NEXT_PUBLIC_MAIC_EDITOR_ENABLED=true
 
 # مراجع مواد PPT والمشاهد التفاعلية أثناء تشغيل Pi (علامة وقت البناء؛ لا تؤثر في مراجع وضع التحرير)
@@ -454,6 +454,9 @@ NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
 
 # عرض مدخل استيراد PPTX التجريبي
 NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
+
+# موقع التوثيق الذي يفتحه عنصر «التوثيق» في قائمة الحساب (الافتراضي /docs على النطاق نفسه)
+NEXT_PUBLIC_DOCS_URL=https://docs.example.com
 ```
 
 تعمل محادثة الصف دائمًا على Pi، وتتطلب نموذجًا يدعم استدعاء الأدوات/الدوال: اختر نموذجًا كهذا لـ **الصف** في **إعداد نماذج المقرر**، أو اضبط الخانة `classroom` (أو الخانة `llm` التي ترث منها) في `openmaic.yml`. مع Gemini استخدم الإعداد المسبق الأصلي `google` بدلًا من عنوان Google المتوافق مع OpenAI. يُرفض النموذج الذي يذكر الكتالوج المدمج أنه لا يدعم استدعاء الأدوات قبل الاستدلال، مع `400 MODEL_CONFIG_INVALID` (`reason: tool_calling_required`)، ويشير **إعداد نماذج المقرر** إلى هذا الشرط عند خانة الصف.

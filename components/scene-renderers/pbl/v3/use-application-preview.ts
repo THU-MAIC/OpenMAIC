@@ -28,15 +28,27 @@ async function waitForApplication(
   observeAfterLaunch = false,
 ) {
   assertCurrent();
-  // A busy response can be reconciled with the same request and durable launch receipt.
-  // Network failures have no such acknowledgement and require explicit recovery.
+  // Busy and explicit temporary failures can retry the same request and durable
+  // launch receipt. Unknown network outcomes still require explicit recovery.
   const contentionRetries = retryStudyContention ? 30 : 2;
   const observe = async (input = request) => {
+    let temporaryRetries = 0;
     for (let contention = 0; ; contention++) {
       assertCurrent();
       try {
         return await pblRequest<ApplicationObservation>('/api/pbl/v3/application', input, signal);
       } catch (error) {
+        if (
+          retryStudyContention &&
+          (input.action === 'open' || input.action === 'status') &&
+          error instanceof SandboxRequestError &&
+          [502, 503, 504].includes(error.status) &&
+          temporaryRetries < 2
+        ) {
+          temporaryRetries++;
+          await new Promise((resolve) => setTimeout(resolve, temporaryRetries * 750));
+          continue;
+        }
         if (
           retryStudyContention &&
           input.action === 'status' &&
@@ -173,7 +185,9 @@ export function useApplicationPreview(
         )
     );
   });
-  const disabled = unavailable || dirty || !!view?.evaluation || !!sourceWriting;
+  const isolatedAssessment = view?.evaluation?.isolatedSources === true;
+  const disabled =
+    unavailable || dirty || (!!view?.evaluation && !isolatedAssessment) || !!sourceWriting;
   const binding = `${view?.id}:${view?.environmentId}:${workbench?.environmentId}:${workbench?.epoch}`;
   const stage = `${view?.state?.position?.milestoneId}:${view?.state?.position?.stageIndex}`;
   const [observedBinding, setObservedBinding] = useState(binding);
@@ -186,11 +200,26 @@ export function useApplicationPreview(
   // A timeout from an older grant cannot expire a later accepted renewal.
   const expired = !!document && expiredAt === document.expiresAt;
   const frontendUnavailable = t('pblV3.application.unavailable');
+  const retriedFrontend = useRef(false);
+  const retryFrontendOnce = useCallback(() => {
+    if (retriedFrontend.current || !currentBinding || !open || unavailable) return false;
+    retriedFrontend.current = true;
+    setFrontend(null);
+    setFrameVersion((value) => value + 1);
+    return true;
+  }, [currentBinding, open, unavailable]);
   const frontendStudy = view?.id;
   const frontendEnvironment = workbench?.environmentId;
   const frontendEpoch = workbench?.epoch;
+  // Issue the first grant when the app can use it. A grant renewed before its
+  // first mount would keep the expired bootstrap fragment in the document URL.
   const needsFrontend =
-    standaloneFrontend && currentBinding && open && !unavailable && !frontendState;
+    standaloneFrontend &&
+    currentBinding &&
+    open &&
+    !unavailable &&
+    observation?.state === 'running' &&
+    !frontendState;
   useEffect(() => {
     if (!needsFrontend || !frontendStudy || !frontendEnvironment || frontendEpoch === undefined)
       return;
@@ -211,7 +240,10 @@ export function useApplicationPreview(
         if (!abort.signal.aborted) setFrontend({ binding, grant: result.preview });
       })
       .catch((error: Error) => {
-        if (!abort.signal.aborted) setFrontend({ binding, error: error.message });
+        if (abort.signal.aborted) return;
+        const retryable =
+          !(error instanceof SandboxRequestError) || error.status >= 500 || error.status === 429;
+        if (!retryable || !retryFrontendOnce()) setFrontend({ binding, error: error.message });
       });
     return () => abort.abort();
   }, [
@@ -221,6 +253,8 @@ export function useApplicationPreview(
     frontendEpoch,
     binding,
     frontendUnavailable,
+    frameVersion,
+    retryFrontendOnce,
   ]);
   useEffect(() => {
     ++attempt.current;
@@ -230,6 +264,7 @@ export function useApplicationPreview(
     setPending(false);
     setObservation(null);
     setFrontend(null);
+    retriedFrontend.current = false;
     setError('');
     setExpiredAt(null);
     setRefreshNeeded(false);
@@ -282,10 +317,119 @@ export function useApplicationPreview(
     const timer = setTimeout(() => setExpiredAt(deadline), Math.max(0, deadline - Date.now()));
     return () => clearTimeout(timer);
   }, [document]);
+  const frontendUrl = frontendState?.grant?.url;
+  const frontendDeadline = frontendState?.grant?.expiresAt;
+  useEffect(() => {
+    if (
+      !open ||
+      unavailable ||
+      !frontendUrl ||
+      frontendDeadline === undefined ||
+      !frontendStudy ||
+      !frontendEnvironment ||
+      frontendEpoch === undefined
+    )
+      return;
+    const abort = new AbortController();
+    const hostDocument = window.document;
+    const renewAt = frontendDeadline - 60_000;
+    let timer: ReturnType<typeof setTimeout>;
+    let renewing = false;
+    let consecutiveFailures = 0;
+    const schedule = (delay: number) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => void refreshGrant(), delay);
+    };
+    const refreshGrant = async () => {
+      if (abort.signal.aborted || renewing || hostDocument.visibilityState === 'hidden') return;
+      renewing = true;
+      try {
+        const { preview: grant } = await pblRequest<ApplicationObservation>(
+          '/api/pbl/v3/application',
+          {
+            studyId: frontendStudy,
+            environmentId: frontendEnvironment,
+            epoch: frontendEpoch,
+            revision: 0,
+            id: crypto.randomUUID(),
+            action: 'frontend',
+          },
+          AbortSignal.any([abort.signal, AbortSignal.timeout(15_000)]),
+        );
+        if (!grant) throw new Error('Preview authorization unavailable');
+        const fresh = new URL(grant.url);
+        if (fresh.origin !== new URL(frontendUrl).origin) throw new Error('Preview origin changed');
+        const response = await fetch(new URL('/__openmaic_renew', fresh.origin), {
+          method: 'POST',
+          credentials: 'include',
+          body: fresh.hash.slice(1),
+          signal: AbortSignal.any([abort.signal, AbortSignal.timeout(15_000)]),
+        });
+        if (response.status === 403) return;
+        if (!response.ok) throw new Error('Preview authorization unavailable');
+        const { expiresAt } = await response.json();
+        if (abort.signal.aborted) return;
+        if (
+          !Number.isSafeInteger(expiresAt) ||
+          expiresAt <= Date.now() ||
+          expiresAt > grant.expiresAt
+        )
+          throw new Error('Invalid preview authorization');
+        // The existing iframe URL remains the document identity. Only its
+        // gateway cookie and deadline are replaced.
+        setFrontend((current) =>
+          current?.binding === binding &&
+          current.grant?.url === frontendUrl &&
+          current.grant.expiresAt === frontendDeadline
+            ? { ...current, grant: { ...current.grant, expiresAt } }
+            : current,
+        );
+        consecutiveFailures = 0;
+        if (expiresAt === frontendDeadline) schedule(15_000);
+      } catch (error) {
+        if (
+          !abort.signal.aborted &&
+          ++consecutiveFailures < 4 &&
+          !(
+            error instanceof SandboxRequestError &&
+            ([401, 403].includes(error.status) ||
+              ['ENVIRONMENT_UNAVAILABLE', 'ENVIRONMENT_CHANGED', 'WORKSPACE_STOPPED'].includes(
+                error.reason ?? '',
+              ))
+          )
+        )
+          schedule(15_000);
+      } finally {
+        renewing = false;
+      }
+    };
+    const onVisible = () => {
+      if (hostDocument.visibilityState === 'visible' && Date.now() >= renewAt) {
+        consecutiveFailures = 0;
+        void refreshGrant();
+      }
+    };
+    schedule(Math.max(15_000, renewAt - Date.now()));
+    hostDocument.addEventListener('visibilitychange', onVisible);
+    return () => {
+      abort.abort();
+      clearTimeout(timer);
+      hostDocument.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [
+    open,
+    unavailable,
+    frontendUrl,
+    frontendDeadline,
+    frontendStudy,
+    frontendEnvironment,
+    frontendEpoch,
+    binding,
+  ]);
 
   const load = useCallback(
     async (action: 'open' | 'restart', recovery?: 'automatic' | 'explicit') => {
-      if (!currentBinding || disabled || !view || !workbench) return;
+      if (!currentBinding || disabled || isolatedAssessment || !view || !workbench) return;
       if (standaloneFrontend && recovery === 'explicit' && (expired || frontendState?.error))
         setFrontend(null);
       const expiredRecovery = () =>
@@ -352,6 +496,8 @@ export function useApplicationPreview(
           ) {
             observedRevision.current = view.revision;
             setObservation((current) => ({ ...status, preview: current?.preview }));
+            if (standaloneFrontend && status.state === 'starting')
+              setError(t('pblV3.application.unavailable'));
             return;
           }
           if (['running', 'starting'].includes(status.state) && status.sourceChanged)
@@ -431,6 +577,7 @@ export function useApplicationPreview(
     [
       currentBinding,
       disabled,
+      isolatedAssessment,
       view,
       workbench,
       observation,
@@ -462,6 +609,7 @@ export function useApplicationPreview(
       deferAutomatic ||
       !currentBinding ||
       disabled ||
+      isolatedAssessment ||
       !view?.application ||
       closedStudy.current === view.id ||
       autoLaunched.current === binding ||
@@ -486,6 +634,7 @@ export function useApplicationPreview(
     deferAutomatic,
     currentBinding,
     disabled,
+    isolatedAssessment,
     view,
     binding,
     pending,
@@ -499,6 +648,7 @@ export function useApplicationPreview(
       open &&
       refreshNeeded &&
       !deferAutomatic &&
+      !isolatedAssessment &&
       !disabled &&
       (!view?.busy || reviewReady || quizNarration) &&
       !pending &&
@@ -511,6 +661,7 @@ export function useApplicationPreview(
     open,
     refreshNeeded,
     deferAutomatic,
+    isolatedAssessment,
     disabled,
     pending,
     expired,
@@ -622,8 +773,10 @@ export function useApplicationPreview(
         document.expiresAt <= Date.now() ||
         refreshNeeded ||
         replacementNeeded.current
-      )
-        void load('open', refreshNeeded || standaloneFrontend ? 'explicit' : undefined);
+      ) {
+        if (isolatedAssessment) setRefreshNeeded(true);
+        else void load('open', refreshNeeded || standaloneFrontend ? 'explicit' : undefined);
+      }
     }
   }
   return {
@@ -634,11 +787,16 @@ export function useApplicationPreview(
     document: currentBinding && !unavailable ? document : undefined,
     standaloneFrontend,
     frontendPending: needsFrontend,
-    reloadFrontend: () => setFrontend(null),
+    reloadFrontend: () => {
+      retriedFrontend.current = false;
+      setFrontend(null);
+    },
+    retryFrontendOnce,
     error: standaloneFrontend ? frontendState?.error : error,
     applicationError: standaloneFrontend ? error : undefined,
     expired,
     disabled,
+    launchPaused: isolatedAssessment,
     dirty,
     updating: disabled || pending,
     frameVersion,

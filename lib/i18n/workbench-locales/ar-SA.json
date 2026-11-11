@@ -48,7 +48,9 @@
     "fileTooLargeWithLimit": "الملف كبير جدًا. اختر ملفًا لا يتجاوز حجمه {{limit}} ميجابايت.",
     "unsupportedType": "نوع الملف غير مدعوم. اختر ملفًا من نوع مدعوم.",
     "quotaExceeded": "تم بلوغ حد رفع المواد.",
-    "storageFull": "مساحة التخزين ممتلئة. تعذّر رفع هذه المادة."
+    "storageFull": "مساحة التخزين ممتلئة. تعذّر رفع هذه المادة.",
+    "uploadFailedShort": "تعذّر الرفع",
+    "retryFailed": "تعذّر بدء التحليل من جديد. يُرجى المحاولة مرة أخرى."
   },
   "skill": {
     "listFailed": "تعذّر تحميل قائمة المهارات",
@@ -139,9 +141,7 @@
     "listSeparator": "، ",
     "group": {
       "tools": "{{count}} نداء أدوات",
-      "skills": "{{count}} مهارات",
-      "running": "قيد التنفيذ",
-      "error": "به أخطاء",
+      "failed": "فشل {{count}}",
       "done": "تم"
     },
     "section": {

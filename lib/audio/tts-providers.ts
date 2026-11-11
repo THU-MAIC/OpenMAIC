@@ -108,6 +108,7 @@ import {
   VOXCPM_VLLM_MODEL_ID,
   VOXCPM_AUTO_VOICE_ID,
   normalizeVoxCPMBackend,
+  voxCPMPromptProviderOptions,
   type VoxCPMProviderOptions,
 } from './voxcpm';
 import { createLogger } from '@/lib/logger';
@@ -474,8 +475,20 @@ async function generateVoxCPMTTS(
 
   const options = (config.providerOptions || {}) as VoxCPMProviderOptions;
   const backend = normalizeVoxCPMBackend(options.backend);
+  // A server-side caller (the agent's narration) names the speaker instead of
+  // sending the prompt the browser builds: design the auto voice from it.
+  const speakerPrompt =
+    !options.voicePrompt && !options.registeredVoiceId && config.speaker
+      ? voxCPMPromptProviderOptions(config.voice, {
+          ...(config.speaker.name ? { agentName: config.speaker.name } : {}),
+          ...(config.speaker.role ? { role: config.speaker.role } : {}),
+          ...(config.speaker.persona ? { persona: config.speaker.persona } : {}),
+          ...(config.speaker.voiceDesign ? { voiceDesign: config.speaker.voiceDesign } : {}),
+        }).voicePrompt
+      : undefined;
   const voicePrompt =
     options.voicePrompt ||
+    (config.voice === VOXCPM_AUTO_VOICE_ID ? speakerPrompt : undefined) ||
     (config.voice && config.voice !== 'default' && config.voice !== VOXCPM_AUTO_VOICE_ID
       ? config.voice
       : undefined);

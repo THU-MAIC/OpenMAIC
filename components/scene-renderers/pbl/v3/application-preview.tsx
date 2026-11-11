@@ -64,6 +64,7 @@ function ApplicationPreviewContent({
 }) {
   const { t } = useI18n();
   const { pending, observation, expired, disabled } = preview;
+  const standalone = preview.standaloneFrontend;
   const mounted = !!preview.document;
   const frame = useRef<HTMLIFrameElement | null>(null);
   const candidate = useRef<HTMLIFrameElement | null>(null);
@@ -79,8 +80,8 @@ function ApplicationPreviewContent({
   );
   const readinessError =
     readinessFailure?.url === url && readinessFailure?.version === preview.frameVersion;
-  const error = preview.error || (readinessError ? t('pblV3.application.unavailable') : '');
-  const standalone = preview.standaloneFrontend;
+  const documentError = preview.error || (readinessError ? t('pblV3.application.unavailable') : '');
+  const error = documentError || (standalone && !currentReady ? preview.applicationError : '');
   const recoverApplication = standalone && currentReady && !expired && !!preview.applicationError;
   const applicationAction = t(
     recoverApplication ? 'pblV3.application.reopen' : 'pblV3.application.restart',
@@ -112,6 +113,7 @@ function ApplicationPreviewContent({
   // Modal presentation pauses input only. Readiness and candidate promotion
   // continue independently; closing a tour must never launch a replacement.
   const inputAvailable = available && !inputPaused;
+  const runId = standalone ? observation?.runId : undefined;
   const sendInput = useCallback(
     (element: HTMLIFrameElement | null) => {
       if (!element) return;
@@ -121,12 +123,12 @@ function ApplicationPreviewContent({
         {
           type: 'openmaic-preview-input',
           enabled: !!inputAvailable && preview.open && element === frame.current,
-          ...(preview.standaloneFrontend ? { refreshOnEnable: true } : {}),
+          ...(runId ? { runId } : {}),
         },
         target.origin,
       );
     },
-    [inputAvailable, preview.open, preview.standaloneFrontend],
+    [inputAvailable, preview.open, runId],
   );
   useLayoutEffect(() => {
     sendInput(frame.current);
@@ -200,14 +202,18 @@ function ApplicationPreviewContent({
       window.removeEventListener('blur', reclaim, true);
     };
   }, [inputAvailable, preview.open]);
+  const retryFrontendOnce = preview.retryFrontendOnce;
   useLayoutEffect(() => {
     if (!url || currentReady) return;
     const timer = setTimeout(
-      () => setReadinessFailure({ url, version: preview.frameVersion }),
+      () => {
+        if (!standalone || !retryFrontendOnce())
+          setReadinessFailure({ url, version: preview.frameVersion });
+      },
       standalone ? 15_000 : 60_000,
     );
     return () => clearTimeout(timer);
-  }, [url, preview.frameVersion, currentReady, standalone]);
+  }, [url, preview.frameVersion, currentReady, standalone, retryFrontendOnce]);
   const renew = preview.renew;
   const documentReady = preview.documentReady;
   useLayoutEffect(() => {
@@ -229,8 +235,10 @@ function ApplicationPreviewContent({
           setReadinessFailure(null);
           setDisplayed({ url, version: preview.frameVersion });
           documentReady(preview.frameVersion);
-        } else if (event.data?.type === 'openmaic-preview-error')
-          setReadinessFailure({ url, version: preview.frameVersion });
+        } else if (event.data?.type === 'openmaic-preview-error') {
+          if (!standalone || !retryFrontendOnce())
+            setReadinessFailure({ url, version: preview.frameVersion });
+        }
       }
       if (
         event.source === frame.current?.contentWindow &&
@@ -241,7 +249,16 @@ function ApplicationPreviewContent({
     };
     window.addEventListener('message', receive);
     return () => window.removeEventListener('message', receive);
-  }, [url, previous?.url, preview.frameVersion, renew, documentReady, sendInput]);
+  }, [
+    url,
+    previous?.url,
+    preview.frameVersion,
+    renew,
+    documentReady,
+    sendInput,
+    standalone,
+    retryFrontendOnce,
+  ]);
   const status = !available && !updating && (!standalone || !currentReady || expired) && (
     <div
       role="status"
@@ -278,12 +295,12 @@ function ApplicationPreviewContent({
           {observation.output}
         </pre>
       )}
-      {((standalone && !!error) || (!pending && !preview.frontendPending && !disabled)) && (
+      {!pending && !preview.frontendPending && !disabled && (
         <button
           type="button"
           className="rounded border px-3 py-2 text-foreground"
           onClick={() => {
-            if (standalone && error) preview.reloadFrontend();
+            if (standalone && documentError) preview.reloadFrontend();
             else void preview.load('open', 'explicit');
           }}
         >
@@ -321,11 +338,20 @@ function ApplicationPreviewContent({
             {standalone && observation?.output && (
               <pre className="max-h-40 overflow-auto whitespace-pre-wrap">{observation.output}</pre>
             )}
+            {standalone && available && !preview.launchPaused && (
+              <button
+                type="button"
+                className="rounded border px-2 py-1 text-foreground hover:bg-muted"
+                onClick={preview.reloadFrontend}
+              >
+                {t('pblV3.application.reopen')}
+              </button>
+            )}
           </div>
         </details>
         <button
           type="button"
-          disabled={pending || disabled}
+          disabled={pending || disabled || preview.launchPaused}
           className="rounded p-1 hover:bg-muted disabled:opacity-40"
           title={applicationAction}
           aria-label={applicationAction}
@@ -390,7 +416,9 @@ function ApplicationPreviewContent({
           <LoaderCircle size={14} className="shrink-0 animate-spin" />
           {t(
             standalone && !currentReady
-              ? 'common.loading'
+              ? observation?.state === 'running'
+                ? 'common.loading'
+                : 'pblV3.application.starting'
               : preview.dirty
                 ? 'pblV3.application.saveFirst'
                 : paused && disabled

@@ -116,6 +116,7 @@ export type {
   SceneOutline,
   UserRequirements,
   WidgetOutline,
+  WidgetVariable,
   WidgetType,
 } from './outline-types.js';
 

@@ -61,6 +61,7 @@ const mocks = vi.hoisted(() => ({
   rosterUnavailable: false,
   rosterFetchCount: 0,
   unsavedStageEdit: false,
+  unsavedScenes: new Set<string>(),
   rosterBase: new Map<string, unknown>(),
   setStageAgents: vi.fn(),
 }));
@@ -79,7 +80,11 @@ vi.mock('@/lib/workbench/session-store', () => ({
 }));
 
 vi.mock('@/lib/store/stage', () => ({
+  hasQueuedWholeDocumentChange: () => false,
+  hasUnsavedSceneEdit: (_stageId: string, sceneId: string) => mocks.unsavedScenes.has(sceneId),
   hasUnsavedStageEdit: () => mocks.unsavedStageEdit,
+  isServerGeneratingStage: () => false,
+  stageDocumentEditClock: () => 0,
   isStageWriteInFlight: () => false,
   recordServerRosterBase: (stageId: string, roster: unknown) =>
     mocks.rosterBase.set(stageId, roster),
@@ -358,6 +363,7 @@ beforeEach(() => {
   mocks.rosterFetchCount = 0;
   mocks.rosterUnavailable = false;
   mocks.unsavedStageEdit = false;
+  mocks.unsavedScenes.clear();
   mocks.rosterBase.clear();
   mocks.setStageAgents.mockReset();
   // The real action's effect on what the classroom shows: the stage carries
@@ -457,28 +463,41 @@ describe('AC1: 另一个会话改这门课 → 画布收敛（判据在画布拿
   });
 });
 
-describe('revision-veto sync request (#1960 Part 2 fix)', () => {
-  it('the store sync-request tick triggers one sync pass that converges the canvas', async () => {
-    await mount();
-
-    // An agent commit lands while the canvas is stale; elsewhere a save was
-    // vetoed and the store's sync-request tick was bumped (the veto's "trigger
-    // one sync" side, see stage-revision-veto.test.ts).
-    bumpSceneRev('scene-2');
-    const before = mocks.manifestFetchCount;
-    await act(async () => {
+describe('sync request when a save finishes', () => {
+  const saveFinishes = () =>
+    act(async () => {
       const { useStageStore } = await import('@/lib/store/stage');
       useStageStore.setState({
         stageSyncRequest: (mocks.stageState.stageSyncRequest ?? 0) + 1,
       });
     });
 
-    // One pass ran and the canvas converged to the agent's scene — the store
-    // no longer holds content the server has superseded.
+  it('runs one pass that converges the canvas when the last pass held a scene back', async () => {
+    await mount();
+    const source = MockEventSource.instances[0]!;
+
+    bumpSceneRev('scene-2');
+    mocks.unsavedScenes.add('scene-2');
+    await act(async () => source.emitFreshness());
+    expect(mocks.stageState.scenes.find((s) => s.id === 'scene-2')).not.toMatchObject({
+      title: 'scene-2 v2',
+    });
+
+    mocks.unsavedScenes.clear();
+    const before = mocks.manifestFetchCount;
+    await saveFinishes();
+
     expect(mocks.manifestFetchCount).toBe(before + 1);
     expect(mocks.stageState.scenes.find((s) => s.id === 'scene-2')).toMatchObject({
       title: 'scene-2 v2',
     });
+  });
+
+  it('runs no pass when nothing was held back', async () => {
+    await mount();
+    const before = mocks.manifestFetchCount;
+    await saveFinishes();
+    expect(mocks.manifestFetchCount).toBe(before);
   });
 
   it('the sync records the write-side baseline (server manifest) into the store', async () => {

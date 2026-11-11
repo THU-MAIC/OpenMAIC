@@ -281,7 +281,10 @@ describe('Pi call_agent JSON action output', () => {
       instruction: 'Explain the selected element.',
     });
 
-    expect(result).not.toHaveProperty('isError');
+    expect(result).toHaveProperty('isError', true);
+    expect(result.content).toEqual([
+      { type: 'text', text: expect.stringContaining('Partial visible response: partial answer') },
+    ]);
     expect(result.details).toMatchObject({
       text: 'partial answer',
       elementReferenceEvidence: expect.objectContaining({ elementId: 'element-1' }),
