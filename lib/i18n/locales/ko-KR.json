@@ -3038,6 +3038,9 @@
       "advance": "현재 단계를 진행할 수 있을 때만 입력창 위에 보라색 버튼이 나타납니다. 버튼이 보이면 눌러서 계속하세요."
     },
     "journey": {
+      "currentMilestone": "현재 단계",
+      "milestoneGoal": "목표:",
+      "milestoneResult": "결과:",
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",

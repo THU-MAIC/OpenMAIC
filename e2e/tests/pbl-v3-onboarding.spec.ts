@@ -323,6 +323,13 @@ test('keeps the authored overview visible while its workbench guide toggles inde
   });
   expect(geometry.left).toBeGreaterThanOrEqual(16);
   expect(geometry.right).toBeGreaterThanOrEqual(16);
+  // The card fills the transcript at wide sizes too; only its content is compact.
+  await page.getByRole('button', { name: 'Toggle code workspace', exact: true }).click();
+  await expect
+    .poll(() =>
+      overview.evaluate((el) => el.parentElement!.clientWidth - el.getBoundingClientRect().width),
+    )
+    .toBeLessThanOrEqual(1);
   expect(geometry.overflow).toBe('visible');
   expect(geometry.maxHeight).toBe('none');
   await guideToggle.click();
@@ -372,6 +379,9 @@ test('shows only the current milestone goal and outcome in the drawer from its f
   // Legacy packages keep milestone results without copying one into the final work.
   await expect(page.locator('.pbl-overview-result')).toHaveCount(0);
   const summary = drawer.getByTestId('pbl-current-milestone-summary');
+  await expect(summary).toContainText('Current milestone');
+  await expect(summary.getByText('Goal:', { exact: true })).toHaveCSS('display', 'inline');
+  await expect(summary.getByText('Outcome:', { exact: true })).toHaveCSS('display', 'inline');
   await expect(summary).toContainText('First goal');
   await expect(summary).toContainText('First result');
   await expect(summary).not.toContainText('Second goal');

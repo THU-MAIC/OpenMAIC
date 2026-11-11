@@ -208,8 +208,6 @@
 .pbl-workbench .pbl-project-overview {
   container: pbl-overview / inline-size;
   width: 100%;
-  max-width: 44rem;
-  margin-inline: auto;
   --pbl-overview-ink: #302a48;
   --pbl-overview-muted: #6d6383;
   --pbl-overview-accent: #7045bd;
@@ -306,6 +304,18 @@
 .pbl-workbench .pbl-overview-guide summary:focus-visible {
   outline: 2px solid var(--pbl-overview-accent);
   outline-offset: 3px;
+}
+.pbl-workbench .pbl-milestone-summary {
+  border-color: color-mix(in srgb, var(--pbl-guidance) 25%, var(--border));
+  background: color-mix(in srgb, var(--pbl-guidance) 6%, var(--popover));
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--pbl-guidance) 55%, transparent);
+}
+.pbl-workbench .pbl-milestone-caption {
+  color: var(--pbl-guidance);
+  background: color-mix(in srgb, var(--pbl-guidance) 12%, transparent);
+}
+.pbl-workbench .pbl-milestone-label {
+  color: var(--pbl-guidance);
 }
 .pbl-workbench .pbl-task-drawer {
   /* Keep its close control inside the chat area, even in a short scene. */

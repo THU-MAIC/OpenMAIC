@@ -3038,6 +3038,9 @@
       "advance": "Nút màu tím phía trên ô nhập chỉ xuất hiện khi bước hiện tại đủ điều kiện để tiếp tục. Khi nút xuất hiện, hãy nhấn để đi tiếp."
     },
     "journey": {
+      "currentMilestone": "Giai đoạn hiện tại",
+      "milestoneGoal": "Mục tiêu:",
+      "milestoneResult": "Kết quả:",
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",

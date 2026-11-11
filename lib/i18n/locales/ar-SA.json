@@ -3038,6 +3038,9 @@
       "advance": "لا يظهر الزر البنفسجي فوق حقل الإدخال إلا عندما تصبح الخطوة الحالية جاهزة للتقدّم. عند ظهوره، اضغط عليه للمتابعة."
     },
     "journey": {
+      "currentMilestone": "المرحلة الحالية",
+      "milestoneGoal": "الهدف:",
+      "milestoneResult": "النتيجة:",
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",

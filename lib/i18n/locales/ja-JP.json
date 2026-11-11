@@ -3038,6 +3038,9 @@
       "advance": "現在のステップを進められる状態になると、入力欄の上に紫色のボタンが表示されます。表示されたらクリックして進みましょう。"
     },
     "journey": {
+      "currentMilestone": "現在の段階",
+      "milestoneGoal": "目標：",
+      "milestoneResult": "成果：",
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",

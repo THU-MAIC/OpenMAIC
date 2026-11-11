@@ -166,24 +166,29 @@ export function TaskDock({
               <section
                 data-testid="pbl-current-milestone-summary"
                 aria-label={milestone.title}
-                className="rounded-xl border border-primary/20 bg-primary/5 p-3"
+                className="pbl-milestone-summary rounded-xl border p-3"
               >
-                <h4 className="font-semibold">{milestone.title}</h4>
-                <dl className="mt-2 space-y-2">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="pbl-milestone-caption rounded-md px-2 py-1 text-xs font-semibold">
+                    {t('pblV3.journey.currentMilestone')}
+                  </span>
+                  <h4 className="text-[15px] font-semibold leading-snug">{milestone.title}</h4>
+                </div>
+                <dl className="mt-2 space-y-1.5 leading-relaxed">
                   {milestone.goal && (
                     <div>
-                      <dt className="text-xs font-medium text-muted-foreground">
-                        {t('pblV3.overview.goal')}
+                      <dt className="pbl-milestone-label inline font-semibold">
+                        {t('pblV3.journey.milestoneGoal')}
                       </dt>
-                      <dd className="mt-0.5">{milestone.goal}</dd>
+                      <dd className="ms-1 inline">{milestone.goal}</dd>
                     </div>
                   )}
                   {milestone.outcome && (
                     <div>
-                      <dt className="text-xs font-medium text-muted-foreground">
-                        {t('pblV3.overview.result')}
+                      <dt className="pbl-milestone-label inline font-semibold">
+                        {t('pblV3.journey.milestoneResult')}
                       </dt>
-                      <dd className="mt-0.5">{milestone.outcome}</dd>
+                      <dd className="ms-1 inline">{milestone.outcome}</dd>
                     </div>
                   )}
                 </dl>

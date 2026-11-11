@@ -3038,6 +3038,9 @@
       "advance": "Фиолетовая кнопка над полем ввода появляется только тогда, когда можно перейти дальше. Когда она появится, нажмите её, чтобы продолжить."
     },
     "journey": {
+      "currentMilestone": "Текущий этап",
+      "milestoneGoal": "Цель:",
+      "milestoneResult": "Результат:",
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",

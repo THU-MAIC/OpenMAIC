@@ -3038,6 +3038,9 @@
       "advance": "当前环节达到推进条件后，输入框上方才会出现紫色执行条；看到它时，点击即可继续。"
     },
     "journey": {
+      "currentMilestone": "当前阶段",
+      "milestoneGoal": "目标：",
+      "milestoneResult": "成果：",
       "completionHandoff": "本环节已完成。下一步操作请看学习助手底部的任务栏。",
       "startConversation": "学习环境就绪后，助手会主动开始当前环节。",
       "latest": "回到最新消息",

@@ -3038,6 +3038,9 @@
       "advance": "Le bouton violet au-dessus de la saisie apparaît uniquement lorsque vous pouvez avancer. Cliquez dessus pour continuer."
     },
     "journey": {
+      "currentMilestone": "Étape actuelle",
+      "milestoneGoal": "Objectif :",
+      "milestoneResult": "Résultat :",
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",

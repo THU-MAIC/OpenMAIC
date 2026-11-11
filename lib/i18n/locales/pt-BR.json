@@ -3038,6 +3038,9 @@
       "advance": "O botão roxo acima do campo de entrada só aparece quando a etapa atual permite avançar. Quando aparecer, clique nele para continuar."
     },
     "journey": {
+      "currentMilestone": "Etapa atual",
+      "milestoneGoal": "Objetivo:",
+      "milestoneResult": "Resultado:",
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",
