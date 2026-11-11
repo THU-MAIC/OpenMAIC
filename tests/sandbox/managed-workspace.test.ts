@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 import { SandboxService } from '@/lib/server/sandbox/service';
+import { MAX_COMMAND_BYTES } from '@/lib/sandbox/types';
 import {
   assertWorkspaceMutation,
   learningWorkspaceId,
@@ -14,13 +15,20 @@ const workspaceId = learningWorkspaceId(id);
 const config = { fingerprint: 'config', lifetimeMs: 300000 };
 let workspace: string;
 let content: string;
-const provider = { readText: vi.fn(), writeText: vi.fn(), startCommand: vi.fn() };
+const provider = {
+  readText: vi.fn(),
+  writeText: vi.fn(),
+  startCommand: vi.fn(),
+  prepareAssessmentCommand: vi.fn(),
+};
 const store = {
   get: vi.fn(),
   exclusive: vi.fn(),
   listCommands: vi.fn(),
   listTerminals: vi.fn(),
   command: vi.fn(),
+  reserveCommand: vi.fn(),
+  saveCommand: vi.fn(),
 };
 const service = () =>
   Reflect.construct(SandboxService, ['owner', config, store, provider]) as SandboxService;
@@ -61,6 +69,36 @@ beforeEach(() => {
 });
 
 describe('learning workspace service boundary', () => {
+  it('keeps oversized assessment scripts host-only and records upload failure before dispatch', async () => {
+    const s = service();
+    const input = { requestId: id, command: 'x'.repeat(MAX_COMMAND_BYTES + 1) };
+    const execute = <T>(run: () => Promise<T>) =>
+      withLearningWorkspaceAccess(
+        {
+          ownerId: 'owner',
+          workspaceId,
+          environmentIds: () => [id],
+          operations: ['command'],
+        },
+        run,
+      );
+    await expect(execute(() => s.startCommand(id, input))).rejects.toThrow('32 KiB');
+    expect(store.reserveCommand).not.toHaveBeenCalled();
+    store.reserveCommand.mockResolvedValueOnce(true);
+    provider.prepareAssessmentCommand.mockRejectedValueOnce(new Error('upload failed'));
+    await expect(execute(() => s.startAssessmentCommand(id, input))).rejects.toThrow(
+      'upload failed',
+    );
+    expect(store.saveCommand).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        id,
+        state: 'cancelled',
+      }),
+    );
+    expect(provider.startCommand).not.toHaveBeenCalled();
+  });
+
   it('quiesces registered applications before source evidence, but never treats cancellation as proof', async () => {
     const s = service();
     store.listCommands.mockResolvedValue([{ id, purpose: 'application' }]);

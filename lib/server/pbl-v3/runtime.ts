@@ -29,7 +29,7 @@ import { writeSessionGrant } from '@/lib/server/sandbox/store';
 import { fenceOwnerWrite } from '@/lib/persistence/owner-merges';
 import { SandboxService } from '@/lib/server/sandbox/service';
 import { SandboxError, sandboxConflict, sandboxInvalid } from '@/lib/sandbox/errors';
-import { MAX_COMMAND_BYTES } from '@/lib/sandbox/types';
+import { MAX_ASSESSMENT_SCRIPT_BYTES, MAX_COMMAND_BYTES } from '@/lib/sandbox/types';
 import { getAgentSessionStore } from '@/lib/server/agent-runtime/store';
 import { listAgentUserMessages } from '@/lib/server/agent-runtime/user-messages';
 import { getOwnerScopedDocumentStore } from '@/lib/server/agent-runtime/owner-scoped-documents';
@@ -929,17 +929,24 @@ export async function commandStudy(
           }
         }
       }
-      if (Buffer.byteLength(testCommand) > MAX_COMMAND_BYTES)
+      const testCommandBytes = Buffer.byteLength(testCommand);
+      const assessmentFile =
+        row.evaluation?.isolatedSources && testCommandBytes > MAX_COMMAND_BYTES;
+      if (testCommandBytes > (assessmentFile ? MAX_ASSESSMENT_SCRIPT_BYTES : MAX_COMMAND_BYTES))
         throw sandboxInvalid(
-          'Current evaluation sources exceed the sandbox 32 KiB command limit.',
-          'PBL_SOURCE_SIZE',
+          'The generated assessment exceeds the sandbox transport budget.',
+          'PBL_COMMAND_SIZE',
         );
       row = await store.transaction((db) => store.commit(db, row, testedWorkspace));
-      result = await service.startCommand(requireEnvironment(row), {
+      const environmentId = requireEnvironment(row);
+      const input = {
         requestId: command.id,
         command: testCommand,
         timeoutMs: 60_000,
-      });
+      };
+      result = assessmentFile
+        ? await service.startAssessmentCommand(environmentId, input)
+        : await service.startCommand(environmentId, input);
       transition = { state: row.state, events: [] };
     } else if (command.type === 'collect') {
       const collected = await collectStudyExecution(store, row, service);
