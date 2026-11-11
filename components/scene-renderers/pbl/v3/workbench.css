@@ -206,6 +206,10 @@
   --ring: var(--pbl-guidance);
 }
 .pbl-workbench .pbl-project-overview {
+  container: pbl-overview / inline-size;
+  width: 100%;
+  max-width: 44rem;
+  margin-inline: auto;
   --pbl-overview-ink: #302a48;
   --pbl-overview-muted: #6d6383;
   --pbl-overview-accent: #7045bd;
@@ -248,6 +252,11 @@
     0 0 18px rgb(159 96 255 / 0.48),
     0 0 36px rgb(133 82 229 / 0.3),
     8px 8px 32px rgb(67 192 217 / 0.2);
+}
+@container pbl-overview (min-width: 34rem) {
+  .pbl-overview-roadmap {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 .pbl-workbench .pbl-overview-accent {
   color: var(--pbl-overview-accent);

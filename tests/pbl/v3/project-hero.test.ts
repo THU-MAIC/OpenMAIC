@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 import { projectHeroDetails } from '@/lib/server/pbl-v3/project-hero';
 import { installedProject } from '@/lib/server/pbl-v3/catalog';
+import { projectSchema } from '@/lib/pbl/v3/domain/project/project-schema';
 
 describe('authored project entrances', () => {
   const sample = installedProject({ id: 'greeting-python-lab', version: '1.1.0' }).definition;
@@ -10,11 +11,12 @@ describe('authored project entrances', () => {
     definition.presentation = {
       hero: {
         description: 'Authored project introduction',
+        finishedWork: 'A complete application, distinct from the last milestone result',
         gains: ['Review your own choices'],
         instructorName: 'Learning guide',
       },
     };
-    expect(projectHeroDetails(definition)).toMatchObject({
+    expect(projectHeroDetails(projectSchema.parse(definition))).toMatchObject({
       title: definition.title,
       ...definition.presentation.hero,
       milestoneCount: 2,

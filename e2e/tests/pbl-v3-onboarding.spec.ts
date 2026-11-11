@@ -32,6 +32,7 @@ async function project(
     staleWorkbench = false,
     priorProgress,
     openingText = '',
+    finishedWork,
   }: {
     started?: boolean;
     secondScene?: boolean;
@@ -54,6 +55,7 @@ async function project(
     staleWorkbench?: boolean;
     priorProgress?: 'stage' | 'reset' | 'discard';
     openingText?: string;
+    finishedWork?: string;
   } = {},
 ) {
   await page.addInitScript((language) => localStorage.setItem('locale', language), locale);
@@ -213,6 +215,7 @@ async function project(
           hero: {
             title: view.title,
             description: 'A synthetic project for the workspace guide.',
+            ...(finishedWork ? { finishedWork } : {}),
             gains: ['Read, decide and review'],
             instructorName: 'Project tutor',
             milestoneCount: 1,
@@ -278,6 +281,7 @@ test('keeps the authored overview visible while its workbench guide toggles inde
   const fixture = await project(page, learningEvents, {
     application: false,
     openingText: 'Welcome. First, we will work through the opening concepts together.',
+    finishedWork: 'The complete greeting application with saved history.',
   });
   fixture.view.milestones![0].goal = 'Connect a name to a greeting.';
   fixture.view.milestones![0].outcome = 'A working greeting application.';
@@ -294,6 +298,12 @@ test('keeps the authored overview visible while its workbench guide toggles inde
   await expect(overview).toContainText('A synthetic project for the workspace guide.');
   await expect(overview).toContainText('Connect a name to a greeting.');
   await expect(overview).toContainText('A working greeting application.');
+  await expect(overview.locator('.pbl-overview-result')).toContainText(
+    'The complete greeting application with saved history.',
+  );
+  await expect(overview.locator('.pbl-overview-result')).not.toContainText(
+    'A working greeting application.',
+  );
   await expect(overview.getByRole('list', { name: 'Project roadmap' })).toContainText('Greeting');
   await expect(overview).not.toContainText('Current learning step');
   await expect(overview).not.toContainText('Current goal');
@@ -359,6 +369,8 @@ test('shows only the current milestone goal and outcome in the drawer from its f
   const toggle = page.getByRole('button', { name: 'Current task', exact: true });
   const drawer = page.getByRole('region', { name: 'Current task details' });
   await toggle.click();
+  // Legacy packages keep milestone results without copying one into the final work.
+  await expect(page.locator('.pbl-overview-result')).toHaveCount(0);
   const summary = drawer.getByTestId('pbl-current-milestone-summary');
   await expect(summary).toContainText('First goal');
   await expect(summary).toContainText('First result');
