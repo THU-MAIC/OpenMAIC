@@ -73,6 +73,7 @@ import {
 } from '@/lib/workbench/course-read-only';
 import { fetchStageMeta, type StageMetaResult } from '@/lib/classroom/stage-meta-client';
 import { useRouter } from 'next/navigation';
+import { draftCourseTitle } from '@/lib/workbench/draft-course-title';
 import { findGuideCourse, seedGuideCourse } from '@/lib/workbench/guide-course';
 import {
   markOnboardingSeen,
@@ -1484,6 +1485,11 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    * special case (see `lib/workbench/first-message-session`). Opening a course
    * therefore starts no run until the user actually asks for something.
    */
+  // A course not in the rail's list (someone else's, opened read-only) is
+  // named by the document loaded in the classroom pane.
+  const draftLoadedName = useStageStore((s) =>
+    draftCourseId && s.stage?.id === draftCourseId ? s.stage.name : null,
+  );
   const draftConversation = useMemo(
     () =>
       draftCourseId
@@ -1495,9 +1501,12 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
               ? {
                   course: {
                     stageId: draftCourseId,
-                    title:
-                      courses.classrooms.find((course) => course.id === draftCourseId)?.name ||
-                      t('workspace.untitledCourse'),
+                    title: draftCourseTitle({
+                      listedName: courses.classrooms.find((course) => course.id === draftCourseId)
+                        ?.name,
+                      loadedName: draftLoadedName,
+                      fallback: t('workspace.untitledCourse'),
+                    }),
                   },
                 }
               : {}),
@@ -1544,7 +1553,15 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
             },
           }
         : null,
-    [courses.classrooms, draftCourseId, draftNamesCourse, loadSessions, navigateInBackground, t],
+    [
+      courses.classrooms,
+      draftCourseId,
+      draftLoadedName,
+      draftNamesCourse,
+      loadSessions,
+      navigateInBackground,
+      t,
+    ],
   );
 
   // The owner list stream and attached conversation stream have independent

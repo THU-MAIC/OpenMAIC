@@ -614,8 +614,10 @@ export function WorkbenchChat({
     setSlashDismissed(written.draft);
     return focusComposerWhenShown(composerRef, 'workbench-chat-composer');
     // Once per ask and per course: the draft and mentions are read as they are then.
+    // Also when the course's title arrives late (a course outside the viewer's
+    // list, named by its document once loaded): an untouched mention is rewritten.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seedCourse?.stageId, composerOwnerId, newConversation]);
+  }, [seedCourse?.stageId, seedCourse?.title, composerOwnerId, newConversation]);
   const refreshedCreateCalls = useRef(new Set<string>());
 
   // The durable completed tool node is the source of truth: replay and a live
