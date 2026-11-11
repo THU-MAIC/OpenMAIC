@@ -3023,7 +3023,25 @@
       "file-edit": "File edit",
       "workspace-run": "Workspace run"
     },
+    "overview": {
+      "title": "Tổng quan dự án",
+      "expand": "Mở rộng",
+      "collapse": "Thu gọn",
+      "projectGoal": "Mục tiêu dự án",
+      "finishedWork": "Ứng dụng khi hoàn thành",
+      "roadmap": "Lộ trình dự án",
+      "goalAndResult": "Mục tiêu và kết quả",
+      "goal": "Mục tiêu",
+      "result": "Kết quả",
+      "eachStage": "Quy trình mỗi giai đoạn",
+      "yourRole": "Bạn quyết định và rà soát; AI hỗ trợ viết kế hoạch và mã.",
+      "preview": "Dùng ứng dụng trong vùng xem trước để kiểm tra kết quả.",
+      "advance": "Nút màu tím phía trên ô nhập chỉ xuất hiện khi bước hiện tại đủ điều kiện để tiếp tục. Khi nút xuất hiện, hãy nhấn để đi tiếp."
+    },
     "journey": {
+      "currentMilestone": "Giai đoạn hiện tại",
+      "milestoneGoal": "Mục tiêu:",
+      "milestoneResult": "Kết quả:",
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",
@@ -3065,6 +3083,7 @@
       "notReflected": "Reflection not yet recorded",
       "taskDetails": "Current task details",
       "closeDetails": "Close task details",
+      "reviewDetails": "Xem chi tiết",
       "milestoneSteps": "Milestone learning steps",
       "enterStep": "Continue to {{step}}",
       "enterMilestone": "Giai đoạn sau",

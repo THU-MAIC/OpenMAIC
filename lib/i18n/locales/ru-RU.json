@@ -3023,7 +3023,25 @@
       "file-edit": "File edit",
       "workspace-run": "Workspace run"
     },
+    "overview": {
+      "title": "Обзор проекта",
+      "expand": "Развернуть",
+      "collapse": "Свернуть",
+      "projectGoal": "Цель проекта",
+      "finishedWork": "Готовое приложение",
+      "roadmap": "План проекта",
+      "goalAndResult": "Цель и результат",
+      "goal": "Цель",
+      "result": "Результат",
+      "eachStage": "Порядок каждой стадии",
+      "yourRole": "Вы принимаете решения и проверяете; ИИ помогает написать план и код.",
+      "preview": "Испытайте приложение в области предпросмотра и проверьте результат.",
+      "advance": "Фиолетовая кнопка над полем ввода появляется только тогда, когда можно перейти дальше. Когда она появится, нажмите её, чтобы продолжить."
+    },
     "journey": {
+      "currentMilestone": "Текущий этап",
+      "milestoneGoal": "Цель:",
+      "milestoneResult": "Результат:",
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",
@@ -3065,6 +3083,7 @@
       "notReflected": "Reflection not yet recorded",
       "taskDetails": "Current task details",
       "closeDetails": "Close task details",
+      "reviewDetails": "Посмотреть детали",
       "milestoneSteps": "Milestone learning steps",
       "enterStep": "Continue to {{step}}",
       "enterMilestone": "Следующий этап",

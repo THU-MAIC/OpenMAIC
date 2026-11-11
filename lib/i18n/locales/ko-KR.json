@@ -3023,7 +3023,25 @@
       "file-edit": "File edit",
       "workspace-run": "Workspace run"
     },
+    "overview": {
+      "title": "프로젝트 개요",
+      "expand": "펼치기",
+      "collapse": "Collapse",
+      "projectGoal": "프로젝트 목표",
+      "finishedWork": "완성할 앱",
+      "roadmap": "프로젝트 개요",
+      "goalAndResult": "목표와 결과",
+      "goal": "목표",
+      "result": "결과",
+      "eachStage": "각 단계의 진행 순서",
+      "yourRole": "직접 결정하고 검토하며, AI는 계획과 코드 작성을 돕습니다.",
+      "preview": "미리보기에서 앱을 사용해 구현한 기능을 확인하세요.",
+      "advance": "현재 단계를 진행할 수 있을 때만 입력창 위에 보라색 버튼이 나타납니다. 버튼이 보이면 눌러서 계속하세요."
+    },
     "journey": {
+      "currentMilestone": "현재 단계",
+      "milestoneGoal": "목표:",
+      "milestoneResult": "결과:",
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",
@@ -3065,6 +3083,7 @@
       "notReflected": "Reflection not yet recorded",
       "taskDetails": "Current task details",
       "closeDetails": "Close task details",
+      "reviewDetails": "세부 내용 보기",
       "milestoneSteps": "Milestone learning steps",
       "enterStep": "Continue to {{step}}",
       "enterMilestone": "다음 단계로 이동",

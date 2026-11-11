@@ -3023,7 +3023,25 @@
       "file-edit": "File edit",
       "workspace-run": "Workspace run"
     },
+    "overview": {
+      "title": "Resumen del proyecto",
+      "expand": "Expandir",
+      "collapse": "Contraer",
+      "projectGoal": "Objetivo del proyecto",
+      "finishedWork": "Tu aplicación terminada",
+      "roadmap": "Ruta del proyecto",
+      "goalAndResult": "Objetivo y resultado",
+      "goal": "Objetivo",
+      "result": "Resultado",
+      "eachStage": "Pasos de cada etapa",
+      "yourRole": "Tú decides y revisas; la IA ayuda a escribir el plan y el código.",
+      "preview": "Prueba tu aplicación en la vista previa y comprueba lo que construiste.",
+      "advance": "El botón morado sobre el campo de entrada aparece solo cuando puedes avanzar desde el paso actual. Cuando aparezca, haz clic para continuar."
+    },
     "journey": {
+      "currentMilestone": "Etapa actual",
+      "milestoneGoal": "Objetivo:",
+      "milestoneResult": "Resultado:",
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",
@@ -3065,6 +3083,7 @@
       "notReflected": "Reflection not yet recorded",
       "taskDetails": "Current task details",
       "closeDetails": "Close task details",
+      "reviewDetails": "Ver detalles",
       "milestoneSteps": "Milestone learning steps",
       "enterStep": "Continue to {{step}}",
       "enterMilestone": "Siguiente etapa",

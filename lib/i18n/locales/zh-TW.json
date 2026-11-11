@@ -3023,7 +3023,25 @@
       "file-edit": "File edit",
       "workspace-run": "Workspace run"
     },
+    "overview": {
+      "title": "專案總覽",
+      "expand": "展開",
+      "collapse": "收起",
+      "projectGoal": "專案目標",
+      "finishedWork": "完成後的作品",
+      "roadmap": "專案大綱",
+      "goalAndResult": "目標與成果",
+      "goal": "目標",
+      "result": "成果",
+      "eachStage": "每個階段怎麼走",
+      "yourRole": "由你做決策和審閱，AI 協助撰寫計畫和程式碼。",
+      "preview": "在作品預覽區使用自己的產品，檢查做出的效果。",
+      "advance": "目前環節達到推進條件後，輸入框上方才會出現紫色操作列；看到它時，點擊即可繼續。"
+    },
     "journey": {
+      "currentMilestone": "目前階段",
+      "milestoneGoal": "目標：",
+      "milestoneResult": "成果：",
       "completionHandoff": "本環節已完成。下一步操作請看學習助手底部的任務列。",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",
@@ -3065,6 +3083,7 @@
       "notReflected": "Reflection not yet recorded",
       "taskDetails": "Current task details",
       "closeDetails": "Close task details",
+      "reviewDetails": "回看詳情",
       "milestoneSteps": "Milestone learning steps",
       "enterStep": "Continue to {{step}}",
       "enterMilestone": "進入下一階段",

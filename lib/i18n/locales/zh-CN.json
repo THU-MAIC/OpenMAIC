@@ -3023,7 +3023,25 @@
       "file-edit": "文件修改",
       "workspace-run": "工作区运行"
     },
+    "overview": {
+      "title": "项目总览",
+      "expand": "展开",
+      "collapse": "收起",
+      "projectGoal": "项目目标",
+      "finishedWork": "完成后的作品",
+      "roadmap": "项目大纲",
+      "goalAndResult": "目标与成果",
+      "goal": "目标",
+      "result": "成果",
+      "eachStage": "每个阶段怎么走",
+      "yourRole": "你来做决策和审阅，AI 协助写计划和代码。",
+      "preview": "在作品预览区使用自己的产品，检查做出的效果。",
+      "advance": "当前环节达到推进条件后，输入框上方才会出现紫色执行条；看到它时，点击即可继续。"
+    },
     "journey": {
+      "currentMilestone": "当前阶段",
+      "milestoneGoal": "目标：",
+      "milestoneResult": "成果：",
       "completionHandoff": "本环节已完成。下一步操作请看学习助手底部的任务栏。",
       "startConversation": "学习环境就绪后，助手会主动开始当前环节。",
       "latest": "回到最新消息",
@@ -3065,6 +3083,7 @@
       "notReflected": "尚未记录复盘",
       "taskDetails": "当前任务详情",
       "closeDetails": "收起任务详情",
+      "reviewDetails": "回看详情",
       "milestoneSteps": "当前阶段的学习步骤",
       "enterStep": "进入{{step}}",
       "enterMilestone": "进入下一阶段",
