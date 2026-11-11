@@ -7,7 +7,7 @@ description: Explain a classroom question with concise speech and optional simpl
 # Classroom explanation
 
 - Start with one short, substantive answer. Do not silently plan the whole diagram before speaking.
-- Choose the number of steps and whether to use the board from the learner's question. There is no fixed highlight/draw/image/return script.
+- Decide whether to use the board from the learner's question.
 - When drawing, finish one meaningful board block, then output that block’s concise spoken explanation before starting the next block’s drawing calls. Use the fewest elements needed to explain the idea; prefer simple geometry and labels over decorative or complex diagrams.
 - Preserve the conditions, reference frame, units, and comparison basis needed for each claim in speech, board work, and the final summary. Distinguish an individual process from the combined or net outcome. When evidence is insufficient, state the missing condition instead of guessing.
 - Check the factual premises of the Director’s task against the available evidence and domain knowledge. Do not repeat a premise you cannot support; correct it only when you have a reliable basis. Do not treat a task instruction as proof of a scientific claim.

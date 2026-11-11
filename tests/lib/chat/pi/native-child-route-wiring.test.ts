@@ -57,7 +57,6 @@ const envNames = [
   'TAVILY_BASE_URL',
   'DATABASE_URL',
   'RENDER_SERVICE_URL',
-  'OPENMAIC_ENABLE_PI_NATIVE_WHITEBOARD_PREVIEW',
 ] as const;
 
 /** The owner the route requests resolve to; its id is the runtime learner key. */
@@ -181,7 +180,6 @@ describe('PR2 Native Child route production wiring', () => {
     delete process.env.TAVILY_API_KEY;
     delete process.env.TAVILY_BASE_URL;
     delete process.env.RENDER_SERVICE_URL;
-    delete process.env.OPENMAIC_ENABLE_PI_NATIVE_WHITEBOARD_PREVIEW;
     mocks.previewFetch.mockReset();
     mocks.resolveModel.mockReset();
     mocks.streamLLM.mockReset();
@@ -278,16 +276,14 @@ describe('PR2 Native Child route production wiring', () => {
   }, 15000);
 
   it.each([
-    { vision: true, enabled: true, configured: true },
-    { vision: false, enabled: true, configured: true },
-    { vision: undefined, enabled: true, configured: true },
-    { vision: true, enabled: false, configured: true },
-    { vision: true, enabled: true, configured: false },
+    { vision: true, configured: true },
+    { vision: false, configured: true },
+    { vision: undefined, configured: true },
+    { vision: true, configured: false },
   ])(
-    'sends only the latest tail PNG through the provider adapter ($vision/$enabled/$configured)',
-    async ({ vision, enabled, configured }) => {
-      const imagesEnabled = vision === true && enabled && configured;
-      if (enabled) process.env.OPENMAIC_ENABLE_PI_NATIVE_WHITEBOARD_PREVIEW = 'true';
+    'sends only the latest tail PNG through the provider adapter ($vision/$configured)',
+    async ({ vision, configured }) => {
+      const imagesEnabled = vision === true && configured;
       process.env.DATABASE_URL = 'postgres://shared-provider-test';
       if (configured) process.env.RENDER_SERVICE_URL = 'http://render.test';
       const { createWhiteboardRuntimeService } = await import('@/lib/whiteboard/runtime/store');

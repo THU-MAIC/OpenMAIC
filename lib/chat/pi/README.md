@@ -22,10 +22,10 @@ and panel information remains explicitly labeled as a request-start snapshot.
 
 `whiteboard-preview.ts` renders the snapshot read for the current tail through
 `prepareScenePreview`, owner-scoped asset resolution, and the self-hostable
-`render-service/` endpoint `POST /preview`. Enable it explicitly with
-`OPENMAIC_ENABLE_PI_NATIVE_WHITEBOARD_PREVIEW=true` and `RENDER_SERVICE_URL`.
-The Native classroom must have a whiteboard service, and the resolved model must
-explicitly support vision. Otherwise requests retain text-only state.
+`render-service/` endpoint `POST /preview`. It is enabled when
+`RENDER_SERVICE_URL` is configured, the Native classroom has a whiteboard
+service, and the resolved model explicitly supports vision. Otherwise requests
+retain text-only state.
 
 Director and Child tails contain at most one whole-board PNG alongside the text
 state. A nonempty existing board is visible on the first model round. Empty

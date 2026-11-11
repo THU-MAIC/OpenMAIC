@@ -15,7 +15,6 @@ import {
   isCoursewareReferenceEnabled,
   isPiNativeChildRuntimeEnabled,
   isPiNativeChildSpotlightEnabled,
-  isPiNativeWhiteboardPreviewEnabled,
 } from '@/lib/config/feature-flags';
 import { createLogger } from '@/lib/logger';
 import { resolveAgentConfigs } from '@/lib/chat/pi/config';
@@ -297,10 +296,7 @@ async function chat(req: NextRequest, principal: OwnerPrincipal): Promise<Respon
           languageModel,
           supportsToolImages,
           whiteboardPreview:
-            isPiNativeWhiteboardPreviewEnabled() &&
-            supportsToolImages &&
-            nativeWhiteboardService &&
-            validRequestStartStageId
+            supportsToolImages && nativeWhiteboardService && validRequestStartStageId
               ? createWhiteboardPreview(principal.ownerId, validRequestStartStageId)
               : undefined,
           thinkingConfig,

@@ -101,11 +101,6 @@ export function isPiNativeChildRuntimeEnabled(): boolean {
   return readBoolean(process.env.OPENMAIC_ENABLE_PI_NATIVE_CHILD_RUNTIME);
 }
 
-/** Server-only, default-OFF whole-board observations for the Native classroom. */
-export function isPiNativeWhiteboardPreviewEnabled(): boolean {
-  return readBoolean(process.env.OPENMAIC_ENABLE_PI_NATIVE_WHITEBOARD_PREVIEW);
-}
-
 /**
  * Server-only capability gate for Native Child Spotlight. This flag never
  * selects the Child runtime and has no effect while the Legacy harness is used.
