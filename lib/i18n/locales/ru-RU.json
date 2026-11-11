@@ -3025,7 +3025,7 @@
     "overview": {
       "title": "Обзор проекта",
       "expand": "Развернуть",
-      "collapse": "Свернуть обзор",
+      "collapse": "Свернуть",
       "projectGoal": "Цель проекта",
       "finishedWork": "Готовое приложение",
       "roadmap": "План проекта",

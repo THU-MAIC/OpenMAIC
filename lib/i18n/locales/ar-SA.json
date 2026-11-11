@@ -3025,7 +3025,7 @@
     "overview": {
       "title": "نظرة عامة على المشروع",
       "expand": "توسيع",
-      "collapse": "طي النظرة العامة",
+      "collapse": "طي",
       "projectGoal": "هدف المشروع",
       "finishedWork": "تطبيقك المكتمل",
       "roadmap": "خطة المشروع",

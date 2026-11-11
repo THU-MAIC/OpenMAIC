@@ -3025,7 +3025,7 @@
     "overview": {
       "title": "Aperçu du projet",
       "expand": "Développer",
-      "collapse": "Replier la vue d’ensemble",
+      "collapse": "Replier",
       "projectGoal": "Objectif du projet",
       "finishedWork": "Votre application terminée",
       "roadmap": "Plan du projet",

@@ -3025,7 +3025,7 @@
     "overview": {
       "title": "Project overview",
       "expand": "Expand",
-      "collapse": "Collapse overview",
+      "collapse": "Collapse",
       "projectGoal": "Project goal",
       "finishedWork": "Your finished application",
       "roadmap": "Project roadmap",

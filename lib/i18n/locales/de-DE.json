@@ -3025,7 +3025,7 @@
     "overview": {
       "title": "Projektübersicht",
       "expand": "Aufklappen",
-      "collapse": "Übersicht zuklappen",
+      "collapse": "Einklappen",
       "projectGoal": "Projektziel",
       "finishedWork": "Ihre fertige Anwendung",
       "roadmap": "Projektübersicht",

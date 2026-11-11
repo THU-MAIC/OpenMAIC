@@ -3025,7 +3025,7 @@
     "overview": {
       "title": "프로젝트 개요",
       "expand": "펼치기",
-      "collapse": "개요 접기",
+      "collapse": "Collapse",
       "projectGoal": "프로젝트 목표",
       "finishedWork": "완성할 앱",
       "roadmap": "프로젝트 개요",

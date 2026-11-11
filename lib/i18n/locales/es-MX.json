@@ -3025,7 +3025,7 @@
     "overview": {
       "title": "Resumen del proyecto",
       "expand": "Expandir",
-      "collapse": "Contraer resumen",
+      "collapse": "Contraer",
       "projectGoal": "Objetivo del proyecto",
       "finishedWork": "Tu aplicación terminada",
       "roadmap": "Ruta del proyecto",

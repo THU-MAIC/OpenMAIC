@@ -94,13 +94,17 @@ export function ProjectOverview({ view, hero }: { view: LearningView; hero?: Pro
           </div>
         )}
         <details className="pbl-overview-guide group border-t pt-3">
-          <summary className="pbl-overview-accent flex cursor-pointer list-none items-center justify-between gap-3 rounded-md py-1 text-sm font-semibold [&::-webkit-details-marker]:hidden">
-            {t('pblV3.overview.eachStage')}
-            <ChevronDown
-              size={16}
-              className="shrink-0 transition-transform group-open:rotate-180 motion-reduce:transition-none"
-              aria-hidden="true"
-            />
+          <summary className="pbl-overview-accent flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-xl border px-3 py-2 text-sm font-semibold [&::-webkit-details-marker]:hidden">
+            <span>{t('pblV3.overview.eachStage')}</span>
+            <span className="pbl-overview-disclosure flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold">
+              <span className="group-open:hidden">{t('pblV3.overview.expand')}</span>
+              <span className="hidden group-open:inline">{t('pblV3.overview.collapse')}</span>
+              <ChevronDown
+                size={16}
+                className="transition-transform group-open:rotate-180 motion-reduce:transition-none"
+                aria-hidden="true"
+              />
+            </span>
           </summary>
           <div className="space-y-3 pt-2">
             {steps.length > 0 && (

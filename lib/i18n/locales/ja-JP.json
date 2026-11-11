@@ -3025,7 +3025,7 @@
     "overview": {
       "title": "プロジェクト概要",
       "expand": "開く",
-      "collapse": "概要を閉じる",
+      "collapse": "折りたたむ",
       "projectGoal": "プロジェクトの目標",
       "finishedWork": "完成するアプリ",
       "roadmap": "プロジェクトの流れ",
