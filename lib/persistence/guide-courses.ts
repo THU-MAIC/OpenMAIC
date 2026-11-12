@@ -10,10 +10,11 @@
  * both in the transactions that could otherwise make a second copy:
  *
  * - {@link refuseSecondGuideCourse}: creating a guide course is refused while
- *   the owner holds another active one. Creates and claims of an owner are
- *   serialized by its identity lock, so a seed that lands after a claim sees
- *   the claimed copy; the seed takes the refusal (403) as settled and reloads
- *   the library, whose list missed the claimed copy.
+ *   the owner holds another active one. A claim takes the owner's identity
+ *   lock exclusively, so a seed that lands after a claim sees the claimed
+ *   copy; creates take it shared, so two creates of one owner are serialized
+ *   by a per-owner guide lock instead. The seed takes the refusal (403) as
+ *   settled and reloads the library, whose list missed the claimed copy.
  * - {@link retireDuplicateGuideCourses}: a claim between two owners that both
  *   hold a copy keeps one, never retiring an edited copy.
  *
@@ -58,8 +59,9 @@ export { GUIDE_COURSE_EXISTS };
 /**
  * Refuse the creation of guide course `stageId` for `ownerId` when the owner
  * already holds another active guide course of the current generation. Inside
- * the create transaction, after its identity lock. Any other id, an older
- * generation's included, passes untouched.
+ * the create transaction, after its identity lock (shared); a per-owner lock
+ * serializes two such creates, so they cannot both pass. Any other id,
+ * an older generation's included, passes untouched.
  */
 export async function refuseSecondGuideCourse(
   tx: Queryable,
@@ -67,6 +69,12 @@ export async function refuseSecondGuideCourse(
   ownerId: string,
 ): Promise<void> {
   if (!isCurrentGuideCourseId(stageId)) return;
+  // Held to COMMIT. Taken after the stage-create lock of `stageId`, and only
+  // here, so every holder takes the two in the same order.
+  await tx.query(
+    "SELECT pg_advisory_xact_lock(hashtextextended('openmaic.guide-course:' || $1, 0))",
+    [ownerId],
+  );
   const other = await tx.query<{ stage_id: string } & Record<string, unknown>>(
     `SELECT stage_id FROM stage_meta
       WHERE owner_id = $1 AND stage_id ~ $2 AND stage_id <> $3 AND deleted_at IS NULL

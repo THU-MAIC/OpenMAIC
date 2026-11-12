@@ -13,6 +13,7 @@ import { Pool } from 'pg';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
+import { guideCourseIdFor } from '@/lib/persistence/guide-course-id';
 import { assetPrincipalForOwner } from '@/lib/persistence/owner-assets';
 import { createOwnerBoundDocumentStore } from '@/lib/persistence/owner-bound-document-store';
 import {
@@ -171,6 +172,49 @@ describe.skipIf(!contractUrl)('claiming anonymous work on PostgreSQL', () => {
 
   it('keeps at most one guide course, and every edited copy', async () => {
     await guideCourseClaimScenario(harness);
+  });
+
+  it('lets one of two concurrent guide course creates of one owner through', async () => {
+    // Two learner keys landing on one account seed two different ids. The
+    // first create parks after its guide check, holding the per-owner guide
+    // lock; the second waits on that lock, then sees the first one's copy.
+    const owner = 'user:guide-race';
+    const parked = gate();
+    let first = true;
+    const store = () =>
+      createOwnerBoundDocumentStore({
+        pool,
+        ownerId: owner,
+        principal: accountPrincipal(owner),
+        validateScene: validateAppScene,
+        validateStage: validateAppStage,
+        createHooks: {
+          name: 'test-gate',
+          onCreate: async () => {
+            if (!first) return;
+            first = false;
+            await parked.wait();
+          },
+        },
+      });
+    const [a, b] = [guideCourseIdFor('race-a'), guideCourseIdFor('race-b')];
+    const saveA = store().saveDocument(courseNaming(a) as never);
+    await parked.reached;
+    const saveB = store().saveDocument(courseNaming(b) as never);
+    expect(await stillPending(saveB)).toBe(true);
+    parked.release();
+
+    const { results } = await settleWithinBudget([saveA, saveB]);
+    expect(results[0]!.status).toBe('fulfilled');
+    expect(results[1]).toMatchObject({
+      status: 'rejected',
+      reason: { code: 'GUIDE_COURSE_EXISTS' },
+    });
+    const active = await pool.query<{ stage_id: string }>(
+      'SELECT stage_id FROM stage_meta WHERE owner_id = $1 AND deleted_at IS NULL',
+      [owner],
+    );
+    expect(active.rows.map((row) => row.stage_id)).toEqual([a]);
   });
 
   it('keeps nothing when a participant throws mid-claim', async () => {
