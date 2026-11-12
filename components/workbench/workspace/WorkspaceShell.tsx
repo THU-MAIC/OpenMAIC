@@ -894,7 +894,8 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   useEffect(() => {
     if (!coursesReady) return;
     void seedGuideCourse(guideOption, courseList).then((outcome) => {
-      if (outcome === 'created') void reloadCourses();
+      // `present`: a claim brought a guide course in after this list loaded.
+      if (outcome === 'created' || outcome === 'present') void reloadCourses();
     });
     // Settled owners return at once (browser memory), so a list that changes
     // later costs nothing.
