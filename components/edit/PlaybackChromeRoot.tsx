@@ -35,6 +35,7 @@ import {
   type CourseEndContext,
 } from '@/lib/classroom/course-end';
 import { sessionBuildsCourse, useWorkbenchStore } from '@/lib/workbench/session-store';
+import { producerSessionRunning, useRunningSessions } from '@/lib/workbench/running-sessions';
 import { onQuizReviewed } from '@/lib/classroom/quiz-reviewed';
 import { loadQuizAttemptState } from '@/lib/quiz/runtime';
 import { useCanvasStore } from '@/lib/store/canvas';
@@ -186,7 +187,14 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const generationComplete = useStageStore.use.generationComplete();
     const generationInterrupted = useStageStore.use.generationInterrupted();
     // The workspace's agent run is writing this very course: its pages keep landing.
-    const agentBuilding = useWorkbenchStore((s) => sessionBuildsCourse(s, stage?.id));
+    // Either the attached conversation's run, or — for a course open beside a
+    // different conversation — the run of the conversation that produces it.
+    const attachedRunBuilding = useWorkbenchStore((s) => sessionBuildsCourse(s, stage?.id));
+    const outlineProducerRef = useStageStore((s) => s.outlineProducerRef);
+    const producerBuilding = useRunningSessions((s) =>
+      producerSessionRunning(s.ids, outlineProducerRef),
+    );
+    const agentBuilding = attachedRunBuilding || producerBuilding;
 
     const currentScene = getCurrentScene();
     const coursewareReferenceEnabled = isCoursewareReferenceEnabled();

@@ -63,6 +63,7 @@ import {
   type ProHomeSessionItem,
 } from '@/lib/workbench/pro-home-data';
 import { OwnerSessionClient } from '@/lib/workbench/owner-session-client';
+import { useRunningSessions } from '@/lib/workbench/running-sessions';
 import { resolveCourseChatBootstrap } from '@/lib/workbench/course-chat-bootstrap';
 import { startConversationWithFirstMessage } from '@/lib/workbench/first-message-session';
 import { createdCourseTabsToOpen } from '@/lib/workbench/created-course-tabs';
@@ -247,6 +248,13 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     [forgetRun, t],
   );
   const [sessions, setSessions] = useState<ProHomeSessionItem[]>(EMPTY_SESSIONS);
+  // Which conversations are running, for a classroom showing a course another
+  // conversation is still building (see `lib/workbench/running-sessions.ts`).
+  const setRunningSessions = useRunningSessions((s) => s.setFromSessions);
+  useEffect(() => {
+    setRunningSessions(sessions);
+  }, [sessions, setRunningSessions]);
+  useEffect(() => () => setRunningSessions([]), [setRunningSessions]);
   /**
    * The latest list, readable from queued callbacks without waiting for React
    * to commit another render. The owner publisher updates it before setState.
