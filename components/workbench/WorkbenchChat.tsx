@@ -107,6 +107,7 @@ import { useWorkbenchAutoscroll } from './chat/autoscroll';
 import { chatColumn, composerLayout, wbStyles as styles } from './chat/chat-styles';
 import { ChatTimeline } from './chat/chat-timeline';
 import { queuedOpeningMessage } from '@/lib/workbench/queued-session';
+import { type SeedCourseAsk, seedIsTitleOnlyChange } from '@/lib/workbench/draft-course-title';
 import { pendingQuestion } from './chat/question-card-state';
 import { QuestionForm } from './chat/question-form';
 import { useQuestionHost } from '@/lib/workbench/question-host';
@@ -577,8 +578,10 @@ export function WorkbenchChat({
    */
   const seedCourse = sessionId ? null : (draftConversation?.course ?? null);
   const seededCourse = useRef<{ readonly stageId: string; readonly text: string } | null>(null);
+  const seededAsk = useRef<SeedCourseAsk | null>(null);
   useEffect(() => {
     if (!seedCourse) {
+      seededAsk.current = null;
       // Nothing named any more (a conversation now, or New chat): nothing
       // bound, and a mention that is all the composer holds goes with it.
       const seeded = seededCourse.current;
@@ -591,6 +594,16 @@ export function WorkbenchChat({
       }
       return;
     }
+    const ask: SeedCourseAsk = {
+      stageId: seedCourse.stageId,
+      title: seedCourse.title,
+      ownerId: composerOwnerId,
+      ask: newConversation,
+    };
+    // Only the title changed (it arrived after the course opened): rewrite the
+    // mention in place, but leave focus and the caret where the user has them.
+    const titleOnly = seedIsTitleOnlyChange(seededAsk.current, ask);
+    seededAsk.current = ask;
     const seeded = seededCourse.current;
     const untouched =
       draft === '' ||
@@ -612,12 +625,18 @@ export function WorkbenchChat({
     });
     if (!written) return;
     seededCourse.current = { stageId: ref.stageId, text: written.draft };
-    pendingCaret.current = written.caret;
+    const composerFocused = !!document.activeElement?.closest(
+      '[data-testid="workbench-chat-composer"]',
+    );
+    // The caret effect focuses the composer: a title-only rewrite moves the
+    // caret only when the composer already holds focus.
+    if (!titleOnly || composerFocused) pendingCaret.current = written.caret;
     setCaret(written.caret);
     setDraft(written.draft);
     // The mention just written must not open the menu it would come from.
     setMentionDismissed(written.draft);
     setSlashDismissed(written.draft);
+    if (titleOnly) return;
     return focusComposerWhenShown(composerRef, 'workbench-chat-composer');
     // Once per ask and per course: the draft and mentions are read as they are then.
     // Also when the course's title arrives late (a course outside the viewer's
