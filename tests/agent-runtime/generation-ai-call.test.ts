@@ -240,6 +240,22 @@ describe('createGenerationAiCallFactory', () => {
     expect(callLLM.mock.calls[1][0].prompt).toBe('img_1');
   });
 
+  it('returns a content-filter refusal without a text retry', async () => {
+    routeTo(true);
+    callLLM.mockResolvedValueOnce({ text: '', finishReason: 'content-filter' });
+    const routed = createGenerationAiCallFactory({
+      ownerId: 'owner-1',
+      readAsset: resolvedReader(await png()),
+    });
+
+    const text = await routed('scene-content:slide')('system', 'img_1 [see attached]', [
+      { id: 'img_1', src: 'ast_figure1' },
+    ]);
+
+    expect(text).toBe('');
+    expect(callLLM).toHaveBeenCalledTimes(1);
+  });
+
   it('stays text-only when the routed model does not accept images', async () => {
     routeTo(false);
     const readAsset = vi.fn<VisionAssetReader>();

@@ -193,8 +193,11 @@ export function createGenerationAiCallFactory(options?: {
           { enabled: false, serverManaged: resolved.serverManaged },
         );
         // callLLM's empty-output fallback is off for this call, so an empty
-        // reply is handled like a failure: retried as text below.
-        if (isEmptyLlmOutput(result.text)) throw new Error('empty vision output');
+        // reply is handled like a failure: retried as text below. A
+        // content-filter finish is a refusal, returned as is, as callLLM does.
+        if (result.finishReason !== 'content-filter' && isEmptyLlmOutput(result.text)) {
+          throw new Error('empty vision output');
+        }
         return result.text;
       } catch (error) {
         if (options?.abortSignal?.aborted) throw error;
