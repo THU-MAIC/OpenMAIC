@@ -6,6 +6,7 @@ import { MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES } from '@/lib/constants/generation
 import { resolveOwnedAsset } from '@/lib/persistence/resolve-server-asset';
 import { prepareVisionImages } from '@/lib/server/generation/vision-images';
 import type { LlmStage } from '@/lib/server/model-routes';
+import { isEmptyLlmOutput } from '@/lib/server/llm-fallback';
 import { resolveModel } from '@/lib/server/resolve-model';
 
 const CONTENT_TYPES = new Set(['slide', 'quiz', 'interactive', 'pbl']);
@@ -191,6 +192,9 @@ export function createGenerationAiCallFactory(options?: {
           resolved.thinkingConfig,
           { enabled: false, serverManaged: resolved.serverManaged },
         );
+        // callLLM's empty-output fallback is off for this call, so an empty
+        // reply is handled like a failure: retried as text below.
+        if (isEmptyLlmOutput(result.text)) throw new Error('empty vision output');
         return result.text;
       } catch (error) {
         if (options?.abortSignal?.aborted) throw error;

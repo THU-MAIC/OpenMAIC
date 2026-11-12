@@ -221,6 +221,25 @@ describe('createGenerationAiCallFactory', () => {
     expect(textFallback?.enabled).not.toBe(false);
   });
 
+  it('retries an empty vision reply as text', async () => {
+    routeTo(true);
+    callLLM.mockResolvedValueOnce({ text: '  ' });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const routed = createGenerationAiCallFactory({
+      ownerId: 'owner-1',
+      readAsset: resolvedReader(await png()),
+    });
+
+    const text = await routed('scene-content:slide')('system', 'img_1 [see attached]', [
+      { id: 'img_1', src: 'ast_figure1' },
+    ]);
+    warn.mockRestore();
+
+    expect(text).toBe('generated');
+    expect(callLLM).toHaveBeenCalledTimes(2);
+    expect(callLLM.mock.calls[1][0].prompt).toBe('img_1');
+  });
+
   it('stays text-only when the routed model does not accept images', async () => {
     routeTo(false);
     const readAsset = vi.fn<VisionAssetReader>();
