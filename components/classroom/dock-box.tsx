@@ -17,6 +17,10 @@
  * remembered height that a fold never touches. A drag still in flight is aborted as the
  * edge unmounts (it stays mounted across a fold: one edge in both states).
  *
+ * From the keyboard, ArrowUp / ArrowDown size the open dock, and ArrowUp on the folded
+ * dock's edge unfolds it. While folded the separator's range starts at the folded height,
+ * so the value it reports stays inside the range it advertises.
+ *
  * `data-dragging` on the dock is set as the pointer goes down and cleared as it comes up,
  * never in between (a fold mid-drag included): it only switches off transitions, and
  * nothing under it may hang an entrance animation on it, or the animation would replay
@@ -76,6 +80,7 @@ export function DockResizeHandle({
   const { t } = useI18n();
   const stored = useSettingsStore((state) => state.dockHeight);
   const setDockHeight = useSettingsStore((state) => state.setDockHeight);
+  const setDockCollapsed = useSettingsStore((state) => state.setDockCollapsed);
   const settle = useRef<number | null>(null);
   const abortDrag = useRef<(() => void) | null>(null);
   useEffect(
@@ -90,7 +95,13 @@ export function DockResizeHandle({
   const room = () => hostOf(dockRef.current)?.clientHeight || null;
 
   const onKeyDown = (event: KeyboardEvent) => {
-    if (folded) return;
+    if (folded) {
+      // Up unfolds, to the remembered height, as the fold button does.
+      if (event.key !== 'ArrowUp') return;
+      event.preventDefault();
+      setDockCollapsed(false);
+      return;
+    }
     const step =
       event.key === 'ArrowUp'
         ? DOCK_KEYBOARD_STEP
@@ -167,7 +178,7 @@ export function DockResizeHandle({
       aria-orientation="horizontal"
       aria-label={t('stage.dock.resize')}
       aria-valuenow={folded ? DOCK_FOLDED_HEIGHT : stored}
-      aria-valuemin={DOCK_MIN_HEIGHT}
+      aria-valuemin={folded ? DOCK_FOLDED_HEIGHT : DOCK_MIN_HEIGHT}
       aria-valuemax={DOCK_MAX_HEIGHT}
       data-testid="dock-resize"
       data-folded={folded ? 'true' : undefined}

@@ -278,6 +278,36 @@ describe('the classroom dock edge', () => {
     expect(useSettingsStore.getState().dockHeight).toBe(232);
   });
 
+  it('keeps the value it reports inside its range, folded or open', async () => {
+    const { edge } = await render();
+    const range = () => {
+      const el = edge();
+      return ['aria-valuemin', 'aria-valuenow', 'aria-valuemax'].map((name) =>
+        Number(el.getAttribute(name)),
+      );
+    };
+    for (const collapsed of [false, true]) {
+      await act(async () => useSettingsStore.setState({ dockCollapsed: collapsed }));
+      const [min, now, max] = range();
+      expect(min).toBeLessThanOrEqual(now);
+      expect(now).toBeLessThanOrEqual(max);
+    }
+    expect(range()[1]).toBe(DOCK_FOLDED_HEIGHT);
+  });
+
+  it('unfolds from the keyboard: ArrowUp on the folded edge', async () => {
+    useSettingsStore.setState({ dockCollapsed: true });
+    const { edge } = await render();
+    const key = (name: string) =>
+      edge().dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true }));
+    await act(async () => key('ArrowDown'));
+    expect(useSettingsStore.getState()).toMatchObject({ dockCollapsed: true, dockHeight: 192 });
+    await act(async () => key('ArrowUp'));
+    // Unfolded to the remembered height, not grown by a step.
+    expect(useSettingsStore.getState()).toMatchObject({ dockCollapsed: false, dockHeight: 192 });
+    expect(edge().getAttribute('aria-valuenow')).toBe('192');
+  });
+
   it('a dock the classroom holds folded has no edge to unfold it', async () => {
     const { edge } = await render(true);
     expect(edge()).toBeNull();
