@@ -2416,7 +2416,6 @@
     "loadFailed": "加载失败",
     "retry": "重试",
     "untitledSession": "未命名对话",
-    "pagePosition": "第 {{index}} / {{total}} 页",
     "navAria": "工作区导航",
     "homeAria": "返回首页",
     "currentSession": "当前对话",
