@@ -137,7 +137,10 @@ describe('authoritative product guidance', () => {
     expect(prompt).toContain('also applies to the final bold instruction');
     expect(prompt).toContain('not by sending a chat message');
     expect(prompt).toContain('does not submit, save, approve or advance');
-    expect(teachingProductContext(fixture(0)).current.taskDrawer).toBe(false);
+    expect(teachingProductContext(fixture(0)).current.taskDrawer).toBe(true);
+    expect(teachingProductContext(fixture(0)).current.taskContents).toContain(
+      'current milestone goal and outcome',
+    );
   });
   it('keeps declared UI instructions separate from observed runtime and formal assessment evidence', () => {
     const input = fixture(6);

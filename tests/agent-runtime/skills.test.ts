@@ -605,6 +605,17 @@ describe('shipped course-design skills', () => {
     expect(stageDesign).toContain('narration that talks about material this stage does not teach');
   });
 
+  it('builds the first page first and makes media just in time', async () => {
+    const stageDesign = flat((await listSkills()).find((s) => s.id === 'stage-design')!.content);
+    expect(stageDesign).toContain('get page 1 persisted as early as possible');
+    expect(stageDesign).toContain('generate page 1 before any work that page does not need');
+    expect(stageDesign).toContain('Research a page relies on comes before that page');
+    expect(stageDesign).toContain(
+      "the images for page N are generated right before page N's `generate_scene`",
+    );
+    expect(stageDesign).toContain('never as a batch for the whole course');
+  });
+
   it('does not teach a single removed slide op in any shipped agent skill', async () => {
     const removed = [
       'set_text',

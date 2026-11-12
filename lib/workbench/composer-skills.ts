@@ -15,12 +15,11 @@
  * sees in the box is exactly what will be sent, they can write as many handles
  * as they like, and deleting one is Backspace.
  *
- * It IS drawn as a pill now — but as a pill AROUND THE TEXT, not instead of it:
- * `segmentSkillHandles` below finds the handles in the draft and the composer's
- * mirror layer paints a rounded ground behind them (`components/workbench/composer-input`).
+ * It IS drawn as a chip now, but the chip is how the TEXT looks, not a thing
+ * beside it: `segmentSkillHandles` below finds the handles in the draft and the
+ * composer's input draws each as one inline node (`lib/workbench/composer-doc`).
  * The value never stops being the plain string, which is the difference that
- * matters: no staging store, no ceiling, no dedupe, and deleting one is still
- * Backspace (`deleteSkillHandleBefore`).
+ * matters: no staging store, no ceiling, no dedupe.
  *
  * EVERY composer, without exception — the conversation's and the shared launch
  * panel's. An input box is an input box. The launch surfaces briefly
@@ -35,8 +34,7 @@ import { composerTokens, tokenAtCaret, type ComposerToken } from './composer-tok
 /**
  * The skill NAME a token spells, or null when the token is not a handle at all.
  *
- * One shape, four callers (the trigger, the insertion, the whole-token Backspace,
- * the inline pill), so none of them can disagree about what a handle looks like:
+ * One shape, three callers (the trigger, the insertion, the chip), so none of them can disagree about what a handle looks like:
  * a `/` starting the token, and a name with no second slash in it. `'/'` on its
  * own spells the EMPTY name — a live query with nothing typed after it yet, which
  * is what opens the menu on the bare keystroke — and every caller that needs a
@@ -71,52 +69,7 @@ export interface SkillHandleInsertion {
   readonly caret: number;
 }
 
-/**
- * Backspace over a whole handle.
- *
- * A handle that names an installed skill is one thing to the reader and one
- * thing to the model, so deleting it one character at a time — leaving
- * `/k12-core-literacy-plannin`, which resolves to nothing — is the wrong unit.
- * With the caret immediately after such a handle (or after the space that
- * follows it) one Backspace takes the whole run.
- *
- * A token that does not resolve — `/deep-res` while `deep-research` is what is
- * installed — is still being typed. This returns null and the browser deletes
- * one character. That is the same condition `segmentSkillHandles` uses to paint
- * a pill.
- *
- * Deliberately narrow. It fires ONLY on a collapsed caret sitting at the END of a
- * handle token; anywhere else — mid-handle, with a selection, in the middle of
- * prose — this returns null and the browser's own editing behaviour stands.
- * Callers must also skip it while an IME is composing: rewriting the value under a
- * composition would break Chinese input, which is the one thing this composer may
- * never regress.
- */
-export function deleteSkillHandleBefore(
-  draft: string,
-  caret: number,
-  installedNames: readonly string[],
-): SkillHandleInsertion | null {
-  if (caret <= 0 || caret > draft.length) return null;
-  // The insertion leaves a single trailing space, so the caret usually sits after
-  // it rather than against the handle. Step over exactly one.
-  const probe = draft[caret - 1] === ' ' ? caret - 1 : caret;
-  const token = tokenAtCaret(draft, probe);
-  /**
-   * The caret has to be at the token's END, not inside it. From the text alone
-   * `/k12-c` is a perfectly good short handle, so without this a Backspace in the
-   * middle of `/k12-core` would swallow the left half and leave `ore` — the exact
-   * mangling this exists to prevent, in the other direction.
-   */
-  if (token.end !== probe) return null;
-  const name = skillHandleName(token.text);
-  // Same condition as the pill: only an installed skill is one unit. A handle
-  // still being typed does not resolve, so the browser deletes one character.
-  if (!name || !installedNames.includes(name)) return null;
-  return { draft: draft.slice(0, token.start) + draft.slice(caret), caret: token.start };
-}
-
-/** One run of the draft, as the mirror layer draws it. */
+/** One run of the draft: a handle the input draws as a chip, or plain text. */
 export interface ComposerTextSegment {
   readonly text: string;
   /** True when this run is a handle that resolves to an installed skill. */
@@ -126,16 +79,15 @@ export interface ComposerTextSegment {
 /**
  * Cut the draft into plain runs and skill-handle runs, in order.
  *
- * This is what the inline pill is: the composer's mirror layer draws a rounded
- * ground behind the handles this returns (see `components/workbench/composer-input`).
- * Concatenating every `text` back together always reproduces the draft exactly —
- * the pill is decoration over unchanged text, never a transformation of it.
+ * This is what a skill chip is: the composer's input draws each handle this
+ * returns as one inline node (`lib/workbench/composer-doc`). Concatenating every
+ * `text` back together always reproduces the draft exactly.
  *
  * A handle counts only when the WHOLE token names an INSTALLED skill:
  * `/stage-design` is a pill, `/stage-desig` and `/whatever` are ordinary text, and
  * so is `/stage-design,` (the comma is part of the token, and the agent would not
  * resolve that either). It walks `composerTokens`, the same boundary definition
- * the trigger and the Backspace use, so all four agree on where a handle ends.
+ * the trigger uses, so they agree on where a handle ends.
  *
  * ONE ACCEPTED IMPRECISION: text carries no provenance, so a handle the user
  * PASTED renders identically to one the `/` menu inserted. There is nothing in a

@@ -1,7 +1,7 @@
 'use client';
 
-import { useRef, useState, useLayoutEffect } from 'react';
 import type { PPTLatexElement } from '@openmaic/dsl';
+import { KatexContent } from './BaseLatexElement';
 
 export { BaseLatexElement } from './BaseLatexElement';
 
@@ -48,6 +48,7 @@ export function LatexElement({ elementInfo, selectElement }: LatexElementProps) 
               html={elementInfo.html}
               width={elementInfo.width}
               height={elementInfo.height}
+              align={elementInfo.align}
             />
           ) : elementInfo.path && elementInfo.viewBox ? (
             <svg
@@ -72,35 +73,6 @@ export function LatexElement({ elementInfo, selectElement }: LatexElementProps) 
           ) : null}
         </div>
       </div>
-    </div>
-  );
-}
-
-function KatexContent({ html, width, height }: { html: string; width: number; height: number }) {
-  const innerRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
-
-  useLayoutEffect(() => {
-    if (!innerRef.current) return;
-    const naturalW = innerRef.current.scrollWidth;
-    const naturalH = innerRef.current.scrollHeight;
-    if (naturalW > 0 && naturalH > 0) {
-      setScale(Math.min(width / naturalW, height / naturalH));
-    }
-  }, [html, width, height]);
-
-  return (
-    <div style={{ width, height, overflow: 'hidden' }}>
-      <div
-        ref={innerRef}
-        className="[&_.katex-display]:!m-0"
-        style={{
-          transformOrigin: '0 0',
-          transform: `scale(${scale})`,
-          whiteSpace: 'nowrap',
-        }}
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
     </div>
   );
 }

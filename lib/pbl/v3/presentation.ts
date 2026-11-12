@@ -7,9 +7,7 @@ export const learningWorkbenchFeatures = { executionConsole: false, applicationP
 export const TASK_DRAWER_LINK = '#pbl-task';
 
 export function hasTaskDrawer(view: Pick<LearningView, 'state' | 'stage'>): boolean {
-  return (
-    view.state.status !== 'completed' && ['dialogue', 'produce', 'check'].includes(view.stage.kind)
-  );
+  return view.state.status !== 'completed';
 }
 
 /** Labels follow authoritative progress; they never authorize a transition. */

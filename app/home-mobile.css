@@ -91,9 +91,6 @@
   margin: 0;
   animation: none;
 }
-.home-page[data-mobile='true'] [data-pro-morph='badge'] {
-  display: none;
-}
 .home-mobile-heading {
   font-size: 23px;
   line-height: 32px;

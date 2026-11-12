@@ -17,6 +17,8 @@ import type { Scene, SceneType } from '@/lib/types/stage';
 import { sceneEditorRegistry } from '@/lib/edit/scene-editor-registry';
 import { NOOP_SURFACE } from '@/lib/edit/noop-surface';
 import { useStageStore } from '@/lib/store/stage';
+import { markOnboardingSeen } from '@/lib/workbench/onboarding';
+import { editTourSteps } from '@/components/workbench/workspace/edit-tour-steps';
 
 const probe = vi.hoisted(() => ({
   sceneType: 'slide' as string,
@@ -34,6 +36,7 @@ vi.mock('@/components/edit/EditDock/EditDock', () => ({ EditDock: () => null }))
 vi.mock('@/components/stage/header-controls', () => ({ HeaderControls: () => null }));
 vi.mock('@/lib/edit/preload-editor', () => ({
   preloadEditor: () => Promise.resolve(),
+  preloadEditorSurfaces: () => Promise.resolve(),
   isEditorPreloaded: () => true,
 }));
 vi.mock('@/lib/edit/noop-surface', () => ({
@@ -94,7 +97,7 @@ function surfaceFor(sceneType: SceneType): SceneEditorSurface {
 }
 
 let root: Root | null = null;
-type PaneProps = { readOnly: boolean; playback: boolean; hidden: boolean };
+type PaneProps = { readOnly: boolean; fullscreen: boolean; hidden: boolean };
 
 async function mount(element: Parameters<Root['render']>[0]) {
   if (!root) {
@@ -114,7 +117,7 @@ function renderPane(next: Partial<PaneProps> = {}) {
         onCloseCourse: vi.fn(),
       },
       readOnly: false,
-      playback: false,
+      fullscreen: false,
       hidden: false,
       ...next,
     }),
@@ -161,9 +164,14 @@ describe('undo and redo in the classroom pane header', () => {
       const redoControl = redoButton()!;
       expect(header.contains(undoButton())).toBe(true);
       expect(header.contains(redoControl)).toBe(true);
-      expect(redoControl.parentElement!.nextElementSibling).toBe(
-        byTestId('workbench-mode-learning')!.parentElement,
-      );
+      // With the other editing control between them at most: the tour's ?.
+      const modeGroup = byTestId('workbench-mode-learning')!.parentElement;
+      const next = redoControl.parentElement!.nextElementSibling;
+      expect(
+        next === modeGroup ||
+          (next?.getAttribute('data-testid') === 'workspace-edit-guide' &&
+            next.nextElementSibling === modeGroup),
+      ).toBe(true);
       expect(undoButton()!.getAttribute('aria-label')).toBe('edit.undo');
       expect(undoButton()!.title).toBe('edit.undo');
       expect(redoControl.getAttribute('aria-label')).toBe('edit.redo');
@@ -257,13 +265,13 @@ describe('undo and redo in the classroom pane header', () => {
     expect(redoButton()).toBeNull();
   });
 
-  it('are absent in playback and return afterwards', async () => {
+  it('stay with the editor in full screen, where editing works too', async () => {
     await renderPane();
     await setMode('editing');
-    await renderPane({ playback: true });
-    expect(undoButton()).toBeNull();
-    await renderPane({ playback: false });
-    expect(undoButton()).not.toBeNull();
+    await renderPane({ fullscreen: true });
+    expect(byTestId('workbench-fullscreen-header')!.contains(undoButton())).toBe(true);
+    await renderPane({ fullscreen: false });
+    expect(byTestId('workbench-editor-header')!.contains(undoButton())).toBe(true);
   });
 
   it('are absent for a read-only course and a hidden pane', async () => {
@@ -273,6 +281,37 @@ describe('undo and redo in the classroom pane header', () => {
     expect(undoButton()).toBeNull();
     await renderPane({ readOnly: false, hidden: true });
     expect(undoButton()).toBeNull();
+  });
+});
+
+describe('the Edit guide (?) in the pane header', () => {
+  it('opens the Edit tour in full screen too', async () => {
+    markOnboardingSeen('edit');
+    await renderPane();
+    await setMode('editing');
+    await renderPane({ fullscreen: true });
+    const guide = byTestId('workspace-edit-guide')!;
+    expect(byTestId('workbench-fullscreen-header')!.contains(guide)).toBe(true);
+    expect(byTestId('workspace-tour-skip')).toBeNull();
+    await act(async () => guide.click());
+    expect(byTestId('workspace-tour-skip')).not.toBeNull();
+    // Playing, the ? steps aside like it does beside the conversation.
+    expect(byTestId('workspace-edit-guide')).toBeNull();
+  });
+
+  it('leaves out the conversation step full screen, where there is no conversation', () => {
+    expect(editTourSteps(false).map((step) => step.id)).toContain('edit.chat');
+    const fullscreen = editTourSteps(true);
+    expect(fullscreen.map((step) => step.id)).not.toContain('edit.chat');
+    // Every step left points inside the classroom pane, which full screen keeps.
+    for (const step of fullscreen) {
+      for (const group of step.target ?? []) {
+        for (const target of group) {
+          const selector = typeof target === 'string' ? target : target.selector;
+          expect(selector.startsWith('[data-testid="workspace-classroom-pane"] ')).toBe(true);
+        }
+      }
+    }
   });
 });
 

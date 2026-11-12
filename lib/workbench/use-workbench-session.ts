@@ -170,6 +170,9 @@ export function useWorkbenchStream(sessionId: string | null): void {
             ...(expectedTitleRevision === 0 ? { title: detailTitle, expectedTitleRevision } : {}),
             ...(status ? { status } : {}),
             ...(typeof meta.stageId === 'string' && meta.stageId ? { stageId: meta.stageId } : {}),
+            ...(typeof meta.existingCourse === 'boolean'
+              ? { existingCourse: meta.existingCourse }
+              : {}),
           });
         }
       })
