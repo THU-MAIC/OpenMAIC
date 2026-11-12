@@ -43,9 +43,10 @@ export function summarizeChildElement(element: PPTElement) {
     return { ...rest, content: text, color: element.defaultColor };
   }
   if (element.type === 'code') {
-    // Line IDs are needed by the existing code editor, not connector endpoints.
+    // Keep the per-line content and IDs used by wb_edit_code.
+    const { text: _text, ...rest } = summary;
     return {
-      ...summary,
+      ...rest,
       language: element.language,
       lines: element.lines,
       fontSize: element.fontSize,
