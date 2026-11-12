@@ -148,8 +148,9 @@ async function readBoundedBody(
 
 async function readJson<T>(response: Response, context: string): Promise<T> {
   const text = (await readBoundedBody(response, MAX_JSON_BYTES, context)).toString('utf8');
+  let value: unknown;
   try {
-    return JSON.parse(text) as T;
+    value = JSON.parse(text);
   } catch {
     // Never quote the body in the error: parse routes relay extractor
     // messages to clients. The body only reaches the server log.
@@ -158,6 +159,15 @@ async function readJson<T>(response: Response, context: string): Promise<T> {
     );
     throw new Error(`MiniCPM-OCR ${context}: invalid JSON response (HTTP ${response.status})`);
   }
+  // A `null`/array payload is not a job envelope. Reject it here so callers
+  // never dereference it outside their own cancellation path.
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    log.warn(
+      `[MiniCPM-OCR] ${context}: non-object JSON body (HTTP ${response.status}): ${text.slice(0, 500)}`,
+    );
+    throw new Error(`MiniCPM-OCR ${context}: invalid JSON response (HTTP ${response.status})`);
+  }
+  return value as T;
 }
 
 function clampRetryAfter(ms: number): number {

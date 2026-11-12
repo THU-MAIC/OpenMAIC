@@ -199,6 +199,28 @@ describe('parseWithMiniCPMOCR', () => {
     expect(cancel?.url).toBe(`${MINICPM_OCR_DEFAULT_BASE}/document-parse/jobs/job-1`);
   });
 
+  it('rejects a non-object poll payload and stops the server-side job', async () => {
+    install({
+      polls: [
+        () =>
+          new Response('null', {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+      ],
+    });
+
+    await expect(
+      parseWithMiniCPMOCR({ providerId: 'minicpm-ocr', apiKey: 'test-key' }, PDF, {
+        fileName: 'lesson.pdf',
+        mimeType: 'application/pdf',
+      }),
+    ).rejects.toThrow('invalid JSON response');
+
+    const cancel = calls().find((call) => call.init?.method === 'DELETE');
+    expect(cancel?.url).toBe(`${MINICPM_OCR_DEFAULT_BASE}/document-parse/jobs/job-1`);
+  });
+
   it('stops the server-side job when the caller aborts during polling', async () => {
     const controller = new AbortController();
     install({
