@@ -20,9 +20,23 @@ export interface AskUserToolDeps {
   onUserQuestion: (question: AskUserQuestion) => void;
 }
 
+/**
+ * True for a question whose line breaks arrived as a backslash followed by `n`
+ * (the model JSON-escaped the string twice) and that has no actual newline:
+ * Markdown shows those two characters verbatim between the paragraphs.
+ * Code spans and math are skipped, and so is a backslash+n that starts a
+ * lowercase word (`\\neq`, `\\nabla`): those are text the user should see.
+ */
+function hasEscapedLineBreaks(question: string): boolean {
+  if (question.includes('\n')) return false;
+  const prose = question.replace(/`[^`]*`/g, '').replace(/\$[^$]*\$/g, '');
+  return /\\n(?![a-z])/.test(prose);
+}
+
 const AskUserParams = Type.Object({
   question: Type.String({
-    description: 'The question, phrased for the user to answer in chat. It must be self-contained.',
+    description:
+      'The question, phrased for the user to answer in chat. It must be self-contained. It is rendered as Markdown: break lines with actual newlines in the decoded string, never the two characters backslash+n.',
   }),
   options: Type.Optional(
     Type.Array(
@@ -57,6 +71,22 @@ export function buildAskUserTool(deps: AskUserToolDeps): AgentTool<typeof AskUse
         return {
           content: [{ type: 'text' as const, text: 'ask_user needs a non-empty question.' }],
           details: { error: 'empty-question' },
+          isError: true,
+        };
+      }
+
+      if (hasEscapedLineBreaks(question)) {
+        // Rejected rather than converted, as the edit tools do for the same
+        // mistake: guessing which backslash+n were meant as text is the
+        // post-processing the agent tools avoid.
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: 'ask_user question uses literal backslash+n where line breaks were meant; the user would see the characters "\\n". Put actual newlines in the decoded string value, not its JSON-escaped representation, and call again. No automatic conversion was applied.',
+            },
+          ],
+          details: { error: 'escaped-newlines' },
           isError: true,
         };
       }
