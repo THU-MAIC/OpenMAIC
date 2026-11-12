@@ -1328,9 +1328,7 @@ export function Roundtable({
         )}
       >
         {/* One edge in both states, so a fold mid-drag keeps the same handle under the pointer. */}
-        {isPresenting || dock.held ? null : (
-          <DockResizeHandle dockRef={dockRef} folded={dock.collapsed} />
-        )}
+        {dock.held ? null : <DockResizeHandle dockRef={dockRef} folded={dock.collapsed} />}
         {/* ── Toolbar strip — merged from CanvasArea ── */}
         <div
           className={cn(
