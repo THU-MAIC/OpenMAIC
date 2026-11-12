@@ -2416,7 +2416,6 @@
     "loadFailed": "Couldn't load",
     "retry": "Retry",
     "untitledSession": "Untitled chat",
-    "pagePosition": "Page {{index}} of {{total}}",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
@@ -2536,7 +2535,6 @@
       "onboarding": "Prise en main"
     },
     "coursesPage": {
-      "subtitle": "Les cours que vous avez créés ou importés, et les dossiers où vous les rangez",
       "searchPlaceholder": "Rechercher dans mes cours",
       "results": "Résultats",
       "allCourses": "Tous les cours",

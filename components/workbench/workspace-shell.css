@@ -2288,12 +2288,6 @@
   color: var(--ws-ink);
 }
 
-.ws-page-sub {
-  margin-top: 4px;
-  font-size: 14px;
-  color: var(--ws-ink-mute);
-}
-
 .ws-page-search {
   display: flex;
   width: 240px;

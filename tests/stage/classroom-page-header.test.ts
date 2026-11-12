@@ -75,11 +75,12 @@ function render(props: Record<string, unknown>): string {
 }
 
 describe('the classroom page header with the workbench', () => {
-  it('is the full-screen classroom header: course · page, then the scene', () => {
+  it('is the full-screen classroom header: the course, then the scene', () => {
     const html = render({ workbenchControls: true, onToggleEditMode: vi.fn() });
     expect(html).toContain('data-testid="classroom-full-header"');
     expect(html).toContain('Photosynthesis');
-    expect(html).toContain('workspace.pagePosition({"index":2,"total":2})');
+    // No page position: the playback toolbar already shows it.
+    expect(html).not.toContain('pagePosition');
     expect(html).toContain('Leaves');
     // Not the classic header: no back arrow, no label, no settings pill.
     expect(html).not.toContain('classroom-exit');

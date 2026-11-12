@@ -2416,7 +2416,6 @@
     "loadFailed": "Couldn't load",
     "retry": "Retry",
     "untitledSession": "Untitled chat",
-    "pagePosition": "Page {{index}} of {{total}}",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
@@ -2536,7 +2535,6 @@
       "onboarding": "Hướng dẫn bắt đầu"
     },
     "coursesPage": {
-      "subtitle": "Các khóa học bạn đã tạo hoặc nhập, và các thư mục để sắp xếp chúng",
       "searchPlaceholder": "Tìm trong khóa học của tôi",
       "results": "Kết quả tìm kiếm",
       "allCourses": "Tất cả khóa học",

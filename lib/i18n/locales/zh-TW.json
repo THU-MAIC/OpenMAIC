@@ -2416,7 +2416,6 @@
     "loadFailed": "載入失敗",
     "retry": "重試",
     "untitledSession": "未命名對話",
-    "pagePosition": "第 {{index}} / {{total}} 頁",
     "navAria": "工作區導覽",
     "homeAria": "返回首頁",
     "currentSession": "目前對話",
@@ -2536,7 +2535,6 @@
       "onboarding": "新手引導"
     },
     "coursesPage": {
-      "subtitle": "你產生或匯入的課程，以及整理它們的資料夾",
       "searchPlaceholder": "搜尋我的課程",
       "results": "搜尋結果",
       "allCourses": "全部課程",

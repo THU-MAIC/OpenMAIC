@@ -664,11 +664,8 @@ export function WorkspaceCoursesPage({
       className="ws-canvas ws-page relative flex min-w-0 flex-1 flex-col overflow-y-auto"
     >
       <div className="mx-auto w-full max-w-[1120px] px-6 pb-16 pt-10 lg:px-10">
-        <header className="flex flex-wrap items-end justify-between gap-4">
-          <div className="min-w-0">
-            <h1 className="ws-page-title">{t('workspace.nav.myCourses')}</h1>
-            <p className="ws-page-sub">{t('workspace.coursesPage.subtitle')}</p>
-          </div>
+        <header className="flex flex-wrap items-center justify-between gap-4">
+          <h1 className="ws-page-title min-w-0">{t('workspace.nav.myCourses')}</h1>
           <div className="flex items-center gap-2">
             <label className="ws-page-search">
               <Search className="size-4 shrink-0" aria-hidden="true" />

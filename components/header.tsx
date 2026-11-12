@@ -26,7 +26,7 @@ interface HeaderProps {
  *
  * Where the workbench is part of the build (`workbenchControls`), the page is
  * the workspace's full-screen classroom entered from outside, and wears its
- * header (`ClassroomFullHeader`): the course and page, the scene's title, then
+ * header (`ClassroomFullHeader`): the course, the scene's title, then
  * the export control and — for the owner — Learn | Edit and the way into the
  * workspace; for a viewer, the way to a course of their own instead. The
  * language / theme / settings pill is not part of it: the workbench keeps
@@ -46,10 +46,6 @@ export function Header({
   const searchParams = useSearchParams();
   const exitLabel = t(classroomExitLabelKey(searchParams));
   const courseName = useStageStore((s) => s.stage?.name) || t('workspace.untitledCourse');
-  const sceneCount = useStageStore((s) => s.scenes.length);
-  const sceneIndex = useStageStore((s) =>
-    s.scenes.findIndex((scene) => scene.id === s.currentSceneId),
-  );
 
   if (workbenchControls) {
     return (
@@ -58,8 +54,6 @@ export function Header({
         className="px-3 sm:pl-6 sm:pr-5"
         courseName={courseName}
         sceneTitle={currentSceneTitle}
-        sceneIndex={sceneIndex}
-        sceneCount={sceneCount}
         actions={
           <HeaderControls
             variant="compact"

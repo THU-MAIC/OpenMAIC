@@ -2416,7 +2416,6 @@
     "loadFailed": "Couldn't load",
     "retry": "Retry",
     "untitledSession": "Untitled chat",
-    "pagePosition": "Page {{index}} of {{total}}",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
@@ -2536,7 +2535,6 @@
       "onboarding": "С чего начать"
     },
     "coursesPage": {
-      "subtitle": "Курсы, которые вы создали или импортировали, и папки, в которых они лежат",
       "searchPlaceholder": "Поиск по моим курсам",
       "results": "Результаты поиска",
       "allCourses": "Все курсы",

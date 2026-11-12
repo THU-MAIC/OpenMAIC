@@ -2416,7 +2416,6 @@
     "loadFailed": "加载失败",
     "retry": "重试",
     "untitledSession": "未命名对话",
-    "pagePosition": "第 {{index}} / {{total}} 页",
     "navAria": "工作区导航",
     "homeAria": "返回首页",
     "currentSession": "当前对话",
@@ -2536,7 +2535,6 @@
       "onboarding": "新手引导"
     },
     "coursesPage": {
-      "subtitle": "你生成或导入的课程，以及整理它们的文件夹",
       "searchPlaceholder": "搜索我的课程",
       "results": "搜索结果",
       "allCourses": "全部课程",

@@ -2416,7 +2416,6 @@
     "loadFailed": "Couldn't load",
     "retry": "Retry",
     "untitledSession": "Untitled chat",
-    "pagePosition": "Page {{index}} of {{total}}",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
@@ -2536,7 +2535,6 @@
       "onboarding": "Primeros pasos"
     },
     "coursesPage": {
-      "subtitle": "Los cursos que creaste o importaste, y las carpetas donde los organizas",
       "searchPlaceholder": "Buscar en mis cursos",
       "results": "Resultados",
       "allCourses": "Todos los cursos",
