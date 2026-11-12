@@ -28,13 +28,14 @@ export const FONT_FAMILIES = [
 /**
  * Other family names that render with one of the faces above, as
  * `alias → FONT_FAMILIES entry`. These are the Google Fonts names of the same
- * typefaces, which the OpenMAIC slide editor's font picker writes into slides.
- * The editor declares them itself from `@fontsource`, but a slide shown anywhere
- * else only has this stylesheet; without an alias, text set in one of these
- * fonts falls back to a system font there.
+ * typefaces, which the @openmaic/editor default font picker writes into
+ * slides. Without an alias, text set in one of them falls back to a system font.
  *
- * Each alias gets its own `@font-face` rule with the same woff2 `src` as its
- * target, so the browser downloads the file once however many names use it.
+ * Generated into the opt-in `picker-fonts.css`, not `fonts.css`: a page that
+ * imports it gives these names to the self-hosted faces, so it must not load
+ * its own faces under the same names. Each alias gets its own `@font-face` rule
+ * with the same woff2 `src` as its target, so the browser downloads the file
+ * once however many names use it.
  */
 export const FONT_ALIASES = {
   'Noto Sans SC': 'SourceHanSans',

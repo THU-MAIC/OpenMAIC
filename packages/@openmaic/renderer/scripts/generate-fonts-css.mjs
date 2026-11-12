@@ -1,8 +1,8 @@
 /**
- * Generate fonts.css from fonts.config.mjs.
+ * Generate fonts.css and picker-fonts.css from fonts.config.mjs.
  *
  * Run via `pnpm run genfonts`. The package build runs this first so the CSS
- * always reflects the config. Do not edit fonts.css by hand.
+ * always reflects the config. Do not edit either file by hand.
  */
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -16,7 +16,7 @@ import {
 } from '../fonts.config.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const outFile = path.join(here, '..', 'fonts.css');
+const packageDir = path.join(here, '..');
 
 for (const [alias, family] of Object.entries(FONT_ALIASES)) {
   if (!FONT_FAMILIES.includes(family)) {
@@ -29,17 +29,13 @@ for (const [alias, family] of Object.entries(FONT_ALIASES)) {
   }
 }
 
-const header = `/**
+const fontsHeader = `/**
  * GENERATED FILE — do not edit by hand.
  * Source of truth: fonts.config.mjs (run \`pnpm run genfonts\` to regenerate).
  *
  * Self-hosted Chinese faces for slides imported from PPTX. The importer passes
  * original font-family names through unchanged; a name renders here only if it
  * matches one of these families.
- *
- * After them come aliases: the Google Fonts names of the same typefaces, which
- * the OpenMAIC slide editor's font picker writes. Each alias reuses its
- * family's woff2, so the file downloads once for both names.
  *
  * Consumers import this once at the app shell:
  *     import '@openmaic/renderer/fonts.css';
@@ -49,21 +45,43 @@ const header = `/**
  * time a slide actually uses the corresponding font-family.
  */`;
 
+const pickerHeader = `/**
+ * GENERATED FILE — do not edit by hand.
+ * Source of truth: FONT_ALIASES in fonts.config.mjs (run \`pnpm run genfonts\`).
+ *
+ * Opt-in. Declares the Google Fonts names that the @openmaic/editor default
+ * font picker writes for its Chinese fonts, over the self-hosted faces in
+ * fonts.css, so a slide set in one of them renders in it wherever it is shown:
+ *     import '@openmaic/renderer/picker-fonts.css';
+ *
+ * Importing it claims these family names for the whole page, and each covers
+ * every character with no unicode-range: any text on the page set in one of
+ * them, slide or not, renders with (and downloads) the whole self-hosted file.
+ * Do not import it if the page loads its own faces under these names.
+ */`;
+
 const fontFace = (name, family) => `@font-face {
   font-display: swap;
   font-family: '${name}';
   src: url('${fontUrl(family)}') format('woff2');
 }`;
 
-const blocks = [
-  ...FONT_FAMILIES.map((family) => fontFace(family, family)),
-  ...Object.entries(FONT_ALIASES).map(([alias, family]) => fontFace(alias, family)),
-].join('\n');
+const write = (file, header, blocks) =>
+  writeFileSync(path.join(packageDir, file), `${header}\n${blocks.join('\n')}\n`);
 
-writeFileSync(outFile, `${header}\n${blocks}\n`);
+write(
+  'fonts.css',
+  fontsHeader,
+  FONT_FAMILIES.map((family) => fontFace(family, family)),
+);
+write(
+  'picker-fonts.css',
+  pickerHeader,
+  Object.entries(FONT_ALIASES).map(([alias, family]) => fontFace(alias, family)),
+);
 
 console.log(
-  `[genfonts] wrote ${FONT_FAMILIES.length} @font-face rules and ` +
-    `${Object.keys(FONT_ALIASES).length} aliases → fonts.css ` +
+  `[genfonts] wrote ${FONT_FAMILIES.length} @font-face rules → fonts.css and ` +
+    `${Object.keys(FONT_ALIASES).length} aliases → picker-fonts.css ` +
     `(${FONT_CDN_BASE_URL}/${FONT_DIR})`,
 );

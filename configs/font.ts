@@ -1,24 +1,20 @@
 /**
  * Fonts offered in the slide editor's text-format picker.
  *
- * Every entry is a real web font: Inter via `next/font` (`app/layout.tsx`),
- * the rest via `@fontsource` packages loaded in `app/editor-fonts.ts`.
- * `@fontsource` `unicode-range`-subsets the CJK faces, so they download lazily
- * per glyph range — a picked font actually renders.
+ * A slide stores the picked family name, so an entry renders only where its
+ * name is declared:
+ *  - Chinese: `@openmaic/renderer/picker-fonts.css`, imported on every page by
+ *    `app/layout.tsx`, declares these names over the renderer's self-hosted
+ *    faces (`FONT_ALIASES` in its `fonts.config.mjs`). The editor and the
+ *    classroom use the same files, so they render alike.
+ *  - Latin: `@fontsource` packages loaded with the editor by
+ *    `app/editor-fonts.ts`. Inter is loaded by `app/layout.tsx` as
+ *    `Inter Variable`.
  *
- * Adding a font: install its `@fontsource` package, import the weight CSS in
- * `app/editor-fonts.ts`, then add an entry here whose `value` matches the
- * package's `@font-face` family name.
- *
- * `app/editor-fonts.ts` loads only with the editor. Elsewhere (the standalone
- * `/classroom` route, for one), a font it declares renders only if
- * `@openmaic/renderer/fonts.css` declares the same name, so the Chinese
- * entries are aliased there (`FONT_ALIASES` in `fonts.config.mjs`).
- *
- * In the editor both declarations exist, and the browser matches weight first:
- * the `@fontsource` face wins where it declares the requested weight. LXGW
- * WenKai ships no 400 there (only 500 and 700), so normal-weight text in it
- * renders with the aliased face in the editor too, as it does in the classroom.
+ * Adding a Latin font: install its `@fontsource` package, import the weight
+ * CSS in `app/editor-fonts.ts`, then add an entry here whose `value` matches
+ * the package's `@font-face` family name. A Chinese font needs a self-hosted
+ * face and an alias in the renderer's `fonts.config.mjs`.
  */
 export interface FontEntry {
   /** Display name; rendered as the fallback when `labelKey` is absent. */

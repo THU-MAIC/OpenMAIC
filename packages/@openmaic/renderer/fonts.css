@@ -6,10 +6,6 @@
  * original font-family names through unchanged; a name renders here only if it
  * matches one of these families.
  *
- * After them come aliases: the Google Fonts names of the same typefaces, which
- * the OpenMAIC slide editor's font picker writes. Each alias reuses its
- * family's woff2, so the file downloads once for both names.
- *
  * Consumers import this once at the app shell:
  *     import '@openmaic/renderer/fonts.css';
  *
@@ -45,25 +41,5 @@
 @font-face {
   font-display: swap;
   font-family: 'ZcoolHappy';
-  src: url('https://file.maic.chat/fonts/ZcoolHappy.woff2') format('woff2');
-}
-@font-face {
-  font-display: swap;
-  font-family: 'Noto Sans SC';
-  src: url('https://file.maic.chat/fonts/SourceHanSans.woff2') format('woff2');
-}
-@font-face {
-  font-display: swap;
-  font-family: 'Noto Serif SC';
-  src: url('https://file.maic.chat/fonts/SourceHanSerif.woff2') format('woff2');
-}
-@font-face {
-  font-display: swap;
-  font-family: 'LXGW WenKai';
-  src: url('https://file.maic.chat/fonts/LXGWWenKai.woff2') format('woff2');
-}
-@font-face {
-  font-display: swap;
-  font-family: 'ZCOOL KuaiLe';
   src: url('https://file.maic.chat/fonts/ZcoolHappy.woff2') format('woff2');
 }
