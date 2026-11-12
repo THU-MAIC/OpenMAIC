@@ -13,6 +13,7 @@ import {
   claimRulesScenario,
   forwardingScenario,
   fullClaimScenario,
+  guideCourseClaimScenario,
   materialFolderClaimScenario,
   unfiledOnlyMaterialClaimScenario,
   emptyFoldersOnlyMaterialClaimScenario,
@@ -60,6 +61,10 @@ describe('claiming anonymous work (PGlite)', () => {
 
   it('re-keys every participant and leaves nothing under the anonymous owner', async () => {
     await fullClaimScenario(harness);
+  });
+
+  it('keeps every guide course across a claim; a late seed adds no second', async () => {
+    await guideCourseClaimScenario(harness);
   });
 
   it('keeps nothing when a participant throws mid-claim', async () => {

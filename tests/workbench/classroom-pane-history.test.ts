@@ -17,6 +17,8 @@ import type { Scene, SceneType } from '@/lib/types/stage';
 import { sceneEditorRegistry } from '@/lib/edit/scene-editor-registry';
 import { NOOP_SURFACE } from '@/lib/edit/noop-surface';
 import { useStageStore } from '@/lib/store/stage';
+import { markOnboardingSeen } from '@/lib/workbench/onboarding';
+import { editTourSteps } from '@/components/workbench/workspace/edit-tour-steps';
 
 const probe = vi.hoisted(() => ({
   sceneType: 'slide' as string,
@@ -279,6 +281,37 @@ describe('undo and redo in the classroom pane header', () => {
     expect(undoButton()).toBeNull();
     await renderPane({ readOnly: false, hidden: true });
     expect(undoButton()).toBeNull();
+  });
+});
+
+describe('the Edit guide (?) in the pane header', () => {
+  it('opens the Edit tour in full screen too', async () => {
+    markOnboardingSeen('edit');
+    await renderPane();
+    await setMode('editing');
+    await renderPane({ fullscreen: true });
+    const guide = byTestId('workspace-edit-guide')!;
+    expect(byTestId('workbench-fullscreen-header')!.contains(guide)).toBe(true);
+    expect(byTestId('workspace-tour-skip')).toBeNull();
+    await act(async () => guide.click());
+    expect(byTestId('workspace-tour-skip')).not.toBeNull();
+    // Playing, the ? steps aside like it does beside the conversation.
+    expect(byTestId('workspace-edit-guide')).toBeNull();
+  });
+
+  it('leaves out the conversation step full screen, where there is no conversation', () => {
+    expect(editTourSteps(false).map((step) => step.id)).toContain('edit.chat');
+    const fullscreen = editTourSteps(true);
+    expect(fullscreen.map((step) => step.id)).not.toContain('edit.chat');
+    // Every step left points inside the classroom pane, which full screen keeps.
+    for (const step of fullscreen) {
+      for (const group of step.target ?? []) {
+        for (const target of group) {
+          const selector = typeof target === 'string' ? target : target.selector;
+          expect(selector.startsWith('[data-testid="workspace-classroom-pane"] ')).toBe(true);
+        }
+      }
+    }
   });
 });
 

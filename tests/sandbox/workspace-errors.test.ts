@@ -50,6 +50,7 @@ const cases = [
   [sandboxInvalid('server diagnostic', 'PBL_SOURCE_PATH'), 'sourcePath'],
   [sandboxInvalid('server diagnostic', 'PBL_SOURCE_COUNT'), 'sourceCount'],
   [sandboxInvalid('server diagnostic', 'PBL_SOURCE_SIZE'), 'sourceSize'],
+  [sandboxInvalid('server diagnostic', 'PBL_COMMAND_SIZE'), 'commandSize'],
   [sandboxConflict('server diagnostic', 'WORKSPACE_COMMAND_ACTIVE'), 'commandActive'],
   [sandboxConflict('server diagnostic', 'WORKSPACE_TERMINAL_ACTIVE'), 'terminalActive'],
 ] as const;

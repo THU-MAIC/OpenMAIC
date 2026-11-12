@@ -158,6 +158,7 @@ export function PBLV3Container({ sceneId }: { sceneId: string }) {
             ) : (
               <PBLV3Workspace
                 sceneId={sceneId}
+                projectHero={entrance?.hero}
                 onReturnToHero={returnToHero}
                 // Eligibility belongs to this Hero entry, not the current layout.
                 // layoutReady still waits for the initial expansion to settle.

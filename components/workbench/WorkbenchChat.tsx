@@ -25,7 +25,7 @@
  * Send/cancel failures surface as a sonner toast, not inline chrome.
  */
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, Loader2, Send, Square } from 'lucide-react';
+import { ArrowDown, Clock3, Loader2, Send, Square } from 'lucide-react';
 import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { WORKBENCH_CHAT_MIN_PX } from '@/lib/edit/contain-box';
@@ -106,6 +106,8 @@ import { useDoubleEscapeStop } from './chat/composer-escape';
 import { useWorkbenchAutoscroll } from './chat/autoscroll';
 import { chatColumn, composerLayout, wbStyles as styles } from './chat/chat-styles';
 import { ChatTimeline } from './chat/chat-timeline';
+import { queuedOpeningMessage } from '@/lib/workbench/queued-session';
+import { type SeedCourseAsk, seedIsTitleOnlyChange } from '@/lib/workbench/draft-course-title';
 import { pendingQuestion } from './chat/question-card-state';
 import { QuestionForm } from './chat/question-form';
 import { useQuestionHost } from '@/lib/workbench/question-host';
@@ -232,13 +234,18 @@ export function WorkbenchChat({
       setOpeningMessage(null);
     }
   }
-  const liveChat = useMemo(
-    () =>
-      openingMessage && !chat.some((node) => node.kind === 'user')
-        ? [...chat, openingMessage]
-        : chat,
-    [chat, openingMessage],
+  // A request still waiting for a runner has no events yet, its own message
+  // included: show what was asked from the start (see `queuedOpeningMessage`).
+  const sessionPrompt = useWorkbenchStore((s) => s.sessionPrompt);
+  const queuedOpening = useMemo(
+    () => queuedOpeningMessage({ status, chat, prompt: sessionPrompt }),
+    [status, chat, sessionPrompt],
   );
+  const queued = status === 'queued';
+  const liveChat = useMemo(() => {
+    const opening = openingMessage ?? queuedOpening;
+    return opening && !chat.some((node) => node.kind === 'user') ? [...chat, opening] : chat;
+  }, [chat, openingMessage, queuedOpening]);
   const settledTranscriptRef = useRef<{
     readonly sessionId: string | null;
     readonly chat: ChatNode[];
@@ -571,8 +578,10 @@ export function WorkbenchChat({
    */
   const seedCourse = sessionId ? null : (draftConversation?.course ?? null);
   const seededCourse = useRef<{ readonly stageId: string; readonly text: string } | null>(null);
+  const seededAsk = useRef<SeedCourseAsk | null>(null);
   useEffect(() => {
     if (!seedCourse) {
+      seededAsk.current = null;
       // Nothing named any more (a conversation now, or New chat): nothing
       // bound, and a mention that is all the composer holds goes with it.
       const seeded = seededCourse.current;
@@ -585,6 +594,16 @@ export function WorkbenchChat({
       }
       return;
     }
+    const ask: SeedCourseAsk = {
+      stageId: seedCourse.stageId,
+      title: seedCourse.title,
+      ownerId: composerOwnerId,
+      ask: newConversation,
+    };
+    // Only the title changed (it arrived after the course opened): rewrite the
+    // mention in place, but leave focus and the caret where the user has them.
+    const titleOnly = seedIsTitleOnlyChange(seededAsk.current, ask);
+    seededAsk.current = ask;
     const seeded = seededCourse.current;
     const untouched =
       draft === '' ||
@@ -606,16 +625,24 @@ export function WorkbenchChat({
     });
     if (!written) return;
     seededCourse.current = { stageId: ref.stageId, text: written.draft };
-    pendingCaret.current = written.caret;
+    const composerFocused = !!document.activeElement?.closest(
+      '[data-testid="workbench-chat-composer"]',
+    );
+    // The caret effect focuses the composer: a title-only rewrite moves the
+    // caret only when the composer already holds focus.
+    if (!titleOnly || composerFocused) pendingCaret.current = written.caret;
     setCaret(written.caret);
     setDraft(written.draft);
     // The mention just written must not open the menu it would come from.
     setMentionDismissed(written.draft);
     setSlashDismissed(written.draft);
+    if (titleOnly) return;
     return focusComposerWhenShown(composerRef, 'workbench-chat-composer');
     // Once per ask and per course: the draft and mentions are read as they are then.
+    // Also when the course's title arrives late (a course outside the viewer's
+    // list, named by its document once loaded): an untouched mention is rewritten.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seedCourse?.stageId, composerOwnerId, newConversation]);
+  }, [seedCourse?.stageId, seedCourse?.title, composerOwnerId, newConversation]);
   const refreshedCreateCalls = useRef(new Set<string>());
 
   // The durable completed tool node is the source of truth: replay and a live
@@ -1321,6 +1348,7 @@ export function WorkbenchChat({
                 ) : showEmptyState ? (
                   <WorkbenchChatEmptyState t={t} />
                 ) : null}
+                {queued && !catchingUp ? <QueuedNotice t={t} /> : null}
               </div>
             </div>
           )}
@@ -1487,9 +1515,11 @@ export function WorkbenchChat({
                       hasText: !!draft.trim(),
                     })
                       ? 'workbench.chat.refsNeedInstruction'
-                      : live
-                        ? 'workbench.chat.interruptPlaceholder'
-                        : 'workbench.chat.continuePlaceholder',
+                      : queued
+                        ? 'workbench.chat.queuedPlaceholder'
+                        : live
+                          ? 'workbench.chat.interruptPlaceholder'
+                          : 'workbench.chat.continuePlaceholder',
                   )}
                   className={styles.composer.input}
                 />
@@ -1537,9 +1567,19 @@ export function WorkbenchChat({
                       onClick={() => void stop()}
                       disabled={busy || pendingStop || !ownerAttached}
                       aria-busy={pendingStop}
-                      title={t(pendingStop ? 'workbench.chat.stopping' : 'workbench.chat.stop')}
+                      title={t(
+                        pendingStop
+                          ? 'workbench.chat.stopping'
+                          : queued
+                            ? 'workbench.chat.cancelQueued'
+                            : 'workbench.chat.stop',
+                      )}
                       aria-label={t(
-                        pendingStop ? 'workbench.chat.stoppingAria' : 'workbench.chat.stop',
+                        pendingStop
+                          ? 'workbench.chat.stoppingAria'
+                          : queued
+                            ? 'workbench.chat.cancelQueued'
+                            : 'workbench.chat.stop',
                       )}
                       className={styles.composer.stopAction}
                     >
@@ -1589,6 +1629,31 @@ export function WorkbenchChat({
                 still names nothing. */}
           </div>
         </footer>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The request is waiting for a free runner: nothing has started yet. Said once,
+ * in the system notice's quiet register, under the request it is about; it goes
+ * the moment the runner claims the run.
+ */
+function QueuedNotice({ t }: { readonly t: (key: string) => string }) {
+  return (
+    <div
+      className={cn(styles.systemNotice.row, 'mt-2')}
+      data-tone="info"
+      role="status"
+      data-testid="workbench-queued-notice"
+    >
+      <span className={styles.systemNotice.icon} data-tone="info" aria-hidden="true">
+        <Clock3 size={13} />
+      </span>
+      <div className={styles.systemNotice.body}>
+        <span className={styles.systemNotice.text} data-tone="info">
+          {t('workbench.chat.queued')}
+        </span>
       </div>
     </div>
   );

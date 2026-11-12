@@ -97,8 +97,13 @@ describe('a new conversation shows its preview as soon as the request is sent', 
   it('while the session waits in the queue with nothing folded', async () => {
     vi.setSystemTime(1_000);
     const reports = await show({ status: 'queued', sessionPrompt: 'Make a course' });
-    expect(section()?.getAttribute('data-scene')).toBe('understanding');
+    // Says it is waiting, not that an agent is reading the request: nothing has started.
+    expect(section()?.getAttribute('data-scene')).toBe('queued');
     expect(section()?.getAttribute('data-preview-mode')).toBe('scene');
+    expect(section()?.textContent).toContain('workbench.preview.queued');
+    expect(section()?.textContent).toContain('workbench.preview.queuedEyebrow');
+    expect(section()?.textContent).not.toContain('workbench.preview.understanding');
+    expect(section()?.textContent).not.toContain('workbench.preview.eyebrow');
     // Live, so the tab takes focus for this request.
     expect(reports.at(-1)).toMatchObject({ shown: true, live: true, requestKey: 'queued' });
   });

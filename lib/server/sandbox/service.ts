@@ -7,6 +7,7 @@ import { SandboxError, sandboxConflict, sandboxInvalid } from '@/lib/sandbox/err
 import {
   MAX_TEXT_FILE_BYTES,
   MAX_COMMAND_BYTES,
+  MAX_ASSESSMENT_SCRIPT_BYTES,
   type SandboxProvider,
   type SandboxCommandResult,
   type DesktopAction,
@@ -562,6 +563,17 @@ export class SandboxService {
     return this.store.exclusive(id, () => this.startCommandUnlocked(id, body, epoch));
   }
 
+  /** Host-only entry point for oversized assessment scripts. */
+  async startAssessmentCommand(id: string, body: Record<string, unknown>) {
+    await this.mutation(id, 'command');
+    return this.store.exclusive(id, async () => {
+      const dispatch = await this.prepareCommandUnlocked(id, body, undefined, {
+        assessmentFile: true,
+      });
+      return dispatch();
+    });
+  }
+
   /** Host-only declaration, not accepted from the generic command route. */
   async startApplicationCommand(id: string, body: Record<string, unknown>, epoch: number) {
     return this.applicationCommand(id, body, epoch, false);
@@ -605,8 +617,7 @@ export class SandboxService {
           timeoutMs: 3_585_000,
         },
         epoch,
-        'application',
-        defer,
+        { purpose: 'application', defer },
       );
       return defer ? dispatch : dispatch();
     });
@@ -621,17 +632,29 @@ export class SandboxService {
     id: string,
     body: Record<string, unknown>,
     epoch?: number,
-    purpose?: 'application',
-    defer = false,
+    {
+      purpose,
+      defer,
+      assessmentFile,
+    }: {
+      purpose?: 'application';
+      defer?: boolean;
+      assessmentFile?: boolean;
+    } = {},
   ) {
     assertSandboxId(body.requestId);
+    const maxBytes = assessmentFile ? MAX_ASSESSMENT_SCRIPT_BYTES : MAX_COMMAND_BYTES;
     if (
       typeof body.command !== 'string' ||
       !body.command.trim() ||
       body.command.includes('\0') ||
-      Buffer.byteLength(body.command) > MAX_COMMAND_BYTES
+      Buffer.byteLength(body.command) > maxBytes
     )
-      throw sandboxInvalid('command must be a non-empty string of at most 32 KiB.');
+      throw sandboxInvalid(
+        assessmentFile
+          ? 'Assessment script exceeds the sandbox file transport budget.'
+          : 'command must be a non-empty string of at most 32 KiB.',
+      );
     if (body.cwd !== undefined) assertPath(body.cwd);
     const timeoutMs = body.timeoutMs ?? 60_000;
     if (
@@ -670,10 +693,31 @@ export class SandboxService {
             if (recorded && !['starting', 'running', 'unknown'].includes(recorded.state))
               return recorded;
           }
-          await dispatchWorkspaceMutation(this.ownerId, row.workspace_id, row.id, 'command', () => {
-            dispatched = true;
-            return this.provider.startCommand(row.resource_id, row.id, input);
-          });
+          await dispatchWorkspaceMutation(
+            this.ownerId,
+            row.workspace_id,
+            row.id,
+            'command',
+            async () => {
+              if (assessmentFile) {
+                if (!this.provider.prepareAssessmentCommand)
+                  throw new SandboxError(
+                    'SANDBOX_UNSUPPORTED',
+                    422,
+                    'Assessment file transport is unavailable.',
+                  );
+                const start = await this.provider.prepareAssessmentCommand(
+                  row.resource_id,
+                  row.id,
+                  input,
+                );
+                dispatched = true;
+                return start();
+              }
+              dispatched = true;
+              return this.provider.startCommand(row.resource_id, row.id, input);
+            },
+          );
         } catch (error) {
           if (!dispatched) {
             // No provider dispatch happened; leave a collectable terminal command, not an orphan writer.

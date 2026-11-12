@@ -42,7 +42,7 @@
 
 ## 🗞️ News
 
-- **2026-11-10** — [v1.5.0-rc.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.5.0-rc.1): **A brand-new home, redesigned end to end** (release candidate) — the home page becomes the workbench: the course grows beside the conversation, My courses gets folders and pinning, and one full-screen classroom handles learning and editing. Off by default (`NEXT_PUBLIC_WORKBENCH_ENABLED`).
+- **2026-11-12** — [v1.5.0-rc.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.5.0-rc.2): **A brand-new home, redesigned end to end** (release candidate) — the home page becomes the workbench, with the course beside the conversation and one full-screen classroom for learning and editing. Off by default (`NEXT_PUBLIC_WORKBENCH_ENABLED`).
 - **2026-11-09** — [v1.4.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.4.2): **course-level undo** for manual edits and agent runs; sandboxes open to every admitted owner.
 - **2026-11-05** — [v1.4.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.4.1): edits and learner progress kept through background syncs; faster loading on slow connections.
 - **2026-11-04** — [v1.4.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.4.0): **PBL v3** — build a working project with an AI tutor, milestone by milestone. One-way upgrade.

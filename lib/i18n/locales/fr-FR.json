@@ -2416,7 +2416,6 @@
     "loadFailed": "Couldn't load",
     "retry": "Retry",
     "untitledSession": "Untitled chat",
-    "pagePosition": "Page {{index}} of {{total}}",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
@@ -2536,7 +2535,6 @@
       "onboarding": "Prise en main"
     },
     "coursesPage": {
-      "subtitle": "Les cours que vous avez créés ou importés, et les dossiers où vous les rangez",
       "searchPlaceholder": "Rechercher dans mes cours",
       "results": "Résultats",
       "allCourses": "Tous les cours",
@@ -2716,6 +2714,7 @@
       "sourcePath": "Ce fichier ne fait pas partie des fichiers sources du projet.",
       "sourceCount": "Les projets pédagogiques acceptent au maximum 256 fichiers sources.",
       "sourceSize": "Le contenu source du projet ne doit pas dépasser 1 MiB au total.",
+      "commandSize": "La commande de compilation ou de test générée est trop volumineuse pour être exécutée dans le bac à sable.",
       "teachingContextSize": "Le contexte pédagogique est trop long. Raccourcissez PLAN.md ou la question de révision, puis réessayez.",
       "commandActive": "Arrêtez les commandes en cours et récupérez leurs résultats avant de lire ou d’enregistrer un instantané de l’espace de travail.",
       "terminalActive": "Fermez les terminaux avant de lire ou d’enregistrer un instantané de l’espace de travail.",
@@ -3022,7 +3021,25 @@
       "file-edit": "File edit",
       "workspace-run": "Workspace run"
     },
+    "overview": {
+      "title": "Aperçu du projet",
+      "expand": "Développer",
+      "collapse": "Replier",
+      "projectGoal": "Objectif du projet",
+      "finishedWork": "Votre application terminée",
+      "roadmap": "Plan du projet",
+      "goalAndResult": "Objectif et résultat",
+      "goal": "Objectif",
+      "result": "Résultat",
+      "eachStage": "Déroulement de chaque étape",
+      "yourRole": "Vous prenez les décisions et vérifiez ; l’IA aide à écrire le plan et le code.",
+      "preview": "Essayez votre application dans l’aperçu et vérifiez le résultat.",
+      "advance": "Le bouton violet au-dessus de la saisie apparaît uniquement lorsque vous pouvez avancer. Cliquez dessus pour continuer."
+    },
     "journey": {
+      "currentMilestone": "Étape actuelle",
+      "milestoneGoal": "Objectif :",
+      "milestoneResult": "Résultat :",
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",
@@ -3064,6 +3081,7 @@
       "notReflected": "Reflection not yet recorded",
       "taskDetails": "Current task details",
       "closeDetails": "Close task details",
+      "reviewDetails": "Voir les détails",
       "milestoneSteps": "Milestone learning steps",
       "enterStep": "Continue to {{step}}",
       "enterMilestone": "Étape suivante",
