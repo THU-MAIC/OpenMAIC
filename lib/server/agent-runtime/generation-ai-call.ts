@@ -155,30 +155,49 @@ export function createGenerationAiCallFactory(options?: {
         images?.length && resolved.modelInfo?.capabilities?.vision
           ? await resolveVisionImages(images, options?.ownerId, options?.readAsset)
           : [];
-      const result = await callLLM(
-        {
-          model: resolved.model,
-          system: systemPrompt,
-          ...(visionImages.length
-            ? {
-                messages: [
-                  {
-                    role: 'user' as const,
-                    content: buildVisionUserContent(userPrompt, visionImages),
-                  },
-                ],
-              }
-            : { prompt: userPrompt }),
-          maxOutputTokens: resolved.modelInfo?.outputWindow,
-          maxRetries: 0,
-          abortSignal: options?.abortSignal,
-        },
-        stage,
-        undefined,
-        resolved.thinkingConfig,
-        { serverManaged: resolved.serverManaged },
-      );
-      return result.text;
+      const textCall = (prompt: string) =>
+        callLLM(
+          {
+            model: resolved.model,
+            system: systemPrompt,
+            prompt,
+            maxOutputTokens: resolved.modelInfo?.outputWindow,
+            maxRetries: 0,
+            abortSignal: options?.abortSignal,
+          },
+          stage,
+          undefined,
+          resolved.thinkingConfig,
+          { serverManaged: resolved.serverManaged },
+        );
+      if (!visionImages.length) return (await textCall(userPrompt)).text;
+      // The slot's fallback model may not accept images, and callLLM retries
+      // it with the same params. So images go to the primary only, and a
+      // failed vision call is retried as text, where the fallback applies.
+      try {
+        const result = await callLLM(
+          {
+            model: resolved.model,
+            system: systemPrompt,
+            messages: [
+              { role: 'user' as const, content: buildVisionUserContent(userPrompt, visionImages) },
+            ],
+            maxOutputTokens: resolved.modelInfo?.outputWindow,
+            maxRetries: 0,
+            abortSignal: options?.abortSignal,
+          },
+          stage,
+          undefined,
+          resolved.thinkingConfig,
+          { enabled: false, serverManaged: resolved.serverManaged },
+        );
+        return result.text;
+      } catch (error) {
+        if (options?.abortSignal?.aborted) throw error;
+        console.warn(`Vision ${stage} call failed; retrying as text:`, error);
+        // Nothing is attached on the text retry; each image keeps its description.
+        return (await textCall(userPrompt.replaceAll(' [see attached]', ''))).text;
+      }
     };
     calls.set(stage, call);
     return call;

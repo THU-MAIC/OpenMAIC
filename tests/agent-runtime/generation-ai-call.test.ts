@@ -194,6 +194,33 @@ describe('createGenerationAiCallFactory', () => {
     expect(resolveModel).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps images off the fallback and retries a failed vision call as text', async () => {
+    routeTo(true);
+    callLLM.mockRejectedValueOnce(new Error('primary overloaded'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const routed = createGenerationAiCallFactory({
+      ownerId: 'owner-1',
+      readAsset: resolvedReader(await png()),
+    });
+
+    const text = await routed('scene-content:slide')(
+      'system',
+      '- **img_1**: image page 1 [see attached] — Dose curve',
+      [{ id: 'img_1', src: 'ast_figure1' }],
+    );
+    warn.mockRestore();
+
+    expect(text).toBe('generated');
+    expect(callLLM).toHaveBeenCalledTimes(2);
+    const [visionRequest, , , , visionFallback] = callLLM.mock.calls[0];
+    expect(visionRequest.messages).toBeDefined();
+    expect(visionFallback).toMatchObject({ enabled: false });
+    const [textRequest, , , , textFallback] = callLLM.mock.calls[1];
+    expect(textRequest.messages).toBeUndefined();
+    expect(textRequest.prompt).toBe('- **img_1**: image page 1 — Dose curve');
+    expect(textFallback?.enabled).not.toBe(false);
+  });
+
   it('stays text-only when the routed model does not accept images', async () => {
     routeTo(false);
     const readAsset = vi.fn<VisionAssetReader>();
