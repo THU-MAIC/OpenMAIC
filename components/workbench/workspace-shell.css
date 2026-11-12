@@ -1011,9 +1011,18 @@
    button's width) and the action is out of flow entirely, so the name's usable
    width is identical at rest and on hover.
    Scoped to rows that HAVE an action — a chat row in the read-only drawer has
-   none, so its metadata would otherwise vanish on hover for nothing. */
-.ws-row-wrap-actionable:hover .ws-row-meta,
-.ws-row-wrap-actionable:focus-within .ws-row-meta {
+   none, so its metadata would otherwise vanish on hover for nothing.
+   Focus hides it only when the focus is on the action itself (the ⋯ shows
+   exactly then, below). Focus on the row button — which a click leaves there —
+   reveals nothing, so hiding the slot for it blanked the open chat's running
+   spinner and timestamp for as long as the row kept focus. */
+.ws-row-wrap-actionable:hover .ws-row-meta {
+  opacity: 0;
+}
+
+/* Its own rule: an engine without `:has()` drops this selector, and in a list
+   with the hover selector it would drop the hover rule along with it. */
+.ws-row-wrap-actionable:has(.ws-row-trailing:focus-within) .ws-row-meta {
   opacity: 0;
 }
 

@@ -63,6 +63,7 @@ import {
   type ProHomeSessionItem,
 } from '@/lib/workbench/pro-home-data';
 import { OwnerSessionClient } from '@/lib/workbench/owner-session-client';
+import { useRunningSessions } from '@/lib/workbench/running-sessions';
 import { resolveCourseChatBootstrap } from '@/lib/workbench/course-chat-bootstrap';
 import { startConversationWithFirstMessage } from '@/lib/workbench/first-message-session';
 import { createdCourseTabsToOpen } from '@/lib/workbench/created-course-tabs';
@@ -73,6 +74,7 @@ import {
 } from '@/lib/workbench/course-read-only';
 import { fetchStageMeta, type StageMetaResult } from '@/lib/classroom/stage-meta-client';
 import { useRouter } from 'next/navigation';
+import { draftCourseTitle } from '@/lib/workbench/draft-course-title';
 import { findGuideCourse, seedGuideCourse } from '@/lib/workbench/guide-course';
 import {
   markOnboardingSeen,
@@ -248,6 +250,13 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     [forgetRun, t],
   );
   const [sessions, setSessions] = useState<ProHomeSessionItem[]>(EMPTY_SESSIONS);
+  // Which conversations are running, for a classroom showing a course another
+  // conversation is still building (see `lib/workbench/running-sessions.ts`).
+  const setRunningSessions = useRunningSessions((s) => s.setFromSessions);
+  useEffect(() => {
+    setRunningSessions(sessions);
+  }, [sessions, setRunningSessions]);
+  useEffect(() => () => setRunningSessions([]), [setRunningSessions]);
   /**
    * The latest list, readable from queued callbacks without waiting for React
    * to commit another render. The owner publisher updates it before setState.
@@ -1486,6 +1495,11 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    * special case (see `lib/workbench/first-message-session`). Opening a course
    * therefore starts no run until the user actually asks for something.
    */
+  // A course not in the rail's list (someone else's, opened read-only) is
+  // named by the document loaded in the classroom pane.
+  const draftLoadedName = useStageStore((s) =>
+    draftCourseId && s.stage?.id === draftCourseId ? s.stage.name : null,
+  );
   const draftConversation = useMemo(
     () =>
       draftCourseId
@@ -1497,9 +1511,12 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
               ? {
                   course: {
                     stageId: draftCourseId,
-                    title:
-                      courses.classrooms.find((course) => course.id === draftCourseId)?.name ||
-                      t('workspace.untitledCourse'),
+                    title: draftCourseTitle({
+                      listedName: courses.classrooms.find((course) => course.id === draftCourseId)
+                        ?.name,
+                      loadedName: draftLoadedName,
+                      fallback: t('workspace.untitledCourse'),
+                    }),
                   },
                 }
               : {}),
@@ -1546,7 +1563,15 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
             },
           }
         : null,
-    [courses.classrooms, draftCourseId, draftNamesCourse, loadSessions, navigateInBackground, t],
+    [
+      courses.classrooms,
+      draftCourseId,
+      draftLoadedName,
+      draftNamesCourse,
+      loadSessions,
+      navigateInBackground,
+      t,
+    ],
   );
 
   // The owner list stream and attached conversation stream have independent
