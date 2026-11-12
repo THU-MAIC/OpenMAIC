@@ -23,7 +23,7 @@
  * | order | participant       | rows                                                   |
  * |------:|-------------------|--------------------------------------------------------|
  * |   100 | `document-folders`| `document_folders`, `document_stages.folder_id`        |
- * |   150 | `guide-courses`   | retires a duplicate guide course (`./guide-courses.ts`) |
+ * |   150 | `guide-courses`   | retires the incoming guide course when spare (`./guide-courses.ts`) |
  * |   200 | `courses`         | `stage_meta` (and the retired `document_stages.owner_id`) |
  * |   300 | `owner-materials` | `material_folders`, `owner_material` (folder conflicts as course folders') |
  * |   400 | `agent-sessions`  | `agent_sessions`, the owner session-event projection   |
@@ -229,9 +229,10 @@ function coreParticipants(provider: ServerPersistenceProvider): ClaimParticipant
       },
     },
     {
-      // At most one guide course per owner, edited or referenced copies always
-      // kept. Before the courses move, after the folders participant locked
-      // the source's ownership rows.
+      // Retires the incoming guide course only when it is untouched, unused
+      // and unpublished; the account's copy is never retired. Before the
+      // courses move, after the folders participant locked the source's
+      // ownership rows.
       name: 'guide-courses',
       order: 150,
       rekey: (tx, from, to) => retireDuplicateGuideCourses(tx, from, to),

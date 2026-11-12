@@ -863,8 +863,8 @@ export async function rootedMaterialClaimScenario(h: ClaimHarness): Promise<void
 
 /**
  * The guide course across a claim (`lib/persistence/guide-courses.ts`):
- * one copy kept when both owners have one, a copy that was edited or that a
- * session or learner record names never retired.
+ * the incoming copy retired only when it is untouched, unreferenced and not
+ * published; the account's copy never retired; otherwise both kept.
  */
 export async function guideCourseClaimScenario(h: ClaimHarness): Promise<void> {
   const guide = (owner: string) => guideCourseIdFor(owner);
@@ -910,12 +910,14 @@ export async function guideCourseClaimScenario(h: ClaimHarness): Promise<void> {
   await claim(anon(2), 'user:g2');
   expect(await activeGuides('user:g2')).toEqual([]);
 
-  // The visitor edited theirs: it stays, and the account's untouched copy makes way.
+  // The visitor edited theirs: both stay, the account's untouched copy too.
   await seed(anon(3));
   await rename(anon(3));
   await seed('user:g3');
-  await claim(anon(3), 'user:g3');
-  expect(await activeGuides('user:g3')).toEqual([guide(anon(3))]);
+  await expect(claim(anon(3), 'user:g3')).resolves.toMatchObject({
+    moved: { 'guide-courses': 0, courses: 1 },
+  });
+  expect(await activeGuides('user:g3')).toEqual([guide(anon(3)), guide('user:g3')].sort());
 
   // Both edited: both stay.
   await seed(anon(4));
@@ -940,7 +942,7 @@ export async function guideCourseClaimScenario(h: ClaimHarness): Promise<void> {
   } as never);
   await seed('user:g5');
   await claim(anon(5), 'user:g5');
-  expect(await activeGuides('user:g5')).toEqual([guide(anon(5))]);
+  expect(await activeGuides('user:g5')).toEqual([guide(anon(5)), guide('user:g5')].sort());
 
   // The account has none yet: the visitor's copy simply moves in.
   await seed(anon(6));
@@ -977,8 +979,8 @@ export async function guideCourseClaimScenario(h: ClaimHarness): Promise<void> {
   );
 
   // A conversation about the visitor's untouched copy (no edit yet): the copy
-  // is in use, so it stays and the account's spare copy makes way. The
-  // session arrives still bound to a course the library shows.
+  // is in use, so both stay. The session arrives still bound to a course the
+  // library shows.
   await seed(anon(9));
   const talk = await h.sessions.createSession({
     ownerId: anon(9),
@@ -988,16 +990,16 @@ export async function guideCourseClaimScenario(h: ClaimHarness): Promise<void> {
   });
   await seed('user:g9');
   await expect(claim(anon(9), 'user:g9')).resolves.toMatchObject({
-    moved: { 'guide-courses': 1, courses: 1, 'agent-sessions': 1 },
+    moved: { 'guide-courses': 0, courses: 1, 'agent-sessions': 1 },
   });
-  expect(await activeGuides('user:g9')).toEqual([guide(anon(9))]);
+  expect(await activeGuides('user:g9')).toEqual([guide(anon(9)), guide('user:g9')].sort());
   await expect(h.sessions.getSession(talk.id)).resolves.toMatchObject({
     ownerId: 'user:g9',
     stageId: guide(anon(9)),
   });
 
-  // Both copies in use, neither edited: both stay. The visitor's through the
-  // session's active course, the account's through a learner record.
+  // The visitor's copy in use through a session's active course (the account's
+  // through a learner record, which does not matter): both stay.
   await seed(anon(10));
   const other = await h.sessions.createSession({ ownerId: anon(10), prompt: 'a new course' });
   await h.pool.query('UPDATE agent_sessions SET active_stage_id = $2 WHERE id = $1', [
@@ -1019,8 +1021,7 @@ export async function guideCourseClaimScenario(h: ClaimHarness): Promise<void> {
   });
   expect(await activeGuides('user:g10')).toEqual([guide(anon(10)), guide('user:g10')].sort());
 
-  // A learner record on the visitor's copy keeps it too; a deleted session
-  // on the account's copy does not, so the account's copy is the spare one.
+  // A learner record on the visitor's copy keeps it too.
   await seed(anon(11));
   await h.provider.runtimeStore.createSession({
     id: 'rt-guide-a11',
@@ -1032,13 +1033,65 @@ export async function guideCourseClaimScenario(h: ClaimHarness): Promise<void> {
     updatedAt: ISO_NOW,
   });
   await seed('user:g11');
+  await expect(claim(anon(11), 'user:g11')).resolves.toMatchObject({
+    moved: { 'guide-courses': 0 },
+  });
+  expect(await activeGuides('user:g11')).toEqual([guide(anon(11)), guide('user:g11')].sort());
+
+  // A deleted session names nothing: the visitor's copy is spare and retired.
+  await seed(anon(12));
   const gone = await h.sessions.createSession({
-    ownerId: 'user:g11',
+    ownerId: anon(12),
     prompt: 'about the guide',
-    stageId: guide('user:g11'),
+    stageId: guide(anon(12)),
     existingCourse: true,
   });
   await h.pool.query('UPDATE agent_sessions SET deleted_at = now() WHERE id = $1', [gone.id]);
-  await claim(anon(11), 'user:g11');
-  expect(await activeGuides('user:g11')).toEqual([guide(anon(11))]);
+  await seed('user:g12');
+  await expect(claim(anon(12), 'user:g12')).resolves.toMatchObject({
+    moved: { 'guide-courses': 1 },
+  });
+  expect(await activeGuides('user:g12')).toEqual([guide('user:g12')]);
+
+  // The account published its otherwise untouched copy: it is kept (publishing
+  // writes only stage_meta, so it still looks untouched), and the visitor's
+  // untouched copy is retired.
+  const publish = (stageId: string) =>
+    h.pool.query('UPDATE stage_meta SET is_public = true, published_at = $2 WHERE stage_id = $1', [
+      stageId,
+      NOW,
+    ]);
+  await seed(anon(13));
+  await seed('user:g13');
+  await publish(guide('user:g13'));
+  await expect(claim(anon(13), 'user:g13')).resolves.toMatchObject({
+    moved: { 'guide-courses': 1, courses: 1 },
+  });
+  expect(await activeGuides('user:g13')).toEqual([guide('user:g13')]);
+  const published = await h.pool.query<{ is_public: boolean }>(
+    'SELECT is_public FROM stage_meta WHERE stage_id = $1 AND deleted_at IS NULL',
+    [guide('user:g13')],
+  );
+  expect(published.rows).toEqual([{ is_public: true }]);
+
+  // The account published its copy and the visitor edited theirs: both stay,
+  // the account's published copy included.
+  await seed(anon(14));
+  await rename(anon(14));
+  await seed('user:g14');
+  await publish(guide('user:g14'));
+  await expect(claim(anon(14), 'user:g14')).resolves.toMatchObject({
+    moved: { 'guide-courses': 0 },
+  });
+  expect(await activeGuides('user:g14')).toEqual([guide(anon(14)), guide('user:g14')].sort());
+
+  // A published visitor copy (anonymous owners normally cannot publish) is
+  // never retired, untouched or not.
+  await seed(anon(15));
+  await publish(guide(anon(15)));
+  await seed('user:g15');
+  await expect(claim(anon(15), 'user:g15')).resolves.toMatchObject({
+    moved: { 'guide-courses': 0 },
+  });
+  expect(await activeGuides('user:g15')).toEqual([guide(anon(15)), guide('user:g15')].sort());
 }

@@ -63,7 +63,7 @@ describe('claiming anonymous work (PGlite)', () => {
     await fullClaimScenario(harness);
   });
 
-  it('keeps at most one guide course, and every edited copy', async () => {
+  it('retires only a spare incoming guide course, never the account copy', async () => {
     await guideCourseClaimScenario(harness);
   });
 

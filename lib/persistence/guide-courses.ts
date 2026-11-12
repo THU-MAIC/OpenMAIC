@@ -1,5 +1,6 @@
 /**
- * The guide course on the server: at most one per owner, nothing edited lost.
+ * The guide course on the server: one per owner where that is safe, nothing
+ * edited, referenced or published lost.
  *
  * Every owner's library gets a copy of the guide course the first time it
  * loads (`lib/workbench/guide-course.ts`), under an id derived from that
@@ -15,47 +16,41 @@
  *   copy; creates take it shared, so two creates of one owner are serialized
  *   by a per-owner guide lock instead. The seed takes the refusal (403) as
  *   settled and reloads the library, whose list missed the claimed copy.
- * - {@link retireDuplicateGuideCourses}: a claim between two owners that both
- *   hold a copy keeps one, never retiring a copy that was edited or that a
- *   session or learner record names.
+ * - {@link retireDuplicateGuideCourses}: a claim into an account that holds a
+ *   copy (kept or deleted) retires the incoming anonymous copy when it is
+ *   spare. The account's copy is never retired.
  *
- * A copy is UNTOUCHED when nothing wrote it after the seed: the seed inserts
- * the stage row and each scene row once, in one save, so the document's
- * revision counter (`document_stage_revision`, bumped by the storage
- * package's triggers on every stage and scene write) is exactly one more than
- * its scene count, and every scene still carries the stage's creation time.
- * Any later write (a rename, an edited, added or removed scene, an agent
- * change) breaks one of the two. Opening or learning the course writes no
- * document row. A copy without a revision row counts as edited.
+ * The incoming copy is SPARE when all three hold:
  *
- * A copy is IN USE when a record the claim carries over names it: an agent
- * session (`agent_sessions.stage_id` or `active_stage_id`, not deleted), such
- * as a conversation about the course started without editing it, or a
- * learner's runtime session (`runtime_sessions.stage_id`: classroom chat,
- * quiz attempts, whiteboard). The claim moves those records unchanged, so a
- * retired copy would leave them bound to a course the library no longer
- * shows. A copy is SPARE when it is untouched and not in use; only a spare
- * copy is ever retired.
+ * - UNTOUCHED: nothing wrote it after the seed. The seed inserts the stage
+ *   row and each scene row once, in one save, so the document's revision
+ *   counter (`document_stage_revision`, bumped by the storage package's
+ *   triggers on every stage and scene write) is exactly one more than its
+ *   scene count, and every scene still carries the stage's creation time.
+ *   Any later write (a rename, an edited, added or removed scene, an agent
+ *   change) breaks one of the two. Opening or learning the course writes no
+ *   document row. A copy without a revision row counts as edited.
+ * - NOT IN USE: no record the claim carries over names it, neither an agent
+ *   session (`agent_sessions.stage_id` or `active_stage_id`, not deleted),
+ *   such as a conversation about the course started without editing it, nor
+ *   a learner's runtime session (`runtime_sessions.stage_id`: classroom chat,
+ *   quiz attempts, whiteboard). The claim moves those records unchanged, so a
+ *   retired copy would leave them bound to a course the library no longer
+ *   shows.
+ * - NOT PUBLIC: `stage_meta.is_public` is false. Publishing writes only
+ *   `stage_meta`, so the two checks above do not see it; an anonymous owner
+ *   cannot normally publish, and this is the guard if one did.
  *
- * The rule, when the account holds a guide course (kept or deleted):
- *
- * - a spare anonymous copy is retired: the account has its own, or deleted
- *   it, and the visitor neither changed theirs nor bound anything to it;
- * - an anonymous copy that is edited or in use stays, and then the account's
- *   spare copies are retired instead, so the visitor's is the account's
- *   guide course;
- * - neither side spare: both stay. Edited or referenced work is never retired.
- *
- * Keeping a copy is preferred over re-pointing the records at the kept one:
- * a session's history, its course edits and a learner's runtime records all
- * speak of the copy they were made on, and re-pointing them would mix two
- * documents' histories. A second guide course in the library is harmless;
- * the user can delete either.
+ * In every other case both copies stay. A second guide course in the library
+ * is harmless (the user can delete either), and keeping a copy beats
+ * re-pointing the records at the other one: a session's history, its course
+ * edits and a learner's runtime records all speak of the copy they were made
+ * on.
  *
  * Only copies of the current seed generation count
  * (`./guide-course-id.ts`): a copy of an older generation is an ordinary
- * course, never refused against, retired or kept in place of a new one, so
- * advancing the generation seeds the new course once for everyone.
+ * course, never refused against or retired, so advancing the generation
+ * seeds the new course once for everyone.
  *
  * Retiring is the same tombstone a delete writes (`stage_meta.deleted_at`,
  * the folder cleared); the rows stay, and the retired id is never seeded
@@ -113,12 +108,13 @@ interface GuideRow extends Record<string, unknown> {
   owner_id: string;
   deleted: boolean;
   untouched: boolean;
+  public: boolean;
 }
 
 /**
- * Retire the duplicate guide courses a claim of `from` into `to` would leave.
- * Runs before the courses move, so `from`'s copies are still `from`'s. Answers
- * how many copies it retired.
+ * Retire the incoming guide course a claim of `from` into `to` would
+ * duplicate, when it is spare. Runs before the courses move, so `from`'s
+ * copies are still `from`'s. Answers how many copies it retired.
  */
 export async function retireDuplicateGuideCourses(
   tx: Queryable,
@@ -127,6 +123,7 @@ export async function retireDuplicateGuideCourses(
 ): Promise<number> {
   const guides = await tx.query<GuideRow>(
     `SELECT meta.stage_id, meta.owner_id, meta.deleted_at IS NOT NULL AS deleted,
+            meta.is_public AS public,
             COALESCE(rev.rev = 1 + (SELECT count(*) FROM document_scenes s WHERE s.stage_id = meta.stage_id)
               AND NOT EXISTS (
                 SELECT 1 FROM document_scenes s
@@ -141,22 +138,12 @@ export async function retireDuplicateGuideCourses(
       FOR UPDATE OF meta`,
     [from, to, currentGuideCourseIdPattern()],
   );
-  const incoming = guides.rows.filter((row) => row.owner_id === from && !row.deleted);
-  const account = guides.rows.filter((row) => row.owner_id === to);
-  if (incoming.length === 0 || account.length === 0) return 0;
-
-  const inUse = await stagesInUse(
-    tx,
-    [from, to],
-    guides.rows.filter((row) => !row.deleted && row.untouched).map((row) => row.stage_id),
-  );
-  const spare = (row: GuideRow) => row.untouched && !inUse.has(row.stage_id);
-  const retire = incoming.filter(spare).map((row) => row.stage_id);
-  if (incoming.some((row) => !spare(row))) {
-    // An edited or referenced copy arrives: it becomes the guide course, and
-    // the account's spare copies make way for it.
-    retire.push(...account.filter((row) => !row.deleted && spare(row)).map((row) => row.stage_id));
-  }
+  if (!guides.rows.some((row) => row.owner_id === to)) return 0;
+  const candidates = guides.rows
+    .filter((row) => row.owner_id === from && !row.deleted && row.untouched && !row.public)
+    .map((row) => row.stage_id);
+  const inUse = await stagesInUse(tx, [from, to], candidates);
+  const retire = candidates.filter((stageId) => !inUse.has(stageId));
   if (retire.length === 0) return 0;
   await tx.query(
     `UPDATE stage_meta SET deleted_at = CURRENT_TIMESTAMP
