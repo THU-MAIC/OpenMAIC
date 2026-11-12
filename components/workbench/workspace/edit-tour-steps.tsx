@@ -30,3 +30,14 @@ export const EDIT_TOUR_STEPS: readonly TourStep[] = [
   { id: 'edit.learn', target: [[`${PANE} [data-testid="workbench-mode-learning"]`]] },
   { id: 'edit.chat', target: [['[data-testid="workspace-chat-pane"]']] },
 ];
+
+/**
+ * Full screen there is no conversation beside the course, so the step that points at
+ * it is left out rather than said in the middle of the screen about nothing.
+ */
+const FULLSCREEN_EDIT_TOUR_STEPS = EDIT_TOUR_STEPS.filter((step) => step.id !== 'edit.chat');
+
+/** The Edit tour for the pane as it is laid out now: split, or full screen. */
+export function editTourSteps(fullscreen: boolean): readonly TourStep[] {
+  return fullscreen ? FULLSCREEN_EDIT_TOUR_STEPS : EDIT_TOUR_STEPS;
+}

@@ -10,6 +10,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Pro workbench: pages built from an uploaded document now show the document's extracted figures. `use_material_media` used to tell the agent to place an image with `patch_stage`, so new pages were generated through `generate_scene` without `media` and showed no figures. Its reply, the `generate_scene` description, the materials prompt and the `stage-design` skill now say to pass each image in `generate_scene.media`. [#2099](https://github.com/THU-MAIC/OpenMAIC/pull/2099)
 
+## [1.5.0-rc.2] - 2026-11-12
+
+1.5.0-rc.2 is the second release candidate for 1.5.0. It polishes the workbench (drag to fold the rail and the classroom dock, clearer chat status, no duplicate guide course after sign-in), gives Native classroom agents fresh whiteboard state, and fixes PBL previews, assessments and history. No upgrade conditions over 1.5.0-rc.1: no new migrations, and the 1.5.0-rc.1 **Breaking Changes** still apply when upgrading from 1.4.x.
+
+### Behavior Changes
+
+- Classroom: Native classroom agents (Director and Child) get a fresh whiteboard state before every model round. Where `RENDER_SERVICE_URL` is set, the service passes its `GET /health` check and the model explicitly supports vision, each request also carries at most one image of the current board (5 s per render, text-only after the first failure), which adds image input to those model calls. Successful board writes now return the next expected sequence, and `wb_draw_text` takes plain text only. The classroom skill directory can be set with `OPENMAIC_CLASSROOM_SKILLS_DIR`. [#2216](https://github.com/THU-MAIC/OpenMAIC/pull/2216), [#2232](https://github.com/THU-MAIC/OpenMAIC/pull/2232), [#2237](https://github.com/THU-MAIC/OpenMAIC/pull/2237) (by @LING-6150)
+- Agent runtime: `render_scene_preview` is offered to the agent only when the render service passes its health check, instead of whenever `RENDER_SERVICE_URL` is set. [#2119](https://github.com/THU-MAIC/OpenMAIC/pull/2119) (by @mahmud035)
+
+### Features
+
+- Workbench: the rail and the classroom dock fold and unfold by dragging their edge, within one gesture; the remembered width and height are kept. [#2239](https://github.com/THU-MAIC/OpenMAIC/pull/2239)
+- PBL v3: the project overview sits in the conversation with the goal, the finished work and the milestone roadmap; the task drawer is available from each milestone's first step, and the next step is one full-width button above the composer. Course packages may add an optional `presentation.hero.finishedWork`. [#2230](https://github.com/THU-MAIC/OpenMAIC/pull/2230) (by @Irisdai517)
+
+### Bug Fixes
+
+- Workbench: a queued request shows its prompt and says it is queued; the open chat keeps its spinner in the rail; a course still being built by another conversation no longer shows the course end; the course chip names a course outside the viewer's list. [#2240](https://github.com/THU-MAIC/OpenMAIC/pull/2240)
+- Workbench: signing in no longer adds a second guide course next to the one the visitor already had, and the Edit guide works in full screen. [#2241](https://github.com/THU-MAIC/OpenMAIC/pull/2241)
+- Workbench: small polish: no duplicate page count in the full-screen header, no subtitle on My courses, tooltips open on keyboard focus only, external rail links show an arrow, and `ask_user` rejects double-escaped line breaks. [#2243](https://github.com/THU-MAIC/OpenMAIC/pull/2243)
+- PBL: standalone previews wait for the application to be running on a cold start instead of showing an unusable retry. [#2227](https://github.com/THU-MAIC/OpenMAIC/pull/2227) (by @Irisdai517)
+- PBL: isolated assessments larger than the sandbox command budget run through a staged script instead of failing with a source-size error. [#2228](https://github.com/THU-MAIC/OpenMAIC/pull/2228) (by @Irisdai517)
+- PBL v3: History lists conversations from earlier milestones again, grouped by milestone. [#2229](https://github.com/THU-MAIC/OpenMAIC/pull/2229) (by @Irisdai517)
+
+### Packages
+
+- No package changes; all packages are unchanged from 1.5.0-rc.1.
+
+### Known issues
+
+- The 1.5.0-rc.1 known issues still apply.
+
 ## [1.5.0-rc.1] - 2026-11-10
 
 1.5.0-rc.1 is the first release candidate for 1.5.0: **a brand-new home, redesigned end to end.** With the workbench enabled, the home page is the workbench. A request shows a live preview beside the conversation from the moment it is sent, and the preview becomes the course once its first page is saved. A rail without a top bar holds **My courses** (folders, pinning, thumbnails), the knowledge base and a chat list that shows what is running, waiting for an answer or failed. One full-screen classroom handles both learning and editing, and the agent settles one style per course and briefs each slide's design apart from its content. The workbench stays off by default (`NEXT_PUBLIC_WORKBENCH_ENABLED`), and without it the classic home page is unchanged. Some classroom changes apply to every deployment: interactive pages fill the classroom pane and shrink to fit instead of scrolling, a course ends on a closing card instead of an extra completion page, and the dock under the stage can be resized and folded. Read **Breaking Changes** before upgrading: the workbench flag is renamed, and deployments that run the agent runtime get a one-way schema migration.

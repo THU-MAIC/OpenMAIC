@@ -18,6 +18,14 @@
  * again. Two tabs racing write the same document to the same id. A browser
  * remembers when its owner is settled, so later loads ask nothing.
  *
+ * One per library. A library that already holds a guide course of the current
+ * seed generation under another id (an anonymous copy a sign-in brought into
+ * the account) is not given a second, and the server refuses one that a stale
+ * list would let through (`lib/persistence/guide-courses.ts`). A claim
+ * retires nothing: a visitor and an account that each had a copy keep both. A copy of an older generation does not
+ * count: it is an ordinary course, and a new generation is seeded beside it
+ * (`lib/persistence/guide-course-id.ts`).
+ *
  * A deployment turns it off or seeds its own documents through
  * `WorkbenchShellExtensions.guideCourse` (see `shell-extensions.tsx`).
  */
@@ -27,17 +35,25 @@ import i18n from '@/lib/i18n/config';
 import { mutateDocument, type AppDocument } from '@/lib/document-store';
 import { getPersistenceLearnerKey } from '@/lib/persistence/bootstrap';
 import type { Scene, Stage } from '@/lib/types/stage';
+import {
+  GUIDE_COURSE_EXISTS,
+  guideCourseIdFor,
+  isCurrentGuideCourseId,
+} from '@/lib/persistence/guide-course-id';
 
-/** The prefix of every seeded guide course's id. */
-export const GUIDE_COURSE_PREFIX = 'stage-guide-';
+export {
+  GUIDE_COURSE_PREFIX,
+  guideCourseIdFor,
+  isCurrentGuideCourseId as isGuideCourseId,
+} from '@/lib/persistence/guide-course-id';
 
-export function isGuideCourseId(id: string | null | undefined): boolean {
-  return !!id && id.startsWith(GUIDE_COURSE_PREFIX);
-}
-
-/** This owner's guide course among the courses they can list, if it is there. */
+/**
+ * This owner's guide course among the courses they can list, if it is there:
+ * a copy of the current seed generation (an older generation's copy is an
+ * ordinary course, see `lib/persistence/guide-course-id.ts`).
+ */
 export function findGuideCourse(courses: readonly { readonly id: string }[]): string | null {
-  return courses.find((course) => isGuideCourseId(course.id))?.id ?? null;
+  return courses.find((course) => isCurrentGuideCourseId(course.id))?.id ?? null;
 }
 
 export type GuideCourseLocale = 'zh' | 'en';
@@ -47,25 +63,6 @@ export const DEFAULT_GUIDE_COURSE_SRC = '/guide-course/{locale}.json';
 
 export function guideCourseLocale(language: string | undefined): GuideCourseLocale {
   return language?.toLowerCase().startsWith('zh') ? 'zh' : 'en';
-}
-
-/**
- * Part of every seeded id. Changing it gives every owner a new id, so the
- * course is seeded once more for everyone, including owners who deleted it.
- */
-const GUIDE_SEED_GENERATION = 'g1';
-
-/** A short, stable, non-reversible name for a learner key (FNV-1a, 2×32 bits). */
-export function guideCourseIdFor(learnerKey: string): string {
-  const input = `${GUIDE_SEED_GENERATION}:${learnerKey}`;
-  let a = 0x811c9dc5;
-  let b = 0x01000193 ^ 0x5bd1e995;
-  for (let i = 0; i < input.length; i += 1) {
-    const code = input.charCodeAt(i);
-    a = Math.imul(a ^ code, 0x01000193) >>> 0;
-    b = Math.imul(b ^ code, 0x01000193 + 2) >>> 0;
-  }
-  return `${GUIDE_COURSE_PREFIX}${a.toString(16).padStart(8, '0')}${b.toString(16).padStart(8, '0')}`;
 }
 
 /**
@@ -99,12 +96,15 @@ const SETTLED_KEY = 'openmaic:workspace:guide-course-seeded';
 const LOCK = 'openmaic:guide-course-seed';
 let inFlight: Promise<SeedOutcome> | null = null;
 
-export type SeedOutcome = 'created' | 'settled' | 'off' | 'retry';
+export type SeedOutcome = 'created' | 'present' | 'settled' | 'off' | 'retry';
 
 /**
  * Put the guide course into this owner's library if it was never there.
- * `created` means the library has a new course; `retry` means a transient
- * failure, to be tried on a later load.
+ * `created` means the library has a new course; `present` means the server
+ * holds a guide course the list did not show (a sign-in claim brought one in
+ * after the list loaded), so the list is stale; `retry` means a transient
+ * failure, to be tried on a later load. Reload the list on `created` and
+ * `present`.
  */
 export function seedGuideCourse(
   option: false | { readonly src: string } | undefined,
@@ -129,7 +129,10 @@ async function seed(
   }
   const id = guideCourseIdFor(learnerKey);
   if (readSettled().includes(id)) return 'settled';
-  if (courses.some((course) => course.id === id)) {
+  // Another copy of the current generation (a claimed anonymous one) is this
+  // library's guide course. Only the current generation counts, so a copy of
+  // an older one neither stops the new seed nor marks it settled.
+  if (findGuideCourse(courses)) {
     rememberSettled(id);
     return 'settled';
   }
@@ -171,6 +174,12 @@ async function write(src: string, id: string): Promise<SeedOutcome> {
     // A refusal is permanent (the owner deleted it, and its id is retired);
     // anything else is worth another try on a later load.
     const status = error instanceof HttpDocumentStoreError ? error.status : 0;
+    if (error instanceof HttpDocumentStoreError && error.code === GUIDE_COURSE_EXISTS) {
+      // The library has a guide course of this generation the list did not
+      // show (a claim landed after it loaded): settled, and the list is stale.
+      rememberSettled(id);
+      return 'present';
+    }
     if (status >= 400 && status < 500 && status !== 408 && status !== 429) {
       rememberSettled(id);
       return 'settled';
