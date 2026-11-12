@@ -2416,7 +2416,6 @@
     "loadFailed": "載入失敗",
     "retry": "重試",
     "untitledSession": "未命名對話",
-    "pagePosition": "第 {{index}} / {{total}} 頁",
     "navAria": "工作區導覽",
     "homeAria": "返回首頁",
     "currentSession": "目前對話",
@@ -2536,7 +2535,6 @@
       "onboarding": "新手引導"
     },
     "coursesPage": {
-      "subtitle": "你產生或匯入的課程，以及整理它們的資料夾",
       "searchPlaceholder": "搜尋我的課程",
       "results": "搜尋結果",
       "allCourses": "全部課程",
@@ -2716,6 +2714,7 @@
       "sourcePath": "此檔案不在專案原始碼範圍內。",
       "sourceCount": "學習專案最多支援 256 個原始碼檔案。",
       "sourceSize": "專案原始碼內容總量不能超過 1 MiB。",
+      "commandSize": "平台產生的編譯或測試指令過長，沙箱無法執行。",
       "teachingContextSize": "教學上下文過長，請縮短 PLAN.md 或審查問題後重試。",
       "commandActive": "請先停止執行中的命令並取得結果，再讀取或儲存工作區快照。",
       "terminalActive": "請先關閉終端機，再讀取或儲存工作區快照。",
@@ -3022,7 +3021,25 @@
       "file-edit": "File edit",
       "workspace-run": "Workspace run"
     },
+    "overview": {
+      "title": "專案總覽",
+      "expand": "展開",
+      "collapse": "收起",
+      "projectGoal": "專案目標",
+      "finishedWork": "完成後的作品",
+      "roadmap": "專案大綱",
+      "goalAndResult": "目標與成果",
+      "goal": "目標",
+      "result": "成果",
+      "eachStage": "每個階段怎麼走",
+      "yourRole": "由你做決策和審閱，AI 協助撰寫計畫和程式碼。",
+      "preview": "在作品預覽區使用自己的產品，檢查做出的效果。",
+      "advance": "目前環節達到推進條件後，輸入框上方才會出現紫色操作列；看到它時，點擊即可繼續。"
+    },
     "journey": {
+      "currentMilestone": "目前階段",
+      "milestoneGoal": "目標：",
+      "milestoneResult": "成果：",
       "completionHandoff": "本環節已完成。下一步操作請看學習助手底部的任務列。",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",
@@ -3064,6 +3081,7 @@
       "notReflected": "Reflection not yet recorded",
       "taskDetails": "Current task details",
       "closeDetails": "Close task details",
+      "reviewDetails": "回看詳情",
       "milestoneSteps": "Milestone learning steps",
       "enterStep": "Continue to {{step}}",
       "enterMilestone": "進入下一階段",

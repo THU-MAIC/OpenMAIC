@@ -331,8 +331,6 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
         <ClassroomFullHeader
           courseName={courseName}
           sceneTitle={scene?.title}
-          sceneIndex={sceneIndex}
-          sceneCount={scenes.length}
           actions={
             <>
               {readOnly && readOnlyKnown ? <ReadOnlyBadge /> : null}

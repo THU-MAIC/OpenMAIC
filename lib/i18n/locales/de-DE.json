@@ -2416,7 +2416,6 @@
     "loadFailed": "Couldn't load",
     "retry": "Retry",
     "untitledSession": "Untitled chat",
-    "pagePosition": "Page {{index}} of {{total}}",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
@@ -2536,7 +2535,6 @@
       "onboarding": "Erste Schritte"
     },
     "coursesPage": {
-      "subtitle": "Kurse, die du erstellt oder importiert hast, und die Ordner, in denen du sie ablegst",
       "searchPlaceholder": "Meine Kurse durchsuchen",
       "results": "Suchergebnisse",
       "allCourses": "Alle Kurse",
@@ -2716,6 +2714,7 @@
       "sourcePath": "Diese Datei gehört nicht zu den Quelldateien des Projekts.",
       "sourceCount": "Lernprojekte unterstützen höchstens 256 Quelldateien.",
       "sourceSize": "Der Quellinhalt des Projekts darf insgesamt 1 MiB nicht überschreiten.",
+      "commandSize": "Der erzeugte Build- oder Testbefehl ist zu groß für die Sandbox.",
       "teachingContextSize": "Der Lernkontext ist zu lang. Kürzen Sie PLAN.md oder die Überprüfungsfrage und versuchen Sie es erneut.",
       "commandActive": "Beenden Sie laufende Befehle und rufen Sie deren Ergebnisse ab, bevor Sie einen Arbeitsbereich-Snapshot lesen oder speichern.",
       "terminalActive": "Schließen Sie die Terminals, bevor Sie einen Arbeitsbereich-Snapshot lesen oder speichern.",
@@ -3022,7 +3021,25 @@
       "file-edit": "File edit",
       "workspace-run": "Workspace run"
     },
+    "overview": {
+      "title": "Projektübersicht",
+      "expand": "Aufklappen",
+      "collapse": "Einklappen",
+      "projectGoal": "Projektziel",
+      "finishedWork": "Ihre fertige Anwendung",
+      "roadmap": "Projektübersicht",
+      "goalAndResult": "Ziel und Ergebnis",
+      "goal": "Ziel",
+      "result": "Ergebnis",
+      "eachStage": "Ablauf jeder Phase",
+      "yourRole": "Sie entscheiden und prüfen; KI hilft beim Planen und Programmieren.",
+      "preview": "Probieren Sie die Anwendung in der Vorschau aus und prüfen Sie das Ergebnis.",
+      "advance": "Die violette Schaltfläche über dem Eingabefeld erscheint erst, wenn der aktuelle Schritt zum Fortfahren bereit ist. Klicke dann darauf, um weiterzumachen."
+    },
     "journey": {
+      "currentMilestone": "Aktueller Meilenstein",
+      "milestoneGoal": "Ziel:",
+      "milestoneResult": "Ergebnis:",
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",
@@ -3064,6 +3081,7 @@
       "notReflected": "Reflection not yet recorded",
       "taskDetails": "Current task details",
       "closeDetails": "Close task details",
+      "reviewDetails": "Details ansehen",
       "milestoneSteps": "Milestone learning steps",
       "enterStep": "Continue to {{step}}",
       "enterMilestone": "Nächste Phase",

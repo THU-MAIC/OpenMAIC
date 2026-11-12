@@ -93,9 +93,10 @@ export function EditDock({
       data-testid="edit-dock"
       data-collapsed={collapsed ? 'true' : 'false'}
       style={{ height }}
-      className="relative flex flex-col overflow-hidden transition-[height] duration-[400ms] ease-[cubic-bezier(0.22,1,0.36,1)] data-[dragging=true]:transition-none border-t border-gray-100 bg-white/60 backdrop-blur-md dark:border-gray-800 dark:bg-gray-800/60"
+      className="relative flex flex-col overflow-hidden transition-[height] duration-[400ms] ease-[cubic-bezier(0.22,1,0.36,1)] data-[dragging=true]:transition-none motion-reduce:transition-none border-t border-gray-100 bg-white/60 backdrop-blur-md dark:border-gray-800 dark:bg-gray-800/60"
     >
-      {collapsed ? null : <DockResizeHandle dockRef={dockRef} />}
+      {/* One edge in both states, so a fold mid-drag keeps the same handle under the pointer. */}
+      <DockResizeHandle dockRef={dockRef} folded={collapsed} />
       <DockEditBar
         sceneId={sceneId}
         canPickElements={canPickElements}

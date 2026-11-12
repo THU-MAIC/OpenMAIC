@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   CommandExitError,
   FileNotFoundError,
@@ -12,6 +12,7 @@ import {
 import { SandboxError, sandboxConflict } from '@/lib/sandbox/errors';
 import {
   MAX_TEXT_FILE_BYTES,
+  MAX_ASSESSMENT_SCRIPT_BYTES,
   type SandboxProvider,
   type SandboxResource,
   type SandboxCommandInput,
@@ -41,6 +42,23 @@ import { TERMINAL_CLEANUP } from '../terminal-cleanup';
 import { openSdkPreviewConnection } from '../preview-connection';
 
 const REQUEST_TIMEOUT_MS = 30_000;
+const assessmentPrefix = (id: string) => `/tmp/openmaic-assessment-${id}-`;
+const ASSESSMENT_FILE_RUNNER = String.raw`
+import hashlib, os, stat, sys, tempfile
+path, expected = sys.argv[1:]
+with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'rb') as source:
+    os.unlink(path)
+    if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
+        raise ValueError('Invalid assessment file')
+    data = source.read(${MAX_ASSESSMENT_SCRIPT_BYTES + 1})
+if len(data) > ${MAX_ASSESSMENT_SCRIPT_BYTES} or hashlib.sha256(data).hexdigest() != expected:
+    raise ValueError('Assessment file integrity check failed')
+with tempfile.TemporaryFile() as script:
+    script.write(data)
+    script.seek(0)
+    os.dup2(script.fileno(), 0)
+    os.execl('/bin/sh', 'sh', '-s')
+`;
 
 /** Candidate adapter; account/template compatibility must be established before rollout. */
 export class E2BCompatibleSandboxProvider implements SandboxProvider {
@@ -303,9 +321,49 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
 
   async startCommand(resourceId: string, operationId: string, input: SandboxCommandInput) {
     const sandbox = await this.connect(resourceId, operationId);
+    await this.runSupervisedCommand(sandbox, input);
+  }
+
+  async prepareAssessmentCommand(
+    resourceId: string,
+    operationId: string,
+    input: SandboxCommandInput,
+  ) {
+    const sandbox = await this.connect(resourceId, operationId);
+    const path = `${assessmentPrefix(input.id)}${randomUUID()}.sh`;
+    const digest = createHash('sha256').update(input.command).digest('hex');
+    try {
+      await sandbox.files.write(path, input.command, { requestTimeoutMs: REQUEST_TIMEOUT_MS });
+    } catch (error) {
+      await sandbox.files.remove(path, { requestTimeoutMs: REQUEST_TIMEOUT_MS }).catch(() => {});
+      throw error;
+    }
+    // Leave the file in place on an ambiguous start response. The launched
+    // process consumes it, or cancellation removes it if no process claims it.
+    return () =>
+      this.runSupervisedCommand(
+        sandbox,
+        {
+          ...input,
+          command: `exec python3 -c ${shellQuote(ASSESSMENT_FILE_RUNNER)} ${shellQuote(path)} ${shellQuote(digest)}`,
+        },
+        path,
+      );
+  }
+
+  private async runSupervisedCommand(
+    sandbox: Sandbox,
+    input: SandboxCommandInput,
+    assessmentPath?: string,
+  ) {
     const spec = Buffer.from(JSON.stringify(input)).toString('base64');
+    // Cancellation may have finished before an in-flight upload completes.
+    // Clean that late file before the supervisor exits on its existing claim.
+    const cleanup = assessmentPath
+      ? `if [ -e ${shellQuote(`/tmp/openmaic-commands/${input.id}/cancel`)} ]; then rm -f -- ${shellQuote(assessmentPath)}; fi; `
+      : '';
     const handle = await sandbox.commands.run(
-      `python3 -u -c ${shellQuote(COMMAND_RUNNER)} ${shellQuote(spec)}`,
+      `${cleanup}python3 -u -c ${shellQuote(COMMAND_RUNNER)} ${shellQuote(spec)}`,
       {
         background: true,
         timeoutMs: Math.min(input.timeoutMs + 15_000, 3_600_000),
@@ -373,10 +431,10 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
     const spec = Buffer.from(
       JSON.stringify({ id, command: ':', cwd: WORKSPACE_ROOT, timeoutMs: 100 }),
     ).toString('base64');
-    await sandbox.commands.run(`python3 -c ${shellQuote(COMMAND_RUNNER)} ${shellQuote(spec)}`, {
-      timeoutMs: 5000,
-      requestTimeoutMs: REQUEST_TIMEOUT_MS,
-    });
+    await sandbox.commands.run(
+      `rm -f -- ${shellQuote(assessmentPrefix(id))}*.sh; exec python3 -c ${shellQuote(COMMAND_RUNNER)} ${shellQuote(spec)}`,
+      { timeoutMs: 5000, requestTimeoutMs: REQUEST_TIMEOUT_MS },
+    );
   }
 
   async desktopScreenshot(resourceId: string, operationId: string): Promise<Uint8Array> {

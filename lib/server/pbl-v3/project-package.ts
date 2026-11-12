@@ -10,7 +10,7 @@ import {
 } from '@/lib/pbl/v3/domain/project/project-schema';
 import { SandboxError } from '@/lib/sandbox/errors';
 import { PROJECT_LIMITS, safeProjectPath } from '@/lib/pbl/v3/package-policy';
-import { MAX_COMMAND_BYTES } from '@/lib/sandbox/types';
+import { MAX_ASSESSMENT_SCRIPT_BYTES, MAX_COMMAND_BYTES } from '@/lib/sandbox/types';
 import type { InstalledProject } from './catalog';
 import { evaluationCommand } from './evaluation';
 import { stageSkill } from './skills';
@@ -306,6 +306,23 @@ export function validateProjectPackage(
     config.definition.paths.rubric !== 'rubric'
   )
     return invalid('Project paths must use docs/, skills/, skeleton/, tests/ and rubric/.');
+  const files = Object.fromEntries(
+    names
+      .filter((name) => name.startsWith('skeleton/'))
+      .map((name) => [name.slice(9), bundle.files[name]]),
+  );
+  if (!Object.keys(files).length || !Object.hasOwn(files, 'PLAN.md'))
+    return invalid('Starter files must include skeleton/PLAN.md.');
+  if (
+    Object.keys(files).length > 256 ||
+    Object.keys(files).some((name) => !validSourcePath(name)) ||
+    config.runtime.sourceRoots.some((name) => !validSourcePath(name)) ||
+    Object.values(files).reduce((n, text) => n + Buffer.byteLength(text), 0) > 1_048_576
+  )
+    return invalid(
+      'Starter files exceed the supported source paths, 256 files or 1 MiB snapshot limit.',
+    );
+  const application = config.runtime.application;
   const evaluations: InstalledProject['evaluations'] = {};
   for (const [milestone, name] of Object.entries(config.runtime.evaluations)) {
     if (!config.definition.milestones.some((m) => m.id === milestone))
@@ -352,7 +369,7 @@ export function validateProjectPackage(
     );
     if (Buffer.byteLength(JSON.stringify({ ...spec, resources })) > 48 * 1024)
       return invalid(`Evaluation payload exceeds 48 KiB: ${name}`);
-    // Runtime request IDs are UUIDs. Account for the complete encoded runner, not just its JSON.
+    // Include the same isolated source manifest used when a standalone preview is open.
     if (
       Buffer.byteLength(
         evaluationCommand(
@@ -378,27 +395,16 @@ export function validateProjectPackage(
               : {}),
           },
           '00000000-0000-0000-0000-000000000000',
+          application?.frontendPath ? files : undefined,
         ),
-      ) > MAX_COMMAND_BYTES
+      ) > (application?.frontendPath ? MAX_ASSESSMENT_SCRIPT_BYTES : MAX_COMMAND_BYTES)
     )
-      return invalid(`Evaluation exceeds the sandbox 32 KiB command limit: ${name}`);
+      return invalid(
+        application?.frontendPath
+          ? `Evaluation exceeds the sandbox assessment file transport budget: ${name}`
+          : `Evaluation exceeds the sandbox 32 KiB command limit: ${name}`,
+      );
   }
-  const files = Object.fromEntries(
-    names
-      .filter((name) => name.startsWith('skeleton/'))
-      .map((name) => [name.slice(9), bundle.files[name]]),
-  );
-  if (!Object.keys(files).length || !Object.hasOwn(files, 'PLAN.md'))
-    return invalid('Starter files must include skeleton/PLAN.md.');
-  if (
-    Object.keys(files).length > 256 ||
-    Object.keys(files).some((name) => !validSourcePath(name)) ||
-    config.runtime.sourceRoots.some((name) => !validSourcePath(name)) ||
-    Object.values(files).reduce((n, text) => n + Buffer.byteLength(text), 0) > 1_048_576
-  )
-    return invalid(
-      'Starter files exceed the supported source paths, 256 files or 1 MiB snapshot limit.',
-    );
   for (const root of config.runtime.sourceRoots)
     if (Object.keys(files).some((name) => root === name || root.startsWith(`${name}/`)))
       return invalid(`Source root must be a directory, but conflicts with a starter file: ${root}`);
@@ -407,7 +413,6 @@ export function validateProjectPackage(
     return invalid('Starter files overlap private course resources.');
   if (config.runtime.sourceRoots.some((root) => /^(skills|docs|tests|rubric)(\/|$)/.test(root)))
     return invalid('Source roots overlap private course resources.');
-  const application = config.runtime.application;
   if (
     application?.frontendPath &&
     (!application.frontendPath.endsWith('.html') ||

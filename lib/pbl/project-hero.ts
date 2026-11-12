@@ -1,6 +1,7 @@
 export interface ProjectHeroDetails {
   title: string;
   description: string;
+  finishedWork?: string;
   gains?: readonly string[];
   learningObjective?: string;
   instructorName: string;

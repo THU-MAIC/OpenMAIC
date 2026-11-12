@@ -2416,7 +2416,6 @@
     "loadFailed": "Couldn't load",
     "retry": "Retry",
     "untitledSession": "Untitled chat",
-    "pagePosition": "Page {{index}} of {{total}}",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
@@ -2536,7 +2535,6 @@
       "onboarding": "시작 가이드"
     },
     "coursesPage": {
-      "subtitle": "직접 만들거나 가져온 코스와 이를 정리하는 폴더",
       "searchPlaceholder": "내 코스 검색",
       "results": "검색 결과",
       "allCourses": "전체 코스",
@@ -2716,6 +2714,7 @@
       "sourcePath": "이 파일은 프로젝트 소스 파일 범위 밖에 있습니다.",
       "sourceCount": "학습 프로젝트는 최대 256개의 소스 파일을 지원합니다.",
       "sourceSize": "프로젝트 소스 내용의 총크기는 1 MiB를 초과할 수 없습니다.",
+      "commandSize": "생성된 빌드 또는 테스트 명령이 너무 길어 샌드박스에서 실행할 수 없습니다.",
       "teachingContextSize": "학습 컨텍스트가 너무 깁니다. PLAN.md 또는 검토 질문을 줄인 후 다시 시도하세요.",
       "commandActive": "작업 공간 스냅샷을 읽거나 저장하기 전에 실행 중인 명령을 중지하고 결과를 가져오세요.",
       "terminalActive": "작업 공간 스냅샷을 읽거나 저장하기 전에 터미널을 닫으세요.",
@@ -3022,7 +3021,25 @@
       "file-edit": "File edit",
       "workspace-run": "Workspace run"
     },
+    "overview": {
+      "title": "프로젝트 개요",
+      "expand": "펼치기",
+      "collapse": "Collapse",
+      "projectGoal": "프로젝트 목표",
+      "finishedWork": "완성할 앱",
+      "roadmap": "프로젝트 개요",
+      "goalAndResult": "목표와 결과",
+      "goal": "목표",
+      "result": "결과",
+      "eachStage": "각 단계의 진행 순서",
+      "yourRole": "직접 결정하고 검토하며, AI는 계획과 코드 작성을 돕습니다.",
+      "preview": "미리보기에서 앱을 사용해 구현한 기능을 확인하세요.",
+      "advance": "현재 단계를 진행할 수 있을 때만 입력창 위에 보라색 버튼이 나타납니다. 버튼이 보이면 눌러서 계속하세요."
+    },
     "journey": {
+      "currentMilestone": "현재 단계",
+      "milestoneGoal": "목표:",
+      "milestoneResult": "결과:",
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",
@@ -3064,6 +3081,7 @@
       "notReflected": "Reflection not yet recorded",
       "taskDetails": "Current task details",
       "closeDetails": "Close task details",
+      "reviewDetails": "세부 내용 보기",
       "milestoneSteps": "Milestone learning steps",
       "enterStep": "Continue to {{step}}",
       "enterMilestone": "다음 단계로 이동",
