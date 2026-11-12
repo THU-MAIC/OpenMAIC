@@ -24,6 +24,7 @@ export const PDF_PROVIDERS: Record<PDFProviderId, PDFProviderConfig> = {
     requiresApiKey: false,
     icon: '/logos/unpdf.svg',
     features: ['text', 'images', 'metadata'],
+    legacyEnv: { prefix: 'PDF_UNPDF' },
   },
 
   mineru: {
@@ -32,6 +33,7 @@ export const PDF_PROVIDERS: Record<PDFProviderId, PDFProviderConfig> = {
     requiresApiKey: false,
     icon: '/logos/mineru.png',
     features: ['text', 'images', 'tables', 'formulas', 'layout-analysis'],
+    legacyEnv: { prefix: 'PDF_MINERU' },
   },
 
   'mineru-cloud': {
@@ -40,6 +42,7 @@ export const PDF_PROVIDERS: Record<PDFProviderId, PDFProviderConfig> = {
     requiresApiKey: true,
     icon: '/logos/mineru.png',
     features: ['text', 'images', 'tables', 'formulas', 'layout-analysis'],
+    legacyEnv: { prefix: 'PDF_MINERU_CLOUD', baseUrlOptional: true },
   },
 
   alidocmind: {
@@ -60,6 +63,7 @@ export const PDF_PROVIDERS: Record<PDFProviderId, PDFProviderConfig> = {
     features: ['text', 'tables', 'formulas', 'layout-analysis', 'ocr'],
     // The hosted API needs a key; a self-hosted web demo usually does not.
     apiKeyOptionalWithBaseUrl: true,
+    legacyEnv: { prefix: 'PDF_MINICPM_OCR', baseUrlOptional: true, keyless: true },
   },
 };
 

@@ -215,8 +215,6 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['elevenlabs', 2],
       ['whisper', 1],
       ['funasr', 3],
-      ['unpdf', 2],
-      ['mineru', 5],
       ['seedream', 2],
       ['banana', 2],
       ['nano', 2],
@@ -235,8 +233,6 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['browser-native', 3],
       ['comfyui', 2],
       ['alidocmind', 14],
-      // MiniCPM-OCR's env map and the legacy loader's optional-base/keyless sets.
-      ['minicpm', 4],
     ],
   ),
   ...groupedDebt(

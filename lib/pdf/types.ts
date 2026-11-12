@@ -25,6 +25,18 @@ export interface PDFProviderConfig {
    * optional, and without one the hosted API's key is required.
    */
   apiKeyOptionalWithBaseUrl?: boolean;
+  /**
+   * Legacy environment variables (`<prefix>_API_KEY`, `<prefix>_BASE_URL`).
+   * Keeping the mapping here lets the neutral provider loader derive its env
+   * map and activation rules without naming any vendor.
+   */
+  legacyEnv?: {
+    prefix: string;
+    /** A key alone activates the provider: it has a usable default endpoint. */
+    baseUrlOptional?: boolean;
+    /** A base URL alone activates the provider without a key (self-hosted). */
+    keyless?: boolean;
+  };
 }
 
 /**

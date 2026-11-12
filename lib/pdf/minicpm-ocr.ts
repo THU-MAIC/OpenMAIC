@@ -50,6 +50,8 @@ const POLL_MAX_INTERVAL_MS = 10_000;
 const POLL_GROWTH = 1.5;
 const POLL_MAX_MS = 15 * 60 * 1_000; // 15 minutes
 const SUBMIT_ATTEMPTS = 4;
+/** A submission Retry-After longer than this is not worth blocking on. */
+const SUBMIT_MAX_RETRY_WAIT_MS = 120_000;
 const MAX_CONSECUTIVE_POLL_FAILURES = 5;
 
 /** Non-terminal statuses the service may report while a job is in flight. */
@@ -155,23 +157,25 @@ async function readJson<T>(response: Response, context: string): Promise<T> {
   }
 }
 
-function clampPollDelay(ms: number): number {
-  return Math.min(Math.max(ms, POLL_MIN_MS), POLL_MAX_INTERVAL_MS);
+function clampRetryAfter(ms: number): number {
+  // The poll deadline, not the normal polling interval: a server asking for a
+  // longer wait must not be retried early. Callers check it against their own
+  // remaining time.
+  return Math.min(Math.max(ms, POLL_MIN_MS), POLL_MAX_MS);
 }
 
 /**
- * Retry-After as a delay in milliseconds, clamped to the polling bounds, or
- * undefined when absent/invalid. Accepts both the delta-seconds form and the
- * HTTP-date form.
+ * Retry-After as a delay in milliseconds, or undefined when absent/invalid.
+ * Accepts both the delta-seconds form and the HTTP-date form.
  */
 export function retryAfterMs(response: Response): number | undefined {
   const raw = response.headers.get('retry-after')?.trim();
   if (!raw) return undefined;
   const seconds = Number(raw);
-  if (Number.isFinite(seconds)) return clampPollDelay(seconds * 1000);
+  if (Number.isFinite(seconds)) return clampRetryAfter(seconds * 1000);
   const at = Date.parse(raw);
   if (!Number.isFinite(at)) return undefined;
-  return clampPollDelay(at - Date.now());
+  return clampRetryAfter(at - Date.now());
 }
 
 /** Whether `base` is the vendor's hosted API rather than a self-hosted demo. */
@@ -508,10 +512,13 @@ async function submitJob(
         throw new Error(`MiniCPM-OCR API key was rejected (HTTP ${response.status})`);
       }
       if (response.status === 429 || response.status >= 500) {
-        const retryAfter = retryAfterMs(response);
+        const retryAfter = retryAfterMs(response) ?? 0;
         discardBody(response);
+        if (retryAfter > SUBMIT_MAX_RETRY_WAIT_MS) {
+          throw new Error(`MiniCPM-OCR asked to retry after ${Math.ceil(retryAfter / 1000)}s`);
+        }
         if (attempt < SUBMIT_ATTEMPTS) {
-          await sleep(Math.max(retryAfter ?? 0, 500 * attempt), config.signal);
+          await sleep(Math.max(retryAfter, 500 * attempt), config.signal);
           continue;
         }
         throw new Error(`MiniCPM-OCR job submission failed (HTTP ${response.status})`);
@@ -566,6 +573,19 @@ async function pollJob(
     await cancel();
     throw new Error(message, options);
   };
+  const waitForNextPoll = async (retryAfter: number | undefined): Promise<void> => {
+    const requested = Math.max(retryAfter ?? 0, pollInterval);
+    const remaining = Math.max(deadline - Date.now(), 0);
+    if (requested >= remaining) {
+      await giveUp(
+        `MiniCPM-OCR asked to retry after ${Math.ceil(requested / 1000)}s, beyond the ${Math.ceil(
+          remaining / 1000,
+        )}s remaining`,
+      );
+    }
+    await sleep(requested, config.signal);
+    pollInterval = growPollInterval(pollInterval);
+  };
 
   try {
     while (Date.now() < deadline) {
@@ -589,8 +609,7 @@ async function pollJob(
           return giveUp(`MiniCPM-OCR polling failed: ${detail}`, { cause: error });
         }
         log.warn(`[MiniCPM-OCR] polling — transient failure:`, error);
-        await sleep(pollInterval, config.signal);
-        pollInterval = growPollInterval(pollInterval);
+        await waitForNextPoll(undefined);
         continue;
       }
 
@@ -609,8 +628,7 @@ async function pollJob(
         if (consecutiveFailures > MAX_CONSECUTIVE_POLL_FAILURES) {
           return giveUp(`MiniCPM-OCR polling failed (HTTP ${response.status})`);
         }
-        await sleep(Math.max(retryAfter ?? 0, pollInterval), config.signal);
-        pollInterval = growPollInterval(pollInterval);
+        await waitForNextPoll(retryAfter);
         continue;
       }
       if (!response.ok) {
@@ -652,8 +670,7 @@ async function pollJob(
         return giveUp(`MiniCPM-OCR returned unexpected job status "${status}"`);
       }
 
-      await sleep(Math.max(retryAfterMs(response) ?? 0, pollInterval), config.signal);
-      pollInterval = growPollInterval(pollInterval);
+      await waitForNextPoll(retryAfterMs(response));
     }
 
     return giveUp(`MiniCPM-OCR timed out after ${POLL_MAX_MS / 1000}s`);
@@ -666,6 +683,37 @@ async function pollJob(
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
+
+export type MiniCPMOCRVerification = { ok: true } | { ok: false; reason: 'auth' };
+
+/**
+ * Probe the service for the settings' "test connection" action. The hosted
+ * API lists its models behind the key; a self-hosted web demo may answer 404
+ * for the same path, which still means it is up. Only a rejected key is a
+ * failure; transport errors are the caller's to map.
+ */
+export async function verifyMiniCPMOCRConnection(config: {
+  apiKey?: string;
+  baseUrl?: string;
+  managed?: boolean;
+}): Promise<MiniCPMOCRVerification> {
+  const apiRoot = (config.baseUrl || MINICPM_OCR_DEFAULT_BASE).replace(/\/+$/, '');
+  const token = config.apiKey?.trim() || undefined;
+  const response = await providerFetch(
+    `${apiRoot}/models`,
+    {
+      headers: { ...authHeaders(token), Accept: 'application/json' },
+      signal: AbortSignal.timeout(10_000),
+    },
+    providerPolicy({ providerId: 'minicpm-ocr', ...config }),
+  );
+  discardBody(response);
+  if (response.status === 401 || response.status === 403) {
+    log.warn(`[MiniCPM-OCR] probe rejected credentials [status=${response.status}]`);
+    return { ok: false, reason: 'auth' };
+  }
+  return { ok: true };
+}
 
 /**
  * Parse a PDF or image with MiniCPM-OCR.

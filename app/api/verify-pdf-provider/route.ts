@@ -17,11 +17,8 @@ import {
   ALIDOCMIND_ENDPOINT_NOT_ALLOWED_MESSAGE,
   resolveSafeClientAliDocMindEndpoint,
 } from '@/lib/server/alidocmind-endpoint';
-import {
-  MINERU_CLOUD_DEFAULT_BASE,
-  MINICPM_OCR_DEFAULT_BASE,
-  PDF_PROVIDERS,
-} from '@/lib/pdf/constants';
+import { MINERU_CLOUD_DEFAULT_BASE, PDF_PROVIDERS } from '@/lib/pdf/constants';
+import { verifyMiniCPMOCRConnection } from '@/lib/pdf/minicpm-ocr';
 import {
   savedMediaConnection,
   savedProviderRef,
@@ -64,32 +61,6 @@ async function probeMinerUCloud(cloudBase: string, apiKey: string, managed: bool
   // Other responses (including 4xx for "batch not found") mean auth + connectivity works.
   if (response.status === 401 || response.status === 403) {
     log.warn(`MinerU Cloud probe rejected credentials [status=${response.status}]`);
-    return apiError('INTERNAL_ERROR', 500, AUTH_FAILED_MESSAGE);
-  }
-  return apiSuccess({ message: 'Connection successful' });
-}
-
-/**
- * MiniCPM-OCR: the hosted API lists its models behind the key. A self-hosted
- * web demo may answer 404 for the same path, which still means it is up; only
- * a rejected key is a failure.
- */
-async function probeMiniCPMOCR(baseUrl: string, apiKey: string | undefined, managed: boolean) {
-  const root = baseUrl.replace(/\/+$/, '');
-  const response = await providerFetch(
-    `${root}/models`,
-    {
-      headers: {
-        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-        Accept: 'application/json',
-      },
-      signal: AbortSignal.timeout(10000),
-    },
-    probePolicy(managed),
-  );
-  await response.body?.cancel().catch(() => undefined);
-  if (response.status === 401 || response.status === 403) {
-    log.warn(`MiniCPM-OCR probe rejected credentials [status=${response.status}]`);
     return apiError('INTERNAL_ERROR', 500, AUTH_FAILED_MESSAGE);
   }
   return apiSuccess({ message: 'Connection successful' });
@@ -150,7 +121,9 @@ async function verifySavedProvider(req: NextRequest, ref: string): Promise<Respo
     if (!apiKey && !baseUrl) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'API Key is required for MiniCPM-OCR');
     }
-    return probeMiniCPMOCR(baseUrl || MINICPM_OCR_DEFAULT_BASE, apiKey, managed);
+    const result = await verifyMiniCPMOCRConnection({ apiKey, baseUrl, managed });
+    if (!result.ok) return apiError('INTERNAL_ERROR', 500, AUTH_FAILED_MESSAGE);
+    return apiSuccess({ message: 'Connection successful' });
   }
   const endpoint = baseUrl || PDF_PROVIDERS[providerId as keyof typeof PDF_PROVIDERS]?.baseUrl;
   if (!endpoint) return apiError('MISSING_REQUIRED_FIELD', 400, 'Base URL is required');
@@ -267,14 +240,17 @@ export async function POST(req: NextRequest) {
         }
       }
       const resolvedApiKey = resolvePDFApiKey(providerId, managed ? undefined : apiKey);
-      const base = (resolvePDFBaseUrl(providerId, clientBase) || MINICPM_OCR_DEFAULT_BASE).replace(
-        /\/+$/,
-        '',
-      );
+      const base = resolvePDFBaseUrl(providerId, clientBase);
       if (!resolvedApiKey && !clientBase && !managed) {
         return apiError('MISSING_REQUIRED_FIELD', 400, 'API Key is required for MiniCPM-OCR');
       }
-      return await probeMiniCPMOCR(base, resolvedApiKey, managed);
+      const result = await verifyMiniCPMOCRConnection({
+        apiKey: resolvedApiKey || undefined,
+        baseUrl: base,
+        managed,
+      });
+      if (!result.ok) return apiError('INTERNAL_ERROR', 500, AUTH_FAILED_MESSAGE);
+      return apiSuccess({ message: 'Connection successful' });
     }
 
     // Self-hosted providers: verify by connecting to the base URL

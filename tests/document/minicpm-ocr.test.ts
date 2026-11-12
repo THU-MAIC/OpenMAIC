@@ -345,13 +345,44 @@ describe('parseWithMiniCPMOCR', () => {
 
   it('parses Retry-After in seconds and HTTP-date form', () => {
     expect(retryAfterMs(new Response('', { headers: { 'retry-after': '2' } }))).toBe(2000);
-    expect(retryAfterMs(new Response('', { headers: { 'retry-after': '1000' } }))).toBe(10000);
+    expect(retryAfterMs(new Response('', { headers: { 'retry-after': '1000' } }))).toBe(900000);
     expect(retryAfterMs(new Response(''))).toBeUndefined();
     expect(retryAfterMs(new Response('', { headers: { 'retry-after': 'soon' } }))).toBeUndefined();
     const future = new Date(Date.now() + 6000).toUTCString();
     const delay = retryAfterMs(new Response('', { headers: { 'retry-after': future } }))!;
     expect(delay).toBeGreaterThan(4000);
-    expect(delay).toBeLessThanOrEqual(10000);
+    expect(delay).toBeLessThanOrEqual(900000);
+  });
+
+  it('does not retry a poll before a Retry-After beyond the deadline', async () => {
+    install({
+      polls: [() => json({}, { status: 429, headers: { 'retry-after': '1000' } })],
+    });
+
+    await expect(
+      parseWithMiniCPMOCR({ providerId: 'minicpm-ocr', apiKey: 'test-key' }, PDF, {
+        fileName: 'lesson.pdf',
+        mimeType: 'application/pdf',
+      }),
+    ).rejects.toThrow('beyond the');
+
+    const cancel = calls().find((call) => call.init?.method === 'DELETE');
+    expect(cancel?.url).toBe(`${MINICPM_OCR_DEFAULT_BASE}/document-parse/jobs/job-1`);
+  });
+
+  it('does not retry a submit before a Retry-After it will not wait for', async () => {
+    install({
+      submit: () => json({}, { status: 429, headers: { 'retry-after': '1000' } }),
+      polls: [],
+    });
+
+    await expect(
+      parseWithMiniCPMOCR({ providerId: 'minicpm-ocr', apiKey: 'test-key' }, PDF, {
+        fileName: 'lesson.pdf',
+        mimeType: 'application/pdf',
+      }),
+    ).rejects.toThrow('asked to retry after 900s');
+    expect(transport.providerFetch).toHaveBeenCalledTimes(1);
   });
 
   it('parses an image through the document extractor boundary as Markdown', async () => {
