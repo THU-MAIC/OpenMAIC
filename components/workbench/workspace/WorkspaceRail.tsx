@@ -68,6 +68,7 @@ import {
   MessagesSquare,
   RefreshCw,
   Search,
+  SquareArrowOutUpRight,
   SquarePen,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -857,6 +858,10 @@ function RailDestinationButton({
       <Icon className="size-[18px] shrink-0" aria-hidden />
       <span className="min-w-0 flex-1 truncate">{item.label}</span>
       {item.tag ? <span className="ws-nav-tag">{item.tag}</span> : null}
+      {/* A link that leaves the shell says so, as the account menu's links do. */}
+      {item.href && item.external ? (
+        <SquareArrowOutUpRight className="size-3 shrink-0 opacity-50" aria-hidden />
+      ) : null}
     </>
   );
   if (item.href && !item.onSelect) {
