@@ -49,7 +49,7 @@ import {
 } from '@/lib/workbench/onboarding';
 import { WorkspaceCourseTabs, type WorkspaceCourseTabItem } from './WorkspaceCourseTabs';
 import { WorkspaceTour } from './WorkspaceTour';
-import { EDIT_TOUR_STEPS } from './edit-tour-steps';
+import { editTourSteps } from './edit-tour-steps';
 
 const noop = () => {};
 import { PaneFoldButton } from './PaneFoldButton';
@@ -201,13 +201,11 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
   // replaces the Learn/Edit hint there rather than stacking on it. (Not gated
   // on `tourActive`: that flag is the playing tour's own, this one's included.)
   const editTourPending = useOnboardingPending('edit');
+  // Full screen included: its header carries the same ?, and a ? that cleared the
+  // mark without a tour to show for it did nothing (and the tour then surprised
+  // the viewer on leaving full screen).
   const showEditTour =
-    editTourPending &&
-    !learning &&
-    editingAllowed &&
-    !hidden &&
-    !fullscreen &&
-    loadedCourseId === courseId;
+    editTourPending && !learning && editingAllowed && !hidden && loadedCourseId === courseId;
   // Replaying the Edit tour lives where it applies: in Edit mode, on a course
   // the viewer can edit. Clearing the mark is enough; `showEditTour` picks it up.
   const editGuideButton =
@@ -365,7 +363,9 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
       {showHint ? <PaneHint /> : null}
       {showEditTour ? (
         <WorkspaceTour
-          steps={EDIT_TOUR_STEPS}
+          // Its steps differ by layout: a switch restarts it rather than skip a step.
+          key={fullscreen ? 'fullscreen' : 'split'}
+          steps={editTourSteps(fullscreen)}
           doneLabel="workspace.tour.editDone"
           onNavigate={noop}
           onSendExample={noop}
