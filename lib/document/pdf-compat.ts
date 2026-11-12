@@ -51,11 +51,6 @@ function pdfLayoutType(value: unknown): NonNullable<ParsedPdfContent['layout']>[
     : 'text';
 }
 
-/** Providers whose text is Markdown (tables and formulas included). */
-function producesMarkdown(parser: unknown): boolean {
-  return parser === 'mineru' || parser === 'mineru-cloud' || parser === 'minicpm-ocr';
-}
-
 export function parsedPdfToDocumentArtifact(
   parsed: ParsedPdfContent,
   input: DocumentExtractorInput,
@@ -65,7 +60,7 @@ export function parsedPdfToDocumentArtifact(
   if (parsed.text) {
     blocks.push({
       id: 'document-text',
-      type: producesMarkdown(parsed.metadata?.parser) ? 'markdown' : 'text',
+      type: parsed.metadata?.textFormat === 'markdown' ? 'markdown' : 'text',
       text: parsed.text,
     });
   }

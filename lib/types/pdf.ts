@@ -50,6 +50,12 @@ export interface ParsedPdfContent {
     fileSize?: number;
     pageCount: number;
     parser?: string; // 'unpdf' | 'mineru'
+    /**
+     * How `text` is encoded. Markdown output carries tables and formulas
+     * inline, so the compatibility adapter types its block as `markdown`
+     * without matching provider ids.
+     */
+    textFormat?: 'text' | 'markdown';
     processingTime?: number;
     taskId?: string; // MinerU task ID
     /** Image ID to base64 URL mapping (used in generation pipeline) */

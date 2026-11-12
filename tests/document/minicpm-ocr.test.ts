@@ -193,7 +193,7 @@ describe('parseWithMiniCPMOCR', () => {
         fileName: 'lesson.pdf',
         mimeType: 'application/pdf',
       }),
-    ).rejects.toThrow('MiniCPM-OCR returned unexpected job status "mystery"');
+    ).rejects.toThrow('MiniCPM-OCR returned an unexpected job status');
 
     const cancel = calls().find((call) => call.init?.method === 'DELETE');
     expect(cancel?.url).toBe(`${MINICPM_OCR_DEFAULT_BASE}/document-parse/jobs/job-1`);
@@ -341,6 +341,44 @@ describe('parseWithMiniCPMOCR', () => {
         String(message).includes('was turned 180 degrees'),
       ),
     ).toBe(true);
+  });
+
+  it('reports a page whose result status is not complete', async () => {
+    install({
+      polls: [
+        () =>
+          json({
+            id: 'job-1',
+            status: 'Success',
+            pages_done: 2,
+            pages_total: 2,
+            pages: [
+              {
+                metadata: { page_index: 0 },
+                result_status: 'Failed',
+                choices: [],
+                ocr: { blocks: [] },
+              },
+              {
+                metadata: { page_index: 1 },
+                result_status: 'complete',
+                choices: [{ message: { content: 'Second page' } }],
+              },
+            ],
+          }),
+      ],
+    });
+
+    const parsed = await parseWithMiniCPMOCR(
+      { providerId: 'minicpm-ocr', apiKey: 'test-key' },
+      PDF,
+      { fileName: 'lesson.pdf', mimeType: 'application/pdf' },
+    );
+
+    expect(parsed.text).toBe('Second page');
+    expect(parsed.diagnostics).toEqual([
+      { severity: 'warning', message: 'page 1 was not parsed completely' },
+    ]);
   });
 
   it('parses Retry-After in seconds and HTTP-date form', () => {

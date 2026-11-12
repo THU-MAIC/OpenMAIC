@@ -64,6 +64,9 @@ const RUNNING_JOB_STATUSES = new Set([
   'in_progress',
 ]);
 
+/** Page-level statuses that mean the page was parsed without a loss. */
+const PAGE_COMPLETE_STATUSES = new Set(['complete', 'completed', 'success', 'ok', 'done']);
+
 /** Page furniture that adds noise to the layout view; the Markdown keeps it. */
 const LAYOUT_SKIP_LABELS = new Set([
   'header',
@@ -270,6 +273,38 @@ function sortedPages(job: MiniCPMOCRJob): Array<{ page: MiniCPMOCRPage; index: n
   return pagesOf(job)
     .map((page, fallback) => ({ page, index: pageIndex(page, fallback) }))
     .sort((left, right) => left.index - right.index);
+}
+
+/**
+ * Surface pages the service did not parse completely. A failed page can be
+ * absent from `issues` and from the failed-block report, so its result status
+ * is the only signal that the Markdown is missing a page.
+ */
+function collectPageDiagnostics(
+  job: MiniCPMOCRJob,
+  diagnostics: NonNullable<ParsedPdfContent['diagnostics']>,
+): void {
+  for (const { page, index } of sortedPages(job)) {
+    const rawStatus = typeof page.result_status === 'string' ? page.result_status.trim() : '';
+    const normalizedStatus = rawStatus.toLowerCase();
+    if (normalizedStatus && !PAGE_COMPLETE_STATUSES.has(normalizedStatus)) {
+      // The status is provider-controlled: log it server-side, report a fixed
+      // message to the caller.
+      log.warn(`[MiniCPM-OCR] page ${index + 1} result_status=${rawStatus.slice(0, 200)}`);
+      diagnostics.push({
+        severity: 'warning',
+        message: `page ${index + 1} was not parsed completely`,
+      });
+    }
+    const issues = Array.isArray(page.issues) ? page.issues.length : 0;
+    if (issues > 0) {
+      log.warn(`[MiniCPM-OCR] page ${index + 1}: ${issues} issue(s) reported`);
+      diagnostics.push({
+        severity: 'warning',
+        message: `page ${index + 1} reported ${issues} issue(s)`,
+      });
+    }
+  }
 }
 
 function assembleMarkdown(job: MiniCPMOCRJob): string {
@@ -667,7 +702,12 @@ async function pollJob(
         throw new Error(`MiniCPM-OCR parsing ${status === 'failed' ? 'failed' : 'cancelled'}`);
       }
       if (!RUNNING_JOB_STATUSES.has(status)) {
-        return giveUp(`MiniCPM-OCR returned unexpected job status "${status}"`);
+        // The status string is provider-controlled; log it and keep the
+        // caller-facing error fixed (the parse route relays extractor errors).
+        log.warn(
+          `[MiniCPM-OCR] job ${jobId} returned unexpected status: ${String(job.status).slice(0, 200)}`,
+        );
+        return giveUp('MiniCPM-OCR returned an unexpected job status');
       }
 
       await waitForNextPoll(retryAfterMs(response));
@@ -757,18 +797,8 @@ export async function parseWithMiniCPMOCR(
   const text = assembleMarkdown(job);
   if (!text) throw new Error('MiniCPM-OCR returned no text');
 
-  const pages = pagesOf(job);
   const diagnostics: NonNullable<ParsedPdfContent['diagnostics']> = [];
-  const issueCount = pages.reduce(
-    (count, page) => count + (Array.isArray(page.issues) ? page.issues.length : 0),
-    0,
-  );
-  if (issueCount > 0) {
-    const message = `${issueCount} page issue(s) reported`;
-    log.warn(`[MiniCPM-OCR] job ${jobId}: ${message}`);
-    diagnostics.push({ severity: 'warning', message });
-  }
-
+  collectPageDiagnostics(job, diagnostics);
   const layout = layoutFromJob(job, diagnostics);
   return {
     text,
@@ -779,6 +809,7 @@ export async function parseWithMiniCPMOCR(
       fileName: options.fileName,
       pageCount: pageCountOf(job),
       parser: 'minicpm-ocr',
+      textFormat: 'markdown',
       taskId: jobId,
     },
   };

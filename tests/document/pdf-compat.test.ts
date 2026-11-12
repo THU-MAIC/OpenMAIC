@@ -12,6 +12,7 @@ describe('PDF compatibility adapter', () => {
       metadata: {
         pageCount: 2,
         parser: 'mineru',
+        textFormat: 'markdown',
         imageMapping: {
           img_1: 'data:image/png;base64,abc',
         },
@@ -113,6 +114,7 @@ describe('PDF compatibility adapter', () => {
       metadata: {
         pageCount: 1,
         parser: 'mineru-cloud',
+        textFormat: 'markdown',
       },
     };
 
@@ -139,6 +141,7 @@ describe('PDF compatibility adapter', () => {
       metadata: {
         pageCount: 1,
         parser: 'minicpm-ocr',
+        textFormat: 'markdown',
       },
     };
 
