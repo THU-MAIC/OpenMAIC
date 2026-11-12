@@ -418,6 +418,75 @@ describe('generation and deck tools', () => {
       });
     });
 
+    it('attaches the images that resolve and describes the rest in text', async () => {
+      const current = state(document([]));
+      const prompts: string[] = [];
+      const images: Array<unknown> = [];
+      const generate = find(
+        buildGenerationTools(
+          deps(current.store, {
+            aiCall: visionCall(prompts, images),
+            ownerId: 'owner-1',
+            visionEnabled: true,
+            readVisionAsset: vi.fn(async (_owner: string, assetId: string) =>
+              assetId === 'ast_figure_1'
+                ? {
+                    status: 'resolved' as const,
+                    buffer: Buffer.from(PNG, 'base64'),
+                    mimeType: 'image/png',
+                  }
+                : { status: 'too_large' as const },
+            ),
+          }),
+        ),
+        'generate_scene',
+      );
+      const response = (await generate.execute('vision-mixed', {
+        stageId: 'stage-test',
+        order: 1,
+        title: 'Curves',
+        type: 'slide',
+        brief: 'Read both curves',
+        media: [
+          ...media,
+          { src: 'ast_figure_2', description: 'Salivary flow curve', width: 400, height: 225 },
+        ],
+      } as never)) as { content: Array<{ text?: string }> };
+
+      expect(response).not.toMatchObject({ isError: true });
+      expect(prompts[0]?.match(/\[see attached\]/g)).toHaveLength(1);
+      expect(prompts[0]).toMatch(/img_1[^\n]*\[see attached\][^\n]*read the dip/);
+      expect(prompts[0]).toMatch(/img_2[^\n]*Salivary flow curve/);
+      expect(prompts[0]).not.toMatch(/img_2[^\n]*\[see attached\]/);
+      expect(images).toHaveLength(1);
+      expect(response.content[0]?.text).toContain('1 media image(s) could not be shown');
+    });
+
+    it('does not read media for page types that cannot use it', async () => {
+      const current = state(document([]));
+      const readVisionAsset = vi.fn();
+      const generate = find(
+        buildGenerationTools(
+          deps(current.store, {
+            aiCall: vi.fn(async () => '[]'),
+            ownerId: 'owner-1',
+            visionEnabled: true,
+            readVisionAsset,
+          }),
+        ),
+        'generate_scene',
+      );
+      await generate.execute('vision-quiz', {
+        stageId: 'stage-test',
+        order: 1,
+        title: 'Check',
+        type: 'quiz',
+        brief: 'Quiz on the curve',
+        media,
+      } as never);
+      expect(readVisionAsset).not.toHaveBeenCalled();
+    });
+
     it('never declares an unreadable image attached and tells the agent', async () => {
       const current = state(document([]));
       const prompts: string[] = [];
@@ -446,7 +515,7 @@ describe('generation and deck tools', () => {
       expect(prompts[0]).not.toContain('[see attached]');
       expect(prompts[0]).toContain('read the dip at 1 mcg/kg');
       expect(images).toHaveLength(0);
-      expect(response.content[0]?.text).toContain('could not be read for the content model');
+      expect(response.content[0]?.text).toContain('could not be shown to the content model');
       // The image still lands on the page: only the vision read failed.
       const elements = (
         current.get()?.scenes[0]?.content as { canvas: { elements: { src?: string }[] } }

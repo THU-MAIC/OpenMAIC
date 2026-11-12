@@ -470,11 +470,15 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
         // accepts them, so it can place and annotate them by what they show.
         // An injected aiCall (tests) keeps the text-only contract unless the
         // test turns vision on.
+        // Only slide generation consumes page media; other page types skip
+        // the reads entirely.
         const visionWanted =
           assignedImages.length > 0 &&
+          (params.type ?? 'slide') === 'slide' &&
           (deps.visionEnabled ?? (!deps.aiCall && (await routed.supportsVision(contentStage))));
         // Resolve before prompt assembly, as classic generation does: an image
-        // the prompt marks "[see attached]" must actually be attached.
+        // the prompt marks "[see attached]" must actually be attached. An image
+        // that does not resolve is described in text by the generator.
         let resolvedVisionImages: VisionImage[] | undefined;
         if (visionWanted) {
           resolvedVisionImages = await resolveVisionImages(
@@ -486,20 +490,20 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
             })),
             deps.ownerId,
             deps.readVisionAsset,
+            { signal: signal ?? deps.abortSignal },
           );
           const resolvedIds = new Set(resolvedVisionImages.map((image) => image.id));
           visionFallbackIds = assignedImages
             .filter((image) => !resolvedIds.has(image.id))
             .map((image) => image.id);
         }
-        // shortcut: one unreadable image sends the whole page text-only; split per image if mixed pages matter.
-        const visionEnabled = visionWanted && visionFallbackIds.length === 0;
+        const visionEnabled = visionWanted;
         content = await generateSceneContent(outline, aiCallFor(contentStage), {
           agents,
           languageDirective: doc.stage.languageDirective ?? '',
           allowProceduralSkill: true,
           ...(assignedImages.length ? { assignedImages, imageMapping, visionEnabled } : {}),
-          ...(visionEnabled ? { resolvedVisionImages } : {}),
+          ...(visionEnabled && resolvedVisionImages ? { resolvedVisionImages } : {}),
           ...(params.instruction ? { editDirective: params.instruction } : {}),
           ...(baseline ? { baselineContent: baseline } : {}),
           onFailure: (failure) => {
@@ -594,7 +598,7 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
             : ''
         }${
           visionFallbackIds.length
-            ? ` ${visionFallbackIds.length} media image(s) could not be read for the content model, so this page was composed from the media descriptions only.`
+            ? ` ${visionFallbackIds.length} media image(s) could not be shown to the content model, so those were placed from their descriptions only.`
             : ''
         }`,
         {

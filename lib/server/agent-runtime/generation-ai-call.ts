@@ -35,44 +35,84 @@ const readOwnedAsset: VisionAssetReader = (ownerId, assetId, maxByteLength) => {
   return resolveOwnedAsset(assetId, ownerId, connectionString, maxByteLength);
 };
 
+/** Wall-clock budget for reading one page's media for vision, as in classic scene-content. */
+const VISION_RESOLUTION_BUDGET_MS = 15_000;
+
+export interface ResolveVisionImagesOptions {
+  /** Stops the reads: the call throws once the signal aborts. */
+  signal?: AbortSignal;
+  /** Total time for all reads; images not read in time are dropped. */
+  budgetMs?: number;
+}
+
 /**
  * Turn page media srcs into inline image bytes for a vision call.
  *
  * A data URL or an HTTP(S) URL passes through. An allocated asset id is read
  * from the run owner's asset partition. An image that does not resolve (no
- * owner, missing, over the size bound, or a failed read) is dropped: the page
- * still generates, from that image's text description alone.
+ * owner, a same-origin path, missing, over the size bound, a failed read, or
+ * out of time) is dropped; the caller describes it in text instead. Each image
+ * is bounded as soon as it is read, so a page never holds several unbounded
+ * payloads at once.
  */
 export async function resolveVisionImages(
   images: readonly VisionImage[],
   ownerId: string | undefined,
   readAsset: VisionAssetReader = readOwnedAsset,
+  { signal, budgetMs = VISION_RESOLUTION_BUDGET_MS }: ResolveVisionImagesOptions = {},
 ): Promise<VisionImage[]> {
   const resolved: VisionImage[] = [];
+  const deadline = Date.now() + budgetMs;
   for (const image of images) {
+    signal?.throwIfAborted();
     if (/^(?:data:|https?:)/i.test(image.src)) {
-      resolved.push(image);
+      resolved.push(...(await prepareVisionImages([image], console)));
       continue;
     }
-    if (!ownerId) continue;
-    let resolution: Awaited<ReturnType<VisionAssetReader>>;
+    // Same-origin paths are served by app routes, not the asset pool; their
+    // bytes are not read here, so the image is described in text.
+    if (!ownerId || image.src.startsWith('/')) continue;
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      console.warn(`Vision media reads ran past ${budgetMs} ms; describing the rest in text`);
+      break;
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let resolution: Awaited<ReturnType<VisionAssetReader>> | 'timeout';
     try {
-      resolution = await readAsset(ownerId, image.src, MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES);
+      resolution = await Promise.race([
+        readAsset(ownerId, image.src, MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES),
+        new Promise<'timeout'>((resolve) => {
+          timer = setTimeout(() => resolve('timeout'), remaining);
+        }),
+      ]);
     } catch (error) {
       console.warn(`Vision image "${image.id}" could not be read; dropping it:`, error);
       continue;
+    } finally {
+      clearTimeout(timer);
+    }
+    signal?.throwIfAborted();
+    if (resolution === 'timeout') {
+      console.warn(`Vision media reads ran past ${budgetMs} ms; describing the rest in text`);
+      break;
     }
     if (resolution.status !== 'resolved') continue;
-    resolved.push({
-      id: image.id,
-      src: `data:${resolution.mimeType};base64,${resolution.buffer.toString('base64')}`,
-      ...(image.width !== undefined ? { width: image.width } : {}),
-      ...(image.height !== undefined ? { height: image.height } : {}),
-    });
+    resolved.push(
+      ...(await prepareVisionImages(
+        [
+          {
+            id: image.id,
+            src: `data:${resolution.mimeType};base64,${resolution.buffer.toString('base64')}`,
+            ...(image.width !== undefined ? { width: image.width } : {}),
+            ...(image.height !== undefined ? { height: image.height } : {}),
+          },
+        ],
+        console,
+      )),
+    );
   }
-  // Bound each inline attachment (dimensions and encoded size), as the
-  // classic generation path does.
-  return prepareVisionImages(resolved, console);
+  return resolved;
 }
 
 /** The generation package's callback seam, bound to server stage routing. */

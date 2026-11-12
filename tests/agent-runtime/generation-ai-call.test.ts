@@ -88,6 +88,50 @@ describe('resolveVisionImages', () => {
     expect(images.map((image) => image.id)).toEqual(['img_2']);
   });
 
+  it('does not read a same-origin path as an asset id', async () => {
+    const readAsset = vi.fn<VisionAssetReader>();
+    const images = await resolveVisionImages(
+      [{ id: 'img_1', src: '/api/classroom-media/stage-1/media/figure.png' }],
+      'owner-1',
+      readAsset,
+    );
+    expect(images).toEqual([]);
+    expect(readAsset).not.toHaveBeenCalled();
+  });
+
+  it('stops reading once the time budget runs out and drops the rest', async () => {
+    const bytes = await png();
+    const readAsset: VisionAssetReader = vi.fn(async (_owner, assetId) =>
+      assetId === 'ast_fast'
+        ? { status: 'resolved' as const, buffer: bytes, mimeType: 'image/png' }
+        : new Promise<never>(() => {}),
+    );
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const images = await resolveVisionImages(
+      [
+        { id: 'img_1', src: 'ast_fast' },
+        { id: 'img_2', src: 'ast_hangs' },
+        { id: 'img_3', src: 'ast_never_tried' },
+      ],
+      'owner-1',
+      readAsset,
+      { budgetMs: 50 },
+    );
+    warn.mockRestore();
+    expect(images.map((image) => image.id)).toEqual(['img_1']);
+    expect(readAsset).toHaveBeenCalledTimes(2);
+  });
+
+  it('throws when the call is aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      resolveVisionImages([{ id: 'img_1', src: 'ast_figure1' }], 'owner-1', vi.fn(), {
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow();
+  });
+
   it('drops allocated asset ids when the run has no owner', async () => {
     const readAsset = vi.fn<VisionAssetReader>();
     const images = await resolveVisionImages(
