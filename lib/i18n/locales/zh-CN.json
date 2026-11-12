@@ -2416,7 +2416,6 @@
     "loadFailed": "加载失败",
     "retry": "重试",
     "untitledSession": "未命名对话",
-    "pagePosition": "第 {{index}} / {{total}} 页",
     "navAria": "工作区导航",
     "homeAria": "返回首页",
     "currentSession": "当前对话",
@@ -2536,7 +2535,6 @@
       "onboarding": "新手引导"
     },
     "coursesPage": {
-      "subtitle": "你生成或导入的课程，以及整理它们的文件夹",
       "searchPlaceholder": "搜索我的课程",
       "results": "搜索结果",
       "allCourses": "全部课程",
@@ -2716,6 +2714,7 @@
       "sourcePath": "此文件不在项目源码范围内。",
       "sourceCount": "学习项目最多支持 256 个源文件。",
       "sourceSize": "项目源码内容总量不能超过 1 MiB。",
+      "commandSize": "平台生成的编译或测试命令过长，沙箱无法执行。",
       "teachingContextSize": "教学上下文过长，请缩短 PLAN.md 或审查问题后重试。",
       "commandActive": "请先停止运行中的命令并获取结果，再读取或保存工作区快照。",
       "terminalActive": "请先关闭终端，再读取或保存工作区快照。",
@@ -3022,7 +3021,25 @@
       "file-edit": "文件修改",
       "workspace-run": "工作区运行"
     },
+    "overview": {
+      "title": "项目总览",
+      "expand": "展开",
+      "collapse": "收起",
+      "projectGoal": "项目目标",
+      "finishedWork": "完成后的作品",
+      "roadmap": "项目大纲",
+      "goalAndResult": "目标与成果",
+      "goal": "目标",
+      "result": "成果",
+      "eachStage": "每个阶段怎么走",
+      "yourRole": "你来做决策和审阅，AI 协助写计划和代码。",
+      "preview": "在作品预览区使用自己的产品，检查做出的效果。",
+      "advance": "当前环节达到推进条件后，输入框上方才会出现紫色执行条；看到它时，点击即可继续。"
+    },
     "journey": {
+      "currentMilestone": "当前阶段",
+      "milestoneGoal": "目标：",
+      "milestoneResult": "成果：",
       "completionHandoff": "本环节已完成。下一步操作请看学习助手底部的任务栏。",
       "startConversation": "学习环境就绪后，助手会主动开始当前环节。",
       "latest": "回到最新消息",
@@ -3064,6 +3081,7 @@
       "notReflected": "尚未记录复盘",
       "taskDetails": "当前任务详情",
       "closeDetails": "收起任务详情",
+      "reviewDetails": "回看详情",
       "milestoneSteps": "当前阶段的学习步骤",
       "enterStep": "进入{{step}}",
       "enterMilestone": "进入下一阶段",

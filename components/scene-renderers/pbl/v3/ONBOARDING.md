@@ -5,7 +5,9 @@ when present, and replay. A declared application opens automatically once its
 environment is ready; closing it is remembered for this workspace visit. The
 application guide page lights both its visible panel and its toolbar toggle.
 There are five pages (four without an application).
-The task bar provides the current learning stage's instructions.
+The task bar provides the current learning stage's instructions. Its drawer is
+available from the first step and begins with the current milestone's authored
+goal and outcome; changing milestones replaces this summary.
 
 ## Learner-wide V3 entry
 
@@ -45,6 +47,13 @@ Transient visibility/online reconnection and HTTP/SSE revision gaps keep the cur
 page. Real unavailability or actionable errors interrupt it, including completed
 projects with saved files: those files bypass environment requirements only. Completed read-only
 workspaces need no execution environment to replay the guide.
+
+A fresh study begins at the authored overview when it becomes visible, even if
+the learner already completed the guide in another project. Automatic welcome
+output does not move that initial reading position. Sending a message or choosing
+Latest resumes the existing follow-tail behavior; upward reading still releases
+it. Returning to an existing transcript and replaying the guide do not reset the
+reading position to the overview.
 
 ## Interaction boundary
 

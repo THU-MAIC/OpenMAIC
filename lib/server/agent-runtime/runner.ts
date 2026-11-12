@@ -1734,7 +1734,8 @@ async function executeSession(
           // owner probe (reference semantics) — it is not wrapped by the generic
           // stage authorization of the course toolset, and it refuses a foreign
           // stage with its own message shape. It contributes nothing when the
-          // render service is not configured.
+          // render service is not configured, and the capability map drops it
+          // when the service fails its health probe.
           const scenePreviewTools = buildScenePreviewTools({
             store: ownerScopedStore,
             stageAccess,

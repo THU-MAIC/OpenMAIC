@@ -2416,7 +2416,6 @@
     "loadFailed": "Couldn't load",
     "retry": "Retry",
     "untitledSession": "Untitled chat",
-    "pagePosition": "Page {{index}} of {{total}}",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
@@ -2536,7 +2535,6 @@
       "onboarding": "С чего начать"
     },
     "coursesPage": {
-      "subtitle": "Курсы, которые вы создали или импортировали, и папки, в которых они лежат",
       "searchPlaceholder": "Поиск по моим курсам",
       "results": "Результаты поиска",
       "allCourses": "Все курсы",
@@ -2716,6 +2714,7 @@
       "sourcePath": "Этот файл не входит в исходные файлы проекта.",
       "sourceCount": "Учебные проекты поддерживают не более 256 исходных файлов.",
       "sourceSize": "Общий объём исходного содержимого проекта не должен превышать 1 MiB.",
+      "commandSize": "Сформированная команда сборки или тестирования слишком велика для запуска в песочнице.",
       "teachingContextSize": "Учебный контекст слишком длинный. Сократите PLAN.md или вопрос для проверки и повторите попытку.",
       "commandActive": "Остановите выполняющиеся команды и получите их результаты перед чтением или сохранением снимка рабочего пространства.",
       "terminalActive": "Закройте терминалы перед чтением или сохранением снимка рабочего пространства.",
@@ -3022,7 +3021,25 @@
       "file-edit": "File edit",
       "workspace-run": "Workspace run"
     },
+    "overview": {
+      "title": "Обзор проекта",
+      "expand": "Развернуть",
+      "collapse": "Свернуть",
+      "projectGoal": "Цель проекта",
+      "finishedWork": "Готовое приложение",
+      "roadmap": "План проекта",
+      "goalAndResult": "Цель и результат",
+      "goal": "Цель",
+      "result": "Результат",
+      "eachStage": "Порядок каждой стадии",
+      "yourRole": "Вы принимаете решения и проверяете; ИИ помогает написать план и код.",
+      "preview": "Испытайте приложение в области предпросмотра и проверьте результат.",
+      "advance": "Фиолетовая кнопка над полем ввода появляется только тогда, когда можно перейти дальше. Когда она появится, нажмите её, чтобы продолжить."
+    },
     "journey": {
+      "currentMilestone": "Текущий этап",
+      "milestoneGoal": "Цель:",
+      "milestoneResult": "Результат:",
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",
@@ -3064,6 +3081,7 @@
       "notReflected": "Reflection not yet recorded",
       "taskDetails": "Current task details",
       "closeDetails": "Close task details",
+      "reviewDetails": "Посмотреть детали",
       "milestoneSteps": "Milestone learning steps",
       "enterStep": "Continue to {{step}}",
       "enterMilestone": "Следующий этап",

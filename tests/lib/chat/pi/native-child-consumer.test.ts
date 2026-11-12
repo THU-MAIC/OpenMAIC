@@ -270,6 +270,52 @@ describe('Native Child production consumer', () => {
     mocks.searchWeb.mockReset();
   });
 
+  it('discovers classroom guidance without preloading, then retains a model-issued read only within that Child', async () => {
+    const { listClassroomSkills, listSkills } = await import('@/lib/server/agent-runtime/skills');
+    const skills = await listClassroomSkills();
+    const skill = skills.find((s) => s.name === 'classroom-explanation')!;
+    expect(skill).toBeDefined();
+    expect((await listSkills()).some((s) => s.name === skill.name)).toBe(false);
+    useResponses([
+      [
+        {
+          type: 'tool-call',
+          toolCallId: 'skill-read',
+          toolName: 'read',
+          input: { path: skill.filePath },
+        },
+        finish('tool-calls'),
+      ],
+      [finish('stop')],
+      [finish('stop')],
+    ]);
+    const harness = makeHarness();
+    const first = await execute(harness);
+    const second = await execute(harness);
+    const firstRequest = JSON.stringify(mocks.streamLLM.mock.calls[0]![0]);
+    const continuation = JSON.stringify(transportMessages(1));
+    const nextChild = JSON.stringify(mocks.streamLLM.mock.calls[2]![0]);
+    expect(firstRequest).toContain(skill.description);
+    expect(firstRequest).not.toContain('Start with one short, substantive answer');
+    expect(continuation).toContain('Start with one short, substantive answer');
+    expect(nextChild).not.toContain('Start with one short, substantive answer');
+    expect(first.details).toMatchObject({
+      availableSkills: [skill.name],
+      activatedSkills: [skill.name],
+    });
+    expect(second.details).toMatchObject({ availableSkills: [skill.name], activatedSkills: [] });
+    expect(first.details).toMatchObject({ nativeChildRun: { dispatchedActionCount: 0 } });
+  });
+
+  it('offers classroom guidance to the fallback assistant but not simulated students', async () => {
+    useResponses([[finish('stop')], [finish('stop')]]);
+    const assistant = await execute(makeHarness({ agent: { ...teacher, role: 'assistant' } }));
+    const student = await execute(makeHarness({ agent: { ...teacher, role: 'student' } }));
+    expect(assistant.details).toMatchObject({ availableSkills: ['classroom-explanation'] });
+    expect(student.details).toMatchObject({ availableSkills: [], activatedSkills: [] });
+    expect(mocks.streamLLM.mock.calls[1]![0].tools).not.toHaveProperty('read');
+  });
+
   it('rejects an invalid delegation before starting a grounded Child', async () => {
     const takeSceneEvidence = vi.fn(() => sceneEvidence());
     const harness = makeHarness({
@@ -376,11 +422,11 @@ describe('Native Child production consumer', () => {
       'Selected element evidence: scene-other/other-element',
     );
     expect(first.details).toMatchObject({
-      availableToolNames: ['web_search'],
+      availableToolNames: ['read', 'web_search'],
       elementReferenceEvidence: packet.metadata,
     });
     expect(second.details).toMatchObject({
-      availableToolNames: ['web_search'],
+      availableToolNames: ['read', 'web_search'],
       elementReferenceEvidence: packet.metadata,
     });
     expect(harness.events.some((event) => event.type === 'action')).toBe(false);
@@ -398,11 +444,11 @@ describe('Native Child production consumer', () => {
     const second = await execute(harness);
 
     expect(first.details).toMatchObject({
-      availableToolNames: ['web_search'],
+      availableToolNames: ['read', 'web_search'],
       elementReferenceEvidence: packet.metadata,
     });
     expect(second.details).toMatchObject({
-      availableToolNames: ['web_search'],
+      availableToolNames: ['read', 'web_search'],
       elementReferenceEvidence: packet.metadata,
     });
     expect(harness.events.some((event) => event.type === 'action')).toBe(false);
@@ -437,7 +483,9 @@ describe('Native Child production consumer', () => {
       },
     });
     expect(second.details).not.toHaveProperty('sceneEvidence');
-    expect(second.details).toMatchObject({ availableToolNames: ['spotlight', 'web_search'] });
+    expect(second.details).toMatchObject({
+      availableToolNames: ['read', 'spotlight', 'web_search'],
+    });
     expect(takeSceneEvidence).toHaveBeenCalledTimes(2);
     expect(JSON.stringify(mocks.streamLLM.mock.calls[0]?.[0])).toContain(
       'Scene evidence (sceneId=scene-current)',
@@ -493,7 +541,7 @@ describe('Native Child production consumer', () => {
     expect(result).toMatchObject({
       details: {
         runtimeMode: 'native',
-        availableToolNames: ['spotlight', 'web_search'],
+        availableToolNames: ['read', 'spotlight', 'web_search'],
         text: 'This is the key idea.',
         sceneEvidence: [expect.objectContaining({ sceneId: 'scene-current' })],
         nativeChildRun: {
@@ -568,7 +616,7 @@ describe('Native Child production consumer', () => {
     );
     expect(result).toMatchObject({
       details: {
-        availableToolNames: ['web_search'],
+        availableToolNames: ['read', 'web_search'],
         sceneEvidence: [expect.objectContaining({ sceneId: 'scene-other' })],
       },
     });
@@ -590,7 +638,7 @@ describe('Native Child production consumer', () => {
     expect(result).toMatchObject({
       details: {
         runtimeMode: 'native',
-        availableToolNames: ['web_search'],
+        availableToolNames: ['read', 'web_search'],
         nativeChildRun: { status: 'completed' },
       },
     });
@@ -637,7 +685,7 @@ describe('Native Child production consumer', () => {
     );
     expect(result.details).toMatchObject({
       runtimeMode: 'native',
-      availableToolNames: ['web_search'],
+      availableToolNames: ['read', 'web_search'],
     });
   });
 
@@ -659,7 +707,7 @@ describe('Native Child production consumer', () => {
     expect((mocks.streamLLM.mock.calls[0]?.[0] as { tools?: object }).tools).toHaveProperty(
       'web_search',
     );
-    expect(result.details).toMatchObject({ availableToolNames: ['web_search'] });
+    expect(result.details).toMatchObject({ availableToolNames: ['read', 'web_search'] });
   });
 
   it('does not instantiate or read the Legacy whiteboard shadow state', async () => {
@@ -716,7 +764,7 @@ describe('Native Child production consumer', () => {
     expect(harness.events.some((event) => event.type === 'action')).toBe(false);
     expect(result).toMatchObject({
       details: {
-        availableToolNames: ['web_search'],
+        availableToolNames: ['read', 'web_search'],
         nativeChildRun: {
           status: 'completed',
           attemptCount: 1,

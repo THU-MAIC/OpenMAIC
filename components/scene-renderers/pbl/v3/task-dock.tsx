@@ -30,6 +30,7 @@ export function TaskDock({
   summary,
   working = false,
   modalActive = false,
+  actionDisabled = false,
   ref,
 }: {
   view: LearningView;
@@ -38,6 +39,7 @@ export function TaskDock({
   summary?: ReactNode;
   working?: boolean;
   modalActive?: boolean;
+  actionDisabled?: boolean;
   ref?: Ref<TaskDockHandle>;
 }) {
   const { t } = useI18n();
@@ -50,8 +52,17 @@ export function TaskDock({
   const open = hasDrawer && openKey === key;
   const progress = learningProgress(view);
   const step = learningStep(view);
+  const milestone = view.milestones?.find((item) => item.id === view.state.position.milestoneId);
   const running = view.busy || working;
-  const ready = view.actions.includes('next') && !running;
+  const canAdvance = view.actions.includes('next');
+  const ready = canAdvance && !running;
+  const [attentionDismissed, setAttentionDismissed] = useState(false);
+  const attention = ready && !actionDisabled && !modalActive && !attentionDismissed;
+  useEffect(() => {
+    if (!attention) return;
+    const timeout = window.setTimeout(() => setAttentionDismissed(true), 8_000);
+    return () => window.clearTimeout(timeout);
+  }, [attention]);
   useImperativeHandle(
     ref,
     () => ({
@@ -71,7 +82,7 @@ export function TaskDock({
       ? 'pblV3.completed'
       : view.busy
         ? 'pblV3.thinking'
-        : view.actions.includes('next')
+        : canAdvance
           ? 'pblV3.journey.ready'
           : `pblV3.journey.hints.${step}`,
     { action: continueActionLabel(view, t) },
@@ -97,12 +108,14 @@ export function TaskDock({
         className={`h-1.5 w-1.5 shrink-0 rounded-full ${running ? 'animate-pulse bg-primary' : ready ? 'bg-primary' : 'bg-muted-foreground'}`}
       />
       <strong className="pbl-task-step min-w-0 truncate">{t(`pblV3.journey.steps.${step}`)}</strong>
-      <span
-        className={`${summary ? 'order-last basis-full' : 'pbl-task-hint flex-1'} min-w-0 truncate text-muted-foreground`}
-        title={hint}
-      >
-        {summary ?? hint}
-      </span>
+      {(summary || !ready) && (
+        <span
+          className={`${summary ? 'order-last basis-full' : 'pbl-task-hint flex-1'} min-w-0 truncate text-muted-foreground`}
+          title={hint}
+        >
+          {summary ?? hint}
+        </span>
+      )}
     </>
   );
   return (
@@ -149,6 +162,38 @@ export function TaskDock({
             </button>
           </header>
           <div className="grid min-h-0 content-start gap-3 overflow-y-auto p-3 leading-[1.5]">
+            {milestone && (
+              <section
+                data-testid="pbl-current-milestone-summary"
+                aria-label={milestone.title}
+                className="pbl-milestone-summary rounded-xl border p-3"
+              >
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="pbl-milestone-caption rounded-md px-2 py-1 text-xs font-semibold">
+                    {t('pblV3.journey.currentMilestone')}
+                  </span>
+                  <h4 className="text-[15px] font-semibold leading-snug">{milestone.title}</h4>
+                </div>
+                <dl className="mt-2 space-y-1.5 leading-relaxed">
+                  {milestone.goal && (
+                    <div>
+                      <dt className="pbl-milestone-label inline font-semibold">
+                        {t('pblV3.journey.milestoneGoal')}
+                      </dt>
+                      <dd className="ms-1 inline">{milestone.goal}</dd>
+                    </div>
+                  )}
+                  {milestone.outcome && (
+                    <div>
+                      <dt className="pbl-milestone-label inline font-semibold">
+                        {t('pblV3.journey.milestoneResult')}
+                      </dt>
+                      <dd className="ms-1 inline">{milestone.outcome}</dd>
+                    </div>
+                  )}
+                </dl>
+              </section>
+            )}
             <div className="grid gap-0.5">
               <strong className="font-semibold">{t(`pblV3.journey.steps.${step}`)}</strong>
               <p className="text-xs text-muted-foreground">{t(`pblV3.journey.hints.${step}`)}</p>
@@ -157,7 +202,9 @@ export function TaskDock({
           </div>
         </div>
       )}
-      <div className={`flex ${summary ? 'min-h-12' : 'h-10'} items-center gap-2 px-3 py-2`}>
+      <div
+        className={`flex ${canAdvance ? 'min-h-8' : summary ? 'min-h-12' : 'h-10'} items-center gap-2 px-3 ${canAdvance ? 'py-1' : 'py-2'}`}
+      >
         <details
           className="relative shrink-0 text-xs"
           onKeyDown={(event) => {
@@ -196,6 +243,9 @@ export function TaskDock({
             ))}
           </ol>
         </details>
+        {canAdvance && (
+          <div className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{summary}</div>
+        )}
         {hasDrawer ? (
           <button
             data-pbl-tour="task-trigger"
@@ -204,23 +254,47 @@ export function TaskDock({
             aria-expanded={open}
             aria-controls={id}
             aria-label={t('pblV3.journey.taskTitle')}
-            className={`pbl-task-trigger flex min-w-0 flex-1 rounded-md px-2 py-1 hover:bg-accent ${summary ? 'flex-wrap gap-x-2 gap-y-0.5' : 'gap-2'} items-center text-left text-xs`}
+            className={`pbl-task-trigger flex min-w-0 rounded-md px-2 py-1 hover:bg-accent ${canAdvance ? 'shrink-0 gap-1.5 text-muted-foreground' : summary ? 'flex-1 flex-wrap gap-x-2 gap-y-0.5' : 'flex-1 gap-2'} items-center text-left text-xs`}
             onClick={() => setOpenKey(open ? null : key)}
           >
-            <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 font-semibold text-primary">
-              {t('pblV3.journey.taskTitle')}
-            </span>
-            {copy}
+            {canAdvance ? (
+              <>
+                <Settings size={12} aria-hidden="true" />
+                <span>{t('pblV3.journey.reviewDetails')}</span>
+              </>
+            ) : (
+              <>
+                <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 font-semibold text-primary">
+                  {t('pblV3.journey.taskTitle')}
+                </span>
+                {copy}
+              </>
+            )}
             <ChevronUp
               size={13}
-              className={`shrink-0 text-primary transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
+              className={`shrink-0 ${canAdvance ? 'text-muted-foreground' : 'text-primary'} transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
             />
           </button>
         ) : (
-          <div className="flex min-w-0 flex-1 items-center gap-2 text-xs">{copy}</div>
+          !canAdvance && (
+            <div className="flex min-w-0 flex-1 items-center gap-2 text-xs">{copy}</div>
+          )
         )}
-        {action}
+        {!canAdvance && action}
       </div>
+      {canAdvance && action && (
+        <div
+          data-testid="pbl-advance-bar"
+          data-attention={attention ? 'true' : 'false'}
+          data-ready={ready && !actionDisabled ? 'true' : 'false'}
+          className="pbl-advance-bar mx-3 mb-2 min-w-0 rounded-lg"
+          onPointerEnter={() => setAttentionDismissed(true)}
+          onFocusCapture={() => setAttentionDismissed(true)}
+          onPointerDownCapture={() => setAttentionDismissed(true)}
+        >
+          {action}
+        </div>
+      )}
     </section>
   );
 }

@@ -22,7 +22,10 @@
     "waiting": "正在處理",
     "emptyTitle": "開始一個新對話",
     "emptyHint": "描述你想做的變更，或用 @ 指一堂課",
-    "copyReply": "複製 Agent 回覆"
+    "copyReply": "複製 Agent 回覆",
+    "queued": "正在排隊，輪到後會自動開始",
+    "queuedPlaceholder": "排隊中，可以先補充要求，Enter 送出",
+    "cancelQueued": "取消排隊"
   },
   "question": {
     "waiting": "等你回答",
@@ -116,7 +119,10 @@
     "pageCaption": "第 {{order}} 頁 · {{title}}",
     "skills": "已裝備的技能",
     "resting": "課程會出現在這裡",
-    "restingDesc": "在對話裡繼續；生成課程後會在這個分頁開啟。"
+    "restingDesc": "在對話裡繼續；生成課程後會在這個分頁開啟。",
+    "queuedEyebrow": "排隊中",
+    "queued": "正在排隊",
+    "queuedDesc": "前面還有任務在進行，輪到後會自動開始。"
   },
   "thinking": {
     "active": "思考中…",

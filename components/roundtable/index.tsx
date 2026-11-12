@@ -1321,13 +1321,14 @@ export function Roundtable({
         style={{ height: dock.height, ...dockBubbleVars(dock.height) } as CSSProperties}
         className={cn(
           // Its height moves with the fold, not with the drag that sizes it.
-          'w-full flex flex-col relative z-10 transition-[height,background-color,border-color] duration-[400ms] ease-[cubic-bezier(0.22,1,0.36,1)] data-[dragging=true]:transition-none',
+          'w-full flex flex-col relative z-10 transition-[height,background-color,border-color] duration-[400ms] ease-[cubic-bezier(0.22,1,0.36,1)] data-[dragging=true]:transition-none motion-reduce:transition-none',
           isPresenting && !controlsVisible
             ? 'border-t border-transparent bg-transparent backdrop-blur-none'
             : 'border-t border-gray-100 dark:border-gray-800 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md',
         )}
       >
-        {dock.collapsed || isPresenting ? null : <DockResizeHandle dockRef={dockRef} />}
+        {/* One edge in both states, so a fold mid-drag keeps the same handle under the pointer. */}
+        {dock.held ? null : <DockResizeHandle dockRef={dockRef} folded={dock.collapsed} />}
         {/* ── Toolbar strip — merged from CanvasArea ── */}
         <div
           className={cn(

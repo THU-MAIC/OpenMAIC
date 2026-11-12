@@ -1,12 +1,13 @@
 import 'server-only';
 import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
+import { deflateSync } from 'node:zlib';
 import { sandboxConflict } from '@/lib/sandbox/errors';
 import type {
   EvaluationResult,
   PublicEvaluationDiagnosticLocation,
 } from '@/lib/pbl/v3/domain/orchestration/types';
-import type { SandboxCommandResult } from '@/lib/sandbox/types';
+import { MAX_COMMAND_BYTES, type SandboxCommandResult } from '@/lib/sandbox/types';
 import type { InstalledProject } from './catalog';
 import { additionalBuildSources } from './build-command';
 import { validSourcePath } from './workspace-files';
@@ -140,11 +141,13 @@ export function evaluationCommand(
       ...(literalArgIndexes?.length ? { literalArgIndexes } : {}),
     })),
   };
-  const payload = Buffer.from(JSON.stringify({ spec: execution, requestId })).toString('base64');
+  const payload = Buffer.from(JSON.stringify({ spec: execution, requestId }));
   // Optional host choices and source isolation keep existing runner receipts compatible.
   const boundEnvironment = spec.decisionContext !== undefined;
-  const script = `import base64,json,subprocess,tempfile,os,hashlib,resource,re
-cfg=json.loads(base64.b64decode(${JSON.stringify(payload)}))
+  const render = (encoded: Buffer, compressed = false) => {
+    const decoded = `base64.b64decode(${JSON.stringify(encoded.toString('base64'))})`;
+    const script = `import base64,json,subprocess,tempfile,os,hashlib,resource,re${compressed ? ',zlib' : ''}
+cfg=json.loads(${compressed ? `zlib.decompress(${decoded})` : decoded})
 spec=cfg['spec']; results=[]; build=True; buildReason=None; locations=[]
 def diagnose(raw):
  text=re.sub(r'\\x1b\\[[0-?]*[ -/]*[@-~]','',raw); found=[]; compilation=False
@@ -215,7 +218,19 @@ ${
  except OSError: build=False; buildReason='environment'
 print('PBL_RESULT:'+cfg['requestId']+':'+json.dumps({'build':build,'buildReason':buildReason,'checks':results,'locations':locations[:8]},separators=(',',':')))
 `;
-  return `python3 -c ${quote(script)}`;
+    const inline = `python3 -c ${quote(script)}`;
+    // A staged shell script must not put the Python program back into argv:
+    // Linux also limits the size of each individual process argument.
+    return compressed && Buffer.byteLength(inline) > MAX_COMMAND_BYTES
+      ? `python3 <<'OPENMAIC_ASSESSMENT_PROGRAM'\n${script}OPENMAIC_ASSESSMENT_PROGRAM\n`
+      : inline;
+  };
+  const command = render(payload);
+  // The isolated runner adds source paths and verification code to the authored
+  // assessment. Keep its transport bounded without changing legacy commands.
+  return source && Buffer.byteLength(command) > MAX_COMMAND_BYTES
+    ? render(deflateSync(payload), true)
+    : command;
 }
 type Receipt = {
   build: boolean;

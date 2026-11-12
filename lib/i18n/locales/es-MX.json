@@ -2416,7 +2416,6 @@
     "loadFailed": "Couldn't load",
     "retry": "Retry",
     "untitledSession": "Untitled chat",
-    "pagePosition": "Page {{index}} of {{total}}",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
@@ -2536,7 +2535,6 @@
       "onboarding": "Primeros pasos"
     },
     "coursesPage": {
-      "subtitle": "Los cursos que creaste o importaste, y las carpetas donde los organizas",
       "searchPlaceholder": "Buscar en mis cursos",
       "results": "Resultados",
       "allCourses": "Todos los cursos",
@@ -2716,6 +2714,7 @@
       "sourcePath": "Este archivo no forma parte de los archivos fuente del proyecto.",
       "sourceCount": "Los proyectos de aprendizaje admiten un máximo de 256 archivos fuente.",
       "sourceSize": "El contenido fuente del proyecto no debe superar 1 MiB en total.",
+      "commandSize": "El comando de compilación o prueba generado es demasiado grande para ejecutarse en el entorno aislado.",
       "teachingContextSize": "El contexto de aprendizaje es demasiado largo. Acorta PLAN.md o la pregunta de revisión y vuelve a intentarlo.",
       "commandActive": "Detén los comandos en ejecución y obtén sus resultados antes de leer o guardar una instantánea del espacio de trabajo.",
       "terminalActive": "Cierra las terminales antes de leer o guardar una instantánea del espacio de trabajo.",
@@ -3022,7 +3021,25 @@
       "file-edit": "File edit",
       "workspace-run": "Workspace run"
     },
+    "overview": {
+      "title": "Resumen del proyecto",
+      "expand": "Expandir",
+      "collapse": "Contraer",
+      "projectGoal": "Objetivo del proyecto",
+      "finishedWork": "Tu aplicación terminada",
+      "roadmap": "Ruta del proyecto",
+      "goalAndResult": "Objetivo y resultado",
+      "goal": "Objetivo",
+      "result": "Resultado",
+      "eachStage": "Pasos de cada etapa",
+      "yourRole": "Tú decides y revisas; la IA ayuda a escribir el plan y el código.",
+      "preview": "Prueba tu aplicación en la vista previa y comprueba lo que construiste.",
+      "advance": "El botón morado sobre el campo de entrada aparece solo cuando puedes avanzar desde el paso actual. Cuando aparezca, haz clic para continuar."
+    },
     "journey": {
+      "currentMilestone": "Etapa actual",
+      "milestoneGoal": "Objetivo:",
+      "milestoneResult": "Resultado:",
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",
@@ -3064,6 +3081,7 @@
       "notReflected": "Reflection not yet recorded",
       "taskDetails": "Current task details",
       "closeDetails": "Close task details",
+      "reviewDetails": "Ver detalles",
       "milestoneSteps": "Milestone learning steps",
       "enterStep": "Continue to {{step}}",
       "enterMilestone": "Siguiente etapa",

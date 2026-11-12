@@ -48,7 +48,7 @@ export function currentBuildCommand(
   if (Buffer.byteLength(command) > MAX_COMMAND_BYTES)
     throw sandboxInvalid(
       'Current build sources exceed the sandbox 32 KiB command limit.',
-      'PBL_SOURCE_SIZE',
+      'PBL_COMMAND_SIZE',
     );
   return command;
 }

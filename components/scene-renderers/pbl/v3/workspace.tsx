@@ -7,6 +7,7 @@ import { useApplicationPreview } from './use-application-preview';
 import { usePblActivityGeneration } from './activity-provider';
 import {
   ArrowUp,
+  ArrowRight,
   ArrowLeft,
   Square,
   MessageSquareText,
@@ -32,6 +33,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useStageStore } from '@/lib/store/stage';
 import type { LearningView } from '@/lib/pbl/v3/types';
+import type { ProjectHeroDetails } from '@/lib/pbl/project-hero';
 import { LearningWorkbenchPanel } from './workbench-panel';
 import type { FileSaveReceipt } from './use-project-editor';
 import { ProjectReport } from './project-report';
@@ -43,6 +45,7 @@ import { TestEvaluation } from './test-evaluation';
 import { TeachingRunNotice } from './teaching-run-notice';
 import { PendingAction } from './pending-action';
 import { TaskDock } from './task-dock';
+import { ProjectOverview } from './project-overview';
 import { ProductionContext } from './production-context';
 import { useWorkbenchOnboarding } from './use-workbench-onboarding';
 import { WorkbenchOnboarding } from './workbench-onboarding';
@@ -54,6 +57,7 @@ import { SandboxRequestError } from '@/components/sandbox/client';
 
 interface WorkspaceProps {
   sceneId: string;
+  projectHero?: ProjectHeroDetails;
   onReturnToHero?: () => void;
   autoOnboarding?: boolean;
   initialEntry?: boolean;
@@ -64,6 +68,7 @@ interface WorkspaceProps {
 
 function PBLV3WorkspaceContent({
   sceneId,
+  projectHero,
   onReturnToHero,
   autoOnboarding = false,
   initialEntry = false,
@@ -804,6 +809,11 @@ function PBLV3WorkspaceContent({
 
                 <div className="pbl-task-area flex min-h-0 flex-1 flex-col">
                   <LearningConversation
+                    overview={
+                      !onboarding.active && !entryLoading ? (
+                        <ProjectOverview key={view.id} view={view} hero={projectHero} />
+                      ) : undefined
+                    }
                     modalActive={onboarding.active || entryLoading}
                     view={view}
                     onOpenFile={(reference) => {
@@ -823,6 +833,7 @@ function PBLV3WorkspaceContent({
                     requesting={['chat', 'begin', 'retry'].includes(pendingAction ?? '')}
                   />
                   <TaskDock
+                    actionDisabled={disabled}
                     modalActive={onboarding.active || entryLoading}
                     key={`${view.id}:${view.state.position.milestoneIndex}:${view.state.position.stageIndex}`}
                     view={view}
@@ -898,16 +909,23 @@ function PBLV3WorkspaceContent({
                       ) : (
                         view.actions.includes('next') && (
                           <button
-                            className="pbl-stage-action inline-flex h-7 min-w-0 max-w-[220px] shrink-0 items-center justify-center truncate rounded-md border px-3 text-xs font-semibold transition-colors disabled:cursor-not-allowed"
+                            className="pbl-stage-action flex h-10 w-full min-w-0 items-center justify-center gap-2 rounded-lg border px-3 text-center text-xs font-semibold transition-colors disabled:cursor-not-allowed"
                             data-state={disabled ? 'disabled' : 'ready'}
                             disabled={disabled}
                             aria-busy={pendingAction === 'next'}
                             onClick={() => void command('next')}
                           >
                             {pendingAction === 'next' && (
-                              <LoaderCircle size={13} className="mr-1 animate-spin" />
+                              <LoaderCircle size={13} className="shrink-0 animate-spin" />
                             )}
-                            {continueActionLabel(view, t)}
+                            <span className="line-clamp-2 min-w-0 break-words leading-4">
+                              {continueActionLabel(view, t)}
+                            </span>
+                            <ArrowRight
+                              size={15}
+                              className="shrink-0 rtl:-scale-x-100"
+                              aria-hidden="true"
+                            />
                           </button>
                         )
                       )
