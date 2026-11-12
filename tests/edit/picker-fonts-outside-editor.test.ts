@@ -86,11 +86,13 @@ describe('picker fonts outside the editor', () => {
     for (const alias of Object.keys(SELF_HOSTED)) expect(faces.has(alias), alias).toBe(false);
   });
 
-  it('loads the aliases on every page and no other face under those names in the editor', () => {
-    expect(read('app/layout.tsx')).toMatch(/^import '@openmaic\/renderer\/picker-fonts\.css';/m);
-    const editorFonts = read('app/editor-fonts.ts');
+  it('loads the aliases on every page, through the module the root layout imports', () => {
+    expect(read('app/layout.tsx')).toMatch(/^import '\.\/slide-fonts';/m);
+    expect(read('app/slide-fonts.ts')).toMatch(
+      /^import '@openmaic\/renderer\/picker-fonts\.css';/m,
+    );
     for (const pkg of ['noto-sans-sc', 'noto-serif-sc', 'lxgw-wenkai', 'zcool-kuaile']) {
-      expect(editorFonts, pkg).not.toContain(`@fontsource/${pkg}`);
+      expect(read('app/slide-fonts.ts'), pkg).not.toContain(`@fontsource/${pkg}`);
     }
   });
 });

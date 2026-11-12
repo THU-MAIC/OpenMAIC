@@ -1029,7 +1029,7 @@ describe('emitHyperframes determinism red-lines (hyperframes lint proxy)', () =>
 
   it('embeds its primary font so Hyperframes never resolves Google Fonts', () => {
     expect(html).toContain('@font-face');
-    expect(html).toContain('font-family: "Inter"');
+    expect(html).toContain('font-family: "OpenMAIC Inter"');
     expect(html).toMatch(/src:\s*url\("data:font\/woff2;base64,[A-Za-z0-9+/=]+"\)/);
     expect(html).not.toContain('fonts.googleapis.com');
     expect(html).not.toContain('fonts.gstatic.com');

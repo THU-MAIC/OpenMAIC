@@ -14,17 +14,12 @@ import { writeClassroomMode } from '@/lib/workbench/classroom-mode';
 const probe = vi.hoisted(() => ({
   preload: (() => Promise.resolve()) as () => Promise<void>,
   calls: 0,
-  surfaceCalls: 0,
   preloaded: false,
 }));
 
 vi.mock('@/lib/edit/preload-editor', () => ({
   preloadEditor: () => {
     probe.calls += 1;
-    return probe.preload();
-  },
-  preloadEditorSurfaces: () => {
-    probe.surfaceCalls += 1;
     return probe.preload();
   },
   isEditorPreloaded: () => probe.preloaded,
@@ -103,7 +98,6 @@ beforeEach(() => {
   idleHandles = new Map();
   cancelIdle.mockClear();
   probe.calls = 0;
-  probe.surfaceCalls = 0;
   probe.preloaded = false;
   probe.preload = () => Promise.resolve();
   localStorage.clear();
@@ -232,8 +226,7 @@ describe('warming the editor from the classroom pane', () => {
     writeClassroomMode('stage-1', 'editing');
     useStageStore.setState({ stage: null, scenes: [] });
     await render();
-    expect(probe.surfaceCalls).toBe(1);
-    expect(probe.calls).toBe(0);
+    expect(probe.calls).toBe(1);
     expect(idle).toHaveLength(0);
   });
 
@@ -241,6 +234,6 @@ describe('warming the editor from the classroom pane', () => {
     writeClassroomMode('stage-1', 'editing');
     useStageStore.setState({ stage: null, scenes: [] });
     await render({ hidden: true });
-    expect(probe.surfaceCalls).toBe(0);
+    expect(probe.calls).toBe(0);
   });
 });
