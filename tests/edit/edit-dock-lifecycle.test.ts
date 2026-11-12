@@ -296,11 +296,17 @@ describe('EditDock fold', () => {
     expect(host.querySelector('[data-testid="edit-dock-bar"]')).not.toBeNull();
     expect(host.querySelector('[data-testid="edit-dock-roster"]')).not.toBeNull();
     expect(host.querySelector('[data-testid="element-ref-arm"]')).not.toBeNull();
-    expect(host.querySelector('[data-testid="dock-resize"]')).toBeNull();
+    // The folded dock keeps its edge: dragging it up unfolds the dock.
+    expect(host.querySelector('[data-testid="dock-resize"]')?.getAttribute('data-folded')).toBe(
+      'true',
+    );
 
     await click(host.querySelector('[data-testid="timeline-expand"]'));
     expect(section.style.height).toBe('192px');
     expect(host.querySelector('[data-testid="dock-resize"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="dock-resize"]')?.hasAttribute('data-folded')).toBe(
+      false,
+    );
   });
 
   it('takes the height set in the other mode', async () => {
