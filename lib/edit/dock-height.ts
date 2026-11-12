@@ -4,6 +4,11 @@ export const DOCK_MIN_HEIGHT = 150;
 export const DOCK_MAX_HEIGHT = 480;
 /** Folded: the control bar and the border above it, in both modes. */
 export const DOCK_FOLDED_HEIGHT = 33;
+/**
+ * Dragging the dock's edge down until its unclamped height is below this folds it,
+ * mid-drag; 50px past the minimum, so a drag to the minimum never folds by accident.
+ */
+export const DOCK_COLLAPSE_BELOW = 100;
 /** The least the canvas keeps, however tall the dock is asked to be. */
 export const DOCK_MIN_CANVAS_HEIGHT = 240;
 export const DOCK_KEYBOARD_STEP = 16;

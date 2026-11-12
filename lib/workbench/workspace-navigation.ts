@@ -53,6 +53,14 @@ export const RAIL_WIDTH_DEFAULT = 280;
 export const RAIL_WIDTH_MIN = 200;
 export const RAIL_WIDTH_MAX = 360;
 export const RAIL_WIDTH_STORAGE_KEY = 'openmaic:workspace:rail-width';
+/**
+ * Dragging the rail's edge inward to an (unclamped) width below this folds the
+ * rail, live, mid-drag; the same drag back out past it (plus a small
+ * hysteresis) unfolds it. It sits well under `RAIL_WIDTH_MIN`, so a drag that
+ * merely overshoots the minimum still just stops there; only a deliberate pull
+ * of 80px past it folds.
+ */
+export const RAIL_COLLAPSE_THRESHOLD = 120;
 
 /** Clamp to the supported range; anything non-finite falls back to the default. */
 export function clampRailWidth(width: number): number {
