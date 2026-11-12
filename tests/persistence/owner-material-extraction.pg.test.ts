@@ -45,6 +45,7 @@ import {
   heartbeatLossScenario,
   lostClaimStopsProvidersScenario,
   lostDuringLookupScenario,
+  providerSeesRunSignalScenario,
   expire,
   mediaDerivativeScenario,
   ownerCacheScenario,
@@ -259,6 +260,10 @@ describe.skipIf(!contractUrl)('owner-level material extraction on PostgreSQL', (
 
   it('calls no further provider once the claim is found lost', async () => {
     await lostClaimStopsProvidersScenario(await boot());
+  });
+
+  it('stops the provider with the run s signal when the run is cancelled', async () => {
+    await providerSeesRunSignalScenario(await boot());
   });
 
   it('calls no provider when the claim is lost while the cache lookup waits', async () => {

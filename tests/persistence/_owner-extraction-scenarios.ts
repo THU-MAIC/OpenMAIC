@@ -1656,6 +1656,57 @@ export async function lostClaimStopsProvidersScenario(h: ExtractionHarness): Pro
 }
 
 /**
+ * The run's signal reaches the provider it runs: a stopped runner or a claim
+ * found lost aborts the provider's config, so an asynchronous job is cancelled
+ * instead of polling to its own deadline. Nothing is settled.
+ */
+export async function providerSeesRunSignalScenario(h: ExtractionHarness): Promise<void> {
+  const controller = new AbortController();
+  let started!: () => void;
+  const providerStarted = new Promise<void>((resolve) => (started = resolve));
+  let sawSignal: AbortSignal | undefined;
+  const extract = vi.fn((input: { config: { signal?: AbortSignal } }) => {
+    sawSignal = input.config.signal;
+    started();
+    return new Promise<never>((_, reject) => {
+      input.config.signal?.addEventListener(
+        'abort',
+        () => reject(input.config.signal!.reason ?? new Error('aborted')),
+        { once: true },
+      );
+    });
+  });
+  const deps = h.deps({ providers: () => [documentProvider(extract)] });
+  await seedSource(h, 'doc-signal');
+  await ensure(h, 'doc-signal');
+  const run = runClaimedOwnerExtraction((await claim(h))!, deps, {
+    lost: false,
+    signal: controller.signal,
+  });
+  await providerStarted;
+  controller.abort(new Error('runner stopped'));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await expect(
+      Promise.race([
+        run,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('the run did not stop within 3 s')), 3_000);
+        }),
+      ]),
+    ).rejects.toThrow('runner stopped');
+  } finally {
+    clearTimeout(timer);
+  }
+  expect(sawSignal).toBe(controller.signal);
+  expect(await stateOf(h, 'doc-signal')).toMatchObject({
+    status: 'running',
+    extraction_error: null,
+    extraction_result: null,
+  });
+}
+
+/**
  * A claim found lost while the cache lookup waits on the database, the
  * lookup then a miss: the run stops there and calls no provider, on the
  * document and on the media path.

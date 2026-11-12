@@ -317,14 +317,22 @@ export async function runSourceExtraction(
   throw documentExtractionFailure(errors, failures, plan.noServiceConfigured);
 }
 
-/** Run one document provider on a planned input; a failure is the provider's own error. */
+/**
+ * Run one document provider on a planned input; a failure is the provider's
+ * own error. `signal` reaches the provider's config, so a provider that honors
+ * it stops its requests, polls and jobs when the caller stops waiting.
+ */
 export function extractWithDocumentProvider(
   provider: DocumentExtractorProvider,
   plan: Extract<SourceExtractionPlan, { kind: 'document' }>,
+  signal?: AbortSignal,
 ): Promise<DocumentArtifact> {
   return provider.extract({
     ...plan.input,
-    config: extractorConfigFor(provider.id, plan.services),
+    config: {
+      ...extractorConfigFor(provider.id, plan.services),
+      ...(signal ? { signal } : {}),
+    },
   });
 }
 
