@@ -8,6 +8,14 @@
  * otherwise. An agent-built course names its conversation as its producer
  * (`outlineProducerRef`), so the classroom asks whether that one is running.
  *
+ * This is a session-level signal, coarser than the attached conversation's
+ * course-specific one (`sessionBuildsCourse`): the rail list carries only each
+ * conversation's status, not which course its current request writes, so any
+ * request in the producer conversation — even one that never touches this
+ * course — holds the course end back until it finishes. It is therefore used
+ * only when the producer is NOT the attached conversation; for the attached
+ * one, the fold knows exactly which courses the run is writing.
+ *
  * Empty outside the workspace: the standalone classroom has no owner stream.
  */
 import { create } from 'zustand';
@@ -37,10 +45,18 @@ export const useRunningSessions = create<RunningSessionsState>((set, get) => ({
   },
 }));
 
-/** The conversation that produces this course is running: more pages may land. */
+/**
+ * The conversation that produces this course is running: more pages may land.
+ *
+ * False when the producer is the attached conversation (`attachedSessionId`):
+ * there `sessionBuildsCourse` answers per course, and this coarser check would
+ * hold the course end back for an unrelated follow-up in that conversation.
+ */
 export function producerSessionRunning(
   ids: ReadonlySet<string>,
   producerRef: string | null | undefined,
+  attachedSessionId: string | null | undefined,
 ): boolean {
-  return !!producerRef && ids.has(producerRef);
+  if (!producerRef || producerRef === attachedSessionId) return false;
+  return ids.has(producerRef);
 }

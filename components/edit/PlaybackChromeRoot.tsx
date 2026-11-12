@@ -187,12 +187,14 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const generationComplete = useStageStore.use.generationComplete();
     const generationInterrupted = useStageStore.use.generationInterrupted();
     // The workspace's agent run is writing this very course: its pages keep landing.
-    // Either the attached conversation's run, or — for a course open beside a
-    // different conversation — the run of the conversation that produces it.
+    // Either the attached conversation's run (course-specific), or — for a course
+    // open beside a different conversation — any run of the conversation that
+    // produces it (session-level; see `lib/workbench/running-sessions.ts`).
     const attachedRunBuilding = useWorkbenchStore((s) => sessionBuildsCourse(s, stage?.id));
+    const attachedSessionId = useWorkbenchStore((s) => s.sessionId);
     const outlineProducerRef = useStageStore((s) => s.outlineProducerRef);
     const producerBuilding = useRunningSessions((s) =>
-      producerSessionRunning(s.ids, outlineProducerRef),
+      producerSessionRunning(s.ids, outlineProducerRef, attachedSessionId),
     );
     const agentBuilding = attachedRunBuilding || producerBuilding;
 
