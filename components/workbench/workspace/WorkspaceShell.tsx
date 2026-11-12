@@ -153,6 +153,7 @@ import { QUEUED_REQUEST_KEY, requestEpisodeStart } from '@/lib/workbench/request
 import { requestCourse, type RequestCourse } from '@/lib/workbench/conversation-course';
 import { PaneTab } from './PaneTab';
 import { ResizeHandle } from './ResizeHandle';
+import { useResizeDragOwner } from './resize-drag-owner';
 import { MaterialLibraryPage } from './MaterialLibraryPage';
 import { WorkspaceCoursesPage } from './WorkspaceCoursesPage';
 import { WorkspaceSearchPalette } from './WorkspaceSearchPalette';
@@ -1889,6 +1890,9 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   useEffect(() => {
     railFold.current = { navCollapsed, toggleRail };
   }, [navCollapsed, toggleRail]);
+  // One owner for both rail edges: the drag outlives the edge that started it,
+  // and is aborted only if the shell itself unmounts mid-drag.
+  const railDrag = useResizeDragOwner();
   const collapseRail = useCallback(() => {
     const fold = railFold.current;
     if (fold.navCollapsed) return;
@@ -1980,6 +1984,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
               collapseBelow={RAIL_COLLAPSE_THRESHOLD}
               onCollapse={collapseRail}
               onExpand={expandRail}
+              drag={railDrag}
             />
           }
           miniResizeHandle={
@@ -1996,6 +2001,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
               collapseBelow={RAIL_COLLAPSE_THRESHOLD}
               onCollapse={collapseRail}
               onExpand={expandRail}
+              drag={railDrag}
             />
           }
         />

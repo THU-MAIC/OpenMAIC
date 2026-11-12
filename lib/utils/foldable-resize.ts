@@ -65,11 +65,15 @@ export interface FoldableResizeStart {
   readonly collapseBelow?: number;
   /** Read on every move: the latest handlers of a drag that may outlive its handle. */
   readonly handlers: () => FoldableResizeHandlers;
-  /** Called once, as the pointer is released or cancelled. */
+  /** Called once, as the drag ends or is aborted. */
   readonly onEnd?: () => void;
 }
 
-/** Tracks one drag from its pointerdown to its release; returns a function that aborts it. */
+/**
+ * Tracks one drag from its pointerdown to its end; returns a function that
+ * aborts it (listeners removed, `onEnd` called, nothing committed). Aborting a
+ * drag that has already ended does nothing.
+ */
 export function trackFoldableResize(start: FoldableResizeStart): () => void {
   const initial = start.handlers();
   const canFold =
@@ -84,6 +88,11 @@ export function trackFoldableResize(start: FoldableResizeStart): () => void {
 
   const move = (e: PointerEvent) => {
     if (e.pointerId !== start.pointerId) return;
+    // Released outside the window: the pointerup never reached us.
+    if (e.buttons === 0) {
+      finish(true);
+      return;
+    }
     if (Math.hypot(e.clientX - start.clientX, e.clientY - start.clientY) >= DRAG_SLOP) {
       drag.moved = true;
     }
@@ -110,23 +119,36 @@ export function trackFoldableResize(start: FoldableResizeStart): () => void {
     h.onPreview(drag.latest);
   };
 
-  const detach = () => {
+  let ended = false;
+  function finish(commit: boolean) {
+    if (ended) return;
+    ended = true;
     window.removeEventListener('pointermove', move);
     window.removeEventListener('pointerup', end);
     window.removeEventListener('pointercancel', end);
-  };
+    window.removeEventListener('blur', lost);
+    document.removeEventListener('visibilitychange', hidden);
+    start.onEnd?.();
+    // Open at the end of a drag that moved: the size it reached is the new one.
+    // Folded: nothing to commit.
+    if (commit && !drag.folded && drag.moved) start.handlers().onCommit(drag.latest);
+  }
 
   function end(e: PointerEvent) {
     if (e.pointerId !== start.pointerId) return;
-    detach();
-    start.onEnd?.();
-    // Open at the end of a drag that moved: the size it reached is the new one
-    // (a cancelled pointer keeps it too). Folded: nothing to commit.
-    if (!drag.folded && drag.moved) start.handlers().onCommit(drag.latest);
+    finish(true);
+  }
+  function lost() {
+    finish(true);
+  }
+  function hidden() {
+    if (document.visibilityState === 'hidden') finish(true);
   }
 
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', end);
   window.addEventListener('pointercancel', end);
-  return detach;
+  window.addEventListener('blur', lost);
+  document.addEventListener('visibilitychange', hidden);
+  return () => finish(false);
 }

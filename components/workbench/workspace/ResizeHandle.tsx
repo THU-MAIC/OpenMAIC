@@ -28,6 +28,11 @@
  * hysteresis, window-level tracking that survives this handle unmounting) is
  * `trackFoldableResize`, shared with the classroom dock's top edge.
  *
+ * A drag still in flight is aborted as its owner unmounts. By default the owner
+ * is this handle. A handle that may be swapped for another mid-drag (the rail's
+ * open and folded edges) is given an owner that outlives the swap
+ * (`useResizeDragOwner`, held by the shell), so the drag carries on.
+ *
  * The active state is keyed off `data-ws-drag` ON THIS HANDLE rather than the
  * document flag: `data-ws-resizing` is shared by every seam on the page, and
  * lighting all of them while one is moving misreports what is happening.
@@ -39,6 +44,8 @@
 import { useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils/cn';
 import { trackFoldableResize } from '@/lib/utils/foldable-resize';
+
+import { useResizeDragOwner, type ResizeDragOwner } from './resize-drag-owner';
 
 export { RESIZE_FOLD_HYSTERESIS } from '@/lib/utils/foldable-resize';
 
@@ -55,6 +62,7 @@ export function ResizeHandle({
   onCollapse,
   onExpand,
   folded = false,
+  drag,
 }: {
   readonly testId: string;
   readonly label: string;
@@ -75,7 +83,14 @@ export function ResizeHandle({
   readonly onExpand?: () => void;
   /** This is the folded pane's edge: the gesture starts folded. */
   readonly folded?: boolean;
+  /**
+   * Who aborts a drag still in flight as it unmounts. Defaults to this handle;
+   * pass one that outlives the handle when the handle may unmount mid-drag.
+   */
+  readonly drag?: ResizeDragOwner;
 }) {
+  const ownDrag = useResizeDragOwner();
+  const owner = drag ?? ownDrag;
   // The latest callbacks, read by the window listeners of a drag that may
   // outlive this render (and this handle).
   const props = useRef({ clamp, onPreview, onCommit, onCollapse, onExpand });
@@ -91,7 +106,8 @@ export function ResizeHandle({
     const remembered = current();
     handle.setAttribute('data-ws-drag', 'true');
     document.documentElement.setAttribute('data-ws-resizing', 'true');
-    trackFoldableResize({
+    owner.abort();
+    const abort = trackFoldableResize({
       pointerId: event.pointerId,
       clientX: event.clientX,
       clientY: event.clientY,
@@ -104,10 +120,12 @@ export function ResizeHandle({
       collapseBelow,
       handlers: () => props.current,
       onEnd: () => {
+        owner.release(abort);
         handle.removeAttribute('data-ws-drag');
         document.documentElement.removeAttribute('data-ws-resizing');
       },
     });
+    owner.hold(abort);
   };
 
   return (

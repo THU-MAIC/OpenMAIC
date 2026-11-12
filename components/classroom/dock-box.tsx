@@ -14,7 +14,8 @@
  * and the edge follows the pointer again, and the folded dock's edge starts the same
  * gesture upward. The gesture is the workspace rail's (`trackFoldableResize`): tracked on
  * the window, with a hysteresis at the threshold, a click that does nothing and a
- * remembered height that a fold never touches.
+ * remembered height that a fold never touches. A drag still in flight is aborted as the
+ * edge unmounts (it stays mounted across a fold: one edge in both states).
  *
  * `data-dragging` on the dock is set as the pointer goes down and cleared as it comes up,
  * never in between (a fold mid-drag included): it only switches off transitions, and
@@ -76,6 +77,14 @@ export function DockResizeHandle({
   const stored = useSettingsStore((state) => state.dockHeight);
   const setDockHeight = useSettingsStore((state) => state.setDockHeight);
   const settle = useRef<number | null>(null);
+  const abortDrag = useRef<(() => void) | null>(null);
+  useEffect(
+    () => () => {
+      abortDrag.current?.();
+      abortDrag.current = null;
+    },
+    [],
+  );
 
   // Unmeasured (no layout yet) reads as unknown, like `useDockBox`'s.
   const room = () => hostOf(dockRef.current)?.clientHeight || null;
@@ -106,7 +115,8 @@ export function DockResizeHandle({
     let base = dock.getBoundingClientRect().height;
     dock.dataset.dragging = 'true';
     const settings = useSettingsStore.getState();
-    trackFoldableResize({
+    abortDrag.current?.();
+    const abort = trackFoldableResize({
       pointerId: event.pointerId,
       clientX: event.clientX,
       clientY: event.clientY,
@@ -138,6 +148,7 @@ export function DockResizeHandle({
         },
       }),
       onEnd: () => {
+        if (abortDrag.current === abort) abortDrag.current = null;
         dock.style.marginTop = '';
         // The commit must not animate: the dock is already there.
         settle.current = requestAnimationFrame(() => {
@@ -146,6 +157,7 @@ export function DockResizeHandle({
         });
       },
     });
+    abortDrag.current = abort;
   };
 
   return (

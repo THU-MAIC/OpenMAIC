@@ -28,6 +28,10 @@ import {
   ResizeHandle,
   RESIZE_FOLD_HYSTERESIS,
 } from '@/components/workbench/workspace/ResizeHandle';
+import {
+  createResizeDragOwner,
+  type ResizeDragOwner,
+} from '@/components/workbench/workspace/resize-drag-owner';
 import { PaneFoldButton } from '@/components/workbench/workspace/PaneFoldButton';
 
 beforeAll(() => {
@@ -48,8 +52,11 @@ afterEach(async () => {
   document.documentElement.removeAttribute('data-ws-resizing');
 });
 
+// A move carries the held primary button: a move with none means the pointer
+// was released where the window could not hear it.
 function pointerEvent(type: string, init: MouseEventInit = {}) {
-  const event = new MouseEvent(type, { bubbles: true, button: 0, ...init });
+  const buttons = type === 'pointermove' ? 1 : 0;
+  const event = new MouseEvent(type, { bubbles: true, button: 0, buttons, ...init });
   Object.defineProperty(event, 'pointerId', { value: 1 });
   return event;
 }
@@ -152,7 +159,7 @@ describe('the pane seam', () => {
 });
 
 describe('drag-to-collapse on a seam (live, one gesture)', () => {
-  async function renderFoldableSeam(folded = false) {
+  async function renderFoldableSeam(folded = false, drag?: ResizeDragOwner) {
     const calls = {
       commit: [] as number[],
       preview: [] as number[],
@@ -175,6 +182,7 @@ describe('drag-to-collapse on a seam (live, one gesture)', () => {
           onCollapse: () => calls.events.push('collapse'),
           onExpand: () => calls.events.push('expand'),
           folded,
+          drag,
         }),
       );
     });
@@ -291,8 +299,21 @@ describe('drag-to-collapse on a seam (live, one gesture)', () => {
     expect(calls.commit).toEqual([]);
   });
 
-  it('keeps tracking after the handle unmounts mid-drag', async () => {
+  it('an open drag that is cancelled keeps the width it reached', async () => {
     const { seam, calls } = await renderFoldableSeam();
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointerdown', { clientX: 280, clientY: 50 }));
+      seam.dispatchEvent(pointerEvent('pointermove', { clientX: 300, clientY: 50 }));
+      seam.dispatchEvent(pointerEvent('pointercancel', { clientX: 300, clientY: 50 }));
+    });
+    expect(calls.commit).toEqual([300]);
+    expect(document.documentElement.hasAttribute('data-ws-resizing')).toBe(false);
+  });
+
+  it('keeps tracking after the handle unmounts mid-drag, under an owner that outlives it', async () => {
+    // The shell's owner: it outlives the rail's edges.
+    const owner = createResizeDragOwner();
+    const { seam, calls } = await renderFoldableSeam(false, owner);
     await act(async () => {
       seam.dispatchEvent(pointerEvent('pointerdown', { clientX: 280, clientY: 50 }));
     });
@@ -303,6 +324,102 @@ describe('drag-to-collapse on a seam (live, one gesture)', () => {
     });
     expect(calls.commit).toEqual([300]);
     expect(document.documentElement.hasAttribute('data-ws-resizing')).toBe(false);
+    // Ended on its own: the owner holds nothing to abort any more.
+    owner.abort();
+    expect(calls.commit).toEqual([300]);
+  });
+
+  it('aborts the drag as its owner unmounts, without committing', async () => {
+    const { seam, calls } = await renderFoldableSeam();
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointerdown', { clientX: 280, clientY: 50 }));
+      window.dispatchEvent(pointerEvent('pointermove', { clientX: 300, clientY: 50 }));
+    });
+    // No owner given: the handle owns its drag.
+    await act(async () => root?.render(createElement('div')));
+    expect(document.documentElement.hasAttribute('data-ws-resizing')).toBe(false);
+    await act(async () => {
+      window.dispatchEvent(pointerEvent('pointermove', { clientX: 320, clientY: 50 }));
+      window.dispatchEvent(pointerEvent('pointerup', { clientX: 320, clientY: 50 }));
+    });
+    expect(calls.preview).toEqual([300]);
+    expect(calls.commit).toEqual([]);
+  });
+
+  it('an owner that outlives the handle aborts the drag when it goes', async () => {
+    const owner = createResizeDragOwner();
+    const { seam, calls } = await renderFoldableSeam(false, owner);
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointerdown', { clientX: 280, clientY: 50 }));
+      window.dispatchEvent(pointerEvent('pointermove', { clientX: 300, clientY: 50 }));
+    });
+    await act(async () => root?.render(createElement('div')));
+    expect(document.documentElement.hasAttribute('data-ws-resizing')).toBe(true);
+    owner.abort();
+    expect(document.documentElement.hasAttribute('data-ws-resizing')).toBe(false);
+    window.dispatchEvent(pointerEvent('pointerup', { clientX: 300, clientY: 50 }));
+    expect(calls.commit).toEqual([]);
+  });
+
+  describe('ends a drag released outside the window', () => {
+    async function dragTo300() {
+      const { seam, calls } = await renderFoldableSeam();
+      await act(async () => {
+        seam.dispatchEvent(pointerEvent('pointerdown', { clientX: 280, clientY: 50 }));
+        window.dispatchEvent(pointerEvent('pointermove', { clientX: 300, clientY: 50 }));
+      });
+      expect(document.documentElement.hasAttribute('data-ws-resizing')).toBe(true);
+      return { seam, calls };
+    }
+
+    async function expectEndedAt300(calls: { commit: number[]; preview: number[] }) {
+      expect(document.documentElement.hasAttribute('data-ws-resizing')).toBe(false);
+      expect(calls.commit).toEqual([300]);
+      // A stale drag does not continue on later events with the same pointer.
+      await act(async () => {
+        window.dispatchEvent(pointerEvent('pointermove', { clientX: 340, clientY: 50 }));
+        window.dispatchEvent(pointerEvent('pointerup', { clientX: 340, clientY: 50 }));
+      });
+      expect(calls.preview).toEqual([300]);
+      expect(calls.commit).toEqual([300]);
+    }
+
+    it('when the pointer comes back with no button held', async () => {
+      const { seam, calls } = await dragTo300();
+      await act(async () => {
+        window.dispatchEvent(
+          pointerEvent('pointermove', { clientX: 360, clientY: 50, buttons: 0 }),
+        );
+      });
+      expect(seam.hasAttribute('data-ws-drag')).toBe(false);
+      await expectEndedAt300(calls);
+    });
+
+    it('when the window loses focus', async () => {
+      const { calls } = await dragTo300();
+      await act(async () => {
+        window.dispatchEvent(new Event('blur'));
+      });
+      await expectEndedAt300(calls);
+    });
+
+    it('when the page is hidden', async () => {
+      const { calls } = await dragTo300();
+      const visibility = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState');
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        get: () => 'hidden',
+      });
+      try {
+        await act(async () => {
+          document.dispatchEvent(new Event('visibilitychange'));
+        });
+      } finally {
+        delete (document as { visibilityState?: unknown }).visibilityState;
+        if (visibility) expect(document.visibilityState).toBe('visible');
+      }
+      await expectEndedAt300(calls);
+    });
   });
 
   it('sets the document resizing flag once per drag, not once per move', async () => {
@@ -372,6 +489,10 @@ describe('drag-to-collapse on a seam (live, one gesture)', () => {
     const miniProps = miniSeam.slice(0, miniSeam.indexOf('/>'));
     expect(miniProps).toContain('folded');
     expect(miniProps).toContain('onExpand={expandRail}');
+    // Both rail edges hand their drag to the shell, which outlives the swap.
+    expect(railProps).toContain('drag={railDrag}');
+    expect(miniProps).toContain('drag={railDrag}');
+    expect(shell).toContain('const railDrag = useResizeDragOwner();');
     // The chat seam stays a pure resize.
     expect(shell.match(/collapseBelow=/g)).toHaveLength(2);
   });

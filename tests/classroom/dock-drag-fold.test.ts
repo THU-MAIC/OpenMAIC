@@ -23,8 +23,11 @@ import {
   trackFoldableResize,
 } from '@/lib/utils/foldable-resize';
 
+// A move carries the held primary button: a move with none means the pointer
+// was released where the window could not hear it.
 function pointerEvent(type: string, init: MouseEventInit = {}) {
-  const event = new MouseEvent(type, { bubbles: true, button: 0, ...init });
+  const buttons = type === 'pointermove' ? 1 : 0;
+  const event = new MouseEvent(type, { bubbles: true, button: 0, buttons, ...init });
   Object.defineProperty(event, 'pointerId', { value: 1 });
   return event;
 }
@@ -244,6 +247,35 @@ describe('the classroom dock edge', () => {
       window.dispatchEvent(at('pointerup', 300));
     });
     expect(useSettingsStore.getState()).toMatchObject({ dockCollapsed: false, dockHeight: 233 });
+  });
+
+  it('aborts a drag in flight as the edge unmounts, committing nothing', async () => {
+    const { edge } = await render();
+    await act(async () => {
+      edge().dispatchEvent(at('pointerdown', 500));
+      window.dispatchEvent(at('pointermove', 460)); // 232
+    });
+    await act(async () => root?.unmount());
+    root = null;
+    window.dispatchEvent(at('pointermove', 400));
+    window.dispatchEvent(at('pointerup', 400));
+    expect(useSettingsStore.getState()).toMatchObject({ dockCollapsed: false, dockHeight: 192 });
+  });
+
+  it('ends a drag released outside the window at the next buttonless move', async () => {
+    const { dock, edge } = await render();
+    await act(async () => {
+      edge().dispatchEvent(at('pointerdown', 500));
+      window.dispatchEvent(at('pointermove', 460)); // 232
+      window.dispatchEvent(pointerEvent('pointermove', { clientX: 400, clientY: 300, buttons: 0 }));
+    });
+    expect(useSettingsStore.getState().dockHeight).toBe(232);
+    expect(dock.hasAttribute('data-dragging')).toBe(false);
+    await act(async () => {
+      window.dispatchEvent(at('pointermove', 300));
+      window.dispatchEvent(at('pointerup', 300));
+    });
+    expect(useSettingsStore.getState().dockHeight).toBe(232);
   });
 
   it('a dock the classroom holds folded has no edge to unfold it', async () => {
