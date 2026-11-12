@@ -63,7 +63,7 @@ describe('claiming anonymous work (PGlite)', () => {
     await fullClaimScenario(harness);
   });
 
-  it('retires only a spare incoming guide course, never the account copy', async () => {
+  it('keeps every guide course across a claim; a late seed adds no second', async () => {
     await guideCourseClaimScenario(harness);
   });
 

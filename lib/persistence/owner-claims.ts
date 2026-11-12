@@ -23,7 +23,6 @@
  * | order | participant       | rows                                                   |
  * |------:|-------------------|--------------------------------------------------------|
  * |   100 | `document-folders`| `document_folders`, `document_stages.folder_id`        |
- * |   150 | `guide-courses`   | retires the incoming guide course when spare (`./guide-courses.ts`) |
  * |   200 | `courses`         | `stage_meta` (and the retired `document_stages.owner_id`) |
  * |   300 | `owner-materials` | `material_folders`, `owner_material` (folder conflicts as course folders') |
  * |   400 | `agent-sessions`  | `agent_sessions`, the owner session-event projection   |
@@ -95,7 +94,6 @@ import { rekeyLegacyImportBindings } from './legacy-import-bindings';
 import { isLockContention, isOwnerBusyError, lockOwnerIdentities } from './owner-merges';
 import { resolveClaimLockWaitMs } from './owner-lock-waits';
 import { ownerMaterialQuotaLockKey, reassignMaterialFolders } from './owner-materials';
-import { retireDuplicateGuideCourses } from './guide-courses';
 import { getServerPersistenceProvider, type ServerPersistenceProvider } from './server-provider';
 import { STAGE_META_OWNERSHIP } from './stage-meta-ownership';
 import { rekeyWorkspaceModelConfig } from './workspace-model-config';
@@ -127,7 +125,6 @@ function registry(): RegistryState {
 /** The names core's own participants use; a host participant cannot take one. */
 export const CORE_CLAIM_PARTICIPANTS = [
   'document-folders',
-  'guide-courses',
   'courses',
   'owner-materials',
   'agent-sessions',
@@ -227,15 +224,6 @@ function coreParticipants(provider: ServerPersistenceProvider): ClaimParticipant
           })
         ).length;
       },
-    },
-    {
-      // Retires the incoming guide course only when it is untouched, unused
-      // and unpublished; the account's copy is never retired. Before the
-      // courses move, after the folders participant locked the source's
-      // ownership rows.
-      name: 'guide-courses',
-      order: 150,
-      rekey: (tx, from, to) => retireDuplicateGuideCourses(tx, from, to),
     },
     {
       name: 'courses',

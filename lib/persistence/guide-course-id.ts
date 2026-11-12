@@ -6,8 +6,7 @@
  * An id names its seed generation: `stage-guide-<hash>` for the first one
  * (`g1`, the ids already in libraries), `stage-guide-<generation>-<hash>` for
  * every later one. Only copies of the CURRENT generation count as the guide
- * course: the seed skips, the server refuses a second, and a claim keeps one,
- * among those alone. A copy of an older generation is an ordinary course of
+ * course: the seed skips and the server refuses a second among those alone. A copy of an older generation is an ordinary course of
  * its owner's, so advancing the generation seeds the new course once more for
  * everyone, as {@link GUIDE_SEED_GENERATION} says.
  */

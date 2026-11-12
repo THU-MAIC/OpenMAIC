@@ -21,8 +21,8 @@
  * One per library. A library that already holds a guide course of the current
  * seed generation under another id (an anonymous copy a sign-in brought into
  * the account) is not given a second, and the server refuses one that a stale
- * list would let through; a claim keeps at most one of two copies
- * (`lib/persistence/guide-courses.ts`). A copy of an older generation does not
+ * list would let through (`lib/persistence/guide-courses.ts`). A claim
+ * retires nothing: a visitor and an account that each had a copy keep both. A copy of an older generation does not
  * count: it is an ordinary course, and a new generation is seeded beside it
  * (`lib/persistence/guide-course-id.ts`).
  *
