@@ -600,6 +600,21 @@ describe('parseWithMiniCPMOCR', () => {
     expect(transport.providerFetch).toHaveBeenCalledTimes(1);
   });
 
+  it('does not retry a submit answered with 5xx (the job may already exist)', async () => {
+    install({
+      submit: () => json({ error: 'bad gateway' }, { status: 502 }),
+      polls: [],
+    });
+
+    await expect(
+      parseWithMiniCPMOCR({ providerId: 'minicpm-ocr', apiKey: 'test-key' }, PDF, {
+        fileName: 'lesson.pdf',
+        mimeType: 'application/pdf',
+      }),
+    ).rejects.toThrow('MiniCPM-OCR job submission failed (HTTP 502)');
+    expect(transport.providerFetch).toHaveBeenCalledTimes(1);
+  });
+
   it('does not retry a submit whose transport failed (it may have been accepted)', async () => {
     install({
       submit: () => {

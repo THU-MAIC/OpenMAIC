@@ -49,6 +49,9 @@ const POLL_MIN_MS = 500;
 const POLL_MAX_INTERVAL_MS = 10_000;
 const POLL_GROWTH = 1.5;
 const POLL_MAX_MS = 15 * 60 * 1_000; // 15 minutes
+// A rate-limited submission is refused before the service creates a job, so it
+// is retried; an ambiguous 5xx is not, since a proxy can answer 5xx after the
+// origin created the job.
 const SUBMIT_ATTEMPTS = 4;
 /** A submission Retry-After longer than this is not worth blocking on. */
 const SUBMIT_MAX_RETRY_WAIT_MS = 120_000;
@@ -556,7 +559,7 @@ async function submitJob(
         discardBody(response);
         throw new Error(`MiniCPM-OCR API key was rejected (HTTP ${response.status})`);
       }
-      if (response.status === 429 || response.status >= 500) {
+      if (response.status === 429) {
         const retryAfter = retryAfterMs(response) ?? 0;
         discardBody(response);
         if (retryAfter > SUBMIT_MAX_RETRY_WAIT_MS) {
@@ -566,6 +569,15 @@ async function submitJob(
           await sleep(Math.max(retryAfter, 500 * attempt), config.signal);
           continue;
         }
+        throw new Error(`MiniCPM-OCR job submission failed (HTTP ${response.status})`);
+      }
+      if (response.status >= 500) {
+        // The submission is not idempotent: a reverse proxy can answer 5xx
+        // after the origin created the job, so retrying would leave a job
+        // running that this client never learns the id of, spending the
+        // account's quota. Only the 429 refusal above creates nothing.
+        log.warn(`[MiniCPM-OCR] job submission failed (HTTP ${response.status})`);
+        discardBody(response);
         throw new Error(`MiniCPM-OCR job submission failed (HTTP ${response.status})`);
       }
       if (!response.ok) {
@@ -583,14 +595,15 @@ async function submitJob(
       // A transport failure may have reached the server after the server
       // accepted the upload: retrying the POST can create a second job whose
       // id this client never learns, leaving it running. Only an explicit
-      // 429/5xx answer is retried (the branch above); a transport failure is
-      // left to the extraction layer's own retry.
+      // 429 answer is retried (the branch above); a transport failure or a
+      // 5xx is left to the extraction layer's own retry.
       lastError = error;
       break;
     }
   }
   const blocked = findUnsafeNetworkTargetError(lastError);
   if (blocked) throw blocked;
+  if (lastError instanceof Error && lastError.message.startsWith('MiniCPM-OCR ')) throw lastError;
   const detail = lastError instanceof Error ? lastError.message : String(lastError);
   throw new Error(`MiniCPM-OCR job submission failed: ${detail}`, { cause: lastError });
 }
