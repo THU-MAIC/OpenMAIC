@@ -26,4 +26,17 @@ describe('rail row metadata slot', () => {
       '.ws-row-wrap-actionable:has(.ws-row-trailing:focus-within) .ws-row-meta',
     );
   });
+
+  it('keeps the :has() selector in its own rule, so an engine without it keeps the hover rule', () => {
+    const selectorOf = (selector: string) => selector.replace(/\/\*[\s\S]*?\*\//g, '').trim();
+    const rules = [...css.matchAll(/([^{}]*)\{[^}]*\}/g)].map((match) => selectorOf(match[1]));
+    const hover = rules.filter((selector) => selector.includes('.ws-row-wrap-actionable:hover'));
+    expect(hover.length).toBeGreaterThan(0);
+    for (const selector of hover) expect(selector).not.toContain(':has(');
+    const metaHas = rules.filter((r) => r.includes(':has(') && r.includes('.ws-row-meta'));
+    expect(metaHas.length).toBeGreaterThan(0);
+    for (const selector of metaHas) {
+      expect(selector.split(',')).toHaveLength(1);
+    }
+  });
 });
