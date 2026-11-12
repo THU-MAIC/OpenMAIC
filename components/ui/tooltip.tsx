@@ -27,8 +27,38 @@ function Tooltip({ ...props }: React.ComponentProps<typeof TooltipPrimitive.Root
   );
 }
 
-function TooltipTrigger({ ...props }: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
-  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />;
+/**
+ * Focus opens a tooltip only when the focus is visible (keyboard): a dialog's
+ * open auto-focus, or focus handed back to its trigger on close, is
+ * programmatic and must not pop a tooltip over what the user just opened.
+ * Hover is unaffected.
+ */
+function suppressProgrammaticFocus(event: React.FocusEvent<HTMLButtonElement>) {
+  const el = event.currentTarget;
+  let visible = true;
+  try {
+    visible = el.matches(':focus-visible');
+  } catch {
+    // An engine without :focus-visible keeps the old behaviour.
+  }
+  // Radix skips its own focus handler for a default-prevented event.
+  if (!visible) event.preventDefault();
+}
+
+function TooltipTrigger({
+  onFocus,
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
+  return (
+    <TooltipPrimitive.Trigger
+      data-slot="tooltip-trigger"
+      onFocus={(event) => {
+        onFocus?.(event);
+        if (!event.defaultPrevented) suppressProgrammaticFocus(event);
+      }}
+      {...props}
+    />
+  );
 }
 
 function TooltipContent({
