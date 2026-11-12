@@ -203,6 +203,7 @@ export function WorkspaceRequestActivity({
       <RequestPreview
         view={view}
         prompt={track.prompt}
+        queued={status === 'queued'}
         hidden={hidden}
         revealKey={rosterSeenAt ?? 'unseen'}
         onClose={() => onClose(track.key)}
@@ -251,7 +252,17 @@ function useHostedQuestion(
 function sceneCopy(
   view: RequestPreviewView,
   t: Translate,
+  queued = false,
 ): { readonly key: string; readonly title: string; readonly description: string } {
+  // Not claimed yet: the opening scene would claim the agent is reading the
+  // request, and nothing is. Said as it is until the runner starts.
+  if (queued && view.mode === 'scene' && view.scene === 'understanding') {
+    return {
+      key: 'queued',
+      title: t('workbench.preview.queued'),
+      description: t('workbench.preview.queuedDesc'),
+    };
+  }
   if (view.mode === 'classroom') {
     return { key: 'opening', title: t('workbench.preview.opening'), description: '' };
   }
@@ -308,6 +319,7 @@ const EASE: [number, number, number, number] = [0.22, 0.61, 0.36, 1];
 function RequestPreview({
   view,
   prompt,
+  queued,
   hidden,
   revealKey,
   onClose,
@@ -318,6 +330,8 @@ function RequestPreview({
 }: {
   readonly view: RequestPreviewView;
   readonly prompt: string;
+  /** The request waits for a free runner: nothing has started yet. */
+  readonly queued: boolean;
   readonly hidden: boolean;
   /**
    * When this viewer first saw the cast. A reveal that played while the
@@ -333,7 +347,7 @@ function RequestPreview({
   const reduced = useReducedMotion();
   const sessionId = useWorkbenchStore((s) => s.sessionId);
   const hosted = useHostedQuestion(view, hidden);
-  const copy = sceneCopy(view, t);
+  const copy = sceneCopy(view, t, queued);
   const asking = view.scene === 'asking' && view.question !== null && view.mode === 'scene';
   // The cast's reveal owns the scene area while it plays, like the classic modal.
   const revealing = view.scene === 'assembling' && view.roster !== null && view.mode === 'scene';
@@ -375,7 +389,13 @@ function RequestPreview({
         <span className="ws-ctabs-rule" aria-hidden="true" />
         {/* "In progress" only while something is: at rest the tab says nothing. */}
         {copy.key === 'resting' ? null : (
-          <span className="ws-pane-eyebrow shrink-0 pr-1">{t('workbench.preview.eyebrow')}</span>
+          <span className="ws-pane-eyebrow shrink-0 pr-1">
+            {t(
+              copy.key === 'queued'
+                ? 'workbench.preview.queuedEyebrow'
+                : 'workbench.preview.eyebrow',
+            )}
+          </span>
         )}
       </header>
 
@@ -441,9 +461,11 @@ function RequestPreview({
           <div
             className={cn(
               'flex h-10 items-center justify-center gap-3 text-sm font-medium uppercase tracking-widest text-[var(--ws-ink-faint)] transition-opacity duration-300',
-              asking || copy.key === 'resting' ? 'opacity-0' : 'opacity-100',
+              asking || copy.key === 'resting' || copy.key === 'queued'
+                ? 'opacity-0'
+                : 'opacity-100',
             )}
-            aria-hidden={asking || copy.key === 'resting' || undefined}
+            aria-hidden={asking || copy.key === 'resting' || copy.key === 'queued' || undefined}
           >
             <Sparkles
               className="size-3 animate-pulse motion-reduce:animate-none"
