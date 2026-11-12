@@ -224,6 +224,10 @@ once at your app shell to make those faces available:
 import '@openmaic/renderer/fonts.css';
 ```
 
+It also maps the Google Fonts names of those typefaces (`Noto Sans SC`,
+`Noto Serif SC`, `LXGW WenKai`, `ZCOOL KuaiLe`) onto the same files, so slides
+whose fonts were picked in `@openmaic/editor` render in those fonts too.
+
 > **Runtime dependency — read this.** The `@font-face` `src` URLs point at an
 > external font host (`https://file.maic.chat/fonts/<name>.woff2`); the woff2
 > files are **not** bundled in the package. So this is a hard runtime dependency:

@@ -9,6 +9,17 @@
  * Adding a font: install its `@fontsource` package, import the weight CSS in
  * `app/editor-fonts.ts`, then add an entry here whose `value` matches the
  * package's `@font-face` family name.
+ *
+ * `app/editor-fonts.ts` loads only with the editor, so the classroom (Learn,
+ * the standalone `/classroom` route) renders a picked font only if
+ * `@openmaic/renderer/fonts.css` declares the same name. The Chinese entries
+ * are aliased there (`FONT_ALIASES` in `fonts.config.mjs`); the Latin ones,
+ * apart from Inter, still fall back outside the editor.
+ *
+ * In the editor both declarations exist, and the browser matches weight first:
+ * the `@fontsource` face wins where it declares the requested weight. LXGW
+ * WenKai ships no 400 there (only 500 and 700), so normal-weight text in it
+ * renders with the aliased face in the editor too, as it does in the classroom.
  */
 export interface FontEntry {
   /** Display name; rendered as the fallback when `labelKey` is absent. */
