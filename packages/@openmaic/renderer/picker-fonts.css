@@ -15,11 +15,13 @@
 @font-face {
   font-display: swap;
   font-family: 'Noto Sans SC';
+  font-weight: 250 900;
   src: url('https://file.maic.chat/fonts/SourceHanSans.woff2') format('woff2');
 }
 @font-face {
   font-display: swap;
   font-family: 'Noto Serif SC';
+  font-weight: 250 900;
   src: url('https://file.maic.chat/fonts/SourceHanSerif.woff2') format('woff2');
 }
 @font-face {

@@ -12,6 +12,7 @@ import {
   FONT_CDN_BASE_URL,
   FONT_DIR,
   FONT_FAMILIES,
+  VARIABLE_WEIGHTS,
   fontUrl,
 } from '../fonts.config.mjs';
 
@@ -26,6 +27,11 @@ for (const [alias, family] of Object.entries(FONT_ALIASES)) {
   }
   if (FONT_FAMILIES.includes(alias)) {
     throw new Error(`[genfonts] alias '${alias}' is already a family in FONT_FAMILIES`);
+  }
+}
+for (const family of Object.keys(VARIABLE_WEIGHTS)) {
+  if (!FONT_FAMILIES.includes(family)) {
+    throw new Error(`[genfonts] VARIABLE_WEIGHTS names '${family}', which is not in FONT_FAMILIES`);
   }
 }
 
@@ -60,9 +66,9 @@ const pickerHeader = `/**
  * Do not import it if the page loads its own faces under these names.
  */`;
 
-const fontFace = (name, family) => `@font-face {
+const fontFace = (name, family, weight) => `@font-face {
   font-display: swap;
-  font-family: '${name}';
+  font-family: '${name}';${weight ? `\n  font-weight: ${weight};` : ''}
   src: url('${fontUrl(family)}') format('woff2');
 }`;
 
@@ -77,7 +83,9 @@ write(
 write(
   'picker-fonts.css',
   pickerHeader,
-  Object.entries(FONT_ALIASES).map(([alias, family]) => fontFace(alias, family)),
+  Object.entries(FONT_ALIASES).map(([alias, family]) =>
+    fontFace(alias, family, VARIABLE_WEIGHTS[family]),
+  ),
 );
 
 console.log(

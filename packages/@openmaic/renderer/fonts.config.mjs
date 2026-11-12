@@ -44,5 +44,17 @@ export const FONT_ALIASES = {
   'ZCOOL KuaiLe': 'ZcoolHappy',
 };
 
+/**
+ * Weight range of the variable faces, from each woff2's `wght` axis. Without a
+ * `font-weight` descriptor, WebKit (Safari) treats the file as one normal-weight
+ * face and synthesizes bold on top of it; Chromium and Firefox read the font's
+ * own range. Declaring the range makes bold use the axis in all three. Only the
+ * alias rules in `picker-fonts.css` carry it; `fonts.css` stays as it was.
+ */
+export const VARIABLE_WEIGHTS = {
+  SourceHanSans: '250 900',
+  SourceHanSerif: '250 900',
+};
+
 /** Build the woff2 URL for a given family. */
 export const fontUrl = (family) => `${FONT_CDN_BASE_URL}/${FONT_DIR}/${family}.woff2`;

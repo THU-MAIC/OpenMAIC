@@ -61,6 +61,27 @@ describe('picker fonts outside the editor', () => {
     }
   });
 
+  it('declares the weight axis of the variable faces, so bold uses it rather than synthesis', () => {
+    const weights = new Map(
+      [
+        ...readPackageFile('@openmaic/renderer/picker-fonts.css').matchAll(
+          /@font-face\s*\{([^}]*)\}/g,
+        ),
+      ].map(([, body]) => [
+        body.match(/font-family:\s*'([^']+)'/)?.[1],
+        body.match(/font-weight:\s*([^;]+);/)?.[1] ?? null,
+      ]),
+    );
+    expect(Object.fromEntries(weights)).toEqual({
+      // Source Han Sans / Serif CN VF: `wght` axis 250–900.
+      'Noto Sans SC': '250 900',
+      'Noto Serif SC': '250 900',
+      // Single-weight files: no range to declare.
+      'LXGW WenKai': null,
+      'ZCOOL KuaiLe': null,
+    });
+  });
+
   it('keeps the aliases out of fonts.css, which other consumers import for imported slides', () => {
     for (const alias of Object.keys(SELF_HOSTED)) expect(faces.has(alias), alias).toBe(false);
   });
