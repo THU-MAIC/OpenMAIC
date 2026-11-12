@@ -21,6 +21,8 @@ describe('ask_user line breaks', () => {
     expect(result.isError).toBe(true);
     expect(result.details).toEqual({ error: 'escaped-newlines' });
     expect(result.content[0].text).toContain('literal backslash+n');
+    // The model is told how to keep a backslash+n the user should read.
+    expect(result.content[0].text).toContain('backtick code spans');
     expect(onUserQuestion).not.toHaveBeenCalled();
   });
 
@@ -48,5 +50,34 @@ describe('ask_user line breaks', () => {
     const question = 'Pick one:\n\nA. split on `\\n`\nB. split on \\n literally';
     const { result } = await ask(question);
     expect(result.isError).toBeUndefined();
+  });
+
+  it('rejects at most once per run, then shows a repeated question as written', async () => {
+    const onUserQuestion = vi.fn();
+    const tool = buildAskUserTool({ onUserQuestion });
+    const question = 'Compare these?\\n\\nA. Line 1';
+    const first = (await tool.execute('call-1', { question }, undefined)) as { isError?: boolean };
+    expect(first.isError).toBe(true);
+    expect(onUserQuestion).not.toHaveBeenCalled();
+
+    const second = (await tool.execute('call-2', { question }, undefined)) as {
+      isError?: boolean;
+    };
+    expect(second.isError).toBeUndefined();
+    expect(onUserQuestion).toHaveBeenCalledWith({ question });
+
+    // A different escaped question later in the same run is not rejected again.
+    const other = 'Another one?\\n\\nA. yes';
+    const third = (await tool.execute('call-3', { question: other }, undefined)) as {
+      isError?: boolean;
+    };
+    expect(third.isError).toBeUndefined();
+    expect(onUserQuestion).toHaveBeenLastCalledWith({ question: other });
+  });
+
+  it('a new run (new tool instance) checks again', async () => {
+    const question = 'Pick one?\\n\\nA. yes';
+    expect((await ask(question)).result.isError).toBe(true);
+    expect((await ask(question)).result.isError).toBe(true);
   });
 });

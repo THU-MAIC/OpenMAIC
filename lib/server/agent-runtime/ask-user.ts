@@ -58,6 +58,10 @@ const AskUserParams = Type.Object({
 });
 
 export function buildAskUserTool(deps: AskUserToolDeps): AgentTool<typeof AskUserParams, unknown> {
+  // The escaped-line-break check is a heuristic, so it rejects at most once per
+  // tool instance (one run): a model that calls again, with the same text or
+  // not, is taken at its word and the question is shown as written.
+  let escapedLineBreaksRejected = false;
   return {
     name: 'ask_user',
     label: 'Ask the user',
@@ -75,15 +79,16 @@ export function buildAskUserTool(deps: AskUserToolDeps): AgentTool<typeof AskUse
         };
       }
 
-      if (hasEscapedLineBreaks(question)) {
+      if (!escapedLineBreaksRejected && hasEscapedLineBreaks(question)) {
         // Rejected rather than converted, as the edit tools do for the same
         // mistake: guessing which backslash+n were meant as text is the
         // post-processing the agent tools avoid.
+        escapedLineBreaksRejected = true;
         return {
           content: [
             {
               type: 'text' as const,
-              text: 'ask_user question uses literal backslash+n where line breaks were meant; the user would see the characters "\\n". Put actual newlines in the decoded string value, not its JSON-escaped representation, and call again. No automatic conversion was applied.',
+              text: 'ask_user question uses literal backslash+n where line breaks were meant; the user would see the characters "\\n". Put actual newlines in the decoded string value, not its JSON-escaped representation, and call again. Text inside backtick code spans is not checked, so write a backslash+n the user should read as `\\n`. This check runs once: if the backslash+n was intended, call again with the same text and it is shown as written. No automatic conversion was applied.',
             },
           ],
           details: { error: 'escaped-newlines' },
