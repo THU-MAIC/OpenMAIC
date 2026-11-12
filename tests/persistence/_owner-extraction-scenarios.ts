@@ -1656,50 +1656,86 @@ export async function lostClaimStopsProvidersScenario(h: ExtractionHarness): Pro
 }
 
 /**
- * The run's signal reaches the provider it runs: a stopped runner or a claim
- * found lost aborts the provider's config, so an asynchronous job is cancelled
- * instead of polling to its own deadline. Nothing is settled.
+ * The run's signal reaches the provider it runs, on the document and on the
+ * media path: a stopped runner or a claim found lost aborts the provider's
+ * config, so an asynchronous job or a local transcription is stopped instead
+ * of running to its own deadline. Nothing is settled.
  */
 export async function providerSeesRunSignalScenario(h: ExtractionHarness): Promise<void> {
-  const controller = new AbortController();
-  let started!: () => void;
-  const providerStarted = new Promise<void>((resolve) => (started = resolve));
-  let sawSignal: AbortSignal | undefined;
-  const extract = vi.fn((input: { config: { signal?: AbortSignal } }) => {
-    sawSignal = input.config.signal;
-    started();
-    return new Promise<never>((_, reject) => {
-      input.config.signal?.addEventListener(
-        'abort',
-        () => reject(input.config.signal!.reason ?? new Error('aborted')),
-        { once: true },
-      );
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expectStopped = async (run: Promise<unknown>): Promise<void> => {
+    try {
+      await expect(
+        Promise.race([
+          run,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error('the run did not stop within 3 s')), 3_000);
+          }),
+        ]),
+      ).rejects.toThrow('runner stopped');
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  const abortable = (
+    onStart: (signal: AbortSignal | undefined) => void,
+  ): ReturnType<typeof vi.fn> =>
+    vi.fn((input: { config: { signal?: AbortSignal } }) => {
+      onStart(input.config.signal);
+      return new Promise<never>((_, reject) => {
+        input.config.signal?.addEventListener(
+          'abort',
+          () => reject(input.config.signal!.reason ?? new Error('aborted')),
+          { once: true },
+        );
+      });
     });
+
+  const documentController = new AbortController();
+  let started!: () => void;
+  const documentStarted = new Promise<void>((resolve) => (started = resolve));
+  let documentSignal: AbortSignal | undefined;
+  const documentExtract = abortable((signal) => {
+    documentSignal = signal;
+    started();
   });
-  const deps = h.deps({ providers: () => [documentProvider(extract)] });
   await seedSource(h, 'doc-signal');
   await ensure(h, 'doc-signal');
-  const run = runClaimedOwnerExtraction((await claim(h))!, deps, {
-    lost: false,
-    signal: controller.signal,
-  });
-  await providerStarted;
-  controller.abort(new Error('runner stopped'));
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    await expect(
-      Promise.race([
-        run,
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new Error('the run did not stop within 3 s')), 3_000);
-        }),
-      ]),
-    ).rejects.toThrow('runner stopped');
-  } finally {
-    clearTimeout(timer);
-  }
-  expect(sawSignal).toBe(controller.signal);
+  const documentRun = runClaimedOwnerExtraction(
+    (await claim(h))!,
+    h.deps({ providers: () => [documentProvider(documentExtract)] }),
+    { lost: false, signal: documentController.signal },
+  );
+  await documentStarted;
+  documentController.abort(new Error('runner stopped'));
+  await expectStopped(documentRun);
+  expect(documentSignal).toBe(documentController.signal);
   expect(await stateOf(h, 'doc-signal')).toMatchObject({
+    status: 'running',
+    extraction_error: null,
+    extraction_result: null,
+  });
+
+  const mediaController = new AbortController();
+  let mediaStarted!: () => void;
+  const mediaStartedPromise = new Promise<void>((resolve) => (mediaStarted = resolve));
+  let mediaSignal: AbortSignal | undefined;
+  const mediaExtract = abortable((signal) => {
+    mediaSignal = signal;
+    mediaStarted();
+  });
+  await seedSource(h, 'vid-signal', { mime: 'video/mp4', bytes: Buffer.from('mp4-signal') });
+  await ensure(h, 'vid-signal');
+  const mediaRun = runClaimedOwnerExtraction(
+    (await claim(h))!,
+    h.deps({ mediaProviders: () => [mediaProvider(mediaExtract)] }),
+    { lost: false, signal: mediaController.signal },
+  );
+  await mediaStartedPromise;
+  mediaController.abort(new Error('runner stopped'));
+  await expectStopped(mediaRun);
+  expect(mediaSignal).toBe(mediaController.signal);
+  expect(await stateOf(h, 'vid-signal')).toMatchObject({
     status: 'running',
     extraction_error: null,
     extraction_result: null,

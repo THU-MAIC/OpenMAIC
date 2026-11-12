@@ -247,17 +247,26 @@ export function plannedExtractor(plan: SourceExtractionPlan): { id: string; vers
   return { id: provider.id, version: provider.version };
 }
 
-/** Run a plan's extractor (falling back across document providers) and return its output. */
+/**
+ * Run a plan's extractor (falling back across document providers) and return
+ * its output. `signal` reaches every provider's config, so one that honors it
+ * stops its requests and jobs when the caller stops waiting.
+ */
 export async function runSourceExtraction(
   plan: SourceExtractionPlan,
   title: string | null,
+  signal?: AbortSignal,
 ): Promise<SourceExtractionOutcome> {
   if (plan.kind === 'media') {
     let artifact: MediaArtifact;
     try {
       artifact = await plan.provider.extract({
         ...plan.input,
-        config: { ...plan.input.config, providerId: plan.provider.id },
+        config: {
+          ...plan.input.config,
+          providerId: plan.provider.id,
+          ...(signal ? { signal } : {}),
+        },
       });
     } catch (error) {
       throw wrapProviderError(error);
@@ -304,7 +313,7 @@ export async function runSourceExtraction(
   for (const provider of plan.candidates) {
     let artifact: DocumentArtifact;
     try {
-      artifact = await extractWithDocumentProvider(provider, plan);
+      artifact = await extractWithDocumentProvider(provider, plan, signal);
     } catch (error) {
       errors.push(documentFailureLine(provider, error));
       failures.push(error);

@@ -492,7 +492,7 @@ async function extractOrReuse(
   if (plan.kind === 'media') {
     const reused = await reuse(plannedExtractor(plan));
     if (reused) return { kind: 'reused', outcome: reused };
-    return { kind: 'extracted', outcome: await runSourceExtraction(plan, title) };
+    return { kind: 'extracted', outcome: await runSourceExtraction(plan, title, signal) };
   }
   const errors: string[] = [];
   const failures: unknown[] = [];

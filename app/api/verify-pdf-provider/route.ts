@@ -46,6 +46,15 @@ function probePolicy(managed: boolean): ProviderFetchPolicy {
 const AUTH_FAILED_MESSAGE = 'Authentication failed, please check the API Key';
 const CONNECTION_FAILED_MESSAGE = 'Cannot connect to server, please check the Base URL';
 
+/** A MiniCPM-OCR probe failure: a rejected key, or a hosted endpoint that answers an error. */
+function miniCPMOCRProbeFailure(reason: 'auth' | 'endpoint'): Response {
+  return apiError(
+    'INTERNAL_ERROR',
+    500,
+    reason === 'auth' ? AUTH_FAILED_MESSAGE : CONNECTION_FAILED_MESSAGE,
+  );
+}
+
 /** MinerU Cloud: an authenticated call to the batch endpoint tells whether the token works. */
 async function probeMinerUCloud(cloudBase: string, apiKey: string, managed: boolean) {
   const response = await providerFetch(
@@ -122,7 +131,7 @@ async function verifySavedProvider(req: NextRequest, ref: string): Promise<Respo
       return apiError('MISSING_REQUIRED_FIELD', 400, 'API Key is required for MiniCPM-OCR');
     }
     const result = await verifyMiniCPMOCRConnection({ apiKey, baseUrl, managed });
-    if (!result.ok) return apiError('INTERNAL_ERROR', 500, AUTH_FAILED_MESSAGE);
+    if (!result.ok) return miniCPMOCRProbeFailure(result.reason);
     return apiSuccess({ message: 'Connection successful' });
   }
   const endpoint = baseUrl || PDF_PROVIDERS[providerId as keyof typeof PDF_PROVIDERS]?.baseUrl;
@@ -249,7 +258,7 @@ export async function POST(req: NextRequest) {
         baseUrl: base,
         managed,
       });
-      if (!result.ok) return apiError('INTERNAL_ERROR', 500, AUTH_FAILED_MESSAGE);
+      if (!result.ok) return miniCPMOCRProbeFailure(result.reason);
       return apiSuccess({ message: 'Connection successful' });
     }
 

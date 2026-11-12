@@ -67,8 +67,20 @@ const RUNNING_JOB_STATUSES = new Set([
   'in_progress',
 ]);
 
-/** Page-level statuses that mean the page was parsed without a loss. */
-const PAGE_COMPLETE_STATUSES = new Set(['complete', 'completed', 'success', 'ok', 'done']);
+/**
+ * Statuses that mean the work finished without a loss, for the job and for a
+ * page's result. The service and its self-hosted demo spell them differently.
+ */
+const COMPLETE_STATUSES = new Set([
+  'complete',
+  'completed',
+  'success',
+  'succeeded',
+  'successful',
+  'ok',
+  'done',
+  'finished',
+]);
 
 /** Page furniture that adds noise to the layout view; the Markdown keeps it. */
 const LAYOUT_SKIP_LABELS = new Set([
@@ -300,7 +312,7 @@ function collectPageDiagnostics(
   for (const { page, index } of sortedPages(job)) {
     const rawStatus = typeof page.result_status === 'string' ? page.result_status.trim() : '';
     const normalizedStatus = rawStatus.toLowerCase();
-    if (normalizedStatus && !PAGE_COMPLETE_STATUSES.has(normalizedStatus)) {
+    if (normalizedStatus && !COMPLETE_STATUSES.has(normalizedStatus)) {
       // The status is provider-controlled: log it server-side, report a fixed
       // message to the caller.
       log.warn(`[MiniCPM-OCR] page ${index + 1} result_status=${rawStatus.slice(0, 200)}`);
@@ -412,8 +424,13 @@ function layoutFromJob(
       if (typeof block?.status === 'string' && block.status.toLowerCase() === 'failed') {
         // A failed region leaves a hole in the page's Markdown. Keep the rest
         // of the document and surface the loss in the server log, as the
-        // reference integration does.
-        failedBlocks.push(`page ${index + 1} ${label} block ${order}`);
+        // reference integration does. The label is provider-controlled and
+        // unbounded: log it (bounded) but keep it out of the diagnostic that
+        // callers receive and store.
+        log.warn(
+          `[MiniCPM-OCR] page ${index + 1} ${label.slice(0, 80)} block ${order} was not recognized`,
+        );
+        failedBlocks.push(`page ${index + 1} block ${order}`);
       }
       const content = typeof block?.content === 'string' ? block.content.trim() : '';
       if (!content) continue;
@@ -718,7 +735,7 @@ async function pollJob(
         log.info(`[MiniCPM-OCR] job ${jobId}: ${status} ${done}/${total}`);
       }
 
-      if (status === 'success') return job;
+      if (COMPLETE_STATUSES.has(status)) return job;
       if (status === 'failed' || status === 'cancelled' || status === 'canceled') {
         // The provider's error text may name its internals; log it only.
         log.warn(`[MiniCPM-OCR] job ${jobId} ${status}: ${String(job.error ?? '').slice(0, 500)}`);
@@ -747,13 +764,14 @@ async function pollJob(
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-export type MiniCPMOCRVerification = { ok: true } | { ok: false; reason: 'auth' };
+export type MiniCPMOCRVerification = { ok: true } | { ok: false; reason: 'auth' | 'endpoint' };
 
 /**
  * Probe the service for the settings' "test connection" action. The hosted
- * API lists its models behind the key; a self-hosted web demo may answer 404
- * for the same path, which still means it is up. Only a rejected key is a
- * failure; transport errors are the caller's to map.
+ * API lists its models behind the key: a rejected key fails, and so does a
+ * 404 or 5xx (a mistyped endpoint, a broken gateway), since no document can
+ * be parsed through it. A self-hosted web demo may answer 404 for the same
+ * path, which still means it is up, so only a rejected key fails it.
  */
 export async function verifyMiniCPMOCRConnection(config: {
   apiKey?: string;
@@ -774,6 +792,10 @@ export async function verifyMiniCPMOCRConnection(config: {
   if (response.status === 401 || response.status === 403) {
     log.warn(`[MiniCPM-OCR] probe rejected credentials [status=${response.status}]`);
     return { ok: false, reason: 'auth' };
+  }
+  if (isHostedBase(apiRoot) && (response.status === 404 || response.status >= 500)) {
+    log.warn(`[MiniCPM-OCR] probe against the hosted API failed [status=${response.status}]`);
+    return { ok: false, reason: 'endpoint' };
   }
   return { ok: true };
 }

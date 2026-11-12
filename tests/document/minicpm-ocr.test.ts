@@ -38,7 +38,11 @@ vi.mock('@/lib/server/audio-provider-fetch', async (importOriginal) => {
 });
 
 import { getDocumentExtractorProvider } from '@/lib/document';
-import { parseWithMiniCPMOCR, retryAfterMs } from '@/lib/pdf/minicpm-ocr';
+import {
+  parseWithMiniCPMOCR,
+  retryAfterMs,
+  verifyMiniCPMOCRConnection,
+} from '@/lib/pdf/minicpm-ocr';
 import { parsePDF } from '@/lib/pdf/pdf-providers';
 import { MINICPM_OCR_DEFAULT_BASE } from '@/lib/pdf/constants';
 
@@ -131,6 +135,18 @@ describe('parseWithMiniCPMOCR', () => {
   beforeEach(() => {
     transport.providerFetch.mockReset();
     for (const mock of Object.values(logger)) mock.mockClear();
+  });
+
+  it('accepts a job finished with another terminal status spelling', async () => {
+    install({ polls: [() => json({ ...SUCCESS_JOB, status: 'Completed' })] });
+
+    const parsed = await parseWithMiniCPMOCR(
+      { providerId: 'minicpm-ocr', apiKey: 'test-key' },
+      PDF,
+      { fileName: 'lesson.pdf', mimeType: 'application/pdf' },
+    );
+
+    expect(parsed.text).toBe(SUCCESS_JOB.markdown);
   });
 
   it('submits the document, polls the job, and returns its Markdown and layout', async () => {
@@ -306,7 +322,7 @@ describe('parseWithMiniCPMOCR', () => {
       },
     ]);
     expect(parsed.diagnostics).toEqual([
-      { severity: 'warning', message: '1 block(s) were not recognized: page 1 table block 1' },
+      { severity: 'warning', message: '1 block(s) were not recognized: page 1 block 1' },
     ]);
     expect(
       logger.warn.mock.calls.some(([message]) =>
@@ -645,6 +661,20 @@ describe('parseWithMiniCPMOCR', () => {
       ),
     ).rejects.toThrow();
     expect(transport.providerFetch).not.toHaveBeenCalled();
+  });
+
+  it('fails a hosted probe that answers an error, but treats a self-hosted one as up', async () => {
+    transport.providerFetch.mockResolvedValueOnce(new Response(null, { status: 404 }));
+
+    await expect(
+      verifyMiniCPMOCRConnection({ baseUrl: 'http://127.0.0.1:8966/api' }),
+    ).resolves.toEqual({ ok: true });
+
+    transport.providerFetch.mockResolvedValueOnce(new Response(null, { status: 502 }));
+
+    await expect(
+      verifyMiniCPMOCRConnection({ apiKey: 'test-key', baseUrl: MINICPM_OCR_DEFAULT_BASE }),
+    ).resolves.toEqual({ ok: false, reason: 'endpoint' });
   });
 
   it('bounds the response body', async () => {

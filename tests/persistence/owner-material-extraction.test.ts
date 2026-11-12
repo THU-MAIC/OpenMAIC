@@ -228,7 +228,7 @@ describe('owner-level material extraction (PGlite)', () => {
     await lostClaimStopsProvidersScenario(await boot());
   });
 
-  it('stops the provider with the run s signal when the run is cancelled', async () => {
+  it('stops document and media providers with the run s signal when the run is cancelled', async () => {
     await providerSeesRunSignalScenario(await boot());
   });
 
