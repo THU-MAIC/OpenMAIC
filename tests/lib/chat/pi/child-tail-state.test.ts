@@ -120,11 +120,14 @@ describe('Native child board projection', () => {
       lines: [{ id: 'line-1', content: 'const x = 2;' }],
       fontSize: 16,
     } as PPTElement;
-    expect(summarizeChildElement(code)).toMatchObject({
+    const codeSummary = summarizeChildElement(code);
+    expect(codeSummary).toMatchObject({
+      id: 'code',
       language: 'javascript',
       lines: [{ id: 'line-1', content: 'const x = 2;' }],
       fontSize: 16,
     });
+    expect(codeSummary).not.toHaveProperty('text');
   });
 
   it('reads the bound stage afresh without accumulating snapshots in history', async () => {
