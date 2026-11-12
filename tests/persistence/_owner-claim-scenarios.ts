@@ -28,7 +28,7 @@ import {
   registerClaimParticipant,
   resetClaimParticipantsForTests,
 } from '@/lib/persistence/owner-claims';
-import { GUIDE_COURSE_ID_PREFIX } from '@/lib/persistence/guide-courses';
+import { guideCourseIdFor } from '@/lib/persistence/guide-course-id';
 import { bindLegacyImport } from '@/lib/persistence/legacy-import-bindings';
 import { reassignMaterialFolders, registerOwnerMaterial } from '@/lib/persistence/owner-materials';
 import {
@@ -866,7 +866,7 @@ export async function rootedMaterialClaimScenario(h: ClaimHarness): Promise<void
  * one copy kept when both owners have one, an edited copy never retired.
  */
 export async function guideCourseClaimScenario(h: ClaimHarness): Promise<void> {
-  const guide = (owner: string) => `${GUIDE_COURSE_ID_PREFIX}${owner.replace(/\W/g, '')}`;
+  const guide = (owner: string) => guideCourseIdFor(owner);
   const docs = (owner: string) =>
     h.documents(owner.startsWith('anon:') ? anonymousPrincipal(owner) : accountPrincipal(owner));
   const seed = (owner: string) => docs(owner).saveDocument(courseNaming(guide(owner)) as never);
@@ -957,4 +957,21 @@ export async function guideCourseClaimScenario(h: ClaimHarness): Promise<void> {
   await seed('user:g6');
   expect(await activeGuides('user:g6')).toEqual([guide('user:g6')]);
   await docs('user:g6').saveDocument(courseNaming('user-g6-course') as never);
+
+  // A copy of an older seed generation is an ordinary course: it does not
+  // refuse the current generation's seed, and a claim neither retires it nor
+  // counts it as the account's guide course.
+  const older = (owner: string) => guideCourseIdFor(owner, 'g0');
+  await docs('user:g7').saveDocument(courseNaming(older('user:g7')) as never);
+  await seed('user:g7');
+  expect(await activeGuides('user:g7')).toEqual([guide('user:g7'), older('user:g7')].sort());
+  await docs(anon(8)).saveDocument(courseNaming(older(anon(8))) as never);
+  await seed(anon(8));
+  await docs('user:g8').saveDocument(courseNaming(older('user:g8')) as never);
+  await expect(claim(anon(8), 'user:g8')).resolves.toMatchObject({
+    moved: { 'guide-courses': 0, courses: 2 },
+  });
+  expect(await activeGuides('user:g8')).toEqual(
+    [guide(anon(8)), older(anon(8)), older('user:g8')].sort(),
+  );
 }

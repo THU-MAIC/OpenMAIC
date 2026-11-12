@@ -12,7 +12,8 @@
  * - {@link refuseSecondGuideCourse}: creating a guide course is refused while
  *   the owner holds another active one. Creates and claims of an owner are
  *   serialized by its identity lock, so a seed that lands after a claim sees
- *   the claimed copy; the seed takes the refusal (403) as settled.
+ *   the claimed copy; the seed takes the refusal (403) as settled and reloads
+ *   the library, whose list missed the claimed copy.
  * - {@link retireDuplicateGuideCourses}: a claim between two owners that both
  *   hold a copy keeps one, never retiring an edited copy.
  *
@@ -33,6 +34,11 @@
  *   are retired instead, so the edited one is the account's guide course;
  * - both edited: both stay. Edited work is never retired.
  *
+ * Only copies of the current seed generation count
+ * (`./guide-course-id.ts`): a copy of an older generation is an ordinary
+ * course, never refused against, retired or kept in place of a new one, so
+ * advancing the generation seeds the new course once for everyone.
+ *
  * Retiring is the same tombstone a delete writes (`stage_meta.deleted_at`,
  * the folder cleared); the rows stay, and the retired id is never seeded
  * again. An untouched copy names only the guide's static files, never the
@@ -41,30 +47,31 @@
 import { DocumentWriteRefusedError } from '@openmaic/storage';
 import type { Queryable } from '@openmaic/storage/document/pg';
 
-/** `GUIDE_COURSE_PREFIX` of `lib/workbench/guide-course.ts` (a client module); a test pins them equal. */
-export const GUIDE_COURSE_ID_PREFIX = 'stage-guide-';
+import {
+  currentGuideCourseIdPattern,
+  GUIDE_COURSE_EXISTS,
+  isCurrentGuideCourseId,
+} from './guide-course-id';
 
-const GUIDE = `${GUIDE_COURSE_ID_PREFIX}%`;
-
-/** The code a refused second guide course answers with, as `403`. */
-export const GUIDE_COURSE_EXISTS = 'GUIDE_COURSE_EXISTS';
+export { GUIDE_COURSE_EXISTS };
 
 /**
  * Refuse the creation of guide course `stageId` for `ownerId` when the owner
- * already holds another active guide course. Inside the create transaction,
- * after its identity lock; any other id passes untouched.
+ * already holds another active guide course of the current generation. Inside
+ * the create transaction, after its identity lock. Any other id, an older
+ * generation's included, passes untouched.
  */
 export async function refuseSecondGuideCourse(
   tx: Queryable,
   stageId: string,
   ownerId: string,
 ): Promise<void> {
-  if (!stageId.startsWith(GUIDE_COURSE_ID_PREFIX)) return;
+  if (!isCurrentGuideCourseId(stageId)) return;
   const other = await tx.query<{ stage_id: string } & Record<string, unknown>>(
     `SELECT stage_id FROM stage_meta
-      WHERE owner_id = $1 AND stage_id LIKE $2 AND stage_id <> $3 AND deleted_at IS NULL
+      WHERE owner_id = $1 AND stage_id ~ $2 AND stage_id <> $3 AND deleted_at IS NULL
       LIMIT 1`,
-    [ownerId, GUIDE, stageId],
+    [ownerId, currentGuideCourseIdPattern(), stageId],
   );
   if (other.rows.length > 0) {
     throw new DocumentWriteRefusedError(
@@ -103,10 +110,10 @@ export async function retireDuplicateGuideCourses(
        FROM stage_meta meta
        JOIN document_stages stages ON stages.id = meta.stage_id
        LEFT JOIN document_stage_revision rev ON rev.stage_id = meta.stage_id
-      WHERE meta.owner_id IN ($1, $2) AND meta.stage_id LIKE $3
+      WHERE meta.owner_id IN ($1, $2) AND meta.stage_id ~ $3
       ORDER BY meta.stage_id
       FOR UPDATE OF meta`,
-    [from, to, GUIDE],
+    [from, to, currentGuideCourseIdPattern()],
   );
   const incoming = guides.rows.filter((row) => row.owner_id === from && !row.deleted);
   const account = guides.rows.filter((row) => row.owner_id === to);

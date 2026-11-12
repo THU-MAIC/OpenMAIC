@@ -28,13 +28,18 @@ vi.mock('@/lib/document-store', () => ({
 }));
 
 import {
+  findGuideCourse,
   guideCourseIdFor,
   guideCourseLocale,
-  GUIDE_COURSE_PREFIX,
   isGuideCourseId,
   seedGuideCourse,
   toGuideCourseDocument,
 } from '@/lib/workbench/guide-course';
+import {
+  currentGuideCourseIdPattern,
+  guideCourseGenerationOf,
+  GUIDE_SEED_GENERATION,
+} from '@/lib/persistence/guide-course-id';
 import { resolveCourseChatBootstrap } from '@/lib/workbench/course-chat-bootstrap';
 
 const doc = {
@@ -63,9 +68,20 @@ describe('the seeded guide course', () => {
     expect(toGuideCourseDocument({ stage: {} }, 'x', 1)).toBeNull();
   });
 
-  it('names its copies the way the claim recognizes them', async () => {
-    const { GUIDE_COURSE_ID_PREFIX } = await import('@/lib/persistence/guide-courses');
-    expect(GUIDE_COURSE_ID_PREFIX).toBe(GUIDE_COURSE_PREFIX);
+  it('names the seed generation in its ids, the first one without a segment', () => {
+    const current = guideCourseIdFor('a');
+    expect(current).toMatch(/^stage-guide-[0-9a-f]{16}$/);
+    expect(guideCourseGenerationOf(current)).toBe(GUIDE_SEED_GENERATION);
+    const other = guideCourseIdFor('a', 'g2');
+    expect(other).toMatch(/^stage-guide-g2-[0-9a-f]{16}$/);
+    expect(guideCourseGenerationOf(other)).toBe('g2');
+    // Only the current generation is the guide course; anything else is ordinary.
+    expect(isGuideCourseId(other)).toBe(false);
+    expect(isGuideCourseId('stage-guide-x')).toBe(false);
+    expect(guideCourseGenerationOf('stage-other')).toBeNull();
+    const pattern = new RegExp(currentGuideCourseIdPattern());
+    expect(pattern.test(current)).toBe(true);
+    expect(pattern.test(other)).toBe(false);
   });
 
   it('has one stable id per owner, and different owners different ids', () => {
@@ -98,6 +114,25 @@ describe('the seeded guide course', () => {
     expect(await seedGuideCourse(undefined, [{ id: 'stage-other' }, { id: claimed }])).toBe(
       'settled',
     );
+    expect(mocks.saved).toHaveLength(0);
+  });
+
+  it('is seeded beside a copy of an older generation, which stays an ordinary course', async () => {
+    const older = guideCourseIdFor('learner-1', 'g0');
+    expect(await seedGuideCourse(undefined, [{ id: older }])).toBe('created');
+    expect(mocks.saved.map((saved) => saved.stage.id)).toEqual([guideCourseIdFor('learner-1')]);
+    expect(findGuideCourse([{ id: older }, { id: guideCourseIdFor('learner-1') }])).toBe(
+      guideCourseIdFor('learner-1'),
+    );
+    expect(findGuideCourse([{ id: older }])).toBeNull();
+  });
+
+  it('asks for a reload when the server holds a guide course the list missed (a claim landed)', async () => {
+    mocks.saveError = new HttpDocumentStoreError(403, 'GUIDE_COURSE_EXISTS', 'exists');
+    expect(await seedGuideCourse(undefined, [])).toBe('present');
+    mocks.saveError = null;
+    // Settled: a later load writes nothing.
+    expect(await seedGuideCourse(undefined, [])).toBe('settled');
     expect(mocks.saved).toHaveLength(0);
   });
 
