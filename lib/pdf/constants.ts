@@ -42,6 +42,7 @@ export const PDF_PROVIDERS: Record<PDFProviderId, PDFProviderConfig> = {
     requiresApiKey: true,
     icon: '/logos/mineru.png',
     features: ['text', 'images', 'tables', 'formulas', 'layout-analysis'],
+    displayEndpoint: `${MINERU_CLOUD_DEFAULT_BASE}/file-urls/batch`,
     legacyEnv: { prefix: 'PDF_MINERU_CLOUD', baseUrlOptional: true },
   },
 
@@ -61,6 +62,7 @@ export const PDF_PROVIDERS: Record<PDFProviderId, PDFProviderConfig> = {
     baseUrl: MINICPM_OCR_DEFAULT_BASE,
     icon: '/logos/minicpm-ocr.png',
     features: ['text', 'tables', 'formulas', 'layout-analysis', 'ocr'],
+    displayEndpoint: `${MINICPM_OCR_DEFAULT_BASE}/document-parse/jobs`,
     // The hosted API needs a key; a self-hosted web demo usually does not.
     apiKeyOptionalWithBaseUrl: true,
     legacyEnv: { prefix: 'PDF_MINICPM_OCR', baseUrlOptional: true, keyless: true },

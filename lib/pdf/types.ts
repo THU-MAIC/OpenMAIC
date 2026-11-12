@@ -17,6 +17,8 @@ export interface PDFProviderConfig {
   /** Authenticates with a key pair (`credentials`) rather than one API key. */
   requiresCredentials?: boolean;
   baseUrl?: string;
+  /** The request endpoint shown in settings, when the provider has a hosted one. */
+  displayEndpoint?: string;
   icon?: string;
   features: string[]; // ['text', 'images', 'tables', 'formulas', 'layout-analysis', etc.]
   /**

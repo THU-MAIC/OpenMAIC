@@ -5,11 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import {
-  MINERU_CLOUD_DEFAULT_BASE,
-  MINICPM_OCR_DEFAULT_BASE,
-  PDF_PROVIDERS,
-} from '@/lib/pdf/constants';
+import { PDF_PROVIDERS } from '@/lib/pdf/constants';
 import type { PDFProviderId } from '@/lib/pdf/types';
 import { getFormatLabelsForProviders } from '@/lib/document/mime';
 import { CheckCircle2, Loader2, Zap, XCircle } from 'lucide-react';
@@ -52,11 +48,7 @@ export function PDFSettings({ view, apply, entry }: ServicePanelProps) {
   const pdfProvider = PDF_PROVIDERS[providerId];
   const provider = entry.provider;
   const isCloud = providerId === 'mineru-cloud';
-  const hostedEndpoint = isCloud
-    ? `${MINERU_CLOUD_DEFAULT_BASE}/file-urls/batch`
-    : providerId === 'minicpm-ocr'
-      ? `${MINICPM_OCR_DEFAULT_BASE}/document-parse/jobs`
-      : undefined;
+  const hostedEndpoint = pdfProvider?.displayEndpoint;
   const needsRemoteConfig = !!pdfProvider?.requiresApiKey || !!pdfProvider?.requiresCredentials;
   const editable =
     (entry.state === 'workspace' || entry.state === 'available') && needsRemoteConfig;
