@@ -305,6 +305,48 @@ describe('drag-to-collapse on a seam (live, one gesture)', () => {
     expect(document.documentElement.hasAttribute('data-ws-resizing')).toBe(false);
   });
 
+  it('sets the document resizing flag once per drag, not once per move', async () => {
+    const { seam } = await renderFoldableSeam();
+    // Each mutation's value before it: absent, then set, and nothing else.
+    const before: (string | null)[] = [];
+    const observer = new MutationObserver((records) => {
+      for (const record of records) before.push(record.oldValue);
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeOldValue: true,
+      attributeFilter: ['data-ws-resizing'],
+    });
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointerdown', { clientX: 280, clientY: 50 }));
+      // Within range, across the fold, and back out again.
+      for (const x of [300, 250, 200, 150, 100, 60, 100, 200, 300, 320]) {
+        window.dispatchEvent(pointerEvent('pointermove', { clientX: x, clientY: 50 }));
+      }
+      window.dispatchEvent(pointerEvent('pointerup', { clientX: 320, clientY: 50 }));
+    });
+    await Promise.resolve();
+    observer.disconnect();
+    expect(before).toEqual([null, 'true']);
+    expect(document.documentElement.hasAttribute('data-ws-resizing')).toBe(false);
+  });
+
+  it('never gates the rail’s entrance fade on the per-drag resizing flag', () => {
+    const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
+    // An animation switched off while `[data-ws-resizing]` is set replays when
+    // the flag clears: the rail faded in from nothing at the end of every drag.
+    const css = read('components/workbench/workspace-shell.css').replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(css).not.toMatch(/\[data-ws-resizing\][^{]*\.ws-enter-rail/);
+    // Instead the rail decides as it mounts: a drag-unfolded rail has no fade.
+    const rail = read('components/workbench/workspace/WorkspaceRail.tsx');
+    expect(rail).toContain("fadeIn && 'ws-enter-rail'");
+    expect(rail).not.toMatch(/className="[^"]*ws-enter-rail/);
+    const shell = read('components/workbench/workspace/WorkspaceShell.tsx');
+    expect(shell).toContain('fadeIn={!railUnfoldedByDrag}');
+    const expand = shell.slice(shell.indexOf('const expandRail'));
+    expect(expand.slice(0, expand.indexOf('}, []);'))).toContain('setRailUnfoldedByDrag(true)');
+  });
+
   it('never folds a seam that did not opt in', async () => {
     const { host, calls } = await renderSeam();
     const seam = host.querySelector('[data-testid="seam"]') as HTMLElement;

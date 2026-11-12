@@ -1869,6 +1869,17 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       setNavReopenedForPreview(false);
     }
   }, [autoFold, collapse, navCollapsed]);
+  // The rail fades in as it opens (the page loading, its fold button), but not
+  // when a drag unfolds it: that is the same gesture continuing under the
+  // pointer. The flag is set as the drag unfolds the rail and cleared only when
+  // the rail folds again, so it never changes under an expanded rail already
+  // on screen (which would replay the fade).
+  const [railUnfoldedByDrag, setRailUnfoldedByDrag] = useState(false);
+  const [railWasCollapsed, setRailWasCollapsed] = useState(navCollapsed);
+  if (railWasCollapsed !== navCollapsed) {
+    setRailWasCollapsed(navCollapsed);
+    if (navCollapsed && railUnfoldedByDrag) setRailUnfoldedByDrag(false);
+  }
   // Dragging the rail's edge far enough inward folds it mid-drag, and the same
   // drag carried back out unfolds it, through the same toggle as its fold
   // button (so the preference is remembered the same way). The drag outlives
@@ -1888,6 +1899,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     const fold = railFold.current;
     if (!fold.navCollapsed) return;
     fold.navCollapsed = false;
+    setRailUnfoldedByDrag(true);
     fold.toggleRail();
   }, []);
 
@@ -1941,6 +1953,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           activeSessionId={panes.sessionId}
           collapsed={navCollapsed}
           onToggleCollapsed={toggleRail}
+          fadeIn={!railUnfoldedByDrag}
           onOpenSession={openSession}
           onNewSession={startNewConversation}
           onGoHome={goHome}

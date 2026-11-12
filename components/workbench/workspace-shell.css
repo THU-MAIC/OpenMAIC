@@ -549,11 +549,11 @@
   animation: ws-fade 500ms var(--ws-ease) both;
 }
 
-/* Folded and unfolded mid-drag (drag-to-collapse), the rail swaps under the
-   pointer: no entrance fade then, it is the same gesture continuing. */
-[data-ws-resizing] .ws-enter-rail {
-  animation: none;
-}
+/* Unfolded mid-drag (drag-to-collapse), the rail mounts without this class
+   (`WorkspaceRail`'s `fadeIn`): it is the same gesture continuing. Never gate
+   it on the document's `[data-ws-resizing]` instead: that flag comes and goes
+   with every drag, and an animation switched off and back on replays, so the
+   rail would fade in from nothing at the end of each one. */
 
 /* The right pane opening: it comes in from the right edge, a beat after the
    conversation starts to narrow beside it (see `WorkspaceChatPane`), on the

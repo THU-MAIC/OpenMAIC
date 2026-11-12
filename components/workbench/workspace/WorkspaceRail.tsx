@@ -135,6 +135,7 @@ export function WorkspaceRail({
   onOpenView,
   resizeHandle,
   miniResizeHandle,
+  fadeIn = true,
 }: {
   readonly sessions: readonly ProHomeSessionItem[];
   readonly sessionState: HomeDiscoveryState;
@@ -176,6 +177,13 @@ export function WorkspaceRail({
   readonly resizeHandle: ReactNode;
   /** The folded rail's edge: dragging it outward unfolds the rail. */
   readonly miniResizeHandle?: ReactNode;
+  /**
+   * Whether the expanded rail fades in as it appears. Off when a drag unfolded
+   * it: that is the same gesture continuing under the pointer. Read when the
+   * expanded rail mounts and steady for as long as it stays: an entrance
+   * animation switched off and on again replays on the element already there.
+   */
+  readonly fadeIn?: boolean;
 }) {
   const { t } = useI18n();
   const brand = useBrand();
@@ -485,7 +493,10 @@ export function WorkspaceRail({
       // `z-10`: the resize handle straddles the rail's right edge, and the
       // panes are later positioned siblings — without a stacking order the
       // canvas paints over the handle and swallows the drag.
-      className="ws-rail ws-enter-rail relative z-10 hidden h-full shrink-0 flex-col md:flex"
+      className={cn(
+        'ws-rail relative z-10 hidden h-full shrink-0 flex-col md:flex',
+        fadeIn && 'ws-enter-rail',
+      )}
       style={{ width: 'var(--ws-rail-w)' }}
     >
       <div className="flex h-14 shrink-0 items-center gap-2 pl-4 pr-3">
