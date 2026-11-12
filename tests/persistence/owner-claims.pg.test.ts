@@ -36,6 +36,7 @@ import {
   courseNaming,
   forwardingScenario,
   fullClaimScenario,
+  guideCourseClaimScenario,
   materialFolderClaimScenario,
   unfiledOnlyMaterialClaimScenario,
   emptyFoldersOnlyMaterialClaimScenario,
@@ -166,6 +167,10 @@ describe.skipIf(!contractUrl)('claiming anonymous work on PostgreSQL', () => {
 
   it('re-keys every participant and leaves nothing under the anonymous owner', async () => {
     await fullClaimScenario(harness);
+  });
+
+  it('keeps at most one guide course, and every edited copy', async () => {
+    await guideCourseClaimScenario(harness);
   });
 
   it('keeps nothing when a participant throws mid-claim', async () => {

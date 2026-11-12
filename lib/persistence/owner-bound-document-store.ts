@@ -30,6 +30,7 @@ import { sanitizeSceneContent } from '@/lib/server/sanitize-scene-content';
 
 import { assetReferencePrincipalsForOwner } from './owner-assets';
 import { fenceOwnerWrite } from './owner-merges';
+import { refuseSecondGuideCourse } from './guide-courses';
 import {
   claimStageMeta,
   markStageGenerationComplete,
@@ -677,6 +678,9 @@ export function createOwnerBoundDocumentStore<
           // a refusal or a throw rolls the course and the ownership row back
           // together with anything the hooks wrote.
           const created = await claimStageMeta(queryable, operation.stageId!, options.ownerId);
+          // One guide course per library (see `./guide-courses.ts`).
+          if (created)
+            await refuseSecondGuideCourse(queryable, operation.stageId!, options.ownerId);
           if (operation.completesGeneration) {
             await markStageGenerationComplete(queryable, operation.stageId!);
           }

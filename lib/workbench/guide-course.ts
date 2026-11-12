@@ -18,6 +18,11 @@
  * again. Two tabs racing write the same document to the same id. A browser
  * remembers when its owner is settled, so later loads ask nothing.
  *
+ * One per library. A library that already holds a guide course under another
+ * id (an anonymous copy a sign-in brought into the account) is not given a
+ * second, and the server refuses one that a stale list would let through; a
+ * claim keeps at most one of two copies (`lib/persistence/guide-courses.ts`).
+ *
  * A deployment turns it off or seeds its own documents through
  * `WorkbenchShellExtensions.guideCourse` (see `shell-extensions.tsx`).
  */
@@ -129,7 +134,7 @@ async function seed(
   }
   const id = guideCourseIdFor(learnerKey);
   if (readSettled().includes(id)) return 'settled';
-  if (courses.some((course) => course.id === id)) {
+  if (findGuideCourse(courses)) {
     rememberSettled(id);
     return 'settled';
   }

@@ -30,6 +30,7 @@ vi.mock('@/lib/document-store', () => ({
 import {
   guideCourseIdFor,
   guideCourseLocale,
+  GUIDE_COURSE_PREFIX,
   isGuideCourseId,
   seedGuideCourse,
   toGuideCourseDocument,
@@ -62,6 +63,11 @@ describe('the seeded guide course', () => {
     expect(toGuideCourseDocument({ stage: {} }, 'x', 1)).toBeNull();
   });
 
+  it('names its copies the way the claim recognizes them', async () => {
+    const { GUIDE_COURSE_ID_PREFIX } = await import('@/lib/persistence/guide-courses');
+    expect(GUIDE_COURSE_ID_PREFIX).toBe(GUIDE_COURSE_PREFIX);
+  });
+
   it('has one stable id per owner, and different owners different ids', () => {
     expect(guideCourseIdFor('a')).toBe(guideCourseIdFor('a'));
     expect(guideCourseIdFor('a')).not.toBe(guideCourseIdFor('b'));
@@ -83,6 +89,15 @@ describe('the seeded guide course', () => {
     const id = guideCourseIdFor('learner-1');
     mocks.existing.add(id);
     expect(await seedGuideCourse(undefined, [])).toBe('settled');
+    expect(mocks.saved).toHaveLength(0);
+  });
+
+  it('is not seeded beside another guide course already in the library (a claimed copy)', async () => {
+    const claimed = guideCourseIdFor('anonymous-before-sign-in');
+    expect(claimed).not.toBe(guideCourseIdFor('learner-1'));
+    expect(await seedGuideCourse(undefined, [{ id: 'stage-other' }, { id: claimed }])).toBe(
+      'settled',
+    );
     expect(mocks.saved).toHaveLength(0);
   });
 
