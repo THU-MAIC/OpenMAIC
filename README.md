@@ -494,6 +494,22 @@ slots:
 
 Without `openmaic.yml`, the legacy variables `PDF_MINERU_CLOUD_API_KEY` or `PDF_MINERU_BASE_URL` in `.env.local` still work.
 
+### Optional: MiniCPM-OCR (Document Parsing)
+
+[MiniCPM-OCR](https://github.com/OpenBMB/MiniCPM-OCR) is a compact open-source OCR model from OpenBMB for text, tables, formulas and layout. Use the hosted API with an API key, or point `baseUrl` at the MiniCPM-OCR web demo from the official SDK (its routes live under `/api`).
+
+```yaml
+providers:
+  minicpm-ocr:
+    preset: minicpm-ocr
+    apiKey: ${PDF_MINICPM_OCR_API_KEY}
+
+slots:
+  document: minicpm-ocr
+```
+
+Without `openmaic.yml`, set `PDF_MINICPM_OCR_API_KEY` (hosted) or `PDF_MINICPM_OCR_BASE_URL` (self-hosted) in `.env.local`.
+
 ### Optional: VoxCPM2 (Self-Hosted TTS with Voice Cloning)
 
 [VoxCPM2](https://github.com/OpenBMB/VoxCPM) is an open-source TTS model from OpenBMB with voice cloning. OpenMAIC ships an adapter; run VoxCPM on your own hardware and OpenMAIC will talk to it.

@@ -5,7 +5,7 @@
 /**
  * PDF Provider IDs
  */
-export type PDFProviderId = 'unpdf' | 'mineru' | 'mineru-cloud' | 'alidocmind';
+export type PDFProviderId = 'unpdf' | 'mineru' | 'mineru-cloud' | 'alidocmind' | 'minicpm-ocr';
 
 /**
  * PDF Provider Configuration
@@ -19,6 +19,12 @@ export interface PDFProviderConfig {
   baseUrl?: string;
   icon?: string;
   features: string[]; // ['text', 'images', 'tables', 'formulas', 'layout-analysis', etc.]
+  /**
+   * The provider offers a hosted API that takes a key and a self-hosted
+   * deployment that usually takes none: with an explicit `baseUrl` the key is
+   * optional, and without one the hosted API's key is required.
+   */
+  apiKeyOptionalWithBaseUrl?: boolean;
 }
 
 /**

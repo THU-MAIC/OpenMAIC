@@ -125,6 +125,7 @@ const PDF_ENV_MAP: Record<string, string> = {
   PDF_UNPDF: 'unpdf',
   PDF_MINERU: 'mineru',
   PDF_MINERU_CLOUD: 'mineru-cloud',
+  PDF_MINICPM_OCR: 'minicpm-ocr',
 };
 
 const IMAGE_ENV_MAP: Record<string, string> = {
@@ -573,7 +574,11 @@ function buildConfig(yamlData: YamlData): ServerConfig {
     pdf: applyAliDocMindFallback(
       loadEnvSection(PDF_ENV_MAP, yamlData.pdf, {
         requiresBaseUrl: true,
-        baseUrlOptionalProviders: new Set(['mineru-cloud']),
+        // MinerU Cloud has a default endpoint. MiniCPM-OCR has a hosted
+        // default too, but a self-hosted web demo may run without a key,
+        // so a base URL alone activates it.
+        baseUrlOptionalProviders: new Set(['mineru-cloud', 'minicpm-ocr']),
+        keylessProviders: new Set(['minicpm-ocr']),
       }),
       yamlData.pdf,
     ),

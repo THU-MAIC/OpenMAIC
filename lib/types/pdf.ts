@@ -35,6 +35,15 @@ export interface ParsedPdfContent {
     position?: { x: number; y: number; width: number; height: number };
   }>;
 
+  /**
+   * Non-fatal issues the parser reported (a failed region, a page it had to
+   * turn): the text is still usable, but the caller should know it is partial.
+   */
+  diagnostics?: Array<{
+    severity: 'info' | 'warning' | 'error';
+    message: string;
+  }>;
+
   /** Metadata about the PDF */
   metadata?: {
     fileName?: string;

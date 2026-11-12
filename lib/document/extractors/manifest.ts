@@ -28,6 +28,7 @@ import {
   DOCUMENT_MIME_TYPES,
   MINERU_CLOUD_MIMES,
   MINERU_SELFHOST_MIMES,
+  MINICPM_OCR_MIMES,
   PLAIN_TEXT_MIMES,
   LOCAL_FFMPEG_MEDIA_MIMES,
 } from '../mime';
@@ -142,6 +143,24 @@ const DOCUMENT_EXTRACTOR_MANIFEST: Record<string, DocumentExtractorManifestEntry
     capabilities: {
       text: true,
       images: true,
+      tables: true,
+      formulas: true,
+      layout: true,
+      ocr: true,
+      async: true,
+    },
+  },
+  'minicpm-ocr': {
+    id: 'minicpm-ocr',
+    displayName: 'MiniCPM-OCR',
+    version: '1',
+    supportedMimeTypes: MINICPM_OCR_MIMES,
+    requiresServiceConfig: true,
+    capabilities: {
+      text: true,
+      // The parser returns Markdown (tables and formulas included), not
+      // extracted image files.
+      images: false,
       tables: true,
       formulas: true,
       layout: true,

@@ -235,6 +235,8 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['browser-native', 3],
       ['comfyui', 2],
       ['alidocmind', 14],
+      // MiniCPM-OCR's env map and the legacy loader's optional-base/keyless sets.
+      ['minicpm', 4],
     ],
   ),
   ...groupedDebt(
@@ -351,6 +353,7 @@ const GENERIC_ID_PARTS = new Set([
   'image',
   'media',
   'native',
+  'ocr',
   'pdf',
   'plain',
   'search',
