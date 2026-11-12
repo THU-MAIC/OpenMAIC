@@ -16,7 +16,8 @@
  *   by a per-owner guide lock instead. The seed takes the refusal (403) as
  *   settled and reloads the library, whose list missed the claimed copy.
  * - {@link retireDuplicateGuideCourses}: a claim between two owners that both
- *   hold a copy keeps one, never retiring an edited copy.
+ *   hold a copy keeps one, never retiring a copy that was edited or that a
+ *   session or learner record names.
  *
  * A copy is UNTOUCHED when nothing wrote it after the seed: the seed inserts
  * the stage row and each scene row once, in one save, so the document's
@@ -27,13 +28,29 @@
  * change) breaks one of the two. Opening or learning the course writes no
  * document row. A copy without a revision row counts as edited.
  *
+ * A copy is IN USE when a record the claim carries over names it: an agent
+ * session (`agent_sessions.stage_id` or `active_stage_id`, not deleted), such
+ * as a conversation about the course started without editing it, or a
+ * learner's runtime session (`runtime_sessions.stage_id`: classroom chat,
+ * quiz attempts, whiteboard). The claim moves those records unchanged, so a
+ * retired copy would leave them bound to a course the library no longer
+ * shows. A copy is SPARE when it is untouched and not in use; only a spare
+ * copy is ever retired.
+ *
  * The rule, when the account holds a guide course (kept or deleted):
  *
- * - an untouched anonymous copy is retired: the account has its own, or
- *   deleted it, and the visitor never changed theirs;
- * - an edited anonymous copy stays, and then the account's untouched copies
- *   are retired instead, so the edited one is the account's guide course;
- * - both edited: both stay. Edited work is never retired.
+ * - a spare anonymous copy is retired: the account has its own, or deleted
+ *   it, and the visitor neither changed theirs nor bound anything to it;
+ * - an anonymous copy that is edited or in use stays, and then the account's
+ *   spare copies are retired instead, so the visitor's is the account's
+ *   guide course;
+ * - neither side spare: both stay. Edited or referenced work is never retired.
+ *
+ * Keeping a copy is preferred over re-pointing the records at the kept one:
+ * a session's history, its course edits and a learner's runtime records all
+ * speak of the copy they were made on, and re-pointing them would mix two
+ * documents' histories. A second guide course in the library is harmless;
+ * the user can delete either.
  *
  * Only copies of the current seed generation count
  * (`./guide-course-id.ts`): a copy of an older generation is an ordinary
@@ -43,7 +60,8 @@
  * Retiring is the same tombstone a delete writes (`stage_meta.deleted_at`,
  * the folder cleared); the rows stay, and the retired id is never seeded
  * again. An untouched copy names only the guide's static files, never the
- * asset pool, so it has no asset references to withdraw.
+ * asset pool, so it has no asset references to withdraw, and a spare one has
+ * no session or runtime record left pointing at it.
  */
 import { DocumentWriteRefusedError } from '@openmaic/storage';
 import type { Queryable } from '@openmaic/storage/document/pg';
@@ -127,13 +145,17 @@ export async function retireDuplicateGuideCourses(
   const account = guides.rows.filter((row) => row.owner_id === to);
   if (incoming.length === 0 || account.length === 0) return 0;
 
-  const retire = incoming.filter((row) => row.untouched).map((row) => row.stage_id);
-  if (incoming.some((row) => !row.untouched)) {
-    // An edited copy arrives: it becomes the guide course, and the account's
-    // untouched copies make way for it.
-    retire.push(
-      ...account.filter((row) => !row.deleted && row.untouched).map((row) => row.stage_id),
-    );
+  const inUse = await stagesInUse(
+    tx,
+    [from, to],
+    guides.rows.filter((row) => !row.deleted && row.untouched).map((row) => row.stage_id),
+  );
+  const spare = (row: GuideRow) => row.untouched && !inUse.has(row.stage_id);
+  const retire = incoming.filter(spare).map((row) => row.stage_id);
+  if (incoming.some((row) => !spare(row))) {
+    // An edited or referenced copy arrives: it becomes the guide course, and
+    // the account's spare copies make way for it.
+    retire.push(...account.filter((row) => !row.deleted && spare(row)).map((row) => row.stage_id));
   }
   if (retire.length === 0) return 0;
   await tx.query(
@@ -145,4 +167,48 @@ export async function retireDuplicateGuideCourses(
     retire,
   ]);
   return retire.length;
+}
+
+/**
+ * Which of `stageIds` a record the claim carries over still names: an agent
+ * session of `owners` that is not deleted, or a runtime session (of any
+ * learner). Either table may not be provisioned yet (both are created
+ * lazily), and then names nothing. Reads only: the claim holds both owners'
+ * identity locks, which the session and runtime writers take first.
+ */
+async function stagesInUse(
+  tx: Queryable,
+  owners: readonly string[],
+  stageIds: readonly string[],
+): Promise<Set<string>> {
+  const inUse = new Set<string>();
+  if (stageIds.length === 0) return inUse;
+  const present = await tx.query<{ sessions: boolean; runtime: boolean } & Record<string, unknown>>(
+    `SELECT to_regclass('agent_sessions') IS NOT NULL AS sessions,
+            to_regclass('runtime_sessions') IS NOT NULL AS runtime`,
+  );
+  const tables = present.rows[0];
+  const collect = (rows: Array<{ id: string | null }>) => {
+    for (const row of rows) if (row.id) inUse.add(row.id);
+  };
+  if (tables?.sessions) {
+    const named = await tx.query<{ id: string | null } & Record<string, unknown>>(
+      `SELECT stage_id AS id FROM agent_sessions
+        WHERE owner_id = ANY($2::text[]) AND deleted_at IS NULL AND stage_id = ANY($1::text[])
+       UNION
+       SELECT active_stage_id FROM agent_sessions
+        WHERE owner_id = ANY($2::text[]) AND deleted_at IS NULL
+          AND active_stage_id = ANY($1::text[])`,
+      [[...stageIds], [...owners]],
+    );
+    collect(named.rows);
+  }
+  if (tables?.runtime) {
+    const named = await tx.query<{ id: string | null } & Record<string, unknown>>(
+      'SELECT DISTINCT stage_id AS id FROM runtime_sessions WHERE stage_id = ANY($1::text[])',
+      [[...stageIds]],
+    );
+    collect(named.rows);
+  }
+  return inUse;
 }

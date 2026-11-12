@@ -229,9 +229,9 @@ function coreParticipants(provider: ServerPersistenceProvider): ClaimParticipant
       },
     },
     {
-      // At most one guide course per owner, edited copies always kept. Before
-      // the courses move, after the folders participant locked the source's
-      // ownership rows.
+      // At most one guide course per owner, edited or referenced copies always
+      // kept. Before the courses move, after the folders participant locked
+      // the source's ownership rows.
       name: 'guide-courses',
       order: 150,
       rekey: (tx, from, to) => retireDuplicateGuideCourses(tx, from, to),

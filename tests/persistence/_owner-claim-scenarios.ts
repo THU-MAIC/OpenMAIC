@@ -863,7 +863,8 @@ export async function rootedMaterialClaimScenario(h: ClaimHarness): Promise<void
 
 /**
  * The guide course across a claim (`lib/persistence/guide-courses.ts`):
- * one copy kept when both owners have one, an edited copy never retired.
+ * one copy kept when both owners have one, a copy that was edited or that a
+ * session or learner record names never retired.
  */
 export async function guideCourseClaimScenario(h: ClaimHarness): Promise<void> {
   const guide = (owner: string) => guideCourseIdFor(owner);
@@ -886,7 +887,7 @@ export async function guideCourseClaimScenario(h: ClaimHarness): Promise<void> {
       )
     ).rows.map((row) => row.stage_id);
   const claim = (from: string, to: string) => claimOwner(from, to, { provider: h.provider });
-  const anon = (n: number) => `anon:${n}b5a3f4e-8c1d-4e2f-9a3b-1c2d3e4f5a6b`;
+  const anon = (n: number) => `anon:${n.toString(16)}b5a3f4e-8c1d-4e2f-9a3b-1c2d3e4f5a6b`;
 
   // Both untouched: the account keeps its own, the visitor's copy is retired.
   await seed(anon(1));
@@ -974,4 +975,70 @@ export async function guideCourseClaimScenario(h: ClaimHarness): Promise<void> {
   expect(await activeGuides('user:g8')).toEqual(
     [guide(anon(8)), older(anon(8)), older('user:g8')].sort(),
   );
+
+  // A conversation about the visitor's untouched copy (no edit yet): the copy
+  // is in use, so it stays and the account's spare copy makes way. The
+  // session arrives still bound to a course the library shows.
+  await seed(anon(9));
+  const talk = await h.sessions.createSession({
+    ownerId: anon(9),
+    prompt: 'explain this course',
+    stageId: guide(anon(9)),
+    existingCourse: true,
+  });
+  await seed('user:g9');
+  await expect(claim(anon(9), 'user:g9')).resolves.toMatchObject({
+    moved: { 'guide-courses': 1, courses: 1, 'agent-sessions': 1 },
+  });
+  expect(await activeGuides('user:g9')).toEqual([guide(anon(9))]);
+  await expect(h.sessions.getSession(talk.id)).resolves.toMatchObject({
+    ownerId: 'user:g9',
+    stageId: guide(anon(9)),
+  });
+
+  // Both copies in use, neither edited: both stay. The visitor's through the
+  // session's active course, the account's through a learner record.
+  await seed(anon(10));
+  const other = await h.sessions.createSession({ ownerId: anon(10), prompt: 'a new course' });
+  await h.pool.query('UPDATE agent_sessions SET active_stage_id = $2 WHERE id = $1', [
+    other.id,
+    guide(anon(10)),
+  ]);
+  await seed('user:g10');
+  await h.provider.runtimeStore.createSession({
+    id: 'rt-guide-g10',
+    kind: 'chat',
+    stageId: guide('user:g10'),
+    learnerKey: 'user:g10',
+    status: 'active',
+    createdAt: ISO_NOW,
+    updatedAt: ISO_NOW,
+  });
+  await expect(claim(anon(10), 'user:g10')).resolves.toMatchObject({
+    moved: { 'guide-courses': 0 },
+  });
+  expect(await activeGuides('user:g10')).toEqual([guide(anon(10)), guide('user:g10')].sort());
+
+  // A learner record on the visitor's copy keeps it too; a deleted session
+  // on the account's copy does not, so the account's copy is the spare one.
+  await seed(anon(11));
+  await h.provider.runtimeStore.createSession({
+    id: 'rt-guide-a11',
+    kind: 'chat',
+    stageId: guide(anon(11)),
+    learnerKey: anon(11),
+    status: 'active',
+    createdAt: ISO_NOW,
+    updatedAt: ISO_NOW,
+  });
+  await seed('user:g11');
+  const gone = await h.sessions.createSession({
+    ownerId: 'user:g11',
+    prompt: 'about the guide',
+    stageId: guide('user:g11'),
+    existingCourse: true,
+  });
+  await h.pool.query('UPDATE agent_sessions SET deleted_at = now() WHERE id = $1', [gone.id]);
+  await claim(anon(11), 'user:g11');
+  expect(await activeGuides('user:g11')).toEqual([guide(anon(11))]);
 }
