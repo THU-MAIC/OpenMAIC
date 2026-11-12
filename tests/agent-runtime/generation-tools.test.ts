@@ -343,6 +343,118 @@ describe('generation and deck tools', () => {
     expect(elements[0]?.src).toBe('ast_generated_1');
   });
 
+  describe('generate_scene media with vision', () => {
+    const PNG =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    const media = [
+      {
+        src: 'ast_figure_1',
+        description: 'Dose-response curve; read the dip at 1 mcg/kg',
+        width: 400,
+        height: 225,
+      },
+    ];
+
+    function visionCall(prompts: string[], images: Array<unknown>) {
+      let calls = 0;
+      return vi.fn(async (_system: string, user: string, attached?: Array<unknown>) => {
+        calls += 1;
+        if (calls === 1) {
+          prompts.push(user);
+          images.push(...(attached ?? []));
+          return JSON.stringify({
+            elements: [
+              {
+                id: 'image-1',
+                type: 'image',
+                src: 'img_1',
+                left: 0,
+                top: 0,
+                width: 400,
+                height: 225,
+              },
+            ],
+          });
+        }
+        return JSON.stringify([{ type: 'text', content: 'Narration' }]);
+      });
+    }
+
+    it('attaches a resolved image and keeps its description on the vision line', async () => {
+      const current = state(document([]));
+      const prompts: string[] = [];
+      const images: Array<unknown> = [];
+      const generate = find(
+        buildGenerationTools(
+          deps(current.store, {
+            aiCall: visionCall(prompts, images),
+            ownerId: 'owner-1',
+            visionEnabled: true,
+            readVisionAsset: vi.fn(async () => ({
+              status: 'resolved' as const,
+              buffer: Buffer.from(PNG, 'base64'),
+              mimeType: 'image/png',
+            })),
+          }),
+        ),
+        'generate_scene',
+      );
+      const response = await generate.execute('vision-ok', {
+        stageId: 'stage-test',
+        order: 1,
+        title: 'Curve',
+        type: 'slide',
+        brief: 'Read the curve',
+        media,
+      } as never);
+
+      expect(response).not.toMatchObject({ isError: true });
+      expect(prompts[0]).toContain('[see attached]');
+      expect(prompts[0]).toContain('read the dip at 1 mcg/kg');
+      expect(images).toHaveLength(1);
+      expect(images[0]).toMatchObject({
+        id: 'img_1',
+        src: expect.stringMatching(/^data:image\/png;base64,/),
+      });
+    });
+
+    it('never declares an unreadable image attached and tells the agent', async () => {
+      const current = state(document([]));
+      const prompts: string[] = [];
+      const images: Array<unknown> = [];
+      const generate = find(
+        buildGenerationTools(
+          deps(current.store, {
+            aiCall: visionCall(prompts, images),
+            ownerId: 'owner-1',
+            visionEnabled: true,
+            readVisionAsset: vi.fn(async () => ({ status: 'too_large' as const })),
+          }),
+        ),
+        'generate_scene',
+      );
+      const response = (await generate.execute('vision-dropped', {
+        stageId: 'stage-test',
+        order: 1,
+        title: 'Curve',
+        type: 'slide',
+        brief: 'Read the curve',
+        media,
+      } as never)) as { content: Array<{ text?: string }> };
+
+      expect(response).not.toMatchObject({ isError: true });
+      expect(prompts[0]).not.toContain('[see attached]');
+      expect(prompts[0]).toContain('read the dip at 1 mcg/kg');
+      expect(images).toHaveLength(0);
+      expect(response.content[0]?.text).toContain('could not be read for the content model');
+      // The image still lands on the page: only the vision read failed.
+      const elements = (
+        current.get()?.scenes[0]?.content as { canvas: { elements: { src?: string }[] } }
+      ).canvas.elements;
+      expect(elements[0]?.src).toBe('ast_figure_1');
+    });
+  });
+
   it('passes widgetType and widgetOutline through to interactive generation', async () => {
     const current = state(document([]));
     const prompts: string[] = [];

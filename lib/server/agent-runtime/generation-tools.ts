@@ -24,7 +24,13 @@ import { COURSE_STAGE_ID_DESCRIPTION } from './course-stage';
 import type { CourseToolDeps } from './course-tools';
 import { runStageMutation } from './mutation-fence';
 import { shiftCourseOrders } from './course-edit/tools';
-import { createGenerationAiCallFactory, sceneContentStage } from './generation-ai-call';
+import {
+  createGenerationAiCallFactory,
+  resolveVisionImages,
+  sceneContentStage,
+  type VisionAssetReader,
+  type VisionImage,
+} from './generation-ai-call';
 import {
   describeNarrationVoice,
   formatTtsFailureTally,
@@ -132,6 +138,10 @@ type ActionGenerator = typeof generateSceneActions;
 export interface GenerationToolDeps extends CourseToolDeps {
   aiCall?: AICallFn;
   generateActions?: ActionGenerator;
+  /** Tests: force vision on or off instead of asking the routed model. */
+  visionEnabled?: boolean;
+  /** Tests: read page media bytes for vision instead of the asset pool. */
+  readVisionAsset?: VisionAssetReader;
 }
 
 function sceneIdFor(scenes: readonly Scene[], order: number) {
@@ -453,18 +463,43 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
       const agents = doc.stage.generatedAgentConfigs;
       let content: Awaited<ReturnType<typeof generateSceneContent>>;
       let contentFailure: SceneContentFailureCode | undefined;
+      let visionFallbackIds: string[] = [];
       try {
         const contentStage = sceneContentStage(params.type);
         // The content model sees page media as images when its routed model
         // accepts them, so it can place and annotate them by what they show.
-        // An injected aiCall (tests) keeps the text-only contract.
-        const visionEnabled =
-          assignedImages.length > 0 && !deps.aiCall && (await routed.supportsVision(contentStage));
+        // An injected aiCall (tests) keeps the text-only contract unless the
+        // test turns vision on.
+        const visionWanted =
+          assignedImages.length > 0 &&
+          (deps.visionEnabled ?? (!deps.aiCall && (await routed.supportsVision(contentStage))));
+        // Resolve before prompt assembly, as classic generation does: an image
+        // the prompt marks "[see attached]" must actually be attached.
+        let resolvedVisionImages: VisionImage[] | undefined;
+        if (visionWanted) {
+          resolvedVisionImages = await resolveVisionImages(
+            assignedImages.map((image) => ({
+              id: image.id,
+              src: imageMapping[image.id],
+              ...(image.width ? { width: image.width } : {}),
+              ...(image.height ? { height: image.height } : {}),
+            })),
+            deps.ownerId,
+            deps.readVisionAsset,
+          );
+          const resolvedIds = new Set(resolvedVisionImages.map((image) => image.id));
+          visionFallbackIds = assignedImages
+            .filter((image) => !resolvedIds.has(image.id))
+            .map((image) => image.id);
+        }
+        // shortcut: one unreadable image sends the whole page text-only; split per image if mixed pages matter.
+        const visionEnabled = visionWanted && visionFallbackIds.length === 0;
         content = await generateSceneContent(outline, aiCallFor(contentStage), {
           agents,
           languageDirective: doc.stage.languageDirective ?? '',
           allowProceduralSkill: true,
           ...(assignedImages.length ? { assignedImages, imageMapping, visionEnabled } : {}),
+          ...(visionEnabled ? { resolvedVisionImages } : {}),
           ...(params.instruction ? { editDirective: params.instruction } : {}),
           ...(baseline ? { baselineContent: baseline } : {}),
           onFailure: (failure) => {
@@ -556,6 +591,10 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
         }${
           mediaPlaceholders.length
             ? ` ${mediaPlaceholders.length} media placeholder(s) still render as skeletons.`
+            : ''
+        }${
+          visionFallbackIds.length
+            ? ` ${visionFallbackIds.length} media image(s) could not be read for the content model, so this page was composed from the media descriptions only.`
             : ''
         }`,
         {

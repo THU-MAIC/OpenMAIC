@@ -673,7 +673,14 @@ async function generateSlideContent(
     );
     if (visionEnabled && imageMapping) {
       // Vision mode: split into vision images and text-only
-      const visionDescriptions = visionSlice.map((img) => formatImagePlaceholder(img));
+      // The caller's description says what the learner should read from the
+      // figure, which the pixels alone cannot tell the model.
+      const visionDescriptions = visionSlice.map((img) => {
+        const description = img.description?.trim();
+        return description
+          ? `${formatImagePlaceholder(img)} — ${description}`
+          : formatImagePlaceholder(img);
+      });
       const textDescriptions = [...textOnlySlice, ...noSrcImages].map((img) =>
         formatImageDescription(img),
       );

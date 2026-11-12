@@ -8,7 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Bug Fixes
 
-- Pro workbench: when the scene-content model accepts images, `generate_scene` now sends the page's `media` to it as images, as classic generation already does. Before, the model saw only a one-line text description of each figure. Each image adds input tokens (roughly 400–1,100 for a typical textbook figure) and is read from the owner's asset storage before the call; a model without image input keeps the text-only behavior.
+- Pro workbench: when the scene-content model accepts images, `generate_scene` now sends the page's `media` to it as images, as classic generation already does. Before, the model saw only a one-line text description of each figure. Images are read before the page is composed; if one cannot be read, the page uses the media descriptions only and the agent is told. With vision, each image's description is now also given beside it, so the model knows which point each figure serves. Each image adds input tokens (roughly 400–1,100 for a typical textbook figure) and is read from the owner's asset storage before the call; a model without image input keeps the text-only behavior.
+
+### Packages
+
+- `@openmaic/generation` 0.3.33 (was 0.3.32).
 
 ## [1.5.0-rc.1] - 2026-11-10
 
