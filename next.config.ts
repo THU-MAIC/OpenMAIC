@@ -1,13 +1,30 @@
 import type { NextConfig } from 'next';
 import { PHASE_PRODUCTION_BUILD } from 'next/constants';
 
+/**
+ * Deployment sub-path (`basePath`). Empty — the default — serves the app at the
+ * domain root, exactly as before. Set NEXT_PUBLIC_APP_BASE_PATH=/openmaic to
+ * serve it at https://example.com/openmaic.
+ */
+function readAppBasePath(): string {
+  const normalised = (process.env.NEXT_PUBLIC_APP_BASE_PATH ?? '').trim().replace(/^\/+|\/+$/g, '');
+  return normalised ? `/${normalised}` : '';
+}
+
+const APP_BASE_PATH = readAppBasePath();
+
 const nextConfig: NextConfig = {
   // Keep Next dev from creating or rewriting repository agent instructions.
   agentRules: false,
   output: 'standalone',
+  basePath: APP_BASE_PATH,
   env: {
     INTERACTIVE_ASSET_BASE_URL:
-      process.env.INTERACTIVE_ASSET_BASE_URL?.trim() || '/vendor/interactive',
+      process.env.INTERACTIVE_ASSET_BASE_URL?.trim() ||
+      (APP_BASE_PATH ? `${APP_BASE_PATH}/vendor/interactive` : '/vendor/interactive'),
+    // Read by `lib/utils/app-url.ts`. Both sides must agree, so the normalised
+    // value is the one written into the client bundle.
+    NEXT_PUBLIC_APP_BASE_PATH: APP_BASE_PATH,
   },
   outputFileTracingIncludes: {
     '/*': [

@@ -3,6 +3,7 @@
 import { isConcreteMediaAddress } from '@openmaic/dsl';
 export { isConcreteMediaAddress } from '@openmaic/dsl';
 
+import { appUrl } from '@/lib/utils/app-url';
 import type { MediaTask } from '@/lib/store/media-generation';
 import { useMayGenerateForStage } from '@/lib/classroom/generation-permission';
 import { useMediaStageId } from '@/lib/contexts/media-stage-context';
@@ -127,7 +128,12 @@ export function useResolvedMediaRef(
 export function renderableMediaUrl(state: MediaResolution): string | undefined {
   const candidate =
     state.kind === 'url' ? state.url : state.kind === 'raw' ? state.value : undefined;
-  return isConcreteMediaAddress(candidate) ? candidate?.trimStart() : undefined;
+  // Stored media addresses are app-local absolute paths (`/api/classroom-media/…`)
+  // and must carry the deployment basePath, exactly like the page they render on.
+  // `appUrl` leaves external, `data:` and `blob:` addresses untouched.
+  if (!isConcreteMediaAddress(candidate)) return undefined;
+  const trimmed = candidate?.trimStart();
+  return trimmed ? appUrl(trimmed) : undefined;
 }
 
 export function mediaResolutionCanRetry(state: MediaResolution | undefined): boolean {
