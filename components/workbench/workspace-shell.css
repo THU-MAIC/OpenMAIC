@@ -2804,6 +2804,14 @@
   transition: opacity 200ms var(--ws-ease);
 }
 
+/* Another modal dialog is open (the tour sits above the app's dialogs): the
+   tour steps aside, unseen and taking no pointer, until it closes. */
+.ws-tour-yielded,
+.ws-tour-yielded * {
+  visibility: hidden;
+  pointer-events: none !important;
+}
+
 .ws-tour-block {
   position: absolute;
   inset: 0;

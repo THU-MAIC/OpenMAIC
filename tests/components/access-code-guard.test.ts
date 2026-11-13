@@ -18,7 +18,7 @@ vi.mock('@/lib/legacy-browser-import', () => ({
   resumeLegacyBrowserImportAfterAccess: legacyImport.resume,
 }));
 
-import { AccessCodeGuard } from '@/components/access-code-guard';
+import { AccessCodeGuard, useAccessCodeGateOpen } from '@/components/access-code-guard';
 
 let host: HTMLDivElement;
 beforeEach(() => {
@@ -77,5 +77,55 @@ it('mounts the page once when no access code is required', async () => {
   expect(mounts.count).toBe(1);
   expect(modal.onSuccess).toBeNull();
   expect(legacyImport.resume).not.toHaveBeenCalled();
+  await act(async () => root.unmount());
+});
+
+/** Records what the page under the guard reads from the gate, render by render. */
+function renderGateReader() {
+  const seen: boolean[] = [];
+  function Reader() {
+    seen.push(useAccessCodeGateOpen());
+    return null;
+  }
+  const root = createRoot(host);
+  return {
+    root,
+    seen,
+    render: () => root.render(createElement(AccessCodeGuard, null, createElement(Reader))),
+  };
+}
+
+it('keeps the gate closed for the page until the access code is accepted', async () => {
+  stubStatus({ enabled: true, authenticated: false });
+  const { root, seen, render } = renderGateReader();
+  await act(async () => render());
+  // Closed while the status is loading and while the code is owed: a first-run
+  // tour started now would take the focus the access-code input needs.
+  expect(seen.length).toBeGreaterThan(0);
+  expect(seen.every((open) => !open)).toBe(true);
+
+  await act(async () => modal.onSuccess!());
+  expect(seen.at(-1)).toBe(true);
+  await act(async () => root.unmount());
+});
+
+it('opens the gate once the status says no code is required', async () => {
+  stubStatus({ enabled: false, authenticated: false });
+  const { root, seen, render } = renderGateReader();
+  await act(async () => render());
+  expect(seen[0]).toBe(false); // still asking
+  expect(seen.at(-1)).toBe(true);
+  await act(async () => root.unmount());
+});
+
+it('reads as open outside a guard', async () => {
+  const seen: boolean[] = [];
+  function Reader() {
+    seen.push(useAccessCodeGateOpen());
+    return null;
+  }
+  const root = createRoot(host);
+  await act(async () => root.render(createElement(Reader)));
+  expect(seen).toEqual([true]);
   await act(async () => root.unmount());
 });

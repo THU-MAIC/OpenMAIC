@@ -82,6 +82,7 @@ import {
   useOnboardingPending,
 } from '@/lib/workbench/onboarding';
 import { usePromptSeed } from '@/lib/workbench/prompt-seed';
+import { useAccessCodeGateOpen } from '@/components/access-code-guard';
 import { useTourViewport, WorkspaceTour, type TourEnd } from './WorkspaceTour';
 import { TOUR_STEPS, type TourView } from './tour-steps';
 import {
@@ -1031,8 +1032,12 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const tourPending = useOnboardingPending('home');
   // The rail it walks through is there from `md` up; a phone gets no tour.
   const tourFits = useTourViewport();
+  // Not under the access-code gate: the tour is a modal of its own, and one
+  // started behind the gate's dialog took the focus its input needs. Accepting
+  // the code mounts the workspace again, and the tour starts then.
+  const accessGateOpen = useAccessCodeGateOpen();
   const [tourRunning, setTourRunning] = useState(false);
-  const showTour = tourPending && (tourRunning || (render.home && tourFits));
+  const showTour = accessGateOpen && tourPending && (tourRunning || (render.home && tourFits));
   const tourSteps = useMemo(
     () => TOUR_STEPS.filter((step) => !step.needsGuide || !!guideCourseId),
     [guideCourseId],

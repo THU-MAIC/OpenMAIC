@@ -16,7 +16,9 @@
  *
  * It is a modal while it plays: the rest of the page takes no pointer, focus
  * stays in the card (Tab cycles, ←/→ step, Esc skips) and goes back where it was
- * when the tour ends.
+ * when the tour ends. Another modal dialog outranks it: while one is open (the
+ * access-code gate, a confirmation) the tour steps aside, hidden and holding no
+ * pointer, focus or key, and comes back where it was once that dialog closes.
  */
 
 import { ArrowRight, Play, X } from 'lucide-react';
@@ -94,6 +96,21 @@ function sameRect(a: Rect | null, b: Rect | null): boolean {
   );
 }
 
+/** A modal dialog the tour gives way to: anything but a tour's own card. */
+const OTHER_MODAL = [
+  '[aria-modal="true"]',
+  '[role="alertdialog"]',
+  '[data-slot="dialog-content"]',
+  '[data-slot="alert-dialog-content"]',
+].join(',');
+
+function otherModalOpen(): boolean {
+  for (const element of document.querySelectorAll(OTHER_MODAL)) {
+    if (!element.closest('.ws-tour')) return true;
+  }
+  return false;
+}
+
 const WIDE = '(min-width: 768px)';
 
 /** Wide enough for the tour: the rail it points at only exists from `md` up. */
@@ -139,6 +156,8 @@ export function WorkspaceTour({
   const [viewport, setViewport] = useState({ w: 0, h: 0 });
   const [cardH, setCardH] = useState(200);
   const [leaving, setLeaving] = useState(false);
+  /** Another modal dialog is open: the tour is hidden and holds nothing. */
+  const [yielded, setYielded] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const primaryRef = useRef<HTMLButtonElement>(null);
   const returnFocus = useRef<Element | null>(null);
@@ -191,6 +210,7 @@ export function WorkspaceTour({
     const stepStarted = waitingSince;
     const tick = () => {
       const now = performance.now();
+      setYielded(otherModalOpen());
       if (step.target === null) {
         if (settled.current?.step !== step.id) {
           settled.current = { step: step.id, rect: null };
@@ -303,6 +323,7 @@ export function WorkspaceTour({
   // app navigates as it always does), so the tour just follows.
   useEffect(() => {
     if (!step.passThrough || step.target === null) return;
+    if (yielded) return;
     const onClick = (event: MouseEvent) => {
       const hit = (event.target as Element | null)?.closest?.(
         step
@@ -314,34 +335,44 @@ export function WorkspaceTour({
     };
     document.addEventListener('click', onClick, true);
     return () => document.removeEventListener('click', onClick, true);
-  }, [goTo, index, step]);
+  }, [goTo, index, step, yielded]);
 
   // The card keeps the focus: its main button on each step, and back into the
   // card whenever something else takes it (a menu that closed restoring focus
   // to its trigger, a pane that autofocuses as the tour opens it).
+  // Never while another modal dialog is open: its focus is its own.
   useEffect(() => {
+    if (yielded) return;
     primaryRef.current?.focus({ preventScroll: true });
-  }, [index]);
+  }, [index, yielded]);
   useEffect(() => {
+    if (yielded) return;
     const onFocusIn = (event: FocusEvent) => {
       const card = cardRef.current;
       if (!card || leaving || card.contains(event.target as Node)) return;
+      if (otherModalOpen()) return;
       primaryRef.current?.focus({ preventScroll: true });
     };
     document.addEventListener('focusin', onFocusIn);
     // Whatever held focus when the tour opened may keep it past the first
     // effect (a closing menu returns focus a frame later).
     const timer = window.setTimeout(() => {
-      if (!cardRef.current?.contains(document.activeElement)) primaryRef.current?.focus();
+      const card = cardRef.current;
+      if (card?.contains(document.activeElement) || otherModalOpen()) return;
+      primaryRef.current?.focus();
     }, 120);
     return () => {
       document.removeEventListener('focusin', onFocusIn);
       window.clearTimeout(timer);
     };
-  }, [leaving]);
+  }, [leaving, yielded]);
 
   useEffect(() => {
+    if (yielded) return;
     const onKeyDown = (event: KeyboardEvent) => {
+      // The keys belong to a dialog opened over the tour (Esc closes it, not
+      // the tour), even in the frame before the tour has noticed it.
+      if (otherModalOpen()) return;
       if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
@@ -378,7 +409,7 @@ export function WorkspaceTour({
     };
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [end, go]);
+  }, [end, go, yielded]);
 
   const vw = viewport.w || (typeof window === 'undefined' ? 1440 : window.innerWidth);
   const vh = viewport.h || (typeof window === 'undefined' ? 900 : window.innerHeight);
@@ -391,9 +422,12 @@ export function WorkspaceTour({
 
   const tour = (
     <div
-      className={cn('ws-tour', leaving && 'ws-tour-leaving')}
+      className={cn('ws-tour', leaving && 'ws-tour-leaving', yielded && 'ws-tour-yielded')}
       data-testid="workspace-tour"
       data-step={step.id}
+      data-yielded={yielded || undefined}
+      // Out of the accessibility tree too while a dialog is over it.
+      inert={yielded || undefined}
     >
       {/* Takes every pointer, so the page under the mask stays still -- all but
           the lit box, on a step whose lit element takes its own click. */}
