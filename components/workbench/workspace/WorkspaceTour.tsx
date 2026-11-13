@@ -34,6 +34,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils/cn';
 import { setTourActive } from '@/lib/workbench/onboarding';
 import { TOUR_EXAMPLES, type TourStep, type TourTarget, type TourView } from './tour-steps';
+import { placeTourCard } from './tour-placement';
 
 type Rect = { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
 
@@ -41,9 +42,6 @@ type Rect = { readonly x: number; readonly y: number; readonly w: number; readon
 export type TourEnd = 'skip' | 'done' | 'guide' | 'example';
 
 const PAD = 8;
-const GAP = 14;
-const MARGIN = 12;
-const CARD_W = 340;
 /** Frames a target must hold still before the light moves to it. */
 const SETTLE_FRAMES = 8;
 /** How long the light may hold before it says it is waiting. */
@@ -94,30 +92,6 @@ function sameRect(a: Rect | null, b: Rect | null): boolean {
     Math.abs(a.w - b.w) < 0.5 &&
     Math.abs(a.h - b.h) < 0.5
   );
-}
-
-/**
- * Where the card goes: beside a narrow target (the rail, a card), under a wide
- * one (the composer), above it when there is no room below; always on screen.
- */
-function placeCard(rect: Rect | null, cardH: number, vw: number, vh: number) {
-  const clampX = (x: number) => Math.max(MARGIN, Math.min(x, vw - CARD_W - MARGIN));
-  const clampY = (y: number) => Math.max(MARGIN, Math.min(y, vh - cardH - MARGIN));
-  if (!rect) return { x: (vw - CARD_W) / 2, y: (vh - cardH) / 2 };
-  const roomRight = vw - (rect.x + rect.w) - GAP - MARGIN;
-  const roomLeft = rect.x - GAP - MARGIN;
-  const narrow = rect.w < vw * 0.4;
-  if (narrow && roomRight >= CARD_W) {
-    return { x: rect.x + rect.w + GAP, y: clampY(rect.y + rect.h / 2 - cardH / 2) };
-  }
-  if (narrow && roomLeft >= CARD_W) {
-    return { x: rect.x - GAP - CARD_W, y: clampY(rect.y + rect.h / 2 - cardH / 2) };
-  }
-  const cx = clampX(rect.x + rect.w / 2 - CARD_W / 2);
-  if (rect.y + rect.h + GAP + cardH <= vh - MARGIN) return { x: cx, y: rect.y + rect.h + GAP };
-  if (rect.y - GAP - cardH >= MARGIN) return { x: cx, y: rect.y - GAP - cardH };
-  // Nothing fits outside a tall target: sit inside its bottom edge.
-  return { x: cx, y: clampY(rect.y + rect.h - cardH - GAP) };
 }
 
 const WIDE = '(min-width: 768px)';
@@ -258,13 +232,33 @@ export function WorkspaceTour({
     return () => cancelAnimationFrame(frame);
   }, [step]);
 
-  useEffect(() => {
-    const card = cardRef.current;
-    if (!card || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => setCardH(card.offsetHeight));
+  /*
+   * The card's height, which decides where it fits. Observed through the ref
+   * itself rather than once on mount: the card is a new element whenever the
+   * tour moves into its portal host (the host may not exist yet on the very
+   * first render), and an observer left on the detached first card would
+   * report 0 and let the card hang off the bottom of the window.
+   */
+  const observerRef = useRef<ResizeObserver | null>(null);
+  const setCard = useCallback((card: HTMLDivElement | null) => {
+    cardRef.current = card;
+    observerRef.current?.disconnect();
+    observerRef.current = null;
+    if (!card) return;
+    setCardH(card.offsetHeight);
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (card.isConnected) setCardH(card.offsetHeight);
+    });
     observer.observe(card);
-    return () => observer.disconnect();
+    observerRef.current = observer;
   }, []);
+  useEffect(() => () => observerRef.current?.disconnect(), []);
+  // A new step's content is laid out before it is placed, not a frame after.
+  useLayoutEffect(() => {
+    const card = cardRef.current;
+    if (card?.isConnected) setCardH(card.offsetHeight);
+  }, [index]);
 
   const end = useCallback(
     (how: TourEnd, then?: () => void) => {
@@ -389,7 +383,7 @@ export function WorkspaceTour({
   const vw = viewport.w || (typeof window === 'undefined' ? 1440 : window.innerWidth);
   const vh = viewport.h || (typeof window === 'undefined' ? 900 : window.innerHeight);
   const lit = step.target === null ? null : rect;
-  const card = placeCard(lit, cardH, vw, vh);
+  const card = placeTourCard(lit, cardH, vw, vh);
   // A centred step shrinks the light to a point in the middle, so the next
   // step's light opens out of the card rather than out of a corner.
   const hole = lit ?? { x: vw / 2, y: vh / 2, w: 0, h: 0 };
@@ -438,7 +432,7 @@ export function WorkspaceTour({
         }}
       />
       <div
-        ref={cardRef}
+        ref={setCard}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -446,7 +440,11 @@ export function WorkspaceTour({
         data-testid="workspace-tour-card"
         data-waiting={waiting || undefined}
         className={cn('ws-tour-card', waiting && 'ws-tour-card-wait')}
-        style={{ transform: `translate3d(${card.x}px, ${card.y}px, 0)` }}
+        style={{
+          transform: `translate3d(${card.x}px, ${card.y}px, 0)`,
+          // A window too short for the card: it scrolls inside, on screen.
+          maxHeight: card.maxHeight,
+        }}
       >
         <div className="ws-tour-progress" aria-hidden="true">
           <span style={{ transform: `scaleX(${(index + 1) / steps.length})` }} />

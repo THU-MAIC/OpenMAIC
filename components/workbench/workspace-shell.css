@@ -2857,7 +2857,10 @@
   top: 0;
   left: 0;
   width: 340px;
-  overflow: hidden;
+  /* Clipped to the radius; scrolls only when the window is shorter than the
+     card (its max-height comes from the placement). */
+  overflow: hidden auto;
+  overscroll-behavior: contain;
   border-radius: 18px;
   border: 1px solid var(--ws-line-soft);
   background: var(--ws-raised);
