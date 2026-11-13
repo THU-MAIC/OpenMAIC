@@ -129,6 +129,13 @@ export interface SandboxProvider {
     path: string,
     signal?: AbortSignal,
   ): Promise<string>;
+  /** One bounded UTF-8 source snapshot; providers may retain the single-file fallback. */
+  readTexts?(
+    resourceId: string,
+    operationId: string,
+    paths: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<Record<string, string>>;
   writeText(resourceId: string, operationId: string, path: string, text: string): Promise<void>;
   mutateFile?(
     resourceId: string,

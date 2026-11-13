@@ -136,14 +136,27 @@ export async function readFiles(
     () => projectFiles(service, environmentId, project, signal),
     signal,
   );
+  let snapshot: Record<string, string>;
+  try {
+    snapshot = await checkpointIO(() => service.readTexts(environmentId, paths, signal), signal);
+  } catch (error) {
+    if (error instanceof SandboxError && error.code === 'SANDBOX_FILE_TOO_LARGE')
+      throw sandboxInvalid('Project source snapshots are limited to 1 MiB.', 'PBL_SOURCE_SIZE');
+    throw error;
+  }
   for (const path of paths) {
     signal?.throwIfAborted();
-    const text = await checkpointIO(() => service.readText(environmentId, path, signal), signal);
-    signal?.throwIfAborted();
+    const text = snapshot[path];
+    if (typeof text !== 'string') throw sandboxInvalid('Project source snapshot is incomplete.');
     bytes += Buffer.byteLength(text);
     if (bytes > 1_048_576)
       throw sandboxInvalid('Project source snapshots are limited to 1 MiB.', 'PBL_SOURCE_SIZE');
-    result[path] = text;
+    Object.defineProperty(result, path, {
+      value: text,
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
   }
   return result;
 }
