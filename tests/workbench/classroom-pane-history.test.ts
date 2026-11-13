@@ -36,7 +36,6 @@ vi.mock('@/components/edit/EditDock/EditDock', () => ({ EditDock: () => null }))
 vi.mock('@/components/stage/header-controls', () => ({ HeaderControls: () => null }));
 vi.mock('@/lib/edit/preload-editor', () => ({
   preloadEditor: () => Promise.resolve(),
-  preloadEditorSurfaces: () => Promise.resolve(),
   isEditorPreloaded: () => true,
 }));
 vi.mock('@/lib/edit/noop-surface', () => ({
