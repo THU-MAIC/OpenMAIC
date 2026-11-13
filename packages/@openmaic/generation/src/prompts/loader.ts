@@ -13,11 +13,29 @@ import type { LoadedPrompt, PromptId, PromptVariableDefaults, SnippetId } from '
 // mistake the Markdown directory for a statically imported module asset.
 const DEFAULT_PROMPTS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
+const DEFAULT_THEME_PROMPT_VARIABLES = {
+  styleName: 'Light',
+  isLightStyle: true,
+  themeBackground: '#ffffff',
+  themeSurface: '#f8fafc',
+  themeText: '#0f172a',
+  themeMuted: '#64748b',
+  themeBorder: '#e2e8f0',
+  themeAccent: '#2563eb',
+  themeFont: 'system-ui, -apple-system, sans-serif',
+};
+
 const PROMPT_VARIABLE_DEFAULTS = {
   'pbl-actions': {
     projectSummary:
       '(No generated milestones are available; introduce the project topic without inventing any.)',
   },
+  'simulation-content': DEFAULT_THEME_PROMPT_VARIABLES,
+  'diagram-content': DEFAULT_THEME_PROMPT_VARIABLES,
+  'code-content': DEFAULT_THEME_PROMPT_VARIABLES,
+  'game-content': DEFAULT_THEME_PROMPT_VARIABLES,
+  'visualization3d-content': DEFAULT_THEME_PROMPT_VARIABLES,
+  'procedural-skill-content': DEFAULT_THEME_PROMPT_VARIABLES,
 } satisfies PromptVariableDefaults;
 
 function isMissingFileError(error: unknown): boolean {
