@@ -151,4 +151,29 @@ describe('home discovery authoritative reloads', () => {
     expect(mocks.listFolders).toHaveBeenCalledTimes(3);
     expect(discovery?.folders).toEqual(latest);
   });
+
+  it('reports the folder list as loading until it lands, apart from the courses', async () => {
+    const folders = deferred<Array<{ id: string; name: string }>>();
+    mocks.listFolders.mockReturnValueOnce(folders.promise);
+
+    await mountDiscovery();
+    expect(discovery?.state).toBe('ready');
+    expect(discovery?.foldersState).toBe('loading');
+
+    await act(async () => folders.resolve([{ id: 'f1', name: 'Math' }]));
+    expect(discovery?.foldersState).toBe('ready');
+  });
+
+  it('reports a failed first folder load, and keeps ready on a failed background one', async () => {
+    mocks.listFolders.mockRejectedValueOnce(new Error('down'));
+    await mountDiscovery();
+    expect(discovery?.foldersState).toBe('error');
+
+    await act(async () => discovery?.reload());
+    expect(discovery?.foldersState).toBe('ready');
+
+    mocks.listFolders.mockRejectedValueOnce(new Error('transient'));
+    await act(async () => discovery?.reload());
+    expect(discovery?.foldersState).toBe('ready');
+  });
 });
