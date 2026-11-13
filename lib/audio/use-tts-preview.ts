@@ -127,7 +127,11 @@ export function useTTSPreview() {
         if (isStale()) return;
 
         if (!res.ok || !data.base64) {
-          throw new Error(data.error || 'TTS preview failed');
+          const error = new Error(data.error || 'TTS preview failed') as Error & {
+            errorCode?: string;
+          };
+          if (typeof data.errorCode === 'string') error.errorCode = data.errorCode;
+          throw error;
         }
 
         // Decode base64 → Blob → Object URL

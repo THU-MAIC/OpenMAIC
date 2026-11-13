@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Voice settings retain a server-reported re-clone instruction beside the affected saved Qwen/CosyVoice profile after preview fails. A successful retry clears the notice; saved voices and bindings remain unchanged. [#2030](https://github.com/THU-MAIC/OpenMAIC/issues/2030)
+
 ## [1.5.0-rc.2] - 2026-11-12
 
 1.5.0-rc.2 is the second release candidate for 1.5.0. It polishes the workbench (drag to fold the rail and the classroom dock, clearer chat status, no duplicate guide course after sign-in), gives Native classroom agents fresh whiteboard state, and fixes PBL previews, assessments and history. No upgrade conditions over 1.5.0-rc.1: no new migrations, and the 1.5.0-rc.1 **Breaking Changes** still apply when upgrading from 1.4.x.

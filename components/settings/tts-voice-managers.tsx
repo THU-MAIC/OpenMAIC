@@ -511,6 +511,8 @@ export function QwenVoiceCloneManager() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
+  const [recloneWarnings, setRecloneWarnings] = useState<Record<string, string>>({});
+  const previewRequestRef = useRef(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
   const recordingStreamRef = useRef<MediaStream | null>(null);
@@ -618,6 +620,7 @@ export function QwenVoiceCloneManager() {
 
   useEffect(() => {
     return () => {
+      previewRequestRef.current += 1;
       stopRecordingTimer();
       if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop();
       stopRecordingStream();
@@ -646,7 +649,16 @@ export function QwenVoiceCloneManager() {
     }
   };
 
+  const clearRecloneWarning = (voiceId: string) => {
+    setRecloneWarnings((current) => {
+      const next = { ...current };
+      delete next[voiceId];
+      return next;
+    });
+  };
+
   const handlePreview = async (voiceId: string) => {
+    const requestId = ++previewRequestRef.current;
     if (previewingVoiceId === voiceId) {
       stopPreview();
       setPreviewingVoiceId(null);
@@ -660,14 +672,23 @@ export function QwenVoiceCloneManager() {
         voice: voiceId,
         speed: ttsSpeed,
       });
+      if (requestId === previewRequestRef.current) clearRecloneWarning(voiceId);
     } catch (error) {
+      if (requestId !== previewRequestRef.current) return;
       setPreviewingVoiceId(null);
+      if (
+        error instanceof Error &&
+        (error as { errorCode?: string }).errorCode === 'QWEN_VC_RECLONE_REQUIRED'
+      ) {
+        setRecloneWarnings((current) => ({ ...current, [voiceId]: error.message }));
+      }
       toast.error(error instanceof Error ? error.message : t('settings.qwenCloneSaveFailed'));
     }
   };
 
   const handleDelete = async (voiceId: string) => {
     const vendorDeleted = await deleteVoice(voiceId);
+    clearRecloneWarning(voiceId);
     if (!vendorDeleted) toast.warning(t('settings.qwenCloneDeleteWarning'));
     if (ttsVoiceProviderId === 'qwen-tts' && ttsVoice === voiceId) {
       setTTSVoice(DEFAULT_TTS_VOICES['qwen-tts'], 'qwen-tts');
@@ -717,6 +738,7 @@ export function QwenVoiceCloneManager() {
                     title={profile.name}
                     badge={t('settings.voxcpmClone')}
                     detail={profile.referenceAudioName || profile.id}
+                    warning={recloneWarnings[profile.id]}
                     kind="clone"
                     previewing={previewingVoiceId === profile.id}
                     onPreview={() => handlePreview(profile.id)}
@@ -809,6 +831,7 @@ function VoiceProfileRow({
   badge,
   badgeTone = 'neutral',
   detail,
+  warning,
   kind = 'prompt',
   muted,
   previewing,
@@ -820,6 +843,7 @@ function VoiceProfileRow({
   badge: string;
   badgeTone?: 'default' | 'warning' | 'neutral';
   detail: string;
+  warning?: string;
   kind?: 'auto' | 'prompt' | 'clone';
   muted?: boolean;
   previewing?: boolean;
@@ -868,6 +892,11 @@ function VoiceProfileRow({
           </span>
         </div>
         <p className="mt-1 truncate text-xs text-muted-foreground">{detail}</p>
+        {warning && (
+          <p role="status" className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+            {warning}
+          </p>
+        )}
       </div>
       {onPreview && (
         <Button
