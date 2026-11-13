@@ -91,6 +91,12 @@ RUN NODE_OPTIONS=--max-old-space-size=1024 pnpm run build:packages
 
 RUN pnpm build
 
+# Workers are spawned from computed paths, so Next's tracer copies their files but
+# never reads their imports: the packages are absent from `.next/standalone` and the
+# first request fails with "Cannot find package '<name>'" (see the script's header).
+# This provisions them beside each worker and fails the build if one cannot resolve.
+RUN node scripts/collect-worker-deps.mjs
+
 # ---- Stage 4: Runner ----
 FROM node:22-alpine AS runner
 
