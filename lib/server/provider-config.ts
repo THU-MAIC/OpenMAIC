@@ -28,6 +28,7 @@ import {
   isVoiceCloneGroupId,
   TTS_PROVIDERS,
 } from '@/lib/audio/constants';
+import { PDF_PROVIDERS } from '@/lib/pdf/constants';
 
 const log = createLogger('ServerProviderConfig');
 
@@ -121,11 +122,19 @@ const ASR_ENV_MAP: Record<string, string> = {
   ASR_XIAOMI: 'xiaomi-asr',
 };
 
-const PDF_ENV_MAP: Record<string, string> = {
-  PDF_UNPDF: 'unpdf',
-  PDF_MINERU: 'mineru',
-  PDF_MINERU_CLOUD: 'mineru-cloud',
-};
+/** PDF providers declaring legacy env variables, in registry order. */
+const PDF_LEGACY_ENV = Object.values(PDF_PROVIDERS).flatMap((provider) =>
+  provider.legacyEnv ? [{ provider, env: provider.legacyEnv }] : [],
+);
+const PDF_ENV_MAP: Record<string, string> = Object.fromEntries(
+  PDF_LEGACY_ENV.map(({ provider, env }) => [env.prefix, provider.id]),
+);
+const PDF_BASE_URL_OPTIONAL_PROVIDERS = new Set(
+  PDF_LEGACY_ENV.filter(({ env }) => env.baseUrlOptional).map(({ provider }) => provider.id),
+);
+const PDF_KEYLESS_PROVIDERS = new Set(
+  PDF_LEGACY_ENV.filter(({ env }) => env.keyless).map(({ provider }) => provider.id),
+);
 
 const IMAGE_ENV_MAP: Record<string, string> = {
   IMAGE_OPENAI: 'openai-image',
@@ -573,7 +582,10 @@ function buildConfig(yamlData: YamlData): ServerConfig {
     pdf: applyAliDocMindFallback(
       loadEnvSection(PDF_ENV_MAP, yamlData.pdf, {
         requiresBaseUrl: true,
-        baseUrlOptionalProviders: new Set(['mineru-cloud']),
+        // Declared per provider in the PDF registry: a default endpoint lets
+        // a key alone activate it, and a self-hosted service may take none.
+        baseUrlOptionalProviders: PDF_BASE_URL_OPTIONAL_PROVIDERS,
+        keylessProviders: PDF_KEYLESS_PROVIDERS,
       }),
       yamlData.pdf,
     ),

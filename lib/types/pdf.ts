@@ -35,12 +35,27 @@ export interface ParsedPdfContent {
     position?: { x: number; y: number; width: number; height: number };
   }>;
 
+  /**
+   * Non-fatal issues the parser reported (a failed region, a page it had to
+   * turn): the text is still usable, but the caller should know it is partial.
+   */
+  diagnostics?: Array<{
+    severity: 'info' | 'warning' | 'error';
+    message: string;
+  }>;
+
   /** Metadata about the PDF */
   metadata?: {
     fileName?: string;
     fileSize?: number;
     pageCount: number;
     parser?: string; // 'unpdf' | 'mineru'
+    /**
+     * How `text` is encoded. Markdown output carries tables and formulas
+     * inline, so the compatibility adapter types its block as `markdown`
+     * without matching provider ids.
+     */
+    textFormat?: 'text' | 'markdown';
     processingTime?: number;
     taskId?: string; // MinerU task ID
     /** Image ID to base64 URL mapping (used in generation pipeline) */

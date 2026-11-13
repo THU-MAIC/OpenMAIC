@@ -31,6 +31,7 @@ describe('document extractor registry', () => {
       'mineru',
       'mineru-cloud',
       'alidocmind',
+      'minicpm-ocr',
     ]);
     expect(providers.every((provider) => provider.supportedMimeTypes)).toBe(true);
     expect(
@@ -222,6 +223,29 @@ describe('document extractor registry', () => {
       ocr: true,
       async: true,
     });
+  });
+
+  it('exposes MiniCPM-OCR for PDFs and images with async OCR capability', () => {
+    const minicpm = getDocumentExtractorProvider('minicpm-ocr');
+    expect(minicpm).toBeDefined();
+    expect(minicpm?.displayName).toBe('MiniCPM-OCR');
+    expect(minicpm?.supportedMimeTypes).toEqual([
+      'application/pdf',
+      'image/png',
+      'image/jpeg',
+      'image/bmp',
+      'image/webp',
+    ]);
+    expect(minicpm?.capabilities).toMatchObject({
+      text: true,
+      images: false,
+      tables: true,
+      formulas: true,
+      layout: true,
+      ocr: true,
+      async: true,
+    });
+    expect(minicpm?.requiresServiceConfig).toBe(true);
   });
 
   it('keeps the client-safe manifest in exact sync with both registries (RFC #1153 part 1)', () => {

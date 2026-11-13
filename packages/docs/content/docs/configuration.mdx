@@ -131,7 +131,7 @@ Amazon Bedrock (`preset: bedrock`) signs requests with the AWS credential chain 
 | `video` | video | — | Video generation |
 | `webFetch` | webFetch | — | Web page extraction (default: `builtin`) |
 | `webSearch` | webSearch | — | Web search |
-| `document` | document | — | The document parsing service (MinerU, MinerU Cloud, AliDocMind). The built-in PDF text extraction needs no service |
+| `document` | document | — | The document parsing service (MinerU, MinerU Cloud, AliDocMind, MiniCPM-OCR). The built-in PDF text extraction needs no service |
 
 How a slot resolves:
 
@@ -745,11 +745,18 @@ PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
 ALIDOCMIND_ACCESS_KEY_ID=
 ALIDOCMIND_ACCESS_KEY_SECRET=
 ALIDOCMIND_BASE_URL=       # optional override
+
+# MiniCPM-OCR (hosted API by default)
+PDF_MINICPM_OCR_API_KEY=
+# Optional. Leave it commented to use the hosted default
+# (https://api.modelbest.cn/v1). A self-hosted MiniCPM-OCR web demo serves the
+# same routes under /api and usually needs no key.
+# PDF_MINICPM_OCR_BASE_URL=http://127.0.0.1:8966/api
 ```
 
-`unpdf` is built into OpenMAIC and supports basic PDF parsing. For Office documents, images, and material requiring OCR, table, formula, or layout analysis, select a compatible MinerU or AliDocMind provider.
+`unpdf` is built into OpenMAIC and supports basic PDF parsing. For Office documents, images, and material requiring OCR, table, formula, or layout analysis, select a compatible MinerU, AliDocMind or MiniCPM-OCR provider.
 
-AliDocMind document parsing supports PDF, DOCX, PPTX, XLSX, and PNG, JPG/JPEG, BMP, and GIF. Audio and video material is currently supported only through AliDocMind: MP4, MOV, AVI, MKV, and WMV for video; MP3, WAV, and AAC for audio. M4A is not supported.
+AliDocMind document parsing supports PDF, DOCX, PPTX, XLSX, and PNG, JPG/JPEG, BMP, and GIF. MiniCPM-OCR parses PDF and PNG, JPG/JPEG, BMP, and WebP. Audio and video material is currently supported only through AliDocMind: MP4, MOV, AVI, MKV, and WMV for video; MP3, WAV, and AAC for audio. M4A is not supported.
 
 ### Web search
 
@@ -810,6 +817,8 @@ pdf:
   alidocmind:
     accessKeyId: your-access-key-id
     accessKeySecret: your-access-key-secret
+  minicpm-ocr:
+    apiKey: your-minicpm-ocr-api-key
 
 image:
   seedream:
@@ -830,7 +839,7 @@ web-search:
     baseUrl: http://localhost:8080
 ```
 
-Environment variables override matching YAML provider fields one by one. Keys must use provider IDs registered in the code, such as `openai`, `doubao-tts`, `openai-whisper`, `mineru`, `alidocmind`, `seedream`, `seedance`, `exa`, `tavily`, or `searxng`. Unknown IDs cannot register custom LLM providers here.
+Environment variables override matching YAML provider fields one by one. Keys must use provider IDs registered in the code, such as `openai`, `doubao-tts`, `openai-whisper`, `mineru`, `alidocmind`, `minicpm-ocr`, `seedream`, `seedance`, `exa`, `tavily`, or `searxng`. Unknown IDs cannot register custom LLM providers here.
 
 ## Model authorization for server-managed providers
 

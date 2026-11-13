@@ -28,8 +28,10 @@
  * so they do not hold the owner's quota for a day; a publication whose
  * outcome is uncertain keeps them, and an entry whose allocation itself
  * failed part-way expires like any unpublished allocation. What
- * this does not do: cancel a provider call (none of them takes a signal) or
- * bound how long one runs. A late result is refused when it tries to publish.
+ * this does not do: bound how long one runs. A provider that honors the run's
+ * signal stops with it -- its requests are aborted, and a job service is asked
+ * to cancel the job -- while a local parse runs to its own deadline. A late
+ * result is refused when it tries to publish.
  *
  * Document extraction keeps its text and the images the provider found, as
  * derivatives; the text's references to them name the derivatives
@@ -490,7 +492,7 @@ async function extractOrReuse(
   if (plan.kind === 'media') {
     const reused = await reuse(plannedExtractor(plan));
     if (reused) return { kind: 'reused', outcome: reused };
-    return { kind: 'extracted', outcome: await runSourceExtraction(plan, title) };
+    return { kind: 'extracted', outcome: await runSourceExtraction(plan, title, signal) };
   }
   const errors: string[] = [];
   const failures: unknown[] = [];
@@ -498,7 +500,7 @@ async function extractOrReuse(
     const reused = await reuse({ id: provider.id, version: provider.version });
     if (reused) return { kind: 'reused', outcome: reused };
     try {
-      const artifact = await extractWithDocumentProvider(provider, plan);
+      const artifact = await extractWithDocumentProvider(provider, plan, signal);
       return {
         kind: 'extracted',
         outcome: await ownerDocumentOutcome(artifact, provider, { signal }),

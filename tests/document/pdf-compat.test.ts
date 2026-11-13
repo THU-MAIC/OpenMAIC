@@ -12,6 +12,7 @@ describe('PDF compatibility adapter', () => {
       metadata: {
         pageCount: 2,
         parser: 'mineru',
+        textFormat: 'markdown',
         imageMapping: {
           img_1: 'data:image/png;base64,abc',
         },
@@ -113,6 +114,7 @@ describe('PDF compatibility adapter', () => {
       metadata: {
         pageCount: 1,
         parser: 'mineru-cloud',
+        textFormat: 'markdown',
       },
     };
 
@@ -129,6 +131,43 @@ describe('PDF compatibility adapter', () => {
       type: 'markdown',
       text: '# Cloud Parsed Lesson',
     });
+  });
+
+  it('normalizes MiniCPM-OCR Markdown output into a markdown document block', () => {
+    const parsed: ParsedPdfContent = {
+      text: '# OCR Lesson\n\n| A | B |\n| - | - |',
+      images: [],
+      diagnostics: [{ severity: 'warning', message: '1 block(s) were not recognized' }],
+      metadata: {
+        pageCount: 1,
+        parser: 'minicpm-ocr',
+        textFormat: 'markdown',
+      },
+    };
+
+    const artifact = parsedPdfToDocumentArtifact(parsed, {
+      buffer: Buffer.from('png'),
+      fileName: 'scan.png',
+      fileSize: 321,
+      mimeType: 'image/png',
+      config: { providerId: 'minicpm-ocr' },
+    });
+
+    expect(artifact.blocks[0]).toMatchObject({
+      id: 'document-text',
+      type: 'markdown',
+      text: '# OCR Lesson\n\n| A | B |\n| - | - |',
+    });
+    expect(artifact.diagnostics).toEqual([
+      {
+        severity: 'warning',
+        message: '1 block(s) were not recognized',
+        providerId: 'minicpm-ocr',
+      },
+    ]);
+    expect(documentArtifactToParsedPdfContent(artifact).diagnostics).toEqual([
+      { severity: 'warning', message: '1 block(s) were not recognized' },
+    ]);
   });
 
   it('round-trips back to the existing ParsedPdfContent shape used by generation', () => {

@@ -131,7 +131,7 @@ Amazon Bedrock（`preset: bedrock`）使用服务端的 AWS 凭证链（环境�
 | `video` | video | — | 视频生成 |
 | `webFetch` | webFetch | — | 网页内容提取（默认：`builtin`） |
 | `webSearch` | webSearch | — | 联网搜索 |
-| `document` | document | — | 文档解析服务（MinerU、MinerU Cloud、AliDocMind）。内置的 PDF 文本提取不需要服务 |
+| `document` | document | — | 文档解析服务（MinerU、MinerU Cloud、AliDocMind、MiniCPM-OCR）。内置的 PDF 文本提取不需要服务 |
 
 槽位的解析方式：
 
@@ -695,11 +695,17 @@ PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
 ALIDOCMIND_ACCESS_KEY_ID=
 ALIDOCMIND_ACCESS_KEY_SECRET=
 ALIDOCMIND_BASE_URL=       # 可选覆盖
+
+# MiniCPM-OCR（默认使用托管 API）
+PDF_MINICPM_OCR_API_KEY=
+# 可选。留空时使用托管默认地址 https://api.modelbest.cn/v1。自托管的
+# MiniCPM-OCR Web Demo 在 /api 下提供相同路由，通常无需 key。
+# PDF_MINICPM_OCR_BASE_URL=http://127.0.0.1:8966/api
 ```
 
-`unpdf` 内置于 OpenMAIC，可用于基础 PDF 解析。Office 文档、图片和需要 OCR、表格、公式或版面分析的材料，应选择兼容的 MinerU 或 AliDocMind provider。
+`unpdf` 内置于 OpenMAIC，可用于基础 PDF 解析。Office 文档、图片和需要 OCR、表格、公式或版面分析的材料，应选择兼容的 MinerU、AliDocMind 或 MiniCPM-OCR provider。
 
-AliDocMind 的文档解析支持 PDF、DOCX、PPTX、XLSX，以及 PNG、JPG/JPEG、BMP、GIF。当前音视频材料仅支持通过 AliDocMind 解析：视频格式为 MP4、MOV、AVI、MKV、WMV，音频格式为 MP3、WAV、AAC；不支持 M4A。
+AliDocMind 的文档解析支持 PDF、DOCX、PPTX、XLSX，以及 PNG、JPG/JPEG、BMP、GIF。MiniCPM-OCR 解析 PDF 以及 PNG、JPG/JPEG、BMP、WebP。当前音视频材料仅支持通过 AliDocMind 解析：视频格式为 MP4、MOV、AVI、MKV、WMV，音频格式为 MP3、WAV、AAC；不支持 M4A。
 
 ### 联网搜索
 

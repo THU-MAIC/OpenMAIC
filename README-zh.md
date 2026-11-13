@@ -446,6 +446,22 @@ slots:
 
 没有 `openmaic.yml` 时，在 `.env.local` 中设置旧版变量 `PDF_MINERU_CLOUD_API_KEY` 或 `PDF_MINERU_BASE_URL` 仍然有效。
 
+### 可选：MiniCPM-OCR（文档解析）
+
+[MiniCPM-OCR](https://github.com/OpenBMB/MiniCPM-OCR) 是 OpenBMB 推出的轻量开源 OCR 模型，支持文字、表格、公式和版面解析。可以使用托管 API（需要 API Key），也可以把 `baseUrl` 指向官方 SDK 提供的 MiniCPM-OCR Web Demo（路由位于 `/api` 下）。
+
+```yaml
+providers:
+  minicpm-ocr:
+    preset: minicpm-ocr
+    apiKey: ${PDF_MINICPM_OCR_API_KEY}
+
+slots:
+  document: minicpm-ocr
+```
+
+没有 `openmaic.yml` 时，在 `.env.local` 中设置 `PDF_MINICPM_OCR_API_KEY`（托管）或 `PDF_MINICPM_OCR_BASE_URL`（自托管）即可。
+
 ### 可选：VoxCPM2（自托管 TTS，支持音色克隆）
 
 [VoxCPM2](https://github.com/OpenBMB/VoxCPM) 是 OpenBMB 开源的 TTS 模型，支持声音克隆。OpenMAIC 自带适配器，把 VoxCPM 跑在自己机器上即可对接。

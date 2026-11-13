@@ -51,10 +51,6 @@ function pdfLayoutType(value: unknown): NonNullable<ParsedPdfContent['layout']>[
     : 'text';
 }
 
-function isMinerUMarkdownParser(parser: unknown): boolean {
-  return parser === 'mineru' || parser === 'mineru-cloud';
-}
-
 export function parsedPdfToDocumentArtifact(
   parsed: ParsedPdfContent,
   input: DocumentExtractorInput,
@@ -64,7 +60,7 @@ export function parsedPdfToDocumentArtifact(
   if (parsed.text) {
     blocks.push({
       id: 'document-text',
-      type: isMinerUMarkdownParser(parsed.metadata?.parser) ? 'markdown' : 'text',
+      type: parsed.metadata?.textFormat === 'markdown' ? 'markdown' : 'text',
       text: parsed.text,
     });
   }
@@ -132,6 +128,11 @@ export function parsedPdfToDocumentArtifact(
     },
     blocks,
     assets,
+    diagnostics: (parsed.diagnostics ?? []).map((diagnostic) => ({
+      severity: diagnostic.severity,
+      message: diagnostic.message,
+      providerId: input.config.providerId,
+    })),
     providerRaw: parsed,
   };
 }
@@ -174,6 +175,7 @@ export function documentArtifactToParsedPdfContent(artifact: DocumentArtifact): 
       content: block.text ?? '',
       position: bboxToPosition(block.bbox),
     }));
+  const diagnostics = artifact.diagnostics?.length ? artifact.diagnostics : raw?.diagnostics;
 
   return {
     text,
@@ -181,6 +183,11 @@ export function documentArtifactToParsedPdfContent(artifact: DocumentArtifact): 
     ...(tables.length > 0 ? { tables } : {}),
     ...(formulas.length > 0 ? { formulas } : {}),
     ...(layout.length > 0 ? { layout } : {}),
+    ...(diagnostics?.length
+      ? {
+          diagnostics: diagnostics.map(({ severity, message }) => ({ severity, message })),
+        }
+      : {}),
     metadata: {
       ...rawMetadata,
       fileName: artifact.metadata.fileName,
