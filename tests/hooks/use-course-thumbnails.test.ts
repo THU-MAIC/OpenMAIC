@@ -3,6 +3,7 @@ import { act, createElement, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Slide } from '@openmaic/dsl';
+import type { CourseThumbnail } from '@/lib/utils/course-cover';
 
 const mocks = vi.hoisted(() => ({
   loadCourseThumbnail: vi.fn(),
@@ -27,7 +28,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 interface Pending {
   readonly stageId: string;
   readonly signal: AbortSignal;
-  resolve(value: Slide | null): void;
+  resolve(value: CourseThumbnail | null): void;
 }
 
 let pending: Pending[] = [];
@@ -74,7 +75,9 @@ beforeEach(() => {
     .mockReset()
     .mockImplementation(
       (stageId: string, _version: number, signal: AbortSignal) =>
-        new Promise<Slide | null>((resolve) => pending.push({ stageId, signal, resolve })),
+        new Promise<CourseThumbnail | null>((resolve) =>
+          pending.push({ stageId, signal, resolve }),
+        ),
     );
   mocks.revokeThumbnailSlideMediaUrls.mockReset();
 });
@@ -92,7 +95,10 @@ describe('useCourseThumbnails', () => {
     expect(mocks.loadCourseThumbnail).toHaveBeenCalledTimes(COURSE_THUMBNAIL_CONCURRENCY);
     expect(latest?.thumbnails).toEqual({});
 
-    const first = { id: 'slide-0', elements: [] } as unknown as Slide;
+    const first = {
+      kind: 'slide',
+      slide: { id: 'slide-0', elements: [] } as unknown as Slide,
+    } satisfies CourseThumbnail;
     await act(async () => pending.shift()!.resolve(first));
 
     expect(latest?.thumbnails).toEqual({ 'stage-0': first });
@@ -103,14 +109,14 @@ describe('useCourseThumbnails', () => {
   it('aborts loads in flight and revokes loaded thumbnails when the page unmounts', async () => {
     vi.useFakeTimers();
     const root = mount(['stage-a', 'stage-b']);
-    const loaded = { id: 'slide-a', elements: [] } as unknown as Slide;
-    await act(async () => pending.shift()!.resolve(loaded));
+    const slide = { id: 'slide-a', elements: [] } as unknown as Slide;
+    await act(async () => pending.shift()!.resolve({ kind: 'slide', slide }));
     const inFlight = pending[0]!;
 
     act(() => root.unmount());
 
     expect(inFlight.signal.aborted).toBe(true);
     vi.runAllTimers();
-    expect(mocks.revokeThumbnailSlideMediaUrls).toHaveBeenCalledWith(loaded);
+    expect(mocks.revokeThumbnailSlideMediaUrls).toHaveBeenCalledWith(slide);
   });
 });

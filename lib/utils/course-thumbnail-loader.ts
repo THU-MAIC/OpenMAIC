@@ -1,14 +1,14 @@
-import type { Slide } from '@openmaic/dsl';
+import type { CourseThumbnail } from '@/lib/utils/course-cover';
 
 /**
  * Lazy, bounded loader for the home library's course thumbnails.
  *
- * A thumbnail costs a full document read plus the first slide's media bytes,
- * so the library never loads them up front: a card asks for its own thumbnail
- * while it is near the viewport ({@link CourseThumbnailLoader.request}), at
- * most `concurrency` loads run at once, and a card that leaves the viewport
- * before its load starts withdraws it. {@link CourseThumbnailLoader.dispose}
- * (leaving the page) drops the queue and aborts the loads in flight.
+ * A thumbnail costs a full document read plus the cover's media bytes, so the
+ * library never loads them up front: a card asks for its own thumbnail while
+ * it is near the viewport ({@link CourseThumbnailLoader.request}), at most
+ * `concurrency` loads run at once, and a card that leaves the viewport before
+ * its load starts withdraws it. {@link CourseThumbnailLoader.dispose} (leaving
+ * the page) drops the queue and aborts the loads in flight.
  *
  * Entries are versioned by the course's `updatedAt`: asking again with the
  * same version is free, a newer version reloads while the previous thumbnail
@@ -16,10 +16,14 @@ import type { Slide } from '@openmaic/dsl';
  */
 
 export interface CourseThumbnailLoaderOptions {
-  /** Resolve a course's first slide at `version`, or null when it has none. */
-  readonly load: (stageId: string, version: number, signal: AbortSignal) => Promise<Slide | null>;
-  /** Release what a loaded thumbnail holds (its object URLs). */
-  readonly release: (slide: Slide) => void;
+  /** Resolve a course's cover at `version`, or null when it has none. */
+  readonly load: (
+    stageId: string,
+    version: number,
+    signal: AbortSignal,
+  ) => Promise<CourseThumbnail | null>;
+  /** Release what a loaded thumbnail holds (a slide's object URLs). */
+  readonly release: (cover: CourseThumbnail) => void;
   /** Maximum loads in flight at once. */
   readonly concurrency: number;
   /** Called after the visible thumbnail set changed. */
@@ -30,7 +34,7 @@ export interface CourseThumbnailLoaderOptions {
 
 interface Entry {
   readonly version: number;
-  readonly slide: Slide | null;
+  readonly cover: CourseThumbnail | null;
 }
 
 interface Job {
@@ -88,10 +92,10 @@ export class CourseThumbnailLoader {
     };
   }
 
-  /** The loaded thumbnails: a slide, or null for a course without one. */
-  snapshot(): Record<string, Slide | null> {
-    const result: Record<string, Slide | null> = {};
-    for (const [stageId, entry] of this.entries) result[stageId] = entry.slide;
+  /** The loaded thumbnails: a course's cover, or null for a course without one. */
+  snapshot(): Record<string, CourseThumbnail | null> {
+    const result: Record<string, CourseThumbnail | null> = {};
+    for (const [stageId, entry] of this.entries) result[stageId] = entry.cover;
     return result;
   }
 
@@ -101,7 +105,7 @@ export class CourseThumbnailLoader {
     for (const [stageId, entry] of this.entries) {
       if (stageIds.has(stageId)) continue;
       this.entries.delete(stageId);
-      if (entry.slide) this.options.release(entry.slide);
+      if (entry.cover) this.options.release(entry.cover);
       changed = true;
     }
     if (changed) this.options.onChange();
@@ -115,7 +119,7 @@ export class CourseThumbnailLoader {
     for (const controller of this.inFlight.values()) controller.abort();
     this.inFlight.clear();
     for (const entry of this.entries.values()) {
-      if (entry.slide) this.options.release(entry.slide);
+      if (entry.cover) this.options.release(entry.cover);
     }
     this.entries.clear();
   }
@@ -131,29 +135,29 @@ export class CourseThumbnailLoader {
   }
 
   private async run(job: Job, controller: AbortController): Promise<void> {
-    let slide: Slide | null = null;
+    let cover: CourseThumbnail | null = null;
     let failed = false;
     try {
-      slide = await this.options.load(job.stageId, job.version, controller.signal);
+      cover = await this.options.load(job.stageId, job.version, controller.signal);
     } catch (error) {
       failed = true;
       if (!controller.signal.aborted) this.options.onError?.(job.stageId, error);
     }
     this.inFlight.delete(job);
     if (this.disposed || controller.signal.aborted) {
-      if (slide) this.options.release(slide);
+      if (cover) this.options.release(cover);
       return;
     }
     const previous = this.entries.get(job.stageId);
     if (previous && previous.version > job.version) {
-      if (slide) this.options.release(slide);
+      if (cover) this.options.release(cover);
     } else if (failed) {
       // Keep showing what the course had; the next version retries.
-      this.entries.set(job.stageId, { version: job.version, slide: previous?.slide ?? null });
+      this.entries.set(job.stageId, { version: job.version, cover: previous?.cover ?? null });
       if (!previous) this.options.onChange();
     } else {
-      this.entries.set(job.stageId, { version: job.version, slide });
-      if (previous?.slide) this.options.release(previous.slide);
+      this.entries.set(job.stageId, { version: job.version, cover });
+      if (previous?.cover) this.options.release(previous.cover);
       this.options.onChange();
     }
     this.pump();

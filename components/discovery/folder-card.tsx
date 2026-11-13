@@ -22,8 +22,9 @@ import {
   AlertDialogCancel,
   AlertDialogAction,
 } from '@/components/ui/alert-dialog';
+import { InteractiveCover } from '@/components/discovery/interactive-cover';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
-import type { Slide } from '@openmaic/dsl';
+import type { CourseThumbnail } from '@/lib/utils/course-cover';
 import type { FolderRecord } from '@/lib/types/folder';
 import type { DeleteFolderMode, StageListItem } from '@/lib/utils/stage-storage';
 
@@ -47,7 +48,7 @@ export function FolderCard({
   mobile = false,
   folder,
   courseCount,
-  coverSlides,
+  covers: coverSlides,
   coverCandidates = [],
   requestThumbnail,
   onOpen,
@@ -58,8 +59,8 @@ export function FolderCard({
   mobile?: boolean;
   folder: FolderRecord;
   courseCount: number;
-  /** Up to {@link MAX_COVERS} first-slide thumbnails of the member courses. */
-  coverSlides: Slide[];
+  /** Up to {@link MAX_COVERS} covers of the member courses. */
+  covers: CourseThumbnail[];
   /** The member courses whose thumbnails fill (or may fill) the cover slots. */
   coverCandidates?: readonly StageListItem[];
   /** Loads a member's thumbnail; called for the candidates while the tile is near the viewport. */
@@ -521,7 +522,7 @@ export function FolderTileCover({
   covers: coverSlides,
   courseCount,
 }: {
-  covers: Slide[];
+  covers: CourseThumbnail[];
   courseCount: number;
 }) {
   const { t } = useI18n();
@@ -577,7 +578,7 @@ function CoverStack({
   thumbWidth,
   setThumbWidth,
 }: {
-  covers: Slide[];
+  covers: CourseThumbnail[];
   thumbWidth: number;
   setThumbWidth: (w: number) => void;
 }) {
@@ -625,12 +626,16 @@ function CoverStack({
           >
             {thumbWidth > 0 && (
               <div className="aspect-[16/9] w-full rounded-xl overflow-hidden shadow-md ring-1 ring-black/5 bg-slate-200 dark:bg-slate-700">
-                <SlideThumbnail
-                  slide={cover}
-                  size={Math.round((thumbWidth * widthPct) / 100)}
-                  viewportSize={cover.viewportSize ?? 1000}
-                  viewportRatio={cover.viewportRatio ?? 0.5625}
-                />
+                {cover.kind === 'slide' ? (
+                  <SlideThumbnail
+                    slide={cover.slide}
+                    size={Math.round((thumbWidth * widthPct) / 100)}
+                    viewportSize={cover.slide.viewportSize ?? 1000}
+                    viewportRatio={cover.slide.viewportRatio ?? 0.5625}
+                  />
+                ) : (
+                  <InteractiveCover cover={cover.cover} />
+                )}
               </div>
             )}
           </div>

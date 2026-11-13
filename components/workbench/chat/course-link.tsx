@@ -42,6 +42,7 @@
 
 import { useEffect, useState } from 'react';
 import { ArrowRight, BookOpen, MoreHorizontal } from 'lucide-react';
+import { InteractiveCover } from '@/components/discovery/interactive-cover';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useCourseThumbnails } from '@/lib/hooks/use-course-thumbnails';
@@ -71,16 +72,20 @@ function CourseCover({
     if (version === null) return;
     return requestThumbnail(courseId, version);
   }, [courseId, version, requestThumbnail]);
-  const slide = version === null ? null : thumbnails[courseId];
+  const cover = version === null ? null : thumbnails[courseId];
   return (
     <span className={styles.courseLink.thumb} aria-hidden="true">
-      {slide ? (
-        <SlideThumbnail
-          slide={slide}
-          size={COVER_WIDTH}
-          viewportSize={slide.viewportSize ?? 1000}
-          viewportRatio={slide.viewportRatio ?? 0.5625}
-        />
+      {cover ? (
+        cover.kind === 'slide' ? (
+          <SlideThumbnail
+            slide={cover.slide}
+            size={COVER_WIDTH}
+            viewportSize={cover.slide.viewportSize ?? 1000}
+            viewportRatio={cover.slide.viewportRatio ?? 0.5625}
+          />
+        ) : (
+          <InteractiveCover cover={cover.cover} compact />
+        )
       ) : (
         <BookOpen className={styles.courseLink.glyph} />
       )}

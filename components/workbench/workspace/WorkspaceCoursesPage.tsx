@@ -64,11 +64,12 @@ import {
 } from 'lucide-react';
 import { FOLDER_TILE_FRAME, FolderTileCover } from '@/components/discovery/folder-card';
 import { toast } from 'sonner';
-import type { Slide } from '@openmaic/dsl';
+import type { CourseThumbnail } from '@/lib/utils/course-cover';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { useHomeDiscovery } from '@/lib/hooks/use-home-discovery';
 import { useCourseThumbnails } from '@/lib/hooks/use-course-thumbnails';
 import { useNearViewport } from '@/lib/hooks/use-near-viewport';
+import { InteractiveCover } from '@/components/discovery/interactive-cover';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
 import { ThumbnailSkeleton } from '@/components/discovery/thumbnail-skeleton';
 import {
@@ -470,19 +471,19 @@ export function WorkspaceCoursesPage({
    * Each folder's cover: up to three member covers, newest first, as the
    * classic home's folder tile shows them. The members that fill (or, not
    * loaded yet, may fill) those slots are the card's candidates; a member
-   * without a slide gives its slot to the next.
+   * without a cover gives its slot to the next.
    */
   const folderCovers = useMemo(() => {
-    const byFolder = new Map<string, { slides: Slide[]; candidates: Course[] }>();
+    const byFolder = new Map<string, { covers: CourseThumbnail[]; candidates: Course[] }>();
     for (const course of [...courses.classrooms].sort((a, b) => b.updatedAt - a.updatedAt)) {
       if (!course.folderId) continue;
-      const covers = byFolder.get(course.folderId) ?? { slides: [], candidates: [] };
-      byFolder.set(course.folderId, covers);
-      if (covers.candidates.length >= 3) continue;
-      const slide = thumbnails[course.id];
-      if (slide === null) continue;
-      covers.candidates.push(course);
-      if (slide) covers.slides.push(slide);
+      const entry = byFolder.get(course.folderId) ?? { covers: [], candidates: [] };
+      byFolder.set(course.folderId, entry);
+      if (entry.candidates.length >= 3) continue;
+      const cover = thumbnails[course.id];
+      if (cover === null) continue;
+      entry.candidates.push(course);
+      if (cover) entry.covers.push(cover);
     }
     return byFolder;
   }, [courses.classrooms, thumbnails]);
@@ -583,7 +584,7 @@ export function WorkspaceCoursesPage({
           openTestId={`workspace-courses-folder-${item.id}`}
           name={item.name}
           courseCount={counts.get(item.id) ?? 0}
-          covers={covers?.slides ?? NO_COVERS}
+          covers={covers?.covers ?? NO_COVERS}
           candidates={covers?.candidates}
           requestThumbnail={requestThumbnail}
           onOpen={() => {
@@ -639,7 +640,7 @@ export function WorkspaceCoursesPage({
         key={entry.id}
         course={course}
         run={courseRuns.get(course.id)}
-        slide={thumbnails[course.id]}
+        cover={thumbnails[course.id]}
         requestThumbnail={requestThumbnail}
         onOpen={() => onOpenCourse(course.id)}
         folders={foldersAvailable ? courses.folders : null}
@@ -882,7 +883,7 @@ export function WorkspaceCoursesPage({
 
 /** Course cards per scroll page: a few rows of the grid at any width. */
 const COURSE_PAGE_SIZE = 24;
-const NO_COVERS: Slide[] = [];
+const NO_COVERS: CourseThumbnail[] = [];
 const NO_ORDER: readonly string[] = [];
 const NO_FOLDERS: Discovery['folders'] = [];
 /** The middle share of a folder card that files a course into it. */
@@ -979,7 +980,7 @@ function FolderTile({
   readonly dropActive?: boolean;
   readonly name: string;
   readonly courseCount: number;
-  readonly covers: Slide[];
+  readonly covers: CourseThumbnail[];
   /** The members whose thumbnails fill (or may fill) the cover. */
   readonly candidates?: readonly Course[];
   readonly requestThumbnail?: (stageId: string, version: number) => () => void;
@@ -1077,7 +1078,7 @@ function FolderTile({
 function CourseCard({
   course,
   run,
-  slide,
+  cover,
   requestThumbnail,
   onOpen,
   folders,
@@ -1095,8 +1096,8 @@ function CourseCard({
 }: {
   readonly course: Course;
   readonly run: RunSnapshot | undefined;
-  /** The first slide; null when the course has none, undefined until loaded. */
-  readonly slide: Slide | null | undefined;
+  /** The course's cover; null when it has none, undefined until loaded. */
+  readonly cover: CourseThumbnail | null | undefined;
   readonly requestThumbnail: (stageId: string, version: number) => () => void;
   readonly onOpen: () => void;
   /** The folders a course can be filed into; null when folders are unavailable. */
@@ -1166,14 +1167,18 @@ function CourseCard({
         className="ws-course-card w-full text-left"
       >
         <div ref={thumbRef} className="ws-course-card-thumb relative">
-          {slide && width > 0 ? (
-            <SlideThumbnail
-              slide={slide}
-              size={width}
-              viewportSize={slide.viewportSize ?? 1000}
-              viewportRatio={slide.viewportRatio ?? 0.5625}
-            />
-          ) : slide === undefined ? (
+          {cover && (cover.kind === 'interactive' || width > 0) ? (
+            cover.kind === 'slide' ? (
+              <SlideThumbnail
+                slide={cover.slide}
+                size={width}
+                viewportSize={cover.slide.viewportSize ?? 1000}
+                viewportRatio={cover.slide.viewportRatio ?? 0.5625}
+              />
+            ) : (
+              <InteractiveCover cover={cover.cover} />
+            )
+          ) : cover === undefined ? (
             <ThumbnailSkeleton />
           ) : (
             <div className="ws-course-card-blank" aria-hidden="true" />

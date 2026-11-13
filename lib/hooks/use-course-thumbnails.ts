@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Slide } from '@openmaic/dsl';
 import { createLogger } from '@/lib/logger';
 import { loadCourseThumbnail } from '@/lib/utils/course-thumbnail-cache';
+import type { CourseThumbnail } from '@/lib/utils/course-cover';
 import { CourseThumbnailLoader } from '@/lib/utils/course-thumbnail-loader';
 import { revokeThumbnailSlideMediaUrls } from '@/lib/utils/stage-storage';
 
@@ -12,10 +12,11 @@ export const COURSE_THUMBNAIL_CONCURRENCY = 4;
 
 export interface CourseThumbnails {
   /**
-   * Loaded thumbnails by stage id: the first slide, or null for a course
+   * Loaded thumbnails by stage id: the course's cover (its first slide, or
+   * the static cover of its first interactive page), or null for a course
    * without one. A course that is absent has not loaded (yet).
    */
-  readonly thumbnails: Record<string, Slide | null>;
+  readonly thumbnails: Record<string, CourseThumbnail | null>;
   /** Ask for a course's thumbnail at `version` (its updatedAt); returns a withdraw. */
   readonly requestThumbnail: (stageId: string, version: number) => () => void;
   /** Forget the thumbnails of courses no longer in the library. */
@@ -30,7 +31,7 @@ export interface CourseThumbnails {
  * page aborts what is still loading and releases every thumbnail's object URLs.
  */
 export function useCourseThumbnails(): CourseThumbnails {
-  const [thumbnails, setThumbnails] = useState<Record<string, Slide | null>>({});
+  const [thumbnails, setThumbnails] = useState<Record<string, CourseThumbnail | null>>({});
   const loaderRef = useRef<CourseThumbnailLoader | null>(null);
 
   const loader = useCallback((): CourseThumbnailLoader => {
@@ -38,8 +39,11 @@ export function useCourseThumbnails(): CourseThumbnails {
     const created: CourseThumbnailLoader = new CourseThumbnailLoader({
       load: loadCourseThumbnail,
       // Deferred so the card re-renders with its replacement before the old
-      // object URLs are revoked.
-      release: (slide) => window.setTimeout(() => revokeThumbnailSlideMediaUrls(slide), 0),
+      // object URLs are revoked. Only a slide mints object URLs.
+      release: (cover) =>
+        window.setTimeout(() => {
+          if (cover.kind === 'slide') revokeThumbnailSlideMediaUrls(cover.slide);
+        }, 0),
       concurrency: COURSE_THUMBNAIL_CONCURRENCY,
       onChange: () => {
         if (loaderRef.current === created) setThumbnails(created.snapshot());
