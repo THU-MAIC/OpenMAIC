@@ -49,8 +49,8 @@ export interface ResolveVisionImagesOptions {
 /**
  * Turn page media srcs into inline image bytes for a vision call.
  *
- * A data URL or an HTTP(S) URL passes through. An allocated asset id is read
- * from the run owner's asset partition. An image that does not resolve (no
+ * A data URL passes through. An allocated asset id is read from the run
+ * owner's asset partition. An image that does not resolve (an HTTP(S) URL, no
  * owner, a same-origin path, missing, over the size bound, a failed read, or
  * out of time) is dropped; the caller describes it in text instead. Each image
  * is bounded as soon as it is read, so a page never holds several unbounded
@@ -66,10 +66,14 @@ export async function resolveVisionImages(
   const deadline = Date.now() + budgetMs;
   for (const image of images) {
     signal?.throwIfAborted();
-    if (/^(?:data:|https?:)/i.test(image.src)) {
+    if (/^data:/i.test(image.src)) {
       resolved.push(...(await prepareVisionImages([image], console)));
       continue;
     }
+    // A remote URL in an image part may be downloaded by the model SDK on the
+    // server, outside the URL guard; the agent chooses these URLs, so the
+    // image is described in text instead.
+    if (/^https?:/i.test(image.src)) continue;
     // Same-origin paths are served by app routes, not the asset pool; their
     // bytes are not read here, so the image is described in text.
     if (!ownerId || image.src.startsWith('/')) continue;
@@ -118,7 +122,11 @@ export async function resolveVisionImages(
 
 /** The generation package's callback seam, bound to server stage routing. */
 export interface GenerationAiCallFactory {
-  (stage: LlmStage): AICallFn;
+  /**
+   * `onVisionCall` hears how each call that attached images ended: `true` when
+   * the vision request failed and the reply came from the text retry.
+   */
+  (stage: LlmStage, onVisionCall?: (textFallback: boolean) => void): AICallFn;
   /** Whether the model routed for `stage` accepts image input. */
   supportsVision(stage: LlmStage): Promise<boolean>;
 }
@@ -147,8 +155,8 @@ export function createGenerationAiCallFactory(options?: {
     return model;
   };
   const calls = new Map<LlmStage, AICallFn>();
-  const factory = ((stage: LlmStage) => {
-    const cached = calls.get(stage);
+  const factory = ((stage: LlmStage, onVisionCall?: (textFallback: boolean) => void) => {
+    const cached = onVisionCall ? undefined : calls.get(stage);
     if (cached) return cached;
     const call: AICallFn = async (systemPrompt, userPrompt, images) => {
       const resolved = await modelFor(stage);
@@ -198,15 +206,18 @@ export function createGenerationAiCallFactory(options?: {
         if (result.finishReason !== 'content-filter' && isEmptyLlmOutput(result.text)) {
           throw new Error('empty vision output');
         }
+        onVisionCall?.(false);
         return result.text;
       } catch (error) {
         if (options?.abortSignal?.aborted) throw error;
         console.warn(`Vision ${stage} call failed; retrying as text:`, error);
         // Nothing is attached on the text retry; each image keeps its description.
-        return (await textCall(userPrompt.replaceAll(' [see attached]', ''))).text;
+        const text = (await textCall(userPrompt.replaceAll(' [see attached]', ''))).text;
+        onVisionCall?.(true);
+        return text;
       }
     };
-    calls.set(stage, call);
+    if (!onVisionCall) calls.set(stage, call);
     return call;
   }) as GenerationAiCallFactory;
   factory.supportsVision = async (stage) =>

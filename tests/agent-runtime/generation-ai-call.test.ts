@@ -28,7 +28,7 @@ function resolvedReader(bytes: Buffer, mimeType = 'image/png'): VisionAssetReade
 }
 
 describe('resolveVisionImages', () => {
-  it('passes data and HTTP(S) URLs through without reading the asset pool', async () => {
+  it('passes data URLs through and drops HTTP(S) URLs without reading the asset pool', async () => {
     const dataUrl = `data:image/png;base64,${(await png()).toString('base64')}`;
     const readAsset = vi.fn<VisionAssetReader>();
     const images = await resolveVisionImages(
@@ -39,10 +39,7 @@ describe('resolveVisionImages', () => {
       'owner-1',
       readAsset,
     );
-    expect(images).toEqual([
-      { id: 'img_1', src: dataUrl },
-      { id: 'img_2', src: 'https://example.com/figure.png' },
-    ]);
+    expect(images).toEqual([{ id: 'img_1', src: dataUrl }]);
     expect(readAsset).not.toHaveBeenCalled();
   });
 
@@ -137,7 +134,7 @@ describe('resolveVisionImages', () => {
     const images = await resolveVisionImages(
       [
         { id: 'img_1', src: 'ast_figure1' },
-        { id: 'img_2', src: 'https://example.com/figure.png' },
+        { id: 'img_2', src: `data:image/png;base64,${(await png()).toString('base64')}` },
       ],
       undefined,
       readAsset,
@@ -238,6 +235,25 @@ describe('createGenerationAiCallFactory', () => {
     expect(text).toBe('generated');
     expect(callLLM).toHaveBeenCalledTimes(2);
     expect(callLLM.mock.calls[1][0].prompt).toBe('img_1');
+  });
+
+  it('tells the caller whether each vision call fell back to text', async () => {
+    routeTo(true);
+    callLLM.mockRejectedValueOnce(new Error('primary overloaded'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const routed = createGenerationAiCallFactory({
+      ownerId: 'owner-1',
+      readAsset: resolvedReader(await png()),
+    });
+    const onVisionCall = vi.fn();
+    const call = routed('scene-content:slide', onVisionCall);
+    const images = [{ id: 'img_1', src: 'ast_figure1' }];
+
+    await call('system', 'img_1 [see attached]', images);
+    await call('system', 'img_1 [see attached]', images);
+    warn.mockRestore();
+
+    expect(onVisionCall.mock.calls).toEqual([[true], [false]]);
   });
 
   it('returns a content-filter refusal without a text retry', async () => {

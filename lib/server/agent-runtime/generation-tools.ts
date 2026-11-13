@@ -294,7 +294,10 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
     abortSignal: deps.abortSignal,
     ownerId: deps.ownerId,
   });
-  const aiCallFor = (stage: Parameters<typeof routed>[0]) => deps.aiCall ?? routed(stage);
+  const aiCallFor = (
+    stage: Parameters<typeof routed>[0],
+    onVisionCall?: Parameters<typeof routed>[1],
+  ) => deps.aiCall ?? routed(stage, onVisionCall);
   const actionGenerator = deps.generateActions ?? generateSceneActions;
 
   const generateScene: AgentTool<typeof SceneParams> = {
@@ -464,6 +467,9 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
       let content: Awaited<ReturnType<typeof generateSceneContent>>;
       let contentFailure: SceneContentFailureCode | undefined;
       let visionFallbackIds: string[] = [];
+      // Set when the content call's vision request failed and its text retry
+      // wrote the page; the last call decides, as its reply is the one kept.
+      let visionCallFellBack = false;
       try {
         const contentStage = sceneContentStage(params.type);
         // The content model sees page media as images when its routed model
@@ -498,7 +504,10 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
             .map((image) => image.id);
         }
         const visionEnabled = visionWanted;
-        content = await generateSceneContent(outline, aiCallFor(contentStage), {
+        const contentCall = aiCallFor(contentStage, (textFallback) => {
+          visionCallFellBack = textFallback;
+        });
+        content = await generateSceneContent(outline, contentCall, {
           agents,
           languageDirective: doc.stage.languageDirective ?? '',
           allowProceduralSkill: true,
@@ -597,9 +606,11 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
             ? ` ${mediaPlaceholders.length} media placeholder(s) still render as skeletons.`
             : ''
         }${
-          visionFallbackIds.length
-            ? ` ${visionFallbackIds.length} media image(s) could not be shown to the content model, so those were placed from their descriptions only.`
-            : ''
+          visionCallFellBack
+            ? ` The content model's image request failed, so this page was composed from the ${assignedImages.length} media image description(s) only.`
+            : visionFallbackIds.length
+              ? ` ${visionFallbackIds.length} media image(s) could not be shown to the content model, so those were placed from their descriptions only.`
+              : ''
         }`,
         {
           sceneId: scene.id,
