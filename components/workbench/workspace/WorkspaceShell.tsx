@@ -892,16 +892,39 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const coursesReady = courses.state === 'ready';
   const reloadCourses = courses.reload;
   const courseList = courses.classrooms;
+  // Whether the seed has had its say: until then the tour does not know if its
+  // guide-course steps belong, and starting it early showed a shorter tour that
+  // grew once a first visit's seed landed. Kept per owner: a sign-in or
+  // sign-out (`auth-change`, which also reloads the list) starts a new owner
+  // generation, and a seed still settling for the previous owner does not
+  // count for the new one.
+  const ownerGeneration = useRef(0);
+  const [currentGeneration, setCurrentGeneration] = useState(0);
+  const [seededGeneration, setSeededGeneration] = useState(-1);
+  useEffect(() => {
+    const next = () => {
+      ownerGeneration.current += 1;
+      setCurrentGeneration(ownerGeneration.current);
+    };
+    window.addEventListener('auth-change', next);
+    return () => window.removeEventListener('auth-change', next);
+  }, []);
   useEffect(() => {
     if (!coursesReady) return;
-    void seedGuideCourse(guideOption, courseList).then((outcome) => {
-      // `present`: a claim brought a guide course in after this list loaded.
-      if (outcome === 'created' || outcome === 'present') void reloadCourses();
-    });
+    const generation = ownerGeneration.current;
+    void seedGuideCourse(guideOption, courseList)
+      .then(async (outcome) => {
+        // `present`: a claim brought a guide course in after this list loaded.
+        if (outcome === 'created' || outcome === 'present') await reloadCourses();
+      })
+      .catch(() => undefined)
+      .finally(() => setSeededGeneration(generation));
     // Settled owners return at once (browser memory), so a list that changes
     // later costs nothing.
   }, [coursesReady, guideOption, courseList, reloadCourses]);
+  const guideSeedDone = seededGeneration === currentGeneration;
   const guideCourseId = guideOption === false ? null : findGuideCourse(courses.classrooms);
+  const guideSettled = guideOption === false || !!guideCourseId || guideSeedDone;
   const unknownView =
     !!panes.view &&
     panes.view !== WORKSPACE_LIBRARY_VIEW &&
@@ -1037,11 +1060,18 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   // the code mounts the workspace again, and the tour starts then.
   const accessGateOpen = useAccessCodeGateOpen();
   const [tourRunning, setTourRunning] = useState(false);
-  const showTour = accessGateOpen && tourPending && (tourRunning || (render.home && tourFits));
-  const tourSteps = useMemo(
+  const showTour =
+    accessGateOpen && tourPending && (tourRunning || (render.home && tourFits && guideSettled));
+  const currentTourSteps = useMemo(
     () => TOUR_STEPS.filter((step) => !step.needsGuide || !!guideCourseId),
     [guideCourseId],
   );
+  // Fixed while the tour is up: a guide course arriving mid-tour (a later
+  // retry of a failed seed) must not renumber the steps under the reader.
+  const [startedTourSteps, setStartedTourSteps] = useState<typeof currentTourSteps | null>(null);
+  if (showTour && !startedTourSteps) setStartedTourSteps(currentTourSteps);
+  if (!showTour && startedTourSteps) setStartedTourSteps(null);
+  const tourSteps = startedTourSteps ?? currentTourSteps;
   const tourNavigate = (view: TourView) => {
     if (view === 'courses') {
       if (render.view !== WORKSPACE_COURSES_VIEW) openView(WORKSPACE_COURSES_VIEW);
