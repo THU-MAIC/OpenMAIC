@@ -1117,6 +1117,9 @@ for (const [width, height, locale, docked] of [
     await finish(page);
     if (docked) await page.getByTestId('pbl-workspace-size').click();
     await page.locator('[data-pbl-tour="replay"]').click();
+    await expect
+      .poll(() => page.getByTestId('pbl-v3-workspace').evaluate((owner) => owner.scrollTop))
+      .toBe(0);
     const selectors = [
       '[data-pbl-tour="task"]',
       '[data-pbl-tour="conversation"]',
