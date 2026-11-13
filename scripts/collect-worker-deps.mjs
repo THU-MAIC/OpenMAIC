@@ -23,9 +23,19 @@
  * starts importing something new is covered before anyone notices. `SELF_BUNDLED` is
  * the only per-package knowledge, for entries already published as one bundled file.
  *
- * Usage: node scripts/collect-worker-deps.mjs [--target <root>]
+ * Every resolved path must also stay inside the deployment. In the image the target
+ * is `.next/standalone` *inside* `/app`, while the builder's full install is still at
+ * `/app/node_modules`; Node walking up from the probe would happily resolve a package
+ * the runner never receives, so the audit would bless a broken image.
+ *
+ * Workers are provisioned per directory, not per file: two workers sharing one
+ * directory share one `node_modules`, and provisioning them one at a time would wipe
+ * the tree between audits.
+ *
+ * Usage: node scripts/collect-worker-deps.mjs [--target <root>] [--audit-only]
  *   `<root>` mirrors the repository layout (`<root>/lib/.../x-worker.mjs`).
- *   Defaults to `.next/standalone`.
+ *   Defaults to `.next/standalone`. `--audit-only` re-checks a deployment that is
+ *   already provisioned, without copying anything into it.
  */
 import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
@@ -55,6 +65,8 @@ const targetRoot =
   targetArg === -1
     ? path.join(root, '.next', 'standalone')
     : path.resolve(process.argv[targetArg + 1] ?? '');
+/** Check a deployment that is already provisioned, copying nothing into it. */
+const auditOnly = process.argv.includes('--audit-only');
 
 /** Packages resolve from the project's install tree, never from the target: the
  *  target may be outside the repository (the tests), and the question is "copy
@@ -253,9 +265,11 @@ async function copyPackage(name, { dir, pkg }, nodeModules) {
   return sizeOf(dest);
 }
 
-/** Copy the imports of one worker, expanding `dependencies` breadth-first. */
-async function provision(workerRel, edges) {
-  const nodeModules = path.join(targetRoot, path.posix.dirname(workerRel), 'node_modules');
+/** Copy the imports of one directory's workers, expanding `dependencies`
+ *  breadth-first. The directory is written from scratch, so the caller passes the
+ *  union of every worker that lives there. */
+async function provision(dir, edges) {
+  const nodeModules = path.join(targetRoot, dir, 'node_modules');
   await rm(nodeModules, { recursive: true, force: true });
   await mkdir(nodeModules, { recursive: true });
 
@@ -282,6 +296,29 @@ async function provision(workerRel, edges) {
 }
 
 // ---------------------------------------------------------------------------
+// Planning
+// ---------------------------------------------------------------------------
+
+/**
+ * Workers grouped by the `node_modules` they share. Two workers in one directory
+ * must be provisioned together: provisioning them one at a time would wipe the tree
+ * between them, and the first one was audited before that happened -- so the build
+ * would pass while the image carried only the last worker's packages.
+ */
+async function groupByDirectory(workers) {
+  const groups = new Map();
+  for (const workerRel of workers) {
+    const graph = await buildGraph(workerRel);
+    const dir = path.posix.dirname(workerRel);
+    const group = groups.get(dir) ?? { dir, edges: [], workers: [] };
+    group.edges.push(...graph.edges);
+    group.workers.push({ workerRel, graph });
+    groups.set(dir, group);
+  }
+  return [...groups.values()];
+}
+
+// ---------------------------------------------------------------------------
 // Audit
 // ---------------------------------------------------------------------------
 
@@ -293,6 +330,11 @@ async function provision(workerRel, edges) {
  * `import.meta.resolve`, not `require.resolve`: these were disagreeing on exactly
  * the packages that matter -- `linkedom/worker` is an `exports` condition and
  * `parse5@8` has no CommonJS entry, so CJS reports both broken when they are fine.
+ *
+ * A resolution that leaves the deployment is a failure too. Node walks up past
+ * `.next/standalone` to the builder's own `node_modules`, so without this check the
+ * audit would pass for a package the runner never receives -- which is exactly the
+ * bug it exists to catch.
  */
 async function audit(workerRel, graph, problems) {
   const absent = graph.files.filter((rel) => !existsSync(path.join(targetRoot, rel)));
@@ -312,11 +354,19 @@ async function audit(workerRel, graph, problems) {
     const deployedDir = path.join(targetRoot, dir);
     const probe = path.join(deployedDir, '.worker-deps-probe.mjs');
     const source =
+      `import path from 'node:path';\n` +
+      `import { fileURLToPath } from 'node:url';\n` +
+      `const deployment = path.resolve(${JSON.stringify(targetRoot)});\n` +
       `const specifiers = ${JSON.stringify([...specifiers])};\n` +
+      'const inside = (url) => {\n' +
+      '  const file = path.resolve(fileURLToPath(url));\n' +
+      '  return file === deployment || file.startsWith(deployment + path.sep);\n' +
+      '};\n' +
       'const results = [];\n' +
       'for (const specifier of specifiers) {\n' +
       '  try {\n' +
-      '    results.push([specifier, import.meta.resolve(specifier), null]);\n' +
+      '    const url = import.meta.resolve(specifier);\n' +
+      '    results.push([specifier, url, inside(url) ? null : "outside"]);\n' +
       '  } catch (error) {\n' +
       '    results.push([specifier, null, error.code ?? String(error.message)]);\n' +
       '  }\n' +
@@ -325,8 +375,15 @@ async function audit(workerRel, graph, problems) {
     await writeFile(probe, source);
     try {
       const { stdout } = await runFile(process.execPath, [probe], { cwd: deployedDir });
-      for (const [specifier, , failure] of JSON.parse(stdout)) {
-        if (failure) problems.push(`cannot resolve '${specifier}' from ${dir}/ (${failure})`);
+      for (const [specifier, url, failure] of JSON.parse(stdout)) {
+        if (failure === 'outside') {
+          problems.push(
+            `'${specifier}' from ${dir}/ resolves outside the deployment (${url}) -- ` +
+              'the builder tree is not copied to the runner',
+          );
+        } else if (failure) {
+          problems.push(`cannot resolve '${specifier}' from ${dir}/ (${failure})`);
+        }
       }
     } finally {
       await rm(probe, { force: true });
@@ -357,27 +414,41 @@ async function main() {
     );
   }
 
+  const groups = await groupByDirectory(workers);
   const problems = [];
   let totalPackages = 0;
   let totalBytes = 0;
 
-  for (const workerRel of workers) {
-    const graph = await buildGraph(workerRel);
-    const { nodeModules, copied } = await provision(workerRel, graph.edges);
-    await audit(workerRel, graph, problems);
-
+  // Provision every directory first, then audit all of them. Provisioning and
+  // auditing in one pass would audit a directory that a later worker is about to
+  // rewrite -- and with two workers sharing a directory, the second `rm` would
+  // delete the packages the first one was just checked against.
+  for (const group of groups) {
+    const { dir, edges, workers: members } = group;
+    const files = members.reduce((sum, member) => sum + member.graph.files.length, 0);
+    if (auditOnly) {
+      console.log(`[worker-deps] ${dir}/: ${files} file(s) (audit only, nothing provisioned)`);
+      continue;
+    }
+    const { nodeModules, copied } = await provision(dir, edges);
     for (const [name, info] of [...copied].sort()) {
       totalBytes += info.bytes;
       console.log(
-        `[worker-deps] ${workerRel}: ${name}@${info.version}` +
+        `[worker-deps] ${dir}/: ${name}@${info.version}` +
           `${info.selfBundled ? ' (self-bundled)' : ''} ${mib(info.bytes)}`,
       );
     }
     totalPackages += copied.size;
     console.log(
-      `[worker-deps] ${workerRel}: ${graph.files.length} file(s), ${copied.size} package(s) -> ` +
+      `[worker-deps] ${dir}/: ${files} file(s), ${copied.size} package(s) -> ` +
         `${path.relative(root, nodeModules)}`,
     );
+  }
+
+  for (const group of groups) {
+    for (const member of group.workers) {
+      await audit(member.workerRel, member.graph, problems);
+    }
   }
 
   if (problems.length > 0) {
@@ -388,8 +459,11 @@ async function main() {
   }
 
   console.log(
-    `[worker-deps] ${workers.length} worker(s), ${totalPackages} package(s), ${mib(totalBytes)} -- ` +
-      'every import resolves from the deployed copy',
+    auditOnly
+      ? `[worker-deps] ${workers.length} worker(s) audited in place -- every import ` +
+          'resolves inside the deployment'
+      : `[worker-deps] ${workers.length} worker(s), ${totalPackages} package(s), ` +
+          `${mib(totalBytes)} -- every import resolves from the deployed copy`,
   );
 }
 

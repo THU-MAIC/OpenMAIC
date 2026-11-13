@@ -185,6 +185,28 @@ describe('runtime workers in a standalone deployment', () => {
     expect(pathLoadedModules()).toEqual([]);
   });
 
+  it('rejects a resolution that leaves the deployment', async () => {
+    // A deployment *inside* the checkout: in the image `.next/standalone` sits
+    // under `/app` with the builder's full install still at `/app/node_modules`,
+    // so Node walking up finds packages the runner never receives. Without this
+    // check the audit blesses them, which is the bug it exists to catch.
+    const inside = await mkdtemp(path.join(root, '.tmp-worker-audit-'));
+    scratchDirs.push(inside);
+    const parent = 'lib/server/material-extraction';
+    await cp(path.join(root, parent), path.join(inside, parent), { recursive: true });
+
+    const failure = await run(process.execPath, [
+      COLLECTOR,
+      '--target',
+      inside,
+      '--audit-only',
+    ]).then(
+      () => null,
+      (error: { stderr?: string }) => String(error.stderr ?? ''),
+    );
+    expect(failure).toContain('resolves outside the deployment');
+  }, 120_000);
+
   for (const worker of workers) {
     it(`${worker}: every import resolves once the dependencies are collected`, async () => {
       const edges = await walkGraph(worker);
