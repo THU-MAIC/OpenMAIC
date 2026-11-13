@@ -7,9 +7,7 @@ import { PHASE_PRODUCTION_BUILD } from 'next/constants';
  * serve it at https://example.com/openmaic.
  */
 function readAppBasePath(): string {
-  const normalised = (process.env.NEXT_PUBLIC_APP_BASE_PATH ?? '')
-    .trim()
-    .replace(/^\/+|\/+$/g, '');
+  const normalised = (process.env.NEXT_PUBLIC_APP_BASE_PATH ?? '').trim().replace(/^\/+|\/+$/g, '');
   return normalised ? `/${normalised}` : '';
 }
 
