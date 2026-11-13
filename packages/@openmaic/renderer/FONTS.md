@@ -24,6 +24,22 @@ the fonts.
 | `ZcoolHappy`      | 站酷快乐体   | 站酷 (ZCOOL) free-use license (永久免费授权所有人使用，可免费商用) | ✅ (conditions) | © ZCOOL (站酷), designers retain attribution — [license](./font-licenses/ZcoolHappy-LICENSE.txt) |
 | `WenDingPLKaiTi`  | 文鼎PL简中楷 (AR PL KaitiM GB) | Arphic Public License (1999) | ✅ | © 1994–1999 Arphic Technology Co., Ltd. — [license](./font-licenses/ARPHIC-PL.txt) |
 
+### Aliases (`picker-fonts.css`)
+
+The opt-in `picker-fonts.css` declares four other names for faces above, from
+`FONT_ALIASES` in `fonts.config.mjs`. They are the Google Fonts names of the
+same typefaces, which the `@openmaic/editor` default font picker writes into
+slides. An alias is only another CSS `font-family` name: its rule points at the
+same woff2 as its target, so no extra font is served and the font files are
+unchanged.
+
+| Alias (`font-family`) | Renders with      |
+| --------------------- | ----------------- |
+| `Noto Sans SC`        | `SourceHanSans`   |
+| `Noto Serif SC`       | `SourceHanSerif`  |
+| `LXGW WenKai`         | `LXGWWenKai`      |
+| `ZCOOL KuaiLe`        | `ZcoolHappy`      |
+
 ✅ = free to redistribute (bundle/embed/serve) as long as its conditions are met
 (notice/license travels with it; not sold on its own). The four OFL faces are
 OFL 1.1; `ZcoolHappy` is permanently free for everyone to use with the

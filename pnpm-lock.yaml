@@ -74,9 +74,6 @@ importers:
       '@fontsource/literata':
         specifier: ^5.2.8
         version: 5.2.8
-      '@fontsource/lxgw-wenkai':
-        specifier: ^5.2.5
-        version: 5.2.5
       '@fontsource/merriweather':
         specifier: ^5.2.11
         version: 5.2.11
@@ -89,9 +86,6 @@ importers:
       '@fontsource/noto-sans-sc':
         specifier: ^5.2.9
         version: 5.2.9
-      '@fontsource/noto-serif-sc':
-        specifier: ^5.2.8
-        version: 5.2.8
       '@fontsource/open-sans':
         specifier: ^5.2.7
         version: 5.2.7
@@ -104,9 +98,6 @@ importers:
       '@fontsource/source-serif-4':
         specifier: ^5.2.9
         version: 5.2.9
-      '@fontsource/zcool-kuaile':
-        specifier: ^5.2.8
-        version: 5.2.8
       '@joplin/turndown-plugin-gfm':
         specifier: ^1.0.67
         version: 1.0.67
@@ -2909,9 +2900,6 @@ packages:
   '@fontsource/literata@5.2.8':
     resolution: {integrity: sha512-Rj3eEQeu7+yBw9ZjXxcRiKDDrhbhpCyb0b79VJVCjDF1fdgJ8gDr9C1SRFLwfi+VaHEkhJDnRGm25fq1Yk+wNg==}
 
-  '@fontsource/lxgw-wenkai@5.2.5':
-    resolution: {integrity: sha512-lIBouZW7qNw3VdVnjc0NC80iDfxjU7OnaKGaz6QHiHjC8z0fv9MyrHpeBMzkPnyEVabcpUu4Wf8DnaihfGVYtw==}
-
   '@fontsource/merriweather@5.2.11':
     resolution: {integrity: sha512-ZiIMeUh5iT8d73o6xlSF8GKgjV5pgiFrufYc5jZTVAfExtWKqM2vQHnsqXSFMv4ELhAcjt6Vf+5T3oVGXhAizQ==}
 
@@ -2930,9 +2918,6 @@ packages:
   '@fontsource/noto-sans@5.3.0':
     resolution: {integrity: sha512-fBCog2PY7DiVVTEEqtI/Qdinx/knobHYfoGpjFXdfBX5RoJaBp1Prw2G75p0OIsdlMZg3cLo0c+YbIUYOxnQJw==}
 
-  '@fontsource/noto-serif-sc@5.2.8':
-    resolution: {integrity: sha512-C7fAr+d1GjOAw1qIbntsnqbA3l5dkdzcmNNgeCXLC8QZ7VNubL7MTrX8UcYKHceX4mI//z8gGtXbOeeQrB6P7g==}
-
   '@fontsource/open-sans@5.2.7':
     resolution: {integrity: sha512-8yfgDYjE5O0vmTPdrcjV35y4yMnctsokmi9gN49Gcsr0sjzkMkR97AnKDe6OqZh2SFkYlR28fxOvi21bYEgMSw==}
 
@@ -2944,9 +2929,6 @@ packages:
 
   '@fontsource/source-serif-4@5.2.9':
     resolution: {integrity: sha512-er/Pym9emsEVJNf947umJ4kXarXfsiN6CN7kTYinefKRaHLwiquiiHOZvKvxWgkV8JMCf3pV3g0NcsPFpVCH9w==}
-
-  '@fontsource/zcool-kuaile@5.2.8':
-    resolution: {integrity: sha512-pIeFNRM0rwrJkO+TP7WG+KXvqy0YFRrPecNNzHTNOQLYhxrqN67/wzyx3fH+Ky63Y/Am5heB5XIzsEx/Io+P4w==}
 
   '@google/genai@1.52.0':
     resolution: {integrity: sha512-gwSvbpiN/17O9TbsqSsE/OzZcpv5Fo4RQjdngGgogtuB9RsyJ8ZHhX5KjHj1bp5N9snN2eK8LDGXSaWW2hof8Q==}
@@ -16241,8 +16223,6 @@ snapshots:
 
   '@fontsource/literata@5.2.8': {}
 
-  '@fontsource/lxgw-wenkai@5.2.5': {}
-
   '@fontsource/merriweather@5.2.11': {}
 
   '@fontsource/montserrat@5.2.8': {}
@@ -16255,8 +16235,6 @@ snapshots:
 
   '@fontsource/noto-sans@5.3.0': {}
 
-  '@fontsource/noto-serif-sc@5.2.8': {}
-
   '@fontsource/open-sans@5.2.7': {}
 
   '@fontsource/roboto@5.2.10': {}
@@ -16264,8 +16242,6 @@ snapshots:
   '@fontsource/source-sans-3@5.2.9': {}
 
   '@fontsource/source-serif-4@5.2.9': {}
-
-  '@fontsource/zcool-kuaile@5.2.8': {}
 
   '@google/genai@1.52.0(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))':
     dependencies:

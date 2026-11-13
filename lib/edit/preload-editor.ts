@@ -4,8 +4,9 @@
  *   1. `surfaces/slide` + `surfaces/quiz` — register their SceneEditorSurfaces
  *      into `sceneEditorRegistry` so EditShell can resolve them (otherwise it
  *      falls back to NOOP_SURFACE, i.e. a read-only flash).
- *   2. `editor-fonts` — the @fontsource font-face tables the slide font
- *      picker offers (CSS side effect).
+ *   2. `editor-fonts` — the @fontsource font-face tables of the slide font
+ *      picker's Latin fonts (CSS side effect). Its Chinese fonts are declared
+ *      on every page by the root layout.
  *
  * Only (1) is awaited. Called from the Learn→Edit switch BEFORE flipping into
  * edit mode, so the surfaces are registered by the time EditShell reads the

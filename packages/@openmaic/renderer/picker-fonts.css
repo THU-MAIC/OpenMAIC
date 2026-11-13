@@ -1,0 +1,36 @@
+/**
+ * GENERATED FILE — do not edit by hand.
+ * Source of truth: FONT_ALIASES in fonts.config.mjs (run `pnpm run genfonts`).
+ *
+ * Opt-in. Declares the Google Fonts names that the @openmaic/editor default
+ * font picker writes for its Chinese fonts, over the self-hosted faces in
+ * fonts.css, so a slide set in one of them renders in it wherever it is shown:
+ *     import '@openmaic/renderer/picker-fonts.css';
+ *
+ * Importing it claims these family names for the whole page, and each covers
+ * every character with no unicode-range: any text on the page set in one of
+ * them, slide or not, renders with (and downloads) the whole self-hosted file.
+ * Do not import it if the page loads its own faces under these names.
+ */
+@font-face {
+  font-display: swap;
+  font-family: 'Noto Sans SC';
+  font-weight: 250 900;
+  src: url('https://file.maic.chat/fonts/SourceHanSans.woff2') format('woff2');
+}
+@font-face {
+  font-display: swap;
+  font-family: 'Noto Serif SC';
+  font-weight: 250 900;
+  src: url('https://file.maic.chat/fonts/SourceHanSerif.woff2') format('woff2');
+}
+@font-face {
+  font-display: swap;
+  font-family: 'LXGW WenKai';
+  src: url('https://file.maic.chat/fonts/LXGWWenKai.woff2') format('woff2');
+}
+@font-face {
+  font-display: swap;
+  font-family: 'ZCOOL KuaiLe';
+  src: url('https://file.maic.chat/fonts/ZcoolHappy.woff2') format('woff2');
+}
