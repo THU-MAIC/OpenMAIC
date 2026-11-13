@@ -12,6 +12,16 @@ export interface FallbackModel {
   model: LanguageModel;
   /** Canonical `provider:model`, for logs. */
   modelString: string;
+  /** Known maximum output tokens of the fallback; absent for unknown models. */
+  outputWindow?: number;
+}
+
+/** Keep a caller's smaller limit; unknown model limits leave the request unchanged. */
+export function fallbackMaxOutputTokens(
+  requested: number | undefined,
+  outputWindow: number | undefined,
+): number | undefined {
+  return outputWindow === undefined ? requested : Math.min(requested ?? outputWindow, outputWindow);
 }
 
 export type FallbackLoader = () => Promise<FallbackModel | null>;
