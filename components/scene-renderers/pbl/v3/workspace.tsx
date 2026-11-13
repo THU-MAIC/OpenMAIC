@@ -422,7 +422,9 @@ function PBLV3WorkspaceContent({
       ref={workspaceRoot}
       tabIndex={-1}
       data-pbl-focus-owner
-      className="relative flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground"
+      // The chrome is a fixed viewport. Programmatic scrollIntoView (including
+      // replay-button focus) must scroll inner panes, never this overlay coordinate root.
+      className="relative flex h-full min-h-0 flex-col overflow-clip bg-background text-foreground"
       data-testid="pbl-v3-workspace"
       // Editor, terminal and teaching inputs own their keys, not the host's slide/chat shortcuts.
       onKeyDown={(event) => event.stopPropagation()}
