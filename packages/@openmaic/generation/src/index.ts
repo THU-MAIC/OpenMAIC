@@ -95,8 +95,8 @@ export { changeOutlineType } from './outline-type.js';
 export { uniquifyMediaElementIds } from './outline-media.js';
 export { partitionImagesForVision } from './outline-formatters.js';
 export type { VisionImagePartition } from './outline-formatters.js';
-export { parseJsonResponse } from './json-repair.js';
-export type { JsonParsingOptions } from './json-repair.js';
+export { parseJsonResponse, parseJsonResponseWithCandidate } from './json-repair.js';
+export type { JsonParsingOptions, ParsedJsonResult } from './json-repair.js';
 export { noopGenerationLogger } from './logger.js';
 export type { GenerationLogger } from './logger.js';
 export {

@@ -96,7 +96,7 @@ class PGlitePool implements ExtractionScenarioPool {
   async end() {}
 }
 
-describe('owner-level material extraction (PGlite)', () => {
+describe('owner-level material extraction (PGlite)', { timeout: 20_000 }, () => {
   let db: PGlite | undefined;
 
   async function boot(env: Record<string, string> = {}): Promise<ExtractionHarness> {

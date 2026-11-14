@@ -168,4 +168,53 @@ describe('slide content edit-mode directive', () => {
     expect(prompt).toContain('"type":"image"');
     expect(prompt).toContain('KEEP them');
   });
+
+  it('repairs decoded LaTeX control characters only in the edit baseline', async () => {
+    const { aiCall, lastUser } = makeCapturingAiCall(
+      JSON.stringify({ elements: [], background: null, remark: '' }),
+    );
+    const formula =
+      String.fromCharCode(8) +
+      'eta + ' +
+      String.fromCharCode(9) +
+      'imes + ' +
+      String.fromCharCode(12) +
+      'rac + ' +
+      String.fromCharCode(13) +
+      'ho\n+ y';
+    const baseline: GeneratedSlideContent = {
+      elements: [
+        {
+          id: 'latex_1',
+          type: 'latex',
+          left: 0,
+          top: 0,
+          width: 100,
+          height: 40,
+          latex: formula,
+          rotate: 0,
+        },
+        {
+          id: 'text_1',
+          type: 'text',
+          left: 0,
+          top: 50,
+          width: 100,
+          height: 40,
+          content: `<p>${formula}</p>`,
+          defaultFontName: '',
+          defaultColor: '#000',
+          rotate: 0,
+        },
+      ],
+      background: undefined,
+      remark: '',
+    };
+
+    await generateSceneContent(slideOutline(), aiCall, { baselineContent: baseline });
+
+    expect(lastUser()).toContain('"latex":"\\\\beta + \\\\times + \\\\frac + \\\\rho\\n+ y"');
+    expect(lastUser()).toContain(`"content":${JSON.stringify(`<p>${formula}</p>`)}`);
+    expect(baseline.elements[0]).toMatchObject({ latex: formula });
+  });
 });
