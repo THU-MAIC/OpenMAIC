@@ -20,11 +20,16 @@ function positiveInteger(name: string, fallback: number): number {
   return value;
 }
 
+/** Shared page threshold for PDF chunking and optional chapter recognition. */
+export function getMinerUChunkPages(): number {
+  return positiveInteger('PDF_MINERU_CHUNK_PAGES', 50);
+}
+
 /** Only self-hosted PDF parsing uses these limits; Office documents stay whole. */
 function chunkConfig() {
   return {
     maxPages: positiveInteger('PDF_MINERU_MAX_PAGES', 1000),
-    chunkPages: positiveInteger('PDF_MINERU_CHUNK_PAGES', 50),
+    chunkPages: getMinerUChunkPages(),
     concurrency: positiveInteger('PDF_MINERU_CHUNK_CONCURRENCY', 4),
   };
 }

@@ -1,6 +1,7 @@
 import { callLLM } from '@/lib/ai/llm';
 import { buildChapterInput, type ChapterSource } from '@/lib/document/chapter-source';
 import { DOCUMENT_MIME_TYPES, normalizeDocumentMimeType } from '@/lib/document/mime';
+import { getMinerUChunkPages } from '@/lib/pdf/mineru-chunks';
 import { createLogger } from '@/lib/logger';
 import { loadPrompt, PROMPT_IDS } from '@/lib/prompts';
 import { resolveStageModel } from '@/lib/server/model-config/llm';
@@ -46,7 +47,14 @@ export function validateChapters(value: unknown, pages: number): MaterialChapter
 export function decodeChapterResponse(text: string, pages: number): MaterialChapter[] {
   const trimmed = text.trim();
   const fenced = /^```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```$/i.exec(trimmed);
-  return validateChapters(JSON.parse(fenced ? fenced[1] : trimmed), pages);
+  let value: unknown;
+  try {
+    value = JSON.parse(fenced ? fenced[1] : trimmed);
+  } catch {
+    // Native JSON errors may quote document content from the response.
+    throw new SyntaxError('Invalid chapter response JSON');
+  }
+  return validateChapters(value, pages);
 }
 
 export interface ChapterRecognitionInput {
@@ -65,18 +73,14 @@ export async function recognizeMaterialChapters(
   input.signal?.throwIfAborted();
   const mime = normalizeDocumentMimeType({ mimeType: input.mimeType });
   const format = Object.entries(DOCUMENT_MIME_TYPES).find(([, value]) => value === mime)?.[0];
-  const raw = process.env.PDF_MINERU_CHUNK_PAGES?.trim();
-  const chunkPages = raw ? Number(raw) : 50;
   if (
     input.providerId !== 'mineru' ||
     !input.source?.titles.length ||
     !format ||
-    !['pdf', 'doc', 'docx', 'ppt', 'pptx'].includes(format) ||
-    !Number.isSafeInteger(chunkPages) ||
-    chunkPages < 1 ||
-    input.pageCount <= chunkPages
+    !['pdf', 'doc', 'docx', 'ppt', 'pptx'].includes(format)
   )
     return undefined;
+  if (input.pageCount <= getMinerUChunkPages()) return undefined;
 
   const timeout = new AbortController();
   const timer = setTimeout(
@@ -85,6 +89,9 @@ export async function recognizeMaterialChapters(
   );
   timer.unref?.();
   const signal = input.signal ? AbortSignal.any([input.signal, timeout.signal]) : timeout.signal;
+  const state: { phase: 'model_configuration' | 'call' | 'decode' } = {
+    phase: 'model_configuration',
+  };
   try {
     const work = async () => {
       const workspaceId = await backgroundWorkspaceId(input.ownerId);
@@ -92,6 +99,7 @@ export async function recognizeMaterialChapters(
       signal.throwIfAborted();
       const template = loadPrompt(PROMPT_IDS.MATERIAL_CHAPTERS);
       if (!template) throw new Error('Chapter prompt unavailable');
+      state.phase = 'call';
       const result = await callLLM(
         {
           model: resolved.model,
@@ -108,6 +116,7 @@ export async function recognizeMaterialChapters(
         { enabled: false },
       );
       signal.throwIfAborted();
+      state.phase = 'decode';
       return decodeChapterResponse(result.text, input.pageCount);
     };
     // Also bounds model configuration lookup and providers that ignore abort.
@@ -118,9 +127,20 @@ export async function recognizeMaterialChapters(
         .then(resolve, reject)
         .finally(() => signal.removeEventListener('abort', abort));
     });
-  } catch {
+  } catch (error) {
     input.signal?.throwIfAborted();
-    log.warn('Chapter recognition unavailable; keeping the successful document extraction.');
+    const reason = timeout.signal.aborted
+      ? 'timeout'
+      : state.phase === 'decode'
+        ? error instanceof SyntaxError
+          ? 'json_decode'
+          : 'validation'
+        : state.phase;
+    log.warn('Chapter recognition unavailable; keeping the successful document extraction.', {
+      reason,
+      errorType: error instanceof Error ? error.name.slice(0, 64) : 'UnknownError',
+      message: error instanceof Error ? error.message.slice(0, 320) : 'Non-Error failure',
+    });
     return undefined;
   } finally {
     clearTimeout(timer);

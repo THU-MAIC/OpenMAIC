@@ -1,4 +1,7 @@
-/** Transient parser evidence. Symbol keys survive spreads but never JSON serialization. */
+/**
+ * Transient parser evidence. Symbol keys survive spreads but never JSON serialization.
+ * Ordinary fields would expose this evidence in API responses such as /api/parse-pdf.
+ */
 const chapterSource = Symbol('chapterSource');
 
 export interface ChapterSource {

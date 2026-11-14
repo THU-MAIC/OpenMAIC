@@ -1,5 +1,3 @@
-import { getChapterSource } from '@/lib/document/chapter-source';
-import { recognizeMaterialChapters } from './chapters';
 /**
  * Owner-level extraction of library sources: claim, extract, allocate and
  * publish, on the state in `lib/persistence/owner-material-extraction.ts`.
@@ -40,6 +38,9 @@ import { recognizeMaterialChapters } from './chapters';
  * (`./document-images.ts`). Media extraction keeps its transcript and its
  * images. The session chain still keeps document text only.
  */
+
+import { getChapterSource } from '@/lib/document/chapter-source';
+import { recognizeMaterialChapters } from './chapters';
 import { createHash, randomUUID } from 'node:crypto';
 
 import { AssetQuotaExceededError } from '@openmaic/storage';

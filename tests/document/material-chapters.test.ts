@@ -10,7 +10,11 @@ import {
   documentArtifactToParsedPdfContent,
 } from '@/lib/document/pdf-compat';
 import { extractMinerUResult } from '@/lib/pdf/mineru-parser';
-import { mergeMinerUChunks } from '@/lib/pdf/mineru-chunks';
+import {
+  getMinerUChunkPages,
+  mergeMinerUChunks,
+  parseMinerUPdfChunks,
+} from '@/lib/pdf/mineru-chunks';
 import { DOCUMENT_MIME_TYPES } from '@/lib/document/mime';
 import { loadPrompt } from '@/lib/prompts';
 import {
@@ -21,6 +25,9 @@ import {
 } from '@/lib/server/material-extraction/chapters';
 import { callLLM } from '@/lib/ai/llm';
 import { resolveStageModel } from '@/lib/server/model-config/llm';
+
+const { warn } = vi.hoisted(() => ({ warn: vi.fn() }));
+vi.mock('@/lib/logger', () => ({ createLogger: () => ({ info: vi.fn(), warn }) }));
 
 vi.mock('@/lib/ai/llm', () => ({ callLLM: vi.fn() }));
 vi.mock('@/lib/server/model-config/llm', () => ({ resolveStageModel: vi.fn() }));
@@ -171,6 +178,54 @@ describe('whole-tree validation', () => {
 });
 
 describe('optional chapter recognition', () => {
+  it.each(['', '  ', '30', '100', '1e2'])('shares the chunk threshold for %j', async (raw) => {
+    vi.stubEnv('PDF_MINERU_CHUNK_PAGES', raw);
+    const pages = getMinerUChunkPages();
+    expect(await recognizeMaterialChapters({ ...input, pageCount: pages })).toBeUndefined();
+    expect(callLLM).not.toHaveBeenCalled();
+    expect(await recognizeMaterialChapters({ ...input, pageCount: pages + 1 })).toBeDefined();
+    expect(callLLM).toHaveBeenCalledTimes(1);
+  });
+  it.each(['0', '-1', '1.5', 'bad', 'Infinity'])(
+    'rejects invalid shared configuration %j in both paths',
+    async (raw) => {
+      vi.stubEnv('PDF_MINERU_CHUNK_PAGES', raw);
+      const message = 'PDF_MINERU_CHUNK_PAGES must be a positive integer';
+      expect(() => getMinerUChunkPages()).toThrow(message);
+      await expect(recognizeMaterialChapters(input)).rejects.toThrow(message);
+      await expect(parseMinerUPdfChunks(Buffer.alloc(0), vi.fn())).rejects.toThrow(message);
+      expect(callLLM).not.toHaveBeenCalled();
+    },
+  );
+  it('does not consult MinerU configuration for another provider', async () => {
+    vi.stubEnv('PDF_MINERU_CHUNK_PAGES', 'invalid');
+    expect(await recognizeMaterialChapters({ ...input, providerId: 'unpdf' })).toBeUndefined();
+    expect(callLLM).not.toHaveBeenCalled();
+  });
+  it('bounds error type and message, without logging an error object or response body', async () => {
+    const error = Object.assign(new Error('x'.repeat(500)), {
+      name: 'Type'.repeat(30),
+      responseBody: 'private response',
+    });
+    vi.mocked(callLLM).mockRejectedValue(error);
+    expect(await recognizeMaterialChapters(input)).toBeUndefined();
+    expect(warn).toHaveBeenCalledExactlyOnceWith(expect.any(String), {
+      reason: 'call',
+      errorType: error.name.slice(0, 64),
+      message: 'x'.repeat(320),
+    });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('private response');
+  });
+  it('does not quote malformed output in JSON diagnostics', async () => {
+    vi.mocked(callLLM).mockResolvedValue({ text: 'PRIVATE DOCUMENT TEXT is not JSON' } as never);
+    await recognizeMaterialChapters(input);
+    expect(warn).toHaveBeenCalledExactlyOnceWith(expect.any(String), {
+      reason: 'json_decode',
+      errorType: 'SyntaxError',
+      message: 'Invalid chapter response JSON',
+    });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('PRIVATE DOCUMENT TEXT');
+  });
   it.each(['pdf', 'docx', 'pptx'] as const)(
     'calls once for long %s through the stage and shared LLM',
     async (format) => {
@@ -214,6 +269,22 @@ describe('optional chapter recognition', () => {
           text: failure === 'json' ? 'not json' : '{"chapters":[{}]}',
         } as never);
       expect(await recognizeMaterialChapters(input)).toBeUndefined();
+      const reason =
+        failure === 'throw'
+          ? 'call'
+          : failure === 'json'
+            ? 'json_decode'
+            : failure === 'invalid'
+              ? 'validation'
+              : 'model_configuration';
+      expect(warn).toHaveBeenCalledExactlyOnceWith(
+        expect.any(String),
+        expect.objectContaining({
+          reason,
+          errorType: expect.any(String),
+          message: expect.any(String),
+        }),
+      );
     },
   );
   it('times out even when a provider ignores cancellation', async () => {
@@ -222,6 +293,11 @@ describe('optional chapter recognition', () => {
     const pending = recognizeMaterialChapters(input);
     await vi.advanceTimersByTimeAsync(CHAPTER_TIMEOUT_MS);
     expect(await pending).toBeUndefined();
+    expect(warn).toHaveBeenCalledExactlyOnceWith(expect.any(String), {
+      reason: 'timeout',
+      errorType: 'Error',
+      message: 'Chapter recognition timed out',
+    });
   });
   it('preserves caller cancellation during the call and before dispatch', async () => {
     const controller = new AbortController();
