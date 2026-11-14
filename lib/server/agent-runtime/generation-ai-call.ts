@@ -83,21 +83,30 @@ export async function resolveVisionImages(
       break;
     }
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let resolution: Awaited<ReturnType<VisionAssetReader>> | 'timeout';
+    let onAbort: (() => void) | undefined;
+    let resolution: Awaited<ReturnType<VisionAssetReader>> | 'timeout' | 'aborted';
     try {
       resolution = await Promise.race([
         readAsset(ownerId, image.src, MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES),
         new Promise<'timeout'>((resolve) => {
           timer = setTimeout(() => resolve('timeout'), remaining);
         }),
+        // A cancel ends the wait at once; the throw below then stops the run.
+        new Promise<'aborted'>((resolve) => {
+          onAbort = () => resolve('aborted');
+          signal?.addEventListener('abort', onAbort, { once: true });
+        }),
       ]);
     } catch (error) {
+      signal?.throwIfAborted();
       console.warn(`Vision image "${image.id}" could not be read; dropping it:`, error);
       continue;
     } finally {
       clearTimeout(timer);
+      if (onAbort) signal?.removeEventListener('abort', onAbort);
     }
     signal?.throwIfAborted();
+    if (resolution === 'aborted') continue;
     if (resolution === 'timeout') {
       console.warn(`Vision media reads ran past ${budgetMs} ms; describing the rest in text`);
       break;

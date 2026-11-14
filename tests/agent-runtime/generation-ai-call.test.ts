@@ -129,6 +129,19 @@ describe('resolveVisionImages', () => {
     ).rejects.toThrow();
   });
 
+  it('stops waiting on a read as soon as the call is aborted', async () => {
+    const controller = new AbortController();
+    const readAsset: VisionAssetReader = vi.fn(() => new Promise<never>(() => {}));
+    setTimeout(() => controller.abort(), 10);
+    const started = Date.now();
+    await expect(
+      resolveVisionImages([{ id: 'img_1', src: 'ast_hangs' }], 'owner-1', readAsset, {
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow();
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
   it('drops allocated asset ids when the run has no owner', async () => {
     const readAsset = vi.fn<VisionAssetReader>();
     const images = await resolveVisionImages(
