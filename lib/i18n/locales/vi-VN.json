@@ -1090,6 +1090,12 @@
     "notReady": "Có thể dùng sau khi tạo xong"
   },
   "classroom": {
+    "copyToMyCourses": "Sao chép vào khóa học của tôi",
+    "copying": "Đang sao chép...",
+    "copySuccess": "Đã sao chép khóa học vào khóa học của bạn",
+    "copyFailed": "Không thể sao chép khóa học",
+    "copyQuotaRefused": "Đã vượt quá dung lượng lưu trữ",
+    "copyPblV3Unsupported": "Không thể sao chép khóa học chứa dự án PBL v3",
     "recentClassrooms": "Gần đây",
     "today": "Hôm nay",
     "yesterday": "Hôm qua",

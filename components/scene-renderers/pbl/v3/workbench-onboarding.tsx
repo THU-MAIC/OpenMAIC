@@ -208,7 +208,18 @@ export function WorkbenchOnboarding({
     window.addEventListener('resize', schedule);
     document.addEventListener('scroll', schedule, true);
     document.addEventListener('fullscreenchange', schedule);
-    measure();
+
+    // Keep the spotlight aligned across layout transitions (e.g. workspace
+    // frame docking/expanding) until geometry settles.
+    let settlingFrames = 45;
+    const poll = () => {
+      measure();
+      if (--settlingFrames > 0) {
+        frame = requestAnimationFrame(poll);
+      }
+    };
+    poll();
+
     return () => {
       cancelAnimationFrame(frame);
       resize.disconnect();

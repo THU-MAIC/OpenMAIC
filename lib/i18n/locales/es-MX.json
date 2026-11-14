@@ -1090,6 +1090,12 @@
     "notReady": "Disponible cuando termine la generación"
   },
   "classroom": {
+    "copyToMyCourses": "Copiar a mis cursos",
+    "copying": "Copiando...",
+    "copySuccess": "Curso copiado a mis cursos",
+    "copyFailed": "Error al copiar el curso",
+    "copyQuotaRefused": "Cuota de almacenamiento superada",
+    "copyPblV3Unsupported": "Los cursos con proyectos PBL v3 no se pueden copiar",
     "recentClassrooms": "Recientes",
     "today": "Hoy",
     "yesterday": "Ayer",

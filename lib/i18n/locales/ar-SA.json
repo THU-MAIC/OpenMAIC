@@ -1090,6 +1090,12 @@
     "notReady": "متاح بعد اكتمال التوليد"
   },
   "classroom": {
+    "copyToMyCourses": "نسخ إلى دوراتي",
+    "copying": "جارٍ النسخ...",
+    "copySuccess": "تم نسخ الدورة إلى دوراتك",
+    "copyFailed": "فشل نسخ الدورة",
+    "copyQuotaRefused": "تم تجاوز حصة التخزين",
+    "copyPblV3Unsupported": "لا يمكن نسخ الدورات التي تحتوي على مشاريع PBL v3",
     "recentClassrooms": "الأخيرة",
     "today": "اليوم",
     "yesterday": "أمس",
