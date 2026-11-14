@@ -184,6 +184,9 @@ export function extractionIdentityKey(mimeType: string, services: ExtractionServ
 /** How long before the extraction's budget runs out its image downloads stop. */
 const IMAGE_DEADLINE_MARGIN_MS = 30_000;
 
+/** Fixed budget for self-hosted PDF parsing, which can require several batches of chunks. */
+const MINERU_PDF_EXTRACTION_DEADLINE_MS = 30 * 60_000;
+
 /** The bytes `value` takes in a stored result (UTF-8 JSON). */
 function serializedBytes(value: unknown): number {
   return Buffer.byteLength(JSON.stringify(value), 'utf8');
@@ -345,7 +348,7 @@ export interface MaterialExtractionDependencies {
   services?: (ownerId: string) => Promise<ExtractionServices>;
   /** The extraction itself (the run's `analyzeMaterial`); replaced by tests. */
   analyze?: typeof analyzeMaterial;
-  /** The extraction's time budget: the material-analysis step's. */
+  /** Override the extraction's time budget, otherwise chosen by type and service. */
   deadlineMs?: number;
 }
 
@@ -420,7 +423,11 @@ export async function extractOwnerMaterial(
     }
   }
 
-  const deadlineMs = dependencies.deadlineMs ?? STEP_DEADLINES_MS.materialAnalysis;
+  const deadlineMs =
+    dependencies.deadlineMs ??
+    (mimeType === 'application/pdf' && services.document?.providerId === 'mineru'
+      ? MINERU_PDF_EXTRACTION_DEADLINE_MS
+      : STEP_DEADLINES_MS.materialAnalysis);
   const timeout = new AbortController();
   const timer = setTimeout(
     () => timeout.abort(new MaterialExtractionTimeoutError(material.id, deadlineMs)),
@@ -801,7 +808,7 @@ export function startOwnerMaterialExtractor(
  * extraction and settles right after, within its deadline and its lease).
  */
 export function orphanResultAgeMs(): number {
-  return 2 * (STEP_DEADLINES_MS.materialAnalysis + agentRuntimeConfig.leaseTtlMs);
+  return 2 * (MINERU_PDF_EXTRACTION_DEADLINE_MS + agentRuntimeConfig.leaseTtlMs);
 }
 
 /** Where the orphan sweep goes on from, across passes. */
@@ -870,16 +877,13 @@ export class MaterialExtractionFailedError extends StepRefusal<string> {
  * its error. Polls the rows (`pollMs`) and honours `signal` (the run's lease
  * and shutdown). There is no deadline while a material waits in the queue
  * (other owners' extractions may be ahead of it); once a worker claims it, its
- * extraction gets the material-analysis budget (`deadlineMs`, plus a lease's
- * grace for a worker that died), after which the wait fails as a timeout.
+ * extraction gets its type's budget (`deadlineMs` overrides it), plus lease
+ * grace for a worker that died, after which the wait fails as a timeout.
  */
 export async function awaitOwnerMaterialExtractions(
   records: readonly OwnerMaterialRecord[],
   signal: AbortSignal | undefined,
-  {
-    pollMs = 500,
-    deadlineMs = STEP_DEADLINES_MS.materialAnalysis,
-  }: { pollMs?: number; deadlineMs?: number } = {},
+  { pollMs = 500, deadlineMs }: { pollMs?: number; deadlineMs?: number } = {},
 ): Promise<OwnerMaterialRecord[]> {
   if (records.length === 0) return [];
   const { pool } = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
@@ -895,7 +899,16 @@ export async function awaitOwnerMaterialExtractions(
     );
     wakeOwnerMaterialExtractor();
   }
-  const graceMs = deadlineMs + 2 * agentRuntimeConfig.leaseTtlMs;
+  // The pending row does not yet name its parser. Allow a PDF the longest
+  // extraction budget; the worker still enforces its actual provider's budget.
+  const budgetOf = (record: OwnerMaterialRecord) =>
+    deadlineMs ??
+    (normalizeDocumentMimeType({
+      mimeType: record.mime,
+      fileName: record.originalName ?? record.id,
+    }) === 'application/pdf'
+      ? MINERU_PDF_EXTRACTION_DEADLINE_MS
+      : STEP_DEADLINES_MS.materialAnalysis);
   let current = records;
   for (;;) {
     const failed = current.find((record) => record.extraction?.status === 'failed');
@@ -905,9 +918,10 @@ export async function awaitOwnerMaterialExtractions(
       (record) =>
         record.extraction?.status === 'extracting' &&
         record.extraction.claimedAt !== undefined &&
-        Date.now() - record.extraction.claimedAt > graceMs,
+        Date.now() - record.extraction.claimedAt >
+          budgetOf(record) + 2 * agentRuntimeConfig.leaseTtlMs,
     );
-    if (overdue) throw new MaterialExtractionTimeoutError(overdue.id, deadlineMs);
+    if (overdue) throw new MaterialExtractionTimeoutError(overdue.id, budgetOf(overdue));
     await new Promise<void>((resolve, reject) => {
       if (signal?.aborted) {
         reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
