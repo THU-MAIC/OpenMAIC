@@ -672,31 +672,43 @@ async function generateSlideContent(
       MAX_VISION_IMAGES,
     );
     if (visionEnabled && imageMapping) {
-      // Vision mode: split into vision images and text-only
-      const visionDescriptions = visionSlice.map((img) => formatImagePlaceholder(img));
-      const textDescriptions = [...textOnlySlice, ...noSrcImages].map((img) =>
+      // Vision mode: split into vision images and text-only.
+      // When the caller pre-resolved the slice, only images it resolved are
+      // attached; a slice image it could not resolve is described in text
+      // instead of being announced "[see attached]" with nothing attached.
+      // Without pre-resolved images, the mapping src goes to the caller's
+      // aiCall to resolve at prompt-assembly time.
+      const resolvedById = new Map(
+        (resolvedVisionImages ?? []).map((img) => [img.id, img] as const),
+      );
+      const attached = resolvedVisionImages
+        ? visionSlice.filter((img) => resolvedById.has(img.id))
+        : visionSlice;
+      const unattached = resolvedVisionImages
+        ? visionSlice.filter((img) => !resolvedById.has(img.id))
+        : [];
+      // The caller's description says what the learner should read from the
+      // figure, which the pixels alone cannot tell the model.
+      const visionDescriptions = attached.map((img) => {
+        const description = img.description?.trim();
+        return description
+          ? `${formatImagePlaceholder(img)} — ${description}`
+          : formatImagePlaceholder(img);
+      });
+      const textDescriptions = [...unattached, ...textOnlySlice, ...noSrcImages].map((img) =>
         formatImageDescription(img),
       );
       assignedImagesText = [...visionDescriptions, ...textDescriptions].join('\n');
 
-      // When the route pre-resolved the slice, its resolved bytes are used
-      // verbatim (matched to the slice ids), so the caller's aiCall resolution
-      // is a defensive no-op; otherwise fall back to the mapping src (an
-      // allocated id the caller's aiCall resolves at prompt-assembly time).
-      const resolvedById = new Map(
-        (resolvedVisionImages ?? []).map((img) => [img.id, img] as const),
-      );
-      visionImages = visionSlice.map((img) => {
-        const resolved = resolvedById.get(img.id);
-        return (
-          resolved ?? {
+      visionImages = attached.map(
+        (img) =>
+          resolvedById.get(img.id) ?? {
             id: img.id,
             src: imageMapping[img.id],
             width: img.width,
             height: img.height,
-          }
-        );
-      });
+          },
+      );
     } else {
       assignedImagesText = sorted.map((img) => formatImageDescription(img)).join('\n');
     }
