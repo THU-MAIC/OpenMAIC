@@ -779,10 +779,13 @@ async function generateSlideContent(
     // channel course-generation uses), and `resolveImageIds` resolves the ids
     // back to real srcs after generation. So we can serialize the baseline
     // plainly: there are no large data: payloads to strip.
-    const baselineBlock = baselineContent
+    const baselineForPrompt = baselineContent
+      ? repairLatexControlCharactersInBaseline(baselineContent)
+      : undefined;
+    const baselineBlock = baselineForPrompt
       ? `\nThe current slide content (JSON), to use as the editing baseline:\n${JSON.stringify({
-          elements: baselineContent.elements,
-          background: baselineContent.background,
+          elements: baselineForPrompt.elements,
+          background: baselineForPrompt.background,
         })}`
       : '';
     const hasBaselineImages = !!baselineContent?.elements?.some(
@@ -900,6 +903,37 @@ async function generateSlideContent(
     background,
     remark: generatedData.remark || outline.description,
   };
+}
+
+function repairLatexControlCharactersInBaseline(
+  baseline: GeneratedSlideContent,
+): GeneratedSlideContent {
+  const repairedElements = baseline.elements.map((element) => {
+    if (element.type !== 'latex') {
+      return element;
+    }
+
+    const latex = element.latex.replace(/[\x08\x09\x0c\x0d]/g, (character) => {
+      switch (character) {
+        case '\x08':
+          return '\\b';
+        case '\x09':
+          return '\\t';
+        case '\x0c':
+          return '\\f';
+        case '\x0d':
+          return '\\r';
+        default:
+          return character;
+      }
+    });
+
+    return latex === element.latex ? element : { ...element, latex };
+  });
+
+  return repairedElements === baseline.elements
+    ? baseline
+    : { ...baseline, elements: repairedElements };
 }
 
 function findInvalidShapeRotation(elements: GeneratedSlideData['elements']): string | undefined {
