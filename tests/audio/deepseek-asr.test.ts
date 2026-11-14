@@ -97,6 +97,33 @@ describe('DeepSeek ASR', () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
+  it('refuses Ogg Opus over 120 seconds from its granule position', async () => {
+    // OpusHead (pre-skip 312) on the first page, then a last page whose
+    // granule position counts 130 s of 48 kHz samples.
+    const page = (granule: bigint, payload: Buffer) => {
+      const header = Buffer.alloc(27);
+      header.write('OggS', 0, 'ascii');
+      header.writeBigInt64LE(granule, 6);
+      return Buffer.concat([header, payload]);
+    };
+    const head = Buffer.alloc(19);
+    head.write('OpusHead', 0, 'ascii');
+    head[8] = 1;
+    head[9] = 1;
+    head.writeUInt16LE(312, 10);
+    const ogg = (seconds: number) =>
+      Buffer.concat([page(BigInt(0), head), page(BigInt(seconds * 48000 + 312), Buffer.alloc(40))]);
+
+    await expect(
+      transcribeAudio({ providerId: 'deepseek-asr', apiKey: 'k' }, ogg(130)),
+    ).rejects.toThrow('at most 120 seconds');
+    expect(mockFetch).not.toHaveBeenCalled();
+
+    mockFetch.mockResolvedValueOnce(okResponse('short'));
+    await transcribeAudio({ providerId: 'deepseek-asr', apiKey: 'k' }, ogg(30));
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
   it('refuses audio over 8 MiB', async () => {
     const big = Buffer.concat([pcmWav(1), Buffer.alloc(8 * 1024 * 1024)]);
     await expect(transcribeAudio({ providerId: 'deepseek-asr', apiKey: 'k' }, big)).rejects.toThrow(

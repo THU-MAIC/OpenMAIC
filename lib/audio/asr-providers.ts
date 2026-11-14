@@ -836,17 +836,21 @@ async function transcribeDeepSeekASR(
         `(${(bytes.byteLength / 1024 / 1024).toFixed(1)} MiB). Record a shorter clip.`,
     );
   }
+  let seconds: number | null;
   if (format === 'wav') {
-    const seconds = wavDurationSeconds(bytes);
+    seconds = wavDurationSeconds(bytes);
     if (seconds === null) {
       throw new Error('DeepSeek ASR accepts 16-bit PCM WAV only; this WAV is not 16-bit PCM.');
     }
-    if (seconds > MAX_DEEPSEEK_ASR_SECONDS) {
-      throw new Error(
-        `DeepSeek ASR accepts at most ${MAX_DEEPSEEK_ASR_SECONDS} seconds of audio per request ` +
-          `(${Math.ceil(seconds)} s). Record a shorter clip.`,
-      );
-    }
+  } else {
+    // Unreadable Ogg timing is left to the service to judge.
+    seconds = oggOpusDurationSeconds(bytes);
+  }
+  if (seconds !== null && seconds > MAX_DEEPSEEK_ASR_SECONDS) {
+    throw new Error(
+      `DeepSeek ASR accepts at most ${MAX_DEEPSEEK_ASR_SECONDS} seconds of audio per request ` +
+        `(${Math.ceil(seconds)} s). Record a shorter clip.`,
+    );
   }
 
   const formData = new FormData();
@@ -902,6 +906,39 @@ function deepseekASRFormat(bytes: Uint8Array): 'wav' | 'ogg' | null {
     bytes[3] === 0x53
   ) {
     return 'ogg';
+  }
+  return null;
+}
+
+/**
+ * Seconds of audio in an Ogg Opus stream: the granule position of the last
+ * page counts 48 kHz samples, less the pre-skip declared in the OpusHead
+ * packet. Null when there is no OpusHead or no positive granule position.
+ */
+function oggOpusDurationSeconds(bytes: Uint8Array): number | null {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const isAt = (offset: number, tag: string) => {
+    for (let i = 0; i < tag.length; i += 1) {
+      if (bytes[offset + i] !== tag.charCodeAt(i)) return false;
+    }
+    return true;
+  };
+  let preSkip = -1;
+  const headLimit = Math.min(bytes.byteLength - 12, 512);
+  for (let offset = 0; offset <= headLimit; offset += 1) {
+    if (isAt(offset, 'OpusHead')) {
+      preSkip = view.getUint16(offset + 10, true);
+      break;
+    }
+  }
+  if (preSkip < 0) return null;
+  // The last page header: "OggS", version 0, then the 64-bit granule position.
+  for (let offset = bytes.byteLength - 27; offset >= 0; offset -= 1) {
+    if (isAt(offset, 'OggS') && bytes[offset + 4] === 0) {
+      const granule = Number(view.getBigInt64(offset + 6, true));
+      if (granule <= 0) return null;
+      return Math.max(0, granule - preSkip) / 48000;
+    }
   }
   return null;
 }
