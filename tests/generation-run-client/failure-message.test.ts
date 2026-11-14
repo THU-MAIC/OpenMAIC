@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import enUS from '@/lib/i18n/locales/en-US.json';
 import { applyRunEvent, viewFromSnapshot } from '@/lib/generation-run-client/reducer';
 import { runFailureText, sceneFailureText } from '@/lib/generation-run-client/failure-message';
 import { RunApiError, runApiErrorText } from '@/lib/generation-run-client/api';
@@ -15,6 +16,8 @@ describe('what a paused run says', () => {
         message: 'QWEN_VC_RECLONE_REQUIRED',
       }),
     ).toEqual({ key: 'generation.qwenCloneNewGenerationHint' });
+    expect(enUS.generation.qwenCloneNewGenerationHint).toContain('start a new generation');
+    expect(enUS.generation.qwenCloneNewGenerationHint).not.toMatch(/retry/i);
   });
 
   const at = (step: string, extra: Record<string, unknown> = {}) =>

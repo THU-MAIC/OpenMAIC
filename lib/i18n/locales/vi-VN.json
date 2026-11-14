@@ -1163,7 +1163,7 @@
     "materialTooLarge": "{{name}} quá lớn: mỗi tài liệu tối đa {{size}}."
   },
   "generation": {
-    "qwenCloneNewGenerationHint": "Giọng đã lưu này cần được nhân bản lại. Hãy tải âm thanh tham chiếu phù hợp lên phần cài đặt giọng nói, chọn giọng mới rồi bắt đầu một lần tạo mới. Thử lại tác vụ đang tạm dừng vẫn dùng giọng ban đầu.",
+    "qwenCloneNewGenerationHint": "Giọng đã lưu này cần được nhân bản lại. Hãy tải âm thanh tham chiếu phù hợp lên phần cài đặt giọng nói, chọn giọng mới rồi bắt đầu một lần tạo mới.",
     "quotaExhausted": "Đã dùng hết hạn mức tạo nội dung. Hãy kiểm tra hạn mức gói hoặc số dư tài khoản, hoặc liên hệ quản trị viên để xử lý trước khi thử lại.",
     "pdfLoadFailed": "Không nạp được tệp PDF, vui lòng thử lại",
     "pdfParseFailed": "Đọc PDF không thành công",
