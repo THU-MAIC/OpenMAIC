@@ -146,6 +146,7 @@ import { createLogger } from '@/lib/logger';
 import { extractMinerUResult } from './mineru-parser';
 import { parseWithMinerUCloud } from './mineru-cloud';
 import { parseWithAliDocMindClient } from './alidocmind-client';
+import { parseWithDeepSeekOCR } from './deepseek-ocr';
 import { providerFetch, type ProviderFetchPolicy } from '@/lib/server/provider-fetch';
 import { MaterialSourceRefusedError } from '@/lib/server/material-extraction/errors';
 
@@ -338,6 +339,10 @@ export async function parsePDF(
 
     case 'alidocmind':
       result = await parseWithAliDocMind(config, pdfBuffer, options);
+      break;
+
+    case 'deepseek-ocr':
+      result = await parseWithDeepSeekOCR(config, pdfBuffer, options);
       break;
 
     default:

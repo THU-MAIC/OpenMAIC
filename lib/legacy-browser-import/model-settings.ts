@@ -138,6 +138,8 @@ const TOKEN_PLAN_CAPABILITY: Record<TokenPlanModality, SlotCapability> = {
   image: 'image',
   video: 'video',
   tts: 'tts',
+  asr: 'asr',
+  document: 'document',
   webSearch: 'webSearch',
   webFetch: 'webFetch',
 };

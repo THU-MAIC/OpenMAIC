@@ -131,7 +131,7 @@ Amazon Bedrock (`preset: bedrock`) подписывает запросы цеп�
 | `video` | video | — | Генерация видео |
 | `webFetch` | webFetch | — | Извлечение веб-страниц (по умолчанию `builtin`) |
 | `webSearch` | webSearch | — | Веб-поиск |
-| `document` | document | — | Сервис разбора документов (MinerU, MinerU Cloud, AliDocMind). Встроенному извлечению текста из PDF сервис не нужен |
+| `document` | document | — | Сервис разбора документов (MinerU, MinerU Cloud, AliDocMind, DeepSeek OCR). Встроенному извлечению текста из PDF сервис не нужен |
 
 Как разрешается слот:
 
@@ -563,6 +563,10 @@ TTS_QWEN_BASE_URL=         # опциональное переопределен
 TTS_XIAOMI_API_KEY=
 TTS_XIAOMI_BASE_URL=https://api.xiaomimimo.com/v1
 
+# DeepSeek TTS
+TTS_DEEPSEEK_API_KEY=
+TTS_DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
+
 # Любой OpenAI-совместимый TTS endpoint
 TTS_OPENAI_API_KEY=
 TTS_OPENAI_BASE_URL=
@@ -571,7 +575,7 @@ TTS_OPENAI_BASE_URL=
 TTS_VOXCPM_BASE_URL=http://localhost:8000
 ```
 
-Поддерживаемые TTS префиксы: `TTS_OPENAI_`, `TTS_AZURE_`, `TTS_GLM_`, `TTS_QWEN_`, `TTS_MINIMAX_`, `TTS_DOUBAO_`, `TTS_ELEVENLABS_`, `TTS_GOOGLE_`, `TTS_VOXCPM_`, `TTS_XIAOMI_` и `TTS_LEMONADE_`. Локальные Lemonade TTS и VoxCPM2 не требуют API key. Встроенный в браузер TTS не требует серверной настройки.
+Поддерживаемые TTS префиксы: `TTS_OPENAI_`, `TTS_AZURE_`, `TTS_GLM_`, `TTS_QWEN_`, `TTS_MINIMAX_`, `TTS_DOUBAO_`, `TTS_ELEVENLABS_`, `TTS_GOOGLE_`, `TTS_VOXCPM_`, `TTS_XIAOMI_`, `TTS_DEEPSEEK_` и `TTS_LEMONADE_`. Локальные Lemonade TTS и VoxCPM2 не требуют API key. Встроенный в браузер TTS не требует серверной настройки.
 
 Администратор может принудительно отключить TTS провайдер на сервере, установив `TTS_<PROVIDER>_ENABLED=false`. VoxCPM2 (self-hosted TTS + клонирование голоса) описан на отдельной странице [VoxCPM2](./voxcpm.mdx).
 
@@ -591,6 +595,10 @@ ASR_QWEN_BASE_URL=         # опциональное переопределен
 # Xiaomi MiMo ASR
 ASR_XIAOMI_API_KEY=
 ASR_XIAOMI_BASE_URL=https://api.xiaomimimo.com/v1
+
+# DeepSeek ASR
+ASR_DEEPSEEK_API_KEY=
+ASR_DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
 
 # Azure ASR
 ASR_AZURE_API_KEY=
@@ -693,9 +701,15 @@ PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
 ALIDOCMIND_ACCESS_KEY_ID=
 ALIDOCMIND_ACCESS_KEY_SECRET=
 ALIDOCMIND_BASE_URL=       # опциональное переопределение
+
+# DeepSeek OCR (использует API key DeepSeek)
+PDF_DEEPSEEK_OCR_API_KEY=
+PDF_DEEPSEEK_OCR_BASE_URL=https://api.deepseek.com/v1
 ```
 
-`unpdf` встроен в OpenMAIC и подходит для базового разбора PDF. Для Office-документов, изображений и материалов с OCR, таблицами, формулами или сложной версткой рекомендуется MinerU или AliDocMind.
+`unpdf` встроен в OpenMAIC и подходит для базового разбора PDF. Для Office-документов, изображений и материалов с OCR, таблицами, формулами или сложной версткой рекомендуется MinerU, AliDocMind или DeepSeek OCR.
+
+DeepSeek OCR (`deepseek-ocr`) поддерживает PDF, DOC, DOCX, PPT, PPTX, PNG, JPEG, WebP, GIF и BMP, до 100 MiB и 1000 страниц на файл; сервис ограничивает запрос 180 секундами. Результат — Markdown с заголовками, HTML-таблицами и формулами LaTeX. Иллюстрации вырезаются из PDF и изображений; из файлов Word и PowerPoint извлекается только текст.
 
 AliDocMind поддерживает PDF, DOCX, PPTX, XLSX, а также PNG, JPG/JPEG, BMP, GIF. Текущая поддержка аудио/видео через AliDocMind: видео форматы MP4, MOV, AVI, MKV, WMV; аудио MP3, WAV, AAC. M4A не поддерживается.
 

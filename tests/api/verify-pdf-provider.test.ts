@@ -216,6 +216,71 @@ describe('POST /api/verify-pdf-provider', () => {
       expect(cloud.lastHeaders()!.authorization).toBe('Bearer test-key');
     });
 
+    it('verifies a DeepSeek OCR key with a file-less request that recognizes nothing', async () => {
+      const deepseek = await startLoopback((_req, res) => {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end('{"error":{"message":"\'file\' is a required property"}}');
+      });
+
+      const res = await postVerifyPdfProvider({
+        providerId: 'deepseek-ocr',
+        apiKey: 'sk-test',
+        baseUrl: `${deepseek.origin}/v1`,
+      });
+
+      expect(res).toEqual({
+        status: 200,
+        json: { success: true, message: 'Connection successful' },
+      });
+      expect(deepseek.requests()).toBe(1);
+      expect(deepseek.lastUrl()).toBe('/v1/tools/ocr');
+      expect(deepseek.lastHeaders()!.authorization).toBe('Bearer sk-test');
+    });
+
+    it('answers a rejected DeepSeek OCR key with the fixed auth message', async () => {
+      const deepseek = await startLoopback((_req, res) => {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end('{"error":{"message":"Authentication Fails"}}');
+      });
+
+      const res = await postVerifyPdfProvider({
+        providerId: 'deepseek-ocr',
+        apiKey: 'sk-wrong',
+        baseUrl: `${deepseek.origin}/v1`,
+      });
+
+      expect(res).toEqual({
+        status: 500,
+        json: {
+          success: false,
+          errorCode: 'INTERNAL_ERROR',
+          error: 'Authentication failed, please check the API Key',
+        },
+      });
+    });
+
+    it('fails DeepSeek OCR verification when the base URL path answers 404', async () => {
+      const deepseek = await startLoopback((_req, res) => {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Not Found');
+      });
+
+      const res = await postVerifyPdfProvider({
+        providerId: 'deepseek-ocr',
+        apiKey: 'sk-test',
+        baseUrl: `${deepseek.origin}/wrong-prefix`,
+      });
+
+      expect(res).toEqual({
+        status: 500,
+        json: {
+          success: false,
+          errorCode: 'INTERNAL_ERROR',
+          error: 'Cannot connect to server, please check the Base URL',
+        },
+      });
+    });
+
     it('verifies a self-hosted MinerU on a local network', async () => {
       const selfHosted = await startLoopback();
 

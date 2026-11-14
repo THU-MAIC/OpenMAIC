@@ -108,6 +108,7 @@ const TTS_ENV_MAP: Record<string, string> = {
   TTS_ELEVENLABS: 'elevenlabs-tts',
   TTS_MINIMAX: 'minimax-tts',
   TTS_XIAOMI: 'xiaomi-tts',
+  TTS_DEEPSEEK: 'deepseek-tts',
   TTS_GOOGLE: 'google-tts',
   TTS_LEMONADE: 'lemonade-tts',
 };
@@ -119,12 +120,14 @@ const ASR_ENV_MAP: Record<string, string> = {
   ASR_FUNASR: 'funasr-asr',
   ASR_LEMONADE: 'lemonade-asr',
   ASR_XIAOMI: 'xiaomi-asr',
+  ASR_DEEPSEEK: 'deepseek-asr',
 };
 
 const PDF_ENV_MAP: Record<string, string> = {
   PDF_UNPDF: 'unpdf',
   PDF_MINERU: 'mineru',
   PDF_MINERU_CLOUD: 'mineru-cloud',
+  PDF_DEEPSEEK_OCR: 'deepseek-ocr',
 };
 
 const IMAGE_ENV_MAP: Record<string, string> = {
@@ -573,7 +576,7 @@ function buildConfig(yamlData: YamlData): ServerConfig {
     pdf: applyAliDocMindFallback(
       loadEnvSection(PDF_ENV_MAP, yamlData.pdf, {
         requiresBaseUrl: true,
-        baseUrlOptionalProviders: new Set(['mineru-cloud']),
+        baseUrlOptionalProviders: new Set(['mineru-cloud', 'deepseek-ocr']),
       }),
       yamlData.pdf,
     ),

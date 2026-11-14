@@ -131,7 +131,7 @@ Amazon Bedrock（`preset: bedrock`）使用伺服器端的 AWS 憑證鏈（環�
 | `video` | video | — | 影片生成 |
 | `webFetch` | webFetch | — | 網頁內容擷取（預設：`builtin`） |
 | `webSearch` | webSearch | — | 網路搜尋 |
-| `document` | document | — | 文件解析服務（MinerU、MinerU Cloud、AliDocMind）。內建的 PDF 文字擷取不需要服務 |
+| `document` | document | — | 文件解析服務（MinerU、MinerU Cloud、AliDocMind、DeepSeek OCR）。內建的 PDF 文字擷取不需要服務 |
 
 插槽的解析方式：
 
@@ -563,6 +563,10 @@ TTS_QWEN_BASE_URL=         # 選填覆寫值
 TTS_XIAOMI_API_KEY=
 TTS_XIAOMI_BASE_URL=https://api.xiaomimimo.com/v1
 
+# DeepSeek TTS
+TTS_DEEPSEEK_API_KEY=
+TTS_DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
+
 # 任何 OpenAI 相容的 TTS 端點
 TTS_OPENAI_API_KEY=
 TTS_OPENAI_BASE_URL=
@@ -571,7 +575,7 @@ TTS_OPENAI_BASE_URL=
 TTS_VOXCPM_BASE_URL=http://localhost:8000
 ```
 
-支援的 TTS 字首包括 `TTS_OPENAI_`、`TTS_AZURE_`、`TTS_GLM_`、`TTS_QWEN_`、`TTS_MINIMAX_`、`TTS_DOUBAO_`、`TTS_ELEVENLABS_`、`TTS_GOOGLE_`、`TTS_VOXCPM_`、`TTS_XIAOMI_` 和 `TTS_LEMONADE_`。本機 Lemonade TTS 和 VoxCPM2 不需要 API key。瀏覽器原生 TTS 不需要伺服器端設定。
+支援的 TTS 字首包括 `TTS_OPENAI_`、`TTS_AZURE_`、`TTS_GLM_`、`TTS_QWEN_`、`TTS_MINIMAX_`、`TTS_DOUBAO_`、`TTS_ELEVENLABS_`、`TTS_GOOGLE_`、`TTS_VOXCPM_`、`TTS_XIAOMI_`、`TTS_DEEPSEEK_` 和 `TTS_LEMONADE_`。本機 Lemonade TTS 和 VoxCPM2 不需要 API key。瀏覽器原生 TTS 不需要伺服器端設定。
 
 管理員可以使用 `TTS_<PROVIDER>_ENABLED=false` 在伺服器端強制關閉某個 TTS 供應商。VoxCPM2（自託管 TTS + 聲音複製）請見獨立的 [VoxCPM2](./voxcpm.mdx) 章節。
 
@@ -593,6 +597,10 @@ ASR_QWEN_BASE_URL=         # 選填覆寫值
 # 小米 MiMo ASR
 ASR_XIAOMI_API_KEY=
 ASR_XIAOMI_BASE_URL=https://api.xiaomimimo.com/v1
+
+# DeepSeek ASR
+ASR_DEEPSEEK_API_KEY=
+ASR_DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
 
 # Azure ASR
 ASR_AZURE_API_KEY=
@@ -695,9 +703,15 @@ PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
 ALIDOCMIND_ACCESS_KEY_ID=
 ALIDOCMIND_ACCESS_KEY_SECRET=
 ALIDOCMIND_BASE_URL=       # 選填覆寫值
+
+# DeepSeek OCR（使用 DeepSeek API key）
+PDF_DEEPSEEK_OCR_API_KEY=
+PDF_DEEPSEEK_OCR_BASE_URL=https://api.deepseek.com/v1
 ```
 
-`unpdf` 內建於 OpenMAIC，可用於基礎 PDF 解析。Office 文件、圖片和需要 OCR、表格、公式或版面分析的材料，應選擇相容的 MinerU 或 AliDocMind provider。
+`unpdf` 內建於 OpenMAIC，可用於基礎 PDF 解析。Office 文件、圖片和需要 OCR、表格、公式或版面分析的材料，應選擇相容的 MinerU、AliDocMind 或 DeepSeek OCR provider。
+
+DeepSeek OCR（`deepseek-ocr`）支援 PDF、DOC、DOCX、PPT、PPTX、PNG、JPEG、WebP、GIF、BMP，單一檔案最大 100 MiB、1,000 頁；服務端單次請求限時 180 秒。輸出為 Markdown，包含標題、HTML 表格和 LaTeX 公式。插圖從 PDF 和圖片中裁切；Word 和 PowerPoint 檔案只擷取文字。
 
 AliDocMind 的文件解析支援 PDF、DOCX、PPTX、XLSX，以及 PNG、JPG/JPEG、BMP、GIF。目前音訊與影片材料僅支援透過 AliDocMind 解析：影片格式為 MP4、MOV、AVI、MKV、WMV，音訊格式為 MP3、WAV、AAC；不支援 M4A。
 

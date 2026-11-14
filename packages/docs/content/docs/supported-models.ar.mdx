@@ -19,11 +19,11 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 | `tokendance` | TokenDance | المحادثة والصور والفيديو وTTS والبحث على الويب |
 | `volcengine-ark` | Volcengine Ark Agent Plan | المحادثة والصور والفيديو وTTS والبحث على الويب |
 | `kimi-coding-plan` | Kimi coding plan | المحادثة والبحث على الويب وجلب صفحات الويب |
-| `deepseek-token-plan` | DeepSeek | المحادثة والبحث على الويب وجلب صفحات الويب |
+| `deepseek-token-plan` | DeepSeek | المحادثة وTTS وASR وتحليل المستندات والبحث على الويب وجلب صفحات الويب |
 
 يوصي ربط Kimi Coding Plan في **الإعدادات ← Token Plan** بالمحادثة والبحث على الويب وجلب الصفحات معًا، باستخدام مفتاح الخطة والعنوان `https://api.kimi.com/coding/v1`. إذا كان الجلب يستخدم القارئ المدمج الافتراضي الضمني فقط، فإن الربط يعيّن Kimi مباشرةً دون تأكيد تعارض، حتى عند الاحتفاظ بالإعدادات الحالية. تخضع اختيارات مساحة العمل الصريحة (بما فيها `null`) والقارئ غير المدمج أو `null` المحددان في إعداد النشر لخيارات التعارض الحالية. يزيل قطع الاتصال تعيينات الخطة ويعيد القيمة الافتراضية للخادم (القارئ المدمج عند عدم إعداد قارئ آخر)، ولا يعيد اختيارًا صريحًا سابقًا لمساحة العمل. تبقى الخانات المقفلة دون تغيير، ولا تغيّر الخطط التي لا تعلن جلب الصفحات هذه الخانة.
 
-يوصي ربط DeepSeek في **الإعدادات ← Token Plan** بالمحادثة (افتراضيًا `deepseek-flash`) والبحث على الويب وجلب الصفحات معًا، باستخدام مفتاح DeepSeek API واحد والعنوان `https://api.deepseek.com/v1`. هذا هو حساب الدفع حسب الاستخدام والعنوان نفسهما في الإعداد المسبق `deepseek`؛ وتستخدم الخطة إعدادها المسبق الخاص `deepseek-token-plan`، لذا فإن فصلها يزيل مزوّد الخطة وتعييناتها فقط ويترك مزوّد `deepseek` المنفصل دون تغيير.
+يوصي ربط DeepSeek في **الإعدادات ← Token Plan** بالمحادثة (افتراضيًا `deepseek-flash`) وTTS (`deepseek-tts`) وASR (`deepseek-asr`) وتحليل المستندات (`deepseek-ocr`) والبحث على الويب وجلب الصفحات معًا، باستخدام مفتاح DeepSeek API واحد والعنوان `https://api.deepseek.com/v1`. لا تشمل الخطة الصور والفيديو. هذا هو حساب الدفع حسب الاستخدام والعنوان نفسهما في الإعداد المسبق `deepseek`؛ وتستخدم الخطة إعدادها المسبق الخاص `deepseek-token-plan`، لذا فإن فصلها يزيل مزوّد الخطة وتعييناتها فقط ويترك مزوّد `deepseek` المنفصل دون تغيير.
 
 يُبقي معالج الإعداد الأولي جلب الصفحات على القارئ المدمج؛ ولا تُطبّق توصية الخطة للجلب إلا عند ربطها عبر صفحة إعدادات Token Plan.
 
@@ -34,13 +34,13 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 | القدرة | الإعدادات المسبقة |
 | --- | --- |
 | المحادثة | `openai` و`azure` و`atlascloud` و`anthropic` و`bedrock` و`google` و`glm` و`qwen` و`deepseek` و`kimi` و`siliconflow` و`doubao` و`openrouter` و`grok` و`tencent-hunyuan` و`xiaomi` و`ollama` و`lemonade` و`openai-compatible`، وخطط Token Plan |
-| TTS | `openai-tts` و`azure-tts` و`glm-tts` و`qwen-tts` و`minimax-tts` و`xiaomi-tts` و`voxcpm-tts` و`doubao-tts` و`elevenlabs-tts` و`google-tts` و`browser-native-tts` و`lemonade-tts` |
-| ASR | `openai-whisper` و`qwen-asr` و`azure-asr` و`browser-native` و`funasr-asr` و`lemonade-asr` و`xiaomi-asr` |
+| TTS | `openai-tts` و`azure-tts` و`glm-tts` و`qwen-tts` و`minimax-tts` و`xiaomi-tts` و`voxcpm-tts` و`doubao-tts` و`elevenlabs-tts` و`google-tts` و`browser-native-tts` و`lemonade-tts` و`deepseek-tts` |
+| ASR | `openai-whisper` و`qwen-asr` و`azure-asr` و`browser-native` و`funasr-asr` و`lemonade-asr` و`xiaomi-asr` و`deepseek-asr` |
 | الصور | `seedream` و`openai-image` و`qwen-image` و`nano-banana` و`minimax-image` و`grok-image` و`comfyui-image` و`lemonade-image` و`openrouter-image` |
 | الفيديو | `seedance` و`kling` و`minimax-video` و`grok-video` و`happyhorse` و`openrouter-video` |
 | البحث على الويب | `tavily` و`exa` و`firecrawl` و`bocha` و`brave` و`baidu` و`claude` و`minimax-search` و`doubao-search` و`deepseek` و`deepseek-token-plan` و`kimi` و`kimi-coding-plan` و`searxng` |
 | جلب صفحات الويب | `builtin` و`deepseek` و`deepseek-token-plan` و`firecrawl` و`kimi` و`kimi-coding-plan` |
-| تحليل المستندات | `unpdf` و`mineru` و`mineru-cloud` و`alidocmind` |
+| تحليل المستندات | `unpdf` و`mineru` و`mineru-cloud` و`alidocmind` و`deepseek-ocr` |
 
 تحتاج `azure` و`openai-compatible` و`searxng` و`mineru` إلى `baseUrl`، ويصادق `alidocmind` عبر `credentials` (زوج مفاتيح). إعدادات TTS وASR والصور والبحث والمستندات المستضافة ذاتيًا، وإعدادات أزواج المفاتيح، وBedrock لا تُضبط إلا في `openmaic.yml`؛ راجع [الإعدادات](./configuration.mdx).
 
@@ -111,6 +111,7 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 | VoxCPM2            | `voxcpm-tts`         | VoxCPM2 (`voxcpm2`)<br />الواجهات الخلفية: vLLM-Omni, Python API, Nano-vLLM                                                                                                                                                                    |
 | Lemonade TTS       | `lemonade-tts`       | Kokoro v1 (`kokoro-v1`)                                                                                                                                                                                                                |
 | Xiaomi MiMo TTS   | `xiaomi-tts`        | MiMo V2.5 TTS (`mimo-v2.5-tts`) — إعدادات الصوت الجاهزة: 冰糖 / 茉莉 / 苏打 / 白桦 / Mia / Chloe / Milo / Dean؛ السرعة عبر تعليمات الأسلوب — تلميح أسلوبي وليست دقيقة |
+| DeepSeek TTS       | `deepseek-tts`       | لا يوجد محدد نموذج. الصوتان `stella` (أنثوي، افتراضي) و`tide` (ذكوري)؛ تُكتشف اللغة من النص؛ لا يمكن التحكم في السرعة؛ المخرجات WAV؛ حتى 10,000 حرف محتسب لكل طلب (الحرف الصيني يُحتسب بحرفين) وجسم طلب حتى 64 KiB |
 | Doubao TTS 2.0     | `doubao-tts`         | لا يوجد محدد نموذج؛ تُستخدم معرّفات أصوات Doubao TTS 2.0.                                                                                                                                                                                      |
 | ElevenLabs TTS     | `elevenlabs-tts`     | Multilingual v2 (`eleven_multilingual_v2`)<br />Flash v2.5 (`eleven_flash_v2_5`)<br />Flash v2 (`eleven_flash_v2`)                                                                                                                     |
 | Google Gemini TTS  | `google-tts`         | Gemini 3.8 Flash-Lite TTS (`gemini-3.8-flash-lite-tts`)<br />Gemini 3.8 Flash TTS (`gemini-3.8-flash-tts`)<br />Gemini 3.1 Flash TTS Preview (`gemini-3.1-flash-tts-preview`)<br />Gemini 2.5 Flash Preview TTS (`gemini-2.5-flash-preview-tts`)<br />Gemini 2.5 Pro Preview TTS (`gemini-2.5-pro-preview-tts`)                                        |
@@ -130,6 +131,7 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 | FunASR             | `funasr-asr`     | SenseVoiceSmall (`sensevoice`)<br />Paraformer (`paraformer`)<br />Fun-ASR-Nano (`fun-asr-nano`) |
 | Lemonade ASR       | `lemonade-asr`   | Whisper Base (`Whisper-Base`)<br />Whisper Large v3 (`Whisper-Large-v3`)<br />Whisper Large v3 Turbo (`Whisper-Large-v3-Turbo`)<br />Whisper Medium (`Whisper-Medium`)<br />Whisper Small (`Whisper-Small`)<br />Whisper Tiny (`Whisper-Tiny`) |
 | Xiaomi MiMo ASR   | `xiaomi-asr`        | MiMo V2.5 ASR (`mimo-v2.5-asr`) — wav/mp3، auto/zh/en |
+| DeepSeek ASR       | `deepseek-asr`   | لا يوجد محدد نموذج. يقبل 16-bit PCM WAV أو Ogg Opus فقط (تُحوَّل تسجيلات المتصفح إلى WAV)، حتى 8 MiB و120 ثانية لكل طلب؛ اكتشاف اللغة تلقائي فقط؛ تُقسَّم الوسائط الأطول إلى مقاطع مدتها 110 ثوانٍ |
 | Browser Native ASR | `browser-native` | لا يوجد محدد نموذج؛ تُستخدم Web Speech API للمتصفح.                                                                                                                                                                                            |
 
 ## مزودو تحليل المستندات
@@ -140,6 +142,7 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 | MinerU       | `mineru`       | نصوص، صور، جداول، صيغ، تحليل تخطيط |
 | MinerU Cloud | `mineru-cloud` | نصوص، صور، جداول، صيغ، تحليل تخطيط |
 | AliDocMind   | `alidocmind`   | نصوص، صور، جداول، صيغ، تحليل تخطيط، OCR |
+| DeepSeek OCR | `deepseek-ocr` | نصوص، جداول، صيغ، تحليل تخطيط، OCR؛ تُستخرج الصور من ملفات PDF والصور فقط (PDF وDOC/DOCX وPPT/PPTX وPNG وJPEG وWebP وGIF وBMP؛ حتى 100 MiB و1,000 صفحة) |
 
 ## مزودو البحث على الويب
 

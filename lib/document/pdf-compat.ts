@@ -51,8 +51,9 @@ function pdfLayoutType(value: unknown): NonNullable<ParsedPdfContent['layout']>[
     : 'text';
 }
 
-function isMinerUMarkdownParser(parser: unknown): boolean {
-  return parser === 'mineru' || parser === 'mineru-cloud';
+/** Parsers whose text is markdown that names its images by path. */
+function isMarkdownParser(parser: unknown): boolean {
+  return parser === 'mineru' || parser === 'mineru-cloud' || parser === 'deepseek-ocr';
 }
 
 export function parsedPdfToDocumentArtifact(
@@ -64,7 +65,7 @@ export function parsedPdfToDocumentArtifact(
   if (parsed.text) {
     blocks.push({
       id: 'document-text',
-      type: isMinerUMarkdownParser(parsed.metadata?.parser) ? 'markdown' : 'text',
+      type: isMarkdownParser(parsed.metadata?.parser) ? 'markdown' : 'text',
       text: parsed.text,
     });
   }

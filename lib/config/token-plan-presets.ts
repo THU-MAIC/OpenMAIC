@@ -2,7 +2,7 @@
  * Token Plan presets — multi-modal.
  *
  * A token plan (e.g. MiniMax) is often a single key that spans LLM + image +
- * video + TTS + web search + web fetch. A preset declares, per modality, the
+ * video + TTS + ASR + document parsing + web search + web fetch. A preset declares, per modality, the
  * target provider id + base URL in that modality's registry. "One-click apply" fills the key into
  * every declared modality and lights it up; modalities not declared here are
  * simply "not adapted yet" (at our best — add an entry later to extend).
@@ -16,8 +16,16 @@ import type { ProviderType } from '@/lib/types/provider';
 /** Loose grouping for the preset list UI. */
 export type PresetCategory = 'official' | 'aggregator' | 'token_plan' | 'third_party';
 
-/** The modalities a token plan can be applied to. ASR is omitted = not adapted. */
-export type TokenPlanModality = 'llm' | 'image' | 'video' | 'tts' | 'webSearch' | 'webFetch';
+/** The modalities a token plan can be applied to. */
+export type TokenPlanModality =
+  | 'llm'
+  | 'image'
+  | 'video'
+  | 'tts'
+  | 'asr'
+  | 'document'
+  | 'webSearch'
+  | 'webFetch';
 
 /** Where a token plan maps in one modality's provider registry. */
 export interface TokenPlanModalityTarget {
@@ -80,6 +88,8 @@ export const MODALITY_ORDER: TokenPlanModality[] = [
   'image',
   'video',
   'tts',
+  'asr',
+  'document',
   'webSearch',
   'webFetch',
 ];
@@ -97,7 +107,7 @@ export const MODALITY_ORDER: TokenPlanModality[] = [
  * - MiniMax: LLM/image/video/TTS/web-search adapters.
  * - Volcengine Ark Agent Plan: LLM/image/video/TTS/web-search via the plan key.
  * - Kimi Coding Plan: LLM/web-search/web-fetch via the plan key.
- * - DeepSeek: LLM/web-search/web-fetch via one platform API key.
+ * - DeepSeek: LLM/TTS/ASR/document OCR/web-search/web-fetch via one platform API key.
  */
 export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
   // ── Gateway token plan (one key, vendor wire formats) ─────────────────────
@@ -331,14 +341,17 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
   },
   // ── DeepSeek (last = lowest priority) ───────────────────────────────────
   // Pay-as-you-go rather than a subscription, but one DeepSeek platform key
-  // covers chat, web search (/v1/tools/search) and web fetch (/v1/tools/fetch)
-  // on the same official endpoint, through the existing `deepseek` registry
-  // adapters. The endpoint is the one a personal `deepseek` provider uses; the
-  // plan still gets its own `deepseek-token-plan` preset so connecting and
-  // disconnecting it never touches a personal DeepSeek provider (and so a
-  // personal key does not count as a connected plan). The mainline defaults
-  // to `deepseek-flash` (vision, tool calling); every follow-mainline LLM
-  // station inherits it. Image/video/TTS are not declared and stay untouched.
+  // covers chat, speech synthesis (/v1/tools/tts), speech recognition
+  // (/v1/tools/asr), document OCR (/v1/tools/ocr), web search
+  // (/v1/tools/search) and web fetch (/v1/tools/fetch) on the same official
+  // endpoint, through the existing `deepseek*` registry adapters. The endpoint
+  // is the one a personal `deepseek` provider uses; the plan still gets its
+  // own `deepseek-token-plan` preset so connecting and disconnecting it never
+  // touches a personal DeepSeek provider (and so a personal key does not count
+  // as a connected plan). The mainline defaults to `deepseek-flash` (vision,
+  // tool calling); every follow-mainline LLM station inherits it. The speech
+  // and OCR tools have no model parameter, so their slots get the provider
+  // itself. Image and video are not declared and stay untouched.
   // Priority note: placed LAST in TOKEN_PLAN_PRESETS, so DeepSeek yields the
   // slots any other connected plan also recommends.
   {
@@ -356,6 +369,9 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
         defaultModels: ['deepseek-flash', 'deepseek-v4-pro'],
         defaultModelId: 'deepseek-flash',
       },
+      tts: { providerId: 'deepseek-tts', baseUrl: 'https://api.deepseek.com/v1' },
+      asr: { providerId: 'deepseek-asr', baseUrl: 'https://api.deepseek.com/v1' },
+      document: { providerId: 'deepseek-ocr', baseUrl: 'https://api.deepseek.com/v1' },
       webSearch: { providerId: 'deepseek', baseUrl: 'https://api.deepseek.com/v1' },
       webFetch: { providerId: 'deepseek', baseUrl: 'https://api.deepseek.com/v1' },
     },

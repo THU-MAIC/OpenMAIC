@@ -131,7 +131,7 @@ Amazon Bedrock（`preset: bedrock`）はサーバーの AWS 認証情報チェ�
 | `video` | video | — | 動画生成 |
 | `webFetch` | webFetch | — | Webページ抽出（既定：`builtin`） |
 | `webSearch` | webSearch | — | Web 検索 |
-| `document` | document | — | ドキュメント解析サービス（MinerU、MinerU Cloud、AliDocMind）。組み込みの PDF テキスト抽出にはサービスは不要です |
+| `document` | document | — | ドキュメント解析サービス（MinerU、MinerU Cloud、AliDocMind、DeepSeek OCR）。組み込みの PDF テキスト抽出にはサービスは不要です |
 
 スロットの解決方法：
 
@@ -563,6 +563,10 @@ TTS_QWEN_BASE_URL=         # 任意の上書き
 TTS_XIAOMI_API_KEY=
 TTS_XIAOMI_BASE_URL=https://api.xiaomimimo.com/v1
 
+# DeepSeek TTS
+TTS_DEEPSEEK_API_KEY=
+TTS_DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
+
 # 任意の OpenAI 互換 TTS エンドポイント
 TTS_OPENAI_API_KEY=
 TTS_OPENAI_BASE_URL=
@@ -571,7 +575,7 @@ TTS_OPENAI_BASE_URL=
 TTS_VOXCPM_BASE_URL=http://localhost:8000
 ```
 
-対応している TTS prefix は `TTS_OPENAI_`、`TTS_AZURE_`、`TTS_GLM_`、`TTS_QWEN_`、`TTS_MINIMAX_`、`TTS_DOUBAO_`、`TTS_ELEVENLABS_`、`TTS_GOOGLE_`、`TTS_VOXCPM_`、`TTS_XIAOMI_`、`TTS_LEMONADE_` です。ローカル Lemonade TTS と VoxCPM2 は API key 不要です。ブラウザのネイティブ TTS はサーバー設定不要です。
+対応している TTS prefix は `TTS_OPENAI_`、`TTS_AZURE_`、`TTS_GLM_`、`TTS_QWEN_`、`TTS_MINIMAX_`、`TTS_DOUBAO_`、`TTS_ELEVENLABS_`、`TTS_GOOGLE_`、`TTS_VOXCPM_`、`TTS_XIAOMI_`、`TTS_DEEPSEEK_`、`TTS_LEMONADE_` です。ローカル Lemonade TTS と VoxCPM2 は API key 不要です。ブラウザのネイティブ TTS はサーバー設定不要です。
 
 管理者は `TTS_<PROVIDER>_ENABLED=false` で特定の TTS プロバイダーをサーバー側で強制無効化できます。VoxCPM2（セルフホスト TTS＋音声クローン）については専用の [VoxCPM2](./voxcpm.mdx) ページを参照してください。
 
@@ -591,6 +595,10 @@ ASR_QWEN_BASE_URL=         # 任意の上書き
 # Xiaomi MiMo ASR
 ASR_XIAOMI_API_KEY=
 ASR_XIAOMI_BASE_URL=https://api.xiaomimimo.com/v1
+
+# DeepSeek ASR
+ASR_DEEPSEEK_API_KEY=
+ASR_DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
 
 # Azure ASR
 ASR_AZURE_API_KEY=
@@ -693,9 +701,15 @@ PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
 ALIDOCMIND_ACCESS_KEY_ID=
 ALIDOCMIND_ACCESS_KEY_SECRET=
 ALIDOCMIND_BASE_URL=       # 任意の上書き
+
+# DeepSeek OCR（DeepSeek API key を使用）
+PDF_DEEPSEEK_OCR_API_KEY=
+PDF_DEEPSEEK_OCR_BASE_URL=https://api.deepseek.com/v1
 ```
 
-`unpdf` は OpenMAIC に組み込み済みで、基本的な PDF 解析に使えます。Office 文書、画像、OCR、表、数式、レイアウト解析が必要な教材は MinerU または AliDocMind の互換 provider を選択してください。
+`unpdf` は OpenMAIC に組み込み済みで、基本的な PDF 解析に使えます。Office 文書、画像、OCR、表、数式、レイアウト解析が必要な教材は MinerU、AliDocMind または DeepSeek OCR の互換 provider を選択してください。
+
+DeepSeek OCR（`deepseek-ocr`）は PDF、DOC、DOCX、PPT、PPTX、PNG、JPEG、WebP、GIF、BMP に対応し、1 ファイルあたり最大 100 MiB・1,000 ページです。サービス側で 1 リクエストは 180 秒に制限されます。出力は見出し、HTML の表、LaTeX の数式を含む Markdown です。図は PDF と画像から切り出され、Word と PowerPoint ファイルはテキストのみを抽出します。
 
 AliDocMind のドキュメント解析は PDF、DOCX、PPTX、XLSX、PNG、JPG/JPEG、BMP、GIF に対応します。現在の音声・動画素材は AliDocMind でのみ解析可能で、動画は MP4、MOV、AVI、MKV、WMV、音声は MP3、WAV、AAC に対応し、M4A は非対応です。
 

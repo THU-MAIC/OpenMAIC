@@ -19,11 +19,11 @@ description: オープンソース版 OpenMAIC の組み込みモデルと provi
 | `tokendance` | TokenDance | チャット、画像、動画、TTS、Web 検索 |
 | `volcengine-ark` | Volcengine Ark Agent Plan | チャット、画像、動画、TTS、Web 検索 |
 | `kimi-coding-plan` | Kimi コーディングプラン | チャット、Web 検索、Webページ取得 |
-| `deepseek-token-plan` | DeepSeek | チャット、Web 検索、Webページ取得 |
+| `deepseek-token-plan` | DeepSeek | チャット、TTS、ASR、ドキュメント解析、Web 検索、Webページ取得 |
 
 **設定 → Token Plan** で Kimi Coding Plan を接続すると、プランのキーと `https://api.kimi.com/coding/v1` を共有するチャット、ウェブ検索、ウェブ取得が推奨されます。ウェブ取得が暗黙の内蔵リーダーの既定値のみを使っている場合、現在の設定を保持する場合も、競合の確認なしで Kimi が直接割り当てられます。ワークスペースの明示的な選択（`null` を含む）と、デプロイ設定の内蔵以外のリーダーまたは `null` には既存の競合時の選択肢が適用されます。切断するとプランの割り当てが削除され、サーバーの既定値（リーダー未設定時は内蔵リーダー）に戻りますが、以前のワークスペースの明示的な選択は復元されません。ロックされたスロットは変更されません。ウェブ取得を宣言しないプランは、このスロットを変更しません。
 
-**設定 → Token Plan** で DeepSeek を接続すると、1 つの DeepSeek API キーと `https://api.deepseek.com/v1` を共有するチャット（既定は `deepseek-flash`）、ウェブ検索、ウェブ取得がまとめて推奨されます。`deepseek` プリセットと同じ従量課金のアカウントとエンドポイントですが、プランは専用の `deepseek-token-plan` プリセットを使うため、切断してもプラン自身のプロバイダーと割り当てだけが削除され、別に設定した `deepseek` プロバイダーはそのまま残ります。
+**設定 → Token Plan** で DeepSeek を接続すると、1 つの DeepSeek API キーと `https://api.deepseek.com/v1` を共有するチャット（既定は `deepseek-flash`）、TTS（`deepseek-tts`）、ASR（`deepseek-asr`）、ドキュメント解析（`deepseek-ocr`）、ウェブ検索、ウェブ取得がまとめて推奨されます。画像と動画は対象外です。`deepseek` プリセットと同じ従量課金のアカウントとエンドポイントですが、プランは専用の `deepseek-token-plan` プリセットを使うため、切断してもプラン自身のプロバイダーと割り当てだけが削除され、別に設定した `deepseek` プロバイダーはそのまま残ります。
 
 初回設定ウィザードではウェブ取得に内蔵リーダーを維持し、Token Plan 設定ページからプランを接続した場合にのみ、その取得の推奨設定が適用されます。
 
@@ -34,13 +34,13 @@ description: オープンソース版 OpenMAIC の組み込みモデルと provi
 | 機能 | プリセット |
 | --- | --- |
 | チャット | `openai`、`azure`、`atlascloud`、`anthropic`、`bedrock`、`google`、`glm`、`qwen`、`deepseek`、`kimi`、`siliconflow`、`doubao`、`openrouter`、`grok`、`tencent-hunyuan`、`xiaomi`、`ollama`、`lemonade`、`openai-compatible`、および各 Token Plan |
-| TTS | `openai-tts`、`azure-tts`、`glm-tts`、`qwen-tts`、`minimax-tts`、`xiaomi-tts`、`voxcpm-tts`、`doubao-tts`、`elevenlabs-tts`、`google-tts`、`browser-native-tts`、`lemonade-tts` |
-| ASR | `openai-whisper`、`qwen-asr`、`azure-asr`、`browser-native`、`funasr-asr`、`lemonade-asr`、`xiaomi-asr` |
+| TTS | `openai-tts`、`azure-tts`、`glm-tts`、`qwen-tts`、`minimax-tts`、`xiaomi-tts`、`voxcpm-tts`、`doubao-tts`、`elevenlabs-tts`、`google-tts`、`browser-native-tts`、`lemonade-tts`、`deepseek-tts` |
+| ASR | `openai-whisper`、`qwen-asr`、`azure-asr`、`browser-native`、`funasr-asr`、`lemonade-asr`、`xiaomi-asr`、`deepseek-asr` |
 | 画像 | `seedream`、`openai-image`、`qwen-image`、`nano-banana`、`minimax-image`、`grok-image`、`comfyui-image`、`lemonade-image`、`openrouter-image` |
 | 動画 | `seedance`、`kling`、`minimax-video`、`grok-video`、`happyhorse`、`openrouter-video` |
 | Web 検索 | `tavily`、`exa`、`firecrawl`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`deepseek`、`deepseek-token-plan`、`kimi`、`kimi-coding-plan`、`searxng` |
 | Webページ取得 | `builtin`、`deepseek`、`deepseek-token-plan`、`firecrawl`、`kimi`、`kimi-coding-plan` |
-| ドキュメント解析 | `unpdf`、`mineru`、`mineru-cloud`、`alidocmind` |
+| ドキュメント解析 | `unpdf`、`mineru`、`mineru-cloud`、`alidocmind`、`deepseek-ocr` |
 
 `azure`、`openai-compatible`、`searxng`、`mineru` には `baseUrl` が必要で、`alidocmind` は `credentials`（キーペア）で認証します。セルフホストの TTS・ASR・画像・検索・ドキュメントのプリセット、キーペアのプリセット、Bedrock は `openmaic.yml` でのみ設定できます。[設定説明](./configuration.mdx)を参照してください。
 
@@ -111,6 +111,7 @@ description: オープンソース版 OpenMAIC の組み込みモデルと provi
 | VoxCPM2        | `voxcpm-tts`         | VoxCPM2 (`voxcpm2`)<br />バックエンド：vLLM-Omni、Python API、Nano-vLLM                                                                                                                                                                        |
 | Lemonade TTS   | `lemonade-tts`       | Kokoro v1 (`kokoro-v1`)                                                                                                                                                                                                                |
 | Xiaomi MiMo TTS   | `xiaomi-tts`        | MiMo V2.5 TTS (`mimo-v2.5-tts`) — ボイスプリセット：冰糖 / 茉莉 / 苏打 / 白桦 / Mia / Chloe / Milo / Dean、速度はスタイル指示で調整 — あくまでヒントであり厳密ではない |
+| DeepSeek TTS   | `deepseek-tts`       | モデルセレクターはありません。音声は `stella`（女性、既定）と `tide`（男性）。言語はテキストから自動判定。話速の調整は不可。WAV 出力。1 リクエストあたり課金文字数 10,000 文字まで（中国語の漢字は 2 文字として計算）、リクエスト本文は 64 KiB まで |
 | Doubao TTS 2.0 | `doubao-tts`         | モデルセレクターはなく、Doubao TTS 2.0 の音声 ID を使用します。                                                                                                                                                                                            |
 | ElevenLabs TTS | `elevenlabs-tts`     | Multilingual v2 (`eleven_multilingual_v2`)<br />Flash v2.5 (`eleven_flash_v2_5`)<br />Flash v2 (`eleven_flash_v2`)                                                                                                                     |
 | Google Gemini TTS | `google-tts`         | Gemini 3.8 Flash-Lite TTS (`gemini-3.8-flash-lite-tts`)<br />Gemini 3.8 Flash TTS (`gemini-3.8-flash-tts`)<br />Gemini 3.1 Flash TTS Preview (`gemini-3.1-flash-tts-preview`)<br />Gemini 2.5 Flash Preview TTS (`gemini-2.5-flash-preview-tts`)<br />Gemini 2.5 Pro Preview TTS (`gemini-2.5-pro-preview-tts`)                                        |
@@ -130,6 +131,7 @@ Google TTS の既定モデルは `gemini-3.8-flash-lite-tts` です。明示的�
 | FunASR         | `funasr-asr`     | SenseVoiceSmall (`sensevoice`)<br />Paraformer (`paraformer`)<br />Fun-ASR-Nano (`fun-asr-nano`) |
 | Lemonade ASR   | `lemonade-asr`   | Whisper Base (`Whisper-Base`)<br />Whisper Large v3 (`Whisper-Large-v3`)<br />Whisper Large v3 Turbo (`Whisper-Large-v3-Turbo`)<br />Whisper Medium (`Whisper-Medium`)<br />Whisper Small (`Whisper-Small`)<br />Whisper Tiny (`Whisper-Tiny`) |
 | Xiaomi MiMo ASR   | `xiaomi-asr`        | MiMo V2.5 ASR (`mimo-v2.5-asr`) — wav/mp3、auto/zh/en |
+| DeepSeek ASR   | `deepseek-asr`   | モデルセレクターはありません。16 ビット PCM WAV または Ogg Opus のみ（ブラウザの録音は WAV に変換してからアップロード）、1 リクエストあたり 8 MiB・120 秒まで。言語は自動判定のみ。長い音声・動画は 110 秒ごとに分割 |
 | ブラウザネイティブ ASR | `browser-native` | モデルセレクターはなく、ブラウザの Web Speech API を使用します。                                                                                                                                                                                                      |
 
 ## ドキュメント解析プロバイダー
@@ -140,6 +142,7 @@ Google TTS の既定モデルは `gemini-3.8-flash-lite-tts` です。明示的�
 | MinerU       | `mineru`       | テキスト、画像、表、数式、レイアウト解析 |
 | MinerU Cloud | `mineru-cloud` | テキスト、画像、表、数式、レイアウト解析 |
 | AliDocMind   | `alidocmind`   | テキスト、画像、表、数式、レイアウト解析、OCR |
+| DeepSeek OCR | `deepseek-ocr` | テキスト、表、数式、レイアウト解析、OCR。図は PDF と画像からのみ抽出（PDF、DOC/DOCX、PPT/PPTX、PNG、JPEG、WebP、GIF、BMP。最大 100 MiB・1,000 ページ） |
 
 ## Web Search プロバイダー
 
