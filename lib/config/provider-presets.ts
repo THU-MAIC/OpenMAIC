@@ -102,7 +102,7 @@ export { PRESET_ID_OVERRIDES } from '@/lib/config/preset-ids';
  */
 const REQUIRES_BASE_URL: Partial<Record<SlotCapability, readonly string[]>> = {
   chat: ['azure'],
-  document: ['mineru'],
+  document: ['mineru', 'paddleocr'],
 };
 
 const MODALITY_CAPABILITY: Record<TokenPlanModality, SlotCapability> = {

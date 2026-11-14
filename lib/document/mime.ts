@@ -193,11 +193,31 @@ export const ALIDOCMIND_MIMES: readonly string[] = [
   ...ALIDOCMIND_IMAGE_MIMES,
 ];
 
+/** PaddleOCR self-host (PaddleX layout-parsing): PDF + the common image set. */
+export const PADDLEOCR_MIMES: readonly string[] = [M.pdf, M.jpeg, M.png, M.bmp, M.webp];
+
+/**
+ * PaddleOCR Cloud (Baidu document parsing): PDF + modern Office + the image
+ * set per the submit contract (images additionally capped at 8192 px).
+ */
+export const PADDLE_CLOUD_MIMES: readonly string[] = [
+  M.pdf,
+  M.docx,
+  M.pptx,
+  M.xlsx,
+  M.jpeg,
+  M.png,
+  M.bmp,
+  M.webp,
+];
+
 export const PROVIDER_SUPPORTED_MIME_TYPES: Record<string, readonly string[]> = {
   unpdf: [M.pdf],
   mineru: MINERU_SELFHOST_MIMES,
   'mineru-cloud': MINERU_CLOUD_MIMES,
   alidocmind: ALIDOCMIND_MIMES,
+  paddleocr: PADDLEOCR_MIMES,
+  'paddleocr-cloud': PADDLE_CLOUD_MIMES,
   'plain-text': PLAIN_TEXT_MIMES,
 };
 
