@@ -7,7 +7,7 @@
  * - Amazon Bedrock (native)
  * - Google Gemini (native)
  * - MiniMax (Anthropic-compatible, recommended by official)
- * - OpenAI-compatible providers (DeepSeek, Qwen, Kimi, GLM, SiliconFlow, Doubao, Tencent, Xiaomi, Lemonade, etc.)
+ * - OpenAI-compatible providers (DeepSeek, Qwen, Kimi, GLM, SiliconFlow, Doubao, Tencent, Xiaomi, Lemonade, LLMTR, etc.)
  *
  * Sources:
  * - https://platform.openai.com/docs/models
@@ -1245,6 +1245,18 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         capabilities: { streaming: true, tools: true, vision: false },
       },
     ],
+  },
+
+  llmtr: {
+    id: 'llmtr',
+    name: 'LLMTR',
+    type: 'openai',
+    defaultBaseUrl: 'https://llmtr.com/v1',
+    requiresApiKey: true,
+    // No built-in logo: a public asset could not be retrieved from llmtr.com
+    // from this environment. The settings UI already falls back when `icon`
+    // is omitted, as it does for Atlas Cloud.
+    models: [],
   },
 
   grok: {

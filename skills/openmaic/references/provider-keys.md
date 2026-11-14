@@ -90,7 +90,7 @@ slots:
   llm: google:gemini-2.5-flash
 ```
 
-Same shape for `openai` (`OPENAI_API_KEY`), `anthropic`, `deepseek`, `qwen`, `glm`, `kimi`, `openrouter` and the other chat presets.
+Same shape for `openai` (`OPENAI_API_KEY`), `anthropic`, `deepseek`, `qwen`, `glm`, `kimi`, `openrouter`, `llmtr` (`LLMTR_API_KEY`) and the other chat presets.
 
 ### 3. Web App Only
 
