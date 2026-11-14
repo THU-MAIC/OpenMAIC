@@ -120,7 +120,9 @@ describe('HeaderControls Copy to my courses UI', () => {
     mocks.stageState.isOwner = false;
 
     act(() => {
-      root.render(createElement(HeaderControls, { showCourseActions: true }));
+      root.render(
+        createElement(HeaderControls, { showCourseActions: true, makeOwnCourseHref: '/' }),
+      );
     });
 
     const button = container.querySelector('button[title="Copy to my courses"]');
@@ -171,7 +173,9 @@ describe('HeaderControls Copy to my courses UI', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     act(() => {
-      root.render(createElement(HeaderControls, { showCourseActions: true }));
+      root.render(
+        createElement(HeaderControls, { showCourseActions: true, makeOwnCourseHref: '/' }),
+      );
     });
 
     const button = container.querySelector(
@@ -199,13 +203,16 @@ describe('HeaderControls Copy to my courses UI', () => {
       ok: false,
       status: 507,
       json: async () => ({
-        error: { code: 'ASSET_QUOTA_EXCEEDED', message: 'Asset storage quota exceeded.' },
+        errorCode: 'ASSET_QUOTA_EXCEEDED',
+        error: 'Asset storage quota exceeded.',
       }),
     });
     vi.stubGlobal('fetch', fetchMock);
 
     act(() => {
-      root.render(createElement(HeaderControls, { showCourseActions: true }));
+      root.render(
+        createElement(HeaderControls, { showCourseActions: true, makeOwnCourseHref: '/' }),
+      );
     });
 
     const button = container.querySelector(
@@ -215,7 +222,7 @@ describe('HeaderControls Copy to my courses UI', () => {
       button.click();
     });
 
-    expect(mocks.toastError).toHaveBeenCalledWith('Asset storage quota exceeded.');
+    expect(mocks.toastError).toHaveBeenCalledWith('Storage quota exceeded');
     expect(mocks.routerPush).not.toHaveBeenCalled();
   });
 });

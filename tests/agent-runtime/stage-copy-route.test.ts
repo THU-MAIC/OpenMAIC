@@ -407,7 +407,7 @@ describe('POST /api/stages/[id]/copy', () => {
     expect(copiedSpeech.audioUrl).toBeUndefined();
   });
 
-  it('refuses courses containing PBL v3 projects with a clear 400 error', async () => {
+  it('refuses courses containing PBL projects with a clear error', async () => {
     const sourceDoc = mocks.fakeStore!.docs.get(SOURCE_STAGE_ID)!;
     sourceDoc.scenes.push({
       id: 'scene-pbl-v3',
@@ -424,11 +424,11 @@ describe('POST /api/stages/[id]/copy', () => {
     });
 
     const res = await callCopy(SOURCE_STAGE_ID);
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(409);
 
     const body = (await res.json()) as { errorCode: string; error: string };
-    expect(body.errorCode).toBe('INVALID_REQUEST');
-    expect(body.error).toContain('PBL v3 projects cannot be copied');
+    expect(body.errorCode).toBe('PBL_COPY_UNSUPPORTED');
+    expect(body.error).toContain('PBL projects cannot be copied');
   });
 
   it('surfaces asset quota refusal as 507 and releases pending allocations', async () => {
@@ -515,6 +515,65 @@ describe('POST /api/stages/[id]/copy', () => {
 
     const res = await callCopy(SOURCE_STAGE_ID);
     expect(res.status).toBe(404);
+  });
+
+  it('refuses courses that are still generating with a distinct error code', async () => {
+    mocks.resolveStageAccess.mockResolvedValue({
+      stageId: SOURCE_STAGE_ID,
+      ownerId: SOURCE_OWNER,
+      name: 'Generating course',
+      isPublic: true,
+      publishedAt: null,
+      generationComplete: false,
+      source: 'document',
+      deletedAt: null,
+    });
+
+    const res = await callCopy(SOURCE_STAGE_ID);
+    expect(res.status).toBe(409);
+    expect((await res.json()).errorCode).toBe('COURSE_GENERATING');
+  });
+
+  it('preserves preset agent ids while remapping generated agents', async () => {
+    const sourceDoc = mocks.fakeStore!.docs.get(SOURCE_STAGE_ID)!;
+    sourceDoc.stage.agentIds = ['default-teacher', 'agent-teacher-1'];
+    sourceDoc.scenes[0]!.multiAgent!.agentIds = ['default-teacher', 'agent-teacher-1'];
+    (sourceDoc.scenes[1]!.actions![0] as DiscussionAction).agentId = 'default-teacher';
+
+    const res = await callCopy(SOURCE_STAGE_ID);
+    expect(res.status).toBe(200);
+    const copied = mocks.fakeStore!.docs.get((await res.json()).id)!;
+    expect(copied.stage.agentIds?.[0]).toBe('default-teacher');
+    expect(copied.stage.agentIds?.[1]).not.toBe('agent-teacher-1');
+    expect(copied.scenes[0]!.multiAgent?.agentIds?.[0]).toBe('default-teacher');
+    expect((copied.scenes[1]!.actions![0] as DiscussionAction).agentId).toBe('default-teacher');
+  });
+
+  it('keeps an external legacy speech URL when it cannot be copied', async () => {
+    const sourceDoc = mocks.fakeStore!.docs.get(SOURCE_STAGE_ID)!;
+    const speech = sourceDoc.scenes[0]!.actions![0] as SpeechAction & { audioUrl?: string };
+    speech.audioId = undefined;
+    speech.audioUrl = 'https://cdn.example.com/narration.mp3';
+
+    const res = await callCopy(SOURCE_STAGE_ID);
+    expect(res.status).toBe(200);
+    const copied = mocks.fakeStore!.docs.get((await res.json()).id)!;
+    const copiedSpeech = copied.scenes[0]!.actions![0] as SpeechAction & { audioUrl?: string };
+    expect(copiedSpeech.audioUrl).toBe('https://cdn.example.com/narration.mp3');
+    expect(copiedSpeech.audioId).toBeUndefined();
+  });
+
+  it('prefers a copied audioId over an external legacy speech URL', async () => {
+    const sourceDoc = mocks.fakeStore!.docs.get(SOURCE_STAGE_ID)!;
+    const speech = sourceDoc.scenes[0]!.actions![0] as SpeechAction & { audioUrl?: string };
+    speech.audioUrl = 'https://cdn.example.com/old-narration.mp3';
+
+    const res = await callCopy(SOURCE_STAGE_ID);
+    expect(res.status).toBe(200);
+    const copied = mocks.fakeStore!.docs.get((await res.json()).id)!;
+    const copiedSpeech = copied.scenes[0]!.actions![0] as SpeechAction & { audioUrl?: string };
+    expect(copiedSpeech.audioId).toMatch(/^ast_copied_/);
+    expect(copiedSpeech.audioUrl).toBeUndefined();
   });
 
   it('enforces one copy in flight per owner and returns 429', async () => {

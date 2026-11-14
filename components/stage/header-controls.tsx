@@ -172,19 +172,22 @@ export function HeaderControls({
         },
       });
       if (!res.ok) {
-        let data: { error?: { code?: string; message?: string }; details?: string } | undefined;
+        let data: { error?: string; errorCode?: string; details?: string } | undefined;
         try {
           data = await res.json();
         } catch {
           // ignore
         }
         const message =
-          data?.error?.message ||
-          (res.status === 507
+          data?.errorCode === 'ASSET_QUOTA_EXCEEDED'
             ? t('classroom.copyQuotaRefused')
-            : res.status === 400 && data?.error?.message?.includes('PBL')
+            : data?.errorCode === 'PBL_COPY_UNSUPPORTED'
               ? t('classroom.copyPblV3Unsupported')
-              : t('classroom.copyFailed'));
+              : data?.errorCode === 'RATE_LIMITED'
+                ? t('classroom.copyFailed')
+                : data?.errorCode === 'COURSE_GENERATING'
+                  ? t('classroom.copyFailed')
+                  : data?.error || t('classroom.copyFailed');
         toast.error(message);
         return;
       }
@@ -453,7 +456,8 @@ export function HeaderControls({
             description={t('export.videoDesc')}
           />
         )}
-        {showViewerCopyHint({ isOwner, workbench: isWorkbenchEnabled(), scenes }) ? (
+        {!makeOwnCourseHref &&
+        showViewerCopyHint({ isOwner, workbench: isWorkbenchEnabled(), scenes }) ? (
           // Someone else's course: how to make an editable copy of their own.
           <p
             data-testid="export-viewer-copy-hint"
@@ -571,7 +575,7 @@ export function HeaderControls({
       ) : null}
 
       {/* Copy to my courses — for non-owners only */}
-      {!isOwner && stage?.id && showCourseActions && mode !== 'edit' && (
+      {makeOwnCourseHref && stage?.id && showCourseActions && mode !== 'edit' && (
         <button
           type="button"
           data-testid="classroom-copy-course"

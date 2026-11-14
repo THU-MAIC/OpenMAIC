@@ -32,7 +32,6 @@ import { isDocumentWriteRefusedError, toAssetId } from '@openmaic/storage';
 import {
   enumerateAssetManifest,
   isConcreteMediaAddress,
-  isPBLV3Reference,
   type AssetKind,
   type Slide,
 } from '@openmaic/dsl';
@@ -50,7 +49,6 @@ import { resolveOwnedAsset } from '@/lib/persistence/resolve-server-asset';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { getOwnerScopedDocumentStore } from '@/lib/server/agent-runtime/owner-scoped-documents';
 import { ownerApiError, ownerJson, ownerNotFound } from '@/lib/server/agent-runtime/route-response';
-import type { ApiErrorCode } from '@/lib/server/api-response';
 import { STAGE_NAME_MAX_LENGTH } from '@/lib/server/agent-runtime/stage-limits';
 import { generateClassroomId, saveCompletedClassroom } from '@/lib/server/classroom-persistence';
 import { CLASSROOMS_DIR, classroomMediaMimeType } from '@/lib/server/classroom-storage';
@@ -73,9 +71,11 @@ const RATE_LIMIT_WINDOW_MS = 60_000;
 
 /** Maximum copy operations allowed per window per owner. */
 const MAX_COPIES_PER_WINDOW = 10;
+const MAX_COPIES_IN_FLIGHT = 4;
 
 /** Track active in-flight copies per owner. */
 const inFlightCopies = new Set<string>();
+const inFlightOperations = new Set<string>();
 
 /** Sliding window timestamps for rate limiting per owner. */
 const copyTimestamps = new Map<string, number[]>();
@@ -83,6 +83,7 @@ const copyTimestamps = new Map<string, number[]>();
 /** Reset in-memory concurrency and rate limit state (for tests). */
 export function _resetCopyLimitsForTesting(): void {
   inFlightCopies.clear();
+  inFlightOperations.clear();
   copyTimestamps.clear();
 }
 
@@ -132,14 +133,6 @@ function assetKindFor(mimeType: string, poster: boolean): GeneratedAssetKind {
   return 'image';
 }
 
-function hasPblV3Project(scenes: readonly Scene[]): boolean {
-  return scenes.some(
-    (scene) =>
-      scene.content?.type === 'pbl' &&
-      isPBLV3Reference((scene.content as { projectV3?: unknown }).projectV3),
-  );
-}
-
 function resolveRequestLanguage(req: Request): string {
   const userLocaleHeader = req.headers.get('x-user-locale');
   if (userLocaleHeader) {
@@ -166,7 +159,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
   if (!isSameOriginJsonRequest(req)) {
     return ownerApiError(
-      'CROSS_ORIGIN_REFUSED' as unknown as ApiErrorCode,
+      'CROSS_ORIGIN_REFUSED',
       403,
       'Copy requests must be same-origin JSON requests.',
       new Headers(),
@@ -176,10 +169,10 @@ export async function POST(req: NextRequest, { params }: Params) {
   return withRequestOwner(req, async (principal, responseHeaders) => {
     const { ownerId } = principal;
 
-    // Concurrency limit: 1 copy in flight per owner.
-    if (inFlightCopies.has(ownerId)) {
+    // Concurrency limits: one copy per owner and a small process-wide cap.
+    if (inFlightCopies.has(ownerId) || inFlightOperations.size >= MAX_COPIES_IN_FLIGHT) {
       return ownerApiError(
-        'CONCURRENT_COPY_LIMIT' as unknown as ApiErrorCode,
+        'CONCURRENT_COPY_LIMIT',
         429,
         'A copy operation is already in progress for this account.',
         responseHeaders,
@@ -191,6 +184,11 @@ export async function POST(req: NextRequest, { params }: Params) {
     const timestamps = (copyTimestamps.get(ownerId) ?? []).filter(
       (t) => now - t < RATE_LIMIT_WINDOW_MS,
     );
+    for (const [key, values] of copyTimestamps) {
+      const active = values.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+      if (active.length === 0) copyTimestamps.delete(key);
+      else if (key === ownerId) copyTimestamps.set(key, active);
+    }
     if (timestamps.length >= MAX_COPIES_PER_WINDOW) {
       return ownerApiError(
         'RATE_LIMITED',
@@ -203,6 +201,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     timestamps.push(now);
     copyTimestamps.set(ownerId, timestamps);
     inFlightCopies.add(ownerId);
+    const operationId = nanoid(12);
+    inFlightOperations.add(operationId);
 
     try {
       const { id: sourceStageId } = await params;
@@ -212,6 +212,14 @@ export async function POST(req: NextRequest, { params }: Params) {
       if (!access || access.deletedAt !== null) {
         return ownerNotFound(responseHeaders);
       }
+      if (!access.generationComplete) {
+        return ownerApiError(
+          'COURSE_GENERATING',
+          409,
+          'This course is still generating and cannot be copied yet.',
+          responseHeaders,
+        );
+      }
 
       // Load source document through owner-scoped store.
       const copierStore = await getOwnerScopedDocumentStore(principal);
@@ -220,12 +228,12 @@ export async function POST(req: NextRequest, { params }: Params) {
         return ownerNotFound(responseHeaders);
       }
 
-      // Refuse PBL v3 projects.
-      if (hasPblV3Project(sourceDocument.scenes)) {
+      // PBL documents may contain learner state; refuse all PBL copies for now.
+      if (sourceDocument.scenes.some((scene) => scene.content?.type === 'pbl')) {
         return ownerApiError(
-          'INVALID_REQUEST',
-          400,
-          'Courses containing PBL v3 projects cannot be copied.',
+          'PBL_COPY_UNSUPPORTED',
+          409,
+          'Courses containing PBL projects cannot be copied.',
           responseHeaders,
         );
       }
@@ -257,8 +265,12 @@ export async function POST(req: NextRequest, { params }: Params) {
         sceneIdMap.set(scene.id, `scene-${nanoid(12)}`);
       }
 
+      const generatedAgentIds = new Set(
+        (sourceDocument.stage.generatedAgentConfigs ?? []).map((cfg) => cfg.id),
+      );
       const agentIdMap = new Map<string, string>();
       const getNewAgentId = (oldId: string): string => {
+        if (!generatedAgentIds.has(oldId)) return oldId;
         let mapped = agentIdMap.get(oldId);
         if (!mapped) {
           const prefix = oldId.startsWith('gen-') ? 'gen-' : 'agent-';
@@ -372,6 +384,11 @@ export async function POST(req: NextRequest, { params }: Params) {
             try {
               const realPath = await fs.realpath(path.join(classroomRoot, legacyFile));
               if (realPath.startsWith(classroomRoot + path.sep)) {
+                const stat = await fs.stat(realPath);
+                const remaining = MAX_COPY_MEDIA_BYTES - totalMediaBytes;
+                if (stat.size > remaining) {
+                  throw new CopyPayloadTooLargeError();
+                }
                 const bytes = await fs.readFile(realPath);
                 totalMediaBytes += bytes.byteLength;
                 if (totalMediaBytes > MAX_COPY_MEDIA_BYTES) {
@@ -417,10 +434,15 @@ export async function POST(req: NextRequest, { params }: Params) {
             ref,
             access.ownerId,
             connectionString,
-            undefined,
+            MAX_COPY_MEDIA_BYTES - totalMediaBytes,
           );
           if (resolution.status === 'missing' && access.ownerId !== ownerId) {
-            resolution = await resolveOwnedAsset(ref, ownerId, connectionString, undefined);
+            resolution = await resolveOwnedAsset(
+              ref,
+              ownerId,
+              connectionString,
+              MAX_COPY_MEDIA_BYTES - totalMediaBytes,
+            );
           }
 
           if (resolution.status === 'too_large') {
@@ -522,13 +544,15 @@ export async function POST(req: NextRequest, { params }: Params) {
           for (const action of scene.actions ?? []) {
             if (action.type !== 'speech') continue;
             const speech = action as SpeechAction & { audioUrl?: string };
-            const currentRef = speech.audioUrl ?? speech.audioId;
-            if (currentRef) {
-              const newAssetId = await copyMediaReference(currentRef, false, 'audio');
+            let newAssetId = speech.audioId
+              ? await copyMediaReference(speech.audioId, false, 'audio')
+              : null;
+            if (!newAssetId && speech.audioUrl) {
+              newAssetId = await copyMediaReference(speech.audioUrl, false, 'audio');
+            }
+            if (newAssetId) {
               delete speech.audioUrl;
-              if (newAssetId) {
-                speech.audioId = newAssetId;
-              }
+              speech.audioId = newAssetId;
             }
           }
         }
@@ -578,6 +602,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       }
     } finally {
       inFlightCopies.delete(ownerId);
+      inFlightOperations.delete(operationId);
     }
   });
 }
