@@ -6,6 +6,8 @@ import { GeistSans } from 'geist/font/sans';
 import { GeistMono } from 'geist/font/mono';
 import './globals.css';
 import '@openmaic/renderer/fonts.css';
+// The slide font picker's Chinese fonts, by the names it writes (see configs/font.ts).
+import '@openmaic/renderer/picker-fonts.css';
 import 'animate.css';
 import 'katex/dist/katex.min.css';
 import { ThemeProvider } from '@/lib/hooks/use-theme';
@@ -15,7 +17,7 @@ import { AgentRegistryInit } from '@/components/agent-registry-init';
 import { ModelSettingsInit } from '@/components/model-settings-init';
 import { StorageHealthNotice } from '@/components/storage-health-notice';
 import { AccessCodeGuard } from '@/components/access-code-guard';
-import { ProSwapWatcher } from '@/components/workbench/ProSwapWatcher';
+import { WorkbenchShellExtensionsProvider } from '@/lib/workbench/shell-extensions';
 import { loadLocaleResource } from '@/lib/i18n/load-resource';
 import { LOCALE_COOKIE, resolveRequestLocale } from '@/lib/i18n/resolve-locale';
 
@@ -85,8 +87,13 @@ export default async function RootLayout({
             <I18nProvider initialLocale={locale} initialResources={resources}>
               <ModelSettingsInit />
               <AgentRegistryInit />
-              <ProSwapWatcher />
-              <AccessCodeGuard>{children}</AccessCodeGuard>
+              {/* The workspace shell's host extension slots, empty upstream. A
+                  deployment that adds rail entries, account menu items or an
+                  account summary provides them here (see
+                  `lib/workbench/shell-extensions.tsx`). */}
+              <WorkbenchShellExtensionsProvider>
+                <AccessCodeGuard>{children}</AccessCodeGuard>
+              </WorkbenchShellExtensionsProvider>
               <Toaster position="top-center" />
               {/* After the Toaster: this one raises a toast on mount when
                 persistence is already broken, and a toast raised before its

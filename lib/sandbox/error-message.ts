@@ -14,6 +14,7 @@ const reasonKeys: Record<SandboxErrorReason, string> = {
   PBL_SOURCE_PATH: 'sandbox.errors.sourcePath',
   PBL_SOURCE_COUNT: 'sandbox.errors.sourceCount',
   PBL_SOURCE_SIZE: 'sandbox.errors.sourceSize',
+  PBL_COMMAND_SIZE: 'sandbox.errors.commandSize',
   WORKSPACE_COMMAND_ACTIVE: 'sandbox.errors.commandActive',
   WORKSPACE_TERMINAL_ACTIVE: 'sandbox.errors.terminalActive',
 };

@@ -1,17 +1,15 @@
 /**
- * Loads the web fonts offered in the slide editor's text-format picker.
+ * Loads the Latin web fonts offered in the slide editor's text-format picker.
+ * Imported lazily with the editor by `lib/edit/preload-editor.ts`.
  *
  * `@fontsource` ships the font files via npm (no binaries committed to the
- * repo) and `unicode-range`-subsets the CJK faces, so a CJK font downloads
- * lazily — only the glyph-range chunks a slide actually uses. Imported once
- * from the root layout.
+ * repo). The picker's Chinese fonts are not loaded here: the root layout
+ * declares them on every page from `@openmaic/renderer/picker-fonts.css`, so
+ * the editor and the classroom render them with the same files.
  *
- * The picker list lives in `configs/font.ts`; each entry's `value` must match
- * the `@font-face` family name of a package imported here. Inter is loaded
- * separately via `next/font` in `app/layout.tsx`.
+ * The picker list lives in `configs/font.ts`; each Latin entry's `value` must
+ * match the `@font-face` family name of a package imported here.
  */
-
-// Latin
 import '@fontsource/roboto/400.css';
 import '@fontsource/roboto/700.css';
 import '@fontsource/open-sans/400.css';
@@ -28,12 +26,3 @@ import '@fontsource/source-serif-4/400.css';
 import '@fontsource/source-serif-4/700.css';
 import '@fontsource/jetbrains-mono/400.css';
 import '@fontsource/jetbrains-mono/700.css';
-
-// Chinese — @fontsource unicode-range-subsets these, so each loads lazily.
-import '@fontsource/noto-sans-sc/400.css';
-import '@fontsource/noto-sans-sc/700.css';
-import '@fontsource/noto-serif-sc/400.css';
-import '@fontsource/noto-serif-sc/700.css';
-import '@fontsource/lxgw-wenkai/500.css';
-import '@fontsource/lxgw-wenkai/700.css';
-import '@fontsource/zcool-kuaile/400.css';

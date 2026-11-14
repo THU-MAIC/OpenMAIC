@@ -524,7 +524,10 @@ const useCanvasStoreBase = create<CanvasState>((set, get) => ({
     const whiteboardManualVisibilityRevision = get().whiteboardManualVisibilityRevision;
     set({
       ...initialState,
-      // Preserve viewport settings
+      // Preserve viewport settings. The percentage belongs to whoever hosts the
+      // canvas (the workbench pane sets 100 for as long as it is mounted), not to
+      // the course or the mode this reset is leaving.
+      canvasPercentage: get().canvasPercentage,
       viewportSize: get().viewportSize,
       viewportRatio: get().viewportRatio,
       runtimeWhiteboardProjection,

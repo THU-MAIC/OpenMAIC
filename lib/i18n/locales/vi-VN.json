@@ -26,7 +26,6 @@
     "examplesLabel": "Thử một chủ đề",
     "examplePython": "Học Python từ đầu",
     "exampleFourier": "Hiểu biến đổi Fourier qua ví dụ trực quan",
-    "desktopOnly": "Hãy dùng máy tính cho trình biên tập và chế độ Pro.",
     "slogan": "Học tập sinh tạo trong lớp học tương tác đa tác nhân",
     "greetingWithName": "Chào {{name}}"
   },
@@ -89,6 +88,7 @@
     "exportFailed": "Xuất không thành công",
     "classroomZip": "Xuất lớp học dạng ZIP",
     "classroomZipDesc": "Cấu trúc bài học + tệp phương tiện",
+    "viewerCopyHint": "Muốn có bản sao để chỉnh sửa? Tải về bằng “{{zip}}”, rồi dùng “{{importLabel}}” trong {{courses}}.",
     "html": "Xuất dưới dạng HTML",
     "htmlDesc": "Một tệp ngoại tuyến tự phát",
     "htmlWithNarration": "Có lời dẫn và video",
@@ -113,6 +113,7 @@
       "emptyClassroom": "Lớp học này không có cảnh nào.",
       "unsupportedScene": "Cảnh này không có trong bản xuất ngoại tuyến.",
       "interactiveTitle": "Cảnh tương tác",
+      "interactiveMoreBelow": "Còn nội dung bên dưới",
       "videoUnavailable": "Bản xuất ngoại tuyến không bao gồm video",
       "quizSubmit": "Nộp bài",
       "quizRetry": "Làm lại",
@@ -271,6 +272,7 @@
       "title": "Tương tác này không chạy được",
       "dismiss": "Đóng"
     },
+    "interactiveMoreBelow": "Còn nội dung bên dưới",
     "tabs": {
       "lecture": "Ghi chú",
       "chat": "Trò chuyện"
@@ -347,15 +349,27 @@
     "confirmSwitchTitle": "Chuyển cảnh",
     "confirmSwitchMessage": "Đang có một chủ đề dở dang. Chuyển cảnh sẽ kết thúc chủ đề đang học. Bạn có chắc không?",
     "generatingNextPage": "Cảnh đang được tạo, vui lòng đợi…",
-    "courseComplete": "Đã học xong bài",
     "fullscreen": "Toàn màn hình",
     "exitFullscreen": "Thoát toàn màn hình",
     "editCourse": "Sửa bài học",
     "doneEditing": "Sửa xong",
-    "proModeDisabledHint": "Trang này không sửa được — hãy mở một slide bài học để dùng chế độ Pro."
+    "editDisabledHint": "Trang này không sửa được — hãy mở một slide bài học để sửa.",
+    "editToggle": "Sửa",
+    "openInWorkspace": "Mở trong không gian làm việc",
+    "openInWorkspaceHint": "Mở trong không gian làm việc để tiếp tục khóa học này qua trò chuyện",
+    "makeOwnCourse": "Tạo bài học của bạn",
+    "makeOwnCourseHint": "Tạo bài học của riêng bạn trong không gian làm việc",
+    "dock": {
+      "collapse": "Thu gọn thanh dưới",
+      "expand": "Mở rộng thanh dưới",
+      "resize": "Đổi chiều cao thanh dưới"
+    },
+    "chatPanel": {
+      "expand": "Hiện bảng hội thoại",
+      "collapse": "Ẩn bảng hội thoại"
+    }
   },
   "edit": {
-    "proMode": "Pro",
     "undo": "Hoàn tác",
     "redo": "Làm lại",
     "courseHistory": {
@@ -583,7 +597,19 @@
       "whiteboardLatex": "Công thức",
       "whiteboardTable": "Bảng biểu",
       "action": "Hành động",
-      "discussion": "Thảo luận"
+      "discussion": "Thảo luận",
+      "playVideo": "Phát video",
+      "whiteboardChart": "Biểu đồ",
+      "whiteboardLine": "Vẽ đường",
+      "whiteboardClear": "Xóa bảng",
+      "whiteboardDelete": "Xóa phần tử",
+      "whiteboardClose": "Đóng bảng",
+      "whiteboardCode": "Khối mã",
+      "whiteboardEditCode": "Sửa mã",
+      "widgetHighlight": "Làm nổi bật trong hoạt động",
+      "widgetSetState": "Đặt trạng thái hoạt động",
+      "widgetAnnotation": "Chú thích hoạt động",
+      "widgetReveal": "Hiện trong hoạt động"
     },
     "element": {
       "toolbar": "Thanh công cụ đối tượng",
@@ -648,12 +674,6 @@
     "timeline": {
       "title": "Kịch bản lời giảng",
       "regenAllTts": "Tạo lại toàn bộ giọng đọc",
-      "voiceAll": "Lồng tiếng tất cả",
-      "counts": "{{speech}} lời giảng · {{cue}} hiệu ứng",
-      "panLeft": "Trượt sang trái",
-      "panRight": "Trượt sang phải",
-      "collapseAxis": "Thu về trục",
-      "expandTrack": "Mở rộng dải",
       "emptyHint": "Kéo các hành động lên trục để bắt đầu, hoặc để MAIC Agent tự viết lời giảng.",
       "speechPlaceholder": "Nhập câu giảng này…",
       "reorder": "Kéo để sắp xếp lại",
@@ -665,13 +685,15 @@
       "fieldElement": "Đối tượng",
       "fieldContent": "Nội dung",
       "addDiscussionExists": "Mỗi cảnh chỉ có một phần thảo luận",
-      "discussionTerminal": "KẾT",
       "discussionTerminalHint": "Phần thảo luận luôn nằm ở cuối cảnh (mỗi cảnh một phần)",
-      "discussionTopicPlaceholder": "Chủ đề thảo luận (bắt buộc)",
-      "discussionPromptPlaceholder": "Câu dẫn hướng (không bắt buộc)",
+      "discussionTopicPlaceholder": "Bắt buộc",
+      "discussionPromptPlaceholder": "Không bắt buộc",
+      "discussionTopicLabel": "Chủ đề thảo luận",
+      "discussionPromptLabel": "Câu dẫn hướng",
       "discussionAgent": "Người mở lời",
       "discussionAgentUnset": "Chưa chỉ định",
-      "addAction": "Thêm hành động"
+      "addAction": "Thêm hành động",
+      "fieldState": "Trạng thái"
     },
     "picker": {
       "title": "Chèn hành động",
@@ -755,8 +777,7 @@
       "moveDown": "Chuyển xuống",
       "removeFromClass": "Bỏ khỏi lớp",
       "aiClassmates": "Bạn học AI · {{count}}",
-      "addRole": "Thêm vai",
-      "shortTitle": "Danh sách nhân vật"
+      "addRole": "Thêm vai"
     },
     "elementRef": {
       "remove": "移除引用 {{label}}",
@@ -767,21 +788,6 @@
     "dock": {
       "elementRefHint": "Tham chiếu phần tử — chọn phần tử để gửi kèm tin nhắn tiếp theo",
       "globalTools": "Công cụ chung"
-    }
-  },
-  "classroomComplete": {
-    "title": "Đã học xong bài",
-    "trailLabels": {
-      "slide": "trang",
-      "quiz": "câu đố",
-      "interactive": "phần tương tác",
-      "pbl": "dự án"
-    },
-    "quizScoreLabel": "Đúng {{correct}} / {{total}}",
-    "encouragement": {
-      "high": "Xuất sắc — bạn làm rất tốt.",
-      "mid": "Khá tốt — cứ giữ đà này.",
-      "low": "Khởi đầu ổn — hãy xem lại rồi thử lần nữa."
     }
   },
   "whiteboard": {
@@ -1095,6 +1101,7 @@
     "rename": "Đổi tên",
     "renamePlaceholder": "Nhập tên lớp học",
     "renameFailed": "Không đổi được tên lớp học",
+    "saveRefused": "Thay đổi chưa được lưu: bạn không có quyền chỉnh sửa bài học này.",
     "searchPlaceholder": "Tìm bài học…",
     "searchAriaLabel": "Tìm bài học",
     "clearSearch": "Xóa",
@@ -2369,6 +2376,7 @@
     "sceneCount_one": "{{count}} 页",
     "sceneCount_other": "{{count}} 页",
     "courseLinkHint": "在右侧打开《{{name}}》",
+    "courseLinkOpen": "Mở",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
       "search": "Tìm lớp học và tài liệu",
@@ -2400,7 +2408,6 @@
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
     "newSession": "New chat",
     "sections": {
-      "courses": "Courses",
       "sessions": "Chats"
     },
     "coursesEmpty": "No courses yet",
@@ -2409,8 +2416,6 @@
     "loadFailed": "Couldn't load",
     "retry": "Retry",
     "untitledSession": "Untitled chat",
-    "pagePosition": "Page {{index}} of {{total}}",
-    "exitPro": "Exit Pro",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
@@ -2419,7 +2424,7 @@
     "learningMode": "Học",
     "editingMode": "Chỉnh sửa",
     "editingUnavailableGenerating": "Không thể chỉnh sửa khi khóa học đang được tạo.",
-    "fullscreenLearning": "Học toàn màn hình",
+    "editGuide": "Hướng dẫn chỉnh sửa",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -2432,11 +2437,10 @@
       "running": "Running",
       "succeeded": "Ready",
       "failed": "Needs attention",
-      "cancelled": "Stopped"
+      "cancelled": "Stopped",
+      "awaitingAnswer": "Đang chờ câu trả lời của bạn"
     },
     "backToWorkspace": "Back to workspace",
-    "searchPlaceholder": "Filter by name",
-    "searchAria": "Search {{section}}",
     "searchEmpty": "No matches",
     "showMore": "Show {{count}} more",
     "showLess": "Show less",
@@ -2449,6 +2453,8 @@
     "expandNavInto": "Expand navigation · {{section}}",
     "collapseChat": "Collapse conversation",
     "expandChat": "Conversation",
+    "talkAboutCourse": "Sửa cùng AI",
+    "talkAboutCourseHint": "Mở cuộc trò chuyện mới về bài học này",
     "collapseClassroom": "Collapse classroom",
     "expandClassroom": "Classroom",
     "readOnlyBadge": "Read-only",
@@ -2458,7 +2464,6 @@
     "coursePausedDesc": "Một trang tạo không thành công. Hãy thử lại trong lớp học; khóa học sẽ mở ở đây khi tạo xong.",
     "viewGenerationProgress": "Xem tiến độ tạo",
     "openToRetry": "Mở để thử lại",
-    "courseGeneratingRowHint": "Có thể mở khi tạo xong",
     "noCourseTitle": "No course open",
     "noCourseHint": "Open one from a course link in the conversation, or pick one from the list on the left — the conversation stays put",
     "resizeChatAria": "Drag to resize the conversation pane",
@@ -2467,7 +2472,6 @@
     "autoSaved": "Đã lưu",
     "collapsedTitle": "Both panes are collapsed",
     "collapsedHint": "Use the tabs on the left to bring the conversation or the classroom back",
-    "moreUtilities": "More",
     "rowMore": "Thao tác khác cho {{name}}",
     "folderDeleteHint": "Các khoá học bên trong sẽ trở về cấp trên cùng, không bị xoá.",
     "dropToUnfile": "Thả vào đây để đưa ra khỏi thư mục",
@@ -2481,11 +2485,177 @@
     "confirmDelete": "Xác nhận xóa",
     "deleting": "Đang xóa…",
     "deleteFailed": "Không thể xóa. Vui lòng thử lại.",
-    "tabsAria": "Chats and courses",
     "courseTabsAria": "Open courses",
     "courseTabClose": "Close tab: {{name}}",
     "courseTabRunning": "Generating",
-    "foldersUnavailable": "Thư mục không khả dụng trong bản này"
+    "foldersUnavailable": "Thư mục không khả dụng trong bản này",
+    "composer": {
+      "attach": "Đính kèm tài liệu",
+      "mentionCourse": "引用课堂",
+      "mentionCourseOrMaterial": "Nhắc đến một lớp học hoặc tài liệu trong kho kiến thức",
+      "loadSkill": "加载 skill",
+      "skillMenuTitle": "选择课程设计技能",
+      "skillsLoading": "正在加载 skill…",
+      "noSkillsAvailable": "暂无可用 skill",
+      "userSkillsGroup": "我的 Skill",
+      "builtinSkillsGroup": "内置 Skill",
+      "skillsLoadFailed": "Skill 加载失败，点击重试",
+      "retrySkills": "重试",
+      "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+      "launchPlaceholder": "Mô tả trải nghiệm học tập bạn muốn tạo",
+      "launchSend": "Bắt đầu tạo"
+    },
+    "nav": {
+      "search": "Tìm kiếm",
+      "myCourses": "Khóa học của tôi"
+    },
+    "search": {
+      "placeholder": "Tìm cuộc trò chuyện, khóa học và tài liệu",
+      "recentChats": "Cuộc trò chuyện gần đây",
+      "recentCourses": "Khóa học gần đây",
+      "courses": "Khóa học",
+      "materials": "Tài liệu",
+      "actions": "Thao tác nhanh",
+      "searching": "Đang tìm…",
+      "empty": "Không có kết quả khớp với “{{query}}”",
+      "materialsFailed": "Không thể tìm trong kho kiến thức",
+      "themeAction": "Giao diện: {{name}}",
+      "languageAction": "Ngôn ngữ: {{name}}"
+    },
+    "account": {
+      "signIn": "Đăng nhập",
+      "menu": "Tài khoản và cài đặt",
+      "profileSaved": "Đã lưu",
+      "language": "Ngôn ngữ",
+      "about": "Giới thiệu OpenMAIC",
+      "aboutBody": "Nền tảng mã nguồn mở biến mọi chủ đề thành một lớp học tương tác với giáo viên và bạn học AI. Phát hành theo giấy phép MIT.",
+      "viewOnGithub": "Xem trên GitHub",
+      "docs": "Tài liệu",
+      "signOut": "Đăng xuất",
+      "onboarding": "Hướng dẫn bắt đầu"
+    },
+    "coursesPage": {
+      "searchPlaceholder": "Tìm trong khóa học của tôi",
+      "results": "Kết quả tìm kiếm",
+      "allCourses": "Tất cả khóa học",
+      "emptyHint": "Mô tả một chủ đề ở trang chủ, bài học đầu tiên của bạn sẽ xuất hiện ở đây.",
+      "makeCourse": "Tạo bài học",
+      "pin": "Ghim lên đầu",
+      "unpin": "Bỏ ghim",
+      "pinned": "Đã ghim"
+    },
+    "fullscreen": {
+      "expand": "Toàn màn hình",
+      "collapse": "Thoát toàn màn hình (Esc)"
+    },
+    "onboarding": {
+      "paneTitle": "Học hay chỉnh sửa",
+      "paneLearn": "«Học»: giáo viên AI dẫn bạn qua bài học, hỏi bất cứ lúc nào.",
+      "paneEdit": "«Chỉnh sửa»: sửa trực tiếp các trang.",
+      "paneChat": "Hoặc nhờ trong khung chat, ví dụ «làm trang 2 đơn giản hơn».",
+      "gotIt": "Đã hiểu"
+    },
+    "tour": {
+      "skip": "Bỏ qua",
+      "prev": "Quay lại",
+      "next": "Tiếp",
+      "done": "Tự nhập",
+      "count": "{{index}} / {{total}}",
+      "openGuide": "Học thử ngay",
+      "welcome": {
+        "title": "Chào mừng đến với OpenMAIC",
+        "body": "Nói điều bạn muốn học, OpenMAIC sẽ tạo một lớp học tương tác cùng giáo viên AI và bạn học."
+      },
+      "start": {
+        "title": "Bắt đầu từ đây",
+        "body": "«Cuộc trò chuyện mới» bắt đầu bài học mới. Tìm kiếm (⌘K) tìm bài học, cuộc trò chuyện và tài liệu."
+      },
+      "courses": {
+        "title": "Bài học trải nghiệm",
+        "body": "Bài học 5 phút này cũng được làm bằng OpenMAIC. Mở ra để xem lớp học diễn ra ở đâu."
+      },
+      "library": {
+        "title": "Kho kiến thức",
+        "body": "Tải tài liệu, PDF lên một lần và dùng lại trong mọi bài học."
+      },
+      "conversations": {
+        "title": "Cuộc trò chuyện",
+        "body": "Mỗi bài học được tạo trong một cuộc trò chuyện. Muốn sửa, hãy quay lại đó và nhờ."
+      },
+      "mode": {
+        "title": "Học hay chỉnh sửa",
+        "body": "«Học»: học cùng giáo viên AI. «Chỉnh sửa»: sửa từng trang."
+      },
+      "dock": {
+        "title": "Lớp học",
+        "body": "Phát, lật trang, hỏi giáo viên AI bất cứ lúc nào; bạn học cũng cùng thảo luận."
+      },
+      "chat": {
+        "title": "Sửa bằng trò chuyện",
+        "body": "Chỉ cần nói «làm trang 2 đơn giản hơn» ở khung chat bên cạnh, AI sẽ sửa bài."
+      },
+      "account": {
+        "title": "Tài khoản và cài đặt",
+        "body": "Hồ sơ, cài đặt, ngôn ngữ và giao diện ở đây, cả hướng dẫn này nữa."
+      },
+      "try": {
+        "title": "Thử ngay",
+        "body": "Nhập một chủ đề hoặc chọn một ví dụ để bắt đầu.",
+        "attach": "Tài liệu: tải giáo trình lên làm nền cho bài học",
+        "mention": "Tham chiếu: @ một bài học hoặc tài liệu trong kho",
+        "skill": "Kỹ năng: chọn cách dạy, ví dụ Tương tác sâu"
+      },
+      "examples": {
+        "sky": {
+          "label": "Vì sao bầu trời màu xanh?",
+          "prompt": "Vì sao bầu trời màu xanh? Giải thích bằng những hiện tượng thường ngày"
+        },
+        "interest": {
+          "label": "Lãi kép hoạt động thế nào",
+          "prompt": "Giải thích lãi kép hoạt động thế nào bằng ví dụ đời thường"
+        },
+        "teach": {
+          "label": "Dạy: định lý Pythagore, lớp 8",
+          "prompt": "Một tiết về định lý Pythagore cho học sinh lớp 8, có bài kiểm tra ngắn ở cuối"
+        }
+      },
+      "coursesNav": {
+        "title": "Khóa học của tôi",
+        "body": "Bài học đã xong nằm ở đây. Bấm để xem."
+      },
+      "openLook": "Mở xem",
+      "edit": {
+        "canvas": {
+          "title": "Trang",
+          "body": "Bấm vào chữ, hình ảnh hay hình khối trên trang để sửa; kéo để di chuyển hoặc đổi kích thước."
+        },
+        "pages": {
+          "title": "Danh sách trang",
+          "body": "Mở danh sách trang ở đây: thêm trang, kéo để sắp xếp, xóa trang."
+        },
+        "bar": {
+          "title": "Thanh điều khiển",
+          "body": "Thêm hành động, lồng tiếng, lật và thêm trang, chọn giáo viên và bạn học; bên phải có thể khoanh vùng để AI sửa."
+        },
+        "timeline": {
+          "title": "Dải hành động",
+          "body": "Mỗi thẻ là một hành động: giảng, làm nổi bật, thảo luận. Kéo để sắp xếp, bấm để sửa."
+        },
+        "dock": {
+          "title": "Thanh dưới",
+          "body": "Kéo mép trên để chỉnh chiều cao, hoặc thu gọn để trang rộng hơn."
+        },
+        "learn": {
+          "title": "Xem trước",
+          "body": "Chuyển lại «Học» để xem lớp học như học sinh."
+        },
+        "chat": {
+          "title": "Nhờ AI sửa",
+          "body": "Không muốn tự sửa? Nói trong khung chat, ví dụ «thêm một bài tập ở trang 2»."
+        }
+      },
+      "editDone": "Bắt đầu sửa"
+    }
   },
   "profile": {
     "title": "Trang cá nhân",
@@ -2517,25 +2687,6 @@
     "placeholder": "Mã truy cập",
     "error": "Mã truy cập không đúng. Vui lòng thử lại."
   },
-  "proMode": {
-    "attach": "Đính kèm tài liệu",
-    "mentionCourse": "引用课堂",
-    "loadSkill": "加载 skill",
-    "skillMenuTitle": "选择课程设计技能",
-    "skillsLoading": "正在加载 skill…",
-    "noSkillsAvailable": "暂无可用 skill",
-    "userSkillsGroup": "我的 Skill",
-    "builtinSkillsGroup": "内置 Skill",
-    "skillsLoadFailed": "Skill 加载失败，点击重试",
-    "retrySkills": "重试",
-    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
-    "badgeAria": "Chế độ Pro",
-    "badgeEnter": "Chế độ Pro",
-    "badgeExit": "Quay lại chế độ cổ điển",
-    "launchPlaceholder": "Mô tả trải nghiệm học tập bạn muốn tạo",
-    "launchSend": "Bắt đầu tạo",
-    "mentionCourseOrMaterial": "Nhắc đến một lớp học hoặc tài liệu trong kho kiến thức"
-  },
   "workbench": {
     "tool": {
       "label": {
@@ -2547,12 +2698,23 @@
       }
     }
   },
+  "classroomEnd": {
+    "close": "Quay lại trang cuối",
+    "learned": "Đã học xong {{count}} trang",
+    "result": "Đúng {{correct}} / {{total}} câu",
+    "actions": {
+      "reviewWrong": "Xem câu sai",
+      "doQuiz": "Làm bài kiểm tra",
+      "restart": "Học lại từ đầu"
+    }
+  },
   "sandbox": {
     "errors": {
       "learningManaged": "Không gian làm việc này thuộc một dự án học tập. Hãy sử dụng các chức năng điều khiển trong không gian học tập.",
       "sourcePath": "Tệp này nằm ngoài phạm vi mã nguồn của dự án.",
       "sourceCount": "Dự án học tập hỗ trợ tối đa 256 tệp mã nguồn.",
       "sourceSize": "Tổng nội dung mã nguồn của dự án không được vượt quá 1 MiB.",
+      "commandSize": "Lệnh biên dịch hoặc kiểm thử được tạo quá dài để chạy trong môi trường sandbox.",
       "teachingContextSize": "Ngữ cảnh học tập quá dài. Hãy rút ngắn PLAN.md hoặc câu hỏi kiểm tra rồi thử lại.",
       "commandActive": "Hãy dừng các lệnh đang chạy và lấy kết quả trước khi đọc hoặc lưu ảnh chụp trạng thái không gian làm việc.",
       "terminalActive": "Hãy đóng các cửa sổ terminal trước khi đọc hoặc lưu ảnh chụp trạng thái không gian làm việc.",
@@ -2859,7 +3021,25 @@
       "file-edit": "File edit",
       "workspace-run": "Workspace run"
     },
+    "overview": {
+      "title": "Tổng quan dự án",
+      "expand": "Mở rộng",
+      "collapse": "Thu gọn",
+      "projectGoal": "Mục tiêu dự án",
+      "finishedWork": "Ứng dụng khi hoàn thành",
+      "roadmap": "Lộ trình dự án",
+      "goalAndResult": "Mục tiêu và kết quả",
+      "goal": "Mục tiêu",
+      "result": "Kết quả",
+      "eachStage": "Quy trình mỗi giai đoạn",
+      "yourRole": "Bạn quyết định và rà soát; AI hỗ trợ viết kế hoạch và mã.",
+      "preview": "Dùng ứng dụng trong vùng xem trước để kiểm tra kết quả.",
+      "advance": "Nút màu tím phía trên ô nhập chỉ xuất hiện khi bước hiện tại đủ điều kiện để tiếp tục. Khi nút xuất hiện, hãy nhấn để đi tiếp."
+    },
     "journey": {
+      "currentMilestone": "Giai đoạn hiện tại",
+      "milestoneGoal": "Mục tiêu:",
+      "milestoneResult": "Kết quả:",
       "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",
@@ -2901,6 +3081,7 @@
       "notReflected": "Reflection not yet recorded",
       "taskDetails": "Current task details",
       "closeDetails": "Close task details",
+      "reviewDetails": "Xem chi tiết",
       "milestoneSteps": "Milestone learning steps",
       "enterStep": "Continue to {{step}}",
       "enterMilestone": "Giai đoạn sau",

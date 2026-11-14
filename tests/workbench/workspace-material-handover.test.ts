@@ -13,6 +13,12 @@
  */
 
 import { act, createElement, type ReactNode } from 'react';
+import {
+  appendComposerText,
+  COMPOSER_INPUT,
+  composerText,
+  setComposerText,
+} from './_composer-driver';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -62,6 +68,7 @@ const mocks = vi.hoisted(() => ({
   } | null,
   courses: null as Record<string, unknown> | null,
   railProps: null as Record<string, unknown> | null,
+  coursesPageProps: null as Record<string, unknown> | null,
   homeProps: null as Record<string, unknown> | null,
   libraryProps: null as Record<string, unknown> | null,
   store: {
@@ -208,7 +215,8 @@ vi.mock('@/lib/workbench/owner-session-client', () => ({
     }
   },
 }));
-vi.mock('@/lib/workbench/pro-swap', () => ({ startProSwap: vi.fn() }));
+// The settings dialog (owned by the shell) has its own tests.
+vi.mock('@/components/settings', () => ({ SettingsDialog: () => null }));
 vi.mock('@/components/workbench/workspace/WorkspaceRail', () => ({
   WorkspaceRail: (props: Record<string, unknown>) => {
     mocks.railProps = props;
@@ -244,6 +252,20 @@ vi.mock('@/components/workbench/workspace/WorkspaceClassroomPane', async () => {
   };
 });
 vi.mock('@/components/workbench/workspace/PaneTab', () => ({ PaneTab: () => null }));
+// My courses carries the library's course actions (open, delete, the
+// generating cards); the page itself is tested on its own.
+vi.mock('@/components/workbench/workspace/WorkspaceCoursesPage', () => ({
+  WorkspaceCoursesPage: (props: Record<string, unknown>) => {
+    mocks.coursesPageProps = props;
+    return createElement('main', { 'data-testid': 'workspace-courses-page' });
+  },
+}));
+/** Open My courses from the rail and hand back the page's props. */
+const openMyCourses = async (): Promise<Record<string, unknown>> => {
+  await act(async () => (mocks.railProps!.onOpenView as (view: string) => void)('courses'));
+  expect(mocks.coursesPageProps).not.toBeNull();
+  return mocks.coursesPageProps!;
+};
 vi.mock('@/components/workbench/workspace/MaterialLibraryPage', () => ({
   MaterialLibraryPage: (props: Record<string, unknown>) => {
     mocks.libraryProps = props;
@@ -253,6 +275,7 @@ vi.mock('@/components/workbench/workspace/MaterialLibraryPage', () => ({
 vi.mock('@/components/workbench/workspace/ResizeHandle', () => ({ ResizeHandle: () => null }));
 
 import { WorkspaceShell } from '@/components/workbench/workspace/WorkspaceShell';
+import { COURSE_TABS_STORAGE_KEY } from '@/lib/workbench/workspace-course-tabs';
 
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
@@ -278,6 +301,9 @@ function deferred<T>() {
 
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  // Uploads report progress through XMLHttpRequest when the page has it; here
+  // they go through the fetch mock instead.
+  vi.stubGlobal('XMLHttpRequest', undefined);
   mocks.router = { push: mocks.routerPush, replace: mocks.routerReplace };
   vi.spyOn(window.history, 'pushState').mockImplementation((_state, _unused, url) => {
     mocks.routerPush(String(url));
@@ -291,16 +317,14 @@ beforeEach(() => {
     state: 'ready',
     reload: vi.fn(() => Promise.resolve()),
     importInput: null,
-    discoveryContent: null,
-    openNewFolder: vi.fn(),
     moveCourse: vi.fn(),
-    createAndMove: vi.fn(),
     deleteCourse: vi.fn(),
   };
   mocks.classroomProps = null;
   mocks.classroomMounts = 0;
   mocks.chatPaneProps = null;
   mocks.railProps = null;
+  mocks.coursesPageProps = null;
   mocks.homeProps = null;
   mocks.libraryProps = null;
   mocks.searchParams = new URLSearchParams('course=stage-1');
@@ -396,16 +420,13 @@ function serve(post?: Fetch) {
     }),
   );
 }
-const type = async (textarea: HTMLTextAreaElement, text: string) => {
+const type = async (textarea: HTMLElement, text: string) => {
   await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(
-      textarea,
-      text,
-    );
-    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    setComposerText(textarea, text);
   });
 };
-const openLibrary = () => act(async () => (mocks.railProps!.onOpenLibrary as () => void)());
+const openLibrary = () =>
+  act(async () => (mocks.railProps!.onOpenView as (view: string) => void)('library'));
 const chatWith = async (id: string) => {
   await openLibrary();
   await act(async () =>
@@ -423,14 +444,14 @@ describe('chat with this material, twice beside a classroom', () => {
     await render();
     await chatWith('A');
     expect(container!.textContent).toContain('A.pdf');
-    await type(container!.querySelector('textarea')!, 'Old draft A');
+    await type(container!.querySelector<HTMLElement>(COMPOSER_INPUT)!, 'Old draft A');
 
     await chatWith('B');
-    expect(container!.querySelector('textarea')!.value).toBe('');
+    expect(composerText(container!.querySelector<HTMLElement>(COMPOSER_INPUT)!)).toBe('');
     expect(container!.textContent).toContain('B.pdf');
     expect(container!.textContent).not.toContain('A.pdf');
 
-    await type(container!.querySelector('textarea')!, 'About B');
+    await type(container!.querySelector<HTMLElement>(COMPOSER_INPUT)!, 'About B');
     await act(async () =>
       container!.querySelector<HTMLButtonElement>('[data-testid="workbench-send"]')!.click(),
     );
@@ -470,7 +491,7 @@ describe('an upload still in flight when the next hand-over arrives', () => {
         }),
       ),
     );
-    await type(container!.querySelector('textarea')!, 'Send now');
+    await type(container!.querySelector<HTMLElement>(COMPOSER_INPUT)!, 'Send now');
     await act(async () =>
       container!.querySelector<HTMLButtonElement>('[data-testid="workbench-send"]')!.click(),
     );
@@ -496,7 +517,7 @@ describe('a home conversation created while the knowledge base was opened', () =
     const created = deferred<Response>();
     serve(() => created.promise);
     await render();
-    await type(container!.querySelector('textarea')!, 'Teach A');
+    await type(container!.querySelector<HTMLElement>(COMPOSER_INPUT)!, 'Teach A');
     await act(async () =>
       container!.querySelector<HTMLButtonElement>('[data-testid="pro-launch-start"]')!.click(),
     );
@@ -531,7 +552,7 @@ describe('a home conversation created while the knowledge base was opened', () =
     await openLibrary();
     await act(async () => (mocks.railProps!.onGoHome as () => void)());
     expect(container!.querySelector('[data-testid="pro-launch-panel"]')).not.toBeNull();
-    await type(container!.querySelector('textarea')!, 'A new draft');
+    await type(container!.querySelector<HTMLElement>(COMPOSER_INPUT)!, 'A new draft');
     await openLibrary();
     mocks.routerPush.mockClear();
     mocks.routerReplace.mockClear();
@@ -541,7 +562,8 @@ describe('a home conversation created while the knowledge base was opened', () =
 
   it('leaves it in the rail when the teacher moved on to a classroom', async () => {
     const answer = await sendFromHome();
-    await act(async () => (mocks.railProps!.onOpenCourse as (id: string) => void)('stage-1'));
+    const page = await openMyCourses();
+    await act(async () => (page.onOpenCourse as (id: string) => void)('stage-1'));
     expect(container!.querySelector('[data-testid="pro-launch-panel"]')).toBeNull();
     mocks.routerPush.mockClear();
     mocks.routerReplace.mockClear();
@@ -589,7 +611,7 @@ describe('a draft message still on its way when the next hand-over arrives', () 
     elementRefsAccepted: true,
     courseRefsAccepted: true,
   });
-  const textarea = () => container!.querySelector('textarea')!;
+  const textarea = () => container!.querySelector<HTMLElement>(COMPOSER_INPUT)!;
   const sendButton = () =>
     container!.querySelector<HTMLButtonElement>('[data-testid="workbench-send"]');
   const send = () => act(async () => sendButton()!.click());
@@ -622,7 +644,7 @@ describe('a draft message still on its way when the next hand-over arrives', () 
   it('control: nobody superseded it, so its failure puts the text back', async () => {
     const sendingA = await sendAboutA();
     await act(async () => sendingA.reject(new Error('send A failed')));
-    expect(textarea().value).toBe('About A');
+    expect(composerText(textarea())).toBe('About A');
     expect(mocks.toastError).toHaveBeenCalledWith('send A failed');
   });
 
@@ -631,7 +653,7 @@ describe('a draft message still on its way when the next hand-over arrives', () 
     await chatWith('B');
     // The new draft is free at once: no STOP left over from A, and it can send.
     expect(container!.querySelector('[data-testid="workbench-stop"]')).toBeNull();
-    expect(textarea().value).toBe('');
+    expect(composerText(textarea())).toBe('');
     expect(container!.textContent).toContain('B.pdf');
     await type(textarea(), 'Typing about B');
     mocks.requestFullFetch.mockClear();
@@ -640,7 +662,7 @@ describe('a draft message still on its way when the next hand-over arrives', () 
     // Created, so the rail reloads; not attached, and the draft is untouched.
     expect(mocks.requestFullFetch).toHaveBeenCalled();
     expect(attachedTo('session-A')).toBe(false);
-    expect(textarea().value).toBe('Typing about B');
+    expect(composerText(textarea())).toBe('Typing about B');
     expect(container!.textContent).toContain('B.pdf');
 
     // B's message starts its own conversation, with B's source alone.
@@ -664,7 +686,7 @@ describe('a draft message still on its way when the next hand-over arrives', () 
 
     await act(async () => sendingA.reject(new Error('send A failed')));
     expect(mocks.toastError).toHaveBeenCalledWith('send A failed');
-    expect(textarea().value).toBe('Typing about B');
+    expect(composerText(textarea())).toBe('Typing about B');
     expect(container!.textContent).toContain('B.pdf');
     expect(container!.textContent).not.toContain('A.pdf');
     expect(container!.querySelector('[data-testid="workbench-stop"]')).toBeNull();
@@ -721,7 +743,7 @@ describe('a draft message still on its way when the next hand-over arrives', () 
     );
     expect([...mocks.routerPush.mock.calls, ...mocks.routerReplace.mock.calls]).toEqual([]);
     expect(container!.textContent).toContain('B.pdf');
-    expect(textarea().value).toBe('');
+    expect(composerText(textarea())).toBe('');
   });
 });
 
@@ -737,7 +759,7 @@ describe('a request still on its way when the teacher switches conversation', ()
     elementRefsAccepted: true,
     courseRefsAccepted: true,
   });
-  const textarea = () => container!.querySelector('textarea')!;
+  const textarea = () => container!.querySelector<HTMLElement>(COMPOSER_INPUT)!;
   const sendButton = () =>
     container!.querySelector<HTMLButtonElement>('[data-testid="workbench-send"]');
   const stopButton = () => container!.querySelector('[data-testid="workbench-stop"]');
@@ -757,6 +779,9 @@ describe('a request still on its way when the teacher switches conversation', ()
       });
       input.dispatchEvent(new Event('change', { bubbles: true }));
     });
+  /** A browsed course shows alone: "Edit with AI" puts a draft beside it. */
+  const talkAboutCourse = () =>
+    act(async () => (mocks.classroomProps!.onTalkAboutCourse as () => void)());
   /** The store follows the panes, as the real one does once it attaches. */
   const followPanes = async () => {
     await act(async () => {});
@@ -841,6 +866,7 @@ describe('a request still on its way when the teacher switches conversation', ()
   async function sendAboutA(start: (input: StartInput) => Promise<Started>) {
     mocks.startFirstMessage.mockImplementationOnce(start);
     await render();
+    await talkAboutCourse();
     await pick('a-notes.pdf');
     await act(async () => uploads.get('a-notes.pdf')!.resolve(material('A-doc', 'a-notes.pdf')));
     expect(container!.textContent).toContain('a-notes.pdf');
@@ -851,6 +877,9 @@ describe('a request still on its way when the teacher switches conversation', ()
     expect(sent.materials.map((item) => item.materialId)).toEqual(['A-doc']);
     expect(stopButton()).not.toBeNull();
   }
+
+  /** B's draft once its document is picked: the pick is written in as a mention. */
+  const B_DRAFT = 'Typing in B @b-notes.pdf ';
 
   /** In B: type a draft and attach a document the library already holds. */
   async function draftInB() {
@@ -876,7 +905,8 @@ describe('a request still on its way when the teacher switches conversation', ()
   async function sendInB() {
     await send();
     expect(sentToB()).toHaveLength(1);
-    expect(messageBodies.at(-1)!.body.text).toBe('Typing in B');
+    // The picked document is named in the sentence, where it was written.
+    expect(messageBodies.at(-1)!.body.text).toBe('Typing in B @b-notes.pdf');
     expect(messageBodies.at(-1)!.body.materialIds).toEqual(['B-doc']);
   }
 
@@ -894,7 +924,7 @@ describe('a request still on its way when the teacher switches conversation', ()
     expect(mocks.requestFullFetch).toHaveBeenCalled();
     expect(attachedTo('session-A')).toBe(false);
     expect(mocks.store.sessionId).toBe('session-B');
-    expect(textarea().value).toBe('Typing in B');
+    expect(composerText(textarea())).toBe(B_DRAFT);
     expect(container!.textContent).toContain('b-notes.pdf');
     await sendInB();
   });
@@ -911,7 +941,7 @@ describe('a request still on its way when the teacher switches conversation', ()
     await act(async () => sendingA.resolve(started('session-A')));
     await followPanes();
     expect(attachedTo('session-A')).toBe(false);
-    expect(textarea().value).toBe('Typing in B');
+    expect(composerText(textarea())).toBe(B_DRAFT);
     expect(container!.textContent).toContain('b-notes.pdf');
     await sendInB();
   });
@@ -926,7 +956,7 @@ describe('a request still on its way when the teacher switches conversation', ()
     await followPanes();
     expect(mocks.toastError).toHaveBeenCalledWith('send A failed');
     expect(attachedTo('session-A')).toBe(false);
-    expect(textarea().value).toBe('Typing in B');
+    expect(composerText(textarea())).toBe(B_DRAFT);
     expect(container!.textContent).toContain('b-notes.pdf');
     expect(container!.textContent).not.toContain('a-notes.pdf');
     await sendInB();
@@ -968,7 +998,7 @@ describe('a request still on its way when the teacher switches conversation', ()
       messageAnswers[0].resolve(Response.json({ error: 'send S failed' }, { status: 500 })),
     );
     expect(mocks.toastError).toHaveBeenCalledWith('send S failed');
-    expect(textarea().value).toBe('Typing in B');
+    expect(composerText(textarea())).toBe('Typing in B');
   });
 
   it('a message that fails before the store has attached B never refills B', async () => {
@@ -990,12 +1020,12 @@ describe('a request still on its way when the teacher switches conversation', ()
       messageAnswers[0].resolve(Response.json({ error: 'send S failed' }, { status: 500 })),
     );
     expect(mocks.toastError).toHaveBeenCalledWith('send S failed');
-    expect(textarea().value).toBe('');
+    expect(composerText(textarea())).toBe('');
 
     // Now the store attaches B: still nothing of S's in its composer.
     mocks.store.sessionId = 'session-B';
     await render();
-    expect(textarea().value).toBe('');
+    expect(composerText(textarea())).toBe('');
   });
 
   it('a released composer does not send until the store has attached B', async () => {
@@ -1020,7 +1050,7 @@ describe('a request still on its way when the teacher switches conversation', ()
     expect(messageBodies.map((call) => call.url)).toEqual([
       '/api/agent/sessions/session-S/messages',
     ]);
-    expect(textarea().value).toBe('For B');
+    expect(composerText(textarea())).toBe('For B');
 
     // B attaches: the same draft now goes to B.
     mocks.store.sessionId = 'session-B';
@@ -1036,6 +1066,7 @@ describe('a request still on its way when the teacher switches conversation', ()
 
   it("a late upload is kept in the library but never joins B's attachments", async () => {
     await render();
+    await talkAboutCourse();
     await pick('a-upload.pdf');
     expect(uploads.has('a-upload.pdf')).toBe(true);
     await openB();
@@ -1047,7 +1078,7 @@ describe('a request still on its way when the teacher switches conversation', ()
     await act(async () => uploads.get('a-upload.pdf')!.resolve(material('A-up', 'a-upload.pdf')));
     expect(container!.textContent).not.toContain('a-upload.pdf');
     expect(container!.textContent).toContain('b-notes.pdf');
-    expect(textarea().value).toBe('Typing in B');
+    expect(composerText(textarea())).toBe(B_DRAFT);
     await sendInB();
   });
   describe('a new chat asked for on the draft whose first message is on its way', () => {
@@ -1066,7 +1097,7 @@ describe('a request still on its way when the teacher switches conversation', ()
       await act(async () => sendingA.resolve(started('session-A')));
       await followPanes();
       expect(attachedTo('session-A')).toBe(false);
-      expect(textarea().value).toBe('A new chat');
+      expect(composerText(textarea())).toBe('A new chat');
       expect(stopButton()).toBeNull();
     });
 
@@ -1078,13 +1109,14 @@ describe('a request still on its way when the teacher switches conversation', ()
 
       await act(async () => sendingA.reject(new Error('send A failed')));
       expect(mocks.toastError).toHaveBeenCalledWith('send A failed');
-      expect(textarea().value).toBe('A new chat');
+      expect(composerText(textarea())).toBe('A new chat');
       expect(container!.textContent).not.toContain('a-notes.pdf');
     });
   });
 
   it('a failed upload stays with the conversation it was picked in', async () => {
     await render();
+    await talkAboutCourse();
     await pick('a-broken.pdf');
     await act(async () =>
       uploads.get('a-broken.pdf')!.resolve(Response.json({ error: 'nope' }, { status: 400 })),
@@ -1114,5 +1146,104 @@ describe('a request still on its way when the teacher switches conversation', ()
     await act(async () => cancelAnswers[0].resolve(new Response(null, { status: 202 })));
     expect(stopButton()!.hasAttribute('disabled')).toBe(false);
     expect(stopButton()!.getAttribute('data-stopping')).toBeNull();
+  });
+});
+
+/**
+ * "Edit with AI" on a browsed course opens an empty conversation whose
+ * composer already names the course, as an `@` pick would. That mention is
+ * the conversation's whole binding to the course.
+ */
+describe('an empty conversation opened for a course', () => {
+  const textarea = () => container!.querySelector<HTMLElement>(COMPOSER_INPUT)!;
+  const sendButton = () =>
+    container!.querySelector<HTMLButtonElement>('[data-testid="workbench-send"]');
+  const send = () => act(async () => sendButton()!.click());
+  const talkAboutCourse = () =>
+    act(async () => (mocks.classroomProps!.onTalkAboutCourse as () => void)());
+  const sentWith = () => mocks.startFirstMessage.mock.calls.at(-1)![0] as Record<string, unknown>;
+
+  beforeEach(() => {
+    serve();
+    mocks.courses = {
+      ...mocks.courses!,
+      classrooms: [classroom('stage-1'), classroom('stage-2')],
+    };
+  });
+
+  it('starts with the course as a mention, the caret after it', async () => {
+    await render();
+    await talkAboutCourse();
+    await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+
+    expect(composerText(textarea())).toBe('@stage-1 name ');
+    expect(document.activeElement?.closest(COMPOSER_INPUT)).not.toBeNull();
+    // Only words of the user's own can be sent.
+    expect(sendButton()!.disabled).toBe(true);
+  });
+
+  it('sent with the mention: a conversation about that course', async () => {
+    await render();
+    await talkAboutCourse();
+    await act(async () => {
+      appendComposerText(textarea(), 'make page 2 simpler');
+    });
+    await send();
+
+    expect(sentWith()).toMatchObject({
+      text: '@stage-1 name make page 2 simpler',
+      stageId: 'stage-1',
+      courseRefs: [expect.objectContaining({ stageId: 'stage-1' })],
+    });
+  });
+
+  it('with the mention removed: an ordinary new conversation, nothing bound', async () => {
+    await render();
+    await talkAboutCourse();
+    await type(textarea(), 'a lesson about tides');
+    await send();
+
+    const sent = sentWith();
+    expect(sent.text).toBe('a lesson about tides');
+    expect(sent).not.toHaveProperty('stageId');
+    expect(sent.courseRefs).toEqual([]);
+  });
+
+  it('switching course tabs before typing names the new course instead', async () => {
+    localStorage.setItem(
+      COURSE_TABS_STORAGE_KEY,
+      JSON.stringify({ courseIds: ['stage-1', 'stage-2'], activeCourseId: 'stage-1' }),
+    );
+    await render();
+    await talkAboutCourse();
+    expect(composerText(textarea())).toBe('@stage-1 name ');
+
+    await act(async () =>
+      (
+        mocks.classroomProps!.browser as { onActivateCourse: (id: string) => void }
+      ).onActivateCourse('stage-2'),
+    );
+    await act(async () => {});
+    expect(composerText(textarea())).toBe('@stage-2 name ');
+
+    // Once typed, the user's mentions are left as they are.
+    await act(async () => {
+      appendComposerText(textarea(), 'compare');
+    });
+    await act(async () =>
+      (
+        mocks.classroomProps!.browser as { onActivateCourse: (id: string) => void }
+      ).onActivateCourse('stage-1'),
+    );
+    await act(async () => {});
+    expect(composerText(textarea())).toBe('@stage-2 name compare');
+    await send();
+    expect(sentWith()).toMatchObject({ stageId: 'stage-2' });
+  });
+
+  it('New chat names no course', async () => {
+    await render();
+    await act(async () => (mocks.railProps!.onNewSession as () => void)());
+    expect(composerText(textarea())).toBe('');
   });
 });

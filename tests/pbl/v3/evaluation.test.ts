@@ -7,6 +7,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 vi.mock('server-only', () => ({}));
 import { installedProject } from '@/lib/server/pbl-v3/catalog';
+import { MAX_COMMAND_BYTES } from '@/lib/sandbox/types';
 import {
   evaluationCommand,
   evaluationPassed,
@@ -43,6 +44,41 @@ it('tests verified source bytes in a private working directory and rejects stale
     const stale = await run('/bin/sh', ['-c', command], { cwd });
     expect(evaluationPassed(assessment, 'isolated', stale.stdout)).toBe(false);
     expect(await readFile(path, 'utf8')).toBe('edited meanwhile');
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+it('fits a large isolated assessment in the command budget and keeps source verification', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'packed-assessment-'));
+  const source = { 'source.txt': 'reviewed\n' };
+  const resource = 'a private assessment fixture\n'.repeat(744);
+  const assessment = {
+    decisionContext: { queue: 'per-session' },
+    resources: { 'tests/fixture.txt': resource },
+    cases: [
+      {
+        id: 'isolated',
+        argv: [
+          'python3',
+          '-c',
+          'import os,sys; from pathlib import Path; print(Path("source.txt").read_text().strip(), len(Path(sys.argv[1]).read_bytes()), os.environ["OPENMAIC_PBL_DECISIONS"])',
+          '{resources}/tests/fixture.txt',
+        ],
+        stdout: `reviewed ${Buffer.byteLength(resource)} {"queue": "per-session"}\n`,
+      },
+    ],
+  };
+  const requestId = '00000000-0000-0000-0000-000000000000';
+  const command = evaluationCommand(assessment, requestId, source);
+  expect(command).toContain('zlib.decompress');
+  expect(Buffer.byteLength(command)).toBeLessThanOrEqual(MAX_COMMAND_BYTES);
+  try {
+    await writeFile(join(cwd, 'source.txt'), source['source.txt']);
+    const run = () => promisify(execFile)('/bin/sh', ['-c', command], { cwd });
+    expect(evaluationPassed(assessment, requestId, (await run()).stdout)).toBe(true);
+    await writeFile(join(cwd, 'source.txt'), 'unreviewed\n');
+    expect(evaluationPassed(assessment, requestId, (await run()).stdout)).toBe(false);
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }

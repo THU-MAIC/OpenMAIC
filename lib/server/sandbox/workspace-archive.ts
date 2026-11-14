@@ -30,6 +30,35 @@ import os, sys, stat, base64, json, hashlib
 try:
     root='/home/user/project'
     mode, encoded, transfer=sys.argv[1:]
+    def read_text(fd,name):
+        src=os.open(name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK,dir_fd=fd)
+        with os.fdopen(src,'rb') as source:
+            info=os.fstat(source.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink!=1: raise ValueError('file')
+            data=source.read(1048577)
+        if len(data)>1048576: sys.exit(48)
+        text=data.decode('utf-8-sig')
+        return text,len(text.encode('utf-8'))
+    if mode=='read_many':
+        with open(transfer+'.paths','rb') as source: spec=source.read(2097153)
+        if len(spec)>2097152: raise ValueError('paths')
+        paths=json.loads(spec)
+        if not isinstance(paths,list) or len(paths)>256 or any(not isinstance(p,str) for p in paths) or len(set(paths))!=len(paths): raise ValueError('paths')
+        result={};total=0
+        for path in paths:
+            parts=path.split('/')
+            if len(path)>2048 or '\\' in path or '\x00' in path or any(p in ('','.','..') for p in parts): raise ValueError('path')
+            fd=os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+            try:
+                for part in parts[:-1]:
+                    child=os.open(part,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=fd)
+                    os.close(fd);fd=child
+                text,size=read_text(fd,parts[-1]);total+=size
+                if total>1048576: sys.exit(48)
+                result[path]=text
+            finally: os.close(fd)
+        with open(transfer,'xb') as out: out.write(json.dumps(result,ensure_ascii=False).encode('utf-8'))
+        sys.exit(0)
     parts=base64.b64decode(encoded).decode().split('/')
     if any(p in ('','.','..') for p in parts): raise ValueError('path')
     os.makedirs(root,exist_ok=True)

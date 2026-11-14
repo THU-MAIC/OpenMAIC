@@ -3,6 +3,15 @@ import { seedServerDocument, uniqueStageId } from '../fixtures/server-seed';
 import { defaultTheme } from '../fixtures/test-data/slide-theme';
 import { DEFAULT_MODEL_SETTINGS } from '../fixtures/test-data/model-settings';
 import { createMockScene } from '../fixtures/test-data/generated-scene';
+import { SETTINGS_KV_KEY, createSettingsStorage } from '../fixtures/test-data/settings';
+import type { Page } from '@playwright/test';
+
+/** The markers live on the edit rail, which starts collapsed. */
+const openEditRail = (page: Page) =>
+  page.addInitScript(
+    ([key, value]) => localStorage.setItem(key!, value!),
+    [SETTINGS_KV_KEY, createSettingsStorage({ agentMode: 'auto', sidebarCollapsed: false })],
+  );
 
 test('course issue markers appear only in edit mode and clear after narration is fixed', async ({
   page,
@@ -11,6 +20,7 @@ test('course issue markers appear only in edit mode and clear after narration is
   test.setTimeout(120_000);
   await mockApi.mockModelSettings({ ...DEFAULT_MODEL_SETTINGS, media: { tts: 'openai-tts' } });
   await page.addInitScript(() => localStorage.setItem('locale', 'en-US'));
+  await openEditRail(page);
   const stageId = uniqueStageId('course-issues');
   const now = Date.now();
   const doc = {
@@ -101,6 +111,7 @@ test('a course without server narration only marks content problems and pending 
 }) => {
   test.setTimeout(120_000);
   await page.addInitScript(() => localStorage.setItem('locale', 'en-US'));
+  await openEditRail(page);
   const stageId = uniqueStageId('no-tts-course-issues');
   const now = Date.now();
   const scenes = Array.from({ length: 8 }, (_, order) => {
@@ -175,6 +186,7 @@ test('legacy narration does not flash a warning when the scene is renamed', asyn
   test.setTimeout(120_000);
   await mockApi.mockModelSettings({ ...DEFAULT_MODEL_SETTINGS, media: { tts: 'openai-tts' } });
   await page.addInitScript(() => localStorage.setItem('locale', 'en-US'));
+  await openEditRail(page);
   const stageId = uniqueStageId('legacy-narration-marker');
   const now = Date.now();
   const scene = {
@@ -275,6 +287,7 @@ test('cached narration does not flash a marker on mount or when a page is insert
 }, testInfo) => {
   test.setTimeout(120_000);
   await mockApi.mockModelSettings({ ...DEFAULT_MODEL_SETTINGS, media: { tts: 'openai-tts' } });
+  await openEditRail(page);
   await page.addInitScript(() => {
     localStorage.setItem('locale', 'en-US');
     const observed = { markers: 0 };

@@ -101,13 +101,17 @@ A v3 definition can include optional public display copy:
 "presentation": {
   "hero": {
     "description": "Build and verify a small application with teaching assistants.",
+    "finishedWork": "An application that keeps tasks and lets you mark them done.",
     "gains": ["Explain a behavior rule", "Check an implementation against tests"],
     "instructorName": "Project mentor"
   }
 }
 ```
 
-`description` is required only when `hero` is present. `gains` and
+`description` is required only when `hero` is present. Optional `finishedWork`
+describes the complete project artifact in the workbench overview, independently
+of each milestone’s result. When omitted, that block is hidden; the last
+milestone’s result is never substituted for the whole project. `gains` and
 `instructorName` may be omitted to retain their existing fallback values. The
 actual project title, milestone count and decision count always come from the
 project definition. Copy is plain public text, never trusted HTML, teaching

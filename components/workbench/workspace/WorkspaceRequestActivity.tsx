@@ -97,13 +97,17 @@ export interface PreviewTabStrip {
 }
 
 /**
- * The placeholder for the course this conversation may produce — the role the
- * classic generation preview plays — as a regular tab in the right pane's tab
- * strip, beside any course tabs. The first tool call or question of a request
- * opens it; it never folds on its own: between requests it rests, and the next
- * request animates in the same tab. It goes when the conversation's first scene
- * hands off to its course tab (which takes its place), or when the user closes
- * it — remembered for that request (`lib/workbench/preview-tab.ts`).
+ * The tab of the new course a request is making — the role the classic
+ * generation preview plays — as a regular tab in the right pane's tab strip,
+ * beside any course tabs. The workspace mounts it only while the request is
+ * making a course (`lib/workbench/conversation-course.ts`). A request opens it
+ * the moment it is sent, on understanding. A request that ends without a page
+ * rests here once the conversation has done something (a tool call, a
+ * question), and the next request animates in the same tab; a conversation
+ * that has only talked folds it away until its next request. When the
+ * course's first page is persisted, the workspace turns this tab into the
+ * course tab, in place. Closing it is remembered for that request
+ * (`lib/workbench/preview-tab.ts`).
  */
 export function WorkspaceRequestActivity({
   onStateChange,
@@ -167,15 +171,16 @@ export function WorkspaceRequestActivity({
   const conversationActive = chat.some(
     (node) => (node.kind === 'tool' && !!node.toolName) || node.kind === 'question',
   );
-  // `quiet` is a request with no tool call or question yet; `collapsed` one that did and ended.
-  const requestActive = view !== null && view.mode !== 'quiet';
+  // Every request shows here from the moment it is sent. One that ended
+  // without a page rests here only in a conversation that has done something;
+  // a conversation that has only talked folds the tab away and gives the main
+  // column back. Closing the tab is for that request only.
   const closedFor = closedKey ?? closedPreviewRequest(sessionId);
   const shown =
     track !== null &&
     view !== null &&
     closedFor !== track.key &&
-    // Closed for an earlier request: only this request's own activity reopens it.
-    (closedFor !== null ? requestActive : conversationActive || requestActive);
+    (view.mode !== 'collapsed' || conversationActive);
   const live = shown && view?.mode === 'scene';
   // The conversation's name, as the rail and the chat header show it: its
   // generated title, else its first request — never a later follow-up.
@@ -198,6 +203,7 @@ export function WorkspaceRequestActivity({
       <RequestPreview
         view={view}
         prompt={track.prompt}
+        queued={status === 'queued'}
         hidden={hidden}
         revealKey={rosterSeenAt ?? 'unseen'}
         onClose={() => onClose(track.key)}
@@ -246,11 +252,21 @@ function useHostedQuestion(
 function sceneCopy(
   view: RequestPreviewView,
   t: Translate,
+  queued = false,
 ): { readonly key: string; readonly title: string; readonly description: string } {
+  // Not claimed yet: the opening scene would claim the agent is reading the
+  // request, and nothing is. Said as it is until the runner starts.
+  if (queued && view.mode === 'scene' && view.scene === 'understanding') {
+    return {
+      key: 'queued',
+      title: t('workbench.preview.queued'),
+      description: t('workbench.preview.queuedDesc'),
+    };
+  }
   if (view.mode === 'classroom') {
     return { key: 'opening', title: t('workbench.preview.opening'), description: '' };
   }
-  if (view.mode === 'quiet' || view.mode === 'collapsed') {
+  if (view.mode === 'collapsed') {
     // Between requests: the placeholder at rest.
     return {
       key: 'resting',
@@ -303,6 +319,7 @@ const EASE: [number, number, number, number] = [0.22, 0.61, 0.36, 1];
 function RequestPreview({
   view,
   prompt,
+  queued,
   hidden,
   revealKey,
   onClose,
@@ -313,6 +330,8 @@ function RequestPreview({
 }: {
   readonly view: RequestPreviewView;
   readonly prompt: string;
+  /** The request waits for a free runner: nothing has started yet. */
+  readonly queued: boolean;
   readonly hidden: boolean;
   /**
    * When this viewer first saw the cast. A reveal that played while the
@@ -328,7 +347,7 @@ function RequestPreview({
   const reduced = useReducedMotion();
   const sessionId = useWorkbenchStore((s) => s.sessionId);
   const hosted = useHostedQuestion(view, hidden);
-  const copy = sceneCopy(view, t);
+  const copy = sceneCopy(view, t, queued);
   const asking = view.scene === 'asking' && view.question !== null && view.mode === 'scene';
   // The cast's reveal owns the scene area while it plays, like the classic modal.
   const revealing = view.scene === 'assembling' && view.roster !== null && view.mode === 'scene';
@@ -341,15 +360,16 @@ function RequestPreview({
       data-preview-awaiting={asking ? 'true' : undefined}
       aria-hidden={hidden || undefined}
       className={cn(
-        'ws-pane ws-pane-last h-full min-w-0 flex-1 flex-col',
+        'ws-pane ws-pane-last ws-pane-enter h-full min-w-0 flex-1 flex-col',
         hidden ? 'hidden' : 'flex',
       )}
     >
       {/* The course pane's header, with the one preview tab in its strip. */}
       <header className="ws-pane-head ws-classroom-head flex shrink-0 items-center px-2">
         {onCollapse ? (
-          <span className="mr-1 flex shrink-0 items-center">
+          <span className="flex shrink-0 items-center">
             <PaneFoldButton
+              className="ws-pane-fold"
               testId="workspace-preview-fold"
               label={t('workspace.collapseClassroom')}
               direction="right"
@@ -358,7 +378,10 @@ function RequestPreview({
           </span>
         ) : null}
         <WorkspaceCourseTabs
-          tabs={[...(strip?.tabs ?? []), { id: PREVIEW_TAB_ID, name: label }]}
+          tabs={[
+            ...(strip?.tabs ?? []),
+            { id: PREVIEW_TAB_ID, name: label, kind: 'preview', busy: copy.key !== 'resting' },
+          ]}
           activeCourseId={PREVIEW_TAB_ID}
           onActivate={(id) => (id === PREVIEW_TAB_ID ? undefined : strip?.onActivate(id))}
           onClose={(id) => (id === PREVIEW_TAB_ID ? onClose() : strip?.onCloseCourse(id))}
@@ -366,7 +389,13 @@ function RequestPreview({
         <span className="ws-ctabs-rule" aria-hidden="true" />
         {/* "In progress" only while something is: at rest the tab says nothing. */}
         {copy.key === 'resting' ? null : (
-          <span className="ws-pane-eyebrow shrink-0 pr-1">{t('workbench.preview.eyebrow')}</span>
+          <span className="ws-pane-eyebrow shrink-0 pr-1">
+            {t(
+              copy.key === 'queued'
+                ? 'workbench.preview.queuedEyebrow'
+                : 'workbench.preview.eyebrow',
+            )}
+          </span>
         )}
       </header>
 
@@ -432,9 +461,11 @@ function RequestPreview({
           <div
             className={cn(
               'flex h-10 items-center justify-center gap-3 text-sm font-medium uppercase tracking-widest text-[var(--ws-ink-faint)] transition-opacity duration-300',
-              asking || copy.key === 'resting' ? 'opacity-0' : 'opacity-100',
+              asking || copy.key === 'resting' || copy.key === 'queued'
+                ? 'opacity-0'
+                : 'opacity-100',
             )}
-            aria-hidden={asking || copy.key === 'resting' || undefined}
+            aria-hidden={asking || copy.key === 'resting' || copy.key === 'queued' || undefined}
           >
             <Sparkles
               className="size-3 animate-pulse motion-reduce:animate-none"
@@ -649,6 +680,10 @@ function AgentDocument({ text }: { readonly text: string }) {
  * that stays for the rest of the request. Each badge settles in with one soft
  * shine; a skill load is never a scene of its own.
  */
+function isInternalSkillId(id: string): boolean {
+  return id.startsWith('usk_');
+}
+
 function EquippedSkills({
   skills,
   t,
@@ -674,13 +709,20 @@ function EquippedSkills({
         const known = (Array.isArray(registry) ? registry : []).find(
           (skill) => skill.id === id || skill.name === id,
         );
-        const title = skillTitle(known ?? { name: id }, t as WorkbenchTranslator) ?? id;
+        // A user Skill is equipped by its internal id (`usk_*`); until the
+        // registry names it, it shows nothing rather than that id.
+        const title =
+          skillTitle(known ?? { name: id }, t as WorkbenchTranslator) ??
+          (known ? known.name : isInternalSkillId(id) ? null : id);
+        if (!title) return null;
         return (
           <motion.li
             key={id}
             layout={!reduced}
             data-skill={id}
-            title={`/${id}`}
+            // The readable name, for a badge too narrow to show it whole. Never
+            // the id: a skill the user made is named by an internal id.
+            title={title}
             initial={reduced ? false : { opacity: 0, y: -4, scale: 0.92 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ duration: reduced ? 0 : 0.45, ease: EASE }}

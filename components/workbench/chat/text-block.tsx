@@ -15,17 +15,23 @@
  *  - the `.wb-prose` skin (see `workbench-chat.css`), which styles Streamdown's
  *    `data-streamdown` node contract rather than its Tailwind class names.
  *  - an anchor override, so a link the agent writes to a course becomes the
- *    INLINE form of `CourseLink` — a course named mid-sentence stays in the
- *    sentence instead of chopping the transcript into cards. Only hrefs that
- *    name a course are upgraded (`/classroom/<id>`, `?course=<id>`); every other
- *    link renders exactly as it did before, and outside `/workspace` — where
- *    there is no right pane — the pill falls back to the plain anchor.
+ *    INLINE form of `CourseLink` — a link in the sentence — and the course's
+ *    card stands right under the block (paragraph, list, quote) that first
+ *    named it: one card per course per answer, none for a course the answer's
+ *    tail already cards (`segmentCourseMentions`). Only hrefs that name a
+ *    course are upgraded (`/classroom/<id>`, `?course=<id>`); every other link
+ *    renders exactly as it did before, and outside `/workspace` — where there
+ *    is no right pane — the link falls back to the plain anchor and no card
+ *    is drawn.
  */
-import { Streamdown, defaultRemarkPlugins } from 'streamdown';
+import { Fragment, useMemo } from 'react';
+import { Streamdown, defaultRemarkPlugins, parseMarkdownIntoBlocks } from 'streamdown';
 import remarkCjkFriendly from 'remark-cjk-friendly';
 import { createSafeMathPlugin } from '@/lib/markdown/safe-math-plugin';
-import { courseIdFromHref } from '@/lib/workbench/course-link';
+import { courseIdFromHref, segmentCourseMentions } from '@/lib/workbench/course-link';
+import { useWorkbenchCourseNavigation } from '@/lib/workbench/panel-context';
 import { remarkSelectiveSingleDollarMath } from '@/lib/workbench/markdown-math';
+import { wbStyles as styles } from './chat-styles';
 import { CourseLink } from './course-link';
 
 const REMARK_PLUGINS = [
@@ -103,30 +109,63 @@ const LESSON_COMPONENTS = {
   ),
 };
 
+const NO_EXCLUSIONS: ReadonlySet<string> = new Set();
+
 export function TextBlock({
   text,
   streaming = false,
+  excludeCourseCards = NO_EXCLUSIONS,
   variant = 'default',
 }: {
   text: string;
   streaming?: boolean;
   variant?: 'default' | 'lesson';
+  /**
+   * Courses that get no card under this text: carded earlier in the same
+   * answer, or among the cards at its tail (`chat-timeline`).
+   */
+  excludeCourseCards?: ReadonlySet<string>;
 }) {
+  const navigation = useWorkbenchCourseNavigation();
+  const segments = useMemo(
+    () =>
+      navigation
+        ? segmentCourseMentions(parseMarkdownIntoBlocks(text), excludeCourseCards)
+        : [{ markdown: text, cards: [] as readonly string[] }],
+    [navigation, text, excludeCourseCards],
+  );
   if (!text) return null;
   return (
     <div className="wb-prose">
-      {/* No typewriter caret, no block animation: streaming text just streams,
-          quietly. (Walkthrough verdict: the caret read as too heavy.) */}
-      <Streamdown
-        remarkPlugins={REMARK_PLUGINS}
-        plugins={STREAMDOWN_PLUGINS}
-        remend={REMEND}
-        controls={CONTROLS}
-        components={variant === 'lesson' ? LESSON_COMPONENTS : COMPONENTS}
-        parseIncompleteMarkdown={streaming}
-      >
-        {text}
-      </Streamdown>
+      {segments.map((segment, index) => (
+        <Fragment key={index}>
+          {/* No typewriter caret, no block animation: streaming text just
+              streams, quietly. (Walkthrough verdict: the caret read as too
+              heavy.) */}
+          {segment.markdown ? (
+            <Streamdown
+              remarkPlugins={REMARK_PLUGINS}
+              plugins={STREAMDOWN_PLUGINS}
+              remend={REMEND}
+              controls={CONTROLS}
+              components={variant === 'lesson' ? LESSON_COMPONENTS : COMPONENTS}
+              parseIncompleteMarkdown={streaming && index === segments.length - 1}
+            >
+              {segment.markdown}
+            </Streamdown>
+          ) : null}
+          {segment.cards.length > 0 ? (
+            <div
+              className={styles.courseLink.mentionSet}
+              data-testid="workbench-course-mention-cards"
+            >
+              {segment.cards.map((courseId) => (
+                <CourseLink key={courseId} courseId={courseId} variant="block" />
+              ))}
+            </div>
+          ) : null}
+        </Fragment>
+      ))}
     </div>
   );
 }

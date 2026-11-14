@@ -47,6 +47,9 @@ export const workbenchEn = {
     stopping: 'Stopping…',
     stoppingAria: 'Stopping',
     stop: 'Stop this build',
+    queued: 'In the queue — it starts on its own when a slot frees up',
+    queuedPlaceholder: 'Waiting in the queue — add a note, then press Enter',
+    cancelQueued: 'Cancel this request',
     waiting: 'Processing',
     copyReply: 'Copy Agent reply',
     emptyTitle: 'Start a new conversation',
@@ -87,6 +90,8 @@ export const workbenchEn = {
     unsupportedType: 'Unsupported file type. Please choose a supported file.',
     quotaExceeded: 'Material upload limit reached.',
     storageFull: 'Storage is full. This material could not be uploaded.',
+    uploadFailedShort: 'Upload failed',
+    retryFailed: 'Could not start parsing again. Please try again.',
   },
   /**
    * The installed skills, as the product names them.
@@ -166,6 +171,9 @@ export const workbenchEn = {
   },
   preview: {
     eyebrow: 'Working on it',
+    queuedEyebrow: 'Queued',
+    queued: 'Waiting in the queue',
+    queuedDesc: 'Other requests are ahead of this one; it starts on its own.',
     understanding: 'Understanding your request',
     understandingDesc: 'Reading what you asked for and what it needs…',
     asking: 'A quick question',
@@ -204,9 +212,7 @@ export const workbenchEn = {
     listSeparator: ', ',
     group: {
       tools: '{{count}} tool calls',
-      skills: '{{count}} skills',
-      running: 'Running',
-      error: 'Has errors',
+      failed: '{{count}} failed',
       done: 'Completed',
     },
     section: {
@@ -430,6 +436,9 @@ export const workbenchZh = {
     stopping: '正在停止…',
     stoppingAria: '正在停止',
     stop: '停止本轮构建',
+    queued: '正在排队，轮到后会自动开始',
+    queuedPlaceholder: '排队中，可以先补充要求，回车发送',
+    cancelQueued: '取消排队',
     waiting: '正在处理',
     emptyTitle: '开始一个新对话',
     emptyHint: '描述你想做的改动，或用 @ 指一门课堂',
@@ -459,6 +468,8 @@ export const workbenchZh = {
     unsupportedType: '不支持此文件类型，请选择受支持的文件。',
     quotaExceeded: '已达到材料上传限额。',
     storageFull: '存储空间已达上限，无法上传这份资料。',
+    uploadFailedShort: '上传失败',
+    retryFailed: '无法重新解析，请稍后再试。',
   },
   skill: {
     listFailed: 'Skill 列表加载失败',
@@ -521,6 +532,9 @@ export const workbenchZh = {
   },
   preview: {
     eyebrow: '正在进行',
+    queuedEyebrow: '排队中',
+    queued: '正在排队',
+    queuedDesc: '前面还有任务在进行，轮到后会自动开始。',
     understanding: '理解你的需求',
     understandingDesc: '正在阅读你的要求和相关资料…',
     asking: '需要你确认一下',
@@ -557,9 +571,7 @@ export const workbenchZh = {
     listSeparator: '、',
     group: {
       tools: '{{count}} 个工具调用',
-      skills: '{{count}} 个 skill',
-      running: '执行中',
-      error: '有错误',
+      failed: '{{count}} 个失败',
       done: '已完成',
     },
     section: {

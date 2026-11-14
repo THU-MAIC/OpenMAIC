@@ -4,6 +4,7 @@ import { BrowserRuntimeStore, RuntimeAppendConflictError } from '@openmaic/stora
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
 
+import { CHILD_STATE_PREFIX, createChildTailStateTransform } from '@/lib/chat/pi/child-tail-state';
 import { buildNativeWhiteboardTools } from '@/lib/chat/pi/tools/native-whiteboard';
 import { settleWhiteboardVisibility } from '@/lib/chat/pi/whiteboard-visibility';
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
@@ -2215,6 +2216,201 @@ describe('Native whiteboard rotation and custom geometry', () => {
       await expect(reopened.store.listRecords(sessions[0]!.id)).resolves.toHaveLength(2);
     } finally {
       vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe('Native whiteboard plain text', () => {
+  it.each([
+    ['普通中文', '普通中文'],
+    ['>', '&gt;'],
+    ['&gt;', '&gt;'],
+    ['&', '&amp;'],
+    ['&#62; &#x3e;', '&gt; &gt;'],
+    ['<b>word</b>', '&lt;b&gt;word&lt;/b&gt;'],
+    ['&lt;script&gt;alert(1)&lt;/script&gt;', '&lt;script&gt;alert(1)&lt;/script&gt;'],
+    ['&unknown;', '&amp;unknown;'],
+    ['A&#0;B&#x7f;C&#8;D&#11;E&#12;F&#31;G', 'ABCDEFG'],
+    ['A&#9;B&#10;C&#13;D', 'A\tB<br>C<br>D'],
+    ['&amp;gt;', '&amp;gt;'],
+    ['literal\\ntext', 'literal\\ntext'],
+  ])('safely normalizes %s', async (content, expected) => {
+    const runtime = service();
+    const draw = build(runtime).tools.find((t) => t.name === 'wb_draw_text')!;
+    const result = await draw.execute('plain', { expectedLastSeq: null, content, x: 0, y: 0 });
+    expect(result).not.toHaveProperty('isError', true);
+    const input = vi.mocked(runtime.append).mock.calls[0]![0];
+    expect(input.payload.operation).toMatchObject({
+      kind: 'element_added',
+      element: { content: `<p style="font-size: 18px;">${expected}</p>` },
+    });
+  });
+});
+
+it('returns only the successful text receipt for a write', async () => {
+  const runtime = service();
+  const tool = build(runtime).tools.find((t) => t.name === 'wb_draw_text')!;
+  const result = await tool.execute('draw', {
+    expectedLastSeq: null,
+    content: 'Label',
+    x: 0,
+    y: 0,
+  });
+  expect(runtime.append).toHaveBeenCalledTimes(1);
+  expect(result).not.toHaveProperty('isError', true);
+  expect(result.details).toMatchObject({
+    committedSeq: 0,
+    nextMutation: { expectedLastSeq: 0 },
+    dispatchedAction: true,
+  });
+  expect(result.content).toHaveLength(1);
+  expect(result.content[0].type).toBe('text');
+  expect(result.details).not.toHaveProperty('preview');
+});
+
+describe('Mutation receipts as sequence sources', () => {
+  it('continues from read and write receipts, including zero, no-op and late replay', async () => {
+    vi.stubGlobal('IDBKeyRange', IDBKeyRange);
+    const store = new BrowserRuntimeStore({
+      indexedDB: new IDBFactory(),
+      payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+    });
+    const runtime = createWhiteboardRuntimeService({
+      store,
+      resolveLearnerKey: () => 'learner-1',
+      withMaintenanceLock: (work) => work(),
+    });
+    const tools = build(runtime, async (event) => {
+      if (event.type === 'whiteboard' && event.data.kind === 'visibility_query') {
+        settleWhiteboardVisibility({
+          queryId: event.data.queryId,
+          stageId: 'stage-1',
+          learnerKey: 'learner-1',
+          visibility: 'open',
+        });
+      }
+    }).tools;
+    const tool = (name: string) => tools.find((t) => t.name === name)!;
+    const receipt = (result: Awaited<ReturnType<(typeof tools)[number]['execute']>>) => {
+      const text = result.content.find((c) => c.type === 'text');
+      if (!text || text.type !== 'text') throw new Error('Missing receipt');
+      return JSON.parse(text.text);
+    };
+    try {
+      const empty = receipt(await tool('wb_clear').execute('empty', { expectedLastSeq: null }));
+      expect(empty).toMatchObject({ noOp: true, nextMutation: { expectedLastSeq: null } });
+      const read = receipt(await tool('wb_read').execute('read', {}));
+      const argsA = {
+        expectedLastSeq: read.nextMutation.expectedLastSeq,
+        content: 'A',
+        x: 0,
+        y: 0,
+      };
+      const a = receipt(await tool('wb_draw_text').execute('a', argsA));
+      expect(a.nextMutation.expectedLastSeq).toBe(0);
+      const b = receipt(
+        await tool('wb_draw_text').execute('b', {
+          expectedLastSeq: a.nextMutation.expectedLastSeq,
+          content: 'B',
+          x: 0,
+          y: 50,
+        }),
+      );
+      expect(b.nextMutation.expectedLastSeq).toBe(1);
+      const tail = await createChildTailStateTransform({ service: runtime, stageId: 'stage-1' })(
+        [],
+      );
+      const tailMessage = tail.at(-1)!;
+      if (!('content' in tailMessage)) throw new Error('Missing tail content');
+      const tailContent = tailMessage.content;
+      if (typeof tailContent !== 'string') throw new Error('Missing tail text');
+      const board = JSON.parse(tailContent.slice(CHILD_STATE_PREFIX.length)).whiteboard;
+      const target = board.elements.find(
+        (element: { content?: string }) => element.content === 'A',
+      );
+      expect(target).toBeDefined();
+      await expect(
+        tool('wb_delete').execute('delete-a', {
+          expectedLastSeq: b.nextMutation.expectedLastSeq,
+          elementId: target.id,
+        }),
+      ).resolves.toMatchObject({ details: { committedSeq: 2 } });
+      expect(
+        (await runtime.read('stage-1')).whiteboard?.elements.map((element) => element.id),
+      ).toEqual([b.affected.element.id]);
+      const replay = receipt(await tool('wb_draw_text').execute('a', argsA));
+      expect(replay).toMatchObject({
+        committedSeq: 0,
+        lastSeq: 2,
+        replayed: true,
+        nextMutation: { expectedLastSeq: 2 },
+      });
+      expect((await runtime.read('stage-1')).whiteboard?.elements).toHaveLength(1);
+      const c = receipt(
+        await tool('wb_draw_text').execute('c', {
+          expectedLastSeq: replay.nextMutation.expectedLastSeq,
+          content: 'C',
+          x: 0,
+          y: 100,
+        }),
+      );
+      expect(c.committedSeq).toBe(3);
+      const cleared = receipt(
+        await tool('wb_clear').execute('clear', {
+          expectedLastSeq: c.nextMutation.expectedLastSeq,
+        }),
+      );
+      expect(cleared.nextMutation.expectedLastSeq).toBe(4);
+      const noOp = receipt(
+        await tool('wb_clear').execute('clear-empty', {
+          expectedLastSeq: cleared.nextMutation.expectedLastSeq,
+        }),
+      );
+      expect(noOp).toMatchObject({ noOp: true, lastSeq: 4, nextMutation: { expectedLastSeq: 4 } });
+      await expect(
+        tool('wb_draw_text').execute('after-noop', {
+          expectedLastSeq: noOp.nextMutation.expectedLastSeq,
+          content: 'D',
+          x: 0,
+          y: 0,
+        }),
+      ).resolves.toMatchObject({ details: { committedSeq: 5 } });
+      // A separate writer advances the board after the observed receipt.
+      const external = buildNativeWhiteboardTools({
+        agent: teacher,
+        messageId: 'external',
+        send: vi.fn(),
+        service: runtime,
+        stageId: 'stage-1',
+        learnerKey: 'learner-1',
+        requestStartManualVisibilityRevision: 0,
+      }).find((t) => t.name === 'wb_draw_text')!;
+      await external.execute('external', { expectedLastSeq: 5, content: 'External', x: 0, y: 100 });
+      await expect(
+        tool('wb_draw_text').execute('stale', {
+          expectedLastSeq: 5,
+          content: 'Stale',
+          x: 0,
+          y: 200,
+        }),
+      ).resolves.toMatchObject({
+        isError: true,
+        details: { code: 'STALE_STATE', actualLastSeq: 6 },
+      });
+      const sessions = await store.listSessions('stage-1', 'learner-1');
+      expect(await store.listRecords(sessions[0]!.id)).toHaveLength(7);
+      expect((await runtime.read('stage-1')).whiteboard?.elements).toHaveLength(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('allows existing object and code-line IDs from fresh tail observations', () => {
+    const tools = build(service()).tools;
+    for (const name of ['wb_delete', 'wb_edit_code']) {
+      expect(tools.find((t) => t.name === name)!.description).toContain(
+        'latest wb_read or fresh whiteboard tail state',
+      );
     }
   });
 });

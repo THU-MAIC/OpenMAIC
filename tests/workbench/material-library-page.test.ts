@@ -532,6 +532,26 @@ describe('the list', () => {
 
 // ── Staying fresh (option B) on the page ───────────────────────────────────
 
+describe('a source the workspace search located', () => {
+  it('opens on a search for its name, with its row marked and its ⋯ focused', async () => {
+    library = (params) =>
+      params.get('query')
+        ? json({ materials: [inF1('hit', { name: 'worksheet.pdf' })], limits: LIMITS })
+        : json({ materials: [source('a')], limits: LIMITS });
+    const page = await openPage({ locate: { key: 1, materialId: 'hit', name: 'worksheet.pdf' } });
+    await settle();
+    expect(libraryCalls.at(-1)?.get('query')).toBe('worksheet.pdf');
+    expect((page.query('kb-search') as HTMLInputElement | null)?.value).toBe('worksheet.pdf');
+    expect(page.query('kb-material-hit')?.getAttribute('data-located')).toBe('true');
+    expect(document.activeElement?.getAttribute('data-testid')).toBe('kb-material-menu-hit');
+
+    // Typing another search lets the mark go.
+    await search('other');
+    expect(page.query('kb-material-hit')?.getAttribute('data-located') ?? null).toBeNull();
+    await page.dispose();
+  });
+});
+
 describe('staying fresh without moving the teacher', () => {
   it('a background refresh keeps the open folders and the rows already shown', async () => {
     const page = await openPage();

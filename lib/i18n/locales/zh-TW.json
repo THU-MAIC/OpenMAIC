@@ -26,7 +26,6 @@
     "examplesLabel": "試試這些主題",
     "examplePython": "從零學習 Python",
     "exampleFourier": "用直觀的例子講解傅立葉轉換",
-    "desktopOnly": "編輯器和專業模式請在電腦上使用。",
     "slogan": "多智能體互動課室中的生成式學習",
     "greetingWithName": "嗨，{{name}}"
   },
@@ -89,6 +88,7 @@
     "exportFailed": "匯出失敗",
     "classroomZip": "匯出課堂 ZIP",
     "classroomZipDesc": "課程結構 + 媒體檔案",
+    "viewerCopyHint": "想要一份可以編輯的副本？先「{{zip}}」，再到「{{courses}}」裡「{{importLabel}}」。",
     "html": "匯出為 HTML",
     "htmlDesc": "單一離線檔案，可自動播放",
     "htmlWithNarration": "包含旁白和影片",
@@ -113,6 +113,7 @@
       "emptyClassroom": "此課堂沒有任何場景。",
       "unsupportedScene": "離線匯出暫不支援此場景。",
       "interactiveTitle": "互動場景",
+      "interactiveMoreBelow": "下方還有內容",
       "videoUnavailable": "離線匯出不包含影片",
       "quizSubmit": "提交",
       "quizRetry": "重新作答",
@@ -271,6 +272,7 @@
       "title": "這個互動未能執行",
       "dismiss": "關閉"
     },
+    "interactiveMoreBelow": "下方還有內容",
     "tabs": {
       "lecture": "筆記",
       "chat": "對話"
@@ -347,15 +349,27 @@
     "confirmSwitchTitle": "切換頁面",
     "confirmSwitchMessage": "目前主題正在進行中，切換頁面將結束目前主題。確定要切換嗎？",
     "generatingNextPage": "場景正在生成，請稍候...",
-    "courseComplete": "課程完成",
     "fullscreen": "全螢幕",
     "exitFullscreen": "離開全螢幕",
     "editCourse": "編輯課程",
     "doneEditing": "完成編輯",
-    "proModeDisabledHint": "此頁面無法編輯——開啟課程投影片以使用 Pro 模式編輯。"
+    "editDisabledHint": "此頁面無法編輯——開啟課程投影片即可編輯。",
+    "editToggle": "編輯",
+    "openInWorkspace": "在工作台中開啟",
+    "openInWorkspaceHint": "在工作台中開啟，可以繼續對話修改這門課",
+    "makeOwnCourse": "做一堂自己的課",
+    "makeOwnCourseHint": "到工作台做一堂自己的課",
+    "dock": {
+      "collapse": "收合底欄",
+      "expand": "展開底欄",
+      "resize": "調整底欄高度"
+    },
+    "chatPanel": {
+      "expand": "展開會話區",
+      "collapse": "收起會話區"
+    }
   },
   "edit": {
-    "proMode": "專業模式",
     "undo": "復原",
     "redo": "重做",
     "courseHistory": {
@@ -511,7 +525,19 @@
       "whiteboardLatex": "公式",
       "whiteboardTable": "表格",
       "action": "動作",
-      "discussion": "討論"
+      "discussion": "討論",
+      "playVideo": "播放影片",
+      "whiteboardChart": "圖表",
+      "whiteboardLine": "畫線",
+      "whiteboardClear": "清空畫板",
+      "whiteboardDelete": "擦除元素",
+      "whiteboardClose": "關閉畫板",
+      "whiteboardCode": "程式碼區塊",
+      "whiteboardEditCode": "修改程式碼",
+      "widgetHighlight": "醒目顯示互動元素",
+      "widgetSetState": "設定互動狀態",
+      "widgetAnnotation": "標註互動元素",
+      "widgetReveal": "顯示互動元素"
     },
     "element": {
       "text": "文字",
@@ -576,12 +602,6 @@
     "timeline": {
       "title": "講解腳本",
       "regenAllTts": "重新生成全部配音",
-      "voiceAll": "全部配音",
-      "counts": "{{speech}} 旁白 · {{cue}} 提示",
-      "panLeft": "向左平移",
-      "panRight": "向右平移",
-      "collapseAxis": "收合至時間軸",
-      "expandTrack": "展開音軌",
       "emptyHint": "將動作拖曳至時間軸以開始，或讓 MAIC Agent 生成旁白。",
       "speechPlaceholder": "輸入此旁白內容…",
       "reorder": "拖曳以重新排序",
@@ -593,13 +613,15 @@
       "fieldElement": "元素",
       "fieldContent": "內容",
       "addDiscussionExists": "每個場景只能有一個討論",
-      "discussionTerminal": "結束",
       "discussionTerminalHint": "討論會停留在場景結尾（每個場景一個）",
-      "discussionTopicPlaceholder": "討論主題（必填）",
-      "discussionPromptPlaceholder": "引導語（可選）",
+      "discussionTopicPlaceholder": "必填",
+      "discussionPromptPlaceholder": "可選",
+      "discussionTopicLabel": "討論主題",
+      "discussionPromptLabel": "引導語",
       "discussionAgent": "發起人",
       "discussionAgentUnset": "不指定",
-      "addAction": "新增動作"
+      "addAction": "新增動作",
+      "fieldState": "狀態"
     },
     "picker": {
       "title": "插入動作",
@@ -683,8 +705,7 @@
       "moveDown": "下移",
       "removeFromClass": "移出課堂",
       "aiClassmates": "AI 同學 · {{count}}",
-      "addRole": "新增角色",
-      "shortTitle": "陣容"
+      "addRole": "新增角色"
     },
     "line": {
       "toolbar": "線條工具列",
@@ -1080,6 +1101,7 @@
     "rename": "重新命名",
     "renamePlaceholder": "輸入新名稱...",
     "renameFailed": "重新命名失敗",
+    "saveRefused": "變更沒有儲存：你沒有編輯這堂課的權限。",
     "searchPlaceholder": "搜尋教室...",
     "searchAriaLabel": "搜尋教室",
     "clearSearch": "清除搜尋",
@@ -2354,6 +2376,7 @@
     "sceneCount_one": "{{count}} 页",
     "sceneCount_other": "{{count}} 页",
     "courseLinkHint": "在右侧打开《{{name}}》",
+    "courseLinkOpen": "打開",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
       "search": "搜尋課堂和資料",
@@ -2385,7 +2408,6 @@
     "heroSubtitle": "說出你的想法，把它變成一段可以親歷的學習旅程",
     "newSession": "新增對話",
     "sections": {
-      "courses": "課程",
       "sessions": "對話"
     },
     "coursesEmpty": "還沒有課程",
@@ -2394,8 +2416,6 @@
     "loadFailed": "載入失敗",
     "retry": "重試",
     "untitledSession": "未命名對話",
-    "pagePosition": "第 {{index}} / {{total}} 頁",
-    "exitPro": "退出 Pro",
     "navAria": "工作區導覽",
     "homeAria": "返回首頁",
     "currentSession": "目前對話",
@@ -2404,7 +2424,7 @@
     "learningMode": "學習",
     "editingMode": "編輯",
     "editingUnavailableGenerating": "課程生成期間無法編輯。",
-    "fullscreenLearning": "全螢幕學習",
+    "editGuide": "編輯引導",
     "time": {
       "justNow": "剛剛",
       "minutesAgo": "{{count}} 分鐘前",
@@ -2417,11 +2437,10 @@
       "running": "進行中",
       "succeeded": "已就緒",
       "failed": "需處理",
-      "cancelled": "已停止"
+      "cancelled": "已停止",
+      "awaitingAnswer": "等待你的回答"
     },
     "backToWorkspace": "返回工作區",
-    "searchPlaceholder": "依名稱篩選",
-    "searchAria": "在{{section}}中搜尋",
     "searchEmpty": "沒有符合的內容",
     "showMore": "顯示更多 {{count}}",
     "showLess": "收合",
@@ -2434,6 +2453,8 @@
     "expandNavInto": "展開導覽 · {{section}}",
     "collapseChat": "收合對話",
     "expandChat": "對話",
+    "talkAboutCourse": "和 AI 一起改",
+    "talkAboutCourseHint": "開一個新對話，和 AI 一起修改這堂課",
     "collapseClassroom": "收合課堂",
     "expandClassroom": "課堂",
     "readOnlyBadge": "唯讀",
@@ -2443,7 +2464,6 @@
     "coursePausedDesc": "有一頁生成失敗。請在課堂中重試，生成完成後課程會在這裡開啟。",
     "viewGenerationProgress": "查看生成進度",
     "openToRetry": "前往重試",
-    "courseGeneratingRowHint": "生成完成後可開啟",
     "noCourseTitle": "還沒有開啟課堂",
     "noCourseHint": "點對話裡的課堂連結開啟，或在左側清單裡選一節；對話會一直在這兒",
     "resizeChatAria": "拖曳調整對話欄寬度",
@@ -2452,7 +2472,6 @@
     "autoSaved": "已儲存",
     "collapsedTitle": "兩側面板都收合了",
     "collapsedHint": "點左邊的標籤，把對話或課堂展開",
-    "moreUtilities": "更多",
     "rowMore": "{{name}}的更多操作",
     "folderDeleteHint": "資料夾裡的課堂會回到列表最上層，不會被刪除。",
     "dropToUnfile": "放到這裡移出資料夾",
@@ -2466,11 +2485,177 @@
     "confirmDelete": "確認刪除",
     "deleting": "刪除中…",
     "deleteFailed": "刪除失敗，請重試",
-    "tabsAria": "對話與課程",
     "courseTabsAria": "右欄標籤頁",
     "courseTabClose": "關閉標籤頁《{{name}}》",
     "courseTabRunning": "產生中",
-    "foldersUnavailable": "此版本不支援資料夾"
+    "foldersUnavailable": "此版本不支援資料夾",
+    "composer": {
+      "attach": "添加材料",
+      "mentionCourse": "引用课堂",
+      "mentionCourseOrMaterial": "引用課堂或知識庫材料",
+      "loadSkill": "加载 skill",
+      "skillMenuTitle": "选择课程设计技能",
+      "skillsLoading": "正在加载 skill…",
+      "noSkillsAvailable": "暂无可用 skill",
+      "userSkillsGroup": "我的 Skill",
+      "builtinSkillsGroup": "内置 Skill",
+      "skillsLoadFailed": "Skill 加载失败，点击重试",
+      "retrySkills": "重试",
+      "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+      "launchPlaceholder": "描述你想創造的學習體驗",
+      "launchSend": "開始構建"
+    },
+    "nav": {
+      "search": "搜尋",
+      "myCourses": "我的課程"
+    },
+    "search": {
+      "placeholder": "搜尋對話、課程和資料",
+      "recentChats": "最近對話",
+      "recentCourses": "最近課程",
+      "courses": "課程",
+      "materials": "資料",
+      "actions": "快捷操作",
+      "searching": "正在搜尋…",
+      "empty": "沒有與「{{query}}」相符的結果",
+      "materialsFailed": "知識庫搜尋失敗",
+      "themeAction": "主題：{{name}}",
+      "languageAction": "語言：{{name}}"
+    },
+    "account": {
+      "signIn": "登入",
+      "menu": "帳號與設定",
+      "profileSaved": "已儲存",
+      "language": "語言",
+      "about": "關於 OpenMAIC",
+      "aboutBody": "開源的多智慧體互動課堂平台：輸入任何主題，AI 老師和同學陪你一起學。以 MIT 授權條款發布。",
+      "viewOnGithub": "在 GitHub 上查看",
+      "docs": "文件",
+      "signOut": "登出",
+      "onboarding": "新手引導"
+    },
+    "coursesPage": {
+      "searchPlaceholder": "搜尋我的課程",
+      "results": "搜尋結果",
+      "allCourses": "全部課程",
+      "emptyHint": "在首頁說一句想學的內容，第一堂課就會出現在這裡。",
+      "makeCourse": "做一堂課",
+      "pin": "置頂",
+      "unpin": "取消置頂",
+      "pinned": "已置頂"
+    },
+    "fullscreen": {
+      "expand": "全螢幕",
+      "collapse": "結束全螢幕（Esc）"
+    },
+    "onboarding": {
+      "paneTitle": "學習，或者編輯",
+      "paneLearn": "「學習」：AI 老師帶你上課，隨時可以提問。",
+      "paneEdit": "「編輯」：直接修改頁面。",
+      "paneChat": "也可以在對話裡說「把第 2 頁講得更簡單」，讓 AI 幫你改。",
+      "gotIt": "知道了"
+    },
+    "tour": {
+      "skip": "跳過",
+      "prev": "上一步",
+      "next": "下一步",
+      "done": "自己輸入",
+      "count": "{{index}} / {{total}}",
+      "openGuide": "去上體驗課",
+      "welcome": {
+        "title": "歡迎來到 OpenMAIC",
+        "body": "說一句想學什麼，OpenMAIC 就生成一堂有 AI 老師和同學陪你上的互動課。"
+      },
+      "start": {
+        "title": "從這裡開始",
+        "body": "「新建對話」開始一堂新課；「搜尋」（⌘K）找課程、對話和資料。"
+      },
+      "courses": {
+        "title": "體驗課",
+        "body": "這堂 5 分鐘的課也是 OpenMAIC 做的。打開它，看看上課的地方。"
+      },
+      "library": {
+        "title": "知識庫",
+        "body": "講義、PDF 上傳一次，之後做課時都能引用。"
+      },
+      "conversations": {
+        "title": "對話",
+        "body": "每堂課都是在一段對話裡做出來的。想改課，回到那段對話裡說。"
+      },
+      "mode": {
+        "title": "學習，或者編輯",
+        "body": "「學習」跟著 AI 老師上課；「編輯」逐頁修改。"
+      },
+      "dock": {
+        "title": "上課的地方",
+        "body": "播放、翻頁，隨時向 AI 老師提問，同學們也會一起討論。"
+      },
+      "chat": {
+        "title": "用對話改課",
+        "body": "在旁邊的對話裡直接說「第 2 頁講簡單點」，AI 會幫你改。"
+      },
+      "account": {
+        "title": "帳號與設定",
+        "body": "個人資料、設定、語言和主題都在這裡，也能從這裡重看這份引導。"
+      },
+      "try": {
+        "title": "現在試一堂",
+        "body": "在輸入框寫一個主題，或者點一個例子馬上開始。",
+        "attach": "材料：上傳講義，照著它做課",
+        "mention": "引用：@ 一堂課或知識庫裡的資料",
+        "skill": "技能：選一種教學方式，例如深度互動"
+      },
+      "examples": {
+        "sky": {
+          "label": "為什麼天空是藍色的？",
+          "prompt": "為什麼天空是藍色的？用生活中看得到的現象講清楚"
+        },
+        "interest": {
+          "label": "複利是怎麼回事",
+          "prompt": "用生活裡的例子，講懂複利是怎麼回事"
+        },
+        "teach": {
+          "label": "備課：國二畢氏定理",
+          "prompt": "給國二學生上一堂畢氏定理課，最後帶一個小測驗"
+        }
+      },
+      "coursesNav": {
+        "title": "我的課程",
+        "body": "做好的課都在這裡，點一下看看。"
+      },
+      "openLook": "打開看看",
+      "edit": {
+        "canvas": {
+          "title": "頁面",
+          "body": "直接點頁面上的文字、圖片、形狀來改，拖動調整位置和大小。"
+        },
+        "pages": {
+          "title": "頁面列表",
+          "body": "點這裡展開頁面列表：加頁、拖動排序、刪除頁面。"
+        },
+        "bar": {
+          "title": "控制列",
+          "body": "加動作、配旁白語音、翻頁和加頁、設定老師和同學；最右邊可以圈選元素交給 AI 改。"
+        },
+        "timeline": {
+          "title": "動作軌道",
+          "body": "每張卡片是一個動作：講解、聚光、討論。拖動排序，點開修改。"
+        },
+        "dock": {
+          "title": "底欄",
+          "body": "拖動上邊緣調整高度，或者收起來給頁面更多空間。"
+        },
+        "learn": {
+          "title": "預覽",
+          "body": "切回「學習」，看看學生上課時的樣子。"
+        },
+        "chat": {
+          "title": "讓 AI 幫你改",
+          "body": "不想手動改？在對話裡直接說，例如「第 2 頁加一道練習」。"
+        }
+      },
+      "editDone": "開始編輯"
+    }
   },
   "profile": {
     "title": "個人資料",
@@ -2502,40 +2687,6 @@
     "placeholder": "課堂碼",
     "error": "課堂碼錯誤，請重試。"
   },
-  "classroomComplete": {
-    "title": "課程完成",
-    "trailLabels": {
-      "slide": "頁面",
-      "quiz": "測驗",
-      "interactive": "互動",
-      "pbl": "專題"
-    },
-    "quizScoreLabel": "{{correct}} / {{total}} 正確",
-    "encouragement": {
-      "high": "太棒了，你答對了！",
-      "mid": "做得好，繼續保持！",
-      "low": "不錯的開始，回顧一下再試一次。"
-    }
-  },
-  "proMode": {
-    "attach": "添加材料",
-    "mentionCourse": "引用课堂",
-    "loadSkill": "加载 skill",
-    "skillMenuTitle": "选择课程设计技能",
-    "skillsLoading": "正在加载 skill…",
-    "noSkillsAvailable": "暂无可用 skill",
-    "userSkillsGroup": "我的 Skill",
-    "builtinSkillsGroup": "内置 Skill",
-    "skillsLoadFailed": "Skill 加载失败，点击重试",
-    "retrySkills": "重试",
-    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
-    "badgeAria": "專業模式",
-    "badgeEnter": "專業模式",
-    "badgeExit": "返回普通模式",
-    "launchPlaceholder": "描述你想創造的學習體驗",
-    "launchSend": "開始構建",
-    "mentionCourseOrMaterial": "引用課堂或知識庫材料"
-  },
   "workbench": {
     "tool": {
       "label": {
@@ -2547,12 +2698,23 @@
       }
     }
   },
+  "classroomEnd": {
+    "close": "回到最後一頁",
+    "learned": "已學完 {{count}} 頁",
+    "result": "答對 {{correct}} / {{total}} 題",
+    "actions": {
+      "reviewWrong": "查看錯題",
+      "doQuiz": "去做小測",
+      "restart": "重新學習"
+    }
+  },
   "sandbox": {
     "errors": {
       "learningManaged": "此工作區屬於學習專案，請使用學習工作區內的操作入口。",
       "sourcePath": "此檔案不在專案原始碼範圍內。",
       "sourceCount": "學習專案最多支援 256 個原始碼檔案。",
       "sourceSize": "專案原始碼內容總量不能超過 1 MiB。",
+      "commandSize": "平台產生的編譯或測試指令過長，沙箱無法執行。",
       "teachingContextSize": "教學上下文過長，請縮短 PLAN.md 或審查問題後重試。",
       "commandActive": "請先停止執行中的命令並取得結果，再讀取或儲存工作區快照。",
       "terminalActive": "請先關閉終端機，再讀取或儲存工作區快照。",
@@ -2859,7 +3021,25 @@
       "file-edit": "File edit",
       "workspace-run": "Workspace run"
     },
+    "overview": {
+      "title": "專案總覽",
+      "expand": "展開",
+      "collapse": "收起",
+      "projectGoal": "專案目標",
+      "finishedWork": "完成後的作品",
+      "roadmap": "專案大綱",
+      "goalAndResult": "目標與成果",
+      "goal": "目標",
+      "result": "成果",
+      "eachStage": "每個階段怎麼走",
+      "yourRole": "由你做決策和審閱，AI 協助撰寫計畫和程式碼。",
+      "preview": "在作品預覽區使用自己的產品，檢查做出的效果。",
+      "advance": "目前環節達到推進條件後，輸入框上方才會出現紫色操作列；看到它時，點擊即可繼續。"
+    },
     "journey": {
+      "currentMilestone": "目前階段",
+      "milestoneGoal": "目標：",
+      "milestoneResult": "成果：",
       "completionHandoff": "本環節已完成。下一步操作請看學習助手底部的任務列。",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",
@@ -2901,6 +3081,7 @@
       "notReflected": "Reflection not yet recorded",
       "taskDetails": "Current task details",
       "closeDetails": "Close task details",
+      "reviewDetails": "回看詳情",
       "milestoneSteps": "Milestone learning steps",
       "enterStep": "Continue to {{step}}",
       "enterMilestone": "進入下一階段",

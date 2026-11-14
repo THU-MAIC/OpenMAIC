@@ -4,8 +4,9 @@
  *   1. `surfaces/slide` + `surfaces/quiz` — register their SceneEditorSurfaces
  *      into `sceneEditorRegistry` so EditShell can resolve them (otherwise it
  *      falls back to NOOP_SURFACE, i.e. a read-only flash).
- *   2. `editor-fonts` — the @fontsource font-face tables the slide font
- *      picker offers (CSS side effect).
+ *   2. `editor-fonts` — the @fontsource font-face tables of the slide font
+ *      picker's Latin fonts (CSS side effect). Its Chinese fonts are declared
+ *      on every page by the root layout.
  *
  * Only (1) is awaited. Called from the Learn→Edit switch BEFORE flipping into
  * edit mode, so the surfaces are registered by the time EditShell reads the
@@ -55,7 +56,13 @@ function requestEditorFonts(): void {
   });
 }
 
-export function preloadEditor(): Promise<void> {
+/**
+ * Only the surfaces, for a caller ahead of the page's own loading: a course
+ * remembered in Edit, while its document is still on the way. The font
+ * stylesheets would compete with that document for connections, so they wait for
+ * the {@link preloadEditor} that the actual entry into the editor makes.
+ */
+export function preloadEditorSurfaces(): Promise<void> {
   if (!editorReady) {
     const attempt = Promise.all([
       import('@/components/edit/surfaces/slide'),
@@ -73,8 +80,13 @@ export function preloadEditor(): Promise<void> {
       if (editorReady === attempt) editorReady = null;
     });
   }
+  return editorReady;
+}
+
+export function preloadEditor(): Promise<void> {
+  const surfaces = preloadEditorSurfaces();
   // After the surfaces, so their chunks are never queued behind the font
   // stylesheets; not part of what callers wait for.
-  editorReady.then(requestEditorFonts, requestEditorFonts);
-  return editorReady;
+  surfaces.then(requestEditorFonts, requestEditorFonts);
+  return surfaces;
 }

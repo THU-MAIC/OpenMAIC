@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   CommandExitError,
   FileNotFoundError,
@@ -12,6 +12,7 @@ import {
 import { SandboxError, sandboxConflict } from '@/lib/sandbox/errors';
 import {
   MAX_TEXT_FILE_BYTES,
+  MAX_ASSESSMENT_SCRIPT_BYTES,
   type SandboxProvider,
   type SandboxResource,
   type SandboxCommandInput,
@@ -41,6 +42,23 @@ import { TERMINAL_CLEANUP } from '../terminal-cleanup';
 import { openSdkPreviewConnection } from '../preview-connection';
 
 const REQUEST_TIMEOUT_MS = 30_000;
+const assessmentPrefix = (id: string) => `/tmp/openmaic-assessment-${id}-`;
+const ASSESSMENT_FILE_RUNNER = String.raw`
+import hashlib, os, stat, sys, tempfile
+path, expected = sys.argv[1:]
+with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'rb') as source:
+    os.unlink(path)
+    if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
+        raise ValueError('Invalid assessment file')
+    data = source.read(${MAX_ASSESSMENT_SCRIPT_BYTES + 1})
+if len(data) > ${MAX_ASSESSMENT_SCRIPT_BYTES} or hashlib.sha256(data).hexdigest() != expected:
+    raise ValueError('Assessment file integrity check failed')
+with tempfile.TemporaryFile() as script:
+    script.write(data)
+    script.seek(0)
+    os.dup2(script.fileno(), 0)
+    os.execl('/bin/sh', 'sh', '-s')
+`;
 
 /** Candidate adapter; account/template compatibility must be established before rollout. */
 export class E2BCompatibleSandboxProvider implements SandboxProvider {
@@ -172,6 +190,12 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
 
   private fileFailure(error: unknown): never {
     if (error instanceof CommandExitError) {
+      if (error.exitCode === 48)
+        throw new SandboxError(
+          'SANDBOX_FILE_TOO_LARGE',
+          413,
+          'Text snapshots are limited to 1 MiB.',
+        );
       if (error.exitCode === 44)
         throw new SandboxError('SANDBOX_FILE_NOT_FOUND', 404, 'Project file not found.');
       if (error.exitCode === 47)
@@ -221,6 +245,65 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
     }
   }
 
+  async readTexts(
+    resourceId: string,
+    operationId: string,
+    paths: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<Record<string, string>> {
+    const relative = paths.map(workspacePath);
+    if (relative.length > 256 || new Set(relative).size !== relative.length)
+      throw new SandboxError('SANDBOX_ARCHIVE_INVALID', 422, 'Invalid text snapshot paths.');
+    if (!relative.length) return {};
+    const sandbox = await this.connect(resourceId, operationId, signal);
+    const transfer = `/tmp/openmaic-file-${randomUUID()}`;
+    try {
+      // Transfer the bounded path list rather than growing the shell command with source count.
+      await checkpointIO(
+        () =>
+          sandbox.files.write(transfer + '.paths', JSON.stringify(relative), {
+            requestTimeoutMs: REQUEST_TIMEOUT_MS,
+            signal,
+          }),
+        signal,
+      );
+      await checkpointIO(
+        () =>
+          sandbox.commands.run(
+            `python3 -c ${shellQuote(WORKSPACE_FILE_RUNNER)} read_many eA== ${shellQuote(transfer)}`,
+            { timeoutMs: 30_000, requestTimeoutMs: 35_000, signal },
+          ),
+        signal,
+      );
+      // JSON escaping can expand 1 MiB of source text up to sixfold, plus bounded paths.
+      const text = await this.readConnectedUtf8(sandbox, transfer, 8 * MAX_TEXT_FILE_BYTES, signal);
+      const result: unknown = JSON.parse(text);
+      if (
+        !result ||
+        typeof result !== 'object' ||
+        Array.isArray(result) ||
+        Object.keys(result).length !== relative.length ||
+        relative.some(
+          (path) =>
+            !Object.hasOwn(result, path) ||
+            typeof (result as Record<string, unknown>)[path] !== 'string',
+        )
+      )
+        throw new SandboxError('SANDBOX_ARCHIVE_INVALID', 422, 'Invalid text snapshot result.');
+      return Object.fromEntries(
+        paths.map((path, index) => [path, (result as Record<string, string>)[relative[index]]]),
+      );
+    } catch (error) {
+      return this.fileFailure(error);
+    } finally {
+      await Promise.all([
+        this.removeTransfer(sandbox, transfer, signal),
+        this.removeTransfer(sandbox, transfer + '.paths', signal),
+      ]);
+      signal?.throwIfAborted();
+    }
+  }
+
   private async readUtf8(
     resourceId: string,
     operationId: string,
@@ -229,6 +312,15 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
     signal?: AbortSignal,
   ): Promise<string> {
     const sandbox = await this.connect(resourceId, operationId, signal);
+    return this.readConnectedUtf8(sandbox, path, limit, signal);
+  }
+
+  private async readConnectedUtf8(
+    sandbox: Sandbox,
+    path: string,
+    limit: number,
+    signal?: AbortSignal,
+  ): Promise<string> {
     const local = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
     const readSignal = signal ? AbortSignal.any([signal, local]) : local;
     try {
@@ -303,9 +395,49 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
 
   async startCommand(resourceId: string, operationId: string, input: SandboxCommandInput) {
     const sandbox = await this.connect(resourceId, operationId);
+    await this.runSupervisedCommand(sandbox, input);
+  }
+
+  async prepareAssessmentCommand(
+    resourceId: string,
+    operationId: string,
+    input: SandboxCommandInput,
+  ) {
+    const sandbox = await this.connect(resourceId, operationId);
+    const path = `${assessmentPrefix(input.id)}${randomUUID()}.sh`;
+    const digest = createHash('sha256').update(input.command).digest('hex');
+    try {
+      await sandbox.files.write(path, input.command, { requestTimeoutMs: REQUEST_TIMEOUT_MS });
+    } catch (error) {
+      await sandbox.files.remove(path, { requestTimeoutMs: REQUEST_TIMEOUT_MS }).catch(() => {});
+      throw error;
+    }
+    // Leave the file in place on an ambiguous start response. The launched
+    // process consumes it, or cancellation removes it if no process claims it.
+    return () =>
+      this.runSupervisedCommand(
+        sandbox,
+        {
+          ...input,
+          command: `exec python3 -c ${shellQuote(ASSESSMENT_FILE_RUNNER)} ${shellQuote(path)} ${shellQuote(digest)}`,
+        },
+        path,
+      );
+  }
+
+  private async runSupervisedCommand(
+    sandbox: Sandbox,
+    input: SandboxCommandInput,
+    assessmentPath?: string,
+  ) {
     const spec = Buffer.from(JSON.stringify(input)).toString('base64');
+    // Cancellation may have finished before an in-flight upload completes.
+    // Clean that late file before the supervisor exits on its existing claim.
+    const cleanup = assessmentPath
+      ? `if [ -e ${shellQuote(`/tmp/openmaic-commands/${input.id}/cancel`)} ]; then rm -f -- ${shellQuote(assessmentPath)}; fi; `
+      : '';
     const handle = await sandbox.commands.run(
-      `python3 -u -c ${shellQuote(COMMAND_RUNNER)} ${shellQuote(spec)}`,
+      `${cleanup}python3 -u -c ${shellQuote(COMMAND_RUNNER)} ${shellQuote(spec)}`,
       {
         background: true,
         timeoutMs: Math.min(input.timeoutMs + 15_000, 3_600_000),
@@ -373,10 +505,10 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
     const spec = Buffer.from(
       JSON.stringify({ id, command: ':', cwd: WORKSPACE_ROOT, timeoutMs: 100 }),
     ).toString('base64');
-    await sandbox.commands.run(`python3 -c ${shellQuote(COMMAND_RUNNER)} ${shellQuote(spec)}`, {
-      timeoutMs: 5000,
-      requestTimeoutMs: REQUEST_TIMEOUT_MS,
-    });
+    await sandbox.commands.run(
+      `rm -f -- ${shellQuote(assessmentPrefix(id))}*.sh; exec python3 -c ${shellQuote(COMMAND_RUNNER)} ${shellQuote(spec)}`,
+      { timeoutMs: 5000, requestTimeoutMs: REQUEST_TIMEOUT_MS },
+    );
   }
 
   async desktopScreenshot(resourceId: string, operationId: string): Promise<Uint8Array> {

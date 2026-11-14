@@ -10,7 +10,11 @@ import {
 } from './report-share';
 
 export const shareImageSize = [reportShareLayout.width, reportShareLayout.height] as const;
-const primaryFont = '"Inter Variable", "Noto Sans SC", system-ui, sans-serif';
+// No named CJK web font: the page declares `Noto Sans SC` over a whole
+// self-hosted file (`@openmaic/renderer/picker-fonts.css`), and the load below
+// would wait for that download, even for text with no Chinese in it. System
+// CJK faces render the card at once.
+const primaryFont = '"Inter Variable", system-ui, sans-serif';
 const fallbackFont = 'system-ui, sans-serif';
 async function loadImage(src: string) {
   const img = new Image();

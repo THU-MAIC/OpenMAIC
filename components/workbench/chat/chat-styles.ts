@@ -24,15 +24,19 @@ export const wbStyles = {
   userBubble: {
     row: 'flex justify-end',
     bubble:
+      'flex max-w-[85%] flex-col gap-1.5 whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-violet-100 px-3.5 py-2.5 text-[length:var(--wb-text-base)] leading-relaxed text-slate-900 [overflow-wrap:anywhere] dark:bg-violet-500/20 dark:text-slate-100',
+    // The solid fill, for a surface that sets its own `--primary` (PBL's green). It
+    // shows text and skill chips only: its caller sends no attachments.
+    bubblePrimary:
       'flex max-w-[85%] flex-col gap-1.5 whitespace-pre-wrap break-words rounded-2xl rounded-tr-md bg-primary px-3 py-2 text-[length:var(--wb-text-base)] leading-relaxed text-primary-foreground [overflow-wrap:anywhere]',
     materials: 'flex flex-wrap gap-1',
     // One chip skin for both kinds of attachment inside the bubble (a file, an
     // element reference): 7px radius to match the composer's pill geometry, but
-    // drawn in on-primary tints instead of the composer's tones.
+    // drawn in tints of the bubble's own violet instead of the composer's tones.
     materialChip:
-      'inline-flex max-w-[220px] items-center gap-1 rounded-[7px] border border-primary-foreground/20 bg-primary-foreground/10 px-1.5 py-0.5 text-[11px] leading-4 text-primary-foreground',
+      'inline-flex max-w-[220px] items-center gap-1 rounded-[7px] border border-violet-300/60 bg-white/60 px-1.5 py-0.5 text-[11px] leading-4 text-slate-700 dark:border-violet-300/25 dark:bg-white/10 dark:text-slate-200',
     chipOrdinal:
-      'grid size-[14px] shrink-0 place-items-center rounded-full bg-primary-foreground/20 font-mono text-[9px] font-semibold tabular-nums',
+      'grid size-[14px] shrink-0 place-items-center rounded-full bg-violet-200 font-mono text-[9px] font-semibold tabular-nums dark:bg-violet-400/30',
   },
   /**
    * System notice — everything the run says about itself (a recovery, a queued
@@ -89,36 +93,45 @@ export const wbStyles = {
    */
   courseLink: {
     /**
-     * One resting look and one hover look, for every card. There is no
-     * `data-[state=…]` ramp any more: the accent border / wash / text that a
-     * background or active tab used to take was a second thing to read on a row
-     * whose subject is a course name, and it described the right pane rather
-     * than the card.
+     * The course card: one resting look and one hover look, for every card --
+     * the cards under an answer and the card under a paragraph that named a
+     * course are the same object. Hover lifts it a pixel and draws the accent
+     * border, so it reads as something that opens.
      */
-    base: 'group/clink inline-flex max-w-full items-center gap-1.5 rounded-[var(--wb-radius-sm)] border border-[var(--wb-line)] bg-[var(--wb-surface)] px-2 py-[2px] align-[-4px] text-[length:var(--wb-text-sm)] font-medium text-[var(--wb-text)] transition-colors duration-[var(--wb-duration-base)] hover:border-[var(--wb-accent)] hover:bg-[var(--wb-accent-soft)] hover:text-[var(--wb-accent)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus-ring)] motion-reduce:transition-none',
-    block:
-      'mt-2 flex w-full max-w-[440px] gap-2 rounded-[var(--wb-radius-md)] px-2.5 py-2 text-left',
+    base: 'group/clink flex min-w-0 items-center rounded-[var(--wb-radius-md)] border border-[var(--wb-line)] bg-[var(--wb-surface)] text-left text-[length:var(--wb-text-sm)] font-medium text-[var(--wb-text)] transition-[border-color,background-color,box-shadow,transform] duration-[var(--wb-duration-base)] hover:-translate-y-px hover:border-[var(--wb-accent)] hover:shadow-[0_2px_8px_-2px_color-mix(in_srgb,var(--wb-text)_18%,transparent)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus-ring)] motion-reduce:transition-none motion-reduce:hover:translate-y-0',
+    block: 'mt-2 w-full max-w-[440px] gap-2.5 px-2 py-1.5',
+    /** The cover: the course's first page, as the course library shows it. */
+    thumb:
+      'relative grid h-9 w-16 shrink-0 place-items-center overflow-hidden rounded-[5px] bg-[var(--wb-surface-sunken)] ring-1 ring-[var(--wb-line)]',
     glyph: 'size-[13px] shrink-0 text-[var(--wb-accent)]',
+    body: 'flex min-w-0 flex-1 flex-col gap-px',
+    name: 'min-w-0 truncate',
+    /** The page count under the name: the quietest type on the card. */
+    pages: 'truncate text-[length:var(--wb-text-xs)] font-normal text-[var(--wb-text-muted)]',
+    /** "Open →": what a press does, said at the far edge. */
+    open: 'ml-auto inline-flex shrink-0 items-center gap-0.5 pl-1 text-[length:var(--wb-text-xs)] font-medium text-[var(--wb-accent)] [&>svg]:transition-transform group-hover/clink:[&>svg]:translate-x-0.5',
     /**
      * One exchange's cards, stacked. No `gap`: `block` already carries its own
      * top margin, so one spacing rule owns the distance between a card and
-     * whatever is above it — the prose, or the card before it.
+     * whatever is above it -- the prose, or the card before it.
      */
     set: 'flex flex-col',
+    /** The cards under a paragraph that named them: the prose's own gap below. */
+    mentionSet: 'mb-3 flex flex-col last:mb-0',
     /**
      * The `+N` disclosure. The SAME card box, deliberately quieter: it is not a
      * classroom, it is the rest of the list, so nothing about it is accent until
      * hover (which `base` already provides).
      */
     more: 'text-[var(--wb-text-muted)] [&>svg]:text-[var(--wb-text-faint)]',
-    name: 'min-w-0 truncate',
     /**
-     * The page count, at the far edge — `ml-auto` because it is now the only
-     * thing after the name, and the row still has to put it against the right
-     * rule rather than beside the title. The quietest type on the card.
+     * A course named mid-sentence: a link in the sentence and nothing more --
+     * the card that opens it stands under the paragraph. Same size and line
+     * as the words around it; the accent and a hover underline say it is
+     * pressable.
      */
-    pages:
-      'ml-auto shrink-0 text-[length:var(--wb-text-xs)] font-normal text-[var(--wb-text-muted)] group-hover/clink:text-[var(--wb-accent)]',
+    inline:
+      'inline cursor-pointer border-0 bg-transparent p-0 align-baseline [font-family:inherit] text-[length:inherit] font-medium leading-[inherit] text-[var(--wb-accent)] underline-offset-2 decoration-[color-mix(in_srgb,var(--wb-accent)_50%,transparent)] hover:underline focus-visible:rounded-[3px] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus-ring)]',
   },
   thinking: {
     box: 'group/thinking m-0 overflow-hidden rounded-[var(--wb-radius-md)] border border-[var(--wb-line)] bg-[var(--wb-surface)] transition-colors duration-[var(--wb-duration-base)] data-[stack=first]:rounded-none data-[stack=first]:border-0 data-[stack=middle]:rounded-none data-[stack=middle]:border-0 data-[stack=middle]:border-t data-[stack=middle]:border-[var(--wb-line)] data-[stack=last]:rounded-none data-[stack=last]:border-0 data-[stack=last]:border-t data-[stack=last]:border-[var(--wb-line)]',
@@ -133,8 +146,8 @@ export const wbStyles = {
       'm-0 max-h-72 overflow-y-auto whitespace-pre-wrap break-words font-inherit text-[length:var(--wb-text-sm)] leading-relaxed text-[var(--wb-text-muted)]',
   },
   toolCard: {
-    box: 'group/tool m-0 overflow-hidden rounded-[var(--wb-radius-md)] border border-[var(--wb-line)] bg-[var(--wb-surface)] transition-colors duration-[var(--wb-duration-base)] data-[kind=skill]:border-[color-mix(in_srgb,var(--wb-accent)_40%,var(--wb-line))] data-[kind=skill]:bg-[var(--wb-accent-soft)] data-[status=failed]:border-[var(--wb-danger-line)] data-[stack=first]:rounded-none data-[stack=first]:border-0 data-[stack=middle]:rounded-none data-[stack=middle]:border-0 data-[stack=middle]:border-t data-[stack=middle]:border-[var(--wb-line)] data-[stack=last]:rounded-none data-[stack=last]:border-0 data-[stack=last]:border-t data-[stack=last]:border-[var(--wb-line)]',
-    head: 'flex min-h-[var(--wb-bar-min-h)] w-full cursor-pointer items-center gap-[var(--wb-bar-gap)] border-0 bg-transparent px-[var(--wb-bar-pad-x)] text-left text-[length:var(--wb-text-sm)] text-[var(--wb-text)] hover:not-disabled:bg-[var(--wb-surface-sunken)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus-ring)] disabled:cursor-default group-data-[open=true]/tool:bg-[var(--wb-surface-sunken)] group-data-[status=failed]/tool:bg-[var(--wb-danger-soft)]',
+    box: 'group/tool m-0 overflow-hidden rounded-[var(--wb-radius-md)] border border-[var(--wb-line)] bg-[var(--wb-surface)] transition-colors duration-[var(--wb-duration-base)] data-[kind=skill]:border-[color-mix(in_srgb,var(--wb-accent)_40%,var(--wb-line))] data-[kind=skill]:bg-[var(--wb-accent-soft)] data-[stack=first]:rounded-none data-[stack=first]:border-0 data-[stack=middle]:rounded-none data-[stack=middle]:border-0 data-[stack=middle]:border-t data-[stack=middle]:border-[var(--wb-line)] data-[stack=last]:rounded-none data-[stack=last]:border-0 data-[stack=last]:border-t data-[stack=last]:border-[var(--wb-line)]',
+    head: 'flex min-h-[var(--wb-bar-min-h)] w-full cursor-pointer items-center gap-[var(--wb-bar-gap)] border-0 bg-transparent px-[var(--wb-bar-pad-x)] text-left text-[length:var(--wb-text-sm)] text-[var(--wb-text)] hover:not-disabled:bg-[var(--wb-surface-sunken)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus-ring)] disabled:cursor-default group-data-[open=true]/tool:bg-[var(--wb-surface-sunken)]',
     status:
       'inline-flex shrink-0 items-center data-[status=ok]:text-[var(--wb-success)] data-[status=error]:text-[var(--wb-danger)]',
     icon: 'inline-flex shrink-0 items-center text-[var(--wb-text-faint)] group-data-[kind=skill]/tool:text-[var(--wb-accent)]',
@@ -171,7 +184,7 @@ export const wbStyles = {
     head: 'flex items-center gap-1.5 text-[length:var(--wb-text-xs)] font-medium text-[var(--wb-accent)] group-data-[answered=true]/question:font-normal group-data-[answered=true]/question:text-[var(--wb-text-faint)]',
     glyph: 'size-[13px] shrink-0',
     question:
-      'whitespace-pre-wrap break-words text-[length:var(--wb-text-base)] leading-relaxed text-[var(--wb-text)] [overflow-wrap:anywhere] group-data-[answered=true]/question:text-[var(--wb-text-muted)]',
+      'break-words text-[length:var(--wb-text-base)] leading-relaxed text-[var(--wb-text)] [overflow-wrap:anywhere] group-data-[answered=true]/question:text-[var(--wb-text-muted)]',
     options: 'flex flex-wrap gap-1.5',
     // One button skin for both pick modes: `data-picked` is the multi-select
     // checked state, and a disabled button keeps the shape but drops every
@@ -226,7 +239,7 @@ export const wbStyles = {
     // The question is the form's title, so it carries the weight a title does —
     // the one place in the rail where prose is bold.
     question:
-      'max-h-[22vh] overflow-y-auto whitespace-pre-wrap break-words text-[length:var(--wb-text-base)] font-semibold leading-relaxed text-[var(--wb-text)] [overflow-wrap:anywhere]',
+      'max-h-[22vh] overflow-y-auto break-words text-[length:var(--wb-text-base)] leading-relaxed text-[var(--wb-text)] [overflow-wrap:anywhere]',
     rows: 'flex max-h-[34vh] flex-col gap-1 overflow-y-auto',
     /**
      * One row = one decision. The frame lives on the wrapper (not the button)
@@ -274,13 +287,18 @@ export const wbStyles = {
   },
   toolGroup: {
     group:
-      'group/tool-group flex flex-col overflow-hidden rounded-[var(--wb-radius-md)] border border-[var(--wb-line)] bg-[var(--wb-surface)] data-[kind=skill]:border-[color-mix(in_srgb,var(--wb-accent)_40%,var(--wb-line))] data-[kind=skill]:bg-[var(--wb-accent-soft)]',
+      'group/tool-group flex flex-col overflow-hidden rounded-[var(--wb-radius-md)] border border-[var(--wb-line)] bg-[var(--wb-surface)]',
     head: 'flex h-8 w-full cursor-pointer select-none items-center gap-[var(--wb-bar-gap)] border-0 bg-transparent px-[var(--wb-bar-pad-x)] text-left text-[length:var(--wb-text-sm)] text-[var(--wb-text-muted)] hover:bg-[var(--wb-surface-sunken)] hover:text-[var(--wb-text)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus-ring)]',
-    icon: 'inline-flex shrink-0 items-center text-[var(--wb-text-faint)] group-data-[kind=skill]/tool-group:text-[var(--wb-accent)]',
-    title:
-      'font-medium text-[var(--wb-text)] group-data-[kind=skill]/tool-group:text-[var(--wb-accent)]',
-    meta: 'text-[var(--wb-text-faint)]',
-    car: 'ml-auto inline-flex shrink-0 items-center text-[var(--wb-text-faint)] transition-transform duration-[var(--wb-duration-base)] group-data-[open=true]/tool-group:rotate-90',
+    icon: 'inline-flex shrink-0 items-center text-[var(--wb-text-faint)]',
+    title: 'min-w-0 truncate font-medium text-[var(--wb-text)]',
+    meta: 'shrink-0 text-[var(--wb-text-faint)]',
+    // The step under way, the only thing the line says while it runs.
+    live: 'min-w-0 truncate font-medium text-[var(--wb-text)]',
+    failed: 'shrink-0 text-[var(--wb-text-faint)]',
+    reason:
+      'min-w-0 flex-1 truncate pl-0.5 text-[length:var(--wb-text-xs)] text-[var(--wb-text-faint)]',
+    time: 'shrink-0 pl-1 text-[length:var(--wb-text-xs)] tabular-nums text-[var(--wb-text-faint)]',
+    car: 'inline-flex shrink-0 items-center text-[var(--wb-text-faint)] transition-transform duration-[var(--wb-duration-base)] group-data-[open=true]/tool-group:rotate-90',
     // The fold: one clipped grid row going 0fr → 1fr. `1fr` in an auto-height
     // grid resolves to the content's own height, so the transition needs no
     // measured pixel value and no max-height guess.
@@ -301,8 +319,13 @@ export const wbStyles = {
       'size-[5px] rounded-full bg-[var(--wb-text-faint)] animate-[wb-wait-pulse_1.2s_ease-in-out_0.3s_infinite] motion-reduce:animate-none motion-reduce:opacity-60',
   },
   composer: {
+    /**
+     * `pb-10` is the toolbar's strip. It belongs to the box, not to the input:
+     * as the input's own bottom padding it only shows at the end of a scroll,
+     * so a long draft scrolled to the middle ran its lines under the buttons.
+     */
     inputBox:
-      'relative rounded-2xl border border-[var(--wb-line)] bg-[var(--wb-surface)] shadow-[0_10px_32px_-14px_rgba(15,23,42,0.22)] transition duration-150 focus-within:border-[var(--wb-accent)] focus-within:shadow-[var(--wb-focus-ring),0_10px_32px_-14px_rgba(15,23,42,0.22)] dark:shadow-[0_12px_36px_-12px_rgba(0,0,0,0.55)]',
+      'relative rounded-2xl border pb-10 border-[var(--wb-line)] bg-[var(--wb-surface)] shadow-[0_10px_32px_-14px_rgba(15,23,42,0.22)] transition duration-150 focus-within:border-[var(--wb-accent)] focus-within:shadow-[var(--wb-focus-ring),0_10px_32px_-14px_rgba(15,23,42,0.22)] dark:shadow-[0_12px_36px_-12px_rgba(0,0,0,0.55)]',
     /**
      * Everything attached to the next message, INSIDE the box it is attached to.
      *
@@ -320,7 +343,7 @@ export const wbStyles = {
      */
     context: 'max-h-[92px] overflow-y-auto px-2 pb-1 pt-2',
     input:
-      'box-border block min-h-[62px] w-full resize-none rounded-lg border-0 bg-transparent px-3 pb-10 pt-2.5 font-inherit text-[length:var(--wb-text-sm)] leading-relaxed text-[var(--wb-text)] outline-none placeholder:text-[var(--wb-text-faint)] disabled:opacity-60',
+      'box-border block max-h-[164px] min-h-[22px] w-full rounded-lg border-0 bg-transparent px-3 pb-1 pt-2.5 text-[length:var(--wb-text-sm)] leading-relaxed text-[var(--wb-text)] [--composer-placeholder:var(--wb-text-faint)]',
     actionsLeft: 'absolute bottom-2 left-2 z-10 flex items-center',
     actionsRow: 'absolute bottom-2 right-2 z-10 flex items-center',
     sendAction:
@@ -349,7 +372,7 @@ export const wbStyles = {
  * (once on the scroll viewport, once on the composer footer) and the two were
  * expected to stay equal by hand.
  */
-const WB_CHAT_GUTTER = 'px-3';
+const WB_CHAT_GUTTER = 'px-5';
 
 /**
  * THE one column class that decides where the transcript and the composer begin.
@@ -379,14 +402,14 @@ const WB_CHAT_GUTTER = 'px-3';
  * by hand.
  *
  * `760px` is the reading measure of the text itself; the cap carries the gutter
- * on top of it (760 + 2 * 12) so the measure stays exactly what it was.
+ * on top of it (760 + 2 * 20) so the measure stays exactly what it was.
  *
  * @param measured Full-width conversation. Beside the classroom the chat is the
  *   flex leftover (min 400), so dragging the splitter moves the border instead
  *   of a right-side gutter — there the column is the pane.
  */
 export function chatColumn(measured: boolean): string {
-  return measured ? `mx-auto w-full max-w-[784px] ${WB_CHAT_GUTTER}` : WB_CHAT_GUTTER;
+  return measured ? `mx-auto w-full max-w-[800px] ${WB_CHAT_GUTTER}` : WB_CHAT_GUTTER;
 }
 
 /**

@@ -1,0 +1,89 @@
+/* The composer's rich-text input, and its chips (a sent message draws them too). Global: both workbench composers
+   use it, on routes that do not all load the workspace's stylesheet. */
+
+.composer-input {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-y: auto;
+  cursor: text;
+}
+
+.composer-input[contenteditable='false'] {
+  cursor: default;
+}
+
+.composer-input p {
+  margin: 0;
+}
+
+/* `--composer-rows`: how many lines an empty box shows. */
+.composer-input > p:only-child {
+  min-height: calc(var(--composer-rows, 1) * 1lh);
+}
+
+.composer-input p.is-empty::before {
+  float: left;
+  height: 0;
+  color: var(--composer-placeholder, color-mix(in srgb, currentColor 45%, transparent));
+  content: attr(data-placeholder);
+  pointer-events: none;
+}
+
+/* The chip is a word of the sentence. It sits on the line's baseline and its box
+   is no taller than the line, so a line with a chip is the height of one without. */
+.composer-chip {
+  display: inline-flex;
+  max-width: min(100%, 20em);
+  align-items: baseline;
+  gap: 4px;
+  padding: 1px 8px 1px 6px;
+  border-radius: 7px;
+  background: #f3efff;
+  color: #6d28d9;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+  vertical-align: baseline;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.dark .composer-chip {
+  background: rgba(139, 92, 246, 0.2);
+  color: #c4b5fd;
+}
+
+/* In a sent message: the bubble is itself a violet tint, so the chip stands on it
+   in white, and in a lighter translucent violet on the dark one. */
+.composer-chip[data-surface='bubble'] {
+  background: #fff;
+  color: #6d28d9;
+}
+
+.dark .composer-chip[data-surface='bubble'] {
+  background: rgba(196, 181, 253, 0.18);
+  color: #ddd6fe;
+}
+
+/* On a solid primary bubble the chip takes the bubble's own pair, reversed, which
+   holds in both themes because `--primary` flips with them. */
+[data-tone='primary'] .composer-chip[data-surface='bubble'] {
+  background: var(--primary-foreground);
+  color: var(--primary);
+}
+
+.composer-chip-label {
+  min-width: 0;
+  overflow: clip;
+  overflow-clip-margin: 2px;
+  text-overflow: ellipsis;
+}
+
+.composer-chip-icon {
+  flex-shrink: 0;
+  align-self: center;
+  width: 13px;
+  height: 13px;
+  /* A CJK label's ink centres a little below its line box; the icon follows it. */
+  transform: translateY(0.35px);
+}

@@ -6,6 +6,100 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.5.0-rc.2] - 2026-11-12
+
+1.5.0-rc.2 is the second release candidate for 1.5.0. It polishes the workbench (drag to fold the rail and the classroom dock, clearer chat status, no duplicate guide course after sign-in), gives Native classroom agents fresh whiteboard state, and fixes PBL previews, assessments and history. No upgrade conditions over 1.5.0-rc.1: no new migrations, and the 1.5.0-rc.1 **Breaking Changes** still apply when upgrading from 1.4.x.
+
+### Behavior Changes
+
+- Classroom: Native classroom agents (Director and Child) get a fresh whiteboard state before every model round. Where `RENDER_SERVICE_URL` is set, the service passes its `GET /health` check and the model explicitly supports vision, each request also carries at most one image of the current board (5 s per render, text-only after the first failure), which adds image input to those model calls. Successful board writes now return the next expected sequence, and `wb_draw_text` takes plain text only. The classroom skill directory can be set with `OPENMAIC_CLASSROOM_SKILLS_DIR`. [#2216](https://github.com/THU-MAIC/OpenMAIC/pull/2216), [#2232](https://github.com/THU-MAIC/OpenMAIC/pull/2232), [#2237](https://github.com/THU-MAIC/OpenMAIC/pull/2237) (by @LING-6150)
+- Agent runtime: `render_scene_preview` is offered to the agent only when the render service passes its health check, instead of whenever `RENDER_SERVICE_URL` is set. [#2119](https://github.com/THU-MAIC/OpenMAIC/pull/2119) (by @mahmud035)
+
+### Features
+
+- Workbench: the rail and the classroom dock fold and unfold by dragging their edge, within one gesture; the remembered width and height are kept. [#2239](https://github.com/THU-MAIC/OpenMAIC/pull/2239)
+- PBL v3: the project overview sits in the conversation with the goal, the finished work and the milestone roadmap; the task drawer is available from each milestone's first step, and the next step is one full-width button above the composer. Course packages may add an optional `presentation.hero.finishedWork`. [#2230](https://github.com/THU-MAIC/OpenMAIC/pull/2230) (by @Irisdai517)
+
+### Bug Fixes
+
+- Workbench: a queued request shows its prompt and says it is queued; the open chat keeps its spinner in the rail; a course still being built by another conversation no longer shows the course end; the course chip names a course outside the viewer's list. [#2240](https://github.com/THU-MAIC/OpenMAIC/pull/2240)
+- Workbench: signing in no longer adds a second guide course next to the one the visitor already had, and the Edit guide works in full screen. [#2241](https://github.com/THU-MAIC/OpenMAIC/pull/2241)
+- Workbench: small polish: no duplicate page count in the full-screen header, no subtitle on My courses, tooltips open on keyboard focus only, external rail links show an arrow, and `ask_user` rejects double-escaped line breaks. [#2243](https://github.com/THU-MAIC/OpenMAIC/pull/2243)
+- PBL: standalone previews wait for the application to be running on a cold start instead of showing an unusable retry. [#2227](https://github.com/THU-MAIC/OpenMAIC/pull/2227) (by @Irisdai517)
+- PBL: isolated assessments larger than the sandbox command budget run through a staged script instead of failing with a source-size error. [#2228](https://github.com/THU-MAIC/OpenMAIC/pull/2228) (by @Irisdai517)
+- PBL v3: History lists conversations from earlier milestones again, grouped by milestone. [#2229](https://github.com/THU-MAIC/OpenMAIC/pull/2229) (by @Irisdai517)
+
+### Packages
+
+- No package changes; all packages are unchanged from 1.5.0-rc.1.
+
+### Known issues
+
+- The 1.5.0-rc.1 known issues still apply.
+
+## [1.5.0-rc.1] - 2026-11-10
+
+1.5.0-rc.1 is the first release candidate for 1.5.0: **a brand-new home, redesigned end to end.** With the workbench enabled, the home page is the workbench. A request shows a live preview beside the conversation from the moment it is sent, and the preview becomes the course once its first page is saved. A rail without a top bar holds **My courses** (folders, pinning, thumbnails), the knowledge base and a chat list that shows what is running, waiting for an answer or failed. One full-screen classroom handles both learning and editing, and the agent settles one style per course and briefs each slide's design apart from its content. The workbench stays off by default (`NEXT_PUBLIC_WORKBENCH_ENABLED`), and without it the classic home page is unchanged. Some classroom changes apply to every deployment: interactive pages fill the classroom pane and shrink to fit instead of scrolling, a course ends on a closing card instead of an extra completion page, and the dock under the stage can be resized and folded. Read **Breaking Changes** before upgrading: the workbench flag is renamed, and deployments that run the agent runtime get a one-way schema migration.
+
+### Breaking Changes
+
+- **`NEXT_PUBLIC_PRO_WORKBENCH_ENABLED` is renamed to `NEXT_PUBLIC_WORKBENCH_ENABLED`.** The previous name is still read when the new one is unset or empty, until its removal in 1.6.0, and the server logs a deprecation warning at startup when it is used. Like every `NEXT_PUBLIC_*` flag it is compiled into the build, so switching to the new name requires a rebuild; the Docker build and `docker-compose.yml` pass both names. [#2094](https://github.com/THU-MAIC/OpenMAIC/pull/2094) (by @LING-6150)
+- **With the agent runtime enabled, the upgrade is one-way: stop every 1.4.x instance first, and plan rollback as a database restore.** `@openmaic/storage` 0.39.4 adds agent-session migration v4 (`open_question_seq`), applied when the agent runtime first opens its session store. It is additive: one nullable `INTEGER` column on `agent_sessions`, backfilled once from the existing event logs in the same transaction, so the first start reads the whole `agent_session_events` table once. [#2094](https://github.com/THU-MAIC/OpenMAIC/pull/2094)
+  - Once v4 is applied, a 1.4.x server refuses to start against the database (`SchemaVersionAheadError`), and a 1.4.x replica that is still running drains and exits within about a minute (the schema monitor added in 1.4.0). Roll back by restoring the previous database state, not by restarting the old version.
+  - A host that provisions `AGENT_SESSION_PG_SCHEMA` through its own migrations must add the nullable `open_question_seq INTEGER` column to `agent_sessions` before upgrading.
+  - Deployments that never enable the agent runtime do not apply this migration.
+
+### Behavior Changes
+
+These apply to every deployment, with or without the workbench.
+
+- Interactive pages: pages fill the classroom pane instead of sitting in a centered 16:9 box. The page's viewport is at least 1280×720 CSS pixels and takes the pane's aspect ratio, growing in height or width; highlights, the element picker and the runtime-error banner follow the new frame. Pages laid out for exactly 1280×720 mostly stretch to fill; a page with a fixed-size layout shows empty space around its content inside the frame. [#2094](https://github.com/THU-MAIC/OpenMAIC/pull/2094)
+- Interactive pages: a page taller than its frame shrinks to fit instead of scrolling, down to three quarters of its normal scale; past that it keeps that scale and the frame shows a small **More below** cue that scrolls the page. The platform measures and scales the page, with no change to generation prompts. Images, canvases, SVG and video get a `max-width: 100%` default that a page's own styles override. Both changes apply in the classroom and in the exported standalone HTML player. [#2094](https://github.com/THU-MAIC/OpenMAIC/pull/2094)
+- Classroom: the course-end completion page is replaced by a closing card over the last page, which stays as it was underneath. The card shows a medal, the pages learned, the course title and the quiz score, and offers up to two next steps (do an unanswered quiz, review a wrong answer, start over). Only graded quizzes count toward the score: a quiz nobody handed in is offered instead of counted wrong. It opens when the last page finishes, on Next, or once a quiz on the last page is handed in, and waits while a course is still being built. The pager no longer counts the completion page as an extra page. [#2094](https://github.com/THU-MAIC/OpenMAIC/pull/2094)
+- Classroom: the dock under the stage can be resized (drag its top edge or use the arrow keys) and folded. Its height and fold are kept in settings and shared by Learn and Edit. With the dock folded, the conversation stays over the stage: the teacher's bubbles bottom-left, the students' and the learner's bottom-right, with voice, text input and suggested replies. The speech bubble grows with the dock, and on the control bar the dock fold moves to the left of full screen. [#2094](https://github.com/THU-MAIC/OpenMAIC/pull/2094)
+- Classroom: a save the server refuses now shows an error instead of looking saved. Where the workbench is part of the build, someone viewing a course they do not own also finds a note in the export menu on how to get an editable copy (download the classroom ZIP, then import it in My courses); it is hidden for owners and for courses with PBL scenes, whose package only the owner can export. [#2094](https://github.com/THU-MAIC/OpenMAIC/pull/2094)
+- Editor: where only the classroom editor is enabled (`NEXT_PUBLIC_MAIC_EDITOR_ENABLED` without the workbench), the classroom's edit switch is labelled **Edit** instead of **Pro**. [#2094](https://github.com/THU-MAIC/OpenMAIC/pull/2094) (by @LING-6150)
+
+### Features
+
+All of these are part of the workbench and appear only where it is enabled.
+
+- **The home page is the workbench.** `/` renders the workspace (also at `/workspace`), with its rail folded for anyone who has not chosen otherwise; with the workbench disabled, `/` renders the classic home page unchanged. The separate "Pro mode" is retired: the PRO badge, the home ↔ workspace transition and the Exit Pro control are gone. [#2094](https://github.com/THU-MAIC/OpenMAIC/pull/2094) (by @LING-6150)
+- **From request to course in one place.** A new conversation shows its request preview in the right pane from the moment it is sent, and hands it to the course tab when the first page is saved. A conversation started beside a course, one that @-names an existing course, and a later request of a conversation that already has its course work on that course and show no preview. [#2202](https://github.com/THU-MAIC/OpenMAIC/pull/2202)
+- **A shell without a top bar.** The rail holds the logo and fold, **New chat** (Cmd/Ctrl+J), **Search** (Cmd/Ctrl+K: conversations, courses, knowledge-base materials and quick actions, by name), the destinations **My courses** and **Knowledge base**, and the chat list, which loads more rows as it scrolls. An account block at its foot opens a menu with an inline profile editor that saves as you type, settings, language, theme (light, dark, system), the getting-started and editing tours, About, Docs and GitHub with the repository's star count. Docs points at `/docs` on the same origin unless the build sets `NEXT_PUBLIC_DOCS_URL`. The folded rail shows the same items as icons, and pages in the main area share one `?view=` parameter. [#2094](https://github.com/THU-MAIC/OpenMAIC/pull/2094)
+- **Chat status at a glance.** Each conversation in the rail shows one mark: running, queued (a still clock), waiting for your answer (when the agent ended its run on a question, until it is answered), or failed; otherwise its relative time. The waiting mark comes from the server, so it is right on every device and updates live. [#2094](https://github.com/THU-MAIC/OpenMAIC/pull/2094)
+- **My courses.** A new page lists folders and courses together by recent activity (a folder by its newest course), as cards with course thumbnails, and loads more as it scrolls. Folders are created inline; courses are dragged into folders and reordered; folders and courses can be pinned and lead the list. Pins and the manual order are kept per browser. [#2094](https://github.com/THU-MAIC/OpenMAIC/pull/2094)
+- **Browse a course, then edit it with AI.** A course opened from My courses or search fills the right side with the chat folded. **Edit with AI** in its header opens an empty conversation with the course as an @ mention in the composer; sent with the mention, the conversation works on that course, and with it removed it is an ordinary new conversation. A course opened from a conversation keeps that conversation beside it. [#2094](https://github.com/THU-MAIC/OpenMAIC/pull/2094)
+- **One full-screen classroom, editing included.** The classroom pane's ⛶ fills the window and keeps a header: the course and page on the left, and in the same corner as ⛶ the Learn | Edit switch and a collapse button that returns to the split view with the course still open; Esc does the same. [#2094](https://github.com/THU-MAIC/OpenMAIC/pull/2094)
+- **The classroom page wears the same header.** In workbench builds, `/classroom/[id]` shows the full-screen header for owners and viewers. Owners get Learn | Edit and the collapse button, which opens the course in the workspace's classroom pane and replaces **Edit in workspace**; viewers get a **Make your own course** link to the home page and the download menu. A course link opened in the workbench by someone who does not own the course goes to `/classroom/[id]`, and the course is read-only wherever such a viewer lands (no Edit, Edit with AI or editing tour). Builds without the workbench keep the classic classroom header. [#2094](https://github.com/THU-MAIC/OpenMAIC/pull/2094)
+- **One style per course.** `generate_scene` takes a `design` brief for slide pages (style, palette roles, layout regions), kept apart from the page's content; it is passed to the slide generator as direction only, and other page types reject it with `design-requires-slide`. The agent settles one style for the whole course before its first slide, restates it on every slide, and keeps an existing course's style when editing it. The agent also treats a new conversation's opening request as a request for a course (asking once when it cannot tell), saves the first page as early as it can, and makes each page's images just before that page instead of all at once. `@openmaic/generation` 0.3.32. [#2206](https://github.com/THU-MAIC/OpenMAIC/pull/2206)
+- **Guide course and tours.** Each owner's library gets a five-minute course about OpenMAIC the first time it loads, in Chinese for a `zh` interface and English otherwise; it is an ordinary course of theirs, pinned in My courses until unpinned, and stays deleted once deleted. A first-run tour introduces the home page, and an Edit tour runs the first time the owner edits a course; both can be replayed from the account menu. A deployment can turn the guide course off or ship its own through the shell extension slots. [#2094](https://github.com/THU-MAIC/OpenMAIC/pull/2094)
+- **Composer and chat.** @ mentions and skills appear as inline chips in a rich-text composer and in sent messages; attachments show upload and parsing progress; a sent message appears at once. The chat stream groups thinking and tool calls between text and names only the step under way; a tool failure reads as information rather than an alarm; questions render as Markdown; course mentions show as cards that open the course. A new chat focuses the composer. [#2094](https://github.com/THU-MAIC/OpenMAIC/pull/2094)
+- **Shell extension slots** (`lib/workbench/shell-extensions.tsx`). A deployment adds its own rail destinations (pages in the main area or links), account menu entries, an account summary line, an unread badge, its own sign-in identity, a section under the home composer and its own guide course by providing `WorkbenchShellExtensionsProvider` (mounted empty in the root layout), without changing the shell. Nested providers merge. [#2094](https://github.com/THU-MAIC/OpenMAIC/pull/2094)
+
+### Changed
+
+- Editor: Edit mode is aligned with Learn. The script header is part of the control bar, every script action has its own card (a newly added one is revealed), the discussion card names its fields as property rows, the page list is one control in both modes, the legacy editing canvas draws slides the way Learn does, and a page keeps its size when returning from Edit to Learn. This applies wherever the classroom editor is enabled. [#2094](https://github.com/THU-MAIC/OpenMAIC/pull/2094)
+- Workbench: the rail, account menu, home, panes, classroom pane tab strip and chat column are restyled on the existing design tokens, in light and dark. [#2094](https://github.com/THU-MAIC/OpenMAIC/pull/2094)
+- Performance: ECharts loads when a chart first draws, pptxgenjs and temml load when a PowerPoint export starts, and the editor's fonts stay out of a course's own loading; a course's chats are read alongside its document. [#2094](https://github.com/THU-MAIC/OpenMAIC/pull/2094)
+- Docs: the README, configuration and hosting docs drop the "Pro" wording and describe the workbench as the home page. [#2094](https://github.com/THU-MAIC/OpenMAIC/pull/2094) (by @LING-6150)
+
+### Bug Fixes
+
+- PBL v3: when a formal test fails because `PLAN.md` is wrong rather than the code, the repair step lets the learner amend the plan in the IDE or through the Coder. Writer locks still hold during active tests and Agent turns, and the amended plan is tied to the next test run and checkpointed on a pass; code-only failures go straight to a focused source repair. [#2215](https://github.com/THU-MAIC/OpenMAIC/pull/2215) (by @Irisdai517)
+
+### Packages
+
+- `@openmaic/generation` 0.3.32 (was 0.3.31) and `@openmaic/storage` 0.39.4 (was 0.39.3). Other packages are unchanged from 1.4.2.
+
+### Known issues
+
+- A viewer cannot yet copy someone else's course into their own library in one step. Until then, export the classroom ZIP from the classroom page and import it in My courses (courses with PBL scenes excepted). [#2223](https://github.com/THU-MAIC/OpenMAIC/issues/2223)
+- My courses pins and order, the rail fold and the tours' progress are kept per browser and do not follow an account to another device.
+- The workbench layout is designed for desktop widths; on a phone it keeps working but is not adapted.
+- `NEXT_PUBLIC_DOCS_URL` is not passed through the Docker build, so Docker images link Docs to `/docs` on the same origin.
+- The 1.4.0 known issues still apply, except [#2122](https://github.com/THU-MAIC/OpenMAIC/issues/2122), which 1.4.2 resolved.
+
 ## [1.4.2] - 2026-11-09
 
 1.4.2 is a regular patch release. Its main addition is **course-level undo**: one undo/redo line per course that covers manual edits, page add/delete/reorder, narration, titles and agent runs, with buttons in the workbench header and Cmd/Ctrl+Z. It also stops a Director from retrying a failing child agent without end (the 1.4.0 known issue [#2122](https://github.com/THU-MAIC/OpenMAIC/issues/2122)), keeps Pro edits from leaving an interactive page empty, lets `ALLOW_LOCAL_NETWORKS` cover TUN/fake-ip proxies, and carries a batch of PBL v3 fixes plus Java application previews. There are no schema or migration changes over 1.4.1. Read **Behavior Changes** before upgrading: sandboxes are no longer limited to one role, and `ASSET_COLLECTION_GRACE_MS` must stay at 45 minutes or more.

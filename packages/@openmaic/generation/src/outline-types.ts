@@ -96,6 +96,12 @@ export interface SceneOutline {
   title: string;
   description: string;
   keyPoints: string[];
+  /**
+   * Slide only: a designer brief for the page's look (what it shows at a
+   * glance, visual style, layout regions). Direction for the generator, never
+   * page text; content stays in `description` and `keyPoints`.
+   */
+  design?: string;
   teachingObjective?: string;
   estimatedDuration?: number;
   order: number;

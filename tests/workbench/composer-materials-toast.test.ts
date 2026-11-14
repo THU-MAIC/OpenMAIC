@@ -89,6 +89,9 @@ async function mountComposer(locale: string, fetchImpl: typeof fetch) {
   vi.stubGlobal('fetch', fetchImpl);
   vi.stubGlobal('localStorage', localStorageStub);
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  // Uploads report progress through XMLHttpRequest when the page has it; here
+  // they go through the fetch mock instead.
+  vi.stubGlobal('XMLHttpRequest', undefined);
   localStorageStub.setItem(LOCALE_STORAGE_KEY, locale);
 
   const modules = await loadModules();
@@ -303,4 +306,110 @@ describe('composer material upload toasts', () => {
     resolveRuntime(Response.json({ enabled: false }));
     await runtime;
   });
+});
+
+describe('composer material progress and recovery', () => {
+  let dispose: (() => Promise<void>) | null = null;
+
+  afterEach(async () => {
+    await dispose?.();
+    dispose = null;
+    localStorageStub.clear();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  /** Flush React (state set inside one `act` lands when it ends) until `check` holds. */
+  const until = (act: (fn: () => Promise<void>) => Promise<void>, check: () => void) =>
+    vi.waitFor(
+      async () => {
+        await act(async () => {});
+        check();
+      },
+      { timeout: 5000 },
+    );
+
+  const staged = {
+    materialId: 'mat_00000000000000000000000001',
+    originalName: 'notes.pdf',
+    bytes: 4,
+    mime: 'application/pdf',
+    extraction: { status: 'pending' },
+  };
+
+  it('keeps a failed upload with its reason and sends it again on retry', async () => {
+    let posts = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/agent/runtime')) return Response.json({ enabled: true });
+      if (url.includes('/api/materials/mat_')) {
+        return Response.json({ material: { ...staged, extraction: { status: 'done' } } });
+      }
+      if (url.includes('/api/materials')) {
+        posts += 1;
+        return posts === 1
+          ? Response.json({ error: 'raw' }, { status: 415 })
+          : Response.json(staged, { status: 201 });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const mounted = await mountComposer('zh-CN', fetchMock);
+    dispose = mounted.dispose;
+    await until(mounted.act, () => expect(mounted.sink.current?.enabled).toBe(true));
+    await mounted.act(async () => mounted.sink.current?.addFiles([pdfFile()]));
+    await until(mounted.act, () => expect(mounted.sink.current?.failed).toHaveLength(1));
+    const failed = mounted.sink.current!.failed[0]!;
+    expect(failed.reason).toBe(STATUS_TOAST[415]['zh-CN']);
+
+    await mounted.act(async () => mounted.sink.current?.retryFailed(failed.id));
+    await until(mounted.act, () => expect(mounted.sink.current?.materials).toHaveLength(1));
+    expect(posts).toBe(2);
+    expect(mounted.sink.current?.failed).toEqual([]);
+  });
+
+  it('follows a staged upload while it is parsed, and parses a failed one again', async () => {
+    let reads = 0;
+    let reparses = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/agent/runtime')) return Response.json({ enabled: true });
+      if (url.endsWith('/extraction') && init?.method === 'POST') {
+        reparses += 1;
+        return Response.json({ ok: true });
+      }
+      if (url.includes('/api/materials/mat_')) {
+        reads += 1;
+        const extraction =
+          reads === 1
+            ? { status: 'running' }
+            : reads === 2
+              ? { status: 'failed', reasonCode: 'no_text_extracted', error: 'raw' }
+              : { status: 'done' };
+        return Response.json({ material: { ...staged, extraction } });
+      }
+      if (url.includes('/api/materials')) return Response.json(staged, { status: 201 });
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const mounted = await mountComposer('en-US', fetchMock);
+    dispose = mounted.dispose;
+    await until(mounted.act, () => expect(mounted.sink.current?.enabled).toBe(true));
+    await mounted.act(async () => mounted.sink.current?.addFiles([pdfFile()]));
+    await until(mounted.act, () => expect(mounted.sink.current?.materials).toHaveLength(1));
+    const id = staged.materialId;
+    await until(mounted.act, () =>
+      expect(mounted.sink.current?.extraction[id]).toEqual({
+        status: 'failed',
+        reasonCode: 'no_text_extracted',
+      }),
+    );
+    // A failure stops the polling until the teacher asks again.
+    expect(reads).toBe(2);
+
+    await mounted.act(async () => mounted.sink.current?.retryExtraction(id));
+    await until(mounted.act, () =>
+      expect(mounted.sink.current?.extraction[id]).toEqual({ status: 'done' }),
+    );
+    expect(reparses).toBe(1);
+    expect(reads).toBe(3);
+  }, 15_000);
 });

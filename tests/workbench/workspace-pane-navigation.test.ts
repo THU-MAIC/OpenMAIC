@@ -41,7 +41,7 @@ function Probe({ initial }: { readonly initial: WorkspacePanes }) {
       'button',
       {
         'data-testid': 'open-library',
-        onClick: () => navigation.push({ ...navigation.panes, library: true }),
+        onClick: () => navigation.push({ ...navigation.panes, view: 'library' }),
       },
       'library',
     ),
@@ -138,10 +138,10 @@ describe('workspace pane navigation', () => {
     await act(async () =>
       firstRender!.update((current) => ({
         next: { ...current, sessionId: 'session-late' },
-        mode: current.library ? 'replace' : 'push',
+        mode: current.view ? 'replace' : 'push',
       })),
     );
-    expect(state()).toBe('{"sessionId":"session-late","courseId":"course-1","library":true}');
+    expect(state()).toBe('{"sessionId":"session-late","courseId":"course-1","view":"library"}');
     expect(push).not.toHaveBeenCalled();
     expect(replace).toHaveBeenLastCalledWith(
       null,
@@ -149,6 +149,6 @@ describe('workspace pane navigation', () => {
       '/workspace?session=session-late&course=course-1&view=library',
     );
     await act(async () => firstRender!.update(() => null));
-    expect(state()).toBe('{"sessionId":"session-late","courseId":"course-1","library":true}');
+    expect(state()).toBe('{"sessionId":"session-late","courseId":"course-1","view":"library"}');
   });
 });
