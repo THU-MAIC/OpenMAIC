@@ -106,11 +106,23 @@ async function validateQwenNarratorVoices(
 ): Promise<void> {
   const candidates = [
     ...(input.voice && input.voice.providerId === 'qwen-tts'
-      ? [{ voiceId: input.voice.voiceId, name: input.voice.name }]
+      ? [
+          {
+            providerId: input.voice.providerId,
+            voiceId: input.voice.voiceId,
+            name: input.voice.name,
+          },
+        ]
       : []),
     ...agents.flatMap((agent) =>
       agent.voiceConfig?.providerId === 'qwen-tts'
-        ? [{ voiceId: agent.voiceConfig.voiceId, name: agent.name }]
+        ? [
+            {
+              providerId: agent.voiceConfig.providerId,
+              voiceId: agent.voiceConfig.voiceId,
+              name: agent.name,
+            },
+          ]
         : [],
     ),
   ].filter(({ voiceId }) => isQwenCloneVoice(voiceId));
