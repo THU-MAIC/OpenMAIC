@@ -874,6 +874,27 @@ export const TTS_PROVIDERS: Record<BuiltInTTSProviderId, TTSProviderConfig> = {
     },
   },
 
+  'deepseek-tts': {
+    id: 'deepseek-tts',
+    name: 'DeepSeek TTS',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.deepseek.com/v1',
+    endpointPath: '/tools/tts',
+    icon: '/logos/deepseek.svg',
+    // The speech API has no model parameter.
+    models: [],
+    defaultModelId: '',
+    // Both voices read every supported language; the language is detected
+    // from the text.
+    voices: [
+      { id: 'stella', name: 'Stella', language: 'zh-CN', gender: 'female' },
+      { id: 'tide', name: 'Tide', language: 'zh-CN', gender: 'male' },
+    ],
+    supportedFormats: ['wav'],
+    // The full-text API has no speed control.
+    supportsSpeed: false,
+  },
+
   'voxcpm-tts': {
     id: VOXCPM_TTS_PROVIDER_ID,
     name: 'VoxCPM2',
@@ -1631,6 +1652,27 @@ export const ASR_PROVIDERS: Record<BuiltInASRProviderId, ASRProviderConfig> = {
     // 10 MB input_audio cap with headroom for the WAV header.
     maxChunkSeconds: 180,
   },
+
+  'deepseek-asr': {
+    id: 'deepseek-asr',
+    name: 'DeepSeek ASR',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.deepseek.com/v1',
+    endpointPath: '/tools/asr',
+    icon: '/logos/deepseek.svg',
+    // The speech API has no model parameter.
+    models: [],
+    defaultModelId: '',
+    // No language parameter: the language is detected from the audio.
+    supportedLanguages: ['auto'],
+    // 16-bit PCM WAV or Ogg Opus. Browser recordings (WebM) are transcoded
+    // to WAV client-side before upload.
+    supportedFormats: ['wav', 'ogg'],
+    // One request takes at most 120 seconds of audio (and 8 MiB). Media
+    // chunks are 16 kHz mono s16le WAV (32 KiB/s), so 110 s is ~3.4 MiB and
+    // stays under the duration cap with headroom for segment rounding.
+    maxChunkSeconds: 110,
+  },
 };
 
 /**
@@ -1647,6 +1689,7 @@ export const DEFAULT_TTS_VOICES: Record<BuiltInTTSProviderId, string> = {
   'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
   'minimax-tts': 'female-yujie',
   'xiaomi-tts': 'mimo_default',
+  'deepseek-tts': 'stella',
   'google-tts': 'Kore',
   'lemonade-tts': 'af_heart',
   'browser-native-tts': 'default',
@@ -1662,6 +1705,7 @@ export const DEFAULT_TTS_MODELS: Record<BuiltInTTSProviderId, string> = {
   'elevenlabs-tts': 'eleven_multilingual_v2',
   'minimax-tts': 'speech-2.8-hd',
   'xiaomi-tts': 'mimo-v2.5-tts',
+  'deepseek-tts': '',
   'google-tts': 'gemini-3.8-flash-lite-tts',
   'lemonade-tts': 'kokoro-v1',
   'browser-native-tts': '',

@@ -31,6 +31,7 @@ describe('document extractor registry', () => {
       'mineru',
       'mineru-cloud',
       'alidocmind',
+      'deepseek-ocr',
     ]);
     expect(providers.every((provider) => provider.supportedMimeTypes)).toBe(true);
     expect(

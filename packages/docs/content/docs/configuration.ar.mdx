@@ -131,7 +131,7 @@ allowUserKeys: false               # يختار المستخدمون من بين
 | `video` | video | — | توليد الفيديو |
 | `webFetch` | webFetch | — | استخراج صفحات الويب (الافتراضي: `builtin`) |
 | `webSearch` | webSearch | — | البحث على الويب |
-| `document` | document | — | خدمة تحليل المستندات (MinerU وMinerU Cloud وAliDocMind). لا يحتاج استخراج نص PDF المدمج إلى خدمة |
+| `document` | document | — | خدمة تحليل المستندات (MinerU وMinerU Cloud وAliDocMind وDeepSeek OCR). لا يحتاج استخراج نص PDF المدمج إلى خدمة |
 
 كيف تُحل الخانة:
 
@@ -563,6 +563,10 @@ TTS_QWEN_BASE_URL=         # تجاوز اختياري
 TTS_XIAOMI_API_KEY=
 TTS_XIAOMI_BASE_URL=https://api.xiaomimimo.com/v1
 
+# DeepSeek TTS
+TTS_DEEPSEEK_API_KEY=
+TTS_DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
+
 # أي نقطة نهاية متوافقة مع OpenAI TTS
 TTS_OPENAI_API_KEY=
 TTS_OPENAI_BASE_URL=
@@ -571,7 +575,7 @@ TTS_OPENAI_BASE_URL=
 TTS_VOXCPM_BASE_URL=http://localhost:8000
 ```
 
-بادئات TTS المدعومة تشمل `TTS_OPENAI_`، `TTS_AZURE_`، `TTS_GLM_`، `TTS_QWEN_`، `TTS_MINIMAX_`، `TTS_DOUBAO_`، `TTS_ELEVENLABS_`، `TTS_GOOGLE_`، `TTS_VOXCPM_`، `TTS_XIAOMI_` و `TTS_LEMONADE_`. TTS المحلي لـ Lemonade وVoxCPM2 لا يحتاجان إلى مفتاح API. TTS المدمج في المتصفح لا يحتاج إلى إعدادات خادم.
+بادئات TTS المدعومة تشمل `TTS_OPENAI_`، `TTS_AZURE_`، `TTS_GLM_`، `TTS_QWEN_`، `TTS_MINIMAX_`، `TTS_DOUBAO_`، `TTS_ELEVENLABS_`، `TTS_GOOGLE_`، `TTS_VOXCPM_`، `TTS_XIAOMI_`، `TTS_DEEPSEEK_` و `TTS_LEMONADE_`. TTS المحلي لـ Lemonade وVoxCPM2 لا يحتاجان إلى مفتاح API. TTS المدمج في المتصفح لا يحتاج إلى إعدادات خادم.
 
 يمكن للمسؤولين تعطيل موفر TTS معين على الخادم باستخدام `TTS_<PROVIDER>_ENABLED=false`. لمزيد من التفاصيل عن VoxCPM2 (TTS ذاتي الاستضافة واستنساخ الصوت)، راجع الفصل الخاص بـ [VoxCPM2](./voxcpm.mdx).
 
@@ -591,6 +595,10 @@ ASR_QWEN_BASE_URL=         # تجاوز اختياري
 # Xiaomi MiMo ASR
 ASR_XIAOMI_API_KEY=
 ASR_XIAOMI_BASE_URL=https://api.xiaomimimo.com/v1
+
+# DeepSeek ASR
+ASR_DEEPSEEK_API_KEY=
+ASR_DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
 
 # Azure ASR
 ASR_AZURE_API_KEY=
@@ -693,9 +701,15 @@ PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
 ALIDOCMIND_ACCESS_KEY_ID=
 ALIDOCMIND_ACCESS_KEY_SECRET=
 ALIDOCMIND_BASE_URL=       # تجاوز اختياري
+
+# DeepSeek OCR (يستخدم مفتاح DeepSeek API)
+PDF_DEEPSEEK_OCR_API_KEY=
+PDF_DEEPSEEK_OCR_BASE_URL=https://api.deepseek.com/v1
 ```
 
-`unpdf` مدمج في OpenMAIC ويستخدم لتحليل PDF الأساسي. لتحليل مستندات Office، الصور، أو المواد التي تحتاج إلى OCR، جداول، معادلات أو تحليل تخطيط، يجب اختيار موفر MinerU أو AliDocMind المتوافق.
+`unpdf` مدمج في OpenMAIC ويستخدم لتحليل PDF الأساسي. لتحليل مستندات Office، الصور، أو المواد التي تحتاج إلى OCR، جداول، معادلات أو تحليل تخطيط، يجب اختيار موفر MinerU أو AliDocMind أو DeepSeek OCR المتوافق.
+
+يدعم DeepSeek OCR (`deepseek-ocr`) ملفات PDF وDOC وDOCX وPPT وPPTX وPNG وJPEG وWebP وGIF وBMP، حتى 100 MiB و1,000 صفحة لكل ملف؛ وتحدّ الخدمة الطلب الواحد بـ 180 ثانية. المخرجات بصيغة Markdown تتضمن العناوين وجداول HTML ومعادلات LaTeX. تُقتطع الأشكال من ملفات PDF والصور؛ أما ملفات Word وPowerPoint فيُستخرج منها النص فقط.
 
 يدعم AliDocMind تحليل PDF، DOCX، PPTX، XLSX، بالإضافة إلى PNG، JPG/JPEG، BMP، GIF. حاليًا، يدعم تحليل الوسائط الصوتية والفيديو فقط عبر AliDocMind: صيغ الفيديو MP4، MOV، AVI، MKV، WMV، وصيغ الصوت MP3، WAV، AAC؛ لا يدعم M4A.
 

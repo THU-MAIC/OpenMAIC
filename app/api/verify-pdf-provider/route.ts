@@ -17,7 +17,12 @@ import {
   ALIDOCMIND_ENDPOINT_NOT_ALLOWED_MESSAGE,
   resolveSafeClientAliDocMindEndpoint,
 } from '@/lib/server/alidocmind-endpoint';
-import { MINERU_CLOUD_DEFAULT_BASE, PDF_PROVIDERS } from '@/lib/pdf/constants';
+import {
+  DEEPSEEK_OCR_DEFAULT_BASE,
+  MINERU_CLOUD_DEFAULT_BASE,
+  PDF_PROVIDERS,
+} from '@/lib/pdf/constants';
+import { deepseekToolsEndpoint } from '@/lib/web-search/deepseek-endpoint';
 import {
   savedMediaConnection,
   savedProviderRef,
@@ -60,6 +65,32 @@ async function probeMinerUCloud(cloudBase: string, apiKey: string, managed: bool
   // Other responses (including 4xx for "batch not found") mean auth + connectivity works.
   if (response.status === 401 || response.status === 403) {
     log.warn(`MinerU Cloud probe rejected credentials [status=${response.status}]`);
+    return apiError('INTERNAL_ERROR', 500, AUTH_FAILED_MESSAGE);
+  }
+  return apiSuccess({ message: 'Connection successful' });
+}
+
+/**
+ * DeepSeek OCR: a request with no file is refused before any recognition (so
+ * nothing is billed); 401/403 means the key is wrong, any other answer means
+ * the key and the endpoint work.
+ */
+async function probeDeepSeekOCR(baseUrl: string, apiKey: string, managed: boolean) {
+  const form = new FormData();
+  form.set('purpose', 'rich_layout_recognition');
+  const response = await providerFetch(
+    deepseekToolsEndpoint(baseUrl, 'ocr'),
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+      body: form,
+      signal: AbortSignal.timeout(10000),
+    },
+    probePolicy(managed),
+  );
+  await response.body?.cancel().catch(() => undefined);
+  if (response.status === 401 || response.status === 403) {
+    log.warn(`DeepSeek OCR probe rejected credentials [status=${response.status}]`);
     return apiError('INTERNAL_ERROR', 500, AUTH_FAILED_MESSAGE);
   }
   return apiSuccess({ message: 'Connection successful' });
@@ -113,6 +144,12 @@ async function verifySavedProvider(req: NextRequest, ref: string): Promise<Respo
       return apiError('MISSING_REQUIRED_FIELD', 400, 'API Key is required for MinerU Cloud');
     }
     return probeMinerUCloud(baseUrl || MINERU_CLOUD_DEFAULT_BASE, apiKey, managed);
+  }
+  if (providerId === 'deepseek-ocr') {
+    if (!apiKey) {
+      return apiError('MISSING_REQUIRED_FIELD', 400, 'API Key is required for DeepSeek OCR');
+    }
+    return probeDeepSeekOCR(baseUrl || DEEPSEEK_OCR_DEFAULT_BASE, apiKey, managed);
   }
   const endpoint = baseUrl || PDF_PROVIDERS[providerId as keyof typeof PDF_PROVIDERS]?.baseUrl;
   if (!endpoint) return apiError('MISSING_REQUIRED_FIELD', 400, 'Base URL is required');
@@ -217,6 +254,26 @@ export async function POST(req: NextRequest) {
 
       // Probe the batch endpoint with an empty body to verify auth
       return await probeMinerUCloud(cloudBase, resolvedApiKey, managed);
+    }
+
+    // DeepSeek OCR: verify the key against the OCR endpoint
+    if (providerId === 'deepseek-ocr') {
+      const clientBase = managed ? undefined : (baseUrl as string | undefined) || undefined;
+      if (clientBase) {
+        const ssrfError = await validateClientBaseUrl(clientBase);
+        if (ssrfError) {
+          return apiError('INVALID_URL', 403, ssrfError);
+        }
+      }
+      const resolvedApiKey = resolvePDFApiKey(providerId, managed ? undefined : apiKey);
+      if (!resolvedApiKey) {
+        return apiError('MISSING_REQUIRED_FIELD', 400, 'API Key is required for DeepSeek OCR');
+      }
+      return await probeDeepSeekOCR(
+        resolvePDFBaseUrl(providerId, clientBase) || DEEPSEEK_OCR_DEFAULT_BASE,
+        resolvedApiKey,
+        managed,
+      );
     }
 
     // Self-hosted providers: verify by connecting to the base URL

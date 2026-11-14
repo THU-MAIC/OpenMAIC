@@ -7,6 +7,8 @@ import type { PDFProviderId, PDFProviderConfig } from './types';
 
 export const MINERU_CLOUD_DEFAULT_BASE = 'https://mineru.net/api/v4';
 export const ALIDOCMIND_DEFAULT_BASE = 'https://docmind-api.cn-hangzhou.aliyuncs.com';
+/** The DeepSeek API root; OCR is served at `/tools/ocr` under it. */
+export const DEEPSEEK_OCR_DEFAULT_BASE = 'https://api.deepseek.com/v1';
 
 /**
  * PDF Provider Registry
@@ -42,6 +44,14 @@ export const PDF_PROVIDERS: Record<PDFProviderId, PDFProviderConfig> = {
     requiresApiKey: true,
     requiresCredentials: true,
     icon: '/logos/aliyun.svg',
+    features: ['text', 'images', 'tables', 'formulas', 'layout-analysis', 'ocr'],
+  },
+
+  'deepseek-ocr': {
+    id: 'deepseek-ocr',
+    name: 'DeepSeek OCR',
+    requiresApiKey: true,
+    icon: '/logos/deepseek.svg',
     features: ['text', 'images', 'tables', 'formulas', 'layout-analysis', 'ocr'],
   },
 };

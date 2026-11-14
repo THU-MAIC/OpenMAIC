@@ -19,11 +19,11 @@ A preset is a built-in provider template: which vendor, which endpoint, and whic
 | `tokendance` | TokenDance | Chat, image, video, TTS, web search |
 | `volcengine-ark` | Volcengine Ark Agent Plan | Chat, image, video, TTS, web search |
 | `kimi-coding-plan` | Kimi Coding Plan | Chat, web search, web fetch |
-| `deepseek-token-plan` | DeepSeek | Chat, web search, web fetch |
+| `deepseek-token-plan` | DeepSeek | Chat, TTS, ASR, document parsing, web search, web fetch |
 
 Connecting Kimi Coding Plan in **Settings → Token Plan** recommends chat, web search and web fetch together, using the Coding Plan key and `https://api.kimi.com/coding/v1`. If web fetch only uses the implicit builtin default, connecting assigns Kimi directly without a conflict, even when keeping the current setup. Explicit workspace choices (including `null`) and deployment-configured non-builtin readers or `null` use the existing conflict choices. Disconnecting removes the plan's assignments and restores the server default (the builtin reader when no reader is configured); it does not restore a prior explicit workspace choice. Locked slots stay unchanged. Plans that do not declare web fetch leave it untouched.
 
-Connecting DeepSeek in **Settings → Token Plan** recommends chat (`deepseek-flash` by default), web search and web fetch together, using one DeepSeek API key and `https://api.deepseek.com/v1`. This is the same pay-as-you-go account and endpoint as the `deepseek` preset; the plan uses its own `deepseek-token-plan` preset so that disconnecting it removes only the plan's provider and assignments and leaves a separate `deepseek` provider unchanged.
+Connecting DeepSeek in **Settings → Token Plan** recommends chat (`deepseek-flash` by default), TTS (`deepseek-tts`), ASR (`deepseek-asr`), document parsing (`deepseek-ocr`), web search and web fetch together, using one DeepSeek API key and `https://api.deepseek.com/v1`. Image and video are not covered. This is the same pay-as-you-go account and endpoint as the `deepseek` preset; the plan uses its own `deepseek-token-plan` preset so that disconnecting it removes only the plan's provider and assignments and leaves a separate `deepseek` provider unchanged.
 
 The first-run wizard leaves web fetch on the builtin reader; only connecting the plan through the Token Plan settings page applies its fetch recommendation.
 
@@ -34,13 +34,13 @@ All preset IDs:
 | Capability | Presets |
 | --- | --- |
 | Chat | `openai`, `azure`, `atlascloud`, `anthropic`, `bedrock`, `google`, `glm`, `qwen`, `deepseek`, `kimi`, `siliconflow`, `doubao`, `openrouter`, `grok`, `tencent-hunyuan`, `xiaomi`, `ollama`, `lemonade`, `openai-compatible`, and the token plans |
-| TTS | `openai-tts`, `azure-tts`, `glm-tts`, `qwen-tts`, `minimax-tts`, `xiaomi-tts`, `voxcpm-tts`, `doubao-tts`, `elevenlabs-tts`, `google-tts`, `browser-native-tts`, `lemonade-tts` |
-| ASR | `openai-whisper`, `qwen-asr`, `azure-asr`, `browser-native`, `funasr-asr`, `lemonade-asr`, `xiaomi-asr` |
+| TTS | `openai-tts`, `azure-tts`, `glm-tts`, `qwen-tts`, `minimax-tts`, `xiaomi-tts`, `voxcpm-tts`, `doubao-tts`, `elevenlabs-tts`, `google-tts`, `browser-native-tts`, `lemonade-tts`, `deepseek-tts` |
+| ASR | `openai-whisper`, `qwen-asr`, `azure-asr`, `browser-native`, `funasr-asr`, `lemonade-asr`, `xiaomi-asr`, `deepseek-asr` |
 | Image | `seedream`, `openai-image`, `qwen-image`, `nano-banana`, `minimax-image`, `grok-image`, `comfyui-image`, `lemonade-image`, `openrouter-image` |
 | Video | `seedance`, `kling`, `minimax-video`, `grok-video`, `happyhorse`, `openrouter-video` |
 | Web search | `tavily`, `exa`, `firecrawl`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `deepseek`, `deepseek-token-plan`, `kimi`, `kimi-coding-plan`, `searxng` |
 | Web fetch | `builtin`, `deepseek`, `deepseek-token-plan`, `firecrawl`, `kimi`, `kimi-coding-plan` |
-| Document parsing | `unpdf`, `mineru`, `mineru-cloud`, `alidocmind` |
+| Document parsing | `unpdf`, `mineru`, `mineru-cloud`, `alidocmind`, `deepseek-ocr` |
 
 `azure`, `openai-compatible`, `searxng` and `mineru` need a `baseUrl`; `alidocmind` authenticates with `credentials` (a key pair). Self-hosted TTS, ASR, image, search and document presets, key-pair presets and Bedrock can only be configured in `openmaic.yml`; see [Configuration](./configuration.mdx).
 
@@ -111,6 +111,7 @@ This table lists model selectors and self-hosted backends. It does not enumerate
 | VoxCPM2            | `voxcpm-tts`         | VoxCPM2 (`voxcpm2`)<br />Backends: vLLM-Omni, Python API, Nano-vLLM                                                                                                                                                                    |
 | Lemonade TTS       | `lemonade-tts`       | Kokoro v1 (`kokoro-v1`)                                                                                                                                                                                                                |
 | Xiaomi MiMo TTS   | `xiaomi-tts`        | MiMo V2.5 TTS (`mimo-v2.5-tts`) — voice presets 冰糖 / 茉莉 / 苏打 / 白桦 / Mia / Chloe / Milo / Dean; speed via pacing instruction — speed is a style hint, not exact |
+| DeepSeek TTS       | `deepseek-tts`       | No model selector. Voices `stella` (female, default) and `tide` (male); language detected from the text; no speed control; WAV output; up to 10,000 billed characters (a Chinese character counts as 2) and a 64 KiB body per request |
 | Doubao TTS 2.0     | `doubao-tts`         | No model selector. Uses Doubao TTS 2.0 voice IDs.                                                                                                                                                                                      |
 | ElevenLabs TTS     | `elevenlabs-tts`     | Multilingual v2 (`eleven_multilingual_v2`)<br />Flash v2.5 (`eleven_flash_v2_5`)<br />Flash v2 (`eleven_flash_v2`)                                                                                                                     |
 | Google Gemini TTS  | `google-tts`         | Gemini 3.8 Flash-Lite TTS (`gemini-3.8-flash-lite-tts`)<br />Gemini 3.8 Flash TTS (`gemini-3.8-flash-tts`)<br />Gemini 3.1 Flash TTS Preview (`gemini-3.1-flash-tts-preview`)<br />Gemini 2.5 Flash Preview TTS (`gemini-2.5-flash-preview-tts`)<br />Gemini 2.5 Pro Preview TTS (`gemini-2.5-pro-preview-tts`)                                        |
@@ -140,6 +141,7 @@ Saved legacy profiles and their reference samples are retained, but there is no 
 | FunASR             | `funasr-asr`     | SenseVoiceSmall (`sensevoice`)<br />Paraformer (`paraformer`)<br />Fun-ASR-Nano (`fun-asr-nano`) |
 | Lemonade ASR       | `lemonade-asr`   | Whisper Base (`Whisper-Base`)<br />Whisper Large v3 (`Whisper-Large-v3`)<br />Whisper Large v3 Turbo (`Whisper-Large-v3-Turbo`)<br />Whisper Medium (`Whisper-Medium`)<br />Whisper Small (`Whisper-Small`)<br />Whisper Tiny (`Whisper-Tiny`) |
 | Xiaomi MiMo ASR   | `xiaomi-asr`        | MiMo V2.5 ASR (`mimo-v2.5-asr`) — wav/mp3, auto/zh/en |
+| DeepSeek ASR       | `deepseek-asr`   | No model selector. 16-bit PCM WAV or Ogg Opus (browser recordings are converted to WAV), up to 8 MiB and 120 seconds per request; language auto-detected only; longer media is split into 110-second chunks |
 | Browser Native ASR | `browser-native` | No model selector. Uses the browser Web Speech API.                                                                                                                                                                                            |
 
 ## Document parsing providers
@@ -150,6 +152,7 @@ Saved legacy profiles and their reference samples are retained, but there is no 
 | MinerU       | `mineru`       | Text, images, tables, formulas, layout analysis |
 | MinerU Cloud | `mineru-cloud` | Text, images, tables, formulas, layout analysis |
 | AliDocMind   | `alidocmind`   | Text, images, tables, formulas, layout analysis, OCR |
+| DeepSeek OCR | `deepseek-ocr` | Text, tables, formulas, layout analysis, OCR; images from PDFs and images only (PDF, DOC/DOCX, PPT/PPTX, PNG, JPEG, WebP, GIF, BMP; up to 100 MiB and 1,000 pages) |
 
 ## Web Search providers
 

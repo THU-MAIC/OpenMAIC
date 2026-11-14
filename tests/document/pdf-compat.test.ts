@@ -131,6 +131,39 @@ describe('PDF compatibility adapter', () => {
     });
   });
 
+  it('keeps DeepSeek OCR markdown, which names figures by path, as a markdown block', () => {
+    const parsed: ParsedPdfContent = {
+      text: '## Results\n\n![Figure 1](images/deepseek-ocr-p1-1.png)',
+      images: ['data:image/png;base64,AAAA'],
+      metadata: {
+        pageCount: 1,
+        parser: 'deepseek-ocr',
+        pdfImages: [
+          {
+            id: 'img_1',
+            src: 'data:image/png;base64,AAAA',
+            pageNumber: 1,
+            path: 'images/deepseek-ocr-p1-1.png',
+          },
+        ],
+      },
+    };
+
+    const artifact = parsedPdfToDocumentArtifact(parsed, {
+      buffer: Buffer.from('%PDF'),
+      fileName: 'paper.pdf',
+      fileSize: 4,
+      mimeType: 'application/pdf',
+      config: { providerId: 'deepseek-ocr' },
+    });
+
+    expect(artifact.blocks[0]).toMatchObject({ type: 'markdown' });
+    expect(artifact.assets[0]).toMatchObject({
+      pageNumber: 1,
+      metadata: { path: 'images/deepseek-ocr-p1-1.png' },
+    });
+  });
+
   it('round-trips back to the existing ParsedPdfContent shape used by generation', () => {
     const parsed: ParsedPdfContent = {
       text: 'Plain text',

@@ -19,11 +19,11 @@ description: Встроенные модели и список провайде�
 | `tokendance` | TokenDance | Чат, изображения, видео, TTS, веб-поиск |
 | `volcengine-ark` | Volcengine Ark Agent Plan | Чат, изображения, видео, TTS, веб-поиск |
 | `kimi-coding-plan` | Kimi coding plan | Чат, веб-поиск, загрузка веб-страниц |
-| `deepseek-token-plan` | DeepSeek | Чат, веб-поиск, загрузка веб-страниц |
+| `deepseek-token-plan` | DeepSeek | Чат, TTS, ASR, разбор документов, веб-поиск, загрузка веб-страниц |
 
 Подключение Kimi Coding Plan в **Настройки → Token Plan** рекомендует чат, веб-поиск и загрузку веб-страниц с общим ключом тарифа и адресом `https://api.kimi.com/coding/v1`. Если загрузка использует только неявный встроенный ридер по умолчанию, подключение сразу назначает Kimi без подтверждения конфликта, даже при сохранении текущих настроек. Явные назначения рабочего пространства (включая `null`), а также невстроенный ридер или `null`, заданные развёртыванием, обрабатываются через существующий выбор при конфликте. Отключение удаляет назначения тарифа и восстанавливает серверное значение по умолчанию (встроенный ридер, если другой не настроен), но не прежний явный выбор рабочего пространства. Закреплённые слоты не меняются. Тарифы, не объявляющие загрузку веб-страниц, не меняют этот слот.
 
-Подключение DeepSeek в **Настройки → Token Plan** рекомендует чат (по умолчанию `deepseek-flash`), веб-поиск и загрузку веб-страниц с одним API-ключом DeepSeek и адресом `https://api.deepseek.com/v1`. Это тот же аккаунт с оплатой по факту использования и тот же адрес, что и у пресета `deepseek`; тариф использует собственный пресет `deepseek-token-plan`, поэтому отключение удаляет только провайдера и назначения тарифа, не затрагивая отдельный провайдер `deepseek`.
+Подключение DeepSeek в **Настройки → Token Plan** рекомендует чат (по умолчанию `deepseek-flash`), TTS (`deepseek-tts`), ASR (`deepseek-asr`), разбор документов (`deepseek-ocr`), веб-поиск и загрузку веб-страниц с одним API-ключом DeepSeek и адресом `https://api.deepseek.com/v1`. Изображения и видео не покрываются. Это тот же аккаунт с оплатой по факту использования и тот же адрес, что и у пресета `deepseek`; тариф использует собственный пресет `deepseek-token-plan`, поэтому отключение удаляет только провайдера и назначения тарифа, не затрагивая отдельный провайдер `deepseek`.
 
 Мастер первого запуска оставляет загрузку веб-страниц на встроенном ридере; рекомендация тарифа для загрузки применяется только при подключении через страницу настроек Token Plan.
 
@@ -34,13 +34,13 @@ description: Встроенные модели и список провайде�
 | Возможность | Пресеты |
 | --- | --- |
 | Чат | `openai`, `azure`, `atlascloud`, `anthropic`, `bedrock`, `google`, `glm`, `qwen`, `deepseek`, `kimi`, `siliconflow`, `doubao`, `openrouter`, `grok`, `tencent-hunyuan`, `xiaomi`, `ollama`, `lemonade`, `openai-compatible` и пресеты Token Plan |
-| TTS | `openai-tts`, `azure-tts`, `glm-tts`, `qwen-tts`, `minimax-tts`, `xiaomi-tts`, `voxcpm-tts`, `doubao-tts`, `elevenlabs-tts`, `google-tts`, `browser-native-tts`, `lemonade-tts` |
-| ASR | `openai-whisper`, `qwen-asr`, `azure-asr`, `browser-native`, `funasr-asr`, `lemonade-asr`, `xiaomi-asr` |
+| TTS | `openai-tts`, `azure-tts`, `glm-tts`, `qwen-tts`, `minimax-tts`, `xiaomi-tts`, `voxcpm-tts`, `doubao-tts`, `elevenlabs-tts`, `google-tts`, `browser-native-tts`, `lemonade-tts`, `deepseek-tts` |
+| ASR | `openai-whisper`, `qwen-asr`, `azure-asr`, `browser-native`, `funasr-asr`, `lemonade-asr`, `xiaomi-asr`, `deepseek-asr` |
 | Изображения | `seedream`, `openai-image`, `qwen-image`, `nano-banana`, `minimax-image`, `grok-image`, `comfyui-image`, `lemonade-image`, `openrouter-image` |
 | Видео | `seedance`, `kling`, `minimax-video`, `grok-video`, `happyhorse`, `openrouter-video` |
 | Веб-поиск | `tavily`, `exa`, `firecrawl`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `deepseek`, `deepseek-token-plan`, `kimi`, `kimi-coding-plan`, `searxng` |
 | Загрузка веб-страниц | `builtin`, `deepseek`, `deepseek-token-plan`, `firecrawl`, `kimi`, `kimi-coding-plan` |
-| Разбор документов | `unpdf`, `mineru`, `mineru-cloud`, `alidocmind` |
+| Разбор документов | `unpdf`, `mineru`, `mineru-cloud`, `alidocmind`, `deepseek-ocr` |
 
 `azure`, `openai-compatible`, `searxng` и `mineru` требуют `baseUrl`; `alidocmind` аутентифицируется через `credentials` (пару ключей). Собственные (self-hosted) пресеты TTS, ASR, изображений, поиска и документов, пресеты с парой ключей и Bedrock настраиваются только в `openmaic.yml`; см. [Конфигурацию](./configuration.mdx).
 
@@ -111,6 +111,7 @@ description: Встроенные модели и список провайде�
 | VoxCPM2           | `voxcpm-tts`         | VoxCPM2 (`voxcpm2`)<br />Бэкенды: vLLM-Omni, Python API, Nano-vLLM                                                                                                                                                                            |
 | Lemonade TTS      | `lemonade-tts`       | Kokoro v1 (`kokoro-v1`)                                                                                                                                                                                                                        |
 | Xiaomi MiMo TTS   | `xiaomi-tts`        | MiMo V2.5 TTS (`mimo-v2.5-tts`) — голосовые пресеты 冰糖 / 茉莉 / 苏打 / 白桦 / Mia / Chloe / Milo / Dean; скорость задаётся стилевой инструкцией — скорость — стилевая подсказка, не точная |
+| DeepSeek TTS   | `deepseek-tts`       | Нет селектора моделей. Голоса `stella` (женский, по умолчанию) и `tide` (мужской); язык определяется по тексту; без регулировки скорости; вывод WAV; до 10 000 тарифицируемых символов (китайский иероглиф считается за 2) и тело запроса до 64 KiB |
 | Doubao TTS 2.0 | `doubao-tts`         | Нет селектора моделей, используется ID голосов Doubao TTS 2.0.                                                                                                                                                                                  |
 | ElevenLabs TTS    | `elevenlabs-tts`     | Multilingual v2 (`eleven_multilingual_v2`)<br />Flash v2.5 (`eleven_flash_v2_5`)<br />Flash v2 (`eleven_flash_v2`)                                                                                                                             |
 | Google Gemini TTS | `google-tts`         | Gemini 3.8 Flash-Lite TTS (`gemini-3.8-flash-lite-tts`)<br />Gemini 3.8 Flash TTS (`gemini-3.8-flash-tts`)<br />Gemini 3.1 Flash TTS Preview (`gemini-3.1-flash-tts-preview`)<br />Gemini 2.5 Flash Preview TTS (`gemini-2.5-flash-preview-tts`)<br />Gemini 2.5 Pro Preview TTS (`gemini-2.5-pro-preview-tts`)                                                |
@@ -130,6 +131,7 @@ description: Встроенные модели и список провайде�
 | FunASR            | `funasr-asr`     | SenseVoiceSmall (`sensevoice`)<br />Paraformer (`paraformer`)<br />Fun-ASR-Nano (`fun-asr-nano`) |
 | Lemonade ASR      | `lemonade-asr`   | Whisper Base (`Whisper-Base`)<br />Whisper Large v3 (`Whisper-Large-v3`)<br />Whisper Large v3 Turbo (`Whisper-Large-v3-Turbo`)<br />Whisper Medium (`Whisper-Medium`)<br />Whisper Small (`Whisper-Small`)<br />Whisper Tiny (`Whisper-Tiny`)             |
 | Xiaomi MiMo ASR   | `xiaomi-asr`        | MiMo V2.5 ASR (`mimo-v2.5-asr`) — wav/mp3, auto/zh/en |
+| DeepSeek ASR   | `deepseek-asr`   | Нет селектора моделей. Только 16-битный PCM WAV или Ogg Opus (записи из браузера конвертируются в WAV), до 8 MiB и 120 секунд на запрос; язык только определяется автоматически; длинные медиафайлы делятся на фрагменты по 110 секунд |
 | Браузерный нативный ASR | `browser-native` | Нет селектора моделей, используется браузерный Web Speech API.                                                                                                                                                                                           |
 
 ## Провайдеры парсинга документов
@@ -140,6 +142,7 @@ description: Встроенные модели и список провайде�
 | MinerU          | `mineru`       | Текст, изображения, таблицы, формулы, анализ макета |
 | MinerU Cloud    | `mineru-cloud` | Текст, изображения, таблицы, формулы, анализ макета |
 | AliDocMind      | `alidocmind`   | Текст, изображения, таблицы, формулы, анализ макета, OCR |
+| DeepSeek OCR    | `deepseek-ocr` | Текст, таблицы, формулы, анализ макета, OCR; иллюстрации извлекаются только из PDF и изображений (PDF, DOC/DOCX, PPT/PPTX, PNG, JPEG, WebP, GIF, BMP; до 100 MiB и 1000 страниц) |
 
 ## Провайдеры веб-поиска
 

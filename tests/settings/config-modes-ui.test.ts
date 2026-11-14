@@ -240,11 +240,13 @@ describe('the settings sections', () => {
           video: null,
           webSearch: null,
         },
-        lock: ['llm', 'tts', 'image', 'video', 'webSearch', 'webFetch'],
+        lock: ['llm', 'tts', 'asr', 'image', 'video', 'webSearch', 'webFetch', 'document'],
       }),
     );
     expect(nav).not.toContain('token-plan');
-    expect(nav).toContain('model-services');
+    // Every slot a plan can fill (DeepSeek's covers speech recognition and
+    // document parsing too) is locked, so no service is left to set either.
+    expect(nav).not.toContain('model-services');
   });
 
   it('shows Model Services tabs only for capabilities that still have a slot to set', async () => {

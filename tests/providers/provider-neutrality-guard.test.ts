@@ -195,7 +195,8 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['atlascloud', 2],
       ['anthropic', 2],
       ['google', 4],
-      ['deepseek', 4],
+      // TTS_/ASR_/PDF_DEEPSEEK env maps and the optional OCR base URL.
+      ['deepseek', 11],
       ['kimi', 4],
       ['minimax', 13],
       ['glm', 6],
@@ -351,6 +352,7 @@ const GENERIC_ID_PARTS = new Set([
   'image',
   'media',
   'native',
+  'ocr',
   'pdf',
   'plain',
   'search',

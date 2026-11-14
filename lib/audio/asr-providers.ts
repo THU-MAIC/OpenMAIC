@@ -152,6 +152,10 @@ import { isCustomASRProvider } from './types';
 import { ASR_PROVIDERS } from './constants';
 import { asrFetchSignal } from '@/lib/audio/asr-fetch-signal';
 import {
+  DEEPSEEK_TOOLS_DEFAULT_BASE_URL,
+  deepseekToolsEndpoint,
+} from '@/lib/web-search/deepseek-endpoint';
+import {
   audioEndpointPolicy,
   audioProviderFetch,
   createAudioProviderFetch,
@@ -204,6 +208,9 @@ export async function transcribeAudio(
 
     case 'xiaomi-asr':
       return await transcribeXiaomiASR(config, audioBuffer);
+
+    case 'deepseek-asr':
+      return await transcribeDeepSeekASR(config, audioBuffer);
 
     default:
       if (isCustomASRProvider(config.providerId)) {
@@ -783,6 +790,151 @@ function resolveXiaomiASRAudioMime(bytes: Uint8Array): string | null {
     return 'audio/mp3';
   }
   if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) return 'audio/mp3';
+  return null;
+}
+
+/** DeepSeek ASR takes at most 8 MiB of audio per request. */
+const MAX_DEEPSEEK_ASR_BYTES = 8 * 1024 * 1024;
+/** DeepSeek ASR takes at most 120 seconds of audio per request. */
+export const MAX_DEEPSEEK_ASR_SECONDS = 120;
+
+/**
+ * DeepSeek ASR (POST /v1/tools/asr).
+ *
+ * The whole file goes up in one multipart `file` field and the complete
+ * transcript comes back as `{ request_id, text, duration_ms }`. The service
+ * accepts 16-bit PCM WAV or Ogg Opus only (browser recordings are transcoded
+ * to WAV client-side, server media chunks are already WAV), at most 8 MiB and
+ * 120 seconds; there is no model or language parameter (the language is
+ * detected from the audio) and no streaming. Audio over the limits is refused
+ * here with a clear message instead of an opaque provider error; server-side
+ * media extraction keeps its chunks under the cap (`maxChunkSeconds`).
+ */
+async function transcribeDeepSeekASR(
+  config: ASRModelConfig,
+  audioBuffer: Buffer | Blob,
+): Promise<ASRTranscriptionResult> {
+  const endpoint = deepseekToolsEndpoint(
+    config.baseUrl ||
+      ASR_PROVIDERS['deepseek-asr'].defaultBaseUrl ||
+      DEEPSEEK_TOOLS_DEFAULT_BASE_URL,
+    'asr',
+  );
+
+  const audioBlob = await toAudioBlob(audioBuffer);
+  const bytes = new Uint8Array(await audioBlob.arrayBuffer());
+  // The bytes decide, never the declared Content-Type.
+  const format = deepseekASRFormat(bytes);
+  if (!format) {
+    throw new Error(
+      'DeepSeek ASR accepts 16-bit PCM WAV or Ogg Opus audio only (browser recordings are converted to WAV before upload).',
+    );
+  }
+  if (bytes.byteLength > MAX_DEEPSEEK_ASR_BYTES) {
+    throw new Error(
+      `DeepSeek ASR accepts at most 8 MiB of audio per request ` +
+        `(${(bytes.byteLength / 1024 / 1024).toFixed(1)} MiB). Record a shorter clip.`,
+    );
+  }
+  if (format === 'wav') {
+    const seconds = wavDurationSeconds(bytes);
+    if (seconds === null) {
+      throw new Error('DeepSeek ASR accepts 16-bit PCM WAV only; this WAV is not 16-bit PCM.');
+    }
+    if (seconds > MAX_DEEPSEEK_ASR_SECONDS) {
+      throw new Error(
+        `DeepSeek ASR accepts at most ${MAX_DEEPSEEK_ASR_SECONDS} seconds of audio per request ` +
+          `(${Math.ceil(seconds)} s). Record a shorter clip.`,
+      );
+    }
+  }
+
+  const formData = new FormData();
+  formData.set(
+    'file',
+    new Blob([bytes], { type: format === 'wav' ? 'audio/wav' : 'audio/ogg' }),
+    format === 'wav' ? 'audio.wav' : 'audio.ogg',
+  );
+
+  const response = await audioProviderFetch(
+    endpoint,
+    {
+      method: 'POST',
+      headers: getOptionalBearerAuthHeaders(config.apiKey),
+      body: formData,
+      // Extraction wraps the call in an abort scope (timeout/cancel); the
+      // pinned transport bypasses the globalThis.fetch patch, so the context
+      // signal is passed explicitly here.
+      ...(asrFetchSignal.getStore() ? { signal: asrFetchSignal.getStore() } : {}),
+    },
+    audioEndpointPolicy(config),
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    let message = errorText || response.statusText;
+    try {
+      const parsed = JSON.parse(errorText) as { error?: { message?: string } | string };
+      const error = parsed.error;
+      message = (typeof error === 'string' ? error : error?.message) || message;
+    } catch {
+      // Keep the raw text for non-JSON errors.
+    }
+    throw new Error(`DeepSeek ASR API error (${response.status}): ${message}`);
+  }
+
+  const data = (await response.json()) as { text?: unknown; error?: { message?: string } };
+  if (data?.error) {
+    throw new Error(`DeepSeek ASR API error: ${data.error.message || 'request failed'}`);
+  }
+  return { text: typeof data?.text === 'string' ? data.text : '' };
+}
+
+/** The container DeepSeek ASR accepts that the bytes are, if any. */
+function deepseekASRFormat(bytes: Uint8Array): 'wav' | 'ogg' | null {
+  if (detectWavBytes(bytes)) return 'wav';
+  // "OggS" capture pattern.
+  if (
+    bytes.byteLength >= 4 &&
+    bytes[0] === 0x4f &&
+    bytes[1] === 0x67 &&
+    bytes[2] === 0x67 &&
+    bytes[3] === 0x53
+  ) {
+    return 'ogg';
+  }
+  return null;
+}
+
+/**
+ * Seconds of audio in a 16-bit PCM WAV, from its fmt chunk's byte rate and the
+ * data that follows the data chunk header (a streamed WAV may declare the
+ * placeholder size 0xFFFFFFFF, so the bytes present bound it). Null when the
+ * file is not 16-bit PCM or has no readable fmt/data chunks.
+ */
+function wavDurationSeconds(bytes: Uint8Array): number | null {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const ascii = (start: number) => String.fromCharCode(...bytes.subarray(start, start + 4));
+  let offset = 12;
+  let byteRate = 0;
+  while (offset + 8 <= bytes.byteLength) {
+    const id = ascii(offset);
+    const size = view.getUint32(offset + 4, true);
+    const start = offset + 8;
+    if (id === 'fmt ') {
+      if (size < 16 || start + 16 > bytes.byteLength) return null;
+      const format = view.getUint16(start, true);
+      const bitsPerSample = view.getUint16(start + 14, true);
+      // 1 = PCM; 0xFFFE = WAVE_FORMAT_EXTENSIBLE, which still carries PCM samples.
+      if ((format !== 1 && format !== 0xfffe) || bitsPerSample !== 16) return null;
+      byteRate = view.getUint32(start + 8, true);
+    } else if (id === 'data') {
+      if (!byteRate) return null;
+      return Math.min(size, bytes.byteLength - start) / byteRate;
+    }
+    if (size === 0xffffffff) return null;
+    offset = start + size + (size % 2);
+  }
   return null;
 }
 

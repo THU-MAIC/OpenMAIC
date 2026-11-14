@@ -5,7 +5,11 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { MINERU_CLOUD_DEFAULT_BASE, PDF_PROVIDERS } from '@/lib/pdf/constants';
+import {
+  DEEPSEEK_OCR_DEFAULT_BASE,
+  MINERU_CLOUD_DEFAULT_BASE,
+  PDF_PROVIDERS,
+} from '@/lib/pdf/constants';
 import type { PDFProviderId } from '@/lib/pdf/types';
 import { getFormatLabelsForProviders } from '@/lib/document/mime';
 import { CheckCircle2, Loader2, Zap, XCircle } from 'lucide-react';
@@ -34,8 +38,14 @@ function getFeatureLabel(feature: string, t: (key: string) => string): string {
   return labels[feature] || feature;
 }
 
+/** The request URL a hosted parsing service is called at, for the settings hint. */
+const HOSTED_REQUEST_URLS: Partial<Record<PDFProviderId, string>> = {
+  'mineru-cloud': `${MINERU_CLOUD_DEFAULT_BASE}/file-urls/batch`,
+  'deepseek-ocr': `${DEEPSEEK_OCR_DEFAULT_BASE}/tools/ocr`,
+};
+
 /**
- * A document parsing service. MinerU Cloud takes a key; AliDocMind's key pair
+ * A document parsing service. MinerU Cloud and DeepSeek OCR take a key; AliDocMind's key pair
  * and a self-hosted MinerU are the server's to configure; the built-in
  * parsers need nothing.
  */
@@ -48,6 +58,7 @@ export function PDFSettings({ view, apply, entry }: ServicePanelProps) {
   const pdfProvider = PDF_PROVIDERS[providerId];
   const provider = entry.provider;
   const isCloud = providerId === 'mineru-cloud';
+  const requestUrl = HOSTED_REQUEST_URLS[providerId];
   const needsRemoteConfig = !!pdfProvider?.requiresApiKey || !!pdfProvider?.requiresCredentials;
   const editable =
     (entry.state === 'workspace' || entry.state === 'available') && needsRemoteConfig;
@@ -113,11 +124,11 @@ export function PDFSettings({ view, apply, entry }: ServicePanelProps) {
           </div>
 
           {/* Base URL: the service's own; another endpoint is the server's to set. */}
-          {isCloud && (
+          {requestUrl && (
             <div className="space-y-2">
               <Label className="text-sm">{t('settings.pdfBaseUrl')}</Label>
               <p className="text-xs text-muted-foreground break-all">
-                {t('settings.requestUrl')}: {MINERU_CLOUD_DEFAULT_BASE}/file-urls/batch
+                {t('settings.requestUrl')}: {requestUrl}
               </p>
               <EndpointServerOnlyHint />
             </div>

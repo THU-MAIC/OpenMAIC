@@ -19,11 +19,11 @@ description: 開源版 OpenMAIC 的內建模型與 provider 清單。
 | `tokendance` | TokenDance | 對話、圖像、影片、TTS、網路搜尋 |
 | `volcengine-ark` | 火山方舟 Agent Plan | 對話、圖像、影片、TTS、網路搜尋 |
 | `kimi-coding-plan` | Kimi 程式設計方案 | 對話、網路搜尋、網頁擷取 |
-| `deepseek-token-plan` | DeepSeek | 對話、網路搜尋、網頁擷取 |
+| `deepseek-token-plan` | DeepSeek | 對話、TTS、ASR、文件解析、網路搜尋、網頁擷取 |
 
 在**設定 → Token Plan** 中連接 Kimi Coding Plan，會同時推薦對話、網路搜尋和網頁擷取，共用方案金鑰和 `https://api.kimi.com/coding/v1`。如果網頁擷取僅使用隱含的內建預設值，連接會直接指定 Kimi，不顯示衝突確認，即使選擇保留目前設定也是如此。工作區的明確選擇（包括 `null`）以及部署設定的非內建讀取器或 `null` 仍按現有衝突選項處理。中斷連接會移除方案的指定值，恢復伺服器預設值（未設定讀取器時為內建讀取器），不會恢復先前工作區的明確選擇。鎖定的欄位保持不變，未宣告網頁擷取的方案不會修改該欄位。
 
-在**設定 → Token Plan** 中連接 DeepSeek，會同時推薦對話（預設 `deepseek-flash`）、網路搜尋和網頁擷取，共用一把 DeepSeek API 金鑰和 `https://api.deepseek.com/v1`。它與 `deepseek` 範本是同一個按量計費帳號和位址；方案使用獨立的 `deepseek-token-plan` 範本，中斷連接只會移除方案自己的供應商和指定值，不影響另外設定的 `deepseek` 供應商。
+在**設定 → Token Plan** 中連接 DeepSeek，會同時推薦對話（預設 `deepseek-flash`）、TTS（`deepseek-tts`）、ASR（`deepseek-asr`）、文件解析（`deepseek-ocr`）、網路搜尋和網頁擷取，共用一把 DeepSeek API 金鑰和 `https://api.deepseek.com/v1`。圖片和影片不在涵蓋範圍內。它與 `deepseek` 範本是同一個按量計費帳號和位址；方案使用獨立的 `deepseek-token-plan` 範本，中斷連接只會移除方案自己的供應商和指定值，不影響另外設定的 `deepseek` 供應商。
 
 首次設定精靈會將網頁擷取保留為內建讀取器；只有透過 Token Plan 設定頁面連接方案，才會套用方案的擷取建議設定。
 
@@ -34,13 +34,13 @@ description: 開源版 OpenMAIC 的內建模型與 provider 清單。
 | 能力 | 範本 |
 | --- | --- |
 | 對話 | `openai`、`azure`、`atlascloud`、`anthropic`、`bedrock`、`google`、`glm`、`qwen`、`deepseek`、`kimi`、`siliconflow`、`doubao`、`openrouter`、`grok`、`tencent-hunyuan`、`xiaomi`、`ollama`、`lemonade`、`openai-compatible`，以及各 Token Plan |
-| TTS | `openai-tts`、`azure-tts`、`glm-tts`、`qwen-tts`、`minimax-tts`、`xiaomi-tts`、`voxcpm-tts`、`doubao-tts`、`elevenlabs-tts`、`google-tts`、`browser-native-tts`、`lemonade-tts` |
-| ASR | `openai-whisper`、`qwen-asr`、`azure-asr`、`browser-native`、`funasr-asr`、`lemonade-asr`、`xiaomi-asr` |
+| TTS | `openai-tts`、`azure-tts`、`glm-tts`、`qwen-tts`、`minimax-tts`、`xiaomi-tts`、`voxcpm-tts`、`doubao-tts`、`elevenlabs-tts`、`google-tts`、`browser-native-tts`、`lemonade-tts`、`deepseek-tts` |
+| ASR | `openai-whisper`、`qwen-asr`、`azure-asr`、`browser-native`、`funasr-asr`、`lemonade-asr`、`xiaomi-asr`、`deepseek-asr` |
 | 圖像 | `seedream`、`openai-image`、`qwen-image`、`nano-banana`、`minimax-image`、`grok-image`、`comfyui-image`、`lemonade-image`、`openrouter-image` |
 | 影片 | `seedance`、`kling`、`minimax-video`、`grok-video`、`happyhorse`、`openrouter-video` |
 | 網路搜尋 | `tavily`、`exa`、`firecrawl`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`deepseek`、`deepseek-token-plan`、`kimi`、`kimi-coding-plan`、`searxng` |
 | 網頁擷取 | `builtin`、`deepseek`、`deepseek-token-plan`、`firecrawl`、`kimi`、`kimi-coding-plan` |
-| 文件解析 | `unpdf`、`mineru`、`mineru-cloud`、`alidocmind` |
+| 文件解析 | `unpdf`、`mineru`、`mineru-cloud`、`alidocmind`、`deepseek-ocr` |
 
 `azure`、`openai-compatible`、`searxng` 和 `mineru` 需要 `baseUrl`；`alidocmind` 使用 `credentials`（金鑰對）驗證。自架的 TTS、ASR、圖像、搜尋和文件範本、金鑰對範本以及 Bedrock 只能在 `openmaic.yml` 中設定，請見[設定說明](./configuration.mdx)。
 
@@ -111,6 +111,7 @@ description: 開源版 OpenMAIC 的內建模型與 provider 清單。
 | VoxCPM2        | `voxcpm-tts`         | VoxCPM2 (`voxcpm2`)<br />後端：vLLM-Omni、Python API、Nano-vLLM                                                                                                                                                                        |
 | Lemonade TTS   | `lemonade-tts`       | Kokoro v1 (`kokoro-v1`)                                                                                                                                                                                                                |
 | 小米 MiMo TTS   | `xiaomi-tts`        | MiMo V2.5 TTS (`mimo-v2.5-tts`) — 預設音色：冰糖 / 茉莉 / 蘇打 / 白樺 / Mia / Chloe / Milo / Dean；語速透過風格指令調節，為風格提示、不精確 |
+| DeepSeek TTS   | `deepseek-tts`       | 無模型選擇器。音色 `stella`（女聲，預設）和 `tide`（男聲）；依文字自動辨識語言；不支援語速調整；輸出 WAV；每次請求最多 10,000 個計費字元（一個漢字計 2 個）、請求本文最大 64 KiB |
 | Doubao TTS 2.0 | `doubao-tts`         | 無模型選擇器，使用 Doubao TTS 2.0 音色 ID。                                                                                                                                                                                            |
 | ElevenLabs TTS | `elevenlabs-tts`     | Multilingual v2 (`eleven_multilingual_v2`)<br />Flash v2.5 (`eleven_flash_v2_5`)<br />Flash v2 (`eleven_flash_v2`)                                                                                                                     |
 | Google Gemini TTS | `google-tts`         | Gemini 3.8 Flash-Lite TTS (`gemini-3.8-flash-lite-tts`)<br />Gemini 3.8 Flash TTS (`gemini-3.8-flash-tts`)<br />Gemini 3.1 Flash TTS Preview (`gemini-3.1-flash-tts-preview`)<br />Gemini 2.5 Flash Preview TTS (`gemini-2.5-flash-preview-tts`)<br />Gemini 2.5 Pro Preview TTS (`gemini-2.5-pro-preview-tts`)                                        |
@@ -140,6 +141,7 @@ Google TTS 預設使用 `gemini-3.8-flash-lite-tts`，已明確選取的模型�
 | FunASR         | `funasr-asr`     | SenseVoiceSmall (`sensevoice`)<br />Paraformer (`paraformer`)<br />Fun-ASR-Nano (`fun-asr-nano`) |
 | Lemonade ASR   | `lemonade-asr`   | Whisper Base (`Whisper-Base`)<br />Whisper Large v3 (`Whisper-Large-v3`)<br />Whisper Large v3 Turbo (`Whisper-Large-v3-Turbo`)<br />Whisper Medium (`Whisper-Medium`)<br />Whisper Small (`Whisper-Small`)<br />Whisper Tiny (`Whisper-Tiny`) |
 | 小米 MiMo ASR   | `xiaomi-asr`        | MiMo V2.5 ASR (`mimo-v2.5-asr`) — wav/mp3，auto/zh/en |
+| DeepSeek ASR   | `deepseek-asr`   | 無模型選擇器。僅支援 16 位元 PCM WAV 或 Ogg Opus（瀏覽器錄音會先轉為 WAV），每次請求最多 8 MiB、120 秒；僅自動辨識語言；較長的音訊與影片依 110 秒分段 |
 | 瀏覽器原生 ASR | `browser-native` | 無模型選擇器，使用瀏覽器 Web Speech API。                                                                                                                                                                                                      |
 
 ## 文件解析供應商
@@ -150,6 +152,7 @@ Google TTS 預設使用 `gemini-3.8-flash-lite-tts`，已明確選取的模型�
 | MinerU       | `mineru`       | 文字、圖片、表格、公式、版面分析      |
 | MinerU Cloud | `mineru-cloud` | 文字、圖片、表格、公式、版面分析      |
 | AliDocMind   | `alidocmind`   | 文字、圖片、表格、公式、版面分析、OCR |
+| DeepSeek OCR | `deepseek-ocr` | 文字、表格、公式、版面分析、OCR；僅從 PDF 和圖片中擷取插圖（PDF、DOC/DOCX、PPT/PPTX、PNG、JPEG、WebP、GIF、BMP；最大 100 MiB、1,000 頁） |
 
 ## Web Search 供應商
 
