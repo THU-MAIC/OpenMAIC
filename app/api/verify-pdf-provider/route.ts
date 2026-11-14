@@ -73,7 +73,7 @@ async function probeMinerUCloud(cloudBase: string, apiKey: string, managed: bool
 /**
  * DeepSeek OCR: a request with no file is refused before any recognition (so
  * nothing is billed); 401/403 means the key is wrong, any other answer means
- * the key and the endpoint work.
+ * the key and the endpoint work, except 404 (a wrong base URL path).
  */
 async function probeDeepSeekOCR(baseUrl: string, apiKey: string, managed: boolean) {
   const form = new FormData();
@@ -92,6 +92,11 @@ async function probeDeepSeekOCR(baseUrl: string, apiKey: string, managed: boolea
   if (response.status === 401 || response.status === 403) {
     log.warn(`DeepSeek OCR probe rejected credentials [status=${response.status}]`);
     return apiError('INTERNAL_ERROR', 500, AUTH_FAILED_MESSAGE);
+  }
+  // A wrong path prefix answers 404 before the key is even checked.
+  if (response.status === 404) {
+    log.warn('DeepSeek OCR probe found no endpoint [status=404]');
+    return apiError('INTERNAL_ERROR', 500, CONNECTION_FAILED_MESSAGE);
   }
   return apiSuccess({ message: 'Connection successful' });
 }

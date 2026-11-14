@@ -460,9 +460,18 @@ export async function parseWithDeepSeekOCR(
       finishReason: page.finish_reason,
     }))
     .sort((a, b) => a.index - b.index);
-  const truncated = pages.filter((page) => page.finishReason === 'length').length;
-  if (truncated) {
-    log.warn(`[DeepSeek OCR] ${truncated} page(s) hit the output limit; their text is incomplete`);
+  // A page that hit the output limit lost its end: refuse the result rather
+  // than hand on a document with text silently missing.
+  const truncated = pages
+    .filter((page) => page.finishReason === 'length')
+    .map((page) => page.index + 1);
+  if (truncated.length) {
+    log.warn(`[DeepSeek OCR] Page(s) ${truncated.join(', ')} hit the output limit`);
+    throw new MaterialExtractionError(
+      `DeepSeek OCR could not read all of page(s) ${truncated.join(', ')}: ` +
+        'the page hit the output limit. Try another document parser.',
+      false,
+    );
   }
 
   const withFigures = config.textOnly !== true && (await canCropFigures(documentBuffer));

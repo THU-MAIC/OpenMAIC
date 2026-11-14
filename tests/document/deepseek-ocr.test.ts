@@ -245,6 +245,23 @@ describe('parseWithDeepSeekOCR', () => {
     expect(result.images).toEqual([]);
   });
 
+  it('refuses a result whose page hit the output limit instead of passing on partial text', async () => {
+    transport.providerFetch.mockResolvedValueOnce(
+      ocrResponse([
+        { text: R('text', '[[0,0,1000,100]]', 'Complete') },
+        { text: R('text', '[[0,0,1000,100]]', 'Cut off mid'), finish_reason: 'length' },
+      ]),
+    );
+
+    const error = await parseWithDeepSeekOCR(
+      { providerId: 'deepseek-ocr', apiKey: 'k', textOnly: true },
+      Buffer.from('%PDF-1.4'),
+    ).catch((e) => e);
+    expect(error).toBeInstanceOf(MaterialExtractionError);
+    expect(error.retryable).toBe(false);
+    expect(error.message).toContain('page(s) 2');
+  });
+
   it('refuses a document over the page limit as the source, not retried', async () => {
     transport.providerFetch.mockResolvedValueOnce(
       errorResponse('Failed to recognize the file: the document has more than 1000 pages'),

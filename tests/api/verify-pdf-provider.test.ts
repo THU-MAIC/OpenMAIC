@@ -259,6 +259,28 @@ describe('POST /api/verify-pdf-provider', () => {
       });
     });
 
+    it('fails DeepSeek OCR verification when the base URL path answers 404', async () => {
+      const deepseek = await startLoopback((_req, res) => {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Not Found');
+      });
+
+      const res = await postVerifyPdfProvider({
+        providerId: 'deepseek-ocr',
+        apiKey: 'sk-test',
+        baseUrl: `${deepseek.origin}/wrong-prefix`,
+      });
+
+      expect(res).toEqual({
+        status: 500,
+        json: {
+          success: false,
+          errorCode: 'INTERNAL_ERROR',
+          error: 'Cannot connect to server, please check the Base URL',
+        },
+      });
+    });
+
     it('verifies a self-hosted MinerU on a local network', async () => {
       const selfHosted = await startLoopback();
 
