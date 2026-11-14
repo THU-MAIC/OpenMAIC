@@ -2276,6 +2276,11 @@
           "label": "Phân tích chưa hoàn tất",
           "description": "Không thể hoàn tất phân tích. Bạn có thể thử lại sau."
         },
+        "pages_failed": {
+          "label": "Không thể phân tích các trang PDF",
+          "description": "Không thể phân tích các trang {{firstPage}}–{{lastPage}} của PDF nên hiện chưa thể đọc tài liệu này. Hãy thử phân tích lại sau.",
+          "descriptionWithoutCount": "Không thể phân tích một số trang của PDF nên hiện chưa thể đọc tài liệu này. Hãy thử phân tích lại sau."
+        },
         "too_many_pages": {
           "label": "Quá nhiều trang",
           "description": "Tệp PDF này có {{pages}} trang, vượt quá giới hạn phân tích {{maxPages}} trang. Hãy chia nhỏ tệp rồi tải lên, hoặc chỉ tải lên các chương cần thiết.",

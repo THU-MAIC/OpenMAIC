@@ -2276,6 +2276,11 @@
           "label": "Analyse non terminée",
           "description": "L’analyse n’a pas pu être terminée. Vous pouvez réessayer plus tard."
         },
+        "pages_failed": {
+          "label": "Échec de l’analyse de pages PDF",
+          "description": "L’analyse des pages {{firstPage}}–{{lastPage}} du PDF a échoué. Ce document ne peut pas encore être lu. Réessayez de l’analyser plus tard.",
+          "descriptionWithoutCount": "L’analyse de certaines pages du PDF a échoué. Ce document ne peut pas encore être lu. Réessayez de l’analyser plus tard."
+        },
         "too_many_pages": {
           "label": "Trop de pages",
           "description": "Ce PDF compte {{pages}} pages, au-delà de la limite d’analyse de {{maxPages}} pages. Divisez-le avant de l’importer, ou importez uniquement les chapitres nécessaires.",

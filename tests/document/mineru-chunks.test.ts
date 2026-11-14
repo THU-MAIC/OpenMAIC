@@ -293,6 +293,12 @@ describe('self-hosted MinerU PDF chunks', () => {
       'PDF pages 3–4 after two attempts: MinerU API error (503)',
     );
     expect(isTransientExtractionError(error)).toBe(false);
+    expect(error).toMatchObject({
+      reasonCode: 'pages_failed',
+      reasonValues: { firstPage: 3, lastPage: 4 },
+      retryable: false,
+    });
+    expect(error).not.toBeInstanceOf(MaterialSourceRefusedError);
     expect(fetchMock.mock.calls.map(([, init]) => fileOf(init!).name)).toEqual([
       'pages-1-2.pdf',
       'pages-3-4.pdf',

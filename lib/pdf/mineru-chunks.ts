@@ -2,7 +2,10 @@ import { PDFArray, PDFDict, PDFDocument, PDFName } from 'pdf-lib';
 
 import { applyImagePlan } from '@/lib/server/material-extraction/document-image-apply.mjs';
 import { imagePlan } from '@/lib/server/material-extraction/document-image-plan.mjs';
-import { MaterialSourceRefusedError } from '@/lib/server/material-extraction/errors';
+import {
+  MaterialExtractionError,
+  MaterialSourceRefusedError,
+} from '@/lib/server/material-extraction/errors';
 import type { ParsedPdfContent } from '@/lib/types/pdf';
 
 import { extractMinerUResult } from './mineru-parser';
@@ -136,7 +139,11 @@ function chunkFailure(error: unknown, start: number, end: number): Error {
       },
     );
   }
-  return new Error(message, { cause: error });
+  return new MaterialExtractionError(message, false, {
+    cause: error,
+    reasonCode: 'pages_failed',
+    reasonValues: { firstPage: start + 1, lastPage: end },
+  });
 }
 
 /** Undefined means the original request must be sent unchanged. */

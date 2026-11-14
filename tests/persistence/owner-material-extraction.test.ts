@@ -15,6 +15,7 @@ import {
   documentFallbackScenario,
   documentServiceUnavailableScenario,
   tooManyPagesScenario,
+  failedPagesScenario,
   cacheCollectorOrderScenario,
   claimIntoSameContentScenario,
   sameKeyConcurrentSourcesScenario,
@@ -142,6 +143,10 @@ describe('owner-level material extraction (PGlite)', () => {
 
   it('keeps public failure reasons on current terminal claims only', async () => {
     await failureReasonScenario(await boot());
+  });
+
+  it('stores failed chunk page ranges in both chains while retaining provider fallback', async () => {
+    await failedPagesScenario(await boot());
   });
 
   it('spends the claim budget on takeovers and keeps a heartbeating lease', async () => {

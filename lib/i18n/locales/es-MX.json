@@ -2276,6 +2276,11 @@
           "label": "Análisis sin completar",
           "description": "No se pudo completar el análisis. Puedes volver a intentarlo más tarde."
         },
+        "pages_failed": {
+          "label": "Error al analizar páginas del PDF",
+          "description": "No se pudieron analizar las páginas {{firstPage}}–{{lastPage}} del PDF, por lo que este material aún no se puede leer. Intenta analizarlo de nuevo más tarde.",
+          "descriptionWithoutCount": "No se pudieron analizar algunas páginas del PDF, por lo que este material aún no se puede leer. Intenta analizarlo de nuevo más tarde."
+        },
         "too_many_pages": {
           "label": "Demasiadas páginas",
           "description": "Este PDF tiene {{pages}} páginas y supera el límite de análisis de {{maxPages}} páginas. Divídelo antes de subirlo o sube solo los capítulos que necesites.",

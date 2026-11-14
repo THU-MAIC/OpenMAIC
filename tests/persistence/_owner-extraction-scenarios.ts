@@ -12,6 +12,9 @@
 import { OwnerMaterialBytesUnavailableError } from '@/lib/server/materials/owner-material-bytes';
 import { MaterialExtractionError } from '@/lib/server/material-extraction/errors';
 import { selfHostedMinerUFailure } from '@/lib/pdf/pdf-providers';
+import { parseMinerUPdfChunks } from '@/lib/pdf/mineru-chunks';
+import { PDFDocument } from 'pdf-lib';
+import { runClaimedOwnerMaterialExtraction } from '@/lib/server/materials/extraction';
 import { createHash, randomUUID } from 'node:crypto';
 
 import { ensureAgentSessionSchema } from '@openmaic/storage/agent-session/pg';
@@ -47,6 +50,9 @@ import {
   publicMaterial,
   publishOwnerMaterialUpload,
   registerOwnerMaterial,
+  finalizeOwnerMaterial,
+  claimOwnerMaterialExtraction,
+  getOwnerMaterial,
 } from '@/lib/persistence/owner-materials';
 import {
   getServerPersistenceProvider,
@@ -1951,6 +1957,111 @@ export async function tooManyPagesScenario(h: ExtractionHarness): Promise<void> 
   expect(failed.extraction_error).toContain('MinerU refused the document: too many pages');
   await ensure(h, 'pdf-long');
   expect((await stored()).extraction).toEqual({ status: 'pending' });
+}
+
+/** A failed chunk's physical page range survives both persistence paths without stopping fallback. */
+export async function failedPagesScenario(h: ExtractionHarness): Promise<void> {
+  vi.stubEnv('PDF_MINERU_CHUNK_PAGES', '2');
+  vi.stubEnv('PDF_MINERU_MAX_PAGES', '1000');
+  vi.stubEnv('PDF_MINERU_CHUNK_CONCURRENCY', '1');
+  const document = await PDFDocument.create();
+  for (let page = 0; page < 5; page++) document.addPage();
+  const bytes = Buffer.from(await document.save());
+  const request = vi.fn(async (_bytes: Buffer, name: string) => {
+    if (name === 'pages-1-2.pdf') return { md_content: 'first chunk succeeded' };
+    throw new Error('MinerU API error (503)');
+  });
+  const parse = vi.fn(async () => {
+    await parseMinerUPdfChunks(bytes, request);
+    throw new Error('Expected the failed chunk to reject the entire document');
+  });
+  const { provider, run, failing } = documentCandidates(h);
+  const pdf = ['application/pdf'];
+  const failedFallback = failing('Invalid PDF structure');
+  expect(
+    await run(
+      'pages-failed',
+      'application/pdf',
+      [provider('mineru', pdf, parse), provider('unpdf', pdf, failedFallback)],
+      ['mineru'],
+    ),
+  ).toMatchObject({
+    status: 'failed',
+    reason_code: 'pages_failed',
+    extraction_claims: 1,
+    extraction_result: null,
+  });
+  expect(request).toHaveBeenCalledTimes(3);
+  expect(failedFallback).toHaveBeenCalledTimes(1);
+  const stored = (
+    await h.pool.query<{ extraction: Record<string, unknown> }>(
+      'SELECT extraction FROM owner_material WHERE id = $1',
+      ['pages-failed'],
+    )
+  ).rows[0].extraction;
+  expect(stored).toEqual({
+    status: 'failed',
+    reasonCode: 'pages_failed',
+    reasonValues: { firstPage: 3, lastPage: 4 },
+  });
+
+  // An ordinary chunk failure must still allow a successful fallback.
+  expect(
+    await run(
+      'pages-fallback',
+      'application/pdf',
+      [provider('mineru', pdf, parse), provider('unpdf', pdf, h.documentExtract)],
+      ['mineru'],
+    ),
+  ).toMatchObject({ status: 'done', reason_code: null });
+  expect(h.documentExtract).toHaveBeenCalledTimes(1);
+
+  // The classic worker publishes the same safe fields in its existing JSON shape.
+  const id = 'classic-pages-failed';
+  await registerOwnerMaterial(
+    h.provider.pool,
+    {
+      id,
+      ownerId: ACCOUNT,
+      kind: 'source',
+      mime: 'application/pdf',
+      bytes: bytes.length,
+      originalName: 'pages.pdf',
+      ossKey: `objects/${id}`,
+    },
+    { maxCount: 100, maxTotalBytes: 1_000_000_000 },
+  );
+  await finalizeOwnerMaterial(h.provider.pool, id, bytes.length, 'classic-digest', {
+    extract: true,
+  });
+  const claim = await claimOwnerMaterialExtraction(h.provider.pool, 'worker', {
+    leaseTtlMs: TTL,
+    perOwnerLimit: 10,
+  });
+  expect(claim?.material.id).toBe(id);
+  const put = vi.fn();
+  await runClaimedOwnerMaterialExtraction(claim!, {
+    heartbeatIntervalMs: 60_000,
+    services: async () => ({ document: null }),
+    analyze: parse,
+    byteStore: {
+      get: async () => bytes,
+      put,
+      delete: vi.fn(),
+      deletePrefix: vi.fn(),
+      list: async () => [],
+    },
+  });
+  const classic = await getOwnerMaterial(h.provider.pool, ACCOUNT, id);
+  expect(classic?.extraction).toMatchObject({
+    status: 'failed',
+    errorCode: 'EXTRACTION_FAILED',
+    retryable: false,
+    reasonCode: 'pages_failed',
+    reasonValues: { firstPage: 3, lastPage: 4 },
+  });
+  expect(classic?.extraction?.error).toContain('PDF pages 3–4');
+  expect(put).not.toHaveBeenCalled();
 }
 
 /** Public failure reasons survive only a terminal, current claim. */

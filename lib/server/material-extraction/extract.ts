@@ -353,9 +353,9 @@ export function documentFailureLine(provider: DocumentExtractorProvider, error: 
 /**
  * The failure once every document provider failed: retryable if any failure
  * was transient, and `service_unavailable` when no candidate was a service
- * the deployment configured (any other failure keeps no reason code). A
- * service that refused the source itself ends the walk: that refusal, never
- * retried, with its reason.
+ * the deployment configured. Failed page ranges keep their public reason;
+ * other provider failures keep no reason code. A service that refused the
+ * source itself ends the walk: that refusal, never retried, with its reason.
  */
 export function documentExtractionFailure(
   errors: string[],
@@ -370,10 +370,18 @@ export function documentExtractionFailure(
       reasonValues: refusal.reasonValues,
     });
   }
+  const failedPages = failures.find(
+    (failure): failure is MaterialExtractionError =>
+      failure instanceof MaterialExtractionError && failure.reasonCode === 'pages_failed',
+  );
   return new MaterialExtractionError(
     `document extraction failed (${errors.join('; ')})`,
     failures.some(isTransientExtractionError),
-    noServiceConfigured ? { reasonCode: 'service_unavailable' } : undefined,
+    failedPages
+      ? { reasonCode: failedPages.reasonCode, reasonValues: failedPages.reasonValues }
+      : noServiceConfigured
+        ? { reasonCode: 'service_unavailable' }
+        : undefined,
   );
 }
 

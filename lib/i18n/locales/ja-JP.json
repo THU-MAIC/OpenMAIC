@@ -2276,6 +2276,11 @@
           "label": "解析が完了しませんでした",
           "description": "解析を完了できませんでした。しばらくしてから再試行できます。"
         },
+        "pages_failed": {
+          "label": "PDFページの解析に失敗",
+          "description": "PDFの{{firstPage}}～{{lastPage}}ページの解析に失敗したため、この資料はまだ読み取れません。後でもう一度解析してください。",
+          "descriptionWithoutCount": "PDFの一部のページの解析に失敗したため、この資料はまだ読み取れません。後でもう一度解析してください。"
+        },
         "too_many_pages": {
           "label": "ページ数が多すぎます",
           "description": "この PDF は {{pages}} ページあり、解析できる上限の {{maxPages}} ページを超えています。分割してアップロードするか、必要な章だけをアップロードしてください。",

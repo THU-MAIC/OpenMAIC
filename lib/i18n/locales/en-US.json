@@ -2276,6 +2276,11 @@
           "label": "Parsing did not finish",
           "description": "Parsing could not be completed. You can try again later."
         },
+        "pages_failed": {
+          "label": "PDF pages failed to parse",
+          "description": "PDF pages {{firstPage}}–{{lastPage}} failed to parse, so this material cannot be read yet. Try parsing it again later.",
+          "descriptionWithoutCount": "Some PDF pages failed to parse, so this material cannot be read yet. Try parsing it again later."
+        },
         "too_many_pages": {
           "label": "Too many pages",
           "description": "This PDF has {{pages}} pages, more than the {{maxPages}}-page parsing limit. Split it and upload the parts, or upload only the chapters you need.",

@@ -709,6 +709,32 @@ describe('material agent tools', () => {
     });
   });
 
+  it('tells the agent which pages failed when it tries to read the material', async () => {
+    const readText = vi.fn();
+    const tools = buildMaterialTools({
+      sessionId: 'ses_1',
+      resolveMaterial: async () => ({
+        origin: 'owner',
+        entry: ownerSource({
+          status: 'failed',
+          reasonCode: 'pages_failed',
+          reasonValues: { firstPage: 101, lastPage: 150 },
+          error: 'PRIVATE_DIAGNOSTIC',
+        }),
+      }),
+      readText,
+      locale: () => 'zh-CN',
+    });
+    const result = await tool(tools, 'read_material').execute('c1', {
+      materialId: 'src_a',
+    } as never);
+    const text = result.content.map((part) => (part as { text?: string }).text ?? '').join('\n');
+    expect(text).toContain('PDF 第 101–150 页解析失败');
+    expect(text).toContain('这份资料暂时无法读取');
+    expect(text).not.toContain('PRIVATE_DIAGNOSTIC');
+    expect(readText).not.toHaveBeenCalled();
+  });
+
   it('reads an unknown or missing stored code as the generic failure', async () => {
     const tools = buildMaterialTools({
       sessionId: 'ses_1',
