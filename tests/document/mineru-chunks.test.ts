@@ -101,7 +101,8 @@ describe('self-hosted MinerU PDF chunks', () => {
     expect(file.name).toBe(options.fileName);
     expect(file.type).toBe(options.mimeType);
     expect(Buffer.from(await file.arrayBuffer())).toEqual(bytes);
-    expect(result).toEqual({
+    // Transient chapter evidence is not part of the serialized parser result.
+    expect(JSON.parse(JSON.stringify(result))).toEqual({
       text: '![figure](images/a.png)',
       images: ['data:image/png;base64,abc'],
       metadata: {

@@ -2171,3 +2171,175 @@ export async function failureReasonScenario(h: ExtractionHarness): Promise<void>
   await drain(h);
   expect(await stateOf(h, 'doc-failed')).toMatchObject({ status: 'failed', reason_code: null });
 }
+
+/** Optional chapter failures cannot undo extraction or enter provider fallback. */
+export async function chapterRecognitionScenario(
+  h: ExtractionHarness,
+  mode: string,
+): Promise<void> {
+  const llm = await import('@/lib/ai/llm');
+  const models = await import('@/lib/server/model-config/llm');
+  const runtime = await import('@/lib/server/model-config/runtime');
+  const { extractMinerUResult } = await import('@/lib/pdf/mineru-parser');
+  const { parsedPdfToDocumentArtifact } = await import('@/lib/document/pdf-compat');
+  const { readMaterialExtractionResult } = await import('@/lib/server/materials/extraction');
+  const chapters = [
+    { title: 'First', startPage: 1, sections: [{ title: 'Section', startPage: 2 }] },
+  ];
+  const parsed = () =>
+    extractMinerUResult({
+      md_content: '# First\n\nBook text',
+      content_list: Array.from({ length: 60 }, (_, page_idx) => ({
+        type: 'text',
+        text: page_idx ? 'Body' : 'First',
+        page_idx,
+        ...(page_idx ? {} : { text_level: 1 }),
+      })),
+    });
+  const controller = new AbortController();
+  const resolve = vi.spyOn(models, 'resolveStageModel').mockResolvedValue({ model: {} } as never);
+  const workspace = vi.spyOn(runtime, 'backgroundWorkspaceId').mockResolvedValue(ACCOUNT);
+  if (['disabled', 'unassigned'].includes(mode)) resolve.mockRejectedValue(new Error(mode));
+  const call = vi.spyOn(llm, 'callLLM').mockImplementation(async (params) => {
+    if (mode === 'cancel') {
+      controller.abort(new Error('runner stopped'));
+      throw controller.signal.reason;
+    }
+    if (mode === 'error') throw new Error('provider unavailable');
+    if (mode === 'timeout')
+      return await new Promise((_resolve, reject) => {
+        params.abortSignal?.addEventListener('abort', () => reject(params.abortSignal?.reason), {
+          once: true,
+        });
+      });
+    return {
+      text:
+        mode === 'json'
+          ? 'not json'
+          : mode === 'invalid'
+            ? '{"chapters":[{}]}'
+            : JSON.stringify({
+                chapters: [
+                  { title: 'First', start: 1, sections: [{ title: 'Section', start: 2 }] },
+                ],
+              }),
+    } as never;
+  });
+  const nativeTimeout = globalThis.setTimeout;
+  const timer =
+    mode === 'timeout'
+      ? vi
+          .spyOn(globalThis, 'setTimeout')
+          .mockImplementation(((...args: Parameters<typeof setTimeout>) =>
+            nativeTimeout(
+              args[0],
+              args[1] === 120_000 ? 10 : args[1],
+              ...args.slice(2),
+            )) as typeof setTimeout)
+      : undefined;
+  try {
+    const extract = vi.fn(async () =>
+      parsedPdfToDocumentArtifact(parsed(), {
+        buffer: Buffer.alloc(0),
+        mimeType: 'application/pdf',
+        config: { providerId: 'mineru' },
+      }),
+    );
+    const fallback = vi.fn(h.documentExtract.getMockImplementation()!);
+    const providers = () => [
+      { ...documentProvider(extract), id: 'mineru' },
+      documentProvider(fallback),
+    ];
+    const id = `chapters-${mode}`;
+    await seedSource(h, id);
+    await ensure(h, id);
+    if (mode === 'cancel') {
+      await expect(
+        runClaimedOwnerExtraction((await claim(h))!, h.deps({ providers }), {
+          lost: false,
+          signal: controller.signal,
+        }),
+      ).rejects.toThrow('runner stopped');
+      expect((await stateOf(h, id)).extraction_result).toBeNull();
+    } else {
+      await runNextOwnerExtraction(h.deps({ providers }));
+      const stored = await stateOf(h, id);
+      expect(stored.status).toBe('done');
+      expect(stored.extraction_result?.chapters).toEqual(mode === 'success' ? chapters : undefined);
+      expect(JSON.stringify(stored.extraction_result)).not.toContain('frontPages');
+      if (mode === 'success') {
+        await seedSource(h, 'chapters-reused', { bytes: h.sources.get(id)! });
+        await ensure(h, 'chapters-reused');
+        await runNextOwnerExtraction(h.deps({ providers }));
+        expect((await stateOf(h, 'chapters-reused')).extraction_result).toMatchObject({
+          chapters,
+          reusedFrom: id,
+        });
+        expect(call).toHaveBeenCalledTimes(1);
+      }
+    }
+    expect(fallback).not.toHaveBeenCalled();
+
+    // Drive the classic worker through JSON storage and its public reader too.
+    const classicId = `classic-${id}`;
+    await registerOwnerMaterial(
+      h.provider.pool,
+      {
+        id: classicId,
+        ownerId: ACCOUNT,
+        kind: 'source',
+        mime: 'application/pdf',
+        bytes: 4,
+        originalName: 'book.pdf',
+        ossKey: `objects/${classicId}`,
+      },
+      { maxCount: 100, maxTotalBytes: 1_000_000_000 },
+    );
+    await finalizeOwnerMaterial(h.provider.pool, classicId, 4, `digest-${mode}`, { extract: true });
+    const current = await claimOwnerMaterialExtraction(h.provider.pool, 'worker', {
+      leaseTtlMs: TTL,
+      perOwnerLimit: 10,
+    });
+    expect(current?.material.id).toBe(classicId);
+    const saved = new Map<string, Buffer>();
+    const byteStore = {
+      get: async (key: string) => saved.get(key) ?? Buffer.from('book'),
+      put: vi.fn(async (key: string, data: Buffer) => {
+        saved.set(key, data);
+      }),
+      delete: vi.fn(),
+      deletePrefix: vi.fn(),
+      list: async () => [],
+    };
+    // For cancellation, let the classic LLM see its own new signal before aborting.
+    const classicController = new AbortController();
+    if (mode === 'cancel')
+      call.mockImplementation(async () => {
+        classicController.abort(new Error('runner stopped'));
+        throw classicController.signal.reason;
+      });
+    await runClaimedOwnerMaterialExtraction(current!, {
+      heartbeatIntervalMs: 60_000,
+      services: async () => ({ document: null }),
+      analyze: async () => parsed(),
+      byteStore,
+      signal: classicController.signal,
+    });
+    const storedClassic = await getOwnerMaterial(h.provider.pool, ACCOUNT, classicId);
+    if (mode === 'cancel') {
+      expect(storedClassic?.extraction?.status).not.toBe('ready');
+      expect(byteStore.put).not.toHaveBeenCalled();
+    } else {
+      expect(storedClassic?.extraction?.status).toBe('ready');
+      const result = await readMaterialExtractionResult(storedClassic!, byteStore);
+      expect(result.chapters).toEqual(mode === 'success' ? chapters : undefined);
+      expect(JSON.stringify(result)).not.toContain('frontPages');
+      expect(result.text).toContain('Book text');
+    }
+  } finally {
+    call.mockRestore();
+    resolve.mockRestore();
+    workspace.mockRestore();
+    timer?.mockRestore();
+  }
+}

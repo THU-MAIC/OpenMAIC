@@ -2189,6 +2189,10 @@
         "webFetch": {
           "name": "웹 페이지 가져오기",
           "desc": "에이전트가 세션에서 허용된 웹 페이지를 읽는 데 사용합니다."
+        },
+        "materialChapters": {
+          "name": "챕터 인식",
+          "desc": "긴 문서의 장과 절을 식별합니다."
         }
       },
       "source": {
@@ -2204,7 +2208,9 @@
           "search": "검색",
           "fetch": "가져오기",
           "image": "이미지",
-          "video": "동영상"
+          "video": "동영상",
+          "parse": "분석",
+          "chapters": "챕터"
         }
       },
       "empty": {

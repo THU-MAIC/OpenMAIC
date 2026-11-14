@@ -2189,6 +2189,10 @@
         "webFetch": {
           "name": "Lấy trang web",
           "desc": "Để tác tử đọc các trang web được cho phép trong phiên."
+        },
+        "materialChapters": {
+          "name": "Nhận diện chương",
+          "desc": "Nhận diện các chương và mục trong tài liệu dài."
         }
       },
       "source": {
@@ -2204,7 +2208,9 @@
           "search": "Tìm kiếm",
           "fetch": "Đọc trang",
           "image": "Ảnh",
-          "video": "Video"
+          "video": "Video",
+          "parse": "Phân tích",
+          "chapters": "Chương"
         }
       },
       "empty": {

@@ -35,6 +35,14 @@ slots:
 );
 
 describe('resolveSlot', () => {
+  it('inherits the default chat model for chapter recognition', () => {
+    expect(resolveSlot('material.chapters', [deployment])).toMatchObject({
+      status: 'assigned',
+      resolvedAt: 'llm',
+      capability: 'chat',
+      modelId: 'MiniMax-M3',
+    });
+  });
   it('inherits from the nearest assigned ancestor', () => {
     const outline = resolveSlot('course.outline', [deployment]);
     expect(outline).toMatchObject({

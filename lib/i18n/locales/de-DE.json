@@ -2189,6 +2189,10 @@
         "webFetch": {
           "name": "Webseiten abrufen",
           "desc": "Lässt den Agent in der Sitzung zugelassene Webseiten lesen."
+        },
+        "materialChapters": {
+          "name": "Kapitelerkennung",
+          "desc": "Erkennt Kapitel und Abschnitte in langen Dokumenten."
         }
       },
       "source": {
@@ -2204,7 +2208,9 @@
           "search": "Suche",
           "fetch": "Abruf",
           "image": "Bild",
-          "video": "Video"
+          "video": "Video",
+          "parse": "Analyse",
+          "chapters": "Kapitel"
         }
       },
       "empty": {

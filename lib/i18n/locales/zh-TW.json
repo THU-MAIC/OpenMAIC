@@ -2189,6 +2189,10 @@
         "webFetch": {
           "name": "網頁擷取",
           "desc": "供智慧體讀取工作階段中已獲准的網頁。"
+        },
+        "materialChapters": {
+          "name": "章節辨識",
+          "desc": "辨識長資料中的章與節。"
         }
       },
       "source": {
@@ -2204,7 +2208,9 @@
           "search": "搜尋",
           "fetch": "擷取",
           "image": "圖像",
-          "video": "影片"
+          "video": "影片",
+          "parse": "解析",
+          "chapters": "章節"
         }
       },
       "empty": {

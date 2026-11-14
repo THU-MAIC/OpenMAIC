@@ -56,6 +56,7 @@ export interface SlotDefinition {
 
 export const MODEL_SLOTS = [
   { id: 'llm', capability: 'chat', parent: null },
+  { id: 'material.chapters', capability: 'chat', parent: 'llm' },
   { id: 'course.research', capability: 'chat', parent: 'llm' },
   { id: 'course.outline', capability: 'chat', parent: 'llm' },
   { id: 'course.agents', capability: 'chat', parent: 'llm' },
@@ -111,6 +112,7 @@ export const STAGE_SLOTS = {
   'web-search-query-rewrite': 'course.research',
   'maic-agent-driver': 'agent',
   'conversation-title': 'agent.title',
+  'material-chapters': 'material.chapters',
 } as const satisfies Record<LlmStage, SlotId>;
 
 const SLOT_BY_ID = new Map<string, SlotDefinition>(MODEL_SLOTS.map((slot) => [slot.id, slot]));

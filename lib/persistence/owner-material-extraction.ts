@@ -1,3 +1,4 @@
+import type { MaterialChapter } from '@/lib/types/material-chapters';
 /**
  * Owner-level extraction state for library sources (RFC #1716 §2–3).
  *
@@ -114,6 +115,7 @@ export interface OwnerExtractionDerivative {
 
 /** The latest successful extraction of a source, as `extraction_result` stores it. */
 export interface OwnerExtractionResult {
+  chapters?: MaterialChapter[];
   /** Changes whenever the result does: the token of the claim that published it. */
   revision: string;
   text: {

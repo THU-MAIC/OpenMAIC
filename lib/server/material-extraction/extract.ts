@@ -1,3 +1,4 @@
+import { getChapterSource, withChapterSource } from '@/lib/document/chapter-source';
 import {
   createMaterialId,
   type ClaimedMaterialExtraction,
@@ -391,21 +392,24 @@ export function documentOutcome(
   provider: DocumentExtractorProvider,
 ): SourceExtractionOutcome {
   const text = artifactText(artifact);
-  return {
-    text,
-    // Document images are not kept: the text is stored as the provider
-    // returned it, the same output the session chain has always published.
-    images: [],
-    extractor: { id: provider.id, version: provider.version },
-    stats: {
-      chars: text.length,
-      pages: artifact.metadata.pageCount ?? 0,
-      imageCount: artifact.assets.filter((asset) => asset.type === 'image').length,
-      ...(artifact.diagnostics?.length
-        ? { diagnostics: artifact.diagnostics.map((diagnostic) => diagnostic.message) }
-        : {}),
+  return withChapterSource(
+    {
+      text,
+      // Document images are not kept: the text is stored as the provider
+      // returned it, the same output the session chain has always published.
+      images: [],
+      extractor: { id: provider.id, version: provider.version },
+      stats: {
+        chars: text.length,
+        pages: artifact.metadata.pageCount ?? 0,
+        imageCount: artifact.assets.filter((asset) => asset.type === 'image').length,
+        ...(artifact.diagnostics?.length
+          ? { diagnostics: artifact.diagnostics.map((diagnostic) => diagnostic.message) }
+          : {}),
+      },
     },
-  };
+    provider.id === 'mineru' ? getChapterSource(artifact) : undefined,
+  );
 }
 
 async function defaultSessionOwner(sessionId: string): Promise<string | undefined> {

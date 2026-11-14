@@ -2189,6 +2189,10 @@
         "webFetch": {
           "name": "网页抓取",
           "desc": "供智能体读取会话中已获准的网页。"
+        },
+        "materialChapters": {
+          "name": "章节识别",
+          "desc": "识别长资料中的章和节。"
         }
       },
       "source": {
@@ -2204,7 +2208,9 @@
           "search": "搜索",
           "fetch": "抓取",
           "image": "图像",
-          "video": "视频"
+          "video": "视频",
+          "parse": "解析",
+          "chapters": "章节"
         }
       },
       "empty": {

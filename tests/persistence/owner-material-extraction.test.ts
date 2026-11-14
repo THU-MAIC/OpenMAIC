@@ -9,6 +9,7 @@ import { afterEach, describe, it, vi } from 'vitest';
 
 import {
   bootExtractionHarness,
+  chapterRecognitionScenario,
   failureReasonScenario,
   failedImageDownloadScenario,
   cancelledImageDownloadScenario,
@@ -116,6 +117,13 @@ describe('owner-level material extraction (PGlite)', () => {
     await db?.close();
     db = undefined;
   });
+
+  it.each(['success', 'error', 'timeout', 'json', 'invalid', 'disabled', 'unassigned', 'cancel'])(
+    'preserves extraction across chapter recognition: %s',
+    async (mode) => {
+      await chapterRecognitionScenario(await boot(), mode);
+    },
+  );
 
   it('starts idle and failed sources once and leaves pending, running and done ones alone', async () => {
     await ensureStartedScenario(await boot());

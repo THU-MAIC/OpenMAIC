@@ -1,3 +1,6 @@
+import { getChapterSource } from '@/lib/document/chapter-source';
+import { recognizeMaterialChapters } from '@/lib/server/material-extraction/chapters';
+import type { MaterialChapter } from '@/lib/types/material-chapters';
 /**
  * Extraction at upload: an owner material's text and images are extracted in
  * the background as soon as it is uploaded (`POST /api/materials`), so a run
@@ -89,6 +92,7 @@ const log = createLogger('MaterialExtraction');
 /** The stored result of one material's extraction: what the run's bundle reads of it. */
 export interface MaterialExtractionResult {
   version: 1;
+  chapters?: MaterialChapter[];
   text: string;
   pageCount?: number;
   /** The images as the extraction found them, each with its bytes as a data URL. */
@@ -96,9 +100,13 @@ export interface MaterialExtractionResult {
 }
 
 /** The images of a parsed material as the generation preview reads them off the extraction. */
-function resultOf(parsed: ParsedPdfContent): MaterialExtractionResult {
+function resultOf(
+  parsed: ParsedPdfContent,
+  chapters?: MaterialChapter[],
+): MaterialExtractionResult {
   return {
     version: 1,
+    ...(chapters ? { chapters } : {}),
     text: parsed.text,
     ...(parsed.metadata?.pageCount !== undefined ? { pageCount: parsed.metadata.pageCount } : {}),
     // The extractor's own list, else its bare data URLs.
@@ -258,8 +266,9 @@ async function inlineResultOf(
   parsed: ParsedPdfContent,
   signal: AbortSignal,
   deadline: AbortSignal,
+  chapters?: MaterialChapter[],
 ): Promise<{ result: MaterialExtractionResult; imagesSkipped: number; imagesRetryable: number }> {
-  const result = resultOf(parsed);
+  const result = resultOf(parsed, chapters);
   if (imagesAreInline(result.images)) return { result, imagesSkipped: 0, imagesRetryable: 0 };
   const maxBytes = maxExtractionResultBytes();
   const { images, skipped, retryable } = await inlineRemoteImages(result.images, {
@@ -458,11 +467,20 @@ export async function extractOwnerMaterial(
       },
       { log, signal: callSignal },
     );
+    const chapters = await recognizeMaterialChapters({
+      source: getChapterSource(parsed),
+      providerId: String(parsed.metadata?.parser ?? ''),
+      pageCount: parsed.metadata?.pageCount ?? 0,
+      mimeType,
+      ownerId: material.ownerId,
+      signal: callSignal,
+    });
     // Within the budget too: images answered as URLs are downloaded now.
     ({ result, imagesSkipped, imagesRetryable } = await inlineResultOf(
       parsed,
       callSignal,
       imagesDeadline.signal,
+      chapters,
     ));
   } catch (error) {
     // Ended by the caller or the budget: say so, not how the extractor broke off.
