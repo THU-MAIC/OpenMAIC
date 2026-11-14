@@ -87,6 +87,7 @@ export const LLM_ENV_MAP: Record<string, string> = {
   SILICONFLOW: 'siliconflow',
   DOUBAO: 'doubao',
   OPENROUTER: 'openrouter',
+  LLMTR: 'llmtr',
   GROK: 'grok',
   TENCENT: 'tencent-hunyuan',
   TENCENT_HUNYUAN: 'tencent-hunyuan',
