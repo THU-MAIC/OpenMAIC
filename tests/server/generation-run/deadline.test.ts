@@ -1,9 +1,49 @@
 /** A step's budget: a timeout is a retryable failure; the run's own abort is an abort. */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { isAbortError } from '@openmaic/generation';
 
-import { StepTimeoutError, withDeadline } from '@/lib/server/generation/run/deadline';
+import {
+  scaledStepDeadlines,
+  StepTimeoutError,
+  stepDeadlineMultiplier,
+  STEP_DEADLINES_MS,
+  withDeadline,
+} from '@/lib/server/generation/run/deadline';
 import { withRouteRetry } from '@/lib/server/generation/run/retry';
+
+describe('step deadline multiplier', () => {
+  const original = process.env.OPENMAIC_STEP_DEADLINE_MULTIPLIER;
+  afterEach(() => {
+    if (original === undefined) delete process.env.OPENMAIC_STEP_DEADLINE_MULTIPLIER;
+    else process.env.OPENMAIC_STEP_DEADLINE_MULTIPLIER = original;
+  });
+
+  it('is 1 when unset or empty', () => {
+    delete process.env.OPENMAIC_STEP_DEADLINE_MULTIPLIER;
+    expect(stepDeadlineMultiplier()).toBe(1);
+    process.env.OPENMAIC_STEP_DEADLINE_MULTIPLIER = '  ';
+    expect(stepDeadlineMultiplier()).toBe(1);
+  });
+
+  it('rejects anything outside integer 1-10 at startup', () => {
+    for (const raw of ['0', '-1', '11', '2.5', 'abc']) {
+      process.env.OPENMAIC_STEP_DEADLINE_MULTIPLIER = raw;
+      expect(stepDeadlineMultiplier).toThrowError(
+        'OPENMAIC_STEP_DEADLINE_MULTIPLIER must be an integer between 1 and 10.',
+      );
+    }
+  });
+
+  it('scales every budget, keeping their relative shape', () => {
+    const scaled = scaledStepDeadlines(3);
+    expect(scaled.sceneActions).toBe(180_000);
+    expect(scaled.sceneContent).toBe(900_000);
+    expect(scaled.narrationClip).toBe(90_000);
+    for (const step of Object.keys(STEP_DEADLINES_MS) as (keyof typeof STEP_DEADLINES_MS)[]) {
+      expect(scaled[step]).toBe(STEP_DEADLINES_MS[step] * 3);
+    }
+  });
+});
 
 describe('step deadlines', () => {
   it('fails a call that outlives its budget, even one that ignores its signal', async () => {
