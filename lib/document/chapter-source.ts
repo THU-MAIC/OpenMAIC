@@ -84,5 +84,5 @@ export function buildChapterInput(source: ChapterSource, format: string, pages: 
   const titles = source.titles
     .map((row) => `${row.page}\t${row.text_level}\t${JSON.stringify(row.text)}`)
     .join('\n');
-  return `文档元数据\n${JSON.stringify({ format, total_units: pages })}\n\n标题列表（1-based 源页、text_level、JSON 标题字符串）\n${titles}\n\n前置页 Markdown\n${front}`;
+  return `Document metadata\n${JSON.stringify({ format, total_units: pages })}\n\nHeading list (1-based source page, text_level, JSON title string)\n${titles}\n\nFront-matter Markdown\n${front}`;
 }
