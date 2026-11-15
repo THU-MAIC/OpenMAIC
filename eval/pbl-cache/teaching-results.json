@@ -1,0 +1,1964 @@
+{
+  "baseCommit": "65d5ac408301a2916d1d7e81b037855760a286ab",
+  "model": "deepseek-v4.1-flash",
+  "fixtures": [
+    {
+      "course": 1,
+      "archive": "第一课 接通对话（生产导入版）.maic.zip",
+      "archiveSha256": "992045e4cb94aa2dd3f011ff89a0f67a87b1b91df46b9604f71ab9ad4c87c52e",
+      "projectVersion": "1.0.0-ui.15-model.local.2"
+    },
+    {
+      "course": 2,
+      "archive": "第二课 接续对话.maic.zip",
+      "archiveSha256": "cdd44a0c7f7ff133eb1d01949ac945a7dfffec6f768e82cc94d0db387958d10c",
+      "projectVersion": "1.0.0-local.17"
+    },
+    {
+      "course": 3,
+      "archive": "第三课 保存记录.maic.zip",
+      "archiveSha256": "170b2b577b325ca86fd0255343cc5d9774323b604269be0ad51e439123b9cd93",
+      "projectVersion": "1.0.0-local.13"
+    }
+  ],
+  "results": [
+    {
+      "id": "c1-m1-route-code-final-cycle",
+      "arm": "after",
+      "course": 1,
+      "kind": "code-final-cycle",
+      "initialSection": "D-confirm.md",
+      "initialLearnerReply": "这项安排我已经看清楚了，没有别的疑问。",
+      "requests": 2,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "明白了，你把关键点说清楚了：`ChatEndpoint.handle` 里先校验本次问题、保留原文，再调用一次已提供的模型连接，把本次回答原样交回网页；收发消息和组织模型输入这两类职责落在同一个入口，所以改模型输入时也要顺带检查相邻的网页收发约定，而不是拿别处的答案拼凑。这段代码目前与你的选择和计划一致，没有发现需要修改的地方。\n\n**这版代码可以进入测试了吗？** 如果确认，请在 [当前任务](#pbl-task) 打开的抽屉中查看记录，然后在底部任务栏点击「进入测试与修复」。",
+          "approval": true,
+          "hostValidated": true,
+          "effectiveApproval": true
+        },
+        {
+          "tool": "complete_stage",
+          "response": null,
+          "hostValidated": true
+        }
+      ],
+      "nextLearnerReply": "可以定稿，不需要修改。",
+      "inputSha256": "744d2d01565bef2e1c1d8d34aafeb659367450350b7e4d179455eb96d7457e95",
+      "messagesSha256": "9fad267df488efdf5a2729d544ca61c05a42f14f41f3d5a9f1145a47214d50bc",
+      "priorLearnerMessages": [
+        "请带我审阅当前已保存的版本。",
+        "入口按顺序校验问题、保留本次问题原文，只调用一次提供的模型连接，再把本次真实回答交回网页。两类职责都在同一个入口，改模型输入时也要检查相邻的网页收发约定，不能把另一段的答案拿来凑。",
+        "这项安排我已经看清楚了，没有别的疑问。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c1-m1-route-code-final-cycle",
+      "arm": "before",
+      "course": 1,
+      "kind": "code-final-cycle",
+      "initialSection": "D-confirm.md",
+      "initialLearnerReply": "这项安排我已经看清楚了，没有别的疑问。",
+      "requests": 4,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "明白，那这段就按你已经看清楚的版本收尾。我重新读了一遍保存的代码，又重新编译了一次，结果是成功（编译通过不等于正式测试通过）。\n\n当前实现和你说的顺序一致：[src/com/futureself/dialogue/ChatEndpoint.java:21–31](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FChatEndpoint.java&line=21&end=31) 里第 22 行先做非空白校验；第 23 行读到的分工是“放在一起”，所以不会走 `dialogue.reply`，网页接收和组织回答都留在同一个入口；第 31 行用本次 `input.message()` 组装模型输入并只调用一次，第 32 行把模型这次给的真实回答连同本轮问题交回网页。启用中的个性化开关在 [src/com/futureself/dialogue/CourseChoices.java:5–7](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FCourseChoices.java&line=5&end=7) 是关闭状态，所以角色文本保持为空、模式为 `none`，正好对应第一关的约定。\n\n**这版代码可以进入测试了吗？**",
+          "approval": true,
+          "hostValidated": true,
+          "effectiveApproval": true
+        },
+        {
+          "tool": "complete_stage",
+          "response": null,
+          "hostValidated": true
+        }
+      ],
+      "nextLearnerReply": "可以定稿，不需要修改。",
+      "inputSha256": "744d2d01565bef2e1c1d8d34aafeb659367450350b7e4d179455eb96d7457e95",
+      "messagesSha256": "9fad267df488efdf5a2729d544ca61c05a42f14f41f3d5a9f1145a47214d50bc",
+      "priorLearnerMessages": [
+        "请带我审阅当前已保存的版本。",
+        "入口按顺序校验问题、保留本次问题原文，只调用一次提供的模型连接，再把本次真实回答交回网页。两类职责都在同一个入口，改模型输入时也要检查相邻的网页收发约定，不能把另一段的答案拿来凑。",
+        "这项安排我已经看清楚了，没有别的疑问。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c1-m1-route-code-first",
+      "arm": "after",
+      "course": 1,
+      "kind": "code-first",
+      "initialSection": "A-implement.md",
+      "initialLearnerReply": "请按已批准的计划完成实现，再带我理解和审阅。",
+      "requests": 3,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "实现按已批准的计划完成了，本次编译也通过（这只是语法与引用闭合的检查，不是正式测试结果）。下面说明这轮改了什么、该从哪里看。\n\n## 这轮实现的职责\n\n按你选的「放在一起」路线，网页请求的接住、模型交接和结果返回都由 [src/com/futureself/dialogue/ChatEndpoint.java:19–32](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FChatEndpoint.java&line=19&end=32) 里的 `handle` 完成，不再往下层的 `DialogueWork` 转发：\n\n1. 第 20 行 `input.validate()` 先校验本次输入，空白消息在这里被挡住，后面的代码只处理非空原文。\n2. 第 21 行仍保留着另一条分工的分支，但 [src/com/futureself/dialogue/CourseChoices.java:3](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FCourseChoices.java&line=3) 返回的是 `entry`，所以这一行不会进入，`dialogue` 字段在本轮路上是闲置的。\n3. 第 30 行 `model.answer(new ModelInput(persona, input.message()))` 把本次原始问题交给给定的模型连接，只调用这一次。角色设置当前是关闭的，所以 `persona` 保持空字符串，模型收到的角色文本为空。\n4. 第 31 行 `return new AnswerResult(answer, mode, persona)` 把模型返回的文字装成本轮结果交回网页，网页字段约定不用改动。\n\n[src/com/futureself/dialogue/DialogueService.java:11–26](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=11&end=26) 我也补成了一份可用的实现，但它不在本轮的调用路上，只是给另一种分工预留。\n\n一句话记住这条链路的方向：**页面问题 → `ChatEndpoint.handle` → `ModelPort.answer` → 模型文字 → `AnswerResult` → 页面**。\n\n## 请你追踪一处真实语句\n\n测试前我们先确认你真的读懂了这段当前代码。假设模型这次返回的是一段很好辨认的文字「样例 42」：\n\n**请在当前代码里找一处接到这段文字的位置，再指出哪一步把它交回网页。**（文件位置和签名已经在上面给出，你只需要说清变量名和它经过的那几行。）\n",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "c08a5b84b8e38840f9f69479622d6266d9a0e65da76e6ad441b19516661c397d",
+      "messagesSha256": "a872a1efad52f8fcc9bef858eecd9c8c126ae763c3d5d69436cf8820247bc02a",
+      "priorLearnerMessages": ["请按已批准的计划完成实现，再带我理解和审阅。"],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c1-m1-route-code-first",
+      "arm": "before",
+      "course": 1,
+      "kind": "code-first",
+      "initialSection": "A-implement.md",
+      "initialLearnerReply": "请按已批准的计划完成实现，再带我理解和审阅。",
+      "requests": 5,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "## 本次改动：一句话进，一句话回\n\n按你选的「A · 放在一起」，这次问答的准备和收发都放在同一个入口里，没有交给对话服务。实现集中在 [src/com/futureself/dialogue/ChatEndpoint.java:19–32](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FChatEndpoint.java&line=19&end=32) 的 `handle` 方法里，另外一个文件 `DialogueService.java` 只是为另一条分工预留的空壳，本次不会被调用。\n\n依次看这段代码做的事：\n\n1. 第 20 行先校验这一次的输入，空白问题在这里就被挡下，不会走到模型。\n2. 第 21 行是分流点：只有分工选成另一条路线时才会转交给 `dialogue.reply(input)`。你选了放在一起，所以这一行在本项目里不生效，后面的句子照常执行。\n3. 第 30 行是关键交接：`model.answer(new ModelInput(persona, input.message()))`。角色说明这次是空字符串（第一关不启用角色），问题就是这一次收到的原文，模型只被调用一次。\n4. 第 31 行把模型交回的文字装进 `AnswerResult` 返回。\n\n再往后，`runtime/Application.java` 的 `/api/chat` 分支把它组装成网页认识的结构：`question` 放本次问题原文，`answer` 取自 `result.answer()`，其余字段由作者提供的代码负责。你自己也可以顺手改一下 `input.message()` 那一处，看看发出去的问题会不会跟着变——这是理解这条链最快的方式。\n\n现在检查一下你对这条链的追踪。演示连接收到问题后，会返回一段带「收到的问题：」字样的文字，比如你发“样例 42”，它回一串包含“样例 42”的内容。**请在 `ChatEndpoint.handle` 里指出哪个变量最终装着这段模型文字，再说出页面上的 `answer` 字段是从哪一句被赋值的。**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "c08a5b84b8e38840f9f69479622d6266d9a0e65da76e6ad441b19516661c397d",
+      "messagesSha256": "a872a1efad52f8fcc9bef858eecd9c8c126ae763c3d5d69436cf8820247bc02a",
+      "priorLearnerMessages": ["请按已批准的计划完成实现，再带我理解和审阅。"],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c1-m1-route-opening",
+      "arm": "after",
+      "course": 1,
+      "kind": "opening",
+      "initialSection": "A-experience.md",
+      "initialLearnerReply": "我准备好了，开始吧。",
+      "requests": 2,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "## 这一关要做出什么\n\n第一阶段的成果很具体：在页面输入一个问题，按下发送，页面上出现的是模型这一次真正给出的回答。不是事先写死在代码里的固定句子，而是这次问题走过去、回答走回来的结果。\n\n前端页面已经写好了，输入框、发送按钮、回答显示区都在。模型连接也已经备好，后端能拿到模型的输出。中间那段还没接通——这正是这一关要解决的部分。\n\n## 一次问答要跨过哪些边界\n\n拿一个真实的问题来看：“哪个学科更有趣？”\n\n```text\n网页 ── 提问 ──→ Java 问答入口 ── 本次问题 ──→ 模型\n网页 ←─ 显示答案 ── Java 问答入口 ←── 生成结果 ─── 模型\n```\n\n上面这条线是请求：网页把用户输入的这段文字交出去，Java 程序接住它，再把这次的问题交给模型。下面这条线是响应：模型生成结果，Java 程序拿到它，再交回网页显示。\n\n三个部件各管一段：网页管“收用户的字”和“把字显示出来”；Java 程序管“把这次的问题送到模型那里，把这次的结果带回来”；模型管“根据收到的内容生成回答”。\n\n这种上下两条线的整体结构，就叫**请求—响应架构**。中间那段 Java 程序是交接的中间人，它上面接着网页，下面接着模型，两边各有一次交接。\n\n## 为什么先看图，而不是先写代码\n\n这张图最实用的地方是当验收地图用。整条链路上有几次跨边界的交接，每一次都应该有一个能直接核对的结果：模型那边确实收到了这次的新问题；Java 那边确实拿到了这一次的生成结果；网页那边确实显示的是这一条，而不是上一条。\n\n所以先跑通这条最小的端到端链路，是为了给自己一个可验证的起点。换一道问题时，能确认新问题真的到了模型，新回答真的回来了。\n\n有一点要留意：页面出现一段文字，只说明网页能显示。一段写死的回复同样能显示出来，但它一次交接都没发生，链路并没有完成。判断是否接通，要看的是“换一个问题，回答跟着变”，而不是“页面上有字”。\n\n## 出了问题先看哪一段\n\n这张图也能当排查顺序用。找一个最后确认过的结果，再查紧挨着它的那一次交接，范围就缩小了。\n\n比如这样一个情况：Java 这边已经拿到了模型对这次问题的回答，可网页上显示的仍然是上一条的内容。也就是说，模型→Java 这一段是通的，问题出在更靠后的一次交接：Java 把结果交回网页、网页把结果画出来这一段。这时候先看的不是模型连接，而是 Java 返回给网页的那份响应里到底带了什么，以及页面拿到之后是怎么用的。\n\n后续要做的事，是内部这段工作怎么组织由你来定，Coder 按你的决定去实现，然后你对着计划和代码核对这个安排是否真的落实了。\n\n**就用上面那个情境判断一下：Java 已经拿到了模型对这次问题的回答，网页却还显示上一条。你会先核对哪一段交接，为什么？**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "a60adf7fde3de9fd0ab520c9cf2866dae8149548dcd61545125c65562e98a782",
+      "messagesSha256": "7e3cafa4f78a5388bbff4b641d68e59498d7f8c6f8597a5224873c0541fadd5f",
+      "priorLearnerMessages": ["我准备好了，开始吧。"],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c1-m1-route-opening",
+      "arm": "before",
+      "course": 1,
+      "kind": "opening",
+      "initialSection": "A-experience.md",
+      "initialLearnerReply": "我准备好了，开始吧。",
+      "requests": 2,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "我们先从这一关要做成什么说起：在页面输入一个问题，收到并显示 AI 对这一问的回答。页面和模型连接都已经有了，中间那段 Java 程序正好缺一块——所以这一关不仅是“写几行代码”，还要把一次问答的往返接通，并且由你来定这段工作怎么安排、怎么验收。\n\n## 一条能核对的链路\n\n最直接的观察方式是问自己：怎样才算这个产品真的回答了“哪个学科更有趣？”，而不只是页面上冒出一段字？\n\n```text\n网页 ── 提问 ──→ Java 问答入口 ── 本次问题 ──→ 模型\n网页 ←─ 显示答案 ── Java 问答入口 ←── 生成结果 ─── 模型\n```\n\n顺着一次请求和响应读这张图：网页负责发出这次的问题、以及把结果展示出来；Java 程序接住请求，用它已有的模型连接把问题交出去，拿到生成结果，再返回给网页。三个部分各有自己的活：网页管界面交互，Java 管这次问答的编排和交接，模型管生成内容。\n\n这就叫**应用架构**——不是抽象图纸，而是“谁负责什么、东西在哪儿跨过去”的约定。它在项目里有两个很实际的用途：验收时可以按整条链路逐段核对；以后出了问题或要加功能，也能先定位到该看的那一段。\n\n这个项目为什么要先做这么一条“最小、但真实”的链路？因为换一道问题时，你要能确认后端确实把**新问题**交给了模型，并且把**本次**的结果带回来了。页面显示出一段字只证明它能显示——如果那段字是写死的，它一样会出现，却没有完成任何往返。所以把这张图当成验证地图：每一次跨边界都有可核对的结果。\n\n## 交接处才是要盯的地方\n\n链路里最容易出问题的地方不是某个部件内部，而是三次交接：网页交给 Java 的问题、Java 交给模型的请求、Java 交回网页的响应。排错时有个稳定的顺序——先找最后一个已经确认的结果，再查紧挨着它的那次交接。比如你已经确认模型这次给出了回答，那就先看 Java 返回给网页的响应里是不是这次的内容，还没到区分“后端没返回”和“页面没刷新”的时候之前，别急着改样式。\n\n接下来几段我们会把这幅图放大到 Java 程序内部，看两项职责怎么分、交接约定怎么定；再往后，由你决定这段代码怎么安排，Coder 按你的决定实现，你拿计划和代码去核对。\n\n## 一个排查判断\n\n设想这样一个情况：Java 已经收到了模型针对本次问题的回答，网页却还显示着上一条。\n\n**你会先核对哪一段交接来缩小范围？为什么？**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "a60adf7fde3de9fd0ab520c9cf2866dae8149548dcd61545125c65562e98a782",
+      "messagesSha256": "7e3cafa4f78a5388bbff4b641d68e59498d7f8c6f8597a5224873c0541fadd5f",
+      "priorLearnerMessages": ["我准备好了，开始吧。"],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c1-m1-route-plan-final-cycle",
+      "arm": "after",
+      "course": 1,
+      "kind": "plan-final-cycle",
+      "initialSection": "D-approve.md",
+      "initialLearnerReply": "这项安排我已经看清楚了，没有别的疑问。",
+      "requests": 2,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "明白，理解这一部分已经完成，接下来只剩对当前保存版本的最后确认。\n\n你现在保存的计划把「放在一起」的路线落成了具体步骤：入口处校验本次问题、保留原文、只调用一次模型连接，再把本轮真实回答交回网页；同时也写明了改动模型输入时要连同相邻的网页收发约定一起检查。这些和你在任务抽屉里提交的选择与理由一致，没有未处理的修改事项。\n\n**这份计划可以定稿，交给 Coder 按它实现吗？**",
+          "approval": true,
+          "hostValidated": true,
+          "effectiveApproval": true
+        },
+        {
+          "tool": "complete_stage",
+          "response": null,
+          "hostValidated": true
+        }
+      ],
+      "nextLearnerReply": "可以定稿，不需要修改。",
+      "inputSha256": "eefab6a21157a35c2dd4f5c7b19656548ae2ffca4d4d870673672f2eca2a05e2",
+      "messagesSha256": "9fad267df488efdf5a2729d544ca61c05a42f14f41f3d5a9f1145a47214d50bc",
+      "priorLearnerMessages": [
+        "请带我审阅当前已保存的版本。",
+        "入口按顺序校验问题、保留本次问题原文，只调用一次提供的模型连接，再把本次真实回答交回网页。两类职责都在同一个入口，改模型输入时也要检查相邻的网页收发约定，不能把另一段的答案拿来凑。",
+        "这项安排我已经看清楚了，没有别的疑问。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c1-m1-route-plan-final-cycle",
+      "arm": "before",
+      "course": 1,
+      "kind": "plan-final-cycle",
+      "initialSection": "D-approve.md",
+      "initialLearnerReply": "这项安排我已经看清楚了，没有别的疑问。",
+      "requests": 5,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "你先前的说明已经把入口这条链路讲清楚，理解部分已经记下。系统里还缺一次对整份计划的定稿确认，需要在这里正式登记。\n\n**这份计划可以定稿，交给 Coder 按它实现吗？**",
+          "approval": true,
+          "hostValidated": true,
+          "effectiveApproval": true
+        },
+        {
+          "tool": "complete_stage",
+          "response": null,
+          "hostValidated": true
+        }
+      ],
+      "nextLearnerReply": "可以定稿，不需要修改。",
+      "inputSha256": "eefab6a21157a35c2dd4f5c7b19656548ae2ffca4d4d870673672f2eca2a05e2",
+      "messagesSha256": "9fad267df488efdf5a2729d544ca61c05a42f14f41f3d5a9f1145a47214d50bc",
+      "priorLearnerMessages": [
+        "请带我审阅当前已保存的版本。",
+        "入口按顺序校验问题、保留本次问题原文，只调用一次提供的模型连接，再把本次真实回答交回网页。两类职责都在同一个入口，改模型输入时也要检查相邻的网页收发约定，不能把另一段的答案拿来凑。",
+        "这项安排我已经看清楚了，没有别的疑问。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c1-m1-route-plan-first",
+      "arm": "after",
+      "course": 1,
+      "kind": "plan-first",
+      "initialSection": "A-generate.md",
+      "initialLearnerReply": "请按已经提交的选择写好计划，再带我理解和审阅。",
+      "requests": 4,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "计划已保存到 [PLAN.md](#pbl-file=PLAN.md)，整份文件现在可以直接在「项目文件」里打开阅读，不用回头翻聊天记录。\n\n现在的计划先讲效果，再讲选择，最后才写实现细节。开头是这一关要做出来的画面：页面发一句话，页面显示模型对这句话的回答；空内容先挡住，本轮只处理这一次问答。\n\n你的选择落在「我的选择：放在一起」这一节（[PLAN.md:13–29](#pbl-file=PLAN.md&line=13&end=29)）。那里写清了你选的是把准备输入、调用连接、收回答案、回复网页四处工作都放在同一个入口里，也照你记录的意思保留了代价：好处是一条链路一眼看完，代价是同一个类同时管着收发网页消息和组织模型输入。对应关系也写成了三条可查的落地：四个动作都在同一个方法里完成、不额外抽新类来分担、本关不动预留的服务类。\n\n「实现步骤」（[PLAN.md:31–41](#pbl-file=PLAN.md&line=31&end=41)）是按顺序的六个动作：校验问题、准备模型输入、调用一次模型、返回本次结果，然后是两个审阅动作——把两类职责在代码里排清楚，再确认返回给网页的形状没变。最后一步对应你选这条路带来的那个真实风险，写在「我接受的风险」里（[PLAN.md:53–55](#pbl-file=PLAN.md&line=53&end=55)）。\n\n接下来请对照你自己选的这条路线读一遍，特别是步骤 2 到 4 里“模型调用一次、回答原样返回”和步骤 5 的职责分界，看看有没有和你理解不一样的地方。\n\n**假设有人准备只改「模型输入怎么组织」这一条规则，但顺手把网页收到的答复格式也改了。按你这份计划，你要回到哪一步去界定自己的改动范围？用计划里的句子或步骤说说依据。**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "4c064fa10fad3f03d70225d03cfb14fcedc8405b03c067d4eaf26b3c6b0fa0c2",
+      "messagesSha256": "b9c6727d70b6da91fcb15661f2455122f1ac674e230e293a2b86325e3ce039f9",
+      "priorLearnerMessages": ["请按已经提交的选择写好计划，再带我理解和审阅。"],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c1-m1-route-plan-first",
+      "arm": "before",
+      "course": 1,
+      "kind": "plan-first",
+      "initialSection": "A-generate.md",
+      "initialLearnerReply": "请按已经提交的选择写好计划，再带我理解和审阅。",
+      "requests": 4,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "计划已经按你提交的工作安排写进 [PLAN.md:1–16](#pbl-file=PLAN.md&line=1&end=16) 的「要做出的效果」：在页面发一句问题，页面显示模型对这一句的回答；空白输入不调用模型，非空原文照送，本次只调用一次，页面字段约定不变。\n\n### 你的选择落在哪一段\n\n[PLAN.md:18–24](#pbl-file=PLAN.md&line=18&end=24) 的「我的选择」写的是「A · 放在一起」，并保留了你给的代价判断：少一层转发、改动集中在一处，但入口同时承担「和网页对接」与「组织模型输入」两类职责。因为路线是放在一起，预留的 DialogueService 这一关不调用。\n\n对应的实现顺序在 [PLAN.md:26–30](#pbl-file=PLAN.md&line=26&end=30) 起：先进入 `ChatEndpoint.handle`，先做空白校验，再用本次原文填 `ModelInput`（角色文本留空、问题就是本次 message），只调用一次 `ModelPort.answer`，最后把本轮 question 与模型 answer 交回去。校验顺序和调用次数写在步骤里，是因为它们决定空白输入会不会白调一次模型。\n\n### 看计划时盯住的地方\n\n一个具体的假设：有人想调整「模型输入怎么组织」，顺手把回给网页的答复格式也改了一层。计划里已经写明网页组装在固定 HTTP 代码里、入口只负责交出本轮 question 和 answer，所以这种改动属于越过了职责边界。判断这类问题时，先看改动落在哪个职责段，再看它是否碰到了网页那一侧的约定。\n\n**按你选的「放在一起」，如果现在要在计划里标明这种改动的影响范围，你会指向「实现步骤」中的哪一步、依据是什么？说一句理由就够了。**\n",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "4c064fa10fad3f03d70225d03cfb14fcedc8405b03c067d4eaf26b3c6b0fa0c2",
+      "messagesSha256": "b9c6727d70b6da91fcb15661f2455122f1ac674e230e293a2b86325e3ce039f9",
+      "priorLearnerMessages": ["请按已经提交的选择写好计划，再带我理解和审阅。"],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c1-m1-route-transition",
+      "arm": "after",
+      "course": 1,
+      "kind": "transition",
+      "initialSection": "B-handoff.md",
+      "initialLearnerReply": "先查Java实际返回给网页的本次响应。那里有新答案再查页面显示；不能让模型再答一遍来代替检查这次交接。",
+      "requests": 1,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "你刚才的判断很准：新答案已经在 Java 手里，就先看 Java 交给网页的那份响应，而不是让模型再算一次。那是在检查“回答结果”这次交接；模型重答只会产生一个新答案，不能证明这次交接是否把旧值送了出去。这个思路接下来会一直有用。\n\n顺着这张图往下走一步：把整条链路放大到 Java 程序内部，看看有哪些工作分别面对网页和模型。\n\n```text\n收发消息：接收网页请求                 → 把结果回给网页\n                   ↓ 本次问题          ↑ 回答结果\n组织回答：         准备本次模型输入 → 调用模型 → 接回答案\n```\n\n**两项职责**\n\n上面那一行“收发消息”负责网页这一侧的交接：把请求接进来，把结果送回去。下面那一行“组织回答”负责准备本次的模型输入、调用模型、接回生成的文本。\n\n在当前程序里，这两件事都得有人做。它们可以先写在同一个方法里，也可以分到两个类；无论哪种，先能分别说清“这一段在替谁干活”，是考虑代码边界的起点。所以这里的重点不是马上分家，而是这两项职责本身要被识别出来。\n\n**一次交接的约定**\n\n再把其中一次交接放大：把本次问题交给已有连接，请它工作，接回一段文本，就像教学示意 `回答 = 请AI回答(本次问题)`。这里有三个要素：输入（交过去什么）、返回（还回来什么），以及调用动作（请它开始工作）。双方约定好交什么、还什么，就叫**接口约定**。\n\n浏览器到 Java 是一次 HTTP 请求；Java 代码内部的方法调用也是同一种交接，只是发生在程序里。约定还有一个作用：只要双方仍按相同格式交接，各自的内部细节都能改而不惊动对方 —— 也正因如此，改动的影响范围才可以从“哪次交接的约定变了”来推断。\n\n放到一个具体变化里：网页和 Java 约定把响应里的答复字段从 `answer` 改成 `reply`，而模型仍然返回原来那段文本。\n\n**如果只改这一个字段名，Java 里这项改动应该落在哪份工作上？说说你的理由。**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "a3e3af01b1c4ab3c594eb40f10aa98d599ccd58fb4307faa7b7e00f4e64235fb",
+      "messagesSha256": "89d1676295175af9902317bf57702f6712c8ee7e0abab1095618a89182f73c68",
+      "priorLearnerMessages": [
+        "请开始当前教学段。",
+        "先查Java实际返回给网页的本次响应。那里有新答案再查页面显示；不能让模型再答一遍来代替检查这次交接。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c1-m1-route-transition",
+      "arm": "before",
+      "course": 1,
+      "kind": "transition",
+      "initialSection": "B-handoff.md",
+      "initialLearnerReply": "先查Java实际返回给网页的本次响应。那里有新答案再查页面显示；不能让模型再答一遍来代替检查这次交接。",
+      "requests": 1,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "你刚才的判断抓得很准：页面显示旧答案时，先看 Java 回给网页的这一份是不是新答案，而不是让模型重答一遍。这正是一次「交接」该检查的地方。现在把视角从整条链路移进 Java 程序内部。\n\n### 程序里有两件不同的工作\n\n一件是面对网页：接收本次请求，把问题留下，最后把回答结果交回去。另一件是面对模型：准备本次要发给模型的输入，调用它，再把返回的文本接住。用箭头表示大致是这样：\n\n```text\n收发消息：接收网页请求                 → 把结果回给网页\n                   ↓ 本次问题          ↑ 回答结果\n组织回答：         准备本次模型输入 → 调用模型 → 接回答案\n```\n\n「收发消息」负责网页这一侧的交接，「组织回答」负责准备输入并拿到模型结果。这两件事在当前程序里都必须有人负责，但它们可以写在同一个类里，也可以分成两个类——先能分别说清各自的责任，才谈得上要不要分开。这就是职责划分的起点，也是下一步你要定的事。\n\n### 一次交接长什么样\n\n拿「组织回答」里最关键的这一步来看，可以写成 `回答 = 请AI回答(本次问题)`：把问题交给已有的模型连接，请它工作，接回它生成的文本。这里出现的三个东西——动作（调用）、交进去的内容（输入）、还回来的内容（返回值）——以及双方对「交什么、还什么」的约定，合起来就叫接口约定。\n\n浏览器到 Java 之间是一次 HTTP 请求，Java 代码内部则是方法与方法之间的交接；两者是同一件事在不同层面的样子。接口约定还决定了变化会从哪里传出去：只要双方仍然按同样的格式交接，一边的内部细节改了，另一边不必跟着改。\n\n### 一个小变化\n\n假设网页和 Java 之间约定好了答复字段，现在要把它从 `answer` 改成 `reply`；模型那边仍然返回原来那段文本，一个字没变。这项改动会落在收发消息这一侧，因为它改的是 Java 交给网页的那份数据的格式；`组织回答` 从模型手里接到的文字没换形状，不需要跟着动——如果它也跟着改，等于把一次外部改名的震荡硬灌进了不需要变的内部工作。\n\n**这项改动应该落到哪份工作上、为什么不需要动另一份？用一句话说说你的依据即可。**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "a3e3af01b1c4ab3c594eb40f10aa98d599ccd58fb4307faa7b7e00f4e64235fb",
+      "messagesSha256": "89d1676295175af9902317bf57702f6712c8ee7e0abab1095618a89182f73c68",
+      "priorLearnerMessages": [
+        "请开始当前教学段。",
+        "先查Java实际返回给网页的本次响应。那里有新答案再查页面显示；不能让模型再答一遍来代替检查这次交接。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c1-m2-persona-code-final-cycle",
+      "arm": "after",
+      "course": 1,
+      "kind": "code-final-cycle",
+      "initialSection": "D-confirm.md",
+      "initialLearnerReply": "这项安排我已经看清楚了，没有别的疑问。",
+      "requests": 3,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "你说的这两点正是这版代码的实际状态。在 [src/com/futureself/dialogue/ChatEndpoint.java:24–28](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FChatEndpoint.java&line=24&end=28) 里，先应用路线只做 `personas.get()` 取已采用值，`personas.set(...)` 那一行被 `on_send` 条件挡在外面，所以改动草稿不会改写保存值；空白时换成默认人设并标记为默认。第 30 行的 `new ModelInput(persona, input.message())` 用的就是这个取到的值，返回的 `AnswerResult` 也把它作为本次实际使用者带回去，因此页面显示的「本次人设」不会拿编辑框里的草稿顶替。\n\n既然理解上没有遗留，接下来就是对这份当前版本的确认了。\n\n**这版代码可以进入测试了吗？**",
+          "approval": true,
+          "hostValidated": true,
+          "effectiveApproval": true
+        },
+        {
+          "tool": "complete_stage",
+          "response": null,
+          "hostValidated": true
+        }
+      ],
+      "nextLearnerReply": "可以定稿，不需要修改。",
+      "inputSha256": "b86530981f53610bf5ab07d3c9eb43aa3273873ee4df5c2cca05dedbfcf68f2b",
+      "messagesSha256": "a83b2b8885dff8645763a449910319801eb3ebf08b14507cb2503bfe5ae760c3",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请带我审阅当前已保存的版本。",
+        "编辑框是草稿，点应用才写已采用值；发送时读取这份采用值。只改草稿不改变本次模型输入。本次人设应来自这次实际送给模型的那份值，不能拿当前编辑框冒充。",
+        "这项安排我已经看清楚了，没有别的疑问。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c1-m2-persona-code-final-cycle",
+      "arm": "before",
+      "course": 1,
+      "kind": "code-final-cycle",
+      "initialSection": "D-confirm.md",
+      "initialLearnerReply": "这项安排我已经看清楚了，没有别的疑问。",
+      "requests": 3,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "你说的这句已经把「草稿」和「采用值」分开了，也可以回到代码里核对位置。\n\n在 [src/com/futureself/dialogue/ChatEndpoint.java:24–31](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FChatEndpoint.java&line=24&end=31) 里，每次发问都是先 `personas.get()` 取回当前已采用的那份文字，空白才换成默认文本并标成默认，否则按原文标成自定义；紧接着这两项就和本次问题一起进入 `ModelInput`，返回值也带着这次真正送出去的人设。发问这条路上没有写入动作，所以只改编辑框、不点应用，模型收到的仍是旧值——这和你的判断一致。\n\n所以「本次人设」显示的是这次实际送给模型的那份值，而不是编辑框里的字。\n\n**这版代码可以进入测试了吗？**",
+          "approval": true,
+          "hostValidated": true,
+          "effectiveApproval": true
+        },
+        {
+          "tool": "complete_stage",
+          "response": null,
+          "hostValidated": true
+        }
+      ],
+      "nextLearnerReply": "可以定稿，不需要修改。",
+      "inputSha256": "b86530981f53610bf5ab07d3c9eb43aa3273873ee4df5c2cca05dedbfcf68f2b",
+      "messagesSha256": "a83b2b8885dff8645763a449910319801eb3ebf08b14507cb2503bfe5ae760c3",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请带我审阅当前已保存的版本。",
+        "编辑框是草稿，点应用才写已采用值；发送时读取这份采用值。只改草稿不改变本次模型输入。本次人设应来自这次实际送给模型的那份值，不能拿当前编辑框冒充。",
+        "这项安排我已经看清楚了，没有别的疑问。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c1-m2-persona-code-first",
+      "arm": "after",
+      "course": 1,
+      "kind": "code-first",
+      "initialSection": "A-implement.md",
+      "initialLearnerReply": "请按已批准的计划完成实现，再带我理解和审阅。",
+      "requests": 4,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "实现已经落在你选定的路线上：网页请求仍然全部由 ChatEndpoint 接收和处理，DialogueService 作为另一种路线的壳子保留、本关不参与回答。\n\n### 改了什么\n\n- [src/com/futureself/dialogue/ChatEndpoint.java:20–31](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FChatEndpoint.java&line=20&end=31)：校验之后先取「已应用」的人设，空白时换成默认人设并标记为默认；随后用这份人设加本次问题组一个模型输入，返回结果里同时带上标记和这次真正用的人设。\n- [src/com/futureself/dialogue/DialogueService.java:20–31](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=20&end=31)：形状与入口一致，只被人设「随发送采用」时才会保存草稿；本次路线不经过它。\n- 配置在 [src/com/futureself/dialogue/CourseChoices.java:2–4](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FCourseChoices.java&line=2&end=4)：人设已启用，采用时机是「先点应用」。第一关的入口分工没有改动。\n\n因为选的是「先点应用」，提问请求里不带草稿，`input.validate()` 会直接拒掉带草稿的请求，入口也不会去写保存值——写保存值只发生在页面那个应用动作对应的 PUT 接口里，不在 chat 里。\n\n### 读代码时值得盯的一条路径\n\n一次有效提问在入口里是三步：取当前已保存的人设 → 组装两份输入（人设、问题）→ 把模型回答连同「这次实际用的人设」一起交回网页。\n\n`model.answer(new ModelInput(persona, input.message()))` 这一行决定了模型看到的是哪份人设；下一行 `new AnswerResult(answer, mode, persona)` 又把这同一个 `persona` 交给网页显示。也就是说，保存值、送进模型的值、页面上「本次人设」显示的值，理想情况下应当是同一次读取的结果。\n\n### 编译情况\n\n我跑了一次编译检查，结果是成功的。这只是语法与引用闭合，不是正式测试结论；测试要用任务栏里的正式控件跑。\n\n接着请你打开 [src/com/futureself/dialogue/ChatEndpoint.java:24–31](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FChatEndpoint.java&line=24&end=31) 和 [src/com/futureself/support/AnswerResult.java:3](#pbl-file=src%2Fcom%2Ffutureself%2Fsupport%2FAnswerResult.java&line=3) 看一眼，然后回答下面这个问题。\n\n**假设你已经应用了物理老师的人设，接着在编辑框里改成历史老师但没点应用，然后提了一个问题——网页却把这条回答标成了历史老师。你会对照当前代码里哪两处取值，判断「标签」和「模型输入」是否已经对不上？**\n",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "7b2a155b335e098963aeb0f023c5be7593b648a77484a2a86eceee05fef9d4c0",
+      "messagesSha256": "d4d95d7880f8b7ce4d98279e1b03053ed618662a8941b69270f521adde1e1ce0",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请按已批准的计划完成实现，再带我理解和审阅。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c1-m2-persona-code-first",
+      "arm": "before",
+      "course": 1,
+      "kind": "code-first",
+      "initialSection": "A-implement.md",
+      "initialLearnerReply": "请按已批准的计划完成实现，再带我理解和审阅。",
+      "requests": 3,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "实现已按批准计划写完，编译结果也返回成功了。这一轮我们先看懂真实代码，不进测试。\n\n## 改了哪些职责\n\n人设启用后，新增的工作全部落在你选定的集中路线里，也就是网页请求的入口类本身。第一关的分工没有任何变动：入口仍然负责整轮问答，只是在校验之后多做了两步——先取人设，再把它和本次问题一起交给模型。\n\n请在 项目文件 面板打开 [src/com/futureself/dialogue/ChatEndpoint.java:19–32](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FChatEndpoint.java&line=19&end=32)。你的人设相关语句在 [第 22–31 行](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FChatEndpoint.java&line=22&end=31)，可以按四步读：\n\n1. 取人设：调用 `personas.get()` 读程序里已经保存的那份文字，而不是页面上正在编辑的草稿。\n2. 判定这次用哪份：空白时换成 `PersonaStore.DEFAULT_PERSONA` 并记作默认，否则保留原文并记作自定义。\n3. 准备输入：`new ModelInput(人设, 本次问题)`，人设在前、问题在后。\n4. 返回实际用值：`new AnswerResult(answer, mode, persona)` 把回答、采用方式和真正送进模型的那段人设一起交给网页，页面靠它显示「本次人设」。\n\n因为这次选的是先点应用，这里没有写「保存草稿」的语句——保存发生在你点应用的那一刻，问答只负责读。另一条路线的服务壳子也补成了同样的结构，但这一关它不会被调用，属于预留。\n\n## 一个容易看漏的细节\n\n第 22 行先给了一个空的 `persona`，再在条件里覆盖。也就是说，这段代码里进模型的人设和返回给网页的人设，用的是同一个变量；不存在「送进模型一份、标给页面另一份」的第二次取值。这正是你要能亲手确认的地方。\n\n**请对照 [ChatEndpoint.java:22–31](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FChatEndpoint.java&line=22&end=31)：如果一次回答实际用到的是默认设定，网页下面的标签却写着自定义，你会拿哪两个值来判断「标签和模型输入是不是同一份」，现在这份代码能不能产生这种不一致？**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "7b2a155b335e098963aeb0f023c5be7593b648a77484a2a86eceee05fef9d4c0",
+      "messagesSha256": "d4d95d7880f8b7ce4d98279e1b03053ed618662a8941b69270f521adde1e1ce0",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请按已批准的计划完成实现，再带我理解和审阅。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c1-m2-persona-opening",
+      "arm": "after",
+      "course": 1,
+      "kind": "opening",
+      "initialSection": null,
+      "initialLearnerReply": "请开始这一关。",
+      "requests": 2,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "## 这一关要做出什么\n\n第一关已经把页面里输入的问题经 Java 送到模型，再把回答带回来。这一关的目标是：让页面「人设」里编辑的那段角色说明，真正参与本轮回答；回答下方还要显示这次实际采用的人设原文，让你能核对「我以为发出去了什么」和「程序实际送去了什么」是否一致。\n\n这件事看上去只是多接一份文字，但它带来一个工程判断：人设是一项可以被用户随时改动的设置。一旦它可编辑，程序就必须回答三个问题——这份值存在哪里、什么动作把它换成新版、这一次问答读的是哪一版。本关的架构重点就是这种状态与数据流，而不是界面上多一个输入框。\n\n## 为什么人设能改变回答的角度\n\n模型的输出只取决于程序实际送进模型的那份内容。同一句问题，搭配不同的角色说明，得到的角度就不同。把这些内容组织成送给模型的形式，就是常说的提示词。\n\n```text\n人设说明「你是物理课代表」 ─┐\n本次问题「哪个学科更有趣？」 ─┴→ Java 组织输入 → 模型 → 回答\n```\n\n问题的角色是「回答什么」，人设的角色是「从什么角度回答」，两者是两份独立、可分别变化的内容。所以当两次回答的味道不一样时，定位顺序一般是：先看程序实际送出的两份内容各是什么，再怀疑模型本身。\n\n用一句教学式示意表示就是 `回答 = 请AI回答(角色说明, 本次问题)`，逗号两边是两份分开的输入，不是一个拼在一起的句子。\n\n## 段末小判断\n\n假设现在手上有两版人设——物理课代表和历史课代表，也想比较同一句话「哪个学科更有趣？」在两种角度下的差别，可是你只打算再补发一次请求。\n\n**你会怎样搭配这一次的问题和人设，才能单独看出是「人设」造成了差别？把搭配写出来，并说一句你为什么这样选。**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "0ff1e47f9aea5a64585a21a84ee6853f24107877a5ae247f0bd290dce1f56530",
+      "messagesSha256": "483db67a822eb7ba91058268bf932b9ae5b5af874c9021aa8cbf0c33a757f149",
+      "priorLearnerMessages": ["上一关已经完成，并通过任务栏进入本关。", "请开始这一关。"],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c1-m2-persona-opening",
+      "arm": "before",
+      "course": 1,
+      "kind": "opening",
+      "initialSection": null,
+      "initialLearnerReply": "请开始这一关。",
+      "requests": 2,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "这一关的成果很直接：你在页面左侧「人设」里写下的角色说明，能真正影响这一轮回答，而且回答下方会标出这次实际用了哪一版人设。听上去只是多了一段文字，但要做对，得先想清楚一件事——有了这份可编辑的设置之后，程序必须知道自己把值放在哪里、什么时候换成新版、这次问答又该取哪一版。这就是本关的架构重点：状态和数据流。\n\n## 想改变回答角度，要改的是哪份输入\n\n第一关里，页面的问题已经能经 Java 发给模型，再把答案带回来。如果问题仍然是“哪个学科更有趣？”，而你希望回答从物理课代表的角度展开，那么变化的地方不在问题本身，而在和问题一起送进模型的那份角色说明。\n\n```text\n人设说明「你是物理课代表」 ─┐\n本次问题「哪个学科更有趣？」 ─┴→ Java 组织输入 → 模型 → 回答\n```\n\n可以把它读成一行示意：`回答 = 请AI回答(角色说明, 本次问题)`。逗号两边是两份用途不同的输入——角色说明指导“从什么角度答”，问题指定“答什么”。模型看到的只是程序实际送出的那两份内容，所以以后觉得回答“不太像设定的人”，第一步应当核对程序真正发出去的东西，而不是只盯着输入框里的字。\n\n## 为什么这需要工程判断\n\n只改输入还不够。角色说明是用户可以随时改的一类状态，而状态一旦可编辑，就必然要面对三个问题：这份值现在存在哪、谁把它更新成新版、本轮回答读的是哪一版。三处只要有一处没对齐，就会出现“我明明改了，回答却还是老样子”这种最难排查的问题。\n\n在本作品里，当前采用的人设值活在 Java 程序的内存中，页面只是编辑入口。于是同一个概念会以两份值的形式出现：页面上你正在编辑的内容，和程序内存里当前保存的内容。两者在多数时候一样，但在你刚敲完还没生效的那一刻，它们可以不同。下一段我们会把这两份值分开来看，这一轮先只需要你从输入的角度想清楚比较方法。\n\n## 一个比较方法上的小问题\n\n先说个情境：手头有两个不同版本的人设，物理课代表和历史课代表，你想确认“换人设”到底会不会改变回答。\n\n**第一次已经用物理课代表问了“哪个学科更有趣？”；第二次只补发一次请求，你会怎么搭配这次的问题和人设，才能单独看出人设的影响？说说你这样搭配的理由。**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "0ff1e47f9aea5a64585a21a84ee6853f24107877a5ae247f0bd290dce1f56530",
+      "messagesSha256": "483db67a822eb7ba91058268bf932b9ae5b5af874c9021aa8cbf0c33a757f149",
+      "priorLearnerMessages": ["上一关已经完成，并通过任务栏进入本关。", "请开始这一关。"],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c1-m2-persona-plan-final-cycle",
+      "arm": "after",
+      "course": 1,
+      "kind": "plan-final-cycle",
+      "initialSection": "D-approve.md",
+      "initialLearnerReply": "这项安排我已经看清楚了，没有别的疑问。",
+      "requests": 4,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "理解的这一节也和计划里的写法对上了：[PLAN.md:8–11](#pbl-file=PLAN.md&line=8&end=11) 说明草稿先留着，点应用才更新已采用值，发送时取的是这份值，所以要检验的是“这次真正交给模型的人设”，而不是编辑框里眼下的文字。\n\n**这份计划可以定稿，交给 Coder 按它实现吗？**",
+          "approval": true,
+          "hostValidated": true,
+          "effectiveApproval": true
+        },
+        {
+          "tool": "complete_stage",
+          "response": null,
+          "hostValidated": true
+        }
+      ],
+      "nextLearnerReply": "可以定稿，不需要修改。",
+      "inputSha256": "4896eeb24dd2bbc71c7e4c2b3dd48467c0a3e9aee9d9a012ebd94871756a79b7",
+      "messagesSha256": "a83b2b8885dff8645763a449910319801eb3ebf08b14507cb2503bfe5ae760c3",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请带我审阅当前已保存的版本。",
+        "编辑框是草稿，点应用才写已采用值；发送时读取这份采用值。只改草稿不改变本次模型输入。本次人设应来自这次实际送给模型的那份值，不能拿当前编辑框冒充。",
+        "这项安排我已经看清楚了，没有别的疑问。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c1-m2-persona-plan-final-cycle",
+      "arm": "before",
+      "course": 1,
+      "kind": "plan-final-cycle",
+      "initialSection": "D-approve.md",
+      "initialLearnerReply": "这项安排我已经看清楚了，没有别的疑问。",
+      "requests": 3,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "你刚才的理解和计划写的一致：先点应用这一路线里，编辑框只是草稿，点「应用人设」后才会把内容写进已采用值，发送问题时读的是这份已采用值，所以只改草稿不会改变这一次的模型输入；而回答下方显示的「本次人设」，应当取自这次真正送给模型的那份文字，而不是读取编辑框当下显示的内容。\n\n第二关的内容就在 [PLAN.md:8–11](#pbl-file=PLAN.md&line=8&end=11)：一段说明草稿、应用、取用三者的先后顺序，一段给出可观察的核对方式——不点应用直接发问仍用旧人设，应用后再发问才换成新内容。第一关的部分保持原样，代码分工仍是集中在一个入口组织问答。\n\n**这份计划可以定稿、交给 Coder 按它实现吗？**",
+          "approval": true,
+          "hostValidated": true,
+          "effectiveApproval": true
+        },
+        {
+          "tool": "complete_stage",
+          "response": null,
+          "hostValidated": true
+        }
+      ],
+      "nextLearnerReply": "可以定稿，不需要修改。",
+      "inputSha256": "4896eeb24dd2bbc71c7e4c2b3dd48467c0a3e9aee9d9a012ebd94871756a79b7",
+      "messagesSha256": "a83b2b8885dff8645763a449910319801eb3ebf08b14507cb2503bfe5ae760c3",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请带我审阅当前已保存的版本。",
+        "编辑框是草稿，点应用才写已采用值；发送时读取这份采用值。只改草稿不改变本次模型输入。本次人设应来自这次实际送给模型的那份值，不能拿当前编辑框冒充。",
+        "这项安排我已经看清楚了，没有别的疑问。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c1-m2-persona-plan-first",
+      "arm": "after",
+      "course": 1,
+      "kind": "plan-first",
+      "initialSection": "A-generate.md",
+      "initialLearnerReply": "请按已经提交的选择写好计划，再带我理解和审阅。",
+      "requests": 5,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "计划已经保存到 [PLAN.md](#pbl-file=PLAN.md)，可以从左侧的「项目文件」打开它。第一关那段我原样保留，第二关的内容接在后面，写的是「先点应用」这条路线下的动作顺序。\n\n- [PLAN.md:12–24](#pbl-file=PLAN.md&line=12&end=24) 先说清这一关做完能看见什么：草稿、程序保存值、每条回答的实际用值这三样东西分开显示。\n- [PLAN.md:26–30](#pbl-file=PLAN.md&line=26&end=30) 记下了你的选择和它为哪样东西付出代价——改完要记得点一次应用，换来的是草稿不会自己生效。\n- [PLAN.md:32–37](#pbl-file=PLAN.md&line=32&end=37) 把这条路线的动作拆成了顺序：改字只算草稿，点应用才写入，提问只带本次问题，回答回来时带回实际用值。\n\n接下来审阅主要看三件事：动作顺序是否真的对应你选的方式、顺序有没有颠倒、哪些地方可能出问题。先请你判断一处假设的变动。\n\n如果有人在计划里加一条「发问时也把编辑框里的新稿一起提交」，让草稿随问题生效，这和你选的方式相符吗？请从计划里找一处能支持你判断的安排。",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "6cba9f0b2102f94b6c802a81067764c2cba458dd330ee0714ac568cb6050e0c5",
+      "messagesSha256": "c7d86f32d857839b3df1d73faadddf3e952336fbb77061245fc092e9e2cfe448",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请按已经提交的选择写好计划，再带我理解和审阅。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c1-m2-persona-plan-first",
+      "arm": "before",
+      "course": 1,
+      "kind": "plan-first",
+      "initialSection": "A-generate.md",
+      "initialLearnerReply": "请按已经提交的选择写好计划，再带我理解和审阅。",
+      "requests": 2,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "计划已经保存好了。[PLAN.md](#pbl-file=PLAN.md) 里第一关那段按原文保留，第二关是这次新增的内容，和你在任务抽屉里选的「先点应用」一致——编辑框里的文字先是草稿，点了应用才算数。\n\n### 这次要做出的效果\n\n用作品页面上能看到的动作来说，整条链路是这样走的：\n\n```\n在「角色说明」写文字 → 点「应用人设」 → 「程序当前保存」变化\n                                        ↓\n                            发送问题（请求里只有问题本身）\n                                        ↓\n                    回答用上刚应用的人设，回答下可点「本次人设」核对\n```\n\n关键在中间那个分岔：**发问时不再附带编辑框里的内容，只带问题本身**；人设是程序之前保存下来的那一份。所以如果你写了一段新文字却没点应用，再发问题，回答用的仍是上一次保存的人设——这正是你选的方案要承担的代价，也是它换来的好处：你能先把文字改好、对比过，再决定什么时候让它生效。\n\n计划里对应的是 [PLAN.md:8–11](#pbl-file=PLAN.md&line=8&end=11)，我先不逐句讲，留给你自己对着看。\n\n### 审阅时重点看三处\n\n1. 谁负责更新保存值：页面点「应用人设」时经由保存入口改掉，不是发问时顺手改。\n2. 谁负责取用：仍然是第一关的问答入口，它每次问答都去读当前已应用的那一份，再和本次问题一起交给模型。这条路线不改第一关的分工，只是在原位置上多取一份人设。\n3. 返回里带什么：除了回答，还要带上这次方式和一个实际使用的原文，页面的「本次人设」才有东西可显示。\n\n### 一个假设改动，请你判断\n\n如果有人在计划里加一条：**「发问时也把编辑框里的新稿一起提交」**，这条和你的选择一致吗？请从 [PLAN.md:8–11](#pbl-file=PLAN.md&line=8&end=11) 里找出一处能支持你判断的安排，告诉我它是哪一句，以及为什么。\n\n**请先打开项目文件里的 PLAN.md 读一读第二关这一段，然后回答上面这个问题。**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "6cba9f0b2102f94b6c802a81067764c2cba458dd330ee0714ac568cb6050e0c5",
+      "messagesSha256": "c7d86f32d857839b3df1d73faadddf3e952336fbb77061245fc092e9e2cfe448",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请按已经提交的选择写好计划，再带我理解和审阅。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c1-m2-persona-transition",
+      "arm": "after",
+      "course": 1,
+      "kind": "transition",
+      "initialSection": "B-state.md",
+      "initialLearnerReply": "固定同一个问题，只换人设，再和这个问题原来的人设回答对照；两项一起变就分不清是哪项带来的差异。",
+      "requests": 2,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "你在上一个问题上的回答是对的：固定同一个问题、只换人设，再拿同一问题的原回答对照，才能把差异归到人设上；两个因素一起动，就分不清是谁造成的。这正是后面要能判断“这次回答真的用上了人设”的前提。\n\n## 同一时刻，两处各有各的值\n\n把视线移到人设值本身。假设现在程序里已采用的值是**历史课代表**，而你在页面编辑框里把它改成了**物理课代表**，改动还没交给后端。此刻：\n\n```text\n页面编辑框      物理课代表  （当前草稿）\nJava 程序内存   历史课代表  （当前已采用值）\n```\n\n页面的职责是让你编辑，改动先落在页面；Java 程序在运行中保留一份已采用值，组织回答时用的是后者。两边要一致，必须有一次明确的写入把它们连起来——那是下一段要看的动作。\n\n由此得到一个通用的设计判断：界面上的某个标签指代哪份状态，显示时就从持有那份状态的地方取值。**哪一方持有状态，取值就找哪一方**，这与第一关把问答职责放在选定位置是同一个思路。\n\n现在把方向反过来问：作品要加一个「当前已采用」标签，有人打算直接读编辑框里的文字来显示。**在上面这个状态里，这个标签会显示成什么？它本应显示成什么，为什么？**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "3afa32c39f50b445a0c00cf0ddbcc8d0f9d78dfbf78dcc2008a3b73814b203cd",
+      "messagesSha256": "5271ea82323b7bcd697ce2b7626b688ec5862aa56bfba96a95d5db890ded8dab",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请开始当前教学段。",
+        "固定同一个问题，只换人设，再和这个问题原来的人设回答对照；两项一起变就分不清是哪项带来的差异。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c1-m2-persona-transition",
+      "arm": "before",
+      "course": 1,
+      "kind": "transition",
+      "initialSection": "B-state.md",
+      "initialLearnerReply": "固定同一个问题，只换人设，再和这个问题原来的人设回答对照；两项一起变就分不清是哪项带来的差异。",
+      "requests": 2,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "先说上一问：你把对照条件讲对了——问题固定不动，只换人设，再和同一问题原来的回答比；如果问题和人设同时变，就分不清差异来自哪里。\n\n## 为什么人设要交给模型\n\n第一关里，模型只看到一句“哪个学科更有趣？”。现在我们要让回答带上人设，物理课代表和历史课代表对同一个问题会答得不一样。模型没有背景信息，它唯一能知道的，就是你随本次问题一起交给它的那段文字。所以在问答链路里，人设必须补进模型输入，和当前问题一起送达；否则页面里写得再热闹，回答也不会有任何变化。\n\n## 同一时刻，两处可能有不同的人设值\n\n这里有个容易被忽略的地方：人设值不只是存在一个地方。页面负责让使用者编辑，Java 程序在当前运行中保留一份“已采用”的值。设想已经采用物理课代表，你正在页面里把它改成历史课代表，还没把这处改动交出去：\n\n```text\n页面编辑框      历史课代表   （正在编辑，还没送出去）\nJava 程序内存   物理课代表   （当前已采用值）\n```\n\n这时候两份值不一样。编辑动作只发生在页面上，程序里的值要等它收到并处理一次写入，才会改变。这就是本关的架构重点：状态放在哪、谁负责更新、这次回答读的是哪一版——这三个问题各自独立，混在一起就说不清一次请求究竟用了什么。\n\n把这句话记住就够了：\n\n> 一份状态由谁持有，取值时就去它那里拿。\n\n具体是哪段代码持有它，留到后面审阅时看。\n\n## 一个小变化，你来判断\n\n假设作品界面上要加一个“当前已采用”的标签，让使用者一眼看到程序现在真正在用哪份人设。\n\n**有同学打算直接读取编辑框里的文字来显示这个标签。请举一个会显示错的时刻，并说明这个标签应当从哪份值取值。**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "3afa32c39f50b445a0c00cf0ddbcc8d0f9d78dfbf78dcc2008a3b73814b203cd",
+      "messagesSha256": "5271ea82323b7bcd697ce2b7626b688ec5862aa56bfba96a95d5db890ded8dab",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请开始当前教学段。",
+        "固定同一个问题，只换人设，再和这个问题原来的人设回答对照；两项一起变就分不清是哪项带来的差异。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c2-m1-continuity-code-final-cycle",
+      "arm": "after",
+      "course": 2,
+      "kind": "code-final-cycle",
+      "initialSection": "D-confirm.md",
+      "initialLearnerReply": "这项安排我已经看清楚了，没有别的疑问。",
+      "requests": 6,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "你说清楚了，那我们把这版收个尾。下面这段是结论，不是新内容。\n\n**逐条保存的选择**落在 [CourseChoices.java:6](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FCourseChoices.java&line=6&end=6)：会话形状取的是逐条消息那一档。\n\n**记录本身**在 [History.java:6–9](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FHistory.java&line=6&end=9)：内部是一串带角色的消息，`snapshot()` 交出去的是隔离副本，`append()` 一次只收一问一答两条，所以不会出现只有问题没有回答的半轮。\n\n**一轮怎么走**在 [DialogueService.java:15–24](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=15&end=24)：整段工作放在按会话编号取到的那份记录里做——先复制旧消息，再把本次问题接上去，然后调用一次模型；只有回答非空才追加，否则抛错，记录保持原样。编号不匹配就拿不到别人的记录，刷新读回也走同一份。\n\n还有一处你可以留意：排队范围那项配置目前仍是未定值，本关不追究它，后面的关卡会用到。\n\n**当前这版代码符合你的要求吗？有哪里想调整？直接说「符合」或「不用改」也可以。**",
+          "approval": true,
+          "hostValidated": true,
+          "effectiveApproval": true
+        },
+        {
+          "tool": "complete_stage",
+          "response": null,
+          "hostValidated": true
+        }
+      ],
+      "nextLearnerReply": "可以定稿，不需要修改。",
+      "inputSha256": "550b68599910ac191b40eec9af047393633f58fe56524ad452317e2138bee8fa",
+      "messagesSha256": "acd18da1c23581e5a54f3b11246fa28bc5ea504a58de8d8fe8c007f385b600fc",
+      "priorLearnerMessages": [
+        "请带我审阅当前已保存的版本。",
+        "按会话编号取本段旧消息，保留双方原话、角色和先后顺序，再加本次问题一次。回答有效后整轮提交，空回答或模型失败不添加半轮。不能把其他会话的记录混进来。",
+        "这项安排我已经看清楚了，没有别的疑问。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c2-m1-continuity-code-final-cycle",
+      "arm": "before",
+      "course": 2,
+      "kind": "code-final-cycle",
+      "initialSection": "D-confirm.md",
+      "initialLearnerReply": "这项安排我已经看清楚了，没有别的疑问。",
+      "requests": 5,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "明白，理解层面没有遗留疑问就好。当前保存的这一版也编译通过了，把上面走的这条路径与真实文件核对下来，结果是：\n\n- 按编号取记录：[SessionBook.java:19](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=19&end=19) 用 `computeIfAbsent` 分开保存 A 和 B，不会串。\n- 取旧消息再加本题：[DialogueService.java:18–19](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=18&end=19) 从 `snapshot()` 的副本上追加，双方原话、角色和顺序都在，记录本此时未被改动。\n- 有效才成对提交：[DialogueService.java:21–22](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=21&end=22) 空回答先抛出，`append` 只在有效分支执行，配 [History.java:7–9](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FHistory.java&line=7&end=9) 一次写入 user 与 assistant 两条。\n- 你的选择记录在 [CourseChoices.java:6](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FCourseChoices.java&line=6&end=6) 的 `messages`。\n\n理解清楚和认可这一版是两件事：进了测试与修复环节，改的就是这一版代码。所以还需要你确认一次。\n\n**当前这版代码符合你的要求吗？有哪里想调整？**\n",
+          "approval": true,
+          "hostValidated": true,
+          "effectiveApproval": true
+        },
+        {
+          "tool": "complete_stage",
+          "response": null,
+          "hostValidated": true
+        }
+      ],
+      "nextLearnerReply": "可以定稿，不需要修改。",
+      "inputSha256": "550b68599910ac191b40eec9af047393633f58fe56524ad452317e2138bee8fa",
+      "messagesSha256": "acd18da1c23581e5a54f3b11246fa28bc5ea504a58de8d8fe8c007f385b600fc",
+      "priorLearnerMessages": [
+        "请带我审阅当前已保存的版本。",
+        "按会话编号取本段旧消息，保留双方原话、角色和先后顺序，再加本次问题一次。回答有效后整轮提交，空回答或模型失败不添加半轮。不能把其他会话的记录混进来。",
+        "这项安排我已经看清楚了，没有别的疑问。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c2-m1-continuity-code-first",
+      "arm": "after",
+      "course": 2,
+      "kind": "code-first",
+      "initialSection": "A-implement.md",
+      "initialLearnerReply": "请按已批准的计划完成实现，再带我理解和审阅。",
+      "requests": 3,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "实现已经落盘并通过了编译。先说这一段在整个流程里的位置：**页面发问** → **后端按会话编号找到这段聊天** → **把前文和本题一起交给 AI** → **有效回答后记下这一问一答**。你要观察的就是中间两步：前文有没有真的进到请求里，以及失败时会不会留下半截记录。\n\n## 改动落在三个地方\n\n**一、整轮的边界**（[src/com/futureself/dialogue/DialogueService.java:12–24](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=12&end=24)）\n\n回答方法不再自己保管聊天记录，而是用请求里带来的会话编号（就是页面上的那段聊天的名字，比如 `A`）去向起点提供的 `SessionBook` 要这一段的记录，所有读写都在这一整段保护范围内完成。人设每轮读一次，空白时用默认设定，旧问答不会被改写。\n\n**二、真正把前文接上**（同文件第 17–21 行）\n\n读出一份记录的**副本**，把本题作为一条 `user` 消息接在后面，再交给模型。接着检查回答：为空或异常就抛错，此时还没写入任何东西；只有拿到有效回答，才把「本题 + 原样回答」成对追加回去。因此失败的那一轮不会在记录里留下半轮。\n\n**三、记录的存法**（[src/com/futureself/dialogue/History.java:5–9](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FHistory.java&line=5&end=9)）\n\n按你选的方式逐条保存带角色的消息：`snapshot()` 交出的是隔离副本，外部改动影响不到内部；`append(question, answer)` 一次追加一问一答。这种结构几乎就是模型需要的样子，读出时不用再做转换。课程选择也已记为逐条保存（[src/com/futureself/dialogue/CourseChoices.java:6](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FCourseChoices.java&line=6)）。\n\n编译只是语法层面的通过，行为还要靠后面的测试和刷新读回来验证。\n\n现在看一个顺序上的细节：`if (answer == null || answer.isBlank()) throw ...` 这一句排在 `history.append(...)` 之前。**假如模型这一轮返回了空白内容，按这个顺序，这段聊天的记录最终会是什么状态？为什么不能把两句调过来？**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "5c1e5e9767f3b34968653f3557e7e21bc0ea1df0512ba70a97420ec5a35a0ecf",
+      "messagesSha256": "0977b8098001660adf731389e1d83f8bd4cc88c78fd50a7a78084531e9c4ac7d",
+      "priorLearnerMessages": ["请按已批准的计划完成实现，再带我理解和审阅。"],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c2-m1-continuity-code-first",
+      "arm": "before",
+      "course": 2,
+      "kind": "code-first",
+      "initialSection": "A-implement.md",
+      "initialLearnerReply": "请按已批准的计划完成实现，再带我理解和审阅。",
+      "requests": 5,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "实现已经完成并编译通过。这次要做的事很小：让第二句追问能带上前文。用你的例子说——“推荐三本画画入门的书”发出一轮后，再问“第二本适合零基础吗？”，模型必须同时看到第一问和它的答案。\n\n**页面发问** → **后端按会话编号取这段聊天** → **模型作答** → **有效才记账**\n\n责任分工没变：页面照旧只发问题和会话编号；后端接手的是取前文、拼请求、记账三件事。\n\n看最能说明问题的几行：[src/com/futureself/dialogue/DialogueService.java:14–24](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=14&end=24)。\n\n- 第 15 行 `sessions.execute(input.sessionId(), ...)`：用请求自带的编号拿这一段聊天，整轮工作都包在里面，不另建共享历史。\n- 第 18 行 `history.snapshot()`：先取一份副本，再往副本里加本题；后面的模型调用不会改动存档。\n- 第 20–21 行：只有拿回非空白的回答才往下走。\n- 第 22 行 `history.append(...)`：一次提交完整的一问一答。\n\n所以如果模型这轮出错、返回 null 或空白，就停在第 21 行，存档不留下半轮——这正是“只记录成功轮”的落地位置。存档本身是逐条消息，格式在 [src/com/futureself/dialogue/History.java:7–9](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FHistory.java&line=7&end=9)，一次追加 user 和 assistant 两条。\n\n**请顺着你的例子走一遍：第二句追问发出时，模型收到的消息列表里，第一问和第一答分别是哪一行代码放进去的？**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "5c1e5e9767f3b34968653f3557e7e21bc0ea1df0512ba70a97420ec5a35a0ecf",
+      "messagesSha256": "0977b8098001660adf731389e1d83f8bd4cc88c78fd50a7a78084531e9c4ac7d",
+      "priorLearnerMessages": ["请按已批准的计划完成实现，再带我理解和审阅。"],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c2-m1-continuity-opening",
+      "arm": "after",
+      "course": 2,
+      "kind": "opening",
+      "initialSection": "A-observe.md",
+      "initialLearnerReply": "我准备好了，开始吧。",
+      "requests": 2,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "好，我们现在开始第一关。\n\n先沿着一次正常操作走一遍。打开「未来的自己」，在聊天里发一句「推荐三本画画入门的书」。AI 回一份书单，假设示意里第二本叫《色彩入门》。别离开这段聊天，接着发「第二本适合零基础吗？」。\n\n人一看就知道「第二本」指哪本，因为我们脑子里存着刚才那份书单。但这一次后端发给 AI 的材料里，只有你的人设和这句新问题，书单并不在里面。所以追问能不能接上，关键不在页面显示得多完整，而在后端这次交给模型的材料里有没有前文。\n\n把这次追问放进一次问答的完整链路里，看后台该去哪里取前文：\n\n**页面发问 → 后端问答 → 模型连接 → AI 作答**\n\n这一行主干在当前作品里已经接通了。本课要补的是从中间分出去的一条线：\n\n**后端问答 → 向会话记录取前文**\n\n意思是：后端收到问题后，先按这段聊天的编号，去已存好的对话记录里把前面的问答取出来，拼进这次请求，再交给模型连接。收到答案后，再把这一轮记回去。气泡显示在页面上，但接不接得上话，取决于后端交出去的那份材料。\n\n换个角度说：两个版本的代码可能都答出了《色彩入门》。甲版真的把书单交给了 AI，乙版没交、只是从「画画入门」和「第二本」这两个词碰巧猜中了一本常见的书。光看两句回答长得一样，分不出谁真的带了前文。\n\n**如果只看两句回答都提到同一本书，你能确认两个版本都把原书单交给 AI 了吗？如果不能，你觉得还该去核对什么？**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "55d527d365dcba420a08c910bbfe960c76988259736b454de74cc3470b12c8a9",
+      "messagesSha256": "7e3cafa4f78a5388bbff4b641d68e59498d7f8c6f8597a5224873c0541fadd5f",
+      "priorLearnerMessages": ["我准备好了，开始吧。"],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c2-m1-continuity-opening",
+      "arm": "before",
+      "course": 2,
+      "kind": "opening",
+      "initialSection": "A-observe.md",
+      "initialLearnerReply": "我准备好了，开始吧。",
+      "requests": 2,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "好，我们现在开始第一关。\n\n## 一次正常操作长什么样\n\n在「未来的自己」里发一句「推荐三本画画入门的书」。AI 回了一份书单，我们假定它排在第二的是《色彩入门》。然后你在同一段聊天里接着发「第二本适合零基础吗？」。\n\n人看着页面，很自然知道「第二本」是哪一本。但对 AI 来说，如果这次请求里只有人设和这句新问题，它就看不到书单，「第二本」就落了空。这正是本关要补上的东西：把聊天记录带进模型请求，让追问用上前文。成品见效的样子是——追问能自然接上前面的话，而且刷新页面后记录还在。\n\n## 把这段放到一次问答的链路里\n\n**页面发问** → **后端问答** → **模型连接** → **AI 作答**\n\n这条主干在当前作品里已经接通了。本课要加的一条旁路是：**后端问答** → **向会话记录取前文**，也就是后端在交给模型之前，先按这段聊天的记录把前文取出来。\n\n三个位置可以这样理解：气泡显示在页面；能不能接上话，取决于后端这次交给模型的材料；模型只是拿这份材料作答。页面负责交来问题和显示，后端负责组装材料，模型负责回答。\n\n如果这一段出了错，你会看到什么？单看回答很难分辨。比如追问「第二本适合零基础吗？」，AI 也可能凭常见书单猜出一个书名来答得很像样，看起来像是接上了前文。\n\n## 一个判断题\n\n设想甲、乙两版实现：乙版追问时其实是猜的，碰巧猜中了书名；甲版是真正把原书单交给了 AI，也答出了同一本。两句回答看起来一模一样。\n\n**仅凭这两句回答相同，能确认两个版本都把原书单交给 AI 了吗？如果不能，你觉得还应该去核对什么？**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "55d527d365dcba420a08c910bbfe960c76988259736b454de74cc3470b12c8a9",
+      "messagesSha256": "7e3cafa4f78a5388bbff4b641d68e59498d7f8c6f8597a5224873c0541fadd5f",
+      "priorLearnerMessages": ["我准备好了，开始吧。"],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c2-m1-continuity-plan-final-cycle",
+      "arm": "after",
+      "course": 2,
+      "kind": "plan-final-cycle",
+      "initialSection": "D-approve.md",
+      "initialLearnerReply": "这项安排我已经看清楚了，没有别的疑问。",
+      "requests": 3,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "好的，你确认已经看清了这段安排：按会话编号取回本段旧消息，保留双方原话、角色和先后顺序，加上本次问题一起送去模型；只有拿到有效回答才整轮提交，空回答或模型失败不留半轮，不同会话的记录也不会混在一起。你选的是逐条保存带角色的消息，成功时成对追加，这一点在计划里也是按原样写下的。\n\n计划里记录这些安排的位置是 [PLAN.md:9–11](#pbl-file=PLAN.md&line=9&end=11)。我看过的是当前保存的这一版，内容没有变化过。\n\n理解清楚和正式表示「这一版可以照着做」是两件事，所以这里还需要你明确一次：如果觉得没问题，直接说符合或不用改就行；如果有想调整的地方，也请现在告诉我是哪一步。\n\n**当前这一版计划符合你的要求吗？有哪里想调整？**",
+          "approval": true,
+          "hostValidated": true,
+          "effectiveApproval": true
+        },
+        {
+          "tool": "complete_stage",
+          "response": null,
+          "hostValidated": true
+        }
+      ],
+      "nextLearnerReply": "可以定稿，不需要修改。",
+      "inputSha256": "e740a4fe5fbe6f082b8df3d57cfe85bdb3e81227e4cb7bbbae7ff0abbf281a84",
+      "messagesSha256": "acd18da1c23581e5a54f3b11246fa28bc5ea504a58de8d8fe8c007f385b600fc",
+      "priorLearnerMessages": [
+        "请带我审阅当前已保存的版本。",
+        "按会话编号取本段旧消息，保留双方原话、角色和先后顺序，再加本次问题一次。回答有效后整轮提交，空回答或模型失败不添加半轮。不能把其他会话的记录混进来。",
+        "这项安排我已经看清楚了，没有别的疑问。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c2-m1-continuity-plan-final-cycle",
+      "arm": "before",
+      "course": 2,
+      "kind": "plan-final-cycle",
+      "initialSection": "D-approve.md",
+      "initialLearnerReply": "这项安排我已经看清楚了，没有别的疑问。",
+      "requests": 3,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "明白，那这份计划就停在现在这个版本，不再往下加内容。\n\n你确认过的关键是 [PLAN.md:9–11](#pbl-file=PLAN.md&line=9&end=11) 这一段：它记录了你选的「逐条保存」——历史里存的是带角色的单条消息；整轮工作放在同一段保护范围内，从读取历史副本、加入本次问题、调用模型，到检查回答有效后再把一问一答一起提交。异常或空回答不提交，所以不会出现半轮；阅读历史时拿到的也是副本，不会因为后续追加而改动已经读到的内容。至于用哪个会话编号去取记录，计划里靠「同一编号读、同一编号写」这一条来保证 A 和 B 不会混在一起。\n\n计划写成这样，Coder 就能照着实现：哪些地方存消息、哪一步提交、失败时停在哪里，都有对应的一句话。\n\n**这份计划现在符合你的要求吗？如果符合、不需要修改，直接回复「符合」或「不用改」就可以。**",
+          "approval": true,
+          "hostValidated": true,
+          "effectiveApproval": true
+        },
+        {
+          "tool": "complete_stage",
+          "response": null,
+          "hostValidated": true
+        }
+      ],
+      "nextLearnerReply": "可以定稿，不需要修改。",
+      "inputSha256": "e740a4fe5fbe6f082b8df3d57cfe85bdb3e81227e4cb7bbbae7ff0abbf281a84",
+      "messagesSha256": "acd18da1c23581e5a54f3b11246fa28bc5ea504a58de8d8fe8c007f385b600fc",
+      "priorLearnerMessages": [
+        "请带我审阅当前已保存的版本。",
+        "按会话编号取本段旧消息，保留双方原话、角色和先后顺序，再加本次问题一次。回答有效后整轮提交，空回答或模型失败不添加半轮。不能把其他会话的记录混进来。",
+        "这项安排我已经看清楚了，没有别的疑问。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c2-m1-continuity-plan-first",
+      "arm": "after",
+      "course": 2,
+      "kind": "plan-first",
+      "initialSection": "A-generate.md",
+      "initialLearnerReply": "请按已经提交的选择写好计划，再带我理解和审阅。",
+      "requests": 3,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "计划已经按你的选择写好并保存了，我们从「要做出的效果」开始看。\n\n你先会在 [PLAN.md:13–15](#pbl-file=PLAN.md&line=13&end=15) 看到这节课的目标：同一段聊天里先问「推荐三本画画入门的书」，再问「第二本适合零基础吗」，第二个问题要能被接住。紧接着 [PLAN.md:17–21](#pbl-file=PLAN.md&line=17&end=21) 记下了你选的「A · 逐条保存」：历史里存的是一问一答两条带角色的消息，形状贴近模型输入；代价是每轮写两条，不能只落一半。\n\n实现顺序在 [PLAN.md:23–30](#pbl-file=PLAN.md&line=23&end=30) 的六个步骤里：先按会话编号拿到这段聊天自己的历史，再把「读副本 → 加入本题 → 调模型 → 判断回答是否有效 → 追加完整一轮」都放在同一次受保护的工作里完成。其中第 4 步是关键的一句——**只有成功的完整轮才写回**。\n\n对照 [PLAN.md:42–48](#pbl-file=PLAN.md&line=42&end=48) 的检查方式想一想其中一个场景：如果模型这次返回的是空白，按第 4 步的要求，随后查询同一段聊天应该看到什么，为什么？\n\n**请按这个场景说说你的预期，我们再看下一段安排。**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "79e5cd35ac2698debbd0fad3735305c2db9612204beddb0e20bf05f3585a0076",
+      "messagesSha256": "bf4f2ca21314e1ec2b20100013626620dd90f3486e00140d704d464498faf82a",
+      "priorLearnerMessages": ["请按已经提交的选择写好计划，再带我理解和审阅。"],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c2-m1-continuity-plan-first",
+      "arm": "before",
+      "course": 2,
+      "kind": "plan-first",
+      "initialSection": "A-generate.md",
+      "initialLearnerReply": "请按已经提交的选择写好计划，再带我理解和审阅。",
+      "requests": 4,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "计划已经按你提交的选择写进 [PLAN.md:11–16](#pbl-file=PLAN.md&line=11&end=16) 的「要做出的效果」了：同一段聊天里第二问能接上第一轮的答案，换一段聊天互相看不到，刷新后记录读得回来，模型失败时不留半轮。\n\n你的选择是**逐条保存**，我照原意写进了「我的选择」：历史里放带角色的 user、assistant 两条消息，成功时一起追加。因为你选了这一种，计划里「一问一答成对」就必须靠提交这一步守住，这也是我没有改成只存整轮的原因。\n\n真正让追问用上前文的关键在 [PLAN.md:32–35](#pbl-file=PLAN.md&line=32&end=35) 这一步：用请求自带的会话编号，在整轮保护范围内先读一份快照，把本次问题接在快照末尾，再交一次给模型；只有拿到有效回答，才把这一整轮追加回同一段历史。注意模型读的是快照，不是你看到的内部记录本身。\n\n**假设用户在同一段聊天里问了第二个问题，这次送给模型的那份完整输入是从哪里拼出来的？为什么计划要先取快照，而不是把内部记录直接交给模型并往里加这句话？**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "79e5cd35ac2698debbd0fad3735305c2db9612204beddb0e20bf05f3585a0076",
+      "messagesSha256": "bf4f2ca21314e1ec2b20100013626620dd90f3486e00140d704d464498faf82a",
+      "priorLearnerMessages": ["请按已经提交的选择写好计划，再带我理解和审阅。"],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c2-m1-continuity-transition",
+      "arm": "after",
+      "course": 2,
+      "kind": "transition",
+      "initialSection": "B-context.md",
+      "initialLearnerReply": "不能，模型可能碰巧答中。要核对模型这次实际收到的消息，看看是否确实带上原书单。",
+      "requests": 2,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "你抓住的正是关键：书名相同可能只是巧合，真正要核对的是这次请求里到底放了什么。顺着这个思路看记录是怎么来的。\n\n## 一轮问答怎么成为记录\n\n第一次问「推荐三本画画入门的书」时，AI 把书单答回来。你发的那句话和 AI 的这份回答，就构成一轮问答；后台把双方的原话记进当前这段聊天的记录里，留着下次发问使用。\n\n于是第二次发问时，交给 AI 的其实是三条消息：\n\n1. **用户**：「推荐三本画画入门的书」\n2. **AI**：那份书单（示意内容，实际书目可能不同）\n3. **用户**：「第二本适合零基础吗？」\n\n前两条是从记录里取出来的旧原话，第三条是你刚发来的问题。人设另外带上，本次问题只加入一次。\n\n## 这就是模型接口的消息格式\n\n交给 AI 的不是一整段文字，而是一份**按顺序排列的消息，每条标一个说话人和对应的内容**。这个「谁说的」标签不能省：书单必须仍标成 AI 说的话，追问才是用户现在要它回答的问题。如果把两段用户原话并成同一条请求消息，说话人就只剩用户一个人，AI 看到的会像是「用户自己列了三本书，又问第二本」，前文的意义就散了。\n\n## 用删减版检查一下\n\n下面两份请求都保留了本次追问，只是各删掉一条旧消息：\n\n| | 上一次的提问 | 上一次的回答 |\n|---|---|---|\n| 甲 | 保留 | 删除 |\n| 乙 | 删除 | 保留 |\n\n**哪一份还有依据确定「第二本」指的是哪本书？请用那份请求里留下的内容解释。**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "3e35146b740b37b4b1cd90907808968b37ac675ae8f634c7eb91b9c41b9cc94f",
+      "messagesSha256": "01e6ea96d00dc490b0be2fe54fdf0327ad7847ffe7067cb9f6a5f5a7a1898909",
+      "priorLearnerMessages": [
+        "请开始当前教学段。",
+        "不能，模型可能碰巧答中。要核对模型这次实际收到的消息，看看是否确实带上原书单。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c2-m1-continuity-transition",
+      "arm": "before",
+      "course": 2,
+      "kind": "transition",
+      "initialSection": "B-context.md",
+      "initialLearnerReply": "不能，模型可能碰巧答中。要核对模型这次实际收到的消息，看看是否确实带上原书单。",
+      "requests": 2,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "你说得对，关键不在答案是否一样，而在模型这次到底收到了什么。要判断这一点，只能把这次请求的内容摊开看。下面就把这个请求摊开。\n\n## 这条请求是怎么攒出来的\n\n第一次你问「推荐三本画画入门的书」，AI 把书单答了回来。你的提问和它的回答就组成一轮问答，后台把双方原话记进当前这段聊天的记录里，留着下次发问时使用。\n\n到了第二次追问，模型收到的并不是一句孤零零的问题，而是三条按顺序排好的消息：\n\n1. **用户**：推荐三本画画入门的书\n2. **AI**：那份书单（例如《色彩入门》排在第二）\n3. **用户**：第二本适合零基础吗？\n\n前两条从记录里取，第三条是你刚发来的问题。人设说明另外带上，当前问题只加入一次——否则同一句话出现两遍，模型的回答也会跟着重复。\n\n## 为什么要有「说话人」\n\n交给 AI 的是一份按顺序排列的消息，每条标一个说话人和对应的内容。这样第 2 条里的书单仍然是「AI 上次说过的话」，第 3 条才是「用户现在要它回答的问题」。\n\n如果把这两段原话并成同一条请求消息，就只剩一个说话人，模型分不清哪些是自己刚说过的、哪些是新要求。\n\n## 两个请求的对照\n\n现在做个小检查：两份请求都保留本次追问，但旧记录各删一段。\n\n| | 保留的旧记录 | 本次追问 |\n|---|---|---|\n| 甲 | 只有上次的提问 | 第二本适合零基础吗？ |\n| 乙 | 只有上次的回答 | 第二本适合零基础吗？ |\n\n**请用两份各自留下的内容解释：哪一份还有依据确定「第二本」指的是哪本书？**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "3e35146b740b37b4b1cd90907808968b37ac675ae8f634c7eb91b9c41b9cc94f",
+      "messagesSha256": "01e6ea96d00dc490b0be2fe54fdf0327ad7847ffe7067cb9f6a5f5a7a1898909",
+      "priorLearnerMessages": [
+        "请开始当前教学段。",
+        "不能，模型可能碰巧答中。要核对模型这次实际收到的消息，看看是否确实带上原书单。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c2-m2-sessions-code-final-cycle",
+      "arm": "after",
+      "course": 2,
+      "kind": "code-final-cycle",
+      "initialSection": "D-confirm.md",
+      "initialLearnerReply": "这项安排我已经看清楚了，没有别的疑问。",
+      "requests": 5,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "**这次落盘的安排，按你的说法逐条核对**\n\n- 计划里第二关那句写的是「全体共用执行门，A 等待时 B 也等待」；`CourseChoices.queueScope()` 返回的也是 `global`，两边一致。\n- [src/com/futureself/dialogue/SessionBook.java:13–18](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=13&end=18)：不管传进来的是哪个会话 ID，最后都走同一个 `global` 门，所以两个会话的请求在同一处排队，B 得等 A 从模型那里回来。\n- [src/com/futureself/dialogue/DialogueService.java:13–25](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=13&end=25)：这一整个方法体都在门的里面——先取前文快照，再把本题接在后面交给模型，拿到有效回答才写回。读取和写入被框在同一段排队里，后来的请求因此不会提前读到旧前文；回答为空时直接抛错，那一次不会留下半轮记录。\n- 记录本身仍按编号分开：`SessionBook` 里每个 ID 各一份自己的 `History`，共享的只是排队的门，不是记录。\n\n编译已通过。另外有个小地方如实说明：`Session` 里还留着一个会话级的执行门字段，目前不参与排队，是多余的一块，不影响现在的行为。\n\n**当前这版代码符合你的要求吗？有哪里想调整？**",
+          "approval": true,
+          "hostValidated": true,
+          "effectiveApproval": true
+        },
+        {
+          "tool": "complete_stage",
+          "response": null,
+          "hostValidated": true
+        }
+      ],
+      "nextLearnerReply": "可以定稿，不需要修改。",
+      "inputSha256": "951b55eeedc80b9de971df90d4fbf911b6cc2a7607a396024aa1b2607a4573ff",
+      "messagesSha256": "209c7d13eae28ec27271ec2617e4b86e8887d0a5da1e06bcfe54eb36fdad5417",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请带我审阅当前已保存的版本。",
+        "选择全局队列，读前文、等模型回答、写回问答是一件排队的工作。后一轮在读取前就要等；不同会话也共享这条队列，接受它带来的额外等待。两段记录仍按各自编号分开。",
+        "这项安排我已经看清楚了，没有别的疑问。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c2-m2-sessions-code-final-cycle",
+      "arm": "before",
+      "course": 2,
+      "kind": "code-final-cycle",
+      "initialSection": "D-confirm.md",
+      "initialLearnerReply": "这项安排我已经看清楚了，没有别的疑问。",
+      "requests": 6,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "好的，那我把这一版正式交给你确认一次。刚才的编译回执是通过的，只说明语法和编译没问题，还不是正式测试结果。\n\n你选的是「全部依次处理」，代码也就是这么排的：\n\n- [src/com/futureself/dialogue/SessionBook.java:11–16](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=11&end=16)：第 11 行只有一把 `global` 门，第 15 行把每次执行都交给它，所以不管会话编号是 A 还是 B，都得排同一条队；第 14 行仍然按编号取各自那份 `History`，两段记录分得开。\n- [src/com/futureself/dialogue/DialogueService.java:15–22](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=15&end=22)：一轮里的读前文（19 行）、问模型（20 行）、写回问答（22 行）都在同一段排队范围里，后来的请求进入时前文已是最新的；21 行空回答直接抛错，不留半轮。\n- [src/com/futureself/dialogue/DialogueService.java:26–27](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=26&end=27)：查历史也走同一把门，拿到的是一份一致快照。\n\n代价就是你已经接受的：A 等模型时 B 也一起等。\n\n**当前代码符合你的要求吗？有哪里想调整？** 说「符合」或「不用改」都算确认。",
+          "approval": true,
+          "hostValidated": true,
+          "effectiveApproval": true
+        },
+        {
+          "tool": "complete_stage",
+          "response": null,
+          "hostValidated": true
+        }
+      ],
+      "nextLearnerReply": "可以定稿，不需要修改。",
+      "inputSha256": "951b55eeedc80b9de971df90d4fbf911b6cc2a7607a396024aa1b2607a4573ff",
+      "messagesSha256": "209c7d13eae28ec27271ec2617e4b86e8887d0a5da1e06bcfe54eb36fdad5417",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请带我审阅当前已保存的版本。",
+        "选择全局队列，读前文、等模型回答、写回问答是一件排队的工作。后一轮在读取前就要等；不同会话也共享这条队列，接受它带来的额外等待。两段记录仍按各自编号分开。",
+        "这项安排我已经看清楚了，没有别的疑问。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c2-m2-sessions-code-first",
+      "arm": "after",
+      "course": 2,
+      "kind": "code-first",
+      "initialSection": "A-implement.md",
+      "initialLearnerReply": "请按已批准的计划完成实现，再带我理解和审阅。",
+      "requests": 3,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "实现已经落到文件里，构建也跑过一遍并通过（那只是编译检查，不是正式测试）。这一轮先讲清楚：用户按下发送后，代码是怎么把「读前文 → 问模型 → 存下这一轮」当成一件事来做的。\n\n还是用那个例子：先问「推荐三本画画入门的书」，再问「第二本适合零基础吗？」。第二句之所以能接上，全靠后端在问模型之前，先把这段会话已经完成的问答取出来，再把新问题接在后面。\n\n现在多了一个新情况：两个窗口同时发问。你要观察的流程是：\n\n**页面发问** → **后端锁定执行范围** → **读这段会话的前文** → **请模型回答** → **存下这一问一答** → **放行下一个请求**\n\n锁定这一步，就是这一关新增的东西。它锁住的不是「存」的那一下，而是整段。原因是：如果只锁存的时候，后来那个请求会在前一个还没存完时就读到旧前文，于是两轮都以为自己接的是第一句。\n\n真正改动的两个位置：\n\n- [src/com/futureself/dialogue/SessionBook.java:10–18](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=10&end=18)：这里有一扇全体共用的门 `global`，`execute` 每次都把这整段工作交给它。注意每个会话仍然有自己的 `history`，门是共用的，记录不是。\n- [src/com/futureself/dialogue/DialogueService.java:15–24](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=15&end=24)：这整块就是交给门去排队的内容——取前文、加本题、问模型、存一轮。读回历史的那个方法也走同一扇门，所以查询看到的是一致快照。\n\n用人话说：`SerialGate` 是作者给的「一次只让一段工作通过」的小工具，我们只需要决定「哪段工作」和「谁共用同一把」。\n\n出错会是什么样：如果门没把整段包住，第二个请求就会带着旧前文去问模型，回答答非所问，而记录里会出现两轮都只接着第一句。\n\n**请你判断一下：当 A 会话正在等模型回答时，B 会话的人点了发送，这次请求会停在哪里？而 B 的历史记录里，会不会因此混进 A 的问答？说一句理由就行。**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "e19810175203a7f0d9b7950974473b50fe934115cbd2a79834d58913730b1edf",
+      "messagesSha256": "ee4b933cefa486fd2cdc7eb04467e431d91814b2fe36627f2f19873bc3feddfb",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请按已批准的计划完成实现，再带我理解和审阅。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c2-m2-sessions-code-first",
+      "arm": "before",
+      "course": 2,
+      "kind": "code-first",
+      "initialSection": "A-implement.md",
+      "initialLearnerReply": "请按已批准的计划完成实现，再带我理解和审阅。",
+      "requests": 4,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "代码已经按计划改好，编译也通过了（编译成功只说明语法和接线没问题，正式测试还没跑）。\n\n## 这次动手做了什么\n\n用你的话来说，现在的作品收到消息后，要做三件事：**翻出这段聊天已有的问答** → **把前文和这次的问题一起交给 AI** → **拿到回答后记进这段聊天**。\n\n第二关的关键是：这三步不能被别的请求插进来。看看 [src/com/futureself/dialogue/DialogueService.java:13–25](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=13&end=25)：整个「读历史 → 问模型 → 写入」被包在 `sessions.execute(...)` 里面，也就是交给会话簿去安排先后。第 18–19 行先复制一份历史、再把本次问题接在后面，所以模型看到的是当时那份完整前文；第 21 行回答为空就抛错，第 22 行才真正记下一问一答。失败的那次不会留下半条记录。\n\n排队范围在 [src/com/futureself/dialogue/SessionBook.java:13–18](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=13&end=18)：第 15 行按会话 ID 找到（或新建）那份记录，第 16 行用的却是一把**所有会话共用**的锁 `global`，第 17 行才真正执行上面那三步。所以 A 在等 AI 的时候，B 也在等。查询历史走的是同一个入口（第 27 行），拿到的也是排队后的一致快照。计划里写的「全部依次处理」就是这个安排，配置记录在 `CourseChoices.queueScope()` 里。\n\n## 想请你判断的一件事\n\n假设有人觉得排队太慢，把模型调用挪到 `execute` 外面，只让「写记录」那一步排队。\n\n**按现在的代码结构，这种改法会让两个同时到来的提问变成什么样？说说你会看到的现象就好。**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "e19810175203a7f0d9b7950974473b50fe934115cbd2a79834d58913730b1edf",
+      "messagesSha256": "ee4b933cefa486fd2cdc7eb04467e431d91814b2fe36627f2f19873bc3feddfb",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请按已批准的计划完成实现，再带我理解和审阅。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c2-m2-sessions-opening",
+      "arm": "after",
+      "course": 2,
+      "kind": "opening",
+      "initialSection": null,
+      "initialLearnerReply": "请开始这一关。",
+      "requests": 2,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "这一关要解决的是「同时到来」这个麻烦：几个聊天同一时间发问，后台的回答和记录不能互相串；同一个聊天里连着问两句，第二句要被排在后面回答。做得好的话，你切回画画聊天问第二本书，拿到的还是画画书单的续问；旁边的跑步聊天同时在问训练计划，两边互不干扰。\n\n**先站在一次请求的时间线上看**\n\n上一关的成果是：页面发问时会把当前聊天编号一起交上去，后端按编号取回这段聊天的前文，再交给 AI 作答，最后把这一轮问答记回记录里。把它画成一条时间线，画画聊天 A 是这样：\n\n```\nA 发问 → 按 A 的编号取 A 的前文 → 等 AI 作答 → 把问答记回 A\n```\n\n跑步聊天 B 走的是另一条线，编号不同、记录也不同。两条线各自的指向是清楚的：**A 的编号** → A 的书单记录，**B 的编号** → B 的训练记录。所以「取错聊天的前文」在这个例子里不该发生。\n\n真正新的地方在「等 AI 作答」这一段：AI 不会立刻回，后台在这段时间里闲着，而 B 的问题可能正好进来。于是问题不是取哪份记录，而是——什么时候开始处理下一条，以及要不要等上一条收尾。\n\n**先想一个具体处境**\n\nA 的请求已经等到 AI 的回答，后端正在把这一轮问答记回 A 的记录，跑步聊天 B 这时发来新问题。\n\n**如果这段时间里 A 的那条请求还没被记全，你会把它当成已经完成，还是当成还没做完？说说你的判断依据——是工作顺序里的哪一步让你这么判断。**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "9521083958c8eed15bdd98dfa217838236fd255d7621d8a2859b68f439e4f83b",
+      "messagesSha256": "483db67a822eb7ba91058268bf932b9ae5b5af874c9021aa8cbf0c33a757f149",
+      "priorLearnerMessages": ["上一关已经完成，并通过任务栏进入本关。", "请开始这一关。"],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c2-m2-sessions-opening",
+      "arm": "before",
+      "course": 2,
+      "kind": "opening",
+      "initialSection": null,
+      "initialLearnerReply": "请开始这一关。",
+      "requests": 2,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "## 这一关要做成什么样\n\n第一关里，工作台已经能做到：画画聊天和跑步聊天各自有编号，追问「第二本适合零基础吗？」时，后台按画画聊天的编号取出它自己的记录，回答不会跑到跑步那边。这一关要补上的是**同时到来的请求**——两个会话一起提问时，记录和回复不串；同一个会话连问两句时，按提问顺序回答。\n\n## 先把时间轴画出来\n\n同一份责任图，这次我们盯住一次请求所花的时间。按发送之后，后台要连着做三件事：\n\n**取前文**（用这条聊天自己的编号）→ **等 AI 作答** → **把这一问一答记回这条聊天的记录**\n\n```\n画画聊天 A：发送「那第二本适合零基础吗？」\n  ├─ 取 A 的记录            ✅ 很快\n  ├─ 等 AI 作答             ⏳ 这段时间后台是空闲的\n  └─ 把这一问一答记回 A      ⏳ 还没做\n```\n\n关键在于中间那段等待。后台等 AI 的时候并没有停摆，它随时可能收到另一条请求——可能是跑步聊天 B 的新问题，也可能是你在 A 里紧接着追问的第三本。于是真正的问题就出现了：**新请求要不要马上开工？**\n\n如果不管不顾地开工，可能出现两种别扭的情况：后台正在往 A 记录里写这一轮，另一条请求同时来读 A 的记录，读到的是半截；或者同一个会话里第二问的答案先回来，你先看到第三本的推荐，再看到第二本的解答。\n\n所以在动手前，这段教学要你先把「什么时候可以开始处理下一问」这件事想清楚。今天只处理当前进程里的排队；重启后怎么恢复记录留给第三课，完整故障恢复和发送预算留给第四课。\n\n## 一个常见的验收场景\n\n假设你只发了一条画画问题，AI 已经返回了回答，后端也把回答显示给了你，但还没来得及把这一问一答记回 A 的记录。这种状态算不算「这一轮做完了」，直接决定你如何判断并发处理是否可靠。\n\n**请判断：上面这种情况，你会把这一轮算作完成吗？说说你的判断依据——你依据的是哪一步工作的结果。**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "9521083958c8eed15bdd98dfa217838236fd255d7621d8a2859b68f439e4f83b",
+      "messagesSha256": "483db67a822eb7ba91058268bf932b9ae5b5af874c9021aa8cbf0c33a757f149",
+      "priorLearnerMessages": ["上一关已经完成，并通过任务栏进入本关。", "请开始这一关。"],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c2-m2-sessions-plan-final-cycle",
+      "arm": "after",
+      "course": 2,
+      "kind": "plan-final-cycle",
+      "initialSection": "D-approve.md",
+      "initialLearnerReply": "这项安排我已经看清楚了，没有别的疑问。",
+      "requests": 4,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "这一版的计划已经完整落盘，第二关的安排写在 [PLAN.md:13–15](#pbl-file=PLAN.md&line=13&end=15)：全体会话共用一道执行门，同一编号仍对应同一份记录，保护范围从读前文一直盖到写回，查询也拿一致快照；检查方式是用两段互不影响的会话配合一次受控并发，看不丢、不重、问答配对和等待范围。你已经看过这项安排，也确认没有别的疑问，接下来这一步只是对当前版本表态。\n\n**当前计划符合你的要求吗？有哪里想调整？** 没问题的话，直接说「符合」或「不用改」就行。",
+          "approval": true,
+          "hostValidated": true,
+          "effectiveApproval": true
+        },
+        {
+          "tool": "complete_stage",
+          "response": null,
+          "hostValidated": true
+        }
+      ],
+      "nextLearnerReply": "可以定稿，不需要修改。",
+      "inputSha256": "0b618a52b73c035ea372c935daaf186e35ee51d524b8b68f603cecc6065314cd",
+      "messagesSha256": "209c7d13eae28ec27271ec2617e4b86e8887d0a5da1e06bcfe54eb36fdad5417",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请带我审阅当前已保存的版本。",
+        "选择全局队列，读前文、等模型回答、写回问答是一件排队的工作。后一轮在读取前就要等；不同会话也共享这条队列，接受它带来的额外等待。两段记录仍按各自编号分开。",
+        "这项安排我已经看清楚了，没有别的疑问。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c2-m2-sessions-plan-final-cycle",
+      "arm": "before",
+      "course": 2,
+      "kind": "plan-final-cycle",
+      "initialSection": "D-approve.md",
+      "initialLearnerReply": "这项安排我已经看清楚了，没有别的疑问。",
+      "requests": 4,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "你已经把第二关的安排讲清楚了，和落盘的那段一致：[PLAN.md:13–15](#pbl-file=PLAN.md&line=13&end=15) 记录的是全部会话共用一道执行门，读取前文、等模型、写回问答作为一次整轮工作排队，前一轮没排到就等；两个会话的记录仍各按编号分开，第一关那部分原样留着。\n\n你把「接受额外等待」这一点也说明了，这是这份计划里最需要提前认下的代价：并发变慢，换来的是不会读到旧前文、也不会串记录。\n\n理解到这一步就够了，剩下只需确认这份计划本身能不能拿去实现。**当前这份计划符合你的要求吗？有哪里想调整？** 如果不用改，回一句「符合」或「不用改」就行。",
+          "approval": true,
+          "hostValidated": true,
+          "effectiveApproval": true
+        },
+        {
+          "tool": "complete_stage",
+          "response": null,
+          "hostValidated": true
+        }
+      ],
+      "nextLearnerReply": "可以定稿，不需要修改。",
+      "inputSha256": "0b618a52b73c035ea372c935daaf186e35ee51d524b8b68f603cecc6065314cd",
+      "messagesSha256": "209c7d13eae28ec27271ec2617e4b86e8887d0a5da1e06bcfe54eb36fdad5417",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请带我审阅当前已保存的版本。",
+        "选择全局队列，读前文、等模型回答、写回问答是一件排队的工作。后一轮在读取前就要等；不同会话也共享这条队列，接受它带来的额外等待。两段记录仍按各自编号分开。",
+        "这项安排我已经看清楚了，没有别的疑问。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c2-m2-sessions-plan-first",
+      "arm": "after",
+      "course": 2,
+      "kind": "plan-first",
+      "initialSection": "A-generate.md",
+      "initialLearnerReply": "请按已经提交的选择写好计划，再带我理解和审阅。",
+      "requests": 4,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "计划已经按你提交的选择真正写进文件了。我先带你从「看得见的功能」走到「后端这一步由谁接手」。\n\n**眼前这件事**\n\n在页面里打字发问 → 后端拿到这条消息 → 找这个会话的前文 → 交给模型 → 把问答写回记录。这个顺序看上去很平常，风险藏在中间的空档里。\n\n用画画入门的例子：你在 A 窗口问「推荐三本画画入门的书」，紧接着追问「第二本适合零基础吗？」。如果两个请求几乎同时进来，第二个请求很可能在前一轮的答案还没写回去时就去读前文，于是它交给模型的只有第一问、没有第一答，甚至什么都没读到。这就是「读到旧前文」。\n\n**这一段由谁负责**\n\n页面和后端的分工不变：消息进来先由会话入口检查，再交给后端问答那一段。本课要加的是把「读前文 → 问模型 → 写回」当成一个不可拆开的整轮，并给它排队。你选的是全体共用一个排队入口——不论哪个会话，谁先拿到机会谁先整轮做完，A 在等模型时 B 也跟着等。好处和执行门的复用都写在计划里。\n\n计划里先把效果和你的选择写清楚，再写实现顺序和检查方式：\n\n[PLAN.md:15–29](#pbl-file=PLAN.md&line=15&end=29)\n\n这里可以顺着猜一下：既然全体共用一个门，B 的「读前文」这一步是不是一定得等 A 的整轮做完？想清楚这一点，就理解了这一步为什么要盖住三段而不只盖住写入。\n\n**按你选的「全体共用一个排队入口」，两个窗口同时发问时，B 能在 A 等待模型回答的那段时间里开始读自己的前文吗？说说你的判断。**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "47813c1fecce709d6fe42c135bc79be5e1bcd73bad2b0284502698a76522bdde",
+      "messagesSha256": "d942855a927a2c377bc0f642148cd399cc2de847da267f390ccb34acc96b6708",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请按已经提交的选择写好计划，再带我理解和审阅。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c2-m2-sessions-plan-first",
+      "arm": "before",
+      "course": 2,
+      "kind": "plan-first",
+      "initialSection": "A-generate.md",
+      "initialLearnerReply": "请按已经提交的选择写好计划，再带我理解和审阅。",
+      "requests": 3,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "计划已经按你提交的选择写进 [PLAN.md:13–57](#pbl-file=PLAN.md&line=13&end=57)，第一关的部分保持原样，只在后面接上第二关。\n\n## 这一关要做出的效果\n\n先不用想代码，看操作就够：开两个窗口，各用一个会话同时提问 → 两边都收到属于自己的回答，记录不串；同一个会话里连问两句 → 按先后各留一问一答，第二问能看到第一问。刷新读回时，看到的是完整的整轮，不会冒出「只有问题、没有答案」的半截记录。这段写在 [PLAN.md:16–21](#pbl-file=PLAN.md&line=16&end=21)。\n\n## 你选的方案，在这个计划里长什么样\n\n你选的是 **A · 全部依次处理**，我按原意写进了 [PLAN.md:23–27](#pbl-file=PLAN.md&line=23&end=27)：所有会话共用一个执行范围。用日常的话说，就是给整个后端问答只留一条工作通道，谁先拿到通道谁先读完前文、问完模型、存好这一轮，下一位才开始。A 在等模型的那几秒里，B 的提问也只能在通道口等着。\n\n代价也随之写进去了：同时在聊的几个人会互相拖慢，整体变慢。换来的是保护只有一处，不用为每个会话 ID 另备一套排队工具。\n\n## 关键安排只有一条\n\n真的容易做错的地方在 [PLAN.md:31–35](#pbl-file=PLAN.md&line=31&end=35)：读历史、请求模型、提交成功轮，这三件必须放在同一段排队工作里。理由是「前文」是在请求模型那一刻定下来的——如果读出前文之后把通道让出去，别的请求就能在模型还没回答时插进来，也读到同样旧的前文，于是两个问题答成了同一份背景。\n\n检查方式我列在 [PLAN.md:45–51](#pbl-file=PLAN.md&line=45&end=51)，都是「操作 → 预期结果」的对照，等代码写完就照着一条条试。\n\n**假设实现时只把最后「提交这一轮」放进保护范围，读前文和问模型都放在保护之外：同一个会话连着问两句，你会看到什么不对的现象？**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "47813c1fecce709d6fe42c135bc79be5e1bcd73bad2b0284502698a76522bdde",
+      "messagesSha256": "d942855a927a2c377bc0f642148cd399cc2de847da267f390ccb34acc96b6708",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请按已经提交的选择写好计划，再带我理解和审阅。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c2-m2-sessions-transition",
+      "arm": "after",
+      "course": 2,
+      "kind": "transition",
+      "initialSection": "B-overlap.md",
+      "initialLearnerReply": "还不能。后台这轮工作要等完整问答真正记回当前会话记录，后面的请求才能使用这一轮。",
+      "requests": 1,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "## 同一段聊天里，后一问要等前一问记好\n\n画画聊天 A 里，你刚发出「推荐三本画画入门的书」，AI 还在生成。这时同一段聊天的后台又收到第二条请求：「顺便告诉我第二本适不适合零基础」。这条请求要回答得好，就得知道第二本书叫什么——而那本书名正躺在第一条还没写完的回答里。\n\n如果第二条现在就去读 A 的已完成记录，读到的还是书单回来之前的旧记录，它根本看不到「色彩入门」这个位置。麻烦不在于两条请求先后调用了模型，而在于前文是提前抄走的：\n\n```text\nA₁：读旧记录 → 调模型（生成中…）\nA₂：读旧记录（书单还没有）→ 调模型  ✗ 材料是旧的\n\nA₁：读旧记录 → 调模型 → 记下这一轮\nA₂：            等 A₁ 记好 → 才读记录 → 调模型  ✓\n```\n\n所以后端把 **读已完成前文 → 调模型并等回答 → 记下完成的问答** 看成一件不可拆的完整工作。后一问的等待点在第一步之前，等前一轮进了记录，才去取材料。这里的等待发生在程序内部，你看不到转圈圈；模型那边收到的永远是已经组装好的那段对话。也正因为如此，光让两次模型调用排队、或光让两次写入排队，都补不回来——提前抄下的旧前文不会自己变新。\n\n**问一个情境**：后一问比较心急，开场先按 A 当时的记录抄了一份副本，然后老老实实等着，直到前一问答被记下才真正去调模型。如果它在发送前没有再取一次记录，模型拿到的会是哪份材料？",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "7ca70c3ee0659dcf40d14d4e88f0214a06a5fbeb23f61b0606afd158145d4fb5",
+      "messagesSha256": "2e4f497e0410f45fbb1d8edbce34742c212b65a19aaf356977af11498c83e4af",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请开始当前教学段。",
+        "还不能。后台这轮工作要等完整问答真正记回当前会话记录，后面的请求才能使用这一轮。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c2-m2-sessions-transition",
+      "arm": "before",
+      "course": 2,
+      "kind": "transition",
+      "initialSection": "B-overlap.md",
+      "initialLearnerReply": "还不能。后台这轮工作要等完整问答真正记回当前会话记录，后面的请求才能使用这一轮。",
+      "requests": 1,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "你已经抓住了要点：这轮工作要等问答真正记回当前会话记录才算完，后面的请求才有东西可接。接下来看同一件事里的先后顺序。\n\n## 两条后台请求重叠时会发生什么\n\n只看画画聊天 A。第一条带 A 编号的请求是「推荐三本画画入门的书」，AI 正在生成；假设后台这时又收到同样带 A 编号的「顺便告诉我第二本适不适合零基础」。如果第二条现在就取前文，拿到的还是书单回来之前的旧记录。\n\n```\n两个请求各读一次：\nA₁ 读旧记录 → 调模型 → 写回\nA₂ 读旧记录 → 调模型 → 写回        ← A₂ 看不到 A₁ 的书单\n\nA₁ 先做完再让 A₂ 开始：\nA₁ 读 → 调模型 → 写回\n              A₂ 读（已含书单）→ 调模型 → 写回\n```\n\n从 **页面发问** 到 **AI 作答** 再看一次这条链路：后端把 **读已完成前文 → 调模型并等回答 → 记下完成的问答** 当作一件完整工作来做。后来的 A 在第一步之前等，等前一轮记好才取前文。这样模型每次接到的是已经组好的材料，等待发生在程序里，不在模型那边。只让两次模型调用排队、或只让两次写入排队，都补不回第二条提前读到的旧前文。\n\n## 一个变体\n\n后一轮先取了前文副本，临时等了一会儿，等到前一轮记好才真正发请求。如果发请求前没有再取一次，它带着的还是那份副本。请你判断：这份副本里有没有 A₁ 刚记下的书单和回答？\n\n**这条「先拿副本、稍后才发」的请求，最终发给模型的材料是新是旧？说说你的判断依据。**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "7ca70c3ee0659dcf40d14d4e88f0214a06a5fbeb23f61b0606afd158145d4fb5",
+      "messagesSha256": "2e4f497e0410f45fbb1d8edbce34742c212b65a19aaf356977af11498c83e4af",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请开始当前教学段。",
+        "还不能。后台这轮工作要等完整问答真正记回当前会话记录，后面的请求才能使用这一轮。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c3-m1-save-code-final-cycle",
+      "arm": "after",
+      "course": 3,
+      "kind": "code-final-cycle",
+      "initialSection": "D-confirm.md",
+      "initialLearnerReply": "这项安排我已经看清楚了，没有别的疑问。",
+      "requests": 2,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "那我把收回来的内容归拢成一句：这一版在同一个会话的执行范围内读取旧记录，在副本中拼好本轮问答，整段写入 history.json 成功之后才替换内存里的正式历史并返回原答案；写入失败时正式记录和内存里都还留着旧版本，下一个问题仍然基于旧版继续，各个会话各自守着自己的记录。\n\n这是本关最后一次确认。\n\n**这份实现是否还需要修改？如果不需要，请直接告诉我没有要改的地方。**",
+          "approval": true,
+          "hostValidated": true,
+          "effectiveApproval": true
+        },
+        {
+          "tool": "complete_stage",
+          "response": null,
+          "hostValidated": true
+        }
+      ],
+      "nextLearnerReply": "可以定稿，不需要修改。",
+      "inputSha256": "9e84b5a79819540903c6af19e6606c1a4c57c0104e32791e6ec27f55d1a036a5",
+      "messagesSha256": "7dab17c3dce2e91001788c6a013f124abc667e135250262f932a130c12f14193",
+      "priorLearnerMessages": [
+        "请带我审阅当前已保存的版本。",
+        "先留着旧的正式记录，在副本里加入本轮有效问答，整段写入文件成功后才更新正式内存记录并返回。保存失败就不发布候选版，下一问仍用旧版；不同会话各管自己的记录。整段文件的代价是每次重写旧正文。",
+        "这项安排我已经看清楚了，没有别的疑问。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c3-m1-save-code-final-cycle",
+      "arm": "before",
+      "course": 3,
+      "kind": "code-final-cycle",
+      "initialSection": "D-confirm.md",
+      "initialLearnerReply": "这项安排我已经看清楚了，没有别的疑问。",
+      "requests": 6,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "这段实现到这里就完整了：同一个会话里先拿旧记录副本，把本轮提问和有效的回答组成本轮候选；[src/com/futureself/dialogue/FileHistoryStore.java:12–18](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FFileHistoryStore.java&line=12&end=18) 先确认候选恰好比旧记录多一轮完整问答，再整段写入这段聊天的记录文件；只有这一步成功，[src/com/futureself/dialogue/DialogueService.java:20–24](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=20&end=24) 才用它替换内存里的正式记录并返回原答案。写入报错就直接抛出，内存和旧正文都留在原样，符合你接受“每次重写旧正文”的代价。\n\n**这份实现现在还需要修改吗？如果不需要，请直接回复确认，我就收尾这一关。**",
+          "approval": true,
+          "hostValidated": true,
+          "effectiveApproval": true
+        },
+        {
+          "tool": "complete_stage",
+          "response": null,
+          "hostValidated": true
+        }
+      ],
+      "nextLearnerReply": "可以定稿，不需要修改。",
+      "inputSha256": "9e84b5a79819540903c6af19e6606c1a4c57c0104e32791e6ec27f55d1a036a5",
+      "messagesSha256": "7dab17c3dce2e91001788c6a013f124abc667e135250262f932a130c12f14193",
+      "priorLearnerMessages": [
+        "请带我审阅当前已保存的版本。",
+        "先留着旧的正式记录，在副本里加入本轮有效问答，整段写入文件成功后才更新正式内存记录并返回。保存失败就不发布候选版，下一问仍用旧版；不同会话各管自己的记录。整段文件的代价是每次重写旧正文。",
+        "这项安排我已经看清楚了，没有别的疑问。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c3-m1-save-code-first",
+      "arm": "after",
+      "course": 3,
+      "kind": "code-first",
+      "initialSection": "A-build.md",
+      "initialLearnerReply": "请按已批准的计划完成实现，再带我理解和审阅。",
+      "requests": 4,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "## 这次改了什么\n\n三处接了线，已经通过编译。你选的是「整段聊天一个文件」，所以保存方式按整段重写来做。\n\n**第一处：什么时候写文件。** 在 [src/com/futureself/dialogue/DialogueService.java:12–26](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=12&end=26) 的 `reply` 里：先取这段聊天已有的旧记录，复制一份，把本轮问题加进副本（第 17 行），再把副本交给模型。只有拿到非空白的回答，才拼出「旧记录 + 本轮一问一答」的完整候选（第 20–21 行），交给保存（第 22 行），保存成功后才把内存里的记录换成新的（第 23 行）。所以写入文件失败时，内存这条线（第 23 行）根本走不到，旧记录保持原样。\n\n**第二处：文件怎么写。** [src/com/futureself/dialogue/FileHistoryStore.java:12–18](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FFileHistoryStore.java&line=12&end=18) 的 `save` 先确认新旧记录都是一问一答的完整段，并确认候选正是「旧的整段 + 两行新消息」，否则报错；接着用提供的完整提交工具一次性写好整段（第 17 行），不是边写边覆盖旧文件。\n\n**第三处：文件选择。** [src/com/futureself/dialogue/CourseChoices.java:11](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FCourseChoices.java&line=11) 这一行按你的选择返回整段一个文件；下一行的恢复时机仍是 unset，读回留到第二关。\n\n## 看一下「段」与「段」之间\n\n保存成功与否只影响发出这轮的那段聊天。原因在 [src/com/futureself/dialogue/SessionBook.java:33–36](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=33&end=36)：每段聊天有自己的一把锁和一份记录，整轮问答被关在这段自己的门里跑完。同一段内再发问要排队，不同段之间各走各的。\n\n**具体情境：画画书单这一段在保存新一轮问答时文件写入报错，同时跑步计划那一段发来一个问题。依据上面这段代码的边界，跑步计划这一轮会怎样？画画书单这一轮又留下了什么？**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "195990efdc7b442cf81d2abd7eb1837dee410f2deb3c3d45660a49d56208c622",
+      "messagesSha256": "1d25cd40683c64da3a5a9e4b27b23150427301c012bcda10e70ff1f897872d61",
+      "priorLearnerMessages": ["请按已批准的计划完成实现，再带我理解和审阅。"],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c3-m1-save-code-first",
+      "arm": "before",
+      "course": 3,
+      "kind": "code-first",
+      "initialSection": "A-build.md",
+      "initialLearnerReply": "请按已批准的计划完成实现，再带我理解和审阅。",
+      "requests": 3,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "实现已经接上，平台编译也通过了（这只是编译结果，正式测试还没跑）。\n\n## 本关的三处接点\n\n先说一句整体分工：这一关改的是\"回答完之后怎么落到文件里\"，读文件回来是第二关的事。\n\n第一处是文件组织方式。你在任务抽屉里选的是\"整段聊天一个文件\"，现在 [CourseChoices.java:11](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FCourseChoices.java&line=11&end=11) 返回的正是这个选项；紧挨着的恢复时机 [CourseChoices.java:12](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FCourseChoices.java&line=12&end=12) 仍保持未设定，留给第二关。\n\n第二处是真正写文件的地方：[FileHistoryStore.java:12–17](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FFileHistoryStore.java&line=12&end=17)。它先检查两份记录都是完整的问答，再确认新记录就是\"原有全部内容 + 本轮一问一答\"，然后交给已提供的完整提交工具写入。这个工具要么整份写好，要么不留下半份。\n\n第三处是提交接点：[DialogueService.java:12–26](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=12&end=26)。一轮问答的顺序是：取旧历史的副本、在本轮输入里只放这一次问题、调用模型、拿到有效回答后组成\"旧内容 + 本轮两条\"的候选、调用保存、保存成功后才替换内存里的历史并把回答交回去。模型返回空或失败就在 [DialogueService.java:19](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=19&end=19) 停下，什么都不会写。\n\n## 请你审一个新情况\n\n画画那个会话正在发新一轮，写文件这一步失败了；同一时间，跑步那个会话也发了一个问题，两个人各说各的。这两段对话在本课里一直是分开处理的：每段有自己的执行边界和文件。上面对应的是保存失败如何处理，以及按会话分开保存。\n\n**请判断：画画这一轮保存失败，影响落在哪里——只有画画这一段受影响，还是会连带挡住跑步正在发的那一轮？画画内存里原来的历史、磁盘上原有的那份记录，又会怎样？**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "195990efdc7b442cf81d2abd7eb1837dee410f2deb3c3d45660a49d56208c622",
+      "messagesSha256": "1d25cd40683c64da3a5a9e4b27b23150427301c012bcda10e70ff1f897872d61",
+      "priorLearnerMessages": ["请按已批准的计划完成实现，再带我理解和审阅。"],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c3-m1-save-opening",
+      "arm": "after",
+      "course": 3,
+      "kind": "opening",
+      "initialSection": "A-blueprint.md",
+      "initialLearnerReply": "我准备好了，开始吧。",
+      "requests": 3,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "好，我们正式开始第一关。\n\n### 这一关要交出什么\n\n这一关叫「持久化保存聊天记录」。把记录放进后台程序结束后仍能保留的存储，这个做法叫**持久化**；本课用磁盘上的文件来完成。\n\n完成后，你能看到的效果是：一次成功的问答结束之后，磁盘上就有对应的文件留着；而在保存出问题时，程序会明确告诉你失败，已有的旧记录不会被破坏。\n\n### 用昨晚的画画聊天看这件事\n\n项目二已经让后台把画画书单存进内存，下一次提问时从这段内存记录里取前文。所以只要后台一直在运行，你追问「第二本讲什么」，它就能接上。\n\n今天的情况变了：后台重新启动过一次。旧后台内存里的记录不会自动进入新后台。文件就是这次新加的一层，专门给新后台留下原来的记录。\n\n上一课学的是会话记录在内存里的写入和读取；这一课把文件的写入、读回接进来。**第一关接写入，第二关接读回。**\n\n```text\n后台正常运行时\n① 从内存取本会话旧记录，带着本次提问交给 AI   ← 项目二已有\n                       ↓\n② AI 返回有效回答，组成待保存的新记录\n                       ↓\n③ 完整写入文件并保存成功                      ← 本关接通\n                       ↓\n④ 更新内存里的正式会话记录，向页面返回回答\n                       ↓\n⑤ 下一次提问，再从内存取前文\n\n后台重新启动后\n文件 ── 读回 ──▶ 新后台的内存记录 ──▶ 回到 ①   ← 第二关接通\n```\n\n有一件事值得先说清楚：每次发问用的是当前内存记录，文件负责让后台结束后仍留着原记录，并不是每问一句都要重新读一遍文件。第②步的待保存记录和第④步的正式记录有什么差别，我们下一段再放大来看。\n\n### 先看保存时机\n\n接下来是第一个具体判断。能不能保住聊天，取决于后台结束之前有没有完成保存；这里既要考虑正常退出的情况，也要考虑来不及退出的情况。\n\n**作品里有一个「退出时保存」功能：正常点击退出时它会运行，但一次升级可能直接结束后台，来不及运行它。你会把这个功能当作保留聊天的唯一办法吗？请说明你的判断和理由。**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "f3e021168b458805fdef5c07cc2e9219a831d3283f9e63779f3f8afbff92aa2c",
+      "messagesSha256": "7e3cafa4f78a5388bbff4b641d68e59498d7f8c6f8597a5224873c0541fadd5f",
+      "priorLearnerMessages": ["我准备好了，开始吧。"],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c3-m1-save-opening",
+      "arm": "before",
+      "course": 3,
+      "kind": "opening",
+      "initialSection": "A-blueprint.md",
+      "initialLearnerReply": "我准备好了，开始吧。",
+      "requests": 2,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "好，我们从第一关开始。\n\n## 这一关要做成什么\n\n这一关叫「持久化保存聊天记录」。持久化的意思是：后台程序结束后，记录仍然留在某个地方，不会跟着程序一起消失。本课用磁盘上的文件来做这件事。\n\n做完之后，你能看到的成果是：一轮问答成功后，文件里留下了这轮聊天的内容，下次重新启动后台，还找得到它；另外，如果保存过程出了问题，作品不会装作成功，而是把原来的记录保住，并给出清楚的提示。\n\n## 用昨晚的画画聊天看这件事\n\n项目二已经让后台把画画书单存进内存，下次提问时从这段内存记录里取前文。所以只要后台一直运行着，你追问「第二本讲什么」，它是能接上的。\n\n但今天后台重新启动，情况就不一样了：旧后台的内存记录不会自动进入新后台。文件是这次新增的一层，专门给重新启动后的新后台留下原记录。\n\n所以上一课你已经学过会话记录在内存里的写入和读取，这一课把文件的写入、读取接进来。第一关接写入，第二关接读回。\n\n```text\n后台正常运行时\n① 从内存取本会话旧记录，带着本次提问交给 AI   ← 项目二已有\n                        ↓\n② AI 返回有效回答，组成待保存的新记录\n                        ↓\n③ 完整写入文件并保存成功                     ← 本关接通\n                        ↓\n④ 更新内存里的正式会话记录，向页面返回回答\n                        ↓\n⑤ 下一次提问，再从内存取前文\n\n后台重新启动后\n文件 ── 读回 ──▶ 新后台的内存记录 ──▶ 回到 ①   ← 第二关接通\n```\n\n这里有一点值得先分清：每次发问用的是当前内存记录，文件负责让后台结束后仍有原记录，并不是每问一句都要重新读一遍文件。至于②那份「待保存的新记录」和④那份「正式记录」为什么分开，我们下一段再放大说。\n\n## 先看文件在什么时候写\n\n能否保住聊天，其实取决于后台结束之前有没有完成保存。作品里有个「退出时保存」的功能：正常点击退出时它会运行，但一次升级可能直接结束后台，来不及运行它。\n\n**你会把这个「退出时保存」当作保留聊天的唯一办法吗？说说你的判断和理由。**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "f3e021168b458805fdef5c07cc2e9219a831d3283f9e63779f3f8afbff92aa2c",
+      "messagesSha256": "7e3cafa4f78a5388bbff4b641d68e59498d7f8c6f8597a5224873c0541fadd5f",
+      "priorLearnerMessages": ["我准备好了，开始吧。"],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c3-m1-save-plan-final-cycle",
+      "arm": "after",
+      "course": 3,
+      "kind": "plan-final-cycle",
+      "initialSection": "D-confirm.md",
+      "initialLearnerReply": "这项安排我已经看清楚了，没有别的疑问。",
+      "requests": 3,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "你刚才讲的这条链路，和 [PLAN.md:8–11](#pbl-file=PLAN.md&line=8&end=11) 里写的方向一致：旧正式记录先不动，本轮问答只加进副本；整段文件一次完整写好之后，才更新内存记录并把这句回答交回去。保存出问题时候选版不发布，下一问接着用旧的正式记录；不同会话各自管自己的文件，代价是每次保存都要重写已有正文——这一点计划里也照实留着。\n\n这份计划目前就是完整版本，没有另外待改的地方。\n\n**这份计划是否还需要修改？如果没有，我就按它结束审阅。**",
+          "approval": true,
+          "hostValidated": true,
+          "effectiveApproval": true
+        },
+        {
+          "tool": "complete_stage",
+          "response": null,
+          "hostValidated": true
+        }
+      ],
+      "nextLearnerReply": "可以定稿，不需要修改。",
+      "inputSha256": "1143601ec1b53b9ab6225661b82d017b0bdcd5e2ba8b0a8fda8e26053896e3ce",
+      "messagesSha256": "7dab17c3dce2e91001788c6a013f124abc667e135250262f932a130c12f14193",
+      "priorLearnerMessages": [
+        "请带我审阅当前已保存的版本。",
+        "先留着旧的正式记录，在副本里加入本轮有效问答，整段写入文件成功后才更新正式内存记录并返回。保存失败就不发布候选版，下一问仍用旧版；不同会话各管自己的记录。整段文件的代价是每次重写旧正文。",
+        "这项安排我已经看清楚了，没有别的疑问。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c3-m1-save-plan-final-cycle",
+      "arm": "before",
+      "course": 3,
+      "kind": "plan-final-cycle",
+      "initialSection": "D-confirm.md",
+      "initialLearnerReply": "这项安排我已经看清楚了，没有别的疑问。",
+      "requests": 3,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "你刚才说的这条链路，和计划里写的是同一件事：[PLAN.md:8–11](#pbl-file=PLAN.md&line=8&end=11) 这段记下了三样东西——你选的整段聊天一个文件、先在副本里加入本轮问答、以及文件写成功之后才更新内存并返回，写不成功就保留旧内容。代价也写在里面：每次保存都要重写这段聊天的旧正文。\n\n这份计划会交给写代码的一方照着做，所以最后确认的是它是否符合你的意图，而不是再考一遍原理。\n\n**这一版计划你还需要补充或修改吗？如果不需要，我就按现在这版交给实现。**",
+          "approval": true,
+          "hostValidated": true,
+          "effectiveApproval": true
+        },
+        {
+          "tool": "complete_stage",
+          "response": null,
+          "hostValidated": true
+        }
+      ],
+      "nextLearnerReply": "可以定稿，不需要修改。",
+      "inputSha256": "1143601ec1b53b9ab6225661b82d017b0bdcd5e2ba8b0a8fda8e26053896e3ce",
+      "messagesSha256": "7dab17c3dce2e91001788c6a013f124abc667e135250262f932a130c12f14193",
+      "priorLearnerMessages": [
+        "请带我审阅当前已保存的版本。",
+        "先留着旧的正式记录，在副本里加入本轮有效问答，整段写入文件成功后才更新正式内存记录并返回。保存失败就不发布候选版，下一问仍用旧版；不同会话各管自己的记录。整段文件的代价是每次重写旧正文。",
+        "这项安排我已经看清楚了，没有别的疑问。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c3-m1-save-plan-first",
+      "arm": "after",
+      "course": 3,
+      "kind": "plan-first",
+      "initialSection": "A-plan.md",
+      "initialLearnerReply": "请按已经提交的选择写好计划，再带我理解和审阅。",
+      "requests": 3,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "计划已经按你提交的选择写进 [PLAN.md](#pbl-file=PLAN.md) 了。先说清它现在长什么样，再请你审一处具体的安排。\n\n## 这份计划现在说了什么\n\n你的选择落在这几句里：[PLAN.md:13–16](#pbl-file=PLAN.md&line=13&end=16) 是“我的选择”，写的是整段聊天一个文件，每次保存重写整份，也写下了你接受的代价——每新增一轮就重写旧正文，文件越长单次写入越大，对“整份一次性完整替换”的要求越高。\n\n真正要动的地方有三处：[PLAN.md:19–24](#pbl-file=PLAN.md&line=19&end=24) 的实现步骤。第一处是把布局选择记进 `CourseChoices.fileLayout`；第二处是 `DialogueService` 的提交接点，它决定“什么时候算这一轮聊完了”；第三处是 `FileHistoryStore.save`，它负责把整份候选记录写到文件。三处是有先后的：先在副本上组装候选记录，文件完整提交成功，才替换内存历史并返回答案——顺序反了，就等于先给用户看答案、再发现没存下来。\n\n## 一处需要你判断的新情况\n\n计划里写着：会话隔离、跨会话并行、快照这几件事保持现状（[PLAN.md:24](#pbl-file=PLAN.md&line=24) 最后一条），而每一轮的处理是在该会话自己的整轮范围里完成，文件提交成功之后才替换内存（[PLAN.md:20–22](#pbl-file=PLAN.md&line=20&end=22)）。\n\n现在有个计划里还没演示过的情境：画画那段正在等模型回答，这一轮的文件还没写完；就在这时，跑步那段也发来了一个问题。\n\n按现在这份计划，跑步这一轮要不要等画画那轮的文件写完再开始？请你说说你的判断，以及计划里哪句安排让你这么想。\n\n**请依据 [PLAN.md:20–24](#pbl-file=PLAN.md&line=20&end=24) 说一句你的判断：跑步要等画画，还是不用等，理由是哪条安排。**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "3e17fba2ccb43f8cd227231647b406d9ece32c79449ce5794d54597d3cc4089e",
+      "messagesSha256": "d704bedfe101fcaa726d571d6b87383f17bb96904d7be31dc6680ea457fcfb57",
+      "priorLearnerMessages": ["请按已经提交的选择写好计划，再带我理解和审阅。"],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c3-m1-save-plan-first",
+      "arm": "before",
+      "course": 3,
+      "kind": "plan-first",
+      "initialSection": "A-plan.md",
+      "initialLearnerReply": "请按已经提交的选择写好计划，再带我理解和审阅。",
+      "requests": 5,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "计划已经写好了，你提交的方案、理由和它要承担的代价都写进了本关章节，[PLAN.md:19–24](#pbl-file=PLAN.md&line=19&end=24)。\n\n**本关要接的责任在哪儿**\n\n这份计划真正动的地方很少，一共三处：\n\n- 一轮问答的接点，写在 [PLAN.md:32–36](#pbl-file=PLAN.md&line=32&end=36)：先读旧历史，在副本里组装给模型的内容，本轮问题只放一次；回答有效才组成“旧历史 + 本轮提问 + 本轮回答”这份待保存内容；文件提交成功之后，才替换内存里的历史并返回回答。\n- 保存动作本身，写在 [PLAN.md:38–40](#pbl-file=PLAN.md&line=38&end=40)：整段编码后交给已有的完整提交工具，工具不支持就明确报错，不退回直接覆盖。\n- 布局设定和你的选择对上，以及运行目录、单进程写入这些边界，集中在 [PLAN.md:49–55](#pbl-file=PLAN.md&line=49&end=55)。\n\n历史读写接口、作者给的工具、HTTP 和前端都不动，所以本关的改动集中在“从拿到模型回答到记录落地”这一小段链路上。\n\n这里有一处安排值得你先看清：计划把“写文件”和“换掉内存记录”限定在**同一段对话的那一轮执行范围**内，没有扩到整个应用，见第 54 行。这是本关怀画书单和跑步计划会不会互相牵连的关键。\n\n**一个还没在计划里演示过的情况**\n\n画画那段对话正在等模型的回答，还没回来；这时跑步那段对话也发来了一个新问题。\n\n**按现在这份计划，跑步要等画画答完才能开始吗？请你说一句判断，并指出你是依据计划里哪一处安排这么判断的。**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "3e17fba2ccb43f8cd227231647b406d9ece32c79449ce5794d54597d3cc4089e",
+      "messagesSha256": "d704bedfe101fcaa726d571d6b87383f17bb96904d7be31dc6680ea457fcfb57",
+      "priorLearnerMessages": ["请按已经提交的选择写好计划，再带我理解和审阅。"],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c3-m1-save-transition",
+      "arm": "after",
+      "course": 3,
+      "kind": "transition",
+      "initialSection": "B-records.md",
+      "initialLearnerReply": "不够，升级直接结束时没有正常退出动作。每轮成功问答都要及时保存，不能把未保存内容一直留到退出。",
+      "requests": 1,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "对，你说到了关键：升级把后台直接结束时，没有「退出」这个动作可等，所以保存要跟着每一轮成功问答走。既然不等到退出，那就把保存接到每轮成功问答之后。接下来看这一轮具体保存什么，以及保存完成前后哪些记录可以使用。\n\n### 一轮问答里，记录长什么样\n\n项目二里你已经处理过的内容，这里带一句就够：会话记录里存着双方的原话、谁说的（用户还是助手）、属于哪个会话、以及先后顺序。画画那份聊天书单原文要能被追问，所以原话得原样留着；「你问的」和「AI 答的」角色要分清；画画和跑步的会话各有自己的编号，不能混在一起；第 1 轮在第 2 轮之前，顺序也要留住。写进文件的时候，这四样一样都不能丢。\n\n```text\n会话ID：画画\n  第1轮：用户原话 → AI原话\n  第2轮：用户原话 → AI原话\n```\n\n### 本关新增的那个接点\n\n现在把 AI 回答回来之后的那一小段放大来看。新的做法是：旧的正式记录先原封不动地留在内存里；另取一份副本，把本轮你问的原话和 AI 实际答的原话放进去，得到「候选记录」——也就是准备保存的新版本。候选记录虽然也在内存里，但它还不是后续问答可以使用的正式记录。\n\n第一关新加的文件保存，就插在候选记录和正式记录更新之间：\n\n```text\n正式记录：原来的两轮     ← 暂时保留\n候选记录：原来的两轮 + 本轮提问与实际回答\n                         ↓\n                    提交完整文件\n                         ↓ 成功\n                用候选记录更新正式记录\n```\n\n也就是说，正式记录的更新多了一个前提：文件先交上去，成功了才换。\n\n下一问只从正式记录里取前文，不去读候选记录。文件提交那一步由项目里现成的保存工具完成，你不需要另写一套读写，但要审阅它是不是正好接在这个位置上。\n\n### 一个出错的情形\n\n助手这次换了顺序：先把新一轮放进了当前会话记录，然后才去写文件。写入失败了。这样一来，文件里仍然只有旧的两轮，可下一问已经用上了新一轮——文件和内存对不上了。\n\n**在这个情形里，你会把哪个动作挪到「文件保存成功之后」再做？请说出那个动作，以及你这样改的理由。**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "8059f63d748041a9823b2d062614f5e42b798aa2971415b2950b0618958e8bfb",
+      "messagesSha256": "7a49fb5d4f341e9f2955a38e2edbe81ead951d34d1bb9bc0ac58317082931765",
+      "priorLearnerMessages": [
+        "请开始当前教学段。",
+        "不够，升级直接结束时没有正常退出动作。每轮成功问答都要及时保存，不能把未保存内容一直留到退出。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c3-m1-save-transition",
+      "arm": "before",
+      "course": 3,
+      "kind": "transition",
+      "initialSection": "B-records.md",
+      "initialLearnerReply": "不够，升级直接结束时没有正常退出动作。每轮成功问答都要及时保存，不能把未保存内容一直留到退出。",
+      "requests": 1,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "你说得对：既然不能一直等到退出，我们就把保存接到每轮成功问答之后。接着看这一轮具体保存什么，以及保存完成前后哪些记录可以用。\n\n### 一轮问答里有哪些内容\n\n项目二已经给会话记录定好了内容：双方原话、user/assistant 角色、会话ID和先后顺序。原话别改，角色分清谁说的，会话ID把画画和跑步分开，顺序留住问答关系。写进文件时这四样一样要保留。\n\n```text\n会话ID：画画\n  第1轮：用户原话 → AI原话\n  第2轮：用户原话 → AI原话\n```\n\n### 本关新增的接点：回答回来之后\n\nAI 的有效回答回来以后，旧的正式记录先原样留着。助手会复制一份，把本轮提问和实际回答放进副本，得到准备保存的新版，我们叫它「候选记录」。候选记录也暂放在内存里，但它还不是后续问答能用的正式记录。\n\n第一关新增的就是这里的文件保存，它给「正式记录的更新」加了一个新前提：\n\n```text\n正式记录：原来的两轮     ← 暂时保留\n候选记录：原来的两轮 + 本轮提问与实际回答\n                         ↓\n                    提交完整文件\n                         ↓ 成功\n                用候选记录更新正式记录\n```\n\n下一问只从正式记录里取前文；候选记录只在内存里待着，等文件落定才有资格变成正式记录。写文件这一步由现成工具完成，你要审的是它接在正确的位置上。\n\n### 一个容易接错的位置\n\n助手先把新一轮放进了当前会话记录，然后才写文件。这次写入失败：文件里仍然只有旧的两轮，可下一问已经用上了新一轮。\n\n**你会把哪个动作改到「文件保存成功之后」？请说出那个动作，以及你的理由。**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "8059f63d748041a9823b2d062614f5e42b798aa2971415b2950b0618958e8bfb",
+      "messagesSha256": "7a49fb5d4f341e9f2955a38e2edbe81ead951d34d1bb9bc0ac58317082931765",
+      "priorLearnerMessages": [
+        "请开始当前教学段。",
+        "不够，升级直接结束时没有正常退出动作。每轮成功问答都要及时保存，不能把未保存内容一直留到退出。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c3-m2-restore-code-final-cycle",
+      "arm": "after",
+      "course": 3,
+      "kind": "code-final-cycle",
+      "initialSection": "D-confirm.md",
+      "initialLearnerReply": "这项安排我已经看清楚了，没有别的疑问。",
+      "requests": 6,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "好，那这一关就按当前这份实现收束。我把最后一遍核对的位置说清楚，剩下的只是你对这份版本的确认。\n\n会话簿的构造里有一段启动检查：[SessionBook.java:22–29](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=22&end=29)。它顺着会话名单逐个进入每段自己的执行边界去恢复，名单里有几段就走几段，走完这段检查才结束——这就是你选的“启动时全部尝试读回”。\n\n每段怎么读回来，在 [SessionBook.java:40–44](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=40&end=44)：读到的整份原话替换该会话的正式记录并记成已加载；读坏时只在这一段留下失败标记，别的会话照常加载。之后 [SessionBook.java:30–39](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=30&end=39) 的入口对带失败标记的会话直接报错，问答和保存都过不去，所以不会拿空白正文覆盖原文件。\n\n正文本身从 [FileHistoryStore.java:19–23](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FFileHistoryStore.java&line=19&end=23) 一次读回这一段唯一的完整正文，双方原话、角色和顺序都随正文一起还原；恢复成功的会话，下一问取的就是这些前文再加上新问题。\n\n**这份实现是否还需要修改？如果不需要，回一句“不需要修改”，我就把这关收束。**",
+          "approval": true,
+          "hostValidated": true,
+          "effectiveApproval": true
+        },
+        {
+          "tool": "complete_stage",
+          "response": null,
+          "hostValidated": true
+        }
+      ],
+      "nextLearnerReply": "可以定稿，不需要修改。",
+      "inputSha256": "9fd92d878c2c27bbfd5d481608f139a415baf0cd6c1edb53701918c357604cf4",
+      "messagesSha256": "c84474b04970f9ec6f7522a57af9b883f0e29aa69560b7dd9fa7b9d6bd7d9805",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请带我审阅当前已保存的版本。",
+        "选择启动时全部尝试读回，各会话先读取、校验，再把完整原话放进对应会话的正式记录；一段读坏只保护这段，不因此停掉其他成功恢复的会话，也不覆盖原文件。问答再从这些正式记录取双方前文，加上本次问题。",
+        "这项安排我已经看清楚了，没有别的疑问。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c3-m2-restore-code-final-cycle",
+      "arm": "before",
+      "course": 3,
+      "kind": "code-final-cycle",
+      "initialSection": "D-confirm.md",
+      "initialLearnerReply": "这项安排我已经看清楚了，没有别的疑问。",
+      "requests": 4,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "现在的版本已经能承接你选的“启动时全部读回”：后台启动后按名单逐段读取每轮的两条原话，校验编号、角色和顺序后再放进该会话的正式记录；某一段读坏只锁住这一段，其他会话照常恢复，原有文件不被覆盖。之后问答取的是恢复后的双方前文再加本次问题，新轮次接着旧编号往后写。\n\n**这份实现是否还需要修改？**",
+          "approval": true,
+          "hostValidated": true,
+          "effectiveApproval": true
+        },
+        {
+          "tool": "complete_stage",
+          "response": null,
+          "hostValidated": true
+        }
+      ],
+      "nextLearnerReply": "可以定稿，不需要修改。",
+      "inputSha256": "9fd92d878c2c27bbfd5d481608f139a415baf0cd6c1edb53701918c357604cf4",
+      "messagesSha256": "c84474b04970f9ec6f7522a57af9b883f0e29aa69560b7dd9fa7b9d6bd7d9805",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请带我审阅当前已保存的版本。",
+        "选择启动时全部尝试读回，各会话先读取、校验，再把完整原话放进对应会话的正式记录；一段读坏只保护这段，不因此停掉其他成功恢复的会话，也不覆盖原文件。问答再从这些正式记录取双方前文，加上本次问题。",
+        "这项安排我已经看清楚了，没有别的疑问。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c3-m2-restore-code-first",
+      "arm": "after",
+      "course": 3,
+      "kind": "code-first",
+      "initialSection": "A-build.md",
+      "initialLearnerReply": "请按已批准的计划完成实现，再带我理解和审阅。",
+      "requests": 4,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "实现已经写完并通过了一次构建检查（编译通过，但这只是语法/构建层面的结果，不是正式测试）。下面我先带你看这次动到的三处，再说一个还没演示过的新情况。\n\n## 这次改了什么\n\n**读回一份已保存的记录**：[src/com/futureself/dialogue/FileHistoryStore.java:19–23](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FFileHistoryStore.java&line=19&end=23)\n\n`load` 先确认这段会话用的还是“每次整份重写”的那种文件组织，然后做一件事：文件不存在就返回空列表（新会话本来就没有旧正文）；文件存在就交给 `RecordCodec.decode` 去解析。也就是说，解析失败不会被吞掉变成空白——它会抛出去，让上层知道这段坏了。\n\n**启动时的逐段恢复**：[src/com/futureself/dialogue/SessionBook.java:22–29](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=22&end=29)\n\n这对应你选的“启动时全部读回”。构造会话簿时会按名单逐个会话恢复，不是遇到第一段就收工：`initialize` 遍历完整个名单才结束。每段的读取都在该会话自己的串行边界内做，所以不会和另一个并发的读写撞在一起。\n\n**单段故障的隔离**：[src/com/futureself/dialogue/SessionBook.java:41–45](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=41&end=45)\n\n`restore` 里一旦读取失败，就把失败状态记在这段会话上（`session.failure`），并且从此不再重试覆盖它；其余会话不受影响。后面的 `ensureLoaded`（[第 30–40 行](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=30&end=40)）先看失败标记，再看是否已经载入，所以坏的那段会一直明确报错，而不是被空白悄悄顶替。\n\n**查询入口的接线**：[src/com/futureself/dialogue/DialogueService.java:27](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=27)\n\n查看历史走的是 `history(id)`，它和完整问答一样进入 `sessions.execute`，在同一会话边界内拿到内存里那份副本。整个 `load`、`restore` 路径没有调用模型。\n\n## 一个还没演示过的新情况\n\n后台刚用同一份数据重启过，而模型那边临时连不上了——用户这时只想翻看重启之前存的聊天，不想提问。\n\n**请你沿着页面查看历史的实际路径判断：在这种情况下，用户能不能看到重启前那些原话？并说出你依据的是哪几处调用（从查询入口进去，一直到取出内容的地方）。**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "d85bc9823abd0fb5a448e5d40d1532524fcb9c0e121f8ab02da472b42fe5b4c2",
+      "messagesSha256": "7117e18b041d18cb58e6d96c45d97abf992c9a1c9d4bfd8b2e0495736d2ac302",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请按已批准的计划完成实现，再带我理解和审阅。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c3-m2-restore-code-first",
+      "arm": "before",
+      "course": 3,
+      "kind": "code-first",
+      "initialSection": "A-build.md",
+      "initialLearnerReply": "请按已批准的计划完成实现，再带我理解和审阅。",
+      "requests": 10,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "本关的读回部分已经接上了，编译也通过了。先说明编译只是语法与接线检查，不等于测试通过；正式测试要等你点任务栏的「运行测试」。\n\n## 这次实际改动的三处\n\n**第一处：会话簿负责“什么时候读”**\n\n构造会话簿时，`initialize` 按会话名单逐段尝试恢复，并把每一段的结果记下来（[SessionBook.java:22–29](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=22&end=29)）。这是你选的「A · 启动时全部读回」：启动那一刻就把所有段试读一遍，哪怕有段暂时不会用到。\n\n**第二处：单段读回与故障隔离**\n\n`restore` 调用文件仓库把该段正文读回来交给内存历史（[SessionBook.java:40–44](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=40&end=44)）。读成功就标记这一段已恢复；读失败则把失败原因留在这一段身上，之后这一段读写都会被明确拒绝，不会退回空白把它覆盖掉。其他健康的段照常可用。\n\n**第三处：打开文件读正文**\n\n文件仓库的读回函数先确认目录里不是“每轮一个文件”的组织方式，然后读取那段完整正文并交给格式检查（[FileHistoryStore.java:19–23](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FFileHistoryStore.java&line=19&end=23)）。没有旧正文就返回空列表，原有内容不会被当成新内容。\n\n## 新条件和原有功能在哪里接上\n\n查看聊天和提问走的是同一道门：`execute` 先确保这一段恢复过，再把历史交给具体工作（[SessionBook.java:46–49](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=46&end=49)）。\n\n- 查看聊天：`/api/history` 路由调用入口的查看方法（[Application.java:335–339](#pbl-file=src%2Fcom%2Ffutureself%2Fruntime%2FApplication.java&line=335&end=339)），入口只校验编号，交给问答服务的查看方法（[Application.java:394–397](#pbl-file=src%2Fcom%2Ffutureself%2Fruntime%2FApplication.java&line=394&end=397)），再到会话簿的 `execute`。\n- 继续提问：`reply` 在 `execute` 内部用 `history.snapshot()` 当对话前文，再调用模型，最后保存本轮（[DialogueService.java:12–26](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=12&end=26)）。读回的内容就这样进入下一问。\n\n**现在有一个新情况要你判断：假设课程模型的连接暂时不可用，用户只是想看重启前已经保存的那段聊天原话。请沿着上面真实的读取路径想一想，这个“查看”会不会因为模型连不上而失败？你判断的依据是哪几处调用？**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "d85bc9823abd0fb5a448e5d40d1532524fcb9c0e121f8ab02da472b42fe5b4c2",
+      "messagesSha256": "7117e18b041d18cb58e6d96c45d97abf992c9a1c9d4bfd8b2e0495736d2ac302",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请按已批准的计划完成实现，再带我理解和审阅。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c3-m2-restore-opening",
+      "arm": "after",
+      "course": 3,
+      "kind": "opening",
+      "initialSection": null,
+      "initialLearnerReply": "请开始这一关。",
+      "requests": 2,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "好，我们接着开始这一关：重启后读回聊天记录。\n\n## 这一关要做出什么\n\n上一关结束时，后台已经把聊天记录写进了磁盘文件。这一关要补上相反的方向：主动停掉后台程序，再重新启动一个，让新后台从文件里把原来的对话取回内存，于是页面上又能看到昨晚的原话，下一句提问也能接着之前的前文聊下去。判断这一关做成了，就看这个现象：重启之后，画画聊天里的旧对话原样出现，并且能顺着它继续问。\n\n本关新增的只有一条读回方向：\n\n```text\n本关：重启后读回聊天记录\n上一关留下的文件 ── 读回 ──▶ 新后台的会话记录\n                                  └─▶ 查看原来的聊天\n```\n\n## 文件还在，不等于内容已经回来了\n\n上一关已经有真实的选择和已保存的记录：记录被完整写进了文件，进程结束也不会消失。但新启动的后台一开始只有一块空的会话记录，文件躺在磁盘上，它并不知道里面写了什么。要让旧聊天重新出现在页面里，新后台必须主动去读那个文件，把里面的文字搬回内存里的会话记录。这一步叫读回。\n\n读回和“再问一次模型”是两件不同的事。读回是把已经存下来的原话带回来，内容应该和昨晚一字不差；如果让模型凭记忆重讲一遍书单，得到的只是相似的新内容，原来那句“《色采入门》”可能就变成了别的写法，角色的名字和说话顺序也没人保证。所以在恢复这件事上，文件是唯一可靠的来源。\n\n拿画画聊天举例：昨晚你让它列了入门书单，它给出了几条，你回了一句，它又补了一条；这些双方原话连同角色和先后顺序都存进了文件。今天你重开后台，页面要显示的还是这几句，顺序也不变。等你接着输入新问题，后台从这份读回的前文出发去组织这次模型请求，模型看到的就是昨晚的上下文，而不是从零开始。这里先只讲清“读回并显示”这一件事，恢复在什么时机做、文件里怎么组织，留给后面几段展开。\n\n现在有一个具体情形需要你判断：昨晚存下的原话写着《色采入门》，今天重开后台后页面却显示《色彩入门》。**你会做什么核对，来判断页面上的文字是不是真的从昨晚的存档读回来的？**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "64cb694109662e25650c8520d06a62cfc18e1f0989d2b2e9d037297748729bd4",
+      "messagesSha256": "483db67a822eb7ba91058268bf932b9ae5b5af874c9021aa8cbf0c33a757f149",
+      "priorLearnerMessages": ["上一关已经完成，并通过任务栏进入本关。", "请开始这一关。"],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c3-m2-restore-opening",
+      "arm": "before",
+      "course": 3,
+      "kind": "opening",
+      "initialSection": null,
+      "initialLearnerReply": "请开始这一关。",
+      "requests": 2,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "上一关结束时，聊天记录已经原样写进了磁盘文件。这一关要让它在后台重启之后还能用起来：新启动的后台打开那个文件，把原来的对话读回内存里的正式会话记录，页面上就能再次看到那几轮画画聊天。\n\n这一关新增的只有“读回”这个方向：\n\n```text\n本关：重启后读回聊天记录\n上一关留下的文件 ── 读回 ──▶ 新后台的会话记录\n                                  └─▶ 查看原来的聊天\n```\n\n## 文件还在，不等于记录已经回到后台\n\n第一关做完以后，磁盘上的文件静静躺着，里面是旧聊天。但新启动的后台程序一开始内存是空的，它并不知道文件里写了什么。只有真的去读一次，把内容装回内存里的正式会话记录，页面才有旧聊天可显示。\n\n这里有个容易走偏的地方：读回必须是取回文件里保存的那份原话，而不是让模型根据几个题目重新生成一份相似的清单。《色采入门》就是《色采入门》，不能让模型再写一遍、看着差不多就算恢复成功。\n\n## 用同一个场景理解这条路径\n\n昨晚你在画画会话里问了一串书，后台把双方原话写进了文件。今天后台程序停下又重新启动，页面打开时是空的。接通读回之后，新后台从文件取出那几轮对话，放回正式会话记录，你再点开这个会话，昨晚的问和答就在那里。下一段会讲到，这份前文怎么接着用于你的下一问。\n\n现在先请你判断一件事：昨晚存下的原话里，书名写的是《色采入门》。今天重开后台后，页面却显示《色彩入门》。\n\n**你会做什么核对，来判断页面上的文字是不是真的从昨晚的存档读回来的？**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "64cb694109662e25650c8520d06a62cfc18e1f0989d2b2e9d037297748729bd4",
+      "messagesSha256": "483db67a822eb7ba91058268bf932b9ae5b5af874c9021aa8cbf0c33a757f149",
+      "priorLearnerMessages": ["上一关已经完成，并通过任务栏进入本关。", "请开始这一关。"],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c3-m2-restore-plan-final-cycle",
+      "arm": "after",
+      "course": 3,
+      "kind": "plan-final-cycle",
+      "initialSection": "D-confirm.md",
+      "initialLearnerReply": "这项安排我已经看清楚了，没有别的疑问。",
+      "requests": 4,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "这里已经把第二阶段的安排核对完整：[PLAN.md:13–16](#pbl-file=PLAN.md&line=13&end=16) 写的是新启动时逐段读回旧会话，每段先校验再拼出双方原话，坏掉的那段报错并禁止覆盖，其他段照常可用；读回后的第一次问答用恢复的前文加本问，新轮接着旧轮次写。\n\n**这份计划是否需要修改？如果不需要，回复确认，我就把计划阶段收尾。**",
+          "approval": true,
+          "hostValidated": true,
+          "effectiveApproval": true
+        },
+        {
+          "tool": "complete_stage",
+          "response": null,
+          "hostValidated": true
+        }
+      ],
+      "nextLearnerReply": "可以定稿，不需要修改。",
+      "inputSha256": "fbcb35ebc66c9fbdce92d82428cd2c3561fef9aac5764517d8bd5dc05bd9c0bc",
+      "messagesSha256": "c84474b04970f9ec6f7522a57af9b883f0e29aa69560b7dd9fa7b9d6bd7d9805",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请带我审阅当前已保存的版本。",
+        "选择启动时全部尝试读回，各会话先读取、校验，再把完整原话放进对应会话的正式记录；一段读坏只保护这段，不因此停掉其他成功恢复的会话，也不覆盖原文件。问答再从这些正式记录取双方前文，加上本次问题。",
+        "这项安排我已经看清楚了，没有别的疑问。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c3-m2-restore-plan-final-cycle",
+      "arm": "before",
+      "course": 3,
+      "kind": "plan-final-cycle",
+      "initialSection": "D-confirm.md",
+      "initialLearnerReply": "这项安排我已经看清楚了，没有别的疑问。",
+      "requests": 4,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "我再核对了一遍当前保存的计划 [PLAN.md:13–17](#pbl-file=PLAN.md&line=13&end=17)，内容和刚才审阅的版本一致：第二阶段记录的是“启动时全部读回”，逐段保存成功与失败状态，失败段阻止覆盖、健康段可用，下一问使用恢复的双方前文，并用两个不同的 Java 进程和同一数据目录验证。\n\n**这份计划是否还需要修改，还是就按现在这一版进入实现？**",
+          "approval": true,
+          "hostValidated": true,
+          "effectiveApproval": true
+        },
+        {
+          "tool": "complete_stage",
+          "response": null,
+          "hostValidated": true
+        }
+      ],
+      "nextLearnerReply": "可以定稿，不需要修改。",
+      "inputSha256": "fbcb35ebc66c9fbdce92d82428cd2c3561fef9aac5764517d8bd5dc05bd9c0bc",
+      "messagesSha256": "c84474b04970f9ec6f7522a57af9b883f0e29aa69560b7dd9fa7b9d6bd7d9805",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请带我审阅当前已保存的版本。",
+        "选择启动时全部尝试读回，各会话先读取、校验，再把完整原话放进对应会话的正式记录；一段读坏只保护这段，不因此停掉其他成功恢复的会话，也不覆盖原文件。问答再从这些正式记录取双方前文，加上本次问题。",
+        "这项安排我已经看清楚了，没有别的疑问。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c3-m2-restore-plan-first",
+      "arm": "after",
+      "course": 3,
+      "kind": "plan-first",
+      "initialSection": "A-plan.md",
+      "initialLearnerReply": "请按已经提交的选择写好计划，再带我理解和审阅。",
+      "requests": 4,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "计划已经写好，第一关那部分原样保留，第二关新增在 [PLAN.md:13–43](#pbl-file=PLAN.md&line=13&end=43)。\n\n**这一关要接住的责任**\n\n第一关解决的是“写下去”：一段聊完，把完整问答整体重写成文件。这一关反过来，解决“读回来”：后台重启后，旧会话里的原话、角色和顺序要能重新出现，并且下一句提问时模型拿到的仍是接得上的前文。计划里把这两件事分开写：读回能力放在文件存储层（[PLAN.md:24–30](#pbl-file=PLAN.md&line=24&end=30)），什么时候读、读完谁来记住状态放在会话簿里（[PLAN.md:31–37](#pbl-file=PLAN.md&line=31&end=37)）。\n\n你选的是启动时全部读回，计划按这个写了：后台一起来就逐段读并校验，所有段处理完才算启动检查结束。代价也照实记着——启动要等全部读完，包括那些之后一直没人打开的段；换来的是起来之后任何一次查看或提问都不用再等。某个段读坏了，就带着明确错误停在那里，既不会拿空白把它盖掉，也不影响别的段。\n\n**一个新的情况**\n\n画画书这段原来存了两轮。后台重启读回后，你又问了一句，这就成了第三轮。假如之后后台再重启一次，按计划写下的安排，这段应该还能找回全部三轮，而不是只剩最新那句，也不会多出重复的两份。\n\n请对照 [PLAN.md:24–30](#pbl-file=PLAN.md&line=24&end=30) 和 [PLAN.md:31–37](#pbl-file=PLAN.md&line=31&end=37) 里的安排，说说第三轮被写下去之后，下一次重启时它是靠哪两处安排被重新读回来的，为什么不会变成重复或者残缺的三轮？\n\n",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "d2fdf6db7515eb3a8d730b1c79259e9b73eb804adf95c461bebb3ad03eac81c3",
+      "messagesSha256": "f8c739237c88341624e70273c8ff86461031c4bb4f52721315d70cf81e06fa37",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请按已经提交的选择写好计划，再带我理解和审阅。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c3-m2-restore-plan-first",
+      "arm": "before",
+      "course": 3,
+      "kind": "plan-first",
+      "initialSection": "A-plan.md",
+      "initialLearnerReply": "请按已经提交的选择写好计划，再带我理解和审阅。",
+      "requests": 5,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "计划已经写好。第一关那一节原样留着，第二关的部分是这次新加的。\n\n先说这一关要接上的责任：[PLAN.md:15–20](#pbl-file=PLAN.md&line=15&end=20) 写清了效果和你做的选择。后台重启时逐个会话把正文读回来并校验，读完全部会话才算启动检查结束。你接受的具体代价也记在里面：暂时没人点开的会话，正文也会被提前读一遍，换来的是启动结束时就知道哪条会话坏了，而不是等用户点开才发现。\n\n接着是读回之后如何与原来的保存流程交接，见 [PLAN.md:22–29](#pbl-file=PLAN.md&line=22&end=29)。启动先只读名单拿编号、名称、时间，再按名单逐段读轮次文件，拼回完整问答；一段里编号缺号、角色或归属不对、某轮不是一问一答，就算这一段失败，此后拒绝写入覆盖它，其他健康段照常读写。检查方式同样写在这份计划里：[PLAN.md:37–42](#pbl-file=PLAN.md&line=37&end=42)，两个不同的 Java 进程走同一目录，再加一段人为弄坏看它是否明确报错。\n\n现在放一个还没在这份说明里走通过的情境。画画那段会话原先存了两轮。重启后读回，你和它又聊了一轮，这一轮按第一关的方式存下来了，文件里于是有了三轮。如果你再重启一次，读回要根据什么把三轮都找齐、数量不变成四轮，找齐之后下一次提问又该从哪里接着写下去。\n\n**请依据 [PLAN.md:22–29](#pbl-file=PLAN.md&line=22&end=29) 里的安排，说说再重启一次时，读回结果和原来的保存流程要怎样配合，才能把这三轮完整找回、既不缺一轮也不重复？**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "d2fdf6db7515eb3a8d730b1c79259e9b73eb804adf95c461bebb3ad03eac81c3",
+      "messagesSha256": "f8c739237c88341624e70273c8ff86461031c4bb4f52721315d70cf81e06fa37",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请按已经提交的选择写好计划，再带我理解和审阅。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c3-m2-restore-transition",
+      "arm": "after",
+      "course": 3,
+      "kind": "transition",
+      "initialSection": "B-continuation.md",
+      "initialLearnerReply": "看实际文件里的原文，再对照程序读回的内容和页面文字；还要确认页面走的是读取存档的路径，不能让模型重新编一份书单。",
+      "requests": 1,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "你刚才的核对方式抓住了要点：以文件里的原文为准，再对照读回的内容和页面文字是否一致，并且确认页面走的是读取存档的那条路，而不是让模型重新编一份书单。这样才算真的读回。\n\n## 本关接通的那一小段箭头\n\n本关的成果是：后台程序被主动停止、再重新启动之后，仍然能找回昨晚的聊天，也能接着聊下去。用局部箭头表示，这一段是这样的：\n\n**文件** → **读回的消息** → **问答入口实际使用的正式会话记录** → **原有流程组装模型请求** → **模型回答**\n\n上一关已经做好的是前面“页面 → 后台 → 模型”和内存里的正式会话记录；本关新接的是箭头最左边这截：文件里的内容怎么变回问答入口能用的会话记录。\n\n## 页面看到的历史，不等于模型收到的请求\n\n这两件事容易混在一起。页面可以用读回的内容把聊天显示出来；可是模型回答当前这一问时，收到的是问答入口按正式会话记录组装出来的请求。如果读回的消息没有进入正式会话记录，页面照样显示得很完整，模型那边却是空的。\n\n假设文件里存着昨晚的三条消息：\n\n1. 用户：今天画完第二本，书名叫《色采入门》。\n2. 助手：记下了，第二本是《色采入门》。\n3. 用户（今天）：第二本每天看多久？\n\n真正的做法是把第 1、2 行读进正式会话记录，再由原有流程把 1、2、3 一起交给模型——模型才知道“第二本”指哪本。如果记录是空的，模型只收到第 3 行，就会猜一个书名，回答可能读起来很顺，却是在编。所以判断读回有没有接上，不能看模型答得顺不顺，要看交给模型的请求里到底带了哪几行。\n\n页面已经从文件显示出昨晚的聊天，但问答入口使用的会话记录仍然是空的。助手建议先改模型提示词，让它“尽量接着聊”。**你会让它先修哪一处连接？依据是什么？**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "353b50acacf43a43b0e0913ff948b2fe4900795c015f4b53c6868d51a5d9e3ef",
+      "messagesSha256": "e65b14eec0bb7030e8fa02243860ad8b23cebb7ede2e18f0caeefb80c3fcd25e",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请开始当前教学段。",
+        "看实际文件里的原文，再对照程序读回的内容和页面文字；还要确认页面走的是读取存档的路径，不能让模型重新编一份书单。"
+      ],
+      "nativeGuardAccepted": true
+    },
+    {
+      "id": "c3-m2-restore-transition",
+      "arm": "before",
+      "course": 3,
+      "kind": "transition",
+      "initialSection": "B-continuation.md",
+      "initialLearnerReply": "看实际文件里的原文，再对照程序读回的内容和页面文字；还要确认页面走的是读取存档的路径，不能让模型重新编一份书单。",
+      "requests": 1,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "你核对的方式是对的：先看文件里的原文，再看程序读回的内容，最后看页面显示的字，三层对得上才算真实读回；模型临场生成的书单无论如何都不能算存档。\n\n现在把这条线接完整。上一关结束时，文件里已经有画画那段对话。昨天你问“色彩入门看完了，下一本读什么”，助手答了书单，页面显示了那段聊天的原话，后台也把双方原话存进了磁盘文件。\n\n今天重新启动后台，目标是把这些原话找回来，让它们参与下一问。整条路分成两截：\n\n- 文件 → 会话记录：把文件里的消息读回来，变成后台能用的聊天记录；\n- 会话记录 → 模型请求：普通问答照原有流程，从内存里的会话记录取前文，连同这次提问一起发给模型。\n\n第二截是第一关已经实现的部分，不用重做。今天要做的是第一截，并且要保证读回来的消息真的落进了问答入口使用的那份会话记录里。\n\n假设今天你问“第二本每天看多久”，理想的模型请求里应该有三段原话加本问：\n\n```\n用户：色彩入门看完了，下一本读什么\n助手：（昨天的书单回答原话）\n用户：第二本每天看多久\n```\n\n如果中间那段缺了，模型只能凭空猜第二本是什么，答出来的书名、页数都可能和存档不一样。反过来，就算模型碰巧答对了，也不能证明读回成功，因为判断依据是送给模型的原文，不是回答像不像。\n\n页面能显示昨晚的聊天，并不等于问答入口也拿到了同样的历史。页面属于显示这一侧，模型请求用的是后台那份正式会话记录，两边各有职责，容易出现一边有、一边空的情况。\n\n现在说一个具体情况：重启后台后，页面已经从文件显示出昨晚的画画对话，但问答入口使用的会话记录仍然是空的。助手提议先改模型提示词，让它“尽量接着聊”。\n\n**你会让它先修哪一处连接？请说明你的依据。**",
+          "approval": false,
+          "effectiveApproval": false
+        }
+      ],
+      "inputSha256": "353b50acacf43a43b0e0913ff948b2fe4900795c015f4b53c6868d51a5d9e3ef",
+      "messagesSha256": "e65b14eec0bb7030e8fa02243860ad8b23cebb7ede2e18f0caeefb80c3fcd25e",
+      "priorLearnerMessages": [
+        "上一关已经完成，并通过任务栏进入本关。",
+        "请开始当前教学段。",
+        "看实际文件里的原文，再对照程序读回的内容和页面文字；还要确认页面走的是读取存档的路径，不能让模型重新编一份书单。"
+      ],
+      "nativeGuardAccepted": true
+    }
+  ]
+}
