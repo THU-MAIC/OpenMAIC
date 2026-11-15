@@ -1390,7 +1390,9 @@ describe('chapter navigation in read_material', () => {
     const first = await read.execute('first', { materialId: entry.id, offset: 0 } as never);
     expect(first.content).toHaveLength(3);
     const navigation = (first.content[2] as { text: string }).text;
-    expect(navigation).toContain('automatically recognized from headings');
+    expect(navigation.split('\n', 1)[0]).toBe(
+      'These chapters were automatically recognized from headings and may be inaccurate. The first time you use this tree to answer in a conversation, tell the user so in one short sentence.',
+    );
     expect(navigation).toContain('revision "rev"');
     const lines = navigation.split('\n').slice(3);
     expect(lines).toHaveLength(3);
