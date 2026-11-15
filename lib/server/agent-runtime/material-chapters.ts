@@ -50,8 +50,8 @@ export function locateMaterialChapters(
   for (const chapter of chapters) {
     for (const item of [chapter, ...chapter.sections]) candidates.set(normalized(item.title), []);
   }
-  // One pass; a two-line candidate is only a fallback for a missing single
-  // line. Never concatenate across an intervening nonempty prose line.
+  // Collect both single- and two-line matches in one pass. Never concatenate
+  // across an intervening nonempty prose line.
   let previousLine: { title: string; offset: number; heading: boolean; whole: boolean } | undefined;
   for (const line of text.matchAll(/[^\r\n]+/g)) {
     const prefix = /^(?: {0,3}#{1,6}[\t ]+)?\s*/.exec(line[0])![0];
@@ -81,6 +81,22 @@ export function locateMaterialChapters(
       usePageEstimate && pageCount && pageCount > 0
         ? ((item.startPage - 1) / pageCount) * text.length
         : after + 1;
+    if (usePageEstimate) {
+      const matches = (candidates.get(normalized(item.title)) ?? []).filter(
+        (candidate) => candidate.offset > after && candidate.offset < before,
+      );
+      if (matches.length <= 1) return matches[0]?.offset;
+      if (!pageCount || pageCount <= 0) return undefined;
+      matches.sort((a, b) => Math.abs(a.offset - estimate) - Math.abs(b.offset - estimate));
+      const nearest = Math.abs(matches[0].offset - estimate);
+      const runnerUp = Math.abs(matches[1].offset - estimate);
+      // Page ratios are only estimates: uneven text density can move the body.
+      // Require a clear lead (at least twice as close and more than one average
+      // page apart in distance), otherwise leave the chapter unlocated.
+      if (runnerUp <= 2 * nearest || runnerUp - nearest <= text.length / pageCount)
+        return undefined;
+      return matches[0].offset;
+    }
     let best: Candidate | undefined;
     for (const candidate of candidates.get(normalized(item.title)) ?? []) {
       if (candidate.offset <= after || candidate.offset >= before) continue;

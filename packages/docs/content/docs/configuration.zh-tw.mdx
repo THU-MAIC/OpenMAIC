@@ -125,6 +125,7 @@ Amazon Bedrock（`preset: bedrock`）使用伺服器端的 AWS 憑證鏈（環�
 | `classroom` | chat | `llm` | 課堂對話、測驗評分和 PBL 執行階段 |
 | `agent` | chat | `llm` | 工作台智慧體。**需要工具呼叫能力。** 另外支援 `api` 和 `contextWindow` |
 | `agent.title` | chat | `agent` | 工作台的工作階段標題。只能在 `openmaic.yml` 中設定，模型設定中不顯示 |
+| `material.chapters` | chat | `llm` | 自架 MinerU 解析長篇資料後的可選章節辨識 |
 | `tts` | tts | — | 語音合成 |
 | `asr` | asr | — | 語音辨識（語音輸入、影音逐字稿） |
 | `image` | image | — | 圖像生成 |
@@ -380,6 +381,7 @@ MODEL_ROUTES does not carry over to the model configuration: write the per-stage
 | `generate-classroom` | `llm` |
 | `maic-agent-driver` | `agent` |
 | `conversation-title` | `agent.title` |
+| `material-chapters` | `material.chapters` |
 | `pbl-chat`、`maic-agent` | 無：這些階段已移除，直接刪掉 |
 
 多個階段共用一個插槽時，為該插槽指定它們應共同使用的那個模型。路由中的 `thinking` 移到插槽的 `thinking`，`maic-agent-driver` 路由的 `api` 和 `contextWindow` 移到 `agent` 插槽。遷移前：
@@ -688,6 +690,13 @@ PDF_MINERU_BASE_URL=http://localhost:8888
 
 # MinerU 自託管的可選後端
 PDF_MINERU_BACKEND=pipeline
+
+# 選填，執行時讀取：PDF 總頁數上限 / 每段頁數 / 並行請求數。
+# 預設值為 1000 / 50 / 4，必須為正整數，僅用於自架 PDF 解析。
+# CHUNK_PAGES 同時作為 PDF、Word 和 PPT 章節辨識的長度門檻。
+PDF_MINERU_MAX_PAGES=1000
+PDF_MINERU_CHUNK_PAGES=50
+PDF_MINERU_CHUNK_CONCURRENCY=4
 
 # MinerU Cloud
 PDF_MINERU_CLOUD_API_KEY=

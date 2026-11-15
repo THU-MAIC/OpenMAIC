@@ -5,6 +5,8 @@
 const chapterSource = Symbol('chapterSource');
 
 export interface ChapterSource {
+  /** Physical PDF pages, when known by the chunker; not the reported-page statistic. */
+  physicalPageCount?: number;
   titles: Array<{ text: string; page: number; text_level: number }>;
   frontPages: Record<number, string>;
 }
@@ -54,7 +56,19 @@ export function chapterSourceFromBlocks(
 ): ChapterSource {
   const titles: ChapterSource['titles'] = [];
   const frontPages: Record<number, string> = {};
-  const count = frontPageCount(pages);
+  const count = frontPageCount(
+    blocks.reduce(
+      (maximum, block) =>
+        Number.isInteger(block.page_idx) &&
+        Number(block.page_idx) >= 0 &&
+        typeof block.text === 'string' &&
+        block.text.trim() &&
+        Number.isInteger(block.text_level)
+          ? Math.max(maximum, Number(block.page_idx) + 1)
+          : maximum,
+      pages,
+    ),
+  );
   const ordered = blocks
     .filter((block) => Number.isInteger(block.page_idx) && Number(block.page_idx) >= 0)
     .sort((a, b) => Number(a.page_idx) - Number(b.page_idx));

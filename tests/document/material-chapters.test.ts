@@ -1,3 +1,4 @@
+import { PDFDocument } from 'pdf-lib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildChapterInput,
@@ -189,12 +190,20 @@ describe('optional chapter recognition', () => {
     expect(callLLM).toHaveBeenCalledTimes(1);
   });
   it.each(['0', '-1', '1.5', 'bad', 'Infinity'])(
-    'rejects invalid shared configuration %j in both paths',
+    'isolates invalid chapter configuration %j but preserves PDF chunking failures',
     async (raw) => {
       vi.stubEnv('PDF_MINERU_CHUNK_PAGES', raw);
       const message = 'PDF_MINERU_CHUNK_PAGES must be a positive integer';
       expect(() => getMinerUChunkPages()).toThrow(message);
-      await expect(recognizeMaterialChapters(input)).rejects.toThrow(message);
+      for (const format of ['pdf', 'docx', 'pptx'] as const) {
+        await expect(
+          recognizeMaterialChapters({ ...input, mimeType: DOCUMENT_MIME_TYPES[format] }),
+        ).resolves.toBeUndefined();
+      }
+      expect(warn).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ reason: 'configuration', message }),
+      );
       await expect(parseMinerUPdfChunks(Buffer.alloc(0), vi.fn())).rejects.toThrow(message);
       expect(callLLM).not.toHaveBeenCalled();
     },
@@ -332,4 +341,79 @@ describe('optional chapter recognition', () => {
     ).rejects.toThrow('lease lost');
     expect(callLLM).toHaveBeenCalledTimes(1);
   });
+});
+
+describe('chapter source page bounds', () => {
+  it.each([
+    { pages: 60, omitted: [0], heading: 60 },
+    { pages: 60, omitted: Array.from({ length: 10 }, (_, i) => i + 29), heading: 56 },
+    { pages: 51, omitted: [49, 50], heading: 49 },
+  ])('uses physical pages across missing blocks: %j', async ({ pages, omitted, heading }) => {
+    const document = await PDFDocument.create();
+    for (let i = 0; i < pages; i++) document.addPage();
+    vi.stubEnv('PDF_MINERU_MAX_PAGES', '1000');
+    vi.stubEnv('PDF_MINERU_CHUNK_CONCURRENCY', '1');
+    const parsed = (await parseMinerUPdfChunks(
+      Buffer.from(await document.save()),
+      async (_bytes, name) => {
+        const start = Number(/^pages-(\d+)/.exec(name)![1]) - 1;
+        return {
+          content_list: Array.from({ length: Math.min(50, pages - start) }, (_, page_idx) => ({
+            page_idx,
+            text: start + page_idx + 1 === heading ? 'Last chapter' : 'Body',
+            ...(start + page_idx + 1 === heading ? { text_level: 1 } : {}),
+          })).filter((row) => !omitted.includes(start + row.page_idx)),
+        };
+      },
+    ))!;
+    expect(parsed.metadata?.pageCount).toBe(pages - omitted.length);
+    const artifact = parsedPdfToDocumentArtifact(parsed, {
+      buffer: Buffer.alloc(0),
+      mimeType: input.mimeType,
+      config: { providerId: 'mineru' },
+    });
+    const evidence = getChapterSource(artifact)!;
+    expect(evidence.physicalPageCount).toBe(pages);
+    expect(evidence.frontPages[6]).toBe('Body');
+    expect(JSON.stringify(artifact)).not.toContain('physicalPageCount');
+    vi.mocked(callLLM).mockResolvedValue({
+      text: JSON.stringify({ chapters: [{ title: 'Last chapter', start: heading, sections: [] }] }),
+    } as never);
+    expect(
+      await recognizeMaterialChapters({
+        ...input,
+        source: evidence,
+        pageCount: artifact.metadata.pageCount!,
+      }),
+    ).toEqual([{ title: 'Last chapter', startPage: heading, sections: [] }]);
+    expect(vi.mocked(callLLM).mock.calls[0][0].prompt).toContain(`"total_units":${pages}`);
+  });
+
+  it.each(['pdf', 'docx', 'pptx'] as const)(
+    'uses the highest heading page without physical metadata for %s',
+    async (format) => {
+      const parsed = extractMinerUResult({
+        content_list: [
+          { page_idx: 0, text: 'Opening', text_level: 1 },
+          { page_idx: 5, text: 'Front matter' },
+          { page_idx: 55, text: 'Last chapter', text_level: 1 },
+        ],
+      });
+      const evidence = getChapterSource(parsed)!;
+      expect(evidence.physicalPageCount).toBeUndefined();
+      expect(evidence.frontPages[6]).toBe('Front matter');
+      vi.mocked(callLLM).mockResolvedValue({
+        text: JSON.stringify({ chapters: [{ title: 'Last chapter', start: 56, sections: [] }] }),
+      } as never);
+      expect(
+        await recognizeMaterialChapters({
+          ...input,
+          mimeType: DOCUMENT_MIME_TYPES[format],
+          source: evidence,
+          pageCount: parsed.metadata!.pageCount,
+        }),
+      ).toEqual([{ title: 'Last chapter', startPage: 56, sections: [] }]);
+      expect(vi.mocked(callLLM).mock.calls[0][0].prompt).toContain('"total_units":56');
+    },
+  );
 });

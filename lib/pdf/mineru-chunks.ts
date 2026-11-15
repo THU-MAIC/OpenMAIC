@@ -1,5 +1,7 @@
 import { PDFArray, PDFDict, PDFDocument, PDFName } from 'pdf-lib';
 
+import { chapterSourceFromBlocks, withChapterSource } from '@/lib/document/chapter-source';
+
 import { applyImagePlan } from '@/lib/server/material-extraction/document-image-apply.mjs';
 import { imagePlan } from '@/lib/server/material-extraction/document-image-plan.mjs';
 import {
@@ -73,7 +75,10 @@ export interface MinerUChunkResult {
 }
 
 /** Merge only the existing result fields; no per-chunk artifact is persisted. */
-export function mergeMinerUChunks(chunks: readonly MinerUChunkResult[]): ParsedPdfContent {
+export function mergeMinerUChunks(
+  chunks: readonly MinerUChunkResult[],
+  physicalPageCount?: number,
+): ParsedPdfContent {
   const markdown: string[] = [];
   const images: Record<string, string> = {};
   const contentList: Record<string, unknown>[] = [];
@@ -85,10 +90,15 @@ export function mergeMinerUChunks(chunks: readonly MinerUChunkResult[]): ParsedP
       const unique = `images/chunk-${startPage + 1}/image-${index + 1}`;
       images[unique] = data;
       paths.set(path, unique);
-      paths.set(`images/${path}`, unique);
-      if (/^https?:\/\//i.test(data)) paths.set(data, unique);
       const basename = path.split('/').pop()!;
       basenames.set(basename, basenames.has(basename) ? null : unique);
+    }
+    // Register every real key before aliases so insertion order cannot redirect it.
+    for (const [path, data] of imageEntries) {
+      const unique = paths.get(path)!;
+      for (const alias of [`images/${path}`, ...(/^https?:\/\//i.test(data) ? [data] : [])]) {
+        if (!paths.has(alias)) paths.set(alias, unique);
+      }
     }
     const imagePath = (path: string): string | undefined => {
       const exact = paths.get(path);
@@ -123,15 +133,24 @@ export function mergeMinerUChunks(chunks: readonly MinerUChunkResult[]): ParsedP
   }
   // The same pageCount rule as whole-document parsing: distinct reported page_idx
   // values, not the highest index or the physical page count (blank pages may be absent).
-  return extractMinerUResult({
+  const parsed = extractMinerUResult({
     md_content: markdown.join('\n\n'),
     images,
     content_list: contentList,
   });
+  return physicalPageCount === undefined
+    ? parsed
+    : withChapterSource(parsed, {
+        ...chapterSourceFromBlocks(
+          contentList,
+          Math.max(physicalPageCount, parsed.metadata?.pageCount ?? 0),
+        ),
+        physicalPageCount,
+      });
 }
 
-function chunkFailure(error: unknown, start: number, end: number): Error {
-  const message = `MinerU failed to parse PDF pages ${start + 1}–${end} after two attempts: ${
+function chunkFailure(error: unknown, start: number, end: number, attempts: number): Error {
+  const message = `MinerU failed to parse PDF pages ${start + 1}–${end} after ${attempts === 1 ? 'one attempt' : 'two attempts'}: ${
     error instanceof Error ? error.message : String(error)
   }`;
   if (error instanceof MaterialSourceRefusedError) {
@@ -215,7 +234,10 @@ export async function parseMinerUPdfChunks(
             break;
           } catch (error) {
             signal.throwIfAborted();
-            if (attempt === 1) throw chunkFailure(error, start, end);
+            if (error instanceof MaterialSourceRefusedError)
+              throw chunkFailure(error, start, end, attempt + 1);
+            if (attempt === 1)
+              throw results.length ? chunkFailure(error, start, end, attempt + 1) : error;
           }
         }
       }
@@ -233,5 +255,5 @@ export async function parseMinerUPdfChunks(
   );
   parentSignal?.throwIfAborted();
   signal.throwIfAborted();
-  return mergeMinerUChunks(results);
+  return mergeMinerUChunks(results, pages);
 }

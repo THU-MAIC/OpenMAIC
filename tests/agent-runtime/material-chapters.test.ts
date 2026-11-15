@@ -145,11 +145,11 @@ it('does not join prose, cross intervening content, or concatenate a third line'
   }
 });
 
-it('uses a valid single line before trying a two-line fallback', () => {
+it('leaves competing single- and two-line titles unlocated without page evidence', () => {
   const text = '# First\nSecond\n# First Second';
   expect(
     locateMaterialChapters(text, [{ title: 'First Second', startPage: 1, sections: [] }])[0].offset,
-  ).toBe(text.lastIndexOf('First'));
+  ).toBeUndefined();
 });
 
 it('bounds sections of missing chapters by the nearest located entries and avoids earlier TOC matches', () => {
@@ -185,4 +185,26 @@ it('bounds sections of missing chapters by the nearest located entries and avoid
     undefined,
     text.indexOf('Last'),
   ]);
+});
+
+it('locates a two-line body title instead of its single-line TOC entry', () => {
+  const text =
+    '# Contents\n## Chapter 1 Motion\n\n' +
+    'front matter\n'.repeat(100) +
+    '# Chapter 1\nMotion\nBody starts here';
+  expect(
+    locateMaterialChapters(
+      text,
+      [{ title: 'Chapter 1 Motion', startPage: 90, sections: [] }],
+      100,
+    )[0].offset,
+  ).toBe(text.lastIndexOf('Chapter 1'));
+});
+
+it('leaves repeated single-line titles unlocated when page estimates cannot distinguish them', () => {
+  const text =
+    '# Motion\n' + 'dense front matter\n'.repeat(40) + '# Motion\n' + 'body\n'.repeat(140);
+  expect(
+    locateMaterialChapters(text, [{ title: 'Motion', startPage: 26, sections: [] }], 100)[0].offset,
+  ).toBeUndefined();
 });

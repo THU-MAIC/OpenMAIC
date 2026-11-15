@@ -1,3 +1,5 @@
+import { parseMinerUPdfChunks } from '@/lib/pdf/mineru-chunks';
+import { documentExtractionFailure } from '@/lib/server/material-extraction/extract';
 import { randomBytes } from 'node:crypto';
 import { PDFDict, PDFDocument, PDFName, PDFString } from 'pdf-lib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -331,7 +333,8 @@ describe('self-hosted MinerU PDF chunks', () => {
     });
     expect((error as Error).message).toContain('PDF pages 1–2');
     expect((error as Error).message).toContain('PDF_MINERU_CHUNK_PAGES exceeds');
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect((error as Error).message).toContain('after one attempt');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('aborts every active request without retrying or dispatching later chunks', async () => {
@@ -376,7 +379,7 @@ describe('self-hosted MinerU PDF chunks', () => {
       });
     });
     const parsing = parseWithMinerUDocument(config, await pdf(7), options);
-    const rejected = expect(parsing).rejects.toThrow('PDF pages 1–2 after two attempts');
+    const rejected = expect(parsing).rejects.toThrow('MinerU API error (503)');
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     fail!();
     await rejected;
@@ -502,3 +505,58 @@ describe('MinerU chunk merge', () => {
     expect(result.metadata?.pageCount).toBe(1);
   });
 });
+
+it.each([
+  Object.assign(new Error('Cannot connect to the parsing service'), { code: 'ECONNREFUSED' }),
+  Object.assign(new Error('Authentication failed'), { status: 401 }),
+  new Error('MinerU API error (status 503)'),
+])(
+  'preserves the original error and failure classification before any chunk succeeds: %s',
+  async (original) => {
+    vi.stubEnv('PDF_MINERU_CHUNK_CONCURRENCY', '1');
+    const parse = vi.fn().mockRejectedValue(original);
+    const error = await parseMinerUPdfChunks(await pdf(5), parse).catch((error: unknown) => error);
+    expect(error).toBe(original);
+    expect(parse).toHaveBeenCalledTimes(2);
+    expect(isTransientExtractionError(error)).toBe(isTransientExtractionError(original));
+    expect(documentExtractionFailure([original.message], [error])).toEqual(
+      documentExtractionFailure([original.message], [original]),
+    );
+    expect(error).not.toHaveProperty('reasonCode', 'pages_failed');
+  },
+);
+
+it.each([false, true])(
+  'preserves real image paths regardless of key order (reverse=%s)',
+  (reverse) => {
+    const entries = [
+      ['images/a.png', 'data:image/png;base64,NESTED'],
+      ['a.png', 'data:image/png;base64,ROOT'],
+    ];
+    if (reverse) entries.reverse();
+    const result = mergeMinerUChunks([
+      {
+        startPage: 0,
+        result: {
+          md_content: '![nested](images/a.png)\n![root](a.png)\n![ambiguous](other/a.png)',
+          images: Object.fromEntries(entries),
+          content_list: [
+            { type: 'image', img_path: 'images/a.png', page_idx: 0 },
+            { type: 'image', img_path: 'a.png', page_idx: 1 },
+          ],
+        },
+      },
+    ]);
+    const nested = reverse ? 2 : 1;
+    const root = reverse ? 1 : 2;
+    expect(result.text).toBe(
+      `![nested](images/chunk-1/image-${nested})\n![root](images/chunk-1/image-${root})\n![ambiguous](other/a.png)`,
+    );
+    expect(
+      result.metadata?.pdfImages?.find((image) => image.src.endsWith('NESTED'))?.pageNumber,
+    ).toBe(1);
+    expect(
+      result.metadata?.pdfImages?.find((image) => image.src.endsWith('ROOT'))?.pageNumber,
+    ).toBe(2);
+  },
+);

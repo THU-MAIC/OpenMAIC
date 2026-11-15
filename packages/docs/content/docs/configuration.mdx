@@ -125,6 +125,7 @@ Amazon Bedrock (`preset: bedrock`) signs requests with the AWS credential chain 
 | `classroom` | chat | `llm` | Classroom chat, quiz grading and the project-based learning runtime |
 | `agent` | chat | `llm` | The workbench agent. **Requires tool calling.** Also accepts `api` and `contextWindow` |
 | `agent.title` | chat | `agent` | Workbench session titles. Configurable in `openmaic.yml` only; the model settings do not show it |
+| `material.chapters` | chat | `llm` | Optional chapter recognition after parsing long materials with self-hosted MinerU |
 | `tts` | tts | — | Text to speech |
 | `asr` | asr | — | Speech recognition (voice input, audio and video transcripts) |
 | `image` | image | — | Image generation |
@@ -430,6 +431,7 @@ Per-stage routes do not map one to one onto slots, so they are not translated. R
 | `generate-classroom` | `llm` |
 | `maic-agent-driver` | `agent` |
 | `conversation-title` | `agent.title` |
+| `material-chapters` | `material.chapters` |
 | `pbl-chat`, `maic-agent` | None: these stages were removed. Drop them |
 
 Several stages share a slot: give the slot the one model they should use. A route's `thinking` moves to the slot's `thinking`, and a `maic-agent-driver` route's `api` and `contextWindow` move to the `agent` slot. Before:
@@ -738,6 +740,13 @@ PDF_MINERU_BASE_URL=http://localhost:8888
 
 # Optional backend for self-hosted MinerU
 PDF_MINERU_BACKEND=pipeline
+
+# Optional, read at runtime: total PDF page limit / pages per chunk / concurrent requests.
+# Defaults: 1000 / 50 / 4; positive integers only. Applies to self-hosted PDF parsing.
+# CHUNK_PAGES also sets the length threshold for chapter recognition in PDF, Word and PPT.
+PDF_MINERU_MAX_PAGES=1000
+PDF_MINERU_CHUNK_PAGES=50
+PDF_MINERU_CHUNK_CONCURRENCY=4
 
 # MinerU Cloud
 PDF_MINERU_CLOUD_API_KEY=

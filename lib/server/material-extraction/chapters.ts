@@ -79,9 +79,6 @@ export async function recognizeMaterialChapters(
     !['pdf', 'doc', 'docx', 'ppt', 'pptx'].includes(format)
   )
     return undefined;
-  if (input.pageCount <= getMinerUChunkPages()) return undefined;
-  // Skipped enrichment must not cancel publication of an already parsed document.
-  input.signal?.throwIfAborted();
 
   const timeout = new AbortController();
   const timer = setTimeout(
@@ -90,10 +87,18 @@ export async function recognizeMaterialChapters(
   );
   timer.unref?.();
   const signal = input.signal ? AbortSignal.any([input.signal, timeout.signal]) : timeout.signal;
-  const state: { phase: 'model_configuration' | 'call' | 'decode' } = {
-    phase: 'model_configuration',
+  const state: { phase: 'configuration' | 'model_configuration' | 'call' | 'decode' } = {
+    phase: 'configuration',
   };
   try {
+    const pages = input.source.titles.reduce(
+      (maximum, title) => Math.max(maximum, title.page),
+      Math.max(input.pageCount, input.source.physicalPageCount ?? 0),
+    );
+    if (pages <= getMinerUChunkPages()) return undefined;
+    // Skipped enrichment must not cancel publication of an already parsed document.
+    input.signal?.throwIfAborted();
+    state.phase = 'model_configuration';
     const work = async () => {
       const workspaceId = await backgroundWorkspaceId(input.ownerId);
       const resolved = await resolveStageModel({ stage: 'material-chapters', workspaceId });
@@ -105,7 +110,7 @@ export async function recognizeMaterialChapters(
         {
           model: resolved.model,
           system: template.systemPrompt,
-          prompt: buildChapterInput(input.source!, format, input.pageCount),
+          prompt: buildChapterInput(input.source!, format, pages),
           temperature: 0,
           maxOutputTokens: 16_384,
           maxRetries: 0,
@@ -118,7 +123,7 @@ export async function recognizeMaterialChapters(
       );
       signal.throwIfAborted();
       state.phase = 'decode';
-      return decodeChapterResponse(result.text, input.pageCount);
+      return decodeChapterResponse(result.text, pages);
     };
     // Also bounds model configuration lookup and providers that ignore abort.
     return await new Promise<MaterialChapter[]>((resolve, reject) => {
