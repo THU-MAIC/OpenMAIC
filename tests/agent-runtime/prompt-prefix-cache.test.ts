@@ -171,6 +171,12 @@ describe('system prompt prefix cache', () => {
   it('names nothing from the set and still points at list_materials and the knowledge base', () => {
     const prompt = systemPrompt(materialSets.none!);
     expect(prompt).toContain('## Materials and the knowledge base');
+    expect(prompt).toContain('use its offset to read it instead of paging from the beginning');
+    expect(prompt).toContain('Tell the user the chapters were automatically recognized');
+    expect(prompt).toContain(
+      'If the requested chapter is missing or ambiguous, ask the user instead of guessing',
+    );
+    expect(prompt).toContain('Never claim to have read parts you have not read');
     expect(prompt).toContain('`list_materials` lists what this conversation has');
     expect(prompt).toContain("scope: 'library'");
     expect(prompt).toContain(

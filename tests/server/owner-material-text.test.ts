@@ -211,3 +211,93 @@ it('reads an immutable classic result with a private revision and rejects unread
     setMaterialByteStoreForTests(null);
   }
 });
+
+it('returns chapters and page count from the same fresh fenced result as projected text and revision, including reuse', async () => {
+  const chapters = [{ title: 'Fresh', startPage: 2, sections: [] }];
+  state.row = {
+    owner_id: 'user:alice',
+    deleted_at: null,
+    extraction_result: {
+      ...result,
+      chapters,
+      stats: { pages: 10 },
+      reusedFrom: 'donor',
+    },
+  };
+  state.parse.mockResolvedValue('![x](material:own-image)\n# Fresh');
+  const read = await readOwnerMaterialText({
+    ...location,
+    extractionResult: {
+      ...result,
+      revision: 'old',
+      chapters: [{ title: 'Old', startPage: 1, sections: [] }],
+      stats: { pages: 3 },
+    },
+  });
+  expect(read).toEqual({
+    text: '![x](material:own-image)\n# Fresh',
+    revision: 'new-revision',
+    chapters,
+    pageCount: 10,
+  });
+  const entry = {
+    ...location,
+    kind: 'source',
+    mime: 'application/pdf',
+    originalName: 'book.pdf',
+  } as OwnerMaterialEntry;
+  const tool = buildMaterialTools({
+    sessionId: 'session',
+    resolveMaterial: async () => ({ origin: 'owner', entry }),
+  }).find((candidate) => candidate.name === 'read_material')!;
+  const first = await tool.execute('first', { materialId: entry.id } as never);
+  const navigation = (first.content[2] as { text: string }).text;
+  const offset = Number(navigation.match(/offset (\d+)$/)![1]);
+  expect(offset).toBe(read!.text.indexOf('Fresh'));
+  expect(navigation).toContain('revision "new-revision"');
+  expect(navigation).toContain('"Fresh"');
+  expect(navigation).not.toContain('"Old"');
+  const next = await tool.execute('next', {
+    materialId: entry.id,
+    offset,
+    revision: read!.revision,
+  } as never);
+  expect((next.content[0] as { text: string }).text.split('\n')[3]).toBe('Fresh');
+});
+
+it('passes classic chapters and page count through the resolver with their result text', async () => {
+  const { setMaterialByteStoreForTests } = await import('@/lib/server/materials/bytes');
+  const { readResolvedMaterialText } = await import('@/lib/server/agent-runtime/material-resolver');
+  const chapters = [{ title: 'Classic', startPage: 1, sections: [] }];
+  const get = vi.fn(async () =>
+    Buffer.from(
+      JSON.stringify({ version: 1, text: '# Classic', images: [], chapters, pageCount: 8 }),
+    ),
+  );
+  setMaterialByteStoreForTests({
+    get,
+    put: vi.fn(),
+    delete: vi.fn(),
+    deletePrefix: vi.fn(),
+    list: vi.fn(),
+  });
+  try {
+    const entry = {
+      id: 'classic',
+      kind: 'source',
+      ownerId: 'user:alice',
+      extractionResult: null,
+      extraction: { status: 'ready', resultKey: 'private/classic' },
+    } as OwnerMaterialEntry;
+    const read = await readResolvedMaterialText('session', { origin: 'owner', entry });
+    expect(read).toEqual({
+      text: '# Classic',
+      chapters,
+      pageCount: 8,
+      revision: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+    expect(get).toHaveBeenCalledOnce();
+  } finally {
+    setMaterialByteStoreForTests(null);
+  }
+});

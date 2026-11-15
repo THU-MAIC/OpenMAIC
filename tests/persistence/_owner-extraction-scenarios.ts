@@ -2275,6 +2275,21 @@ export async function chapterRecognitionScenario(
           chapters,
           reusedFrom: id,
         });
+        const { readOwnerMaterialText } =
+          await import('@/lib/server/materials/owner-material-text');
+        const reused = (await stateOf(h, 'chapters-reused')).extraction_result!;
+        expect(
+          await readOwnerMaterialText({
+            id: 'chapters-reused',
+            ownerId: ACCOUNT,
+            extractionResult: reused,
+          }),
+        ).toEqual({
+          text: '# First\n\nBook text',
+          revision: reused.revision,
+          chapters,
+          pageCount: 60,
+        });
         expect(call).toHaveBeenCalledTimes(1);
       }
     }
