@@ -1,0 +1,235 @@
+{
+  "model": "deepseek-v4.1-flash",
+  "design": "Three additional attempts per scenario and arm for two flagged scenarios. Same fixtures as primary comparison. Keep all successes and transport failures; do not replace primary outputs.",
+  "completedArms": 11,
+  "transportFailures": 1,
+  "interpretation": "Supplementary wording samples, not replacements for the primary comparison. No newly introduced teaching regression was established by these bounded samples. Existing course/model behavior is outside the prompt-layout change.",
+  "results": [
+    {
+      "trial": 1,
+      "id": "c2-m2-sessions-plan-first",
+      "arm": "before",
+      "transportError": "HTTP 408",
+      "requestsCompleted": 1,
+      "protocolIssues": ["transport-error"],
+      "phases": [],
+      "recoveredUnregisteredProse": []
+    },
+    {
+      "trial": 1,
+      "id": "c2-m2-sessions-plan-first",
+      "arm": "after",
+      "transportError": null,
+      "requestsCompleted": 6,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "计划已经按你提交的选择写进 [PLAN.md:15–36](#pbl-file=PLAN.md&line=15&end=36)，第一关那一段保持原样接在前面，第二关的“我的选择”里如实记下的是 **A · 全部依次处理**，理由也照你的说法留着：合成验收场景、实现直接、接受多等一点。\n\n**这一段在整条链路里负责什么**\n\n页面发问 → 后端检查 → 找到这个会话 ID 的记录 → 问模型 → 存下这一问一答。前面几步都不碰记录，真正碰记录的只有负责“按 ID 存取会话记录”的 `SessionBook`。所以要控制“谁能在这时候读和写”，门就装在那里，而不是装在页面上。\n\n**门的大小是这次的关键**\n\n课里已经有一个现成的排队工具 `SerialGate`，它只做一件事：交给它的那段工作，一次只放一段进去。你选的方案是全体会话共用同一把门，因此 A 在等模型的时候，B 也只能排队——不是 A 的记录被锁，而是整条队伍被占用一个位置。\n\n真正容易写错的地方是**门圈住多大一段**。“读前文 → 问模型 → 存问答”必须整段在门内。如果只把最后保存那一步放进门里，那么 A 还在等模型、还没保存的时候，B 已经把旧前文读走了，写出来的回答就会少掉一轮。\n\n计划第 4 步还多要求了一条：**读历史（刷新读回）也要取一致快照**。这是为了让“别人正在追加”的瞬间不暴露给读取方。\n\n**请判断第 4 步：如果某次刷新读历史恰好发生在这条共用门里别人正在追加问答的时刻，而不走这道门，你会看到什么样的记录？描述一下那个画面，并说明这一步把它挡在了哪里。**",
+          "hostValidated": true,
+          "approval": false
+        }
+      ],
+      "recoveredUnregisteredProse": [
+        {
+          "phase": 0,
+          "step": 3,
+          "response": "计划已经保存到 [PLAN.md:13–43](#pbl-file=PLAN.md&line=13&end=43)，原来的第一关内容保持不动，第二关接着写在后面，你提交的那条选择原样保留在“我的选择”里。\n\n**这次要做的效果**\n\n页面、HTTP 接口都照旧。要改的只是后端处理“这一问”的那一小段流程。现在两个人同时提问时，可能都拿着同一段旧前文去问模型，于是同一会话里会丢掉一轮，或者两边的回答对不上。你选的是**全部依次处理**：A 在等模型时，B 也一起等，等 A 完整写完，才轮得到 B。\n\n**责任落在哪**\n\n`ChatEndpoint.handle` 只负责检查，然后把工作交给 `DialogueWork.reply`；真正读写记录的是 `SessionBook`。所以这道“排队门”就放在 `SessionBook` 里，复用已有的 `SerialGate`。它里面的 `run(work)` 做的事很简单：一段工作交给它，它保证一次只做一段。\n\n关键是把「读前文 → 问模型 → 存这一问一答」**三件事一起**放进这道门，而不是只包住保存。\n\n**如果只锁一部分**\n\n计划里把这一点写成了风险提示。比如只把“保存记录”放进这道门，读取和问模型留在门外，第一个请求还在问模型、没保存时，第二个请求就已经把旧前文读走了。\n\n文件里还写了四条实现顺序和五条检查方法，其中“受控并发”那一条专门验证不丢轮、不重复。\n\n**你判断一下这个边界：如果只把“保存记录”这一步放进共用的门内，而“读前文”和“问模型”留在门外，请用一个具体的操作描述你会看到的错误现象，并说明这个现象是怎么发生的？**"
+        },
+        {
+          "phase": 0,
+          "step": 4,
+          "response": "计划已经保存到 [PLAN.md:13–40](#pbl-file=PLAN.md&line=13&end=40)：原来的第一关内容一字未动，第二关紧接着追加，你提交的那条选择原样留在“我的选择”里。\n\n先看整体分工。页面发问 → `ChatEndpoint.handle` 做检查 → `DialogueWork.reply` → `SessionBook` 找到这个 ID 的记录 → 问模型 → 存下这一问一答。这一段里真正“碰到记录”的只有 `SessionBook`，所以排队门放进它里面，而不是加在页面上。\n\n你的选择决定的是这道门的范围：**全体会话共用一道门**，`SerialGate.run(work)` 一次只放一段工作进去，其余等着。要注意的不是门本身，而是门圈住多大一段——“读前文 → 问模型 → 存问答”必须整段在里面；只包住保存的话，别人还在等你写的时候，另一个请求已经把旧前文读走了。\n\n计划里“要做出的效果”用四组“操作 → 预期结果”写了这些场景，“怎样检查”给了对应的验证办法。\n\n**按这份计划，A 正在等模型的时候你在会话 B 提一个问题，B 会看到什么？这个结果是由计划里的哪一处安排决定的？**"
+        }
+      ]
+    },
+    {
+      "trial": 1,
+      "id": "c3-m1-save-code-first",
+      "arm": "before",
+      "transportError": null,
+      "requestsCompleted": 9,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "实现已经写完，并且当前代码编译通过。下面说明这一轮实际落在哪里，再请你判断一个运行情境。\n\n## 本关接点：一轮问答从哪一步开始写文件\n\n三个文件分工。\n\n先看 [src/com/futureself/dialogue/DialogueService.java:12–26](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=12&end=26)。这是每轮问答的总调度：\n\n- 第 17 行把旧历史取出一份副本，再把本次问题加到副本末尾，模型只看到这一份输入，所以同一个问题只出现一次；\n- 第 18–19 行拿到回答后先检查，回答是空值或者全是空格就直接报错结束，不进保存；\n- 第 20–21 行把「这轮之前的完整问答」记为 before，把「before 加上本轮问答」记为 candidate，两份都是独立副本；\n- 第 22–24 行先请求保存，保存成功之后才替换内存里的历史，并把原来的回答返回给页面。\n\n顺序是关键：替换内存在第 23 行，保存请求在第 22 行。文件还没交上去，页面看到的历史就不会变。\n\n再看 [src/com/futureself/dialogue/FileHistoryStore.java:12–18](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FFileHistoryStore.java&line=12&end=18)。这里负责真正写盘，按你选的「整段聊天一个文件」方式：先检查两份记录本身是完整的一问一答，再确认前一段内容原样保留、只多了末尾的一问一答，然后调用提供的完整提交工具写入整段记录。写入用的是先写临时文件再整体替换的做法，不会出现写到一半的正式文件。\n\n最后看 [src/com/futureself/dialogue/SessionBook.java:32–35](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=32&end=35)。这段在执行前先取出一段会话自己的记录和它自己的执行闸门，之后整轮工作都在这把闸门里走完。每段聊天各有一套历史与闸门，是通过第 9–13 行的会话容器按编号分开保存的；闸门只锁住当前这一段，不会锁住其他段。本关的保存只是把文件交上去，恢复读回留到下一关，所以现在不会拿空历史去覆盖已有正文。\n\n你选的整段一个文件，代价也在这里体现：每次成功问答都要重写整段记录，记录越长，一次提交写的内容越多。\n\n## 请你判断的一个情境\n\n画画那段聊天刚发完一轮问答，这次保存时磁盘写入没能完成。几乎同时，你在跑步那段聊天里也提了一个问题。\n\n按上面这三处的分工，跑步那段会照常拿到回答并保存吗？画画那段页面上原本已有的问答会不会被这轮失败的记录弄坏？\n\n**请说一说你对这两段的判断和依据。**",
+          "hostValidated": true,
+          "approval": false
+        }
+      ],
+      "recoveredUnregisteredProse": []
+    },
+    {
+      "trial": 1,
+      "id": "c3-m1-save-code-first",
+      "arm": "after",
+      "transportError": null,
+      "requestsCompleted": 3,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "实现已经写完，语法构建也过了（这只说明代码能编译，还不是正式测试）。\n\n## 这轮改动了哪里\n\n一共三处，都在同一个包里。\n\n**一、每轮问答的保存接点**：`DialogueService.reply` 现在按这个顺序做事，见 [src/com/futureself/dialogue/DialogueService.java:16–23](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=16&end=23)。\n\n- 先取一份旧历史的隔离副本（`history.snapshot()`），在副本末尾加上本轮问题，才交给模型 —— 所以模型看到的输入是旧历史加这一次提问，问题只加一遍。\n- 模型回答为 null 或空白时直接停下，不保存，也不动内存里的历史。\n- 有效回答之后才组成 `candidate`：旧历史 + 本轮 user + 本轮 assistant。\n- 先调 `sessions.save(...)` 提交到文件；只有提交成功，才执行 `history.replace(candidate)` 更新内存，然后返回原答案。\n\n顺序很关键：**文件没写成功，内存就不会被改动**，所以失败时内存和旧文件都还是原来的样子。\n\n**二、文件怎么提交**：`FileHistoryStore.save`，见 [src/com/futureself/dialogue/FileHistoryStore.java:12–18](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FFileHistoryStore.java&line=12&end=18)。按你选的「整段聊天一个文件」，每次把完整候选编码后整份写回，用作者提供的原子完整提交工具写入。写之前会检查：旧历史本身要是一问一答完整的、候选必须恰好是旧历史加末尾两条、并且这段聊天没有混入另一种文件组织的旧文件。\n\n**三、记录你的选择**：`CourseChoices.fileLayout()` 返回 `\"snapshot\"`，[src/com/futureself/dialogue/CourseChoices.java:11–12](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FCourseChoices.java&line=11&end=12)。第二关才做的「启动时读回」仍然保持 `unset`，没有提前接上。\n\n## 这一处要你判断的地方\n\n先看会话边界：`SessionBook.execute` 见 [src/com/futureself/dialogue/SessionBook.java:30–33](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=30&end=33)。它给每段聊天各配一个「排队闸门」（`SerialGate`），同一段的活儿排队做，不同段之间各走各的闸门，可以同时进行。\n\n现在设想一个场景：你正在「画画」那段聊，这一轮的回答已经拿到，但在写文件那一步失败了（比如磁盘写不进去）。几乎同时，你在「跑步」那段问了新问题。\n\n**按现在的代码，画画这段保存失败，会影响同时进行的跑步那段吗？你判断的依据是哪一处代码？**",
+          "hostValidated": true,
+          "approval": false
+        }
+      ],
+      "recoveredUnregisteredProse": []
+    },
+    {
+      "trial": 2,
+      "id": "c2-m2-sessions-plan-first",
+      "arm": "before",
+      "transportError": null,
+      "requestsCompleted": 5,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "计划已经按你的选择写进 [PLAN.md:13–37](#pbl-file=PLAN.md&line=13&end=37)，第一关的内容原样保留在上面。这一段我们先弄清它要接住什么。\n\n## 现在的作品，以及这一关接手的部分\n\n你在页面上发一句话，大致这样走：\n\n**页面发问** → **后端找到这个会话的记录** → **把前文和本题交给模型** → **拿到回答写回记录** → **页面显示**\n\n第一关已经让中间两步用上了前文。这一关不改入口和存法，接手的是「先后顺序」：现在两个请求可能同时走到中途，一个刚读到前文、另一个已经写完了自己的答案，于是两边看到的东西对不上。你选的**全部依次处理**，就是让所有会话共用一道门，谁先拿到执行机会，谁先把「读前文 → 问模型 → 写回」整段做完。\n\n如果这层安排出问题，你会看到很具体的现象：同一个会话里第二个问题得到的回答，像是不认识第一个问题；或者两个窗口的记录掺到了一起。\n\n## 计划里对应的地方\n\n- [PLAN.md:13–22](#pbl-file=PLAN.md&line=13&end=22) 写你最终能观察到的效果；\n- [PLAN.md:24–28](#pbl-file=PLAN.md&line=24&end=28) 忠实记下你选的方案和理由；\n- [PLAN.md:30–54](#pbl-file=PLAN.md&line=30&end=54) 是实现顺序和检查办法，后面写代码时按这个走。\n\n有一个地方很容易做错，值得你先想一想：计划要求把整段「读 → 问 → 写」都放进同一道门，而不只是把写回记录那一步放进去。\n\n**假设只给「写回记录」这一步加门，而读历史、调用模型都在门外面，同一个会话的两个请求同时到达时，第二个请求读到的前文会是什么样子？**\n",
+          "hostValidated": true,
+          "approval": false
+        }
+      ],
+      "recoveredUnregisteredProse": []
+    },
+    {
+      "trial": 2,
+      "id": "c2-m2-sessions-plan-first",
+      "arm": "after",
+      "transportError": null,
+      "requestsCompleted": 4,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "计划已经按你提交的选择写好并保存了。[PLAN.md:13–30](#pbl-file=PLAN.md&line=13&end=30) 是这一关的开头部分：先写「要做出的效果」，再写「我的选择」，把你选的 **A · 全部依次处理** 和理由都原样记了下来，也把它的代价写清楚——所有会话共用一个执行门，A 等模型时 B 也等，换来的是实现直接、行为好解释。\n\n后面的「实现步骤」把这件事拆成五步，核心只有两句：门要**全员共用同一份**，门要**包住读历史→调模型→提交这一整轮**。\n\n为什么门的范围这么关键，看一个具体情况就明白了。假设门只包住「提交记录」：A 读到自己的前文（还没有新的一问一答），开始等模型；这时 B 进来读同一段聊天的前文，读到的还是那份旧快照，于是 B 的回答也基于旧前文——两条回答都错开了本该看见的那一轮。把读历史一起关进门里，后来者就必须等 A 提交完，才轮到它读。\n\n**请你说说：在你看来，如果门只包住「调模型」而不包「读历史」，同一个会话里连发的两问会出现什么情况？**",
+          "hostValidated": true,
+          "approval": false
+        }
+      ],
+      "recoveredUnregisteredProse": []
+    },
+    {
+      "trial": 2,
+      "id": "c3-m1-save-code-first",
+      "arm": "before",
+      "transportError": null,
+      "requestsCompleted": 4,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "## 这次动手改了三处\n\n按你选的“整段聊天一个文件”，保存要做的事是：把这一段聊天的完整内容写进同一个文件，每次把整份重新写好。代码里对应三处改动，都在 `src/com/futureself/dialogue` 这个目录下。\n\n**第一处：把选择写进配置。** [CourseChoices.java:10](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FCourseChoices.java&line=10&end=10) 这一行现在返回“整段一个文件”这个方案。程序其余部分读这一行，就知道该按哪种方式存。同一份文件里，第二关才用的读回时机还写着未设定，本关先不动它。\n\n**第二处：真正写文件的地方。** [FileHistoryStore.java:12–19](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FFileHistoryStore.java&line=12&end=19) 是保存方法。它按顺序做几件事：\n\n1. 检查旧的记录和新的记录各自是不是完整的一问一答；\n2. 检查新记录恰好是旧记录后面接上本轮的一问一答，旧的部分一点没变；\n3. 如果这段聊天里已经出现过“每轮一个文件”的痕迹，就明确报错，不混着写；\n4. 最后把整份新内容交给已有的写入工具，由它一次写完再替换旧文件。\n\n这里不自己直接覆盖文件，靠的是提供的完整提交工具；工具不支持时就会报错，而不是悄悄退回到直接写。\n\n**第三处：决定什么时候算“这一轮真的存住了”。** 这是本关最要紧的接点，在 [DialogueService.java:17–23](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=17&end=23)。读旧历史、拼模型输入、拿回答都在同一个会话的执行范围内完成；回答有效之后，先拼出“旧记录 + 本轮问答”这份待提交内容，调用保存，只有保存成功了，才用这份新内容替换内存里的历史，然后把回答交回去。\n\n也就是说，文件没写成功，内存里的对话也不会被改成“已经存过”的样子。\n\n## 一处需要你判断的新情况\n\n“同一会话的执行范围”这层保护在 [SessionBook.java](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=30&end=34) 里：每个会话各有一把自己的锁和自己的历史，不同会话之间互不等待。\n\n现在设想：你在“画画”这段聊天里刚问完一句，保存这一步失败了；几乎同时，你在“跑步”这段聊天里发了一个新问题。\n\n**请你说说：跑步那边这一轮会受影响吗？为什么？**",
+          "hostValidated": true,
+          "approval": false
+        }
+      ],
+      "recoveredUnregisteredProse": []
+    },
+    {
+      "trial": 2,
+      "id": "c3-m1-save-code-first",
+      "arm": "after",
+      "transportError": null,
+      "requestsCompleted": 2,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "实现已经写进三个地方，当前编译通过（还没跑正式测试）。我先讲清楚本关的接点在哪，再请你判断一个新情况。\n\n## 保存发生在哪一步\n\n整轮问答现在是这样走的：[src/com/futureself/dialogue/DialogueService.java:12–25](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=12&end=25)\n\n- 第 14 行进入 `sessions.execute(...)`，整轮问答都在同一个会话的处理边界里完成。\n- 第 16–17 行取旧历史副本，把本次问题只加一次，交给模型。\n- 第 19 行：回答为空就不往下走，直接结束这一轮，不保存。\n- 第 20–21 行组成 `candidate`，也就是旧历史加上本轮一问一答。\n- 第 22 行调 `sessions.save(...)` 写文件；只有这一步成功，第 23 行才替换内存里的历史并返回原答案。\n\n也就是说，先写文件、后改内存。写文件失败时，内存还停在旧状态。\n\n## 真正落盘的地方\n\n[src/com/futureself/dialogue/FileHistoryStore.java:12–18](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FFileHistoryStore.java&line=12&end=18) 负责这一关的写出。你选的“整段聊天一个文件”，在这里体现为第 17 行：把整份候选历史编码后，通过完整提交工具写到这段聊天的 `history.json`，每次都重写旧正文。第 14–16 行先确认“候选等于旧历史再加一轮”，且这段聊天没有走另一种文件组织。\n\n## 会话之间为什么互不拖累\n\n[src/com/futureself/dialogue/SessionBook.java:33–36](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=33&end=36) 里，每个会话各自有一个 `Session` 对象，里面有它自己的历史和自己的一条队列。13 行附近能看到这两个字段是长在 `Session` 里的。\n\n现在请你用这个事实判断一个新情况：画画那段聊天正在写入时，磁盘出错，保存抛了异常；同一时刻，跑步那段聊天也发出一个问题。跑步这一轮会怎样？\n\n**请根据上面的会话边界，说说跑步那一轮是照常得到回答，还是被画画的失败一起卡住或写坏，并说明你依据的是哪一处代码。**",
+          "hostValidated": true,
+          "approval": false
+        }
+      ],
+      "recoveredUnregisteredProse": []
+    },
+    {
+      "trial": 3,
+      "id": "c2-m2-sessions-plan-first",
+      "arm": "before",
+      "transportError": null,
+      "requestsCompleted": 5,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "计划已经按你提交的选择写进 [PLAN.md:13–30](#pbl-file=PLAN.md&line=13&end=30)，第一关的内容原样保留在文件上方；后面还补上了实现步骤、实现说明和检查方式，供下一步照着做。\n\n**你会看到的变化**\n\n现在的作品，两个窗口一起提问时可能出现这种情况：B 的问题把 A 还没写完的那一轮读进来，或者两份记录混在一起。这一关之后，你用两个窗口分别提问，各自的历史里只出现自己的问答，顺序和配对都对。\n\n**谁接手这段工作**\n\n请求进来后，入口只做检查，真正干活的是会话那一层，它按会话 ID 找到这个会话自己的记录。第二关把「读前文 → 问模型 → 存这一轮」当成一整段排队单位：\n\n**页面发问** → **按会话 ID 取记录** → **读取前文并拼上本题** → **请求 AI** → **成功后存一问一答**\n\n你选的「全部依次处理」意味着这道门只有一个，所有会话共用它：A 在等 AI 时，B 的请求会在门口排队。记录本身仍按会话 ID 分开，B 只读写 B 那一份。执行门的现成部件可以直接复用，不用自己写锁。\n\n**出错时是什么样子**\n\n模型报错或返回空内容，这一轮不会写进记录，后面的提问读到的前文依旧干净。\n\n现在想请你先预测一下这一步的行为：**假设 A 正在等 AI 回答（比较慢），这时 B 发来一个问题，按你选的方案，B 的请求会先发生什么、要等多久？**",
+          "hostValidated": true,
+          "approval": false
+        }
+      ],
+      "recoveredUnregisteredProse": [
+        {
+          "phase": 0,
+          "step": 3,
+          "response": "计划已经按你提交的选择写进 [PLAN.md:13–29](#pbl-file=PLAN.md&line=13&end=29)，第一关的内容原样保留在文件上方。\n\n**你会看到的变化**\n\n现在的作品，两个窗口一起提问时可能出现这种情况：B 的问题把 A 还没写完的那一轮读进来，或者两份记录混在一起。这一关之后，你用两个窗口分别提问，各自的历史里只出现自己的问答，顺序和配对都对。\n\n**谁接手这段工作**\n\n请求进来后，入口只做检查，真正干活的是会话那一层，它按会话 ID 找到这个会话自己的记录。第二关把「读前文 → 问模型 → 存这一轮」当成一整段排队单位：\n\n**页面发问** → **按会话 ID 取记录** → **读取前文并拼上本题** → **请求 AI** → **成功后存一问一答**\n\n你选的「全部依次处理」意味着这道门只有一个，所有会话共用它：A 在等 AI 时，B 的请求会在门口排队。记录本身仍按会话 ID 分开，B 只读写 B 那一份。执行门的现成部件可以直接复用，不用自己写锁。\n\n**出错时是什么样子**\n\n模型报错或返回空内容，这一轮不会写进记录，后面的提问读到的前文依旧干净。\n\n现在想请你先预测一下这一步的行为：**假设 A 正在等 AI 回答（比较慢），这时 B 发来一个问题，按你选的方案，B 的请求会先发生什么、要等多久？**"
+        }
+      ]
+    },
+    {
+      "trial": 3,
+      "id": "c2-m2-sessions-plan-first",
+      "arm": "after",
+      "transportError": null,
+      "requestsCompleted": 6,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "计划已经写进 [PLAN.md](#pbl-file=PLAN.md)，第二关追加在第一关后面，第一关那一段保持原样没有改动。第二关分三层。\n\n先看 [要做出的效果和我的选择](#pbl-file=PLAN.md&line=15&end=27)：用日常画面说明做完之后能看到什么——同一个聊天里第二问会带上第一问的问答；两个聊天同时等 AI 时，按你选的「全部依次处理」排队；每个聊天只碰自己的记录。你选的理由也原样留下了：先保证不串不丢，接受排队等待。\n\n再看 [实现步骤](#pbl-file=PLAN.md&line=29&end=44)：关键只有一点，所有会话共用**同一个**公共执行门（一道让工作逐件完成的闸门），并且让一整轮都待在这道门里——读历史、拼出本次模型输入、请求模型、成功才提交。查询历史的接口也走这道门，读回的一致快照才成立。\n\n最后是 [风险与怎样检查](#pbl-file=PLAN.md&line=46&end=56)：只锁写入或只锁模型调用，会让后来的请求在模型返回前读到旧前文；空回答当成功会留下半轮记录。检查项都写成「操作 → 预期结果」，实现之后可以照着走。\n\n**现在请你判断一个边界：如果我把执行门只罩住最后「提交一问一答」这一步，A 还在等模型时 B 进来，B 会读到什么样的前文？**\n",
+          "hostValidated": true,
+          "approval": false
+        }
+      ],
+      "recoveredUnregisteredProse": [
+        {
+          "phase": 0,
+          "step": 3,
+          "response": "计划已经写入 [PLAN.md](#pbl-file=PLAN.md)，这次在你原有内容后面追加了第二关，前两关的表示方式和按 ID 读写都没有改动。\n\n新增部分分三层。开头是 [要做出的效果和我的选择](#pbl-file=PLAN.md&line=15&end=26)：用日常画面的方式说明做完之后能观察到什么——同一个聊天里第二问会带上第一问的问答，两个聊天同时等 AI 时按你选的「全部依次处理」排队，每个聊天只碰自己的记录。接着是 [实现步骤与实现说明](#pbl-file=PLAN.md&line=28&end=43)：关键只有一点，让所有会话共用**同一个** 公共执行门（一道让工作逐件完成的闸门），并把它交给「处理一个会话一整段工作」的入口，于是排队范围就是全体；一整轮从读历史开始，经请求模型，到提交问答，全在同一段被保护的工作里。没有一起排进去的，就只有页面渲染、切换会话这类界面状态。\n\n最后 [风险与检查](#pbl-file=PLAN.md&line=45&end=55) 里点了两个最实际的坑：只锁写入或只锁模型调用，会让后来的请求在模型返回前读到旧前文；把空回答当成功会留下半轮记录。检查项都写成「操作 → 预期结果」，等实现之后可以照着做。\n\n现在想请你先判断一处边界：如果我把排队范围缩小成只管最后那一步「提交一问一答」，A 还在等模型的时候 B 进来，B 会读到怎样的前文，A 的记录又会怎样？"
+        }
+      ]
+    },
+    {
+      "trial": 3,
+      "id": "c3-m1-save-code-first",
+      "arm": "before",
+      "transportError": null,
+      "requestsCompleted": 4,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "实现和构建都完成了，平台构建返回成功。下面先看三处改动各自负责什么，再用一个真实运行情境请你判断。\n\n## 这一关实际改了什么\n\n三处改动，各管一件事：\n\n1. **记录文件怎么写** —— [src/com/futureself/dialogue/FileHistoryStore.java:12–17](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FFileHistoryStore.java&line=12&end=17) 的保存动作。它先确认“旧记录本身是完整的问答，新记录正好比旧记录多一问一答”，再把整段聊天编码成一份 `history.json`，一次性提交。你选的是“整段聊天一个文件”，所以每次新增都要重写旧正文，这就是那个方案的代价；换来的是恢复和整体检查都集中在一个文件上。第 16 行还留了一道检查：如果目录里出现了另一种组织方式的文件，就直接报错，不混着写。\n2. **保存和内存的先后顺序** —— [src/com/futureself/dialogue/DialogueService.java:15–23](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=15&end=23) 是本关的接点。它先在副本里拼出模型输入，本轮问题只加一次（第 17 行）；拿到有效回答后，才组成“旧历史 + 本轮问答”的候选（第 20–21 行）；第 22 行调用保存，成功之后第 23 行才用候选替换内存里的正式记录。所以保存失败时，内存和磁盘上的旧记录都保持原样。模型没回答或回答是空白，第 19 行就停下，根本不会进入保存。\n3. **文件组织选择** —— [src/com/futureself/dialogue/CourseChoices.java:11](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FCourseChoices.java&line=11) 声明成整段聊天一个文件，和你在任务抽屉里选的那项对应；[第 12 行](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FCourseChoices.java&line=12) 的读回时机还是留着没定，按计划到第二关再处理。\n\n## 这处边界长什么样\n\n聊聊天的边界在 [src/com/futureself/dialogue/SessionBook.java:34–37](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=34&end=37)：每次问答都进到某一段聊天自己的执行区间里。每段聊天有自己的内存历史、自己的排队闸门（第 11 行的 `history` 和 `gate`，按会话编号各存一份），保存也按这段聊天自己的编号写自己的文件。也就是说，画画那段和跑步那段之间不共用内存历史，也不共用同一份文件。\n\n由此判断一次保存失败时，要先问清楚“是哪一段聊天的那一次保存出了问题”。\n\n**假设画画那段聊天刚发出提问、写文件这一步失败了；与此同时，跑步那段聊天也发出提问。按现在这处边界，跑步这次提问会怎样？说说你的判断和依据。**",
+          "hostValidated": true,
+          "approval": false
+        }
+      ],
+      "recoveredUnregisteredProse": [
+        {
+          "phase": 0,
+          "step": 2,
+          "response": "实现已经完成，构建也跑通了（平台构建返回成功）。下面我按“先看这处改动负责什么，再看一个真实运行情境”的顺序带你过一遍。\n\n## 这一关实际改了什么\n\n三处改动，各管一件事：\n\n1. **记录文件怎么写** —— [src/com/futureself/dialogue/FileHistoryStore.java:12–18](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FFileHistoryStore.java&line=12&end=18) 里的保存动作。它先确认“旧记录是完整的问答、新记录正好比旧记录多一问一答”。确认通过后，把整段聊天编码好，一次性提交成 `history.json`。你选的 A 方案就是“整段聊天一个文件”，所以每次新增也重写旧正文，代价就在这里；好处是恢复和整体检查都集中在一个文件上。\n2. **保存和内存的先后顺序** —— [src/com/futureself/dialogue/DialogueService.java:14–25](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=14&end=25) 是本关的接点。它先在副本里拼出模型输入，本轮问题只加一次；拿到有效回答后，才组成“旧历史 + 本轮问答”的候选；调用保存成功之后，第 23 行才用候选替换内存里的正式记录。所以存储失败时，内存和磁盘上的旧记录都还是原样。模型没回答或回答是空白，第 19 行直接停下，不进入保存。\n3. **文件组织选择** —— [src/com/futureself/dialogue/CourseChoices.java:11](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FCourseChoices.java&line=11) 返回 `snapshot`，和你在任务抽屉里选的“整段聊天一个文件”对应；[第 12 行](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FCourseChoices.java&line=12) 的恢复时机仍是 `unset`，按计划留到第二关。\n\n## 这处边界长什么样\n\n会话边界在 [SessionBook.java:31–34](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=31&end=34)：每次问答都进到某一段聊天自己的执行区间里，每段聊天有自己的内存历史和自己的排队顺序（第 12、32 行）。保存时按这段聊天的编号写它自己的文件。\n\n所以判断失败影响范围时，要分清“是哪一段聊天的那一次保存出了问题”。\n\n**假设你在画画那段聊天里刚发出提问，磁盘写入这一步失败了；与此同时，跑步那段聊天也发出提问。按现在这处边界，跑步那边这次提问会怎样？说说你的判断和依据。**"
+        }
+      ]
+    },
+    {
+      "trial": 3,
+      "id": "c3-m1-save-code-first",
+      "arm": "after",
+      "transportError": null,
+      "requestsCompleted": 3,
+      "protocolIssues": [],
+      "phases": [
+        {
+          "tool": "request_skill_review",
+          "response": "实现已经按计划接好，构建也通过了。下面只说这几处真正改动，以及它们各自负责哪一段动作；每一处我都标了行号，方便你点开看。\n\n## 这次动了三处\n\n**1. 选了「整段聊天一个文件」** — [src/com/futureself/dialogue/CourseChoices.java:11–12](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FCourseChoices.java&line=11&end=12)\n第 11 行报告文件组织方式为整段保存；第 12 行的重启读回时机仍是 `unset`，读回是第二关的事，这关没提前接。\n\n**2. 保存这一步本身** — [src/com/futureself/dialogue/FileHistoryStore.java:12–18](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FFileHistoryStore.java&line=12&end=18)\n它做四件事，顺序不能换：先确认传入的旧记录和新记录都是完整的一问一答；再确认新记录恰好是旧记录后面多了本轮两条（第 14 行）；如果这段聊天里已经有一轮一个的文件，就直接报错，不混着写（第 16 行）；最后用提供的完整提交工具把整份内容写进那一个文件（第 17 行）。注意它是「先写完、再替换」，中途断掉不会留下半份正文。\n\n**3. 一句话问答走完的链条** — [src/com/futureself/dialogue/DialogueService.java:11–25](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=11&end=25)\n整个过程在这个会话的执行边界里一次做完：读出旧记录（第 16 行），在副本里加上你这句话，交给模型一次；回答为空时直接停下，什么都不写（第 18 行）；有有效回答才拼出「旧记录 + 你问的 + 它答的」（第 19–20 行），调保存（第 21 行），保存成功之后才把这份新内容设成内存里的正式记录（第 22 行），最后把答案返回给你。保存失败时第 22 行根本走不到，所以内存还是旧的。\n\n## 会话之间为什么不互相拖累\n\n[src/com/futureself/dialogue/SessionBook.java:32–35](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=32&end=35) 是关键：每段聊天有自己的记录对象和自己的排队闸门，问跑步和问画画是两条独立队列，可以同时走；保存也只是转交给上面那份保存实现（第 36 行）。\n\n现在有一个新情况想请你判断：画画这段这一轮写文件时失败了，而跑步那边同一时刻也发了一句话。\n\n**按上面这个会话边界，画画这次失败会影响到跑步那一轮的写入和已保存正文吗？如果你觉得不会，说一下你依据的是哪一处安排。**",
+          "hostValidated": true,
+          "approval": false
+        }
+      ],
+      "recoveredUnregisteredProse": []
+    }
+  ]
+}

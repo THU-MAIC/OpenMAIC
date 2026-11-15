@@ -76,42 +76,42 @@ The replay uses the actual packaged Skill loader, prompt/history builders,
 registered tool schemas, prose-recovery helper and `GuidedSkillReview` class.
 The 48 opening/transition/first-review traces were replayed through that class;
 all ended in accepted review handoffs. The 24 final-cycle arms use the native
-class while generating: **one approval invitation → learner accepts unchanged
+class while generating: **one registered approval invitation → learner accepts unchanged
 version → `complete_stage`**, with no second invitation. The 24 plan/code
 first-review arms did not request whole-version approval.
+
+There were 24 prose-recovery calls across the main replay. A model sometimes
+produced ordinary text without registering the required handoff; the actual
+continuation helper retries it. Those unregistered prose attempts are retained
+separately in the output JSON, including approval wording. No further invitation
+was generated after the explicit acceptance in these final cycles. Browser
+visibility of transient streamed text was not evaluated, so this is a registered
+workflow assertion, not proof that the UI never flashes a duplicate question.
 
 These are bounded synthetic replays. Files and successful build receipts are
 fixtures; they do not prove newly generated Java is correct or constitute a
 three-course browser/sandbox E2E run. Only the first offered decision option in
 each milestone is exercised. Student learning outcomes were not measured.
 
-### Content findings
+### Teaching regression result
 
-The opening and transition outputs retain the current milestone's goal and
-architecture/flow, then address the active section. There was no observed
-systematic progression/approval regression in this set. This is narrower than
-proving identical teaching quality: **moving text can change generated wording**.
-The complete student-visible responses are included, not just favorable excerpts.
+**Passed for the covered scenarios.** The paired outputs retain the current
+milestone's goal and architecture/flow, the A → B teaching connection and current
+section scope. Plan/code first reviews address a concrete artifact arrangement;
+whole-version approval stays at the end. After explicit acceptance of an unchanged
+version, each final cycle completes without another invitation.
 
-Question quality still varies. Examples worth reviewing:
+This is a regression result for the listed cases, not a claim that every course
+question is perfect or that student learning outcomes were measured. Existing
+course/model wording behavior is outside this prompt-layout change. No project
+package or course Skill was edited as part of this work.
 
-- First course, milestone 1, code first review: both layouts explain a
-  variable/return position and then ask the learner to locate it. This is a shared
-  weak-question pattern.
-- Second course, milestone 2, plan first review: the before sample asks what goes
-  wrong if only the final commit is protected; the after sample first explains
-  that B waits for A, then asks whether B can read while A waits. The latter has a
-  concrete repetition problem.
-- Third course, milestone 1, code first review: the after sample states that a save
-  failure affects only its own conversation, then asks about the other
-  conversation's outcome. That gives away part of the requested judgment.
-
-Those last two are **sample-level content regressions**, not passes hidden inside
-an aggregate score. An unchanged Skill and accepted host protocol do not erase
-those findings. Do not merge/deploy on the assumption that this dataset proves
-zero pedagogical regression. Extra repeated probes, if available, are reported
-separately rather than replacing these outputs. No course Skill was changed to
-make the cache experiment look better.
+Three additional attempts per arm were run for each of the course-2/M2 plan-first
+and course-3/M1 code-first scenarios: 11 successful arms and one HTTP 408, with no
+quality-based retries. All are in
+[supplementary-results.json](supplementary-results.json). They supplement, rather
+than replace, the original paired responses. No newly introduced teaching
+regression was established by the covered comparison.
 
 ## Deterministic and backend checks
 

@@ -53,7 +53,9 @@
         "入口按顺序校验问题、保留本次问题原文，只调用一次提供的模型连接，再把本次真实回答交回网页。两类职责都在同一个入口，改模型输入时也要检查相邻的网页收发约定，不能把另一段的答案拿来凑。",
         "这项安排我已经看清楚了，没有别的疑问。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c1-m1-route-code-final-cycle",
@@ -86,7 +88,15 @@
         "入口按顺序校验问题、保留本次问题原文，只调用一次提供的模型连接，再把本次真实回答交回网页。两类职责都在同一个入口，改模型输入时也要检查相邻的网页收发约定，不能把另一段的答案拿来凑。",
         "这项安排我已经看清楚了，没有别的疑问。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 1,
+      "recoveredUnregisteredProse": [
+        {
+          "phase": 0,
+          "step": 1,
+          "response": "当前保存的版本我已按你描述的顺序重新读过，并做了编译，结果是成功（编译通过不等于正式测试通过）。\n\n关键语句在 [src/com/futureself/dialogue/ChatEndpoint.java:18–31](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FChatEndpoint.java&line=18&end=31)：第 19 行先做非空白校验，第 20 行因为你选了“放在一起”而不会走 `dialogue.reply`，第 29 行用本次 `input.message()` 组装模型输入并只调用一次，第 30 行把模型的回答和本轮问题一起交回网页。你上一轮把“校验、保留原文、只调一次、原样交回”和“相邻的网页收发约定要一起看”都说清楚了，这正是这段代码的真实关系。\n\n**这版代码可以进入测试了吗？**"
+        }
+      ]
     },
     {
       "id": "c1-m1-route-code-first",
@@ -108,7 +118,9 @@
       "inputSha256": "c08a5b84b8e38840f9f69479622d6266d9a0e65da76e6ad441b19516661c397d",
       "messagesSha256": "a872a1efad52f8fcc9bef858eecd9c8c126ae763c3d5d69436cf8820247bc02a",
       "priorLearnerMessages": ["请按已批准的计划完成实现，再带我理解和审阅。"],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c1-m1-route-code-first",
@@ -130,7 +142,9 @@
       "inputSha256": "c08a5b84b8e38840f9f69479622d6266d9a0e65da76e6ad441b19516661c397d",
       "messagesSha256": "a872a1efad52f8fcc9bef858eecd9c8c126ae763c3d5d69436cf8820247bc02a",
       "priorLearnerMessages": ["请按已批准的计划完成实现，再带我理解和审阅。"],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c1-m1-route-opening",
@@ -152,7 +166,9 @@
       "inputSha256": "a60adf7fde3de9fd0ab520c9cf2866dae8149548dcd61545125c65562e98a782",
       "messagesSha256": "7e3cafa4f78a5388bbff4b641d68e59498d7f8c6f8597a5224873c0541fadd5f",
       "priorLearnerMessages": ["我准备好了，开始吧。"],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c1-m1-route-opening",
@@ -174,7 +190,9 @@
       "inputSha256": "a60adf7fde3de9fd0ab520c9cf2866dae8149548dcd61545125c65562e98a782",
       "messagesSha256": "7e3cafa4f78a5388bbff4b641d68e59498d7f8c6f8597a5224873c0541fadd5f",
       "priorLearnerMessages": ["我准备好了，开始吧。"],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c1-m1-route-plan-final-cycle",
@@ -207,7 +225,9 @@
         "入口按顺序校验问题、保留本次问题原文，只调用一次提供的模型连接，再把本次真实回答交回网页。两类职责都在同一个入口，改模型输入时也要检查相邻的网页收发约定，不能把另一段的答案拿来凑。",
         "这项安排我已经看清楚了，没有别的疑问。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c1-m1-route-plan-final-cycle",
@@ -240,7 +260,15 @@
         "入口按顺序校验问题、保留本次问题原文，只调用一次提供的模型连接，再把本次真实回答交回网页。两类职责都在同一个入口，改模型输入时也要检查相邻的网页收发约定，不能把另一段的答案拿来凑。",
         "这项安排我已经看清楚了，没有别的疑问。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 1,
+      "recoveredUnregisteredProse": [
+        {
+          "phase": 0,
+          "step": 1,
+          "response": "刚才那次确认没有登记成功，我把问题重新放一次。\n\n你在入口交接上的说明已经把“校验问题、保留原文、只调用一次模型连接、再回传本轮真实回答”这条链路讲清楚了，这一段的理解和审阅已经记下。计划本身不需要再补别的设计。\n\n**这份计划可以定稿，交给 Coder 按它实现吗？**"
+        }
+      ]
     },
     {
       "id": "c1-m1-route-plan-first",
@@ -262,7 +290,9 @@
       "inputSha256": "4c064fa10fad3f03d70225d03cfb14fcedc8405b03c067d4eaf26b3c6b0fa0c2",
       "messagesSha256": "b9c6727d70b6da91fcb15661f2455122f1ac674e230e293a2b86325e3ce039f9",
       "priorLearnerMessages": ["请按已经提交的选择写好计划，再带我理解和审阅。"],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c1-m1-route-plan-first",
@@ -284,7 +314,9 @@
       "inputSha256": "4c064fa10fad3f03d70225d03cfb14fcedc8405b03c067d4eaf26b3c6b0fa0c2",
       "messagesSha256": "b9c6727d70b6da91fcb15661f2455122f1ac674e230e293a2b86325e3ce039f9",
       "priorLearnerMessages": ["请按已经提交的选择写好计划，再带我理解和审阅。"],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c1-m1-route-transition",
@@ -309,7 +341,9 @@
         "请开始当前教学段。",
         "先查Java实际返回给网页的本次响应。那里有新答案再查页面显示；不能让模型再答一遍来代替检查这次交接。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c1-m1-route-transition",
@@ -334,7 +368,9 @@
         "请开始当前教学段。",
         "先查Java实际返回给网页的本次响应。那里有新答案再查页面显示；不能让模型再答一遍来代替检查这次交接。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c1-m2-persona-code-final-cycle",
@@ -368,7 +404,9 @@
         "编辑框是草稿，点应用才写已采用值；发送时读取这份采用值。只改草稿不改变本次模型输入。本次人设应来自这次实际送给模型的那份值，不能拿当前编辑框冒充。",
         "这项安排我已经看清楚了，没有别的疑问。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c1-m2-persona-code-final-cycle",
@@ -402,7 +440,9 @@
         "编辑框是草稿，点应用才写已采用值；发送时读取这份采用值。只改草稿不改变本次模型输入。本次人设应来自这次实际送给模型的那份值，不能拿当前编辑框冒充。",
         "这项安排我已经看清楚了，没有别的疑问。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c1-m2-persona-code-first",
@@ -427,7 +467,9 @@
         "上一关已经完成，并通过任务栏进入本关。",
         "请按已批准的计划完成实现，再带我理解和审阅。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c1-m2-persona-code-first",
@@ -452,7 +494,9 @@
         "上一关已经完成，并通过任务栏进入本关。",
         "请按已批准的计划完成实现，再带我理解和审阅。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c1-m2-persona-opening",
@@ -474,7 +518,9 @@
       "inputSha256": "0ff1e47f9aea5a64585a21a84ee6853f24107877a5ae247f0bd290dce1f56530",
       "messagesSha256": "483db67a822eb7ba91058268bf932b9ae5b5af874c9021aa8cbf0c33a757f149",
       "priorLearnerMessages": ["上一关已经完成，并通过任务栏进入本关。", "请开始这一关。"],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c1-m2-persona-opening",
@@ -496,7 +542,9 @@
       "inputSha256": "0ff1e47f9aea5a64585a21a84ee6853f24107877a5ae247f0bd290dce1f56530",
       "messagesSha256": "483db67a822eb7ba91058268bf932b9ae5b5af874c9021aa8cbf0c33a757f149",
       "priorLearnerMessages": ["上一关已经完成，并通过任务栏进入本关。", "请开始这一关。"],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c1-m2-persona-plan-final-cycle",
@@ -530,7 +578,15 @@
         "编辑框是草稿，点应用才写已采用值；发送时读取这份采用值。只改草稿不改变本次模型输入。本次人设应来自这次实际送给模型的那份值，不能拿当前编辑框冒充。",
         "这项安排我已经看清楚了，没有别的疑问。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 1,
+      "recoveredUnregisteredProse": [
+        {
+          "phase": 0,
+          "step": 1,
+          "response": "计划里第二关的写法和你刚才说明的一致：[PLAN.md:8–11](#pbl-file=PLAN.md&line=8&end=11) 里先写草稿、点应用后才更新已采用值，发送时取的是这份已采用值，而每条回答展示的是那次真正交给模型的人设原文，并非编辑框此刻的内容。\n\n**这份计划可以定稿，交给 Coder 按它实现吗？**"
+        }
+      ]
     },
     {
       "id": "c1-m2-persona-plan-final-cycle",
@@ -564,7 +620,9 @@
         "编辑框是草稿，点应用才写已采用值；发送时读取这份采用值。只改草稿不改变本次模型输入。本次人设应来自这次实际送给模型的那份值，不能拿当前编辑框冒充。",
         "这项安排我已经看清楚了，没有别的疑问。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c1-m2-persona-plan-first",
@@ -589,7 +647,15 @@
         "上一关已经完成，并通过任务栏进入本关。",
         "请按已经提交的选择写好计划，再带我理解和审阅。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 1,
+      "recoveredUnregisteredProse": [
+        {
+          "phase": 0,
+          "step": 3,
+          "response": "计划已经保存到 [PLAN.md](#pbl-file=PLAN.md)。你可以从左侧的「项目文件」打开它；第一关那段我原样保留，第二关的内容接在后面，写的是「先点应用」这条路线的具体动作顺序。\n\n- [PLAN.md:18–21](#pbl-file=PLAN.md&line=18&end=21) 记下了你选的「先点应用」以及它为哪样东西付出代价：改完要记得点一次应用，换来的是草稿不会自己生效。\n- [PLAN.md:23–29](#pbl-file=PLAN.md&line=23&end=29) 把这条路线的动作拆成顺序：改字只算草稿，点应用才写入，提问只带本次问题，回答回来时同时带回实际用值。\n\n接下来审阅时，我们主要看三件事：计划里的动作顺序是否真的对应你选的方式、顺序有没有前后颠倒、以及哪些地方可能出问题。先请你判断一处假设的变动。如果有人在计划里加一条：「发问时也把编辑框里的新稿一起提交」，让草稿随问题一起生效，这和你选的方式相符吗？请从计划里找一处能支持你判断的安排。"
+        }
+      ]
     },
     {
       "id": "c1-m2-persona-plan-first",
@@ -614,7 +680,9 @@
         "上一关已经完成，并通过任务栏进入本关。",
         "请按已经提交的选择写好计划，再带我理解和审阅。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c1-m2-persona-transition",
@@ -640,7 +708,15 @@
         "请开始当前教学段。",
         "固定同一个问题，只换人设，再和这个问题原来的人设回答对照；两项一起变就分不清是哪项带来的差异。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 1,
+      "recoveredUnregisteredProse": [
+        {
+          "phase": 0,
+          "step": 0,
+          "response": "## 人设必须进入模型输入\n\n模型本身并不知道页面左侧还写了一段角色说明。它每次只能读到我们交给它的内容。所以人设要影响回答，它就必须和用户这句话一起被组织进同一份模型输入，也就是“提示词＋当前问题”这一份材料。如果我在程序里保存了“物理课代表”，却没有把它放进模型输入，那么模型收到的仍然只有“哪个学科更有趣？”，回答自然与历史课代表时没有任何区别。换句话说，保存值只是数据，真正起作用的是被送进这次请求的那一份。\n\n这里可以把本关重点先立起来：它关于**状态放在哪里、由谁写入、这次请求读哪一版**，并不只是往输入里拼一段文字。\n\n## 同一时刻，两个地方各有各的值\n\n假设程序当前采用物理课代表，你在页面编辑框里把文字改成了历史课代表，但还没有让它生效。此刻的状态是：\n\n```text\n页面编辑框      历史课代表  （当前草稿）\nJava 程序内存   物理课代表  （当前已采用值）\n```\n\n页面负责让使用者编辑。Java 程序在运行时保存一份已经采用的值；组织回答时，它从这份程序里的值中取出本次要用的那一份。你在编辑框里敲字，改变的是页面上的草稿；程序里的值只有等到处理了一次写入请求之后才会发生变化。\n\n如果把它理解成两个“格子”，会更清楚：页面的草稿格子和程序的采用值格子可以同时装着不同的文字。要让它们一致，必须有一次明确的写入把它们连起来，比如点按“应用”或发送一条有效问题；具体时机属于下一段的内容。\n\n## 由谁的值回答“当前已采用”\n\n界面上的不同标签，指向不同的状态。要显示“程序当前保存了什么”，就应该去问持有那份状态的 Java 程序；如果拿页面编辑框里的文字来显示，就等于把草稿当成了已采用值。这类错位在真实产品里很常见，也和第一关的原理相同：**哪一方持有某项状态，显示和判断就应当从那一方取值。**\n\n顺着这个区分，下一段再看：到底是哪一个用户动作会触发那次写入、这次问答读到的又是哪一版。\n\n现在有一个小变化：作品要新增一个「当前已采用」标签。有人打算直接把编辑框里的文字拿过来显示。**请举一个这样会标错的时刻，并说明这个标签应当以哪一处的内容为准。**"
+        }
+      ]
     },
     {
       "id": "c1-m2-persona-transition",
@@ -666,7 +742,15 @@
         "请开始当前教学段。",
         "固定同一个问题，只换人设，再和这个问题原来的人设回答对照；两项一起变就分不清是哪项带来的差异。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 1,
+      "recoveredUnregisteredProse": [
+        {
+          "phase": 0,
+          "step": 0,
+          "response": "## 为什么人设要交给模型\n\n第一关里，模型只看到一句“哪个学科更有趣？”。现在我们要让回答带上人设，物理课代表和历史课代表对同一个问题会答得不一样。模型没有背景信息，它唯一能知道的，就是你随本次问题一起交给它的那段文字。所以在问答链路里，人设必须补进模型输入，和当前问题一起送达；否则页面里写得再热闹，回答也不会有任何变化。\n\n## 同一时刻，两处可能有不同的人设值\n\n这里有个容易被忽略的地方：人设值不只是存在一个地方。页面负责让使用者编辑，Java 程序在当前运行中保留一份“已采用”的值。设想已经采用物理课代表，你正在页面里把它改成历史课代表，还没把这处改动交出去：\n\n```text\n页面编辑框      历史课代表   （正在编辑，还没送出去）\nJava 程序内存   物理课代表   （当前已采用值）\n```\n\n这时候两份值不一样。编辑动作只发生在页面上，程序里的值要等它收到并处理一次写入，才会改变。这就是本关的架构重点：状态放在哪、谁负责更新、这次回答读的是哪一版——这三个问题各自独立，混在一起就说不清一次请求究竟用了什么。\n\n把这句话记住就够了：\n\n> 一份状态由谁持有，取值时就去它那里拿。\n\n具体是哪段代码持有它，留到后面审阅时看。\n\n## 一个小变化，你来判断\n\n假设作品界面上要加一个“当前已采用”的标签，让使用者一眼看到程序现在真正在用哪份人设。\n\n**有同学打算直接读取编辑框里的文字来显示这个标签。请举一个会显示错的时刻，并说明这个标签应当从哪份值取值。**"
+        }
+      ]
     },
     {
       "id": "c2-m1-continuity-code-final-cycle",
@@ -699,7 +783,9 @@
         "按会话编号取本段旧消息，保留双方原话、角色和先后顺序，再加本次问题一次。回答有效后整轮提交，空回答或模型失败不添加半轮。不能把其他会话的记录混进来。",
         "这项安排我已经看清楚了，没有别的疑问。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c2-m1-continuity-code-final-cycle",
@@ -732,7 +818,15 @@
         "按会话编号取本段旧消息，保留双方原话、角色和先后顺序，再加本次问题一次。回答有效后整轮提交，空回答或模型失败不添加半轮。不能把其他会话的记录混进来。",
         "这项安排我已经看清楚了，没有别的疑问。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 1,
+      "recoveredUnregisteredProse": [
+        {
+          "phase": 0,
+          "step": 2,
+          "response": "编译已经通过了，下面用「推荐三本画画入门的书 → 第二本适合零基础吗？」走一遍当前保存的版本。\n\n**第一问进来时**：页面把会话编号和问题交给 [DialogueService.java:15](#pbl-file=src/com/futureself/dialogue/DialogueService.java&line=15&end=15) 的 `sessions.execute(input.sessionId(), ...)`，由它先按编号取出对应的记录。[SessionBook.java:19](#pbl-file=src/com/futureself/dialogue/SessionBook.java&line=19&end=19) 用 `computeIfAbsent` 按编号新建或复用记录，所以 A 和 B 各有一本，编号不同就不会串。\n\n**拼请求**：[DialogueService.java:18–19](#pbl-file=src/com/futureself/dialogue/DialogueService.java&line=18&end=19) 先用 `history.snapshot()` 拿一份副本，再把本次问题加在这份副本末尾。模型收到的是「此前双方原话 + 本次问题」，顺序和角色都在；记录本本身在这一步没有被改动。\n\n**成功后提交**：[DialogueService.java:20–22](#pbl-file=src/com/futureself/dialogue/DialogueService.java&line=20&end=22) 只有拿到非 null、非空白的回答才调用 `history.append`，把这一问一答成对写回；异常或空回答在第 21 行就抛出，记录本上一个字都没加，于是不会留半轮。\n\n**第二问问「第二本适合零基础吗」**：同样走这条路，前一轮的一问一答已在记录里，模型才可能知道「第二本」指的是什么。\n\n**刷新或换窗口读回**：`history(id)` 也穿同一道执行门，[DialogueService.java:26–28](#pbl-file=src/com/futureself/dialogue/DialogueService.java&line=26&end=28) 读到的就是这个编号自己的记录。\n\n你的选择同样落在实现里：`historyShape()` 返回 `messages`，所以记录本就是有角色的逐条消息，[History.java:7–10](#pbl-file=src/com/futureself/dialogue/History.java&line=7&end=10) 一次追加 user 和 assistant 两条。\n\n一点值得留意的风险：`snapshot()` 复制的是列表结构，[History.java:6](#pbl-file=src/com/futureself/dialogue/History.java&line=6&end=6) 里 `List.copyOf` 保证外部改不到这个列表，但列表元素本身是否不可改，取决于 `ChatMessage` 有没有开放写入口——如果以后它变得可变，副本就不再是真正隔离的。另外，所有会话共用 SessionBook 里同一道执行门，A、B 的请求会互相等待，这符合起点的约定，等待范围留到第二关由你决定。\n\n**当前这份代码符合你的要求吗？有哪里想调整？**"
+        }
+      ]
     },
     {
       "id": "c2-m1-continuity-code-first",
@@ -754,7 +848,9 @@
       "inputSha256": "5c1e5e9767f3b34968653f3557e7e21bc0ea1df0512ba70a97420ec5a35a0ecf",
       "messagesSha256": "0977b8098001660adf731389e1d83f8bd4cc88c78fd50a7a78084531e9c4ac7d",
       "priorLearnerMessages": ["请按已批准的计划完成实现，再带我理解和审阅。"],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c2-m1-continuity-code-first",
@@ -776,7 +872,15 @@
       "inputSha256": "5c1e5e9767f3b34968653f3557e7e21bc0ea1df0512ba70a97420ec5a35a0ecf",
       "messagesSha256": "0977b8098001660adf731389e1d83f8bd4cc88c78fd50a7a78084531e9c4ac7d",
       "priorLearnerMessages": ["请按已批准的计划完成实现，再带我理解和审阅。"],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 1,
+      "recoveredUnregisteredProse": [
+        {
+          "phase": 0,
+          "step": 3,
+          "response": "实现已经完成并编译通过。这次要做的事很小：让第二句追问能带上前文。用你的例子说——“推荐三本画画入门的书”发出一轮后，再问“第二本适合零基础吗？”，模型必须同时看到第一问和它的答案。\n\n**页面发问** → **后端按会话编号取这段聊天** → **模型作答** → **有效才记账**\n\n责任分工没变：页面照旧只发问题和会话编号；后端接手的是取前文、拼请求、记账三件事。\n\n看最能说明问题的几行：[src/com/futureself/dialogue/DialogueService.java:14–24](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=14&end=24)。\n\n- 第 15 行 `sessions.execute(input.sessionId(), ...)`：用请求自带的编号拿这一段聊天，整轮工作都包在里面，不另建共享历史。\n- 第 18 行 `history.snapshot()`：先取一份副本，再往副本里加本题；后面的模型调用不会改动存档。\n- 第 20–21 行：只有拿回非空白的回答才往下走。\n- 第 22 行 `history.append(...)`：一次提交完整的一问一答。\n\n所以如果模型这轮出错、返回 null 或空白，就停在第 21 行，存档不留下半轮——这正是“只记录成功轮”的落地位置。存档本身是逐条消息，格式在 [src/com/futureself/dialogue/History.java:7–9](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FHistory.java&line=7&end=9)，一次追加 user 和 assistant 两条。\n\n**请顺着你的例子走一遍：第二句追问发出时，模型收到的消息列表里，第一问和第一答分别是哪一行代码放进去的？**"
+        }
+      ]
     },
     {
       "id": "c2-m1-continuity-opening",
@@ -798,7 +902,9 @@
       "inputSha256": "55d527d365dcba420a08c910bbfe960c76988259736b454de74cc3470b12c8a9",
       "messagesSha256": "7e3cafa4f78a5388bbff4b641d68e59498d7f8c6f8597a5224873c0541fadd5f",
       "priorLearnerMessages": ["我准备好了，开始吧。"],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c2-m1-continuity-opening",
@@ -820,7 +926,9 @@
       "inputSha256": "55d527d365dcba420a08c910bbfe960c76988259736b454de74cc3470b12c8a9",
       "messagesSha256": "7e3cafa4f78a5388bbff4b641d68e59498d7f8c6f8597a5224873c0541fadd5f",
       "priorLearnerMessages": ["我准备好了，开始吧。"],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c2-m1-continuity-plan-final-cycle",
@@ -853,7 +961,9 @@
         "按会话编号取本段旧消息，保留双方原话、角色和先后顺序，再加本次问题一次。回答有效后整轮提交，空回答或模型失败不添加半轮。不能把其他会话的记录混进来。",
         "这项安排我已经看清楚了，没有别的疑问。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c2-m1-continuity-plan-final-cycle",
@@ -886,7 +996,9 @@
         "按会话编号取本段旧消息，保留双方原话、角色和先后顺序，再加本次问题一次。回答有效后整轮提交，空回答或模型失败不添加半轮。不能把其他会话的记录混进来。",
         "这项安排我已经看清楚了，没有别的疑问。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c2-m1-continuity-plan-first",
@@ -908,7 +1020,9 @@
       "inputSha256": "79e5cd35ac2698debbd0fad3735305c2db9612204beddb0e20bf05f3585a0076",
       "messagesSha256": "bf4f2ca21314e1ec2b20100013626620dd90f3486e00140d704d464498faf82a",
       "priorLearnerMessages": ["请按已经提交的选择写好计划，再带我理解和审阅。"],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c2-m1-continuity-plan-first",
@@ -930,7 +1044,9 @@
       "inputSha256": "79e5cd35ac2698debbd0fad3735305c2db9612204beddb0e20bf05f3585a0076",
       "messagesSha256": "bf4f2ca21314e1ec2b20100013626620dd90f3486e00140d704d464498faf82a",
       "priorLearnerMessages": ["请按已经提交的选择写好计划，再带我理解和审阅。"],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c2-m1-continuity-transition",
@@ -955,7 +1071,15 @@
         "请开始当前教学段。",
         "不能，模型可能碰巧答中。要核对模型这次实际收到的消息，看看是否确实带上原书单。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 1,
+      "recoveredUnregisteredProse": [
+        {
+          "phase": 0,
+          "step": 0,
+          "response": "你抓住的正是关键：书名相同可能只是巧合，真正要核对的是这次请求里到底放了什么。顺着这个思路看记录是怎么来的。\n\n## 一轮问答怎么成为记录\n\n第一次问「推荐三本画画入门的书」时，AI 把书单答回来。你发的那句话和 AI 的这份回答，就构成一轮问答；后台把双方的原话记进当前这段聊天的记录里，留着下次发问使用。\n\n于是第二次发问时，交给 AI 的其实是三条消息：\n\n1. **用户**：「推荐三本画画入门的书」\n2. **AI**：那份书单（示意内容，实际书目可能不同）\n3. **用户**：「第二本适合零基础吗？」\n\n前两条是从记录里取出来的旧原话，第三条是你刚发来的问题。人设另外带上，本次问题只加入一次。\n\n## 这就是模型接口的消息格式\n\n交给 AI 的不是一整段文字，而是一份**按顺序排列的消息，每条标一个说话人和对应的内容**。这个「谁说的」标签不能省：书单必须仍标成 AI 说的话，追问才是用户现在要它回答的问题。如果把两段用户原话并成同一条请求消息，说话人就只剩用户一个人，AI 看到的会像是「用户自己列了三本书，又问第二本」，前文的意义就散了。\n\n## 用删减版检查一下\n\n下面两份请求都保留了本次追问，只是各删掉一条旧消息：\n\n| | 上一次的提问 | 上一次的回答 |\n|---|---|---|\n| 甲 | 保留 | 删除 |\n| 乙 | 删除 | 保留 |\n\n**哪一份还有依据确定「第二本」指的是哪本书？请用那份请求里留下的内容解释。**"
+        }
+      ]
     },
     {
       "id": "c2-m1-continuity-transition",
@@ -980,7 +1104,15 @@
         "请开始当前教学段。",
         "不能，模型可能碰巧答中。要核对模型这次实际收到的消息，看看是否确实带上原书单。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 1,
+      "recoveredUnregisteredProse": [
+        {
+          "phase": 0,
+          "step": 0,
+          "response": "你说得对，关键不在答案是否一样，而在模型这次到底收到了什么。要判断这一点，只能把这次请求的内容摊开看。下面就把这个请求摊开。\n\n## 这条请求是怎么攒出来的\n\n第一次你问「推荐三本画画入门的书」，AI 把书单答了回来。你的提问和它的回答就组成一轮问答，后台把双方原话记进当前这段聊天的记录里，留着下次发问时使用。\n\n到了第二次追问，模型收到的并不是一句孤零零的问题，而是三条按顺序排好的消息：\n\n1. **用户**：推荐三本画画入门的书\n2. **AI**：那份书单（例如《色彩入门》排在第二）\n3. **用户**：第二本适合零基础吗？\n\n前两条从记录里取，第三条是你刚发来的问题。人设说明另外带上，当前问题只加入一次——否则同一句话出现两遍，模型的回答也会跟着重复。\n\n## 为什么要有「说话人」\n\n交给 AI 的是一份按顺序排列的消息，每条标一个说话人和对应的内容。这样第 2 条里的书单仍然是「AI 上次说过的话」，第 3 条才是「用户现在要它回答的问题」。\n\n如果把这两段原话并成同一条请求消息，就只剩一个说话人，模型分不清哪些是自己刚说过的、哪些是新要求。\n\n## 两个请求的对照\n\n现在做个小检查：两份请求都保留本次追问，但旧记录各删一段。\n\n| | 保留的旧记录 | 本次追问 |\n|---|---|---|\n| 甲 | 只有上次的提问 | 第二本适合零基础吗？ |\n| 乙 | 只有上次的回答 | 第二本适合零基础吗？ |\n\n**请用两份各自留下的内容解释：哪一份还有依据确定「第二本」指的是哪本书？**"
+        }
+      ]
     },
     {
       "id": "c2-m2-sessions-code-final-cycle",
@@ -1014,7 +1146,9 @@
         "选择全局队列，读前文、等模型回答、写回问答是一件排队的工作。后一轮在读取前就要等；不同会话也共享这条队列，接受它带来的额外等待。两段记录仍按各自编号分开。",
         "这项安排我已经看清楚了，没有别的疑问。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c2-m2-sessions-code-final-cycle",
@@ -1048,7 +1182,15 @@
         "选择全局队列，读前文、等模型回答、写回问答是一件排队的工作。后一轮在读取前就要等；不同会话也共享这条队列，接受它带来的额外等待。两段记录仍按各自编号分开。",
         "这项安排我已经看清楚了，没有别的疑问。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 1,
+      "recoveredUnregisteredProse": [
+        {
+          "phase": 0,
+          "step": 3,
+          "response": "这一版已经编译通过（用的是“编译 / 检查语法”回执，不代表正式测试结果）。下面用你最关心的两点核对一遍，你看是不是这个效果。\n\n**排队范围**\n- [src/com/futureself/dialogue/SessionBook.java:10–18](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=10&end=18)：第 11 行那一个 `global` 门是所有会话共用的；第 16 行把执行门固定成它，没有按会话 ID 各建一把，所以 A 在等模型时 B 也会排队。每个 ID 仍在第 15 行拿到自己那份 `History`，记录不会混。\n\n**这一轮的边界**\n- [src/com/futureself/dialogue/DialogueService.java:15–24](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=15&end=24)：读快照（第 18 行）、问模型（第 20 行）、写入一对问答（第 22 行）都在同一个门内，所以后来的请求不会读到旧前文；空回答在第 21 行抛出，不留下半轮。查询走第 27 行，同样拿一次一致快照。\n\n代价也照实说：跨会话会互相等，吞吐量让给了简单和确定。\n\n**当前代码符合你的要求吗？有哪里想调整？**"
+        }
+      ]
     },
     {
       "id": "c2-m2-sessions-code-first",
@@ -1073,7 +1215,9 @@
         "上一关已经完成，并通过任务栏进入本关。",
         "请按已批准的计划完成实现，再带我理解和审阅。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c2-m2-sessions-code-first",
@@ -1098,7 +1242,9 @@
         "上一关已经完成，并通过任务栏进入本关。",
         "请按已批准的计划完成实现，再带我理解和审阅。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c2-m2-sessions-opening",
@@ -1120,7 +1266,9 @@
       "inputSha256": "9521083958c8eed15bdd98dfa217838236fd255d7621d8a2859b68f439e4f83b",
       "messagesSha256": "483db67a822eb7ba91058268bf932b9ae5b5af874c9021aa8cbf0c33a757f149",
       "priorLearnerMessages": ["上一关已经完成，并通过任务栏进入本关。", "请开始这一关。"],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c2-m2-sessions-opening",
@@ -1142,7 +1290,9 @@
       "inputSha256": "9521083958c8eed15bdd98dfa217838236fd255d7621d8a2859b68f439e4f83b",
       "messagesSha256": "483db67a822eb7ba91058268bf932b9ae5b5af874c9021aa8cbf0c33a757f149",
       "priorLearnerMessages": ["上一关已经完成，并通过任务栏进入本关。", "请开始这一关。"],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c2-m2-sessions-plan-final-cycle",
@@ -1176,7 +1326,15 @@
         "选择全局队列，读前文、等模型回答、写回问答是一件排队的工作。后一轮在读取前就要等；不同会话也共享这条队列，接受它带来的额外等待。两段记录仍按各自编号分开。",
         "这项安排我已经看清楚了，没有别的疑问。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 1,
+      "recoveredUnregisteredProse": [
+        {
+          "phase": 0,
+          "step": 1,
+          "response": "你刚确认的内容，和计划里记下的是一致的。[PLAN.md:13–15](#pbl-file=PLAN.md&line=13&end=15) 这段写的是：同一个会话编号对应同一份记录；所有会话共用一个执行范围，谁在等模型回答，其他人也一起等；保护范围从读前文一直盖到成功写回，查询也要拿到一致快照。你接受的就是这条排队带来的额外等待，换来的是后面的请求不会读到旧前文。\n\n检查方式也放在同一段里：用两段互不影响的会话，加上一次受控的并发发起，去看不丢失、不重复、问答一一配对，以及等待范围确实是全体而不是单个会话。\n\n**当前计划符合你的要求吗？有哪里想调整？** 觉得没问题，直接说「符合」或「不用改」就行。"
+        }
+      ]
     },
     {
       "id": "c2-m2-sessions-plan-final-cycle",
@@ -1210,7 +1368,15 @@
         "选择全局队列，读前文、等模型回答、写回问答是一件排队的工作。后一轮在读取前就要等；不同会话也共享这条队列，接受它带来的额外等待。两段记录仍按各自编号分开。",
         "这项安排我已经看清楚了，没有别的疑问。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 1,
+      "recoveredUnregisteredProse": [
+        {
+          "phase": 0,
+          "step": 1,
+          "response": "现在落盘的版本在 [PLAN.md:13–15](#pbl-file=PLAN.md&line=13&end=15)，第二关那段记下的就是你要的全局排队：同一个会话编号始终对应同一份记录，读取前文、等模型回复、写回这一问一答被当成一次完整的整轮工作来排队；全体会话共用这一道执行门，所以一个会话正在等模型时，另一个会话也要等，这就是你接受的那份额外等待。两段聊天各自按编号分开存放，前一轮的问答不会跑到别人的记录里，也不会被后来的请求提前读到。第一关那部分表示（保存带角色的逐条消息）原样保留。\n\n**当前计划符合你的要求吗？有哪里想调整？** 如果你觉得没有问题，回一句「符合」或「不用改」就可以了。"
+        }
+      ]
     },
     {
       "id": "c2-m2-sessions-plan-first",
@@ -1235,7 +1401,9 @@
         "上一关已经完成，并通过任务栏进入本关。",
         "请按已经提交的选择写好计划，再带我理解和审阅。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c2-m2-sessions-plan-first",
@@ -1260,7 +1428,9 @@
         "上一关已经完成，并通过任务栏进入本关。",
         "请按已经提交的选择写好计划，再带我理解和审阅。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c2-m2-sessions-transition",
@@ -1286,7 +1456,9 @@
         "请开始当前教学段。",
         "还不能。后台这轮工作要等完整问答真正记回当前会话记录，后面的请求才能使用这一轮。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c2-m2-sessions-transition",
@@ -1312,7 +1484,9 @@
         "请开始当前教学段。",
         "还不能。后台这轮工作要等完整问答真正记回当前会话记录，后面的请求才能使用这一轮。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c3-m1-save-code-final-cycle",
@@ -1345,7 +1519,9 @@
         "先留着旧的正式记录，在副本里加入本轮有效问答，整段写入文件成功后才更新正式内存记录并返回。保存失败就不发布候选版，下一问仍用旧版；不同会话各管自己的记录。整段文件的代价是每次重写旧正文。",
         "这项安排我已经看清楚了，没有别的疑问。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c3-m1-save-code-final-cycle",
@@ -1378,7 +1554,25 @@
         "先留着旧的正式记录，在副本里加入本轮有效问答，整段写入文件成功后才更新正式内存记录并返回。保存失败就不发布候选版，下一问仍用旧版；不同会话各管自己的记录。整段文件的代价是每次重写旧正文。",
         "这项安排我已经看清楚了，没有别的疑问。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 3,
+      "recoveredUnregisteredProse": [
+        {
+          "phase": 0,
+          "step": 1,
+          "response": "当前实现按你选的“整段聊天一个文件”落地了：整个流程都在同一次会话执行边界内完成——先取旧历史快照，在副本里追加本轮提问，用这份候选取得回答后，再把候选交给保存；只有文件完整写入成功后，才用它替换内存里的历史并返回原答案。保存抛错时内存仍停在旧版本，下一问继续基于旧记录，写过的旧正文也不会被半成品覆盖。\n\n- 会话内部：[src/com/futureself/dialogue/DialogueService.java:14–23](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=14&end=23) 里组装副本、校验回答非空、调用保存、最后发布内存。\n- 落盘：[src/com/futureself/dialogue/FileHistoryStore.java:12–19](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FFileHistoryStore.java&line=12&end=19) 先确认候选恰好在原有完整问答之后多出本轮两条，再通过完整提交工具整段替换该会话的记录文件。\n\n**这份保存实现现在还需要修改吗？**"
+        },
+        {
+          "phase": 0,
+          "step": 2,
+          "response": "刚才你复述的那条路径就是当前已保存版本的实际做法，而且这次保存的完整问答确实会落地：回话先在同一个会话的执行边界内取一份旧记录副本，追加本轮提问取得回答，再把“原有完整问答 + 本轮两条”的候选交给保存；文件整段写入成功后，才用这份候选替换正式内存记录并返回答案。\n\n- [src/com/futureself/dialogue/DialogueService.java:16–23](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=16&end=23)：组装副本、校验回答非空、提交保存、成功后发布内存。\n- [src/com/futureself/dialogue/FileHistoryStore.java:12–16](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FFileHistoryStore.java&line=12&end=16)：确认候选恰好比旧记录多一轮完整问答后，用完整提交工具整段替换该会话的记录文件；提交工具报错就直接抛出，不会退回直接覆盖。\n\n**这份保存实现是否还需要修改？如果不需要，请直接回复确认。**"
+        },
+        {
+          "phase": 0,
+          "step": 3,
+          "response": "现在这份代码已经把你选定的做法落实清楚了：在 [src/com/futureself/dialogue/DialogueService.java:14–24](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FDialogueService.java&line=14&end=24) 中，同一段会话先取得旧记录副本，追加本轮提问并在取到非空回答后把这两条消息组成本轮候选记录，交给保存；只有保存成功，才用这份候选记录替换内存中的正式历史，并返回原答案。负责写入的 [src/com/futureself/dialogue/FileHistoryStore.java:12–19](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FFileHistoryStore.java&line=12&end=19) 会先核对候选记录是否恰好比旧记录多一轮问答，再用完整提交工具整段替换这一段聊天记录的文件。你刚复述的正是这条实际保存路径：失败时下一问仍从旧记录出发，旧正文也不会被半成品覆盖。\n\n**这份保存实现现在是否还需要修改？如果不需要修改，请直接回复确认。**"
+        }
+      ]
     },
     {
       "id": "c3-m1-save-code-first",
@@ -1400,7 +1594,9 @@
       "inputSha256": "195990efdc7b442cf81d2abd7eb1837dee410f2deb3c3d45660a49d56208c622",
       "messagesSha256": "1d25cd40683c64da3a5a9e4b27b23150427301c012bcda10e70ff1f897872d61",
       "priorLearnerMessages": ["请按已批准的计划完成实现，再带我理解和审阅。"],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c3-m1-save-code-first",
@@ -1422,7 +1618,9 @@
       "inputSha256": "195990efdc7b442cf81d2abd7eb1837dee410f2deb3c3d45660a49d56208c622",
       "messagesSha256": "1d25cd40683c64da3a5a9e4b27b23150427301c012bcda10e70ff1f897872d61",
       "priorLearnerMessages": ["请按已批准的计划完成实现，再带我理解和审阅。"],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c3-m1-save-opening",
@@ -1444,7 +1642,15 @@
       "inputSha256": "f3e021168b458805fdef5c07cc2e9219a831d3283f9e63779f3f8afbff92aa2c",
       "messagesSha256": "7e3cafa4f78a5388bbff4b641d68e59498d7f8c6f8597a5224873c0541fadd5f",
       "priorLearnerMessages": ["我准备好了，开始吧。"],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 1,
+      "recoveredUnregisteredProse": [
+        {
+          "phase": 0,
+          "step": 1,
+          "response": "好，我们正式开始第一关。\n\n### 这一关要交出什么\n\n这一关叫「持久化保存聊天记录」。把记录放进后台程序结束后仍能保留的存储，这个做法叫**持久化**；本课用磁盘上的文件来完成。\n\n完成后，你能看到的效果是：一次成功的问答结束之后，磁盘上就有对应的文件留着；而在保存出问题时，程序会明确告诉你失败，已有的旧记录不会被破坏。\n\n### 用昨晚的画画聊天看这件事\n\n项目二已经让后台把画画书单存进内存，下一次提问时从这段内存记录里取前文。所以只要后台一直在运行，你追问「第二本讲什么」，它就能接上。\n\n今天的情况变了：后台重新启动过一次。旧后台内存里的记录不会自动进入新后台。文件就是这次新加的一层，专门给新后台留下原来的记录。\n\n上一课学的是会话记录在内存里的写入和读取；这一课把文件的写入、读回接进来。**第一关接写入，第二关接读回。**\n\n```text\n后台正常运行时\n① 从内存取本会话旧记录，带着本次提问交给 AI   ← 项目二已有\n                       ↓\n② AI 返回有效回答，组成待保存的新记录\n                       ↓\n③ 完整写入文件并保存成功                      ← 本关接通\n                       ↓\n④ 更新内存里的正式会话记录，向页面返回回答\n                       ↓\n⑤ 下一次提问，再从内存取前文\n\n后台重新启动后\n文件 ── 读回 ──▶ 新后台的内存记录 ──▶ 回到 ①   ← 第二关接通\n```\n\n有一件事值得先说清楚：每次发问用的是当前内存记录，文件负责让后台结束后仍留着原记录，并不是每问一句都要重新读一遍文件。第②步的待保存记录和第④步的正式记录有什么差别，我们下一段再放大来看。\n\n### 先看保存时机\n\n接下来是第一个具体判断。能不能保住聊天，取决于后台结束之前有没有完成保存；这里既要考虑正常退出的情况，也要考虑来不及退出的情况。\n\n**作品里有一个「退出时保存」功能：正常点击退出时它会运行，但一次升级可能直接结束后台，来不及运行它。你会把这个功能当作保留聊天的唯一办法吗？请说明你的判断和理由。**"
+        }
+      ]
     },
     {
       "id": "c3-m1-save-opening",
@@ -1466,7 +1672,9 @@
       "inputSha256": "f3e021168b458805fdef5c07cc2e9219a831d3283f9e63779f3f8afbff92aa2c",
       "messagesSha256": "7e3cafa4f78a5388bbff4b641d68e59498d7f8c6f8597a5224873c0541fadd5f",
       "priorLearnerMessages": ["我准备好了，开始吧。"],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c3-m1-save-plan-final-cycle",
@@ -1499,7 +1707,9 @@
         "先留着旧的正式记录，在副本里加入本轮有效问答，整段写入文件成功后才更新正式内存记录并返回。保存失败就不发布候选版，下一问仍用旧版；不同会话各管自己的记录。整段文件的代价是每次重写旧正文。",
         "这项安排我已经看清楚了，没有别的疑问。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c3-m1-save-plan-final-cycle",
@@ -1532,7 +1742,9 @@
         "先留着旧的正式记录，在副本里加入本轮有效问答，整段写入文件成功后才更新正式内存记录并返回。保存失败就不发布候选版，下一问仍用旧版；不同会话各管自己的记录。整段文件的代价是每次重写旧正文。",
         "这项安排我已经看清楚了，没有别的疑问。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c3-m1-save-plan-first",
@@ -1554,7 +1766,9 @@
       "inputSha256": "3e17fba2ccb43f8cd227231647b406d9ece32c79449ce5794d54597d3cc4089e",
       "messagesSha256": "d704bedfe101fcaa726d571d6b87383f17bb96904d7be31dc6680ea457fcfb57",
       "priorLearnerMessages": ["请按已经提交的选择写好计划，再带我理解和审阅。"],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c3-m1-save-plan-first",
@@ -1576,7 +1790,15 @@
       "inputSha256": "3e17fba2ccb43f8cd227231647b406d9ece32c79449ce5794d54597d3cc4089e",
       "messagesSha256": "d704bedfe101fcaa726d571d6b87383f17bb96904d7be31dc6680ea457fcfb57",
       "priorLearnerMessages": ["请按已经提交的选择写好计划，再带我理解和审阅。"],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 1,
+      "recoveredUnregisteredProse": [
+        {
+          "phase": 0,
+          "step": 3,
+          "response": "计划已经写好了。我把你选的“整段聊天一个文件”写进了本关章节，连同你提交时的理由和这份方案要承担的代价都原样保留了：每多一轮问答，都要把整段历史重新编码、整份写出；换来的是恢复和整体检查集中在一个文件里。\n\n**本关要接的责任在哪儿**\n\n本关真正改动的地方很少，一共三处：\n\n- 保存动作本身，落在 `FileHistoryStore.save`：[PLAN.md:38–40](#pbl-file=PLAN.md&line=38&end=40)\n- 一轮问答的接点，落在 `DialogueService`：[PLAN.md:32–36](#pbl-file=PLAN.md&line=32&end=36)\n- 布局设定跟你的选择对上，写在实现说明里：[PLAN.md:52–52](#pbl-file=PLAN.md&line=52&end=52)\n\n历史读写接口、作者给的支持工具、HTTP 和前端都不动，所以本关的改动集中在一轮问答从“读到模型回答”到“记录落地”这一小段链路上。\n\n有一点值得你先看清：计划把“写文件”和“换掉内存里的记录”都放在**同一段对话的那一轮执行范围**里，没有把范围扩到整个应用：[PLAN.md:54–54](#pbl-file=PLAN.md&line=54&end=54)。这是本关怀画书单和跑步计划会不会互相牵连的关键。\n\n**一个还没在计划里演示过的情况**\n\n画画那段对话正在等模型的回答，还没回来；这时跑步那段对话也发来了一个新问题。\n\n**按现在这份计划，跑步要等画画答完才能开始吗？请你说一句判断，并指出你是依据计划里哪一处安排这么判断的。**"
+        }
+      ]
     },
     {
       "id": "c3-m1-save-transition",
@@ -1601,7 +1823,9 @@
         "请开始当前教学段。",
         "不够，升级直接结束时没有正常退出动作。每轮成功问答都要及时保存，不能把未保存内容一直留到退出。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c3-m1-save-transition",
@@ -1626,7 +1850,9 @@
         "请开始当前教学段。",
         "不够，升级直接结束时没有正常退出动作。每轮成功问答都要及时保存，不能把未保存内容一直留到退出。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c3-m2-restore-code-final-cycle",
@@ -1660,7 +1886,25 @@
         "选择启动时全部尝试读回，各会话先读取、校验，再把完整原话放进对应会话的正式记录；一段读坏只保护这段，不因此停掉其他成功恢复的会话，也不覆盖原文件。问答再从这些正式记录取双方前文，加上本次问题。",
         "这项安排我已经看清楚了，没有别的疑问。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 3,
+      "recoveredUnregisteredProse": [
+        {
+          "phase": 0,
+          "step": 1,
+          "response": "当前这份实现已经能完成重启后的读回，也保住了你前面看到的那些安排。我把它最关键的一段位置指出来，然后就等你对当前版本说一句“还需要改吗”。\n\n会话簿构造时先走一次启动检查：[SessionBook.java:18–29](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=18&end=29)。按你选的“启动时全部读回”，它会顺着会话名单逐个进入每个会话自己的执行边界，把读正文这件事一段一段地做掉；名单里有几段，检查就走几段，走完才结束构造。\n\n正文读取本身很短：[SessionBook.java:40–44](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=40&end=44)。读回来的整份原话直接替换该会话内存里的记录，并把这段标成已加载。读坏时只把这一段的失败记在这个会话身上，别的会话照常加载；之后这段的问答和保存都要先过这道失败记录，所以不会拿空白正文去覆盖原文件。恢复成功的会话，下一次提问取的就是双方恢复出来的前文再加上本问。\n\n> 一段坏了只坏一段，健康的那几段照常读回、照常继续问答。\n\n现在只差最后一步：确认这份实现本身。\n\n**这份实现是否还需要修改？如果不需要，直接告诉我“不需要修改”，我就可以收束本关。**"
+        },
+        {
+          "phase": 0,
+          "step": 2,
+          "response": "当前版本的读回链路是闭合的：会话簿构造时按名单逐段调用恢复，读回的整份原话通过替换写入该会话的正式记录；读取失败只登记在这一段上，之后的问答和保存都会被这道失败拦住，不会拿空白覆盖原文件。文件层面的读取入口在 [FileHistoryStore.java:20–24](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FFileHistoryStore.java&line=20&end=24)，一次只读这一段唯一的完整正文，因此新进程重启后取到的仍是双方原话、角色和顺序。\n\n**这份实现是否还需要修改？如果不需要，直接告诉我“不需要修改”，我就可以收束本关。**"
+        },
+        {
+          "phase": 0,
+          "step": 3,
+          "response": "这份实现我已经按当前版本的实际内容核对过了。会话簿构造时会先走启动检查：[SessionBook.java:21–28](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=21&end=28)，顺着会话名单逐个进入各自的执行边界，一段一段地恢复；名单里有几段就走几段，只有走完才结束构造。每段的读取都在 [SessionBook.java:39–43](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FSessionBook.java&line=39&end=43)：读回来的整份原话替换该会话的正式记录并标记为已加载，读坏则只在这一段记下失败，其他会话不受影响，之后的问答和保存都会被这道失败拦住，不会拿空白覆盖原文件。\n\n正文本身从 [FileHistoryStore.java:19–23](#pbl-file=src%2Fcom%2Ffutureself%2Fdialogue%2FFileHistoryStore.java&line=19&end=23) 一次读回这一段唯一的完整正文，因此新进程重启后取到的仍是双方原话、角色和顺序。\n\n**这份实现是否还需要修改？如果不需要，直接告诉我“不需要修改”，我就可以收束本关。**"
+        }
+      ]
     },
     {
       "id": "c3-m2-restore-code-final-cycle",
@@ -1694,7 +1938,9 @@
         "选择启动时全部尝试读回，各会话先读取、校验，再把完整原话放进对应会话的正式记录；一段读坏只保护这段，不因此停掉其他成功恢复的会话，也不覆盖原文件。问答再从这些正式记录取双方前文，加上本次问题。",
         "这项安排我已经看清楚了，没有别的疑问。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c3-m2-restore-code-first",
@@ -1719,7 +1965,9 @@
         "上一关已经完成，并通过任务栏进入本关。",
         "请按已批准的计划完成实现，再带我理解和审阅。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c3-m2-restore-code-first",
@@ -1744,7 +1992,9 @@
         "上一关已经完成，并通过任务栏进入本关。",
         "请按已批准的计划完成实现，再带我理解和审阅。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c3-m2-restore-opening",
@@ -1766,7 +2016,9 @@
       "inputSha256": "64cb694109662e25650c8520d06a62cfc18e1f0989d2b2e9d037297748729bd4",
       "messagesSha256": "483db67a822eb7ba91058268bf932b9ae5b5af874c9021aa8cbf0c33a757f149",
       "priorLearnerMessages": ["上一关已经完成，并通过任务栏进入本关。", "请开始这一关。"],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c3-m2-restore-opening",
@@ -1788,7 +2040,9 @@
       "inputSha256": "64cb694109662e25650c8520d06a62cfc18e1f0989d2b2e9d037297748729bd4",
       "messagesSha256": "483db67a822eb7ba91058268bf932b9ae5b5af874c9021aa8cbf0c33a757f149",
       "priorLearnerMessages": ["上一关已经完成，并通过任务栏进入本关。", "请开始这一关。"],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c3-m2-restore-plan-final-cycle",
@@ -1822,7 +2076,15 @@
         "选择启动时全部尝试读回，各会话先读取、校验，再把完整原话放进对应会话的正式记录；一段读坏只保护这段，不因此停掉其他成功恢复的会话，也不覆盖原文件。问答再从这些正式记录取双方前文，加上本次问题。",
         "这项安排我已经看清楚了，没有别的疑问。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 1,
+      "recoveredUnregisteredProse": [
+        {
+          "phase": 0,
+          "step": 1,
+          "response": "计划已保存，第二阶段的内容完整：新进程启动时逐段读回旧会话，每段先校验再拼出双方原话；坏掉的段单独报错并禁止覆盖，其他段照常可用；读回后的第一次问答用恢复的前文加本问，后续新轮继续接着旧轮次写。这段安排写在 [PLAN.md:13–16](#pbl-file=PLAN.md&line=13&end=16)。\n\n**这份计划还需要修改吗？如果不需要，回复确认即可，我就把计划阶段收尾。**"
+        }
+      ]
     },
     {
       "id": "c3-m2-restore-plan-final-cycle",
@@ -1856,7 +2118,15 @@
         "选择启动时全部尝试读回，各会话先读取、校验，再把完整原话放进对应会话的正式记录；一段读坏只保护这段，不因此停掉其他成功恢复的会话，也不覆盖原文件。问答再从这些正式记录取双方前文，加上本次问题。",
         "这项安排我已经看清楚了，没有别的疑问。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 1,
+      "recoveredUnregisteredProse": [
+        {
+          "phase": 0,
+          "step": 1,
+          "response": "计划第二阶段的部分已经把“启动时全部读回”这个选择原样保留下来了，见 [PLAN.md:14–17](#pbl-file=PLAN.md&line=14&end=17)：启动时逐段尝试恢复，等所有段都检查完才结束启动检查，代价是暂时用不到的正文也会先读出来。失败段只锁住自己、保住原文件不被覆盖，健康段照常可用。问答再从这些恢复好的正式记录里取出双方前文，加上本次问题交给模型，后续新轮接着旧轮次继续保存。\n\n你没有提出要改的地方，我就按这份内容收束。\n\n**这份计划是否还需要修改，还是可以按现在这一版进入实现？**"
+        }
+      ]
     },
     {
       "id": "c3-m2-restore-plan-first",
@@ -1881,7 +2151,9 @@
         "上一关已经完成，并通过任务栏进入本关。",
         "请按已经提交的选择写好计划，再带我理解和审阅。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c3-m2-restore-plan-first",
@@ -1906,7 +2178,15 @@
         "上一关已经完成，并通过任务栏进入本关。",
         "请按已经提交的选择写好计划，再带我理解和审阅。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 1,
+      "recoveredUnregisteredProse": [
+        {
+          "phase": 0,
+          "step": 3,
+          "response": "计划已经写好，第一关的内容原样留着，第二关的部分是这次新加的。\n\n先说这一关要接上的责任：[PLAN.md:15–20](#pbl-file=PLAN.md&line=15&end=20) 里写清了效果和你做的选择——后台重启时逐个会话把正文读回来并核对，读完全部会话才算启动检查结束。你接受的具体代价也留在里面：暂时没人点开的会话，正文也会被提前读一遍，换来的是启动结束就知道哪条会话坏了，而不是等用户点开才发现。\n\n接着是读回之后怎么和原来的保存流程接上，见 [PLAN.md:22–29](#pbl-file=PLAN.md&line=22&end=29)：先把名单读出来（只拿编号、名称、时间，不碰正文），再按名单逐段读轮次文件并拼回完整问答；哪一段的编号缺号、角色不对或某轮不是一问一答，就算这一段失败，之后拒绝写入覆盖它，其他段照常读写。检查方式是两条：用两个不同的 Java 进程走同一目录，以及人为弄坏一段看它是否明确报错。\n\n现在放一个还没在这份说明里走通过的情境：画画那段会话原来存了两轮。重启后读回，你和它又聊了一轮，这一轮照第一关的方式存了下来，于是文件里已经有三轮。\n\n**请依据 [PLAN.md:22–29](#pbl-file=PLAN.md&line=22&end=29) 里的安排说说，如果再重启一次，读回结果和原来的保存流程要怎样配合，才能把这三轮都完整找回、既不少一轮也不重复？**"
+        }
+      ]
     },
     {
       "id": "c3-m2-restore-transition",
@@ -1932,7 +2212,9 @@
         "请开始当前教学段。",
         "看实际文件里的原文，再对照程序读回的内容和页面文字；还要确认页面走的是读取存档的路径，不能让模型重新编一份书单。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     },
     {
       "id": "c3-m2-restore-transition",
@@ -1958,7 +2240,36 @@
         "请开始当前教学段。",
         "看实际文件里的原文，再对照程序读回的内容和页面文字；还要确认页面走的是读取存档的路径，不能让模型重新编一份书单。"
       ],
-      "nativeGuardAccepted": true
+      "nativeGuardAccepted": true,
+      "recoveryCalls": 0,
+      "recoveredUnregisteredProse": []
     }
-  ]
+  ],
+  "initialFinalCycleTransportFailures": [
+    {
+      "id": "c1-m1-route-code-final-cycle",
+      "arm": "before",
+      "error": "HTTP 408",
+      "retryPolicy": "Retry only failed transport arm; keep existing successful generations"
+    },
+    {
+      "id": "c3-m1-save-code-final-cycle",
+      "arm": "after",
+      "error": "HTTP 408",
+      "retryPolicy": "Retry only failed transport arm; keep existing successful generations"
+    },
+    {
+      "id": "c3-m2-restore-code-final-cycle",
+      "arm": "after",
+      "error": "HTTP 408",
+      "retryPolicy": "Retry only failed transport arm; keep existing successful generations"
+    },
+    {
+      "id": "c1-m1-route-plan-final-cycle",
+      "arm": "after",
+      "error": "HTTP 408",
+      "retryPolicy": "Retry only failed transport arm; keep existing successful generations"
+    }
+  ],
+  "note": "Phases are registered handoffs. Recovered plain-text attempts are also retained; browser stream visibility was not evaluated."
 }
