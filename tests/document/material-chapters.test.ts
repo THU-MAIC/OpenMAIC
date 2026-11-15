@@ -260,6 +260,23 @@ describe('optional chapter recognition', () => {
     expect(callLLM).not.toHaveBeenCalled();
     expect(resolveStageModel).not.toHaveBeenCalled();
   });
+  it.each([
+    { pageCount: 50 },
+    { source: { ...source, titles: [] } },
+    { providerId: 'mineru-cloud' },
+    { providerId: 'unpdf' },
+  ])(
+    'does not cancel an already parsed ineligible document during shutdown: %j',
+    async (overrides) => {
+      const controller = new AbortController();
+      controller.abort(new Error('runner stopped'));
+      await expect(
+        recognizeMaterialChapters({ ...input, ...overrides, signal: controller.signal }),
+      ).resolves.toBeUndefined();
+      expect(callLLM).not.toHaveBeenCalled();
+      expect(resolveStageModel).not.toHaveBeenCalled();
+    },
+  );
   it.each(['throw', 'json', 'invalid', 'disabled', 'unassigned'])(
     'isolates %s failures',
     async (failure) => {

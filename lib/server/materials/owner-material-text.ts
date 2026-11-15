@@ -101,9 +101,6 @@ async function readClassicText(
     });
     return {
       text: result.text,
-      ...(result.chapters?.length
-        ? { chapters: result.chapters, pageCount: result.pageCount }
-        : {}),
       // Each attempt has an immutable result key; never expose that private key.
       revision: createHash('sha256')
         .update(JSON.stringify([location.id, location.extraction.resultKey]))

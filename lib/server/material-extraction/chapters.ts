@@ -70,7 +70,6 @@ export interface ChapterRecognitionInput {
 export async function recognizeMaterialChapters(
   input: ChapterRecognitionInput,
 ): Promise<MaterialChapter[] | undefined> {
-  input.signal?.throwIfAborted();
   const mime = normalizeDocumentMimeType({ mimeType: input.mimeType });
   const format = Object.entries(DOCUMENT_MIME_TYPES).find(([, value]) => value === mime)?.[0];
   if (
@@ -81,6 +80,8 @@ export async function recognizeMaterialChapters(
   )
     return undefined;
   if (input.pageCount <= getMinerUChunkPages()) return undefined;
+  // Skipped enrichment must not cancel publication of an already parsed document.
+  input.signal?.throwIfAborted();
 
   const timeout = new AbortController();
   const timer = setTimeout(

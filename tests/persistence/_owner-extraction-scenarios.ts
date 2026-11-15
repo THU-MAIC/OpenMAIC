@@ -2183,6 +2183,8 @@ export async function chapterRecognitionScenario(
   const { extractMinerUResult } = await import('@/lib/pdf/mineru-parser');
   const { parsedPdfToDocumentArtifact } = await import('@/lib/document/pdf-compat');
   const { readMaterialExtractionResult } = await import('@/lib/server/materials/extraction');
+  const recognition = await import('@/lib/server/material-extraction/chapters');
+  const recognize = vi.spyOn(recognition, 'recognizeMaterialChapters');
   const chapters = [
     { title: 'First', startPage: 1, sections: [{ title: 'Section', startPage: 2 }] },
   ];
@@ -2295,7 +2297,9 @@ export async function chapterRecognitionScenario(
     }
     expect(fallback).not.toHaveBeenCalled();
 
-    // Drive the classic worker through JSON storage and its public reader too.
+    // Classic uploads keep their entire budget for parsing and image inlining.
+    recognize.mockClear();
+    call.mockClear();
     const classicId = `classic-${id}`;
     await registerOwnerMaterial(
       h.provider.pool,
@@ -2326,32 +2330,22 @@ export async function chapterRecognitionScenario(
       deletePrefix: vi.fn(),
       list: async () => [],
     };
-    // For cancellation, let the classic LLM see its own new signal before aborting.
-    const classicController = new AbortController();
-    if (mode === 'cancel')
-      call.mockImplementation(async () => {
-        classicController.abort(new Error('runner stopped'));
-        throw classicController.signal.reason;
-      });
     await runClaimedOwnerMaterialExtraction(current!, {
       heartbeatIntervalMs: 60_000,
       services: async () => ({ document: null }),
       analyze: async () => parsed(),
       byteStore,
-      signal: classicController.signal,
     });
     const storedClassic = await getOwnerMaterial(h.provider.pool, ACCOUNT, classicId);
-    if (mode === 'cancel') {
-      expect(storedClassic?.extraction?.status).not.toBe('ready');
-      expect(byteStore.put).not.toHaveBeenCalled();
-    } else {
-      expect(storedClassic?.extraction?.status).toBe('ready');
-      const result = await readMaterialExtractionResult(storedClassic!, byteStore);
-      expect(result.chapters).toEqual(mode === 'success' ? chapters : undefined);
-      expect(JSON.stringify(result)).not.toContain('frontPages');
-      expect(result.text).toContain('Book text');
-    }
+    expect(recognize).not.toHaveBeenCalled();
+    expect(call).not.toHaveBeenCalled();
+    expect(storedClassic?.extraction?.status).toBe('ready');
+    const result = await readMaterialExtractionResult(storedClassic!, byteStore);
+    expect(result).not.toHaveProperty('chapters');
+    expect(JSON.stringify(result)).not.toContain('frontPages');
+    expect(result.text).toContain('Book text');
   } finally {
+    recognize.mockRestore();
     call.mockRestore();
     resolve.mockRestore();
     workspace.mockRestore();

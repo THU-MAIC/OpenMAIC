@@ -265,14 +265,11 @@ it('returns chapters and page count from the same fresh fenced result as project
   expect((next.content[0] as { text: string }).text.split('\n')[3]).toBe('Fresh');
 });
 
-it('passes classic chapters and page count through the resolver with their result text', async () => {
+it('passes classic text through the resolver without chapter metadata', async () => {
   const { setMaterialByteStoreForTests } = await import('@/lib/server/materials/bytes');
   const { readResolvedMaterialText } = await import('@/lib/server/agent-runtime/material-resolver');
-  const chapters = [{ title: 'Classic', startPage: 1, sections: [] }];
   const get = vi.fn(async () =>
-    Buffer.from(
-      JSON.stringify({ version: 1, text: '# Classic', images: [], chapters, pageCount: 8 }),
-    ),
+    Buffer.from(JSON.stringify({ version: 1, text: '# Classic', images: [], pageCount: 8 })),
   );
   setMaterialByteStoreForTests({
     get,
@@ -292,8 +289,6 @@ it('passes classic chapters and page count through the resolver with their resul
     const read = await readResolvedMaterialText('session', { origin: 'owner', entry });
     expect(read).toEqual({
       text: '# Classic',
-      chapters,
-      pageCount: 8,
       revision: expect.stringMatching(/^[a-f0-9]{64}$/),
     });
     expect(get).toHaveBeenCalledOnce();
