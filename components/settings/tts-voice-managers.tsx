@@ -516,9 +516,8 @@ export function QwenVoiceCloneManager({ cloneTarget }: { cloneTarget?: string })
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
-  // The server's latest answer per voice from a preview in this session: true
-  // when it asked for a re-clone, false when the voice played. It wins over
-  // `cloneTarget`, which may change while the page is open.
+  // Preview answers override the reported target only until settings refresh
+  // with a different target: true asks for a re-clone, false means it played.
   const [recloneVerdicts, setRecloneVerdicts] = useState<Record<string, boolean>>({});
   const previewRequestRef = useRef(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -656,6 +655,13 @@ export function QwenVoiceCloneManager({ cloneTarget }: { cloneTarget?: string })
       setSaving(false);
     }
   };
+
+  useEffect(() => {
+    previewRequestRef.current += 1;
+    stopPreview();
+    setPreviewingVoiceId(null);
+    setRecloneVerdicts({});
+  }, [cloneTarget, stopPreview]);
 
   const setRecloneVerdict = (voiceId: string, verdict: boolean | undefined) => {
     setRecloneVerdicts((current) => {

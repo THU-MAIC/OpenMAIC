@@ -138,8 +138,75 @@ it('clears a mount-time mark once the server plays the voice', async () => {
   mocks.fetch.mockResolvedValueOnce(success());
   await preview('Assistant');
   expect(notice('Assistant')).toBeNull();
+  await render();
+  expect(notice('Assistant')).toBeNull();
   expect(mocks.setTTSVoice).not.toHaveBeenCalled();
 });
+
+it('drops a successful preview verdict when settings report a different clone target', async () => {
+  mocks.profiles = [teacher, previousAssistant];
+  await render({ cloneTarget: 'cosyvoice-v3-plus' });
+  mocks.fetch.mockResolvedValueOnce(success());
+  await preview('Assistant');
+  expect(notice('Assistant')).toBeNull();
+
+  await render();
+  expect(notice('Assistant')?.textContent).toBe(instruction);
+  expect(notice('Teacher')).toBeNull();
+  expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:preview');
+  expect(mocks.fetch).toHaveBeenCalledTimes(1);
+  expect(mocks.setTTSVoice).not.toHaveBeenCalled();
+});
+
+it('drops an incompatible preview verdict when the reported clone target changes', async () => {
+  mocks.profiles = [teacher, previousAssistant];
+  await render({ cloneTarget: 'cosyvoice-v3-plus' });
+  mocks.fetch.mockResolvedValueOnce(rejected());
+  await preview('Teacher');
+  expect(notice('Teacher')?.textContent).toBe(instruction);
+
+  await render();
+  expect(notice('Teacher')).toBeNull();
+  expect(notice('Assistant')?.textContent).toBe(instruction);
+  expect(mocks.fetch).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  {
+    result: 'successful',
+    response: success,
+    initialTarget: 'cosyvoice-v3-plus',
+    nextTarget: target,
+    marked: true,
+  },
+  {
+    result: 'incompatible',
+    response: rejected,
+    initialTarget: target,
+    nextTarget: 'cosyvoice-v3-plus',
+    marked: false,
+  },
+])(
+  'ignores a pending $result preview after the reported clone target changes',
+  async ({ response, initialTarget, nextTarget, marked }) => {
+    mocks.profiles = [teacher, previousAssistant];
+    await render({ cloneTarget: initialTarget });
+    let finish!: (response: Response) => void;
+    mocks.fetch.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await preview('Assistant');
+    await render({ cloneTarget: nextTarget });
+    await act(async () => finish(response()));
+
+    expect(notice('Assistant')?.textContent ?? null).toBe(marked ? instruction : null);
+    expect(mocks.toastError).not.toHaveBeenCalled();
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+  },
+);
 
 it('keeps the re-clone instruction on only the voice a preview finds stale', async () => {
   await render();
