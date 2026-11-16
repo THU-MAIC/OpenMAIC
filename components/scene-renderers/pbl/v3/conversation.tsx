@@ -257,7 +257,6 @@ export function LearningConversation({
         view.state.position.milestoneIndex === 0 &&
         view.state.position.stageIndex === 0 &&
         view.state.status !== 'completed' &&
-        (!entries.length || view.needsOpening) &&
         !pendingMessage &&
         !entries.some((entry) => entry.speaker === 'user') &&
         !view.conversationHistory?.length

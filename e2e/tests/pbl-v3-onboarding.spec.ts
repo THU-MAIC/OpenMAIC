@@ -460,6 +460,74 @@ for (const [width, guideCompleted] of [
   });
 }
 
+for (const entry of ['delayed-guide', 'prepare', 'existing-opening'] as const) {
+  test(`initial overview survives ${entry} and releases to normal following`, async ({
+    page,
+    learningEvents,
+  }) => {
+    let finishPrepare!: () => void;
+    const prepareGate = new Promise<void>((resolve) => {
+      finishPrepare = resolve;
+    });
+    const fixture = await project(page, learningEvents, {
+      application: false,
+      guideCompleted: entry !== 'delayed-guide',
+      staleWorkbench: entry === 'delayed-guide',
+      environmentReady: entry !== 'prepare',
+      ...(entry === 'prepare' ? { prepareGate } : {}),
+      openingText: entry === 'existing-opening' ? 'Opening background.\n\n'.repeat(60) : '',
+    });
+    const viewport = page.locator('.pbl-conversation-scroll');
+    if (entry === 'delayed-guide') {
+      await expect(page.locator('#pbl-project-overview')).toBeVisible();
+      // A later workspace snapshot can open the tour after the overview has
+      // already rendered. Its removal must not consume the reading protection.
+      fixture.workbench.environmentId = fixture.view.environmentId!;
+      await fixture.publish();
+      await expect(tour(page)).toBeVisible();
+      await expect(page.locator('#pbl-project-overview')).toHaveCount(0);
+      fixture.view.messages = [{ role: 'assistant', text: 'Opening background.\n\n'.repeat(60) }];
+      fixture.view.revision++;
+      await fixture.publish();
+      await page.keyboard.press('Escape');
+    } else if (entry === 'prepare') {
+      await expect.poll(() => fixture.commands).toContain('prepare');
+      finishPrepare();
+      await expect(page.locator('#pbl-project-overview')).toBeVisible();
+    }
+    for (let chunk = 0; chunk < 3; chunk++) {
+      fixture.view.messages = [
+        { role: 'assistant', text: `Opening chunk ${chunk}.\n\n`.repeat(60 + chunk * 10) },
+      ];
+      fixture.view.revision++;
+      await fixture.publish();
+      await expect(viewport).toContainText(`Opening chunk ${chunk}.`);
+      await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeLessThanOrEqual(1);
+    }
+    const latest = page.getByTestId('pbl-conversation-scroll-button');
+    await expect(latest).toBeVisible();
+    await latest.click();
+    await expect
+      .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
+      .toBeLessThanOrEqual(8);
+    const box = (await viewport.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, -250);
+    await expect(latest).toBeVisible();
+    const reading = await viewport.evaluate((el) => el.scrollTop);
+    fixture.view.messages[0].text += 'Later text.\n\n'.repeat(30);
+    fixture.view.revision++;
+    await fixture.publish();
+    await expect(viewport).toContainText('Later text.');
+    await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeCloseTo(reading, 0);
+    await page.getByLabel('Your message', { exact: true }).fill('Continue.');
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await expect
+      .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
+      .toBeLessThanOrEqual(8);
+  });
+}
+
 test('highlights the existing next action only when progression is available', async ({
   page,
   learningEvents,

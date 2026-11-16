@@ -27,26 +27,41 @@ export function ConversationViewport({
   onClick: (event: MouseEvent<HTMLDivElement>) => void;
 }) {
   const { t } = useI18n();
+  // Layout changes (including hiding the overview during onboarding) are not
+  // learner intent. Keep the initial target until the learner chooses to move.
+  const readingOverview = useRef(startAtOverview);
   const stick = useStickToBottom({
-    initial: startAtOverview && header ? false : 'instant',
+    initial: startAtOverview ? false : 'instant',
     resize: 'instant',
   });
   const { contentRef, scrollRef, isNearBottom, scrollToBottom, stopScroll } = stick;
-  // Capture entry intent once. Acknowledging the tour must not erase it before
-  // the overview is revealed, and replaying the tour must not reset reading.
-  const revealOverview = useRef(startAtOverview);
   const viewportRef = useWorkbenchViewportAnchor(stick);
   const previous = useRef(sent);
   useLayoutEffect(() => {
+    // The library re-locks when shrinking content brings it near the bottom.
+    // Suppress that layout-only re-lock during the initial overview, before
+    // its scheduled animation runs. Keep its normal bottom-distance reporting.
+    const observer = new ResizeObserver(() => {
+      if (readingOverview.current) stopScroll();
+    });
+    if (contentRef.current) observer.observe(contentRef.current);
+    if (scrollRef.current) observer.observe(scrollRef.current);
+    return () => observer.disconnect();
+  }, [contentRef, scrollRef, stopScroll]);
+  const releaseOverview = () => {
+    if (!readingOverview.current) return;
+    readingOverview.current = false;
+    // Let the gesture choose the position; do not jump to the tail on a wheel
+    // or touch gesture that only starts reading the opening reply.
+    stopScroll();
+  };
+  useLayoutEffect(() => {
     if (previous.current !== sent) {
       previous.current = sent;
-      revealOverview.current = false;
+      readingOverview.current = false;
       // A new learner send explicitly asks to follow its answer, as in Pro.
       void scrollToBottom({ animation: 'instant' });
-    } else if (revealOverview.current && header) {
-      revealOverview.current = false;
-      // Only the initial reading position changes. The shared follow state
-      // resumes normally on a send, Latest, or scrolling back to the bottom.
+    } else if (readingOverview.current && header) {
       stopScroll();
       if (scrollRef.current) scrollRef.current.scrollTop = 0;
     }
@@ -64,6 +79,18 @@ export function ConversationViewport({
         ref={viewportRef}
         tabIndex={0}
         className="pbl-conversation-scroll min-h-0 flex-1 overflow-y-auto"
+        onWheelCapture={releaseOverview}
+        onTouchMoveCapture={releaseOverview}
+        onPointerDownCapture={(event) => {
+          if (event.target === event.currentTarget) releaseOverview();
+        }}
+        onKeyDownCapture={(event) => {
+          if (
+            event.target === event.currentTarget &&
+            ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)
+          )
+            releaseOverview();
+        }}
       >
         <div ref={contentRef} className="flex flex-col gap-5 p-4" onClick={onClick}>
           {header && (
@@ -88,7 +115,10 @@ export function ConversationViewport({
             title={label}
             data-testid="pbl-conversation-scroll-button"
             data-generating={generating}
-            onClick={() => void scrollToBottom()}
+            onClick={() => {
+              readingOverview.current = false;
+              void scrollToBottom();
+            }}
           >
             {generating ? (
               <span className={wbStyles.waiting.dots} aria-hidden="true">
