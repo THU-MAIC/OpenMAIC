@@ -127,6 +127,45 @@ describe('parseModelConfig', () => {
     ]);
   });
 
+  it.each(['true', 'false', '1', '0', '"auto"', '""', '"TRAILING"'])(
+    'refuses invalid system-tail placement %s while parsing the provider',
+    (value) => {
+      expect(
+        issuesOf(
+          `providers:\n  local:\n    preset: openai-compatible\n    baseUrl: http://ollama:11434/v1\n    options:\n      requestSystemTailPlacement: ${value}\n`,
+        ),
+      ).toEqual([
+        'providers.local.options.requestSystemTailPlacement: expected "prefix" or "trailing"',
+      ]);
+    },
+  );
+
+  it.each(['prefix', 'trailing'])(
+    'accepts an interpolated system-tail placement %s without narrowing unrelated options',
+    (placement) => {
+      const config = parseModelConfig(
+        'providers:\n  local:\n    preset: openai-compatible\n    baseUrl: http://ollama:11434/v1\n    options:\n      requestSystemTailPlacement: ${TAIL_PLACEMENT}\n      normalize: true\n      cfgValue: 2.5\n',
+        { env: { TAIL_PLACEMENT: placement } },
+      );
+      expect(config.providers?.local.options).toEqual({
+        requestSystemTailPlacement: placement,
+        normalize: true,
+        cfgValue: 2.5,
+      });
+    },
+  );
+
+  it('reports the invalid tail-placement field without echoing an interpolated value', () => {
+    expect(
+      issuesOf(
+        'providers:\n  local:\n    preset: openai-compatible\n    baseUrl: http://ollama:11434/v1\n    options:\n      requestSystemTailPlacement: ${TAIL_PLACEMENT}\n',
+        { TAIL_PLACEMENT: 'operator-value-not-for-logs' },
+      ),
+    ).toEqual([
+      'providers.local.options.requestSystemTailPlacement: expected "prefix" or "trailing"',
+    ]);
+  });
+
   it('refuses assignments to undeclared providers or capabilities the preset lacks', () => {
     expect(issuesOf('slots:\n  llm: ghost:model\n')).toEqual([
       'slots.llm: provider "ghost" is not declared under providers',
