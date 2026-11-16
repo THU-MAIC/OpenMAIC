@@ -740,3 +740,23 @@ it('shows the verified buffer immediately and then receives same-revision file c
   expect(editor.buffer?.text).toBe('Changed in the terminal');
   expect(editor.buffer?.hash).toBe('c'.repeat(64));
 });
+
+it('keeps an acknowledged save when an older background read returns afterward', async () => {
+  vi.useFakeTimers();
+  await mount(createElement(Editor, { value: view('background-save-race') }));
+  await act(async () => editor.select('main.py'));
+  let finish!: (value: { text: string; hash: string }) => void;
+  read.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await act(async () => editor.select('PLAN.md'));
+  await act(async () => editor.edit('Newer saved answer'));
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  expect(editor.buffer?.saved).toBe('Newer saved answer');
+  await act(async () => finish({ text: 'Saved source', hash: 'a'.repeat(64) }));
+  expect(editor.buffer?.text).toBe('Newer saved answer');
+  expect(editor.buffer?.hash).toBe('b'.repeat(64));
+});

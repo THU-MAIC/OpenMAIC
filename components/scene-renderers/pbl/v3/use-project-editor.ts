@@ -92,6 +92,7 @@ export function useProjectEditor(
       const active = path === current.current.path;
       const ticket = active ? ++sequence.current : sequence.current;
       const source = editorSource(view);
+      const baseHash = current.current.buffers[path]?.hash;
       const readTicket = (readTickets.current.get(path) ?? 0) + 1;
       readTickets.current.set(path, readTicket);
       const isCurrent = () =>
@@ -105,6 +106,9 @@ export function useProjectEditor(
       try {
         const result = await read(path);
         if (!isCurrent()) return;
+        // A save can finish while a non-blocking read is in flight. Its newer
+        // acknowledged base wins over that read, even if typing is now clean.
+        if (background && current.current.buffers[path]?.hash !== baseHash) return;
         verifiedReads.current.delete(path);
         setReadErrors((previous) => {
           if (previous[path]?.source !== source) return previous;
