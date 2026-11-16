@@ -1491,6 +1491,7 @@
     "qwenCloneUploadShort": "アップロード",
     "qwenCloneRefAudioHint": "Use a clean 5–60 second voice sample (10–20 seconds recommended). Audio is converted to 24 kHz mono PCM WAV.",
     "qwenCloneMigrationHint": "この保存済み音声は再クローンが必要です。音声設定で参照音声をアップロードしてください。",
+    "qwenCloneNeedsReclone": "再クローンが必要",
     "qwenCloneRecloneRequired": "この保存済み音声は現在のクローンモデルと互換性がありません。参照音声を再度アップロードして再クローンしてください。",
     "qwenCloneSaved": "Qwen cloned voice registered and saved",
     "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",

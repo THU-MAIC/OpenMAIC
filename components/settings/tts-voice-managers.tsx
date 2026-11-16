@@ -26,6 +26,7 @@ import {
   FileAudio,
   Mic,
   Square,
+  AlertTriangle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -749,22 +750,28 @@ export function QwenVoiceCloneManager({ cloneTarget }: { cloneTarget?: string })
             </div>
             <div className="max-h-[360px] min-h-[240px] overflow-y-auto">
               {profiles.length ? (
-                profiles.map((profile) => (
-                  <VoiceProfileRow
-                    key={profile.id}
-                    icon={<FileAudio className="h-4 w-4" />}
-                    title={profile.name}
-                    badge={t('settings.voxcpmClone')}
-                    detail={profile.referenceAudioName || profile.id}
-                    warning={
-                      needsReclone(profile.id) ? t('settings.qwenCloneRecloneRequired') : undefined
-                    }
-                    kind="clone"
-                    previewing={previewingVoiceId === profile.id}
-                    onPreview={() => handlePreview(profile.id)}
-                    onDelete={() => handleDelete(profile.id)}
-                  />
-                ))
+                profiles.map((profile) => {
+                  const requiresReclone = needsReclone(profile.id);
+                  return (
+                    <VoiceProfileRow
+                      key={profile.id}
+                      icon={<FileAudio className="h-4 w-4" />}
+                      title={profile.name}
+                      badge={
+                        requiresReclone
+                          ? t('settings.qwenCloneNeedsReclone')
+                          : t('settings.voxcpmClone')
+                      }
+                      badgeTone={requiresReclone ? 'warning' : 'neutral'}
+                      detail={profile.referenceAudioName || profile.id}
+                      warning={requiresReclone ? t('settings.qwenCloneRecloneRequired') : undefined}
+                      kind="clone"
+                      previewing={previewingVoiceId === profile.id}
+                      onPreview={() => handlePreview(profile.id)}
+                      onDelete={() => handleDelete(profile.id)}
+                    />
+                  );
+                })
               ) : (
                 <div className="flex min-h-[200px] items-center justify-center px-4 py-8 text-center text-sm text-muted-foreground/60">
                   {t('settings.voxcpmNoCustomVoices')}
@@ -887,7 +894,7 @@ function VoiceProfileRow({
   return (
     <div
       className={cn(
-        'group relative flex min-h-16 items-center gap-3 border-t border-border/50 px-4 py-3 first:border-t-0',
+        'group relative flex min-h-16 items-start gap-3 border-t border-border/50 px-4 py-3 first:border-t-0',
         muted ? 'opacity-60' : 'hover:bg-muted/35',
       )}
     >
@@ -900,7 +907,7 @@ function VoiceProfileRow({
         {icon}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="truncate text-sm font-medium">{title}</span>
           <span
             className={cn(
@@ -913,9 +920,13 @@ function VoiceProfileRow({
         </div>
         <p className="mt-1 truncate text-xs text-muted-foreground">{detail}</p>
         {warning && (
-          <p role="status" className="mt-1 text-xs text-amber-700 dark:text-amber-300">
-            {warning}
-          </p>
+          <div
+            role="status"
+            className="mt-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs leading-relaxed text-amber-700 dark:border-amber-800/70 dark:bg-amber-950/40 dark:text-amber-300"
+          >
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <p>{warning}</p>
+          </div>
         )}
       </div>
       {onPreview && (
