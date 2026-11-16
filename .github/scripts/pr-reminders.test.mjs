@@ -518,6 +518,14 @@ test('thread replies, pushes and unread thread pages keep a pull request open', 
   assert.deepEqual(client.writes, []);
 });
 
+test('marking ready or removing status:blocked restarts the close window', () => {
+  const pr = makePr(61);
+  const at = (nodes) => lastAuthorActivity(pr, { timelineItems: { nodes } }, []);
+  assert.equal(at([{ createdAt: ago(DAY) }]), ago(DAY));
+  assert.equal(at([{ createdAt: ago(DAY), label: { name: 'status:blocked' } }]), ago(DAY));
+  assert.equal(at([{ createdAt: ago(DAY), label: { name: 'bug' } }]), null);
+});
+
 test('a close whose comment was already posted only retries the close', async () => {
   const pr = makePr(60, withThreads([thread(ago(12 * DAY))]));
   const client = fakeClient({

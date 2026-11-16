@@ -232,7 +232,11 @@ export function lastAuthorActivity(pr, activity, comments) {
         .filter((comment) => comment.author?.login === login)
         .map((comment) => comment.createdAt),
     ),
-    ...(activity?.timelineItems?.nodes ?? []).map((node) => node.createdAt),
+    // Pauses end: a draft marked ready or `status:blocked` removed restarts
+    // the window like a push does.
+    ...(activity?.timelineItems?.nodes ?? [])
+      .filter((node) => !node.label || node.label.name === BLOCKED_LABEL)
+      .map((node) => node.createdAt),
     ...(activity?.reviews?.nodes ?? [])
       .filter((review) => review.author?.login === login)
       .map((review) => review.submittedAt),
@@ -297,7 +301,8 @@ query($owner: String!, $repo: String!, $cursor: String) {
 // Author activity: reviews, thread replies (read from the threads themselves,
 // since an inline reply is a review comment) and issue comments. Pushes show up
 // as the head commit's check suites (created on push, unlike the commit date)
-// or a force-push event; a reopen also restarts the window.
+// or a force-push event; a reopen, a draft marked ready or `status:blocked`
+// removed also restarts the window.
 const ACTIVITY_QUERY = `
 query($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {
@@ -309,10 +314,15 @@ query($owner: String!, $repo: String!, $number: Int!) {
       reviewThreads(first: 100) {
         nodes { comments(last: 50) { nodes { author { login } createdAt } } }
       }
-      timelineItems(last: 20, itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT, REOPENED_EVENT]) {
+      timelineItems(
+        last: 50
+        itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT, REOPENED_EVENT, READY_FOR_REVIEW_EVENT, UNLABELED_EVENT]
+      ) {
         nodes {
           ... on HeadRefForcePushedEvent { createdAt }
           ... on ReopenedEvent { createdAt }
+          ... on ReadyForReviewEvent { createdAt }
+          ... on UnlabeledEvent { createdAt label { name } }
         }
       }
     }
