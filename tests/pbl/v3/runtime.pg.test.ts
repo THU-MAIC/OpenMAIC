@@ -552,6 +552,25 @@ async function invoke(
   expect(tool).toBeDefined();
   return tool.execute(randomUUID(), name === 'request_skill_review' ? reviewInput(args) : args);
 }
+function assertInitialPlanPreload(
+  config: Pick<Awaited<ReturnType<typeof teachingRunnerConfig>>, 'preloadMessages'>,
+  learnerText: string,
+  planText: string,
+) {
+  const user = { role: 'user' as const, content: learnerText, timestamp: Date.now() };
+  const model = { api: 'openai-completions' as const, provider: 'openai', id: 'test-model' };
+  const frames = config.preloadMessages([user], model);
+  expect(frames.map((frame) => frame.role)).toEqual(['assistant', 'toolResult']);
+  const receipt = frames[1]!;
+  if (receipt.role !== 'toolResult' || receipt.content[0]?.type !== 'text')
+    throw new Error('Missing file read');
+  expect(JSON.parse(receipt.content[0].text)).toMatchObject({
+    path: 'PLAN.md',
+    text: planText,
+    hash: digest(planText),
+  });
+  expect(config.preloadMessages([user, ...frames], model)).toEqual([]);
+}
 async function guided(role: 'teaching' | 'plan' | 'code') {
   const current = await store.get(studyId, principal.ownerId);
   const welcome =
@@ -8244,6 +8263,8 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             await writeFile(path, 'Learner plan '.repeat(4000));
             const expanded = await teachingRunnerConfig(request);
             expect(expanded.systemPrompt).toContain('Learner plan '.repeat(4000));
+            if (active.kind === 'produce' && active.writes === 'plan')
+              assertInitialPlanPreload(expanded, text, 'Learner plan '.repeat(4000));
             expect(mocked.modelCalls).toBe(calls);
             oversizedPlanChecked = true;
           } finally {

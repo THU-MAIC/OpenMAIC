@@ -1,6 +1,6 @@
 # PBL v3 prompt-cache evidence
 
-## Current code
+## Request layout
 
 The original PR keeps reusable instructions/history ahead of changing host state:
 
@@ -13,11 +13,72 @@ authority, counts toward the input budget and is not stored as learner dialogue.
 Replayed tool-call object keys are canonicalized without changing argument values
 or array order.
 
-The request layout is the original PR layout at `4126940`, with the provider
-compatibility fix retained. No course/Skill, role-isolation, approval-gate,
+The request layout retains the original PR ordering from `4126940` and the
+provider compatibility fix. The follow-up below removes mutable PLAN data from
+the fixed head while retaining its exact version in tool history. No course/Skill, role-isolation, approval-gate,
 schema or compaction-policy changes; no deployment.
 
-## Latest later-window production replay
+## Latest follow-up: retain each exact PLAN version once
+
+A complete mutable `PLAN.md` snapshot in the fixed head invalidated the history
+prefix after an ordinary plan edit. Moving the complete file to every request
+tail instead repeatedly reprocessed unchanged text. This revision reuses an exact
+retained successful file read/write; when the current complete version is missing,
+it serializes the host's existing run-start read once through the established
+fenced preload message path. It adds no learner frame or extra model call. The
+head keeps a stable file-source reference; the tail identifies the exact retained
+version. Missing/compacted sources restore the full original snapshot. Current
+teaching instructions, feedback and approval data are never deduplicated.
+
+The **same frozen 144 production-source records** were replayed again, with a
+fresh control and candidate: **288 successful requests, zero failures/retries**.
+The original 108- and 111-record masks were frozen before this run and applied to
+both arms; newly stabilized PLAN edits were not added to the 108-row diagnostic.
+
+| Same-source group | Records/version | Earlier reported control | Fresh control | This revision |
+| --- | ---: | ---: | ---: | ---: |
+| Complete sample | 144 | 77.05% | 77.06% | **78.99%** |
+| Original stable-prefix/append-only subset | 108 | 89.35% | 89.36% | **89.25%** |
+| Broader ordinary-turn subset, including three PLAN edits | 111 | 86.92% | 86.92% | **89.25%** |
+| Prerequisite | 48 | 74.80% | 74.79% | 76.49% |
+| Course 1 | 48 | 80.97% | 80.97% | 81.01% |
+| Course 2 | 48 | 74.42% | 74.42% | 78.68% |
+
+Overall uncached input falls from **945,624 to 862,427 tokens (-8.80%)**.
+The stable subset is close, **not improved**: uncached input rises by 2,364 tokens
+(0.68%), entirely among its 29 planning requests; all other 79 records have
+identical usage. Exact-version source metadata has a small uncached per-call cost,
+and removing duplicate cached PLAN text also reduces the cached denominator.
+This explicit trade-off is retained rather than relaxing the frozen mask.
+
+A separate affected-scope replay used all 36 planner records from that same
+144-record cohort (12/course), with its own control and cache isolation:
+
+| Planner records only | Records/version | Control | This revision |
+| --- | ---: | ---: | ---: |
+| Prerequisite | 12 | 75.79% | 81.66% |
+| Course 1 | 12 | 80.66% | 80.77% |
+| Course 2 | 12 | 68.01% | 82.75% |
+| All planning records | 36 | **75.05%** | **81.69%** |
+
+Course 1 is effectively flat. These 36-only rates are separate measurements and
+are not blended into the 144-record result. The full rerun is the primary
+confirmation. Superseded raw-transport probe attempts and the correction are
+accounted for in the JSON.
+
+Teaching was checked against **`65d5ac4`, before PR #2268**, using fresh before/after
+outputs for 36 scenarios across courses 1–3 and both milestones (72 arms; no
+previous generations reused). All 36 instruction/Skill/state equivalence checks
+passed; the candidate's 12 first artifact reviews avoid final approval, and all
+12 final cycles finish after one acceptance. No newly introduced reproducible
+teaching regression was identified in these bounded scenarios. This is not a
+claim that every generated sentence is ideal or a full browser/cloud E2E test.
+Course packages, role isolation, approval gates and compaction policy are unchanged.
+
+[Source, exact totals and validation](plan-preload-cache-results.json) ·
+[144 paired numeric usage rows](plan-preload-per-request.csv).
+
+## Previous restored-layout production replay
 
 Source: production PostgreSQL `llm_calls`, through `maic-ops-prod` / `pg_query`
 (data source `openmaic_live`), joined to published-course studies and role sessions,
@@ -89,7 +150,7 @@ repeated-prefix reprocessing, backend framing, tokenization/rounding and unexpla
 cache effects; **it is not all asserted to be an application defect**. Raw estimates
 and clipping flags are in the CSV; estimated buckets sum to exact misses.
 
-| Current code                                        | All 144 | Stable-prefix 108 |
+| Previous restored layout                            | All 144 | Stable-prefix 108 |
 | --------------------------------------------------- | ------: | ----------------: |
 | Exact uncached tokens                               | 945,784 |           350,173 |
 | Estimated request-only tail                         | 267,499 |           202,283 |

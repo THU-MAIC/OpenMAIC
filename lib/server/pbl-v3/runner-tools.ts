@@ -17,8 +17,8 @@ import {
   withLearningWorkspaceAccess,
 } from '@/lib/server/sandbox/managed-workspace';
 import { randomUUID } from 'node:crypto';
-import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
-import type { Agent, AgentTool, StreamFn } from '@earendil-works/pi-agent-core';
+import { createAssistantMessageEventStream, type Message } from '@earendil-works/pi-ai';
+import type { Agent, AgentMessage, AgentTool, StreamFn } from '@earendil-works/pi-agent-core';
 import { Type, type Static, type TSchema } from 'typebox';
 import { getAgentSessionStore } from '@/lib/server/agent-runtime/store';
 import { listAgentUserMessages } from '@/lib/server/agent-runtime/user-messages';
@@ -56,6 +56,7 @@ import {
 } from './teaching-prompt';
 import { GuidedSkillReview } from './guided-review';
 import { currentTeachingContext, type TeachingHistoryWindow } from './teaching-context';
+import { PLAN_TOOL_REFERENCE, preloadInitialPlan } from './plan-tool-context';
 import {
   hasStageCompletion,
   isFinalProjectRecap,
@@ -900,6 +901,7 @@ export async function teachingRunnerConfig(input: {
   if (row.environment_id && 'reads' in stage && stage.reads.includes('plan')) {
     planText = await (await service(input.signal)).readText(row.environment_id, 'PLAN.md');
     observedFiles.add('PLAN.md');
+    if (stage.kind === 'produce' && stage.writes === 'plan') observedText.set('PLAN.md', planText);
   }
   const promptInput: TeachingPromptInput = {
     definition: project.definition,
@@ -965,6 +967,24 @@ export async function teachingRunnerConfig(input: {
   });
   const initialPrompt = currentPromptInput();
   const { systemPrompt, initialContext } = renderTeachingPrompt(initialPrompt);
+  const historyWindow: TeachingHistoryWindow = {
+    stageKey: bound.stage_key,
+    initialContext,
+    studentTurns: bound.feedback_seq,
+    automaticEntry: latest?.pblOpening === true,
+    ...(stage.kind === 'produce' && stage.writes === 'plan' && planText !== undefined
+      ? {
+          initialPlan: {
+            text: planText,
+            literalPrompt: systemPrompt,
+            referencePrompt: renderTeachingPrompt({
+              ...initialPrompt,
+              planText: PLAN_TOOL_REFERENCE,
+            }).systemPrompt,
+          },
+        }
+      : {}),
+  };
   return {
     tools,
     systemPrompt,
@@ -1020,12 +1040,21 @@ export async function teachingRunnerConfig(input: {
         })(),
         input.signal,
       ),
-    historyWindow: {
-      stageKey: bound.stage_key,
-      initialContext,
-      studentTurns: bound.feedback_seq,
-      automaticEntry: latest?.pblOpening === true,
-    },
+    historyWindow,
+    preloadMessages: (messages: AgentMessage[], model: Parameters<typeof preloadInitialPlan>[2]) =>
+      preloadInitialPlan(
+        currentTeachingContext(
+          {
+            systemPrompt,
+            messages: messages.filter((message): message is Message =>
+              ['user', 'assistant', 'toolResult'].includes(message.role),
+            ),
+          },
+          historyWindow,
+        ),
+        historyWindow.initialPlan,
+        model,
+      ),
   };
 }
 
