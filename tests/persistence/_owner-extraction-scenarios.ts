@@ -2181,6 +2181,7 @@ export async function chapterRecognitionScenario(
   const models = await import('@/lib/server/model-config/llm');
   const runtime = await import('@/lib/server/model-config/runtime');
   const { extractMinerUResult } = await import('@/lib/pdf/mineru-parser');
+  const { getChapterSource, withChapterSource } = await import('@/lib/document/chapter-source');
   const { parsedPdfToDocumentArtifact } = await import('@/lib/document/pdf-compat');
   const { readMaterialExtractionResult } = await import('@/lib/server/materials/extraction');
   const recognition = await import('@/lib/server/material-extraction/chapters');
@@ -2188,16 +2189,18 @@ export async function chapterRecognitionScenario(
   const chapters = [
     { title: 'First', startPage: 1, sections: [{ title: 'Section', startPage: 2 }] },
   ];
-  const parsed = () =>
-    extractMinerUResult({
+  const parsed = () => {
+    const result = extractMinerUResult({
       md_content: '# First\n\nBook text',
-      content_list: Array.from({ length: 60 }, (_, page_idx) => ({
+      content_list: Array.from({ length: 50 }, (_, page_idx) => ({
         type: 'text',
         text: page_idx ? 'Body' : 'First',
         page_idx,
         ...(page_idx ? {} : { text_level: 1 }),
       })),
     });
+    return withChapterSource(result, { ...getChapterSource(result)!, physicalPageCount: 100 });
+  };
   const controller = new AbortController();
   const resolve = vi.spyOn(models, 'resolveStageModel').mockResolvedValue({ model: {} } as never);
   const workspace = vi.spyOn(runtime, 'backgroundWorkspaceId').mockResolvedValue(ACCOUNT);
@@ -2268,6 +2271,8 @@ export async function chapterRecognitionScenario(
       const stored = await stateOf(h, id);
       expect(stored.status).toBe('done');
       expect(stored.extraction_result?.chapters).toEqual(mode === 'success' ? chapters : undefined);
+      expect(stored.extraction_result?.chapterPageCount).toBe(mode === 'success' ? 100 : undefined);
+      expect(stored.extraction_result?.stats.pages).toBe(50);
       expect(JSON.stringify(stored.extraction_result)).not.toContain('frontPages');
       if (mode === 'success') {
         await seedSource(h, 'chapters-reused', { bytes: h.sources.get(id)! });
@@ -2275,6 +2280,8 @@ export async function chapterRecognitionScenario(
         await runNextOwnerExtraction(h.deps({ providers }));
         expect((await stateOf(h, 'chapters-reused')).extraction_result).toMatchObject({
           chapters,
+          chapterPageCount: 100,
+          stats: { pages: 50 },
           reusedFrom: id,
         });
         const { readOwnerMaterialText } =
@@ -2290,7 +2297,7 @@ export async function chapterRecognitionScenario(
           text: '# First\n\nBook text',
           revision: reused.revision,
           chapters,
-          pageCount: 60,
+          pageCount: 100,
         });
         expect(call).toHaveBeenCalledTimes(1);
       }

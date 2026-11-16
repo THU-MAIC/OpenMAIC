@@ -116,6 +116,8 @@ export interface OwnerExtractionDerivative {
 /** The latest successful extraction of a source, as `extraction_result` stores it. */
 export interface OwnerExtractionResult {
   chapters?: MaterialChapter[];
+  /** Page coordinate range used to recognize/validate chapters; not reported-page stats. */
+  chapterPageCount?: number;
   /** Changes whenever the result does: the token of the claim that published it. */
   revision: string;
   text: {

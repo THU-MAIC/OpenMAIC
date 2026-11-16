@@ -69,7 +69,7 @@ export interface ChapterRecognitionInput {
 /** Optional enrichment after provider success, outside every provider fallback loop. */
 export async function recognizeMaterialChapters(
   input: ChapterRecognitionInput,
-): Promise<MaterialChapter[] | undefined> {
+): Promise<{ chapters: MaterialChapter[]; chapterPageCount: number } | undefined> {
   const mime = normalizeDocumentMimeType({ mimeType: input.mimeType });
   const format = Object.entries(DOCUMENT_MIME_TYPES).find(([, value]) => value === mime)?.[0];
   if (
@@ -126,13 +126,14 @@ export async function recognizeMaterialChapters(
       return decodeChapterResponse(result.text, pages);
     };
     // Also bounds model configuration lookup and providers that ignore abort.
-    return await new Promise<MaterialChapter[]>((resolve, reject) => {
+    const chapters = await new Promise<MaterialChapter[]>((resolve, reject) => {
       const abort = () => reject(signal.reason);
       signal.addEventListener('abort', abort, { once: true });
       work()
         .then(resolve, reject)
         .finally(() => signal.removeEventListener('abort', abort));
     });
+    return { chapters, chapterPageCount: pages };
   } catch (error) {
     input.signal?.throwIfAborted();
     const reason = timeout.signal.aborted

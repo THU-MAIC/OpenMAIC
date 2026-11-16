@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { buildMaterialTools } from '@/lib/server/agent-runtime/material-tools';
 import type { OwnerMaterialEntry } from '@/lib/persistence/session-material-links';
 import { readOwnerMaterialText } from '@/lib/server/materials/owner-material-text';
+import { locateMaterialChapters } from '@/lib/server/agent-runtime/material-chapters';
 
 const state = vi.hoisted(() => ({
   inTransaction: false,
@@ -221,6 +222,7 @@ it('returns chapters and page count from the same fresh fenced result as project
       ...result,
       chapters,
       stats: { pages: 10 },
+      chapterPageCount: 20,
       reusedFrom: 'donor',
     },
   };
@@ -232,13 +234,14 @@ it('returns chapters and page count from the same fresh fenced result as project
       revision: 'old',
       chapters: [{ title: 'Old', startPage: 1, sections: [] }],
       stats: { pages: 3 },
+      chapterPageCount: 8,
     },
   });
   expect(read).toEqual({
     text: '![x](material:own-image)\n# Fresh',
     revision: 'new-revision',
     chapters,
-    pageCount: 10,
+    pageCount: 20,
   });
   const entry = {
     ...location,
@@ -264,6 +267,36 @@ it('returns chapters and page count from the same fresh fenced result as project
   } as never);
   expect((next.content[0] as { text: string }).text.split('\n')[3]).toBe('Fresh');
 });
+
+it.each([100, undefined])(
+  'uses chapter page coordinates when present and retains legacy stats fallback (%s)',
+  async (chapterPageCount) => {
+    const text =
+      'front matter\n'.repeat(30) +
+      '# Repeated\n' +
+      'body\n'.repeat(90) +
+      '# Repeated\n' +
+      'tail\n'.repeat(30);
+    const chapters = [{ title: 'Repeated', startPage: 41, sections: [] }];
+    const stored = {
+      ...result,
+      chapters,
+      stats: { pages: 50 },
+      ...(chapterPageCount === undefined ? {} : { chapterPageCount }),
+    };
+    state.row = { owner_id: 'user:alice', deleted_at: null, extraction_result: stored };
+    state.parse.mockResolvedValue(text);
+    const read = await readOwnerMaterialText({ ...location, extractionResult: stored });
+    expect(read?.pageCount).toBe(chapterPageCount ?? 50);
+    expect(stored.stats.pages).toBe(50);
+    const located = locateMaterialChapters(read!.text, read!.chapters!, read!.pageCount);
+    expect(located[0].offset).toBe(
+      chapterPageCount ? text.indexOf('Repeated') : text.lastIndexOf('Repeated'),
+    );
+    if (chapterPageCount === undefined)
+      expect(located).toEqual(locateMaterialChapters(text, chapters, 50));
+  },
+);
 
 it('passes classic text through the resolver without chapter metadata', async () => {
   const { setMaterialByteStoreForTests } = await import('@/lib/server/materials/bytes');

@@ -356,7 +356,7 @@ export async function runClaimedOwnerExtraction(
   if (extracted.kind === 'reused') return extracted.outcome;
   const outcome = extracted.outcome;
   if (state.lost) return 'not-authorized';
-  const chapters = await recognizeMaterialChapters({
+  const chapterRecognition = await recognizeMaterialChapters({
     source: getChapterSource(outcome),
     providerId: outcome.extractor.id,
     pageCount: outcome.stats.pages ?? 0,
@@ -428,7 +428,7 @@ export async function runClaimedOwnerExtraction(
         },
         extractor: { ...outcome.extractor, options },
         stats: { ...outcome.stats },
-        ...(chapters ? { chapters } : {}),
+        ...chapterRecognition,
         derivatives,
       },
       now(),
@@ -563,6 +563,9 @@ async function publishReused(
     extractor: hit.result.extractor,
     stats: hit.result.stats,
     ...(hit.result.chapters ? { chapters: hit.result.chapters } : {}),
+    ...(hit.result.chapterPageCount === undefined
+      ? {}
+      : { chapterPageCount: hit.result.chapterPageCount }),
     derivatives: hit.result.derivatives.map((derivative, index) => ({
       ...derivative,
       id: createId(),

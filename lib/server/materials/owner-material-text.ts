@@ -45,7 +45,10 @@ export interface OwnerMaterialText {
   pageCount?: number;
 }
 
-type TextResult = Pick<OwnerExtractionResult, 'revision' | 'text' | 'derivatives' | 'chapters'> &
+type TextResult = Pick<
+  OwnerExtractionResult,
+  'revision' | 'text' | 'derivatives' | 'chapters' | 'chapterPageCount'
+> &
   Partial<Pick<OwnerExtractionResult, 'stats'>>;
 
 /** What the caller read of the source: its id, its owner then, and its result then. */
@@ -84,7 +87,9 @@ async function textOf(
     ...(result.chapters?.length
       ? {
           chapters: result.chapters,
-          pageCount: typeof result.stats?.pages === 'number' ? result.stats.pages : undefined,
+          pageCount:
+            result.chapterPageCount ??
+            (typeof result.stats?.pages === 'number' ? result.stats.pages : undefined),
         }
       : {}),
   };

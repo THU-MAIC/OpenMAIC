@@ -242,9 +242,12 @@ describe('optional chapter recognition', () => {
     async (format) => {
       expect(
         await recognizeMaterialChapters({ ...input, mimeType: DOCUMENT_MIME_TYPES[format] }),
-      ).toEqual([
-        { title: 'Chapter', startPage: 1, sections: [{ title: 'Section', startPage: 2 }] },
-      ]);
+      ).toEqual({
+        chapters: [
+          { title: 'Chapter', startPage: 1, sections: [{ title: 'Section', startPage: 2 }] },
+        ],
+        chapterPageCount: 100,
+      });
       expect(resolveStageModel).toHaveBeenCalledWith({
         stage: 'material-chapters',
         workspaceId: 'owner',
@@ -385,7 +388,10 @@ describe('chapter source page bounds', () => {
         source: evidence,
         pageCount: artifact.metadata.pageCount!,
       }),
-    ).toEqual([{ title: 'Last chapter', startPage: heading, sections: [] }]);
+    ).toEqual({
+      chapters: [{ title: 'Last chapter', startPage: heading, sections: [] }],
+      chapterPageCount: pages,
+    });
     expect(vi.mocked(callLLM).mock.calls[0][0].prompt).toContain(`"total_units":${pages}`);
   });
 
@@ -412,7 +418,10 @@ describe('chapter source page bounds', () => {
           source: evidence,
           pageCount: parsed.metadata!.pageCount,
         }),
-      ).toEqual([{ title: 'Last chapter', startPage: 56, sections: [] }]);
+      ).toEqual({
+        chapters: [{ title: 'Last chapter', startPage: 56, sections: [] }],
+        chapterPageCount: 56,
+      });
       expect(vi.mocked(callLLM).mock.calls[0][0].prompt).toContain('"total_units":56');
     },
   );
