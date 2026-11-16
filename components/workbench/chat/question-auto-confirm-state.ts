@@ -202,26 +202,40 @@ export function createAutoConfirmTimer(options: {
 }
 
 /**
+ * Marks the auto-confirm switch. Pressing or keying it is a choice ABOUT the
+ * countdown, not an answer to the question, so it never counts as the
+ * interaction that stops it.
+ */
+export const AUTO_CONFIRM_SWITCH_ATTR = 'data-auto-confirm-switch';
+
+function onSwitch(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest(`[${AUTO_CONFIRM_SWITCH_ATTR}]`) !== null;
+}
+
+/**
  * The countdown for one question's form.
  *
- * Returns null while the question may not auto-confirm (see `canAutoConfirm`),
- * otherwise the countdown's state and the handlers the form wires to its own
- * frame. `onFire` receives the recommended option; the form sends it as a click
- * would.
+ * Null when the question has no recommendation (there is nothing to
+ * auto-confirm, so no switch either). Otherwise the preference, its setter for
+ * the form's switch, and — while the question may auto-confirm — the running
+ * countdown. Turning the switch off ends the countdown (the preference is off);
+ * turning it back on starts it again from the top, unless the user already
+ * touched this question.
  */
 export function useAutoConfirmCountdown(input: {
   node: ChatNode;
   locked: boolean;
   onFire: (option: QuestionOption) => void;
 }): {
-  readonly snapshot: AutoConfirmSnapshot;
   readonly option: QuestionOption;
+  readonly enabled: boolean;
+  readonly setEnabled: (enabled: boolean) => void;
+  /** The running or paused countdown, or null while it may not run. */
+  readonly snapshot: AutoConfirmSnapshot | null;
   readonly onPointerEnter: () => void;
   readonly onPointerLeave: () => void;
-  /** A deliberate press or key inside the form: the countdown is over. */
-  readonly stop: () => void;
-  /** Turn the preference off (and so this countdown). */
-  readonly turnOff: () => void;
+  /** A deliberate press inside the form: the countdown is over for this question. */
+  readonly onPointerDownCapture: (event: { target: EventTarget | null }) => void;
 } | null {
   const { node, locked, onFire } = input;
   const sessionId = useWorkbenchStore((s) => s.sessionId);
@@ -264,7 +278,7 @@ export function useAutoConfirmCountdown(input: {
     setSnapshot(timer.snapshot());
     const onVisibility = () => (hidden() ? timer.pause('hidden') : timer.resume('hidden'));
     const onKey = (event: KeyboardEvent) => {
-      if (isDeliberateKey(event.key)) stop();
+      if (isDeliberateKey(event.key) && !onSwitch(event.target)) stop();
     };
     // IME and paste can change an input without a key the page sees first.
     const onInput = () => stop();
@@ -283,16 +297,17 @@ export function useAutoConfirmCountdown(input: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eligible, optionId, key, stop]);
 
-  if (!eligible || !option || !snapshot || snapshot.phase === 'cancelled') return null;
+  if (!option) return null;
+  const counting = eligible && snapshot !== null && snapshot.phase !== 'cancelled';
   return {
-    snapshot,
     option,
+    enabled,
+    setEnabled,
+    snapshot: counting ? snapshot : null,
     onPointerEnter: () => timerRef.current?.pause('hover'),
     onPointerLeave: () => timerRef.current?.resume('hover'),
-    stop,
-    turnOff: () => {
-      stop();
-      setEnabled(false);
+    onPointerDownCapture: (event) => {
+      if (!onSwitch(event.target)) stop();
     },
   };
 }

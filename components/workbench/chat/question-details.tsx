@@ -29,10 +29,18 @@ export function QuestionDetails({
   // Short material needs no toggle and no fade: measured, not guessed from the text.
   const bodyRef = useRef<HTMLDivElement>(null);
   const [overflows, setOverflows] = useState(true);
+  // Re-measured whenever the block is resized too: a pane narrowed after the
+  // first paint can make the same text overflow, and it must not stay clipped
+  // with no way to open it.
   useLayoutEffect(() => {
     const el = bodyRef.current;
     if (!el || open) return;
-    setOverflows(el.scrollHeight > el.clientHeight + 1);
+    const measure = () => setOverflows(el.scrollHeight > el.clientHeight + 1);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
   }, [open, text]);
   return (
     <div

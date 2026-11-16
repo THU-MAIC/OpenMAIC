@@ -297,7 +297,7 @@ export const wbStyles = {
     // A way out, not a competing action: text weight, no frame.
     dismiss:
       'inline-flex cursor-pointer items-center rounded-[var(--wb-radius-sm)] border-0 bg-transparent px-1.5 py-1 text-[length:var(--wb-text-sm)] text-[var(--wb-text-muted)] transition-colors duration-[var(--wb-duration-base)] hover:text-[var(--wb-text)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus-ring)] motion-reduce:transition-none',
-    keys: 'ml-auto text-[length:var(--wb-text-xs)] leading-[17px] text-[var(--wb-text-faint)]',
+    keys: 'text-[length:var(--wb-text-xs)] leading-[17px] text-[var(--wb-text-faint)]',
     // The agent's recommendation: a quiet tag on its row, which also carries the
     // seconds while the auto-confirm countdown runs.
     recommended:
@@ -306,9 +306,16 @@ export const wbStyles = {
     // edge. Steps once a tick; reduced motion drops the easing between steps.
     countdownBar:
       'pointer-events-none absolute bottom-0 left-0 h-[2px] rounded-[var(--wb-radius-full)] bg-[var(--wb-accent)] opacity-60 transition-[width] duration-300 ease-linear motion-reduce:transition-none',
-    auto: 'ml-auto flex min-w-0 items-center gap-1.5 text-[length:var(--wb-text-xs)] leading-[17px] text-[var(--wb-text-muted)]',
-    autoOff:
-      'cursor-pointer rounded-[var(--wb-radius-sm)] border-0 bg-transparent p-0 text-inherit hover:text-[var(--wb-text)] hover:underline focus-visible:outline-none focus-visible:shadow-[var(--wb-focus-ring)]',
+    // The footer's right-hand group: the way out, then the primary action.
+    actions: 'ml-auto flex shrink-0 items-center gap-2',
+    // "Auto-confirm": a compact switch with its label, quiet like the hint it
+    // replaces; the track carries the state.
+    autoSwitch:
+      'inline-flex cursor-pointer items-center gap-1.5 rounded-[var(--wb-radius-sm)] border-0 bg-transparent px-0.5 py-0.5 text-[length:var(--wb-text-xs)] leading-[17px] text-[var(--wb-text-muted)] hover:text-[var(--wb-text)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus-ring)]',
+    autoTrack:
+      'relative inline-flex h-3.5 w-6 shrink-0 items-center rounded-[var(--wb-radius-full)] bg-[var(--wb-line)] transition-colors duration-[var(--wb-duration-base)] motion-reduce:transition-none data-[on=true]:bg-[var(--wb-accent)] [&[data-on=true]>span]:translate-x-[10px]',
+    autoThumb:
+      'ml-[2px] block size-2.5 rounded-full bg-white shadow-sm transition-transform duration-[var(--wb-duration-base)] motion-reduce:transition-none',
   },
   actionCluster: {
     root: 'flex flex-col overflow-hidden rounded-[var(--wb-radius-md)] border border-[var(--wb-line)] bg-[var(--wb-surface)]',

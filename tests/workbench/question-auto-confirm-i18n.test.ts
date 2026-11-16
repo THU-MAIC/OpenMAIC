@@ -12,9 +12,7 @@ import { workbenchEn, workbenchZh } from '@/lib/i18n/workbench';
 const QUESTION_KEYS = [
   'dismiss',
   'recommended',
-  'autoConfirmIn',
-  'autoConfirmPaused',
-  'autoConfirmOff',
+  'autoConfirm',
   'autoConfirmed',
   'showDetails',
   'hideDetails',
@@ -35,7 +33,6 @@ describe('auto-confirm copy', () => {
       for (const key of QUESTION_KEYS) {
         expect(String(base.question[key]).trim()).not.toBe('');
       }
-      expect(base.question.autoConfirmIn).toContain('{{seconds}}');
     }
     // The form's way out hands the composer back; it no longer reads as giving up.
     expect(workbenchEn.question.dismiss).toBe('Collapse');
@@ -49,7 +46,6 @@ describe('auto-confirm copy', () => {
       for (const key of QUESTION_KEYS) {
         expect(typeof question[key], `${file} question.${key}`).toBe('string');
       }
-      expect(String(question.autoConfirmIn)).toContain('{{seconds}}');
     }
   });
 

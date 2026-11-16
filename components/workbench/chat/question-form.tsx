@@ -32,7 +32,9 @@
  * When the agent marked an option as recommended, the form may count down and
  * send that option for a user who does not respond
  * (`question-auto-confirm-state.ts`). The countdown lives on the recommended
- * row and in the footer; any deliberate input inside the form stops it.
+ * row; the footer's "Auto-confirm" switch is the user's preference, shown only
+ * when there is a recommendation to act on. Any deliberate input inside the
+ * form, other than that switch, stops the countdown for this question.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -47,7 +49,11 @@ import { wbStyles as styles } from './chat-styles';
 import { TextBlock } from './text-block';
 import { QuestionDetails } from './question-details';
 import { editingKindFor, questionFormKeyAction, useQuestionForm } from './question-form-state';
-import { countdownSeconds, useAutoConfirmCountdown } from './question-auto-confirm-state';
+import {
+  AUTO_CONFIRM_SWITCH_ATTR,
+  countdownSeconds,
+  useAutoConfirmCountdown,
+} from './question-auto-confirm-state';
 import {
   AUTO_CONFIRM_SECONDS,
   useQuestionAutoConfirm,
@@ -98,11 +104,9 @@ export function QuestionForm({
       });
     },
   });
-  const paused = countdown?.snapshot.phase === 'paused';
-  const seconds = countdown ? countdownSeconds(countdown.snapshot.remainingMs) : 0;
-  const elapsed = countdown
-    ? 1 - countdown.snapshot.remainingMs / (AUTO_CONFIRM_SECONDS * 1000)
-    : 0;
+  const running = countdown?.snapshot ?? null;
+  const seconds = running ? countdownSeconds(running.remainingMs) : 0;
+  const elapsed = running ? 1 - running.remainingMs / (AUTO_CONFIRM_SECONDS * 1000) : 0;
   const rowRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const otherRef = useRef<HTMLInputElement | null>(null);
   const openRef = useRef<HTMLTextAreaElement | null>(null);
@@ -151,11 +155,11 @@ export function QuestionForm({
       // The workbench's convention for "Escape is mine": keeps the double-Escape
       // run-stop from firing underneath the form.
       data-esc-owner=""
-      data-auto-confirm={countdown ? countdown.snapshot.phase : undefined}
+      data-auto-confirm={running ? running.phase : undefined}
       aria-label={t('workbench.question.waiting')}
       onPointerEnter={countdown?.onPointerEnter}
       onPointerLeave={countdown?.onPointerLeave}
-      onPointerDownCapture={countdown?.stop}
+      onPointerDownCapture={countdown?.onPointerDownCapture}
       onKeyDown={(event) => {
         const action = questionFormKeyAction({
           key: event.key,
@@ -257,7 +261,7 @@ export function QuestionForm({
                       data-testid="workbench-question-form-recommended"
                     >
                       {t('workbench.question.recommended')}
-                      {countdown && countdown.option.id === row.id ? (
+                      {running && countdown?.option.id === row.id ? (
                         <span className="tabular-nums" aria-hidden="true">
                           {' · '}
                           {seconds}s
@@ -266,7 +270,7 @@ export function QuestionForm({
                     </span>
                   ) : null}
                 </button>
-                {countdown && row.kind === 'option' && countdown.option.id === row.id ? (
+                {running && row.kind === 'option' && countdown?.option.id === row.id ? (
                   <span
                     aria-hidden="true"
                     className={styles.questionForm.countdownBar}
@@ -292,47 +296,51 @@ export function QuestionForm({
       )}
 
       <div className={styles.questionForm.footer}>
-        <button
-          ref={submitRef}
-          type="button"
-          data-testid="workbench-question-form-submit"
-          data-highlight={mode !== 'open' && form.highlight >= rows.length ? 'true' : 'false'}
-          disabled={!form.canSubmit}
-          className={styles.questionForm.submit}
-          onClick={form.submit}
-        >
-          {t('workbench.question.submit')}
-        </button>
-        <button
-          type="button"
-          data-testid="workbench-question-form-dismiss"
-          className={styles.questionForm.dismiss}
-          onClick={onDismiss}
-        >
-          {t('workbench.question.dismiss')}
-        </button>
         {countdown ? (
-          <span className={styles.questionForm.auto} data-testid="workbench-question-auto-confirm">
-            <span role="timer" aria-live="off">
-              {paused
-                ? t('workbench.question.autoConfirmPaused')
-                : t('workbench.question.autoConfirmIn', { seconds })}
-            </span>
-            <span aria-hidden="true">·</span>
-            <button
-              type="button"
-              data-testid="workbench-question-auto-confirm-off"
-              className={styles.questionForm.autoOff}
-              onClick={countdown.turnOff}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={countdown.enabled}
+            {...{ [AUTO_CONFIRM_SWITCH_ATTR]: '' }}
+            data-testid="workbench-question-auto-confirm"
+            className={styles.questionForm.autoSwitch}
+            onClick={() => countdown.setEnabled(!countdown.enabled)}
+          >
+            <span
+              aria-hidden="true"
+              className={styles.questionForm.autoTrack}
+              data-on={countdown.enabled ? 'true' : 'false'}
             >
-              {t('workbench.question.autoConfirmOff')}
-            </button>
-          </span>
+              <span className={styles.questionForm.autoThumb} />
+            </span>
+            {t('workbench.question.autoConfirm')}
+          </button>
         ) : (
           <span className={styles.questionForm.keys} aria-hidden="true">
             {t(embedded ? 'workbench.question.orAnswerInChat' : 'workbench.question.keyHint')}
           </span>
         )}
+        <span className={styles.questionForm.actions}>
+          <button
+            type="button"
+            data-testid="workbench-question-form-dismiss"
+            className={styles.questionForm.dismiss}
+            onClick={onDismiss}
+          >
+            {t('workbench.question.dismiss')}
+          </button>
+          <button
+            ref={submitRef}
+            type="button"
+            data-testid="workbench-question-form-submit"
+            data-highlight={mode !== 'open' && form.highlight >= rows.length ? 'true' : 'false'}
+            disabled={!form.canSubmit}
+            className={styles.questionForm.submit}
+            onClick={form.submit}
+          >
+            {t('workbench.question.submit')}
+          </button>
+        </span>
       </div>
     </section>
   );

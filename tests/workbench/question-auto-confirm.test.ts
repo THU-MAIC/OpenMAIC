@@ -210,6 +210,14 @@ describe('the answer form', () => {
   }
 
   const form = () => container.querySelector('[data-testid="workbench-question-form"]');
+  const autoSwitch = () =>
+    container.querySelector<HTMLButtonElement>('[data-testid="workbench-question-auto-confirm"]');
+  /** A real press on the switch: pointerdown (which bubbles through the form), then click. */
+  const pressSwitch = async () =>
+    act(async () => {
+      autoSwitch()?.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      autoSwitch()?.click();
+    });
   const advance = async (ms: number) => act(async () => void vi.advanceTimersByTime(ms));
 
   beforeEach(() => {
@@ -235,9 +243,11 @@ describe('the answer form', () => {
   it('counts down on a live question and sends what clicking the recommendation would', async () => {
     await mount();
     expect(form()?.getAttribute('data-auto-confirm')).toBe('running');
+    // The countdown lives on the recommended row.
     expect(
-      container.querySelector('[data-testid="workbench-question-auto-confirm"]')?.textContent,
-    ).toContain(String(AUTO_CONFIRM_SECONDS));
+      container.querySelector('[data-testid="workbench-question-form-recommended"]')?.textContent,
+    ).toContain(`${AUTO_CONFIRM_SECONDS}s`);
+    expect(autoSwitch()?.getAttribute('aria-checked')).toBe('true');
     await advance(DURATION);
     expect(answers).toEqual(['Go ahead']);
     expect(useQuestionAutoConfirm.getState().autoConfirmed).toContain(key);
@@ -256,17 +266,19 @@ describe('the answer form', () => {
     expect(answers).toEqual([]);
   });
 
-  it('does not count down without a recommendation', async () => {
+  it('does not count down, or offer the switch, without a recommendation', async () => {
     await mount(question({ questionOptions: [{ id: 'a', label: 'A' }] }));
     expect(form()?.getAttribute('data-auto-confirm')).toBeNull();
+    expect(autoSwitch()).toBeNull();
     await advance(DURATION * 2);
     expect(answers).toEqual([]);
   });
 
-  it('does not count down with the preference off', async () => {
+  it('does not count down with the preference off, and shows the switch off', async () => {
     useSettingsStore.setState({ autoConfirmRecommendedAnswer: false });
     await mount();
     expect(form()?.getAttribute('data-auto-confirm')).toBeNull();
+    expect(autoSwitch()?.getAttribute('aria-checked')).toBe('false');
     await advance(DURATION * 2);
     expect(answers).toEqual([]);
   });
@@ -314,15 +326,54 @@ describe('the answer form', () => {
     expect(answers).toEqual(['Go ahead']);
   });
 
-  it('turns the preference off from the form', async () => {
+  it('switching off cancels the countdown at once and persists the preference', async () => {
     await mount();
-    const off = container.querySelector<HTMLButtonElement>(
-      '[data-testid="workbench-question-auto-confirm-off"]',
-    );
-    await act(async () => off?.click());
+    await advance(3000);
+    await pressSwitch();
     expect(useSettingsStore.getState().autoConfirmRecommendedAnswer).toBe(false);
+    expect(form()?.getAttribute('data-auto-confirm')).toBeNull();
+    expect(autoSwitch()?.getAttribute('aria-checked')).toBe('false');
     await advance(DURATION * 2);
     expect(answers).toEqual([]);
+  });
+
+  it('switching back on restarts the countdown when the question is untouched', async () => {
+    await mount();
+    await advance(5000);
+    await pressSwitch();
+    await advance(DURATION);
+    await pressSwitch();
+    expect(useSettingsStore.getState().autoConfirmRecommendedAnswer).toBe(true);
+    expect(form()?.getAttribute('data-auto-confirm')).toBe('running');
+    // From the top, not from where it was switched off.
+    await advance(DURATION - 1000);
+    expect(answers).toEqual([]);
+    await advance(1000);
+    expect(answers).toEqual(['Go ahead']);
+  });
+
+  it('switching on does not restart a countdown the user already stopped', async () => {
+    useSettingsStore.setState({ autoConfirmRecommendedAnswer: false });
+    await mount();
+    await act(async () => {
+      form()
+        ?.querySelector('[data-testid="workbench-question-form-option-change"]')
+        ?.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    });
+    await pressSwitch();
+    expect(useSettingsStore.getState().autoConfirmRecommendedAnswer).toBe(true);
+    expect(form()?.getAttribute('data-auto-confirm')).toBeNull();
+    await advance(DURATION * 2);
+    expect(answers).toEqual([]);
+  });
+
+  it('a key on the switch is not an interaction that stops the countdown', async () => {
+    await mount();
+    await act(async () => {
+      autoSwitch()?.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    });
+    await advance(DURATION);
+    expect(answers).toEqual(['Go ahead']);
   });
 
   it('labels the answered card as auto-selected', async () => {
