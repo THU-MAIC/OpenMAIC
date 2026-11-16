@@ -549,6 +549,7 @@ for (const [target, key] of [
     const fixture = await project(page, learningEvents, {
       application: false,
       guideCompleted: true,
+      finishedWork: 'Save complete conversations and restore them after restarting. '.repeat(30),
       openingText:
         'Opening background.\n\n'.repeat(60) +
         (target === 'reply link' ? '[Read more](https://example.test/guide)' : ''),
@@ -559,7 +560,13 @@ for (const [target, key] of [
       target === 'reply link'
         ? viewport.getByRole('link', { name: 'Read more', exact: true })
         : page.locator('#pbl-project-overview summary');
-    await control.focus();
+    // Start with the actual keyboard route through an overview taller than the
+    // viewport, then Tab to the reply link. This establishes real scroll events
+    // before Space at the tail, rather than treating programmatic focus as follow.
+    await page.locator('#pbl-project-overview summary').focus();
+    await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+    if (target === 'reply link') await page.keyboard.press('Tab');
+    await expect(control).toBeFocused();
     await page.keyboard.press(key);
     const distance = () =>
       viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);

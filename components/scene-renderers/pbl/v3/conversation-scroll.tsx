@@ -55,9 +55,8 @@ export function ConversationViewport({
   const releaseOverview = () => {
     if (!readingOverview.current) return;
     readingOverview.current = false;
-    // Let the gesture choose the position; do not jump to the tail on a wheel
-    // or touch gesture that only starts reading the opening reply.
-    stopScroll();
+    // Leave the actual gesture to the library. Do not stop existing following
+    // when focus already reached the tail and the gesture cannot scroll further.
   };
   useLayoutEffect(() => {
     if (previous.current !== sent || (readingOverview.current && !overviewEligible)) {
