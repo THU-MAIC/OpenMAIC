@@ -24,7 +24,13 @@ import { COURSE_STAGE_ID_DESCRIPTION } from './course-stage';
 import type { CourseToolDeps } from './course-tools';
 import { runStageMutation } from './mutation-fence';
 import { shiftCourseOrders } from './course-edit/tools';
-import { createGenerationAiCallFactory, sceneContentStage } from './generation-ai-call';
+import {
+  createGenerationAiCallFactory,
+  resolveVisionImages,
+  sceneContentStage,
+  type VisionAssetReader,
+  type VisionImage,
+} from './generation-ai-call';
 import {
   describeNarrationVoice,
   formatTtsFailureTally,
@@ -132,6 +138,10 @@ type ActionGenerator = typeof generateSceneActions;
 export interface GenerationToolDeps extends CourseToolDeps {
   aiCall?: AICallFn;
   generateActions?: ActionGenerator;
+  /** Tests: force vision on or off instead of asking the routed model. */
+  visionEnabled?: boolean;
+  /** Tests: read page media bytes for vision instead of the asset pool. */
+  readVisionAsset?: VisionAssetReader;
 }
 
 function sceneIdFor(scenes: readonly Scene[], order: number) {
@@ -284,7 +294,10 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
     abortSignal: deps.abortSignal,
     ownerId: deps.ownerId,
   });
-  const aiCallFor = (stage: Parameters<typeof routed>[0]) => deps.aiCall ?? routed(stage);
+  const aiCallFor = (
+    stage: Parameters<typeof routed>[0],
+    onVisionCall?: Parameters<typeof routed>[1],
+  ) => deps.aiCall ?? routed(stage, onVisionCall);
   const actionGenerator = deps.generateActions ?? generateSceneActions;
 
   const generateScene: AgentTool<typeof SceneParams> = {
@@ -453,12 +466,53 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
       const agents = doc.stage.generatedAgentConfigs;
       let content: Awaited<ReturnType<typeof generateSceneContent>>;
       let contentFailure: SceneContentFailureCode | undefined;
+      let visionFallbackIds: string[] = [];
+      // Set when the content call's vision request failed and its text retry
+      // wrote the page; the last call decides, as its reply is the one kept.
+      let visionCallFellBack = false;
       try {
-        content = await generateSceneContent(outline, aiCallFor(sceneContentStage(params.type)), {
+        const contentStage = sceneContentStage(params.type);
+        // The content model sees page media as images when its routed model
+        // accepts them, so it can place and annotate them by what they show.
+        // An injected aiCall (tests) keeps the text-only contract unless the
+        // test turns vision on.
+        // Only slide generation consumes page media; other page types skip
+        // the reads entirely.
+        const visionWanted =
+          assignedImages.length > 0 &&
+          (params.type ?? 'slide') === 'slide' &&
+          (deps.visionEnabled ?? (!deps.aiCall && (await routed.supportsVision(contentStage))));
+        // Resolve before prompt assembly, as classic generation does: an image
+        // the prompt marks "[see attached]" must actually be attached. An image
+        // that does not resolve is described in text by the generator.
+        let resolvedVisionImages: VisionImage[] | undefined;
+        if (visionWanted) {
+          resolvedVisionImages = await resolveVisionImages(
+            assignedImages.map((image) => ({
+              id: image.id,
+              src: imageMapping[image.id],
+              ...(image.width ? { width: image.width } : {}),
+              ...(image.height ? { height: image.height } : {}),
+            })),
+            deps.ownerId,
+            deps.readVisionAsset,
+            { signal: signal ?? deps.abortSignal },
+          );
+          const resolvedIds = new Set(resolvedVisionImages.map((image) => image.id));
+          visionFallbackIds = assignedImages
+            .filter((image) => !resolvedIds.has(image.id))
+            .map((image) => image.id);
+        }
+        const visionEnabled = visionWanted;
+        const contentCall = aiCallFor(contentStage, (textFallback) => {
+          visionCallFellBack = textFallback;
+        });
+        content = await generateSceneContent(outline, contentCall, {
           agents,
           languageDirective: doc.stage.languageDirective ?? '',
           allowProceduralSkill: true,
-          ...(assignedImages.length ? { assignedImages, imageMapping } : {}),
+          ...(assignedImages.length ? { assignedImages, imageMapping, visionEnabled } : {}),
+          ...(visionEnabled && resolvedVisionImages ? { resolvedVisionImages } : {}),
           ...(params.instruction ? { editDirective: params.instruction } : {}),
           ...(baseline ? { baselineContent: baseline } : {}),
           onFailure: (failure) => {
@@ -551,6 +605,12 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
           mediaPlaceholders.length
             ? ` ${mediaPlaceholders.length} media placeholder(s) still render as skeletons.`
             : ''
+        }${
+          visionCallFellBack
+            ? ` The content model's image request failed, so this page was composed from the ${assignedImages.length} media image description(s) only.`
+            : visionFallbackIds.length
+              ? ` ${visionFallbackIds.length} media image(s) could not be shown to the content model, so those were placed from their descriptions only.`
+              : ''
         }`,
         {
           sceneId: scene.id,

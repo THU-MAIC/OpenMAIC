@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Pro workbench: when the scene-content model accepts images, `generate_scene` now sends the page's `media` to it as images, as classic generation already does. Before, the model saw only a one-line text description of each figure. Images are read before the page is composed; if one cannot be read, the page uses the media descriptions only and the agent is told. With vision, each image's description is now also given beside it, so the model knows which point each figure serves. Each image adds input tokens (roughly 400–1,100 for a typical textbook figure) and is read from the owner's asset storage before the call; a model without image input keeps the text-only behavior.
+
+### Packages
+
+- `@openmaic/generation` 0.3.33 (was 0.3.32).
+
 ## [1.5.0-rc.2] - 2026-11-12
 
 1.5.0-rc.2 is the second release candidate for 1.5.0. It polishes the workbench (drag to fold the rail and the classroom dock, clearer chat status, no duplicate guide course after sign-in), gives Native classroom agents fresh whiteboard state, and fixes PBL previews, assessments and history. No upgrade conditions over 1.5.0-rc.1: no new migrations, and the 1.5.0-rc.1 **Breaking Changes** still apply when upgrading from 1.4.x.
