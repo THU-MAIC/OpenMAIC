@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Pro workbench: pages built from an uploaded document now show the document's extracted figures. `use_material_media` used to tell the agent to place an image with `patch_stage`, so new pages were generated through `generate_scene` without `media` and showed no figures. Its reply, the `generate_scene` description, the materials prompt and the `stage-design` skill now say to pass each image in `generate_scene.media`. [#2099](https://github.com/THU-MAIC/OpenMAIC/pull/2099)
+
 ## [1.5.0-rc.2] - 2026-11-12
 
 1.5.0-rc.2 is the second release candidate for 1.5.0. It polishes the workbench (drag to fold the rail and the classroom dock, clearer chat status, no duplicate guide course after sign-in), gives Native classroom agents fresh whiteboard state, and fixes PBL previews, assessments and history. No upgrade conditions over 1.5.0-rc.1: no new migrations, and the 1.5.0-rc.1 **Breaking Changes** still apply when upgrading from 1.4.x.

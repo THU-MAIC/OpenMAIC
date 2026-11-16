@@ -160,7 +160,7 @@ export function buildMaterialMediaTool(deps: MaterialMediaDeps): AgentTool<never
         content: [
           {
             type: 'text',
-            text: `Use src "${src}" for the slide media element, written with patch_stage.`,
+            text: `Use src "${src}" for this media. For a page not yet generated, pass it in generate_scene.media as { src: "${src}", description }; for an existing page, write it onto a media element with patch_stage.`,
           },
         ],
         details: {
