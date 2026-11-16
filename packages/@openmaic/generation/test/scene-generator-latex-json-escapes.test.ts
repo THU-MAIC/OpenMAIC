@@ -62,9 +62,26 @@ describe('scene generator LaTeX JSON escape validation and recovery', () => {
     ]);
   });
 
-  it('preserves correctly JSON-escaped LaTeX such as \\\\frac and \\\\times intact', async () => {
+  it('rejects raw, single-backslash control symbols such as \\{, \\,, and \\%', async () => {
+    for (const formula of [String.raw`\{x | x>0\}`, String.raw`a\,b`, String.raw`50\%`]) {
+      const rawJson = `{"elements":[{"id":"latex_1","type":"latex","left":100,"top":100,"width":300,"height":100,"latex":"${formula}"}]}`;
+      const aiCall: AICallFn = vi.fn(async () => rawJson);
+      const failures: SceneContentFailure[] = [];
+
+      const content = await generateSceneContent(slideOutline(), aiCall, {
+        onFailure: (failure) => failures.push(failure),
+      });
+
+      expect(content).toBeNull();
+      expect(failures).toHaveLength(1);
+      expect(failures[0].code).toBe('invalid-model-output');
+      expect(failures[0].message).toContain('Malformed LaTeX in JSON: raw unescaped LaTeX command');
+    }
+  });
+
+  it('preserves correctly JSON-escaped LaTeX such as \\\\frac, \\\\times, and control symbols intact', async () => {
     // In valid JSON, double backslashes survive plain JSON.parse intact as literal backslashes
-    const validJson = String.raw`{"elements":[{"id":"latex_1","type":"latex","left":100,"top":100,"width":300,"height":100,"latex":"\\frac{1}{2} + \\times 4 + \\nu + \\beta"}],"remark":"Formulas intact"}`;
+    const validJson = String.raw`{"elements":[{"id":"latex_1","type":"latex","left":100,"top":100,"width":300,"height":100,"latex":"\\frac{1}{2} + \\times 4 + \\nu + \\beta + \\{x | x>0\\} + a\\,b + 50\\%"}],"remark":"Formulas intact"}`;
     const aiCall: AICallFn = vi.fn(async () => validJson);
     const failures: SceneContentFailure[] = [];
 
@@ -77,7 +94,7 @@ describe('scene generator LaTeX JSON escape validation and recovery', () => {
     expect(content.elements).toHaveLength(1);
     const latexEl = content.elements[0] as { type: string; latex: string; html?: string };
     expect(latexEl.type).toBe('latex');
-    expect(latexEl.latex).toBe('\\frac{1}{2} + \\times 4 + \\nu + \\beta');
+    expect(latexEl.latex).toBe('\\frac{1}{2} + \\times 4 + \\nu + \\beta + \\{x | x>0\\} + a\\,b + 50\\%');
     expect(latexEl.html).toContain('katex');
     expect(latexEl.html).not.toContain('katex-error');
   });

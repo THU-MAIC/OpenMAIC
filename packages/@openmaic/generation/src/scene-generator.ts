@@ -789,7 +789,7 @@ async function generateSlideContent(
         })}`
       : '';
     const hasBaselineImages = !!baselineContent?.elements?.some(
-      (el) => (el as { type?: string }).type === 'image',
+      (el) => el && typeof el === 'object' && (el as { type?: string }).type === 'image',
     );
     const imageRule = hasBaselineImages
       ? ` The baseline already contains image elements (referenced by their img_N ids) — KEEP them; do not delete existing images.`
@@ -908,12 +908,26 @@ async function generateSlideContent(
 function repairLatexControlCharactersInBaseline(
   baseline: GeneratedSlideContent,
 ): GeneratedSlideContent {
+  if (!baseline || !Array.isArray(baseline.elements)) {
+    return baseline;
+  }
+
+  let hasChanges = false;
   const repairedElements = baseline.elements.map((element) => {
-    if (element.type !== 'latex') {
+    if (!element || typeof element !== 'object') {
       return element;
     }
 
-    const latex = element.latex.replace(/[\x08\x09\x0c\x0d]/g, (character) => {
+    if ((element as { type?: unknown }).type !== 'latex') {
+      return element;
+    }
+
+    const rawLatex = (element as { latex?: unknown }).latex;
+    if (typeof rawLatex !== 'string') {
+      return element;
+    }
+
+    const latex = rawLatex.replace(/[\x08\x09\x0c\x0d]/g, (character) => {
       switch (character) {
         case '\x08':
           return '\\b';
@@ -928,12 +942,15 @@ function repairLatexControlCharactersInBaseline(
       }
     });
 
-    return latex === element.latex ? element : { ...element, latex };
+    if (latex !== rawLatex) {
+      hasChanges = true;
+      return { ...element, latex };
+    }
+
+    return element;
   });
 
-  return repairedElements === baseline.elements
-    ? baseline
-    : { ...baseline, elements: repairedElements };
+  return hasChanges ? { ...baseline, elements: repairedElements } : baseline;
 }
 
 function findInvalidShapeRotation(elements: GeneratedSlideData['elements']): string | undefined {
@@ -1032,13 +1049,10 @@ export function findMalformedLatex(
             i = nextIndex + 1;
             continue;
           }
-          if (/^[a-zA-Z]$/.test(nextChar)) {
-            // Any other raw unescaped LaTeX command (e.g. \alpha, \sum, \int)
-            const cmdMatch = rawContent.slice(nextIndex).match(/^[a-zA-Z]+/);
-            const cmd = cmdMatch ? cmdMatch[0] : nextChar;
-            return `Malformed LaTeX in JSON: raw unescaped LaTeX command \\${cmd} in "latex" property`;
-          }
-          i = nextIndex + 1;
+          // Any other character after an unescaped backslash is invalid JSON (e.g. \alpha, \sum, \int, \{, \%, \,)
+          const cmdMatch = rawContent.slice(nextIndex).match(/^[a-zA-Z]+/);
+          const cmd = cmdMatch ? cmdMatch[0] : nextChar;
+          return `Malformed LaTeX in JSON: raw unescaped LaTeX command \\${cmd} in "latex" property`;
         } else {
           i++;
         }

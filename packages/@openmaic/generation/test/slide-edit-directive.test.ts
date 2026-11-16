@@ -217,4 +217,88 @@ describe('slide content edit-mode directive', () => {
     expect(lastUser()).toContain(`"content":${JSON.stringify(`<p>${formula}</p>`)}`);
     expect(baseline.elements[0]).toMatchObject({ latex: formula });
   });
+
+  it('skips non-object entries in edit baseline without throwing', async () => {
+    const { aiCall, lastUser } = makeCapturingAiCall(
+      JSON.stringify({ elements: [], background: null, remark: '' }),
+    );
+    const baseline = {
+      elements: [
+        null,
+        undefined,
+        42,
+        {
+          id: 'text_1',
+          type: 'text',
+          left: 0,
+          top: 0,
+          width: 100,
+          height: 40,
+          content: '<p>valid</p>',
+          defaultFontName: '',
+          defaultColor: '#000',
+          rotate: 0,
+        },
+      ],
+      background: undefined,
+      remark: '',
+    } as unknown as GeneratedSlideContent;
+
+    await expect(
+      generateSceneContent(slideOutline(), aiCall, { baselineContent: baseline }),
+    ).resolves.not.toThrow();
+
+    expect(lastUser()).toContain('EDIT MODE');
+    expect(lastUser()).toContain('null');
+    expect(lastUser()).toContain('<p>valid</p>');
+  });
+
+  it('skips latex elements with non-string latex in edit baseline without throwing', async () => {
+    const { aiCall, lastUser } = makeCapturingAiCall(
+      JSON.stringify({ elements: [], background: null, remark: '' }),
+    );
+    const baseline = {
+      elements: [
+        {
+          id: 'latex_missing',
+          type: 'latex',
+          left: 0,
+          top: 0,
+          width: 100,
+          height: 40,
+          rotate: 0,
+        },
+        {
+          id: 'latex_null',
+          type: 'latex',
+          left: 0,
+          top: 0,
+          width: 100,
+          height: 40,
+          latex: null,
+          rotate: 0,
+        },
+        {
+          id: 'latex_num',
+          type: 'latex',
+          left: 0,
+          top: 0,
+          width: 100,
+          height: 40,
+          latex: 123,
+          rotate: 0,
+        },
+      ],
+      background: undefined,
+      remark: '',
+    } as unknown as GeneratedSlideContent;
+
+    await expect(
+      generateSceneContent(slideOutline(), aiCall, { baselineContent: baseline }),
+    ).resolves.not.toThrow();
+
+    expect(lastUser()).toContain('EDIT MODE');
+    expect(lastUser()).toContain('"id":"latex_missing"');
+    expect(lastUser()).toContain('"id":"latex_null"');
+  });
 });
