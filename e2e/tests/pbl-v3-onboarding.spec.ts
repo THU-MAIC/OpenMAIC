@@ -538,6 +538,29 @@ for (const entry of ['delayed-guide', 'prepare', 'existing-opening', 'stage-chan
   });
 }
 
+test('keyboard scrolling from the overview summary releases the initial reading hold', async ({
+  page,
+  learningEvents,
+}) => {
+  const fixture = await project(page, learningEvents, {
+    application: false,
+    guideCompleted: true,
+    openingText: 'Opening background.\n\n'.repeat(60),
+  });
+  const viewport = page.locator('.pbl-conversation-scroll');
+  await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeLessThanOrEqual(1);
+  await page.locator('#pbl-project-overview summary').focus();
+  await page.keyboard.press('End');
+  const distance = () =>
+    viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
+  await expect.poll(distance).toBeLessThanOrEqual(8);
+  fixture.view.messages[0].text += 'More text after keyboard navigation.\n\n'.repeat(20);
+  fixture.view.revision++;
+  await fixture.publish();
+  await expect(viewport).toContainText('More text after keyboard navigation.');
+  await expect.poll(distance).toBeLessThanOrEqual(8);
+});
+
 test('highlights the existing next action only when progression is available', async ({
   page,
   learningEvents,

@@ -89,9 +89,13 @@ export function ConversationViewport({
           if (event.target === event.currentTarget) releaseOverview();
         }}
         onKeyDownCapture={(event) => {
+          const target = event.target as HTMLElement;
+          if (target.isContentEditable || target.closest('input, textarea, select')) return;
+          // Navigation keys also scroll when a link or overview summary has focus.
+          // Space on those controls activates them instead of reading the transcript.
           if (
-            event.target === event.currentTarget &&
-            ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)
+            ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key) ||
+            (event.key === ' ' && target === event.currentTarget)
           )
             releaseOverview();
         }}
