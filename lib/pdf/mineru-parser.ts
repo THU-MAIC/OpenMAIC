@@ -115,6 +115,7 @@ export function extractMinerUResult(fileResult: Record<string, unknown>): Parsed
     metadata: {
       pageCount,
       parser: 'mineru',
+      textFormat: 'markdown',
       imageMapping,
       pdfImages,
     },

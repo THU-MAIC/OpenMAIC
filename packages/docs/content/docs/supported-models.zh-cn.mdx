@@ -40,9 +40,9 @@ description: 开源版 OpenMAIC 的内置模型与 provider 列表。
 | 视频 | `seedance`、`kling`、`minimax-video`、`grok-video`、`happyhorse`、`openrouter-video` |
 | 联网搜索 | `tavily`、`exa`、`firecrawl`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`deepseek`、`deepseek-token-plan`、`kimi`、`kimi-coding-plan`、`searxng` |
 | 网页抓取 | `builtin`、`deepseek`、`deepseek-token-plan`、`firecrawl`、`kimi`、`kimi-coding-plan` |
-| 文档解析 | `unpdf`、`mineru`、`mineru-cloud`、`alidocmind` |
+| 文档解析 | `unpdf`、`mineru`、`mineru-cloud`、`alidocmind`、`minicpm-ocr` |
 
-`azure`、`openai-compatible`、`searxng` 和 `mineru` 需要 `baseUrl`；`alidocmind` 使用 `credentials`（密钥对）认证。自托管的 TTS、ASR、图像、搜索和文档预设、密钥对预设以及 Bedrock 只能在 `openmaic.yml` 中配置，见[配置说明](./configuration.mdx)。
+`azure`、`openai-compatible`、`searxng` 和 `mineru` 需要 `baseUrl`；`alidocmind` 使用 `credentials`（密钥对）认证；`minicpm-ocr` 默认使用托管 API，自托管 Web Demo 通过 `baseUrl` 指向。自托管的 TTS、ASR、图像、搜索和文档预设、密钥对预设以及 Bedrock 只能在 `openmaic.yml` 中配置，见[配置说明](./configuration.mdx)。
 
 ## LLM 模型
 
@@ -150,6 +150,7 @@ Google TTS 默认使用 `gemini-3.8-flash-lite-tts`，已显式选择的模型�
 | MinerU       | `mineru`       | 文本、图片、表格、公式、版面分析      |
 | MinerU Cloud | `mineru-cloud` | 文本、图片、表格、公式、版面分析      |
 | AliDocMind   | `alidocmind`   | 文本、图片、表格、公式、版面分析、OCR |
+| MiniCPM-OCR  | `minicpm-ocr`  | 文本、表格、公式、版面分析、OCR       |
 
 ## Web Search 提供方
 

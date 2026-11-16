@@ -100,6 +100,14 @@ providers:
   #     accessKeyId: ${ALIDOCMIND_ACCESS_KEY_ID}
   #     accessKeySecret: ${ALIDOCMIND_ACCESS_KEY_SECRET}
 
+  # MiniCPM-OCR document parsing. The hosted API takes an API key; point
+  # baseUrl at a self-hosted MiniCPM-OCR web demo to parse on your own
+  # infrastructure (its routes live under /api).
+  # minicpm-ocr:
+  #   preset: minicpm-ocr
+  #   apiKey: ${PDF_MINICPM_OCR_API_KEY}
+  #   # baseUrl: http://127.0.0.1:8966/api
+
 slots:
   # The default chat model. Every chat slot without an assignment of its own
   # follows it.
@@ -124,6 +132,7 @@ slots:
   # A provider id alone means that provider's default model (search and
   # document services mostly have none to pick).
   # webSearch: tavily
+  # document: minicpm-ocr
   # image: openai-image:gpt-image-2
   # tts: minimax:speech-2.8-turbo
 

@@ -18,6 +18,7 @@ import {
   resolveSafeClientAliDocMindEndpoint,
 } from '@/lib/server/alidocmind-endpoint';
 import { MINERU_CLOUD_DEFAULT_BASE, PDF_PROVIDERS } from '@/lib/pdf/constants';
+import { verifyMiniCPMOCRConnection } from '@/lib/pdf/minicpm-ocr';
 import {
   savedMediaConnection,
   savedProviderRef,
@@ -44,6 +45,15 @@ function probePolicy(managed: boolean): ProviderFetchPolicy {
 // are logged server-side only and never echoed back to the caller.
 const AUTH_FAILED_MESSAGE = 'Authentication failed, please check the API Key';
 const CONNECTION_FAILED_MESSAGE = 'Cannot connect to server, please check the Base URL';
+
+/** A MiniCPM-OCR probe failure: a rejected key, or a hosted endpoint that answers an error. */
+function miniCPMOCRProbeFailure(reason: 'auth' | 'endpoint'): Response {
+  return apiError(
+    'INTERNAL_ERROR',
+    500,
+    reason === 'auth' ? AUTH_FAILED_MESSAGE : CONNECTION_FAILED_MESSAGE,
+  );
+}
 
 /** MinerU Cloud: an authenticated call to the batch endpoint tells whether the token works. */
 async function probeMinerUCloud(cloudBase: string, apiKey: string, managed: boolean) {
@@ -113,6 +123,16 @@ async function verifySavedProvider(req: NextRequest, ref: string): Promise<Respo
       return apiError('MISSING_REQUIRED_FIELD', 400, 'API Key is required for MinerU Cloud');
     }
     return probeMinerUCloud(baseUrl || MINERU_CLOUD_DEFAULT_BASE, apiKey, managed);
+  }
+  if (providerId === 'minicpm-ocr') {
+    // The hosted API needs its key; an explicitly configured endpoint may be
+    // a self-hosted web demo that takes none.
+    if (!apiKey && !baseUrl) {
+      return apiError('MISSING_REQUIRED_FIELD', 400, 'API Key is required for MiniCPM-OCR');
+    }
+    const result = await verifyMiniCPMOCRConnection({ apiKey, baseUrl, managed });
+    if (!result.ok) return miniCPMOCRProbeFailure(result.reason);
+    return apiSuccess({ message: 'Connection successful' });
   }
   const endpoint = baseUrl || PDF_PROVIDERS[providerId as keyof typeof PDF_PROVIDERS]?.baseUrl;
   if (!endpoint) return apiError('MISSING_REQUIRED_FIELD', 400, 'Base URL is required');
@@ -217,6 +237,29 @@ export async function POST(req: NextRequest) {
 
       // Probe the batch endpoint with an empty body to verify auth
       return await probeMinerUCloud(cloudBase, resolvedApiKey, managed);
+    }
+
+    // MiniCPM-OCR: hosted (key) or a self-hosted web demo (key optional)
+    if (providerId === 'minicpm-ocr') {
+      const clientBase = managed ? undefined : (baseUrl as string | undefined) || undefined;
+      if (clientBase) {
+        const ssrfError = await validateClientBaseUrl(clientBase);
+        if (ssrfError) {
+          return apiError('INVALID_URL', 403, ssrfError);
+        }
+      }
+      const resolvedApiKey = resolvePDFApiKey(providerId, managed ? undefined : apiKey);
+      const base = resolvePDFBaseUrl(providerId, clientBase);
+      if (!resolvedApiKey && !clientBase && !managed) {
+        return apiError('MISSING_REQUIRED_FIELD', 400, 'API Key is required for MiniCPM-OCR');
+      }
+      const result = await verifyMiniCPMOCRConnection({
+        apiKey: resolvedApiKey || undefined,
+        baseUrl: base,
+        managed,
+      });
+      if (!result.ok) return miniCPMOCRProbeFailure(result.reason);
+      return apiSuccess({ message: 'Connection successful' });
     }
 
     // Self-hosted providers: verify by connecting to the base URL
