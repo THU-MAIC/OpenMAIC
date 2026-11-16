@@ -518,6 +518,29 @@ test('thread replies, pushes and unread thread pages keep a pull request open', 
   assert.deepEqual(client.writes, []);
 });
 
+test('a close whose comment was already posted only retries the close', async () => {
+  const pr = makePr(60, withThreads([thread(ago(12 * DAY))]));
+  const client = fakeClient({
+    prs: [pr],
+    comments: {
+      60: [
+        botComment(801, codexBody(pr, 1), ago(9 * DAY)),
+        botComment(802, codexClosedBody(pr, 1), ago(DAY)),
+      ],
+    },
+    activity: { 60: {} },
+  });
+  const result = await run({ client, repo, now: NOW, dryRun: false, log: () => {} });
+  assert.deepEqual(
+    result.results.map((r) => r.action),
+    ['close'],
+  );
+  assert.deepEqual(
+    client.writes.map((w) => w.route),
+    ['PATCH /repos/{owner}/{repo}/pulls/{pull_number}'],
+  );
+});
+
 test('dry runs never close and report what they would do', async () => {
   const pr = makePr(50, withThreads([thread(ago(12 * DAY))]));
   const client = fakeClient({

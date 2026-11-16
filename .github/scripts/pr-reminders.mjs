@@ -473,8 +473,16 @@ export async function run({ client, repo, now = Date.now(), dryRun = true, log =
 
       let done = true;
       if (action === 'close') {
-        done = await write(2, async () => {
-          await postComment(pr, codexClosedBody(pr, decision.count));
+        // Retry-safe: a closing comment already posted after this reminder (a
+        // previous run whose close failed) is not posted again.
+        const announced = comments.some(
+          (comment) =>
+            comment.user?.login === BOT_LOGIN &&
+            comment.body?.startsWith(MARKERS.codexClosed) &&
+            time(comment.created_at) >= time(existing.created_at),
+        );
+        done = await write(announced ? 1 : 2, async () => {
+          if (!announced) await postComment(pr, codexClosedBody(pr, decision.count));
           await client.request('PATCH /repos/{owner}/{repo}/pulls/{pull_number}', {
             ...repo,
             pull_number: pr.number,
