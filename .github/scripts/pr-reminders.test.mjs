@@ -1,22 +1,31 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  CODEX_CLOSE_MS,
   MARKERS,
   MAX_WRITES_PER_RUN,
   approvalBody,
   approvalSince,
+  codexBody,
+  codexClosedBody,
+  codexCloseDue,
+  newestCodexThreadAt,
+  codexSince,
   conflictBody,
   conflictSince,
   decide,
+  decideCodex,
   fetchClient,
   findReminder,
   globalOwners,
   groupRunsBySha,
   isDryRun,
   isStale,
+  lastAuthorActivity,
   listOpenPullRequests,
   run,
   summaryMarkdown,
+  unresolvedCodexThreads,
 } from './pr-reminders.mjs';
 
 const repo = { owner: 'THU-MAIC', repo: 'OpenMAIC' };
@@ -56,11 +65,17 @@ const pendingRun = (sha, name, created_at) => ({
   conclusion: null,
   created_at,
 });
-const botComment = (id, body) => ({
+const botComment = (id, body, created_at = ago(DAY)) => ({
   id,
   body,
+  created_at,
   user: { login: 'github-actions[bot]', type: 'Bot' },
 });
+const thread = (createdAt, { login = 'chatgpt-codex-connector', isResolved = false } = {}) => ({
+  isResolved,
+  comments: { nodes: [{ author: { login }, createdAt }] },
+});
+const withThreads = (threads) => ({ reviewThreads: { nodes: threads } });
 
 test('dry run defaults on for dispatch and off only for scheduled apply mode', () => {
   assert.equal(isDryRun('workflow_dispatch', 'true', 'apply'), true);
@@ -208,11 +223,24 @@ test('listOpenPullRequests re-queries while mergeability is unknown', async () =
   );
 });
 
-function fakeClient({ prs, pending = [], branchRuns = {}, comments = {}, codeowners = null }) {
+function fakeClient({
+  prs,
+  pending = [],
+  branchRuns = {},
+  comments = {},
+  codeowners = null,
+  activity = {},
+}) {
   const writes = [];
+  const activityQueries = [];
   return {
     writes,
-    async graphql() {
+    activityQueries,
+    async graphql(query, variables) {
+      if (variables.number) {
+        activityQueries.push(variables.number);
+        return { repository: { pullRequest: activity[variables.number] ?? {} } };
+      }
       return {
         repository: {
           pullRequests: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: prs },
@@ -302,4 +330,174 @@ test('the local client refuses writes', async () => {
     client.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', repo),
     /read-only/,
   );
+});
+
+test('only unresolved Codex threads count, outdated ones included', () => {
+  const pr = makePr(30, {
+    ...withThreads([
+      thread(ago(3 * DAY)),
+      thread(ago(5 * DAY), { isResolved: true }),
+      thread(ago(6 * DAY), { login: 'someone' }),
+      thread(ago(2 * DAY), { login: 'chatgpt-codex-connector[bot]' }),
+      { ...thread(ago(4 * DAY)), isOutdated: true },
+    ]),
+  });
+  assert.equal(unresolvedCodexThreads(pr).length, 3);
+  assert.equal(codexSince(pr), ago(4 * DAY));
+  assert.equal(codexSince(makePr(31)), null);
+  assert.equal(codexSince(makePr(32, withThreads([thread(ago(DAY), { isResolved: true })]))), null);
+});
+
+test('decideCodex waits a day and skips drafts, bots and blocked pull requests', () => {
+  const pr = makePr(33, withThreads([thread(ago(2 * DAY)), thread(ago(DAY / 2))]));
+  const decision = decideCodex(pr, { now: NOW });
+  assert.equal(decision.kind, 'codex');
+  assert.equal(decision.count, 2);
+  assert.equal(decision.since, ago(2 * DAY));
+  assert.equal(decideCodex(makePr(34, withThreads([thread(ago(DAY / 2))])), { now: NOW }), null);
+  assert.equal(decideCodex({ ...pr, isDraft: true }, { now: NOW }), null);
+  assert.equal(
+    decideCodex({ ...pr, author: { login: 'renovate', __typename: 'Bot' } }, { now: NOW }),
+    null,
+  );
+  const blocked = { ...pr, labels: { nodes: [{ name: 'bug' }, { name: 'status:blocked' }] } };
+  assert.equal(decideCodex(blocked, { now: NOW }), null);
+});
+
+test('codex comment bodies mention the author, the count and the close window', () => {
+  const pr = makePr(35);
+  const body = codexBody(pr, 2);
+  assert.ok(body.startsWith(MARKERS.codex));
+  assert.match(body, /Hi @author35, 2 Codex review threads are still unresolved/);
+  assert.match(body, /within 7 days after this reminder/);
+  assert.match(codexBody(pr, 1), /1 Codex review thread is still unresolved/);
+  const closed = codexClosedBody(pr, 1);
+  assert.ok(closed.startsWith(MARKERS.codexClosed));
+  assert.match(closed, /@author35, closing this pull request: 1 Codex review thread is/);
+  assert.match(closed, /reopen/);
+});
+
+test('the close window restarts at author activity, pushes and newer threads', () => {
+  const pr = makePr(36);
+  const activity = {
+    commits: { nodes: [{ commit: { committedDate: ago(9 * DAY) } }] },
+    timelineItems: { nodes: [{ createdAt: ago(8 * DAY) }] },
+    reviews: {
+      nodes: [
+        { author: { login: 'author36' }, submittedAt: ago(5 * DAY) },
+        { author: { login: 'maintainer' }, submittedAt: ago(1000) },
+        { author: { login: 'author36' }, submittedAt: null },
+      ],
+    },
+  };
+  const comments = [
+    { user: { login: 'maintainer' }, created_at: ago(1000) },
+    { user: { login: 'author36' }, created_at: ago(6 * DAY) },
+  ];
+  assert.equal(lastAuthorActivity(pr, activity, comments), ago(5 * DAY));
+  assert.equal(lastAuthorActivity(pr, {}, []), null);
+
+  const due = (extras) =>
+    codexCloseDue({
+      reminderAt: ago(8 * DAY),
+      newestThreadAt: ago(10 * DAY),
+      lastActivity: null,
+      now: NOW,
+      ...extras,
+    });
+  assert.equal(due({}), true);
+  assert.equal(due({ reminderAt: ago(CODEX_CLOSE_MS) }), false);
+  assert.equal(due({ lastActivity: ago(5 * DAY) }), false);
+  assert.equal(due({ newestThreadAt: ago(2 * DAY) }), false);
+
+  const mixed = withThreads([thread(ago(10 * DAY)), thread(ago(2 * DAY))]);
+  assert.equal(newestCodexThreadAt(mixed), ago(2 * DAY));
+  assert.equal(newestCodexThreadAt(withThreads([])), null);
+});
+
+test('run reminds, closes after 7 quiet days and spares active authors', async () => {
+  const threads = withThreads([thread(ago(12 * DAY)), thread(ago(11 * DAY))]);
+  const fresh = makePr(40, withThreads([thread(ago(DAY / 2))]));
+  const remind = makePr(41, threads);
+  const waiting = makePr(42, threads);
+  const quiet = makePr(43, threads);
+  const active = makePr(44, threads);
+  const resolved = makePr(45, withThreads([thread(ago(12 * DAY), { isResolved: true })]));
+  const blocked = makePr(46, { ...threads, labels: { nodes: [{ name: 'status:blocked' }] } });
+  const draft = makePr(47, { ...threads, isDraft: true });
+  const conflictAndCodex = makePr(48, { ...threads, mergeable: 'CONFLICTING' });
+  const reminder = (id, pr, days) => botComment(id, codexBody(pr, 2), ago(days * DAY));
+  const client = fakeClient({
+    prs: [fresh, remind, waiting, quiet, active, resolved, blocked, draft, conflictAndCodex],
+    comments: {
+      42: [reminder(601, waiting, 3)],
+      43: [reminder(602, quiet, 8), { user: { login: 'author43' }, created_at: ago(9 * DAY) }],
+      44: [reminder(603, active, 8)],
+      45: [reminder(604, resolved, 9)],
+      46: [reminder(605, blocked, 9)],
+    },
+    activity: {
+      43: { commits: { nodes: [{ commit: { committedDate: ago(10 * DAY) } }] } },
+      44: { reviews: { nodes: [{ author: { login: 'author44' }, submittedAt: ago(2 * DAY) }] } },
+    },
+  });
+  const result = await run({ client, repo, now: NOW, dryRun: false, log: () => {} });
+  assert.deepEqual(
+    result.results.map((r) => [r.number, r.kind, r.action]),
+    [
+      [41, 'codex', 'create'],
+      [42, 'codex', 'unchanged'],
+      [43, 'codex', 'close'],
+      [44, 'codex', 'unchanged'],
+      [48, 'conflict', 'create'],
+      [48, 'codex', 'create'],
+    ],
+  );
+  assert.deepEqual(client.activityQueries, [43, 44]);
+  assert.deepEqual(
+    client.writes.map((w) => [w.route, w.params.issue_number ?? w.params.pull_number]),
+    [
+      ['POST /repos/{owner}/{repo}/issues/{issue_number}/comments', 41],
+      ['POST /repos/{owner}/{repo}/issues/{issue_number}/comments', 43],
+      ['PATCH /repos/{owner}/{repo}/pulls/{pull_number}', 43],
+      ['POST /repos/{owner}/{repo}/issues/{issue_number}/comments', 48],
+      ['POST /repos/{owner}/{repo}/issues/{issue_number}/comments', 48],
+    ],
+  );
+  assert.ok(client.writes[1].params.body.startsWith(MARKERS.codexClosed));
+  assert.equal(client.writes[2].params.state, 'closed');
+});
+
+test('dry runs never close and report what they would do', async () => {
+  const pr = makePr(50, withThreads([thread(ago(12 * DAY))]));
+  const client = fakeClient({
+    prs: [pr],
+    comments: { 50: [botComment(701, codexBody(pr, 1), ago(8 * DAY))] },
+  });
+  const logs = [];
+  const result = await run({
+    client,
+    repo,
+    now: NOW,
+    dryRun: true,
+    log: (line) => logs.push(line),
+  });
+  assert.equal(client.writes.length, 0);
+  assert.equal(result.results[0].action, 'close');
+  assert.match(logs[0], /#50 codex since .*: would close/);
+  assert.match(summaryMarkdown(result), /\| unresolved Codex threads \| .* \| would close \|/);
+});
+
+test('a close is deferred rather than split when the write cap is reached', async () => {
+  const conflicts = Array.from({ length: MAX_WRITES_PER_RUN - 1 }, (_, i) =>
+    makePr(200 + i, { mergeable: 'CONFLICTING' }),
+  );
+  const pr = makePr(300, withThreads([thread(ago(12 * DAY))]));
+  const client = fakeClient({
+    prs: [...conflicts, pr],
+    comments: { 300: [botComment(801, codexBody(pr, 1), ago(8 * DAY))] },
+  });
+  const result = await run({ client, repo, now: NOW, dryRun: false, log: () => {} });
+  assert.equal(client.writes.length, MAX_WRITES_PER_RUN - 1);
+  assert.equal(result.results.at(-1).action, 'deferred');
 });
