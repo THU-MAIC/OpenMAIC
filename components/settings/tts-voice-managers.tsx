@@ -15,7 +15,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { slotVoxCPMBackend } from '@/lib/audio/tts-selection';
 import { useModelCapabilities } from '@/lib/model-settings/use-model-settings';
-import { DEFAULT_TTS_VOICES } from '@/lib/audio/constants';
+import { DEFAULT_TTS_VOICES, qwenVoiceNeedsReclone } from '@/lib/audio/constants';
 import {
   Volume2,
   Loader2,
@@ -496,7 +496,12 @@ export function VoxCPMVoiceManager() {
   );
 }
 
-export function QwenVoiceCloneManager() {
+/**
+ * `cloneTarget` is the target the server says saved clones must match. Saved
+ * voices cloned for another target are marked as soon as the manager mounts;
+ * without a target nothing is guessed in the browser.
+ */
+export function QwenVoiceCloneManager({ cloneTarget }: { cloneTarget?: string }) {
   const { t } = useI18n();
   const { profiles, addCloneVoice, deleteVoice } = useQwenVoiceProfiles();
   const ttsVoiceProviderId = useSettingsStore((state) => state.ttsVoiceProviderId);
@@ -511,7 +516,10 @@ export function QwenVoiceCloneManager() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
-  const [recloneWarnings, setRecloneWarnings] = useState<Record<string, string>>({});
+  // The server's latest answer per voice from a preview in this session: true
+  // when it asked for a re-clone, false when the voice played. It wins over
+  // `cloneTarget`, which may change while the page is open.
+  const [recloneVerdicts, setRecloneVerdicts] = useState<Record<string, boolean>>({});
   const previewRequestRef = useRef(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
@@ -649,13 +657,17 @@ export function QwenVoiceCloneManager() {
     }
   };
 
-  const clearRecloneWarning = (voiceId: string) => {
-    setRecloneWarnings((current) => {
+  const setRecloneVerdict = (voiceId: string, verdict: boolean | undefined) => {
+    setRecloneVerdicts((current) => {
       const next = { ...current };
-      delete next[voiceId];
+      if (verdict === undefined) delete next[voiceId];
+      else next[voiceId] = verdict;
       return next;
     });
   };
+
+  const needsReclone = (voiceId: string) =>
+    recloneVerdicts[voiceId] ?? (!!cloneTarget && qwenVoiceNeedsReclone(voiceId, cloneTarget));
 
   const handlePreview = async (voiceId: string) => {
     const requestId = ++previewRequestRef.current;
@@ -672,7 +684,7 @@ export function QwenVoiceCloneManager() {
         voice: voiceId,
         speed: ttsSpeed,
       });
-      if (requestId === previewRequestRef.current) clearRecloneWarning(voiceId);
+      if (requestId === previewRequestRef.current) setRecloneVerdict(voiceId, false);
     } catch (error) {
       if (requestId !== previewRequestRef.current) return;
       setPreviewingVoiceId(null);
@@ -680,7 +692,7 @@ export function QwenVoiceCloneManager() {
         error instanceof Error &&
         (error as { errorCode?: string }).errorCode === 'QWEN_VC_RECLONE_REQUIRED'
       ) {
-        setRecloneWarnings((current) => ({ ...current, [voiceId]: error.message }));
+        setRecloneVerdict(voiceId, true);
       }
       toast.error(error instanceof Error ? error.message : t('settings.qwenCloneSaveFailed'));
     }
@@ -688,7 +700,7 @@ export function QwenVoiceCloneManager() {
 
   const handleDelete = async (voiceId: string) => {
     const vendorDeleted = await deleteVoice(voiceId);
-    clearRecloneWarning(voiceId);
+    setRecloneVerdict(voiceId, undefined);
     if (!vendorDeleted) toast.warning(t('settings.qwenCloneDeleteWarning'));
     if (ttsVoiceProviderId === 'qwen-tts' && ttsVoice === voiceId) {
       setTTSVoice(DEFAULT_TTS_VOICES['qwen-tts'], 'qwen-tts');
@@ -738,7 +750,9 @@ export function QwenVoiceCloneManager() {
                     title={profile.name}
                     badge={t('settings.voxcpmClone')}
                     detail={profile.referenceAudioName || profile.id}
-                    warning={recloneWarnings[profile.id]}
+                    warning={
+                      needsReclone(profile.id) ? t('settings.qwenCloneRecloneRequired') : undefined
+                    }
                     kind="clone"
                     previewing={previewingVoiceId === profile.id}
                     onPreview={() => handlePreview(profile.id)}

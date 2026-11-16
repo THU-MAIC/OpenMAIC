@@ -1,5 +1,5 @@
 import { AudioProviderError } from './provider-error';
-import { qwenVoiceMatchesTargetModel } from './constants';
+import { qwenVoiceNeedsReclone } from './constants';
 import type { TTSGenerationResult } from '@/lib/audio/tts-providers';
 import { createLogger } from '@/lib/logger';
 import {
@@ -484,7 +484,7 @@ export async function downloadAudio(
 
 /** Reject locally incompatible saved IDs before model authorization or network work. */
 export function assertQwenVoiceTarget(voiceId: string, targetModel: string): void {
-  if (targetModel.startsWith('cosyvoice-') && !qwenVoiceMatchesTargetModel(voiceId, targetModel)) {
+  if (qwenVoiceNeedsReclone(voiceId, targetModel)) {
     throw new QwenVoiceCloneError('QWEN_VC_RECLONE_REQUIRED', 400);
   }
 }

@@ -1491,6 +1491,7 @@
     "qwenCloneUploadShort": "Upload",
     "qwenCloneRefAudioHint": "Use a clean 5–60 second voice sample (10–20 seconds recommended). Audio is converted to 24 kHz mono PCM WAV.",
     "qwenCloneMigrationHint": "This saved voice needs to be cloned again. Upload its reference audio in voice settings.",
+    "qwenCloneRecloneRequired": "This saved voice is incompatible with the current cloning model. Upload its reference audio again to re-clone it.",
     "qwenCloneSaved": "Qwen cloned voice registered and saved",
     "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
     "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",

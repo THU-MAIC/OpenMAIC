@@ -1491,6 +1491,7 @@
     "qwenCloneUploadShort": "上传",
     "qwenCloneRefAudioHint": "请使用 5–60 秒的干净人声，推荐 10–20 秒；音频会转换为 24 kHz 单声道 PCM WAV。",
     "qwenCloneMigrationHint": "此音色需要重新复刻，请在音色设置中上传原始参考音频。",
+    "qwenCloneRecloneRequired": "此音色与当前克隆模型不兼容，请重新上传原始参考音频进行克隆。",
     "qwenCloneSaved": "Qwen 克隆音色已注册并保存",
     "qwenCloneSaveFailed": "Qwen 克隆音色注册失败",
     "qwenCloneUnsupported": "当前浏览器不支持录音，请改为上传音频文件。",
