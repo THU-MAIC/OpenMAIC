@@ -3022,6 +3022,7 @@
       "workspace-run": "Workspace run"
     },
     "overview": {
+      "startLearning": "学習を始める",
       "title": "プロジェクト概要",
       "expand": "開く",
       "collapse": "折りたたむ",

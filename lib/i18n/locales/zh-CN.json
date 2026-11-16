@@ -3022,6 +3022,7 @@
       "workspace-run": "工作区运行"
     },
     "overview": {
+      "startLearning": "开始学习",
       "title": "项目总览",
       "expand": "展开",
       "collapse": "收起",

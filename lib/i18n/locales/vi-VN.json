@@ -3022,6 +3022,7 @@
       "workspace-run": "Workspace run"
     },
     "overview": {
+      "startLearning": "Bắt đầu học",
       "title": "Tổng quan dự án",
       "expand": "Mở rộng",
       "collapse": "Thu gọn",

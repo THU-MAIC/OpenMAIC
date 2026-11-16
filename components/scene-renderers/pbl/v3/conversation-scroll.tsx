@@ -13,8 +13,6 @@ export function ConversationViewport({
   children,
   header,
   sent,
-  startAtOverview = false,
-  overviewEligible = startAtOverview,
   generating,
   hidden = false,
   onClick,
@@ -22,53 +20,21 @@ export function ConversationViewport({
   children?: ReactNode;
   header?: ReactNode;
   sent: number;
-  startAtOverview?: boolean;
-  overviewEligible?: boolean;
   generating: boolean;
   hidden?: boolean;
   onClick: (event: MouseEvent<HTMLDivElement>) => void;
 }) {
   const { t } = useI18n();
-  // Layout changes (including hiding the overview during onboarding) are not
-  // learner intent. Keep the initial target until the learner chooses to move.
-  // The initial choice can change as the first reply arrives; only leaving
-  // the opening context (or explicit learner intent) ends an existing hold.
-  const readingOverview = useRef(startAtOverview);
-  const stick = useStickToBottom({
-    initial: startAtOverview ? false : 'instant',
-    resize: 'instant',
-  });
-  const { contentRef, scrollRef, isNearBottom, scrollToBottom, stopScroll } = stick;
+  const stick = useStickToBottom({ initial: 'instant', resize: 'instant' });
+  const { contentRef, isNearBottom, scrollToBottom } = stick;
   const viewportRef = useWorkbenchViewportAnchor(stick);
   const previous = useRef(sent);
   useLayoutEffect(() => {
-    // The library re-locks when shrinking content brings it near the bottom.
-    // Suppress that layout-only re-lock during the initial overview, before
-    // its scheduled animation runs. Keep its normal bottom-distance reporting.
-    const observer = new ResizeObserver(() => {
-      if (readingOverview.current) stopScroll();
-    });
-    if (contentRef.current) observer.observe(contentRef.current);
-    if (scrollRef.current) observer.observe(scrollRef.current);
-    return () => observer.disconnect();
-  }, [contentRef, scrollRef, stopScroll]);
-  const releaseOverview = () => {
-    if (!readingOverview.current) return;
-    readingOverview.current = false;
-    // Leave the actual gesture to the library. Do not stop existing following
-    // when focus already reached the tail and the gesture cannot scroll further.
-  };
-  useLayoutEffect(() => {
-    if (previous.current !== sent || (readingOverview.current && !overviewEligible)) {
+    if (previous.current !== sent) {
       previous.current = sent;
-      readingOverview.current = false;
-      // A learner send or leaving the opening stage ends initial reading.
       void scrollToBottom({ animation: 'instant' });
-    } else if (readingOverview.current && header) {
-      stopScroll();
-      if (scrollRef.current) scrollRef.current.scrollTop = 0;
     }
-  }, [header, sent, overviewEligible, scrollRef, scrollToBottom, stopScroll]);
+  }, [sent, scrollToBottom]);
   const label = generating
     ? `${t('pblV3.journey.latest')} · ${t('workbench.chat.waiting')}`
     : t('pblV3.journey.latest');
@@ -82,22 +48,6 @@ export function ConversationViewport({
         ref={viewportRef}
         tabIndex={0}
         className="pbl-conversation-scroll min-h-0 flex-1 overflow-y-auto"
-        onWheelCapture={releaseOverview}
-        onTouchMoveCapture={releaseOverview}
-        onPointerDownCapture={(event) => {
-          if (event.target === event.currentTarget) releaseOverview();
-        }}
-        onKeyDownCapture={(event) => {
-          const target = event.target as HTMLElement;
-          if (target.isContentEditable || target.closest('input, textarea, select')) return;
-          // Navigation keys also scroll when a link or overview summary has focus.
-          // Space activates buttons/summaries, but scrolls links and plain text.
-          if (
-            ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key) ||
-            (event.key === ' ' && !target.closest('button, summary, [role="button"]'))
-          )
-            releaseOverview();
-        }}
       >
         <div ref={contentRef} className="flex flex-col gap-5 p-4" onClick={onClick}>
           {header && (
@@ -122,10 +72,7 @@ export function ConversationViewport({
             title={label}
             data-testid="pbl-conversation-scroll-button"
             data-generating={generating}
-            onClick={() => {
-              readingOverview.current = false;
-              void scrollToBottom();
-            }}
+            onClick={() => void scrollToBottom()}
           >
             {generating ? (
               <span className={wbStyles.waiting.dots} aria-hidden="true">

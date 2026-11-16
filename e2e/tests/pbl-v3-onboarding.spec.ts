@@ -26,6 +26,8 @@ async function project(
     prepareGate,
     prepareFailure = false,
     beginGate,
+    beginFailures = 0,
+    existingQueuedRun = false,
     lagOpeningWorkbench = false,
     opening = false,
     initialDraft = '',
@@ -49,6 +51,8 @@ async function project(
     prepareGate?: Promise<void>;
     prepareFailure?: boolean;
     beginGate?: Promise<void>;
+    beginFailures?: number;
+    existingQueuedRun?: boolean;
     lagOpeningWorkbench?: boolean;
     opening?: boolean;
     initialDraft?: string;
@@ -136,7 +140,7 @@ async function project(
     files: ['PLAN.md'],
     busy,
     messages: openingText ? [{ role: 'assistant', text: openingText }] : [],
-    roleRun: null,
+    roleRun: existingQueuedRun ? { status: 'queued', failure: null, canRetry: false } : null,
     decisions: [],
     questions: quiz
       ? [{ q: 'A synthetic question', options: ['Draft choice', 'Other choice'] }]
@@ -243,6 +247,11 @@ async function project(
         workbench.revision = view.revision;
       }
       if (body.command.type === 'begin') {
+        if (beginFailures-- > 0)
+          return route.fulfill({
+            status: 503,
+            json: { error: { message: 'Opening temporarily unavailable' } },
+          });
         await beginGate;
         view.needsOpening = false;
         view.busy = true;
@@ -405,45 +414,56 @@ for (const [width, guideCompleted] of [
   [390, false],
   [1365, true],
 ] as const) {
-  test(`first entry keeps the overview visible through the welcome until the learner follows at ${width}px (tour completed: ${guideCompleted})`, async ({
+  test(`first entry waits for Start learning, then follows normally at ${width}px (tour completed: ${guideCompleted})`, async ({
     page,
     learningEvents,
   }) => {
     await page.setViewportSize({ width, height: 900 });
+    let release!: () => void;
+    const beginGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     const fixture = await project(page, learningEvents, {
       application: false,
       guideCompleted,
+      opening: true,
+      beginGate,
     });
-    fixture.view.messages = [{ role: 'assistant', text: 'Opening background.\n\n'.repeat(60) }];
-    fixture.view.revision++;
-    await fixture.publish();
     if (!guideCompleted) {
       await expect(tour(page)).toBeVisible();
+      expect(fixture.commands).toEqual([]);
       await page.keyboard.press('Escape');
     }
-    await expect(tour(page)).toHaveCount(0);
+    const start = page.getByRole('button', { name: 'Start learning', exact: true });
+    await expect(start).toBeEnabled();
+    await expect(page.getByTestId('pbl-agent-turn')).toHaveCount(0);
+    await expect(page.locator('.pbl-conversation-scroll')).toHaveCount(0);
+    await page.locator('#pbl-project-overview summary').click();
+    await fixture.publish();
+    expect(fixture.commands).toEqual([]);
+    await start.click();
+    // Feedback must precede the HTTP acknowledgment, not wait for stream output.
+    await expect(page.getByTestId('pbl-agent-turn')).toBeVisible();
+    await expect(start).toHaveCount(0);
+    expect(fixture.commands).toEqual(['begin']);
+    release();
+    await expect.poll(() => fixture.view.needsOpening).toBe(false);
     const viewport = page.locator('.pbl-conversation-scroll');
-    await expect(page.locator('#pbl-project-overview')).toBeVisible();
-    await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeLessThanOrEqual(1);
+    const distance = () =>
+      viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
     for (let chunk = 0; chunk < 3; chunk++) {
-      fixture.view.messages[0].text += `Welcome chunk ${chunk}.\n\n`.repeat(20);
+      fixture.view.messages = [
+        { role: 'assistant', text: `Welcome chunk ${chunk}.\n\n`.repeat(60 + chunk * 10) },
+      ];
       fixture.view.revision++;
       await fixture.publish();
       await expect(viewport).toContainText(`Welcome chunk ${chunk}.`);
-      await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeLessThanOrEqual(1);
+      await expect.poll(distance).toBeLessThanOrEqual(8);
     }
-    const latest = page.getByTestId('pbl-conversation-scroll-button');
-    await latest.click();
-    fixture.view.messages[0].text += 'After choosing Latest.\n\n'.repeat(20);
-    fixture.view.revision++;
-    await fixture.publish();
-    await expect(viewport).toContainText('After choosing Latest.');
-    await expect
-      .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
-      .toBeLessThanOrEqual(8);
     const box = (await viewport.boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await page.mouse.wheel(0, -200);
+    await page.mouse.wheel(0, -250);
+    const latest = page.getByTestId('pbl-conversation-scroll-button');
     await expect(latest).toBeVisible();
     const reading = await viewport.evaluate((el) => el.scrollTop);
     fixture.view.messages[0].text += 'While reading earlier text.\n\n'.repeat(20);
@@ -451,98 +471,124 @@ for (const [width, guideCompleted] of [
     await fixture.publish();
     await expect(viewport).toContainText('While reading earlier text.');
     await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeCloseTo(reading, 0);
+    await latest.click();
+    await expect.poll(distance).toBeLessThanOrEqual(8);
+    fixture.view.busy = false;
+    fixture.view.roleRun = { status: 'succeeded', failure: null, canRetry: false };
+    await fixture.publish();
+    await page.mouse.wheel(0, -250);
+    await expect(latest).toBeVisible();
     await page.getByLabel('Your message', { exact: true }).fill('I am ready.');
     await page.getByRole('button', { name: 'Send', exact: true }).click();
-    await expect
-      .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
-      .toBeLessThanOrEqual(8);
-    expect(fixture.commands).toEqual(['chat']);
+    await expect.poll(distance).toBeLessThanOrEqual(8);
+    expect(fixture.commands).toEqual(['begin', 'chat']);
   });
 }
 
-for (const entry of ['delayed-guide', 'prepare', 'existing-opening', 'stage-change'] as const) {
-  test(`initial overview survives ${entry} and releases to normal following`, async ({
-    page,
-    learningEvents,
-  }) => {
+for (const entry of [
+  'delayed-guide',
+  'prepare',
+  'peek-return',
+  'existing-opening',
+  'later-stage',
+] as const) {
+  test(`first-entry start respects ${entry}`, async ({ page, learningEvents }) => {
     let finishPrepare!: () => void;
     const prepareGate = new Promise<void>((resolve) => {
       finishPrepare = resolve;
     });
     const fixture = await project(page, learningEvents, {
       application: false,
+      started: entry === 'peek-return' || entry === 'existing-opening',
       guideCompleted: entry !== 'delayed-guide',
       staleWorkbench: entry === 'delayed-guide',
       environmentReady: entry !== 'prepare',
       ...(entry === 'prepare' ? { prepareGate } : {}),
-      openingText: entry === 'existing-opening' ? 'Opening background.\n\n'.repeat(60) : '',
+      opening: entry !== 'existing-opening',
+      priorProgress: entry === 'later-stage' ? 'stage' : undefined,
+      openingText: entry === 'existing-opening' ? 'Existing opening.\n\n'.repeat(60) : '',
     });
-    const viewport = page.locator('.pbl-conversation-scroll');
+    if (entry === 'existing-opening' || entry === 'later-stage') {
+      await expect(page.getByTestId('pbl-project-start')).toHaveCount(0);
+      if (entry === 'later-stage') await expect.poll(() => fixture.commands).toEqual(['begin']);
+      else
+        await expect
+          .poll(() =>
+            page
+              .locator('.pbl-conversation-scroll')
+              .evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop),
+          )
+          .toBeLessThanOrEqual(8);
+      return;
+    }
     if (entry === 'delayed-guide') {
       await expect(page.locator('#pbl-project-overview')).toBeVisible();
-      // A later workspace snapshot can open the tour after the overview has
-      // already rendered. Its removal must not consume the reading protection.
+      await expect(
+        page.getByRole('button', { name: 'Start learning', exact: true }),
+      ).toBeDisabled();
+      expect(fixture.commands).toEqual([]);
       fixture.workbench.environmentId = fixture.view.environmentId!;
       await fixture.publish();
       await expect(tour(page)).toBeVisible();
-      await expect(page.locator('#pbl-project-overview')).toHaveCount(0);
-      fixture.view.messages = [{ role: 'assistant', text: 'Opening background.\n\n'.repeat(60) }];
-      fixture.view.revision++;
-      await fixture.publish();
+      expect(fixture.commands).toEqual([]);
       await page.keyboard.press('Escape');
     } else if (entry === 'prepare') {
-      await expect.poll(() => fixture.commands).toContain('prepare');
+      await expect.poll(() => fixture.commands).toEqual(['prepare']);
       finishPrepare();
-      await expect(page.locator('#pbl-project-overview')).toBeVisible();
     }
-    for (let chunk = 0; chunk < 3; chunk++) {
-      fixture.view.messages = [
-        { role: 'assistant', text: `Opening chunk ${chunk}.\n\n`.repeat(60 + chunk * 10) },
-      ];
-      fixture.view.revision++;
-      await fixture.publish();
-      await expect(viewport).toContainText(`Opening chunk ${chunk}.`);
-      await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeLessThanOrEqual(1);
-    }
-    const latest = page.getByTestId('pbl-conversation-scroll-button');
-    await expect(latest).toBeVisible();
-    if (entry === 'stage-change') {
-      // Advancing beyond the opening is no longer an initial overview read,
-      // even if the learner did not send a chat message first.
-      fixture.view.state.position.stageIndex = 1;
-      fixture.view.messages[0].text += 'Next stage opening.\n\n'.repeat(20);
-      fixture.view.revision++;
-      await fixture.publish();
-      await expect(viewport).toContainText('Next stage opening.');
-    } else {
-      await latest.click();
-    }
-    await expect
-      .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
-      .toBeLessThanOrEqual(8);
-    const box = (await viewport.boundingBox())!;
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await page.mouse.wheel(0, -250);
-    await expect(latest).toBeVisible();
-    const reading = await viewport.evaluate((el) => el.scrollTop);
-    fixture.view.messages[0].text += 'Later text.\n\n'.repeat(30);
-    fixture.view.revision++;
+    await expect(page.getByRole('button', { name: 'Start learning', exact: true })).toBeEnabled();
+    await expect(page.getByTestId('pbl-agent-turn')).toHaveCount(0);
+    expect(fixture.commands).not.toContain('begin');
     await fixture.publish();
-    await expect(viewport).toContainText('Later text.');
-    await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeCloseTo(reading, 0);
-    await page.getByLabel('Your message', { exact: true }).fill('Continue.');
-    await page.getByRole('button', { name: 'Send', exact: true }).click();
     await expect
-      .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
-      .toBeLessThanOrEqual(8);
+      .poll(() => page.getByTestId('pbl-project-start').evaluate((el) => el.scrollTop))
+      .toBe(0);
   });
 }
+
+test('failed first start can be retried without automatic opening', async ({
+  page,
+  learningEvents,
+}) => {
+  const fixture = await project(page, learningEvents, {
+    application: false,
+    guideCompleted: true,
+    opening: true,
+    beginFailures: 1,
+  });
+  const start = page.getByRole('button', { name: 'Start learning', exact: true });
+  await start.click();
+  await expect(page.getByText('Opening temporarily unavailable', { exact: true })).toBeVisible();
+  await expect(start).toBeEnabled();
+  await fixture.publish();
+  expect(fixture.commands).toEqual(['begin']);
+  await start.click();
+  await expect(page.getByTestId('pbl-agent-turn')).toBeVisible();
+  await expect(start).toHaveCount(0);
+  expect(fixture.commands).toEqual(['begin', 'begin']);
+});
+
+test('an existing queued opening resumes its waiting bubble without Start learning', async ({
+  page,
+  learningEvents,
+}) => {
+  const fixture = await project(page, learningEvents, {
+    application: false,
+    started: true,
+    guideCompleted: true,
+    busy: true,
+    existingQueuedRun: true,
+  });
+  await expect(page.getByTestId('pbl-agent-turn')).toBeVisible();
+  await expect(page.getByTestId('pbl-project-start')).toHaveCount(0);
+  expect(fixture.commands).toEqual([]);
+});
 
 for (const [target, key] of [
   ['overview summary', 'PageDown'],
   ['reply link', 'Space'],
 ] as const) {
-  test(`keyboard scrolling from the ${target} releases the initial reading hold`, async ({
+  test(`keyboard scrolling from the ${target} preserves reading during normal replies`, async ({
     page,
     learningEvents,
   }) => {
@@ -556,6 +602,9 @@ for (const [target, key] of [
     await expect(page.locator('[data-pbl-tour="replay"]')).toBeEnabled();
     await page.evaluate(() => document.fonts.ready);
     const viewport = page.locator('.pbl-conversation-scroll');
+    // Read earlier material using the normal scroll mechanism, with no opening hold.
+    await viewport.hover();
+    await page.mouse.wheel(0, -100000);
     await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeLessThanOrEqual(1);
     const control =
       target === 'reply link'
@@ -711,14 +760,17 @@ test('blocks pointer and keyboard interaction during preparation, then opens the
   await page.keyboard.type('Must not become a draft');
   await loading.click({ position: { x: 10, y: 10 } });
   await expect(loading).toBeVisible();
-  await expect(page.locator('[data-pbl-tour="composer"] textarea')).toHaveValue('');
+  await expect(page.locator('[data-pbl-tour="composer"] textarea')).toHaveCount(0);
   await expect(page.locator('[data-pbl-tour="replay"]')).toBeDisabled();
   expect(fixture.commands).toEqual(['prepare']);
   release();
   await expect(loading).toHaveCount(0);
   await expect(tour(page)).toHaveAttribute('data-step', 'progress');
+  expect(fixture.commands).toEqual(['prepare']);
+  expect(fixture.view.busy).toBe(false);
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Start learning', exact: true }).click();
   await expect.poll(() => fixture.commands).toEqual(['prepare', 'begin']);
-  expect(fixture.view.busy).toBe(true);
 });
 
 test('loading keeps its accessible modal and focus through native fullscreen changes', async ({
@@ -895,6 +947,7 @@ test('keeps the current page when an HTTP reply arrives before its workspace sna
   });
   const fixture = await project(page, learningEvents, {
     opening: true,
+    openingText: 'Earlier teaching content.',
     beginGate,
     lagOpeningWorkbench: true,
   });
@@ -1598,7 +1651,13 @@ for (const [width, height] of [
     const viewport = page.locator('.pbl-conversation-scroll');
     const latest = page.getByTestId('pbl-conversation-scroll-button');
     const before = await viewport.evaluate((el) => el.clientHeight);
-    // A fresh study opens at its overview; Latest explicitly opts into following.
+    // Opening and later replies follow normally. Read upward, then resume with Latest.
+    await expect
+      .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
+      .toBeLessThanOrEqual(8);
+    await viewport.hover();
+    await page.mouse.wheel(0, -250);
+    await expect(latest).toBeVisible();
     await latest.click();
     await expect
       .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))

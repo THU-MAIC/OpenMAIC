@@ -3022,6 +3022,7 @@
       "workspace-run": "Workspace run"
     },
     "overview": {
+      "startLearning": "Lernen starten",
       "title": "Projektübersicht",
       "expand": "Aufklappen",
       "collapse": "Einklappen",

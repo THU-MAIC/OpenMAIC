@@ -51,7 +51,7 @@ import { useWorkbenchOnboarding } from './use-workbench-onboarding';
 import { WorkbenchOnboarding } from './workbench-onboarding';
 import { WorkbenchLoading } from './workbench-loading';
 import { pblRequest } from './request';
-import { continueActionLabel } from '@/lib/pbl/v3/presentation';
+import { continueActionLabel, needsInitialStart } from '@/lib/pbl/v3/presentation';
 export { pblRequest } from './request';
 import { SandboxRequestError } from '@/components/sandbox/client';
 
@@ -317,15 +317,24 @@ function PBLV3WorkspaceContent({
     !!view?.evaluation &&
     (collectionFailed === evaluationKey ||
       ['unknown', 'unavailable'].includes(view.evaluation.state));
+  const initialStart = !!view && needsInitialStart(view);
+  const waitingToStart = initialStart && pendingAction !== 'begin';
   const opening = useRef('');
   useEffect(() => {
-    if (!view?.needsOpening || !view.environment?.ready || view.busy || pending || dirtyFiles)
+    if (
+      initialStart ||
+      !view?.needsOpening ||
+      !view.environment?.ready ||
+      view.busy ||
+      pending ||
+      dirtyFiles
+    )
       return;
     const key = `${view.id}:${view.environmentId}:${view.state.position.milestoneId}:${view.state.position.stageIndex}:${view.role}`;
     if (opening.current === key) return;
     opening.current = key;
     void command('begin');
-  }, [view, pending, dirtyFiles, command]);
+  }, [view, pending, dirtyFiles, command, initialStart]);
   const quiz = view?.state.collected[view.state.position.milestoneId ?? '']?.quiz;
   // All teaching actions share their prerequisites, with an explicit path out
   // of each blocked state. Draft input stays editable during recovery.
@@ -811,10 +820,32 @@ function PBLV3WorkspaceContent({
 
                 <div className="pbl-task-area flex min-h-0 flex-1 flex-col">
                   <LearningConversation
-                    initialEntry={initialEntry}
+                    waitingToStart={waitingToStart}
                     overview={
                       !onboarding.active && !entryLoading ? (
-                        <ProjectOverview key={view.id} view={view} hero={projectHero} />
+                        <ProjectOverview
+                          key={view.id}
+                          view={view}
+                          hero={projectHero}
+                          startAction={
+                            waitingToStart ? (
+                              <button
+                                type="button"
+                                className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 font-semibold text-primary-foreground disabled:opacity-50"
+                                disabled={
+                                  !onboardingReady ||
+                                  (blockedReason !== null && blockedReason !== 'opening') ||
+                                  onboarding.active ||
+                                  entryLoading
+                                }
+                                onClick={() => void command('begin')}
+                              >
+                                <ArrowRight size={18} aria-hidden="true" />
+                                {t('pblV3.overview.startLearning')}
+                              </button>
+                            ) : undefined
+                          }
+                        />
                       ) : undefined
                     }
                     modalActive={onboarding.active || entryLoading}
@@ -1149,7 +1180,7 @@ function PBLV3WorkspaceContent({
                     )}
                   </TaskDock>
                 </div>
-                {view.actions.includes('chat') && (
+                {!waitingToStart && view.actions.includes('chat') && (
                   <form
                     data-pbl-tour="composer"
                     className="shrink-0 border-t bg-background p-3"
