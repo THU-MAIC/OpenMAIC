@@ -75,9 +75,11 @@ export class QwenVoiceRecloneRequiredError extends Error {
     super(
       agentName
         ? `Voice "${voiceName}" bound to narrator "${agentName}" is incompatible with the current clone target. ` +
-            `Change that agent's voice in Settings before starting generation: ${QWEN_VOICE_SETTINGS_URL}`
+            `Change that agent's voice in Settings before starting generation: ${QWEN_VOICE_SETTINGS_URL} ` +
+            `If TTS Settings are unavailable, contact your administrator.`
         : `Saved voice "${voiceName}" is incompatible with the current clone target. ` +
-            `Re-clone it in Settings before starting generation: ${QWEN_VOICE_SETTINGS_URL}`,
+            `Re-clone it in Settings before starting generation: ${QWEN_VOICE_SETTINGS_URL} ` +
+            `If TTS Settings are unavailable, contact your administrator.`,
     );
     this.name = 'QwenVoiceRecloneRequiredError';
   }
