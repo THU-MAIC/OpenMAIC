@@ -1,0 +1,340 @@
+{
+  "date": "2026-11-16",
+  "model": "deepseek-v4.1-flash",
+  "endpoint": "https://platform.cogevol.com/v1/chat/completions",
+  "formula": "sum(cached input tokens)/sum(input tokens)",
+  "baselineCommit": "65d5ac408301a2916d1d7e81b037855760a286ab",
+  "previousRevision": "412694039b4691beddb817ee6394ff5ff8668aac",
+  "candidateCodeCommit": "d0572b6",
+  "fullLiteralInstructionAndArtifactTextRetained": true,
+  "instructionOrPlanReferenceElisionShipped": false,
+  "source": {
+    "system": "OpenMAIC production PostgreSQL via maic-ops-prod pg_query, data source openmaic_live",
+    "table": "llm_calls, joined through published-course studies and PBL role sessions",
+    "realCendUsers": true,
+    "authorExcluded": true,
+    "selection": "Fixed seed pbl-cache-long-20261116; up to200 candidate role-session rows/course. Prefer discussion/planner/coder/mentor with distinct learners, using availability and call counts, never cache outcomes. No prerequisite role session >=24 calls in scanned candidates (maximum21), so last12 calls of four sessions with >=16; courses1/2 calls13-24 of four sessions with >=24.",
+    "selectedRecords": 144,
+    "selectedRecordsPerCourse": 48,
+    "roleSessions": 12,
+    "distinctLearners": 10,
+    "distinctLearnersPerCourse": 4,
+    "prerequisiteSelectedSessionLengths": [16, 16, 19, 16],
+    "course1SelectedSessionLengths": [32, 24, 24, 25],
+    "course2SelectedSessionLengths": [38, 25, 25, 28],
+    "sourceHash": "42b2bc501a7e6dc902ef35f57ceec52221325e3fd6238ce9fa2e643fed427152",
+    "conservativeProjectionHash": "e69ecd63007001c5dd540c0906f2a8b95a03f9c1d436afe9195b10c96f941495"
+  },
+  "finalReplay": {
+    "variants": 3,
+    "rounds": 1,
+    "plannedRequests": 432,
+    "actualTransportAttempts": 432,
+    "successfulRequests": 431,
+    "matchedSuccessfulRecordsPerVariant": 143,
+    "failedRequests": [
+      {
+        "index": 101,
+        "arm": "new_v1",
+        "attempts": [
+          {
+            "attempt": 1,
+            "http": 502,
+            "ms": 11484,
+            "usage": null
+          }
+        ]
+      }
+    ],
+    "retryPolicy": "One attempt per logical request; no automatic retry, strict432 transport ceiling. Headline compares only identical source records with successful results in all three arms. All unmatched successes and failures retained privately.",
+    "settings": "Fresh independent equal-length leading markers per arm; chronological same source inputs; three arms concurrently; matched model/tools/output16/thinking-disabled request settings; generated outputs not executed or fed back. Verified custom MaaS endpoint uses explicit trailing capability. Unknown/custom endpoints default prefix.",
+    "methodLimits": "Complete saved system/input but reconstructed identical pre-PR tool schemas, JSONB insertion order and original thinking/output settings not fully retained. Not byte-exact historical HTTP.13 archived recovery whitespace boundaries preserved and labelled; not asserted as current-runtime defects. Recorded assistant text becomes new input without recreating original output-KV warmup. Not UI latency or a population estimate."
+  },
+  "primary": {
+    "old_v1": {
+      "requests": 143,
+      "inputTokens": 4090827,
+      "cachedTokens": 1269760,
+      "uncachedTokens": 2821067,
+      "cachePct": 31.03920063107044
+    },
+    "prev_v": {
+      "requests": 143,
+      "inputTokens": 4092873,
+      "cachedTokens": 3150464,
+      "uncachedTokens": 942409,
+      "cachePct": 76.97438938369208
+    },
+    "new_v1": {
+      "requests": 143,
+      "inputTokens": 4093367,
+      "cachedTokens": 3085568,
+      "uncachedTokens": 1007799,
+      "cachePct": 75.37970575323445
+    }
+  },
+  "gainVsBaselinePercentagePoints": 44.340505122164004,
+  "uncachedReductionVsBaselinePct": 64.27596366906563,
+  "gainVsPreviousPercentagePoints": -1.594683630457638,
+  "uncachedReductionVsPreviousPct": -6.938600968369357,
+  "perCourse": {
+    "prerequisite": {
+      "old_v1": {
+        "requests": 48,
+        "inputTokens": 1110410,
+        "cachedTokens": 407808,
+        "uncachedTokens": 702602,
+        "cachePct": 36.725894039138694
+      },
+      "prev_v": {
+        "requests": 48,
+        "inputTokens": 1111093,
+        "cachedTokens": 831104,
+        "uncachedTokens": 279989,
+        "cachePct": 74.80057924944177
+      },
+      "new_v1": {
+        "requests": 48,
+        "inputTokens": 1111213,
+        "cachedTokens": 833664,
+        "uncachedTokens": 277549,
+        "cachePct": 75.02288040186716
+      }
+    },
+    "course_1": {
+      "old_v1": {
+        "requests": 48,
+        "inputTokens": 1592418,
+        "cachedTokens": 442112,
+        "uncachedTokens": 1150306,
+        "cachePct": 27.76356459170896
+      },
+      "prev_v": {
+        "requests": 48,
+        "inputTokens": 1593115,
+        "cachedTokens": 1289984,
+        "uncachedTokens": 303131,
+        "cachePct": 80.97243450723896
+      },
+      "new_v1": {
+        "requests": 48,
+        "inputTokens": 1593307,
+        "cachedTokens": 1203328,
+        "uncachedTokens": 389979,
+        "cachePct": 75.52392602304515
+      }
+    },
+    "course_2": {
+      "old_v1": {
+        "requests": 47,
+        "inputTokens": 1387999,
+        "cachedTokens": 419840,
+        "uncachedTokens": 968159,
+        "cachePct": 30.247860409121333
+      },
+      "prev_v": {
+        "requests": 47,
+        "inputTokens": 1388665,
+        "cachedTokens": 1029376,
+        "uncachedTokens": 359289,
+        "cachePct": 74.12702127582966
+      },
+      "new_v1": {
+        "requests": 47,
+        "inputTokens": 1388847,
+        "cachedTokens": 1048576,
+        "uncachedTokens": 340271,
+        "cachePct": 75.49974907243202
+      }
+    }
+  },
+  "ordinaryAppendOnlyDiagnostic": {
+    "old_v1": {
+      "requests": 110,
+      "inputTokens": 3362764,
+      "cachedTokens": 1168256,
+      "uncachedTokens": 2194508,
+      "cachePct": 34.740945246231966
+    },
+    "prev_v": {
+      "requests": 110,
+      "inputTokens": 3364335,
+      "cachedTokens": 2923776,
+      "uncachedTokens": 440559,
+      "cachePct": 86.90501986276634
+    },
+    "new_v1": {
+      "requests": 110,
+      "inputTokens": 3364747,
+      "cachedTokens": 2869504,
+      "uncachedTokens": 495243,
+      "cachePct": 85.28141937566183
+    }
+  },
+  "missAttribution": {
+    "status": "complete",
+    "tokenizer": "Official DeepSeek recipe V4 tokenizer; offline component estimates, not exact backend framing or V4.1 tokenizer proof",
+    "tokenizerSha256": "97d2f31b020d18b5aee5c9b3d5b4efb10ea210f3fe3f7dffe3f1cd90542d6b19",
+    "method": "Exact input/cache/miss from API. Tail and genuinely new message/head text estimated offline; estimates capped at measured misses. Allocation assumes the request-only tail is uncached first, then allocates genuinely new text; this is a conservative accounting estimate, not independent backend token-boundary evidence. First window requests separate. Residual explicitly combines repeated-prefix reprocessing, backend framing, tokenization/rounding and unexplained cache effects; it is not all asserted to be a software defect. All buckets sum to exact misses per request. New content includes recorded assistant output that this capped replay does not regenerate.",
+    "primaryRound": 1,
+    "allPrimary": {
+      "exactInputTokens": 4093367,
+      "exactCachedTokens": 3085568,
+      "exactUncachedTokens": 1007799,
+      "estimatedUncachedTailTokens": 432417,
+      "estimatedNewInputTokens": 163500,
+      "estimatedWindowColdStartTokens": 244924,
+      "residualRepeatedPrefixFramingCacheEffects": 166958,
+      "requests": 143,
+      "cachePct": 75.37970575323445
+    },
+    "ordinaryAppendOnly": {
+      "exactInputTokens": 3364747,
+      "exactCachedTokens": 2869504,
+      "exactUncachedTokens": 495243,
+      "estimatedUncachedTailTokens": 343980,
+      "estimatedNewInputTokens": 141895,
+      "estimatedWindowColdStartTokens": 0,
+      "residualRepeatedPrefixFramingCacheEffects": 9368,
+      "requests": 110,
+      "cachePct": 85.28141937566183
+    },
+    "eventGroups": {
+      "archived_recovery_whitespace_difference": {
+        "exactInputTokens": 304720,
+        "exactCachedTokens": 203264,
+        "exactUncachedTokens": 101456,
+        "estimatedUncachedTailTokens": 39621,
+        "estimatedNewInputTokens": 11477,
+        "estimatedWindowColdStartTokens": 0,
+        "residualRepeatedPrefixFramingCacheEffects": 50358,
+        "requests": 13,
+        "cachePct": 66.70517196114466
+      },
+      "captured_prompt_or_reference_revision": {
+        "exactInputTokens": 37492,
+        "exactCachedTokens": 128,
+        "exactUncachedTokens": 37364,
+        "estimatedUncachedTailTokens": 3328,
+        "estimatedNewInputTokens": 466,
+        "estimatedWindowColdStartTokens": 0,
+        "residualRepeatedPrefixFramingCacheEffects": 33570,
+        "requests": 1,
+        "cachePct": 0.3414061666488851
+      },
+      "first_request_in_selected_window": {
+        "exactInputTokens": 282193,
+        "exactCachedTokens": 1536,
+        "exactUncachedTokens": 280657,
+        "estimatedUncachedTailTokens": 35733,
+        "estimatedNewInputTokens": 0,
+        "estimatedWindowColdStartTokens": 244924,
+        "residualRepeatedPrefixFramingCacheEffects": 0,
+        "requests": 12,
+        "cachePct": 0.5443083279882917
+      },
+      "historical_dialogue_projection_changed": {
+        "exactInputTokens": 47417,
+        "exactCachedTokens": 0,
+        "exactUncachedTokens": 47417,
+        "estimatedUncachedTailTokens": 5653,
+        "estimatedNewInputTokens": 3108,
+        "estimatedWindowColdStartTokens": 0,
+        "residualRepeatedPrefixFramingCacheEffects": 38656,
+        "requests": 5,
+        "cachePct": 0.0
+      },
+      "ordinary_append_only": {
+        "exactInputTokens": 3364747,
+        "exactCachedTokens": 2869504,
+        "exactUncachedTokens": 495243,
+        "estimatedUncachedTailTokens": 343980,
+        "estimatedNewInputTokens": 141895,
+        "estimatedWindowColdStartTokens": 0,
+        "residualRepeatedPrefixFramingCacheEffects": 9368,
+        "requests": 110,
+        "cachePct": 85.28141937566183
+      },
+      "stage_entry_policy_or_decision_reference_switch": {
+        "exactInputTokens": 25840,
+        "exactCachedTokens": 0,
+        "exactUncachedTokens": 25840,
+        "estimatedUncachedTailTokens": 1089,
+        "estimatedNewInputTokens": 1818,
+        "estimatedWindowColdStartTokens": 0,
+        "residualRepeatedPrefixFramingCacheEffects": 22933,
+        "requests": 3,
+        "cachePct": 0.0
+      },
+      "stage_or_milestone_switch": {
+        "exactInputTokens": 47417,
+        "exactCachedTokens": 0,
+        "exactUncachedTokens": 47417,
+        "estimatedUncachedTailTokens": 5653,
+        "estimatedNewInputTokens": 3108,
+        "estimatedWindowColdStartTokens": 0,
+        "residualRepeatedPrefixFramingCacheEffects": 38656,
+        "requests": 5,
+        "cachePct": 0.0
+      },
+      "tool_definitions_changed": {
+        "exactInputTokens": 39641,
+        "exactCachedTokens": 0,
+        "exactUncachedTokens": 39641,
+        "estimatedUncachedTailTokens": 4888,
+        "estimatedNewInputTokens": 2911,
+        "estimatedWindowColdStartTokens": 0,
+        "residualRepeatedPrefixFramingCacheEffects": 31842,
+        "requests": 4,
+        "cachePct": 0.0
+      },
+      "welcome_completion_rules": {
+        "exactInputTokens": 70599,
+        "exactCachedTokens": 11136,
+        "exactUncachedTokens": 59463,
+        "estimatedUncachedTailTokens": 7901,
+        "estimatedNewInputTokens": 7647,
+        "estimatedWindowColdStartTokens": 0,
+        "residualRepeatedPrefixFramingCacheEffects": 43915,
+        "requests": 3,
+        "cachePct": 15.773594526834657
+      },
+      "welcome_disclosure_boundary": {
+        "exactInputTokens": 56798,
+        "exactCachedTokens": 11136,
+        "exactUncachedTokens": 45662,
+        "estimatedUncachedTailTokens": 4102,
+        "estimatedNewInputTokens": 6554,
+        "estimatedWindowColdStartTokens": 0,
+        "residualRepeatedPrefixFramingCacheEffects": 35006,
+        "requests": 2,
+        "cachePct": 19.606324166343885
+      }
+    },
+    "newEstimateClippedCount": 13,
+    "headChangeRecords": 21,
+    "toolDefinitionChangeRecords": 4,
+    "noCompactionPolicyChange": true
+  },
+  "prefixAudit": {
+    "sourceRecordsAudited": 144,
+    "sameStageMutablePlanBreaksBeforeReviewFix": 4,
+    "sameStageMutablePlanBreaksAfterReviewFix": 0,
+    "earlierSeedChangeEventsAfterFix": 0,
+    "sameHeadCanonicalHistoryRewrites": 0,
+    "compactionBoundaryObserved": false,
+    "compactionPolicyChanged": false,
+    "toolDefinitionChangesAtStageBoundaries": 4
+  },
+  "rejectedOptionalExperiment": {
+    "shipped": false,
+    "validLogicalResults": 864,
+    "recordedTransportAttemptsIncluding33Invalidated": 906,
+    "possibleUnrecordedInFlight": 3,
+    "approvedCeiling": 912,
+    "cacheRatioNotFinal": 78.55597767800339,
+    "ordinaryRatioNotFinal": 88.88626930916772,
+    "reason": "Optional exact instruction/plan references were removed after teaching-content differences remained uncertain. Preserve full literal material; do not use this higher experimental ratio to represent final code. All invalidated, failed and experimental records retained privately."
+  },
+  "privacy": "Only numeric usage, coarse course/role/window metadata and aggregate hashes published. No learner content, model responses, owner/study/session/trace identifiers or credentials."
+}
