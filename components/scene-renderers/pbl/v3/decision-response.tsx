@@ -122,9 +122,18 @@ export function DecisionResponseForm({
           )}
         </div>
       )}
-      {!hasForm && selected && (
-        <span role="status" className="text-xs text-muted-foreground">
-          {t('pblV3.submitted')}
+      {!hasForm && (selected || pendingChosen !== undefined) && (
+        <span
+          role="status"
+          aria-busy={pendingChosen !== undefined}
+          className="inline-flex items-center gap-2 text-xs text-muted-foreground"
+        >
+          {pendingChosen !== undefined ? (
+            <LoaderCircle size={14} aria-hidden="true" className="animate-spin" />
+          ) : (
+            <Check size={14} aria-hidden="true" />
+          )}
+          {t(pendingChosen !== undefined ? 'pblV3.submitting' : 'pblV3.submitted')}
         </span>
       )}
       {!isDecisionResponseWithinLimits(value) && (

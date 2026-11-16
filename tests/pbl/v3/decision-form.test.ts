@@ -215,3 +215,54 @@ it('marks only acknowledged answers submitted and enables changed or failed subm
   await render('First unsaved rule', false);
   expect(container.querySelector('button')!.textContent).toBe('pblV3.submitDecision');
 });
+
+it('distinguishes pending immediate choices from acknowledged choices and permits retry', async () => {
+  const decision: LearningView['decisions'][number] = {
+    id: 'format',
+    prompt: 'Choose a format',
+    options: [
+      { id: 'plain', label: 'Plain text' },
+      { id: 'json', label: 'JSON' },
+    ],
+  };
+  container = document.createElement('div');
+  document.body.append(container);
+  root = createRoot(container);
+  const render = (chosen?: string, pendingChosen?: string) =>
+    act(async () =>
+      root!.render(
+        createElement(DecisionResponseForm, {
+          decision,
+          selected: chosen ? { id: 'format', chosen, revision: 0 } : undefined,
+          disabled: pendingChosen !== undefined,
+          pendingChosen,
+          onDraftChange: () => {},
+          onSubmit: submit,
+        }),
+      ),
+    );
+  const status = () => container.querySelector('[role="status"]');
+  const options = () => container.querySelectorAll('button');
+  await render();
+  expect(status()).toBeNull();
+  await render(undefined, 'plain');
+  expect(status()!.textContent).toBe('pblV3.submitting');
+  await render('plain');
+  expect(status()!.textContent).toBe('pblV3.submitted');
+  expect(options()[0]!.disabled).toBe(true);
+  expect(options()[1]!.disabled).toBe(false);
+  await render('plain', 'json');
+  expect(status()!.textContent).toBe('pblV3.submitting');
+  expect(status()!.getAttribute('aria-busy')).toBe('true');
+  expect(options()[1]!.getAttribute('aria-pressed')).toBe('true');
+  // Failed replacement: only the prior receipt remains selected; another choice can retry.
+  await render('plain');
+  expect(options()[0]!.getAttribute('aria-pressed')).toBe('true');
+  expect(options()[1]!.getAttribute('aria-pressed')).toBe('false');
+  await act(async () => options()[1]!.click());
+  expect(submit).toHaveBeenCalledWith('json');
+  await render('json');
+  expect(status()!.textContent).toBe('pblV3.submitted');
+  expect(options()[0]!.disabled).toBe(false);
+  expect(options()[1]!.disabled).toBe(true);
+});
