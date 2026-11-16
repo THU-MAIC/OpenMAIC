@@ -1,6 +1,5 @@
 import type { Context } from '@earendil-works/pi-ai';
 import { appendRequestSystemTail } from '@/lib/agent/runtime/request-system-tail';
-import { reuseRetainedTeachingMaterial } from './teaching-live-state';
 
 export interface TeachingHistoryWindow {
   stageKey: string;
@@ -62,7 +61,6 @@ function withDeliveredReply(
   reply: string | undefined,
   instruction?: string,
 ): Context {
-  context = reuseRetainedTeachingMaterial(context);
   if (!reply) return context;
   return appendRequestSystemTail(
     context,

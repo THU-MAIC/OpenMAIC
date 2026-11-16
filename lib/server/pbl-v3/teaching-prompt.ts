@@ -1,5 +1,4 @@
 import 'server-only';
-import { LIVE_TEACHING_STATE_PREFIX } from './teaching-live-state';
 import { communicationRules, type ResponseLanguage } from './communication';
 import type {
   AgentRole,
@@ -451,8 +450,7 @@ export function teachingLiveSuffix(live: string): string {
   if (!live) return '';
   const { decisionsChosen, ...hostContext } = JSON.parse(live);
   return (
-    LIVE_TEACHING_STATE_PREFIX +
-    JSON.stringify(hostContext) +
+    `\nAuthoritative live teaching state (current facts override earlier state; the static product guide still applies): ${JSON.stringify(hostContext)}` +
     (decisionsChosen === undefined ? '' : quotedDecisionContext(decisionsChosen))
   );
 }
