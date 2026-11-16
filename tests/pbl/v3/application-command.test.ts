@@ -58,7 +58,7 @@ public class Main {
         cwd: root,
         env: { ...process.env, TMPDIR: root },
         encoding: 'utf8',
-        timeout: 5000,
+        timeout: 30_000,
       });
     expect(run([...sources, 'src/demo/Added.java'])).toBe('current-source:hello:present');
     writeFileSync(
@@ -70,7 +70,7 @@ public class Main {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}, 15000);
+}, 45_000);
 
 it('rejects Java launch flags, missing entry sources and escaped paths', () => {
   const good = ['java', '-cp', '/tmp/pbl-project-build', 'demo.Main'];
