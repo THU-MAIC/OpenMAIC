@@ -1,10 +1,19 @@
-// Daily reminders for open pull requests whose CI cannot run:
+// Daily reminders for open pull requests that are stuck:
 //
 // - conflict: the pull request conflicts with its base branch. GitHub does not
 //   start `pull_request` workflows for it, so pushes go unchecked and the
 //   author is often unaware.
 // - approval: workflow runs for the head commit wait in `action_required`
 //   until a maintainer approves them (first-time fork contributors).
+// - codex: Codex review threads stay unresolved for over a day. Maintainers
+//   review a pull request once every Codex thread has a reply and is resolved.
+//   If the author shows no activity (push, comment, review or thread reply)
+//   for CODEX_CLOSE_MS after the reminder, the pull request is closed with a
+//   comment saying it can be reopened once the threads are addressed. Pull
+//   requests labelled `status:blocked` are exempt (the ball is with the
+//   maintainers).
+//
+// Drafts and bot-authored pull requests are never reminded or closed.
 //
 // Each reminder is a single comment identified by a hidden marker. Later runs
 // update that comment in place (no new notification) instead of reposting.
@@ -17,8 +26,13 @@ import { pathToFileURL } from 'node:url';
 export const MARKERS = {
   conflict: '<!-- openmaic-pr-reminder:conflict -->',
   approval: '<!-- openmaic-pr-reminder:approval -->',
+  codex: '<!-- openmaic-pr-reminder:codex -->',
+  codexClosed: '<!-- openmaic-pr-reminder:codex-closed -->',
 };
 export const STALE_MS = 24 * 60 * 60 * 1000;
+export const CODEX_CLOSE_MS = 7 * 24 * 60 * 60 * 1000;
+export const BLOCKED_LABEL = 'status:blocked';
+const CODEX_LOGIN = 'chatgpt-codex-connector';
 export const MAX_WRITES_PER_RUN = 20;
 const BOT_LOGIN = 'github-actions[bot]';
 const CODEOWNERS_PATHS = ['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS'];
@@ -43,7 +57,12 @@ export function globalOwners(text) {
 }
 
 export function isEligible(pr) {
-  return !pr.isDraft && pr.author?.__typename !== 'Bot';
+  // A deleted author account comes back as `author: null`: nobody to remind.
+  return !pr.isDraft && Boolean(pr.author?.login) && pr.author.__typename !== 'Bot';
+}
+
+export function isBlocked(pr) {
+  return (pr.labels?.nodes ?? []).some((label) => label.name === BLOCKED_LABEL);
 }
 
 function time(value) {
@@ -141,6 +160,131 @@ export function decide(pr, { now, branchRuns, runsBySha, owners, base }) {
   };
 }
 
+// Unresolved review threads opened by Codex. Outdated threads still count:
+// the author is expected to reply and resolve them.
+export function unresolvedCodexThreads(pr) {
+  return (pr.reviewThreads?.nodes ?? []).filter((thread) => {
+    const first = thread.comments?.nodes?.[0];
+    // The Codex app itself: an exact bot login, so a user account with a
+    // look-alike name cannot open threads that count against a PR.
+    return (
+      !thread.isResolved &&
+      first?.author?.login === CODEX_LOGIN &&
+      first.author.__typename === 'Bot'
+    );
+  });
+}
+
+// Oldest unresolved Codex thread, or null.
+export function codexSince(pr) {
+  const threads = unresolvedCodexThreads(pr);
+  if (!threads.length) return null;
+  return new Date(
+    Math.min(...threads.map((thread) => time(thread.comments.nodes[0].createdAt))),
+  ).toISOString();
+}
+
+function threadCount(count) {
+  return count === 1 ? '1 Codex review thread is' : `${count} Codex review threads are`;
+}
+
+export function codexBody(pr, count) {
+  return [
+    MARKERS.codex,
+    `Hi @${pr.author.login}, ${threadCount(count)} still unresolved on this pull request.`,
+    '',
+    'Maintainers review a pull request once every Codex thread has a reply (fixed in which commit, or why not) and is resolved. Outdated threads count too.',
+    '',
+    `If there is no push or comment from you within ${CODEX_CLOSE_MS / STALE_MS} days after this reminder, the pull request will be closed automatically; you can reopen it once the threads are addressed. Converting it to a draft pauses this.`,
+    '',
+    '<sub>Automated reminder. It is posted once and updated in place.</sub>',
+    '',
+  ].join('\n');
+}
+
+export function codexClosedBody(pr, count) {
+  return [
+    MARKERS.codexClosed,
+    `Hi @${pr.author.login}, closing this pull request: ${threadCount(count)} still unresolved and there has been no push or comment from you for ${CODEX_CLOSE_MS / STALE_MS} days since the reminder above.`,
+    '',
+    'Feel free to reopen it once every Codex thread has a reply and is resolved.',
+    '',
+    '<sub>Automated message.</sub>',
+    '',
+  ].join('\n');
+}
+
+// Pure decision for the Codex reminder. Independent of the CI reminders: a
+// pull request can get both.
+export function decideCodex(pr, { now }) {
+  if (!isEligible(pr) || isBlocked(pr)) return null;
+  const since = codexSince(pr);
+  if (!isStale(since, now)) return null;
+  const count = unresolvedCodexThreads(pr).length;
+  return { kind: 'codex', since, count, body: codexBody(pr, count) };
+}
+
+// Latest activity by the pull request author (or any push / reopen), or null.
+// `activity` is the result of ACTIVITY_QUERY; `comments` are the REST issue
+// comments already read for the reminder lookup.
+export function lastAuthorActivity(pr, activity, comments) {
+  const login = pr.author?.login;
+  const times = [
+    ...(activity?.commits?.nodes ?? []).flatMap((node) => [
+      node.commit?.committedDate,
+      ...(node.commit?.checkSuites?.nodes ?? []).map((suite) => suite.createdAt),
+    ]),
+    ...(activity?.reviewThreads?.nodes ?? []).flatMap((thread) =>
+      (thread.comments?.nodes ?? [])
+        .filter((comment) => comment.author?.login === login)
+        .map((comment) => comment.createdAt),
+    ),
+    // Pauses end: a draft marked ready or `status:blocked` removed restarts
+    // the window like a push does.
+    ...(activity?.timelineItems?.nodes ?? [])
+      .filter((node) => !node.label || node.label.name === BLOCKED_LABEL)
+      .map((node) => node.createdAt),
+    ...(activity?.reviews?.nodes ?? [])
+      .filter((review) => review.author?.login === login)
+      .map((review) => review.submittedAt),
+    ...(comments ?? [])
+      .filter((comment) => comment.user?.login === login)
+      .map((comment) => comment.created_at),
+  ].map(time);
+  const latest = Math.max(0, ...times);
+  return latest ? new Date(latest).toISOString() : null;
+}
+
+// Newest unresolved Codex thread, or null.
+export function newestCodexThreadAt(pr) {
+  const threads = unresolvedCodexThreads(pr);
+  if (!threads.length) return null;
+  return new Date(
+    Math.max(...threads.map((thread) => time(thread.comments.nodes[0].createdAt))),
+  ).toISOString();
+}
+
+// The close window starts at the reminder, and restarts at any later author
+// activity or Codex thread (a thread newer than the reminder was never
+// announced to the author).
+export function codexCloseDue({ reminderAt, newestThreadAt, lastActivity, now }) {
+  const start = Math.max(time(reminderAt), time(newestThreadAt), time(lastActivity));
+  return now - start > CODEX_CLOSE_MS;
+}
+
+// The most recent reminder of a kind, or null.
+export function latestReminder(comments, kind) {
+  const matches = comments.filter(
+    (comment) =>
+      comment.user?.login === BOT_LOGIN &&
+      comment.user?.type === 'Bot' &&
+      comment.body?.startsWith(MARKERS[kind]),
+  );
+  return matches.length
+    ? matches.reduce((a, b) => (time(b.created_at) > time(a.created_at) ? b : a))
+    : null;
+}
+
 export function findReminder(comments, kind) {
   return (
     comments.find(
@@ -163,6 +307,46 @@ query($owner: String!, $repo: String!, $cursor: String) {
         number url isDraft mergeable createdAt baseRefName headRefName headRefOid
         headRepository { nameWithOwner }
         author { login __typename }
+        labels(first: 100) { nodes { name } }
+        reviewThreads(first: 100) {
+          pageInfo { hasNextPage }
+          nodes {
+            isResolved
+            comments(first: 1) { nodes { author { login __typename } createdAt } }
+          }
+        }
+      }
+    }
+  }
+}`;
+
+// Only read for pull requests whose Codex reminder is old enough to close.
+// Author activity: reviews, thread replies (read from the threads themselves,
+// since an inline reply is a review comment) and issue comments. Pushes show up
+// as the head commit's check suites (created on push, unlike the commit date)
+// or a force-push event; a reopen, a draft marked ready or `status:blocked`
+// removed also restarts the window.
+const ACTIVITY_QUERY = `
+query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      commits(last: 1) {
+        nodes { commit { committedDate checkSuites(last: 20) { nodes { createdAt } } } }
+      }
+      reviews(last: 100) { nodes { author { login } submittedAt } }
+      reviewThreads(first: 100) {
+        nodes { comments(last: 50) { nodes { author { login } createdAt } } }
+      }
+      timelineItems(
+        last: 50
+        itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT, REOPENED_EVENT, READY_FOR_REVIEW_EVENT, UNLABELED_EVENT]
+      ) {
+        nodes {
+          ... on HeadRefForcePushedEvent { createdAt }
+          ... on ReopenedEvent { createdAt }
+          ... on ReadyForReviewEvent { createdAt }
+          ... on UnlabeledEvent { createdAt label { name } }
+        }
       }
     }
   }
@@ -246,6 +430,20 @@ export async function run({ client, repo, now = Date.now(), dryRun = true, log =
   const results = [];
   let writes = 0;
 
+  const write = async (count, fn) => {
+    if (dryRun) return true;
+    if (writes + count > MAX_WRITES_PER_RUN) return false;
+    await fn();
+    writes += count;
+    return true;
+  };
+  const postComment = (pr, body) =>
+    client.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
+      ...repo,
+      issue_number: pr.number,
+      body,
+    });
+
   for (const pr of prs) {
     if (!isEligible(pr)) continue;
     let branchRuns = [];
@@ -258,14 +456,11 @@ export async function run({ client, repo, now = Date.now(), dryRun = true, log =
         1,
       );
     }
-    const decision = decide(pr, {
-      now,
-      branchRuns,
-      runsBySha,
-      owners,
-      base: pr.baseRefName || defaultBranch,
-    });
-    if (!decision) continue;
+    const decisions = [
+      decide(pr, { now, branchRuns, runsBySha, owners, base: pr.baseRefName || defaultBranch }),
+      decideCodex(pr, { now }),
+    ].filter(Boolean);
+    if (!decisions.length) continue;
 
     const comments = await paginate(
       client,
@@ -274,45 +469,100 @@ export async function run({ client, repo, now = Date.now(), dryRun = true, log =
       (data) => data,
       10,
     );
-    const existing = findReminder(comments, decision.kind);
-    let action;
-    if (existing && existing.body === decision.body) action = 'unchanged';
-    else if (existing) action = 'update';
-    else action = 'create';
-
-    if (!dryRun && action !== 'unchanged') {
-      if (writes >= MAX_WRITES_PER_RUN) {
-        action = 'deferred';
-      } else if (action === 'update') {
-        await client.request('PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}', {
-          ...repo,
-          comment_id: existing.id,
-          body: decision.body,
-        });
-        writes++;
-      } else {
-        await client.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
-          ...repo,
-          issue_number: pr.number,
-          body: decision.body,
-        });
-        writes++;
+    for (const decision of decisions) {
+      let existing = findReminder(comments, decision.kind);
+      if (decision.kind === 'codex') {
+        // Each episode of unresolved threads gets its own reminder: one posted
+        // before the oldest current thread belongs to an episode that was
+        // already resolved, so it neither starts this close window nor counts
+        // as this episode's announcement.
+        existing = latestReminder(comments, 'codex');
+        if (existing && time(existing.created_at) < time(decision.since)) existing = null;
       }
+      let action;
+      // Close only when every review thread has been seen: a newer Codex thread
+      // on a later page would otherwise not restart the window.
+      if (
+        decision.kind === 'codex' &&
+        existing &&
+        !pr.reviewThreads?.pageInfo?.hasNextPage &&
+        codexCloseDue({
+          reminderAt: existing.created_at,
+          newestThreadAt: newestCodexThreadAt(pr),
+          lastActivity: null,
+          now,
+        })
+      ) {
+        const data = await client.graphql(ACTIVITY_QUERY, { ...repo, number: pr.number });
+        const lastActivity = lastAuthorActivity(pr, data.repository.pullRequest, comments);
+        if (
+          codexCloseDue({
+            reminderAt: existing.created_at,
+            newestThreadAt: newestCodexThreadAt(pr),
+            lastActivity,
+            now,
+          })
+        ) {
+          action = 'close';
+        }
+      }
+      if (!action) {
+        if (existing && existing.body === decision.body) action = 'unchanged';
+        else if (existing) action = 'update';
+        else action = 'create';
+      }
+
+      let done = true;
+      if (action === 'close') {
+        // Retry-safe: a closing comment already posted after this reminder (a
+        // previous run whose close failed) is not posted again.
+        const announced = comments.some(
+          (comment) =>
+            comment.user?.login === BOT_LOGIN &&
+            comment.body?.startsWith(MARKERS.codexClosed) &&
+            time(comment.created_at) >= time(existing.created_at),
+        );
+        done = await write(announced ? 1 : 2, async () => {
+          if (!announced) await postComment(pr, codexClosedBody(pr, decision.count));
+          await client.request('PATCH /repos/{owner}/{repo}/pulls/{pull_number}', {
+            ...repo,
+            pull_number: pr.number,
+            state: 'closed',
+          });
+        });
+      } else if (action === 'update') {
+        done = await write(1, () =>
+          client.request('PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}', {
+            ...repo,
+            comment_id: existing.id,
+            body: decision.body,
+          }),
+        );
+      } else if (action === 'create') {
+        done = await write(1, () => postComment(pr, decision.body));
+      }
+      if (!done) action = 'deferred';
+
+      results.push({
+        number: pr.number,
+        url: pr.url,
+        kind: decision.kind,
+        since: decision.since,
+        action,
+      });
+      log(
+        `#${pr.number} ${decision.kind} since ${decision.since}: ${dryRun && action !== 'unchanged' ? 'would ' : ''}${action}`,
+      );
     }
-    const result = {
-      number: pr.number,
-      url: pr.url,
-      kind: decision.kind,
-      since: decision.since,
-      action,
-    };
-    results.push(result);
-    log(
-      `#${pr.number} ${decision.kind} since ${decision.since}: ${dryRun ? 'would ' : ''}${action}`,
-    );
   }
   return { dryRun, owners, scanned: prs.length, results };
 }
+
+const REASONS = {
+  conflict: 'merge conflict',
+  approval: 'workflow approval',
+  codex: 'unresolved Codex threads',
+};
 
 export function summaryMarkdown({ dryRun, owners, scanned, results }) {
   const lines = [
@@ -320,13 +570,13 @@ export function summaryMarkdown({ dryRun, owners, scanned, results }) {
     '',
     `Scanned ${scanned} open pull requests. Global code owners: ${owners.length ? owners.join(' ') : '(none)'}.`,
     '',
-    'For conflicts, "stuck since" is the last `pull_request` workflow run (or the creation time): GitHub records no time for when a conflict appeared.',
+    'For conflicts, "stuck since" is the last `pull_request` workflow run (or the creation time): GitHub records no time for when a conflict appeared. For Codex threads, it is the oldest unresolved thread.',
     '',
   ];
   if (!results.length) return [...lines, 'Nothing is stuck.', ''].join('\n');
   lines.push('| Pull request | Reason | Stuck since | Comment |', '| --- | --- | --- | --- |');
   for (const r of results) {
-    const reason = r.kind === 'conflict' ? 'merge conflict' : 'workflow approval';
+    const reason = REASONS[r.kind];
     const action = dryRun && r.action !== 'unchanged' ? `would ${r.action}` : r.action;
     lines.push(`| [#${r.number}](${r.url}) | ${reason} | ${r.since} | ${action} |`);
   }
