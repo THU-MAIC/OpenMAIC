@@ -163,11 +163,10 @@ export function LearningWorkbenchPanel({
           ? 'operation'
           : pending
             ? pendingReason
-            : editor.loading || !work
-              ? 'loading'
-              : (access(path).reason ??
-                work.editReason ??
-                (work.canEdit ? (work.planning ? 'planEditable' : 'codeEditable') : 'loading'));
+            : (access(path).reason ??
+              (editor.loading || !work ? 'loading' : null) ??
+              work?.editReason ??
+              (work?.canEdit ? (work.planning ? 'planEditable' : 'codeEditable') : 'loading'));
   const editMessage =
     editReason === 'environment'
       ? t(environmentNoticeKeys[environmentNotice(view.environment, pendingAction === 'prepare')])

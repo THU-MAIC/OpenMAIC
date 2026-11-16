@@ -2162,3 +2162,64 @@ test('independent columns, narrow assistant and a single scrolling tab row', asy
   expect(narrow.assistant.width).toBeGreaterThan(200);
   expect(narrow.assistant.width / width).toBeLessThan(0.23);
 });
+
+test('dismisses transient workbench panels outside without discarding quiz choices', async ({
+  page,
+  learningEvents,
+}) => {
+  await project(page, learningEvents, { started: true, quiz: true });
+  const environment = page.locator('[data-pbl-tour="environment"]');
+  const progress = page.locator('[data-pbl-tour="progress"]');
+  const outside = page.getByTestId('pbl-assistant').locator('header').first();
+  await environment.click();
+  await expect(environment.locator('..')).toHaveAttribute('open');
+  await outside.click();
+  await expect(environment.locator('..')).not.toHaveAttribute('open');
+  await progress.click();
+  await expect(progress.locator('..')).toHaveAttribute('open');
+  await outside.click();
+  await expect(progress.locator('..')).not.toHaveAttribute('open');
+  const toggle = page.locator('[data-pbl-tour="task-trigger"]');
+  await toggle.click();
+  const drawer = page.getByRole('region', { name: 'Current task details' });
+  await drawer.getByRole('radio').first().check();
+  await outside.click();
+  await expect(drawer).toHaveCount(0);
+  await toggle.click();
+  await expect(drawer.getByRole('radio').first()).toBeChecked();
+});
+
+test('shows acknowledged quiz submission and enables only changed answers for resubmission', async ({
+  page,
+  learningEvents,
+}) => {
+  const fixture = await project(page, learningEvents, {
+    started: true,
+    quiz: true,
+    application: false,
+  });
+  await page.locator('[data-pbl-tour="task-trigger"]').click();
+  const drawer = page.getByRole('region', { name: 'Current task details' });
+  await drawer.getByRole('radio').first().check();
+  await drawer.getByRole('button', { name: 'Submit answers', exact: true }).click();
+  // No acknowledged receipt yet: a request alone must not claim success.
+  await expect(drawer.getByRole('button', { name: 'Submitted', exact: true })).toHaveCount(0);
+  fixture.view.state.collected.greeting!.quiz = {
+    id: 'quiz-receipt',
+    attempt: 1,
+    passed: true,
+    score: 1,
+    total: 1,
+    wrong: [],
+    answers: [0],
+  };
+  fixture.view.actions = ['quiz', 'next'];
+  fixture.view.revision++;
+  await fixture.publish();
+  await expect(drawer.getByRole('button', { name: 'Submitted', exact: true })).toBeDisabled();
+  await expect(page.getByTestId('pbl-advance-bar')).toBeVisible();
+  await drawer.getByRole('radio').nth(1).check();
+  await expect(drawer.getByRole('button', { name: 'Submit changes', exact: true })).toBeEnabled();
+  await drawer.getByRole('radio').first().check();
+  await expect(drawer.getByRole('button', { name: 'Submitted', exact: true })).toBeDisabled();
+});

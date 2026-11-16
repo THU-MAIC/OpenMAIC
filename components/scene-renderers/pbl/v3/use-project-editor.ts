@@ -38,6 +38,9 @@ export function useProjectEditor(
     Record<string, { source: ReturnType<typeof editorSource>; message: string }>
   >({});
   const readTickets = useRef(new Map<string, number>());
+  // Only reuse reads verified during this mount, for this source and revision.
+  // Persisted browser drafts still require their normal recovery read.
+  const verifiedReads = useRef(new Map<string, { source: string | null; revision: number }>());
   const [recoveryConflicts, setRecoveryConflicts] = useState<Record<string, string>>({});
   const sequence = useRef(0),
     mounted = useRef(true);
@@ -102,6 +105,7 @@ export function useProjectEditor(
       try {
         const result = await read(path);
         if (!isCurrent()) return;
+        verifiedReads.current.set(path, { source, revision: view.revision });
         setReadErrors((previous) => {
           if (previous[path]?.source !== source) return previous;
           const next = { ...previous };
@@ -185,11 +189,13 @@ export function useProjectEditor(
           setSaveError('');
         }
       } catch (error) {
-        if (isCurrent())
+        if (isCurrent()) {
+          verifiedReads.current.delete(path);
           setReadErrors((previous) => ({
             ...previous,
             [path]: { source, message: (error as Error).message },
           }));
+        }
       } finally {
         if (active && ticket === sequence.current) setLoading(false);
       }
@@ -198,10 +204,16 @@ export function useProjectEditor(
   );
   useEffect(() => {
     const { buffers } = current.current;
+    if (!view.environment?.ready && !view.completedFilesAvailable) verifiedReads.current.clear();
     const buffer = buffers[path];
+    const verified = verifiedReads.current.get(path);
+    const reusable =
+      buffer?.environment === selectedSource &&
+      verified?.source === selectedSource &&
+      verified?.revision === view.revision;
     if (
       !buffer ||
-      buffer.text === buffer.saved ||
+      (buffer.text === buffer.saved && !reusable) ||
       buffer.environment !== selectedSource ||
       unavailableSave.current?.name === path
     )
@@ -371,6 +383,7 @@ export function useProjectEditor(
       delete next[name];
       return next;
     });
+    verifiedReads.current.delete(name);
     const next = tabs.filter((p) => p !== name);
     if (!next.length) next.push('PLAN.md');
     setTabs(next);

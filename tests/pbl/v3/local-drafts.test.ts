@@ -675,3 +675,48 @@ it.each([false, true])(
     expect(editor.buffer?.changes).toEqual([]);
   },
 );
+
+it('reuses verified tabs but rereads new revisions, explicit refreshes and remounted drafts', async () => {
+  const value = view('verified-tabs');
+  await mount(createElement(Editor, { value }));
+  await act(async () => editor.select('main.py'));
+  expect(read).toHaveBeenCalledTimes(2);
+  await act(async () => editor.select('PLAN.md'));
+  expect(editor.loading).toBe(false);
+  expect(read).toHaveBeenCalledTimes(2);
+  await act(async () => root!.render(createElement(Editor, { value: { ...value, revision: 2 } })));
+  expect(read).toHaveBeenCalledTimes(3);
+  await act(async () => editor.select('main.py'));
+  expect(read).toHaveBeenCalledTimes(4);
+  await act(async () => editor.reload());
+  expect(read).toHaveBeenCalledTimes(5);
+  await leave();
+  read.mockResolvedValueOnce({ text: 'Changed while away', hash: 'c'.repeat(64) });
+  await mount(createElement(Editor, { value: { ...value, revision: 2 } }));
+  expect(read).toHaveBeenCalledTimes(6);
+  expect(editor.buffer?.text).toBe('Changed while away');
+});
+
+it('invalidates verified reads after environment loss or a failed refresh', async () => {
+  const value = view('verified-recovery');
+  await mount(createElement(Editor, { value }));
+  await act(async () => editor.select('main.py'));
+  await act(async () =>
+    root!.render(
+      createElement(Editor, {
+        value: { ...value, environment: { ...value.environment!, ready: false } },
+      }),
+    ),
+  );
+  await act(async () => root!.render(createElement(Editor, { value })));
+  expect(read).toHaveBeenCalledTimes(3);
+  await act(async () => editor.select('PLAN.md'));
+  expect(read).toHaveBeenCalledTimes(4);
+  read.mockRejectedValueOnce(new Error('Refresh unavailable'));
+  await act(async () => editor.reload());
+  expect(editor.readError).toBe('Refresh unavailable');
+  await act(async () => editor.select('main.py'));
+  await act(async () => editor.select('PLAN.md'));
+  expect(read).toHaveBeenCalledTimes(6);
+  expect(editor.readError).toBe('');
+});
