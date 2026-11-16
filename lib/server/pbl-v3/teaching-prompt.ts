@@ -173,7 +173,7 @@ function buildTeachingPrompt({
     workspace,
     uiLocale: communication.uiLocale,
   });
-  return (
+  const systemPrompt =
     buildSystemPrompt({
       role: role,
       seed: {
@@ -298,7 +298,8 @@ function buildTeachingPrompt({
           ? '\nBriefly introduce the current test or quiz using productContext controls. Do not give assessment answers, run checks, or claim results. Wait for the learner to use the controls. Ordinary tests/quizzes have no learner chat: do not invite a message; answer repair questions only when productContext.current.chatSupported is true.'
           : '\nFocus decision guidance on the current offered decisions. The learner records choices using the project controls. Project knowledge and product help remain available.') +
     '\n' +
-    productHelpRules +
+    productHelpRules;
+  const initialContext =
     '\nInitial teaching state: ' +
     JSON.stringify({
       stageEntry: { automatic: automaticEntry },
@@ -327,8 +328,8 @@ function buildTeachingPrompt({
             currentReview: teachingReview(pendingReview),
           }
         : {}),
-    })
-  );
+    });
+  return { systemPrompt, initialContext };
 }
 
 /** Learner text belongs to durable conversation history. */
@@ -447,7 +448,7 @@ export function teachingLiveSuffix(live: string): string {
  * Learner history is managed separately by the teaching context window.
  */
 export function renderTeachingPrompt(input: TeachingPromptInput) {
-  const systemPrompt = buildTeachingPrompt(input);
+  const { systemPrompt, initialContext } = buildTeachingPrompt(input);
   const sections =
     input.stage.kind === 'produce' || input.stage.kind === 'mentor_say'
       ? input.skill.progression
@@ -457,9 +458,11 @@ export function renderTeachingPrompt(input: TeachingPromptInput) {
   const sectionBytes = sections.length ? Buffer.byteLength(JSON.stringify(sections)) : 0;
   return {
     systemPrompt,
+    initialContext,
     sectionBytes,
     bytes:
-      Buffer.byteLength(systemPrompt + teachingLiveSuffix(teachingLiveContext(input))) +
-      sectionBytes,
+      Buffer.byteLength(
+        systemPrompt + initialContext + teachingLiveSuffix(teachingLiveContext(input)),
+      ) + sectionBytes,
   };
 }

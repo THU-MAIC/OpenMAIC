@@ -66,11 +66,12 @@ describe('authoritative product guidance', () => {
           studentResponses: [{ seq: 18, text: 'PRIVATE_LEARNER_REPLY' }],
         },
       };
-      const before = renderTeachingPrompt(base).systemPrompt;
-      const after = renderTeachingPrompt(changed).systemPrompt;
+      const before = renderTeachingPrompt(base);
+      const after = renderTeachingPrompt(changed);
       const marker = '\nInitial teaching state: ';
-      expect(before.slice(0, before.indexOf(marker))).toBe(after.slice(0, after.indexOf(marker)));
-      const snapshot = JSON.parse(after.slice(after.indexOf(marker) + marker.length));
+      expect(before.systemPrompt).toBe(after.systemPrompt);
+      expect(after.systemPrompt).not.toContain('CURRENT_REVIEW_SENTINEL');
+      const snapshot = JSON.parse(after.initialContext.slice(marker.length));
       expect(snapshot).toMatchObject({
         stageEntry: { automatic: false },
         learningRoadmap: { completionRecorded: false },

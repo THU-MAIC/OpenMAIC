@@ -1,4 +1,5 @@
 import type { Api, Context, Model } from '@earendil-works/pi-ai';
+import { requestSystemTail } from '@/lib/agent/runtime/request-system-tail';
 
 /** UTF-8 bytes are a conservative token upper estimate, not a tokenizer or usage meter.
  * Count the complete payload when provider usage is absent, with protocol headroom.
@@ -10,6 +11,7 @@ export const contextBytes = (value: unknown): number =>
 export function estimatedRequestTokens(context: Context): number {
   return (
     contextBytes(context.systemPrompt ?? '') +
+    contextBytes(requestSystemTail(context)) +
     contextBytes(context.tools ?? []) +
     contextBytes(context.messages) +
     512

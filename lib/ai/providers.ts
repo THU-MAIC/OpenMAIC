@@ -34,6 +34,7 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { createAmazonBedrock } from '@ai-sdk/amazon-bedrock';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { wrapLanguageModel, extractReasoningMiddleware } from 'ai';
+import { prefixSystemTailMiddleware } from './request-system-tail';
 import {
   createReasoningPreservationMiddleware,
   restoreReasoningContentInRequestBody,
@@ -2743,6 +2744,12 @@ export function getModel(config: ModelConfig): ModelWithInfo {
 
     default:
       throw new Error(`Unsupported provider type: ${providerType}`);
+  }
+
+  // Apply at the actual adapter, including fallback models. OpenAI-compatible
+  // transports retain request tails; prefix-only transports keep valid system ordering.
+  if (providerType === 'anthropic' || providerType === 'google' || providerType === 'bedrock') {
+    model = wrapLanguageModel({ model, middleware: prefixSystemTailMiddleware() });
   }
 
   // Catalog metadata only. config.modelId is still the id sent on the wire.

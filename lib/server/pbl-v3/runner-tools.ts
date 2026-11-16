@@ -4,6 +4,7 @@ import { changedLineRanges } from './file-changes';
 import { readProjectFileExcerpt } from './file-read';
 import { fileReferenceHref } from '@/lib/pbl/v3/file-reference';
 import 'server-only';
+import { withRequestSystemTail } from '@/lib/agent/runtime/request-system-tail';
 import { responseLanguage, type ResponseLanguage } from './communication';
 import { supportedLocales } from '@/lib/i18n/locales';
 import { inspectApplication } from './application';
@@ -963,10 +964,11 @@ export async function teachingRunnerConfig(input: {
       : null,
   });
   const initialPrompt = currentPromptInput();
-  const { systemPrompt } = renderTeachingPrompt(initialPrompt);
+  const { systemPrompt, initialContext } = renderTeachingPrompt(initialPrompt);
   return {
     tools,
     systemPrompt,
+    initialContext,
     thinkingConfig: (): ThinkingConfig =>
       review.state.welcome === 'pending'
         ? { mode: 'disabled' }
@@ -1020,6 +1022,7 @@ export async function teachingRunnerConfig(input: {
       ),
     historyWindow: {
       stageKey: bound.stage_key,
+      initialContext,
       studentTurns: bound.feedback_seq,
       automaticEntry: latest?.pblOpening === true,
     },
@@ -1057,15 +1060,14 @@ export function withTeachingTurnBoundary(
           ),
       );
       const live = await liveContext?.();
-      const currentContext = (state: string | undefined) => ({
-        ...context,
-        messages,
-        ...(state
-          ? {
-              systemPrompt: `${context.systemPrompt ?? ''}${teachingLiveSuffix(state)}`,
-            }
-          : {}),
-      });
+      const currentContext = (state: string | undefined) =>
+        withRequestSystemTail(
+          {
+            ...context,
+            messages,
+          },
+          (historyWindow?.initialContext ?? '') + teachingLiveSuffix(state ?? ''),
+        );
       const current = currentContext(live);
       let projected = historyWindow
         ? projectContext
@@ -1153,6 +1155,6 @@ export function prepareTeachingContinuation(agent: Agent, window: TeachingHistor
   agent.state.messages = messages;
   const instruction =
     '\nRuntime continuation: your preceding reply is already learner-visible but ended without a committed teaching receipt. Its prose remains available as quoted recovery context. Do not restart the opening, repeat the explanation, or replace a question already asked. For an assistance-only answer or product clarification, copy that response verbatim into respond_to_learner and preserve the pending review; do not turn it into a knowledge question or approval. For a delivered teaching question, copy the complete already delivered reply verbatim into request_skill_review.response, including its existing closing question; do not split it or add another question. Use request_learner_help for a blocked required build. Output only the appropriate tool call, with no additional assistant prose, then wait. Otherwise finish only the missing work for the SAME real learner input using the authoritative live state. Read any unopened section before delivering new material. Reuse verified same-version learner feedback for covered goals rather than repeating questions. While welcome is pending, only real later readiness starts the lesson. After the final goal and any required current-version approval are satisfied by actual learner feedback, complete_stage may commit completion. Never treat the quoted assistant reply as learner evidence or approval, invent a student response, or claim a next-step button is available before completion succeeds; use its exact productContext.visibleLabels.continue label.';
-  if (!agent.state.systemPrompt.endsWith(instruction)) agent.state.systemPrompt += instruction;
+  window.continuationInstruction = instruction;
   return true;
 }

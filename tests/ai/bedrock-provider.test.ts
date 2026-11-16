@@ -107,9 +107,10 @@ describe('Bedrock provider defaults', () => {
       }),
     );
     expect(bedrockMock.languageModel).toHaveBeenCalledWith('us.anthropic.claude-sonnet-5');
-    expect(model).toEqual({
-      endpoint: 'bedrock',
+    expect(model).toMatchObject({
       modelId: 'us.anthropic.claude-sonnet-5',
+      doGenerate: expect.any(Function),
+      doStream: expect.any(Function),
     });
 
     const options = bedrockMock.createAmazonBedrock.mock.calls[0]?.[0] as {

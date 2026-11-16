@@ -1,4 +1,59 @@
-# PBL v3 prompt-prefix validation
+# PBL v3 prompt-cache validation — work in progress
+
+## Latest optimization
+
+```text
+fixed system instructions → existing history → initial/live state + continuation policy
+```
+
+Initial review anchors are retained separately from latest state. Request-local
+host state remains a trusted system message, not a learner turn or durable entry,
+and is counted in the context budget. Version/lease rechecks and approval gates
+remain active. Prefix-only adapters merge only the marked host tail back into
+the system prefix; OpenAI-compatible transports retain it after history.
+
+Tool-call objects are recursively key-sorted on replay, including calls still in
+memory. This prevents JSONB key-order changes from invalidating the prefix after
+reload, without mutating execution arguments or array order. No course package,
+project Skill, generic teaching rule, role isolation, compaction policy or storage
+format changes.
+
+## Latest local evidence
+
+Ratio = `sum(cached input tokens) / sum(input tokens)`. Model:
+`deepseek-v4.1-flash`, existing configured MaaS route. Source requests match in all arms.
+
+| Dataset | Before PR #2268 | Initial PR layout | Request-tail candidate |
+| --- | ---: | ---: | ---: |
+| Short synthetic probe, 8 calls/arm | 35.75% | 62.65% | 62.83% |
+| Continuous local-QA replay subset, 67 calls/arm | 56.24% | 60.49% | 81.90% |
+
+The 67 calls are identical retry-free source records per arm, selected from a
+174-record reconstructed local acceptance corpus by execution-quality timestamps,
+not cache outcome. Coverage: course 3, first milestone, discussion/planning/coding;
+not C-end users or every role/milestone. The larger repeated replay had execution
+interruptions, so its full aggregate is not the primary claim. History retains
+visible dialogue/tool records with rebuilt host facts, not byte-exact historical
+HTTP requests. Raw learner records are not published.
+
+Output is capped at 16 tokens; generated tools are never executed. Usage returned
+reasoning tokens even when thinking was requested disabled. No latency gain or
+production-wide cache rate is claimed. Counts/method:
+[latest-local-cache.json](latest-local-cache.json).
+
+**Teaching baseline: pre-PR commit
+`65d5ac408301a2916d1d7e81b037855760a286ab`, not an earlier version inside this PR.**
+Reversible instruction/state/Skill checks pass for 36 scenarios across courses 1–3.
+Fresh full-response comparison with that commit is in progress. Existing baseline
+course/model behavior is excluded from new-regression findings.
+
+**Still a draft; C-end production-data paired validation is being attempted.**
+The sections below retain the initial revision's evidence and describe that
+revision only. The current request-tail implementation is described above.
+
+---
+
+# Initial implementation validation (historical)
 
 This is a local comparison of the **same course packages on two prompt layouts**,
 not a comparison between different editions of the courses. AI-assisted change and

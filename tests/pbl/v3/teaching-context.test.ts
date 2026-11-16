@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AssistantMessage, Context, Message } from '@earendil-works/pi-ai';
 import { currentTeachingContext } from '@/lib/server/pbl-v3/teaching-context';
+import { requestSystemTail } from '@/lib/agent/runtime/request-system-tail';
 
 function assistant(content: AssistantMessage['content']): AssistantMessage {
   return {
@@ -106,12 +107,14 @@ describe('teaching stage handoff', () => {
       };
       const result = currentTeachingContext(context, { ...window, deliveredReply: reply });
       expect(result.messages).toEqual([reflection]);
-      expect(result.systemPrompt).toContain(JSON.stringify(reply));
-      expect(result.systemPrompt).toContain('record that SAME reply');
-      expect(result.systemPrompt).toContain('complete reply verbatim into response');
-      expect(result.systemPrompt).toContain('existing closing question');
-      expect(result.systemPrompt).toContain('Do not omit an already delivered explanation');
-      expect(result.systemPrompt).toContain('never student feedback');
+      const tail = requestSystemTail(result);
+      expect(result.systemPrompt).not.toContain(JSON.stringify(reply));
+      expect(tail).toContain(JSON.stringify(reply));
+      expect(tail).toContain('record that SAME reply');
+      expect(tail).toContain('complete reply verbatim into response');
+      expect(tail).toContain('existing closing question');
+      expect(tail).toContain('Do not omit an already delivered explanation');
+      expect(tail).toContain('never student feedback');
       expect(result.messages.filter((message) => message.role === 'user')).toHaveLength(1);
       expect(context.systemPrompt).toBe('Current teaching policy');
     },
