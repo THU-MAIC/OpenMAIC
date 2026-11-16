@@ -676,24 +676,24 @@ it.each([false, true])(
   },
 );
 
-it('reuses verified tabs but rereads new revisions, explicit refreshes and remounted drafts', async () => {
+it('refreshes verified tabs without blocking and rereads new revisions and remounted drafts', async () => {
   const value = view('verified-tabs');
   await mount(createElement(Editor, { value }));
   await act(async () => editor.select('main.py'));
   expect(read).toHaveBeenCalledTimes(2);
   await act(async () => editor.select('PLAN.md'));
   expect(editor.loading).toBe(false);
-  expect(read).toHaveBeenCalledTimes(2);
-  await act(async () => root!.render(createElement(Editor, { value: { ...value, revision: 2 } })));
   expect(read).toHaveBeenCalledTimes(3);
-  await act(async () => editor.select('main.py'));
+  await act(async () => root!.render(createElement(Editor, { value: { ...value, revision: 2 } })));
   expect(read).toHaveBeenCalledTimes(4);
-  await act(async () => editor.reload());
+  await act(async () => editor.select('main.py'));
   expect(read).toHaveBeenCalledTimes(5);
+  await act(async () => editor.reload());
+  expect(read).toHaveBeenCalledTimes(6);
   await leave();
   read.mockResolvedValueOnce({ text: 'Changed while away', hash: 'c'.repeat(64) });
   await mount(createElement(Editor, { value: { ...value, revision: 2 } }));
-  expect(read).toHaveBeenCalledTimes(6);
+  expect(read).toHaveBeenCalledTimes(7);
   expect(editor.buffer?.text).toBe('Changed while away');
 });
 
@@ -717,6 +717,26 @@ it('invalidates verified reads after environment loss or a failed refresh', asyn
   expect(editor.readError).toBe('Refresh unavailable');
   await act(async () => editor.select('main.py'));
   await act(async () => editor.select('PLAN.md'));
-  expect(read).toHaveBeenCalledTimes(6);
+  expect(read).toHaveBeenCalledTimes(7);
   expect(editor.readError).toBe('');
+});
+
+// Terminal writes can change a file without changing the study revision.
+it('shows the verified buffer immediately and then receives same-revision file changes', async () => {
+  const value = view('background-refresh');
+  await mount(createElement(Editor, { value }));
+  await act(async () => editor.select('main.py'));
+  let finish!: (value: { text: string; hash: string }) => void;
+  read.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await act(async () => editor.select('PLAN.md'));
+  expect(editor.loading).toBe(false);
+  expect(editor.buffer?.text).toBe('Saved source');
+  await act(async () => finish({ text: 'Changed in the terminal', hash: 'c'.repeat(64) }));
+  expect(editor.buffer?.text).toBe('Changed in the terminal');
+  expect(editor.buffer?.hash).toBe('c'.repeat(64));
 });

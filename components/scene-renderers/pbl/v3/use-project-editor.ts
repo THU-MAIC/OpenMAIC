@@ -38,8 +38,8 @@ export function useProjectEditor(
     Record<string, { source: ReturnType<typeof editorSource>; message: string }>
   >({});
   const readTickets = useRef(new Map<string, number>());
-  // Only reuse reads verified during this mount, for this source and revision.
-  // Persisted browser drafts still require their normal recovery read.
+  // Only display verified buffers during background refreshes. Persisted drafts
+  // and changed sources/revisions still require their normal recovery read.
   const verifiedReads = useRef(new Map<string, { source: string | null; revision: number }>());
   const [recoveryConflicts, setRecoveryConflicts] = useState<Record<string, string>>({});
   const sequence = useRef(0),
@@ -84,7 +84,7 @@ export function useProjectEditor(
   }, [view.id, path, tabs, buffers, onError]);
   const dirty = (name: string) => !!buffers[name] && buffers[name].text !== buffers[name].saved;
   const load = useCallback(
-    async (discard = false, name = current.current.path) => {
+    async (discard = false, name = current.current.path, background = false) => {
       const { view, read } = current.current;
       const path = name;
       if ((!view.environment?.ready && !view.completedFilesAvailable) || !view.files.includes(path))
@@ -101,11 +101,11 @@ export function useProjectEditor(
         view.id === current.current.view.id &&
         source === editorSource(current.current.view) &&
         current.current.view.files.includes(path);
-      if (active) setLoading(true);
+      if (active) setLoading(!background);
       try {
         const result = await read(path);
         if (!isCurrent()) return;
-        verifiedReads.current.set(path, { source, revision: view.revision });
+        verifiedReads.current.delete(path);
         setReadErrors((previous) => {
           if (previous[path]?.source !== source) return previous;
           const next = { ...previous };
@@ -174,6 +174,7 @@ export function useProjectEditor(
           return;
         }
         clearConflict();
+        verifiedReads.current.set(path, { source, revision: view.revision });
         updateBuffers((previous) => ({
           ...previous,
           [path]: { ...result, saved: result.text, environment: editorSource(view)! },
@@ -213,11 +214,13 @@ export function useProjectEditor(
       verified?.revision === view.revision;
     if (
       !buffer ||
-      (buffer.text === buffer.saved && !reusable) ||
+      buffer.text === buffer.saved ||
       buffer.environment !== selectedSource ||
       unavailableSave.current?.name === path
     )
-      void load();
+      // Shell writes need not advance the study revision. Keep revalidating
+      // clean files, but do not block a tab switch on an already verified read.
+      void load(false, path, reusable && unavailableSave.current?.name !== path);
     else setLoading(false);
     // Recovery must include background tabs; otherwise their retained drafts
     // would keep the study dirty even after the visible file resumed saving.
