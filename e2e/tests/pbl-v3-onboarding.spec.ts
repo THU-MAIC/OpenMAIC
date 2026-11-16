@@ -2170,7 +2170,7 @@ test('dismisses transient workbench panels outside without discarding quiz choic
   await project(page, learningEvents, { started: true, quiz: true });
   const environment = page.locator('[data-pbl-tour="environment"]');
   const progress = page.locator('[data-pbl-tour="progress"]');
-  const outside = page.getByTestId('pbl-assistant').locator('header').first();
+  const outside = page.getByTestId('pbl-v3-workspace').locator('header h2').first();
   await environment.click();
   await expect(environment.locator('..')).toHaveAttribute('open');
   await outside.click();
