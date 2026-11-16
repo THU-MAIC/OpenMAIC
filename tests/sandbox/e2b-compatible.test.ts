@@ -561,6 +561,70 @@ describe('checkpoint generation deadline', () => {
   });
 });
 
+describe('batched source reads', () => {
+  it('validates one private connection and transfers one snapshot for multiple source files', async () => {
+    const { provider, run, read, sandbox, remove } = archiveFixture();
+    const write = vi.fn(async (_path: string, _content: string) => {});
+    Object.assign(sandbox.files, { write });
+    read.mockResolvedValueOnce(
+      new ReadableStream({
+        start(c) {
+          c.enqueue(
+            Buffer.from(JSON.stringify({ 'PLAN.md': 'plan', 'src/App.java': 'class App {}' })),
+          );
+          c.close();
+        },
+      }),
+    );
+    expect(await provider.readTexts('resource', 'op', ['PLAN.md', 'src/App.java'])).toEqual({
+      'PLAN.md': 'plan',
+      'src/App.java': 'class App {}',
+    });
+    expect(sdk.getInfo).toHaveBeenCalledTimes(1);
+    expect(sdk.connect).toHaveBeenCalledTimes(1);
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledTimes(2);
+    expect(write.mock.calls[0]?.[1]).toBe(JSON.stringify(['PLAN.md', 'src/App.java']));
+  });
+  it('rejects incomplete or unexpected snapshot paths before they can become review evidence', async () => {
+    const { provider, read, sandbox } = archiveFixture();
+    Object.assign(sandbox.files, { write: vi.fn(async () => {}) });
+    read.mockResolvedValueOnce(
+      new ReadableStream({
+        start(c) {
+          c.enqueue(Buffer.from('{"other.py":"wrong"}'));
+          c.close();
+        },
+      }),
+    );
+    await expect(provider.readTexts('resource', 'op', ['PLAN.md'])).rejects.toMatchObject({
+      code: 'SANDBOX_ARCHIVE_INVALID',
+    });
+  });
+  it('cleans both transfer files and starts no download after a cancelled snapshot command', async () => {
+    const { provider, run, read, sandbox, remove } = archiveFixture();
+    Object.assign(sandbox.files, { write: vi.fn(async () => {}) });
+    let reached!: () => void;
+    const entered = new Promise<void>((r) => {
+      reached = r;
+    });
+    run.mockImplementationOnce(async () => {
+      reached();
+      return await new Promise<never>(() => {});
+    });
+    const c = new AbortController(),
+      pending = provider.readTexts('resource', 'op', ['PLAN.md'], c.signal);
+    const failed = expect(pending).rejects.toMatchObject({ name: 'TimeoutError' });
+    await entered;
+    c.abort(new DOMException('source deadline', 'TimeoutError'));
+    await failed;
+    expect(read).not.toHaveBeenCalled();
+    expect(remove).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('checkpoint source-read deadline', () => {
   it('starts no source I/O after a pre-expired checkpoint deadline', async () => {
     const { provider, run, read } = archiveFixture();

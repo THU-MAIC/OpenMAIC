@@ -81,7 +81,7 @@ describe('material analysis from the slots', () => {
     mocks.parseWithMinerUCloud.mockReset().mockResolvedValue({
       text: 'cloud parsed text',
       images: [],
-      metadata: { pageCount: 1, parser: 'mineru-cloud' },
+      metadata: { pageCount: 1, parser: 'mineru-cloud', textFormat: 'markdown' },
     });
     mocks.checkClientDocumentExtractorBaseUrl.mockReset().mockResolvedValue({
       ok: false,

@@ -16,7 +16,9 @@
  *
  * It is a modal while it plays: the rest of the page takes no pointer, focus
  * stays in the card (Tab cycles, ←/→ step, Esc skips) and goes back where it was
- * when the tour ends.
+ * when the tour ends. Another modal dialog outranks it: while one is open (the
+ * access-code gate, a confirmation) the tour steps aside, hidden and holding no
+ * pointer, focus or key, and comes back where it was once that dialog closes.
  */
 
 import { ArrowRight, Play, X } from 'lucide-react';
@@ -34,6 +36,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils/cn';
 import { setTourActive } from '@/lib/workbench/onboarding';
 import { TOUR_EXAMPLES, type TourStep, type TourTarget, type TourView } from './tour-steps';
+import { placeTourCard } from './tour-placement';
 
 type Rect = { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
 
@@ -41,9 +44,6 @@ type Rect = { readonly x: number; readonly y: number; readonly w: number; readon
 export type TourEnd = 'skip' | 'done' | 'guide' | 'example';
 
 const PAD = 8;
-const GAP = 14;
-const MARGIN = 12;
-const CARD_W = 340;
 /** Frames a target must hold still before the light moves to it. */
 const SETTLE_FRAMES = 8;
 /** How long the light may hold before it says it is waiting. */
@@ -96,28 +96,19 @@ function sameRect(a: Rect | null, b: Rect | null): boolean {
   );
 }
 
-/**
- * Where the card goes: beside a narrow target (the rail, a card), under a wide
- * one (the composer), above it when there is no room below; always on screen.
- */
-function placeCard(rect: Rect | null, cardH: number, vw: number, vh: number) {
-  const clampX = (x: number) => Math.max(MARGIN, Math.min(x, vw - CARD_W - MARGIN));
-  const clampY = (y: number) => Math.max(MARGIN, Math.min(y, vh - cardH - MARGIN));
-  if (!rect) return { x: (vw - CARD_W) / 2, y: (vh - cardH) / 2 };
-  const roomRight = vw - (rect.x + rect.w) - GAP - MARGIN;
-  const roomLeft = rect.x - GAP - MARGIN;
-  const narrow = rect.w < vw * 0.4;
-  if (narrow && roomRight >= CARD_W) {
-    return { x: rect.x + rect.w + GAP, y: clampY(rect.y + rect.h / 2 - cardH / 2) };
+/** A modal dialog the tour gives way to: anything but a tour's own card. */
+const OTHER_MODAL = [
+  '[aria-modal="true"]',
+  '[role="alertdialog"]',
+  '[data-slot="dialog-content"]',
+  '[data-slot="alert-dialog-content"]',
+].join(',');
+
+function otherModalOpen(): boolean {
+  for (const element of document.querySelectorAll(OTHER_MODAL)) {
+    if (!element.closest('.ws-tour')) return true;
   }
-  if (narrow && roomLeft >= CARD_W) {
-    return { x: rect.x - GAP - CARD_W, y: clampY(rect.y + rect.h / 2 - cardH / 2) };
-  }
-  const cx = clampX(rect.x + rect.w / 2 - CARD_W / 2);
-  if (rect.y + rect.h + GAP + cardH <= vh - MARGIN) return { x: cx, y: rect.y + rect.h + GAP };
-  if (rect.y - GAP - cardH >= MARGIN) return { x: cx, y: rect.y - GAP - cardH };
-  // Nothing fits outside a tall target: sit inside its bottom edge.
-  return { x: cx, y: clampY(rect.y + rect.h - cardH - GAP) };
+  return false;
 }
 
 const WIDE = '(min-width: 768px)';
@@ -165,6 +156,8 @@ export function WorkspaceTour({
   const [viewport, setViewport] = useState({ w: 0, h: 0 });
   const [cardH, setCardH] = useState(200);
   const [leaving, setLeaving] = useState(false);
+  /** Another modal dialog is open: the tour is hidden and holds nothing. */
+  const [yielded, setYielded] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const primaryRef = useRef<HTMLButtonElement>(null);
   const returnFocus = useRef<Element | null>(null);
@@ -217,6 +210,7 @@ export function WorkspaceTour({
     const stepStarted = waitingSince;
     const tick = () => {
       const now = performance.now();
+      setYielded(otherModalOpen());
       if (step.target === null) {
         if (settled.current?.step !== step.id) {
           settled.current = { step: step.id, rect: null };
@@ -258,13 +252,33 @@ export function WorkspaceTour({
     return () => cancelAnimationFrame(frame);
   }, [step]);
 
-  useEffect(() => {
-    const card = cardRef.current;
-    if (!card || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => setCardH(card.offsetHeight));
+  /*
+   * The card's height, which decides where it fits. Observed through the ref
+   * itself rather than once on mount: the card is a new element whenever the
+   * tour moves into its portal host (the host may not exist yet on the very
+   * first render), and an observer left on the detached first card would
+   * report 0 and let the card hang off the bottom of the window.
+   */
+  const observerRef = useRef<ResizeObserver | null>(null);
+  const setCard = useCallback((card: HTMLDivElement | null) => {
+    cardRef.current = card;
+    observerRef.current?.disconnect();
+    observerRef.current = null;
+    if (!card) return;
+    setCardH(card.offsetHeight);
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (card.isConnected) setCardH(card.offsetHeight);
+    });
     observer.observe(card);
-    return () => observer.disconnect();
+    observerRef.current = observer;
   }, []);
+  useEffect(() => () => observerRef.current?.disconnect(), []);
+  // A new step's content is laid out before it is placed, not a frame after.
+  useLayoutEffect(() => {
+    const card = cardRef.current;
+    if (card?.isConnected) setCardH(card.offsetHeight);
+  }, [index]);
 
   const end = useCallback(
     (how: TourEnd, then?: () => void) => {
@@ -309,6 +323,7 @@ export function WorkspaceTour({
   // app navigates as it always does), so the tour just follows.
   useEffect(() => {
     if (!step.passThrough || step.target === null) return;
+    if (yielded) return;
     const onClick = (event: MouseEvent) => {
       const hit = (event.target as Element | null)?.closest?.(
         step
@@ -320,34 +335,44 @@ export function WorkspaceTour({
     };
     document.addEventListener('click', onClick, true);
     return () => document.removeEventListener('click', onClick, true);
-  }, [goTo, index, step]);
+  }, [goTo, index, step, yielded]);
 
   // The card keeps the focus: its main button on each step, and back into the
   // card whenever something else takes it (a menu that closed restoring focus
   // to its trigger, a pane that autofocuses as the tour opens it).
+  // Never while another modal dialog is open: its focus is its own.
   useEffect(() => {
+    if (yielded) return;
     primaryRef.current?.focus({ preventScroll: true });
-  }, [index]);
+  }, [index, yielded]);
   useEffect(() => {
+    if (yielded) return;
     const onFocusIn = (event: FocusEvent) => {
       const card = cardRef.current;
       if (!card || leaving || card.contains(event.target as Node)) return;
+      if (otherModalOpen()) return;
       primaryRef.current?.focus({ preventScroll: true });
     };
     document.addEventListener('focusin', onFocusIn);
     // Whatever held focus when the tour opened may keep it past the first
     // effect (a closing menu returns focus a frame later).
     const timer = window.setTimeout(() => {
-      if (!cardRef.current?.contains(document.activeElement)) primaryRef.current?.focus();
+      const card = cardRef.current;
+      if (card?.contains(document.activeElement) || otherModalOpen()) return;
+      primaryRef.current?.focus();
     }, 120);
     return () => {
       document.removeEventListener('focusin', onFocusIn);
       window.clearTimeout(timer);
     };
-  }, [leaving]);
+  }, [leaving, yielded]);
 
   useEffect(() => {
+    if (yielded) return;
     const onKeyDown = (event: KeyboardEvent) => {
+      // The keys belong to a dialog opened over the tour (Esc closes it, not
+      // the tour), even in the frame before the tour has noticed it.
+      if (otherModalOpen()) return;
       if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
@@ -384,12 +409,12 @@ export function WorkspaceTour({
     };
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [end, go]);
+  }, [end, go, yielded]);
 
   const vw = viewport.w || (typeof window === 'undefined' ? 1440 : window.innerWidth);
   const vh = viewport.h || (typeof window === 'undefined' ? 900 : window.innerHeight);
   const lit = step.target === null ? null : rect;
-  const card = placeCard(lit, cardH, vw, vh);
+  const card = placeTourCard(lit, cardH, vw, vh);
   // A centred step shrinks the light to a point in the middle, so the next
   // step's light opens out of the card rather than out of a corner.
   const hole = lit ?? { x: vw / 2, y: vh / 2, w: 0, h: 0 };
@@ -397,9 +422,12 @@ export function WorkspaceTour({
 
   const tour = (
     <div
-      className={cn('ws-tour', leaving && 'ws-tour-leaving')}
+      className={cn('ws-tour', leaving && 'ws-tour-leaving', yielded && 'ws-tour-yielded')}
       data-testid="workspace-tour"
       data-step={step.id}
+      data-yielded={yielded || undefined}
+      // Out of the accessibility tree too while a dialog is over it.
+      inert={yielded || undefined}
     >
       {/* Takes every pointer, so the page under the mask stays still -- all but
           the lit box, on a step whose lit element takes its own click. */}
@@ -438,7 +466,7 @@ export function WorkspaceTour({
         }}
       />
       <div
-        ref={cardRef}
+        ref={setCard}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -446,7 +474,11 @@ export function WorkspaceTour({
         data-testid="workspace-tour-card"
         data-waiting={waiting || undefined}
         className={cn('ws-tour-card', waiting && 'ws-tour-card-wait')}
-        style={{ transform: `translate3d(${card.x}px, ${card.y}px, 0)` }}
+        style={{
+          transform: `translate3d(${card.x}px, ${card.y}px, 0)`,
+          // A window too short for the card: it scrolls inside, on screen.
+          maxHeight: card.maxHeight,
+        }}
       >
         <div className="ws-tour-progress" aria-hidden="true">
           <span style={{ transform: `scaleX(${(index + 1) / steps.length})` }} />

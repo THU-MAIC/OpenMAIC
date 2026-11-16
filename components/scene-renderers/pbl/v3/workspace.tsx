@@ -422,7 +422,9 @@ function PBLV3WorkspaceContent({
       ref={workspaceRoot}
       tabIndex={-1}
       data-pbl-focus-owner
-      className="relative flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground"
+      // The chrome is a fixed viewport. Programmatic scrollIntoView (including
+      // replay-button focus) must scroll inner panes, never this overlay coordinate root.
+      className="relative flex h-full min-h-0 flex-col overflow-clip bg-background text-foreground"
       data-testid="pbl-v3-workspace"
       // Editor, terminal and teaching inputs own their keys, not the host's slide/chat shortcuts.
       onKeyDown={(event) => event.stopPropagation()}
@@ -1156,6 +1158,7 @@ function PBLV3WorkspaceContent({
                     }}
                   >
                     {blockedReason &&
+                      blockedReason !== 'busy' &&
                       blockedReason !== 'unsaved' &&
                       blockedReason !== 'pending' && (
                         <div
@@ -1178,7 +1181,9 @@ function PBLV3WorkspaceContent({
                           )}
                         </div>
                       )}
-                    {(blockedReason === 'unsaved' || blockedReason === 'pending') && (
+                    {(blockedReason === 'busy' ||
+                      blockedReason === 'unsaved' ||
+                      blockedReason === 'pending') && (
                       <span id={blockedId} className="sr-only">
                         {t(`pblV3.inputBlocked.${blockedReason}`)}
                       </span>
@@ -1208,7 +1213,7 @@ function PBLV3WorkspaceContent({
                         {view.busy ? (
                           <button
                             type="button"
-                            className="rounded-full bg-primary p-2 text-primary-foreground"
+                            className="rounded-full bg-red-600 p-2 text-white hover:bg-red-700 disabled:opacity-40"
                             aria-label={t('pblV3.cancel')}
                             disabled={pending}
                             onClick={() => void command('cancel')}

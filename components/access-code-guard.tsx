@@ -1,10 +1,23 @@
 'use client';
 
-import { Fragment, useEffect, useState, ReactNode } from 'react';
+import { Fragment, createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { AccessCodeModal } from '@/components/access-code-modal';
 import { importLegacyModelSettings } from '@/components/model-settings-init';
 import { modelSettingsClient } from '@/lib/model-settings/client';
 import { reloadAgentRegistry } from '@/lib/orchestration/registry/store';
+
+/**
+ * Whether the app behind the guard is reachable: the status probe has answered
+ * and no access code is still owed. Children render underneath the modal the
+ * whole time, so anything that takes over the page on mount (the workbench's
+ * first-run tour) must wait for this: a modal layer opened under the gate traps
+ * focus away from the access-code input. Outside a guard there is no gate.
+ */
+const AccessCodeGateContext = createContext(true);
+
+export function useAccessCodeGateOpen(): boolean {
+  return useContext(AccessCodeGateContext);
+}
 
 export function AccessCodeGuard({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<{
@@ -42,9 +55,10 @@ export function AccessCodeGuard({ children }: { children: ReactNode }) {
   }, []);
 
   const needsAuth = !status.loading && status.enabled && !status.authenticated;
+  const gateOpen = !status.loading && !needsAuth;
 
   return (
-    <>
+    <AccessCodeGateContext.Provider value={gateOpen}>
       {needsAuth && (
         <AccessCodeModal
           open={true}
@@ -73,6 +87,6 @@ export function AccessCodeGuard({ children }: { children: ReactNode }) {
         />
       )}
       <Fragment key={grantedCount}>{children}</Fragment>
-    </>
+    </AccessCodeGateContext.Provider>
   );
 }

@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Bug Fixes
 
+- Pro workbench: pages built from an uploaded document now show the document's extracted figures. `use_material_media` used to tell the agent to place an image with `patch_stage`, so new pages were generated through `generate_scene` without `media` and showed no figures. Its reply, the `generate_scene` description, the materials prompt and the `stage-design` skill now say to pass each image in `generate_scene.media`. [#2099](https://github.com/THU-MAIC/OpenMAIC/pull/2099)
 - Voice settings retain a server-reported re-clone instruction beside the affected saved Qwen/CosyVoice profile after preview fails. A successful retry clears the notice; saved voices and bindings remain unchanged. [#2030](https://github.com/THU-MAIC/OpenMAIC/issues/2030)
 
 ## [1.5.0-rc.2] - 2026-11-12

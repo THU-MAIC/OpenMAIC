@@ -190,9 +190,18 @@ vi.mock('@/lib/server/sandbox/providers/e2b-compatible', () => ({
       }
     }
     async initializeWorkspace() {}
-    async readText(id: string, _operation: string, path: string) {
+    async readText(id: string, _operation: string, path: string, _signal?: AbortSignal) {
       path = path.replace(/^\/home\/user\/project\//, '');
       return readFile(join(mocked.root, id, path), 'utf8');
+    }
+    async readTexts(id: string, operation: string, paths: readonly string[], signal?: AbortSignal) {
+      const pairs: [string, string][] = [];
+      for (const path of paths) {
+        signal?.throwIfAborted();
+        pairs.push([path, await this.readText(id, operation, path, signal)]);
+        signal?.throwIfAborted();
+      }
+      return Object.fromEntries(pairs);
     }
     async writeText(id: string, _operation: string, path: string, text: string) {
       path = path.replace(/^\/home\/user\/project\//, '');
@@ -5113,6 +5122,95 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     });
   });
 
+  it('rejects feedback for an unopened section instead of silently reopening the first lesson', async () => {
+    const study = await freshStudy(),
+      opening = (await study.send('begin')) as { sessionId: string };
+    const claim = await agents.claimNextSession('unopened-review-worker', process.pid, {
+      sessionId: opening.sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    const config = await teachingRunnerConfig({
+      sessionId: opening.sessionId,
+      ownerId: principal.ownerId,
+      workerId: 'unopened-review-worker',
+      attempt: claim!.attempt,
+      signal: new AbortController().signal,
+    });
+    await expect(
+      invoke(config, 'read_next_skill', { studentFeedback: 'The learner answered section C.' }),
+    ).rejects.toThrow('No active section is open');
+    expect((await store.binding(opening.sessionId))?.guided?.activeFile).toBeFalsy();
+    await invoke(config, 'request_skill_review', {
+      response: 'Project welcome.\n\nReady to begin?',
+    });
+    await agents.finishSession(opening.sessionId, 'unopened-review-worker', {
+      status: 'succeeded',
+      expectedAttempt: claim!.attempt,
+    });
+  });
+  it('gives the correct next action for missing evidence before any cloud read and preserves review recovery', async () => {
+    const original = studyId,
+      study = await freshTeachingStudy();
+    studyId = study.id;
+    try {
+      await runTools('Please continue.', async (config) => {
+        const read = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'readTexts');
+        try {
+          for (const reuseFeedback of [false, true])
+            await expect(
+              invoke(config, 'read_next_skill', {
+                studentFeedback: 'An old unrelated answer is enough.',
+                reuseFeedback,
+              }),
+            ).rejects.toThrow('feedbackSource=null');
+          expect(read).not.toHaveBeenCalled();
+        } finally {
+          read.mockRestore();
+        }
+        await invoke(config, 'request_skill_review', {
+          response: 'Current explanation.\n\nHow will the caller use the returned value?',
+        });
+      });
+    } finally {
+      studyId = original;
+    }
+  });
+
+  it('binds a learner review to one fresh bulk snapshot and displays its committed response immediately', async () => {
+    const original = studyId,
+      study = await freshTeachingStudy();
+    studyId = study.id;
+    try {
+      await runTools('Please explain this section.', async (config) => {
+        const batch = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'readTexts');
+        const response =
+          'Look at the current program.\n\nWhich behavior should the next change preserve?';
+        try {
+          await invoke(config, 'request_skill_review', { response });
+          expect(batch).toHaveBeenCalledTimes(1);
+        } finally {
+          batch.mockRestore();
+        }
+        const binding = (await store.binding((await store.roles(study.id))[0].session_id))!;
+        expect(binding.guided?.pending?.displayText).toBe(response);
+        const row = await store.get(study.id, principal.ownerId);
+        const sandbox = await SandboxService.forOwner(principal);
+        const expected = filesFingerprint(await readFiles(sandbox, row));
+        expect(binding.guided?.pending?.artifactDigest).toBe(expected);
+        const view = await learningView(principal, study.id, { passive: true });
+        expect(
+          view.conversation
+            ?.flatMap((e) => e.parts)
+            .some((p) => p.kind === 'text' && p.text === response),
+        ).toBe(true);
+        expect(config.isTurnComplete()).toBe(true);
+      });
+    } finally {
+      studyId = original;
+    }
+  });
+
   it('keeps a large reply whole while the committed review question awaits its display event', async () => {
     const study = await freshStudy();
     onTestFinished(async () => {
@@ -6530,13 +6628,13 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     const ready = new Promise<void>((resolve) => {
       entered = resolve;
     });
-    const original = SandboxService.prototype.readText;
+    const original = SandboxService.prototype.readTexts;
     const read = vi
-      .spyOn(SandboxService.prototype, 'readText')
-      .mockImplementationOnce(async function (this: SandboxService, id, path) {
+      .spyOn(SandboxService.prototype, 'readTexts')
+      .mockImplementationOnce(async function (this: SandboxService, id, paths, signal) {
         entered();
         await gate;
-        return original.call(this, id, path);
+        return original.call(this, id, paths, signal);
       });
     try {
       const tool = config.tools.find((t) => t.name === 'request_skill_review')!;
@@ -10938,8 +11036,8 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const original = SandboxService.prototype.readText;
-    const read = vi.spyOn(SandboxService.prototype, 'readText').mockImplementation(async function (
+    const original = SandboxService.prototype.readTexts;
+    const read = vi.spyOn(SandboxService.prototype, 'readTexts').mockImplementation(async function (
       this: SandboxService,
       ...args
     ) {

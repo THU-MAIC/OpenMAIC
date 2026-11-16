@@ -155,6 +155,8 @@ export interface LibraryPins {
 
 export const NO_PINS: LibraryPins = { pinned: [], unpinned: [] };
 
+const ALL_KINDS: ReadonlySet<LibraryKind> = new Set<LibraryKind>(['course', 'folder']);
+
 /** Whether an item is pinned without the user ever pinning it. */
 export type DefaultPinned = (key: string) => boolean;
 
@@ -238,13 +240,23 @@ export function unpinItem(
 /**
  * Drop keys the live list no longer has, and duplicates. Returns the input
  * reference when nothing changed, so a caller can skip the write.
+ *
+ * `loadedKinds` names the kinds whose list `liveKeys` is authoritative for.
+ * Courses and folders load separately, so a key of a kind whose list has not
+ * loaded (or failed to) is kept as it is: its absence from `liveKeys` says
+ * nothing about whether the item still exists.
  */
-export function prunePins(pins: LibraryPins, liveKeys: readonly string[]): LibraryPins {
+export function prunePins(
+  pins: LibraryPins,
+  liveKeys: readonly string[],
+  loadedKinds: ReadonlySet<LibraryKind> = ALL_KINDS,
+): LibraryPins {
   const live = new Set(liveKeys);
   const keep = (list: readonly string[]) => {
     const seen = new Set<string>();
     return list.filter((key) => {
-      if (!live.has(key) || seen.has(key)) return false;
+      if (seen.has(key)) return false;
+      if (!live.has(key) && loadedKinds.has(parseKey(key).kind)) return false;
       seen.add(key);
       return true;
     });
@@ -254,6 +266,30 @@ export function prunePins(pins: LibraryPins, liveKeys: readonly string[]): Libra
   return pinned.length === pins.pinned.length && unpinned.length === pins.unpinned.length
     ? pins
     : { pinned, unpinned };
+}
+
+/** Where one of the library's lists is: still loading, loaded, or failed. */
+export type LibraryListState = 'loading' | 'ready' | 'error';
+
+/**
+ * The kinds whose pins may be pruned now, or `null` for "not yet".
+ *
+ * Courses and folders are fetched in parallel and land in either order. A
+ * prune run while one list is still in flight would read every pin of that
+ * kind as gone and write the loss back to storage, so nothing is pruned until
+ * both have settled; after that, only the kinds whose list actually loaded are
+ * pruned. A failed list, or a build without folders (`folder: null`), never
+ * costs the user a pin.
+ */
+export function prunableKinds(lists: {
+  readonly course: LibraryListState;
+  readonly folder: LibraryListState | null;
+}): ReadonlySet<LibraryKind> | null {
+  if (lists.course === 'loading' || lists.folder === 'loading') return null;
+  const kinds = new Set<LibraryKind>();
+  if (lists.course === 'ready') kinds.add('course');
+  if (lists.folder === 'ready') kinds.add('folder');
+  return kinds.size > 0 ? kinds : null;
 }
 
 /** Parse a persisted value; anything malformed is "no pins". Bare ids are courses. */

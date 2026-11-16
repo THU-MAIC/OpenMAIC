@@ -224,6 +224,20 @@ once at your app shell to make those faces available:
 import '@openmaic/renderer/fonts.css';
 ```
 
+Slides whose fonts were picked in `@openmaic/editor`'s default picker name the
+Google Fonts versions of those typefaces (`Noto Sans SC`, `Noto Serif SC`,
+`LXGW WenKai`, `ZCOOL KuaiLe`). To render them, also import the opt-in alias
+sheet, which maps those names onto the same files:
+
+```ts
+import '@openmaic/renderer/picker-fonts.css';
+```
+
+It claims the four names for the whole page with no `unicode-range`: any text
+set in one of them renders with, and downloads, the whole self-hosted file
+(SourceHanSans is about 7.5 MB, SourceHanSerif about 10 MB). Leave it out if
+your page loads its own faces under these names.
+
 > **Runtime dependency — read this.** The `@font-face` `src` URLs point at an
 > external font host (`https://file.maic.chat/fonts/<name>.woff2`); the woff2
 > files are **not** bundled in the package. So this is a hard runtime dependency:

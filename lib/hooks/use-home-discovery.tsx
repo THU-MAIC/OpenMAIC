@@ -71,7 +71,13 @@ export interface DiscoveryCourse extends StageListItem {
 export interface HomeDiscovery {
   /** The user's classrooms, in the API's own order (newest-first is a view concern). */
   readonly classrooms: DiscoveryCourse[];
+  /** Where `classrooms` is. */
   readonly state: HomeDiscoveryState;
+  /**
+   * Where `folders` is, separately from `state`: the two lists load in
+   * parallel, so a ready course list says nothing about the folder list.
+   */
+  readonly foldersState: HomeDiscoveryState;
   readonly reload: () => Promise<void>;
   /** Hidden ZIP file input — mount it anywhere in the shell. */
   readonly importInput: ReactElement;
@@ -107,6 +113,8 @@ export function useHomeDiscovery({
   // Course folders — folder navigation and the new-folder dialog ride along so
   // both home shells share one folder data layer.
   const [folders, setFolders] = useState<FolderRecord[]>([]);
+  const [foldersState, setFoldersState] = useState<HomeDiscoveryState>('loading');
+  const foldersStateRef = useRef<HomeDiscoveryState>('loading');
 
   // One coalesced loader per list, created lazily on first use (not during
   // render). A response is committed only when no newer request was made while
@@ -141,8 +149,19 @@ export function useHomeDiscovery({
     if (!folderLoaderRef.current) {
       folderLoaderRef.current = createCoalescedLatestLoader({
         load: listFolders,
-        commit: setFolders,
-        fail: (err) => log.error('Failed to load folders:', err),
+        commit: (list) => {
+          setFolders(list);
+          foldersStateRef.current = 'ready';
+          setFoldersState('ready');
+        },
+        fail: (err) => {
+          log.error('Failed to load folders:', err);
+          // As with the courses: a failed background read keeps the last
+          // authoritative list (and its state); only a first load fails.
+          if (foldersStateRef.current === 'ready') return;
+          foldersStateRef.current = 'error';
+          setFoldersState('error');
+        },
       });
     }
     return folderLoaderRef.current();
@@ -154,6 +173,10 @@ export function useHomeDiscovery({
     if (stateRef.current === 'error') {
       stateRef.current = 'loading';
       setState('loading');
+    }
+    if (foldersStateRef.current === 'error') {
+      foldersStateRef.current = 'loading';
+      setFoldersState('loading');
     }
     await Promise.all([loadClassrooms(), loadFolders()]);
   }, [loadClassrooms, loadFolders]);
@@ -247,6 +270,7 @@ export function useHomeDiscovery({
   return {
     classrooms,
     state,
+    foldersState,
     reload,
     importInput,
     triggerImport,

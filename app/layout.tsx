@@ -33,6 +33,9 @@ import { LOCALE_COOKIE, resolveRequestLocale } from '@/lib/i18n/resolve-locale';
 // `--font-sans` moves to globals.css since the family no longer comes from
 // next/font's generated class.
 import '@fontsource-variable/inter';
+// Every font the slide font picker offers, by the names it writes (see configs/font.ts),
+// on every page: a slide renders its picked font outside the editor too.
+import './slide-fonts';
 
 /**
  * Applies the dark theme before the first paint. `ThemeProvider` resolves the

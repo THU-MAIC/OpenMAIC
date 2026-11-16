@@ -648,6 +648,10 @@ export async function teachingRunnerConfig(input: {
           ),
         }),
         async (current, p, _callId, signal) => {
+          if (!review.state.activeFile && p.studentFeedback)
+            throw sandboxConflict(
+              'No active section is open. Call read_next_skill without studentFeedback to read the first section; this call cannot credit a reply to another section.',
+            );
           const reread = !!review.state.activeFile && !p.studentFeedback;
           const startingTeaching =
             review.state.welcome === 'pending' && !!review.state.activeFile && !!p.studentFeedback;

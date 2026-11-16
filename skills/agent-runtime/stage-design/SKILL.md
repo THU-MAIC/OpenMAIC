@@ -62,7 +62,13 @@ order:
    content sits where in what form (table, steps, cards, diagram, chart,
    formula). Keep content and look apart: `brief` and `materialFacts` carry
    what the page says, `design` only how it looks, referring to the content by
-   role instead of repeating it. A `pbl` page is generated the same
+   role instead of repeating it.
+   To show an extracted figure on the page, call `use_material_media` for it
+   first and pass each returned `src` in `media` as
+   `{ src, description, width, height }`. A page generated without `media`
+   has no figure. Patching one in later loses the layout the content model
+   would have built around it.
+   A `pbl` page is generated the same
    way and lands as a full PBL project (`projectV2`) from its brief; a failed
    generation reports an error and writes nothing. Each call is the durable
    checkpoint for its page: the page survives an interruption only once the

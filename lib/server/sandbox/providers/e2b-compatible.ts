@@ -190,6 +190,12 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
 
   private fileFailure(error: unknown): never {
     if (error instanceof CommandExitError) {
+      if (error.exitCode === 48)
+        throw new SandboxError(
+          'SANDBOX_FILE_TOO_LARGE',
+          413,
+          'Text snapshots are limited to 1 MiB.',
+        );
       if (error.exitCode === 44)
         throw new SandboxError('SANDBOX_FILE_NOT_FOUND', 404, 'Project file not found.');
       if (error.exitCode === 47)
@@ -239,6 +245,65 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
     }
   }
 
+  async readTexts(
+    resourceId: string,
+    operationId: string,
+    paths: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<Record<string, string>> {
+    const relative = paths.map(workspacePath);
+    if (relative.length > 256 || new Set(relative).size !== relative.length)
+      throw new SandboxError('SANDBOX_ARCHIVE_INVALID', 422, 'Invalid text snapshot paths.');
+    if (!relative.length) return {};
+    const sandbox = await this.connect(resourceId, operationId, signal);
+    const transfer = `/tmp/openmaic-file-${randomUUID()}`;
+    try {
+      // Transfer the bounded path list rather than growing the shell command with source count.
+      await checkpointIO(
+        () =>
+          sandbox.files.write(transfer + '.paths', JSON.stringify(relative), {
+            requestTimeoutMs: REQUEST_TIMEOUT_MS,
+            signal,
+          }),
+        signal,
+      );
+      await checkpointIO(
+        () =>
+          sandbox.commands.run(
+            `python3 -c ${shellQuote(WORKSPACE_FILE_RUNNER)} read_many eA== ${shellQuote(transfer)}`,
+            { timeoutMs: 30_000, requestTimeoutMs: 35_000, signal },
+          ),
+        signal,
+      );
+      // JSON escaping can expand 1 MiB of source text up to sixfold, plus bounded paths.
+      const text = await this.readConnectedUtf8(sandbox, transfer, 8 * MAX_TEXT_FILE_BYTES, signal);
+      const result: unknown = JSON.parse(text);
+      if (
+        !result ||
+        typeof result !== 'object' ||
+        Array.isArray(result) ||
+        Object.keys(result).length !== relative.length ||
+        relative.some(
+          (path) =>
+            !Object.hasOwn(result, path) ||
+            typeof (result as Record<string, unknown>)[path] !== 'string',
+        )
+      )
+        throw new SandboxError('SANDBOX_ARCHIVE_INVALID', 422, 'Invalid text snapshot result.');
+      return Object.fromEntries(
+        paths.map((path, index) => [path, (result as Record<string, string>)[relative[index]]]),
+      );
+    } catch (error) {
+      return this.fileFailure(error);
+    } finally {
+      await Promise.all([
+        this.removeTransfer(sandbox, transfer, signal),
+        this.removeTransfer(sandbox, transfer + '.paths', signal),
+      ]);
+      signal?.throwIfAborted();
+    }
+  }
+
   private async readUtf8(
     resourceId: string,
     operationId: string,
@@ -247,6 +312,15 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
     signal?: AbortSignal,
   ): Promise<string> {
     const sandbox = await this.connect(resourceId, operationId, signal);
+    return this.readConnectedUtf8(sandbox, path, limit, signal);
+  }
+
+  private async readConnectedUtf8(
+    sandbox: Sandbox,
+    path: string,
+    limit: number,
+    signal?: AbortSignal,
+  ): Promise<string> {
     const local = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
     const readSignal = signal ? AbortSignal.any([signal, local]) : local;
     try {

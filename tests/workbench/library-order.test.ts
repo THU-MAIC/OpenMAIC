@@ -10,6 +10,7 @@ import {
   parsePins,
   pinItem,
   pinnedIds,
+  prunableKinds,
   prunePins,
   serializePins,
   unpinItem,
@@ -164,6 +165,47 @@ describe('prunePins', () => {
   it('returns the same reference when nothing changed', () => {
     const pins = { pinned: ['course:a'], unpinned: [G] };
     expect(prunePins(pins, ['course:a', G])).toBe(pins);
+  });
+
+  it('keeps the pins of a kind whose list has not loaded', () => {
+    // Courses arrived, folders did not: the live keys hold no folder at all.
+    const pins = { pinned: ['folder:f', 'course:gone', 'course:a'], unpinned: [] };
+    expect(prunePins(pins, ['course:a'], new Set(['course']))).toEqual({
+      pinned: ['folder:f', 'course:a'],
+      unpinned: [],
+    });
+  });
+
+  it('still collapses duplicates of a kind it keeps', () => {
+    const pins = { pinned: ['folder:f', 'folder:f'], unpinned: [] };
+    expect(prunePins(pins, [], new Set(['course']))).toEqual({
+      pinned: ['folder:f'],
+      unpinned: [],
+    });
+  });
+});
+
+describe('prunableKinds', () => {
+  it('waits while either list is still loading', () => {
+    expect(prunableKinds({ course: 'ready', folder: 'loading' })).toBeNull();
+    expect(prunableKinds({ course: 'loading', folder: 'ready' })).toBeNull();
+  });
+
+  it('prunes both kinds once both lists are ready', () => {
+    expect(prunableKinds({ course: 'ready', folder: 'ready' })).toEqual(
+      new Set(['course', 'folder']),
+    );
+  });
+
+  it('prunes only the kinds whose list loaded', () => {
+    expect(prunableKinds({ course: 'ready', folder: 'error' })).toEqual(new Set(['course']));
+    expect(prunableKinds({ course: 'error', folder: 'ready' })).toEqual(new Set(['folder']));
+    expect(prunableKinds({ course: 'ready', folder: null })).toEqual(new Set(['course']));
+  });
+
+  it('prunes nothing when no list loaded', () => {
+    expect(prunableKinds({ course: 'error', folder: 'error' })).toBeNull();
+    expect(prunableKinds({ course: 'error', folder: null })).toBeNull();
   });
 });
 

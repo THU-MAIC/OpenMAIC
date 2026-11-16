@@ -391,6 +391,47 @@ export class SandboxService {
     return this.provider.readText(row.resource_id, row.id, path, signal);
   }
 
+  /** Read the same validated source paths in one owned provider operation when supported. */
+  async readTexts(id: string, paths: readonly string[], signal?: AbortSignal) {
+    signal?.throwIfAborted();
+    if (paths.length > 256 || new Set(paths).size !== paths.length)
+      throw sandboxInvalid('Invalid text snapshot paths.');
+    const absolute = paths.map((path) => {
+      const value = `${WORKSPACE_ROOT}/${workspacePath(path)}`;
+      assertPath(value);
+      return value;
+    });
+    const row = await this.running(id);
+    signal?.throwIfAborted();
+    let result: Record<string, string>;
+    if (this.provider.readTexts) {
+      const values = await this.provider.readTexts(row.resource_id, row.id, absolute, signal);
+      result = Object.fromEntries(paths.map((path, index) => [path, values[absolute[index]]]));
+    } else {
+      result = {};
+      let bytes = 0;
+      for (const path of paths) {
+        signal?.throwIfAborted();
+        const text = await this.readText(id, path, signal);
+        bytes += Buffer.byteLength(text);
+        if (bytes > MAX_TEXT_FILE_BYTES)
+          throw new SandboxError(
+            'SANDBOX_FILE_TOO_LARGE',
+            413,
+            'Text snapshots are limited to 1 MiB.',
+          );
+        Object.defineProperty(result, path, {
+          value: text,
+          enumerable: true,
+          configurable: true,
+          writable: true,
+        });
+      }
+    }
+    signal?.throwIfAborted();
+    return result;
+  }
+
   async writeText(id: string, path: unknown, text: unknown) {
     await this.mutation(id, 'write');
     return this.store.exclusive(id, () => this.writeTextUnlocked(id, path, text));

@@ -69,18 +69,34 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+const NO_RUNS = new Map();
+const NO_PENDING: never[] = [];
+
 const byTestId = (id: string) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
 
-async function renderPage(extraCourses: readonly Record<string, unknown>[] = []) {
+/** What a test may change about the discovery lists between renders. */
+interface ListOverrides {
+  readonly state?: string;
+  readonly foldersState?: string;
+  readonly folders?: readonly Record<string, unknown>[];
+}
+
+async function renderPage(
+  extraCourses: readonly Record<string, unknown>[] = [],
+  lists: ListOverrides = {},
+) {
   const onDeleteCourse = vi.fn();
   const reload = vi.fn(async () => undefined);
   const createFolder = vi.fn(async (name: string) => ({ id: 'f-new', name }));
   const moveCourse = vi.fn(async () => undefined);
+  const deleteCourse = vi.fn(async () => true);
+  const triggerImport = vi.fn();
+  const onOpenCourse = vi.fn();
   const container = document.createElement('div');
   document.body.append(container);
   const root = createRoot(container);
   roots.push(root);
-  await act(async () => {
+  const render = (overrides: ListOverrides) =>
     root.render(
       createElement(WorkspaceCoursesPage, {
         courses: {
@@ -96,24 +112,27 @@ async function renderPage(extraCourses: readonly Record<string, unknown>[] = [])
             },
             ...extraCourses,
           ],
-          state: 'ready',
+          state: overrides.state ?? 'ready',
+          foldersState: overrides.foldersState ?? 'ready',
           reload,
           importInput: null,
-          triggerImport: vi.fn(),
+          triggerImport,
           importing: false,
-          folders: [{ id: 'f1', name: 'Math' }],
+          folders: overrides.folders ?? [{ id: 'f1', name: 'Math' }],
           createFolder,
           moveCourse,
-          deleteCourse: vi.fn(async () => true),
+          deleteCourse,
         } as never,
-        courseRuns: new Map(),
-        pendingRuns: [],
-        onOpenCourse: vi.fn(),
+        courseRuns: NO_RUNS,
+        pendingRuns: NO_PENDING,
+        onOpenCourse,
         onDeleteCourse,
       }),
     );
-  });
-  return { onDeleteCourse, reload, createFolder, moveCourse };
+  await act(async () => render(lists));
+  /** Render again with the lists in a later state, as a load landing does. */
+  const rerender = (overrides: ListOverrides) => act(async () => render(overrides));
+  return { onDeleteCourse, reload, createFolder, moveCourse, rerender };
 }
 
 async function openMenu(testId: string) {
@@ -413,6 +432,45 @@ describe('pinned courses', () => {
     expect(JSON.parse(stored()!)).toEqual({
       pinned: ['course:c3'],
       unpinned: [`course:${GUIDE}`],
+    });
+  });
+
+  it('keeps a folder pin when the course list lands before the folder list', async () => {
+    window.localStorage.setItem(
+      'openmaic:workspace:course-pins',
+      JSON.stringify({ pinned: ['folder:f1', 'course:gone'], unpinned: [] }),
+    );
+    // Courses first; the folder list is still in flight and holds nothing yet.
+    const { rerender } = await renderPage([], { foldersState: 'loading', folders: [] });
+    expect(JSON.parse(stored()!)).toEqual({
+      pinned: ['folder:f1', 'course:gone'],
+      unpinned: [],
+    });
+
+    await rerender({ foldersState: 'ready' });
+    expect(byTestId('workspace-courses-folder-card-f1-pinned')).not.toBeNull();
+    expect(JSON.parse(stored()!)).toEqual({ pinned: ['folder:f1'], unpinned: [] });
+  });
+
+  it('keeps a folder pin when the folder list fails to load', async () => {
+    window.localStorage.setItem(
+      'openmaic:workspace:course-pins',
+      JSON.stringify({ pinned: ['folder:f1', 'course:gone'], unpinned: [] }),
+    );
+    await renderPage([], { foldersState: 'error', folders: [] });
+    // Courses are authoritative and pruned; the folder pin is left alone.
+    expect(JSON.parse(stored()!)).toEqual({ pinned: ['folder:f1'], unpinned: [] });
+  });
+
+  it('keeps every pin while the course list is still loading', async () => {
+    window.localStorage.setItem(
+      'openmaic:workspace:course-pins',
+      JSON.stringify({ pinned: ['folder:gone', 'course:c3'], unpinned: [] }),
+    );
+    await renderPage([], { state: 'loading' });
+    expect(JSON.parse(stored()!)).toEqual({
+      pinned: ['folder:gone', 'course:c3'],
+      unpinned: [],
     });
   });
 

@@ -431,3 +431,20 @@ describe('semantic artifact acceptance before the final section', () => {
     expect(() => next.complete('Accept', artifact, true)).toThrow();
   });
 });
+
+it('gives a single actionable recovery for an unanswered section without suggesting flag guessing', () => {
+  const review = new GuidedSkillReview({
+    digest: 'test',
+    progression: ['SKILL.md', 'A.md', 'B.md'],
+    final: 'B.md',
+  });
+  review.beginRun('m:0', [{ seq: 1, text: 'An answer to some earlier question.' }], true, 1);
+  review.advance('A.md', undefined, 'a'.repeat(64));
+  for (const reuse of [false, true])
+    expect(() => review.assertFeedbackSource('Paraphrased old answer', reuse)).toThrow(
+      'Current feedbackSource=null; activeSection=A.md',
+    );
+  expect(() => review.assertFeedbackSource('Old answer', true)).toThrow('Do not retry advancement');
+  expect(review.state.reviewedFiles).toEqual([]);
+  expect(review.state.activeFile).toBe('A.md');
+});

@@ -145,6 +145,7 @@ import { PDF_PROVIDERS } from './constants';
 import { createLogger } from '@/lib/logger';
 import { extractMinerUResult } from './mineru-parser';
 import { parseWithMinerUCloud } from './mineru-cloud';
+import { parseWithMiniCPMOCR } from './minicpm-ocr';
 import { parseWithAliDocMindClient } from './alidocmind-client';
 import { providerFetch, type ProviderFetchPolicy } from '@/lib/server/provider-fetch';
 import { MaterialSourceRefusedError } from '@/lib/server/material-extraction/errors';
@@ -314,7 +315,12 @@ export async function parsePDF(
   if (provider.requiresApiKey && !config.apiKey) {
     // AliDocMind uses AK/SK instead of a single apiKey; check separately.
     const envAvailable = config.allowEnvFallback && !!process.env.ALIDOCMIND_ACCESS_KEY_ID;
-    if (config.providerId !== 'alidocmind' || (!config.accessKeyId && !envAvailable)) {
+    const aliDocMindCredentials =
+      config.providerId === 'alidocmind' && (Boolean(config.accessKeyId) || envAvailable);
+    // A provider with both a hosted API and a self-hosted deployment may run
+    // without a key when the operator points it at their own service.
+    const keylessSelfHost = provider.apiKeyOptionalWithBaseUrl === true && Boolean(config.baseUrl);
+    if (!aliDocMindCredentials && !keylessSelfHost) {
       throw new Error(`API key required for PDF provider: ${config.providerId}`);
     }
   }
@@ -338,6 +344,10 @@ export async function parsePDF(
 
     case 'alidocmind':
       result = await parseWithAliDocMind(config, pdfBuffer, options);
+      break;
+
+    case 'minicpm-ocr':
+      result = await parseWithMiniCPMOCR(config, pdfBuffer, options);
       break;
 
     default:

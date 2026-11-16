@@ -247,17 +247,26 @@ export function plannedExtractor(plan: SourceExtractionPlan): { id: string; vers
   return { id: provider.id, version: provider.version };
 }
 
-/** Run a plan's extractor (falling back across document providers) and return its output. */
+/**
+ * Run a plan's extractor (falling back across document providers) and return
+ * its output. `signal` reaches every provider's config, so one that honors it
+ * stops its requests and jobs when the caller stops waiting.
+ */
 export async function runSourceExtraction(
   plan: SourceExtractionPlan,
   title: string | null,
+  signal?: AbortSignal,
 ): Promise<SourceExtractionOutcome> {
   if (plan.kind === 'media') {
     let artifact: MediaArtifact;
     try {
       artifact = await plan.provider.extract({
         ...plan.input,
-        config: { ...plan.input.config, providerId: plan.provider.id },
+        config: {
+          ...plan.input.config,
+          providerId: plan.provider.id,
+          ...(signal ? { signal } : {}),
+        },
       });
     } catch (error) {
       throw wrapProviderError(error);
@@ -304,7 +313,7 @@ export async function runSourceExtraction(
   for (const provider of plan.candidates) {
     let artifact: DocumentArtifact;
     try {
-      artifact = await extractWithDocumentProvider(provider, plan);
+      artifact = await extractWithDocumentProvider(provider, plan, signal);
     } catch (error) {
       errors.push(documentFailureLine(provider, error));
       failures.push(error);
@@ -317,14 +326,22 @@ export async function runSourceExtraction(
   throw documentExtractionFailure(errors, failures, plan.noServiceConfigured);
 }
 
-/** Run one document provider on a planned input; a failure is the provider's own error. */
+/**
+ * Run one document provider on a planned input; a failure is the provider's
+ * own error. `signal` reaches the provider's config, so a provider that honors
+ * it stops its requests, polls and jobs when the caller stops waiting.
+ */
 export function extractWithDocumentProvider(
   provider: DocumentExtractorProvider,
   plan: Extract<SourceExtractionPlan, { kind: 'document' }>,
+  signal?: AbortSignal,
 ): Promise<DocumentArtifact> {
   return provider.extract({
     ...plan.input,
-    config: extractorConfigFor(provider.id, plan.services),
+    config: {
+      ...extractorConfigFor(provider.id, plan.services),
+      ...(signal ? { signal } : {}),
+    },
   });
 }
 

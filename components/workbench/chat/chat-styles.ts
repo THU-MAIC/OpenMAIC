@@ -319,8 +319,13 @@ export const wbStyles = {
       'size-[5px] rounded-full bg-[var(--wb-text-faint)] animate-[wb-wait-pulse_1.2s_ease-in-out_0.3s_infinite] motion-reduce:animate-none motion-reduce:opacity-60',
   },
   composer: {
+    /**
+     * `pb-10` is the toolbar's strip. It belongs to the box, not to the input:
+     * as the input's own bottom padding it only shows at the end of a scroll,
+     * so a long draft scrolled to the middle ran its lines under the buttons.
+     */
     inputBox:
-      'relative rounded-2xl border border-[var(--wb-line)] bg-[var(--wb-surface)] shadow-[0_10px_32px_-14px_rgba(15,23,42,0.22)] transition duration-150 focus-within:border-[var(--wb-accent)] focus-within:shadow-[var(--wb-focus-ring),0_10px_32px_-14px_rgba(15,23,42,0.22)] dark:shadow-[0_12px_36px_-12px_rgba(0,0,0,0.55)]',
+      'relative rounded-2xl border pb-10 border-[var(--wb-line)] bg-[var(--wb-surface)] shadow-[0_10px_32px_-14px_rgba(15,23,42,0.22)] transition duration-150 focus-within:border-[var(--wb-accent)] focus-within:shadow-[var(--wb-focus-ring),0_10px_32px_-14px_rgba(15,23,42,0.22)] dark:shadow-[0_12px_36px_-12px_rgba(0,0,0,0.55)]',
     /**
      * Everything attached to the next message, INSIDE the box it is attached to.
      *
@@ -338,7 +343,7 @@ export const wbStyles = {
      */
     context: 'max-h-[92px] overflow-y-auto px-2 pb-1 pt-2',
     input:
-      'box-border block max-h-[200px] min-h-[62px] w-full rounded-lg border-0 bg-transparent px-3 pb-10 pt-2.5 text-[length:var(--wb-text-sm)] leading-relaxed text-[var(--wb-text)] [--composer-placeholder:var(--wb-text-faint)]',
+      'box-border block max-h-[164px] min-h-[22px] w-full rounded-lg border-0 bg-transparent px-3 pb-1 pt-2.5 text-[length:var(--wb-text-sm)] leading-relaxed text-[var(--wb-text)] [--composer-placeholder:var(--wb-text-faint)]',
     actionsLeft: 'absolute bottom-2 left-2 z-10 flex items-center',
     actionsRow: 'absolute bottom-2 right-2 z-10 flex items-center',
     sendAction:
