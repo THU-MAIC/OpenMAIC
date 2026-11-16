@@ -928,6 +928,8 @@ test('existing quiz uses four regions, preserves task drafts, and survives denie
   await page.locator('[data-pbl-tour="replay"]').click();
   await expect(tour(page)).toContainText('Workspace guide 1/4');
   await finish(page);
+  // Replaying from outside dismisses the drawer, but retains its answers.
+  await page.getByRole('button', { name: 'Current task', exact: true }).click();
   await expect(page.getByRole('radio', { name: 'Draft choice', exact: true })).toBeChecked();
   expect(fixture.commands).toEqual([]);
 });

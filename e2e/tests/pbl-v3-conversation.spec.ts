@@ -841,7 +841,9 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await expect(choice).toBeEnabled();
   await choice.click();
   await expect(choice).toHaveAttribute('aria-pressed', 'true');
-  await expect(choice).toBeEnabled();
+  await expect(choice).toHaveAttribute('aria-busy', 'false');
+  await expect(choice).toBeDisabled();
+  await expect(details.getByText('Submitted', { exact: true })).toBeVisible();
 
   await expect(details.getByRole('listitem')).toHaveCount(0);
   expect((await page.getByLabel('Your message', { exact: true }).boundingBox())?.y).toBe(
