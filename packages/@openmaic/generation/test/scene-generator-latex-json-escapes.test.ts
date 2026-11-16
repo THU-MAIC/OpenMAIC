@@ -94,7 +94,9 @@ describe('scene generator LaTeX JSON escape validation and recovery', () => {
     expect(content.elements).toHaveLength(1);
     const latexEl = content.elements[0] as { type: string; latex: string; html?: string };
     expect(latexEl.type).toBe('latex');
-    expect(latexEl.latex).toBe('\\frac{1}{2} + \\times 4 + \\nu + \\beta + \\{x | x>0\\} + a\\,b + 50\\%');
+    expect(latexEl.latex).toBe(
+      '\\frac{1}{2} + \\times 4 + \\nu + \\beta + \\{x | x>0\\} + a\\,b + 50\\%',
+    );
     expect(latexEl.html).toContain('katex');
     expect(latexEl.html).not.toContain('katex-error');
   });
