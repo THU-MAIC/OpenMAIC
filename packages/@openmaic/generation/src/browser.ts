@@ -18,12 +18,12 @@ export * from './pbl/operations/kernel/task-completion.js';
 
 export {
   DEFAULT_DESIGN_TOKENS,
-  deriveDesignTokens,
   generateDesignTokenCss,
   injectDesignTokenCss,
   isColorDark,
+  resolveDesignTokens,
 } from './theme.js';
-export type { CourseDesignTokens } from './theme.js';
+export type { CourseDesignTokens, InteractiveDesignPalette } from './theme.js';
 
 export { postProcessInteractiveHtml } from './interactive-post-processor.js';
 export {

@@ -32,12 +32,12 @@ export { buildCompleteScene } from './scene-builder.js';
 export type { BuildCompleteSceneOptions } from './scene-builder.js';
 export {
   DEFAULT_DESIGN_TOKENS,
-  deriveDesignTokens,
   generateDesignTokenCss,
   injectDesignTokenCss,
   isColorDark,
+  resolveDesignTokens,
 } from './theme.js';
-export type { CourseDesignTokens } from './theme.js';
+export type { CourseDesignTokens, InteractiveDesignPalette } from './theme.js';
 export {
   DEFAULT_MAX_DELAY_MS,
   isAbortError,

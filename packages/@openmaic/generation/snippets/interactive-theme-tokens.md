@@ -13,5 +13,5 @@ The runtime automatically injects design tokens as CSS variables on `:root`. You
 
 Rules:
 1. Use `var(--color-background)`, `var(--color-surface)`, `var(--color-text)`, etc. for styling.
-2. Do not define conflicting dark wrapper classes or arbitrary dark background styles when the style is Light.
-3. Strict Light guarantee: When the style is Light, the page and canvas backgrounds must be light and clean. Never output black or dark page backgrounds (`#000`, `#0f172a`, `black`, dark slate/gray full-bleed backgrounds).
+2. Do not define conflicting wrapper colors or arbitrary full-page background styles that contradict the supplied palette.
+3. Use the supplied palette for the page, panels, text, borders, and accents; do not infer a different theme from the interaction brief.

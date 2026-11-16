@@ -8,10 +8,12 @@ import {
   generateSceneContent,
   PBLGenerationError,
   type AICallFn,
+  type InteractiveDesignPalette,
   type ImageMapping,
   type PdfImage,
   type SceneContentFailureCode,
   type SceneGenerationContext,
+  resolveDesignTokens,
 } from '@openmaic/generation';
 
 import { putSceneBringingCurrent } from './document-writes';
@@ -74,6 +76,22 @@ const SceneParams = Type.Object({
       {
         description:
           'Interactive pages only: widget configuration object matching widgetType (e.g. { concept, keyVariables } for simulation, { diagramType, nodes } for diagram, { language } for code, { gameType, challenge } for game, { visualizationType, objects } for visualization3d). Must be a plain object. Defaults to { concept: title } when widgetType is set; when only widgetOutline is set, widgetType defaults to simulation.',
+      },
+    ),
+  ),
+  palette: Type.Optional(
+    Type.Object(
+      {
+        background: Type.Optional(Type.String()),
+        surface: Type.Optional(Type.String()),
+        text: Type.Optional(Type.String()),
+        muted: Type.Optional(Type.String()),
+        border: Type.Optional(Type.String()),
+        accent: Type.Optional(Type.String()),
+      },
+      {
+        description:
+          'Interactive pages only: the six course colour roles fixed for this course. Copy these values from the course style used by its slides; do not infer them from the widget brief.',
       },
     ),
   ),
@@ -283,7 +301,7 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
     name: 'generate_scene',
     label: 'Generate page',
     description:
-      'Generate and durably persist one page from an explicit title, type, and brief. Reusing an order replaces that page. Interactive pages accept widgetType (simulation/diagram/code/game/visualization3d) plus a matching widgetOutline object; both are rejected for other page types.',
+      'Generate and durably persist one page from an explicit title, type, and brief. Reusing an order replaces that page. Interactive pages accept widgetType, widgetOutline, and the course palette (background, surface, text, muted, border, accent); those interactive fields are rejected for other page types.',
     parameters: SceneParams,
     async execute(_callId, params, signal) {
       if (!Number.isInteger(params.order) || params.order < 1) {
@@ -337,6 +355,13 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
         return result(
           'generate_scene only accepts widgetType/widgetOutline for interactive pages.',
           { error: 'widget-requires-interactive', type: params.type },
+          true,
+        );
+      }
+      if (params.type !== 'interactive' && params.palette !== undefined) {
+        return result(
+          'generate_scene only accepts palette for interactive pages.',
+          { error: 'palette-requires-interactive', type: params.type },
           true,
         );
       }
@@ -444,6 +469,9 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
           ...(assignedImages.length ? { assignedImages, imageMapping } : {}),
           ...(params.instruction ? { editDirective: params.instruction } : {}),
           ...(baseline ? { baselineContent: baseline } : {}),
+          ...(params.palette
+            ? { tokens: resolveDesignTokens(params.palette as Partial<InteractiveDesignPalette>) }
+            : {}),
           onFailure: (failure) => {
             contentFailure = failure.code;
           },

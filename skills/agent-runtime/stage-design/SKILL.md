@@ -49,8 +49,11 @@ order:
 4. **`generate_scene` for EACH settled page, in ascending order** — one
    page per call, never more. Pass the page's settled `title`, `type` and
    `brief` (plus `materialFacts` when the page's content comes from attached
-   material); no planned outline is needed. A `pbl` page is generated the same
-   way and lands as a full PBL project (`projectV2`) from its brief; a failed
+   material); no planned outline is needed. For an interactive page, also pass
+   the six-role `palette` (`background`, `surface`, `text`, `muted`, `border`,
+   `accent`) from the course style already used by the slides; do not derive it
+   from the widget's interaction prose. A `pbl` page is generated the same way
+   and lands as a full PBL project (`projectV2`) from its brief; a failed
    generation reports an error and writes nothing. Each call is the durable
    checkpoint for its page: the page survives an interruption only once the
    call has returned. As soon as a page's `generate_scene` succeeds, call

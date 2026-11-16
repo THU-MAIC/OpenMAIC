@@ -49,7 +49,7 @@ import {
   formatWidgetVariables,
   resolveWidgetDesignIdea,
 } from './widget-outline-format.js';
-import { deriveDesignTokens, injectDesignTokenCss, type CourseDesignTokens } from './theme.js';
+import { DEFAULT_DESIGN_TOKENS, injectDesignTokenCss, type CourseDesignTokens } from './theme.js';
 import type {
   GeneratedInteractiveContent,
   GeneratedPBLContent,
@@ -285,20 +285,11 @@ export async function generateSceneContent(
     }
 
     // Route to widget generation (handles all 5 types)
-    const tokens =
-      options.tokens ??
-      deriveDesignTokens(
-        (outline as { design?: string }).design ||
-          outline.widgetOutline?.designIdea ||
-          options.design,
-      );
-
     return generateWidgetContent(outline, aiCall, languageDirective, {
       allowProceduralSkill,
       logger: log,
       onFailure: options.onFailure,
-      design: options.design,
-      tokens,
+      tokens: options.tokens,
     });
   }
 
@@ -1308,11 +1299,7 @@ export async function generateWidgetContent(
     return null;
   }
 
-  const tokens =
-    options.tokens ??
-    deriveDesignTokens(
-      (outline as { design?: string }).design || widgetOutline.designIdea || options.design,
-    );
+  const tokens = options.tokens ?? DEFAULT_DESIGN_TOKENS;
   const themeVars = {
     styleName: tokens.isDark ? 'Dark' : 'Light',
     isLightStyle: !tokens.isDark,
