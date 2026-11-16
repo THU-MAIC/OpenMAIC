@@ -208,3 +208,97 @@ it('leaves repeated single-line titles unlocated when page estimates cannot dist
     locateMaterialChapters(text, [{ title: 'Motion', startPage: 26, sections: [] }], 100)[0].offset,
   ).toBeUndefined();
 });
+
+it.each([100, undefined])(
+  'does not select a TOC section when the first chapter is an image (page count: %s)',
+  (pages) => {
+    const text = '## Kinematics\n' + 'front matter\n'.repeat(80) + '## Kinematics\nbody';
+    const found = locateMaterialChapters(
+      text,
+      [
+        {
+          title: 'Image-only chapter',
+          startPage: 90,
+          sections: [{ title: 'Kinematics', startPage: 95 }],
+        },
+      ],
+      pages,
+    );
+    expect(found[0].offset).toBeUndefined();
+    expect(found[1].offset).toBeUndefined();
+    expect(found[1].offset).not.toBe(text.indexOf('Kinematics'));
+  },
+);
+
+it('leaves a repeated section after a chapter mini-TOC unlocated when its middle chapter is missing', () => {
+  const text =
+    '# First\n## Known\n## Kinematics\n' + 'body\n'.repeat(180) + '## Kinematics\n# Last\n';
+  const found = locateMaterialChapters(
+    text,
+    [
+      { title: 'First', startPage: 1, sections: [{ title: 'Known', startPage: 2 }] },
+      {
+        title: 'Image-only chapter',
+        startPage: 80,
+        sections: [{ title: 'Kinematics', startPage: 95 }],
+      },
+      { title: 'Last', startPage: 100, sections: [] },
+    ],
+    100,
+  );
+  expect(found[2].offset).toBeUndefined();
+  expect(found[3].offset).toBeUndefined();
+});
+
+it('leaves equal-rank sections unlocated when their parent is missing', () => {
+  const text =
+    '## Kinematics\n' +
+    'dense front matter\n'.repeat(40) +
+    '## Kinematics\n' +
+    'body\n'.repeat(140);
+  expect(
+    locateMaterialChapters(
+      text,
+      [
+        {
+          title: 'Image-only chapter',
+          startPage: 20,
+          sections: [{ title: 'Kinematics', startPage: 26 }],
+        },
+      ],
+      100,
+    )[1].offset,
+  ).toBeUndefined();
+});
+
+it.each(['16.6 Standing Waves and Resonance', '17.8 Shock Waves'])(
+  'does not choose an exercise repeat even when its page estimate has a clear lead: %s',
+  (title) => {
+    const text =
+      'front matter\n'.repeat(30) +
+      `## ${title}\n` +
+      'body\n'.repeat(90) +
+      `## ${title}\n` +
+      'exercises\n'.repeat(10);
+    const found = locateMaterialChapters(
+      text,
+      [{ title: 'Image-only chapter', startPage: 40, sections: [{ title, startPage: 85 }] }],
+      100,
+    );
+    expect(found[1].offset).toBeUndefined();
+  },
+);
+
+it.each([
+  ['Kinematics\n## Kinematics\n', 'Kinematics'],
+  ['## Motion\nBasics\nMotion Basics\n', 'Motion Basics'],
+])(
+  'retains the single candidate in the best section rank without page evidence: %s',
+  (text, title) => {
+    expect(
+      locateMaterialChapters(text, [
+        { title: 'Image-only chapter', startPage: 1, sections: [{ title, startPage: 1 }] },
+      ])[1].offset,
+    ).toBe(text.lastIndexOf(title));
+  },
+);

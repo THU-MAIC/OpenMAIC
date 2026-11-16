@@ -76,15 +76,25 @@ export function locateMaterialChapters(
     after: number,
     before: number,
     usePageEstimate = true,
+    missingParent = false,
   ): number | undefined {
     const estimate =
       usePageEstimate && pageCount && pageCount > 0
         ? ((item.startPage - 1) / pageCount) * text.length
         : after + 1;
-    if (usePageEstimate) {
-      const matches = (candidates.get(normalized(item.title)) ?? []).filter(
+    if (usePageEstimate || missingParent) {
+      let matches = (candidates.get(normalized(item.title)) ?? []).filter(
         (candidate) => candidate.offset > after && candidate.offset < before,
       );
+      if (missingParent) {
+        // Keep the section's existing rank preferences, but a missing parent
+        // provides no reliable lower bound for choosing among equal matches.
+        if (matches.some((candidate) => !candidate.joined))
+          matches = matches.filter((candidate) => !candidate.joined);
+        if (matches.some((candidate) => candidate.heading))
+          matches = matches.filter((candidate) => candidate.heading);
+        return matches.length === 1 ? matches[0].offset : undefined;
+      }
       if (matches.length <= 1) return matches[0]?.offset;
       if (!pageCount || pageCount <= 0) return undefined;
       matches.sort((a, b) => Math.abs(a.offset - estimate) - Math.abs(b.offset - estimate));
@@ -132,7 +142,7 @@ export function locateMaterialChapters(
     chapter.sections.forEach((section, sectionIndex) => {
       // A missing chapter stays missing; sections can use the nearest known
       // predecessor and the next located chapter without inventing a parent offset.
-      const sectionOffset = locate(section, previous, next, false);
+      const sectionOffset = locate(section, previous, next, false, offset === undefined);
       if (sectionOffset !== undefined) previous = sectionOffset;
       result.push({ ...section, chapterIndex, sectionIndex, offset: sectionOffset });
     });
