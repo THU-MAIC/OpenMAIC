@@ -4,7 +4,10 @@ import { materialModelCopy } from '@/lib/server/agent-runtime/material-model-cop
 import { documentExtractionFailure } from '@/lib/server/material-extraction/extract';
 import { MaterialExtractionError } from '@/lib/server/material-extraction/errors';
 import { selfHostedMinerUFailure } from '@/lib/pdf/pdf-providers';
-import { failedExtraction } from '@/lib/server/materials/extraction';
+import {
+  failedExtraction,
+  MaterialExtractionTimeoutError,
+} from '@/lib/server/materials/extraction';
 import {
   extractionReasonCodeOf,
   extractionReasonValuesOf,
@@ -122,4 +125,24 @@ describe('failed PDF page range', () => {
       }).guidance,
     ).toContain('this material cannot be read yet');
   });
+});
+
+it('marks an exhausted course upload budget as non-retryable without changing transient provider failures', () => {
+  const error = new MaterialExtractionTimeoutError('source', 300_000);
+  expect(failedExtraction(error)).toMatchObject({
+    status: 'failed',
+    errorCode: 'EXTRACTION_TIMEOUT',
+    retryable: false,
+  });
+  for (const error of [
+    Object.assign(new Error('connection refused'), { code: 'ECONNREFUSED' }),
+    new Error('HTTP 503'),
+    new Error('network timeout'),
+  ]) {
+    expect(failedExtraction(error)).toMatchObject({
+      status: 'failed',
+      errorCode: 'EXTRACTION_FAILED',
+      retryable: true,
+    });
+  }
 });

@@ -352,9 +352,9 @@ export interface MaterialExtractionDependencies {
   deadlineMs?: number;
 }
 
-/** A material's extraction ran out of its time budget. Retryable, like a step timeout. */
+/** Exhausting a course upload's full budget must not automatically reparse all its chunks. */
 export class MaterialExtractionTimeoutError extends Error {
-  readonly retryable = true;
+  readonly retryable = false;
 
   constructor(materialId: string, ms: number) {
     super(`The extraction of material ${materialId} did not finish within ${ms / 1000} s`);

@@ -1,13 +1,11 @@
+import { isAbortError } from '@openmaic/generation';
 import { PDFArray, PDFDict, PDFDocument, PDFName } from 'pdf-lib';
 
 import { chapterSourceFromBlocks, withChapterSource } from '@/lib/document/chapter-source';
 
 import { applyImagePlan } from '@/lib/server/material-extraction/document-image-apply.mjs';
 import type { ImagePlan } from '@/lib/server/material-extraction/document-image-apply.mjs';
-import {
-  DocumentImageInputBudgetError,
-  runDocumentImageWorker,
-} from '@/lib/server/material-extraction/document-image-parser';
+import { runDocumentImageWorker } from '@/lib/server/material-extraction/document-image-parser';
 import { createLogger } from '@/lib/logger';
 import {
   MaterialExtractionError,
@@ -103,11 +101,12 @@ export async function mergeMinerUChunks(
           signal,
         );
       } catch (error) {
-        if (signal?.aborted || !(error instanceof DocumentImageInputBudgetError)) throw error;
+        if (signal?.aborted || isAbortError(error)) throw error;
         // Keep the text, but never publish images whose paths were not namespaced.
         imageEntries = [];
-        log.warn('Chunk image rewriting skipped: input exceeds parser budget', {
+        log.warn('Chunk image rewriting failed; keeping text without chunk images', {
           firstPage: startPage + 1,
+          errorType: error instanceof Error ? error.name.slice(0, 64) : 'UnknownError',
         });
       }
       signal?.throwIfAborted();

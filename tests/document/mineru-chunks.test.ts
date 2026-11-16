@@ -600,8 +600,8 @@ describe('bounded chunk image parsing', () => {
     expect(result.metadata?.pageCount).toBe(3);
     expect(worker).toHaveBeenCalledTimes(3);
     expect(warn).toHaveBeenCalledExactlyOnceWith(
-      'Chunk image rewriting skipped: input exceeds parser budget',
-      { firstPage: 3 },
+      'Chunk image rewriting failed; keeping text without chunk images',
+      { firstPage: 3, errorType: 'DocumentImageParseError' },
     );
   });
 
@@ -660,10 +660,43 @@ describe('bounded chunk image parsing', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it('propagates worker failures other than input admission errors unchanged', async () => {
-    const error = new imageParser.DocumentImageParseError(new Error('worker failed'));
+  it.each([
+    new imageParser.DocumentImageParseError(
+      new Error('Document image parse queue wait exceeded 30s'),
+    ),
+    new imageParser.DocumentImageParseError(new Error('Document image parse exceeded 30s')),
+    new imageParser.DocumentImageParseError(new Error('worker failed')),
+    new Error('unexpected worker failure'),
+    'non-Error worker failure',
+  ])('keeps a fully parsed book when image merging fails: %s', async (error) => {
+    // One middle chunk fails; surrounding chunks still use the real image worker.
+    const realWorker = imageParser.runDocumentImageWorker;
+    const worker = vi
+      .spyOn(imageParser, 'runDocumentImageWorker')
+      .mockImplementationOnce(realWorker)
+      .mockRejectedValueOnce(error);
+    const parse = vi.fn(async (_bytes: Buffer, name: string) => {
+      const start = Number(/^pages-(\d+)/.exec(name)![1]) - 1;
+      return chunk(start).result;
+    });
+    const result = (await parseMinerUPdfChunks(await pdf(6), parse))!;
+    expect(parse).toHaveBeenCalledTimes(3);
+    expect(worker).toHaveBeenCalledTimes(3);
+    expect(result.text).toBe(
+      '![figure](images/chunk-1/image-1)\n\n![figure](images/a.png)\n\n![figure](images/chunk-5/image-1)',
+    );
+    expect(result.images).toEqual(['data:image/png;base64,0', 'data:image/png;base64,4']);
+    expect(result.metadata?.pageCount).toBe(3);
+    expect(warn).toHaveBeenCalledExactlyOnceWith(
+      'Chunk image rewriting failed; keeping text without chunk images',
+      { firstPage: 3, errorType: error instanceof Error ? error.name : 'UnknownError' },
+    );
+  });
+
+  it('does not turn an explicit worker AbortError into a successful parse', async () => {
+    const error = new DOMException('cancelled', 'AbortError');
     vi.spyOn(imageParser, 'runDocumentImageWorker').mockRejectedValue(error);
-    await expect(mergeMinerUChunks([chunk(0)])).rejects.toBe(error);
+    await expect(mergeMinerUChunks([chunk(0), chunk(2)])).rejects.toBe(error);
     expect(warn).not.toHaveBeenCalled();
   });
 
