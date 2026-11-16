@@ -460,7 +460,7 @@ for (const [width, guideCompleted] of [
   });
 }
 
-for (const entry of ['delayed-guide', 'prepare', 'existing-opening'] as const) {
+for (const entry of ['delayed-guide', 'prepare', 'existing-opening', 'stage-change'] as const) {
   test(`initial overview survives ${entry} and releases to normal following`, async ({
     page,
     learningEvents,
@@ -506,7 +506,17 @@ for (const entry of ['delayed-guide', 'prepare', 'existing-opening'] as const) {
     }
     const latest = page.getByTestId('pbl-conversation-scroll-button');
     await expect(latest).toBeVisible();
-    await latest.click();
+    if (entry === 'stage-change') {
+      // Advancing beyond the opening is no longer an initial overview read,
+      // even if the learner did not send a chat message first.
+      fixture.view.state.position.stageIndex = 1;
+      fixture.view.messages[0].text += 'Next stage opening.\n\n'.repeat(20);
+      fixture.view.revision++;
+      await fixture.publish();
+      await expect(viewport).toContainText('Next stage opening.');
+    } else {
+      await latest.click();
+    }
     await expect
       .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
       .toBeLessThanOrEqual(8);

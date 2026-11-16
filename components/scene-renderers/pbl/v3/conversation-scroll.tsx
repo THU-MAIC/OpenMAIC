@@ -56,16 +56,16 @@ export function ConversationViewport({
     stopScroll();
   };
   useLayoutEffect(() => {
-    if (previous.current !== sent) {
+    if (previous.current !== sent || (readingOverview.current && !startAtOverview)) {
       previous.current = sent;
       readingOverview.current = false;
-      // A new learner send explicitly asks to follow its answer, as in Pro.
+      // A learner send or leaving the opening stage ends initial reading.
       void scrollToBottom({ animation: 'instant' });
     } else if (readingOverview.current && header) {
       stopScroll();
       if (scrollRef.current) scrollRef.current.scrollTop = 0;
     }
-  }, [header, sent, scrollRef, scrollToBottom, stopScroll]);
+  }, [header, sent, startAtOverview, scrollRef, scrollToBottom, stopScroll]);
   const label = generating
     ? `${t('pblV3.journey.latest')} · ${t('workbench.chat.waiting')}`
     : t('pblV3.journey.latest');

@@ -202,6 +202,7 @@ export function LearningConversation({
   requesting = false,
   modalActive = false,
   pendingMessage = null,
+  initialEntry = false,
   onOpenFile,
   onOpenReport,
   onOpenTask,
@@ -216,6 +217,7 @@ export function LearningConversation({
   requesting?: boolean;
   modalActive?: boolean;
   pendingMessage?: LearningConversationEntry | null;
+  initialEntry?: boolean;
 }) {
   const { t } = useI18n();
   const entries: LearningConversationEntry[] =
@@ -257,6 +259,7 @@ export function LearningConversation({
         view.state.position.milestoneIndex === 0 &&
         view.state.position.stageIndex === 0 &&
         view.state.status !== 'completed' &&
+        (initialEntry || !entries.length || view.needsOpening) &&
         !pendingMessage &&
         !entries.some((entry) => entry.speaker === 'user') &&
         !view.conversationHistory?.length

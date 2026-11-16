@@ -811,6 +811,7 @@ function PBLV3WorkspaceContent({
 
                 <div className="pbl-task-area flex min-h-0 flex-1 flex-col">
                   <LearningConversation
+                    initialEntry={initialEntry}
                     overview={
                       !onboarding.active && !entryLoading ? (
                         <ProjectOverview key={view.id} view={view} hero={projectHero} />
