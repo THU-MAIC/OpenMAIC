@@ -43,9 +43,18 @@ production-wide cache rate is claimed. Counts/method:
 
 **Teaching baseline: pre-PR commit
 `65d5ac408301a2916d1d7e81b037855760a286ab`, not an earlier version inside this PR.**
-Reversible instruction/state/Skill checks pass for 36 scenarios across courses 1–3.
-Fresh full-response comparison with that commit is in progress. Existing baseline
-course/model behavior is excluded from new-regression findings.
+Reversible instruction/state/Skill checks pass for all 36 scenarios across courses 1–3.
+The final candidate was directly compared with that pre-PR commit: 36 pairs/72
+primary generations, plus 3 fixed paired repeats. Its 36 workflow traces pass;
+all 12 first artifact reviews avoid whole-version approval, and all 12 final
+cycles complete directly after one acceptance. Content pairs and isolated
+differences were reviewed: no newly introduced repeatable teaching regression
+was identified in the covered cases. Existing baseline course/model wording
+behavior is excluded; no course/Skill changes or best-of replacement were used.
+Two transport-failed arms were archived and retried; quality findings were not
+retried away. [Scope and checks](pre-pr-teaching-regression.json).
+This is a bounded synthetic regression check, not a browser/cloud E2E or a claim
+that every generated question is perfect.
 
 **Still a draft; C-end production-data paired validation is being attempted.**
 The sections below retain the initial revision's evidence and describe that
